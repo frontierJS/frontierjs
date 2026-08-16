@@ -2,83 +2,36 @@
 title: New order
 ---
 <script>
-  // The whole form is derived. Look for a field list, a type, an enum value, a
-  // required flag or the name of the customers resource in this file — none of
-  // them are here, because all of them are in db/schema.lite.
+  // The whole form is derived, and now that includes the FIELD LIST. Look for a
+  // field name, a type, an enum value, a required flag, a control choice or the
+  // name of the customers resource in this file — none of them are here, because
+  // all of them are in db/schema.lite.
   //
-  // Nor is there a state machine. This page used to carry ~90 lines of one:
-  // `errors` / `shown` / `typed` / `visible`, a `check()`, an `onInput`, an
-  // `onLeave`, a `saving` flag, a `failed` string and a `save()` that coerced,
-  // validated, revealed everything and unwrapped a ResourceValidationError by
-  // hand. All of it was correct and none of it was about orders — so it is now
-  // `<Form>` in @frontierjs/ui, and the rule it enforces is stated once there
-  // rather than re-derived per app:
+  // This page used to carry ~90 lines of state machine (`errors` / `shown` /
+  // `typed` / `visible`, a `check()`, an `onInput`, an `onLeave`, a `saving`
+  // flag and a `save()` that unwrapped a ResourceValidationError by hand), and
+  // then ~40 lines of a hand-rolled `Object.entries(fields)` loop deciding
+  // control-per-type with the foreign key lifted out. The first became <Form>
+  // in @frontierjs/ui; the second became <Form>'s generated field list, over
+  // the control table in sierra's field-rules.js. Both are stated once there
+  // rather than re-derived in every app.
   //
-  //   on input an error may only be REMOVED, never revealed.
-  //
-  // What is left below is the part that IS about orders: which control a field
-  // gets, and that the foreign key gets a picker.
+  // There is not even an exclusion left. `trackingCode` is written by the
+  // book-courier job and a person must never be offered a box for it — which
+  // the schema now says in the only place it could be true: `@system` on the
+  // column. It reaches the browser as `readOnly`, the control table has no
+  // control for a readOnly field, and the form does not render one. This page
+  // used to carry the repo's only hard-coded field name for that (FJS-095).
   import { orders } from '../../resources/Order.mesa'
-  import { createResource } from '@frontierjs/sierra/junction'
   import { goto } from '@frontierjs/sierra/router'
   import { session } from '../../session.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
-  import Checkbox      from '@frontierjs/ui/components/forms/Checkbox.mesa'
   import Form          from '@frontierjs/ui/components/forms/Form.mesa'
-  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
-  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
-
-  const fields = orders.fields
-
-  // Which fields to render, in schema order, minus the foreign key — that one
-  // gets a picker instead of a number spinner.
-  const fk    = fields.customerId.references     // { model:'Customer', field:'id', relation:'customer' }
-
-  // …and minus the fields a PERSON does not fill in. `trackingCode` is written
-  // by the book-courier job; asking a human for it offers them a box whose
-  // value a worker will overwrite in about a second.
-  //
-  // This is the one field name in this file, and it should not have to be here:
-  // the schema knows the column exists and nothing in it can yet say "the
-  // system writes this, not the user". Litestone already emits `readOnly: true`
-  // for computed/generated/@from fields and Sierra reads it nowhere, so the
-  // shape of the answer exists on both sides of the boundary and the annotation
-  // in between does not. Filed as FJS-095 / FJS-D22.
-  const SYSTEM_WRITTEN = ['trackingCode']
-
-  const plain = Object.entries(fields)
-    .filter(([name]) => name !== 'customerId' && !SYSTEM_WRITTEN.includes(name))
-
-  // The picker's options come from the RELATION, not from a name written here:
-  // orders.relations.customer.model is 'Customer', and the registry resolves it.
-  const related = createResource(
-    orders.relations.customer.model.toLowerCase() + 's',
-    { model: orders.relations.customer.model },
-  )
-
-  let draft   = orders.make()
-  let options = []
 
   $: session.level
-
-  related.service.getOptions({}, { limit: 100, orderBy: 'name' })
-    .then(res => { options = res.data ?? [] })
-    .catch(() => { options = [] })
-
-  // The kit's controls take a value and hand back an event; they are not bound
-  // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
-  // let and a member expression is not one. Replacing the object rather than
-  // mutating it is also what makes the change reactive.
-  //
-  // `name` on each control is what lets <Form> route a message back to it: the
-  // form reads `e.target.name` off the one input listener it has, so a control
-  // without a name is one the form cannot speak to.
-  function write(name, value) {
-    draft = { ...draft, [name]: value }
-  }
 
   // `var`, not `const`: a gate level comes off the schema and never changes,
   // so a snapshot is what it is. Read straight in the template it is still a
@@ -101,10 +54,13 @@ title: New order
 {/if}
 
 <!--
-  <Form> is the <form>: it keeps the `card` class, and `stack` comes from the
-  component. It owns submit, in-flight state, the reveal rule and the map from
-  a rejection to a message under the right control — including the 401 above,
-  which arrives with no field information and lands in the form-level Alert.
+  <Form> with no children IS the form. It renders every writable column in
+  schema order, each with the control its type implies: `status` is a select
+  over the enum's members, `customerId` is a picker whose rows come from the
+  Customer relation, `total` is a number, the rest are text. It also owns
+  submit, in-flight state, the reveal rule and the map from a rejection to a
+  message under the right control — including the 401 above, which arrives with
+  no field information and lands in the form-level Alert.
 
   It also sets `novalidate` itself. That is load-bearing and used to be a
   hand-written attribute with a paragraph next to it: the kit's controls put a
@@ -115,77 +71,14 @@ title: New order
 -->
 <Form
   resource={orders}
-  bind:record={draft}
   class="card"
   style="max-width: 32rem"
   ondone={() => goto('/orders/')}
 >
-  {#each plain as [name, rule]}
-    {#if rule.enum}
-      <!-- Options come from fields.status.enum, which exists only because
-           {"$ref":"#/$defs/OrderStatus"} is resolved against the registry. -->
-      <Select
-        id={'f-' + name}
-        name={name}
-        placeholder="—"
-        options={rule.enum}
-        value={draft[name]}
-        hint={rule.type + ' · enum' + (rule.nullable ? ' · nullable' : '')}
-        oninput={(e) => write(name, e.target.value)}
-      />
-    {:else if rule.type === 'boolean'}
-      <Checkbox
-        id={'f-' + name}
-        name={name}
-        label={name}
-        checked={draft[name]}
-        onchange={(e) => write(name, e.target.checked)}
-      />
-    {:else}
-      <!--
-        No `label`, no `required`, no `maxlength`, no `min`/`max`, no `type`:
-        every one of them is a schema fact and a control inside a <Form>
-        resolves it from the form's `fields`. The label is `@label` where the
-        schema declares one and the title-cased column name otherwise, which is
-        why `customerId` below introduces itself as "Customer".
-
-        `step` stays. "How finely may this be nudged" is a UI decision the
-        schema does not make.
-      -->
-      <Input
-        id={'f-' + name}
-        name={name}
-        step={rule.type === 'number' || rule.type === 'integer' ? 'any' : undefined}
-        value={draft[name]}
-        hint={rule.type + (rule.nullable ? ' · nullable' : '')}
-        oninput={(e) => write(name, e.target.value)}
-      />
-    {/if}
-  {/each}
-
   <!--
-    The relation. Everything except the OPTIONS is derived like any other
-    field — `name="customerId"` is what lets the form match it to the rule, so
-    its label is `@label("Customer")` and its message is `@required("…")`, both
-    authored in db/schema.lite and said by the browser, the client-side check
-    and the API alike.
-
-    What is still hand-written is that a `belongsTo` wants a picker at all, and
-    where the rows come from. That is `ISSUES.md` FJS-078's neighbourhood.
-  -->
-  <Select
-    id="f-customerId"
-    name="customerId"
-    placeholder="—"
-    options={options.map(o => ({ value: o.id, label: o.name }))}
-    value={draft.customerId}
-    hint={'→ ' + fk.model + '.' + fk.field}
-    oninput={(e) => write('customerId', e.target.value)}
-  />
-
-  <!--
-    `slot="actions"` rather than children: <Form> puts them in a `.cluster` so a
-    button row is a row. Two elements may name the same slot.
+    `slot="actions"` rather than children — children would mean "I am writing
+    this form myself" and turn the generated list off. <Form> puts them in a
+    `.cluster` so a button row is a row; two elements may name the same slot.
 
     No `loading`, no `disabled`, no "Saving…" — a type="submit" button inside a
     <Form> reads the form's in-flight state from context and disables and spins

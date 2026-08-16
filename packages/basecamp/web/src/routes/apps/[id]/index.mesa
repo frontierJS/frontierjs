@@ -94,7 +94,7 @@ title: App
   async function makePrimary(domain) {
     error = null; busy = domain.id
     try {
-      await domains.service.action('makePrimary', domain.id)
+      await domains.service.invoke('makePrimary', domain.id)
       await load()
     } catch (e) {
       error = e.message
@@ -120,7 +120,7 @@ title: App
   async function uploadCert(domain) {
     error = null; busy = domain.id
     try {
-      await domains.service.action('uploadCert', domain.id, certDraft)
+      await domains.service.invoke('uploadCert', domain.id, certDraft)
       toasts.success(`Certificate stored for ${domain.hostname}`)
       certDraft = { certPem: '', keyPem: '', expiresAt: '' }
       certFor = null

@@ -90,7 +90,7 @@ title: Environment
   // last full array to arrive wins.
   //
   // A custom method dispatches on the X-Service-Method HEADER, not a sub-path.
-  // POST /environments/:id/setVariable is a 404 — resource.service.action()
+  // POST /environments/:id/setVariable is a 404 — resource.service.invoke()
   // sends the header for us.
   let newKey    = ''
   let newValue  = ''
@@ -100,7 +100,7 @@ title: Environment
   async function setVariable(key, value, secret) {
     error = null; busyKey = key
     try {
-      environment = await environments.service.action('setVariable', environment.id, { key, value, secret })
+      environment = await environments.service.invoke('setVariable', environment.id, { key, value, secret })
       newKey = ''; newValue = ''; newSecret = false
     } catch (e) {
       error = e.message
@@ -112,7 +112,7 @@ title: Environment
   async function deleteVariable(key) {
     error = null; busyKey = key
     try {
-      environment = await environments.service.action('deleteVariable', environment.id, { key })
+      environment = await environments.service.invoke('deleteVariable', environment.id, { key })
     } catch (e) {
       error = e.message
     } finally {

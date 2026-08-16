@@ -70,11 +70,14 @@ so nothing can say "this row is provisional" or "put that row back".
   nothing, so the store silently misses every write that did not come through a
   service. This is the one that matters most: the guarantee is "you never
   invalidate", and it is false in a way you cannot see.
-- **`FJS-011`** — every event is upserted regardless of the query, so a row
-  patched *out* of a filter stays in the store.
+- ~~**`FJS-011`**~~ — **closed 2026-08-15.** Every event was upserted regardless
+  of the query, so a row patched *out* of a filter stayed in the store. The store
+  now asks (`matchesQuery`) and takes such a row out. Ordering and paging are the
+  part no client-side matcher can answer and remain open as `FJS-270`.
 
-`FJS-011` is also what blocks optimism specifically: a store that cannot remove
-a row on a filter miss cannot roll one back either.
+`FJS-011` was also what blocked optimism specifically — a store that cannot
+remove a row on a filter miss cannot roll one back either. That half is now
+available: the removal path exists and is tested.
 
 ### Hole 4 — pagination is `offset`, and `offset` is wrong for the case this framework is best at
 
@@ -177,7 +180,8 @@ sit underneath the features.
 1. **`FJS-010`** — an announcement that misses writes makes every layer above it
    a liar. Blocked on `FJS-D04` (how a subscriber attaches to `onEvent` after
    construction).
-2. **`FJS-011`** — filter-aware event handling. Also unblocks rollback.
+2. ~~**`FJS-011`** — filter-aware event handling. Also unblocks rollback.~~
+   **Done 2026-08-15.**
 3. **Load identity (`FJS-082`)** — small, self-contained, no dependency on the
    two above. Could go first if a quick win is wanted; it just does not fix the
    others.

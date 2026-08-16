@@ -65,6 +65,11 @@ export function sendSystemEmail(
     const isOptional = opts.optional !== false  // default true when undefined
 
     try {
+      // `app.email` is optional and this hook can be installed without the
+      // email plugin. Reaching through it blindly threw
+      // `Cannot read properties of undefined`, which the optional path below
+      // then swallowed into a warning naming nothing anyone can act on.
+      if (!app.email) throw new Error('Junction email: no email plugin is configured — app.configure(emailPlugin({...}))')
       await app.email.system.send(message)
     } catch (err) {
       if (isOptional) {
@@ -111,6 +116,7 @@ export function sendCampaignEmail(
     const isOptional = opts.optional !== false  // default true when undefined
 
     try {
+      if (!app.email) throw new Error('Junction email: no email plugin is configured — app.configure(emailPlugin({...}))')
       await app.email.campaign.send(message)
     } catch (err) {
       if (isOptional) {

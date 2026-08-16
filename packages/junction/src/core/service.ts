@@ -5,8 +5,9 @@
 // Services are registered in the app and called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { requestMeta } from './context.ts'
+import { requestMeta, runWithMeta, runInServiceCall } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
+import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
 import {
   resolvePipelines,
   mergeHookMaps,
@@ -129,7 +130,7 @@ function buildCacheHooks(
   // (e.g. password hashes) to later callers.
   const checkCache: HookFn = (ctx) => {
     const hit = resolveCache(ctx).get(getKey(ctx))
-    if (hit !== undefined) ctx.result = structuredClone(hit)
+    if (hit !== undefined) ctx.result = structuredClone(hit) as ServiceContext['result']
   }
 
   const storeResult: HookFn = (ctx) => {
@@ -150,9 +151,9 @@ function buildCacheHooks(
 /**
  * Where a service's mutations are broadcast — the value of `channel:`.
  *
- * Named `channel` and not `publish`: 'publish' is a perfectly ordinary ACTION
+ * Named `channel` and not `publish`: 'publish' is a perfectly ordinary METHOD
  * name (publish a draft), and reserving it as an option key would stop a
- * service from having one. A noun cannot collide with a verb-shaped action.
+ * service from having one. A noun cannot collide with a verb-shaped method.
  *
  *   'posts'        a channel name — the common case
  *   (rows, ctx) => a channel, an array of channels, or null to skip this one
@@ -173,8 +174,8 @@ export type PublishDeclaration =
 export interface ServiceDescription {
   name:       string
   model:      string
-  /** Declared actions, before the method policy. */
-  actions:    string[]
+  /** Declared custom methods, before the method policy. */
+  customMethods: string[]
   /** What the service will answer, policy applied. */
   methods:    string[]
   allowBulk:  boolean
@@ -268,7 +269,7 @@ export interface Service {
    * What this service IS — the one answer, for anything that describes it.
    *
    * /manifest, the OpenAPI generator and /metrics each used to reach into
-   * `_meta`, `_schemas`, `_hookMap` and the action rule directly, casting on the
+   * `_meta`, `_schemas`, `_hookMap` and the custom-method rule directly, casting on the
    * way in. Three readers of four internals is three chances to read a
    * different service than the one that answers the request.
    */
@@ -295,14 +296,14 @@ export interface Service {
   _hookMap: HookMap
 
   /**
-   * The service's actions, resolved once at construction.
+   * The service's custom methods, resolved once at construction.
    *
    * Dispatch and the three advertisers (manifest, OpenAPI, /metrics) read this
-   * rather than re-deciding what counts as an action. Actions are also own keys
+   * rather than re-deciding what counts as a custom method. They are also own keys
    * on the service, so `svc.reboot` still works and a spread still carries them
    * — the table is what is authoritative.
    */
-  _actions: ActionMap
+  _customMethods: CustomMethodMap
 }
 
 // ─── Service call entry point ─────────────────────────────────────────────
@@ -377,19 +378,19 @@ export const AUTO_EVENT_MAP: Record<string, string> = {
 
 const CRUD_METHODS = new Set(['find', 'get', 'create', 'update', 'patch', 'remove', 'restore'])
 
-// Warned once per service+action, so a table miss is loud but not a per-request
+// Warned once per service+method, so a table miss is loud but not a per-request
 // log flood.
 const _warnedUntabled = new Set<string>()
 
 /**
- * The function behind an action name, or undefined.
+ * The function behind a custom method name, or undefined.
  *
- * The table is the answer. The fallback to an own key is a transition: an action
+ * The table is the answer. The fallback to an own key is a transition: a method
  * attached to a service object AFTER construction was never a supported shape,
  * but nothing refused it either, and a silent 404 is the worst way to find out.
  */
-function actionFn(service: Service, method: string): ActionFn | undefined {
-  const declared = service._actions?.[method]
+function customMethodFn(service: Service, method: string): CustomMethodFn | undefined {
+  const declared = service._customMethods?.[method]
   if (declared) return declared
 
   const attached = (service as unknown as Record<string, unknown>)[method]
@@ -399,12 +400,13 @@ function actionFn(service: Service, method: string): ActionFn | undefined {
   if (!_warnedUntabled.has(key)) {
     _warnedUntabled.add(key)
     console.warn(
-      `[Junction] service '${service.name}': action '${method}' is on the service ` +
-      `object but not in its action table, so it was attached after construction. ` +
+      `[Junction] service '${service.name}': custom method '${method}' is on the ` +
+      `service object but not in its method table, so it was attached after ` +
+      `construction. ` +
       `Declare it on the definition — a later release dispatches from the table alone.`
     )
   }
-  return attached as ActionFn
+  return attached as CustomMethodFn
 }
 
 export async function callService(
@@ -414,10 +416,47 @@ export async function callService(
   events?:    EventEmitter,
   telemetry?: EventEmitter
 ): Promise<void> {
+  // ── the principal propagates from the CALLING CONTEXT ────────────────
+  //
+  // The request store already covers a whole pipeline run, so a nested call
+  // that names no principal inherits the request's. That is right until a call
+  // deliberately changes principal: service A running as alice calls B as bob,
+  // and anything B calls would inherit ALICE — the request's — rather than the
+  // context it is actually running inside.
+  //
+  // So the scope is re-established whenever this call's principal differs from
+  // the one in scope. Only then: an ALS `run()` on every service call would be
+  // paid by the common path, where the two are the same object by construction.
+  // A call that enters with NO store is an entry point of its own — a job, a
+  // script, a test, a boot task. It opens one, which is what gives background
+  // work a principal to propagate at all.
+  const scoped = requestMeta()
+
+  if (!scoped) {
+    return runWithMeta(
+      { correlationId: crypto.randomUUID(), origin: 'internal', user: ctx.auth.user },
+      () => _callService(service, ctx, appHooks, events, telemetry))
+  }
+
+  if (scoped.user !== ctx.auth.user) {
+    return runWithMeta({ ...scoped, user: ctx.auth.user }, () =>
+      _callService(service, ctx, appHooks, events, telemetry))
+  }
+
+  return _callService(service, ctx, appHooks, events, telemetry)
+}
+
+async function _callService(
+  service:    Service,
+  ctx:        ServiceContext,
+  appHooks?:  HookMap,
+  events?:    EventEmitter,
+  telemetry?: EventEmitter
+): Promise<void> {
 
   const start  = Date.now()
   const method = ctx.method
-  const isAction = !CRUD_METHODS.has(method as string)
+  const isCustom = !CRUD_METHODS.has(method as string)
 
   // ── The method policy ────────────────────────────────────────────────
   // Enforced HERE because callService is the one path every caller takes —
@@ -436,7 +475,7 @@ export async function callService(
   // public in /manifest and the OpenAPI spec. And running `before` hooks for a
   // call that cannot proceed means running their side effects: a rate-limit
   // counter incremented, a row touched, for a verb the service does not have.
-  // It matches the action-existence NotFound directly below, which has always
+  // It matches the method-existence NotFound directly below, which has always
   // answered ahead of the pipeline for the same reason.
   if (!isMethodAllowed(service, method as string)) {
     throw new MethodNotAllowed(
@@ -446,7 +485,7 @@ export async function callService(
   }
 
   // For custom methods, check the service has it registered
-  if (isAction && !actionFn(service, method as string)) {
+  if (isCustom && !customMethodFn(service, method as string)) {
     throw new NotFound(`Method '${method}' not found on service '${service.name}'`)
   }
 
@@ -491,21 +530,25 @@ export async function callService(
   // promise.
   const pipelineSource = service.pipelines(appHooks)
 
-  // Hook-less custom actions fall back to the '*' pipeline (app/service
+  // Hook-less custom methods fall back to the '*' pipeline (app/service
   // 'all' hooks only) — never to an empty one, which would silently skip
   // Litestone scoping and every other app-level hook.
   const resolvedPipeline = pipelineSource[method as string]
     ?? pipelineSource['*']
     ?? { around: [], before: [], after: [], error: [] }
 
-  const methodFn = (isAction
-    ? actionFn(service, method as string)
+  const methodFn = (isCustom
+    ? customMethodFn(service, method as string)
     : service[method as ServiceMethod]) as (ctx: ServiceContext) => Promise<unknown>
 
   let pipelineError: unknown = null
 
   try {
-    await runPipeline(ctx, resolvedPipeline, async () => {
+    // Marked for the whole pipeline, hooks included: a write from an `after`
+    // hook belongs to this call and is covered by the announcement below.
+    // Anything the Litestone tap sees OUTSIDE this scope is a write no service
+    // announced, which is what it exists to catch.
+    await runInServiceCall(service.name, () => runPipeline(ctx, resolvedPipeline, async () => {
       const raw = await methodFn(ctx)
       // - null/undefined     → null (transport returns 204)
       // - already an envelope → as-is (cache hit, hook-set result)
@@ -530,7 +573,7 @@ export async function callService(
         // what decides list vs single — see wrapResult.
         ctx.result = wrapResult(raw, service.name, ctx.method)
       }
-    }, t)   // gated: undefined when no telemetry subscribers → per-hook fast path
+    }, t))   // gated: undefined when no telemetry subscribers → per-hook fast path
   } catch (err) {
     pipelineError = err
   } finally {
@@ -581,20 +624,20 @@ export async function callService(
   //
   // Fires when the call succeeded and the method is a write. Reads never
   // announce — which is why this is per-method and not an `all` hook.
-  // A CRUD write announces under its past-tense name; a custom ACTION announces
+  // A CRUD write announces under its past-tense name; a CUSTOM method announces
   // under its own (`orders pay`), because it is a write too — `db.order
   // .transition(id,'pay')` changes the row exactly as a patch does. Until
-  // 2026-08-06 only the map counted, so an action changed a row and told nobody:
-  // the browser client had listened for action events since it was written
-  // ("custom action events — treat as upserts", client/index.ts), and the server
-  // had never sent one. Apps hid it by re-issuing find() after every action.
+  // 2026-08-06 only the map counted, so a custom method changed a row and told
+  // nobody: the browser client had listened for those events since it was
+  // written (client/index.ts), and the server had never sent one. Apps hid it by
+  // re-issuing find() after every call.
   //
   // Reads never announce, which is why `find`/`get` are excluded by name rather
-  // than by shape. An action that only READS (search, stats, export) is
+  // than by shape. A custom method that only READS (search, stats, export) is
   // indistinguishable from one that writes at this layer — it opts out with
   // `ctx.dispatch = false`, the same switch that suppresses any other broadcast.
   const eventName = AUTO_EVENT_MAP[method as string]
-    ?? (isAction ? (method as string) : undefined)
+    ?? (isCustom ? (method as string) : undefined)
 
   if (!ctx.error && !pipelineError && eventName) {
     const past = eventName
@@ -684,7 +727,7 @@ export interface BaseServiceOptions {
    * Narrow what this service answers — `['find','get']`, or `'readOnly'`.
    *
    * Same key and same meaning as on `createService`; carried through and
-   * resolved there, against the actions that exist. Declaring it here used to
+   * resolved there, against the custom methods that exist. Declaring it here used to
    * do NOTHING — the option was neither read nor forwarded, so an append-only
    * service written with this factory answered every verb and the only symptom
    * was a write that worked.
@@ -784,7 +827,7 @@ export interface BaseServiceOptions {
 // used to be copy-pasted in five places (both factories here, createLitestoneService,
 // the manifest plugin, the openapi plugin) and had already drifted — the plugin
 // copies were missing `update`/`_update`, so every service reported `update` as
-// a custom action. Import these instead of writing a sixth list.
+// a custom method. Import these instead of writing a sixth list.
 
 /** Option keys consumed by the service factories — never custom methods. */
 export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
@@ -792,7 +835,7 @@ export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
   'idField', 'softDelete', 'cache', 'schema', 'hooks',
   // `publish` accepts a function, so without this a service declaring
   // `publish: (rows, ctx) => …` would have had it copied on as a callable
-  // custom method and routed over HTTP as an action.
+  // custom method and routed over HTTP as one.
   'channel',
   'methods',
   'transactional',
@@ -802,13 +845,13 @@ export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
 export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
   'find', 'get', 'create', 'update', 'patch', 'remove', 'restore',
   '_find', '_get', '_create', '_update', '_patch', '_remove', '_restore',
-  '_hookMap', '_meta', '_schemas', '_methods', '_actions', '_transactional',
+  '_hookMap', '_meta', '_schemas', '_methods', '_customMethods', '_transactional',
   'pipelines', 'describe',
 ])
 
-// ─── Actions: the one parse step ──────────────────────────────────────────
+// ─── Custom methods: the one parse step ───────────────────────────────────
 //
-// An action used to be recognised by EXCLUSION — a function whose key is in
+// A custom method used to be recognised by EXCLUSION — a function whose key is in
 // neither reserved set — and six consumers re-applied that rule: dispatch twice,
 // the method policy, the manifest, the OpenAPI spec and /metrics. Six copies of
 // one question, none of them able to answer it any better than the deny-lists
@@ -820,34 +863,34 @@ export const SERVICE_RUNTIME_KEYS: ReadonlySet<string> = new Set([
 // nothing written today changes shape — but `methods:` DECLARES, and a
 // declaration beats a guess:
 //
-//   methods: ['find', 'get', 'reboot']   → 'reboot' is an action, stated
+//   methods: ['find', 'get', 'reboot']   → 'reboot' is a custom method, stated
 //   (no methods:)                        → scan, exactly as before
 //
-// The declaration is also the only way to name an action after an option key.
+// The declaration is also the only way to name a method after an option key.
 // `cache`, `schema`, `channel` and the rest of SERVICE_OPTION_KEYS are eaten by
 // the scan with no error, so `async cache(ctx)` was simply impossible. It still
 // costs a cast in TypeScript where the option is typed — `cache` is declared as
 // a CacheDeclaration and cannot also be a function — so the runtime honours the
 // declaration and the type does not know about it.
 
-export type ActionFn  = (ctx: ServiceContext) => Promise<unknown> | unknown
-export type ActionMap = Record<string, ActionFn>
+export type CustomMethodFn  = (ctx: ServiceContext) => Promise<unknown> | unknown
+export type CustomMethodMap = Record<string, CustomMethodFn>
 
 /**
- * The actions a definition declares, resolved to functions.
+ * The custom methods a definition declares, resolved to functions.
  *
  * `declared` is the `methods:` list when there is one. Names in it that are not
- * CRUD are actions and are resolved off the source; a name with no function
+ * CRUD are custom methods and are resolved off the source; a name with no function
  * behind it throws, because the alternative is a 405 in production for a method
  * the author believed they had shipped.
  */
-export function collectActions(
+export function collectCustomMethods(
   source:      object,
   serviceName: string,
   declared?:   MethodPolicy,
-): ActionMap {
+): CustomMethodMap {
   const src = source as Record<string, unknown>
-  const out: ActionMap = {}
+  const out: CustomMethodMap = {}
 
   if (Array.isArray(declared)) {
     for (const name of declared) {
@@ -866,12 +909,12 @@ export function collectActions(
           `[Junction] service '${serviceName}': methods lists '${name}', which is ` +
           (fn === undefined
             ? `not defined on this service.`
-            : `a ${typeof fn}, not a method — rename the option or the action, ` +
+            : `a ${typeof fn}, not a method — rename the option or the method, ` +
               `a name cannot be both.`) +
           ` Available: ${available}`
         )
       }
-      out[name] = fn as ActionFn
+      out[name] = fn as CustomMethodFn
     }
     return out
   }
@@ -879,15 +922,15 @@ export function collectActions(
   // No declaration — the historical scan. Kept because 60-odd services in this
   // repo alone are written that way and none of them is wrong.
   for (const [key, val] of Object.entries(src)) {
-    if (isCustomMethod(key, val)) out[key] = val as ActionFn
+    if (isCustomMethod(key, val)) out[key] = val as CustomMethodFn
   }
   return out
 }
 
-/** The action names on a built service (or, for a definition, by scanning). */
-export function actionNames(svc: object): string[] {
-  const table = (svc as { _actions?: ActionMap })._actions
-  return table ? Object.keys(table) : customMethodNames(svc)
+/** The custom method names on a built service (or, for a definition, by scanning). */
+export function customMethodNames(svc: object): string[] {
+  const table = (svc as { _customMethods?: CustomMethodMap })._customMethods
+  return table ? Object.keys(table) : scanCustomMethods(svc)
 }
 
 // ─── The transaction scope ────────────────────────────────────────────────
@@ -1003,7 +1046,7 @@ function refuseDoubleBroadcast(
 //
 // The allow-list is the general form because a narrower method set is not only
 // ever "read only": `['find','get','create','approve']` says "no patch, no
-// remove, one action", which a boolean cannot express and which otherwise goes
+// remove, one custom method", which a boolean cannot express and which otherwise goes
 // back to a hand-written hook. `'readOnly'` is sugar on the same key rather than
 // a second option, so there is still one place to look.
 
@@ -1021,7 +1064,7 @@ export type MethodPolicy = string[] | 'readOnly'
  * explicitly is allowed.
  *
  * `available` is every name this service could legitimately answer: CRUD plus
- * its own actions. A name outside it THROWS at construction rather than being
+ * its own custom methods. A name outside it THROWS at construction rather than being
  * ignored, because the failure mode of a silent typo is the one this whole
  * feature exists to prevent — `methods: ['find', 'gett']` would block `get`
  * and read as "the allow-list is broken" only after a 405 in production.
@@ -1055,14 +1098,14 @@ export function resolveMethodPolicy(
 }
 
 /**
- * Every method name a service could answer — CRUD plus its own actions.
+ * Every method name a service could answer — CRUD plus its own custom methods.
  *
- * Through `actionNames`, so a DECLARED action counts: `methods: ['find','cache']`
+ * Through `customMethodNames`, so a DECLARED one counts: `methods: ['find','cache']`
  * puts `cache` in the table, and validating the same list against a scan that
  * cannot see it would refuse the declaration for not matching the guess.
  */
 export function serviceMethodNames(svc: object): string[] {
-  return [...CRUD_METHODS, ...actionNames(svc)]
+  return [...CRUD_METHODS, ...customMethodNames(svc)]
 }
 
 /**
@@ -1077,13 +1120,13 @@ export function isMethodAllowed(svc: object, method: string): boolean {
   return !allowed || allowed.has(method)
 }
 
-/** The callable method names, policy applied. Ordered as CRUD then actions. */
+/** The callable method names, policy applied. Ordered as CRUD then custom. */
 export function allowedMethodNames(svc: object): string[] {
   return serviceMethodNames(svc).filter(m => isMethodAllowed(svc, m))
 }
 
 /**
- * The one predicate for "is this a custom service method (action)?".
+ * The one predicate for "is this a custom service method?".
  * Used by both factories to decide what to copy onto the service, and by the
  * manifest/openapi plugins to decide what to advertise.
  */
@@ -1093,8 +1136,11 @@ export function isCustomMethod(key: string, value: unknown): boolean {
     && !SERVICE_RUNTIME_KEYS.has(key)
 }
 
-/** Custom method (action) names on a service definition or built service. */
-export function customMethodNames(obj: object): string[] {
+/**
+ * Custom method names found by SCANNING own keys — the fallback rule, not the
+ * table. `customMethodNames` is what a built service answers with.
+ */
+export function scanCustomMethods(obj: object): string[] {
   return Object.keys(obj).filter(
     k => isCustomMethod(k, (obj as Record<string, unknown>)[k])
   )
@@ -1165,9 +1211,9 @@ export function createBaseService(
     return fn(ctx)
   }
 
-  // Actions — declared by `methods:` when it is there, scanned for when it is
+  // Custom methods — declared by `methods:` when it is there, scanned for when it is
   // not. One parse step; everything downstream reads the table.
-  const customMethods = collectActions(opts, name ?? model ?? 'service', methods)
+  const customMethods = collectCustomMethods(opts, name ?? model ?? 'service', methods)
 
   // Schema validation, derived rather than declared.
   //
@@ -1279,17 +1325,17 @@ export function createBaseService(
     patch:   withDb(base.patch),
     remove:  withDb(base.remove),
     restore: withDb(base.restore as Method),
-    // Actions land twice on purpose: as own keys, which is how a spread carries
+    // They land twice on purpose: as own keys, which is how a spread carries
     // them and how a caller reaches `svc.reboot`, and as the table, which is
     // what createService reads instead of re-scanning a shape that by then
     // includes CRUD, `_meta` and every other runtime key.
     ...customMethods,
-    _actions: customMethods,
+    _customMethods: customMethods,
     ...(name    !== undefined ? { name }    : {}),
     ...(channel !== undefined ? { channel } : {}),
     // Carried through, not resolved here: the loader spreads this object into
     // createService(), which is where the allow-list is validated against the
-    // actions that exist. Dropping it was a SECURITY-shaped silence — the same
+    // custom methods that exist. Dropping it was a SECURITY-shaped silence — the same
     // `methods: 'readOnly'` that makes an audit trail append-only through
     // createService did nothing at all through createBaseService, and the only
     // symptom was a write that succeeded. Which factory you picked decided
@@ -1311,7 +1357,11 @@ export function createBaseService(
       cache:      !!cache,
       idField:    idField ?? 'id',
     },
-  } as Omit<Service, 'name' | 'hooks' | 'pipelines'> & Partial<Pick<Service, 'name' | 'hooks'>>
+  // Two-step because this literal is a service DEFINITION on its way into
+  // createService, not a built Service: it carries no `_customMethods`, no `_methods`
+  // and no `pipelines`, and those are what createService adds. A one-step
+  // assertion claims an overlap the compiler is right to refuse.
+  } as unknown as Omit<Service, 'name' | 'hooks' | 'pipelines'> & Partial<Pick<Service, 'name' | 'hooks'>>
 }
 
 // ─── Plain-client adapter ─────────────────────────────────────────────────
@@ -1397,7 +1447,7 @@ export interface ServiceDefinition {
    *
    *   methods: ['find', 'get']                     an allow-list
    *   methods: 'readOnly'                          shorthand for the above
-   *   methods: ['find', 'get', 'create', 'approve'] CRUD and actions together
+   *   methods: ['find', 'get', 'create', 'approve'] CRUD and custom together
    *
    * A method left out answers **405**, on every transport and to an in-process
    * `app.service(name).create()` alike. A name the service does not have throws
@@ -1485,7 +1535,7 @@ function makeBypass(
 ): (ctx: ServiceContext) => Promise<unknown> {
   return async (ctx: ServiceContext) => {
     const start     = Date.now()
-    const rawTelemetry = (ctx.app as Record<string, unknown>)?.telemetry as EventEmitter | undefined
+    const rawTelemetry = ctx.app?.telemetry
     const telemetry = telemetryEnabled(rawTelemetry) ? rawTelemetry : undefined
     try {
       return await fn(ctx)
@@ -1558,7 +1608,7 @@ export function createService(def: ServiceDefinition): Service {
   // `model: def.model ?? def.name` on the way out. Same file, same options,
   // opposite behaviour.
   //
-  // A service with no model at all (custom actions only) is unaffected: the
+  // A service with no model at all (custom methods only) is unaffected: the
   // derived hooks no-op when the accessor resolves to nothing (gateAuth reads
   // null levels, autoValidate finds no definition), and calling the unused CRUD
   // methods now fails with the base's diagnostic — which names the spellings
@@ -1604,23 +1654,32 @@ export function createService(def: ServiceDefinition): Service {
   }
 
   if (def.hooks) {
-    // Dev-mode: warn on anonymous hooks — they show as 'anonymous' in telemetry waterfall
-    if (process.env.NODE_ENV !== 'production' && def.hooks) {
+    // An anonymous hook shows as 'anonymous' in the telemetry waterfall, which
+    // is worth saying — once. It used to print a full sentence per PHASE per
+    // METHOD, so a service with one inline hook on `all` and five methods
+    // produced five identical lines, and an app produced dozens before it had
+    // served anything. That is a style note competing with real warnings for the
+    // same scrollback.
+    //
+    // Now: one line per service, naming the positions, and only under DEBUG=1.
+    // Nothing is lost — the count and the positions are what a person acts on,
+    // and the advice is the same for all of them.
+    if (isDiagnosticMode()) {
+      const positions: string[] = []
       for (const phase of ['before', 'after', 'around', 'error'] as const) {
         const phaseHooks = def.hooks[phase]
         if (!phaseHooks) continue
         for (const [method, hooks] of Object.entries(phaseHooks)) {
           if (!Array.isArray(hooks)) continue
-          for (const hook of hooks) {
-            if (typeof hook === 'function' && !hook.name) {
-              console.warn(
-                `[Junction] anonymous hook on ${def.name}.${phase}.${method} — ` +
-                `name your hooks for telemetry (e.g. assign to a named const or use a named function)`
-              )
-            }
-          }
+          for (const hook of hooks)
+            if (typeof hook === 'function' && !hook.name) positions.push(`${phase}.${method}`)
         }
       }
+      if (positions.length)
+        diagnostic(
+          `[Junction] ${positions.length} anonymous hook(s) on ${def.name} ` +
+          `(${positions.join(', ')}) — name them for telemetry`
+        )
     }
   }
   // base.hooks already contains def.hooks merged with the derived hooks —
@@ -1684,8 +1743,12 @@ export function createService(def: ServiceDefinition): Service {
   const service: Service = {
     name:  defName,
     model: def.model ?? def.name,
+    // Seeded empty and REPLACED below, once collectCustomMethods has resolved the
+    // table off the built object. Declared here because Service requires it and
+    // a literal that omits it is not one.
+    _customMethods: {},
     // Carried through so callService can find it after the pipeline. Reserved
-    // in SERVICE_OPTION_KEYS, so a function form never becomes an action.
+    // in SERVICE_OPTION_KEYS, so a function form never becomes a custom method.
     ...(def.channel !== undefined ? { channel: def.channel as PublishDeclaration } : {}),
     // Same reason: declared, honoured internally, but previously not carried
     // onto the built service, so anything reading it back saw undefined.
@@ -1709,7 +1772,7 @@ export function createService(def: ServiceDefinition): Service {
     _update:  makeBypass(defName, 'update',  def.update  ?? base.update),
     _patch:   makeBypass(defName, 'patch',   def.patch   ?? base.patch),
     _remove:  makeBypass(defName, 'remove',  def.remove  ?? base.remove),
-    _restore: makeBypass(defName, 'restore', def.restore ?? base.restore),
+    _restore: makeBypass(defName, 'restore', (def.restore ?? base.restore) as (ctx: ServiceContext) => Promise<unknown>),
 
     // Push, merge, bump. One merge and no resolve — the resolve happens on the
     // next read, for whichever app hooks that read carries. Nothing here has to
@@ -1729,7 +1792,7 @@ export function createService(def: ServiceDefinition): Service {
       return {
         name:       service.name,
         model:      service.model ?? service.name,
-        actions:    actionNames(service),
+        customMethods: customMethodNames(service),
         // Policy applied: advertising a verb the service answers 405 to is
         // worse than not advertising it, because a generated client calls it.
         methods:    allowedMethodNames(service),
@@ -1759,23 +1822,23 @@ export function createService(def: ServiceDefinition): Service {
     })(),
   }
 
-  // The actions, resolved once. A base reached through the loader's spread has
+  // The custom methods, resolved once. A base reached through the loader's spread has
   // already built its own table and put it on `def`; taking that over rescanning
   // matters because by then `def` also carries CRUD, the bypass twins and
   // `_meta`, and the scan would have to be right about all of them again.
-  const actions: ActionMap = {
-    ...((def as { _actions?: ActionMap })._actions ?? {}),
-    ...collectActions(def, defName ?? '(unnamed)', def.methods),
+  const custom: CustomMethodMap = {
+    ...((def as { _customMethods?: CustomMethodMap })._customMethods ?? {}),
+    ...collectCustomMethods(def, defName ?? '(unnamed)', def.methods),
   }
 
   // On the object as well as in the table: a spread has to carry them, and
   // `svc.reboot` is a shape callers already use.
-  for (const [key, fn] of Object.entries(actions)) {
-    (service as Record<string, unknown>)[key] = fn
+  for (const [key, fn] of Object.entries(custom)) {
+    (service as unknown as Record<string, unknown>)[key] = fn
   }
-  ;(service as Service)._actions = actions
+  ;(service as Service)._customMethods = custom
 
-  // Resolve the method policy AFTER the actions are on, because an allow-list
+  // Resolve the method policy AFTER the custom methods are on, because an allow-list
   // may name one and the unknown-name check has to be able to see it.
   ;(service as Service)._methods = resolveMethodPolicy(
     def.methods,

@@ -1,0 +1,94 @@
+#!/usr/bin/env bun
+/*
+ * run.js — the @frontierjs/toolbelt test driver.
+ *
+ * One file, no dependencies, runs under bun or node. Every export here is a
+ * pure function, so there is nothing to start, nothing to mock and nothing
+ * to tear down — a harness heavier than this would be testing itself.
+ *
+ *   bun run test          all specs
+ *   bun run test glow     only specs whose filename matches
+ */
+
+import { readdirSync } from 'node:fs'
+import { join, dirname, basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const filters = process.argv.slice(2).filter((a) => !a.startsWith('--'))
+
+const results = []
+let current = ''
+
+globalThis.test = function (name, fn) {
+  try {
+    fn()
+    results.push({ file: current, name, ok: true })
+  } catch (e) {
+    results.push({ file: current, name, ok: false, error: (e && e.message) || String(e) })
+  }
+}
+
+globalThis.assert = {
+  ok(v, msg) {
+    if (!v) throw new Error(msg || 'expected truthy, got ' + JSON.stringify(v))
+  },
+  equal(a, b, msg) {
+    if (a !== b) {
+      throw new Error(
+        (msg ? msg + '\n      ' : '') + 'expected ' + JSON.stringify(b) + '\n      got      ' + JSON.stringify(a)
+      )
+    }
+  },
+  // A kit that answers an object needs this, and JSON is enough of a comparison
+  // for one: every value these kits produce is JSON-shaped, and key ORDER is
+  // meaningful in some of them — a directive table read in a different order is
+  // a different table.
+  deepEqual(a, b, msg) {
+    const [x, y] = [JSON.stringify(a), JSON.stringify(b)]
+    if (x !== y) {
+      throw new Error((msg ? msg + '\n      ' : '') + 'expected ' + y + '\n      got      ' + x)
+    }
+  },
+}
+
+let specs = readdirSync(join(here, 'specs'))
+  .filter((f) => f.endsWith('.spec.js'))
+  .sort()
+
+if (filters.length) specs = specs.filter((f) => filters.some((x) => f.includes(x)))
+
+for (const f of specs) {
+  current = basename(f, '.spec.js')
+  await import(join(here, 'specs', f))
+}
+
+const green = (s) => `\x1b[32m${s}\x1b[0m`
+const red = (s) => `\x1b[31m${s}\x1b[0m`
+const dim = (s) => `\x1b[2m${s}\x1b[0m`
+
+const byFile = new Map()
+for (const r of results) {
+  if (!byFile.has(r.file)) byFile.set(r.file, [])
+  byFile.get(r.file).push(r)
+}
+
+console.log('')
+for (const [file, rows] of byFile) {
+  const bad = rows.filter((r) => !r.ok).length
+  console.log(`${bad ? red('✗') : green('✓')} ${file} ${dim(`(${rows.length - bad}/${rows.length})`)}`)
+  for (const r of rows) {
+    if (!r.ok) console.log(`    ${red('✗')} ${r.name}\n      ${r.error}`)
+  }
+}
+
+const failures = results.filter((r) => !r.ok)
+console.log('')
+console.log(
+  failures.length
+    ? red(`${failures.length} failing`) + dim(`, ${results.length - failures.length} passing`)
+    : green(`${results.length} passing`)
+)
+console.log('')
+
+process.exit(failures.length ? 1 : 0)

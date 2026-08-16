@@ -101,11 +101,11 @@ async function loadLitestone(root, warn, schemaPath) {
           const parserAbs = resolve(pkgDir, parserRel)
           const jsonAbs   = resolve(pkgDir, jsonRel)
           if (existsSync(parserAbs) && existsSync(jsonAbs)) {
-            const [{ parse }, { generateJsonSchema }] = await Promise.all([
+            const [{ parse, parseFile }, { generateJsonSchema }] = await Promise.all([
               import(pathToFileURL(parserAbs).href),
               import(pathToFileURL(jsonAbs).href),
             ])
-            return { parse, generateJsonSchema }
+            return { parse, parseFile, generateJsonSchema }
           }
         }
 
@@ -150,7 +150,7 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   const litestone = await loadLitestone(root, warn, schemaPath)
   if (!litestone) return null
 
-  const { parse, generateJsonSchema } = litestone
+  const { parse, parseFile, generateJsonSchema } = litestone
   if (typeof parse !== 'function' || typeof generateJsonSchema !== 'function') {
     warn?.('@frontierjs/litestone does not export parse / generateJsonSchema')
     return null
@@ -164,7 +164,25 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
     return null
   }
 
-  const result = parse(source)
+  // parseFile, because a schema may `import "./other.lite"` and only it resolves
+  // one. Parsing the root file alone reaches the browser as a $defs table with
+  // the imported models missing — `modelNameFor` misses, `createResource`
+  // degrades to a bare make(), and a generated <Form> renders no fields. Every
+  // step of that is a warning at most, so the app builds and the form is empty.
+  //
+  // An older Litestone with no parseFile still works for the schemas it could
+  // always handle, and says so BY NAME for the one case it cannot — a silent
+  // fallback here is the same bug wearing a version number.
+  const usable = typeof parseFile === 'function'
+  if (!usable && /^[ \t]*import\s+["']/m.test(source)) {
+    warn?.(
+      `${schemaPath} imports another .lite file, and this @frontierjs/litestone ` +
+      `does not export parseFile — the imported models will be missing from the ` +
+      `client schemas. Upgrade @frontierjs/litestone.`
+    )
+  }
+
+  const result = usable ? parseFile(schemaPath) : parse(source)
   if (!result?.valid) {
     for (const e of result?.errors ?? []) warn?.(`${schemaPath}: ${e}`)
     return null

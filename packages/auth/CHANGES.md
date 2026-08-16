@@ -1,5 +1,202 @@
 # Changes — @frontierjs/auth
 
+## 2026-08-16 — the route layer is typed, and it found a hole the same hour (FJS-063, FJS-296)
+
+137 tests. Typecheck baseline unchanged at 4 — all of it still the two nullable
+assertions in `tests/schema-accessors.test.ts`.
+
+`register(app: App)`, `boot(app: App)`, every handler `(ctx: TransportContext)`,
+the return `Plugin`, and `createAuthServices(): Service[]`. Three `as any` casts
+at call sites went with them, which is the cheap proof the types are real.
+
+**What the first clean compile pointed at was a security hole.** `ctx.body` is
+`unknown`, and reading fields off it under `any` meant `{ "email": { "contains":
+"@" } }` reached `sys.user.findFirst({ where: { email } })` as a where-operator —
+the address was a filter. With a correct password that signed the caller in as
+the first matching row; `startsWith` walked the user table with no address known;
+`{ "$ne": null }` came back a 500 carrying Litestone's query vocabulary to an
+unauthenticated caller. `register` wrote one: an array email became a user whose
+address was the array coerced by SQLite, 201 and no complaint.
+
+The password was still verified against whichever row matched, so it was never a
+straight bypass — it turns a password spray into a targeted-account selector,
+which is bad enough. **The cause is structural**: a raw route has no
+`autoValidate`, because that hook is derived from the model and these routes sit
+upstream of every service. So there is now one reader — a declared field is a
+string or the request is a 400 naming it, and an undeclared key does not travel.
+FJS-296, four tests in `routes.test.ts`, probed before and after.
+
+**A second finding went the other way.** `rateLimitHook` is documented for both
+contexts, its own comments name `@frontierjs/auth`'s routes as the reason, and
+`clientIp()` exists to serve both — but it was typed `(ctx: ServiceContext) =>
+void`. Auth's `any` was the only reason its routes compiled. Fixed in junction
+rather than cast around here: `rateLimit` returns a `BridgeHook`, whose parameter
+is the union and therefore still assignable to `Hook`.
+
+## 2026-08-16 — a login refusal costs the same whichever branch refuses it (FJS-063)
+
+133 tests. Typecheck baseline unchanged at 4.
+
+The three refusals already answered one error and recorded the difference only
+in the trail. Two of them never reached the bcrypt: an unknown address and a
+user with no password credential both returned on a database read alone,
+measured at 9ms against 119ms for a wrong password. An error message that says
+nothing is no use when the clock beside it says *this address exists*.
+
+Both branches now call `payPasswordCost`, which verifies against `DUMMY_HASH` —
+a real cost-12 hash of a value nobody holds — and discards the answer. The
+remaining difference between the paths is one database read, three orders of
+magnitude under the bcrypt.
+
+`DUMMY_HASH` is a literal, so it carries its own cost and cannot follow
+`BCRYPT_COST`. A test asserts the two agree: raise the cost without regenerating
+the literal and the gap reopens narrower and silent, which is the failure the
+assertion exists to make loud. The timing test measures the MIN of three runs —
+the floor is what an attacker samples for — and bands it at a factor of two, so
+a loaded box does not fail it.
+
+`requestPasswordReset` had gone to real trouble not to reveal the same fact,
+which is what made this worth doing at S3: the package had already decided
+address existence is a secret, and login leaked it out the other door.
+
+## 2026-08-16 — `sessionFor(userId)`
+
+131 tests, unchanged. Typecheck clean.
+
+The re-resolution `app.runAs(userId, …)` needs: build a session for a caller who
+is presenting nothing, because deferred work outlives the request that asked for
+it and by then there is no token to verify. It goes through `toContext()` like
+every other path — same row, same `sessionFields`, same standing — because a
+parallel builder here would be a second answer to *what standing does this user
+hold*, diverging exactly where it shows least.
+
+`authMethod: 'created'`, so anything auditing *how* a caller authenticated can
+tell it from a session or a key. Reads fresh and answers `null` for a user who
+no longer exists. **It proves no credential** and must never be reachable from
+anything a request can name.
+
+## 2026-08-16 — the surface splits: routes establish a session, services are what you do next (FJS-D20)
+
+`GET /auth/me` is gone. It is `account.get('me')`, and with it come the two
+services this package had the data layer for and no surface to reach:
+`sessions` (list, revoke one, revoke the rest) and `api-keys` (issue, list,
+revoke). `account.changePassword` is the third, and `changePassword` /
+`listSessions` / `revokeSession` / `revokeSessions` / `listApiKeys` are new
+optional methods on `IAuth` — a provider that has none of them answers 400 by
+name, exactly as the reset routes already did.
+
+**The rule is whether the call can be refused for want of a session.** Login
+cannot be gated by login, so register, login, logout and the recovery flows stay
+raw routes. Everything after that can be refused, and as a service it gets the
+hook pipeline, the audit trail, schema validation, the WebSocket transport and
+the browser client — none of which a hand-written route has.
+
+**Every method is scoped to the CALLER.** No method takes a user id; the id a
+caller supplies names a row and never an owner. Both revokes put `userId` INTO
+the delete rather than checking it after a read, because the id is what a UI
+hands back from a list, and matching on it alone ends anyone's session whose id
+can be guessed. The tests name the other person's ids and assert nothing happens.
+
+`SessionContext.sessionId` is new on the session path — a caller listing where
+they are signed in has to be told which row is the one asking, and comparing
+raw tokens to work that out would put a bearer token in front of app code.
+
+Two options on the plugin: `services` renames or drops any of the three (a name
+another service already claims is refused at BOOT, naming the option, because
+the registry is a Map and the alternative is a silent replacement), and
+`services: { level }` makes `account.me` answer the caller's gate level. That
+one is opt-in on purpose: the app owns the role→level mapping, and a default
+answer here would be a second one, disagreeing exactly where it matters.
+
+## 2026-08-15 — four hooks an app can act on, and a throw refuses (FJS-042)
+
+The package emitted nothing, so an app could not rate-limit, lock out or notify
+without wrapping the routes. `onLogin`, `onLoginFailed`, `onLogout` and
+`onRegister` are options on `createLitestoneAuth` — the same shape
+`onPasswordResetRequested` already had, so no new vocabulary, and identical
+whether or not Junction is in the picture.
+
+**Awaited, and a throw refuses.** That is what makes lockout possible at the auth
+layer rather than only in a hook in front of the route, and it is the cost too: an
+app handler is now a failure mode on the login path. Single handlers rather than a
+bus, because each is a decision and a decision has one owner; a second listener
+that wants to observe belongs on Junction's `app.events`, and that question is
+left open deliberately.
+
+**One ordering rule — a hook runs before the thing it can refuse.** So none is
+handed what its refusal would have prevented: `onLogin` gets no session id,
+`onRegister` no user row. A hook that both refuses a thing and reports its result
+cannot exist, and getting it backwards leaves behind exactly what was refused —
+a session for a login that never happened. The hook is the gate; `db.$audit` is
+the record.
+
+`login.failed` is written BEFORE `onLoginFailed` runs, so a hook that swaps the
+401 for a 429 cannot erase the attempt. `onLogin` throwing records
+`reason: 'refused-by-app'`.
+
+## 2026-08-15 — a sign-in leaves a trail with a name on it (FJS-276/267)
+
+The package emitted nothing and recorded only what `@@log(audit)` picked up as a
+side effect of a write: a sign-in as `create:session` with **`actorId: null`**,
+and a failed sign-in as **nothing at all** — the event an app most wants, for
+rate-limiting, lockout and alerting.
+
+Four events now go through litestone's `db.$audit`, beside those rows rather
+than instead of them: `login.succeeded`, `login.failed` and `logout`. The
+`create:session` row records the WRITE and cannot name the actor; these record
+the EVENT and do.
+
+**Every login refusal still answers the same error.** Telling a caller whether an
+address exists is an enumeration oracle, so the three branches — no such user, no
+password credential, bad password — are distinguishable by `reason` in the trail
+and nowhere else. The attempted ADDRESS is recorded, deliberately: a spray across
+many addresses is invisible without it, and it is the only identifier an attempt
+on an unknown user has. The attempted password is not, and a test asserts it
+appears nowhere.
+
+**Two softenings, both on the login path.** An app need not declare a logger
+database — this package's fragment does, but an app may bring its own `User`, and
+a login that throws because there is nowhere to write the record is worse than
+the missing record. And a failed audit write does not fail the request; it is
+reported rather than swallowed. An app that wants a sign-in refused when it
+cannot be recorded says so itself — that is a policy this package should not make
+quietly.
+
+`FJS-042` remains open and is now only what it should always have been: no
+actionable HOOK. The recording half is closed.
+
+## 2026-08-15 — the schema ships as `.lite`, split by who owns the model
+
+`fli auth:install` carried a hand copy of these four models and it had drifted
+three times — pre-rename scalars that no longer parse, a missing `role`, and
+`@@gate("9")`, which is LOCKED and walled the auth tables off from this package
+itself. Two walls had kept the copy there, not one: `fli` is global, so this
+package is not installed beside it — and **`fli` runs on node** while `schema.ts`
+is TypeScript, so even resolved it could not be imported.
+
+Bytes get past both. `db/user.lite` and `db/auth.lite` are the source now;
+`schema.ts` reads them and so does the CLI, through auth's own `exports`
+(`@frontierjs/auth/user.lite`, `@frontierjs/auth/schema.lite`). `FJS-038`.
+
+**The split is by owner, and the gate already stated it.** `User` is
+`@@gate("4.4.4.5")` with row and field policies an app changes; it grows columns,
+relations point at it, and `sessionFields` reads it — so it is APPENDED into the
+app's own `schema.lite` where it can be seen and edited. `Credential`, `Session`
+and `Verification` are `8`, meaning nothing outside `asSystem()` has anything to
+say to them and this package is the only caller that does — so they are a file
+the app imports, and an upgrade here reaches an installed app without a re-inject.
+
+`authSchemaFragments(db)` still answers both halves for a caller assembling one
+schema string in memory (`example/api/db.ts`, this package's test harness).
+`authUserModel` / `authMachineryModels` are the halves.
+
+**A shipped `.lite` cannot interpolate**, so it spells `@@db(main)` — redundant
+to the parser, which already reads an absent `@@db` as main, and load-bearing to
+`retargetDb`, which is how `--db` works. The substitution is line-anchored:
+both files discuss the attribute in their own headers, and a bare `replaceAll`
+rewrote that prose into a description of a swap it no longer showed. That rule is
+the one thing the CLI still restates, and the suite lifts its arrow out of
+`install.md` and runs it against the shipped bytes rather than comparing text.
 
 ## 2026-08-14 — the fragment ships what bounds the level, not just the level
 

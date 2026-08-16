@@ -251,3 +251,75 @@ describe('end to end', () => {
     expect(lead['x-relations'].some(r => r.field === 'tags')).toBe(true)
   })
 })
+
+// ─── a schema split across files ─────────────────────────────────────────────
+//
+// `import "./other.lite"` is resolved by litestone's parseFile and by nothing
+// else. This read the root file and called parse(), so a split schema reached
+// the browser as a $defs table with the imported models missing — and every
+// step after that degrades rather than fails: modelNameFor misses, warns, and
+// createResource falls back to a bare make(), so a generated <Form> renders no
+// fields against an app that builds clean.
+//
+// `fli auth:install` writes exactly this layout — the app's models beside an
+// imported file it does not own — so it is the shape apps will have.
+
+const ROOT_IMPORTING = `
+database main { path env("DATABASE_URL", "./app.db") }
+
+import "./auth.lite"
+
+model Lead {
+  id    Int    @id
+  name  String
+}
+`
+
+const IMPORTED_MODELS = `
+enum Plan { starter pro }
+
+model Session {
+  id      String  @id @default(uuid())
+  userId  String
+  plan    Plan    @default(starter)
+  @@gate("8")
+}
+`
+
+function splitFixture() {
+  const f = fixture(ROOT_IMPORTING)
+  writeFileSync(resolve(f.dir, 'db', 'auth.lite'), IMPORTED_MODELS)
+  return f
+}
+
+describe('a schema that imports another file', () => {
+
+  test('the imported models reach $defs', async () => {
+    const { dir, path } = splitFixture()
+    const out = await generateSchemas(path, () => {}, dir)
+
+    // Lead proves the root file was read at all — without it a null result
+    // would satisfy an assertion about absence.
+    expect(out.models).toContain('Lead')
+    expect(out.models).toContain('Session')
+    expect(out.defs).toHaveProperty('Session')
+  })
+
+  test('an enum declared in the imported file resolves as a $ref target', async () => {
+    const { dir, path } = splitFixture()
+    const out = await generateSchemas(path, () => {}, dir)
+
+    // $defs is the whole definition table, and a $ref into it has to land —
+    // an enum reaching the client as a dangling ref is a control with no options.
+    expect(out.defs).toHaveProperty('Plan')
+    expect(out.models).not.toContain('Plan')
+    registerSchemas(out.defs, out.models)
+    expect(resolveRef('#/$defs/Plan')).toBeTruthy()
+  })
+
+  test('the imported models are absent from a schema that does not import', async () => {
+    const { dir, path } = fixture()
+    const out = await generateSchemas(path, () => {}, dir)
+    expect(out.models).not.toContain('Session')
+  })
+})

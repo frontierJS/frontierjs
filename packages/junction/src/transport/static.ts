@@ -64,14 +64,17 @@ const RANGE_RE     = /^bytes=(\d*)-(\d*)$/
 
 const GZIP_CACHE_MAX_ENTRIES = 256
 const GZIP_CACHE_MAX_BYTES   = 32 * 1024 * 1024   // 32 MB budget
-const _gzipCache = new Map<string, Uint8Array>()
+const _gzipCache = new Map<string, Uint8Array<ArrayBuffer>>()
 let   _gzipCacheBytes = 0
 
-function cachedGzip(key: string, raw: Uint8Array): Uint8Array {
+// `Uint8Array<ArrayBuffer>` rather than a bare `Uint8Array`: since TypeScript
+// 5.7 the latter widens to ArrayBufferLike, which admits SharedArrayBuffer —
+// and neither Bun.gzipSync nor Response accepts one.
+function cachedGzip(key: string, raw: Uint8Array<ArrayBuffer>): Uint8Array<ArrayBuffer> {
   const hit = _gzipCache.get(key)
   if (hit) return hit
 
-  const gzipped = Bun.gzipSync(raw)
+  const gzipped = Bun.gzipSync(raw) as Uint8Array<ArrayBuffer>
 
   // Evict oldest entries (Map insertion order) until the new one fits.
   while (

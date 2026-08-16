@@ -35,15 +35,27 @@
 // The third also grades every package's `files:` field for free: a source file
 // missing from `files` is invisible in the workspace and fatal once installed,
 // which is the same class of bug one level down.
+//
+// ─── who does the packing ────────────────────────────────────
+//
+// `fli`'s own `core/vendor.js`, the module `fli deploy:vendor` runs over a
+// client app. It packs INTO the app — deploy/generated/vendor — rather than into
+// a sibling directory, which is what closed FJS-241: a Docker build cannot see a
+// `file:` tarball outside its own context, so an app packed the old way was
+// installable on this machine and nowhere else. One packer, so the app this
+// phase installs and the app `scaffoldAndDeploy` containerises are made the same
+// way — the two used to answer the packaging question separately.
 // ============================================================
 
 import { spawnSync }                                  from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync,
-         readdirSync, mkdirSync, rmSync, mkdtempSync } from 'node:fs'
+         copyFileSync, rmSync, mkdtempSync }           from 'node:fs'
 import { join, dirname, resolve }                      from 'node:path'
 import { fileURLToPath }                               from 'node:url'
 import { tmpdir }                                      from 'node:os'
 import { randomBytes }                                 from 'node:crypto'
+
+import { vendorWorkspacePackages }                     from '../packages/cli/core/vendor.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
@@ -62,32 +74,15 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
   const findings = []
   const fail     = (message, output) => { findings.push({ message, output }); return findings }
 
-  const work = mkdtempSync(join(tmpdir(), 'fjs-scaffold-'))
-  const tarballs = join(work, 'tarballs')
-  mkdirSync(tarballs, { recursive: true })
+  // $FJS_CI_WORKDIR for the same reason scaffoldAndDeploy honours it: step 8
+  // hands this directory to the Docker daemon as a build context, and a shell
+  // with a private /tmp gets `unable to prepare context` about a path that is
+  // plainly there.
+  const base = process.env.FJS_CI_WORKDIR || tmpdir()
+  const work = mkdtempSync(join(base, 'fjs-scaffold-'))
 
   try {
-    // ── 1 · pack every publishable workspace package ─────────
-    const packages = publishablePackages()
-    const packed   = {}
-
-    for (const { name, dir } of packages) {
-      const r = run('bun', ['pm', 'pack', '--destination', tarballs], { cwd: dir })
-      if (r.status !== 0) return fail(`bun pm pack failed for ${name}`, r.output)
-    }
-
-    // Map @frontierjs/<x> → the tarball just written for it. Read off disk
-    // rather than predicted from the version, so a package whose tarball did
-    // not appear is a miss here rather than a confusing install error later.
-    for (const { name } of packages) {
-      const short = name.slice('@frontierjs/'.length)
-      const file  = readdirSync(tarballs).find(f => new RegExp(`^frontierjs-${short}-\\d`).test(f))
-      if (!file) return fail(`no tarball produced for ${name}`)
-      packed[name] = 'file:' + join(tarballs, file)
-    }
-    log(`  ✓ packed ${packages.length} package(s)`)
-
-    // ── 2 · scaffold ─────────────────────────────────────────
+    // ── 1 · scaffold ─────────────────────────────────────────
     const fli = join(ROOT, 'packages', 'cli', 'bin', 'fli.js')
     const s   = run('bun', [fli, ...SCAFFOLD_ARGS], { cwd: work })
     if (s.status !== 0) return fail('fli new failed', s.output)
@@ -96,25 +91,41 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     if (!existsSync(app)) return fail(`fli new reported success but wrote no ${app}`, s.output)
     log('  ✓ scaffolded')
 
-    // ── 3 · point every @frontierjs dep at its tarball ───────
-    // `overrides` as well as `dependencies`: a tarball's OWN @frontierjs deps
-    // are ordinary ranges and would resolve from the registry, so without this
-    // the app would build sierra-from-here against mesa-from-npm.
+    // ── 2 · pack the tree into the app, and install THAT ─────
+    // `include` because the scaffold was made with `--source npm`: its specs are
+    // published versions and resolve perfectly well, so nothing about the
+    // manifest says the tree wins. This phase has decided that it does.
+    //
+    // `overrides` comes with it, and is not a detail: a tarball's OWN
+    // @frontierjs deps are ordinary ranges and resolve from the registry, so
+    // without them the app builds sierra-from-here against mesa-from-npm.
     const manifestPath = join(app, 'package.json')
     const manifest     = JSON.parse(readFileSync(manifestPath, 'utf8'))
-    const swapped      = []
+    const fjsDeps      = ['dependencies', 'devDependencies']
+      .flatMap(f => Object.keys(manifest[f] ?? {}))
+      .filter(name => name.startsWith('@frontierjs/'))
 
-    for (const field of ['dependencies', 'devDependencies']) {
-      for (const dep of Object.keys(manifest[field] ?? {})) {
-        if (packed[dep]) { manifest[field][dep] = packed[dep]; swapped.push(dep) }
-      }
+    if (!fjsDeps.length) return fail('the scaffold declared no @frontierjs dependency to swap')
+
+    let vendored
+    try {
+      // packagesDir stated: the app sits in a temp directory under no workspace
+      // and has not been installed, so neither of the ways this is normally
+      // found — the walk up, the node_modules symlinks — can answer here.
+      vendored = vendorWorkspacePackages({
+        appRoot: app, include: fjsDeps, packagesDir: join(ROOT, 'packages'),
+      })
+    } catch (err) {
+      return fail('vendoring the working tree into the app failed', err.message)
     }
-    if (!swapped.length) return fail('the scaffold declared no @frontierjs dependency to swap')
-    manifest.overrides = { ...manifest.overrides, ...packed }
-    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n')
-    log(`  ✓ ${swapped.length} dependency swapped to the working tree`)
 
-    // ── 4 · install ──────────────────────────────────────────
+    // The app installs what the IMAGE installs — the same manifest, byte for
+    // byte. Anything else and this phase proves a tree the Dockerfile does not
+    // build.
+    copyFileSync(vendored.manifestPath, manifestPath)
+    log(`  ✓ packed ${vendored.packed.length} package(s), ${vendored.vendored.length} dependency swapped to the working tree`)
+
+    // ── 3 · install ──────────────────────────────────────────
     // --cache-dir is load-bearing. Bun caches a tarball by name AND version, so
     // a second run against the same version serves the FIRST run's bytes: this
     // phase passed against a deliberately broken working tree until the cache
@@ -130,11 +141,11 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     if (!existsSync(installed)) return fail(`installed no ${installed}`, i.output)
     log('  ✓ installed from tarballs')
 
-    // ── 5 · build ────────────────────────────────────────────
+    // ── 4 · build ────────────────────────────────────────────
     const b = run('bun', ['run', 'build'], { cwd: app })
     if (b.status !== 0) return fail('bun run build failed for the scaffolded app', b.output)
 
-    // ── 6 · assert the build produced something usable ───────
+    // ── 5 · assert the build produced something usable ───────
     // A zero exit is not the assertion. Vite injects the built <script> at the
     // first textual match for the body tag and does not skip comments, so a
     // build can succeed and ship a page that loads no JavaScript at all
@@ -148,7 +159,21 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
 
     log('  ✓ built, and the page loads its script')
 
-    // ── 7 · grow the app, then build it again ────────────────
+    // ── 5b · run the gate the app was given ──────────────────
+    // The generated package.json IS the framework's opinion about tooling, and
+    // an opinion that is red on a freshly scaffolded app is worse than none:
+    // the first thing anyone does is run it. Three things only reachable here —
+    // `fli check` from an INSTALLED cli rather than this repo's bin (it had
+    // never run at all, missing an import that the parse sweep cannot see),
+    // `biome check` against a config resolved out of node_modules, and
+    // `fli typecheck` against framework packages that ship TypeScript source.
+    const check = run('bun', ['run', 'check'], { cwd: app })
+    if (check.status !== 0)
+      return fail('`bun run check` failed on a freshly scaffolded app', check.output)
+
+    log('  ✓ its own check gate is green')
+
+    // ── 6 · grow the app, then build it again ────────────────
     // FJS-036: the scaffold templates had been updated twice and never run
     // through `fli scaffold <Model>`, which is the first thing anyone does to a
     // new app. Adding a model is four generated files across all three realms —
@@ -192,21 +217,26 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
 // `fli new` → `fli make:deploy` → `fli deploy:local`: build the API image and
 // prove the container comes up and answers its health endpoint.
 //
-// **This one installs from npm, not from the working tree.** A Docker build
-// cannot see a `file:` tarball outside its build context, which is the same
-// wall `link:` hits (FJS-241) — so testing the working tree here would mean
-// deciding how a local scaffold ships, and that question is not settled. The
-// question this phase answers is narrower and still worth asking: does the
-// deploy pipeline containerise a real app? Every defect it is aimed at
-// (FJS-232, FJS-237, FJS-238) was in the pipeline, not in a framework package.
+// **It runs for both package sources, and they answer different questions.**
 //
-// When FJS-241 is resolved by packing into the app instead of linking, this
-// should move to the working tree and the two phases converge.
+//   npm    the PUBLISHED framework, and the only thing in this repo that tests
+//          it. Every id in the register is a statement about the working tree,
+//          and a user's experience is a function of the tree AND the registry
+//          (FJS-252). Losing this would leave the registry untested.
+//   local  the WORKING TREE, containerised. `fli new --source local` writes
+//          `link:` specs, which a Docker build cannot resolve — that was FJS-241,
+//          and it made this path unrunnable for anyone working in the workspace
+//          for as long as it stood. `fli deploy:local` now packs the tree into
+//          the build context first, and what this asserts is that it does.
+//
+// Every pipeline defect it was originally aimed at (FJS-232, FJS-237, FJS-238)
+// was in the pipeline rather than in a framework package, and both sources still
+// exercise all of it.
 //
 // Returns { findings, skipped } — `skipped` is a reason string when Docker is
 // not available, which the caller turns into a note or a failure.
 
-export function scaffoldAndDeploy({ keep = false, verbose = false, log = console.log } = {}) {
+export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = false, log = console.log } = {}) {
   const findings = []
   const fail     = (message, output) => { findings.push({ message, output }); return { findings, skipped: null } }
 
@@ -215,16 +245,18 @@ export function scaffoldAndDeploy({ keep = false, verbose = false, log = console
     return { findings, skipped: 'no Docker daemon — `docker version` failed' }
   }
 
-  // Unique per run: the container is named for the app, and a fixed name would
-  // let CI `docker rm -f` a container a developer is using.
-  const appName   = `fjsci${process.pid}`
+  // Unique per run AND per source: the container is named for the app, a fixed
+  // name would let CI `docker rm -f` a container a developer is using, and the
+  // two sources must not collide with each other either.
+  const appName   = `fjsci${source}${process.pid}`
   const container = `${appName}-local`
   const tag       = `${appName}:local`
 
   // The scheme in packages/cli/core/ports.js: env 7 = test, category 1 = be,
   // project 0 = whatever `fli new` scaffolds. deploy:local defaults to 3001,
-  // which belongs to nothing.
-  const PORT = 7100
+  // which belongs to nothing. The two sources take adjacent service slots so
+  // they could run at once.
+  const PORT = source === 'local' ? 7101 : 7100
 
   // $FJS_CI_WORKDIR overrides the base directory. The Docker DAEMON has to be
   // able to read the build context, and it does not necessarily share the
@@ -240,10 +272,21 @@ export function scaffoldAndDeploy({ keep = false, verbose = false, log = console
 
     // --no-deploy, then make:deploy by hand: `fli new` would run it for us, but
     // then a make:deploy failure would surface as a scaffold failure.
-    const s = exec('bun', [fli, 'new', appName, '--yes', '--auth', '--source', 'npm', '--no-git', '--no-deploy'], { cwd: work, verbose })
-    if (s.status !== 0) return fail('fli new failed', s.output)
+    const s = exec('bun', [fli, 'new', appName, '--yes', '--auth', '--source', source, '--no-git', '--no-deploy'], { cwd: work, verbose })
+    if (s.status !== 0) return fail(`fli new --source ${source} failed`, s.output)
     if (!existsSync(app)) return fail(`fli new reported success but wrote no ${app}`, s.output)
-    log('  ✓ scaffolded from npm')
+
+    // The claim under test on the local path is that these specs, which resolve
+    // to a workspace the image has never seen, reach the container anyway.
+    // Asserted rather than assumed: if `fli new` stopped writing them the run
+    // would pass while proving the npm path twice.
+    if (source === 'local') {
+      const specs = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8')).dependencies ?? {}
+      const linked = Object.values(specs).filter(v => typeof v === 'string' && v.startsWith('link:'))
+      if (!linked.length)
+        return fail('fli new --source local wrote no link: spec — this run would not test FJS-241', s.output)
+    }
+    log(`  ✓ scaffolded from ${source}`)
 
     // ── .env ─────────────────────────────────────────────────
     // The container needs a real key: `encryptionKey` is parsed as HEX, so 64
@@ -286,7 +329,7 @@ export function scaffoldAndDeploy({ keep = false, verbose = false, log = console
       return fail('fli deploy:local failed' + hint, d.output + dockerLogs(container))
     }
 
-    log(`  ✓ container built, started and answered health on :${PORT}`)
+    log(`  ✓ container built from ${source}, started and answered health on :${PORT}`)
     return { findings, skipped: null }
 
   } finally {
@@ -357,11 +400,13 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   }
 
   if (both || onlyDeploy) {
-    console.log('\n─── scaffold + deploy ──────────────────────────────')
-    const { findings, skipped } = scaffoldAndDeploy({ keep, verbose })
-    if (skipped) console.log(`  ! skipped — ${skipped}`)
-    else if (!findings.length) console.log('  ✓ containerises and answers health')
-    problems.push(...findings)
+    for (const source of ['npm', 'local']) {
+      console.log(`\n─── scaffold + deploy (--source ${source}) ──────────`)
+      const { findings, skipped } = scaffoldAndDeploy({ source, keep, verbose })
+      if (skipped) console.log(`  ! skipped — ${skipped}`)
+      else if (!findings.length) console.log('  ✓ containerises and answers health')
+      problems.push(...findings)
+    }
   }
 
   if (!problems.length) {

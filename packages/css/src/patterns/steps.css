@@ -153,7 +153,8 @@
   font-weight: 600;
   line-height: 1;
 
-  transition: background 120ms, border-color 120ms, color 120ms;
+  transition: background var(--motion-fast), border-color var(--motion-fast),
+              color var(--motion-fast);
 }
 
 /*

@@ -53,7 +53,9 @@ export const RULES = [
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
     title: 'the body tag is never written inside a comment' },
   { id: 'app-layout',           scope: 'app',  severity: 'warn',  invariant: 3,
-    title: 'db/ + api/ + web/ at the app root' },
+    title: 'db/ at the app root, and each surface a directory beside it' },
+  { id: 'widget-entry-name',    scope: 'app',  severity: 'error', invariant: 19,
+    title: 'a widget is a PascalCase file, or a directory holding index.mesa' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
     title: 'four markdown files are the standard at a package root' },
 ]
@@ -315,24 +317,118 @@ const CHECKS = {
     return { findings }
   },
 
-  // Invariant 3. A warning: an API-only or a UI-only project is a legitimate
-  // shape, and a check that fails a repo for not adopting a convention gets
-  // disabled rather than obeyed.
+  // Invariant 3. A SURFACE is a directory at the app root — `api/`, `web/`,
+  // `widgets/` — with the schema beside them and owned by none of them. Which
+  // surfaces an app has is the app's business: api-only, web-only and
+  // widgets-only are all whole projects, and a rule that demands all of them
+  // gets disabled rather than obeyed.
+  //
+  // What is decidable, and silent when wrong, is a surface in the WRONG PLACE:
+  // widgets living inside web/ share that surface's config, its port and its
+  // release, and the first thing anyone notices is a widget shipping when the
+  // SPA does.
   'app-layout': ({ root }) => {
     if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
-    // A schema with neither directory beside it is a single-realm fixture, not an
-    // app that got the layout wrong. Asked before judging, because a check that
+
+    const has = (...p) => existsSync(join(root, ...p))
+    const surfaces = ['api', 'web', 'widgets', 'extension'].filter(d => has(d))
+
+    // A schema with no surface beside it is a single-realm fixture, not an app
+    // that got the layout wrong. Asked before judging, because a check that
     // scolds every fixture in a repo is a check people turn off.
-    if (!existsSync(join(root, 'api')) && !existsSync(join(root, 'web')))
-      return { skipped: 'a schema with no api/ or web/ beside it — a fixture, not an app' }
-    const missing = ['db', 'api', 'web'].filter(d => !existsSync(join(root, d)))
-    if (!missing.length) return { findings: [] }
-    return { findings: [{
-      file: root,
-      message: `no ${missing.join('/, ')}/ at the app root. The three realms are three directories; ` +
-               `a project that keeps them elsewhere works, and every generator, drive and doc that ` +
-               `assumes the layout does not.`,
-    }] }
+    if (!surfaces.length)
+      return { skipped: 'a schema with no api/, web/, widgets/ or extension/ beside it — a fixture, not an app' }
+
+    const findings = []
+
+    // A surface's contents at the app root: `src/` beside `db/` means the
+    // realms were never separated in the first place.
+    if (has('src') && !has('web') && !has('widgets')) findings.push({
+      file: join(root, 'src'),
+      message: `src/ at the app root with no surface owning it. Each realm is a directory — api/, ` +
+               `web/, widgets/ — and every generator, drive and doc resolves paths against one of ` +
+               `them, not against the root.`,
+    })
+
+    // Another surface's contents inside one. Each is its own sub-project — its
+    // own config, its own test shape, its own release — and folded into another
+    // it inherits that one's build and ships when it ships.
+    for (const inside of ['web', 'api']) {
+      if (has(inside, 'src', 'Embeds')) findings.push({
+        file: join(root, inside, 'src', 'Embeds'),
+        message: `widgets inside ${inside}/. A widget surface is a peer of ${inside}/, not a folder in ` +
+                 `it — widgets/src/Embeds/ — because its config, its host pages and its release are ` +
+                 `its own. Here it inherits ${inside}/'s build and ships when ${inside}/ ships.`,
+      })
+      // `src/harbor/` is jetty's service-worker entry and belongs to nothing
+      // else, so it is the one unambiguous marker for an extension.
+      if (has(inside, 'src', 'harbor')) findings.push({
+        file: join(root, inside, 'src', 'harbor'),
+        message: `a browser extension inside ${inside}/. It is a peer of ${inside}/ — extension/ — ` +
+                 `because its config emits a MANIFEST rather than a page, it is loaded unpacked ` +
+                 `instead of served, and it ships to two web stores under a review nothing else here ` +
+                 `waits for.`,
+      })
+    }
+
+    return { findings }
+  },
+
+  // Invariant 19, for the surface next door. A widget's name is a component
+  // name AND the custom element a stranger's page writes, so `booking.mesa`
+  // reaches HTML as `<booking>` — not a legal custom element name, which means
+  // the widget never upgrades and the host page shows nothing.
+  //
+  // The second half is the silent one: discovery is per directory, so a folder
+  // in `src/Embeds/` with no `index.mesa` is simply not a widget. That is
+  // correct for a widget's own parts and wrong for a widget somebody is midway
+  // through writing, and neither says anything at build time.
+  'widget-entry-name': ({ root }) => {
+    // The surface root, or the surface itself — `fli check` is run from an app
+    // root and from inside a sub-project alike.
+    const dir = [join(root, 'widgets', 'src', 'Embeds'), join(root, 'src', 'Embeds')]
+      .find(d => existsSync(d) && statSync(d).isDirectory())
+    if (!dir) return { skipped: 'no widgets/src/Embeds/' }
+
+    const findings = []
+    for (const name of readdirSync(dir).sort()) {
+      if (name.startsWith('.') || name.startsWith('_')) continue
+      const full = join(dir, name)
+      const isDir = statSync(full).isDirectory()
+      const base  = isDir ? name : basename(name, extname(name))
+
+      if (isDir) {
+        const index = ['index.mesa', 'index.js'].some(f => existsSync(join(full, f)))
+        if (!index) {
+          // Not an error — this is exactly where a widget's shared parts live —
+          // but it is built as nothing, and saying so beats an empty dist.
+          const parts = readdirSync(full).filter(f => extname(f) === '.mesa')
+          if (parts.length) findings.push({
+            file: full,
+            message: `no index.mesa, so nothing here is built — the ${parts.length} component(s) inside ` +
+                     `are treated as another widget's parts. A widget with parts is a directory whose ` +
+                     `index.mesa IS the widget.`,
+          })
+          continue
+        }
+      } else if (extname(name) !== '.mesa' && extname(name) !== '.js') {
+        findings.push({
+          file: full,
+          message: `not a widget and not built. src/Embeds/ holds one component per embeddable script — ` +
+                   `a .mesa file, or a directory holding index.mesa. Stylesheets and helpers belong ` +
+                   `beside the widget that imports them.`,
+        })
+        continue
+      }
+
+      if (!/^[A-Z][A-Za-z0-9]*$/.test(base)) findings.push({
+        file: full,
+        message: `"${base}" is not a widget name. PascalCase, singular (Invariant 19) — it is also the ` +
+                 `custom element a host page writes, and a name with no word boundary reaches HTML as a ` +
+                 `tag with no dash, which no browser will upgrade.`,
+      })
+    }
+    return { findings }
   },
 
   // Invariant 17. Repo scope: an app root is the developer's own, but a package

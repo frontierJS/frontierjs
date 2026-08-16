@@ -32,7 +32,7 @@
   --tone-fill:    var(--bg-mix, var(--color-muted));
   background:     var(--fill, var(--tone-fill));
   color:          var(--on-fill, white);
-  border:         1px solid transparent;
+  border:         var(--border-width) solid transparent;
   font-family:    var(--font-primary);
   font-weight:    var(--pill-font-weight);
   text-transform: var(--pill-text-transform);
@@ -70,7 +70,7 @@
   padding:         0;
   cursor:          pointer;
   opacity:         0.7;
-  transition:      opacity 120ms, background 120ms;
+  transition:      opacity var(--motion-fast), background var(--motion-fast);
 }
 /* Icon sizing: icon.css. .pill-close sets --icon-size: 0.85em there. */
 .pill-close:hover {

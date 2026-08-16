@@ -3,7 +3,7 @@
 // Uses bun:sqlite directly — zero external dependencies.
 
 import { Database } from 'bun:sqlite'
-import type { JobRecord, JobStatus, CaravanStats } from './types.ts'
+import type { JobRecord, JobStatus, CaravanStats, QueueStats } from './types.ts'
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS jobs (
@@ -23,7 +23,12 @@ const SCHEMA = `
     started_at    INTEGER,
     finished_at   INTEGER,
     error         TEXT,
-    created_at    INTEGER NOT NULL
+    created_at    INTEGER NOT NULL,
+    -- WHO asked for this work. The id of the principal in scope at dispatch,
+    -- NULL when nobody was — a cron fire, a boot-time enqueue, standalone use.
+    -- An id rather than a session: the standing is re-resolved when the job
+    -- runs, so a caller demoted in between is graded at what they hold then.
+    actor_id      TEXT
   );
 
   -- Primary polling index: queue + status + priority + run_at
@@ -68,8 +73,26 @@ export function openDb(path: string): Database {
   db.exec('PRAGMA busy_timeout = 5000')
   migrateUniqueKey(db)
   db.exec(SCHEMA)
+  addActorColumn(db)
 
   return db
+}
+
+/**
+ * Add `actor_id` to a jobs table created before jobs had a principal.
+ *
+ * `CREATE TABLE IF NOT EXISTS` leaves an existing table exactly as it was, so
+ * without this every dispatch against an old jobs.db fails on an unknown
+ * column. Unlike the unique_key rebuild this is a plain ADD COLUMN — the column
+ * is nullable with no default, which SQLite appends in place.
+ *
+ * Jobs already queued get NULL and therefore run as the app itself, which is
+ * the only honest answer: nothing recorded who asked for them.
+ */
+function addActorColumn(db: Database): void {
+  const cols = db.query<{ name: string }, []>(`PRAGMA table_info(jobs)`).all()
+  if (cols.some(c => c.name === 'actor_id')) return
+  db.exec(`ALTER TABLE jobs ADD COLUMN actor_id TEXT`)
 }
 
 /**
@@ -173,12 +196,12 @@ export function buildStatements(db: Database) {
     id: string; queue: string; name: string; data: string
     status: string; priority: number; max_attempts: number
     retry_delay: string | null; unique_key: string | null
-    run_at: number; created_at: number
+    run_at: number; created_at: number; actor_id: string | null
   }>(db.prepare(`
     INSERT INTO jobs
-      (id, queue, name, data, status, priority, max_attempts, retry_delay, unique_key, run_at, created_at)
+      (id, queue, name, data, status, priority, max_attempts, retry_delay, unique_key, run_at, created_at, actor_id)
     VALUES
-      ($id, $queue, $name, $data, $status, $priority, $max_attempts, $retry_delay, $unique_key, $run_at, $created_at)
+      ($id, $queue, $name, $data, $status, $priority, $max_attempts, $retry_delay, $unique_key, $run_at, $created_at, $actor_id)
   `))
 
   // ── Claim next job (atomic — uses RETURNING to avoid race conditions) ────────
@@ -201,16 +224,21 @@ export function buildStatements(db: Database) {
   `))
 
   // ── Mark done ───────────────────────────────────────────────────────────────
+  // Guarded on 'running': cancel() can land while the attempt is in flight, and
+  // an unguarded UPDATE writes 'done' over the cancellation the caller asked for.
+  // `changes` is 0 when that happens — the worker reads it before announcing.
 
   const markDone = wrap<void, { id: string; now: number }>(db.prepare(`
     UPDATE jobs SET
       status      = 'done',
       finished_at = $now,
       error       = NULL
-    WHERE id = $id
+    WHERE id = $id AND status = 'running'
   `))
 
   // ── Mark failed (will retry or transition to terminal 'failed' depending on caller) ─
+  // Same guard, and it carries more: without it a cancelled job whose handler
+  // then threw is written back to 'pending' and runs again.
 
   const markFailed = wrap<void, {
     id: string; status: string; run_at: number; error: string; now: number
@@ -220,12 +248,13 @@ export function buildStatements(db: Database) {
       finished_at = $now,
       error       = $error,
       run_at      = $run_at
-    WHERE id = $id
+    WHERE id = $id AND status = 'running'
   `))
 
   // ── Cancel ──────────────────────────────────────────────────────────────────
-  // Allows cancelling pending OR running jobs. Running jobs may still complete
-  // their current attempt — the worker checks status before marking done/failed.
+  // Allows cancelling pending OR running jobs. A running job still completes its
+  // current attempt; the status guard on markDone/markFailed is what keeps the
+  // cancellation.
 
   const cancel = wrap<void, { id: string; now: number }>(db.prepare(`
     UPDATE jobs SET
@@ -250,12 +279,17 @@ export function buildStatements(db: Database) {
   // ── Stats ───────────────────────────────────────────────────────────────────
   // No bind params — used directly via stmt.all() with no key prefixing needed.
 
+  // `done` is counted too, and it is the only number here that says the queue
+  // is WORKING: without it a healthy busy queue reports zeros on every line,
+  // which is what an empty one reports. It counts the retention window rather
+  // than all time — the cleanup sweep deletes terminal jobs past
+  // `cleanupAfter`, and that is what makes it a rate instead of a total.
   const statsByQueue = db.prepare<
     { queue: string; status: string; count: number }, []
   >(`
     SELECT queue, status, COUNT(*) as count
     FROM   jobs
-    WHERE  status IN ('pending', 'running', 'failed', 'cancelled')
+    WHERE  status IN ('pending', 'running', 'done', 'failed', 'cancelled')
     GROUP  BY queue, status
   `)
 
@@ -325,8 +359,8 @@ export function aggregateStats(
   rows:   { queue: string; status: string; count: number }[],
   queues: string[]
 ): CaravanStats {
-  const zero = (): { pending: number; running: number; failed: number; cancelled: number } => ({
-    pending: 0, running: 0, failed: 0, cancelled: 0,
+  const zero = (): QueueStats => ({
+    pending: 0, running: 0, done: 0, failed: 0, cancelled: 0,
   })
 
   const result: CaravanStats = {
@@ -345,7 +379,7 @@ export function aggregateStats(
       result.queues[row.queue] = zero()
     }
 
-    const status = row.status as 'pending' | 'running' | 'failed' | 'cancelled'
+    const status = row.status as keyof QueueStats
     if (status in result.queues[row.queue]) {
       result.queues[row.queue][status] += row.count
       result.total[status]             += row.count

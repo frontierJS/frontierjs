@@ -19,12 +19,17 @@
   //   <Switch bind:checked={darkMode} label="Dark mode" />
   //   <Switch bind:checked={enabled} tone="success" />
 
-  import { tone as toTone, cx, uid } from '../../utils.js'
+  import { tone as toTone, cx, uid, nameToLabel, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let checked     = false
-  export let label       = ''
+  export let label       = ''       // falls back to @label, then the column name
   export let description = ''
+  export let name        = undefined
+  export let value       = undefined
   export let disabled    = false
+  export let required    = undefined
+  export let error       = ''
+  export let errors      = undefined
   export let tone        = ''
   export let labelSide   = 'right'  // 'left' | 'right'
   export let onchange    = undefined
@@ -33,7 +38,19 @@
   const switchId = id || uid('switch')
   const descId   = uid('switch-desc')
 
-  const t = toTone(tone)
+  // The enclosing <Form> and this field's rule, both undefined standing alone.
+  // A switch is a checkbox wearing a different shape, so it resolves exactly
+  // what Checkbox does — without this it was the same control unable to say its
+  // own name or show its own rejection, and it also carried no `name`, so a
+  // form's dirty tracking could not see the field at all.
+  const form = $context.form
+  const rule = resolveRule(form, name)
+
+  const resolvedLabel    = stated(label || undefined, rule?.title, name ? nameToLabel(name) : '') ?? ''
+  const resolvedRequired = stated(required, rule?.required)
+  const displayError     = resolveError(form, name, error, errors)
+
+  const t = displayError ? 'danger' : toTone(tone)
 
   function handleChange(e) {
     checked = e.target.checked
@@ -52,16 +69,24 @@
       class="switch"
       type="checkbox"
       role="switch"
+      name={name}
+      value={value}
       checked={checked}
       disabled={disabled}
+      required={resolvedRequired}
       aria-describedby={description ? descId : null}
+      aria-invalid={displayError ? 'true' : null}
       on:change={handleChange}
       {...$attributes}
     />
-    {#if label}<span>{label}</span>{/if}
+    {#if resolvedLabel}<span>{resolvedLabel}</span>{/if}
   </label>
 
   {#if description}
     <p class="field-hint" id={descId}>{description}</p>
+  {/if}
+
+  {#if displayError}
+    <p class={cx('field-hint', 'danger')} role="alert">{displayError}</p>
   {/if}
 </div>

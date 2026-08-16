@@ -4,7 +4,37 @@ description: Deploy FrontierJS apps to a server via SSH + Docker + nginx
 ---
 
 <script>
-const { loadFrontierConfig } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const { loadFrontierConfig }        = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+
+// ─── vendorApp ────────────────────────────────────────────────────────────────
+// Write the build context the Dockerfile installs from: deploy/generated/, with
+// a manifest and — for an app depending on the framework by `link:` or
+// `workspace:` — a packed copy of every one of those packages beside it.
+//
+// Runs on EVERY build, not only a linked one. With nothing linked it copies the
+// manifest and the lockfile, which is what lets one Dockerfile serve both source
+// modes; making it conditional here would move the condition into a template
+// nobody regenerates when the source mode changes.
+//
+// It throws on anything it cannot finish. A half-vendored context installs the
+// rest from npm and produces an image running two trees at once, which does not
+// have to fail to be wrong.
+//
+// It does NOT prune devDependencies, and the reason is worth stating because
+// pruning them looks free: the image builds nothing — it copies `api/` and
+// `db/` and runs `db:migrate` then `start` — and **`bun install --production`
+// resolves devDependencies anyway**, only skipping their install, so one dev
+// tool that 404s fails an image that would never have run it. The `transform`
+// hook can drop them; a manifest that no longer matches the lockfile beside it
+// then fails `--frozen-lockfile` outright, which is the worse trade. An
+// unresolvable devDependency is a publish problem and belongs upstream.
+const vendorApp = (root, log) => {
+  const result = vendorWorkspacePackages({ appRoot: root, log: (m) => log.info(m) })
+  if (result.vendored.length)
+    log.success(`Vendored ${result.vendored.length} workspace dependenc(ies) from ${result.packagesDir}`)
+  return result
+}
 
 // ─── resolveTarget ────────────────────────────────────────────────────────────
 // Resolves the deploy target from flags and git branch.

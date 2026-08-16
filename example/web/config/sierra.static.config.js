@@ -39,5 +39,9 @@ export default {
   // build emits are linked automatically; this is the other half of what
   // `index.html` does for the SPA — the theme is a class on <body>, so without
   // it a prerendered page renders in the token defaults and no brand colour.
+  // The theme is BAKED here rather than switched. A prerendered page has no
+  // switcher and its first paint must be right with no JavaScript at all, so
+  // the class goes in the file — which is the same class the SPA's `theme:`
+  // block applies at runtime, not a second mechanism.
   document: { bodyClass: 'app theme-default' },
 }

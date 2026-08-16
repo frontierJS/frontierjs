@@ -53,15 +53,64 @@ function recordMigration(db, name, sql) {
 
 // ─── File helpers ─────────────────────────────────────────────────────────────
 
-function timestamp() {
-  const d   = new Date()
+export function slugify(label) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+}
+
+// ─── Naming a new migration ───────────────────────────────────────────────────
+//
+// Filename order IS apply order — `listMigrationFiles` sorts, and nothing else
+// records when a file was written. The clock is second-granular, so two
+// migrations created inside one second break that in two ways, both silent:
+//
+//   same label  — the second `writeFileSync` overwrites the first, and the
+//                 change that was in it is simply gone
+//   different   — they sort by LABEL, so `evolve` applies before `initial` and
+//                 a migration runs against a table its predecessor creates
+//
+// Neither is hypothetical: `migrate create` twice in a script, a test that
+// seeds and then evolves, a multi-database create loop. The fix is to name a
+// migration after every one already in the directory rather than after the
+// clock alone — the timestamp still says roughly when, and now also says after
+// what.
+
+const STAMP = /^(\d{14})_/
+
+function formatStamp(d) {
   const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}` +
          `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
-export function slugify(label) {
-  return label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+// A stamp a person wrote by hand may not be a real clock reading (`99999999999999`
+// is a legal filename and sorts last on purpose). Add the second numerically
+// when it cannot be read as a date, so an unparseable stamp still yields a name
+// that sorts after it.
+function bumpStamp(ts) {
+  const y = +ts.slice(0, 4), mo = +ts.slice(4, 6), d = +ts.slice(6, 8)
+  const h = +ts.slice(8, 10), mi = +ts.slice(10, 12), s = +ts.slice(12, 14)
+  const date = new Date(y, mo - 1, d, h, mi, s + 1)
+  if (!Number.isNaN(date.getTime()) && formatStamp(date) > ts) return formatStamp(date)
+  return String(BigInt(ts) + 1n).padStart(14, '0')
+}
+
+function timestamp() {
+  return formatStamp(new Date())
+}
+
+export function nextMigrationName(dir, label, ext = 'sql') {
+  const abs   = resolve(dir)
+  const slug  = slugify(label)
+  const files = listMigrationFiles(abs)
+  const last  = files.length ? files[files.length - 1].match(STAMP)?.[1] : null
+
+  let ts = timestamp()
+  if (last && ts <= last) ts = bumpStamp(last)
+  // A directory can hold a file per label at one stamp; keep stepping until the
+  // name is free rather than overwriting somebody's migration.
+  while (existsSync(join(abs, `${ts}_${slug}.${ext}`))) ts = bumpStamp(ts)
+
+  return `${ts}_${slug}.${ext}`
 }
 
 export function listMigrationFiles(dir) {
@@ -106,7 +155,7 @@ export function create(db, parseResult, label = 'migration', dir = './migrations
   if (!diffResult.hasChanges) return { created: false, message: 'schema is already in sync — no migration needed' }
 
   const sql      = generateMigrationSQL(diffResult, parseResult, { pluralize })
-  const name     = `${timestamp()}_${slugify(label)}.sql`
+  const name     = nextMigrationName(dir, label)
   const summary  = summariseDiff(diffResult)
 
   const header = [
@@ -139,7 +188,7 @@ export function createForDatabase(rawDb, parseResult, dbName, label = 'migration
   if (!diffResult.hasChanges) return { created: false, message: `${dbName}: schema is already in sync` }
 
   const sql      = generateMigrationSQL(diffResult, parseResult, { pluralize })
-  const name     = `${timestamp()}_${slugify(label)}.sql`
+  const name     = nextMigrationName(dir, label)
   const summary  = summariseDiff(diffResult)
 
   const header = [

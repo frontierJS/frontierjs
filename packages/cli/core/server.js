@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { createServer } from 'http'
-import { readFileSync, readdirSync, existsSync } from 'fs'
+import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { basename } from 'path'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -189,7 +189,6 @@ async function handleEnvSave(req, res) {
     })
     const { content } = body
     const envPath = resolve(homedir(), '.config', 'fli', '.env')
-    const { mkdirSync } = await import('fs')
     mkdirSync(resolve(homedir(), '.config', 'fli'), { recursive: true })
     writeFileSync(envPath, content, 'utf8')
     json(res, 200, { ok: true, path: envPath })

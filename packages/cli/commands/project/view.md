@@ -51,12 +51,6 @@ if (!existsSync(viewerPath)) {
 
 const html = readFileSync(viewerPath, 'utf8')
 
-// ── Services path ─────────────────────────────────────────────────────────────
-
-const servicesDir = existsSync(resolve(context.paths.api, 'src/services'))
-  ? resolve(context.paths.api, 'src/services')
-  : resolve(context.paths.api, 'services')
-
 // ── Environment / secrets health ──────────────────────────────────────────────
 // Detects required secrets (parsed from .env.example, plus ENCRYPTION_KEY always)
 // and checks whether each is actually set in the project .env / process.env.
@@ -119,8 +113,13 @@ const buildMap = () => {
   const schema = existsSync(resolve(context.paths.db, 'schema.json'))
     ? JSON.parse(readFileSync(resolve(context.paths.db, 'schema.json'), 'utf8'))
     : {}
-  const services   = scanFiles(servicesDir, '.service.ts')
-                       .map(f => extractServiceMeta(readFileSync(f, 'utf8'), f))
+  // Services come off the committed surface snapshot, never off a scan of
+  // service source: what a service answers is decided at construction, not by
+  // how a file reads, so a scanner drew a confident wrong picture with nothing
+  // able to contradict it (FJS-254). No snapshot means no services panel — the
+  // viewer is served to a person who can go and write one.
+  const surface    = readApiSurface(context.paths.root)
+  if (!surface) log.warn(surfaceMissingHint(context.paths.root))
   const resources  = scanFiles(context.paths.webResources, '.js', '.mesa')
                        .map(f => extractResourceMeta(readFileSync(f, 'utf8'), f))
   const migrations = parseMigrationFiles(resolve(context.paths.db, 'migrations'))
@@ -128,7 +127,14 @@ const buildMap = () => {
   return {
     meta:       { generatedAt: new Date().toISOString(), root: context.paths.root },
     schema,
-    services:   services.length   ? services   : undefined,
+    services:   surface?.services.length ? surface.services : undefined,
+    surface:    surface ? {
+      file:        surface.file,
+      generatedBy: surface.generatedBy,
+      appHooks:    surface.appHooks,
+      routes:      surface.routes,
+      plugins:     surface.plugins,
+    } : undefined,
     resources:  resources.length  ? resources  : undefined,
     migrations: migrations.length ? migrations : undefined,
     packages:   packages.length   ? packages   : undefined,

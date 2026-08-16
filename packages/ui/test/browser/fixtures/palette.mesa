@@ -1,0 +1,41 @@
+<script>
+  // palette.mesa — the ⌘K palette wired the way an app root wires it: the
+  // store holds `open`, a window listener toggles it, and the component is
+  // mounted only while it is open.
+  import CommandPalette      from '../../../components/overlay/CommandPalette.mesa'
+  import { commandPalette }  from '../../../stores/commandPaletteStore.js'
+
+  $: commandPalette.open
+
+  let ran  = ''
+  let runs = 0
+
+  const COMMANDS = [
+    { id: 'new-order',  group: 'Orders',   label: 'New order',        icon: '＋', sub: 'Start a draft', kbd: '⌘ N', action: () => { ran = 'new-order';  runs++ } },
+    { id: 'find-order', group: 'Orders',   label: 'Find an order',    icon: '⌕',  sub: 'By id or customer',            action: () => { ran = 'find-order'; runs++ } },
+    { id: 'refund',     group: 'Orders',   label: 'Refund an order',  icon: '↩',  badge: 'Beta',                       action: () => { ran = 'refund';     runs++ } },
+    { id: 'customers',  group: 'People',   label: 'Customers',        icon: '☺',  sub: 'Everyone who has ordered',     action: () => { ran = 'customers';  runs++ } },
+    { id: 'staff',      group: 'People',   label: 'Staff',            icon: '☗',                                       action: () => { ran = 'staff';      runs++ } },
+    { id: 'theme',      group: 'Settings', label: 'Switch theme',     icon: '◐',  kbd: '⌘ T',                          action: () => { ran = 'theme';      runs++ } },
+  ]
+
+  // The store outlives a fixture, so a run must not inherit the previous one.
+  commandPalette.hide()
+  window.commandPalette = commandPalette
+</script>
+
+<mesa:window on:keydown={(e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault()
+    commandPalette.toggle()
+  }
+}} />
+
+<button type="button" id="open-palette" on:click={() => commandPalette.show()}>Open</button>
+
+{#if commandPalette.open}
+  <CommandPalette items={COMMANDS} onclose={() => commandPalette.hide()} />
+{/if}
+
+<output id="ran">{ran}</output>
+<output id="runs">{runs}</output>

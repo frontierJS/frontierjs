@@ -147,28 +147,28 @@ describe('Plugin.requires', () => {
   })
 })
 
-// ─── app.provide ──────────────────────────────────────────────────────────
+// ─── app.claim ──────────────────────────────────────────────────────────
 
-describe('app.provide', () => {
+describe('app.claim', () => {
   it('claims a namespace and assigns the real property', async () => {
     const app = await createTestApp()
     const thing = { hello: 'world' }
 
-    app.provide('myThing', thing)
+    app.claim('myThing', thing)
 
     expect((app as unknown as Record<string, unknown>).myThing).toBe(thing)
   })
 
   it('throws when the name is already claimed, naming it', async () => {
     const app = await createTestApp()
-    app.provide('twice', { a: 1 })
+    app.claim('twice', { a: 1 })
 
-    expect(() => app.provide('twice', { b: 2 })).toThrow(/'twice'.*already claimed/s)
+    expect(() => app.claim('twice', { b: 2 })).toThrow(/'twice'.*already claimed/s)
   })
 
   it('refuses to overwrite a core app property', async () => {
     const app = await createTestApp()
-    expect(() => app.provide('services', {})).toThrow(/already claimed/)
+    expect(() => app.claim('services', {})).toThrow(/already claimed/)
   })
 
   // The augmentable-interface pattern (AppConduit/AppJobs/AppNotify) depends on
@@ -178,7 +178,7 @@ describe('app.provide', () => {
     const app = await createTestApp()
     const conduitLike = { send: () => {} }
 
-    app.provide('conduit', conduitLike)
+    app.claim('conduit', conduitLike)
 
     expect(app.conduit).toBe(conduitLike)
   })
@@ -188,9 +188,9 @@ describe('app.provide', () => {
     const first  = { id: 'first' }
     const second = { id: 'second' }
 
-    app.configure({ name: 'p1', register(a) { a.provide('shared', first) } })
+    app.configure({ name: 'p1', register(a) { a.claim('shared', first) } })
 
-    expect(() => app.configure({ name: 'p2', register(a) { a.provide('shared', second) } }))
+    expect(() => app.configure({ name: 'p2', register(a) { a.claim('shared', second) } }))
       .toThrow(/Plugin "p2" register\(\) failed/)
     // the first plugin's surface survived
     expect((app as unknown as Record<string, unknown>).shared).toBe(first)

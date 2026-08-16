@@ -165,14 +165,14 @@ function extractFrontmatter(html, routeMeta = {}) {
 
 /**
  * @param {object}   config   — sierra.config.js
- * @param {object}   manifest — { indexed, tree }
+ * @param {object}   routeTable — { indexed, tree }
  * @param {string}   outDir
  * @param {object}   [routeMetaMap] — path → meta object
  */
-export async function generateMarkdownPages(config, manifest, outDir, routeMetaMap = {}) {
+export async function generateMarkdownPages(config, routeTable, outDir, routeMetaMap = {}) {
   if (!config.markdownPages) return null
 
-  const indexed = (manifest.indexed ?? []).filter(
+  const indexed = (routeTable.indexed ?? []).filter(
     p => !p.includes(':') && !p.includes('*')
   )
 

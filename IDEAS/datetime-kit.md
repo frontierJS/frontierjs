@@ -1,6 +1,10 @@
 # Idea — `datetime-kit`: scope
 
-**Status: IDEA. The package that exists today is not this.** Dated 2026-08-12. Two
+**Status: IDEA. The code that exists today is not this.** Dated 2026-08-12; scope
+unchanged, home changed 2026-08-15 — this is now **`@frontierjs/toolbelt/datetime`**, a
+kit inside the substrate package rather than `@frontierjs/datetime-kit`, and the
+prototype audited below is parked at `packages/toolbelt/mockup/datetime/`
+(`DECISIONS.md` § Repo conventions). Read every `datetime-kit` below as that subpath. Two
 decisions are taken and the rest is proposal: the API mirrors a **reduced Temporal**
 (five types), and the package ships **with a schema declaration**, not as a standalone
 library. Everything else below is argued, not settled.

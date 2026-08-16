@@ -368,7 +368,7 @@ describe('plugin wiring', () => {
     const app = await makeApp()
     expect(app.webhooks).toBeDefined()
 
-    expect(() => app.configure({ name: 'squatter', register(a) { a.provide('webhooks', {}) } }))
+    expect(() => app.configure({ name: 'squatter', register(a) { a.claim('webhooks', {}) } }))
       .toThrow(/already claimed/)
   })
 

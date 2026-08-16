@@ -29,7 +29,7 @@ import { readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { glow } from '@frontierjs/utils/glow';
+import { glow } from '@frontierjs/toolbelt/glow';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkg = join(here, '..');

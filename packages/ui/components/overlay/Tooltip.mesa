@@ -25,11 +25,34 @@
   //   <Tooltip label="Saved to cloud">
   //     <Button>Save</Button>
   //   </Tooltip>
+  //
+  // ── Reaching the id from the trigger ─────────────────────────────────
+  //
+  // The trigger has to carry `aria-describedby`, and only the caller can put
+  // it there. Two ways, and the second is the one to reach for when the
+  // trigger is a plain element:
+  //
+  //   <Tooltip label="Delete" id="del-tip">
+  //     <button class="btn square" aria-describedby="del-tip">…</button>
+  //   </Tooltip>
+  //
+  //   <Tooltip label="Delete">
+  //     {#snippet children(tipId)}
+  //       <button class="btn square" aria-describedby={tipId}>…</button>
+  //     {/snippet}
+  //   </Tooltip>
+  //
+  // Mesa has no `let:` directive, and a `<slot>` carries no values to its
+  // caller — an attribute written on one is silently ignored. The snippet
+  // parameter is the only way a child hands something back, so the generated
+  // id travels through `children` and `<slot />` is the fallback for content
+  // that does not need it.
 
   import { uid } from '../../utils.js'
 
-  export let label = ''      // tooltip text
-  export let id    = ''      // override the generated id
+  export let label    = ''      // tooltip text
+  export let id       = ''      // override the generated id
+  export let children = null    // snippet — receives the tooltip's id
 
   const tipId = id || uid('tip')
 
@@ -49,14 +72,11 @@
   on:mouseenter={onEnter}
   on:focusin={onEnter}
 >
-  <!--
-    The consumer's trigger. It must carry aria-describedby={tipId} for the
-    tooltip to be announced — pass it through:
-      <Tooltip label="Delete" let:tipId>
-        <button class="btn square" aria-describedby={tipId}>…</button>
-      </Tooltip>
-  -->
-  <slot tipId={tipId} />
+  {#if children}
+    {@render children(tipId)}
+  {:else}
+    <slot />
+  {/if}
 
   {#if label}
     <span class="tooltip" role="tooltip" id={tipId} hidden={dismissed || null}>

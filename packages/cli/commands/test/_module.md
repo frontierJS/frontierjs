@@ -27,13 +27,16 @@ code shape — a refactor cannot break one, and a gate change cannot leave one
 passing against a rule that no longer exists.
 
 ```
-fli test:access  — write db/access.snapshot.md, the reviewable access artefact
-fli test:ddl     — write db/ddl.snapshot.sql, the tables SQLite is given
-fli test:mutate  — mutate the schema, report what the checks cannot see
+fli test:access     — write db/access.snapshot.md, the reviewable access artefact
+fli test:ddl        — write db/ddl.snapshot.sql, the tables SQLite is given
+fli test:snapshots  — recheck every committed snapshot in this app
+fli test:mutate     — mutate the schema, report what the checks cannot see
 ```
 
-Both snapshots name the command that regenerates them in their own header, so
-CI reruns them with `--check` without carrying a list of what exists.
+Every snapshot names the command that regenerates it in its own header, so
+`fli test:snapshots` reruns them all with `--check` without carrying a list of
+what exists — and it is the same module (`core/snapshots.js`) the framework's
+own CI runs over its repo, for the same reason `core/checks.js` is shared.
 
 ## The access snapshot
 

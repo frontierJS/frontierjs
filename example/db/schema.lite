@@ -126,7 +126,13 @@ model Order {
   /// It is the field that proves deferred work reaches the browser — the job
   /// writes through the orders SERVICE, so the write announces on the channel
   /// and a tab nobody touched fills this cell in seconds later.
-  trackingCode String? @label("Tracking")
+  // Booked by the courier job (api/jobs/book-courier.job.ts), never by a
+  // person. `@system` is what says so: readable by anyone, refused on write to
+  // every caller but the application itself, which names the column on the
+  // call. Without it the generated form offered a text box whose value a worker
+  // overwrote a second later, and the page carried a hand-written exclusion
+  // list to stop it (FJS-095).
+  trackingCode String? @system @label("Tracking")
 
   createdAt DateTime @default(now())
 

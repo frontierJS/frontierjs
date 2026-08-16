@@ -8,7 +8,7 @@
 //
 //   • Telemetry: Litestone exposes both a global `onQuery` (passed to
 //     createClient) and a per-client `$tapQuery(fn)` that returns an unsub
-//     function. We register a tap once per request (cached on ctx.params),
+//     function. We register a tap once per request (cached on ctx.locals),
 //     enrich the event with telemetryId + isSystem, and emit on
 //     app.telemetry. The unsub is queued on ctx._cleanups for the
 //     callService finally block.
@@ -32,7 +32,10 @@ import type { CacheDeclaration } from './service.ts'
 import type { HookMap } from './hooks.ts'
 import { NotFound, BadRequest, Unauthorized } from './errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
+import { announcingService } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, type BulkFailure } from './envelope.ts'
+import { singularize } from '@frontierjs/toolbelt/inflect'
+import { normalizeOrderBy, type SortParam } from './sort.ts'
 
 // Module augmentation: typing ctx.locals.db without forcing a hard
 // Litestone dependency on junction core. Apps using the litestone
@@ -63,7 +66,7 @@ interface LitestoneTable {
   delete:           (args:  Record<string, unknown>) => Promise<unknown>     // always hard
   deleteMany:       (args:  Record<string, unknown>) => Promise<{ count: number }>
   restore:          (args:  Record<string, unknown>) => Promise<unknown>     // @@softDelete models only
-  search:           (query: string, args?: Record<string, unknown>) => Promise<{ rows: unknown[]; total: number }>  // @@fts models only
+  search:           (query: string, args?: Record<string, unknown>) => Promise<unknown[]>  // @@fts models only — the ROWS, ranked
 }
 
 interface LitestoneClient {
@@ -91,6 +94,28 @@ export interface LitestoneQueryEvent {
   isSystem?: boolean
 }
 
+/**
+ * What `$tapEvents` delivers — `onEvent`'s payload plus the event NAME, which a
+ * subscriber needs because a `transition` carries no `operation`.
+ */
+export interface LitestoneWriteEvent {
+  event:  'create' | 'update' | 'remove' | 'transition'
+  model:  string
+  result?: unknown
+  /**
+   * Whether this event is about ONE row or a filter's worth of them. Stated by
+   * Litestone rather than inferred here, because `result: null` is not one fact:
+   * a `select: false` write is row-scoped and has no row to hand over, and a
+   * bulk statement never built the rows at all. Absent on a client predating
+   * this, where every event was row-scoped and carried its row.
+   */
+  scope?:  'row' | 'collection'
+  count?:  number
+  /** The caller's filter, on a collection event. In-process only — see below. */
+  where?:  unknown
+  [k: string]: unknown
+}
+
 const OPS: Record<string, string> = {
   $in:     'in',
   $nin:    'notIn',
@@ -111,9 +136,11 @@ export interface ParsedQuery {
   limit:  number
   select?: Record<string, boolean>
   include?: Record<string, boolean | { select: Record<string, boolean> }>
-  search?:       string    // $search — FTS5 via table.search()
-  withDeleted?:  boolean   // $withDeleted — include soft-deleted rows
-  onlyDeleted?:  boolean   // $onlyDeleted — show only soft-deleted rows
+  search?:         string    // $search — FTS5 via table.search()
+  withDeleted?:    boolean   // $withDeleted — include soft-deleted rows
+  onlyDeleted?:    boolean   // $onlyDeleted — show only soft-deleted rows
+  withTemplates?:  boolean   // $withTemplates — include @@hasTemplates rows
+  onlyTemplates?:  boolean   // $onlyTemplates — show only @@hasTemplates rows
 }
 
 /**
@@ -135,7 +162,8 @@ export function parseQuery(
   directives: QueryDirectives = {}
 ): ParsedQuery {
   const { $limit, $offset, $orderBy, $select, $populate,
-          $search, $withDeleted, $onlyDeleted, ...where } = query
+          $search, $withDeleted, $onlyDeleted,
+          $withTemplates, $onlyTemplates, ...where } = query
 
   const limitRaw   = directives.limit       ?? $limit
   const offsetRaw  = directives.offset      ?? $offset
@@ -145,6 +173,8 @@ export function parseQuery(
   const searchRaw  = directives.search      ?? $search
   const withDel    = directives.withDeleted ?? $withDeleted
   const onlyDel    = directives.onlyDeleted ?? $onlyDeleted
+  const withTmpl   = directives.withTemplates ?? $withTemplates
+  const onlyTmpl   = directives.onlyTemplates ?? $onlyTemplates
 
   // A limit of 0 is meaningful (count-only), so `??` not `||`. Non-numeric
   // input falls back to the default rather than producing NaN — a NaN limit
@@ -162,8 +192,10 @@ export function parseQuery(
     select:       selectRaw  != null ? parseSelect(selectRaw as SelectParam) : undefined,
     include:      popRaw     != null ? parsePopulate(popRaw as PopulateParam) : undefined,
     search:       typeof searchRaw === 'string' ? searchRaw : undefined,
-    withDeleted:  withDel === true || withDel === 'true' || undefined,
-    onlyDeleted:  onlyDel === true || onlyDel === 'true' || undefined,
+    withDeleted:   withDel  === true || withDel  === 'true' || undefined,
+    onlyDeleted:   onlyDel  === true || onlyDel  === 'true' || undefined,
+    withTemplates: withTmpl === true || withTmpl === 'true' || undefined,
+    onlyTemplates: onlyTmpl === true || onlyTmpl === 'true' || undefined,
   }
 }
 
@@ -219,21 +251,10 @@ function translateOps(ops: Record<string, unknown>): Record<string, unknown> {
   return result
 }
 
-type SortParam = string | Record<string, number | string> | Record<string, string>[]
-
-function parseSort(sort: SortParam): Record<string, 'asc' | 'desc'>[] {
-  if (typeof sort === 'string') {
-    return sort.split(',').map((field) => {
-      const f = field.trim()
-      if (f.startsWith('-')) return { [f.slice(1)]: 'desc' }
-      return { [f]: 'asc' }
-    })
-  }
-  if (Array.isArray(sort)) return sort as Record<string, 'asc' | 'desc'>[]
-  return Object.entries(sort).map(([field, dir]) => ({
-    [field]: (dir === 1 || dir === 'asc') ? 'asc' : 'desc',
-  }))
-}
+// The spellings are `core/sort.ts`'s, because the browser client asks the same
+// question of the same value — it has to place a pushed row in a list it cannot
+// re-query — and two readings of `-createdAt` is two orders for one list.
+const parseSort = normalizeOrderBy
 
 type SelectParam = string | string[]
 
@@ -267,23 +288,21 @@ function parsePopulate(
   return result
 }
 
+/**
+ * A service name → the model it answers for. `postsService` and `posts` both
+ * give `post`.
+ *
+ * The `Service` suffix and the camelCase are junction's business; the
+ * inflection is not, and this used to carry its own copy of the rules —
+ * `ies`/`ses` and no irregular table at all, so a `people` service resolved to
+ * `people` and its model was never found. Litestone derives a table name with
+ * the same rules run the other way (Invariant 2), which only holds while there
+ * is one copy of them.
+ */
 export function deriveModelName(name: string): string {
   const clean = name.replace(/Service$/i, '')
   const camel = clean.charAt(0).toLowerCase() + clean.slice(1)
-
-  if (camel.endsWith('ies')) return camel.slice(0, -3) + 'y'
-  if (camel.endsWith('ses')) return camel.slice(0, -2)
-  if (
-    camel.endsWith('s') &&
-    !camel.endsWith('ss') &&
-    !camel.endsWith('us') &&
-    !camel.endsWith('is') &&
-    !camel.endsWith('as')
-  ) {
-    return camel.slice(0, -1)
-  }
-
-  return camel
+  return singularize(camel)
 }
 
 /**
@@ -307,6 +326,41 @@ export function deriveModelName(name: string): string {
 export function accessorCandidates(accessor: string): string[] {
   const derived = deriveModelName(accessor)
   return derived === accessor ? [accessor] : [accessor, derived]
+}
+
+/**
+ * The one spelling of an accessor a Litestone client will actually judge.
+ *
+ * `getTable` and `_gateLevels` each walk `accessorCandidates` themselves, so
+ * they resolve `'orders'` → `db.order` and always have. The two derived hooks
+ * that ASK the client a question — `$checkWhere`, `$checkOrderBy` — passed the
+ * name through untouched, and both answer `[]` for an accessor they do not
+ * know. `[]` also means *no problems*, so the answer to "is this filter valid"
+ * and the answer to "which model is that" were indistinguishable, and the hooks
+ * read *I cannot judge this* as *this is fine*.
+ *
+ * Measured on `example`, whose services declare no `model:` and are therefore
+ * named for the URL: `GET /api/orders?bogusColumn=7` answered **200 with an
+ * empty list** where it documents a 400. The sort half was hidden behind
+ * Litestone's own backstop — it THROWS on a bad `orderBy` where a bad `where`
+ * only warns to stderr — so one of the two looked correct while neither was.
+ *
+ * Resolves off `$schema` rather than probing, because probing cannot work:
+ * there is no query whose answer separates the two meanings of `[]`.
+ */
+export function resolveAccessor(client: unknown, accessor: string): string {
+  let models: Array<{ name: string }> | undefined
+  // Reading an unknown property off a Litestone client throws by design, so
+  // even a plain field read is a guarded one here (see autoFilter).
+  try {
+    models = (client as { $schema?: { models?: Array<{ name: string }> } })?.$schema?.models
+  } catch { return accessor }
+  if (!Array.isArray(models)) return accessor
+
+  const candidates = accessorCandidates(accessor)
+  const camel = (n: string) => n.charAt(0).toLowerCase() + n.slice(1)
+  const model = models.find(m => candidates.includes(camel(m.name)))
+  return model ? camel(model.name) : accessor
 }
 
 export interface LitestoneServiceOptions {
@@ -373,9 +427,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         ? baseDb.$setAuth(toDataPrincipal(ctx.auth.user))
         : baseDb
 
-      const telemetry = (ctx.app as Record<string, unknown>)?.telemetry as
-        | { emit: (e: string, d: unknown) => void }
-        | undefined
+      const telemetry = ctx.app?.telemetry
 
       if (telemetry && ctx.telemetryId && typeof scopedDb.$tapQuery === 'function') {
         const stop = scopedDb.$tapQuery((event: LitestoneQueryEvent) => {
@@ -564,18 +616,38 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       const where = { ...q.where, ...softDeleteFilter() }
 
       // FTS5 search path — routes to table.search() when $search is present.
-      // Only works on models with @@fts; Litestone throws a clear error otherwise.
-      // Response is normalized to the same { total, limit, offset, data } envelope.
+      // Only works on models with @@fts; below that a Litestone client refuses
+      // by name with a 400 (CapabilityNotDeclaredError), naming the attribute.
+      //
+      // `search()` answers the ROWS, ranked — it has no count to give, and this
+      // destructured `{ rows, total }` off the array, so a search that matched
+      // answered `{"limit":20,"offset":0}`: no data, no total, 200. The same
+      // shape as the `restoreMany` that never existed (FJS-245) — a declared
+      // method type nothing executes. The envelope owes a total, so the count
+      // is a second, id-only pass, skipped when the first page is short enough
+      // to BE the total.
       if (q.search) {
         const args: Record<string, unknown> = {
           where,
           limit:  q.limit,
           offset: q.offset,
         }
-        if (q.orderBy) args.orderBy = q.orderBy
-        if (q.select)  args.select  = q.select
-        if (q.include) args.include = q.include
-        const { rows, total } = await table.search(q.search, args)
+        if (q.orderBy)       args.orderBy       = q.orderBy
+        if (q.select)        args.select        = q.select
+        if (q.include)       args.include       = q.include
+        if (q.withDeleted)   args.withDeleted   = true
+        if (q.onlyDeleted)   args.onlyDeleted   = true
+        if (q.withTemplates) args.withTemplates = true
+        if (q.onlyTemplates) args.onlyTemplates = true
+
+        const rows  = await table.search(q.search, args)
+        const total = (!q.offset && rows.length < q.limit)
+          ? rows.length
+          : (await table.search(q.search, {
+              ...args, limit: null, offset: 0, include: undefined,
+              select: { [idField]: true },
+            })).length
+
         return { total, limit: q.limit, offset: q.offset, data: rows }
       }
 
@@ -587,8 +659,10 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       if (q.orderBy)     args.orderBy     = q.orderBy
       if (q.select)      args.select      = q.select
       if (q.include)     args.include     = q.include
-      if (q.withDeleted) args.withDeleted = true
-      if (q.onlyDeleted) args.onlyDeleted = true
+      if (q.withDeleted)   args.withDeleted   = true
+      if (q.onlyDeleted)   args.onlyDeleted   = true
+      if (q.withTemplates) args.withTemplates = true
+      if (q.onlyTemplates) args.onlyTemplates = true
 
       const { rows, total } = await table.findManyAndCount(args)
       return { total, limit: q.limit, offset: q.offset, data: rows }
@@ -603,8 +677,10 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         const args: Record<string, unknown> = { where }
         if (q.select)      args.select      = q.select
         if (q.include)     args.include     = q.include
-        if (q.withDeleted) args.withDeleted = true
-        if (q.onlyDeleted) args.onlyDeleted = true
+        if (q.withDeleted)   args.withDeleted   = true
+        if (q.onlyDeleted)   args.onlyDeleted   = true
+        if (q.withTemplates) args.withTemplates = true
+        if (q.onlyTemplates) args.onlyTemplates = true
 
         const record = await table.findUnique(args)
         if (!record) throw new NotFound(`${model} with ${idField}=${ctx.id} not found`)
@@ -617,8 +693,10 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       }
       if (q.select)      args.select       = q.select
       if (q.include)     args.include      = q.include
-      if (q.withDeleted) args.withDeleted  = true
-      if (q.onlyDeleted) args.onlyDeleted  = true
+      if (q.withDeleted)   args.withDeleted   = true
+      if (q.onlyDeleted)   args.onlyDeleted   = true
+      if (q.withTemplates) args.withTemplates = true
+      if (q.onlyTemplates) args.onlyTemplates = true
 
       const record = await table.findFirst(args)
       if (!record) throw new NotFound(`${model} not found`)
@@ -847,10 +925,14 @@ function _deriveJsonSchema(client: unknown): Promise<LitestoneJsonSchema | null>
 
   const p = (async () => {
     try {
-      const mod = await import('@frontierjs/litestone') as {
-        generateJsonSchema?: (schema: unknown) => LitestoneJsonSchema
-      }
-      if (mod.generateJsonSchema) return mod.generateJsonSchema(c.$schema)
+      // Asserted onto a one-property shape before, which is both a cast the
+      // compiler refuses and a probe that could not fail: litestone really does
+      // export this, so ask the real module and let the signature be checked.
+      const mod = await import('@frontierjs/litestone')
+      if (typeof mod.generateJsonSchema === 'function')
+        return mod.generateJsonSchema(
+          c.$schema as Parameters<typeof mod.generateJsonSchema>[0]
+        ) as unknown as LitestoneJsonSchema
       _warnNoValidation('@frontierjs/litestone does not export generateJsonSchema')
       return null
     } catch (err) {
@@ -946,7 +1028,7 @@ function _hasTable(client: Record<string, unknown>, accessor: string): boolean {
  * and @gte enforces none of them and the first sign is bad data in the table.
  *
  * Only warned when the accessor DOES resolve to a table: a service with no
- * model at all is a supported shape (custom actions only, or its own create()),
+ * model at all is a supported shape (custom methods only, or its own create()),
  * and calling an unused CRUD method on one already fails with getTable's
  * diagnostic, which names every spelling tried.
  */
@@ -1199,7 +1281,7 @@ export async function announcementPayload(
   }
 
   // No row to be found, so the payload travels as the SIGNAL it is. Dropping it
-  // was the first design and it was wrong: an action that changes many rows
+  // was the first design and it was wrong: a method that changes many rows
   // (`volumes.report` — added, updated, forgotten) has no single row to carry,
   // and its subscribers use the event as a trigger to re-read rather than as a
   // record. Suppressing would have stopped a live screen updating with nothing
@@ -1250,7 +1332,6 @@ interface WhereKeyProblem { key: string, suggestion: string | null, allowed: str
 export function autoFilter(accessorOpt: string | undefined) {
   // Named for the same reason as gateAuth — see the note there.
   return function autoFilter(ctx: ServiceContext): void {
-    const accessor = accessorOpt ?? ctx.service
     const client = ctx.locals.db as {
       $checkWhere?: (a: string, w: unknown) => WhereKeyProblem[]
     } | undefined
@@ -1264,6 +1345,11 @@ export function autoFilter(accessorOpt: string | undefined) {
     try { check = client?.$checkWhere } catch { return }
     if (typeof check !== 'function') return
     if (!ctx.query || typeof ctx.query !== 'object') return
+
+    // Resolved, never the literal — a service named for its URL is plural, and
+    // an accessor the client does not know answers `[]`, which reads as "no
+    // problems". See resolveAccessor.
+    const accessor = resolveAccessor(client, accessorOpt ?? ctx.service)
 
     // parseWhere runs later and owns `$or`/`$and`/`$not`; the bridge has already
     // taken the `$` directives out (Invariant 10). What is left should be columns.
@@ -1320,7 +1406,6 @@ const UNSORTABLE: Record<string, string> = {
 
 export function autoSort(accessorOpt: string | undefined) {
   return function autoSort(ctx: ServiceContext): void {
-    const accessor = accessorOpt ?? ctx.service
     const client = ctx.locals.db as {
       $checkOrderBy?: (a: string, o: unknown) => OrderByKeyProblem[]
     } | undefined
@@ -1332,6 +1417,11 @@ export function autoSort(accessorOpt: string | undefined) {
 
     const raw = ctx.directives?.orderBy
     if (raw == null) return
+
+    // Same resolution as autoFilter, and it was broken here too — hidden only
+    // because Litestone throws on a bad orderBy at execution where a bad where
+    // merely warns. The hook exists to answer with a 400 that names the key.
+    const accessor = resolveAccessor(client, accessorOpt ?? ctx.service)
 
     let problems: OrderByKeyProblem[] = []
     try { problems = check.call(client, accessor, parseSort(raw as SortParam)) ?? [] } catch { return }
@@ -1600,6 +1690,300 @@ export function withLitestoneDb(db: unknown): import('./hooks.ts').AroundHook {
         ? client.$setAuth(toDataPrincipal(ctx.auth.user))
         : client
     await next()
+  }
+}
+
+// ─── A write nothing announced ───────────────────────────────────────────────
+//
+// `callService` is the single announcement point, so a mutation that never went
+// through a service told nobody: a `db.asSystem()` write in a job, a raw route
+// writing through the client directly, a Litestone plugin. Every open tab kept
+// the stale row with a 200 (FJS-010). Litestone's own `onEvent` is fixed at
+// `createClient`, which is before Junction exists — `$tapEvents` is the
+// post-construction half it grew for this (FJS-D04).
+//
+// The tap fires for EVERY write, service writes included, so `insideServiceCall()`
+// is what stops each mutation being broadcast twice. That check draws the line
+// at *did a service announce this*, not *is a request in flight*.
+//
+// A write announces in one of two shapes, and which one is Litestone's to say
+// (`scope`). One that read its row back is broadcast as `created`/`updated`/
+// `removed` carrying that row. One that did not — every bulk statement, and a
+// `select: false` write — is broadcast as `changed` carrying a count, because
+// the only honest answer to *N rows you cannot see have changed* is to ask the
+// query again (FJS-307).
+//
+// Two things it cannot do, both reported rather than guessed:
+//
+//   • A model no service is built over has nowhere to announce to. Silent by
+//     design — an app is free to have tables its API does not expose.
+//   • A FUNCTION `channel:` resolver takes `(rows, ctx)`, and an orphan write
+//     has no ServiceContext to give it. The bus still fires; the socket
+//     broadcast is skipped with one warning per service, because inventing a
+//     ctx would hand the app's own resolver a principal nobody authenticated.
+export function announceDataWrites(
+  app: {
+    services: { list: () => string[]; get: (n: string) => unknown }
+    events?:  { emit: (event: string, data: unknown) => void }
+    channels?: unknown
+  },
+  db: unknown
+): () => void {
+  // Probed inside a try: a Litestone client THROWS on an unknown property
+  // rather than answering undefined, so feature-detection is itself a throwing
+  // expression. A client predating $tapEvents, or anything that is not one,
+  // simply does not get this — the app runs exactly as it did before.
+  let tap: ((fn: (e: LitestoneWriteEvent) => void) => () => void) | undefined
+  try {
+    const fn = (db as { $tapEvents?: unknown }).$tapEvents
+    if (typeof fn === 'function') tap = fn as typeof tap
+  } catch { /* not a Litestone client, or an older one */ }
+  if (!tap) return () => {}
+
+  const PAST: Record<string, string> = { create: 'created', update: 'updated', remove: 'removed' }
+
+  // model name → service name, built on first use: services are registered
+  // during the start phases and this installer runs before them.
+  let index: Map<string, string> | null = null
+  const warned = new Set<string>()
+
+  const serviceFor = (model: string): string | undefined => {
+    if (!index) {
+      index = new Map()
+      for (const name of app.services.list()) {
+        const svc = app.services.get(name) as { model?: string } | undefined
+        // `model:` when declared, otherwise the same singularisation every
+        // other resolver uses (Invariant 2) — one owner, so a service named for
+        // its URL resolves here exactly as it does for the gate and the filter.
+        const m = svc?.model ?? singularize(name)
+        index.set(m.toLowerCase(), name)
+      }
+    }
+    return index.get(model.toLowerCase())
+  }
+
+  const sendToChannel = (name: string, event: string, payload: unknown): void => {
+    const svc = app.services.get(name) as { channel?: unknown } | undefined
+    const decl = svc?.channel
+    if (decl === undefined || decl === false) return
+    if (typeof decl !== 'string') {
+      if (!warned.has(name)) {
+        warned.add(name)
+        console.warn(
+          `[Junction] '${name}' declares a function channel: and a write reached it outside any ` +
+          `service call. The resolver takes (rows, ctx) and there is no request context here, so ` +
+          `this write went to the event bus but not to any socket. Declare a channel NAME to have ` +
+          `background writes broadcast, or route the write through the service.`
+        )
+      }
+      return
+    }
+    const manager = app.channels as
+      { channel?: (n: string) => { send?: (event: string, data: unknown) => void } } | undefined
+    const ch = manager?.channel?.(decl)
+    if (!ch?.send) return
+    try { ch.send(`${name} ${event}`, payload) }
+    catch { /* a dead socket is not a background job's problem */ }
+  }
+
+  return tap((e) => {
+    const past = PAST[e.event as string]
+    if (!past || !e.model) return              // 'transition' has its own event, not a CRUD one
+    const name = serviceFor(e.model)
+    if (!name) return
+    // The write is already covered by callService's announcement point — but
+    // only for the service that call is running. A write to ANOTHER model from
+    // inside a hook (the audit row an orders hook writes) is not covered by
+    // `orders created` and still announces under its own name.
+    //
+    // The comparison survives the emitter's setImmediate because ALS propagates
+    // to a callback through the scheduling, so the store read here is the one
+    // that was active at the write.
+    if (announcingService() === name) return
+
+    const row = e.result
+    // ── A write with no row to hand over ──────────────────────────────────
+    // Two arrive here and they are the same problem: a bulk statement answers
+    // `{count}` and never built the rows, and a `select: false` write skipped
+    // its RETURNING. Both changed rows some open list is showing. Dropping them
+    // is what this line used to do, so a job that `createMany`d a hundred rows
+    // left every tab stale with a 200 (FJS-307).
+    //
+    // One name for all three operations, because the only honest answer on the
+    // other side is the same for each: ask the query again. Which operation it
+    // was travels in the payload for a bus subscriber that cares.
+    if (row === null || row === undefined) {
+      const detail = { model: e.model, operation: e.operation ?? past, count: e.count ?? null }
+      app.events?.emit(`${name}:changed`, { ...detail, where: e.where })
+      // `where` stops at the bus, which is in-process. A channel goes to every
+      // subscribed browser and a filter is made of the caller's own values —
+      // `deleteMany({ where: { resetToken } })` would put one on the wire.
+      sendToChannel(name, 'changed', detail)
+      return
+    }
+
+    app.events?.emit(`${name}:${past}`, row)
+    sendToChannel(name, past, row)
+  })
+}
+
+// ─── Tenancy ─────────────────────────────────────────────────────────────────
+//
+// Which tenant a request is for is a Data-realm declaration — `tenancy { }` in
+// the schema — and an API-realm question, because only the request knows the
+// host, the header and the principal. So the DECISION is asked of Litestone
+// (`registry.tenantFor(...)`, which applies the declared `resolve`) and this
+// side contributes what a transport has and what a refusal's status code is.
+// The alternative was a second reading of `resolve subdomain` living up here,
+// which is how two answers to one question drift apart.
+//
+// Two strategies, two shapes of work:
+//
+//   database  one file per tenant. The client itself changes per request, so
+//             this hook resolves the id and swaps `ctx.locals.db`.
+//   row       one database, a tenant column. Nothing to swap — the policies
+//             compiled from the schema already scope every query by the
+//             principal's own claim. What CAN go wrong is a principal that
+//             carries no claim, which reads as an empty screen with a 200, and
+//             `tenantClaimGuard` refuses that by name.
+
+export interface TenantResolution { kind: 'subdomain' | 'header' | 'claim'; name: string | null }
+
+export interface ResolvedTenancy {
+  strategy: 'database' | 'row'
+  column?:  string
+  claim?:   string
+  resolve?: TenantResolution | null
+}
+
+/** The surface `withTenantDb` needs — a Litestone TenantRegistry satisfies it. */
+export interface TenantRegistryLike {
+  tenancy?:   ResolvedTenancy | null
+  tenantFor?: (from: { host?: string | null; headers?: Record<string, unknown> | null; principal?: unknown }) => string | null
+  get:        (id: string) => Promise<LitestoneClient>
+  exists?:    (id: string) => boolean
+}
+
+declare module './context.ts' {
+  interface ServiceContextLocals {
+    /** The tenant this call is for, under `tenancy { strategy database }`. */
+    tenantId?: string
+  }
+}
+
+/**
+ * around hook: put THIS tenant's client on `ctx.locals.db`.
+ *
+ * Installed by `createApp({ tenants })`. It replaces `withLitestoneDb` rather
+ * than composing with it — an app has one `ctx.locals.db` and two hooks
+ * assigning it is a race decided by hook order.
+ */
+export function withTenantDb(registry: TenantRegistryLike): import('./hooks.ts').AroundHook {
+  return async function withTenantDb(ctx, next) {
+    const principal = ctx.auth?.user ? toDataPrincipal(ctx.auth.user) : null
+    const headers   = (ctx.client?.headers ?? {}) as Record<string, unknown>
+    const host      = (headers.host ?? headers.Host ?? null) as string | null
+
+    // A caller may STATE the tenant — `app.service('x').find({ locals: { tenantId } })`
+    // — and that is the only way work with no request behind it can name one.
+    // A job, a scheduled sweep and a webhook replay all arrive with no host, no
+    // header and often no principal.
+    const stated = ctx.locals.tenantId
+    const id = stated ?? registry.tenantFor?.({ host, headers, principal }) ?? null
+
+    if (!id) {
+      const how = registry.tenancy?.resolve
+      throw new BadRequest(
+        `No tenant on this request. The schema resolves a tenant by ` +
+        `${how ? describeResolution(how) : 'nothing — the tenancy block declares no `resolve`'}` +
+        `${host ? `, and this request's Host is '${host}'` : ''}. ` +
+        `Work with no request behind it names its tenant explicitly: ` +
+        `app.service(name).method(…, { locals: { tenantId } }).`,
+      )
+    }
+
+    let client: LitestoneClient
+    try {
+      client = await registry.get(id)
+    } catch (err) {
+      // The registry answers one sentence for "no such tenant" and this is the
+      // boundary that owns its status. Anything else is a real failure and
+      // travels as one.
+      const msg = (err as Error)?.message ?? ''
+      if (msg.includes('does not exist')) throw new NotFound(`No tenant '${id}'`)
+      throw err
+    }
+
+    ctx.locals.tenantId = id
+    ctx.locals.db = principal && typeof client?.$setAuth === 'function'
+      ? client.$setAuth(principal)
+      : client
+
+    await next()
+  }
+}
+
+function describeResolution(r: TenantResolution): string {
+  if (r.kind === 'subdomain') return 'the request subdomain'
+  if (r.kind === 'header')    return `the '${r.name}' header`
+  return `the '${r.name}' claim on the principal`
+}
+
+const _rowScoped = new WeakMap<object, Map<string, boolean>>()
+
+/** Does this accessor's model carry the tenancy column the schema desugared? */
+function isRowScoped(client: unknown, accessor: string): boolean {
+  const c = client as { $schema?: { models?: Array<{ name: string; attributes?: Array<{ generated?: string }> }> } } | null
+  if (!c || typeof c !== 'object' || !c.$schema?.models) return false
+
+  let per = _rowScoped.get(c as object)
+  if (!per) { per = new Map(); _rowScoped.set(c as object, per) }
+  if (per.has(accessor)) return per.get(accessor)!
+
+  const candidates = accessorCandidates(accessor)
+  const model = c.$schema.models.find(m => {
+    const acc = m.name.charAt(0).toLowerCase() + m.name.slice(1)
+    return candidates.includes(acc)
+  })
+  const scoped = !!model?.attributes?.some(a => a.generated === 'tenancy')
+  per.set(accessor, scoped)
+  return scoped
+}
+
+/**
+ * before hook: a signed-in caller with no tenant claim sees nothing, loudly.
+ *
+ * Under `tenancy { strategy row }` every scoped model compiles the claim into
+ * its WHERE, so a principal that carries no claim matches no row — a 200 with
+ * an empty list, on every screen, which is indistinguishable from a tenant that
+ * genuinely has no data. Almost always it means the app never put the column on
+ * the session (`sessionFields` in `@frontierjs/auth`).
+ *
+ * Anonymous is deliberately NOT this hook's business: nobody is not a caller
+ * missing a claim, and refusing there would break every public read the app's
+ * own `@@gate` and `@@allow` are there to grade.
+ */
+export function tenantClaimGuard(db: unknown): (ctx: ServiceContext) => void {
+  return function tenantClaimGuard(ctx: ServiceContext): void {
+    // Reading an unknown property off a Litestone client THROWS, so the
+    // capability probe is itself a throwing expression (see autoFilter).
+    let tenancy: ResolvedTenancy | null | undefined
+    try { tenancy = (db as { $tenancy?: ResolvedTenancy | null })?.$tenancy } catch { return }
+    if (!tenancy || tenancy.strategy !== 'row' || !tenancy.claim) return
+
+    const user = ctx.auth?.user
+    if (!user) return
+
+    const principal = toDataPrincipal(user) as Record<string, unknown>
+    if (principal[tenancy.claim] != null) return
+
+    if (!isRowScoped(db, ctx.service)) return
+
+    throw new Unauthorized(
+      `This session carries no '${tenancy.claim}', and '${ctx.service}' is scoped to it by the schema — ` +
+      `every read would answer an empty list and every write would be refused. ` +
+      `Put the column on the session (sessionFields in @frontierjs/auth), or mark the model @@tenant(none).`,
+    )
   }
 }
 

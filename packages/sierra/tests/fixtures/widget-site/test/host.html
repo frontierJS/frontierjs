@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>A page this app does not own</title>
+  <style>
+    /* The host page's own CSS, written to be hostile on purpose. A widget that
+       is not isolated inherits all of it, and the symptom is a widget that looks
+       broken only on somebody else's site. */
+    * { box-sizing: content-box; }
+    button { background: rgb(255, 0, 0) !important; font-size: 40px !important; }
+    label  { display: none !important; }
+    .lead-form { border: 0 !important; }
+  </style>
+</head>
+<body>
+  <h1>Host page</h1>
+
+  <!-- A button of the host's own. The widget's <style> must not reach it. -->
+  <button id="host-button">host button</button>
+
+  <!-- The element form: no init call, no host JavaScript at all. -->
+  <mt-counter data-start="5"></mt-counter>
+
+  <!-- The selector form: markup that predates the element, kept working. -->
+  <div class="mt-counter" data-start="100"></div>
+
+  <!-- The directory-form widget, with a prop. -->
+  <mt-lead-form data-pid="ABC-1"></mt-lead-form>
+
+  <div id="late"></div>
+
+  <!-- {{EMBEDS}} is a DIFFERENT ORIGIN, filled in by the drive. That is what a
+       host page writes: the widgets are deployed as static files of their own,
+       and a same-origin script tag is the one arrangement no customer has. -->
+  <script defer src="{{EMBEDS}}/Counter.js"></script>
+  <script defer src="{{EMBEDS}}/LeadForm.js"></script>
+  <!-- The same script twice: a tag manager firing again, a page including the
+       snippet in two places. Must not produce two widgets in one box. -->
+  <script defer src="{{EMBEDS}}/Counter.js"></script>
+</body>
+</html>

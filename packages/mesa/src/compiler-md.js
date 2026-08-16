@@ -20,7 +20,7 @@ import remarkGfm       from 'remark-gfm'
 import remarkRehype    from 'remark-rehype'
 import rehypeSlug      from 'rehype-slug'
 import rehypeStringify from 'rehype-stringify'
-import { glow }        from './glow.js'
+import { glow }        from '@frontierjs/toolbelt/glow'
 import { compile }     from './compiler.js'
 
 // ─── Frontmatter ──────────────────────────────────────────────────────────────
@@ -254,6 +254,28 @@ function frontmatterToExports(fm, innerScript) {
     .join('\n')
 }
 
+// ─── Fenced-code decoding ─────────────────────────────────────────────────────
+
+const NAMED = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'", nbsp: ' ' }
+const ENTITY = /&(?:#[xX]([0-9a-fA-F]+)|#(\d+)|([a-zA-Z]+));/g
+
+/**
+ * HTML-decode a fence body on its way to glow(), which re-encodes what it emits.
+ *
+ * ONE pass, never a chain of replaces: rehype writes `<` as `&#x3C;` and `&` as
+ * `&#x26;`, so decoding the numeric forms first and the named ones second turns
+ * a source line that literally reads `&lt;` (`&#x26;lt;` on the wire) into a
+ * `<`, and the reader is shown something nobody wrote. A single pass cannot
+ * decode its own output.
+ */
+function decodeEntities(str) {
+  return str.replace(ENTITY, (whole, hex, dec, name) => {
+    if (hex) return String.fromCodePoint(parseInt(hex, 16))
+    if (dec) return String.fromCodePoint(parseInt(dec, 10))
+    return name in NAMED ? NAMED[name] : whole
+  })
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -300,9 +322,7 @@ export async function compileMd(source, config = {}) {
     .replace(/<pre><code class="language-([^"]+)">([\s\S]*?)<\/code><\/pre>/g,
       (_, lang, encoded) => {
         // rehype already HTML-encoded the content — decode before passing to glow
-        const code = encoded
-          .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
-          .replace(/&#123;/g, '{').replace(/&#125;/g, '}')
+        const code = decodeEntities(encoded)
         // Strip the class suffix rehype adds (e.g. "js mn3k01re1" → "js")
         const language = lang.split(' ')[0]
         const highlighted = glow(code.trimEnd(), { language, prefix: false, mark: false })

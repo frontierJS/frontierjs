@@ -1,6 +1,7 @@
 # Mesa SSR — spec for prerendering support
 
-**Status:** W1 open · W2 premise wrong · **W3 done** · W4 answered — **Written:** 2026-08-02 · **Audience:** a fresh session working in `packages/mesa`
+**Status:** **W1 done** · W2 premise wrong · **W3 done** · W4 answered — nothing in this
+document is open in Mesa — **Written:** 2026-08-02 · **Audience:** a fresh session working in `packages/mesa`
 
 > **Reviewed and verified 2026-08-02.** W1 and W3 hold as written. W2's premise
 > does not, and W4 is answered — both are corrected in place below, and the
@@ -67,10 +68,21 @@ it is not part of this spec, though it deserves a doc line.
 
 ---
 
-## W1 — `tmpDir` option on the renderer
+## W1 — `tmpDir` option on the renderer — **done 2026-08-03**
 
 **Cost:** small · **Unblocks:** bare-specifier imports in rendered trees
 
+> **Done.** `renderComponent` / `renderFile` take `options.tmpDir`; it is resolved
+> per call (`defaultTmpDir()`, memoised, no longer a module-level `const`), created
+> if missing, and threaded through the recursive `compileTree` path so one import
+> graph cannot be split across two directories. The default is unchanged and stays
+> `findMesaDir()` — a temp module carries `import '@frontierjs/mesa/runtime.js'`,
+> which has to resolve from wherever it is written. Sierra's build states its own
+> (`node_modules/.sierra/render`), which is what makes a prerendered layout
+> importing `@frontierjs/sierra/router` render. Four cases in
+> `render-component.test.js`, including the negative one: the same import must
+> still fail under the default. Everything below is the original item.
+>
 > **Verified 2026-08-02 — holds as written.** `_tmpDir` is a module-level `const`
 > (`render-component.js:102`), `makeTmpPath` uses it (`:105`), and temp modules land in
 > Mesa's own package root, so Node resolves bare specifiers from there. The line numbers
@@ -412,8 +424,9 @@ and W2's premise fell:
 3. **Decide the slot protocol.** Is Sierra's router-mediated `page.slots` system meant
    to replace Mesa's native slots or complement them? Everything left in W2 depends on
    that answer, and it is a Sierra architecture decision, not a Mesa feature request.
-4. **W1** — still real, still small, and independent of all of the above. Do it whenever.
-   **The only item in this document still open in Mesa.**
+4. ~~**W1**~~ — **done 2026-08-03.** `options.tmpDir`, defaulting exactly as before.
+   It was the last item in this document open in Mesa; what is left of this spec is
+   Sierra's, at item 3.
 5. ~~**W3**~~ — **done 2026-08-02.** See the note on the item. What is left of it
    is Sierra's: the loader, per-island bundling, and name→module resolution.
 

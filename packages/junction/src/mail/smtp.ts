@@ -91,6 +91,10 @@ function parseResponse(raw: string): { response: SmtpResponse; consumed: number 
 async function openSession(config: SmtpConfig): Promise<{
   sendMessage: (msg: SmtpMessage) => Promise<void>
   quit:        () => Promise<void>
+  // RSET, so a batch can reuse the session after one message fails.
+  // `sendMailBatch` has always called it; the annotation had not named it, so
+  // the only thing keeping the batch path working was that types are erased.
+  reset:       () => Promise<void>
 }> {
   const useTls = config.tls ?? (config.port === 465)
 
@@ -214,11 +218,27 @@ async function openSession(config: SmtpConfig): Promise<{
     const starttls = await command('STARTTLS')
     assertCode(starttls, 220, 'STARTTLS')
 
-    // Upgrade the existing TCP socket to TLS in-place.
-    // startTls() is a Bun TCP socket method — requires Bun ≥ 1.1.0.
-    // It returns a new TLSSocket; the old socket is no longer usable.
-    // The new socket reuses the same data/error/close handlers.
-    const tlsSocket = socket.startTls({ serverName: config.host })
+    // Upgrade the existing TCP socket to TLS in place.
+    //
+    // `socket.startTls()` does not exist and never did on any Bun this repo has
+    // run — probed on 1.3.11, the property is `undefined` — so this threw
+    // `socket.startTls is not a function` against every server that advertises
+    // STARTTLS, which is every mainstream submission host on port 587. It went
+    // unseen because the only mail server the drives talk to is the dev sink,
+    // and a sink advertises no capabilities.
+    //
+    // The real API takes the handlers again (they are not carried over) and
+    // returns a PAIR: `raw` is the original socket, `tls` is the encrypted one,
+    // and everything after this must write to the second.
+    const [, tlsSocket] = socket.upgradeTLS({
+      tls: { serverName: config.host },
+      socket: {
+        data(_sock, data: Buffer) { handleChunk(data.toString('utf8')) },
+        error(_sock, err: Error)  { handleError(err) },
+        close()                   { handleError(new SmtpError('Connection closed unexpectedly')) },
+        open()                    {},
+      },
+    })
     socket = tlsSocket
 
     // Re-EHLO over TLS — required by RFC 3207

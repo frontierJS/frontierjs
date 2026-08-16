@@ -29,7 +29,7 @@
 
 import type { App, Plugin }      from '../../core/app.ts'
 import type { CompiledSchema, Schema, FieldDef } from '../../core/schema.ts'
-import { actionNames, isMethodAllowed } from '../../core/service.ts'
+import { customMethodNames, isMethodAllowed } from '../../core/service.ts'
 
 // ─── Options ──────────────────────────────────────────────────────────────
 
@@ -104,7 +104,7 @@ export interface ServiceSchemas {
   create?: { body?: CompiledSchema | Schema; response?: CompiledSchema | Schema }
   patch?:  { body?: CompiledSchema | Schema; response?: CompiledSchema | Schema }
   remove?: { response?: CompiledSchema | Schema }
-  [action: string]: { body?: CompiledSchema | Schema; response?: CompiledSchema | Schema } | undefined
+  [method: string]: { body?: CompiledSchema | Schema; response?: CompiledSchema | Schema } | undefined
 }
 
 // ─── OpenAPI 3.1 types (minimal) ─────────────────────────────────────────
@@ -118,12 +118,21 @@ interface OASpec {
 }
 
 interface OAPathItem {
-  [method: string]: OAOperation
+  // OpenAPI allows parameters at the PATH level, shared by every operation
+  // under it, and this generator emits one there for `{id}`. The index
+  // signature alone typed that as an operation, so the assignment was an error
+  // and the `in: 'header'` parameter the custom-method dispatch depends on
+  // could not be expressed at all.
+  parameters?: OAParameter[]
+  [method: string]: OAOperation | OAParameter[] | undefined
 }
 
 interface OAOperation {
   operationId: string
   summary:     string
+  // Emitted for every custom method and declared nowhere, so the one line
+  // telling a reader HOW to call one was an excess property.
+  description?: string
   tags:        string[]
   parameters?: OAParameter[]
   requestBody?: { required: boolean; content: { 'application/json': { schema: OASchema } } }
@@ -132,10 +141,14 @@ interface OAOperation {
 }
 
 interface OAParameter {
-  name:     string
-  in:       'path' | 'query'
-  required?: boolean
-  schema:   OASchema
+  name:        string
+  // All four OpenAPI 3 locations. `header` is not optional here in practice:
+  // a custom method is `POST /{service}/{id}` plus `X-Service-Method`, so the
+  // generated spec is wrong about how to call one without it.
+  in:          'path' | 'query' | 'header' | 'cookie'
+  required?:   boolean
+  schema:      OASchema
+  description?: string
 }
 
 interface OASchema {
@@ -400,29 +413,29 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions): OASpec {
     spec.paths[resourcePath].patch  = buildOperation(serviceName, 'patch',  svcSchemas.patch)
     spec.paths[resourcePath].delete = buildOperation(serviceName, 'remove', svcSchemas.remove)
 
-    // ── Action routes ──────────────────────────────────────────────
-    // Custom methods live directly on the service object (no `actions` key),
-    // so "is this an action?" is decided by core/service.ts — this was a local
-    // copy of the reserved-key set that had drifted (it omitted `update` and
-    // `_update`, so both were documented as custom actions on every service).
+    // ── Custom-method routes ───────────────────────────────────────
+    // Custom methods live directly on the service object, so "is this one?" is
+    // decided by core/service.ts — this was a local copy of the reserved-key
+    // set that had drifted (it omitted `update` and `_update`, so both were
+    // documented as custom methods on every service).
     // Policy-filtered: a documented endpoint that answers 405 is worse than an
     // undocumented one, because a generated client will call it.
-    const customMethods = service.describe().actions.filter(m => isMethodAllowed(service, m))
-    // Custom actions — dispatched via X-Service-Method header on POST /{id}.
-    // Each action gets its own path entry for Swagger UI discoverability.
+    const customMethods = service.describe().customMethods.filter(m => isMethodAllowed(service, m))
+    // Dispatched via the X-Service-Method header on POST /{id}. Each method
+    // gets its own path entry for Swagger UI discoverability.
     // The path slug is documentation-only; the wire format uses the header.
-    for (const actionName of customMethods) {
-      const actionPath = `${prefix}/${serviceName}/{id}/${actionName}`
+    for (const methodName of customMethods) {
+      const methodPath = `${prefix}/${serviceName}/{id}/${methodName}`
 
-      spec.paths[actionPath] = {
+      spec.paths[methodPath] = {
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }]
       }
 
-      const actionSchema = svcSchemas[actionName]
-      spec.paths[actionPath]['post'] = {
-        operationId: `${actionName}${serviceName.charAt(0).toUpperCase()}${serviceName.slice(1)}`,
-        summary:     `${actionName} ${serviceName}`,
-        description: `Custom action. Send as: POST /${serviceName}/{id} with header \`X-Service-Method: ${actionName}\``,
+      const methodSchema = svcSchemas[methodName]
+      spec.paths[methodPath]['post'] = {
+        operationId: `${methodName}${serviceName.charAt(0).toUpperCase()}${serviceName.slice(1)}`,
+        summary:     `${methodName} ${serviceName}`,
+        description: `Custom method. Send as: POST /${serviceName}/{id} with header \`X-Service-Method: ${methodName}\``,
         tags:        [tag],
         security:    [{ bearerAuth: [] }],
         parameters: [
@@ -430,19 +443,19 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions): OASpec {
             name:        'X-Service-Method',
             in:          'header',
             required:    true,
-            schema:      { type: 'string', enum: [actionName] },
-            description: 'Identifies the custom action to invoke.',
+            schema:      { type: 'string', enum: [methodName] },
+            description: 'Identifies the custom method to invoke.',
           }
         ],
-        ...(actionSchema?.body ? {
+        ...(methodSchema?.body ? {
           requestBody: {
             required: true,
-            content: { 'application/json': { schema: compiledToOA(actionSchema.body) } }
+            content: { 'application/json': { schema: compiledToOA(methodSchema.body) } }
           }
         } : {}),
         responses: {
-          '200': actionSchema?.response
-            ? { description: 'Success', content: { 'application/json': { schema: compiledToOA(actionSchema.response) } } }
+          '200': methodSchema?.response
+            ? { description: 'Success', content: { 'application/json': { schema: compiledToOA(methodSchema.response) } } }
             : { description: 'Success' },
           '401': { description: 'Unauthorized' },
           '404': { description: 'Not found' },

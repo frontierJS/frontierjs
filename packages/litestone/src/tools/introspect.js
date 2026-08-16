@@ -16,6 +16,8 @@
 //   - camelCase conversion from snake_case table/column names
 
 import { introspect } from '../core/migrate.js'
+// Mirrors the pluralizer ddl.js runs — the same table read the other way.
+import { singularize as toSingular } from '@frontierjs/toolbelt/inflect'
 
 // ─── Type mapping: SQLite types → .lite types ─────────────────────────────────
 
@@ -55,25 +57,6 @@ function toCamelCase(str) {
 function toPascalCase(str) {
   const camel = toCamelCase(str)
   return camel.charAt(0).toUpperCase() + camel.slice(1)
-}
-
-// Basic singularizer — mirrors the pluralizer in ddl.js
-// Used when introspecting a pluralized schema back to singular model names.
-function toSingular(word) {
-  const irregularsReverse = {
-    people: 'person', children: 'child', men: 'man', women: 'woman',
-    teeth: 'tooth', feet: 'foot', mice: 'mouse', geese: 'goose',
-    oxen: 'ox', leaves: 'leaf', lives: 'life', knives: 'knife',
-    indices: 'index', matrices: 'matrix', vertices: 'vertex',
-    analyses: 'analysis', bases: 'basis', crises: 'crisis',
-    data: 'datum', media: 'medium', criteria: 'criterion',
-  }
-  const lower = word.toLowerCase()
-  if (irregularsReverse[lower]) return word.slice(0, word.length - lower.length) + irregularsReverse[lower]
-  if (/ies$/i.test(word))  return word.slice(0, -3) + 'y'
-  if (/ses$|xes$|zes$|ches$|shes$/i.test(word)) return word.slice(0, -2)
-  if (/s$/i.test(word) && !/ss$/i.test(word))   return word.slice(0, -1)
-  return word
 }
 
 // Table name → PascalCase singular model name

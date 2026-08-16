@@ -134,7 +134,7 @@ async function buildManifest(app: App, opts: ManifestPluginOptions): Promise<App
       const dbSchema = (opts.db as Record<string, unknown>).$schema
       if (dbSchema) {
         const { generateJsonSchema } = await import('@frontierjs/litestone')
-        schema = generateJsonSchema(dbSchema as Record<string, unknown>)
+        schema = generateJsonSchema(dbSchema as Parameters<typeof generateJsonSchema>[0])
       }
     } catch {
       // Litestone not available — omit silently
@@ -178,7 +178,7 @@ function buildAppMeta(app: App): AppMeta {
 
 function buildServices(app: App): ServiceManifest[] {
   // Straight off describe(). This used to read `_meta`, `_hookMap` and the
-  // action rule directly, through a cast — three internals, and three chances
+  // custom-method rule directly, through a cast — three internals, and three chances
   // to describe a different service than the one that answers the request. The
   // hardcoded method list here was also a fourth spelling of the CRUD set, and
   // it omitted `update`.
@@ -228,10 +228,7 @@ export function buildRoutes(app: App): RouteManifest[] {
 }
 
 function buildChannels(app: App): ChannelManifest[] {
-  const manager = (app as Record<string, unknown>).channels as
-    { stats?: () => { channelList: { name: string; size: number }[] } } | undefined
-
-  const list = manager?.stats?.().channelList ?? []
+  const list = app.channels?.stats?.().channelList ?? []
   return list.map(c => ({ name: c.name, connections: c.size }))
 }
 

@@ -30,23 +30,44 @@
  *     id:      string | null,
  *     data:    object | null,
  *     query:   object,      // filters — what travels over the wire
- *     findParams: object,   // Junction FindParams — { limit, offset, orderBy, select, populate }
- *     params:  object,      // client-side only — never sent to the server
+ *     directives: object,   // { limit, offset, orderBy, select, populate } — also the wire
+ *     locals:  object,      // per-call scratch — never sent to the server
  *     result:  any,         // populated after a successful call
  *     error:   Error | null // populated in error phase
  *   }
  *
- * params boundary:
- *   ctx.params is a free-form bucket for UI hooks to communicate within a
- *   single pipeline — loading state, local flags, component refs.
- *   It never leaves the browser. ctx.query is what goes over the wire.
+ * locals — per-call scratch:
+ *   Fresh {} on every call, and it never leaves the browser. It is how the
+ *   phases talk to each other: `before` and `after` are separate functions, so
+ *   anything one decides and the next needs has to live somewhere per-call.
  *
- *   ctx.findParams is the separate, structured half of the wire request — the
- *   FindParams object Junction's client serializes into $limit/$offset/
- *   $orderBy/$select/$populate for both HTTP and WebSocket. Hooks set
- *   pagination here, and a view that needs a relation asks for it here:
+ *     before: { all: [ctx => { ctx.locals.startedAt = performance.now() }] },
+ *     after:  { all: [ctx => track(ctx.method, performance.now() - ctx.locals.startedAt)] },
  *
- *     before: { find: [ctx => { ctx.findParams.limit = 50 }] }
+ *   A closed-over variable is the wrong shape for that: two find() calls in
+ *   flight share it and the second overwrites the first. A whole-call concern
+ *   with no hand-off — a loading flag — wants an `around` hook and a signal
+ *   instead (see the example below); this is for the hand-off.
+ *
+ *   It is called `locals` because it is the same noun as Junction's
+ *   `ctx.locals`, with the same rule. It was `params`, which made three
+ *   different things in this package share one word: path captures
+ *   (`page.params`), the wire's directives (the `params` argument below), and
+ *   this. `params` now means path captures and nothing else.
+ *
+ *   ctx.directives is the separate, structured half of the wire request — how
+ *   to SHAPE the answer, never which records. Junction's client serialises it
+ *   into $limit/$offset/$orderBy/$select/$populate for both HTTP and WebSocket.
+ *   Hooks set pagination here, and a view that needs a relation asks for it
+ *   here:
+ *
+ *     before: { find: [ctx => { ctx.directives.limit = 50 }] }
+ *
+ *   The word is `directives` because that is what the rest of the framework
+ *   calls this — `ctx.directives` at the API boundary, `page.directives` off a
+ *   URL in this same package, one grammar in `@frontierjs/toolbelt/directives`
+ *   (Invariant 10). It was `findParams`, which meant Sierra's own router handed
+ *   a view `page.directives` and then made it pass them as `params`.
  *
  * Return shapes — READ THIS BEFORE .map()
  *
@@ -56,7 +77,7 @@
  *   envelope (it carries total/limit/offset, which have nowhere else to live),
  *   a single record unwraps to the record.
  *
- *     service.find(query, params)  → ListResult — { kind:'list', object, data, total, limit, offset }
+ *     service.find(query, directives) → ListResult — { kind:'list', object, data, total, limit, offset }
  *     service.getOptions(...)      → ListResult — same, it is a find
  *     service.get(id)              → the record
  *     service.create(data)         → the record
@@ -74,9 +95,17 @@
  *   The stores hand you rows directly, because a view wants something it can
  *   map over and pagination metadata has no place in a record list:
  *
- *     load(query, params)          → the rows (and sets store to the rows)
+ *     load(query, directives)      → the rows (and sets store to the rows)
  *     store.get()                  → the rows
  *     createStore(svc).find(...)   → returns the raw result; store.get() is rows
+ *
+ *   `stale` is the third thing beside them — how many changes the live store
+ *   could not place on its own, `0` when the list is as current as a push can
+ *   make it. A push can say whether a row is in the query and where it sorts;
+ *   it cannot say which row from page 2 slides up when one leaves page 1. Show
+ *   it and offer a reload; `load()` clears it:
+ *
+ *     const { get } = useStore(orders.stale)   // same shape as a store
  *
  *   Reach for `load()`/`store` when you are rendering a list, and for
  *   `service.find()` when you need the count alongside it.
@@ -106,21 +135,24 @@
 
 import { getClient } from '@frontierjs/sierra/junction'
 import {
-  schemaFor, modelNameFor, hasSchemas, allSchemas, resolveRef, suggestModel,
+  schemaFor, modelNameFor, serviceNameFor, hasSchemas, allSchemas, resolveRef, suggestModel,
 } from './schema-registry.js'
 import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
-  toFieldErrors,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, matchesQuery,
+  registerControl, unregisterControl, registeredControls,
 } from './field-rules.js'
+import { singularize } from '@frontierjs/toolbelt/inflect'
 
 // Re-exported so `sierra/junction` stays the one import for resource work.
 export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
-  toFieldErrors,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, matchesQuery,
+  registerControl, unregisterControl, registeredControls,
 }
 
 // ── Hook runners ──────────────────────────────────────────────────────────────
@@ -197,6 +229,15 @@ export function createMakeFromSchema(
     // Enum and @type(T) fields arrive as {$ref}. Without following it there is
     // no `type` to read, and every such field silently defaulted to null.
     const def = derefFieldSchema(raw, resolve)
+
+    // A value the caller may not write is not the caller's to seed either.
+    // `@system`, `@computed`, `@generated`, `@from` all arrive `readOnly`, and
+    // a blank seeded for one is a key in the payload — which the Data boundary
+    // refuses by name for a @system column, so a form that never showed the
+    // field could not submit at all. `@version` is the deliberate exception and
+    // is not seeded here: `createResource` remembers the version it read and
+    // puts it on the patch itself.
+    if (def.readOnly) continue
 
     // Explicit default wins
     if ('default' in def) {
@@ -324,9 +365,9 @@ export function createStore(service, opts = {}) {
     // overwrite newer rows — the same rule junction's resource().load() applies,
     // and for the same reason: this store is shared by everything subscribed to
     // it, while the returned result belongs to the one caller who awaited it.
-    async find(query, params) {
+    async find(query, directives) {
       const stamp = ++_issued
-      const result = await service.find(query, params)
+      const result = await service.find(query, directives)
       if (stamp === _issued) store.set(Array.isArray(result) ? result : result?.data ?? [])
       return result
     },
@@ -494,14 +535,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // conventional singular of the service name — so createResource('leads') and
   // createResource('leads', { model: 'Lead' }) both resolve.
   //
-  // `model` is the override for everything the registry's plural rules cannot
-  // reach. English irregulars are the obvious case — no rule turns 'people'
-  // into 'Person' — but it equally covers a service deliberately named
-  // something other than its model ('roster' over `model Person`).
+  // `model` is the override for everything the inflection rules cannot reach.
+  // The common irregulars are in the table now (`people` does give `Person`),
+  // so what is left is genuine ambiguity — `lens` is not the plural of `len`
+  // and no rule can know — and a service deliberately named something other
+  // than its model ('roster' over `model Person`).
   if (!schema) {
-    const singular = serviceName.endsWith('ies')
-      ? serviceName.slice(0, -3) + 'y'
-      : serviceName.endsWith('s') ? serviceName.slice(0, -1) : serviceName
+    const singular = singularize(serviceName)
 
     // Resolve the NAME, not just the shape. `model` defaults to the service
     // name, so without this `ctx.model` on a `statuses` resource read
@@ -540,10 +580,6 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const _hooks = { before: {}, after: {}, around: {}, error: {} }
   mergeHooks(_hooks, initialHooks)
 
-  // Junction resource — wires WS push events → store automatically
-  const junctionResource = client.resource(serviceName, idField)
-  const { store } = junctionResource
-
   // Schema-driven make() or pass-through.
   //
   // `modelDef` is the definition make() and fields both read: a caller can pass
@@ -574,6 +610,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const stateSpec = schema ? buildTransitions(modelDef) : null
   const versionOf = schema ? buildVersion(modelDef)     : null
 
+  // Junction resource — wires WS push events → store automatically, scoped to
+  // the query the store's last load() ran with. `fields` is what turns a wire
+  // operand back into the value the column holds, so the matcher is built here
+  // and not in Junction, which holds no schema. Declared after the rules for
+  // that reason; nothing can push before the first load in any case.
+  const junctionResource = client.resource(serviceName, idField, {
+    match: (record, query) => matchesQuery(fields, record, query),
+  })
+  const { store, stale } = junctionResource
+
   // ── @version — the value the server compares against ────────────────────────
   // Litestone refuses a patch on a `@version` model unless it carries the
   // version that was read, so the client has to hand back the one it was given.
@@ -581,7 +627,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // single record with get(), which does not populate the list store at all.
   //
   // Every response is a fresh read, so recording on the way out keeps this
-  // current through create, get, patch and any custom action.
+  // current through create, get, patch and any custom method.
   //
   // List data is recorded off the STORE instead, below — a load whose result the
   // store refused as stale must not leave its versions behind either, and only
@@ -680,7 +726,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   // ── _call — full 4-phase pipeline ──────────────────────────────────────────
 
-  async function _call(method, id, data, query = {}, findParams = {}) {
+  async function _call(method, id, data, query = {}, directives = {}) {
     const ctx = {
       service: serviceName,
       model,
@@ -688,8 +734,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       id:      id   ?? null,
       data:    data ?? null,
       query:   query,        // travels over the wire
-      findParams,            // limit / offset / orderBy / select — also the wire
-      params:  {},           // client-side only — never sent to server
+      directives,            // limit / offset / orderBy / select — also the wire
+      locals:  {},           // per-call scratch — never sent to server
       result:  null,
       error:   null,
     }
@@ -739,21 +785,21 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // network call
       const proxy = client.service(serviceName)
       switch (method) {
-        case 'find':    ctx.result = await proxy.find(ctx.query, ctx.findParams);          break
-        case 'get':     ctx.result = await proxy.get(ctx.id ?? ctx.query, ctx.findParams); break
+        case 'find':    ctx.result = await proxy.find(ctx.query, ctx.directives);          break
+        case 'get':     ctx.result = await proxy.get(ctx.id ?? ctx.query, ctx.directives); break
         case 'create':  ctx.result = await proxy.create(ctx.data);          break
         case 'patch':   ctx.result = await proxy.patch(ctx.id, ctx.data);   break
         case 'remove':  ctx.result = await proxy.remove(ctx.id);            break
         case 'restore': ctx.result = await proxy.restore(ctx.id);           break
-        // A custom service action — anything the server declared that is not
-        // CRUD. action() applies the same transport rule as every other service
+        // A custom service method — anything the server declared that is not
+        // CRUD. invoke() applies the same transport rule as every other service
         // call: the socket when one is connected, HTTP when it is not.
         //
         // This used to call proxy.call(), the explicit WS escape hatch. That was
         // WS-or-nothing by name, and with no socket it recursed inside the
         // client and never settled. `call` is still on the proxy below for a
         // caller that wants to force the socket.
-        default:        ctx.result = await proxy.action(method, ctx.id, ctx.data, ctx.query); break
+        default:        ctx.result = await proxy.invoke(method, ctx.id, ctx.data, ctx.query); break
       }
 
       // Record before the after-hooks, so a hook that reads the version off the
@@ -794,8 +840,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // is live. It used to be accepted here and dropped on the floor, so paging an
   // ordered list through a resource silently returned the server's default page.
   const service = {
-    find:    (query, params) => _call('find',    null,          null,  query ?? {}, params ?? {}),
-    get:     (id, params)    => _call('get',     id,            null,  {},          params ?? {}),
+    find:    (query, directives) => _call('find',    null,      null,  query ?? {}, directives ?? {}),
+    get:     (id, directives)    => _call('get',     id,        null,  {},          directives ?? {}),
     create:  (data)          => _call('create',  null,          data,  {}),
     patch:   (id, data)      => _call('patch',   id,            data,  {}),
     remove:  (id)            => _call('remove',  id,            null,  {}),
@@ -811,22 +857,23 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
      * optionsQuery is `{ query, params }`; params carries the FindParams a
      * select list usually wants (orderBy: 'name', a limit above the default page).
      */
-    getOptions: (query, params) => _call(
+    getOptions: (query, directives) => _call(
       'find', null, null,
       query  ?? optionsQuery?.query  ?? {},
-      params ?? optionsQuery?.params ?? {},
+      directives ?? optionsQuery?.directives ?? {},
     ),
 
     /**
-     * Call a custom service action by name — a server method that is not CRUD.
+     * Call a custom service method by name — one the server declared that is
+     * not CRUD.
      *
-     *   orders.service.action('pay', 3)
+     *   orders.service.invoke('pay', 3)
      *   → POST /api/orders/3   X-Service-Method: pay
      *
-     * `id` may be null for an action about the whole COLLECTION rather than one
+     * `id` may be null for a call about the whole COLLECTION rather than one
      * row, which posts to the service root:
      *
-     *   servers.service.action('feed', null, null, { limit: 50 })
+     *   servers.service.invoke('feed', null, null, { limit: 50 })
      *   → POST /api/servers?limit=50   X-Service-Method: feed
      *
      * The server has always supported that — the bridge dispatches on the
@@ -837,9 +884,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
      * Runs the resource's hook pipeline like any other call. Coercion,
      * blank-stripping and validation are deliberately NOT applied: those are
      * defined against the model's own fields for create/patch payloads, and an
-     * action's body is whatever that action declares.
+     * method's body is whatever that method declares.
      */
-    action: (name, id, data, query) => _call(name, id ?? null, data ?? null, query ?? {}),
+    invoke: (name, id, data, query) => _call(name, id ?? null, data ?? null, query ?? {}),
 
     /** real-time push event subscription */
     on:   (event, fn) => client.service(serviceName).on(event, fn),
@@ -855,8 +902,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // The versions come off the store subscription above rather than from these
   // rows: junction drops a load the store has already moved past, and rows it
   // refused must not be remembered as current either (`FJS-082`).
-  async function load(query, params) {
-    return junctionResource.load(query ?? {}, params)
+  //
+  // The query becomes the store's filter for as long as those rows are in it: a
+  // pushed record outside it is not added, and one a patch has just moved out of
+  // it is removed (`FJS-011`). A record the schema cannot judge — a `select`
+  // that dropped the filtered column, a filter over a relation — reloads rather
+  // than being guessed at.
+  async function load(query, directives) {
+    return junctionResource.load(query ?? {}, directives)
   }
 
   /**
@@ -878,10 +931,98 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     mergeHooks(_hooks, incoming)
   }
 
+  // ── The generated form ──────────────────────────────────────────────────────
+  //
+  // The field SET is the last thing a form still restates about a model, and
+  // these two are what let a component stop restating it. They live on the
+  // resource rather than in the UI kit on purpose: `@frontierjs/ui` peers only
+  // on mesa and css, so a form component that had to import Sierra to know
+  // which control a `Float` gets would invert the dependency. It asks the
+  // resource instead, and the table itself has one home in field-rules.js.
+
+  /**
+   * Every writable field of this model, in schema order, each with the control
+   * it gets. `only` narrows and reorders, `except` removes.
+   *
+   * An entry whose `control` is null is still IN the list, carrying a `reason`
+   * — an array column, a `Json` document, a name that is not a field. Dropping
+   * those quietly is exactly the failure a generated form is supposed to end:
+   * a column that never appears and nothing saying so.
+   */
+  function formFields(opts) {
+    // The model name travels with the list: a registered control is handed
+    // `{ field, model }`, which is what lets an app claim `Order.notes` rather
+    // than every markdown column in the app.
+    return formFieldList(fields, { ...opts, model })
+  }
+
+  // One request per (field, query) for the life of the resource. A form with
+  // three pickers over the same model still asks three times — they are three
+  // different columns and may be filtered differently — but a re-render does
+  // not ask again, which is what a component looping over fields would do.
+  const _options = new Map()
+
+  /**
+   * The rows a foreign key's picker offers — `[{ value, label }]`.
+   *
+   * The relation already says which model answers (`x-relations` → `references`),
+   * the registry says which service that model is served under, and the related
+   * model's own fields say which column a person recognises. So a picker over
+   * `customerId` needs no name written anywhere:
+   *
+   *   const rows = await orders.options('customerId')
+   *
+   * `labelField` states the shown column, `query`/`directives` are passed to the
+   * related service's `getOptions`, and `reload: true` bypasses the cache.
+   *
+   * A field with no relation answers `[]` and says why — it is a question with
+   * no meaning, not an empty list.
+   */
+  function options(fieldName, { labelField, query, directives, limit = 100, reload = false } = {}) {
+    const ref = fields?.[fieldName]?.references
+    if (!ref) {
+      console.warn(
+        `[${serviceName}] options('${fieldName}') — that field is not a foreign key, so there is ` +
+        'nothing to offer. A picker comes from a relation; check the name against the model.',
+      )
+      return Promise.resolve([])
+    }
+
+    const key = `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}`
+    if (!reload && _options.has(key)) return _options.get(key)
+
+    const relatedService = serviceNameFor(ref.model) ?? ref.model
+    const related        = createResource(relatedService, { model: ref.model })
+    const shown          = labelField ?? labelFieldFor(related.fields, ref.field)
+
+    const pending = related.service
+      .getOptions(query ?? {}, directives ?? { limit, orderBy: shown })
+      .then(res => {
+        const rows = Array.isArray(res) ? res : (res?.data ?? [])
+        return rows.map(row => ({
+          value: row?.[ref.field],
+          // The id is the honest fallback: a blank option is unpickable and a
+          // guessed label is worse than a number.
+          label: row?.[shown] ?? row?.[ref.field],
+        }))
+      })
+      .catch(err => {
+        // A picker whose rows fail to load must not take the form down with it.
+        // The field still renders, empty, and the failure is said out loud.
+        console.warn(`[${serviceName}] options('${fieldName}') failed — ${err?.message ?? err}`)
+        _options.delete(key)
+        return []
+      })
+
+    _options.set(key, pending)
+    return pending
+  }
+
   return {
-    service, store, make, load,
+    service, store, stale, make, load,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
     version, versionField: versionOf,
+    formFields, options,
     fieldErrors, context, hooks: addHooks,
   }
 }
@@ -896,11 +1037,14 @@ function _emptyResource(name) {
       remove: noop, restore: noop, upsert: noop,
       on: () => {}, call: noop, getOptions: noop,
     },
-    store:   { get: () => [], subscribe: fn => { fn([]); return () => {} }, set: () => {}, upsert: () => {}, remove: () => {} },
+    store:   { get: () => [], subscribe: fn => { fn([]); return () => {} }, set: () => {}, upsert: () => {}, place: () => {}, remove: () => {} },
+    stale:   { get: () => 0, subscribe: fn => { fn(0); return () => {} }, bump: () => {}, reset: () => {} },
     make:    (spec) => Object.assign({}, spec),
     load:    async () => [],
     fields:    {},
     relations: {},
+    formFields: () => [],
+    options:    () => Promise.resolve([]),
     gate:        null,
     can:         () => true,
     transitions: () => [],

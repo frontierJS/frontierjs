@@ -1,0 +1,53 @@
+// ─── @frontierjs/auth — the identity model ───────────────────────────────────
+//
+// User is the one auth model an app OWNS. It is written into the app's own
+// db/schema.lite rather than imported, because everything an app does next
+// happens to this model and to none of the other three: columns get added
+// (avatarUrl, timezone, a tenant key), relations point at it, sessionFields
+// reads it, and its gate and policies are the app's decisions to change.
+// auth.lite beside this one holds what only asSystem() touches.
+//
+// This file is REAL .lite and parses standalone against a host declaring
+// `database main` and `database audit`. `fli auth:install` appends it to the
+// app's schema.lite, rewriting @@db(main) when --db names another database;
+// the same swap is what schema.ts does in memory. Keep @@db(main) spelled
+// exactly — it is what both substitutions match on.
+
+model User {
+  id             String    @id @default(uuid())
+  email          String    @email @unique @lower
+  name           String?   @trim
+  // The two columns a caller must not write about themselves. role is what an
+  // app's own resolver grades on, and marking your own address verified is
+  // skipping the verification. auth().isAdmin is the standing
+  // FrontierGateGetLevel and sessionGateLevel() both read for ADMINISTRATOR(5),
+  // so the level that may delete a person is the level that may set their role
+  // — one idea, not two. asSystem() writes both regardless, which is how this
+  // package sets them.
+  emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
+  role           String    @default("user") @allow('write', auth().isAdmin)
+  accountId      Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+
+  @@db(main)
+  // R.C.U.D. Read, create and update are USER: an app's own screens list its
+  // people, and a signed-in caller edits their own profile. Delete is
+  // ADMINISTRATOR — removing a person is not self-service.
+  //
+  // A GATE IS PER MODEL, NOT PER ROW, so the level alone would say *any
+  // signed-in caller may write any user row*. The policy is what makes it
+  // their own row, and an admin's the exception — the same standing the gate's
+  // delete position names. Together with the two field policies above, this is
+  // the whole shape an app needs: a level for what kind of caller, a policy for
+  // whose row, and a field policy for the columns the level itself is graded
+  // from. A column the caller can write is not a column a level can be graded
+  // from.
+  //
+  // Registration is unaffected: every write this package makes goes through
+  // asSystem(), which is above the ladder. The three models in auth.lite stay
+  // at 8 — they hold the credential material, and that is the case 8 is for.
+  @@gate("4.4.4.5")
+  @@allow('update', id == auth().id || auth().isAdmin)
+  @@log(audit)
+}

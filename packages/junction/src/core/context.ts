@@ -15,6 +15,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { FrameworkError } from './errors.ts'
 import type { ServiceResult as _ServiceResult } from './envelope.ts'
+import type { SessionContext } from '../auth/types.ts'
+import type { QueryDirectives } from './directives.ts'
 
 // ─── Context shape ────────────────────────────────────────────────────────
 // Single object throughout the pipeline (around → before → method → after
@@ -119,34 +121,20 @@ export interface ServiceContextLocals {
 }
 
 // ─── Query directives ─────────────────────────────────────────────────────
-// The internal form of what arrives on the wire as $limit, $offset, $orderBy,
-// $select, $populate, $search, $withDeleted, $onlyDeleted.
-//
-// `$` is TRANSPORT SYNTAX. It is a way of saying "this key is a directive, not
-// a column" inside a flat query string, and it has no business existing past
-// the bridge. Keeping it internal meant the transport and the query builder
-// both had opinions about the same keys — and they disagreed: the bridge
-// stripped $limit/$offset/$orderBy/$select from ctx.query as "reserved", and
-// parseQuery then looked for exactly those four keys on ctx.query and found
-// nothing. Pagination, ordering and field selection were all inert over HTTP.
+// Declared in core/directives.ts — a module that imports nothing, so the
+// browser client can name the same fields without dragging
+// node:async_hooks into a bundle. Re-exported here because this is where the
+// API realm has always found it.
 
-export interface QueryDirectives {
-  limit?:       number
-  offset?:      number
-  /** Raw sort spec — 'name,-createdAt' | { name: 'asc' } | [{...}] */
-  orderBy?:     unknown
-  /** Raw select spec — 'id,name' | ['id','name'] */
-  select?:      unknown
-  /** Relations to include — 'author' | 'author:id+name' */
-  populate?:    unknown
-  /** Full-text search term (FTS5). */
-  search?:      string
-  withDeleted?: boolean
-  onlyDeleted?: boolean
-}
+export type { QueryDirectives } from './directives.ts'
 
 // ─── Hook type ────────────────────────────────────────────────────────────
-export type HookType = 'before' | 'after' | 'around' | 'error'
+// `method` is the phase where the service method itself runs. It is not a hook
+// slot anyone registers into, but `runPipeline` DOES set `ctx.type = 'method'`
+// while the method executes, so a hook or an `around` reading `ctx.type` can
+// legitimately see it. Leaving it out of the union made the assignment a type
+// error inside the pipeline and a lie to everyone reading it.
+export type HookType = 'before' | 'method' | 'after' | 'around' | 'error'
 
 // ─── Result envelope ──────────────────────────────────────────────────────
 // Owned by core/envelope.ts — the single module that builds, inspects and
@@ -183,20 +171,16 @@ export interface CallOptions {
 }
 
 // ─── Reserved query params ────────────────────────────────────────────────
-// Stripped from ctx.query before reaching Litestone / service methods.
-// $first and $wrap are transport-only — never reach service layer.
-// Every `$` key the wire understands. Removed from ctx.query so a directive
-// can never be mistaken for a column filter.
+// Stripped from ctx.query before reaching Litestone / service methods, so a
+// directive can never be mistaken for a column filter. $first and $wrap are
+// transport-only and have no structured form.
 //
-// $populate/$search/$withDeleted/$onlyDeleted were missing here while
-// parseQuery destructured them off ctx.query — they worked by accident, on the
-// same conflation that made $limit fail. With directives split out they must
-// be listed, or they would leak into the WHERE clause as unknown columns.
-export const RESERVED_PARAMS = new Set([
-  '$limit', '$offset', '$orderBy', '$select',
-  '$populate', '$search', '$withDeleted', '$onlyDeleted',
-  '$first', '$wrap',
-])
+// The table is `@frontierjs/toolbelt/directives`, because Sierra's router reads
+// the same grammar off a URL's search string — two boundaries, one convention,
+// and a key only one of them knows about becomes a WHERE clause on a column
+// nobody declared. Re-exported here because this is where the API realm has
+// always found it.
+export { RESERVED_PARAMS } from '@frontierjs/toolbelt/directives'
 
 // ─── Request-wide metadata (AsyncLocalStorage) ────────────────────────────
 // Correlation id, idempotency key, locale belong to the WHOLE request,
@@ -208,6 +192,38 @@ export interface RequestMeta {
   idempotencyKey?: string
   locale?:         string
   origin:          'http' | 'websocket' | 'internal'
+
+  /**
+   * WHO the request is on behalf of — the principal, request-wide.
+   *
+   * `ctx.auth.user` is the per-call view of this. It lives here because
+   * identity belongs to the request rather than to any one call in it, which
+   * is what makes it propagate: an internal call that names no principal
+   * inherits this one, at any depth, through a hook or a fan-out or a
+   * sub-service three levels down.
+   *
+   * Before this, `ctx.auth` was built from `opts.auth` alone and nothing
+   * else — so `ctx.app.service('inner').find()` from inside a service ran as
+   * STRANGER(0) while `context.ts` documented auth as propagating. Measured:
+   * the inner service saw `null`.
+   *
+   * **Absent is not null.** A caller passing `{ auth: { user: null } }` means
+   * *as nobody* and keeps it; a caller passing no `auth` at all means *say
+   * nothing*, and inherits. Same distinction Invariant 9 makes about a patch,
+   * one realm over — and it is what lets a service deliberately read as an
+   * anonymous caller would.
+   */
+  user?:           import('../auth/types.ts').SessionContext | null
+
+  /**
+   * WHERE the request came from — `ip`, `userAgent`, `headers`.
+   *
+   * Request-wide for the same reason `user` is, and it propagates the same
+   * way: an audit hook three calls deep needs the IP of the request that
+   * caused the write, and there is no other route to it. It is information,
+   * never authority — nothing in the framework grades a caller by it.
+   */
+  client?:         { ip?: string; userAgent?: string; headers: Record<string, string>; [k: string]: unknown }
 }
 
 const _requestStore = new AsyncLocalStorage<RequestMeta>()
@@ -222,6 +238,62 @@ export function runWithMeta<T>(meta: RequestMeta, fn: () => T): T {
 // (e.g. during boot / service init).
 export function requestMeta(): RequestMeta | undefined {
   return _requestStore.getStore()
+}
+
+// ─── Which service is announcing this call? ───────────────────────────────
+// Read by the Litestone adapter's write tap, which announces a write that
+// nothing else did. Every service write also passes that tap, so without this
+// the same mutation would be broadcast twice — once by callService's
+// announcement point and once by the tap underneath it.
+//
+// It holds the service NAME rather than a boolean, because the suppression has
+// to be as narrow as the announcement. `callService` announces for the service
+// it is running; a write to a DIFFERENT model from inside a hook — the audit
+// row an orders hook writes — is not covered by that announcement and must
+// still fire. A boolean swallowed it, measured.
+//
+// An ALS rather than a counter or a field: calls interleave, and a depth
+// integer shared between two concurrent requests decrements under the wrong
+// one. A nested call re-runs this with its own name, so the innermost scope is
+// what the tap compares against — which is exactly the call that will announce.
+const _serviceCallStore = new AsyncLocalStorage<string>()
+
+export function runInServiceCall<T>(service: string, fn: () => T): T {
+  return _serviceCallStore.run(service, fn)
+}
+
+/** The service whose announcement covers a write happening right now, if any. */
+export function announcingService(): string | undefined {
+  return _serviceCallStore.getStore()
+}
+
+/**
+ * The principal for an internal call — the one owner of *auth propagates*.
+ *
+ * Both places that build an internal `ServiceContext` ask this rather than
+ * carrying the rule, because the rule is three lines and the two copies would
+ * be the same call answering two things depending on which door it came in by.
+ *
+ *   opts has no `auth` key   → inherit the request's principal (propagation)
+ *   opts.auth.user is null   → as nobody, deliberately
+ *   opts.auth.user is a user → that one, frozen
+ *
+ * `in`, not `??`: absent and null are different answers, and conflating them
+ * removes the only way to say *read this as a stranger would*.
+ */
+export function inheritedClient(): { ip?: string; userAgent?: string; headers: Record<string, string> } {
+  // `{}` with an empty header bag when there is nothing to inherit — a job or a
+  // script has no client, and the shape stays the same either way so a reader
+  // never has to test for it.
+  return _requestStore.getStore()?.client ?? { headers: {} }
+}
+
+export function resolvePrincipal(opts: CallOptions): SessionContext | null {
+  if ('auth' in opts && opts.auth !== undefined)
+    return opts.auth?.user ? freezeUser(opts.auth.user) : null
+
+  const inherited = _requestStore.getStore()?.user
+  return inherited ? freezeUser(inherited) : null
 }
 
 // ─── Auth principal sharing ──────────────────────────────────────────────

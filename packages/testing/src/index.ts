@@ -65,7 +65,7 @@ export interface ApiFactoryTools {
 
 /** One announcement, exactly as `callService` put it on the bus. */
 export interface Announcement {
-  /** `'leads:created'` for CRUD, `'orders:pay'` for a custom action. */
+  /** `'leads:created'` for CRUD, `'orders:pay'` for a custom method. */
   event: string
   data:  unknown
 }

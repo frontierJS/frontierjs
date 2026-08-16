@@ -1,7 +1,7 @@
 /**
  * sitemap.js — Generate sitemap.xml from indexed routes
  *
- * Uses manifest.indexed — already filtered to exclude:
+ * Uses the route table's `indexed` — already filtered to exclude:
  *   - draft routes (status: draft)
  *   - noindex routes (robots: noindex)
  *   - dynamic routes (/:param/)
@@ -17,7 +17,7 @@ import { writeFile } from 'fs/promises'
 import { join } from 'path'
 
 /**
- * @param {string[]} indexed   — indexed route paths from manifest
+ * @param {string[]} indexed   — indexed route paths from the route table
  * @param {string}   outDir
  * @param {string}   [siteUrl] — base URL e.g. 'https://example.com'
  * @param {object}   [routeMeta] — optional route id → meta map for per-route settings

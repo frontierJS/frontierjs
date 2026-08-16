@@ -49,12 +49,27 @@
 /// action nobody wired a role hook onto, a where-clause built by hand). The
 /// hooks stay: a gate refuses with a level, and a person needs the sentence.
 ///
-/// A gate is per MODEL and never per row. WHICH rows is @@allow, and Server is
-/// the first model to declare one: `workspaceId == auth().workspaceId`, graded
-/// against the workspace applyStanding() put on the principal. The other 36 are
-/// still the workspaceId filter in every service read plus scopeToWorkspace
-/// refusing a non-member — which works, and is the thing being moved into the
-/// schema one model at a time (see db/README.md § Access control).
+/// A gate is per MODEL and never per row. WHICH rows is @@allow, and 15 models
+/// declare one — every model carrying a `workspaceId` except two:
+/// `WorkspaceMember` (it is what standing is READ from, through asSystem(), so a
+/// policy graded off auth().workspaceId would read the field it is deciding) and
+/// `AuditEvent` (whose workspaceId is nullable, because a hub action belongs to
+/// no workspace, and a null compared to a caller's workspace hides exactly the
+/// rows the trail exists for).
+///
+///   Server · Project · Environment · App          the hierarchy every screen walks
+///   Deployment · Job · Domain                     what a person does to an app
+///   Network · Recipe · FeatureFlag                the workspace's own settings
+///   NotificationChannel · AlertRule · Dashboard
+///   Secret · ApiKey                               credential material
+///
+/// `workspaceId == auth().workspaceId`, graded against the workspace
+/// applyStanding() put on the principal. The other 22 are still the workspaceId
+/// filter in every service read plus scopeToWorkspace refusing a non-member —
+/// which works, and is the thing being moved into the schema a batch at a
+/// time (see db/README.md § Access control). Each declaration is an AUDIT
+/// first: every scoped read of that model has to be workspace-filtered already,
+/// and every path that legitimately crosses has to be asSystem().
 ///
 /// A policy FILTERS, where a gate REFUSES. So the failure shape of a wrong one
 /// is an empty screen and no error: any read that legitimately crosses a
@@ -446,6 +461,7 @@ model Secret {
   deletedAt   DateTime?
 
   @@gate("5")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, name])
@@ -512,6 +528,7 @@ model ApiKey {
   // at it. A second, invisible deleted state on top would make "revoked" and
   // "gone" four combinations instead of two.
   @@gate("5")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@log(audit)
   @@unique([workspaceId, name])
   @@index([credentialId])
@@ -674,6 +691,7 @@ model Network {
   serverNetworks ServerNetwork[]
 
   @@gate("2.5")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -715,6 +733,14 @@ model Project {
   environments Environment[]
 
   @@gate("2.4.4.5")
+  // Row-level tenancy in the schema, the second model to carry it after
+  // Server. The services already filter on workspaceId; this is the same
+  // fact where it cannot be left out of a new query. Every path that
+  // legitimately crosses a workspace is asSystem() — the three engines and
+  // the hub — and that audit is what precedes each declaration, because a
+  // policy FILTERS where a gate refuses: a scoped read that crosses starts
+  // matching nothing, with a 200 and an empty screen.
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete(cascade)
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -743,6 +769,10 @@ model Environment {
   flagOverrides FlagOverride[]
 
   @@gate("2.4.4.5")
+  // Same declaration as Project. Environment carries its own workspaceId
+  // rather than reaching through projectId, so the policy is one column
+  // comparison and not a relation hop.
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete(cascade)
   @@log(audit)
   @@unique([projectId, slug])
@@ -784,6 +814,9 @@ model App {
   domains       Domain[]
 
   @@gate("2.4.4.5")
+  // Same declaration as Project. The deployment engine writes App.status
+  // across workspaces and is asSystem(), which passes the policy.
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete(cascade)
   @@log(audit)
   @@unique([environmentId, slug])
@@ -829,6 +862,7 @@ model Domain {
   deletedAt     DateTime?
 
   @@gate("2.5")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, hostname])
@@ -909,6 +943,7 @@ model Deployment {
   steps                DeploymentStep[]
 
   @@gate("2.4.4.4")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@log(audit)
   @@index([appId])
   @@index([workspaceId])
@@ -965,6 +1000,7 @@ model Job {
   runs           JobRun[]
 
   @@gate("2.4.4.5")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@index([workspaceId])
@@ -1055,6 +1091,7 @@ model Recipe {
   runs           RecipeRun[]
 
   @@gate("4.5")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -1221,6 +1258,7 @@ model FeatureFlag {
   overrides   FlagOverride[]
 
   @@gate("2.4.4.5")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, key])
@@ -1298,6 +1336,7 @@ model NotificationChannel {
   rules       AlertRuleChannel[]
 
   @@gate("2.5")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, name])
@@ -1323,6 +1362,7 @@ model AlertRule {
   channels    AlertRuleChannel[]
 
   @@gate("2.5")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@log(audit)
   @@index([workspaceId])
 }
@@ -1412,6 +1452,7 @@ model Dashboard {
   widgets     DashboardWidget[]
 
   @@gate("2.4.4.4")
+  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])

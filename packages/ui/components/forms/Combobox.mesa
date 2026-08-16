@@ -14,13 +14,14 @@
   //   <Combobox bind:value allowNew placeholder="Select or type a tag…" {options} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let value       = undefined    // scalar — bindable
   export let options     = []           // string[] | { value, label, disabled? }[]
   export let placeholder = 'Search…'
   export let allowNew    = false        // confirm any typed string as value
   export let disabled    = false
+  export let required    = undefined
   export let clearable   = true
 
   // Field integration
@@ -32,7 +33,12 @@
 
   // The enclosing <Form>, when there is one — see utils.js § Form context.
   const form     = $context.form
+  const rule     = resolveRule(form, name)
   const hasError = !!resolveError(form, name, error, errors)
+
+  // `required` is a schema fact; without it a column the model insists on
+  // announced nothing on the control a caller reached for instead of a select.
+  const resolvedRequired = stated(required, rule?.required)
   export let badge    = undefined
   export let help     = undefined
   export let onchange = undefined
@@ -134,11 +140,13 @@
         bind:value={query}
         class="field"
         id={inputId}
+        name={name || undefined}
         type="text"
         autocomplete="off"
         spellcheck="false"
         placeholder={placeholder}
         disabled={disabled}
+        required={resolvedRequired}
         aria-invalid={hasError || null}
         role="combobox"
         aria-expanded={open}
@@ -211,7 +219,8 @@
   <Field
     id={inputId}
     name={name}
-    label={label || name}
+    label={label || undefined}
+    required={resolvedRequired}
     hint={hint}
     error={error}
     errors={errors}

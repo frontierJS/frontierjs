@@ -7,7 +7,7 @@
 // hooks run around it in what ORDER, what it broadcasts on, and every path the
 // router actually mounted.
 //
-// None of that is derivable from the source text. `collectActions` decides at
+// None of that is derivable from the source text. `collectCustomMethods` decides at
 // construction whether a key is an option or an action, `svc.pipelines()`
 // resolves the chain, `apiPrefix` moves every route the app registers, and a
 // plugin mounts paths nobody wrote down. So the surface is read off a BUILT
@@ -133,7 +133,7 @@ export interface SurfaceService {
   name:          string
   model:         string
   methods:       string[]
-  actions:       string[]
+  customMethods: string[]
   channel:       string[]
   transactional: string[]
   softDelete:    string | null
@@ -168,7 +168,7 @@ export function describeSurface(app: App): Surface {
       name:          d.name,
       model:         d.model,
       methods:       d.methods,
-      actions:       d.actions,
+      customMethods: d.customMethods,
       channel,
       transactional: d.transactional,
       softDelete:    d.softDelete,
@@ -222,9 +222,9 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
   out.push(`Generated from \`${source}\` by \`junction surface\`. **Do not edit.**`)
   out.push('')
   out.push('What the API answers, read off a BUILT app rather than scanned: the methods')
-  out.push('each service will serve, its actions, the hook chain in the order it runs, and')
-  out.push('every path the router actually mounted. None of it is visible in the source —')
-  out.push('an option key and an action look identical, `apiPrefix` moves every route, and')
+  out.push('each service will serve, its custom methods, the hook chain in the order it runs,')
+  out.push('and every path the router actually mounted. None of it is visible in the source —')
+  out.push('an option key and a method look identical, `apiPrefix` moves every route, and')
   out.push('a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.')
   out.push('')
   out.push('```')
@@ -253,7 +253,7 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
   out.push('## Services')
   out.push('')
   out.push('`methods` is policy-applied — what the service will answer, not what it')
-  out.push('defines. An action is a non-CRUD method `collectActions` resolved at')
+  out.push('defines. A custom method is a non-CRUD one `collectCustomMethods` resolved at')
   out.push('construction; a name that stopped being one is a line that disappears here.')
   out.push('`model` is what the service reports for the result envelope, which is its own')
   out.push('name when it declares none.')
@@ -263,7 +263,7 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
     out.push(`### \`${svc.name}\`${svc.model ? ` · model \`${svc.model}\`` : ''}`)
     out.push('')
     out.push(`- **methods** — ${svc.methods.length ? svc.methods.map(m => `\`${m}\``).join(', ') : '(none)'}`)
-    if (svc.actions.length)       out.push(`- **actions** — ${svc.actions.map(a => `\`${a}\``).join(', ')}`)
+    if (svc.customMethods.length) out.push(`- **custom methods** — ${svc.customMethods.map(a => `\`${a}\``).join(', ')}`)
     if (svc.channel.length)       out.push(`- **broadcasts on** — ${svc.channel.map(c => `\`${c}\``).join(', ')}`)
     if (svc.transactional.length) out.push(`- **transactional** — ${svc.transactional.map(m => `\`${m}\``).join(', ')}`)
     if (svc.softDelete)           out.push(`- **soft delete** — \`${svc.softDelete}\``)

@@ -61,7 +61,7 @@ export interface Harness {
 }
 
 export async function makeApp(opts: {
-  channels?: Record<string, unknown>
+  transports?: Record<string, unknown>
   /** Omit the mailer entirely, to exercise the missing-mailer path. */
   noMailer?: boolean
 } = {}): Promise<Harness> {
@@ -85,7 +85,7 @@ export async function makeApp(opts: {
   const app: any = await createTestApp()
   app.configure(channels())
   if (!opts.noMailer) app.mail = { send: async (m: OutgoingMail) => { sent.push(m) } }
-  app.configure(notificationsPlugin({ db, channels: opts.channels as never }))
+  app.configure(notificationsPlugin({ db, transports: opts.transports as never }))
 
   // asSystem() is untyped at this boundary (notifications duck-types the
   // Litestone client rather than importing it) — name the one accessor used.

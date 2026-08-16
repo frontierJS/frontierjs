@@ -8,12 +8,33 @@ import { parseTtl }                from '@frontierjs/junction'
 // ─── Password hashing ─────────────────────────────────────────────────────
 // Bun's native bcrypt — no external dep.
 
+export const BCRYPT_COST = 12
+
 export async function hashPassword(password: string): Promise<string> {
-  return Bun.password.hash(password, { algorithm: 'bcrypt', cost: 12 })
+  return Bun.password.hash(password, { algorithm: 'bcrypt', cost: BCRYPT_COST })
 }
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return Bun.password.verify(password, hash)
+}
+
+// A bcrypt hash of a value nobody holds, at the same cost every stored password
+// is written with. Nothing is ever meant to match it; it exists to be compared
+// against and thrown away.
+//
+// A login that bails before the comparison answers in a millisecond where one
+// that reaches it answers in ~220ms, and that difference is readable from a
+// clock alone — so an identical error message still tells a caller whether an
+// address exists. `payPasswordCost` is what the early-bail paths call so every
+// refusal costs the same. The remaining difference is a database read, which is
+// three orders of magnitude below the bcrypt and not separable from noise.
+//
+// The cost is asserted against BCRYPT_COST in tests/flows.test.ts: raise the
+// cost and this literal has to be regenerated, or the gap quietly reopens.
+export const DUMMY_HASH = '$2b$12$rbdqjSKMTYmj64JolfD1NOrdSG1SE3VW2XQ25qeYqQsRXuWq1WpYy'
+
+export async function payPasswordCost(password: string): Promise<void> {
+  await Bun.password.verify(password, DUMMY_HASH)
 }
 
 // ─── API key generation + hashing ─────────────────────────────────────────

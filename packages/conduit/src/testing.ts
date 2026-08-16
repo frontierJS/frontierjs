@@ -39,7 +39,7 @@ export type TestConduit<T extends StubMocks> = {
   stubs:   { [K in keyof T]: StubTransport }
 }
 
-export type TestConduitOptions = Pick<ConduitOptions, 'hooks' | 'store' | 'credentials'> & {
+export type TestConduitOptions = Pick<ConduitOptions, 'observers' | 'store' | 'credentials'> & {
   // Extra descriptors registered in the store without a stub. Use to test
   // code that mixes stubbed calls with real target resolution.
   targets?: TargetDescriptor[]
@@ -82,8 +82,8 @@ export async function createTestConduit<T extends StubMocks>(
   }
 
   const conduit = createConduit({
-    hooks: opts.hooks,
-    store: opts.store,
+    observers: opts.observers,
+    store:     opts.store,
     // Never the env resolver here — a test must not be able to pick up a
     // real credential from the developer's environment.
     credentials: opts.credentials ?? createNullResolver(),

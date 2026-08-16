@@ -1,5 +1,305 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-16 — `$context` reaches content a block creates later (`FJS-311`)
+
+`_contextStack` is synchronous setup-time state: a component pushes its map,
+runs `init`, pops. That is correct for everything built inside `init` — and
+wrong for everything a block builds afterwards.
+
+An `{#if}` that flips, an `{#each}` row that arrives, an `{#await}` that
+resolves, a `{#key}` rebuild, a portal: each instantiates its content from
+inside a reactive effect, by which time the stack has unwound to the flush's
+depth. A `$context` read in there walks a stack the provider is no longer on
+and gets `null`.
+
+**Every compound component whose parts live behind a conditional was broken by
+this.** `@frontierjs/ui`'s `<DropdownMenu>` provides `close()` and renders its
+items inside `{#if open}`, so `DropdownItem` read `undefined` and choosing an
+item never closed the menu — the contract its own docblock states, failing
+silently because `close?.()` on undefined is a no-op. `<Accordion>` escaped
+only because its items render on the first pass.
+
+`captureContext()` snapshots the stack where a block is DECLARED and reinstates
+it around every later instantiation. Seven call sites — `ifBlock`,
+`$$eachBlock` (rows and `{:else}`), `keyBlock`, `awaitBlock`, `boundaryBlock`,
+`portal`, `$$virtualEach` — because fixing one says nothing about the others.
+
+Five tests, one per block kind plus *the nearest provider still wins*, and each
+was **checked against a negative control**: with `captureContext` neutered to
+`fn => fn()` all five fail.
+
+## 2026-08-16 — RULE 23's message names the right prop, and is tested (`FJS-054`)
+
+`on:event` on a component has always been a compiler error, and both Vite
+plugins fail the transform on it — so the filed claim that it fails silently
+was stale. Two real things were behind it.
+
+The message said `Use onclick={fn}` **whatever the event was**, so the advice
+for a component's own event was a second wrong guess. `on:paid` now says
+`onpaid={fn}`. A modifier form adds that a modifier has nowhere to go: the
+child decides what it passes, so `preventDefault` is the callback's business.
+
+And the rule had **no test at all** — it is one `.filter()` over a component's
+attributes, and losing that filter compiles the directive to a prop the child
+never declared, silently, because the handler is then simply never called.
+Five cases pin it, three of them the shapes that must stay legal: a directive
+on an element, `onclick` as a prop, and `mesa:window`.
+
+## 2026-08-16 — five events that do not bubble were being delegated
+
+Every handler is routed through one listener on the delegation root, and the
+list of events that cannot go there was missing `close`, `cancel`, `toggle`,
+`beforetoggle` and `invalid`. A miss in that list fails in the worst available
+way: the handler is bound to a root the event never reaches, so the element
+renders, the browser does its half, and the component's half silently never
+runs.
+
+`@frontierjs/ui`'s `Modal` and `Drawer` are both `<dialog on:close on:cancel>`.
+Escape closed the dialog natively, `handleClose` never ran, `bind:open` was
+never written back — and the caller's state said *open* for the rest of the
+page's life, so **the overlay could not be reopened**. Nothing threw.
+`example`'s `verify:ui` had covered `Modal` since it was written; it asserted
+focus going in, and never the way out. It took the kit getting a browser drive
+of its own to see it (`FJS-297`).
+
+Bubbling is now measured rather than assumed —
+`ui/test/browser/specs/events.spec.mjs` reads `event.bubbles` off the
+dispatched event in a real browser — and pinned against the compiler by five
+cases in `compiler.test.js`.
+
+Second fix from the same drive (`FJS-298`): a `{#snippet children}` passed to a
+component built around `<slot />` reached `{...$attributes}`, and
+`spreadAttributes` assigned it to `el.children`, which is a getter on
+`Element` — a TypeError out of an effect that took the whole render with it.
+`children` is slot content and now joins `class`/`$class` in `restProps`'s skip
+set, and a function whose property is a getter with no setter is skipped rather
+than assigned. **The test is a getter WITHOUT a setter, not the absence of a
+setter**: an event-handler property is a plain own property in some DOM
+implementations, and refusing to assign where no descriptor exists stopped
+`onclick` being forwarded at all.
+
+## 2026-08-16 — `{#virtual each}`'s documented options could not compile
+
+**`height=N` and `viewport="500px"` are in VISION §9.7 and required by RULE 34,
+and the compiler put them in the item binding.** The `as` half was matched as
+`(.+)$`, so `rows as row height=48` bound the identifier list `row height=48`
+and the component died as `Unexpected identifier 'height'` — naming neither the
+block, nor the option, nor what was actually wrong. Every use written from the
+documentation failed; the only shape that worked was the one the package's own
+tests use, which declares no options.
+
+They parse now. Options come last, after the optional `(key)`, and are scanned
+at **bracket depth 0** so a destructuring default (`as { name = 'anon' }`) and an
+`=` inside a key expression stay part of the binding. An unrecognised option is
+refused by name with the list of the ones that exist — the rule this package
+already applies to `mesa:*` — and a `height` that is not a positive number of
+pixels is refused the same way, rather than reaching the runtime as `NaN` and
+sizing every spacer to nothing.
+
+Both options do something the runtime could not do without them. `height` skips
+measurement, which matters because the first row is measured before a stylesheet
+has sized it — happy-dom returns 0 for every row, and a real first paint often
+does too, leaving the 40px fallback and a scrollbar that jumps once. `viewport`
+sizes the block's own element and gives it `overflow-y` unless the caller wrote
+one inline: **that element IS the scroller** — the rows and both spacers are
+appended into it — which the documentation described as a viewport div the
+directive creates, and it never created anything.
+
+**Also corrected: seven places said `{#virtual each}` renders nothing on the
+server.** It renders a window. `renderToHTML` sets `isBrowser` true, so the
+block runs; there is simply no viewport to measure, so the window comes from the
+row height and the bottom spacer carries the rest. Measured on a 1000-row list:
+25 rows and a 39000px spacer. A prerendered page therefore gets its first screen
+of rows, which is better than the `{:static}` fallback `FJS-067` was filed
+asking for. 8 tests, both halves mutation-checked.
+
+
+## 2026-08-16 — the Vite plugin is tested, and one of its features has never been able to run
+
+**Sixty-one cases across four files, which is `FJS-024` down to its last claim.**
+`test/vite-plugin.test.js` covers what the plugin decides on its own — which
+files it claims, when the HMR boundary is injected, what happens to a warning,
+what it serves at its virtual ids, `transformIndexHtml`, `handleHotUpdate`.
+`test/vite-devtools.test.js` covers `/__mesa/devtools` and the BroadcastChannel
+relay, run against **both** implementations of that route: the plugin's own and
+`mesaDevtools()`, which exists for an app on Sierra's plugin and had never been
+executed. `test/vite-compiler-resolution.test.js` covers sibling-vs-`compilerPath`
+and the two defensive branches no real compiler output can reach — a warning
+containing a newline, an error carrying `details`.
+
+**And `test/vite-server.test.js` starts a real Vite dev server**, middleware mode
+on port 0, and asks it for what a browser asks for. That is the only file that
+can see a hook which is never REACHED — a middleware installed behind Vite's SPA
+fallback, a virtual id another plugin resolves first, `enforce: 'pre'` losing a
+race — and none of it is visible from a hand-rolled plugin context. It settled
+two things the direct tests had guessed wrong: a browser fetches
+`/src/Counter.mesa?import`, not the bare path (a bare GET is served as SOURCE,
+because `.mesa` is not an extension Vite knows), and the virtual HMR client
+arrives as `/@id/__x00__@frontierjs/mesa-client`.
+
+**`FJS-291`, found by the first test to ask about CSS, and closed the same day.**
+The compiler's `css` is a DESTINATION, not a switch: truthy inlines the scoped
+rules as `$runtime.addStyles(id, …)`, falsy extracts them onto `ctx.css.result`
+for the caller to place. The plugin passed its own option straight through and
+then read the answer as if the word meant the same thing on both sides, so
+`if (css && ctx.css?.result)` was a condition no compiler could satisfy — `true`
+never leaves a result, `false` never asks. The `?mesa-css` virtual module,
+`cssCache`, its `resolveId`/`load` pair and the CSS invalidation in
+`handleHotUpdate` had therefore never run at all, and `css: false` silently
+dropped a component's styles.
+
+**The route is deleted rather than repaired.** Inlining is the one way styles
+reach a page here, and it is the way Sierra's plugin does it for the same file —
+the ids are content-addressed, which is what lets a prerendered page and the
+client agree about which styles are already there (Invariant 12), and a second
+route would have made one `.mesa` file's CSS arrive differently depending on
+which plugin compiled it. `css: false` now means what it says: the block is
+compiled and dropped, said in the option doc, the README and a test rather than
+left as the silent consequence of an unreachable branch. Its one live victim was
+`mesa-bench`, whose config set `css: false` to avoid virtual CSS modules and so
+rendered every bench component unstyled.
+
+Two smaller things: the plugin's `configureServer` printed four debug lines on
+every dev-server start, now gone; and a plugin test must declare
+`// @vitest-environment node`, because happy-dom's global `URL` makes
+`fileURLToPath(new URL(…, import.meta.url))` — how the devtools route finds its
+own HTML — throw `must be of scheme file` against a path that is fine in a real
+dev server.
+
+## 2026-08-15 — `FJS-D18` ruled, and the plugin that ignored the answer
+
+**Braces mean *run code*; parentheses mean *watch*.** `$: (a, b)` is a
+multi-path watch, `$: { (a, b) }` is a compile error. The two parse to the same
+AST, so the parens are the only separator and the check reads them from source
+position. Already implemented (`_isInertBlock`), already in the spec (VISION
+§4.4/§4.8, RULES 14b/50/52) and pinned by `test/inert-block.test.js`; the ruling
+is now recorded in `DECISIONS.md` § UI substrate and `FJS-D18` is closed.
+
+**And the diagnostic reached nobody through this package's own Vite plugin.**
+`compileSource` collects into `analysis.errors` and throws only on a parse
+failure; `mesa-vite/index.js` had a `catch` for the throw and read `warnings`
+alone otherwise, so every diagnostic the compiler DID catch — an inert `$: { }`,
+a `bind:` on a non-`let` — was dropped and the half-compiled module served.
+Sierra's plugin has failed the transform on `analysis.errors` since 2026-08-05;
+this one now agrees, failing the build through `this.error` and returning a
+throwing module in dev so the overlay fires. RULE 53 said the opposite — that
+diagnostics are warnings and the build still produces output — and is rewritten
+to what ships: the compiler reports, the build decides.
+
+`test/vite-errors.test.js` is the first test this plugin has (`FJS-024` is about
+the rest of it), and it checks the dev branch's message survives interpolation
+into a template literal.
+
+## 2026-08-15 — the HMR boundary is exported, and the copy of it was ahead of the original
+
+`injectHMR` was module-private in `mesa-vite/index.js`, so Sierra — which
+reimplements the PLUGIN and has no reason to reimplement the boundary — copied
+it, along with the client it imports. `FJS-D16` closes that: `mesa-vite/hmr.js`
+is now `@frontierjs/mesa/vite/hmr`, `injectHMR(js, id, root, clientId)` takes the
+client id because each plugin serves the client at a virtual id of its own, and
+Sierra deleted both of its files.
+
+**The copy was better in three ways, which is the argument for merging rather
+than picking a side.** All three came back here:
+
+- **`canInject` fails closed.** The two patterns the wrap depends on are shapes
+  of the compiler's own OUTPUT, and this plugin ran the `.replace()` calls
+  unconditionally — a pattern that stops matching is silent, so the file shipped
+  half a boundary. It is now asked before injecting.
+- **`__setMark` lands on the NEW function.** The accept handler set it on the old
+  module's `__mesaOrigFn` while passing the new one to `__mesa_hot_update`; the
+  client reads it off the function it was handed, so the mark was never applied.
+  The first update then registered with `hmrMark: undefined` and the SECOND
+  dropped the entry as stale — **HMR worked once per page load and then reported
+  no connected instances.**
+- **A miss falls back to a reload.** `__mesa_hot_update` warned and returned,
+  losing the edit; it now calls `import.meta.hot?.invalidate?.()`, escalating to
+  the full reload Vite would have done anyway.
+
+Also: a filename's apostrophe is escaped in the emitted comment, where it landed
+unescaped inside a single-quoted string.
+
+**Nothing tested any of this in either package**, which is how the second bug
+survived. `test/vite-hmr.test.js` runs the real compiler and wraps its real
+output — a fixture would keep passing after the shape it describes stopped being
+emitted — and parses the result with acorn (Invariant 15).
+
+## 2026-08-15 — the forked highlighter is deleted; fences use `@frontierjs/toolbelt/glow`
+
+`src/glow.js` was a 211-line copy of the 371-line highlighter in the shared
+package, and it was the copy without the fixes — so both defects that package
+records as *fixed* were live in mesa's Markdown compiler. `compiler-md.js` now
+imports the real one and the fork is gone (`FJS-191`).
+
+What that changes for a fenced code block:
+
+- **A rule matching more than one character is encoded.** The fork encoded per
+  token, in `elem()`, and only a lone `<` or `>` — so a multi-character token
+  went to the page raw.
+- **A comment that opens mid-line is a token, not a block.** The fork had no
+  `isTrailingComment()`, so `const a = 1 /* why */` rendered as one comment and
+  a live line read as a dead one.
+
+**Mesa now has a workspace dependency, and it is still a leaf.** `FJS-D26` ruled
+`@frontierjs/toolbelt` substrate — below the dependency graph rather than a
+member of it — precisely so that this import is not the thing Invariant 1
+forbids. Nothing else changed about what mesa may depend on.
+
+**Release order: toolbelt first.** `workspace:*` publishes as the exact version
+it resolved to, and `@frontierjs/toolbelt@0.1.0` is a name npm has never seen —
+so a mesa release that goes out ahead of it installs a dependency that does not
+exist. Nothing in the workspace can catch that: `bun install` answers from
+`packages/toolbelt/` and never consults the registry.
+
+Deleting the fork exposed a second, older defect and it is fixed in the same
+pass — **`FJS-261`**. rehype writes `<` as `&#x3C;` and `&` as `&#x26;`;
+`compiler-md.js`'s decode table knew neither, so both survived into `glow()`,
+which tokenised `&`, `#` and `;` as three separate punctuation tokens in three
+`<i>` elements — which is also why no browser could put them back together. A
+```html``` fence reading `<div>x</div>` reached the reader as `&#x3C;div>x…`,
+and `a && b` as `a &#x26;&#x26; b`. Every fence in every `.md` page mesa
+compiles was affected.
+
+`decodeEntities()` replaces the table: **one pass over named, decimal and
+hexadecimal forms alike**, never a chain of replaces. The chain is what made the
+old table unfixable by extension — decode the numeric forms first and the named
+ones second, and a source line that literally writes `&lt;` (`&#x26;lt;` on the
+wire) comes out as a `<` nobody typed. A single pass cannot decode its own
+output. The other half of the fix is in `@frontierjs/toolbelt`: `glow` escaped
+`<` and `>` and not `&`, so decoding `&#x26;` alone would have put a bare
+ampersand on the page.
+
+Five cases in `test/compiler.test.js` pin the fence path — markup stays text, a
+mid-line comment does not swallow the line, braces are still escaped for Mesa,
+`<` and `&` arrive as themselves, and a fence that literally writes `&lt;` keeps
+it written.
+
+## 2026-08-15 — a slot made only of comments is not content
+
+`$slots.default` was true for a component whose only child was an HTML comment.
+Comments are dropped from the output unless `preserveComments` is on, so that
+block rendered nothing and still answered *yes, the caller passed children* —
+and a component that BRANCHES on the answer turned itself off because somebody
+explained themselves above the buttons.
+
+Found by `@frontierjs/ui`'s `<Form>`, which generates its field list when the
+caller wrote no controls. The page read:
+
+```
+<Form resource={orders} …>
+  <!-- why the buttons are in a named slot -->
+  <Button slot="actions" type="submit">Create order</Button>
+</Form>
+```
+
+and every field vanished. Nothing errored, nothing warned, and the server-side
+render of the same component without the comment was correct — which is the
+worst shape a defect can have.
+
+Both slot kinds now test for content rather than for length: a named slot whose
+body is comments only is likewise not passed. With `preserveComments` on, a
+comment IS content and both behave as before, since the block then renders.
+
 ## 2026-08-10 — `externalSignals` has no callers left, and its replacement needed strict
 
 No compiler change. Recorded here because the design records live in this package

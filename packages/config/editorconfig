@@ -1,0 +1,27 @@
+# FrontierJS house style, in the one file every editor reads without a plugin.
+#
+# This is the exception to "config is a dependency, not a copy": EditorConfig
+# has no extends mechanism, so the scaffold writes this text into the app. The
+# copy in @frontierjs/config is the original, and packages/config/test asserts
+# the two are byte-identical — a drift is a failing test rather than a slow
+# divergence.
+#
+# Indentation and quotes are all it says. Column alignment — the rule that
+# refuses a formatter — is not expressible here and stays a matter of reading
+# the file you are in.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

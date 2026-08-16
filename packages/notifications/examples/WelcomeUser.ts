@@ -1,5 +1,5 @@
 import { Notification, inApp, mail } from '@frontierjs/notifications'
-import type { InAppMessage, MailMessage, User } from '@frontierjs/notifications'
+import type { InAppMessage, MailMessage, Recipient, Transport } from '@frontierjs/notifications'
 
 /**
  * WelcomeUser notification.
@@ -30,11 +30,11 @@ import type { InAppMessage, MailMessage, User } from '@frontierjs/notifications'
 export class WelcomeUser extends Notification {
   static type = 'WelcomeUser'
 
-  via(_user: User): string[] {
+  via(_recipient: Recipient): Transport[] {
     return ['inApp', 'email']
   }
 
-  toInApp(user: User): InAppMessage {
+  toInApp(user: Recipient): InAppMessage {
     return inApp()
       .title('Welcome!')
       .body(`Good to have you${user.firstName ? `, ${user.firstName}` : ''}.`)
@@ -42,7 +42,7 @@ export class WelcomeUser extends Notification {
       .build()
   }
 
-  toEmail(user: User): MailMessage {
+  toEmail(user: Recipient): MailMessage {
     return mail()
       .subject('Welcome to the app')
       .greeting(`Hi ${(user.firstName as string) ?? 'there'}`)

@@ -13,15 +13,19 @@
  * Already-prefetched routes are skipped. Prefetch never fires
  * for external URLs or URLs that don't match any route.
  *
- * ⚠️  Auth limitation: prefetch uses window.fetch directly, not sierraFetch.
- * The auth token is NOT attached during prefetch load() calls. load() functions
- * that hit protected endpoints will silently fail or receive 401 responses during
- * prefetch. Navigation itself still works correctly because the router uses
- * sierraFetch. See the fetch call in runPrefetch() for workaround options.
+ * A prefetched load() runs with the same `fetch` a navigated one does —
+ * `sierraFetch`, which attaches the session token. It used to be handed
+ * `window.fetch` instead, so the request went out signed-out, and the refusal
+ * was CACHED and then served: hovering a link could make the page you navigated
+ * to render as if you were signed out (`FJS-041`). What the payload means
+ * depends on who asked for it, so the cache is dropped whenever the identity
+ * changes — see invalidatePrefetch(), called from sierra/junction whenever the
+ * client's token changes and on mid-session expiry.
  */
 
 import { matchRoute, normalizePath } from './match.js'
 import { loadLayoutChain } from './internals.js'
+import { sierraFetch } from '../fetch/index.js'
 
 // URLs already prefetched this session.
 //
@@ -97,6 +101,22 @@ export function _prefetchCacheHas(key) {
     return false
   }
   return true
+}
+
+/**
+ * Drop every prefetched PAYLOAD and the gate that stops a URL being fetched
+ * again. Call it whenever the identity behind the requests changes — a sign-in,
+ * a sign-out, a session that expired mid-page. A payload is an answer to *what
+ * may this person see*, so serving one across that line is how a signed-in user
+ * lands on a page rendered signed-out, and the other way round.
+ *
+ * The component chunks are kept: a route's JavaScript is the same file whoever
+ * asks for it, and re-importing it would throw away the half of prefetch that
+ * is never wrong.
+ */
+export function invalidatePrefetch() {
+  _prefetchCache.clear()
+  _prefetched.clear()
 }
 
 /** Test seam — drop all prefetch state. */
@@ -299,21 +319,11 @@ export async function prefetchHref(href) {
           params,
           url: pathname + url.search,
           meta: node.meta ?? {},
-          // ⚠️  Prefetch uses window.fetch directly, not sierraFetch.
-          // This means the auth token is NOT attached during prefetch.
-          // load() functions that call protected API endpoints will silently
-          // fail (or return 401 data) during prefetch — navigation still works
-          // correctly because the router uses sierraFetch.
-          //
-          // If your load() hits a protected endpoint and you need prefetch to
-          // work, pattern options:
-          //   1. Make the endpoint public and filter results post-auth
-          //   2. Skip prefetch on that route (omit the prefetch attribute)
-          //   3. Guard inside load() — return empty/null when fetch returns 401
-          //
-          // V2: prefetch will use sierraFetch once the auth token is accessible
-          // at module init time without a circular dependency on initJunction.
-          fetch: window.fetch?.bind(window) ?? (() => Promise.resolve(new Response('{}'))),
+          // The same fetch the router passes a navigated load(), so a prefetch
+          // asks as the person who is signed in. It reads the token per call
+          // rather than at module init, which is why importing it here costs no
+          // dependency on initJunction.
+          fetch: sierraFetch,
         })
         // Cache the result so the router can use it on navigation instead of
         // re-running load() and making a second round-trip.

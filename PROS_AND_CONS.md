@@ -166,7 +166,7 @@ needs two orthogonal permissions they are back to writing hooks — and the fram
 evaporates exactly when the app gets interesting. A linear ladder is a great *default*; it should
 not be the only vocabulary.
 
-### 3. Custom actions dispatch via an `X-Service-Method` header
+### 3. Custom methods dispatch via an `X-Service-Method` header
 
 `POST /posts/42` + `X-Service-Method: publish`. The obvious question: why isn't that
 `POST /posts/42/publish`?

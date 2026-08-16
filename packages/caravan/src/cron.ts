@@ -214,9 +214,21 @@ export class CronScheduler {
   private _lastMinute: number = -1
 
   add(schedule: CronSchedule): void {
-    // Validate at registration time — fail fast with a clear message
-    parseCron(schedule.cron)
-    this._schedules.push(schedule)
+    // Validate at registration time — fail fast, naming the job as well as the
+    // expression. The expression alone is not enough to find the declaration
+    // once it can live in any *.job.ts file rather than in one call in app.ts.
+    try {
+      parseCron(schedule.cron)
+    } catch (err) {
+      throw new Error(`[Caravan] job "${schedule.name}": ${(err as Error).message}`)
+    }
+
+    // A name is a schedule, not a list of them. Registering the same name twice
+    // used to fire the job twice a minute, and re-registering a handler is the
+    // ordinary way a name is stated again.
+    const existing = this._schedules.findIndex(s => s.name === schedule.name)
+    if (existing >= 0) this._schedules[existing] = schedule
+    else               this._schedules.push(schedule)
   }
 
   start(): void {

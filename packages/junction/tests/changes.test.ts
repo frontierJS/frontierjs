@@ -1,6 +1,6 @@
 // tests/changes.test.ts
 // Tests for changes made in the latest Junction update:
-//   1. Custom methods defined directly on service (no actions key)
+//   1. Custom methods defined directly on service (no wrapper key)
 //   2. get(query) → findFirst
 //   3. restore as a first-class CRUD method
 //   4. ctx.app.service() for internal calls from hooks
@@ -22,9 +22,9 @@ import { createJunctionClient }              from '../src/client/index.ts'
 const REAL_FETCH = globalThis.fetch
 afterAll(() => { globalThis.fetch = REAL_FETCH })
 
-// ─── 1. Custom methods — no actions key ──────────────────────────────────────
+// ─── 1. Custom methods — no wrapper key ─────────────────────────────────────
 
-describe('Custom methods (top-level, no actions key)', () => {
+describe('Custom methods (top-level, no wrapper key)', () => {
 
   it('registers and calls a custom method', async () => {
     let called = false
@@ -145,7 +145,7 @@ describe('Custom methods (top-level, no actions key)', () => {
       async reboot(ctx) { rebooted = true; return { id: ctx.id, rebooted: true } },
     }))
 
-    // Custom actions dispatch via the X-Service-Method header, POSTed to the
+    // Custom methods dispatch via the X-Service-Method header, POSTed to the
     // resource URL — NOT via a path segment (/servers/srv-1/reboot).
     const res = await request(app)
       .post('/servers/srv-1')
@@ -474,7 +474,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
     expect(seenUserId).toBe('u1')
   })
 
-  it('app.service() without params makes an anonymous call', async () => {
+  it('app.service() naming no principal INHERITS the caller (FJS-D03)', async () => {
     const app = await createTestApp({ users: [{ id: 'u1', role: 'user' }] })
     let seenUser: unknown = 'not-set'
 
@@ -491,8 +491,46 @@ describe('ctx.app.service() — internal calls from hooks', () => {
       hooks: {
         after: {
           create: [async (ctx) => {
-            // No params passed — anonymous system call
+            // Names no principal — inherits the request's, at any depth.
+            // This used to be anonymous, and the comment here called it a
+            // "system call", which is the opposite thing: STRANGER(0) rather
+            // than level 8. A sub-call was refused by the model's own gate
+            // while reading as though it had been privileged.
             await ctx.app.service('logs').create({ action: 'lead.created' })
+          }],
+        },
+      },
+    }))
+
+    await request(app)
+      .post('/leads')
+      .auth(app.tokenFor('u1'))
+      .send({ name: 'test' })
+
+    expect((seenUser as { userId?: string })?.userId).toBe('u1')
+  })
+
+  it('an explicit { user: null } is still anonymous — absent is not null', async () => {
+    // The escape hatch the test above used to be. A service that deliberately
+    // reads as a stranger would — checking what a public listing returns —
+    // says so, and saying so still works.
+    const app = await createTestApp({ users: [{ id: 'u1', role: 'user' }] })
+    let seenUser: unknown = 'not-set'
+
+    app.services.register(createService({
+      name: 'logs',
+      find: async () => [],
+      async create(ctx) { seenUser = ctx.auth.user; return { logged: true } },
+    }))
+
+    app.services.register(createService({
+      name: 'leads',
+      find: async () => [],
+      async create() { return { id: '1' } },
+      hooks: {
+        after: {
+          create: [async (ctx) => {
+            await ctx.app.service('logs').create({ action: 'lead.created' }, { auth: { user: null } })
           }],
         },
       },
@@ -653,10 +691,10 @@ describe('Client — updated method behaviour', () => {
 // ─── 6. Custom methods on createService ──────────────────────────────────────
 // (These covered createLitestoneService, which was folded into createService.
 // The invariant is unchanged: custom methods live directly on the service
-// object — there is no `actions` key — and config keys must never leak as
+// object — there is no wrapper key — and config keys must never leak as
 // callable methods. See SERVICE_OPTION_KEYS in core/service.ts.)
 
-describe('createService — custom methods (no actions key)', () => {
+describe('createService — custom methods (no wrapper key)', () => {
 
   it('custom method defined inline on the definition is callable', async () => {
     let called = false

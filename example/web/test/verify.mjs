@@ -179,7 +179,10 @@ async function signIn(who, level) {
     return { alert: document.querySelector('.alert.danger')?.textContent.trim() ?? null };
   `)
   if (problem.alert) {
-    if (problem.alert.includes('429')) {
+    // The message is the SERVER's now — junction's client keeps the body of a
+    // refusal rather than replacing it with the status — so this matches the
+    // limiter's own sentence as well as the old "HTTP 429".
+    if (/429|rate limit/i.test(problem.alert)) {
       console.error(
         `\nSign-in was rate limited (HTTP 429).\n` +
         `Login allows 10 attempts per 15 minutes and this drive signs in twice per run,\n` +
@@ -318,20 +321,20 @@ try {
     });
   `))
   t('form.statusOptions', await evaluate(`
-    return [...document.querySelectorAll('#f-status option')].map(o => o.value).filter(Boolean);
+    return [...document.querySelectorAll('[name="status"] option')].map(o => o.value).filter(Boolean);
   `))
   t('form.customerOptions', await evaluate(`
-    await waitFor(() => document.querySelectorAll('#f-customerId option').length > 1);
-    return [...document.querySelectorAll('#f-customerId option')].map(o => o.textContent.trim()).filter(x => x !== '—');
+    await waitFor(() => document.querySelectorAll('[name="customerId"] option').length > 1);
+    return [...document.querySelectorAll('[name="customerId"] option')].map(o => o.textContent.trim()).filter(x => x !== '—');
   `))
-  t('form.referenceMaxLength', await evaluate(`return document.querySelector('#f-reference').maxLength`))
-  t('form.totalMin', await evaluate(`return document.querySelector('#f-total').min`))
+  t('form.referenceMaxLength', await evaluate(`return document.querySelector('[name="reference"]').maxLength`))
+  t('form.totalMin', await evaluate(`return document.querySelector('[name="total"]').min`))
 
   // 7b ─ a relation key must arrive as null, not 0. `0` is a perfectly good
   // integer, so it passes coerce and validate and reaches SQLite as
   // FOREIGN KEY constraint failed / 500 — the required check never fires.
   t('form.customerStartsEmpty', await evaluate(`
-    return document.querySelector('#f-customerId').value;
+    return document.querySelector('[name="customerId"]').value;
   `))
 
   // 7c ─ live validation. The rule is: on input an error may only be REMOVED.
@@ -344,56 +347,61 @@ try {
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     })()`
-  const hint = (id) => `
+  // Controls are selected by the NAME the schema gave them, not by an id the
+  // page invented: <Form> generates its own field list now, so each control
+  // makes its own unique id and there is no `f-<column>` convention to lean on.
+  // The name is the better handle anyway — it is the thing the form routes a
+  // message back to, and the thing the server sees.
+  const hint = (sel) => `
     (() => {
-      const g = document.querySelector('#' + ${JSON.stringify(id)}).closest('.field-group');
+      const g = document.querySelector(${JSON.stringify(sel)}).closest('.field-group');
       const h = g.querySelector('.field-hint.danger');
       return h ? h.textContent.trim() : null;
     })()`
 
   // Two characters into `reference` — too short, but nothing has been left yet.
   t('live.noErrorWhileTyping', await evaluate(`
-    ${set('#f-reference', 'ab')};
+    ${set('[name="reference"]', 'ab')};
     await new Promise(r => setTimeout(r, 60));
-    return { reference: ${hint('f-reference')}, customer: ${hint('f-customerId')} };
+    return { reference: ${hint('[name="reference"]')}, customer: ${hint('[name="customerId"]')} };
   `))
 
   // Leave the field. NOW it may complain — and only it.
   t('live.errorOnLeave', await evaluate(`
-    document.querySelector('#f-reference').dispatchEvent(new Event('blur'));
-    await waitFor(() => ${hint('f-reference')});
-    return { reference: ${hint('f-reference')}, customer: ${hint('f-customerId')} };
+    document.querySelector('[name="reference"]').dispatchEvent(new Event('blur'));
+    await waitFor(() => ${hint('[name="reference"]')});
+    return { reference: ${hint('[name="reference"]')}, customer: ${hint('[name="customerId"]')} };
   `))
 
   // Fix it. The message must go on the keystroke that fixes it — no blur needed.
   t('live.clearsOnInput', await evaluate(`
-    ${set('#f-reference', 'abc')};
-    await waitFor(() => ${hint('f-reference')} === null);
-    return { hint: ${hint('f-reference')} };
+    ${set('[name="reference"]', 'abc')};
+    await waitFor(() => ${hint('[name="reference"]')} === null);
+    return { hint: ${hint('[name="reference"]')} };
   `))
 
   // Break it again: an already-revealed field may re-show. That is not
   // "adding on input" — the field is already speaking.
   t('live.reappearsOnceRevealed', await evaluate(`
-    ${set('#f-reference', 'ab')};
-    await waitFor(() => ${hint('f-reference')});
-    return { hint: ${hint('f-reference')} };
+    ${set('[name="reference"]', 'ab')};
+    await waitFor(() => ${hint('[name="reference"]')});
+    return { hint: ${hint('[name="reference"]')} };
   `))
 
   // Tabbing out of a field never typed in stays silent — submit reveals those.
   t('live.untypedStaysQuiet', await evaluate(`
-    document.querySelector('#f-note').dispatchEvent(new Event('blur'));
+    document.querySelector('[name="note"]').dispatchEvent(new Event('blur'));
     await new Promise(r => setTimeout(r, 60));
-    return { hint: ${hint('f-customerId')} };
+    return { hint: ${hint('[name="customerId"]')} };
   `))
 
   // Submit with the relation still unpicked: the browser must say so, by name,
   // rather than the server answering 500 FOREIGN KEY constraint failed.
   t('live.submitRevealsRelation', await evaluate(`
-    ${set('#f-reference', 'ORD-LIVE-1')};
+    ${set('[name="reference"]', 'ORD-LIVE-1')};
     byText('form button', 'Create order').click();
-    await waitFor(() => ${hint('f-customerId')});
-    return { customer: ${hint('f-customerId')}, stillOnForm: location.pathname };
+    await waitFor(() => ${hint('[name="customerId"]')});
+    return { customer: ${hint('[name="customerId"]')}, stillOnForm: location.pathname };
   `))
 
   // 8 ─ fill it in and submit. Typing means dispatching the events Mesa binds to.
@@ -406,10 +414,10 @@ try {
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     };
-    set('#f-reference', 'ord-cdp-1');
-    set('#f-total', '42.5');
-    set('#f-status', 'pending');
-    set('#f-customerId', document.querySelectorAll('#f-customerId option')[1].value);
+    set('[name="reference"]', 'ord-cdp-1');
+    set('[name="total"]', '42.5');
+    set('[name="status"]', 'pending');
+    set('[name="customerId"]', document.querySelectorAll('[name="customerId"] option')[1].value);
     // note deliberately left blank — it must store NULL, not ''
     return true;
   `)

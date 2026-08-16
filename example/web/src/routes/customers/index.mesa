@@ -16,7 +16,7 @@ title: Customers
   const { get: rows, unsubscribe } = useStore(customers.store)
   $onDestroy(unsubscribe)
 
-  $: (session.level, session.role, prefs.dense)
+  $: (session.level, session.user, prefs.dense)
 
   let error = null
   const reload = () => customers.load().catch(e => { error = e.message })

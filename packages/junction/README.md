@@ -278,10 +278,24 @@ import { requestMeta } from '@frontierjs/junction'
 const { correlationId } = requestMeta() ?? {}   // readable at any call depth
 ```
 
-`TransportContext.params` is a different thing and is unchanged: route and WS
-handlers (`app.get('/x/{id}', ctx => ctx.params.id)`) keep working as before.
-Route patterns use `{id}`, not `:id` — a `:id` segment is matched literally and
-the route silently never fires.
+A `TransportContext` — what a raw route or a WS handler receives — says
+**`ctx.route`** for the same thing: `app.get('/x/{id}', ctx => ctx.route.id)`.
+One word per realm, so an idiom carried from one context to the other reads
+`undefined` at worst rather than silently meaning something else. Route patterns
+use `{id}`, not `:id` — a `:id` segment is matched literally and the route
+silently never fires.
+
+**Work that outlives the request** has no store to read, so it opens its own:
+
+```typescript
+await app.runAs(userId, async () => {
+  await app.service('orders').patch(id, { status: 'shipped' })   // runs as them
+})
+```
+
+`app.principal()` is the other half — who is in scope, asked from somewhere
+holding no `ctx`, which is how a job records who enqueued it. See **Running as
+somebody** below.
 
 ### 2. The hook pipeline — `core/hooks.ts`
 
@@ -475,9 +489,9 @@ Same `{param}` path syntax as HTTP routes. Handlers receive `WsContext` — para
 ```typescript
 app.ws('/chat/{roomId}', {
   open(ctx) {
-    // ctx.params.roomId — extracted from the path
+    // ctx.route.roomId — extracted from the path
     // ctx.user          — auth resolved before open() is called
-    ctx.send({ type: 'welcome', room: ctx.params.roomId })
+    ctx.send({ type: 'welcome', room: ctx.route.roomId })
   },
   message(ctx, msg) { ctx.send({ echo: msg }) },
   close(ctx, code, reason) { },
@@ -869,6 +883,51 @@ These are optional on `IAuth` — if your provider handles them differently (e.g
 
 ---
 
+## Running as somebody
+
+`ctx.auth.user` propagates, so a service call made inside a request already runs
+as that caller and nothing has to be said. Work that outlives the request — a
+queued job, a retry, a scheduled sweep — is the case that does not: the store is
+gone by the time it runs, and no principal is `STRANGER(0)`, refused by the
+model's own `@@gate`.
+
+```typescript
+createApp({
+  system: { userId: 'system', userType: 'service', role: 'system', authMethod: 'created' },
+})
+```
+
+`system` is the principal an app is when it acts **on its own behalf**. It is
+graded by the app's own `getLevel` like any other. Declaring none is a valid
+answer and yields `null` — an app whose background work touches nothing gated
+needs no system identity, and inventing one would hand every app a privileged
+principal it never asked for.
+
+```typescript
+app.principal()                  // who is in scope, or null
+await app.runAs(userId, async (user) => { … })   // open a scope for them
+await app.runAs(null,   async ()     => { … })   // as the app itself
+```
+
+`runAs` **re-resolves** the id through `IAuth.sessionFor(userId)` rather than
+replaying a stored session. That is the whole reason an id is what travels: a
+caller demoted, suspended or stripped of a role between asking and running is
+graded at what they hold *now*, where a snapshot is a privilege that outlives its
+own revocation. Inside the scope, `auth` propagates as it does anywhere else, so
+the body makes ordinary service calls that name nobody.
+
+An id that cannot be resolved — a deleted user, or a provider that implements no
+`sessionFor` — **throws by name**. Falling back to no principal reinstates the
+refusal this exists to remove; falling back to `system` would silently escalate.
+Neither is safe, so there is no fallback.
+
+`IAuth.sessionFor` is optional on the interface and **proves no credential** — it
+is reached only from code that has already decided whose behalf it acts on, and
+must never be wired to anything a request can name.
+
+`@frontierjs/caravan` is the first caller: it records `app.principal()?.userId`
+at dispatch and runs the handler inside `app.runAs(actorId, …)`.
+
 ## Schema validation
 
 ```typescript
@@ -1045,8 +1104,8 @@ createService({ name: 'tickets', methods: ['find', 'create', 'approve'] })
 
 - **Omitted means everything** — existing services are unaffected.
 - `'readOnly'` is shorthand for `['find', 'get']`.
-- **CRUD and custom actions share the list.** Being defined on the service is
-  not being offered; an action the list omits is refused like any verb.
+- **CRUD and custom methods share the list.** Being defined on the service is
+  not being offered; a method the list omits is refused like any verb.
 - An unlisted method answers **405**, on every transport *and* to an in-process
   `app.service('audit').create()` — the check is in `callService`, which every
   caller goes through, so a job or a hook cannot do what a request cannot.
@@ -1405,17 +1464,40 @@ app.scheduler.once('30 seconds', async () => { /* warmup */ })
 ```typescript
 import { createJunctionClient } from '@frontierjs/junction/client'
 
-const client = createJunctionClient({ url: 'http://localhost:3000' })
+const client = createJunctionClient({
+  url: 'http://localhost:3000',
+  // Where the token lives between page loads. Omit and it lives only as long
+  // as this object does.
+  tokenStorage: localTokenStore('my_app_token'),
+})
 
-// Authenticate — stores token automatically
-const { token } = await client.authenticate({ email: 'alice@example.com', password: 'secret' })
+// Sign in — stores the token and opens the socket
+const { token } = await client.auth.signIn('alice@example.com', 'secret')
 
-// Or set a token directly (e.g. from localStorage)
+// Or set a token directly
 client.setToken(token)
 
 // Connect WebSocket for real-time events — must call after setToken()
 client.connect()
 ```
+
+**`client.auth`** is the whole auth surface, and it speaks the server's own
+split: the routes that ESTABLISH a session, and the services for what the
+caller does to their own credentials afterwards.
+
+```typescript
+await client.auth.signUp({ email, password, name })
+await client.auth.signOut()          // tells the server, THEN clears here
+const me       = await client.auth.me()
+const sessions = await client.auth.sessions()          // where else am I signed in
+await client.auth.revokeOtherSessions()
+const { key }  = await client.auth.createApiKey({ name: 'ci' })  // the key exists once
+await client.auth.changePassword(current, next)
+await client.auth.requestPasswordReset(email)
+```
+
+A Sierra app gets a reactive `session` object and a `ready` promise over the
+top of this — see `@frontierjs/sierra/junction`.
 
 **Service proxy** — CRUD methods prefer WebSocket when connected, fall back to HTTP automatically. File uploads always use HTTP (multipart/form-data):
 
@@ -1432,7 +1514,7 @@ res.total    // total matching — pagination works in the browser too
 const rows = await posts.findData({ status: 'published' })  // rows only
 // A find that answers anything but a list throws ResultShapeError, at the server
 // and in the browser. find means a list; a service answering one thing gives it
-// a name and is called as an action, which is handed back whole.
+// a name and calls it as a custom method, which is handed back whole.
 
 // populate — load relations with the rows. The component declares its own
 // shape instead of a hook over-fetching server-side to cover every caller.
@@ -1475,11 +1557,11 @@ posts.on('created', (post) => console.log('new post', post))
 posts.on('patched', (post) => updateRow(post))
 posts.on('removed', (post) => removeRow(post))
 
-// A custom action announces under its own name — no past tense is invented.
+// A custom method announces under its own name — no past tense is invented.
 posts.on('publish', (post) => updateRow(post))
 ```
 
-Reads never announce. An action that only reads says so with `ctx.dispatch =
+Reads never announce. A method that only reads says so with `ctx.dispatch =
 false`, which suppresses the broadcast to browsers and the in-process bus alike.
 
 **`resource()`** — convenience wrapper that combines a service proxy, a reactive `Store`, and a `load()` function. The store stays in sync with real-time events automatically:
@@ -1729,10 +1811,26 @@ await app.jobs.dispatch('provision-account', { userId: '123' }, {
 })
 
 // Register handlers
-app.jobs.handle('send-email', async (job) => {
-  await mailer.send(job.data)
+app.jobs.handle('send-email', async (ctx) => {
+  await mailer.send(ctx.data)
 }, { queue: 'email', maxAttempts: 5, retryDelay: [60_000, 300_000, 1_800_000] })
 ```
+
+A handler runs **on behalf of whoever dispatched it**. Caravan records the
+principal in scope at `dispatch()` and re-resolves them when the job runs, so a
+service call inside a handler names no `auth` and inherits one:
+
+```ts
+export default defineJob('book-courier', async (ctx) => {
+  const code = await courier.book(ctx.data)
+  // ctx.app is the running app; no principal stated, none needed
+  await ctx.app.service('orders').call('recordTracking', ctx.data.orderId, { trackingCode: code })
+})
+```
+
+Work nobody asked for — a cron fire, a boot-time enqueue — runs as
+`createApp({ system })`, the one place an app says who it is when acting on its
+own behalf. See **Running as somebody** below.
 
 File-based handlers via `defineJob()` — mirrors `autoloadServices`:
 
@@ -1740,8 +1838,8 @@ File-based handlers via `defineJob()` — mirrors `autoloadServices`:
 // jobs/send-email.job.ts
 import { defineJob } from '@frontierjs/caravan'
 
-export default defineJob('send-email', async (job) => {
-  await mailer.send(job.data)
+export default defineJob('send-email', async (ctx) => {
+  await mailer.send(ctx.data)
 }, { queue: 'email', maxAttempts: 5 })
 ```
 

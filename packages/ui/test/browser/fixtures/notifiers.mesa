@@ -1,0 +1,25 @@
+<script>
+  // notifiers.mesa — the two global surfaces mounted the way an app mounts
+  // them: once, near the root, driven from anywhere by their stores.
+  //
+  // Both stores are module singletons, so the fixture also exposes them on
+  // `window` — a spec drives them the way an app's click handler would,
+  // rather than through a prop the real caller never uses.
+  import Toaster       from '../../../components/feedback/Toaster.mesa'
+  import AlertProvider from '../../../components/feedback/AlertProvider.mesa'
+  import { toasts }    from '../../../stores/toastStore.js'
+  import { alert }     from '../../../stores/alertStore.js'
+
+  export let position = 'bottom-right'
+
+  window.toasts = toasts
+  window.alert_ = alert
+
+  // The stores outlive a fixture, so a run must not inherit the previous
+  // one's queue.
+  toasts.clear()
+  alert.hide()
+</script>
+
+<Toaster position={position} max={3} />
+<AlertProvider />

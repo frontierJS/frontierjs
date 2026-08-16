@@ -107,6 +107,7 @@ import {
   throttle,
   // Spread
   spreadAttributes,
+  restProps,
   // Watch proxy
   watchProxy,
   watchPath,
@@ -2577,6 +2578,27 @@ describe('spreadAttributes', () => {
     spreadAttributes(el, attrs)
     expect(el.id).toBe('box')
   })
+
+  it('restProps keeps content and styling hooks out of the spread', () => {
+    // `class` is merged by bindClassPassthrough and `children` is slot
+    // content; neither is an attribute the caller meant to forward.
+    const rest = restProps(
+      { id: 'x', class: 'a', $class: 'b', children: () => {}, label: 'L' },
+      ['label']
+    )
+    expect(Object.keys(rest)).toEqual(['id'])
+  })
+
+  it('skips a function whose property is read-only rather than throwing', () => {
+    // `children` is getter-only on Element. Assigning a function to it threw
+    // out of the effect and took the whole component's render with it — which
+    // is what a `{#snippet children}` passed to a component built around
+    // `<slot />` did, since the snippet reached the root as a spread prop.
+    const el = div()
+    const [attrs] = createSignal({ children: () => {}, id: 'kept' })
+    expect(() => spreadAttributes(el, attrs)).not.toThrow()
+    expect(el.id).toBe('kept')
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3171,6 +3193,136 @@ describe('block teardown — <mesa:mounted>', () => {
     expect(root.textContent).toBe('')
     resolveIt(true); await tick(); flushSync(); await tick()
     expect(root.textContent).toBe('')
+  })
+})
+
+describe('$context reaches content a block creates LATER', () => {
+  // `_contextStack` is synchronous setup-time state: a component pushes its
+  // map, runs init, pops. Everything built inside init therefore sees the
+  // provider — and everything a block builds AFTERWARDS does not, because by
+  // then the stack has unwound to the flush's depth.
+  //
+  // Every compound component in `@frontierjs/ui` has that shape. `DropdownMenu`
+  // provides `close()` and renders its items inside `{#if open}`, so
+  // `DropdownItem` read `undefined` and choosing an item never closed the
+  // menu — silently, because the call is optional.
+  //
+  // Each block that can instantiate content after setup captures the stack
+  // where it was DECLARED and reinstates it. One test per block kind: they are
+  // separate call sites and fixing one says nothing about the others.
+
+  /** Read `key` from inside a factory, the way a consumer's setup does.
+   *
+   *  The push/pop pair is load-bearing, not ceremony: `contextRead` skips the
+   *  TOP map on purpose, because a component must not consume its own
+   *  provides. A reader with no frame of its own therefore skips the provider
+   *  instead and reads one level too far out.
+   *
+   *  `contextRead` answers the reactive GETTER, so the value needs the call;
+   *  `null` is what a consumer with no provider in scope gets. */
+  const reader = (out) => () => {
+    push_component('Consumer', 'C.mesa')
+    try {
+      const getter = contextRead('probe')
+      out.push(getter ? getter() : null)
+    } finally { pop_component() }
+    return document.createComment('')
+  }
+
+  it('an {#if} branch that flips after setup', () => {
+    const seen = []
+    const [show, setShow] = createSignal(false)
+    const anchor = document.createComment('')
+    document.body.appendChild(anchor)
+
+    push_component('Provider', 'P.mesa')
+    contextProvide('probe', () => 'from-provider')
+    ifBlock(anchor, () => (show() ? 0 : -1), [reader(seen)])
+    pop_component()
+
+    flushSync()
+    expect(seen).toEqual([])          // not rendered yet
+
+    setShow(true); flushSync()
+    expect(seen).toEqual(['from-provider'])
+    anchor.remove()
+  })
+
+  it('an {#each} row that arrives after setup', () => {
+    const seen = []
+    const [rows, setRows] = createSignal([])
+    const anchor = document.createComment('')
+    document.body.appendChild(anchor)
+
+    push_component('Provider', 'P.mesa')
+    contextProvide('probe', () => 'from-provider')
+    $rt.$$eachBlock(anchor, 'keyed', rows, (r) => r, reader(seen))
+    pop_component()
+
+    flushSync()
+    setRows(['a']); flushSync()
+    expect(seen).toEqual(['from-provider'])
+    anchor.remove()
+  })
+
+  it('a {#key} block rebuilt after setup', () => {
+    const seen = []
+    const [k, setK] = createSignal(1)
+    const anchor = document.createComment('')
+    document.body.appendChild(anchor)
+
+    push_component('Provider', 'P.mesa')
+    contextProvide('probe', () => 'from-provider')
+    $rt.keyBlock(anchor, k, reader(seen))
+    pop_component()
+
+    flushSync()
+    setK(2); flushSync()
+    // Once at setup, once for the rebuild — and the rebuild is the one that
+    // used to read null.
+    expect(seen.length).toBeGreaterThan(1)
+    expect(seen.every(v => v === 'from-provider')).toBe(true)
+    anchor.remove()
+  })
+
+  it('an {#await} that resolves after setup', async () => {
+    const seen = []
+    let resolveIt
+    const promise = new Promise((r) => { resolveIt = r })
+    const anchor = document.createComment('')
+    document.body.appendChild(anchor)
+
+    push_component('Provider', 'P.mesa')
+    contextProvide('probe', () => 'from-provider')
+    $rt.awaitBlock(anchor, () => promise, null, reader(seen), null)
+    pop_component()
+
+    flushSync()
+    resolveIt('done')
+    await Promise.resolve(); await Promise.resolve(); flushSync()
+    expect(seen).toEqual(['from-provider'])
+    anchor.remove()
+  })
+
+  // The provider must still be the NEAREST one: reinstating a captured stack
+  // must not resurrect a frame that has since been superseded.
+  it('and the nearest provider still wins', () => {
+    const seen = []
+    const [show, setShow] = createSignal(false)
+    const anchor = document.createComment('')
+    document.body.appendChild(anchor)
+
+    push_component('Outer', 'O.mesa')
+    contextProvide('probe', () => 'outer')
+    push_component('Inner', 'I.mesa')
+    contextProvide('probe', () => 'inner')
+    ifBlock(anchor, () => (show() ? 0 : -1), [reader(seen)])
+    pop_component()
+    pop_component()
+
+    setShow(true); flushSync()
+    expect(seen).toEqual(['inner'])
+    anchor.remove()
   })
 })
 

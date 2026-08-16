@@ -13,7 +13,7 @@
   //
   // There is no create hook and no `make()` caller, because a run is never
   // authored from a form: `cleanup.run` writes the row and the engine finishes
-  // it. This resource exists for the reads and for the custom actions.
+  // it. This resource exists for the reads and for the custom methods.
   import { createResource } from '@frontierjs/sierra/junction'
 
   export const cleanup = createResource('cleanup', { model: 'CleanupRun' })

@@ -18,7 +18,7 @@
   //   <FileUpload {files} progressMap={uploadProgress} multiple />
 
   import Field from './Field.mesa'
-  import { uid, resolveError } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let accept       = '*/*'     // MIME types e.g. 'image/*' or '.pdf,.doc'
   export let multiple     = false
@@ -29,6 +29,7 @@
   export let error        = ''
   export let errors       = undefined
   export let disabled     = false
+  export let required     = undefined
   export let files        = []        // File[] — bindable, current selection
   export let progressMap  = {}        // { [filename]: 0-100 } — optional upload progress
   export let onchange     = undefined // (files: File[]) => void
@@ -87,7 +88,13 @@
   }
 
   const form         = $context.form
+  const rule         = resolveRule(form, name)
   const displayError = localError || resolveError(form, name, error, errors)
+
+  // `aria-required` on the dropzone rather than a native `required` on the
+  // input: that input is visually-hidden, and a browser refusing to submit
+  // cannot focus it to say why — the form just stops responding.
+  const resolvedRequired = stated(required, rule?.required)
 </script>
 
 {#snippet dropzone()}
@@ -108,6 +115,7 @@
       data-dragging={dragging || null}
       data-invalid={displayError ? 'true' : null}
       disabled={disabled}
+      aria-required={resolvedRequired ? 'true' : null}
       aria-label="Choose a file to upload"
       on:dragover|preventDefault={() => dragging = true}
       on:dragleave={() => dragging = false}
@@ -219,7 +227,8 @@
   <Field
     id={inputId}
     name={name}
-    label={label || name}
+    label={label || undefined}
+    required={resolvedRequired}
     hint={hint}
     {class}
   >

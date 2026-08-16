@@ -61,7 +61,7 @@ reactivity pass split them.
 | `watchProxy`, `watchPath`, `localWatchProxy` | inert (RULE 19) |
 | `{#await}` | renders `{:pending}` — nothing settles inside a synchronous render |
 | `<mesa:mounted>` | renders its pending branch, for the same reason |
-| `{#virtual each}` | renders nothing, by design (client-only) |
+| `{#virtual each}` | **runs** — renders the first window plus its spacers. No viewport can be measured, so the window comes from the declared or fallback row height |
 | Event handlers | attached to DOM that is then discarded; never fire |
 
 Everything that does run is disposed before `renderToHTML` returns. See

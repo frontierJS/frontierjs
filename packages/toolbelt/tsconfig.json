@@ -1,0 +1,13 @@
+{
+  // Pure-function kits (all JS).
+  //
+  // checkJs is off: turning it on today reports 95 errors, nearly all of them
+  // inside `glow`, which was adopted rather than written here and is written
+  // dynamically throughout — noise rather than a gate. `inflect` carries JSDoc
+  // types, which is what lets junction import it from TypeScript with no
+  // .d.ts. Flip checkJs on per-directory when the JS here grows types worth
+  // enforcing.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "checkJs": false },
+  "include": ["src/**/*.js", "test/**/*.js"]
+}

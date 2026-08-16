@@ -578,9 +578,11 @@ braces to express a watch. The error names the form they wanted.
 `$: if (…) { }`, `$: for (…) { }` and other statement forms are also errors; wrap the
 body in a block instead.
 
-> **RULE 53** — Compiler diagnostics are reported as build warnings, not fatal errors.
-> The build still produces output. "Error" describes the intent — the code is wrong and
-> will not do what it says — not the exit code.
+> **RULE 53** — The compiler *reports*; the build *decides*. `compileSource` collects
+> diagnostics into `analysis.errors` and `analysis.warnings` and throws only on a parse
+> failure. Every Vite plugin that serves Mesa fails the transform on a non-empty
+> `analysis.errors` — an error is wrong code, and serving it means the compiler caught
+> the fault and told nobody. Warnings still produce output.
 
 ---
 
@@ -1129,15 +1131,26 @@ fixed-height items are supported (variable height: planned).
 {/virtual}
 ```
 
-Options:
-- `height=N` — item height in pixels (required)
-- `viewport="400px"` — scrollable container height (default: `"100%"`)
+Options, written last — after the optional `(key)`:
+- `height=N` — item height in pixels. Optional: the height is measured off the
+  first rendered row when it is absent. Declare it when the row's height comes
+  from a stylesheet, since the first measurement happens before that lands
+- `viewport="400px"` — the height of the block's own element, which becomes the
+  scroller. Absent, the element is left alone and must already scroll
 
-The directive creates a scrollable viewport div with `padding-top`/`padding-bottom`
-spacers. On scroll, a `requestAnimationFrame` handler computes the new `[start, end]`
-window, disposes blocks that scrolled out, and mounts new ones. Each rendered row is
-a full reactive Mesa block — signals, `bind:value`, and child components all work
-inside `{#virtual each}`.
+An unrecognised option is refused by name at compile time.
+
+The rows and two spacer divs are appended **inside the element the block sits in**;
+that element is the scroller, either because `viewport=` sized it or because the
+caller gave it a height and `overflow-y`. On scroll, a `requestAnimationFrame`
+handler computes the new `[start, end]` window, disposes blocks that scrolled out,
+and mounts new ones. Each rendered row is a full reactive Mesa block — signals,
+`bind:value`, and child components all work inside `{#virtual each}`.
+
+**On the server it renders a window, not nothing.** There is no viewport to
+measure, so the first window is computed from the declared or fallback row height
+and the bottom spacer carries the rest of the list's height — a prerendered page
+gets its first screen of rows in the HTML rather than an empty box.
 
 ---
 
@@ -2150,7 +2163,7 @@ components hydrate to their initial render and serialize cleanly.
 | 31a | `$class` is a compiler-internal name — never declare `export let $class` directly. Use `{class}` or `bind:class` on the child element. |
 | 32 | `bind:class` and `{class}` on an element auto-wire the parent's class through |
 | 33 | `{@html expr}` injects raw HTML — only use with trusted content |
-| 34 | `{#virtual each}` requires `height=N` (fixed item height in px); variable height is not yet supported |
+| 34 | `{#virtual each}` takes `height=N` (fixed item height in px) and `viewport="Npx"`; the height is measured from the first row when it is not declared, and variable height is not supported |
 | 35 | Snippet props are declared with `export let`; `<slot />` is the preferred mechanism for receiving content from the parent |
 | 35a | `<slot />` is preferred for unattributed content; the `export let children = null` pattern is supported but legacy for new code |
 | 36 | `bind:this` on a component exposes exported `let` props and exported functions — never a DOM node |

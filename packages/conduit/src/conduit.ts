@@ -27,7 +27,7 @@ export function createConduit(
 ): IConduit {
   const store       = opts.store ?? createMemoryStore()
   const credentials = opts.credentials ?? createEnvResolver()
-  const hooks       = opts.hooks ?? {}
+  const observers   = opts.observers ?? {}
   const router      = new Router(
     store,
     credentials,
@@ -37,7 +37,7 @@ export function createConduit(
       deadline_ms:        opts.deadline_ms,
       max_response_bytes: opts.max_response_bytes,
     },
-    hooks,
+    observers,
     _overrides
   )
 
@@ -58,23 +58,24 @@ export function createConduit(
     return { ...req, headers: { ...headers, ...req.headers } }
   }
 
-  // User hooks are arbitrary code. A throwing hook must not take down the
+  // Observers are arbitrary user code. A throwing one must not take down the
   // caller's request: send() documents that it never throws, and a failed
-  // metrics export is not a failed deployment.
+  // metrics export is not a failed deployment. Swallowing here is what makes
+  // the tier true — an observer receives and cannot act, including by failing.
   //
-  // Hooks are never awaited — an async hook exporting a span must not add
+  // They are never awaited — an async observer exporting a span must not add
   // its latency to every request — so a rejected promise is caught here
   // too, or it would surface as an unhandled rejection with no context.
   function safe(name: string, fn: () => void) {
     try {
       // Declared `=> void` so `(req) => arr.push(req)` stays legal, but an
-      // async hook really does return a promise at runtime.
+      // async observer really does return a promise at runtime.
       const result: unknown = fn()
       if (result instanceof Promise) {
-        result.catch(err => console.error(`[conduit] hook '${name}' rejected:`, err))
+        result.catch(err => console.error(`[conduit] observer '${name}' rejected:`, err))
       }
     } catch (err) {
-      console.error(`[conduit] hook '${name}' threw:`, err)
+      console.error(`[conduit] observer '${name}' threw:`, err)
     }
   }
 
@@ -166,12 +167,12 @@ export function createConduit(
       meta:  { protocol: null, target: req.target, duration_ms: 0 }
     }
     recordResult(result, 0)
-    safe('onError', () => hooks.onError?.(req, err))
+    safe('onError', () => observers.onError?.(req, err))
     return result
   }
 
   async function send<T>(req: ConduitRequest): Promise<ConduitResult<T>> {
-    safe('onRequest', () => hooks.onRequest?.(req))
+    safe('onRequest', () => observers.onRequest?.(req))
 
     if (destroyed) {
       return reject<T>(req, {
@@ -226,9 +227,9 @@ export function createConduit(
         : 'success'
 
       if (validated.error) {
-        safe('onError', () => hooks.onError?.(req, validated.error!))
+        safe('onError', () => observers.onError?.(req, validated.error!))
       } else {
-        safe('onResponse', () => hooks.onResponse?.(req, validated))
+        safe('onResponse', () => observers.onResponse?.(req, validated))
       }
 
       return validated
@@ -263,13 +264,13 @@ export function createConduit(
   }
 
   async function* stream(req: ConduitRequest): AsyncIterable<ConduitChunk> {
-    safe('onRequest', () => hooks.onRequest?.(req))
+    safe('onRequest', () => observers.onRequest?.(req))
 
     // Throw so callers can distinguish "stream failed" from "stream ended"
     const abort = (err: ConduitError): never => {
       counters.streams.failed++
       bump(counters.errors, err.kind, 1)
-      safe('onError', () => hooks.onError?.(req, err))
+      safe('onError', () => observers.onError?.(req, err))
       throw new ConduitStreamError(err)
     }
 
@@ -296,7 +297,7 @@ export function createConduit(
     }
 
     counters.streams.opened++
-    safe('onStreamStart', () => hooks.onStreamStart?.(req))
+    safe('onStreamStart', () => observers.onStreamStart?.(req))
 
     let chunks = 0
     try {
@@ -318,17 +319,17 @@ export function createConduit(
             retryable: false,
           }
       bump(counters.errors, conduitErr.kind, 1)
-      safe('onError', () => hooks.onError?.(req, conduitErr))
+      safe('onError', () => observers.onError?.(req, conduitErr))
       throw err
     }
 
-    safe('onStreamEnd', () => hooks.onStreamEnd?.(req, chunks))
+    safe('onStreamEnd', () => observers.onStreamEnd?.(req, chunks))
   }
 
   async function register(descriptor: TargetDescriptor): Promise<void> {
     await put(descriptor)
     router.evict(descriptor.id)   // evict stale pooled connection
-    safe('onRegistered', () => hooks.onRegistered?.(descriptor))
+    safe('onRegistered', () => observers.onRegistered?.(descriptor))
   }
 
   async function deregister(target: string): Promise<void> {
@@ -339,7 +340,7 @@ export function createConduit(
     // Drop breaker state too — a re-registered target (new address, new
     // outpost) must not inherit the old one's trip count.
     resilience.forget(target)
-    safe('onDeregistered', () => hooks.onDeregistered?.(target))
+    safe('onDeregistered', () => observers.onDeregistered?.(target))
   }
 
   // The heartbeat path. Deliberately does not evict the pooled connection —

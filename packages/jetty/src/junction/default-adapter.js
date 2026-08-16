@@ -13,7 +13,7 @@
 //   Out: { kind: 'schema:version' }
 //
 //   In:  { kind: 'result',    id, ok: boolean, value? | error? }
-//   In:  { kind: 'event',     channel, payload }
+//   In:  { kind: 'event',     channel, event, payload }
 //   In:  { kind: 'schema',    version, schema }
 //   In:  { kind: 'schema:version', version }
 //
@@ -116,7 +116,9 @@ export function createDefaultJunctionAdapter() {
     if (msg.kind === 'event' && typeof msg.channel === 'string') {
       const handler = subscriptions.get(msg.channel)
       if (handler) {
-        try { handler(msg.payload) }
+        // (data, event) — a channel carries many events and the subscriber has
+        // to be told which one this is.
+        try { handler(msg.payload, msg.event) }
         catch (e) { console.error('[junction] event handler threw', e) }
       }
       return

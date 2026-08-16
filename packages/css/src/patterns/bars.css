@@ -73,7 +73,7 @@
 .bar.bordered,
 .toolbar.bordered {
   padding:       var(--space-sm) var(--space-lg);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: var(--border-width) solid var(--rule);
 }
 
 /* ── Section header — heading on the left, affordance on the right ─

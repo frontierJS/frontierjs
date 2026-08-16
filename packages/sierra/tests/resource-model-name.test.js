@@ -2,8 +2,9 @@
  * tests/resource-model-name.test.js
  *
  * A resource is addressed by SERVICE name ('leads') but seeded from a MODEL
- * ('Lead'). The registry bridges the two with English's regular plural rules,
- * and `opts.model` is the override for everything those rules cannot reach.
+ * ('Lead'). The registry bridges the two with `@frontierjs/toolbelt/inflect` —
+ * English's regular rules plus a fixed irregular table — and `opts.model` is
+ * the override for everything those cannot reach.
  *
  * Both halves matter. Without the -es rule a plainly regular plural — a
  * `model Status` behind a `statuses` service — silently resolved to nothing,
@@ -44,7 +45,7 @@ const NAMES = Object.keys(DEFS)
 
 beforeEach(() => registerSchemas(DEFS, NAMES))
 
-describe('regular plurals resolve without help', () => {
+describe('plurals resolve without help, irregular ones included', () => {
 
   test.each([
     ['leads',     'Lead'],       // -s
@@ -53,6 +54,9 @@ describe('regular plurals resolve without help', () => {
     ['boxes',     'Box'],
     ['churches',  'Church'],
     ['buses',     'Bus'],
+    // In the irregular table, so no `model:` is needed to say them any more.
+    ['people',    'Person'],
+    ['children',  'Child'],
   ])('%s → %s', (service, expected) => {
     expect(createResource(service).context.model).toBe(expected)
     expect(schemaFor(service).title).toBe(expected)
@@ -110,19 +114,23 @@ describe('opts.model overrides the lookup', () => {
 describe('when nothing resolves, the warning names the fix', () => {
 
   test('suggests a model whose name resembles the service', () => {
+    // A typo, not an irregular — the irregulars resolve on their own now. No
+    // rule turns `companie` into anything, and the lenient accessor + s
+    // spelling the registry also indexes does not cover it, so this is a real
+    // miss and the warning has to earn its place by naming the fix.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    createResource('children')
+    createResource('companie')
     const msg = warn.mock.calls[0][0]
-    expect(msg).toContain("createResource('children', { model: 'Child' })")
+    expect(msg).toContain("createResource('companie', { model: 'Company' })")
     expect(msg).toContain('Known models:')
     warn.mockRestore()
   })
 
   test('offers no guess when no string rule could have known', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    createResource('people')
+    createResource('gadgets')
     const msg = warn.mock.calls[0][0]
-    // 'people' and 'Person' share only 'pe' — claiming a match would be noise.
+    // 'gadget' resembles nothing registered — claiming a match would be noise.
     expect(msg).not.toContain('looks like the one')
     expect(msg).toContain('Person')            // still listed among known models
     expect(msg).toContain('{ model:')          // and the fix is still named

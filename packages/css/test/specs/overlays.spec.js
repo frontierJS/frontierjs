@@ -109,6 +109,32 @@ test('overlays: the transition list carries display and overlay', function () {
   assert.equal(missing.length, 0, 'not in the transition list:\n        ' + missing.join('\n        '));
 });
 
+/*
+ * A transition list splits on TOP-LEVEL commas only.
+ *
+ * `transition: opacity var(--overlay-time, var(--motion-enter)) …` carries a
+ * comma inside the fallback arm, so `t.split(',')` cuts a segment in half and
+ * every property reports as missing its behaviour — a red test against CSS
+ * that is exactly right. The nesting is not incidental either: the fallback
+ * arm is what stops --overlay-time being an alias resolved once at :root
+ * (overlays.css says why), so this shape is here to stay.
+ */
+function segments(list) {
+  var out = [];
+  var depth = 0;
+  var at = 0;
+
+  for (var i = 0; i < list.length; i++) {
+    var c = list[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (c === ',' && depth === 0) { out.push(list.slice(at, i)); at = i + 1; }
+  }
+  out.push(list.slice(at));
+
+  return out.map(function (s) { return s.trim(); });
+}
+
 test('overlays: display and overlay are allow-discrete', function () {
   /*
    * The property in the list does nothing without the behaviour. This is
@@ -120,8 +146,8 @@ test('overlays: display and overlay are allow-discrete', function () {
   OVERLAYS.forEach(function (o) {
     var t = transitionFor(o.closed === '.toast[hidden]' ? '.toast' : o.closed);
     (o.name === 'toast' ? ['display'] : ['display', 'overlay']).forEach(function (prop) {
-      var seg = t.split(',').filter(function (part) {
-        return part.trim().indexOf(prop) === 0;
+      var seg = segments(t).filter(function (part) {
+        return part.indexOf(prop) === 0;
       })[0];
       if (!seg || seg.indexOf('allow-discrete') === -1) {
         bad.push(o.name + ': ' + prop + ' is not allow-discrete');

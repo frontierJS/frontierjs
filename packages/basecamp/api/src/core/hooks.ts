@@ -80,7 +80,7 @@ export function requireWorkspace(): Hook {
 //                        core/gate.ts, at the Data boundary — which is where
 //                        Invariant 6 says access is decided, and which also
 //                        covers every path a hook does not: an engine calling
-//                        a service in-process, a custom action nobody wired a
+//                        a service in-process, a custom method nobody wired a
 //                        role hook onto, a query built by hand in a method.
 //
 // The principal is where the interesting part is. Junction scopes the client
@@ -302,7 +302,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
     if (skip.has(`${ctx.service}.${ctx.method}`)) return
     // What counts as a mutation is decided the same way Junction decides what
     // to announce on a channel: everything except `find`/`get`, and a
-    // read-shaped custom action opts out with `ctx.dispatch = false`.
+    // read-shaped custom method opts out with `ctx.dispatch = false`.
     //
     // It used to be a literal `['create','patch','remove']`, which meant the
     // trail recorded a server being CREATED and not a server being DRAINED —
@@ -313,7 +313,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
     if (ctx.dispatch === false) return
 
     // Two result shapes reach here. CRUD answers the envelope, so the row is
-    // under `.data`; a custom action answers the row itself. Reading only the
+    // under `.data`; a custom method answers the row itself. Reading only the
     // first recorded every action against subjectId 'unknown', which is a trail
     // entry that cannot be joined back to the thing it happened to.
     const raw     = ctx.result as Record<string, unknown> | null

@@ -1,10 +1,19 @@
 import { createBaseService } from '@frontierjs/junction'
 import type { ServiceContext } from '@frontierjs/junction'
 
+// The job DEFINITIONS, not their names. `dispatch(bookCourier, …)` states the
+// name nowhere, so it cannot drift from the file that answers to it, and the
+// payload is typed by the handler that will receive it. Importing them is also
+// what puts Caravan's augmentation of `app.jobs` in this file's program —
+// without it `ctx.app.jobs` is the empty slot Junction declares and every call
+// site needs a hand-written cast.
+import announcePayment from '../jobs/announce-payment.job.ts'
+import bookCourier     from '../jobs/book-courier.job.ts'
+
 // Orders declare @@transitions, and Litestone enforces the machine at the Data
 // boundary. What this file adds is a way to ASK for a move by name.
 //
-// ─── Why these are actions and not four more columns to PATCH ─────────────
+// ─── Why these are methods and not four more columns to PATCH ─────────────
 //
 // `PATCH /api/orders/3 {"status":"paid"}` already works and is already refused
 // when the move is illegal — the machine does not care how you arrive. But a
@@ -22,11 +31,11 @@ import type { ServiceContext } from '@frontierjs/junction'
 // ─── How they are routed ──────────────────────────────────────────────────
 //
 // Any function on a service definition that is not a known option key becomes a
-// custom action, dispatched as POST /{service}/{id} with an
+// custom method, dispatched as POST /{service}/{id} with an
 // `X-Service-Method: {name}` header. The browser calls them through
-// `resource.service.action(name, id)`. Nothing here registers a route.
+// `resource.service.invoke(name, id)`. Nothing here registers a route.
 //
-// A custom action's ctx is a SERVICE context: `ctx.id` is the row and
+// A custom method's ctx is a SERVICE context: `ctx.id` is the row and
 // `ctx.locals.db` the per-request Litestone client that withLitestoneDb scoped
 // to the caller — so the gate sees the real user, not a system bypass.
 
@@ -60,9 +69,8 @@ const move = (name: string) => async (ctx: ServiceContext) => {
 const pay = async (ctx: ServiceContext) => {
   const order = await move('pay')(ctx) as { id: number }
 
-  await (ctx.app as { jobs?: { dispatch(name: string, data: unknown, opts?: { unique?: string }): Promise<string> } })
-    .jobs?.dispatch('announce-payment', { orderId: order.id },
-      { unique: `announce-payment:${order.id}` })
+  await ctx.app?.jobs?.dispatch(announcePayment, { orderId: order.id },
+    { unique: `announce-payment:${order.id}` })
 
   return order
 }
@@ -96,12 +104,42 @@ const ship = async (ctx: ServiceContext) => {
   // again, which is exactly why this guard cannot be left to the queue.
   if (order.trackingCode) return order
 
-  // `app.jobs` is Caravan's claim on the app, made through app.provide().
-  await (ctx.app as { jobs?: { dispatch(name: string, data: unknown, opts?: { unique?: string }): Promise<string> } })
-    .jobs?.dispatch('book-courier', { orderId: order.id, reference: order.reference },
-      { unique: `book-courier:${order.id}` })
+  // `app.jobs` is Caravan's claim on the app, made through app.claim().
+  await ctx.app?.jobs?.dispatch(bookCourier,
+    { orderId: order.id, reference: order.reference },
+    { unique: `book-courier:${order.id}` })
 
   return order
+}
+
+/**
+ * The courier job's way back in.
+ *
+ * `trackingCode` is `@system` in db/schema.lite: readable by anyone, refused on
+ * write to every caller. So the job cannot PATCH it — and that is the point,
+ * because neither can a person, and before the annotation existed nothing could
+ * tell the two apart.
+ *
+ * What unlocks it is naming the column on the call. Everything else still
+ * applies: the gate grades the job's SYSTEM principal exactly as it grades a
+ * browser, the row policies run, the write is audited to the caller. That is
+ * the whole difference from `asSystem()`, which would write this one column by
+ * dropping every rule on the row.
+ *
+ * A named method rather than a PATCH for the same reason the moves are: "record what
+ * the courier said" is a thing the shop does, and a service that says so reads
+ * better than a payload that happens to carry one column.
+ */
+const recordTracking = async (ctx: ServiceContext) => {
+  const db = (ctx.locals as { db?: { order: { update(a: unknown): Promise<unknown> } } } | undefined)?.db
+  if (!db) throw new Error('no scoped db on ctx.locals — is withLitestoneDb installed?')
+
+  const { id, data } = ctx as ServiceContext & { id?: unknown; data?: { trackingCode?: string } }
+  return db.order.update({
+    where:  { id: Number(id) },
+    data:   { trackingCode: data?.trackingCode },
+    system: ['trackingCode'],
+  })
 }
 
 export function createOrdersService() {
@@ -109,12 +147,14 @@ export function createOrdersService() {
     channel: 'orders',
 
     // The names match @@transitions in the schema. They are written twice —
-    // once there, once here — which is the seam worth watching: an action
+    // once there, once here — which is the seam worth watching: a method
     // naming a move the schema does not declare answers 400
     // TransitionNotFoundError rather than inventing one.
     pay,                        // the move + a queued announcement
     ship,                       // the move + a queued courier booking
     refund: move('refund'),
     cancel: move('cancel'),
+
+    recordTracking,             // the courier job writing a @system column
   })
 }

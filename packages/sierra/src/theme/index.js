@@ -2,21 +2,44 @@
  * src/theme/index.js — theme management
  *
  * Exposes:
- *   theme         — plain object: { value: 'light' | 'dark' }
+ *   theme         — plain object: { value: '<theme name>' }
  *   setTheme(v)   — set + persist
- *   toggleTheme() — flip between light/dark
+ *   toggleTheme() — advance to the next configured theme
  *
  * Config (sierra.config.js):
  *   theme: {
- *     default:   'system'     // 'light' | 'dark' | 'system'
- *     persist:   true         // save to localStorage
- *     attribute: 'data-theme' // attribute set on <html>
- *     key:       'theme'      // localStorage key
+ *     themes:  ['theme-default', 'theme-dark']  // what this app offers
+ *     default: 'system'                         // a name, or 'system'
+ *     system:  { light: 'theme-default', dark: 'theme-dark' }
+ *     persist: true                             // save to localStorage
+ *     key:     'theme'                          // localStorage key
+ *     apply:   'class'                          // 'class' | 'attribute'
+ *     attribute: 'data-theme'                   // only when apply: 'attribute'
  *   }
  *
  * A tiny inline script is injected into <head> at build time
  * (by the post-build pipeline) that reads the persisted preference
- * and sets the attribute before first paint — preventing flash.
+ * and applies it before first paint — preventing flash.
+ *
+ * ── Why a class on <html>, and why that is not a knob ──────────────────────
+ *
+ * `@frontierjs/css` ships no JavaScript, so it cannot own a switcher — but it
+ * DOES own the vocabulary: eleven `theme-*` classes, each a block of
+ * inheriting custom properties and nothing else. This module used to set
+ * `data-theme` on <html> instead, which the design system reads NOWHERE: an
+ * app calling `setTheme('dark')` changed an attribute and not one pixel. Both
+ * apps in this repo went and wrote their own applier, which is the symptom
+ * that says the mechanism was never real.
+ *
+ * The element is always <html> and there is no option for it. A `<head>`
+ * script is the only thing that can beat first paint and <body> does not
+ * exist yet when it runs, so a `target: 'body'` would be a setting whose only
+ * effect is to reintroduce the flash. Nothing is lost: a theme is inheriting
+ * tokens, so <html> reaches <body> and everything under it.
+ *
+ * Theming a SUBTREE — `<nav class="sidebar theme-dark">` — is a class written
+ * by hand in the markup, which is what `@frontierjs/css`'s frame.css already
+ * documents. It is not this switcher's job.
  */
 
 import { watchProxy } from '@frontierjs/mesa/runtime.js'
@@ -31,13 +54,13 @@ import { watchProxy } from '@frontierjs/mesa/runtime.js'
  * Not a signal. A component makes it reactive with a `$:` path watch
  * (VISION §4.1, RULE 43):
  *
- *   import { theme } from '@frontierjs/sierra/theme'
+ *   import { theme, setTheme } from '@frontierjs/sierra/theme'
  *   $: theme.value
- *   <button on:click={toggleTheme}>{theme.value}</button>
+ *   <button on:click={() => setTheme('theme-dark')}>{theme.value}</button>
  *
- * @property {'light'|'dark'} value  the resolved theme — never 'system'
+ * @property {string} value  the resolved theme name — never 'system'
  */
-export const theme = { value: 'light' }
+export const theme = { value: '' }
 
 // The writer's handle. Every mutation goes through it so path watches fire —
 // assigning `theme.value` directly updates the object and notifies nobody
@@ -49,11 +72,47 @@ const _w = () => watchProxy(theme)
 
 // ─── Internal config ─────────────────────────────────────────────────────────
 
-let _config = {
-  default:   'system',
-  persist:   true,
-  attribute: 'data-theme',
-  key:       'theme',
+/**
+ * The two the design system ships as a light/dark pair. Defaults rather than
+ * a hard-coded list: an app declares whichever of the eleven it offers, and an
+ * app not using `@frontierjs/css` names whatever its own stylesheet reads.
+ */
+const DEFAULT_THEMES = ['theme-default', 'theme-dark']
+
+let _config = normalise({})
+
+function normalise(config) {
+  const themes = Array.isArray(config.themes) && config.themes.length
+    ? config.themes
+    : DEFAULT_THEMES
+
+  // An app that named an `attribute` and no `apply` was configuring the older
+  // contract, where the attribute was the only thing this module wrote. Say so
+  // rather than quietly switching it to a class: the two are indistinguishable
+  // from inside the app, and the symptom is a stylesheet that stops matching.
+  if (config.attribute && !config.apply) {
+    console.warn(
+      `[Sierra] theme.attribute is set but theme.apply is not. The theme is applied as a ` +
+      `CLASS now, which is what @frontierjs/css reads; add apply: 'attribute' to keep ` +
+      `writing ${config.attribute}.`,
+    )
+  }
+
+  return {
+    themes,
+    default:   config.default   ?? 'system',
+    // Which of this app's themes the OS preference maps onto. Falls back to the
+    // first two declared, which is the light/dark pair for any app that lists
+    // them in that order and is at worst a stable choice for one that does not.
+    system: {
+      light: config.system?.light ?? themes[0],
+      dark:  config.system?.dark  ?? themes[1] ?? themes[0],
+    },
+    persist:   config.persist   ?? true,
+    key:       config.key       ?? 'theme',
+    apply:     config.apply     ?? 'class',
+    attribute: config.attribute ?? 'data-theme',
+  }
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
@@ -63,16 +122,10 @@ let _config = {
  * @param {object} config — theme config from sierra.config.js
  */
 export function initTheme(config = {}) {
-  _config = {
-    default:   config.default   ?? 'system',
-    persist:   config.persist   ?? true,
-    attribute: config.attribute ?? 'data-theme',
-    key:       config.key       ?? 'theme',
-  }
+  _config = normalise(config)
 
   if (typeof window === 'undefined') return
 
-  // Resolve the actual theme (never 'system')
   const resolved = resolveTheme()
   _w().value = resolved
   applyTheme(resolved)
@@ -87,22 +140,35 @@ export function initTheme(config = {}) {
       if (stored) return  // user has a preference — don't override
     }
     if (_config.default === 'system') {
-      const resolved = mq.matches ? 'dark' : 'light'
-      _w().value = resolved
-      applyTheme(resolved)
+      const next = mq.matches ? _config.system.dark : _config.system.light
+      _w().value = next
+      applyTheme(next)
     }
   })
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+/** The themes this app declared, in order. */
+export function themes() {
+  return [..._config.themes]
+}
+
 /**
  * Set the theme explicitly.
- * @param {'light'|'dark'} value
+ *
+ * An unknown name is refused by NAME and the configured list is printed with
+ * it: the failure otherwise is a call that returns normally and changes
+ * nothing, which reads as a broken stylesheet rather than a typo.
+ *
+ * @param {string} value  one of the configured theme names
  */
 export function setTheme(value) {
-  if (value !== 'light' && value !== 'dark') {
-    console.warn(`[Sierra] setTheme: invalid value '${value}'. Use 'light' or 'dark'.`)
+  if (!_config.themes.includes(value)) {
+    console.warn(
+      `[Sierra] setTheme: '${value}' is not one of this app's themes ` +
+      `(${_config.themes.join(', ')}). Declare it in sierra.config.js under theme.themes.`,
+    )
     return
   }
 
@@ -115,32 +181,53 @@ export function setTheme(value) {
 }
 
 /**
- * Toggle between light and dark.
+ * Advance to the next configured theme, wrapping at the end.
+ *
+ * With the two-theme default this is the light/dark toggle it has always been;
+ * with more it is a cycle, because "the other one" is not a question a list of
+ * eleven can answer.
  */
 export function toggleTheme() {
-  setTheme(theme.value === 'dark' ? 'light' : 'dark')
+  const list = _config.themes
+  const at   = list.indexOf(theme.value)
+  setTheme(list[(at + 1) % list.length])
 }
 
 // ─── Internal ─────────────────────────────────────────────────────────────────
 
 function resolveTheme() {
-  // 1. Persisted user preference
+  // 1. Persisted user preference — only if this app still offers it. A theme
+  //    removed from the config would otherwise be restored from storage for
+  //    every reader who had ever selected it, with no stylesheet behind it.
   if (_config.persist && typeof localStorage !== 'undefined') {
     const stored = localStorage.getItem(_config.key)
-    if (stored === 'light' || stored === 'dark') return stored
+    if (stored && _config.themes.includes(stored)) return stored
   }
 
   // 2. Config default
   if (_config.default === 'system') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? _config.system.dark
+      : _config.system.light
   }
 
-  return _config.default === 'dark' ? 'dark' : 'light'
+  return _config.themes.includes(_config.default) ? _config.default : _config.themes[0]
 }
 
 function applyTheme(value) {
   if (typeof document === 'undefined') return
-  document.documentElement.setAttribute(_config.attribute, value)
+  const root = document.documentElement
+
+  if (_config.apply === 'attribute') {
+    root.setAttribute(_config.attribute, value)
+    return
+  }
+
+  // Remove the ones this app declared rather than everything matching
+  // `theme-*`: an app may name its themes anything, and a class it did not
+  // declare belongs to somebody else.
+  for (const name of _config.themes) root.classList.remove(name)
+  root.classList.add(value)
 }
 // ─── Inline script generation (used by post-build) ────────────────────────────
 // Implementation lives in ./script.js so the post-build pipeline can import it

@@ -4,10 +4,11 @@
  * Initialised by virtual:sierra at boot.
  * Exposes a plain `status` object for use in components — see below.
  *
- * import { status, login, logout, useStore } from 'sierra/junction'
+ * import { status, session, signIn, signOut, useStore } from 'sierra/junction'
  */
 
 import { beforeNavigate, goto } from '../router/index.js'
+import { invalidatePrefetch } from '../router/prefetch.js'
 import { configureFetch } from '../fetch/index.js'
 import { createSignal, watchProxy } from '@frontierjs/mesa/runtime'
 
@@ -16,7 +17,14 @@ export {
   registerSchemas, schemaFor, modelNameFor, allSchemas, allDefs, hasSchemas,
   resolveRef, suggestModel,
 } from './schema-registry.js'
-import { createJunctionClient } from '@frontierjs/junction/client'
+import { createJunctionClient, localTokenStore } from '@frontierjs/junction/client'
+
+// The session — who the browser thinks you are. Re-exported here rather than
+// on its own subpath, because `status` and `session` are the two things a
+// component asks this module for and splitting them would be two imports for
+// one subject.
+export { session, ready, refresh, signIn, signUp, signOut } from './session.js'
+import { initSession, _onUnauthorized, session, ready as sessionReady } from './session.js'
 
 // Resource factory — re-exported from the resource module
 export {
@@ -24,6 +32,11 @@ export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
+  // The control table and the registry over it — how an app or a kit says which
+  // control a column gets. The other half of a contribution is the component,
+  // which is the kit's to bind (`@frontierjs/ui/controls`).
+  controlFor, defaultControlFor, formFieldList, labelFieldFor,
+  registerControl, unregisterControl, registeredControls,
 } from './resource.js'
 
 // ─── Module-level refs (set by initJunction) ──────────────────────────────────
@@ -95,39 +108,22 @@ export function getClient() {
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
+//
+// `login(token)` and `logout()` were here, and both were token plumbing wearing
+// the names of the operations: login() never signed anybody in — the app was
+// expected to fetch /auth/login itself and hand the token over — and logout()
+// never told the server, so the session row stayed valid until it expired.
+// `signIn` / `signOut` in ./session.js do the whole thing. What the client
+// cannot know is kept here, and hangs off the client's own token change:
 
-/**
- * Save a token and authenticate the Junction client.
- * Call this after a successful login API response.
- *
- * @param {string} token
- */
-export function login(token) {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(_tokenKey, token)
-  }
-  _client?.setToken(token)
-}
-
-/**
- * Clear the stored token and deauthenticate the Junction client.
- * Redirect handling is left to the caller — call goto() after logout().
- *
- * Note: setToken(null) may trigger a server-side 'unauthorized' event,
- * which will fire the redirectTo guard again. If you call goto() after
- * logout(), that navigation takes priority and the double-redirect is harmless.
- */
-export function logout() {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem(_tokenKey)
-  }
-  // Clear token and close the socket entirely — don't reopen as stranger.
-  // The app is navigating away; an anonymous connection serves no purpose
-  // and would incorrectly fire 'connect' after a deliberate sign-out.
-  if (_client) {
-    _client.token = null
-    _client.disconnect()
-  }
+/** A payload prefetched as somebody else must not be served to whoever is here
+ *  now — in either direction (`FJS-041`). */
+function _tokenChanged(token) {
+  invalidatePrefetch()
+  // A deliberate sign-out closes the socket rather than reopening it as a
+  // stranger: an anonymous connection serves no purpose and would fire
+  // 'connect' after the person has left.
+  if (!token) _client?.disconnect()
 }
 
 // ─── Store bridge ─────────────────────────────────────────────────────────────
@@ -246,16 +242,24 @@ export function initJunction(config) {
   // — Junction registers services at /{service} unless an app opts into a
   // prefix — so a default Sierra app talking to a default Junction app needs
   // no configuration here at all.
-  const client = createJunctionClient({
-    url:        config.url,
-    apiPrefix:  config.apiPrefix,
-    authPrefix: config.authPrefix,
-  })
   const auth = config.auth ?? {}
   const services = config.services ?? {}
   const tokenKey = config.tokenKey ?? 'junction_token'
 
-  // Capture for login() / logout()
+  const client = createJunctionClient({
+    url:        config.url,
+    apiPrefix:  config.apiPrefix,
+    authPrefix: config.authPrefix,
+    // The token has ONE owner, and it is the client — it holds the token, it
+    // opens the socket, and it is what a 401 clears. This module used to write
+    // localStorage in its own login() while the client kept its copy in
+    // memory, so the two halves of "signed in" could disagree.
+    tokenStorage:  localTokenStore(tokenKey),
+    // Only when the app renamed them on the server — see AuthPluginOptions.services.
+    ...(config.authServices ? { authServices: config.authServices } : {}),
+  })
+
+  // Capture for the session module and the navigation guard
   _client = client
   _tokenKey = tokenKey
 
@@ -301,15 +305,12 @@ export function initJunction(config) {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
 
-  // Restore token from storage if present
-  const storedToken = typeof localStorage !== 'undefined'
-    ? localStorage.getItem(tokenKey)
-    : null
-
-  if (storedToken) {
-    // setToken opens the socket itself when none is open, so there is no
-    // separate connect() call here — it would return early anyway.
-    client.setToken(storedToken)
+  // A token in storage is restored by the client's constructor, so there is no
+  // read of localStorage here — that read was the second owner of the token.
+  if (client.token) {
+    // The socket needs opening for a token the constructor adopted: setToken
+    // does it on a CHANGE, and this one was there from the start.
+    client.connect?.()
 
     // Expose the readiness promise instead of awaiting it. Boot continues
     // immediately; anything that genuinely needs the WebSocket transport can
@@ -320,11 +321,21 @@ export function initJunction(config) {
     })
   }
 
-  // Mid-session expiry — 401 from any service call
+  client.on('token', _tokenChanged)
+
+  // Ask the server who this token is — and resolve `ready` either way, which
+  // is what the navigation guard below waits on.
+  initSession(client)
+
+  // Mid-session expiry — 401 from any service call. The client clears its own
+  // token (and therefore storage); what is left is this app's own state.
   client.on('unauthorized', () => {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(tokenKey)
-    }
+    // 401 means the token is not a session — expired, revoked, or issued by a
+    // database that has since been reset. Not 403, which is a caller who IS
+    // authenticated and may not do this; that one must not sign anybody out.
+    client.setToken(null)
+    _onUnauthorized()
+    invalidatePrefetch()
     if (auth.redirectTo) {
       goto(auth.redirectTo)
     }
@@ -342,12 +353,14 @@ export function initJunction(config) {
 
       if (isPublic) return true
 
-      // Token presence check — not validity (see spec §13.3)
-      const hasToken = typeof localStorage !== 'undefined'
-        ? !!localStorage.getItem(tokenKey)
-        : false
+      // Wait for the boot restore rather than judging on token PRESENCE, which
+      // is what this did and is a different question: a token that expired
+      // between visits passed the guard, the page rendered, and its first
+      // service call 401'd — a redirect after the fact, which is the flash both
+      // dogfood apps solved by hand. `ready` resolves signed in or not.
+      await sessionReady
 
-      if (!hasToken) {
+      if (!session.user) {
         if (auth.returnPath) {
           sessionStorage?.setItem('sierra_return_path', to.path)
         }

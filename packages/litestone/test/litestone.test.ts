@@ -18,7 +18,7 @@ import { splitStatements, introspect,
          generateMigrationSQL,
          summariseDiff }              from '../src/core/migrate.js'
 import { createClient, ValidationError } from '../src/core/client.js'
-import { buildWhere, buildOrderBy, sql,
+import { buildWhere, buildOrderBy, sql, now,
          encodeCursor, decodeCursor,
          normaliseOrderBy, buildCursorWhere,
          isNamedAgg, buildNamedAggExpr } from '../src/core/query.js'
@@ -192,6 +192,154 @@ describe('parser', () => {
     const r = parseFile(join(dir, 'schema.lite'))
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toContain('Cannot read file')
+  })
+
+  // parse() and parseFile() have to answer the same shape, or a caller has to
+  // know which one it called. parseFile let a ParseError THROW while parse
+  // returned it as a result — so everything that warns and keeps going (the
+  // CLI's error box, sierra's build, which leaves the app running on explicit
+  // schemas) got a stack trace the moment a schema had a typo in it.
+  test('parseFile answers a bad schema the way parse does — a result, not a throw', () => {
+    const dir = tmpDir('parse-error')
+    const bad = 'model User { id Text @id }'    // Text is renamed, hard-rejected
+    writeFileSync(join(dir, 'schema.lite'), bad)
+
+    expect(parse(bad).valid).toBe(false)
+
+    let r: any
+    expect(() => { r = parseFile(join(dir, 'schema.lite')) }).not.toThrow()
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toContain('was renamed to')
+  })
+
+  // ─── import "..." into <db> ───────────────────────────────────────────────
+  //
+  // A package shipping a schema fragment has to spell SOME database name, and
+  // only the importing app knows what its own are called. `into` is how the app
+  // says where — the one parameter that varies — and it is what makes a shipped
+  // fragment importable rather than copied and rewritten (FJS-265).
+  //
+  // One rule, stated twice: the NEAREST statement about a model's database wins.
+  // An inner `into` beats an outer one; any `into` beats a `@@db` in the file.
+
+  const intoFixture = (label: string, root: string, files: Record<string, string>) => {
+    const dir = tmpDir(label)
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
+    writeFileSync(join(dir, 'schema.lite'), `
+database main  { path "./main.db" }
+database extra { path "./extra.db" }
+database other { path "./other.db" }
+` + root)
+    return dir
+  }
+
+  const dbOf = (r: any) => Object.fromEntries(
+    r.schema.models.map((m: any) => [m.name, m.attributes.find((a: any) => a.kind === 'db')?.name ?? null]))
+
+  test('into overrides a @@db written in the imported file', () => {
+    const dir = intoFixture('into-override',
+      'import "./a.lite" into extra',
+      { 'a.lite': 'model A { id Int @id\n@@db(main) }' })
+
+    const r = parseFile(join(dir, 'schema.lite'))
+    expect(r.valid).toBe(true)
+    expect(dbOf(r).A).toBe('extra')
+  })
+
+  test('into reaches a model that named no database at all', () => {
+    const dir = intoFixture('into-bare',
+      'import "./a.lite" into extra',
+      { 'a.lite': 'model A { id Int @id }' })
+
+    expect(dbOf(parseFile(join(dir, 'schema.lite'))).A).toBe('extra')
+  })
+
+  test('a nested import with no into of its own inherits the outer one', () => {
+    const dir = intoFixture('into-inherit',
+      'import "./a.lite" into extra',
+      { 'a.lite': 'import "./b.lite"\nmodel A { id Int @id }', 'b.lite': 'model B { id Int @id }' })
+
+    expect(dbOf(parseFile(join(dir, 'schema.lite')))).toEqual({ A: 'extra', B: 'extra' })
+  })
+
+  // The nearest wins. Applying the outer one to everything it transitively
+  // brought in would silently move a model the inner import had placed.
+  test('an inner into beats the outer one', () => {
+    const dir = intoFixture('into-nested',
+      'import "./a.lite" into extra',
+      { 'a.lite': 'import "./b.lite" into other\nmodel A { id Int @id }', 'b.lite': 'model B { id Int @id }' })
+
+    expect(dbOf(parseFile(join(dir, 'schema.lite')))).toEqual({ A: 'extra', B: 'other' })
+  })
+
+  // A file is merged once, so the second import is deduplicated away — honouring
+  // it would mean silently applying whichever came first.
+  test('one file imported twice into different databases is an error', () => {
+    const dir = intoFixture('into-conflict',
+      'import "./a.lite" into extra\nimport "./a.lite" into other',
+      { 'a.lite': 'model A { id Int @id }' })
+
+    const r = parseFile(join(dir, 'schema.lite'))
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/imported twice with different destinations/)
+  })
+
+  test('into naming a database the schema never declared is refused', () => {
+    const dir = intoFixture('into-unknown',
+      'import "./a.lite" into nope',
+      { 'a.lite': 'model A { id Int @id }' })
+
+    const r = parseFile(join(dir, 'schema.lite'))
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/nope/)
+  })
+
+  // ─── a bare specifier ─────────────────────────────────────────────────────
+
+  test('a package specifier resolves through node, honouring its exports', () => {
+    const dir = tmpDir('spec-pkg')
+    mkdirSync(join(dir, 'node_modules', 'frag'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules', 'frag', 'package.json'),
+      JSON.stringify({ name: 'frag', exports: { './models.lite': './db/models.lite' } }))
+    mkdirSync(join(dir, 'node_modules', 'frag', 'db'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules', 'frag', 'db', 'models.lite'), 'model Shipped { id Int @id }')
+    writeFileSync(join(dir, 'schema.lite'), 'import "frag/models.lite"\nmodel Own { id Int @id }')
+
+    const r = parseFile(join(dir, 'schema.lite'))
+    expect(r.valid).toBe(true)
+    expect(r.schema.models.map((m: any) => m.name).sort()).toEqual(['Own', 'Shipped'])
+  })
+
+  // Both ways of failing get the SAME guidance, and deliberately: node answers
+  // ERR_PACKAGE_PATH_NOT_EXPORTED for an unexported subpath while bun collapses
+  // it into MODULE_NOT_FOUND, identical to an uninstalled package. Branching on
+  // the code would make the message depend on which runtime read the schema.
+  test.each([
+    ['a subpath the package does not export', 'spec-unexported', true],
+    ['a package that is not installed',       'spec-missing',    false],
+  ])('%s names both causes', (_label, label, withPackage) => {
+    const dir = tmpDir(label)
+    if (withPackage) {
+      mkdirSync(join(dir, 'node_modules', 'frag'), { recursive: true })
+      writeFileSync(join(dir, 'node_modules', 'frag', 'package.json'),
+        JSON.stringify({ name: 'frag', exports: { '.': './index.js' } }))
+    }
+    writeFileSync(join(dir, 'schema.lite'), 'import "frag/models.lite"')
+
+    const r = parseFile(join(dir, 'schema.lite'))
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/is the package installed, and does it export that subpath\?/)
+    expect(r.errors.join(' ')).toContain('frag/models.lite')
+  })
+
+  test('a ParseError in an IMPORTED file names that file, not the root', () => {
+    const dir = tmpDir('parse-error-import')
+    writeFileSync(join(dir, 'broken.lite'), 'model Session { id Text @id }')
+    writeFileSync(join(dir, 'schema.lite'), 'import "./broken.lite"\nmodel User { id Int @id }')
+
+    const r = parseFile(join(dir, 'schema.lite'))
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toContain('broken.lite')
   })
 
   // ─── Invisible / gotcha characters ────────────────────────────────────────
@@ -586,6 +734,63 @@ describe('query helpers', () => {
     const clause = sql`deletedAt IS NULL`
     expect(clause.sql).toBe('deletedAt IS NULL')
     expect(clause.params).toEqual([])
+  })
+
+  // ── FJS-226: the clock, spelled so it can match a stored DateTime ────────
+  //
+  // `DateTime` is ISO-8601 TEXT and every comparison against it is string-wise.
+  // SQLite's `datetime('now')` answers its own format, and 'T' (0x54) sorts
+  // above a space (0x20) — so a predicate written with it is right for
+  // yesterday's rows and wrong for this morning's, with nothing raised.
+
+  test('now() emits the spelling that matches how a DateTime is stored', () => {
+    const clause = sql`dueAt < ${now()}`
+    expect(clause.sql).toBe(`dueAt < strftime('%Y-%m-%dT%H:%M:%fZ','now')`)
+    expect(clause.params).toEqual([])
+  })
+
+  test('a now() modifier is BOUND, not spliced — Invariant 8 holds inside the hatch', () => {
+    const clause = sql`dueAt > ${now('-7 days')}`
+    expect(clause.sql).toBe(`dueAt > strftime('%Y-%m-%dT%H:%M:%fZ','now',?)`)
+    expect(clause.params).toEqual(['-7 days'])
+  })
+
+  test('a fragment keeps its place in the positional order', () => {
+    const clause = sql`a = ${1} AND b < ${now('start of day')} AND c = ${3}`
+    expect(clause.params).toEqual([1, 'start of day', 3])
+    expect(clause.sql).toBe(`a = ? AND b < strftime('%Y-%m-%dT%H:%M:%fZ','now',?) AND c = ?`)
+  })
+
+  test('now() refuses a modifier that is not a string', () => {
+    expect(() => now(7 as any)).toThrow(/modifier/)
+  })
+
+  test("datetime('now') is refused by name, and says what to write instead", () => {
+    expect(() => sql`dueAt < datetime('now')`).toThrow(/cannot match a stored DateTime/)
+    expect(() => sql`dueAt < datetime('now')`).toThrow(/Use now\(\)/)
+    expect(() => sql`dueAt < datetime('now', '-7 days')`).toThrow(/datetime\('now'\)/)
+    expect(() => sql`a < CURRENT_TIMESTAMP`).toThrow(/CURRENT_TIMESTAMP/)
+    expect(() => sql`a = date('now')`).toThrow(/date\('now'\)/)
+    expect(() => sql`a = time('now')`).toThrow(/time\('now'\)/)
+  })
+
+  test('the plain-string $raw is checked too — it skips the tag, not the rule', () => {
+    const p: any[] = []
+    expect(() => buildWhere({ $raw: `dueAt < datetime('now')` }, p)).toThrow(/where\.\$raw/)
+  })
+
+  test('now() also works as a token, for the two callers that cannot interpolate', () => {
+    // A @from(where: …) is a string in the schema and a plain-string $raw has no
+    // interpolation either — without this the refusal would name a spelling
+    // neither of them can write.
+    const p: any[] = []
+    expect(buildWhere({ $raw: `dueAt < now()` }, p)).toBe(`(dueAt < strftime('%Y-%m-%dT%H:%M:%fZ','now'))`)
+    expect(buildWhere({ $raw: `dueAt > now('-7 days')` }, [])).toContain(`'now','-7 days'`)
+  })
+
+  test('julianday() is untouched — it answers a number, so it compares like with like', () => {
+    const clause = sql`julianday(dueAt) - julianday('now') < 7`
+    expect(clause.sql).toContain('julianday')
   })
 
   test('buildWhere — $raw with sql tag', () => {
@@ -1737,6 +1942,139 @@ describe('client — CRUD', () => {
       orderBy: { id: 'asc' },
     })
     expect(rows.every((r: any) => r.id >= minId)).toBe(true)
+  })
+
+  // ─── orderBy: { $raw } ──────────────────────────────────────────────────────
+  //
+  // The hatch `where` has had all along and the sort side did not (FJS-230).
+  // Everything monotonic in a stored column already sorts; what does not —
+  // "snoozed last regardless of due date", a weighted score — could not be said.
+  // The fragment is the whole ORDER BY tail, direction included, because a sort
+  // no builder can express usually needs several keys in an order only the
+  // caller knows.
+
+  describe('orderBy $raw', () => {
+    const S = `model Task {
+      id           Int       @id
+      ownerId      Int       @default(1)
+      weight       Int       @default(0)
+      dueAt        DateTime?
+      snoozedUntil DateTime?
+      @@allow('read', ownerId == auth().id)
+    }`
+    const D = (d: number) => new Date(Date.now() + d * 86400000).toISOString()
+    const seeded = async (label: string) => {
+      const db = await makeDb(S, label)
+      const sys = db.asSystem()
+      await sys.task.create({ data: { id: 1, weight: 5, dueAt: D(1), snoozedUntil: D(9) } })
+      await sys.task.create({ data: { id: 2, weight: 9, dueAt: D(2) } })
+      await sys.task.create({ data: { id: 3, weight: 1, dueAt: D(0) } })
+      await sys.task.create({ data: { id: 4, weight: 99, dueAt: D(-5), ownerId: 2 } })
+      return db
+    }
+    const ids = (rows: any[]) => rows.map((r: any) => r.id)
+
+    test('sorts by an expression no builder can express', async () => {
+      const db = await seeded('ob-raw')
+      // snoozed last, then by due date — nothing stored is monotonic in it
+      expect(ids(await db.$setAuth({ id: 1 }).task.findMany({
+        orderBy: { $raw: sql`CASE WHEN "snoozedUntil" > ${now()} THEN 1 ELSE 0 END ASC, "dueAt" ASC` },
+      }))).toEqual([3, 2, 1])
+      expect(ids(await db.$setAuth({ id: 1 }).task.findMany({
+        orderBy: { $raw: sql`("weight" * ${10} + "id") DESC` },
+      }))).toEqual([2, 1, 3])
+    })
+
+    test('its params keep their place after the WHERE and after the row policy', async () => {
+      // Positional binds make the order the correctness, and ORDER BY comes
+      // after the policy that is ANDed onto the WHERE. A misplaced param here
+      // is a wrong answer, not an error (FJS-215 is the same lesson).
+      const db = await seeded('ob-raw-params')
+      expect(ids(await db.$setAuth({ id: 1 }).task.findMany({
+        where:   { $raw: sql`"weight" > ${2}` },
+        orderBy: { $raw: sql`("weight" * ${100}) DESC` },
+      }))).toEqual([2, 1])
+      expect(ids(await db.$setAuth({ id: 1 }).task.findMany({
+        where:   { id: { in: [1, 2, 3] }, $raw: sql`"weight" >= ${1}` },
+        orderBy: { $raw: sql`ABS("weight" - ${5}) ASC` },
+      }))).toEqual([1, 2, 3])
+      // and the policy is still doing its job — task 4 belongs to owner 2
+      expect(ids(await db.asSystem().task.findMany({ orderBy: { $raw: sql`"weight" DESC` } })))
+        .toEqual([4, 2, 1, 3])
+    })
+
+    test('composes with ordinary keys, in the position it is written', async () => {
+      const db = await seeded('ob-raw-mixed')
+      expect(ids(await db.asSystem().task.findMany({
+        orderBy: [{ ownerId: 'asc' }, { $raw: sql`"weight" DESC` }],
+      }))).toEqual([2, 1, 3, 4])
+    })
+
+    test('survives a relation JOIN without being column-qualified', async () => {
+      // The `t.` rewrite for flat parts is a regex over the FIRST quoted name,
+      // which would qualify one column of a fragment that has several. A raw
+      // part is left alone — the caller names its own columns.
+      const db = await makeDb(`
+        model Company { id Int @id  name String }
+        model Person  { id Int @id  name String  companyId Int  company Company @relation(fields: [companyId], references: [id]) }
+      `, 'ob-raw-join')
+      await db.company.createMany({ data: [{ id: 1, name: 'Zed' }, { id: 2, name: 'Ace' }] })
+      await db.person.createMany({ data: [{ id: 1, name: 'p1', companyId: 1 }, { id: 2, name: 'p2', companyId: 2 }] })
+      expect(ids(await db.person.findMany({
+        orderBy: [{ company: { name: 'asc' } }, { $raw: sql`"id" DESC` }],
+      }))).toEqual([2, 1])
+    })
+
+    test('a plain string is refused — that is how an injected one would arrive', async () => {
+      const db = await seeded('ob-raw-string')
+      await expect(db.asSystem().task.findMany({ orderBy: { $raw: `1; DROP TABLE task` } as any }))
+        .rejects.toThrow(/must be a sql`` tag, not a string/)
+      await expect(db.asSystem().task.findMany({ orderBy: { $raw: sql`` } }))
+        .rejects.toThrow(/orderBy \$raw is empty/)
+    })
+
+    test('refused by name where it cannot mean anything', async () => {
+      const db = await seeded('ob-raw-unsupported')
+      // A cursor reads every sort key's value back off the last row; an
+      // expression is not a column it can read. Emitted as `"$raw" ASC` SQLite
+      // would sort by a string constant and page by a value that is not there.
+      await expect(db.asSystem().task.findManyCursor({ limit: 2, orderBy: { $raw: sql`"weight" DESC` } }))
+        .rejects.toThrow(/cannot be used with a cursor/)
+      await expect(db.asSystem().task.groupBy({ by: ['ownerId'], _count: true, orderBy: { $raw: sql`"ownerId" DESC` } as any }))
+        .rejects.toThrow(/not supported on groupBy/)
+    })
+
+    test('$checkOrderBy does not report it as an unknown field', async () => {
+      const db = await seeded('ob-raw-check')
+      expect(await db.$checkOrderBy('task', { $raw: sql`"weight" DESC` })).toEqual([])
+    })
+  })
+
+  test('$raw with now() agrees with the structured form on rows inside TODAY', async () => {
+    // The defect in one assertion. With datetime('now') the hour-old row was
+    // silently omitted and the day-old one returned, so a demo seeded with last
+    // week's data passed and the failure only appeared for recent rows.
+    const db2 = await makeDb(`
+      model Task { id Int @id @default(autoincrement())  title String  dueAt DateTime  completedAt DateTime? }
+    `, 'clock-agree')
+    const t = Date.now()
+    await db2.task.createMany({ data: [
+      { title: 'a day',    dueAt: new Date(t - 24 * 3600e3) },
+      { title: 'an hour',  dueAt: new Date(t - 3600e3) },
+      { title: 'a minute', dueAt: new Date(t - 60e3) },
+      { title: 'ahead',    dueAt: new Date(t + 3600e3) },
+    ]})
+
+    const raw        = await db2.task.findMany({ where: { $raw: sql`dueAt < ${now()} AND completedAt IS NULL` } })
+    const structured = await db2.task.findMany({ where: { dueAt: { lt: new Date() }, completedAt: null } })
+
+    expect(raw.map((r: any) => r.title)).toEqual(['a day', 'an hour', 'a minute'])
+    expect(raw.map((r: any) => r.id)).toEqual(structured.map((r: any) => r.id))
+
+    // and a modifier reaches the same rows
+    const week = await db2.task.findMany({ where: { $raw: sql`dueAt > ${now('-7 days')}` } })
+    expect(week.length).toBe(4)
+    db2.$close()
   })
 
   test('$raw — composed with structured where', async () => {
@@ -3286,6 +3624,284 @@ const CASCADE_SCHEMA = `
 `
 
 
+// FJS-176's sibling: `withDeleted` was accepted on a write and silently
+// dropped. It is not in the destructured signature, so it went the way an
+// unknown key goes — while `take`/`skip` on the same call throw by name. The
+// flags mean the same thing on a write as on a read now.
+describe('soft delete — a write takes the flags too', () => {
+  const SCHEMA = `model Doc { id Int @id  name String  cost Int @default(0)  deletedAt DateTime?  @@softDelete }`
+  let db: any
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'sd-write-flags') })
+  afterAll(() => db.$close())
+  beforeEach(async () => {
+    await db.doc.deleteMany({ where: {} })
+    await db.doc.createMany({ data: [{ id: 1, name: 'a' }, { id: 2, name: 'gone' }] })
+    await db.doc.remove({ where: { id: 2 } })
+  })
+  const deleted = () => db.doc.findUnique({ where: { id: 2 }, withDeleted: true })
+
+  test('update reaches a soft-deleted row with the flag, and not without it', async () => {
+    expect(await db.doc.update({ where: { id: 2 }, data: { cost: 99 } })).toBeNull()
+    expect((await deleted()).cost).toBe(0)
+    expect((await db.doc.update({ where: { id: 2 }, data: { cost: 99 }, withDeleted: true })).cost).toBe(99)
+  })
+
+  test('onlyDeleted narrows a bulk write to the deleted rows', async () => {
+    expect(await db.doc.updateMany({ where: {}, data: { cost: 5 }, onlyDeleted: true })).toEqual({ count: 1 })
+    expect((await deleted()).cost).toBe(5)
+    expect((await db.doc.findMany())[0].cost).toBe(0)
+  })
+
+  test('aggregate and groupBy honour onlyDeleted/withDeleted, like every other read', async () => {
+    // Both were pinned to 'live' regardless of the args, so
+    // `aggregate({ _count: true, onlyDeleted: true })` counted the LIVE rows —
+    // the opposite of the question, from the method whose whole answer is one
+    // number nothing can cross-check (FJS-263).
+    expect((await db.doc.aggregate({ _count: true }))._count).toBe(1)
+    expect((await db.doc.aggregate({ _count: true, onlyDeleted: true }))._count).toBe(1)
+    expect((await db.doc.aggregate({ _count: true, withDeleted: true }))._count).toBe(2)
+    expect(await db.doc.groupBy({ by: ['name'], _count: true, onlyDeleted: true }))
+      .toEqual([{ name: 'gone', _count: 1 }])
+  })
+
+  test('a hard delete still bypasses the soft-delete filter — that is its contract', async () => {
+    // Unlike templates. `delete` exists BESIDE `remove` precisely to destroy a
+    // row whatever its lifecycle state, and it says so; a deleted row is an end
+    // state rather than a live category the caller cannot see.
+    expect(await db.doc.delete({ where: { id: 2 } })).not.toBeNull()
+    expect(await deleted()).toBeNull()
+  })
+
+  test('...and a flag narrows it, which is how a purge is spelled', async () => {
+    expect(await db.doc.deleteMany({ where: {}, onlyDeleted: true })).toEqual({ count: 1 })
+    expect((await db.doc.findMany({ withDeleted: true })).map((r: any) => r.id)).toEqual([1])
+  })
+})
+
+// ─── a flag the model cannot satisfy ──────────────────────────────────────────
+//
+// FJS-293. `onlyDeleted` on a model with no @@softDelete answered the LIVE rows
+// — not an empty list, the opposite of the question — with nothing anywhere
+// saying the flag had not applied. A filter typo is refused by name and a sort
+// key typo is refused by name; this was the one that said nothing.
+//
+// The same shape twice, because @@hasTemplates is the same two flags one
+// feature over, and FJS-292 is its sibling on a METHOD: a bare Error had no
+// status, so `?$search=…` on a model with no @@fts came back 500.
+
+describe('a directive the schema cannot satisfy is refused, not dropped', () => {
+  const PLAIN = `model Note { id Int @id  name String }`
+  let db: any
+  beforeAll(async () => {
+    db = await makeDb(PLAIN, 'undeclared-capability')
+    await db.note.createMany({ data: [{ id: 1, name: 'a' }, { id: 2, name: 'b' }] })
+  })
+  afterAll(() => db.$close())
+
+  const refusal = async (fn: () => Promise<unknown>) => {
+    const err: any = await Promise.resolve().then(fn).then(() => null, (e: any) => e)
+    expect(err?.name).toBe('CapabilityNotDeclaredError')
+    expect(err.status).toBe(400)
+    expect(err.retryable).toBe(false)
+    return err
+  }
+
+  test('onlyDeleted with no @@softDelete names the model and the attribute', async () => {
+    // Measured before the fix: this answered both rows, exactly as a plain
+    // findMany() does.
+    const err = await refusal(() => db.note.findMany({ onlyDeleted: true }))
+    expect(err.model).toBe('Note')
+    expect(err.requires).toBe('@@softDelete')
+    expect(err.message).toContain('Note')
+  })
+
+  test('every read path refuses, not just findMany', async () => {
+    await refusal(() => db.note.findFirst({ onlyDeleted: true }))
+    await refusal(() => db.note.count({ onlyDeleted: true }))
+    await refusal(() => db.note.aggregate({ _count: true, onlyDeleted: true }))
+    await refusal(() => db.note.groupBy({ by: ['name'], _count: true, onlyDeleted: true }))
+    await refusal(() => db.note.findManyCursor({ limit: 2, onlyDeleted: true }))
+    await refusal(() => db.note.findManyAndCount({ onlyTemplates: true }))
+  })
+
+  test('a write takes the flags too, so a write refuses them too', async () => {
+    await refusal(() => db.note.updateMany({ where: {}, data: { name: 'x' }, onlyDeleted: true }))
+    await refusal(() => db.note.deleteMany({ where: {}, onlyDeleted: true }))
+    await refusal(() => db.note.removeMany({ where: {}, onlyTemplates: true }))
+  })
+
+  test('`withX` is allowed, because widening a model that hides nothing is satisfiable', async () => {
+    // The asymmetry is the point: generic code that does not know the model —
+    // Studio's row browser, an admin screen with a *show deleted* toggle —
+    // asks for everything and gets everything. `onlyX` cannot be satisfied at
+    // all, which is why that is the half that refuses.
+    expect((await db.note.findMany({ withDeleted: true })).length).toBe(2)
+    expect((await db.note.findMany({ withTemplates: true })).length).toBe(2)
+  })
+
+  test('the template flags refuse the same way', async () => {
+    const err = await refusal(() => db.note.findMany({ onlyTemplates: true }))
+    expect(err.requires).toBe('@@hasTemplates')
+  })
+
+  test('an include takes the same flags, so it owes the same refusal', async () => {
+    // The include path builds its own SQL and reaches neither mode function.
+    const rel = await makeDb(`
+      model Author { id Int @id  name String  books Book[] }
+      model Book   { id Int @id  title String  authorId Int  author Author @relation(fields: [authorId], references: [id]) }
+    `, 'undeclared-include')
+    await rel.author.create({ data: { id: 1, name: 'a' } })
+    await rel.book.create({ data: { id: 1, title: 't', authorId: 1 } })
+
+    const err: any = await rel.author
+      .findMany({ include: { books: { onlyDeleted: true } } })
+      .catch((e: any) => e)
+    expect(err?.name).toBe('CapabilityNotDeclaredError')
+    expect(err.model).toBe('Book')
+    rel.$close()
+  })
+
+  test('restore() and search() are the method half of the same refusal', async () => {
+    expect((await refusal(() => db.note.restore({ where: { id: 1 } }))).requires).toBe('@@softDelete')
+    expect((await refusal(() => db.note.search('a'))).requires).toBe('@@fts')
+    expect((await refusal(async () => db.note.optimizeFts())).requires).toBe('@@fts')
+  })
+
+  test('a model that DOES declare it is untouched', async () => {
+    const sd = await makeDb(`model Doc { id Int @id  name String  deletedAt DateTime?  @@softDelete }`, 'undeclared-ok')
+    await sd.doc.createMany({ data: [{ id: 1, name: 'a' }, { id: 2, name: 'b' }] })
+    await sd.doc.remove({ where: { id: 2 } })
+    expect((await sd.doc.findMany({ onlyDeleted: true })).map((r: any) => r.id)).toEqual([2])
+    expect((await sd.doc.findMany()).map((r: any) => r.id)).toEqual([1])
+    sd.$close()
+  })
+
+  test('false is not asking — an explicitly-off flag is not a refusal', async () => {
+    // The flags default to false all over the client and are threaded through
+    // unconditionally by callers that do not know the model. Refusing on a
+    // falsy value would refuse every one of those.
+    expect((await db.note.findMany({ withDeleted: false, onlyDeleted: false })).length).toBe(2)
+  })
+})
+
+// ─── soft delete × @unique ────────────────────────────────────────────────────
+//
+// Ruled: a soft-deleted row KEEPS its unique values. The row is still there, so
+// freeing the slot would make @unique false for every read that includes
+// deleted rows — findUnique(withDeleted) would legitimately match two — and
+// would make restore() conditionally impossible, which is the whole contract.
+//
+// What was wrong is the REPORT (FJS-204) and the fact that four write paths
+// gave four different answers, two of them silent (FJS-276).
+
+describe('a soft-deleted row keeps its @unique slot, and every write says so', () => {
+  const S = `model Doc {
+    id        Int       @id @default(autoincrement())
+    code      String    @unique
+    team      String    @default("a")
+    slot      Int       @default(1)
+    title     String    @default("original")
+    deletedAt DateTime?
+    @@unique([team, slot])
+    @@softDelete
+  }`
+
+  const buried = async (label: string) => {
+    const db = await makeDb(S, label)
+    const row = await db.doc.create({ data: { code: 'x', team: 'a', slot: 1 } })
+    await db.doc.remove({ where: { id: row.id } })
+    return db
+  }
+
+  test('the refusal names the field, the value and the row — not the index', async () => {
+    const db = await buried('sdu-create')
+    // Was `UNIQUE constraint failed: doc.code`, against a table count() says is
+    // empty. Every first diagnosis went to the index.
+    expect(await db.doc.count()).toBe(0)
+    const err = await db.doc.create({ data: { code: 'x', team: 'b', slot: 9 } }).catch((e: any) => e)
+    expect(err.name).toBe('SoftDeletedUniqueError')
+    expect(err.message).toMatch(/soft-deleted row still holds code = "x" \(id 1\)/)
+    expect(err.message).toMatch(/withDeleted: true/)
+    expect(err.status).toBe(409)
+    expect(err.retryable).toBe(false)
+    expect(err.fields).toEqual(['code'])
+  })
+
+  test('a composite @@unique names both columns', async () => {
+    const db = await buried('sdu-composite')
+    const err = await db.doc.create({ data: { code: 'y', team: 'a', slot: 1 } }).catch((e: any) => e)
+    expect(err.name).toBe('SoftDeletedUniqueError')
+    expect(err.fields).toEqual(['team', 'slot'])
+    expect(err.message).toMatch(/team = "a", slot = 1/)
+  })
+
+  test('all four write paths give the SAME answer', async () => {
+    // They gave four different ones. `upsert` answered null having written
+    // nothing, and `upsertMany` wrote the update INTO the deleted row and
+    // reported success — a write no read returns, with deletedAt never cleared.
+    const paths: [string, (db: any) => Promise<any>][] = [
+      ['create',     db => db.doc.create({ data: { code: 'x', team: 'b', slot: 2 } })],
+      ['createMany', db => db.doc.createMany({ data: [{ code: 'x', team: 'b', slot: 3 }] })],
+      ['upsert',     db => db.doc.upsert({ where: { code: 'x' }, create: { code: 'x', team: 'b', slot: 4 }, update: { title: 'via upsert' } })],
+      ['upsertMany', db => db.doc.upsertMany({ data: [{ code: 'x', title: 'via upsertMany' }], conflictTarget: ['code'], update: ['title'] })],
+    ]
+    const answers: string[] = []
+    for (const [name, run] of paths) {
+      const db = await buried(`sdu-path-${name}`)
+      const got = await run(db).then(
+        (r: any) => `answered ${JSON.stringify(r)}`,
+        (e: any) => e.name)
+      // and nothing was written into the row that is not there
+      const still = await db.doc.findUnique({ where: { code: 'x' }, withDeleted: true })
+      answers.push(`${name}: ${got} · title ${still.title} · deletedAt ${still.deletedAt ? 'set' : 'cleared'}`)
+    }
+    expect(answers).toEqual([
+      'create: SoftDeletedUniqueError · title original · deletedAt set',
+      'createMany: SoftDeletedUniqueError · title original · deletedAt set',
+      'upsert: SoftDeletedUniqueError · title original · deletedAt set',
+      'upsertMany: SoftDeletedUniqueError · title original · deletedAt set',
+    ])
+  })
+
+  test('an ordinary conflict is untouched — only a DELETED holder is reinterpreted', async () => {
+    const db = await makeDb(S, 'sdu-live')
+    await db.doc.create({ data: { code: 'live', team: 'a', slot: 1 } })
+    const err = await db.doc.create({ data: { code: 'live', team: 'b', slot: 2 } }).catch((e: any) => e)
+    expect(err.name).not.toBe('SoftDeletedUniqueError')
+    expect(err.message).toMatch(/UNIQUE constraint failed/)
+  })
+
+  test('a race between two LIVE writers still resolves to an update, as upsert promises', async () => {
+    // The fallback that swallowed the soft-delete case exists for a real race,
+    // and narrowing it must not disarm it.
+    const db = await makeDb(S, 'sdu-race')
+    await db.doc.create({ data: { code: 'r', team: 'a', slot: 1 } })
+    const r = await db.doc.upsert({ where: { code: 'r' }, create: { code: 'r', team: 'z', slot: 9 }, update: { title: 'updated' } })
+    expect(r.title).toBe('updated')
+  })
+
+  test('the two ways to release a slot both work', async () => {
+    const a = await buried('sdu-release-rename')
+    // 1. the row still owns the value — move it, deliberately, with the flag
+    await a.doc.update({ where: { id: 1 }, data: { code: 'x-archived' }, withDeleted: true })
+    expect(await a.doc.create({ data: { code: 'x', team: 'b', slot: 2 } })).toBeTruthy()
+
+    const b = await buried('sdu-release-purge')
+    // 2. or stop keeping the row at all
+    await b.doc.delete({ where: { id: 1 }, withDeleted: true })
+    expect(await b.doc.create({ data: { code: 'x', team: 'b', slot: 2 } })).toBeTruthy()
+  })
+
+  test('restore() is what holding the slot buys, and it cannot be raced for it', async () => {
+    const db = await buried('sdu-restore')
+    // Nobody could have taken the value in between — that is the point.
+    await expect(db.doc.create({ data: { code: 'x', team: 'b', slot: 2 } })).rejects.toThrow(/soft-deleted row still holds/)
+    const back = await db.doc.restore({ where: { id: 1 } })
+    expect(back).toHaveLength(1)
+    expect((await db.doc.findUnique({ where: { code: 'x' } }))?.id).toBe(1)
+  })
+})
+
 describe('soft delete cascade', () => {
   let db: any
 
@@ -3727,6 +4343,84 @@ describe('String[] / Int[] array fields', () => {
     await expect(
       db.post.create({ data: { id: 99, title: 'Bad', scores: ['not','ints'], flags: ['ok'] } })
     ).rejects.toThrow(ValidationError)
+  })
+
+  // ── FJS-194: the array family goes through validate.js like every other ────
+  //
+  // These five were enforced inline in writeData with their wording built at
+  // the throw site. Two things followed: an authored message was emitted to the
+  // client in `x-messages` and silently ignored by the server, so the two
+  // realms refused the same write in different words; and the family had no
+  // entry in DEFAULT_MESSAGES, so `x-messages` had no default to fall back to
+  // and the case generator had to restate the wording.
+
+  describe('array rules — one owner, one wording', () => {
+    const SRC = `
+      model Doc {
+        id     Int      @id @default(autoincrement())
+        tags   String[] @minItems(2, "Pick at least two tags") @maxItems(3, "Three tags is the limit")
+        codes  String[] @uniqueItems("No duplicate codes")
+        scores Int[]
+      }
+    `
+    let db: any
+    beforeAll(async () => { db = await makeDb(SRC, 'array-msgs') })
+    afterAll(() => db.$close())
+
+    const failure = async (data: any) => {
+      try { await db.doc.create({ data: { tags: ['a','b'], ...data } }); return null }
+      catch (e: any) { return e }
+    }
+
+    test('an authored @minItems message is what the SERVER says', async () => {
+      const err = await failure({ tags: ['one'] })
+      expect(err).toBeInstanceOf(ValidationError)
+      expect(err.message).toContain('Pick at least two tags')
+    })
+
+    test('@maxItems and @uniqueItems carry theirs too', async () => {
+      expect((await failure({ tags: ['a','b','c','d'] })).message).toContain('Three tags is the limit')
+      expect((await failure({ codes: ['x','x'] })).message).toContain('No duplicate codes')
+    })
+
+    test('the same string reaches the client through x-messages', async () => {
+      const { generateJsonSchema } = await import('../src/jsonschema.js')
+      const js = generateJsonSchema(parse(SRC).schema) as any
+      const tags = js.$defs.Doc.properties.tags['x-messages']
+      // Keyed by rule name AND by the JSON Schema keyword it compiles to — the
+      // two happen to be spelled the same for this family, which is why
+      // @uniqueItems needed adding to the keyword table rather than inheriting.
+      expect(tags.minItems).toBe('Pick at least two tags')
+      expect(tags.maxItems).toBe('Three tags is the limit')
+      expect(js.$defs.Doc.properties.codes['x-messages'].uniqueItems).toBe('No duplicate codes')
+    })
+
+    test('the default wording has no field-name prefix, like every other rule', async () => {
+      const db2 = await makeDb(`model T { id Int @id @default(autoincrement())  tags String[] @minItems(2) }`, 'array-default')
+      const err = await db2.t.create({ data: { tags: ['one'] } }).catch((e: any) => e)
+      expect(err.errors[0]).toEqual({ path: ['tags'], message: 'must have at least 2 item(s)' })
+      db2.$close()
+    })
+
+    test('shape and element type are rules too, not a separate throw', async () => {
+      expect((await failure({ tags: 'not-an-array' })).errors[0].message).toBe('must be an array')
+      expect((await failure({ scores: ['nope'] })).errors[0].message).toBe('must contain only integers')
+      expect((await failure({ tags: [1, 2] })).errors[0].message).toBe('must contain only strings')
+    })
+
+    test('every array error comes back at once, not one throw at a time', async () => {
+      const err = await failure({ tags: ['one'], codes: ['x','x'] })
+      expect(err.errors.map((e: any) => e.path[0]).sort()).toEqual(['codes', 'tags'])
+    })
+
+    test('a model whose ONLY rule is an array field still runs the pass', async () => {
+      // buildValidationMap decides whether validate() is called at all. Before
+      // the move the array checks ran unconditionally in writeData, so a model
+      // with no other validator would have skipped them silently.
+      const db2 = await makeDb(`model T { id Int @id @default(autoincrement())  tags String[] }`, 'array-only')
+      await expect(db2.t.create({ data: { tags: [1] } })).rejects.toThrow(/must contain only strings/)
+      db2.$close()
+    })
   })
 
   test('non-array value throws ValidationError', async () => {
@@ -4614,8 +5308,8 @@ describe('@omit / @guarded field policy', () => {
         secret   String    @guarded(all)
       }
     `, 'policy')
-    await db.user.create({ data: { id: 1, name: 'Alice', bio: 'Long bio', prefs: '{}', salary: 100000, secret: 'top-secret' } })
-    await db.user.create({ data: { id: 2, name: 'Bob',   bio: 'Short bio', prefs: '{"theme":"dark"}', salary: 80000, secret: 'also-secret' } })
+    await db.asSystem().user.create({ data: { id: 1, name: 'Alice', bio: 'Long bio', prefs: '{}', salary: 100000, secret: 'top-secret' } })
+    await db.asSystem().user.create({ data: { id: 2, name: 'Bob',   bio: 'Short bio', prefs: '{"theme":"dark"}', salary: 80000, secret: 'also-secret' } })
   })
   afterAll(() => db.$close())
 
@@ -4686,6 +5380,104 @@ describe('@omit / @guarded field policy', () => {
   // asSystem() memoized
   test('asSystem() returns same instance', () => {
     expect(db.asSystem()).toBe(db.asSystem())
+  })
+})
+
+
+// ─── 18a. @guarded — the write half ───────────────────────────────────────────
+//
+// @guarded is a system-context lock in BOTH directions. It used to strip the
+// column on read and do nothing at all on write, so the column was invisible and
+// settable at once: a caller could not see what they were overwriting and the
+// owner could not see that they had, and the strip made the landed write look
+// exactly like a refusal (FJS-235). @encrypted is deliberately NOT covered — it
+// hides a value from a reader, and whoever supplies a secret is routinely not
+// the system.
+
+describe('@guarded — write half', () => {
+  const SCHEMA = `
+    model Thing {
+      id       Int     @id @default(autoincrement())
+      name     String
+      riskFlag String? @guarded(all)
+      note     String? @guarded
+      card     String? @encrypted
+    }
+  `
+  let db: any
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'guarded-write', { encryptionKey: 'a'.repeat(64) }) })
+  afterAll(() => db.$close())
+
+  test('a non-system create naming a @guarded(all) field is refused by name', async () => {
+    const user = db.$setAuth({ id: 1 })
+    await expect(user.thing.create({ data: { name: 'a', riskFlag: 'HIGH' } }))
+      .rejects.toThrow(/"riskFlag" is @guarded/)
+  })
+
+  test('bare @guarded is refused the same way — it is a lock, not a level', async () => {
+    const user = db.$setAuth({ id: 1 })
+    await expect(user.thing.create({ data: { name: 'a', note: 'n' } }))
+      .rejects.toThrow(/"note" is @guarded/)
+  })
+
+  test('every field is named, not just the first', async () => {
+    const user = db.$setAuth({ id: 1 })
+    await expect(user.thing.create({ data: { name: 'a', riskFlag: 'H', note: 'n' } }))
+      .rejects.toThrow(/"riskFlag", "note" are @guarded/)
+  })
+
+  test('the refusal is an AccessDeniedError, so it lands as a 403 and not a 400', async () => {
+    const user = db.$setAuth({ id: 1 })
+    const err  = await user.thing.create({ data: { name: 'a', riskFlag: 'H' } }).catch((e: any) => e)
+    expect(err.name).toBe('AccessDeniedError')
+    expect(err.code).toBe('ACCESS_DENIED')
+  })
+
+  test('a non-system UPDATE is refused too — the create half alone leaves the hole open', async () => {
+    const row  = await db.asSystem().thing.create({ data: { name: 'b', riskFlag: 'LOW' } })
+    const user = db.$setAuth({ id: 1 })
+    await expect(user.thing.update({ where: { id: row.id }, data: { riskFlag: 'TAMPER' } }))
+      .rejects.toThrow(/"riskFlag" is @guarded/)
+    // and the value it tried to overwrite is untouched
+    const after = await db.asSystem().thing.findUnique({ where: { id: row.id } })
+    expect(after.riskFlag).toBe('LOW')
+  })
+
+  test('updateMany and upsert go through the same owner', async () => {
+    const user = db.$setAuth({ id: 1 })
+    await expect(user.thing.updateMany({ where: {}, data: { riskFlag: 'X' } }))
+      .rejects.toThrow(/@guarded/)
+    await expect(user.thing.upsert({ where: { id: 9999 }, create: { name: 'c', riskFlag: 'X' }, update: {} }))
+      .rejects.toThrow(/@guarded/)
+  })
+
+  test('a write that does not name the column is unaffected', async () => {
+    const row  = await db.asSystem().thing.create({ data: { name: 'd', riskFlag: 'KEEP' } })
+    const user = db.$setAuth({ id: 1 })
+    await user.thing.update({ where: { id: row.id }, data: { name: 'renamed' } })
+    const after = await db.asSystem().thing.findUnique({ where: { id: row.id } })
+    expect(after.name).toBe('renamed')
+    expect(after.riskFlag).toBe('KEEP')
+  })
+
+  test('asSystem() writes it — that is what the lock means', async () => {
+    const row = await db.asSystem().thing.create({ data: { name: 'e', riskFlag: 'SET' } })
+    await db.asSystem().thing.update({ where: { id: row.id }, data: { riskFlag: 'CHANGED' } })
+    const after = await db.asSystem().thing.findUnique({ where: { id: row.id } })
+    expect(after.riskFlag).toBe('CHANGED')
+  })
+
+  test('@encrypted alone stays writable by a non-system caller, and unreadable', async () => {
+    const user = db.$setAuth({ id: 1 })
+    const row  = await user.thing.create({ data: { name: 'f', card: '4111' } })
+    expect('card' in row).toBe(false)
+    expect((await db.asSystem().thing.findUnique({ where: { id: row.id } })).card).toBe('4111')
+  })
+
+  test('the pair still cannot be spelled — @allow beside @guarded is a parse error', () => {
+    const r = parse(`model T { id Int @id  x String? @guarded(all) @allow('write', false) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.some((e: string) => e.includes('@allow conflicts with @guarded'))).toBe(true)
   })
 })
 
@@ -5398,7 +6190,7 @@ describe('@secret field attribute', () => {
 
   test('@secret field is encrypted at rest', async () => {
     const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'secret-enc', { encryptionKey: ENC_KEY })
-    await db.secret.create({ data: { token: 'mysecret' } })
+    await db.asSystem().secret.create({ data: { token: 'mysecret' } })
     const raw = db.$db.query(`SELECT token FROM secret`).get() as any
     expect(raw.token).toMatch(/^v1\./)   // AES-GCM ciphertext prefix
     db.$close()
@@ -5406,7 +6198,7 @@ describe('@secret field attribute', () => {
 
   test('@secret field is stripped from findMany results', async () => {
     const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'secret-strip', { encryptionKey: ENC_KEY })
-    await db.secret.create({ data: { token: 'mysecret' } })
+    await db.asSystem().secret.create({ data: { token: 'mysecret' } })
     const rows = await db.secret.findMany()
     expect((rows[0] as any).token).toBeUndefined()
     db.$close()
@@ -5414,7 +6206,7 @@ describe('@secret field attribute', () => {
 
   test('@secret field is returned via asSystem()', async () => {
     const db = await makeDb(`model Secret { id Int @id; token String? @secret }`, 'secret-system', { encryptionKey: ENC_KEY })
-    await db.secret.create({ data: { token: 'mysecret' } })
+    await db.asSystem().secret.create({ data: { token: 'mysecret' } })
     const row = await db.asSystem().secret.findFirst({}) as any
     expect(row.token).toBe('mysecret')
     db.$close()
@@ -5426,7 +6218,7 @@ describe('@secret field attribute', () => {
 
   test('$rotateKey re-encrypts rotate:true fields', async () => {
     const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-basic', { encryptionKey: ENC_KEY })
-    await db.secret.create({ data: { token: 'rotate-me' } })
+    await db.asSystem().secret.create({ data: { token: 'rotate-me' } })
 
     const statsBefore = db.$db.query(`SELECT token FROM secret`).get() as any
     expect(statsBefore.token).toMatch(/^v1\./)
@@ -5574,8 +6366,8 @@ describe('@secret field attribute', () => {
 
   test('$rotateKey returns per-model stats', async () => {
     const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-stats', { encryptionKey: ENC_KEY })
-    await db.secret.create({ data: { token: 'a' } })
-    await db.secret.create({ data: { token: 'b' } })
+    await db.asSystem().secret.create({ data: { token: 'a' } })
+    await db.asSystem().secret.create({ data: { token: 'b' } })
 
     const stats = await db.$rotateKey(NEW_KEY)
     expect(stats.Secret.rows).toBe(2)
@@ -5594,7 +6386,7 @@ describe('@secret field attribute', () => {
     raw.close()
 
     const dbOld = await createClient({ parsed: r,  db: path, encryptionKey: ENC_KEY })
-    await (dbOld as any).secret.create({ data: { token: 'still-readable' } })
+    await (dbOld as any).asSystem().secret.create({ data: { token: 'still-readable' } })
     await dbOld.$rotateKey(NEW_KEY)
     dbOld.$close()
 
@@ -5610,7 +6402,7 @@ describe('@secret field attribute', () => {
       'rotate-skip',
       { encryptionKey: ENC_KEY }
     )
-    await db.secret.create({ data: { fixed: 'stays', rotateable: 'changes' } })
+    await db.asSystem().secret.create({ data: { fixed: 'stays', rotateable: 'changes' } })
 
     const before = db.$db.query(`SELECT fixed, rotateable FROM secret`).get() as any
     // Skipped is not free: the key swap is global, so `fixed` is unreadable
@@ -5741,6 +6533,100 @@ describe('onLog callback', () => {
     const fieldLog = calls.find(e => e.field === 'body')
     expect(fieldLog).toBeDefined()
     expect(fieldLog.model).toBe('post')
+    db.$close()
+  })
+
+  // ─── $audit ───────────────────────────────────────────────────────────────
+  //
+  // @@log(audit) covers WRITES, so the events an app most wants were the ones it
+  // could not see: a failed login performs no write and left no trace, and a
+  // system-context write left `actorId: null` because asSystem() names no
+  // principal (FJS-276, FJS-277). $audit is the one owner of putting a row in
+  // the trail deliberately — the log model is an ordinary accessor a caller
+  // could write directly, and two writers with no shared definition is how a
+  // second `operation` vocabulary starts drifting from the first.
+
+  test('$audit writes a row nothing else could have written', async () => {
+    const db = await makeLogDb()
+    const row: any = await (db as any).$audit({
+      operation: 'login.failed',
+      model:     'User',
+      records:   ['u1'],
+      actorId:   'u1',
+      meta:      { reason: 'bad-password' },
+    })
+    expect(row.operation).toBe('login.failed')
+    expect(row.actorId).toBe('u1')
+
+    const rows = await (db as any).auditLogs.findMany({})
+    expect(rows.some((r: any) => r.operation === 'login.failed' && r.actorId === 'u1')).toBe(true)
+    db.$close()
+  })
+
+  // It THROWS where @@log(audit) is fire-and-forget, and that difference is the
+  // point: there the record is a side effect of a write that already succeeded
+  // and must not fail it; here the record IS what the caller asked for.
+  test('$audit throws rather than dropping the row', async () => {
+    const db = await makeLogDb()
+    await expect((db as any).$audit({ model: 'User' })).rejects.toThrow(/'operation' is required/)
+    // Refused BY NAME rather than dropped — a misspelled key is a caller that
+    // meant to record something, and a silently thinner row is worse than none.
+    await expect((db as any).$audit({ operation: 'x', reason: 'oops' }))
+      .rejects.toThrow(/unknown key 'reason'/)
+    await expect((db as any).$audit({ operation: 'x' }, { database: 'nope' }))
+      .rejects.toThrow(/not a logger database/)
+    db.$close()
+  })
+
+  test('the actor comes from the client when it is not stated', async () => {
+    const db = await makeLogDb()
+    await (db as any).$setAuth({ id: 7, type: 'user' }).$audit({ operation: 'logout' })
+    await flush()
+    const rows = await (db as any).auditLogs.findMany({})
+    const row  = rows.find((r: any) => r.operation === 'logout')
+    expect(row.actorId).toBe(7)
+    expect(row.actorType).toBe('user')
+    db.$close()
+  })
+
+  // The case FJS-276 is about: a system context has no principal, so an actor
+  // has to be STATED — and stating it has to work.
+  test('asSystem names no principal, so a stated actor is the only one', async () => {
+    const db = await makeLogDb()
+    await (db as any).asSystem().$audit({ operation: 'a' })
+    await (db as any).asSystem().$audit({ operation: 'b', actorId: 'u9' })
+    await flush()
+    const rows = await (db as any).auditLogs.findMany({})
+    expect(rows.find((r: any) => r.operation === 'a').actorId).toBe(null)
+    expect(rows.find((r: any) => r.operation === 'b').actorId).toBe('u9')
+    db.$close()
+  })
+
+  // A stated value beats onLog's. onLog is a generic enricher over every entry;
+  // a $audit caller is naming one event and knows more about it than it does.
+  test('a stated actorId wins over onLog', async () => {
+    const db = await makeLogDb(() => ({ actorId: 'from-onlog' }))
+    await (db as any).$audit({ operation: 'x', actorId: 'stated' })
+    await (db as any).$audit({ operation: 'y' })
+    await flush()
+    const rows = await (db as any).auditLogs.findMany({})
+    expect(rows.find((r: any) => r.operation === 'x').actorId).toBe('stated')
+    expect(rows.find((r: any) => r.operation === 'y').actorId).toBe('from-onlog')
+    db.$close()
+  })
+
+  // Every flavour of client answers it. $checkWhere shipped without this and a
+  // scoped client threw on the property itself, since a Litestone proxy throws
+  // on an unknown one rather than answering undefined.
+  test('every flavour of client has it', async () => {
+    const db: any = await makeLogDb()
+    for (const client of [db, db.asSystem(), db.$setAuth({ id: 1 }), db.$scopedBy({})])
+      expect(typeof client.$audit).toBe('function')
+    // Reflect.ownKeys, not Object.keys — the hand-written $-accessor lists feed
+    // ownKeys, and Object.keys filters by a descriptor the proxy target has not
+    // got. Same for $checkWhere; asserting the other tool fails on both.
+    expect(Reflect.ownKeys(db)).toContain('$audit')
+    expect(Reflect.ownKeys(db.asSystem())).toContain('$audit')
     db.$close()
   })
 
@@ -9422,7 +10308,12 @@ describe('enum transitions — enforcement', () => {
 
   test('transition() on model without transitions throws helpful error', async () => {
     const { db: db2 } = await makeTestClient(`model T { id Int @id; name String }`)
-    await expect(db2.t.transition(1, 'go')).rejects.toThrow('no transitions block')
+    await expect(db2.t.transition(1, 'go')).rejects.toThrow('declares no @@transitions')
+    // A capability the schema does not declare is a 400 — the caller asked for
+    // something this model does not offer, and nothing here broke (FJS-292).
+    const err = await db2.t.transition(1, 'go').catch(e => e)
+    expect(err.name).toBe('CapabilityNotDeclaredError')
+    expect(err.status).toBe(400)
     db2.$close()
   })
 
@@ -11956,6 +12847,522 @@ describe('policyExprToString', () => {
   })
 })
 
+// ─── `in` — membership in the policy language ─────────────────────────────────
+//
+// The policy grammar compared scalars only, so *this row is visible to these
+// principals* — a list held on the row — had no expression at the Data boundary
+// and had to become a service where-clause, which is the thing `@@allow` exists
+// to prevent (FJS-205). One operator, and the list is always the RIGHT operand,
+// which is what lets it read in both directions.
+
+describe("the policy language's `in`", () => {
+  const S = `model Doc {
+    id        Int    @id @default(autoincrement())
+    title     String @default("t")
+    ownerId   Int    @default(0)
+    memberIds Int[]  @default("[]")
+    status    String @default("draft")
+
+    @@allow('read',   auth().id in memberIds)
+    @@allow('create', auth().id in memberIds)
+    @@allow('update', status in ['draft', 'review'])
+    @@allow('delete', ownerId in auth().ownedIds)
+  }`
+
+  const seeded = async (label: string) => {
+    const db = await makeDb(S, label)
+    const sys = db.asSystem()
+    await sys.doc.create({ data: { id: 1, ownerId: 9, memberIds: [4, 5] } })
+    await sys.doc.create({ data: { id: 2, ownerId: 9, memberIds: [7] } })
+    await sys.doc.create({ data: { id: 3, ownerId: 4, memberIds: [] } })
+    await sys.doc.create({ data: { id: 4, ownerId: 9, memberIds: [4], status: 'shipped' } })
+    return db
+  }
+  const ids = async (db: any, u: any) =>
+    (await db.$setAuth(u).doc.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.id)
+
+  test('an array COLUMN is the list — json_each, not a string comparison', async () => {
+    const db = await seeded('in-col')
+    expect(await ids(db, { id: 4 })).toEqual([1, 4])
+    expect(await ids(db, { id: 7 })).toEqual([2])
+    expect(await ids(db, { id: 5 })).toEqual([1])
+    // `44` must not match a row whose list holds `4`, which a LIKE over the
+    // stored document would.
+    expect(await ids(db, { id: 44 })).toEqual([])
+    expect(await ids(db, { id: 1 })).toEqual([])
+    expect(await ids(db, null)).toEqual([])
+  })
+
+  test('a list on the PRINCIPAL is the other direction, and an empty one admits nothing', async () => {
+    const db = await seeded('in-auth')
+    const del = async (u: any, id: number) => !!(await db.$setAuth(u).doc.remove({ where: { id } }))
+    expect(await del({ id: 4, ownedIds: [9] }, 1)).toBe(true)
+    expect(await del({ id: 4, ownedIds: [1] }, 2)).toBe(false)
+    // `IN ()` is a SQL syntax error, so the empty case has to be answered before
+    // any SQL is built — and the answer is that nothing is in an empty list.
+    expect(await del({ id: 4, ownedIds: [] }, 2)).toBe(false)
+    expect(await del({ id: 4 }, 2)).toBe(false)
+  })
+
+  test('a literal list is the form that took two ORed comparisons before', async () => {
+    const db = await seeded('in-literal')
+    const edit = async (id: number) =>
+      !!(await db.$setAuth({ id: 4 }).doc.update({ where: { id }, data: { title: 'e' } }))
+    expect(await edit(1)).toBe(true)    // draft
+    expect(await edit(4)).toBe(false)   // shipped
+  })
+
+  test('create runs the SAME sentence through the JS evaluator', async () => {
+    const db = await seeded('in-create')
+    const as = db.$setAuth({ id: 4 })
+    const made = async (data: any) => {
+      try { await as.doc.create({ data }); return true } catch { return false }
+    }
+    expect(await made({ memberIds: [4, 9] })).toBe(true)
+    expect(await made({ memberIds: [9] })).toBe(false)
+    // A column the payload never set is not an empty list that happens to
+    // match — it is a column with nothing in it.
+    expect(await made({})).toBe(false)
+  })
+
+  test('the two compilers agree, graded by rows on both sides', async () => {
+    // The real oracle: verifyRowPolicies runs the compiled WHERE against
+    // litestone's own JS evaluator. Inverting either half makes this fail —
+    // checked by hand, which is the only way to know an oracle is looking.
+    const dir  = mkdtempSync(join(tmpdir(), 'in-policy-'))
+    const path = join(dir, 'schema.lite')
+    writeFileSync(path, S)
+    const env = await createTestEnv({ schema: path })
+    const sys = env.db.asSystem()
+    await sys.doc.create({ data: { memberIds: [1, 2] } })
+    await sys.doc.create({ data: { memberIds: [] } })
+    expect(await env.verifyRowPolicies({ principal: { id: 1, ownedIds: [0] } } as any)).toEqual([])
+    env.close()
+  })
+
+  test('a shape the schema can refuse is refused at startup, not on a query', async () => {
+    // A policy compiles into a WHERE, so a wrong one is an empty screen with a
+    // 200. Anything decidable from the schema is decided once, where the answer
+    // can name the model and quote the expression back.
+    const build = (body: string) => makeDb(
+      `model T { id Int @id\n tags String[] @default("[]")\n name String @default("")\n ${body} }`, 'in-bad')
+    await expect(build(`@@allow('read', auth().id in name)`)).rejects.toThrow(/'name' is not an array field/)
+    await expect(build(`@@allow('read', auth().id in nope)`)).rejects.toThrow(/'nope' is not a field/)
+    await expect(build(`@@allow('read', tags in auth().id)`)).rejects.toThrow(/is an array field, and 'in' asks whether ONE value/)
+    await expect(build(`@@allow('read', name in tags)`)).rejects.toThrow(/both sides name a column/)
+  })
+
+  test('an encoded column holds an encoding, not its members', async () => {
+    await expect(makeDb(
+      `model T { id Int @id\n secrets String[] @encrypted\n @@allow('read', auth().id in secrets) }`,
+      'in-enc', { encryptionKey: 'd'.repeat(64) },
+    )).rejects.toThrow(/is @encrypted, so the column holds an encoding/)
+  })
+
+  test('the parse error names the operator and lists what is legal', () => {
+    const err = (src: string) => (parse(`model T { id Int @id\n tags String[]\n ${src} }`) as any).errors?.[0]?.toString() ?? ''
+    // Was `Expected RPAREN, got 'in'` — a line and a column, and no statement
+    // about what was wrong or what is available.
+    expect(err(`@@allow('read', auth().id has tags)`)).toMatch(/'has' is not a policy operator/)
+    expect(err(`@@allow('read', auth().id has tags)`)).toMatch(/Available: ==, !=, <, >, <=, >=, in/)
+    expect(err(`@@allow('read', auth().id in [])`)).toMatch(/empty list/)
+    expect(err(`@@allow('read', auth().id in [tags])`)).toMatch(/holds literals/)
+  })
+
+  test('it round-trips through the access snapshot', () => {
+    const { schema } = parse(S)
+    const expr = (schema.models[0].attributes as any[]).filter(x => x.kind === 'allow')
+    expect(policyExprToString(expr[0].expr)).toBe('auth().id in memberIds')
+    expect(policyExprToString(expr[2].expr)).toBe("status in ['draft', 'review']")
+    expect(policyExprToString(expr[3].expr)).toBe('ownerId in auth().ownedIds')
+  })
+})
+
+// ─── @@scope ──────────────────────────────────────────────────────────────────
+//
+// A named predicate in the schema, asked for as `where: { $scope: 'overdue' }`.
+// The policy compiler made explicit and opt-in rather than implicit and
+// always-on — and the one spelling of a query shape a BROWSER can name, since a
+// client sends a `where` OBJECT over HTTP and cannot invoke `db.task.overdue()`
+// (FJS-228). Predicate-only, so no value branch and no property in the schema:
+// if the UI ever RENDERS it, it wants `@derived` instead.
+
+describe('@@scope', () => {
+  const S = `model Task {
+    id          Int       @id
+    ownerId     Int       @default(1)
+    status      String    @default("open")
+    dueAt       DateTime?
+    completedAt DateTime?
+
+    @@scope(overdue,    dueAt < now() && completedAt == null)
+    @@scope(mine,       ownerId == auth().id)
+    @@scope(unfinished, completedAt == null)
+    @@scope(active,     status == 'open' || status == 'review')
+  }`
+  const D = (d: number) => new Date(Date.now() + d * 86400000).toISOString()
+  const seeded = async (label: string) => {
+    const db = await makeDb(S, label)
+    const sys = db.asSystem()
+    await sys.task.create({ data: { id: 1, dueAt: D(-2) } })                                  // overdue, mine
+    await sys.task.create({ data: { id: 2, dueAt: D(-1), completedAt: D(0) } })               // done
+    await sys.task.create({ data: { id: 3, ownerId: 2, dueAt: D(-3) } })                      // overdue, not mine
+    await sys.task.create({ data: { id: 4, dueAt: D(5) } })                                   // future
+    await sys.task.create({ data: { id: 5, status: 'archived' } })                            // no due date
+    return db
+  }
+  const ids = (rows: any[]) => rows.map((r: any) => r.id)
+
+  test('a scope is a where a caller can name', async () => {
+    const db = await seeded('scope-basic')
+    const me = db.$setAuth({ id: 1 })
+    expect(ids(await me.task.findMany({ where: { $scope: 'overdue' } }))).toEqual([1, 3])
+    expect(ids(await me.task.findMany({ where: { $scope: 'mine' } }))).toEqual([1, 2, 4, 5])
+    // an OR lives INSIDE a scope, which is how a disjunction is written
+    expect(ids(await me.task.findMany({ where: { $scope: 'active' } }))).toEqual([1, 2, 3, 4])
+  })
+
+  test('it composes — with keys, with $raw, and nested under AND/OR/NOT', async () => {
+    // All of this comes from desugaring `$scope` into `$raw` before the where is
+    // built, rather than adding a case to buildWhere: composition, nesting and
+    // positional parameter order each keep one owner.
+    const db = await seeded('scope-compose')
+    const me = db.$setAuth({ id: 1 })
+    expect(ids(await me.task.findMany({ where: { $scope: ['overdue', 'mine'] } }))).toEqual([1])
+    expect(ids(await me.task.findMany({ where: { $scope: 'mine', status: 'open' } }))).toEqual([1, 2, 4])
+    expect(ids(await me.task.findMany({ where: { $scope: 'mine', $raw: sql`"id" > ${1}` } }))).toEqual([2, 4, 5])
+    expect(ids(await me.task.findMany({ where: { OR: [{ $scope: 'overdue' }, { id: 5 }] } }))).toEqual([1, 3, 5])
+    expect(ids(await me.task.findMany({ where: { NOT: { $scope: 'unfinished' } } }))).toEqual([2])
+  })
+
+  test('every read applies it, and so does a write', async () => {
+    const db = await seeded('scope-reads')
+    const me = db.$setAuth({ id: 1 })
+    expect(await me.task.count({ where: { $scope: 'overdue' } })).toBe(2)
+    expect(await me.task.exists({ where: { $scope: 'overdue' } })).toBe(true)
+    expect((await me.task.aggregate({ where: { $scope: 'mine' }, _count: true }))._count).toBe(4)
+    expect((await me.task.findFirst({ where: { $scope: 'overdue' } }))?.id).toBe(1)
+    expect(ids((await me.task.findManyCursor({ where: { $scope: 'mine' }, limit: 10 })).items)).toEqual([1, 2, 4, 5])
+    expect(await db.asSystem().task.updateMany({ where: { $scope: 'overdue' }, data: { status: 'late' } })).toEqual({ count: 2 })
+    expect(ids(await db.asSystem().task.findMany({ where: { status: 'late' } }))).toEqual([1, 3])
+  })
+
+  test('`now()` is one instant across every occurrence in the scope', async () => {
+    // FJS-227 had to land first: a scope multiplies the number of now() calls
+    // in one statement, and two of them microseconds apart is a predicate that
+    // is true of no row.
+    const db = await makeDb(`model Window {
+      id Int @id  startAt DateTime  endAt DateTime
+      @@scope(current, startAt < now() && now() < endAt)
+    }`, 'scope-clock')
+    await db.window.create({ data: { id: 1, startAt: D(-1), endAt: D(1) } })
+    await db.window.create({ data: { id: 2, startAt: D(1), endAt: D(2) } })
+    expect(ids(await db.window.findMany({ where: { $scope: 'current' } }))).toEqual([1])
+  })
+
+  test('an unknown name is refused, and never reaches SQL', async () => {
+    // Invariant 8 at the one site that invites breaking it: the value of
+    // `$scope` is caller-supplied, and it is a KEY looked up in the declared
+    // table rather than text put into a pattern.
+    const db = await seeded('scope-unknown')
+    await expect(db.task.findMany({ where: { $scope: 'ovrdue' } })).rejects.toThrow(/Unknown scope 'ovrdue'/)
+    await expect(db.task.findMany({ where: { $scope: 'ovrdue' } })).rejects.toThrow(/declares: active, mine, overdue, unfinished/)
+    await expect(db.task.findMany({ where: { $scope: [] } })).rejects.toThrow(/empty list/)
+    await expect(db.task.findMany({ where: { $scope: 7 } as any })).rejects.toThrow(/Unknown scope/)
+    // and a write refuses too — an unknown filter on a write is a mis-scoped
+    // destructive operation
+    await expect(db.asSystem().task.deleteMany({ where: { $scope: 'nope' } })).rejects.toThrow(/Unknown scope/)
+  })
+
+  test('$checkWhere answers for it, and $scopes publishes the list', async () => {
+    const db = await seeded('scope-check')
+    expect(await db.$checkWhere('task', { $scope: 'overdue' })).toEqual([])
+    const bad = await db.$checkWhere('task', { $scope: 'nope' })
+    expect(bad).toHaveLength(1)
+    expect(bad[0].reason).toBe('scope')
+    expect(bad[0].message).toMatch(/Task declares: active, mine, overdue, unfinished/)
+    // The published list, as source text — a schema fact, so it is the same on
+    // every flavour of client.
+    const want = {
+      overdue:    'dueAt < now() && completedAt == null',
+      mine:       'ownerId == auth().id',
+      unfinished: 'completedAt == null',
+      active:     "status == 'open' || status == 'review'",
+    }
+    expect(db.$scopes('task')).toEqual(want)
+    expect(db.$setAuth({ id: 1 }).$scopes('task')).toEqual(want)
+    expect(db.asSystem().$scopes('task')).toEqual(want)
+    expect(db.$scopes('nosuchmodel')).toEqual({})
+  })
+
+  test('the schema is checked at startup, not on a query nobody ran', async () => {
+    await expect(makeDb(`model T { id Int @id
+      @@scope(a, id > 1)
+      @@scope(a, id > 2)
+    }`, 'scope-dupe')).rejects.toThrow(/declared twice/)
+    // A name that is not a column reaches SQLite as `"nope" > 1`, which it reads
+    // as a string CONSTANT — so the filter silently admits or excludes
+    // everything. The same check now covers @@allow, which had it too.
+    await expect(makeDb(`model T { id Int @id
+      @@scope(a, nope > 1)
+    }`, 'scope-badfield')).rejects.toThrow(/'nope' is not a field on this model/)
+    await expect(makeDb(`model T { id Int @id
+      @@allow('read', nope > 1)
+    }`, 'allow-badfield')).rejects.toThrow(/'nope' is not a field on this model/)
+  })
+})
+
+// ─── the ternary ──────────────────────────────────────────────────────────────
+//
+// `cond ? a : b`, looser than `||` and RIGHT-associative, so `a ? x : b ? y : z`
+// nests into the else — a four-value urgency with no CASE keyword (FJS-234).
+// It is where the language stops being predicate-only and starts producing
+// VALUES, so it has two obligations: land in BOTH compilers, and be gradeable.
+
+describe('a ternary in the policy expression language', () => {
+  const S = `model Task {
+    id       Int    @id
+    ownerId  Int    @default(1)
+    priority Int    @default(0)
+    status   String @default("open")
+
+    @@scope(urgent, priority > 8 ? true : priority > 5 ? status == 'open' : false)
+    @@scope(tiered, (priority > 8 ? 3 : priority > 5 ? 2 : 1) == 3)
+    @@scope(pickAuth, ownerId == (status == 'open' ? auth().id : auth().adminId))
+    @@allow('create', priority > 8 ? auth().isAdmin == true : auth() != null)
+  }`
+  const seeded = async (label: string) => {
+    const db = await makeDb(S, label)
+    const sys = db.asSystem()
+    await sys.task.create({ data: { id: 1, priority: 9, status: 'open' } })
+    await sys.task.create({ data: { id: 2, priority: 6, status: 'open' } })
+    await sys.task.create({ data: { id: 3, priority: 6, status: 'done' } })
+    await sys.task.create({ data: { id: 4, priority: 1, status: 'open' } })
+    await sys.task.create({ data: { id: 5, priority: 9, status: 'done', ownerId: 7 } })
+    return db
+  }
+  const ids = (rows: any[]) => rows.map((r: any) => r.id)
+
+  test('compiles to CASE WHEN, and nests to the right', async () => {
+    const db = await seeded('tern-sql')
+    // p>8 → true; else p>5 → open?; else false
+    expect(ids(await db.asSystem().task.findMany({ where: { $scope: 'urgent' } }))).toEqual([1, 2, 5])
+    expect(ids(await db.asSystem().task.findMany({ where: { $scope: 'tiered' } }))).toEqual([1, 5])
+  })
+
+  test('a parenthesised group is an operand on BOTH sides of a comparison', async () => {
+    // Only the left side took one, so `ownerId == (open ? auth().id : …)` —
+    // a ternary choosing which value to compare against, which is most of what
+    // a ternary is for here — was a parse error on the right and legal on the left.
+    const db = await seeded('tern-operand')
+    expect(ids(await db.$setAuth({ id: 1, adminId: 7 }).task.findMany({ where: { $scope: 'pickAuth' } })))
+      .toEqual([1, 2, 4, 5])
+  })
+
+  test('the JS evaluator decides create the same way', async () => {
+    // A form in one compiler and not the other is FJS-195 repeating: a row
+    // create allows and read then hides.
+    const db = await seeded('tern-create')
+    const made = async (u: any, data: any) => {
+      try { await db.$setAuth(u).task.create({ data }); return true } catch { return false }
+    }
+    expect(await made({ id: 1, isAdmin: true },  { id: 10, priority: 9 })).toBe(true)
+    expect(await made({ id: 1, isAdmin: false }, { id: 11, priority: 9 })).toBe(false)
+    expect(await made({ id: 1, isAdmin: false }, { id: 12, priority: 1 })).toBe(true)
+    expect(await made(null,                     { id: 13, priority: 1 })).toBe(false)
+  })
+
+  test('the two compilers are graded against each other over a ternary', async () => {
+    // Swapping the branches in either half makes this fail — checked by hand.
+    const dir  = mkdtempSync(join(tmpdir(), 'tern-policy-'))
+    const path = join(dir, 'schema.lite')
+    writeFileSync(path, `model Doc {
+      id      Int @id @default(autoincrement())
+      level   Int @default(0)
+      ownerId Int @default(0)
+      @@allow('read', level > 5 ? ownerId == auth().id : true)
+    }`)
+    const env = await createTestEnv({ schema: path })
+    expect(await env.verifyRowPolicies({ principal: { id: 1 } } as any)).toEqual([])
+    env.close()
+  })
+
+  test('an ordering comparison is seeded on both sides of its literal', async () => {
+    // `level > 5` seeded `level = 5`, which is on the EXCLUDED side, so the
+    // only admitted rows were whatever the factory happened to generate — a
+    // policy graded by luck, which reports "all on one side" the day the
+    // factory changes. Nothing about ternaries; the ternary is what surfaced it.
+    const dir  = mkdtempSync(join(tmpdir(), 'ord-policy-'))
+    const path = join(dir, 'schema.lite')
+    writeFileSync(path, `model N {
+      id    Int @id @default(autoincrement())
+      level Int @default(0)
+      @@allow('read', level > 5)
+    }`)
+    const env = await createTestEnv({ schema: path })
+    expect(await env.verifyRowPolicies({ principal: { id: 1 } } as any)).toEqual([])
+    env.close()
+  })
+
+  test('it round-trips through the printer, parens and all', () => {
+    const render = (src: string) => {
+      const { schema } = parse(`model P { id Int @id; a Int; b Int; @@allow('read', ${src}) }`)
+      return policyExprToString((schema.models[0].attributes as any[]).find(x => x.kind === 'allow').expr)
+    }
+    const round = (src: string) => { const once = render(src); expect(render(once)).toBe(once); return once }
+    expect(round('a > 1 ? 2 : 3')).toBe('a > 1 ? 2 : 3')
+    expect(round('a > 1 ? 2 : b > 2 ? 3 : 4')).toBe('a > 1 ? 2 : b > 2 ? 3 : 4')
+    expect(round('a > 1 ? b > 2 ? 3 : 4 : 5')).toBe('a > 1 ? b > 2 ? 3 : 4 : 5')
+    expect(round('(a > 1 ? 2 : 3) == 2')).toBe('(a > 1 ? 2 : 3) == 2')
+  })
+
+  test('a missing else branch is a parse error that says so', () => {
+    const r: any = parse(`model T { id Int @id  a Int\n @@allow('read', a > 1 ? 2) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors[0].toString()).toMatch(/a ternary needs both branches/)
+  })
+})
+
+// ─── @derived ─────────────────────────────────────────────────────────────────
+//
+// A value computed in SQL from the row's own columns — so unlike @computed,
+// which is a JS function SQLite has never heard of, it can be filtered and
+// sorted by (FJS-233). Server-computed only: the schema ships a FLAG, not the
+// expression, so nothing has to implement the language a second time in a
+// browser. `x-litestone-volatile: 'clock'` is the one thing a consumer cannot
+// work out for itself — this value goes stale with no write and no event.
+//
+// It is built into the SAME map as @from, which is why it reaches all six
+// SELECT-building sites without new plumbing.
+
+describe('@derived', () => {
+  const S = `model Task {
+    id          Int       @id
+    priority    Int       @default(0)
+    dueAt       DateTime?
+    completedAt DateTime?
+
+    overdue Boolean @derived(dueAt < now() && completedAt == null)
+    done    Boolean @derived(completedAt != null)
+    urgency Int     @derived(priority > 8 ? 3 : priority > 5 ? 2 : 1)
+  }`
+  const D = (d: number) => new Date(Date.now() + d * 86400000).toISOString()
+  const seeded = async (label: string) => {
+    const db = await makeDb(S, label)
+    await db.task.create({ data: { id: 1, priority: 9, dueAt: D(-2) } })
+    await db.task.create({ data: { id: 2, priority: 6, dueAt: D(-1), completedAt: D(0) } })
+    await db.task.create({ data: { id: 3, priority: 1, dueAt: D(5) } })
+    await db.task.create({ data: { id: 4, priority: 9 } })
+    return db
+  }
+  const ids = (rows: any[]) => rows.map((r: any) => r.id)
+
+  test('it is on the row, in the type the field declares', async () => {
+    const db = await seeded('drv-row')
+    const rows = await db.task.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => `${r.overdue}/${r.done}/${r.urgency}`))
+      .toEqual(['true/false/3', 'false/true/2', 'false/false/1', 'false/false/3'])
+    expect(typeof rows[0].overdue).toBe('boolean')
+  })
+
+  test('it can be filtered and sorted, which is the whole difference from @computed', async () => {
+    const db = await seeded('drv-query')
+    expect(ids(await db.task.findMany({ where: { overdue: true } }))).toEqual([1])
+    expect(ids(await db.task.findMany({ where: { urgency: { gte: 2 } } }))).toEqual([1, 2, 4])
+    expect(ids(await db.task.findMany({ where: { overdue: true, priority: { gte: 8 } } }))).toEqual([1])
+    expect(await db.task.count({ where: { done: true } })).toBe(1)
+    expect(ids(await db.task.findMany({ orderBy: [{ urgency: 'desc' }, { id: 'asc' }] }))).toEqual([1, 4, 2, 3])
+    expect(await db.$checkWhere('task', { overdue: true })).toEqual([])
+    expect(await db.$checkOrderBy('task', { urgency: 'desc' })).toEqual([])
+  })
+
+  test('every read path carries it — the @from seam is why', async () => {
+    // Six sites build their own SELECT. A seventh that forgot would be silent,
+    // exactly as a forgotten @from is.
+    const db = await makeDb(`
+      model Author { id Int @id  name String  posts Post[] }
+      model Post {
+        id Int @id  title String  authorId Int  score Int @default(0)
+        author Author @relation(fields: [authorId], references: [id])
+        hot Boolean @derived(score > 50)
+        @@fts([title])
+      }`, 'drv-paths')
+    await db.author.create({ data: { id: 1, name: 'a' } })
+    await db.post.create({ data: { id: 1, title: 'alpha bright', authorId: 1, score: 90 } })
+    await db.post.create({ data: { id: 2, title: 'beta dim', authorId: 1, score: 10 } })
+
+    expect((await db.post.search('alpha')).map((r: any) => r.hot)).toEqual([true])
+    expect((await db.author.findMany({ include: { posts: true } }))[0].posts.map((p: any) => p.hot)).toEqual([true, false])
+    expect((await db.post.findFirst({ where: { hot: true } }))?.hot).toBe(true)
+    expect((await db.post.findManyAndCount({ where: { hot: true } })).rows.map((r: any) => r.hot)).toEqual([true])
+    expect((await db.post.findManyCursor({ limit: 5, orderBy: { id: 'asc' } })).items.map((r: any) => r.hot)).toEqual([true, false])
+    expect(await db.post.exists({ where: { hot: true } })).toBe(true)
+    expect((await db.post.findMany({ where: { id: 1 }, select: { id: true, hot: true } }))[0]).toEqual({ id: 1, hot: true })
+  })
+
+  test('aggregate and groupBy substitute the expression rather than the name', async () => {
+    // `MAX("urgency")` would reach SQLite as a quoted identifier it reads as a
+    // string CONSTANT and answer 'urgency' — FJS-202 arriving through a new
+    // field kind. groupBy failed louder, with `no such column`.
+    const db = await seeded('drv-agg')
+    expect((await db.task.aggregate({ _max: { urgency: true } }))._max.urgency).toBe(3)
+    expect((await db.task.aggregate({ _count: { distinct: 'urgency' } }))._count).toBe(3)
+    expect(await db.task.groupBy({ by: ['urgency'], _count: true }))
+      .toEqual([{ urgency: 1, _count: 1 }, { urgency: 2, _count: 1 }, { urgency: 3, _count: 2 }])
+  })
+
+  test('it is not a column, and a write says so by name', async () => {
+    const db = await seeded('drv-write')
+    await expect(db.task.create({ data: { id: 9, overdue: true } as any }))
+      .rejects.toThrow(/overdue is @derived/)
+    const cols = await db.asSystem().sql`SELECT name FROM pragma_table_info('task')`
+    expect((cols as any[]).map((c: any) => c.name)).toEqual(['id', 'priority', 'dueAt', 'completedAt'])
+    // and a non-optional derived field is not "required" on create
+    expect(await db.task.create({ data: { id: 10, priority: 2 } })).toBeTruthy()
+  })
+
+  test('the schema ships a flag, not the expression', async () => {
+    const { schema } = parse(S)
+    const full = generateJsonSchema(schema, { mode: 'full' })
+    expect(full.$defs.Task.properties.overdue).toEqual({
+      type: 'boolean', readOnly: true, 'x-litestone-kind': 'derived', 'x-litestone-volatile': 'clock',
+    })
+    // urgency depends only on a stored column, so it is derived and NOT volatile
+    expect(full.$defs.Task.properties.urgency['x-litestone-volatile']).toBeUndefined()
+    expect(full.$defs.Task.properties.urgency['x-litestone-kind']).toBe('derived')
+    // never in a write schema
+    expect(Object.keys(generateJsonSchema(schema, { mode: 'create' }).$defs.Task.properties))
+      .not.toContain('overdue')
+  })
+
+  test('per-request expressions are refused, and named as @@scope instead', async () => {
+    // A derived field is one value for the ROW. `auth()` would make it one
+    // value per reader, which is what @@scope and @@allow are for — and it is
+    // also what keeps the expression static, so it can be compiled once.
+    const mk = (body: string) => makeDb(`model T { id Int @id\n priority Int @default(0)\n ${body} }`, 'drv-bad')
+    await expect(mk(`x Boolean @derived(priority == auth().id)`)).rejects.toThrow(/auth\(\) is per-request/)
+    await expect(mk(`x Boolean @derived(priority == auth().id)`)).rejects.toThrow(/@@scope/)
+    await expect(mk(`x Boolean @derived(nope > 1)`)).rejects.toThrow(/'nope' is not a field/)
+    await expect(mk(`y Boolean @derived(priority > 1)\n x Boolean @derived(y == true)`))
+      .rejects.toThrow(/one derived field cannot read another/)
+  })
+
+  test('the declared type is checked against the branches', async () => {
+    // The obligation the ternary brought with it: the language produces values
+    // now, so a branch that cannot yield the declared type is a schema error
+    // rather than a row that reads back something no consumer expects.
+    const mk = (body: string) =>
+      makeDb(`enum Level { low  high }\nmodel T { id Int @id\n p Int @default(0)\n ${body} }`, 'drv-type')
+    await expect(mk(`x Int @derived(p > 8 ? 3 : 'hi')`)).rejects.toThrow(/branches produce Int and String/)
+    await expect(mk(`x Boolean @derived(p > 8 ? 3 : 1)`)).rejects.toThrow(/declares Boolean and the expression produces Int/)
+    await expect(mk(`x Int @derived(p > 1)`)).rejects.toThrow(/declares Int and the expression produces Boolean/)
+    await expect(mk(`x Level @derived(p > 8 ? 'hgih' : 'low')`)).rejects.toThrow(/'hgih' is not a member of enum Level/)
+    // and the ones that are right are accepted
+    await expect(mk(`x Level @derived(p > 8 ? 'high' : 'low')`)).resolves.toBeTruthy()
+    await expect(mk(`x Int @derived(p > 8 ? 3 : 1)`)).resolves.toBeTruthy()
+  })
+})
+
 describe('renderAccessSnapshot', () => {
   const { schema } = parse(ACCESS_SCHEMA)
   const md = renderAccessSnapshot(deriveAccess(schema), { source: 'db/schema.lite' })
@@ -12408,6 +13815,25 @@ describe('createTestEnv', () => {
     const stricter = parse(POLICY_LADDER_SCHEMA.replace('@@gate("2.4.4.5")', '@@gate("3.4.4.5")')).schema
     const caught = await env.verifyGateLadder({ against: stricter, ops: ['read'] })
     expect(caught.some((m: any) => m.got === 'allow' && m.expect === 'deny')).toBe(true)
+    env.close()
+  })
+
+  test('a required @guarded column makes the create column ungradeable, and says so', async () => {
+    // One layer below the row-policy case above and the same shape: @guarded
+    // refuses the write before the gate is asked, and both arrive as an
+    // AccessDeniedError. An OPTIONAL guarded column is simply left out of the
+    // fixture; a required one cannot be, so the model is uncreatable below
+    // level 8 and the row is reported rather than read as a gate verdict.
+    const schema = LADDER_SCHEMA.replace('handle String @length(3, 12)', 'handle String @length(3, 12)\n    auditTag String @guarded(all)')
+    const env    = await createTestEnv({ schema })
+    const rows   = await env.verifyGateLadder({ ops: ['create'] })
+
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((m: any) => m.got === 'skipped')).toBe(true)
+    expect(rows[0].message).toMatch(/"auditTag" is @guarded and required/)
+
+    // Level 8 is asSystem(), so it still writes the column and still grades.
+    expect(rows.some((m: any) => m.level === 8)).toBe(false)
     env.close()
   })
 
@@ -14141,6 +15567,33 @@ describe('now() is one instant per evaluation', () => {
   })
 })
 
+describe('@from — a where: string is raw SQL, and carries the clock trap', () => {
+  test("datetime('now') in a @from where: is refused at createClient, naming the field", async () => {
+    // Refused on the SCHEMA rather than on a query nobody has run yet. A @from
+    // subquery is built once at startup, so this is the last moment anything
+    // reads the string before it starts answering the wrong question.
+    await expect(makeDb(`
+      model Account { id Int @id  tasks Task[]  overdueCount Int @from(Task, count: true, where: "dueAt < datetime('now')") }
+      model Task    { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  dueAt DateTime }
+    `, 'from-clock')).rejects.toThrow(/@from\(Task, where: …\) on Account\.overdueCount/)
+  })
+
+  test('the same schema is accepted with now(), which a schema string can write', async () => {
+    const db = await makeDb(`
+      model Account { id Int @id  tasks Task[]  overdueCount Int @from(Task, count: true, where: "dueAt < now()") }
+      model Task    { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  dueAt DateTime }
+    `, 'from-clock-ok')
+    const t = Date.now()
+    await db.account.create({ data: { id: 1 } })
+    await db.task.createMany({ data: [
+      { id: 1, accountId: 1, dueAt: new Date(t - 60e3) },      // a minute overdue
+      { id: 2, accountId: 1, dueAt: new Date(t + 3600e3) },
+    ]})
+    expect((await db.account.findUnique({ where: { id: 1 } })).overdueCount).toBe(1)
+    db.$close()
+  })
+})
+
 describe('@from — first/last returns a properly read row', () => {
   const SHOP = `
     model Company { id Int @id  name String  accounts Account[] }
@@ -14169,7 +15622,7 @@ describe('@from — first/last returns a properly read row', () => {
     })
     await db.company.create({ data: { id: 1, name: 'c' } })
     await db.account.create({ data: { id: 1, name: 'acme', companyId: 1 } })
-    await db.order.createMany({ data: [
+    await db.asSystem().order.createMany({ data: [
       { id: 1, accountId: 1, amount: 5, secretNote: 'S1', hiddenNote: 'H1', card: '4111' },
       { id: 2, accountId: 1, amount: 9, secretNote: 'S2', hiddenNote: 'H2', card: '4222' },
     ]})
@@ -14245,10 +15698,128 @@ describe('@from — first/last returns a properly read row', () => {
     await db.asSystem().order.create({ data: { id: 1, accountId: 1, ownerId: 7 } })
 
     expect((await db.$setAuth({ id: 7 }).account.findUnique({ where: { id: 1 } })).lastOrder?.id).toBe(1)
-    // refused by the target's own read policy — null, not the row (FJS-224)
+    // refused by the target's own read policy, and nothing else to fall to
     expect((await db.$setAuth({ id: 8 }).account.findUnique({ where: { id: 1 } })).lastOrder).toBeNull()
     // no orders at all
     expect((await db.asSystem().account.findUnique({ where: { id: 2 } })).lastOrder).toBeNull()
+    db.$close()
+  })
+
+  // ── FJS-224: the pick itself has to be policy-aware ────────────────────────
+  //
+  // The subquery in the SELECT is built once at startup, so the id it chooses is
+  // the newest row that EXISTS. A `@@allow` binds ctx.auth per request, so that
+  // row may be one the caller cannot read — and answering `null` says *no last
+  // order* where the truth is *your last order is the one below it*. The pick is
+  // redone here under the policy, which is the answer a direct findFirst gives.
+
+  const POLICIED = `
+    model Account { id Int @id  orders Order[]  lastOrder Order? @from(Order, last: true) }
+    model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
+                    ownerId Int  amount Int  note String? @guarded(all)  deletedAt DateTime?
+                    @@allow('read', ownerId == auth().id)
+                    @@softDelete }
+  `
+  const policied = async (label: string) => {
+    const db  = await makeDb(POLICIED, label)
+    const sys = db.asSystem()
+    await sys.account.createMany({ data: [{ id: 1 }, { id: 2 }] })
+    await sys.order.createMany({ data: [
+      { id: 1, accountId: 1, ownerId: 7, amount: 100, note: 'n1' },
+      { id: 2, accountId: 1, ownerId: 8, amount: 999, note: 'n2' },   // newest, someone else's
+      { id: 3, accountId: 2, ownerId: 7, amount: 50,  note: 'n3' },
+    ]})
+    return db
+  }
+
+  test('a denied newest row falls through to the newest VISIBLE one', async () => {
+    const db  = await policied('from-pick-fallthrough')
+    const acc = await db.$setAuth({ id: 7 }).account.findUnique({ where: { id: 1 } })
+    expect(acc.lastOrder?.id).toBe(1)
+    expect(acc.lastOrder?.amount).toBe(100)
+    db.$close()
+  })
+
+  test('every parent gets its own pick in one query', async () => {
+    const db   = await policied('from-pick-many')
+    const rows = await db.$setAuth({ id: 7 }).account.findMany({ orderBy: { id: 'asc' } })
+    expect(rows.map((r: any) => r.lastOrder?.id)).toEqual([1, 3])
+    db.$close()
+  })
+
+  test('the repicked row is still read through the field policy', async () => {
+    const db  = await policied('from-pick-guarded')
+    const acc = await db.$setAuth({ id: 7 }).account.findUnique({ where: { id: 1 } })
+    expect('note' in acc.lastOrder).toBe(false)
+    expect((await db.asSystem().order.findUnique({ where: { id: 1 } })).note).toBe('n1')
+    db.$close()
+  })
+
+  test('the target\'s @@softDelete still applies to the pick', async () => {
+    const db = await policied('from-pick-softdelete')
+    await db.asSystem().order.remove({ where: { id: 1 } })
+    // 2 is denied, 1 is deleted — nothing left to pick, and NOT the deleted row
+    expect((await db.$setAuth({ id: 7 }).account.findUnique({ where: { id: 1 } })).lastOrder).toBeNull()
+    db.$close()
+  })
+
+  test('a declared where: on the @from survives the repick', async () => {
+    const db = await makeDb(`
+      model Account { id Int @id  orders Order[]  lastBig Order? @from(Order, last: true, where: "amount > 100") }
+      model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])
+                      ownerId Int  amount Int
+                      @@allow('read', ownerId == auth().id) }
+    `, 'from-pick-where')
+    const sys = db.asSystem()
+    await sys.account.create({ data: { id: 1 } })
+    await sys.order.createMany({ data: [
+      { id: 1, accountId: 1, ownerId: 7, amount: 500 },   // mine, big
+      { id: 2, accountId: 1, ownerId: 7, amount: 10 },    // mine, too small — newer
+      { id: 3, accountId: 1, ownerId: 8, amount: 900 },   // big, not mine — newest
+    ]})
+    expect((await db.$setAuth({ id: 7 }).account.findUnique({ where: { id: 1 } })).lastBig?.id).toBe(1)
+    db.$close()
+  })
+
+  test('asSystem() picks the newest row full stop — no policy, no repick', async () => {
+    const db = await policied('from-pick-system')
+    expect((await db.asSystem().account.findUnique({ where: { id: 1 } })).lastOrder?.id).toBe(2)
+    db.$close()
+  })
+
+  test('it holds through an include and on the cursor path', async () => {
+    const db   = await policied('from-pick-nested')
+    const user = db.$setAuth({ id: 7 })
+    const page = await user.account.findManyCursor({ limit: 2, orderBy: { id: 'asc' } })
+    expect(page.items.map((r: any) => r.lastOrder?.id)).toEqual([1, 3])
+    db.$close()
+  })
+
+  test('a select naming only the @from field still repicks, and does not leak the key it needed', async () => {
+    // The repick correlates on the column the target points back at, so a
+    // narrow select has to carry it. Injected like an FK — into the SQL, out of
+    // the answer — because without it the resolver falls back to the id the
+    // startup subquery chose, which is the pick made before the policy.
+    const db  = await policied('from-pick-narrow')
+    const row = await db.$setAuth({ id: 7 }).account.findUnique({ where: { id: 1 }, select: { lastOrder: true } })
+    expect(row.lastOrder?.id).toBe(1)
+    expect(Object.keys(row)).toEqual(['lastOrder'])
+    db.$close()
+  })
+
+  test('first: true picks the OLDEST visible row, not the oldest row', async () => {
+    const db = await makeDb(`
+      model Account { id Int @id  orders Order[]  firstOrder Order? @from(Order, first: true) }
+      model Order   { id Int @id  accountId Int  account Account @relation(fields: [accountId], references: [id])  ownerId Int
+                      @@allow('read', ownerId == auth().id) }
+    `, 'from-pick-first')
+    const sys = db.asSystem()
+    await sys.account.create({ data: { id: 1 } })
+    await sys.order.createMany({ data: [
+      { id: 1, accountId: 1, ownerId: 8 },   // oldest, not mine
+      { id: 2, accountId: 1, ownerId: 7 },
+    ]})
+    expect((await db.$setAuth({ id: 7 }).account.findUnique({ where: { id: 1 } })).firstOrder?.id).toBe(2)
     db.$close()
   })
 })
@@ -19609,7 +21180,7 @@ describe('@@hasTemplates — runtime', () => {
   afterAll(() => db.$close())
 
   beforeEach(async () => {
-    await db.quote.delete({ where: { id: { in: [1,2,3,4,5] } } })
+    await db.quote.delete({ where: { id: { in: [1,2,3,4,5] } }, withTemplates: true })
     await db.quote.createMany({ data: [
       { id: 1, number: 'INST-1', total: 100, isTemplate: false },
       { id: 2, number: 'INST-2', total: 200, isTemplate: false },
@@ -19694,13 +21265,21 @@ describe('@@hasTemplates — runtime', () => {
     expect(remaining.every((r: any) => r.isTemplate === true)).toBe(true)
   })
 
-  test('aggregate() always operates on instances (parallel to always-live)', async () => {
+  test('aggregate() and groupBy() operate on instances by DEFAULT, and take the flags', async () => {
     const r = await db.quote.aggregate({ _sum: { total: true }, _count: true })
     expect(r._count).toBe(3)
     expect(r._sum.total).toBe(600)   // 100 + 200 + 300, no templates
+
+    // The flags were pinned to 'instances' here, so the two methods whose whole
+    // output is a number nothing can cross-check answered the OPPOSITE of the
+    // question asked — `onlyTemplates` counted the instances (FJS-263).
+    expect((await db.quote.aggregate({ _count: true, onlyTemplates: true }))._count).toBe(2)
+    expect((await db.quote.aggregate({ _count: true, withTemplates: true }))._count).toBe(5)
+    const grouped = await db.quote.groupBy({ by: ['isTemplate'], _count: true, onlyTemplates: true })
+    expect(grouped).toEqual([{ isTemplate: true, _count: 2 }])
   })
 
-  test('templates can be created and edited through normal write API', async () => {
+  test('templates can be created and edited through the normal write API', async () => {
     const t = await db.quote.create({ data: { id: 99, number: 'TPL-NEW', total: 0, isTemplate: true } })
     expect(t.isTemplate).toBe(true)
     // Template is invisible to default reads
@@ -19708,7 +21287,13 @@ describe('@@hasTemplates — runtime', () => {
     // ...but visible with the flag
     const fetched = await db.quote.findUnique({ where: { id: 99 }, withTemplates: true })
     expect(fetched?.id).toBe(99)
-    await db.quote.delete({ where: { id: 99 } })
+    // and EDITABLE with it. This test claimed "and edited" while only reading:
+    // a template was create-once, uneditable through every write route and
+    // destroyable by `delete`, which is what made FJS-176 a defect rather than
+    // a policy.
+    const edited = await db.quote.update({ where: { id: 99 }, data: { total: 42 }, withTemplates: true })
+    expect(edited?.total).toBe(42)
+    await db.quote.delete({ where: { id: 99 }, withTemplates: true })
   })
 
   test('isTemplate defaults to false when omitted on create', async () => {
@@ -19719,18 +21304,111 @@ describe('@@hasTemplates — runtime', () => {
     expect(r.isTemplate).toBe(false)
     const found = await db.quote.findUnique({ where: { id: 100 } })
     expect(found).not.toBeNull()
-    await db.quote.delete({ where: { id: 100 } })
+    await db.quote.delete({ where: { id: 100 }, withTemplates: true })
   })
 
-  test('asSystem() bypasses template filter (parallel to soft-delete bypass)', async () => {
-    // Wait — actually asSystem() does NOT bypass filters; only @@gate / @@allow.
-    // It DOES NOT bypass the soft-delete filter either. Check current behaviour
-    // and document: filters (including hasTemplates) apply uniformly.
+  test('asSystem() does NOT bypass the template filter — it is not an access rule', async () => {
+    // The name of this test used to say the opposite of what it asserts.
+    // asSystem() lifts @@gate, @@allow/@@deny and @guarded — the ACCESS rules.
+    // @@hasTemplates and @@softDelete are not access rules, they shape which
+    // rows a read is about, so they apply to every client and the flags are the
+    // only way past them.
     const sys = db.asSystem()
     const rows = await sys.quote.findMany()
     expect(rows.length).toBe(3)   // still 3, hasTemplates filter still applied
     const all = await sys.quote.findMany({ withTemplates: true })
     expect(all.length).toBe(5)
+  })
+})
+
+// ─── FJS-176: a write takes the same flags a read takes ─────────────────────
+//
+// The parser records the intent for reads — *default reads exclude templates,
+// opt in per call* — and says nothing about writes, which is where the whole
+// defect lived. `update`, `updateMany`, `upsert` and `remove` hardcoded
+// `instances` with no argument that opted in, so a template was create-once and
+// uneditable through every route, `asSystem()` included. Meanwhile `delete` and
+// `deleteMany` applied NO filter and destroyed one happily: a row class that
+// could not be corrected but could be lost.
+//
+// Ruled: templates are a live parallel class rather than an end state, so the
+// writes take the flags. That closes the trapdoor too — an instance could be
+// promoted with `{ isTemplate: true }` and then never demoted, because nothing
+// could reach it again.
+
+describe('@@hasTemplates — writes take the flags', () => {
+  const SCHEMA = `
+    model Recipe {
+      id   Int    @id
+      name String
+      cost Int    @default(0)
+      @@hasTemplates
+    }`
+  let db: any
+  beforeAll(async () => { db = await makeDb(SCHEMA, 'ht-writes') })
+  afterAll(() => db.$close())
+  beforeEach(async () => {
+    await db.recipe.deleteMany({ where: {}, withTemplates: true })
+    await db.recipe.createMany({ data: [
+      { id: 1, name: 'i1', cost: 1 },
+      { id: 2, name: 'i2', cost: 2 },
+      { id: 3, name: 't1', cost: 9, isTemplate: true },
+    ]})
+  })
+  const template = () => db.recipe.findUnique({ where: { id: 3 }, withTemplates: true })
+
+  test('update reaches a template with the flag, and not without it', async () => {
+    expect(await db.recipe.update({ where: { id: 3 }, data: { cost: 99 } })).toBeNull()
+    expect((await template()).cost).toBe(9)
+    const done = await db.recipe.update({ where: { id: 3 }, data: { cost: 99 }, withTemplates: true })
+    expect(done.cost).toBe(99)
+  })
+
+  test('updateMany, upsert and remove take them too', async () => {
+    expect(await db.recipe.updateMany({ where: {}, data: { cost: 5 } })).toEqual({ count: 2 })
+    expect(await db.recipe.updateMany({ where: {}, data: { cost: 5 }, withTemplates: true })).toEqual({ count: 3 })
+
+    const up = await db.recipe.upsert({
+      where: { id: 3 }, create: { id: 3, name: 'x' }, update: { cost: 7 }, withTemplates: true,
+    })
+    expect(up.cost).toBe(7)
+
+    expect(await db.recipe.remove({ where: { id: 3 } })).toBeNull()
+    expect(await db.recipe.remove({ where: { id: 3 }, withTemplates: true })).not.toBeNull()
+  })
+
+  test('onlyTemplates narrows a bulk write to the templates alone', async () => {
+    expect(await db.recipe.updateMany({ where: {}, data: { cost: 0 }, onlyTemplates: true })).toEqual({ count: 1 })
+    expect((await template()).cost).toBe(0)
+    expect((await db.recipe.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.cost)).toEqual([1, 2])
+  })
+
+  test('the promotion trapdoor is closed — a template can be demoted again', async () => {
+    // Promotion always worked and demotion never did, so `{ isTemplate: true }`
+    // was a one-way door into a row nothing could reach.
+    await db.recipe.update({ where: { id: 1 }, data: { isTemplate: true } })
+    expect((await db.recipe.findMany()).map((r: any) => r.id)).toEqual([2])
+
+    await db.recipe.update({ where: { id: 1 }, data: { isTemplate: false }, withTemplates: true })
+    expect((await db.recipe.findMany({ orderBy: { id: 'asc' } })).map((r: any) => r.id)).toEqual([1, 2])
+  })
+
+  test('a hard delete no longer destroys a template the caller cannot see', async () => {
+    // The behaviour change. `delete`/`deleteMany` applied no template filter, so
+    // an ordinary cleanup destroyed rows that no read of the model returns —
+    // data loss with nothing to anticipate it.
+    expect(await db.recipe.delete({ where: { id: 3 } })).toBeNull()
+    expect(await template()).not.toBeNull()
+
+    expect(await db.recipe.deleteMany({ where: {} })).toEqual({ count: 2 })
+    expect(await template()).not.toBeNull()
+
+    expect(await db.recipe.delete({ where: { id: 3 }, withTemplates: true })).not.toBeNull()
+    expect(await template()).toBeNull()
+  })
+
+  test('delete still refuses an empty where — the filter must not paper over it', async () => {
+    await expect(db.recipe.delete({ where: {} })).rejects.toThrow(/requires a where clause/)
   })
 })
 
@@ -19751,7 +21429,7 @@ describe('@@hasTemplates + @@softDelete — composition', () => {
   afterAll(() => db.$close())
 
   beforeEach(async () => {
-    await db.item.delete({ where: { id: { in: [1,2,3,4] } } })
+    await db.item.delete({ where: { id: { in: [1,2,3,4] } }, withTemplates: true })
     await db.item.createMany({ data: [
       { id: 1, name: 'I-1', isTemplate: false },
       { id: 2, name: 'I-2', isTemplate: false },
@@ -19818,7 +21496,7 @@ describe('@@hasTemplates — nested includes', () => {
   afterAll(() => db.$close())
 
   beforeEach(async () => {
-    await db.quote.delete({ where: { id: { in: [1,2,3] } } })
+    await db.quote.delete({ where: { id: { in: [1,2,3] } }, withTemplates: true })
     await db.account.delete({ where: { id: 1 } })
     await db.account.create({ data: { id: 1, name: 'Acme' } })
     await db.quote.createMany({ data: [
@@ -22316,7 +23994,11 @@ model Person {
   email  String @email @unique
   handle String @length(3, 12)
   age    Int    @gte(18) @lte(120)
-  token  String @guarded
+  // Optional on purpose: @guarded refuses a non-system write, so a REQUIRED one
+  // makes the model uncreatable below level 8 and the ladder's whole create
+  // column goes ungraded — which costs this test the gate-lower kill it is here
+  // to prove. verifyGateLadder reports that case; see the @guarded write tests.
+  token  String? @guarded
   teamId Int
   team   Team   @relation(fields: [teamId], references: [id])
   @@gate("2.4.4.5")
@@ -22562,9 +24244,16 @@ describe('a grouped or aggregated value keeps the type a row read gives it', () 
     const gm = await db.post.groupBy({ by: ['meta'], _count: true })
     expect(gm.every((r: any) => typeof r.meta === 'object' && r.meta !== null)).toBe(true)
 
-    const a = await db.post.aggregate({ _max: { flag: true, words: true } })
+    const a = await db.post.aggregate({ _max: { flag: true } })
     expect(typeof a._max.flag).toBe('boolean')
-    expect(Array.isArray(a._max.words)).toBe(true)
+
+    // `by:` keeps an opaque column and MAX does not: grouping by stored text is
+    // self-consistent — every distinct value is its own group — while MAX orders
+    // that text, so `['10']` ranks below `['9']` (FJS-273). Hydration is what
+    // makes the group key a real array again; there is nothing to hydrate on the
+    // aggregate side because the question is refused.
+    await expect(db.post.aggregate({ _max: { words: true } })).rejects.toThrow(/words.*array column/s)
+    await expect(db.post.aggregate({ _max: { meta:  true } })).rejects.toThrow(/meta.*Json column/s)
   })
 
   test('_sum and _avg are NOT coerced — the sum of a Boolean column is a count', async () => {
@@ -22576,6 +24265,151 @@ describe('a grouped or aggregated value keeps the type a row read gives it', () 
     expect(a._sum.flag).toBe(2)      // not `true`
     expect(a._sum.num).toBe(6)
     expect(a._avg.flag).toBeCloseTo(2 / 3)
+  })
+})
+
+// ─── every name an aggregate can put in a quoted identifier ───────────────────
+//
+// The sibling of the read-surface grid: an aggregate NAMES a column and never
+// builds a row, so both of the things `read()` does for a row — resolve the name
+// and strip what the caller may not see — have to happen here instead.
+// SQLite reads an unresolvable `"name"` as a string CONSTANT, so every miss is a
+// query that succeeds: `_max` answers the name, `_sum` answers 0 (FJS-202).
+// Nothing strips a protected column either, and `_stringAgg` over one is not an
+// aggregate at all but the whole column joined with commas (FJS-273).
+//
+// A new argument that can carry a field name is added to the table below.
+
+describe('an aggregate names a column, and every name is checked', () => {
+  const S = `model Row {
+    id     Int      @id @default(autoincrement())
+    amount Float    @default(0)
+    label  String   @default("")
+    tags   String[] @default("[]")
+    meta   Json?
+    salary Float    @guarded @default(0)
+    hidden Float    @omit(all) @default(0)
+    ssn    String?  @encrypted
+    pw     String?  @hashed
+    upper  String?  @computed
+    kids   Int      @from(Kid, count: true)
+    all    Kid[]
+  }
+  model Kid {
+    id    Int @id @default(autoincrement())
+    rowId Int
+    row   Row @relation(fields: [rowId], references: [id])
+  }`
+
+  const mk = async (label: string) => {
+    const db = await makeDb(S, label, {
+      encryptionKey: 'b'.repeat(64),
+      computed: { Row: { upper: (r: any) => r.label?.toUpperCase() ?? null } },
+    })
+    await db.asSystem().row.create({ data: { amount: 1, label: 'a', tags: ['x'], meta: { t: 1 }, salary: 100, hidden: 1, ssn: 's1' } })
+    await db.asSystem().row.create({ data: { amount: 2, label: 'b', tags: ['y'], meta: { t: 2 }, salary: 900, hidden: 2, ssn: 's2' } })
+    return db
+  }
+
+  // Every argument that reaches SQLite inside a quoted identifier, and the tier
+  // it takes. `naming` needs a real column; `value` needs one holding a value an
+  // aggregate can compare.
+  const ARGS: [string, 'naming' | 'value', (f: string) => any][] = [
+    ['_max',              'value',  f => ({ _max: { [f]: true } })],
+    ['_min',              'value',  f => ({ _min: { [f]: true } })],
+    ['_sum',              'value',  f => ({ _sum: { [f]: true } })],
+    ['_avg',              'value',  f => ({ _avg: { [f]: true } })],
+    ['_stringAgg.field',  'value',  f => ({ _stringAgg: { field: f } })],
+    ['_stringAgg.orderBy','value',  f => ({ _stringAgg: { field: 'label', orderBy: f } })],
+    ['named agg',         'value',  f => ({ _n: { max: f } })],
+    ['_count.distinct',   'naming', f => ({ _count: { distinct: f } })],
+  ]
+
+  // A name that is not a column at all — refused at both tiers.
+  const NOT_A_COLUMN = ['upper', 'kids', 'all', 'nosuchfield']
+  // A real column whose stored TEXT is a storage detail — refused at the value
+  // tier only, because grouping and counting distinct values of it is coherent.
+  const OPAQUE       = ['tags', 'meta']
+  // Opaque AND unreadable, which is every encrypted column: the two reasons
+  // compose, so it is refused at the naming tier as well — counting distinct
+  // ciphertexts is a fact about the values.
+  const OPAQUE_UNREADABLE = ['ssn', 'pw']
+  // A real column this caller may not read — refused at both tiers, because the
+  // answer is about the value either way.
+  const PROTECTED    = ['salary', 'hidden']
+
+  test('no argument lets a non-column through', async () => {
+    const db = await mk('agg-noncol')
+    const allowed: string[] = []
+    for (const [name, , build] of ARGS)
+      for (const f of NOT_A_COLUMN) {
+        const r = await db.row.aggregate(build(f)).then(v => ({ ok: v }), (e: any) => ({ err: e.message }))
+        if (!('err' in r) || !r.err.includes(f)) allowed.push(`${name}(${f}) → ${JSON.stringify(r)}`)
+      }
+    expect(allowed).toEqual([])
+  })
+
+  test('the value tier refuses an opaque column and the naming tier keeps it', async () => {
+    const db = await mk('agg-opaque')
+    const wrong: string[] = []
+    for (const [name, tier, build] of ARGS)
+      for (const f of [...OPAQUE, ...OPAQUE_UNREADABLE]) {
+        const r = await db.row.aggregate(build(f)).then(() => 'answered', (e: any) => e.message)
+        const refused = r !== 'answered' && r.includes(f)
+        const want = tier === 'value' || OPAQUE_UNREADABLE.includes(f)
+        if (refused !== want) wrong.push(`${name}(${f}): ${refused ? 'refused' : 'answered'}, wanted ${want ? 'refused' : 'answered'}`)
+      }
+    expect(wrong).toEqual([])
+  })
+
+  test('a column read() would strip is not readable through an aggregate either', async () => {
+    const db = await mk('agg-protected')
+    const leaked: string[] = []
+    for (const [name, , build] of ARGS)
+      for (const f of PROTECTED) {
+        const r = await db.row.aggregate(build(f)).then(v => ({ ok: v }), (e: any) => ({ err: e.message }))
+        if (!('err' in r)) leaked.push(`${name}(${f}) → ${JSON.stringify(r.ok)}`)
+      }
+    expect(leaked).toEqual([])
+
+    // The shape that made this worth its own id: not one number about a hidden
+    // column, but every value in it.
+    await expect(db.row.aggregate({ _stringAgg: { field: 'salary' } })).rejects.toThrow(/salary/)
+    await expect(db.row.groupBy({ by: ['salary'], _count: true })).rejects.toThrow(/salary/)
+  })
+
+  test('asSystem() reads what it is allowed to, and the schema tier still holds', async () => {
+    const db = await mk('agg-system')
+    const sys = db.asSystem()
+    expect((await sys.row.aggregate({ _max: { salary: true } }))._max.salary).toBe(900)
+    expect((await sys.row.aggregate({ _sum: { hidden: true } }))._sum.hidden).toBe(3)
+    // Not an access rule: a @computed field is not a column for anyone, and an
+    // array column is opaque to MAX however privileged the caller is.
+    await expect(sys.row.aggregate({ _max: { upper: true } })).rejects.toThrow(/@computed/)
+    await expect(sys.row.aggregate({ _max: { tags:  true } })).rejects.toThrow(/array column/)
+    await expect(sys.row.aggregate({ _max: { pw:    true } })).rejects.toThrow(/one-way digest/)
+  })
+
+  test('groupBy checks by, interval and its aggregates', async () => {
+    const db = await mk('agg-groupby')
+    await expect(db.row.groupBy({ by: ['upper'], _count: true })).rejects.toThrow(/@computed/)
+    await expect(db.row.groupBy({ by: ['kids'],  _count: true })).rejects.toThrow(/@from/)
+    await expect(db.row.groupBy({ by: ['nope'],  _count: true })).rejects.toThrow(/Unknown groupBy field 'nope'/)
+    await expect(db.row.groupBy({ by: ['label'], _max: { upper: true } })).rejects.toThrow(/@computed/)
+    await expect(db.row.groupBy({ by: ['label'], interval: { nope: 'month' } })).rejects.toThrow(/Unknown groupBy interval field 'nope'/)
+    // An opaque column is a legal group key — every distinct stored value is its
+    // own group — and hydration gives it back in the shape a row read gives it.
+    const g = await db.row.groupBy({ by: ['tags'], _count: true })
+    expect(g.every((r: any) => Array.isArray(r.tags))).toBe(true)
+  })
+
+  test('what is legal is still legal, and the message names an alternative', async () => {
+    const db = await mk('agg-legal')
+    expect((await db.row.aggregate({ _max: { amount: true }, _count: true }))._max.amount).toBe(2)
+    expect((await db.row.aggregate({ _stringAgg: { field: 'label', orderBy: 'label' } }))._stringAgg.label).toBe('a,b')
+    expect((await db.row.aggregate({ _n: { max: 'amount' } } as any))._n).toBe(2)
+    expect((await db.row.aggregate({ _count: { distinct: 'label' } }))._count).toBe(2)
+    await expect(db.row.aggregate({ _max: { amoutn: true } })).rejects.toThrow(/Did you mean: amount\?/)
   })
 })
 
@@ -22645,6 +24479,88 @@ describe('$checkWhere says WHY a key cannot be filtered', () => {
   })
 })
 
+// ─── FJS-262: a read that builds its own SQL asked none of the questions ─────
+//
+// Found while closing FJS-215, by asking which methods evaluate the global
+// filter. `findManyCursor` and `search()` build their own SQL rather than going
+// through `buildSQL`, and applied neither the global filter nor the ROW POLICY:
+// `findMany` answered one row where they answered every row in the table,
+// another owner's and another tenant's included. `aggregate`, `groupBy` and
+// `search` never called `plugins.beforeRead`, so a `@@gate` never saw them —
+// a model gated at SYSADMIN answered a level-4 caller's COUNT.
+//
+// The grid is the point, not the two methods: this is the fourth time a path
+// that assembles its own SELECT has been found missing something every other
+// read has (FJS-173, FJS-178, FJS-185, FJS-216). One cell per method.
+
+describe('every read applies the filter, the policy and the gate', () => {
+  const SCOPED = `
+    model Post {
+      id       Int    @id @default(autoincrement())
+      title    String
+      tenantId Int
+      ownerId  Int
+      @@fts([title])
+      @@allow('read', ownerId == auth().id)
+    }`
+
+  let db: any, user: any
+  beforeAll(async () => {
+    db = await makeDb(SCOPED, 'read-surface', { filters: { post: { tenantId: 1 } } })
+    await db.asSystem().post.createMany({ data: [
+      { title: 'alpha mine',   tenantId: 1, ownerId: 7 },   // the only visible row
+      { title: 'beta other',   tenantId: 2, ownerId: 7 },   // excluded by the global filter
+      { title: 'gamma theirs', tenantId: 1, ownerId: 8 },   // excluded by the row policy
+    ]})
+    user = db.$setAuth({ id: 7 })
+  })
+  afterAll(() => db.$close())
+
+  test('the list reads answer one row, not three', async () => {
+    expect((await user.post.findMany()).length).toBe(1)
+    expect((await user.post.findManyCursor({ limit: 10, orderBy: { id: 'asc' } })).items.map((r: any) => r.title)).toEqual(['alpha mine'])
+    expect((await user.post.search('alpha OR beta OR gamma')).map((r: any) => r.title)).toEqual(['alpha mine'])
+    expect((await user.post.query({})).length).toBe(1)
+    const both = await user.post.findManyAndCount({})
+    expect([both.rows.length, both.total]).toEqual([1, 1])
+  })
+
+  test('the counting reads agree with the list — a total that disagrees is the same bug', async () => {
+    expect(await user.post.count()).toBe(1)
+    expect(await user.post.aggregate({ _count: true })).toEqual({ _count: 1 })
+    expect(await user.post.groupBy({ by: ['tenantId'], _count: true })).toEqual([{ tenantId: 1, _count: 1 }])
+  })
+
+  test('a denied row is not reachable by asking for it directly', async () => {
+    expect(await user.post.findUnique({ where: { id: 3 } })).toBeNull()
+    expect(await user.post.findFirst({ where: { ownerId: 8 } })).toBeNull()
+    expect(await user.post.exists({ where: { id: 3 } })).toBe(false)
+  })
+
+  test('a @@gate refuses every read, including the three that never asked', async () => {
+    const gated = await makeDb(
+      `model Vault { id Int @id @default(autoincrement())  name String  @@fts([name])  @@gate("7") }`,
+      'read-surface-gate',
+      { plugins: [new GatePlugin({ getLevel: () => 4 })] },
+    )
+    await gated.asSystem().vault.create({ data: { name: 'k' } })
+    const caller = gated.$setAuth({ id: 1 })
+
+    for (const run of [
+      () => caller.vault.findMany(),
+      () => caller.vault.findManyCursor({ limit: 5, orderBy: { id: 'asc' } }),
+      () => caller.vault.search('k'),
+      () => caller.vault.count(),
+      () => caller.vault.aggregate({ _count: true }),
+      () => caller.vault.groupBy({ by: ['name'], _count: true }),
+      () => caller.vault.query({}),
+    ]) {
+      await expect(run()).rejects.toThrow(/requires level 7/)
+    }
+    gated.$close()
+  })
+})
+
 describe('a predicate that can never match is refused at startup', () => {
   test('a global filter over a @computed field', async () => {
     const schema = `model Post {
@@ -22656,7 +24572,72 @@ describe('a predicate that can never match is refused at startup', () => {
     await expect(makeDb(schema, 'tier2-filter', {
       computed: { Post: { comp: (r: any) => r.title } },
       filters:  { post: { comp: 'A' } },
-    })).rejects.toThrow(/global filter.*cannot match/s)
+    })).rejects.toThrow(/global filter.*cannot be applied/s)
+  })
+
+  // ── FJS-215: the function form, and the unknown key ───────────────────────
+  //
+  // A static filter is judged here; a function filter is handed `ctx` and has
+  // no answer until a query asks it, so it went unjudged entirely and kept the
+  // whole defect alive behind one spelling. And an UNKNOWN key was excluded
+  // from the refusal in both forms, which is the same defect: SQLite reads an
+  // identifier it cannot bind as a string literal, so `{ nope: 'x' }` empties
+  // the model and `{ nope: 'nope' }` returns every row of it.
+
+  const FILTER_SCHEMA = `model Post {
+    id Int @id @default(autoincrement())
+    title String
+    status String @default("draft")
+    comp String? @computed
+  }`
+  const withFilter = (label: string, filters: any) =>
+    makeDb(FILTER_SCHEMA, label, { computed: { Post: { comp: (r: any) => r.title } }, filters })
+
+  test('the FUNCTION form is judged the first time a query asks it', async () => {
+    // Not at startup: it takes a ctx, and there is none yet. The refusal is a
+    // ValidationError rather than the startup Error, because by now it is
+    // failing a query rather than a construction.
+    const db = await withFilter('filter-fn', { post: () => ({ comp: 'A' }) })
+    await expect(db.post.findMany()).rejects.toThrow(/global filter.*cannot be applied/s)
+    await expect(db.post.count()).rejects.toThrow(/@computed/)
+    await expect(db.post.aggregate({ _count: true })).rejects.toThrow(/@computed/)
+    await expect(db.post.groupBy({ by: ['status'], _count: true })).rejects.toThrow(/@computed/)
+    await expect(db.post.findManyAndCount({})).rejects.toThrow(/@computed/)
+    await expect(db.post.findManyCursor({ limit: 5 })).rejects.toThrow(/@computed/)
+    db.$close()
+  })
+
+  test('an unknown key is refused in both forms — it is the same string-literal fallback', async () => {
+    await expect(withFilter('filter-unknown-static', { post: { nope: 'x' } }))
+      .rejects.toThrow(/cannot be applied.*Unknown field 'nope'/s)
+    const db = await withFilter('filter-unknown-fn', { post: () => ({ nope: 'x' }) })
+    await expect(db.post.findMany()).rejects.toThrow(/Unknown field 'nope'/)
+    db.$close()
+  })
+
+  test('the refusal names a near-miss, because a global filter has no caller to hint at', async () => {
+    await expect(withFilter('filter-typo', { post: { titel: 'x' } }))
+      .rejects.toThrow(/Did you mean: title\?/)
+  })
+
+  test('a filter that CAN narrow is untouched, in both forms', async () => {
+    const stat = await withFilter('filter-ok-static', { post: { status: 'draft' } })
+    const dyn  = await withFilter('filter-ok-fn', { post: () => ({ status: 'draft' }) })
+    for (const db of [stat, dyn]) {
+      await db.asSystem().post.create({ data: { title: 'a' } })
+      await db.asSystem().post.create({ data: { title: 'b', status: 'live' } })
+      expect((await db.post.findMany()).map((r: any) => r.title)).toEqual(['a'])
+      expect(await db.post.count()).toBe(1)
+      db.$close()
+    }
+  })
+
+  test('a function filter that returns nothing is still nothing, not a refusal', async () => {
+    // The escape a multi-tenant filter needs: no tenant in ctx, no filter.
+    const db = await withFilter('filter-fn-null', { post: () => null })
+    await db.asSystem().post.create({ data: { title: 'a' } })
+    expect((await db.post.findMany()).length).toBe(1)
+    db.$close()
   })
 
   test('a @@allow policy comparing a protected field — only the mode with no answer', async () => {
@@ -23083,6 +25064,64 @@ describe('$transaction under concurrency', () => {
     await bulk
     expect(await sys.row.count({ where: { tag: { in: ['c1', 'c2'] } } })).toBe(2)
     expect(await sys.row.count({ where: { tag: 'A' } })).toBe(0)
+    db.$close()
+  })
+})
+
+// ─── a plugin has an identity — FJS-D19 ──────────────────────────────────────
+//
+// It had none at all, which is why nothing could introspect, order or report
+// them. The ruling was the other half: the concept is NOT renamed. Litestone's
+// plugins attach capabilities (access control, file storage) and hold config,
+// installed once with an onInit lifecycle — which is what a Plugin is in every
+// realm here. And this package already has `hooks`, so a rename would have
+// collided with a live concept one option key away.
+
+describe('a plugin has a name, and every client flavour will say it', () => {
+  const schema = `model Post {
+    id    Int    @id
+    title String
+    @@gate("0.4.4.5")
+  }`
+
+  test('defaults to the class name — right for every plugin written as a class', async () => {
+    const { Plugin } = await import('../src/core/plugin.js')
+    class TenantScope extends Plugin {}
+    expect(new TenantScope().name).toBe('TenantScope')
+  })
+
+  test('a stated name wins, because a minifier rewrites the class name', async () => {
+    const { Plugin } = await import('../src/core/plugin.js')
+    class Whatever extends Plugin { name = 'tenant-scope' }
+    expect(new Whatever().name).toBe('tenant-scope')
+  })
+
+  test('$plugins lists what is installed, in run order', async () => {
+    const { Plugin } = await import('../src/core/plugin.js')
+    class TenantScope extends Plugin {}
+    class Auditor    extends Plugin { name = 'auditor' }
+
+    // The auto-installed GatePlugin is in it and comes LAST, which is the
+    // answer this accessor exists to give: what you passed is not what is
+    // running, and until now nothing could say so.
+    const db = await createClient({ schema, db: ':memory:', plugins: [new TenantScope(), new Auditor()] })
+    expect(db.$plugins).toEqual(['TenantScope', 'auditor', 'GatePlugin'])
+    db.$close()
+  })
+
+  test('names the GatePlugin a gated schema installed for you', async () => {
+    // The introspection this exists for: you cannot run without gates, so
+    // something is installed whether or not you passed one, and nothing could
+    // say what.
+    const db = await createClient({ schema, db: ':memory:' })
+    expect(db.$plugins).toContain('GatePlugin')
+    db.$close()
+  })
+
+  test('is on every flavour — what is installed does not vary with auth', async () => {
+    const db = await createClient({ schema, db: ':memory:' })
+    expect(db.asSystem().$plugins).toEqual(db.$plugins)
+    expect(db.$setAuth({ id: 1 }).$plugins).toEqual(db.$plugins)
     db.$close()
   })
 })

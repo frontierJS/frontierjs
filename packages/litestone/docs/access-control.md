@@ -51,8 +51,82 @@ auth() != null        — authenticated check
 now()                 — current UTC timestamp, ONE instant per evaluation
 check(field)          — delegates to related model's read policy
 field == value        field != value  field > value  field >= value  field < value  field <= value
+value in list         membership — the list is always the RIGHT operand
+cond ? a : b          a value chosen by a condition — see below
 expr1 && expr2        expr1 || expr2  !expr
 ```
+
+### `cond ? a : b`
+
+Binds looser than `||` and is **right-associative**, so `a ? x : b ? y : z`
+nests into the else — which is how a four-value ladder is written without a
+CASE keyword:
+
+```
+@@scope(urgent, priority > 8 ? true : priority > 5 ? status == 'open' : false)
+@@allow('create', priority > 8 ? auth().isAdmin == true : auth() != null)
+```
+
+A parenthesised group is an operand on **either** side of a comparison, so a
+ternary can choose the value being compared against:
+
+```
+@@allow('read', ownerId == (status == 'open' ? auth().id : auth().adminId))
+```
+
+This is where the language stops being predicate-only and starts producing
+**values**, so it carries two obligations, both met:
+
+- It lands in **both** compilers — `CASE WHEN … THEN … ELSE … END` in the SQL
+  half, `?:` in the JS half. A form in one and not the other is the shape that
+  let `field == null` allow a row on create that then read as hidden.
+- `verifyRowPolicies` grades one against the other over it, with rows on both
+  sides of the condition.
+
+### `in` — a list on one side
+
+The grammar compared scalars, so *this row is visible to these principals* — an
+audience held on the row — could not be said at the Data boundary at all and had
+to become a service where-clause, which is what `@@allow` exists to prevent: a
+forgotten filter is an exposure.
+
+**The list is always on the right**, which is what makes one operator enough for
+all three shapes:
+
+```
+model Doc {
+  memberIds Int[]
+  ownerId   Int
+  status    String
+
+  @@allow('read',   auth().id in memberIds)          // the row holds the list
+  @@allow('delete', ownerId in auth().ownedIds)      // the principal holds it
+  @@allow('update', status in ['draft', 'review'])   // written literally
+}
+```
+
+An array column compiles to `EXISTS (SELECT 1 FROM json_each("memberIds") WHERE
+value = ?)` — the same SQL `where: { memberIds: { has: … } }` produces, so
+membership has one definition. The other two compile to `IN (?, …)`. **An empty
+list admits nothing** and is answered before any SQL is built, because `IN ()`
+is a syntax error.
+
+A literal list also replaces the shape that had to be written as
+`status == 'draft' || status == 'review'`.
+
+**What the schema can decide is decided at startup**, naming the model and
+quoting the expression back, because a wrong policy is an empty screen with a
+200 rather than an error:
+
+- the right operand is not an array field, or is not a field at all
+- the left operand is an array — overlap between two lists is not expressible
+- both operands name a column on the same row
+- the list column is `@encrypted`/`@hashed`/`@secret`, so it holds an encoding
+  rather than its members
+
+It lands in **both** compilers — `compileSql` for the WHERE and `evalJs` for
+`create` — because a form in only one is `FJS-195` repeating: a row that create
+allows and read then hides. `verifyRowPolicies` grades one against the other.
 
 ### Comparing an encrypted column
 
@@ -94,13 +168,20 @@ JS evaluator a `create` policy uses — and `@@softDelete`'s stamp, so a frozen
 clock freezes every timestamp litestone writes rather than only the ones a
 policy compares against.
 
-**Do not reach for SQLite's own clock in a `$raw` predicate.** `datetime('now')`
+**SQLite's own clock is refused in a `$raw` predicate.** `datetime('now')`
 answers `2026-08-13 07:38:31` — a space, no milliseconds, no `Z` — while
 litestone stores `2026-08-13T07:38:31.984Z`. The comparison is string-wise and
-`'T'` sorts after a space, so `dueAt < datetime('now')` is right for rows from
-earlier days and silently wrong for rows from today (`FJS-226`). Use the
-structured form, `{ dueAt: { lt: new Date().toISOString() } }`, or
-`strftime('%Y-%m-%dT%H:%M:%fZ','now')`.
+`'T'` sorts after a space, so `dueAt < datetime('now')` was right for rows from
+earlier days and silently wrong for rows from today (`FJS-226`). Write
+`sql\`dueAt < ${now()}\`` instead, or the structured form
+`{ dueAt: { lt: new Date().toISOString() } }`.
+
+`now()` and this `now` are **different clocks**, deliberately. The one here is
+the request's instant, resolved once and injectable for a test. `now()` in a
+`$raw` is SQLite's, fixed for the duration of one statement — which is what lets
+two occurrences in one predicate agree, and what puts it out of reach of
+`createClient({ now })`. A test that needs a frozen instant in a raw predicate
+binds its own ISO string.
 
 ### Applying policies
 
@@ -153,7 +234,17 @@ model User {
 `@allow('write', expr)` — field silently dropped from write data when expr is false
 `@allow('all', expr)` — both
 
-`asSystem()` always sees and writes all fields. Conflicts with `@guarded` and `@secret`.
+`asSystem()` always sees and writes all fields.
+
+**Conflicts with `@guarded` and `@secret`, and the conflict is the point.**
+`@guarded` answers both halves at once — a system-context column, stripped from
+every read and refused on every write — so a field cannot carry both a lock that
+says *nobody but the system* and a predicate that says *some callers*. Pick the
+one that describes the column: `@allow('write', …)` for a column an admin may
+set, `@guarded` for one only `asSystem()` touches. The two also fail
+differently, which is deliberate: a field `@allow` DROPS the key, because the
+same form body is legitimate for the caller one level up, while `@guarded`
+REFUSES the write by name, because no caller was ever meant to send it.
 
 ## Gates — level-based access control
 

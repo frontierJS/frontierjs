@@ -108,7 +108,7 @@ title: Recipes
   async function run(recipe) {
     error = null; busy = recipe.id
     try {
-      const res = await recipes.service.action('run', recipe.id, target ? { serverId: target } : {})
+      const res = await recipes.service.invoke('run', recipe.id, target ? { serverId: target } : {})
       selected  = { ...res, runs: res.runs }
       toasts.success(
         `${recipe.name} queued on ${res.queued} server(s)`,

@@ -38,12 +38,21 @@ accounts are in `CHANGES.md`.
   `src/core/app.ts`. Add a phase to the list, never to one caller.
 - **`register` is `=> void`, not `=> Promise<void>`.** `configure()` runs it
   synchronously. Async setup goes in `boot()`.
-- **`app.provide(name, value)`** is the guarded namespace claim — it throws on a
-  taken name instead of silently overwriting.
+- **`app.claim(name, value)`** is the guarded namespace claim — it throws on a
+  taken name instead of silently overwriting. Named `claim` and not `provide`
+  because a Provider is a third party the app speaks to (`FJS-D06`).
+- **`app.registerMetricsSource(name, fn)`** is the blessed way into `/metrics`.
+  The store behind it is `_metricsSources`; a plugin reaching for that field
+  directly is guessing, and the guess fails silently.
 - **Raw-route path params are `{id}`, not `:id`** (`PARAM_PATTERN` in
   `src/transport/router.ts`). `:id` registers as a literal static segment and
-  404s forever, silently. On a raw route `ctx` is a `TransportContext`: `params`
-  is path params only, and headers are on `ctx.headers`.
+  404s forever, silently. On a raw route `ctx` is a `TransportContext`: path
+  captures are `ctx.route` (never `ctx.params`, which does not exist on either
+  context — `FJS-D03`) and headers are on `ctx.headers`.
+- **`app.principal()` / `app.runAs(userId, fn)`** are the seam deferred work runs
+  through. `runAs` re-resolves the id via `IAuth.sessionFor` and opens the ALS
+  scope, so a service call inside names no `auth` and inherits one; `null` means
+  `createApp({ system })`.
 - **`hasRoute()` is a matching question, not an existence one.** Use
   `hasExactRoute(method, path)` for "is this endpoint mounted", and
   `routePaths(method)` to list where things actually landed.

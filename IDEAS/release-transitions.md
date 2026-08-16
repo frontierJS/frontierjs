@@ -1,6 +1,7 @@
 # Idea — Reversible deployment transitions: the Release realm, sequenced
 
-**Status: IDEA / ARCHITECTURE. Nothing here is built.** Dated 2026-08-12. Produced
+**Status: IDEA / ARCHITECTURE — except Phase 0, which shipped 2026-08-15**
+(`litestone release` / `fli release:check`; see § Phases). Dated 2026-08-12. Produced
 by two rounds of outside research — first a survey of how eleven deployment systems
 actually fail, then a deliberate attempt to falsify the conclusions of the first.
 Two of the six starting claims were falsified and are recorded as such below; the
@@ -268,11 +269,35 @@ Sequenced by one rule, which is the reason the phases fall where they do:
 > first phase even when unused, because a recorded-state migration is the expensive
 > kind of change. Anything that only *does* something can wait.
 
-### Phase 0 — Know
+### Phase 0 — Know — **shipped 2026-08-15**
 
 A pivot classifier and nothing else. `fli release:check` reads a schema diff and
 answers **expand / contract / unknown**, with unknown counting as contract. A
 committed snapshot and a CI phase that fails a stale one.
+
+Built as `litestone release` (`packages/litestone/src/release.js`) with
+`fli release:check` as the app-facing door. Three things it settled that this
+record left open:
+
+- **The baseline is git, not a second file.** `db/release.snapshot.md` holds the
+  release SURFACE and never the verdict — a verdict is a fact about two schemas
+  while the file describes one, so writing it in makes the file depend on its own
+  previous contents, which is not a fixed point and therefore not recheckable.
+  The schema at `HEAD` (or `--from v1.4.0`, or a path) is the other side.
+- **Access is in the comparison.** Raising a `@@gate` and adding an `@@allow` are
+  compatibility changes — N-1 callers are refused, or quietly filtered with a 200
+  — and this is the half no generic deployer can reach at any price. Run over
+  basecamp's working tree it reported 14 contracts, one per model that gained the
+  row-level tenancy predicate: the first time that change was visible as a deploy
+  risk rather than as a schema edit.
+- **The fourth answer is a plan, not a verdict.** A new required column with no
+  default comes back as a contract carrying its three steps (expand → backfill →
+  contract) rather than as a fourth state. The classifier stays tri-state, and
+  the split is attached to the finding that needs it — which leaves the open
+  question below about a fourth answer answered in the narrower direction.
+
+It needed no CI edit, which was the claim: the snapshot names its own generator
+in its header, and the `snapshots` phase found it.
 
 **This is an existing repo idiom, not a new mechanism**: it is the shape of
 `fli test:access` → committed `db/access.snapshot.md` → the `access` phase in
@@ -452,9 +477,12 @@ Compose has no traffic layer at all and stops the old container before starting 
 
 ## Open questions
 
-- **Does the classifier need a third answer?** *Expand / contract / unknown* treats
-  unknown as contract, which is conservative and correct, but a diff that is mostly
-  additive with one narrowing will be common and will annoy.
+- ~~**Does the classifier need a third answer?**~~ — **answered by shipping it.**
+  *Expand / contract / unknown* stands; the verdict is the worst finding and the
+  findings are all reported, so a mostly-additive diff with one narrowing reads as
+  a contract WITH its expands listed beside it rather than as a flat refusal. What
+  is still unmeasured is whether *required → optional* (a contract, because this
+  release may write a NULL N-1 has no case for) is the one that annoys in real use.
 - **Where does the Release declaration live** — its own file beside `db/schema.lite`,
   or `frontier.config.js`, which `IDEAS/app-manifest.md` is already shaping. If the
   former, whether *everything derives from the schema* holds literally here or by

@@ -12,7 +12,29 @@ bun run verify:build # builds, then probes the PRODUCTION output (FJS-085)
 bun run db:types     # regenerate db/schema.d.ts — the client's types
 bun run db:seed      # an example fleet
 bun run db:reset     # stops the servers, deletes the databases
+bun run image        # build the container image from the WORKING TREE
+bun run image:up     # …and bring the stack up on 8020  · image:down stops it
 ```
+
+**The image packs the workspace into its own build context.** Nine
+`workspace:*` deps that a Docker build can resolve no more than `link:`
+(`FJS-241`), so the packing and the manifest rewrite (`overrides` included, or
+sierra installs mesa from npm and the image runs two trees) are done by **`fli`'s
+own `packages/cli/core/vendor.js`** — the same module `fli deploy:vendor` runs
+over a client app, imported by path rather than through `node_modules`, where a
+`bun install` copy would be whatever the last install saw. `deploy/build.mjs`
+calls it, hands it the script pruning this image wants, and generates
+the Caddy config from `web/config/api-paths.js`. Two containers: the API is an
+image, the SPA is static files behind a proxy — one process serving both would
+need an `apiPrefix`, because `GET /{service}` matches almost any single-segment
+path and `/apps/` in a browser would answer JSON.
+`ENCRYPTION_KEY` and `AUTH_SECRET` are required and have no defaults there;
+**losing the encryption key loses every `@encrypted` column in that volume.**
+
+**An interrupted `verify` cleans up after itself** — SIGINT/SIGTERM/SIGHUP and
+an uncaught throw all kill the API, the Vite and the Chrome it started. Before
+that they were orphaned, and the next run either tripped its own port check or
+talked to an API holding a database `--reset` had already deleted.
 
 `verify` needs an **empty** database (`bun run verify --reset` does it for you)
 and both ports free: API **8120**, web **8020**. That web port is the same one
@@ -82,10 +104,18 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   replaces**: `job.engine.ts` carried `JobRow` in snake_case with `service_id` on
   it — three renames stale, describing no row that has ever existed, while the
   code around it read the right camelCase names.
-- **`Server` is the one model whose tenancy is in the schema.** `@@allow('all',
-  workspaceId == auth().workspaceId)`, graded off the same principal — the other
-  36 are still the `workspaceId` in a service where-clause plus
-  `scopeToWorkspace`. Adding the next one is an audit before it is a line: **a
+- **15 models keep their tenancy in the schema** —
+  `@@allow('all', workspaceId == auth().workspaceId)`, graded off the same
+  principal. Every model carrying a `workspaceId` except two: `WorkspaceMember`
+  (what standing is READ from, before there is a workspace on the principal to
+  compare against) and `AuditEvent` (nullable workspace — a hub action belongs to
+  none, and a null comparison would hide the rows the trail exists for). The
+  other 22 carry no `workspaceId` of their own — a `DeploymentStep`, a `JobRun`,
+  a `Volume` — so the next move there is `check(parent)`, not a restated column.
+  `Deployment`/`Job`/`Domain`
+  brought a shape the hierarchy did not have — a read filtered on `appId` alone
+  (an app's recent releases, a hostname's siblings), safe before only because the
+  app had been fetched scoped first. Adding the next one is an audit before it is a line: **a
   policy filters where a gate refuses**, so any read crossing a workspace that
   is not `asSystem()` starts matching nothing, quietly. The engines, the hub and
   the outpost endpoints already are; a new one is the thing to check. `db/README.md`
@@ -125,10 +155,13 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   the channels service reported *Slack needs a credential — send it as `secret`*
   about a request that carried exactly that. Same shape as `ip_address` on the
   servers service, where the write succeeds and the column comes back null.
-- **`ctx.params` does not exist in a service context.** This app's services read
-  `ctx.params.user.user_id` and `ctx.params.headers` throughout — every one
-  `undefined`, so role checks silently passed for everyone. Fixing an occurrence
-  means moving to `ctx.auth` / `ctx.client.headers` / `ctx.route`.
+- **`ctx.params` does not exist in Junction at all** — on either context, since
+  `FJS-D03`. This app's services read `ctx.params.user.user_id` and
+  `ctx.params.headers` throughout, every one `undefined`, so role checks silently
+  passed for everyone. Fixing an occurrence means `ctx.auth.user` /
+  `ctx.client.headers` / `ctx.route` — and `ctx.route` is the answer on a raw
+  route too, which is what changed: the word used to mean path captures there and
+  nothing here, and that asymmetry is what kept the idiom arriving.
 - **`before: { all: [...] }` hits every method**, outpost endpoints included.
 - **Leaving a method out does not remove it.** `createService({ model })` brings
   Junction's Litestone base, which answers every CRUD verb the service does not
@@ -143,15 +176,16 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   material is written into the registry, which `GET /conduit-targets` returns.
   `core/credentials.ts` resolves `secret:<id>` and `env:<NAME>`. Nothing had
   ever sent to an outpost, so neither half showed for two phases.
-- **`bun run db:seed` is the only thing here that writes every model, and no
-  suite runs it.** It had been broken for two phases when that was noticed:
-  Phase 3 turned `severity` into an enum and left the seed writing `'high'`,
-  Phase 5 replaced `AlertRule.channels` with a join and left the seed writing
-  the dead column. `--force` could not run at all on a database that had never
-  been seeded, and its delete list had drifted eleven models behind the schema —
-  so a `--force` left those rows in place. Neither shows up in `verify`, which
-  drives screens rather than the seeder. Run it after any schema change, and add
-  the model to the `--force` list when you add one.
+- **`bun run db:seed` is the only thing here that writes every model, and `db/test/seed.test.ts` now runs it** — as a process, in a throwaway cwd, including `--force`. It had rotted twice before anything asked: Phase 3
+  turned `severity` into an enum and left the seed writing `'high'`, Phase 5
+  replaced `AlertRule.channels` with a join and left it writing the dead column,
+  and the `--force` delete list was eleven models behind. Run it after any schema
+  change, and add the model to the `--force` list when you add one.
+- **Migrations are per DATABASE — `db/migrations/main/`** — and both the boot
+  path and the seeder apply them with litestone's `apply()`, never junction's
+  `dbClient.migrate(dir)`, which globs one level and reports success for a
+  directory it cannot read. That is how a fresh boot came up with no tables and
+  said nothing (`FJS-193`'s family).
 - **Only `find` is built into a list envelope; an action is handed back whole.**
   It used to be shape alone — any `{ data, total }` was rebuilt as a paginated
   list from `total`/`limit`/`offset`/`data`/`errors` and every sibling key was
@@ -183,7 +217,7 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   refused before the request was made, naming fields the caller was never meant
   to send. The symptom is the button doing nothing. `{ validate: false }` is the
   only escape today (`FJS-095`, ruling `FJS-D22`).
-- **The audit trail must cover custom actions.** It recorded `create`/`patch`/
+- **The audit trail must cover custom methods.** It recorded `create`/`patch`/
   `remove` only, so drain, deploy, cancel and trigger were in no trail at all. It
   now runs on `all` minus reads, with `servers.heartbeat` excluded by name.
 - **Zero raw SQL, on purpose** — everything goes through accessors, which is what

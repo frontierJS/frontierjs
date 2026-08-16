@@ -1,194 +1,126 @@
-// Fixture Dock App.mesa — Phase 3 smoke.
-//
-// Uses createResource('leads') to drive a CRUD UI through harbor.
-// Demonstrates:
-//   - service.find populates the store via load()
-//   - create/patch/remove fire push events that update the store reactively
-//   - 4-phase hook pipeline (around hook for loading state)
-//   - Login flow (Phase 2 still works)
-//   - Connection state (Phase 2.5 still works)
-//
-// Auto-gen registers the harbor port with the resources module before mount,
-// so createResource() works from inside this file as long as we call it
-// AFTER the App function has been invoked (i.e. inside the function, not
-// at module top level).
+<script>
+  // The fixture Dock — a REAL Mesa component.
+  //
+  // It used to be plain JavaScript in a `.mesa` file, which built only because
+  // the compiler was never found and the plugin fell through to stub mode. So
+  // jetty's Mesa path was not exercised by anything, and the bug that hid it —
+  // a compiler lookup that probed two fixed directories and never walked up —
+  // survived every run of this suite. Keep this file Mesa: it is the only thing
+  // here that compiles.
+  //
+  // It has no connection of its own. `harbor` is the port to the service
+  // worker, supplied by auto-gen, and every call goes through it.
+  import { createResource, login, logout, getConnectionState } from '@frontierjs/jetty/resources'
 
-import { createResource, login, logout, getConnectionState } from '../../../../../src/resources/index.js'
+  export let harbor = null
 
-export default function App(root, props) {
-  // Phase 3: create the resource inside the App function, not at module
-  // top level. This ensures the active port is registered before any
-  // resource methods are called.
+  const CYCLE = ['active', 'pending', 'inactive']
+
+  let status   = harbor ? 'connected' : 'no harbor'
+  let session  = getConnectionState()
+  let leads    = []
+  let messages = []
+  let email    = 'demo@example.com'
+  let password = ''
+  let error    = ''
+
   const leadsResource = createResource('leads', {
     hooks: {
       around: {
         all: [async (ctx, next) => {
-          // Mark loading state in the UI for visible evidence the around hook ran
-          status.textContent = `…${ctx.method}`
-          status.style.background = '#eef'
-          try {
-            await next()
-            console.log(`[hook:around] ${ctx.service}.${ctx.method} → ok`)
-          } catch (err) {
-            console.error(`[hook:around] ${ctx.service}.${ctx.method} → error:`, err.message)
-            throw err
-          }
+          status = `…${ctx.method}`
+          await next()
+          status = 'ok'
         }],
       },
     },
   })
 
-  root.innerHTML = `
-    <div style="font-family: system-ui, -apple-system, sans-serif; padding: 1rem; min-width: 380px;">
-      <h1 style="margin: 0 0 0.5rem; font-size: 1.1rem;">Phase 3 Smoke — Resources</h1>
+  leadsResource.store.subscribe((rows) => { leads = [...(rows ?? [])] })
 
-      <div style="display: grid; gap: 0.4rem; font-size: 0.85rem; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #ccc;">
-        <div>Status: <code id="status" style="background: #eee; padding: 2px 6px; border-radius: 3px;">init</code></div>
-        <div>User: <code id="user" style="background: #eee; padding: 2px 6px; border-radius: 3px;">—</code></div>
-      </div>
-
-      <div id="login-panel" style="margin-bottom: 0.75rem;">
-        <input id="email" placeholder="email" value="demo@example.com" style="width: 100%; padding: 5px; margin-bottom: 4px; box-sizing: border-box;" />
-        <input id="password" type="password" placeholder="password (try: demo)" style="width: 100%; padding: 5px; margin-bottom: 4px; box-sizing: border-box;" />
-        <button id="login-btn" style="padding: 5px 12px; cursor: pointer;">Login</button>
-        <span id="login-error" style="color: #c33; font-size: 0.85rem; margin-left: 0.5rem;"></span>
-      </div>
-      <div id="logout-panel" style="display: none; margin-bottom: 0.75rem;">
-        <button id="logout-btn" style="padding: 5px 12px; cursor: pointer;">Logout</button>
-      </div>
-
-      <div style="margin-bottom: 0.5rem;">
-        <strong style="font-size: 0.9rem;">Leads</strong>
-        <button id="load-btn" style="margin-left: 0.5rem; padding: 3px 10px; cursor: pointer; font-size: 0.85rem;">Load</button>
-        <button id="add-btn"  style="margin-left: 0.25rem; padding: 3px 10px; cursor: pointer; font-size: 0.85rem;">+ Add</button>
-      </div>
-      <div id="leads-table" style="font-size: 0.85rem; border: 1px solid #ddd; border-radius: 4px; min-height: 80px; max-height: 200px; overflow-y: auto;"></div>
-
-      <div id="messages" style="margin-top: 0.75rem;"></div>
-    </div>
-  `
-
-  const $ = (sel) => root.querySelector(sel)
-  const status      = $('#status')
-  const userEl      = $('#user')
-  const loginPanel  = $('#login-panel')
-  const logoutPanel = $('#logout-panel')
-  const errorEl     = $('#login-error')
-  const messages    = $('#messages')
-  const table       = $('#leads-table')
-
-  if (!props?.harbor) {
-    status.textContent = 'no harbor'
-    status.style.background = '#f5b5b5'
-    return
-  }
-
-  function setStatus(text, bg) { status.textContent = text; status.style.background = bg }
-
-  function renderSession(s) {
-    const authed = s?.authenticated
-    userEl.textContent = authed ? `${s.user?.name ?? s.user?.email ?? '?'} (id ${s.user?.id})` : '—'
-    loginPanel.style.display  = authed ? 'none' : 'block'
-    logoutPanel.style.display = authed ? 'block' : 'none'
-  }
-
-  function renderLeads(leads) {
-    if (!leads || leads.length === 0) {
-      table.innerHTML = `<div style="padding: 0.5rem; color: #999;">No leads loaded</div>`
-      return
-    }
-    table.innerHTML = leads.map((l) => `
-      <div style="display: flex; align-items: center; padding: 4px 8px; border-bottom: 1px solid #eee;">
-        <span style="flex: 1;"><strong>${escapeHtml(l.name)}</strong> <span style="color:#888;">— ${escapeHtml(l.status)}</span></span>
-        <button data-id="${l.id}" data-action="patch"  style="padding: 1px 6px; cursor: pointer; font-size: 0.75rem;">cycle</button>
-        <button data-id="${l.id}" data-action="remove" style="padding: 1px 6px; cursor: pointer; font-size: 0.75rem; margin-left: 4px;">×</button>
-      </div>
-    `).join('')
-
-    table.querySelectorAll('button[data-action]').forEach((b) => {
-      b.addEventListener('click', async () => {
-        const id = parseInt(b.dataset.id, 10)
-        const action = b.dataset.action
-        try {
-          if (action === 'patch') {
-            const current = leadsResource.store.get().find((l) => l.id === id)
-            const next = nextStatus(current?.status)
-            await leadsResource.service.patch(id, { status: next })
-          } else if (action === 'remove') {
-            await leadsResource.service.remove(id)
-          }
-          setStatus('ok', '#cfe9d2')
-        } catch (e) {
-          setStatus(`err: ${e.message}`, '#f5b5b5')
-        }
-      })
+  if (harbor) {
+    harbor.on('session', (p) => {
+      status  = 'session ✓'
+      session = { authenticated: p?.authenticated, user: p?.user }
     })
+    harbor.on('hello-from-run', (p) => { messages = [...messages, p?.message ?? ''] })
+    harbor.onDisconnect(() => status = 'disconnected')
+    harbor.onReconnect(()  => status = 'reconnected')
   }
 
-  // Initial render
-  renderSession(getConnectionState())
-  renderLeads(leadsResource.store.get())
+  async function attempt(fn) {
+    try { await fn() } catch (e) { status = `err: ${e.message}` }
+  }
 
-  // Subscribe to store updates — Mesa would use $: leadsResource.store.get(),
-  // but in this stub fixture we just re-render on every update.
-  leadsResource.store.subscribe(renderLeads)
+  const doLogin  = () => attempt(async () => { error = ''; await login({ email, password }) })
+                          .catch(e => error = e.message)
+  const doLogout = () => attempt(() => logout())
+  const load     = () => attempt(() => leadsResource.load())
+  const add      = () => attempt(() => leadsResource.service.create({
+    name: `New Lead ${leads.length + 1}`, status: 'new', ownerId: 1,
+  }))
+  const cycle    = (row) => attempt(() => leadsResource.service.patch(row.id, {
+    status: CYCLE[(CYCLE.indexOf(row.status) + 1) % CYCLE.length],
+  }))
+  const drop     = (row) => attempt(() => leadsResource.service.remove(row.id))
+</script>
 
-  // Connection events from harbor
-  setStatus('connected', '#cfe9d2')
-  props.harbor.on('session', (payload) => {
-    setStatus('session ✓', '#a8d5b0')
-    renderSession({ authenticated: payload?.authenticated, user: payload?.user })
-  })
-  props.harbor.on('hello-from-run', (payload) => {
-    const note = document.createElement('div')
-    note.style.cssText = 'padding: 6px 10px; background: #eef; border-radius: 4px; font-size: 0.85rem;'
-    note.textContent = `📨 ${payload?.message ?? ''}`
-    messages.appendChild(note)
-  })
-  props.harbor.onDisconnect(() => setStatus('disconnected', '#f5d2a8'))
-  props.harbor.onReconnect(()  => setStatus('reconnected',  '#cfe9d2'))
+<div class="dock">
+  <h1>Fixture Dock — Resources</h1>
 
-  // Login / logout
-  $('#login-btn').addEventListener('click', async () => {
-    errorEl.textContent = ''
-    try {
-      await login({ email: $('#email').value, password: $('#password').value })
-    } catch (e) {
-      errorEl.textContent = e.message
-    }
-  })
-  $('#logout-btn').addEventListener('click', async () => {
-    try { await logout() } catch (e) { console.error(e) }
-  })
+  <div class="meta">
+    <div>Status: <code>{status}</code></div>
+    <div>User: <code>{session?.authenticated ? (session.user?.name ?? session.user?.email) : '—'}</code></div>
+  </div>
 
-  // Leads CRUD
-  $('#load-btn').addEventListener('click', async () => {
-    try {
-      await leadsResource.load()
-      setStatus(`loaded ${leadsResource.store.get().length}`, '#cfe9d2')
-    } catch (e) {
-      setStatus(`err: ${e.message}`, '#f5b5b5')
-    }
-  })
-  $('#add-btn').addEventListener('click', async () => {
-    try {
-      const n = leadsResource.store.get().length + 1
-      await leadsResource.service.create({ name: `New Lead ${n}`, status: 'new', ownerId: 1 })
-      setStatus('created', '#cfe9d2')
-    } catch (e) {
-      setStatus(`err: ${e.message}`, '#f5b5b5')
-    }
-  })
-}
+  {#if session?.authenticated}
+    <button onclick={doLogout}>Logout</button>
+  {:else}
+    <div class="login">
+      <input bind:value={email} placeholder="email" />
+      <input bind:value={password} type="password" placeholder="password (try: demo)" />
+      <button onclick={doLogin}>Login</button>
+      <span class="error">{error}</span>
+    </div>
+  {/if}
 
-function nextStatus(current) {
-  const cycle = ['active', 'pending', 'inactive']
-  const idx = cycle.indexOf(current)
-  return cycle[(idx + 1) % cycle.length]
-}
+  <div class="bar">
+    <strong>Leads</strong>
+    <button onclick={load}>Load</button>
+    <button onclick={add}>+ Add</button>
+  </div>
 
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',
-  })[c])
-}
+  <div class="leads">
+    {#each leads as row (row.id)}
+      <div class="lead">
+        <span><strong>{row.name}</strong> — {row.status}</span>
+        <button onclick={() => cycle(row)}>cycle</button>
+        <button onclick={() => drop(row)}>×</button>
+      </div>
+    {:else}
+      <div class="empty">No leads loaded</div>
+    {/each}
+  </div>
+
+  {#each messages as message, i (i)}
+    <div class="message">📨 {message}</div>
+  {/each}
+</div>
+
+<style>
+  .dock    { font: 14px system-ui, sans-serif; padding: 1rem; min-width: 380px; }
+  h1       { font-size: 1.1rem; margin: 0 0 0.5rem; }
+  .meta    { display: grid; gap: 0.25rem; font-size: 0.85rem; padding-bottom: 0.5rem;
+             margin-bottom: 0.75rem; border-bottom: 1px solid #ccc; }
+  code     { background: #eee; padding: 2px 6px; border-radius: 3px; }
+  .login   { display: grid; gap: 4px; margin-bottom: 0.75rem; }
+  .error   { color: #c33; font-size: 0.85rem; }
+  .bar     { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.5rem; }
+  .leads   { border: 1px solid #ddd; border-radius: 4px; min-height: 80px;
+             max-height: 200px; overflow-y: auto; font-size: 0.85rem; }
+  .lead    { display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+             border-bottom: 1px solid #eee; }
+  .lead span { flex: 1; }
+  .empty   { padding: 0.5rem; color: #999; }
+  .message { margin-top: 0.5rem; padding: 6px 10px; background: #eef; border-radius: 4px; }
+</style>

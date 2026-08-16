@@ -312,7 +312,12 @@ const expected = {
   // Three changes, three announcements. The middle one is the regression guard:
   // without it the page above still passes, because the row was created paid-
   // less and deleted before anyone reloaded.
-  'watcher.events':  { names: ['orders created', 'orders pay', 'orders ship', 'orders patched', 'orders removed'] },
+  //
+  // `orders recordTracking` and not `orders patched`: the courier job writes the
+  // `@system` column through a named action, which announces under its own name.
+  // That is the whole difference between the two — the job used to patch, and a
+  // patch is what a caller may not do to a `@system` column.
+  'watcher.events':  { names: ['orders created', 'orders pay', 'orders ship', 'orders recordTracking', 'orders removed'] },
   'watcher.payload': { ofPay: { reference: 'ORD-LIVE-1', status: 'paid' } },
 
   'consoleErrors': [],

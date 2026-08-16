@@ -18,7 +18,7 @@
 }
 
 .dialog::backdrop {
-  background:      rgba(0, 0, 0, 0.45);
+  background:      var(--scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -55,6 +55,14 @@
   --surface-tint-bg:     initial;
   --surface-tint-border: initial;
   --surface-tint-color:  initial;
+
+  /*
+   * The modal's own ground. Assigned to --surface-ground and not to
+   * --surface-bg: the .outlined and .ghost treatments set --surface-bg in
+   * surface.css's base layer, and this file is a later one, so writing it
+   * here would beat both variants on every dialog.
+   */
+  --surface-ground: var(--dialog-bg, var(--surface));
 
   --dialog-header-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
   --dialog-header-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));

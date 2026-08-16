@@ -25,7 +25,10 @@ const db = await createClient({
 
 ## @encrypted
 
-Encrypts the value at rest using AES-256-GCM. Implies `@guarded(all)` — only readable via `asSystem()` or explicit select from a system context.
+Encrypts the value at rest using AES-256-GCM, and hides it from every non-system
+read — a non-deterministic ciphertext has nothing to hand back. A non-system
+caller may still WRITE one: whoever supplies a secret is routinely not the
+system. For a column no caller may set either, add `@guarded`.
 
 ```prisma
 model User {
@@ -218,13 +221,31 @@ const tenants = await createTenantRegistry({
 
 ## @guarded and @guarded(all)
 
-Not encryption, but related — these hide fields from reads unless `asSystem()` is used:
+Not encryption, but related. **A system-context column, in both directions**:
+stripped from every read, and refused on every write, unless the client is
+`asSystem()`.
 
 ```prisma
 model User {
-  passwordHash String @guarded(all)   // excluded everywhere unless asSystem()
-  internalNote String @guarded        // excluded from findMany/findFirst, returned by findUnique
+  passwordHash String @guarded(all)   // system only, and a select cannot unlock the read
+  internalNote String @guarded        // system only; the read is unlockable by nothing either
 }
 ```
 
-`@omit` is similar but weaker — explicit `select` can unlock it. `@guarded` requires `asSystem()` even with explicit select.
+```js
+const userDb = db.$setAuth(user)
+await userDb.user.update({ where: { id }, data: { passwordHash: 'x' } })
+// AccessDeniedError: User: "passwordHash" is @guarded — a system-context column
+// on write as well as read.
+```
+
+The write half matters because the read half hides the evidence: without it the
+column is invisible and settable at once, so a caller cannot see what they are
+overwriting and the owner cannot see that they did.
+
+`@omit` is the weaker neighbour — a read-shaped rule only, and an explicit
+`select` unlocks it. Neither level of `@guarded` is unlockable that way.
+
+For a column *some* callers may write, the tool is field-level
+`@allow('write', …)`; it cannot sit beside `@guarded`, which already answers
+both halves.

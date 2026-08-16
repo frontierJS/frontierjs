@@ -1,6 +1,6 @@
 # @frontierjs/ui
 
-Mesa components over [`@frontierjs/css`](../css). 64 components across forms,
+Mesa components over [`@frontierjs/css`](../css). 66 components across forms,
 display, layout, overlay and feedback.
 
 ```bash
@@ -24,6 +24,13 @@ import '@frontierjs/css'
 <Alert tone="warning" title="Heads up">Your trial ends Friday.</Alert>
 <Button tone="danger" onclick={remove}>Delete</Button>
 ```
+
+**`onclick`, never `on:click`.** A handler reaches a component as a plain
+callback prop; the directive form is for elements. Mesa refuses it on a
+component (VISION rule 23) and the message names the prop to use — including
+for a component's own events, where `on:paid` means `onpaid={fn}`. A modifier
+has nowhere to go: the child decides what it passes, so `preventDefault` is the
+callback's business.
 
 ---
 
@@ -90,7 +97,7 @@ The old six-value `variant` conflated the two, which is why `outline` and
 
 **forms** — `Form` `Button` `Field` `Fieldset` `Label` `Input` `Textarea`
 `Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Combobox`
-`MultiSelect` `DatePicker` `FileUpload`
+`MultiSelect` `DatePicker` `DateTimeInput` `FileUpload`
 
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`
 `Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton`
@@ -106,7 +113,13 @@ The old six-value `variant` conflated the two, which is why `outline` and
 **feedback** — `Alert` `AlertProvider` `Toast` `Toaster` `Progress` `Spinner`
 `Skeleton`
 
-**stores** — `toastStore` `alertStore` `themeStore` `commandPaletteStore`
+**stores** — `toastStore` `alertStore` `commandPaletteStore`
+
+There is no `themeStore` here. A theme in `@frontierjs/css` is a class of
+inheriting tokens, and applying it before first paint needs a script in
+`<head>` that only the build can write — so the switch belongs to
+`@frontierjs/sierra/theme`, and this package would only ever have been a second
+answer to it.
 
 ## Forms know what they are editing
 
@@ -128,9 +141,85 @@ its `@length` as `maxlength` — and if the write is rejected, the message lands
 under that control without anyone routing it there. The form puts the rules and
 the error map in context; each control resolves its own.
 
+**A `DateTime` column gets `DateTimeInput`**, and it is the one control where
+the value on screen is not the value on the wire. Litestone stores an instant;
+`<input type="datetime-local">` has no zone at all, so the component converts
+at each edge and names the zone it is showing you. Its callback is
+`onvalue(iso)` rather than `oninput` — a handler reading `e.target.value` would
+get the wall clock, which is the one thing that must never reach the column. A
+`Date` column has no zone to lose and stays a plain `type="date"`.
+
+```svelte
+<DateTimeInput
+  name="scheduledFor"
+  value={record.scheduledFor}
+  onvalue={(iso) => record.scheduledFor = iso}
+/>
+```
+
+`bind:` is not used there on purpose: a component binding takes a writable
+top-level `let` in the caller, so a field of a record is written back through
+the callback.
+
 **A stated prop always wins**, including a falsy one — `required={false}` beats
 a schema that says required, because the resolution asks "was anything said",
 not "is it truthy".
+
+### Or write no controls at all
+
+```svelte
+<Form {leads} />                        <!-- every writable column, in schema order -->
+<Form {leads} only={['name', 'email']} />
+<Form {leads} except={['internalRef']} />
+```
+
+Each column gets the control its type implies: an enum is a select over its
+members, a boolean is a checkbox, `@markdown` is a textarea, and a foreign key
+is a **picker** whose rows come from the relation — no service name written
+anywhere. Children win: passing any control means you are writing the form, and
+`auto` turns generation back on with the generated fields first.
+
+The field list is the last thing a form restates about a model, and a list typed
+into a page drifts — a column added to `.lite` stops appearing, and nothing says
+so. Which is also why a column the kit has no control for (an array, a `Json`
+document) is **warned about by name** rather than quietly skipped.
+
+The table that decides all of this lives in `@frontierjs/sierra`
+(`field-rules.js`) and is reached through the resource, so a generated form and
+a hand-written one cannot disagree about what a `Float` is.
+
+### Contributing a control
+
+The kit ships five, so the columns it cannot place — a `Json` document, a
+`String[]`, money, a rating, a rich editor — are controls your app owns. Two
+registrations, in one place, at startup:
+
+```js
+import { registerControl }     from '@frontierjs/sierra/junction'
+import { registerFormControl } from '@frontierjs/ui/controls'
+import Money from './Money.mesa'
+
+// which columns get it — a name, a whole descriptor, or null to decline
+registerControl('money', (rule, { field }) => (field.endsWith('Cents') ? 'money' : null))
+// what that name renders as
+registerFormControl('money', Money)
+```
+
+Two because the two halves live on opposite sides of a dependency rule: Sierra's
+table has to run in plain Node — a test, a prerender and a snapshot all ask it
+which control a column gets — and this kit peers only on mesa and css, so it
+cannot import Sierra. A name is the only thing that crosses.
+
+With no `props` builder your component is handed
+`{ name, field, value, onvalue, options }`. Put `name` on the element that emits
+input: that is what the form's dirty tracking and its blur-reveal watch.
+
+A registered name **replaces** a built-in of the same name, so
+`registerFormControl('select', MyCombobox)` swaps every generated select in the
+app. The last registration is the first asked, which is why an app beats a kit
+it imported. A `readOnly` column is never offered — `@system`, `@computed`,
+`@generated` and `@from` are the schema saying the value is not the caller's to
+write, so a control over one is a form that cannot submit.
 
 **Standing alone, nothing changes.** Every control works outside a form exactly
 as it did; an absent form resolves to `undefined` and each fallback is what the
@@ -244,7 +333,7 @@ Four suites, and the split matters:
   perfectly.
 - **`test/attributes.mjs`** — every component forwards its caller's attributes,
   the caller's value replaces the component's own, and `id` lands wherever it
-  is not a declared prop. Renders all 64; the six it cannot render are named
+  is not a declared prop. Renders all 65; the five it cannot render are named
   with the reason rather than filtered out, so nothing goes quiet. 55 of 64
   components dropped every undeclared attribute before it existed.
 - **`test/form.mjs`** — `<Form>` and the form context. Asserts the claim that
@@ -253,8 +342,35 @@ Four suites, and the split matters:
   not the state machine — the machine's inputs are pinned in sierra's
   `resource-validation.test.js`, and the whole of it in `example/`'s
   `bun run verify`.
+- **`test/browser/`** — the kit drive: a server that compiles each `.mesa` on
+  request behind an import map, and Chrome over CDP. It needs Chrome on PATH or
+  `$FJS_CHROME`, and it is where everything this kit adds over
+  `@frontierjs/css` is actually asserted — a focus trap, a calendar changing
+  month, a dropzone taking a file, ⌘K, a toast settling in place. Input goes
+  through the browser's own pipeline, because a dispatched `KeyboardEvent` is
+  not trusted and moves no focus. Covering a component costs a fixture and a
+  spec; the run reports which components no spec has opened.
+
+## Toasts
+
+```js
+import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+toasts.success('Saved')
+
+const said = toasts.loading('Sending…')
+try   { await send(); said.update('success', 'Sent') }
+catch (e) { said.update('error', e.message) }
+```
+
+`loading()` answers `{ id, update(type, message, duration?), dismiss() }` and
+settles the same toast in place, so one notification covers a whole action. A
+loading toast carries a spinner and does not dismiss itself; settling it gives
+it a lifetime. Settling one the reader already dismissed answers `false` and
+does not put it back.
 
 ## Status
 
-Alpha, zero production consumers. Verified by compiling and rendering, **not
-in a browser** — see `PROJECT_STATE.md` for what is and is not confirmed.
+Alpha, zero production consumers. Compiled, rendered, and **driven in a real
+browser** by `test/browser/` and by `example/`'s two drives — see
+`PROJECT_STATE.md` for which components each has opened.

@@ -32,6 +32,11 @@
 //      build. No suite can ask this: an app in this repo resolves sierra to
 //      packages/sierra/, never a node_modules path, so the code that only runs
 //      for an installed app runs nowhere here. FJS-251 shipped that way.
+//   7. What this branch did to WHO MAY DO WHAT is printed. The only phase that
+//      reports rather than judges, and the only one a person is meant to read
+//      every time: access is declared in the seed, so the difference between two
+//      branches is computable — which is not true of a framework whose
+//      authorization lives in handlers.
 //
 // Every allowance lives in scripts/ci-allowances.json, keyed by name with a
 // reason, so widening the net is a diff and narrowing it is automatic.
@@ -47,6 +52,8 @@ import { fileURLToPath }                   from 'node:url'
 // rules is worse than one that never stated them — and the way that happens is
 // two copies where only one of them is ever re-derived.
 import { runChecks, findApps, formatFindings } from '../packages/cli/core/checks.js'
+import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
+import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
@@ -94,7 +101,9 @@ function main() {
     hygiene()
     structure()
     snapshots()
+    access()
     coverage()
+    registry()
     scaffold()
     typecheck()
   }
@@ -148,6 +157,118 @@ function hygiene() {
   }
 
   if (!unexpected.length) ok(`${ignoredSource.length} ignored source file(s), all accounted for`)
+
+  substratePurity()
+}
+
+// ─── phase 1b · substrate purity ────────────────────────────
+// `FJS-D26` admits @frontierjs/toolbelt BELOW the dependency graph — litestone
+// and mesa may import it, which Invariant 1 would otherwise forbid — and the
+// whole of that argument is that the package depends on nothing and computes
+// nothing it is not given. A dependency, a clock or a filesystem read makes the
+// exemption unsafe, and no consumer's suite would fail: the import still works.
+//
+// So the rule is stated where it can break a build. It is deliberately blunt —
+// a substrate file may import RELATIVELY and nowhere else, which catches a node
+// builtin, a workspace sibling and a registry package in one test rather than
+// three lists that go stale.
+
+const SUBSTRATE = ['packages/toolbelt']
+
+const AMBIENT = [
+  [/\bDate\.now\s*\(|\bnew\s+Date\s*\(|\bperformance\.now\s*\(/, 'reads a clock'],
+  [/\bMath\.random\s*\(|\bcrypto\.randomUUID\s*\(/,                    'is nondeterministic'],
+  [/\bprocess\.[a-zA-Z]/,                                                'reads the environment'],
+  [/\bfetch\s*\(|\bXMLHttpRequest\b/,                                   'talks to the network'],
+  [/\brequire\s*\(|\bimport\s*\(/,                                     'loads a module at runtime'],
+  [/\bglobalThis\.[a-zA-Z]|\bwindow\.[a-zA-Z]|\bdocument\.[a-zA-Z]/,      'reaches for a global'],
+]
+
+function substratePurity() {
+  for (const pkg of SUBSTRATE) {
+    const from = problems.length
+    const manifestPath = join(ROOT, pkg, 'package.json')
+    if (!existsSync(manifestPath)) {
+      note(`substrate package ${pkg} is named in scripts/ci.mjs and does not exist. Remove it from SUBSTRATE.`)
+      continue
+    }
+
+    const manifest = readJson(manifestPath)
+    for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
+      const names = Object.keys(manifest[field] ?? {})
+      if (names.length) fail(
+        `${pkg} declares ${field}: ${names.join(', ')}\n` +
+        `      Substrate depends on nothing — that is what lets litestone and mesa import it\n` +
+        `      without routing around Litestone ← Junction ← Sierra (FJS-D26). Either the\n` +
+        `      dependency goes, or the ruling does.`
+      )
+    }
+
+    const files = sourceFilesUnder(join(ROOT, pkg, 'src'))
+    for (const file of files) {
+      const rel  = relative(ROOT, file)
+      const raw  = readFileSync(file, 'utf8')
+      const code = stripStrings(stripComments(raw))
+
+      for (const [pattern, why] of AMBIENT) {
+        if (pattern.test(code)) fail(
+          `${rel} ${why}\n` +
+          `      Every export in a substrate package is a pure function: same input, same output.\n` +
+          `      The purity is not a house style, it is the licence to be imported from anywhere.`
+        )
+      }
+
+      for (const spec of importSpecifiers(stripComments(raw))) {
+        if (spec.startsWith('.')) continue
+        fail(
+          `${rel} imports '${spec}'\n` +
+          `      A substrate file may only import relatively. A node builtin is I/O, a sibling is a\n` +
+          `      workspace dependency, and either one costs the standing FJS-D26 granted.`
+        )
+      }
+    }
+
+    // Only when the package IS clean: a summary that says so under three
+    // failures reads as though the failures belong to something else.
+    if (clean(from)) ok(`${pkg} — ${files.length} source file(s), no dependency and no ambient capability`)
+  }
+}
+
+// Comments say what the code must NOT do ("no clock, no filesystem") and a
+// string may hold an example, so the patterns run over neither — otherwise the
+// rule fails on the paragraph explaining it. The import scan keeps the strings,
+// because the specifier IS one; it only drops comments, where a doc block
+// showing an example import is not an import.
+function stripComments(code) {
+  return code
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+}
+
+function stripStrings(code) {
+  return code
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+}
+
+function importSpecifiers(code) {
+  const out = []
+  const re  = /\b(?:import|export)\b[^;\n]*?\bfrom\s*['"`]([^'"`]+)['"`]/g
+  let m
+  while ((m = re.exec(code))) out.push(m[1])
+  return out
+}
+
+function sourceFilesUnder(dir) {
+  if (!existsSync(dir)) return []
+  const out = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) out.push(...sourceFilesUnder(full))
+    else if (/\.(js|mjs|ts)$/.test(entry.name)) out.push(full)
+  }
+  return out
 }
 
 // ─── phase 2 · structure ────────────────────────────────────
@@ -200,112 +321,49 @@ function structure() {
 
 // ─── phase 3 · snapshots ────────────────────────────────────
 // A snapshot is a generated artefact committed beside its source, so a change
-// nothing else in the repo can see arrives as a diff. Access rules are enforced
-// below the API and a gate that moved is invisible until production refuses
-// someone; emitted DDL is a set of names every hand-written statement binds to.
-// Both are only a gate because this reruns them.
+// nothing else in the repo can see arrives as a diff: the access rules enforced
+// below the API, the DDL every hand-written statement binds to, the JSON Schema
+// three packages validate against, a route table a rename moves, what a thrown
+// value becomes. Each names the command that wrote it in its own header, and
+// that command is rerun with `--check` from the file's own directory.
 //
-// Each snapshot names the command that wrote it, in its own header:
+// The walk, the header parse, the argv restriction and the rerun all live in
+// `packages/cli/core/snapshots.js` — the SAME module `fli test:snapshots` gives
+// a client app, for the same reason `checks.js` is shared: a framework that
+// publishes the generators and keeps the gate to itself has shipped half a
+// feature, and two implementations of one rule is how the halves drift.
 //
-//   <!-- generated by: litestone access --schema schema.lite -->
-//   -- generated by: litestone ddl --schema schema.lite
-//
-// This phase reruns that command with `--check` appended, from the snapshot's
-// own directory — which is why the header names the schema by basename and not
-// by a path. Adding a KIND of snapshot therefore costs nothing here; it costs a
-// generator that answers `--check`.
-//
-// The command comes out of a file in the repo, so it is restricted to a known
-// binary and a shell-free argv. A header is data, and data that CI executes is
-// a supply chain.
-//
-// Opt-in by committing the file. An app with no snapshot is not asked for one —
-// a check that fails a repo for not adopting a convention gets disabled. But
-// once a snapshot exists it may not quietly stop existing: see
-// checkSnapshotsRemoved below, which is where discovery would otherwise fail
-// open.
-
-const SNAPSHOT_BINS = new Set(['litestone', 'fli', 'junction', 'sierra'])
-const SNAPSHOT_GEN  = /generated by:\s*`?([A-Za-z0-9][^\n`"]*?)`?\s*(?:-->|\*\/|"|$)/m
-const SNAPSHOT_ARG  = /^[A-Za-z0-9._/@=,:-]+$/
+// What stays here is the half that is about THIS repo's history: a snapshot may
+// be absent because an app never adopted one, and that is not a failure — but
+// one that existed at the base ref and is gone now is.
 
 function snapshots() {
   const from = phase('snapshots')
 
-  const files = git(['ls-files', '*.snapshot.*']).split('\n').filter(Boolean)
+  const { results, checked } = checkSnapshots({ root: ROOT, timeoutMs: TIMEOUT_MS, maxBuffer: MAX_BUFFER })
 
-  if (!files.length) {
-    note('no snapshot is committed anywhere — `litestone access` and `litestone ddl` write one beside a schema')
-    return
+  if (!checked) {
+    note('no snapshot anywhere — `litestone access` and `litestone ddl` write one beside a schema')
   }
 
-  for (const file of files) {
-    // The header is near the top by convention; reading a slice keeps a large
-    // generated file from being parsed in full.
-    const head  = readFileSync(join(ROOT, file), 'utf8').slice(0, 4096)
-    const found = head.match(SNAPSHOT_GEN)
-
-    if (!found) {
-      fail(
-        `${file} names no generator, so nothing can check it\n` +
-        `      Add a \`generated by: <command>\` line to its header — the command that\n` +
-        `      writes it, with the schema named by basename. CI reruns it with --check.`
-      )
-      continue
-    }
-
-    const argv = found[1].trim().split(/\s+/)
-
-    if (!SNAPSHOT_BINS.has(argv[0])) {
-      fail(
-        `${file} names generator \`${argv[0]}\`, which CI will not run\n` +
-        `      Allowed: ${[...SNAPSHOT_BINS].join(', ')}. Add one here only when a real\n` +
-        `      generator needs it — this list is what stops a committed file from\n` +
-        `      choosing what CI executes.`
-      )
-      continue
-    }
-
-    const bad = argv.slice(1).find(a => !SNAPSHOT_ARG.test(a))
-    if (bad) {
-      fail(`${file} passes \`${bad}\` to its generator — arguments are plain flags and paths, no shell syntax`)
-      continue
-    }
-
-    // The litestone CLI is reached through the workspace rather than by a
-    // relative path into packages/: a consuming app runs this same check with
-    // litestone installed from the registry.
-    const result = spawnSync('bunx', [...argv, '--check'], {
-      cwd:        join(ROOT, dirname(file)),
-      encoding:   'utf8',
-      shell:      false,
-      maxBuffer:  MAX_BUFFER,
-      timeout:    TIMEOUT_MS,
-      killSignal: 'SIGKILL',
-      env:        { ...process.env, CI: '1', FORCE_COLOR: '0' },
-    })
-
-    if (result.error) {
-      fail(`${file}: could not run \`${argv.join(' ')}\` — ${result.error.message}`)
-      continue
-    }
-
-    if (result.status !== 0) {
-      fail(
-        `${file} no longer matches its source\n` +
-        `      Run \`cd ${dirname(file)} && bunx ${argv.join(' ')}\` and read the diff before\n` +
-        `      committing — a line that moved without a change you meant to make is a bug\n` +
-        `      that ships.`,
-        { stdout: result.stdout ?? '', stderr: result.stderr ?? '' }
-      )
-    }
+  for (const r of results) {
+    if (r.ok) continue
+    fail(
+      `${r.file} ${r.error}` +
+      (r.argv
+        ? `\n      Run \`cd ${r.dir} && bunx ${r.argv.join(' ')}\` and read the diff before\n` +
+          `      committing — a line that moved without a change you meant to make is a bug\n` +
+          `      that ships.`
+        : ''),
+      { stdout: r.stdout, stderr: r.stderr }
+    )
   }
 
-  checkSnapshotsRemoved(files)
+  checkSnapshotsRemoved(results.map(r => r.file))
 
   // Guarded on the whole phase — a green summary printed beside a red line is
   // how a failure gets read as noise.
-  if (clean(from)) ok(`${files.length} snapshot(s) current`)
+  if (clean(from)) ok(`${checked} snapshot(s) current`)
 }
 
 // ─── a snapshot that stopped existing ───────────────────────
@@ -352,7 +410,79 @@ function checkSnapshotsRemoved(present) {
   }
 }
 
-// ─── phase 4 · coverage ─────────────────────────────────────
+// ─── phase 4 · access ───────────────────────────────────────
+// What did this branch do to who may do what.
+//
+// Every other phase here answers is-this-broken. This one answers a question a
+// person has to read, because the framework can derive the answer and no
+// reviewer can: `@@gate`, `@@allow`, `@guarded`, a field-level `@allow` and a
+// transition gate are declared in the seed, so the difference between two
+// branches is computable — where a framework whose authorization lives in
+// handlers can only diff the handlers.
+//
+// It reports and does not fail, and that is the one deliberate exception to this
+// runner's rule that a check either passes or fails. A branch that widens access
+// is usually a branch doing its job — a new screen for a new role widens. Making
+// it red would train everyone to ignore the phase, which is exactly the failure
+// mode `knownTestFailures` exists to prevent one line up. The gate is
+// `fli test:access --from <ref> --strict`, which belongs on the branch that
+// deploys rather than on every push.
+//
+// It runs the SAME command a client app runs, through bunx, for the reason the
+// snapshots phase does: a framework that publishes the generator and keeps the
+// gate to itself has shipped half a feature.
+
+function access() {
+  const from = phase('access')
+
+  const ref = resolveRef(baseRef)
+  if (!ref) {
+    note(`access not compared — \`${baseRef}\` does not resolve here. Pass --base-ref, or set FJS_CI_BASE_REF.`)
+    console.log(`  ! no baseline — \`${baseRef}\` does not resolve here`)
+    return
+  }
+
+  const apps = findApps(ROOT).filter(app => existsSync(join(app, 'db', 'schema.lite')))
+  let compared = 0
+
+  for (const app of apps) {
+    const label = relative(ROOT, app) || '.'
+    const run   = spawnSync('bunx', ['litestone', 'access', '--schema', 'db/schema.lite', '--from', ref, '--json'], {
+      cwd: app, encoding: 'utf8', shell: false, maxBuffer: MAX_BUFFER, timeout: TIMEOUT_MS,
+      env: { ...process.env, CI: '1', FORCE_COLOR: '0' },
+    })
+
+    const result = parseJsonOr(run.stdout ?? '', null)
+    if (!result) {
+      // A phase that cannot run is not a phase that passed — the same rule the
+      // snapshots phase applies to a snapshot naming no generator.
+      fail(`${label} — could not compare the access surface against ${ref}\n` +
+           `      Run \`cd ${label} && bunx litestone access --schema db/schema.lite --from ${ref}\`.`,
+           { stdout: run.stdout ?? '', stderr: run.stderr ?? '' })
+      continue
+    }
+
+    compared++
+
+    if (!result.baseline.resolved) {
+      note(`${label} access not compared — ${result.baseline.note}`)
+      continue
+    }
+    if (result.verdict === 'unchanged') continue
+
+    const mark = result.verdict === 'narrows' ? ok : warn
+    mark(`${label} — access ${result.verdict}: ` +
+         `${result.counts.widens} widen · ${result.counts.unknown} undecidable · ${result.counts.narrows} narrow`)
+
+    for (const f of result.findings) console.log(`      ${f.access.padEnd(8)} ${f.subject} — ${f.detail}`)
+  }
+
+  // Said out loud rather than inferred from silence: zero apps compared and zero
+  // changes found print the same nothing otherwise.
+  if (clean(from)) ok(`${compared} app(s) compared against ${ref.slice(0, 8)}`)
+}
+
+// ─── phase 5 · coverage ─────────────────────────────────────
 // Skipped is not passed. The aggregate `--filter '*'` walks straight past a
 // package with no `test` script and prints nothing at all about it.
 
@@ -412,7 +542,7 @@ function coverage() {
   if (clean(from)) ok(`${workspaceDirs().length} workspace member(s), ${Object.keys(exempt).length} exempt by name`)
 }
 
-// ─── phase 5 · typecheck ────────────────────────────────────
+// ─── phase 6 · typecheck ────────────────────────────────────
 // Two halves: the direction of the ratchet (a git question) and the count
 // itself (each package's own script already answers that, and exits 1 above
 // its ceiling).
@@ -476,15 +606,124 @@ function checkBaselineDirection() {
   if (!raised) ok(`baselines never raised against ${ref}`)
 }
 
-// ─── phase 5b · scaffold ────────────────────────────────────
-// Packs the working tree, scaffolds an app against the tarballs, installs and
-// builds it. In the fast tier because it costs ~6s and answers a pre-push
-// question: would this change break every app that installs the framework?
+// ─── phase 6b · scaffold ────────────────────────────────────
+// Scaffolds an app, packs the working tree into it, installs and builds it. In
+// the fast tier because it costs seconds and answers a pre-push question: would
+// this change break every app that installs the framework?
 //
 // The suites cannot ask it. An app in this repo resolves sierra to
 // `packages/sierra/`, never a node_modules path, so a whole branch of the Mesa
 // plugin never runs here — which is how FJS-251 shipped past 836 green tests.
 // scripts/scaffold-build.mjs carries the rest of the reasoning.
+
+// ─── phase 5b · registry ────────────────────────────────────
+// Does npm hold what the scaffold tells an app to install?
+//
+// Every id in `ISSUES.md` is a statement about the WORKING TREE, and a user's
+// experience is a function of the tree AND the registry, which move
+// independently (FJS-252). So the tree can be green while `fli new` writes a
+// package.json that cannot be installed — which is not hypothetical: the
+// scaffold started giving every app `@frontierjs/config`, a package that has
+// never been published, and the only thing that noticed was the `deploy`
+// phase's npm branch failing on an image build minutes later (FJS-267).
+//
+// This asks the cheap question first and names the package. It is not a
+// substitute for the deploy branch — an install that resolves can still fail —
+// it is the half that needs no Docker and no minutes.
+//
+// **A skip is named, never silent**, the same shape the deploy phase uses: with
+// no registry reachable this reports a note and passes, and
+// FJS_CI_REQUIRE_REGISTRY=1 turns that skip into a failure.
+
+function registry() {
+  const from = phase('registry')
+
+  // What `fli new` writes, read from the module that decides it rather than
+  // parsed out of the command — a second implementation of "which packages does
+  // an app get" is how the two answers drift (FJS-254 was exactly that).
+  const scaffolded = [
+    ...Object.keys(FJS_PACKAGES),
+    ...Object.keys(APP_DEV_DEPS).filter(n => n.startsWith('@frontierjs/')),
+  ].sort()
+
+  const t0    = Date.now()
+  const state = scaffolded.map(name => [name, npmVersion(name)])
+
+  // Distinguish "the registry said no" from "nobody answered". Every name
+  // failing at once is a network story, not fourteen unpublished packages.
+  const unreachable = state.filter(([, v]) => v === 'unreachable')
+  if (unreachable.length === state.length) {
+    const why = 'no answer from the npm registry'
+    if (process.env.FJS_CI_REQUIRE_REGISTRY === '1') {
+      fail(`registry phase skipped and FJS_CI_REQUIRE_REGISTRY=1 — ${why}`)
+    } else {
+      note(`registry phase SKIPPED — ${why}. Set FJS_CI_REQUIRE_REGISTRY=1 to make this a failure.`)
+      warn(`skipped — ${why}`)
+    }
+    return
+  }
+
+  const known = allowances.knownUnpublished ?? {}
+
+  for (const [name, version] of state) {
+    if (version === 'unpublished') {
+      if (name in known) {
+        note(`${name} is unpublished — known: ${known[name]}`)
+        warn(`${name} unpublished (known)`)
+      } else fail(
+        `the scaffold installs ${name} and npm has never heard of it\n` +
+        `      \`fli new --source npm\` writes it into an app's package.json, so the install fails\n` +
+        `      and the app never starts. Publish it, take it out of FJS_PACKAGES / APP_DEV_DEPS in\n` +
+        `      packages/cli/core/app-config.js, or name it under knownUnpublished in\n` +
+        `      scripts/ci-allowances.json with the reason.`
+      )
+      continue
+    }
+    // The ratchet: an allowance that is no longer true is a failure, so the
+    // entry disappears on the release that publishes the package rather than
+    // outliving it silently.
+    if (name in known && version !== 'unreachable') fail(
+      `${name} is published (${version}) and still listed under knownUnpublished — remove the entry.`
+    )
+  }
+
+  // The version gap is NOT a failure — a package ahead of the registry is the
+  // normal state between releases. It is reported because it is the thing the
+  // register cannot see: a scaffold template written against behaviour only the
+  // tree has, installed from a registry that does not have it yet.
+  const ahead = state
+    .filter(([, v]) => v !== 'unpublished' && v !== 'unreachable')
+    .map(([name, published]) => [name, published, localVersion(name)])
+    .filter(([, published, local]) => local && published !== local)
+  if (ahead.length) {
+    note(
+      `${ahead.length} scaffolded package(s) differ between tree and registry: ` +
+      ahead.map(([n, p, l]) => `${n} ${l}≠${p}`).join(', ') +
+      ` — a template written against the tree is installed against the registry.`
+    )
+  }
+
+  if (clean(from)) ok(`${state.length} scaffolded package(s), every one of them installable`, Date.now() - t0)
+}
+
+// `npm view` is the same question `fli ws:npm` asks; this is a plain-node
+// caller of it rather than a copy of that command, because ci.mjs cannot run a
+// markdown command. Answers three things and never throws: the published
+// version, `unpublished` (E404 — an answer), or `unreachable` (no answer).
+function npmVersion(name) {
+  const r = spawnSync('npm', ['view', name, 'version'], {
+    cwd: ROOT, encoding: 'utf8', shell: false, timeout: 30_000,
+  })
+  if (r.status === 0) return (r.stdout ?? '').trim()
+  const text = `${r.stderr ?? ''}${r.stdout ?? ''}`
+  return /E404|is not in this registry|404 Not Found/.test(text) ? 'unpublished' : 'unreachable'
+}
+
+function localVersion(name) {
+  const dir = name.replace('@frontierjs/', '')
+  const manifest = join(ROOT, 'packages', dir, 'package.json')
+  return existsSync(manifest) ? (readJson(manifest).version ?? null) : null
+}
 
 function scaffold() {
   const from = phase('scaffold')
@@ -496,9 +735,9 @@ function scaffold() {
   if (clean(from)) ok('a scaffolded app installs from the working tree and builds', Date.now() - t0)
 }
 
-// ─── phase 5c · deploy ──────────────────────────────────────
+// ─── phase 6c · deploy ──────────────────────────────────────
 // `fli new` → `fli make:deploy` → `fli deploy:local`: does the deploy pipeline
-// containerise a real app? ~15s and it needs a Docker daemon, so it sits in the
+// containerise a real app? ~30s and it needs a Docker daemon, so it sits in the
 // full tier rather than the pre-push one.
 //
 // Three defects lived on this path and all three were found by reading, because
@@ -507,33 +746,79 @@ function scaffold() {
 // so a working deploy was rolled back (FJS-238), and a leaked deploy lock
 // (FJS-237).
 //
+// **Both package sources, because they answer different questions.** `npm` is
+// the only thing in this repo that tests the PUBLISHED framework — every id in
+// the register is a statement about the working tree, and the two drift
+// independently (FJS-252). `local` is the working tree containerised, which was
+// impossible until the build started packing the tree into its own context
+// (FJS-241) and is therefore the half most likely to break again.
+//
 // **A skip is named, never silent.** Without a daemon this reports a note and
 // passes, because requiring Docker to run `bun run ci` on a laptop is too much —
 // but FJS_CI_REQUIRE_DOCKER=1 turns the skip into a failure, and the workflow
 // sets it. A phase that quietly stops running is the failure mode this whole
 // file exists to prevent.
 
+// **A source can be a named known failure**, in `knownDeployFailures`, and the
+// case it exists for is publish order: the scaffold gives an app a package this
+// repo has written and nobody has published, so the `npm` branch cannot resolve
+// it and says so by name. That is the branch working — it is the only thing here
+// that grades the registry — but it is not a defect anyone can fix in the tree.
+// The entry ratchets like every other: the day the package is published, the
+// branch passes and a stale allowance fails CI.
+
 function deploy() {
   const from = phase('deploy')
 
-  const t0 = Date.now()
-  const { findings, skipped } = scaffoldAndDeploy({ verbose })
+  const t0     = Date.now()
+  const known  = allowances.knownDeployFailures ?? {}
+  const fixed  = []
 
-  if (skipped) {
-    if (process.env.FJS_CI_REQUIRE_DOCKER === '1') {
-      fail(`deploy phase skipped and FJS_CI_REQUIRE_DOCKER=1 — ${skipped}`)
-    } else {
-      note(`deploy phase SKIPPED — ${skipped}. It did not run; set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
-      warn(`skipped — ${skipped}`)
+  for (const source of ['npm', 'local']) {
+    const { findings, skipped } = scaffoldAndDeploy({ source, verbose })
+
+    if (skipped) {
+      if (process.env.FJS_CI_REQUIRE_DOCKER === '1') {
+        fail(`deploy phase skipped and FJS_CI_REQUIRE_DOCKER=1 — ${skipped}`)
+      } else {
+        note(`deploy phase SKIPPED — ${skipped}. It did not run; set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+        warn(`skipped — ${skipped}`)
+      }
+      return
     }
-    return
+
+    if (!findings.length) {
+      if (source in known) fixed.push(source)
+      continue
+    }
+
+    if (source in known) {
+      note(`--source ${source} failed — known: ${known[source]}`)
+      warn(`--source ${source} (known failure)`)
+      continue
+    }
+
+    for (const f of findings) fail(`--source ${source}: ${f.message}`, f.output)
   }
 
-  for (const f of findings) fail(f.message, f.output)
-  if (clean(from)) ok('a scaffolded app containerises and answers health', Date.now() - t0)
+  for (const source of fixed) {
+    if (update) {
+      delete allowances.knownDeployFailures[source]
+      note(`--source ${source} now passes — removed from knownDeployFailures.`)
+    } else {
+      fail(
+        `--source ${source} is listed in knownDeployFailures and now PASSES.\n` +
+        `      Remove the entry, or run with --update. A stale allowance stops CI seeing the next real failure.`
+      )
+    }
+  }
+
+  if (update && fixed.length) saveAllowances()
+
+  if (clean(from)) ok('a scaffolded app containerises and answers health, from npm and from the tree', Date.now() - t0)
 }
 
-// ─── phase 6 · tests ────────────────────────────────────────
+// ─── phase 7 · tests ────────────────────────────────────────
 // Sequential on purpose: several suites bind ports and start real servers, and
 // interleaved output from four different runners is unreadable when one fails.
 
@@ -822,8 +1107,10 @@ function isSourcePath(path) {
 // the whole story and neither is reliably the one that carries it.
 function renderOutput({ stdout, stderr, ci }) {
   const parts = []
-  if (stdout.trim()) parts.push(indent(`── stdout ──\n${tail(stdout, 30)}`))
-  if (stderr.trim()) parts.push(indent(`── stderr ──\n${tail(stderr, 30)}`))
+  // A phase that reports its own `ci` note carries neither stream, and the
+  // reporter runs last — a throw here loses the whole run's summary.
+  if (stdout?.trim()) parts.push(indent(`── stdout ──\n${tail(stdout, 30)}`))
+  if (stderr?.trim()) parts.push(indent(`── stderr ──\n${tail(stderr, 30)}`))
   if (ci)            parts.push(indent(`── ci ──\n${ci}`))
   return parts.join('\n')
 }

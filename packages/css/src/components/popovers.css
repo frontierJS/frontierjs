@@ -4,15 +4,39 @@
  *
  * Visual treatment (bg, border, radius, tones) comes from surface.css.
  *
- * ── Positioning is the consumer's job ─────────────────────────────
+ * ── The anchor owns the positioning context ───────────────────────
  *
- * The one positioning utility this package ships is `.relative`, which
- * establishes a containing block and places nothing — and against a native
- * `[popover]` even that means nothing, because the top layer escapes every
- * positioning context. So there is nothing here to reach for: place it with
- * anchor positioning, a style attribute, or whatever your app already uses.
+ *   <div class="popover-anchor">
+ *     <button class="btn" aria-expanded="false">Actions</button>
+ *     <article class="popover" hidden> … </article>
+ *   </div>
  *
- *   <div class="popover" style="top: 3rem; left: 0">…</div>
+ * `.popover` is `position: absolute`, so without a positioned ancestor it
+ * resolves against the page, and with no inset it resolves to its STATIC
+ * position — centred on its own trigger. Measured in the demo before the
+ * anchor existed: 265px tall at y = -39, hanging off the top of the
+ * viewport. Every consumer of a term this package NAMES had to write both
+ * rules before the term worked at all, which is what made it a gap rather
+ * than a taste (`FJS-132`). `.tooltip-anchor` had solved the identical
+ * problem for Tooltip since v0.4.
+ *
+ * A <div>, where `.tooltip-anchor` is a <span>: a Popover is an <article>
+ * and a <span> cannot legally contain flow content. Same anatomy
+ * constraint, opposite answer, for the same reason.
+ *
+ * ── The default placement, and the one modifier ───────────────────
+ *
+ * Below the trigger, aligned to its start edge, because a popover in
+ * practice is a dropdown — the four plausible edges a term like this
+ * could have are what anchor positioning is for, and this file is not
+ * going to grow a placement ladder. `.align-end` is the one exception,
+ * and it is here because it is the case the package's own demo needed:
+ * a trigger at the end of a bar opens a menu that would otherwise run
+ * off the viewport.
+ *
+ * The placement is scoped to the anchor, not written on `.popover`, so a
+ * popover placed by anchor positioning or a style attribute is untouched
+ * — opting into the anchor is what opts into the placement.
  *
  * ── Two ways to use ───────────────────────────────────────────────
  *
@@ -23,6 +47,14 @@
  *      <button popovertarget="menu">Open</button>
  *      <div id="menu" popover class="popover">…</div>
  *
+ * **The second one cannot use the anchor.** A native `[popover]` is in the
+ * top layer, which escapes every positioning context, so an inset there
+ * resolves against the VIEWPORT — the anchor's placement would move it
+ * somewhere arbitrary rather than under the trigger. The rules below say
+ * `:not([popover])` for that reason, which turns a documented trap into
+ * one the stylesheet cannot fall into. Place a native popover with anchor
+ * positioning.
+ *
  * ── A dropdown menu is this plus a list ───────────────────────────
  *
  * There is no Menu term and no .menu component. A menu is the popover as
@@ -32,6 +64,21 @@
  * cannot keep (Principle 6, the same reason Bar and Toolbar are two
  * terms). @frontierjs/ui's DropdownMenu is that composition.
  */
+
+.popover-anchor {
+  position:    relative;
+  display:     inline-flex;
+  align-items: center;
+}
+
+.popover-anchor > .popover:not([popover]) {
+  inset-block-start:  calc(100% + var(--space-2xs));
+  inset-inline-start: 0;
+}
+.popover-anchor > .popover.align-end:not([popover]) {
+  inset-inline-start: auto;
+  inset-inline-end:   0;
+}
 
 .popover {
   position:   absolute;
@@ -47,13 +94,13 @@
    state for a transition to key on, so entry stays a keyframe. With the
    attribute, overlays.css transitions it both ways. */
 .popover:not([popover]) {
-  animation: popover-in 120ms ease-out;
+  animation: popover-in var(--motion-fast) var(--motion-ease-out);
 }
 
 /* Native [popover] attribute support — kill the default UA styling */
 [popover].popover {
   margin:    0;
-  border:    1px solid var(--surface-border);
+  border:    var(--border-width) solid var(--surface-border);
   inset:     unset;
   position:  fixed;
 }

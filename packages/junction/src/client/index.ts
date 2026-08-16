@@ -7,7 +7,7 @@
 //
 // Usage:
 //   const client = createJunctionClient({ url: 'http://localhost:3001' })
-//   await client.authenticate({ email: 'admin@acme.com', password: 'secret' })
+//   await client.auth.signIn('admin@acme.com', 'secret')
 //
 //   const servers = client.service('servers')
 //   const list    = await servers.find({ query: { status: 'online' } })
@@ -18,12 +18,16 @@
 //
 // ─────────────────────────────────────────────────────────────────────────
 
-// The only import in this file, and deliberately so: the envelope is shared
-// with the server rather than re-described here. core/envelope.ts is pure and
-// dependency-free, so it bundles into the browser build without pulling
-// anything else in — and it means the client cannot drift from the shape the
-// server actually sends, which is precisely what happened before.
+// Two imports, and both are here for one reason: what the server means is
+// shared with it rather than re-described here, and both modules are pure and
+// dependency-free, so they bundle into the browser build without pulling
+// anything else in. The envelope is the shape the server sends — re-describing
+// it is precisely how the two ends drifted before. `orderBy` is the same story
+// one field along: the client places a pushed row in a list it cannot re-query,
+// so it must read the caller's `-createdAt` the way the server compiles it.
 import { isListResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
+import type { QueryDirectives } from '../core/directives.ts'
+import { comparatorFor } from '../core/sort.ts'
 export type { ListResult, ServiceResult }
 export { ResultShapeError }
 
@@ -45,31 +49,71 @@ export interface JunctionClientOptions {
   // registers is mounted under apiPrefix. Match the plugin's option and leave
   // apiPrefix to say where the app lives.
   authPrefix?: string
+  // Where the session token is kept between page loads. Absent = nowhere, and
+  // the token lives for the life of the object.
+  //
+  // This is here rather than in the UI layer because the token has one owner:
+  // Sierra used to write localStorage in its own login() while the client held
+  // the token in memory, so signing in through the client left storage empty
+  // and writing storage by hand left the socket unauthenticated. Both halves
+  // now hang off setToken().
+  tokenStorage?: TokenStore
+  // The names the auth plugin registered its three services under. Only needed
+  // when the server renamed them — see AuthPluginOptions.services.
+  authServices?: AuthServiceNames
 }
 
-export interface FindParams {
-  query?: Record<string, unknown>
-  offset?: number
-  limit?: number
-  orderBy?: string | Record<string, 'asc' | 'desc'> | Record<string, 'asc' | 'desc'>[]
-  select?: string | string[]
-  /**
-   * Relations to load with the rows — `$populate` on the wire.
-   *
-   *   populate: 'customer'                  the whole related row
-   *   populate: ['customer', 'items']       several
-   *   populate: 'customer:name+email'       named fields of one
-   *
-   * The `:` and `+` spelling is the server's own (`parsePopulate` in
-   * core/litestone.ts) and travels unchanged, so there is one grammar rather
-   * than a client dialect that has to be translated.
-   *
-   * Litestone batches includes — one `IN` per relation level, no N+1 — which is
-   * what makes it safe to let a component declare its own shape instead of
-   * over-fetching server-side to cover every caller (`FJS-084`).
-   */
-  populate?: string | string[]
+/**
+ * Somewhere to keep the session token between page loads.
+ *
+ * `clear()` rather than `set(null)`: a store backed by a cookie or a keychain
+ * deletes differently from how it writes, and every implementation of this has
+ * had to say so.
+ */
+export interface TokenStore {
+  get():   string | null
+  set(token: string): void
+  clear(): void
 }
+
+/** localStorage, guarded — a server render and a locked-down browser both answer null. */
+export function localTokenStore(key: string = 'junction_token'): TokenStore {
+  const ls = () => (typeof localStorage !== 'undefined' ? localStorage : null)
+  return {
+    get()      { try { return ls()?.getItem(key) ?? null } catch { return null } },
+    set(token) { try { ls()?.setItem(key, token) } catch {} },
+    clear()    { try { ls()?.removeItem(key) } catch {} },
+  }
+}
+
+/** What the auth plugin's three services are called. Defaults match its own. */
+export interface AuthServiceNames {
+  account?:  string
+  sessions?: string
+  apiKeys?:  string
+}
+
+/**
+ * How to SHAPE the answer — never which records. The second argument to every
+ * read on this client, and the same fields `ctx.directives` carries on the
+ * server, from the same declaration (`core/directives.ts`).
+ *
+ * It used to be a `QueryDirectives` that also held `query`, which made the container
+ * both halves of a split the rest of the framework keeps apart (Invariant 10) —
+ * and it declared five of them, so `$search`, `$withDeleted` and
+ * `$onlyDeleted` had a server that read them, a URL grammar that carried them
+ * and no way for a caller here to ask (`FJS-290`). A `.lite` declaring
+ * `@@softDelete` gave an app a restore flow it could not build a list screen
+ * for.
+ *
+ *   servers.find({ status: 'online' }, { limit: 20, orderBy: '-name' })
+ *   servers.find({}, { onlyDeleted: true })          // the restore screen
+ *   servers.find({}, { onlyTemplates: true })        // the template screen
+ *   servers.find({}, { search: 'acme' })             // FTS5
+ *
+ * Filters are the FIRST argument. Always.
+ */
+export type { QueryDirectives } from '../core/directives.ts'
 
 /**
  * @deprecated Use `ListResult<T>` — the actual shape find() returns.
@@ -177,11 +221,7 @@ export class ServiceProxy<
    *
    * Throws `ResultShapeError` if the server answered anything that is not a list.
    */
-  async find(query?: Record<string, unknown>, params?: FindParams): Promise<ListResult<T>> {
-    const merged: FindParams = {
-      ...params,
-      query: { ...(params?.query ?? {}), ...(query ?? {}) }
-    }
+  async find(query?: Record<string, unknown>, directives?: QueryDirectives): Promise<ListResult<T>> {
     // Normalise whatever arrived into one shape, so callers see one shape:
     // an envelope passes through, and everything else goes to the SAME
     // wrapResult the service layer uses, asked as `find`. This used to be a
@@ -194,33 +234,43 @@ export class ServiceProxy<
       isListResult<T>(res) ? res : wrapResult(res, this.name, 'find') as ListResult<T>
 
     if (this._client._wsReady) {
-      // Send the FULL merged query (filters + $limit/$offset/$orderBy/$select)
-      // as params.query so the server puts it on ctx.query — the same shape
-      // the HTTP query string produces. Previously only the raw filter object
-      // was sent (as the DATA field, not the query), so pagination/ordering/
-      // select were silently dropped over WebSocket.
+      // Filters AND directives, flattened into one bag on ctx.query — the same
+      // shape the HTTP query string produces, because the bridge splits both
+      // the same way. Previously only the raw filter object was sent (as the
+      // DATA field, not the query), so pagination, ordering and select were
+      // silently dropped over WebSocket.
       return asEnvelope(await this._client._wsCall(
-        this.name, 'find', null, null, buildWsQuery(merged)
+        this.name, 'find', null, null, buildWsQuery(query, directives)
       ))
     }
 
-    const qs = buildQueryString(merged)
+    const qs = buildQueryString(query, directives)
     return asEnvelope(await this._client._request('GET', `${this._base}${qs}`))
   }
 
   /** find() but just the rows — for callers that don't need total/limit/offset. */
-  async findData(query?: Record<string, unknown>, params?: FindParams): Promise<T[]> {
-    return (await this.find(query, params)).data
+  async findData(query?: Record<string, unknown>, directives?: QueryDirectives): Promise<T[]> {
+    return (await this.find(query, directives)).data
   }
 
   // get(id, params?) → T   /   get(query, params?) → T (findFirst via $first)
   async get(
     idOrQuery: string | number | Record<string, unknown>,
-    params?: FindParams
+    params?: QueryDirectives,
+    /**
+     * Already-`$`-spelled wire parameters, forwarded verbatim.
+     *
+     * One caller: the WebSocket→HTTP fallback, whose frame carries directives
+     * in wire spelling because that is how they arrived. Parsing them back into
+     * a QueryDirectives so this method could re-emit them would be a second
+     * translation of the `$` convention on the client, where the whole point of
+     * `@frontierjs/toolbelt/directives` is that there is one per boundary.
+     */
+    _wire?: Record<string, unknown>
   ): Promise<T> {
     if (typeof idOrQuery === 'object') {
       // findFirst — pass $first=true
-      const qs = buildQueryString({ ...params, query: { ...idOrQuery, $first: 'true' } })
+      const qs = buildQueryString(idOrQuery, params, { $first: 'true' })
       return this._client._request('GET', `${this._base}${qs}`) as Promise<T>
     }
     // params travels on a by-id get too. It used to be accepted and dropped on
@@ -228,15 +278,15 @@ export class ServiceProxy<
     // detail page wants most — silently answered the bare row.
     if (this._client._wsReady) {
       return this._client._wsCall(
-        this.name, 'get', idOrQuery, null, params ? buildWsQuery(params) : undefined
+        this.name, 'get', idOrQuery, null, params ? buildWsQuery(null, params) : undefined
       ) as Promise<T>
     }
-    const qs = params ? buildQueryString(params) : ''
+    const qs = (params || _wire) ? buildQueryString(_wire, params) : ''
     return this._client._request('GET', `${this._base}/${idOrQuery}${qs}`) as Promise<T>
   }
 
   // create(data, params?) → T
-  async create(data: Partial<T> & Record<string, unknown>, params?: FindParams): Promise<T> {
+  async create(data: Partial<T> & Record<string, unknown>, params?: QueryDirectives): Promise<T> {
     if (this._client._wsReady && !_hasFiles(data)) {
       return this._client._wsCall(this.name, 'create', null, data) as Promise<T>
     }
@@ -254,20 +304,20 @@ export class ServiceProxy<
   async patch(
     id: string | number,
     data: Partial<T> & Record<string, unknown>,
-    params?: FindParams
+    params?: QueryDirectives
   ): Promise<T>
   async patch(
     query: Record<string, unknown>,
     data: Partial<T> & Record<string, unknown>,
-    params?: FindParams
+    params?: QueryDirectives
   ): Promise<ListResult<T>>
   async patch(
     idOrQuery: string | number | Record<string, unknown>,
     data: Partial<T> & Record<string, unknown>,
-    params?: FindParams
+    params?: QueryDirectives
   ): Promise<T | ListResult<T>> {
     if (typeof idOrQuery === 'object') {
-      const qs = buildQueryString({ ...params, query: idOrQuery })
+      const qs = buildQueryString(idOrQuery, params)
       return this._client._request('PATCH', `${this._base}${qs}`, data) as Promise<ListResult<T>>
     }
     if (this._client._wsReady && !_hasFiles(data)) {
@@ -286,14 +336,14 @@ export class ServiceProxy<
   // Rows, not ids: a filtered remove deletes one row at a time and each one
   // answers itself, so a subscriber has the record it lost rather than a key to
   // go and look one up that is no longer there.
-  async remove(id: string | number, params?: FindParams): Promise<T>
-  async remove(query: Record<string, unknown>, params?: FindParams): Promise<ListResult<T>>
+  async remove(id: string | number, params?: QueryDirectives): Promise<T>
+  async remove(query: Record<string, unknown>, params?: QueryDirectives): Promise<ListResult<T>>
   async remove(
     idOrQuery: string | number | Record<string, unknown>,
-    params?: FindParams
+    params?: QueryDirectives
   ): Promise<T | ListResult<T>> {
     if (typeof idOrQuery === 'object') {
-      const qs = buildQueryString({ ...params, query: idOrQuery })
+      const qs = buildQueryString(idOrQuery, params)
       return this._client._request('DELETE', `${this._base}${qs}`) as Promise<ListResult<T>>
     }
     if (this._client._wsReady) {
@@ -304,14 +354,14 @@ export class ServiceProxy<
 
   // restore(id, params?) → T
   // restore(query, params?) → T[]
-  async restore(id: string | number, params?: FindParams): Promise<T>
-  async restore(query: Record<string, unknown>, params?: FindParams): Promise<T[]>
+  async restore(id: string | number, params?: QueryDirectives): Promise<T>
+  async restore(query: Record<string, unknown>, params?: QueryDirectives): Promise<T[]>
   async restore(
     idOrQuery: string | number | Record<string, unknown>,
-    params?: FindParams
+    params?: QueryDirectives
   ): Promise<T | T[]> {
     if (typeof idOrQuery === 'object') {
-      const qs = buildQueryString({ ...params, query: idOrQuery })
+      const qs = buildQueryString(idOrQuery, params)
       return this._client._request('PUT', `${this._base}${qs}`, undefined, {
         header: { 'x-service-method': 'restore' }
       }) as Promise<T[]>
@@ -330,27 +380,30 @@ export class ServiceProxy<
   }
 
   // upsert — client-side convenience: data.id != null → patch, else → create
-  async upsert(data: Partial<T> & Record<string, unknown>, params?: FindParams): Promise<T> {
+  async upsert(data: Partial<T> & Record<string, unknown>, params?: QueryDirectives): Promise<T> {
     if (data.id != null) {
       return this.patch(data.id as string | number, data, params) as Promise<T>
     }
     return this.create(data as T & Record<string, unknown>, params)
   }
 
-  // ── Actions ─────────────────────────────────────────────────────────
+  // ── Custom methods ──────────────────────────────────────────────────
   // Same transport rule as CRUD: the socket when one is connected, HTTP when it
-  // is not. Over WS that is a service_call frame with method = the action name
-  // (no URL involved); over HTTP it is POST /{id} with an X-Service-Method
-  // header, which keeps the URL space flat.
+  // is not. Over WS that is a service_call frame naming the method (no URL
+  // involved); over HTTP it is POST /{id} with an X-Service-Method header,
+  // which keeps the URL space flat.
+  //
+  // Named for what it does rather than for a category: a service has methods,
+  // and this calls one the client has no typed shortcut for.
 
-  async action(
+  async invoke(
     name: string,
     id?: string | number | null,
     data?: Record<string, unknown> | null,
     query?: Record<string, unknown>
   ): Promise<unknown> {
     // Same rule as CRUD: the socket when it is there, HTTP when it is not.
-    // This used to be unconditionally HTTP, which made a custom action the only
+    // This used to be unconditionally HTTP, which made a custom method the only
     // service call that ignored a live connection — and the WS path dispatches
     // any method name generically, so there was never a reason for it.
     //
@@ -360,7 +413,7 @@ export class ServiceProxy<
     if (this._client._wsReady && !_hasFiles(data ?? {})) {
       return this._client._wsCall(this.name, name, id ?? null, data ?? null, query)
     }
-    // A COLLECTION-level action — `id` omitted or null — posts to the service
+    // A COLLECTION-level call — `id` omitted or null — posts to the service
     // root. The server has always supported it: the bridge dispatches on the
     // X-Service-Method header before it looks at `params.id`, so a method that
     // is about the whole collection needs no id and never did. This client
@@ -368,9 +421,9 @@ export class ServiceProxy<
     // invent a throwaway id and post to `/{service}/null` — found writing
     // basecamp's fleet-wide event feed, where there IS no subject row.
     const path = id == null ? this._base : `${this._base}/${id}`
-    // A plain filter map, NOT FindParams — so it is serialised plainly rather
+    // A plain filter map, NOT QueryDirectives — so it is serialised plainly rather
     // than through buildQueryString, which exists to turn {limit, orderBy, …}
-    // into the `$`-prefixed directive syntax. An action declares its own query
+    // into the `$`-prefixed directive syntax. A custom method declares its own query
     // vocabulary; the bridge still splits `$` keys off as directives if the
     // caller uses them.
     return this._client._request(
@@ -398,6 +451,166 @@ export class ServiceProxy<
   }
 }
 
+// ─── AuthClient — client.auth ───────────────────────────────────────────────
+//
+// The browser half of `@frontierjs/auth`, and the reason it lives here rather
+// than there: this is the client that holds the token, opens the socket and
+// knows both prefixes, and an app that wrote its own sign-in against `fetch`
+// had to reproduce all three. Both dogfood apps did, differently, and neither
+// ever called POST /auth/logout — so a sign-out dropped the token locally and
+// left the session row alive until it expired.
+//
+// The split it speaks is the server's own (DECISIONS.md § API design):
+// establishing a session is a ROUTE under /auth, everything the caller does to
+// their own credentials afterwards is a SERVICE. Both halves are here because
+// to the person signing in that is one subject.
+
+export class AuthClient {
+  constructor(
+    private _c:      JunctionClient,
+    private _prefix: string,
+    private _names:  Required<AuthServiceNames>
+  ) {}
+
+  // ── Establishing a session — the routes ────────────────────────────
+
+  /** Sign in. Stores the token, opens the socket, emits 'authenticated'. */
+  async signIn(email: string, password: string): Promise<AuthResult> {
+    return this._adopt(
+      await this._c._request('POST', `${this._prefix}/login`, { email, password }, { skipAuth: true })
+    )
+  }
+
+  /** Register and sign in — the plugin's /register does both in one call. */
+  async signUp(data: { email: string; password: string; name?: string }): Promise<AuthResult> {
+    return this._adopt(
+      await this._c._request('POST', `${this._prefix}/register`, data, { skipAuth: true })
+    )
+  }
+
+  /**
+   * Sign out — at the server first, then here.
+   *
+   * The server call is what actually ends the session: dropping the token
+   * locally leaves the row valid until it expires, so a token that leaked is
+   * still a session. A failure to reach the server does NOT keep the caller
+   * signed in — the local half runs regardless, and the error is reported on
+   * the returned object rather than thrown, because the thing the person
+   * asked for (be signed out here) did happen.
+   */
+  async signOut(): Promise<{ revoked: boolean; error?: Error }> {
+    let error: Error | undefined
+    if (this._c.token) {
+      try {
+        await this._c._request('POST', `${this._prefix}/logout`, {})
+      } catch (err) {
+        error = err as Error
+      }
+    }
+    this._c.setToken(null)
+    this._c.emit('logout')
+    return error ? { revoked: false, error } : { revoked: true }
+  }
+
+  // ── Recovery — routes, because none of them can hold a session ──────
+
+  async requestPasswordReset(email: string): Promise<void> {
+    await this._c._request('POST', `${this._prefix}/password-reset/request`, { email }, { skipAuth: true })
+  }
+
+  async confirmPasswordReset(token: string, password: string): Promise<void> {
+    await this._c._request('POST', `${this._prefix}/password-reset/confirm`, { token, password }, { skipAuth: true })
+  }
+
+  /** Send the verification mail again. Needs a session — it is the caller's own address. */
+  async requestEmailVerification(): Promise<void> {
+    await this._c._request('POST', `${this._prefix}/email/verify/request`, {})
+  }
+
+  /** Confirm an address from the link. No session: the link is the proof. */
+  async verifyEmail(token: string): Promise<unknown> {
+    return this._c._request('GET', `${this._prefix}/email/verify?token=${encodeURIComponent(token)}`, undefined, { skipAuth: true })
+  }
+
+  // ── The caller's own account — services ────────────────────────────
+
+  /** Who this token is. Answers the SessionContext the server built, not a User row. */
+  async me(): Promise<Record<string, unknown>> {
+    return this._c.service(this._names.account).get('me') as Promise<Record<string, unknown>>
+  }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this._c.service(this._names.account).invoke('changePassword', 'me', { currentPassword, newPassword })
+  }
+
+  /** Every live session of this caller's, the one making the request marked `current`. */
+  async sessions(): Promise<AuthSessionInfo[]> {
+    const list = await this._c.service(this._names.sessions).find()
+    return (list.data ?? []) as unknown as AuthSessionInfo[]
+  }
+
+  async revokeSession(id: string): Promise<void> {
+    await this._c.service(this._names.sessions).remove(id)
+  }
+
+  /** Sign out everywhere else, keeping this one. */
+  async revokeOtherSessions(): Promise<{ revoked: number }> {
+    return this._c.service(this._names.sessions).invoke('revokeOthers') as Promise<{ revoked: number }>
+  }
+
+  async apiKeys(): Promise<ApiKeyInfo[]> {
+    const list = await this._c.service(this._names.apiKeys).find()
+    return (list.data ?? []) as unknown as ApiKeyInfo[]
+  }
+
+  /** The raw key comes back ONCE, here. Nothing can read it afterwards. */
+  async createApiKey(opts: { name?: string; scopes?: string[]; expiresAt?: string | Date } = {}): Promise<{ id: string; key: string }> {
+    return this._c.service(this._names.apiKeys).create(opts as Record<string, unknown>) as Promise<{ id: string; key: string }>
+  }
+
+  async revokeApiKey(id: string): Promise<void> {
+    await this._c.service(this._names.apiKeys).remove(id)
+  }
+
+  // ── Internal ───────────────────────────────────────────────────────
+
+  private _adopt(raw: unknown): AuthResult {
+    const r = raw as AuthResult
+    // cookieAuth mode answers no token — the browser holds an httpOnly cookie
+    // it cannot read, and setToken(null) would close a socket that is
+    // authenticated by that cookie at upgrade.
+    if (r?.token) this._c.setToken(r.token)
+    if (r?.workspaceId && !this._c.workspaceId) this._c.workspaceId = r.workspaceId
+    this._c.emit('authenticated', r)
+    return r
+  }
+}
+
+export interface AuthResult {
+  token?:       string
+  user:         Record<string, unknown>
+  workspaceId?: string | null
+}
+
+// Re-declared rather than imported from ../auth/types.ts: this file is the
+// BROWSER bundle and that module is the server's IAuth contract, which pulls
+// in ServiceContext and the transport types behind it. The two shapes are
+// pinned against each other in tests/client-auth.test.ts.
+export interface AuthSessionInfo {
+  id:         string
+  createdAt?: string | null
+  expiresAt?: string | null
+  current:    boolean
+}
+
+export interface ApiKeyInfo {
+  id:         string
+  name:       string | null
+  scopes:     string[]
+  createdAt?: string | null
+  expiresAt?: string | null
+}
+
 // ─── JunctionClient ─────────────────────────────────────────────────────────
 
 export class JunctionClient extends EventEmitter {
@@ -413,6 +626,9 @@ export class JunctionClient extends EventEmitter {
   // Read by ServiceProxy._base. Normalised at construction, never re-derived.
   _apiPrefix: string
   private _authPrefix: string
+  private _tokens: TokenStore | null
+  private _auth: AuthClient | null = null
+  private _authNames: Required<AuthServiceNames>
 
   private _services: Map<string, ServiceProxy<Record<string, unknown>>> = new Map()
   private _ws: WebSocket | null = null
@@ -440,36 +656,41 @@ export class JunctionClient extends EventEmitter {
     // every other route — so the two prefixes compose here rather than the auth
     // one standing alone (FJS-012).
     this._authPrefix = this._apiPrefix + _normalizePrefix(opts.authPrefix, '/auth')
-    this.token = opts.token ?? null
+    this._tokens = opts.tokenStorage ?? null
+    this._authNames = {
+      account:  opts.authServices?.account  ?? 'account',
+      sessions: opts.authServices?.sessions ?? 'sessions',
+      apiKeys:  opts.authServices?.apiKeys  ?? 'api-keys',
+    }
+    // A stated token wins over a stored one: a caller passing `token` is saying
+    // who this client is, and reading storage over the top would answer with
+    // whoever used this browser last.
+    this.token = opts.token ?? this._tokens?.get() ?? null
     this.workspaceId = opts.workspaceId ?? null
   }
 
   // ── Auth ────────────────────────────────────────────────────────────
+  //
+  // Everything sign-in shaped is on `client.auth` — see AuthClient above.
+  // Lazy, so a client that never authenticates never builds one.
 
-  async authenticate(credentials: {
-    email: string
-    password: string
-  }): Promise<{ token: string; user: unknown; workspaceId: string | null }> {
-    // _authPrefix already carries apiPrefix — see the constructor.
-    const result = await this._request('POST', `${this._authPrefix}/login`, credentials, {
-      skipAuth: true
-    })
-    const r = result as { token: string; user: unknown; workspaceId: string | null }
-    this.setToken(r.token)
-    if (r.workspaceId && !this.workspaceId) this.workspaceId = r.workspaceId
-    this.emit('authenticated', r)
-    return r
-  }
-
-  async logout(): Promise<void> {
-    this.setToken(null)
-    this.emit('logout')
+  get auth(): AuthClient {
+    if (!this._auth) this._auth = new AuthClient(this, this._authPrefix, this._authNames)
+    return this._auth
   }
 
   setToken(token: string | null): void {
     const changed = token !== this.token
     this.token = token
+    // Persisted here rather than at the call sites, because there are four of
+    // them (sign in, sign up, an app restoring by hand, a 401 clearing) and a
+    // stored token that outlives the client's is a session the socket cannot
+    // open and the next boot trusts.
+    if (this._tokens) token ? this._tokens.set(token) : this._tokens.clear()
     if (!changed) return
+    // Who this client is has changed. Anything cached as the previous caller
+    // — Sierra's prefetch, an app's own store — is now somebody else's data.
+    this.emit('token', token)
     if (this._ws && this._ws.readyState < 2) {
       // Cycle existing socket so upgrade carries the new token
       this._disconnect()
@@ -501,6 +722,11 @@ export class JunctionClient extends EventEmitter {
   // and a load() function together. The store wires up to real-time WS
   // events automatically — created → upsert, patched → upsert, removed → remove.
   //
+  // The store is scoped to the query its last load() ran with: given a `match`
+  // (see ResourceOptions) a record outside that query is not added, and one that
+  // has just left it is removed. Without a match every event applies, which is
+  // the old behaviour and still what a caller passing nothing gets.
+  //
   // Usage:
   //   const { service, store, load } = client.resource('leads')
   //   await load()                          // populate from server
@@ -509,7 +735,8 @@ export class JunctionClient extends EventEmitter {
 
   resource<T extends Record<string, unknown> = Record<string, unknown>>(
     name: string,
-    idField: string = 'id'
+    idField: string = 'id',
+    opts: ResourceOptions<T> = {}
   ): ResourceResult<T> {
     const svc = this.service<T>(name)
     const store = new Store<T>()
@@ -535,17 +762,175 @@ export class JunctionClient extends EventEmitter {
         ? (raw as ServiceResult<T>).data
         : raw as T
 
+    // ── The query the store means ──────────────────────────────────────────
+    // A push is an announcement about a ROW; the store is the answer to a
+    // QUERY. Applying every event to it unconditionally is what put a draft in
+    // a list loaded `{ status: 'active' }`, and — worse, because it looks like
+    // an update — left a row that had just been patched OUT of the filter
+    // sitting in the list with its new values (`FJS-011`).
+    //
+    // `match` decides; without one nothing has changed. It answers `null` for a
+    // record it cannot judge — a `select` dropped the filtered column, the
+    // filter names a relation — and the only honest response to that is to ask
+    // the server the same question again.
+    //
+    // Set with the rows rather than when the load is issued, so the store's
+    // contents and the query they answer move together: a superseded load must
+    // not leave its query behind any more than it leaves its rows.
+    let lastQuery: Record<string, unknown> | null = null
+    let lastParams: QueryDirectives = {}
+
+    const verdict = (record: T): boolean | null => {
+      if (!opts.match || lastQuery === null) return true
+      try {
+        return opts.match(record, lastQuery, lastParams)
+      } catch {
+        return null
+      }
+    }
+
+    // One refetch per burst — each answers the whole list, so N events landing
+    // together are one question, not N.
+    let refetchQueued = false
+    const refetch = (): void => {
+      if (refetchQueued || lastQuery === null) return
+      refetchQueued = true
+      setTimeout(() => {
+        refetchQueued = false
+        void load(lastQuery ?? {}, lastParams).catch(() => {})
+      }, 0)
+    }
+
+    // ── Where in the list, and whether this list can say ────────────────────
+    // Membership is only half the question (`FJS-011`); a row also has a
+    // POSITION, and appending ignored it — a list loaded `orderBy: '-createdAt'`
+    // received new rows at the bottom, and one loaded `limit: 20` grew past 20
+    // (`FJS-270`). The row was genuinely in the query; it was in the wrong place
+    // in it, which is the same silent-wrong-data class one step along.
+    //
+    // Sorting is answerable here: `orderBy` is the caller's own, and
+    // `core/sort.ts` reads it the way the server does. **Paging is not.**
+    // Nothing in a browser can know whether a new row belongs on page 3 without
+    // asking, so a list past the first page does not guess: the row is refused
+    // and `stale` counts it, for a view to render as *3 new — refresh*. A list
+    // that is quietly wrong past the fold is the outcome this exists to avoid.
+    //
+    // Read off the ENVELOPE rather than the params, because the effective limit
+    // is the server's — a caller that named none still got one.
+    let limit:  number | null = null
+    let offset = 0
+    let total:  number | null = null
+
+    const stale = new Stale()
+
+    const orderOf = (): ((a: T, b: T) => number) | null =>
+      comparatorFor(lastParams.orderBy as Parameters<typeof comparatorFor>[0]) as ((a: T, b: T) => number) | null
+
+    // `total` is the query's row count as of the last load, kept in step with
+    // the store so `hasMore()` keeps meaning what it meant then. Two of the
+    // adjustments are exact — a row that left the query, a row that entered it
+    // — and one is not: a row arriving into page 1 may be new to the query or
+    // may have moved up from page 2, and nothing here can tell. It counts as
+    // new, which errs towards reporting a gap that is not there rather than
+    // hiding one that is. An offered refresh is cheap; a list that looks
+    // complete and is not is the whole defect.
+    const hasMore = (): boolean =>
+      total !== null && total > offset + store.get().length
+
+    const insert = (record: T): void => {
+      if (total !== null) total++
+
+      // Not the first page: this row may belong before it, and putting it here
+      // would push a row off the end that belongs here.
+      if (offset > 0) return stale.bump()
+
+      const cmp = orderOf()
+      if (!cmp) {
+        // No order to place it by. Appending is what this did before there was
+        // a comparator and is still the only defensible move — but the list can
+        // now be longer than the page it claims to be, so say so rather than
+        // trimming a row chosen at random. Dropping the row the user just
+        // created, to honour a page size, is the worse of the two.
+        store.upsert(record, idField)
+        if (limit !== null && store.get().length > limit) stale.bump()
+        return
+      }
+
+      // Sorted insertion, and the overflow row genuinely moved to the next
+      // page — page 1 of an ordered list IS its first `limit` rows.
+      store.place(record, idField, cmp, limit ?? undefined)
+    }
+
+    const drop = (record: T | null, id: unknown): void => {
+      const had = store.get().length
+      store.remove(id, idField)
+
+      if (store.get().length === had) {
+        // Not one of this page's rows. Page 1's contents do not depend on a row
+        // further down the query, but a later page's window does — every row
+        // behind it shifts by one.
+        if (offset > 0 && record && verdict(record) === true) {
+          if (total !== null) total--
+          stale.bump()
+        }
+        return
+      }
+
+      if (total !== null) total--
+      // A row left a page with rows behind it, so one should slide up and only
+      // the server knows which.
+      if (hasMore()) stale.bump()
+    }
+
+    const apply = (raw: unknown): void => {
+      const record = unwrap(raw)
+      const answer = verdict(record)
+      if (answer === false) {
+        // Out of the filter: not "do not add it" but "take it out" — a patch is
+        // how a row leaves a list, and there is no removal event for that.
+        return drop(record, record?.[idField])
+      }
+      if (answer !== true) return refetch()
+
+      const present = store.get().some((r) => r[idField] === record?.[idField])
+      // A row already on this page is this page's row whatever the paging says;
+      // reposition it, since the patch may have moved its sort key.
+      if (present) {
+        const cmp = orderOf()
+        return cmp ? store.place(record, idField, cmp) : store.upsert(record, idField)
+      }
+      insert(record)
+    }
+
     // Server auto-events use past-tense names: created / patched / removed
     // (see AUTO_EVENT_MAP server-side). Match those exactly.
-    svc.on('created',  (raw: unknown) => store.upsert(unwrap(raw), idField))
-    svc.on('patched',  (raw: unknown) => store.upsert(unwrap(raw), idField))
-    svc.on('removed',  (raw: unknown) => store.remove(unwrap(raw)[idField], idField))
+    svc.on('created',  apply)
+    svc.on('patched',  apply)
+    svc.on('removed',  (raw: unknown) => {
+      const record = unwrap(raw)
+      drop(record, record?.[idField])
+    })
 
-    // Custom action events (e.g. 'moved', 'archived') — treat as upserts.
-    // The server publishes them with the updated record, same as patch.
+    // ── A change with no record ────────────────────────────────────────────
+    // Every other event names a row. `changed` cannot: it is what a bulk write
+    // or a `select: false` write announces, and it carries a count instead
+    // (FJS-307). That is the same position `verdict` reports as `null` — the
+    // list cannot decide from what it was given — so it takes the same answer,
+    // and `refetch` already collapses a burst into one request.
+    //
+    // Not `stale`: a counter is for a gap this list knows the shape of. This is
+    // *some unknown rows moved*, which a number on a banner cannot describe.
+    svc.on('changed', () => refetch())
+
+    // Custom method events (e.g. 'moved', 'archived') — treat as patches. The
+    // server publishes them with the updated record, and a row can leave the
+    // filter through one exactly as it can through a patch.
     svc.on('*', (method: unknown, raw: unknown) => {
       if (method === 'created' || method === 'patched' || method === 'removed') return
-      store.upsert(unwrap(raw), idField)
+      // Handled above, and it carries a count rather than a record — applying
+      // it would upsert the count object into the store as a row.
+      if (method === 'changed') return
+      apply(raw)
     })
 
     // load() keeps returning rows — the store holds records, not envelopes,
@@ -563,15 +948,30 @@ export class JunctionClient extends EventEmitter {
     let issued = 0
     const load = async (
       query: Record<string, unknown> = {},
-      params: FindParams = {}
+      params: QueryDirectives = {}
     ): Promise<T[]> => {
       const stamp = ++issued
-      const rows = (await svc.find(query, params)).data
-      if (stamp === issued) store.set(rows)
+      const res  = await svc.find(query, params)
+      const rows = res.data
+      if (stamp === issued) {
+        lastQuery  = query
+        lastParams = params
+        // The envelope's, not the params': the effective limit is the server's
+        // — a caller naming none still got one — and a service that answers no
+        // pagination metadata leaves `limit` unknown, which turns the trimming
+        // off rather than inventing a page size.
+        limit  = typeof res.limit  === 'number' ? res.limit  : (params.limit ?? null)
+        offset = typeof res.offset === 'number' ? res.offset : (params.offset ?? 0)
+        total  = typeof res.total  === 'number' ? res.total  : null
+        store.set(rows)
+        // This answer is current by definition; whatever the list could not
+        // account for before it has just been accounted for.
+        stale.reset()
+      }
       return rows
     }
 
-    return { service: svc, store, load }
+    return { service: svc, store, load, stale }
   }
 
   // ── HTTP request ─────────────────────────────────────────────────────
@@ -623,17 +1023,22 @@ export class JunctionClient extends EventEmitter {
 
       clearTimeout(timer)
 
-      if (res.status === 401) {
-        this.emit('unauthorized')
-        throw Object.assign(new Error('Unauthorized'), { code: 401 })
-      }
-
       const text = await res.text()
       let data: unknown
       try {
         data = text ? JSON.parse(text) : null
       } catch {
         data = text
+      }
+
+      if (res.status === 401) {
+        this.emit('unauthorized')
+        // The server's own sentence, not the word "Unauthorized". This threw
+        // before reading the body at all, so every app that wanted to tell a
+        // person "wrong email or password" had to re-map the status itself —
+        // which is most of what a hand-written sign-in page was.
+        const msg = (data as Record<string, unknown>)?.message ?? 'Unauthorized'
+        throw Object.assign(new Error(String(msg)), { code: 401, data })
       }
 
       if (!res.ok) {
@@ -897,10 +1302,10 @@ export class JunctionClient extends EventEmitter {
         // fetched the entire unfiltered collection.
         return svc.find(query ?? undefined)
       case 'get':
-        // Same thread-through as find above: the frame's query holds the
-        // directives ($populate, $select) already in wire spelling, and
-        // buildQueryString emits a params.query entry verbatim.
-        return svc.get(id!, query ? { query } : undefined)
+        // Same thread-through as find above. The frame's query holds the
+        // directives ($populate, $select) already in WIRE spelling, so it is
+        // forwarded verbatim rather than parsed back and re-emitted.
+        return svc.get(id!, undefined, query ?? undefined)
       case 'create':
         return svc.create(data ?? {})
       case 'patch':
@@ -910,12 +1315,12 @@ export class JunctionClient extends EventEmitter {
       case 'restore':
         return svc.restore(id!)
       default:
-        // Anything else is a custom action, and action() is the HTTP form of
+        // Anything else is a custom method, and invoke() is the HTTP form of
         // one. This used to call svc.call(), which is _wsCall() — and _wsCall
-        // routes here when the socket is down, so a custom action with no
+        // routes here when the socket is down, so a custom method with no
         // connection recursed between the two forever. Async recursion, so no
         // stack overflow to tell you: the call simply never settled.
-        return svc.action(method, id!, data)
+        return svc.invoke(method, id!, data)
     }
   }
 
@@ -965,26 +1370,39 @@ function _normalizePrefix(value: string | undefined, fallback: string): string {
   return stripped ? `/${stripped}` : ''
 }
 
-// Flatten FindParams into the wire query shape the server expects on
+// Flatten QueryDirectives into the wire query shape the server expects on
 // ctx.query — same keys the HTTP query string uses ($limit, $offset,
 // $orderBy, $select + raw filters). Used for the WebSocket path.
-function buildWsQuery(params: FindParams): Record<string, unknown> {
-  const q: Record<string, unknown> = { ...(params.query ?? {}) }
-  if (params.limit  != null) q['$limit']  = params.limit
-  if (params.offset != null) q['$offset'] = params.offset
-  if (params.orderBy != null) {
-    q['$orderBy'] =
-      typeof params.orderBy === 'string' ? params.orderBy : JSON.stringify(params.orderBy)
-  }
-  if (params.select != null) {
-    q['$select'] = Array.isArray(params.select) ? params.select.join(',') : params.select
-  }
-  // Every directive the HTTP builder sends has to be here too: the client
-  // prefers the socket whenever one is up, so a directive on one path only is
-  // a difference nothing can see from the call site.
-  if (params.populate != null) {
-    q['$populate'] = Array.isArray(params.populate) ? params.populate.join(',') : params.populate
-  }
+/**
+ * Every directive → its `$` name on the wire.
+ *
+ * One table, read by both builders. The client prefers the socket whenever one
+ * is up, so a directive emitted on one path only is a difference nothing can
+ * see from the call site — `$populate` was exactly that once. Values stay in
+ * their own types here; the HTTP builder stringifies, the WS builder does not.
+ */
+function directiveParams(d: QueryDirectives | null | undefined): Record<string, unknown> {
+  const p: Record<string, unknown> = {}
+  if (!d) return p
+  if (d.limit       != null) p['$limit']       = d.limit
+  if (d.offset      != null) p['$offset']      = d.offset
+  if (d.orderBy     != null) p['$orderBy']     = typeof d.orderBy === 'string' ? d.orderBy : JSON.stringify(d.orderBy)
+  if (d.select      != null) p['$select']      = Array.isArray(d.select)   ? d.select.join(',')   : d.select
+  if (d.populate    != null) p['$populate']    = Array.isArray(d.populate) ? d.populate.join(',') : d.populate
+  if (d.search      != null) p['$search']      = d.search
+  if (d.withDeleted != null) p['$withDeleted'] = d.withDeleted
+  if (d.onlyDeleted != null) p['$onlyDeleted'] = d.onlyDeleted
+  if (d.withTemplates != null) p['$withTemplates'] = d.withTemplates
+  if (d.onlyTemplates != null) p['$onlyTemplates'] = d.onlyTemplates
+  return p
+}
+
+function buildWsQuery(
+  query: Record<string, unknown> | null | undefined,
+  d: QueryDirectives | null | undefined,
+): Record<string, unknown> {
+  const q: Record<string, unknown> = { ...(query ?? {}) }
+  for (const [key, value] of Object.entries(directiveParams(d))) q[key] = value
   return q
 }
 
@@ -1002,41 +1420,31 @@ function _plainQuery(query?: Record<string, unknown> | null): string {
   return qs ? `?${qs}` : ''
 }
 
-function buildQueryString(params: FindParams): string {
+function buildQueryString(
+  query?: Record<string, unknown> | null,
+  d?: QueryDirectives | null,
+  extra?: Record<string, string>,
+): string {
   const p: Record<string, string> = {}
 
-  if (params.offset != null) p['$offset'] = String(params.offset)
-  if (params.limit != null) p['$limit'] = String(params.limit)
+  for (const [key, value] of Object.entries(directiveParams(d))) p[key] = String(value)
 
-  if (params.orderBy != null) {
-    p['$orderBy'] =
-      typeof params.orderBy === 'string' ? params.orderBy : JSON.stringify(params.orderBy)
-  }
-
-  if (params.select != null) {
-    p['$select'] = Array.isArray(params.select) ? params.select.join(',') : params.select
-  }
-
-  if (params.populate != null) {
-    p['$populate'] = Array.isArray(params.populate) ? params.populate.join(',') : params.populate
-  }
-
-  if (params.query) {
-    for (const [key, val] of Object.entries(params.query)) {
+  if (query) {
+    for (const [key, val] of Object.entries(query)) {
       if (val == null) continue
-      if (typeof val === 'object') {
-        p[key] = JSON.stringify(val)
-      } else {
-        p[key] = String(val)
-      }
+      p[key] = typeof val === 'object' ? JSON.stringify(val) : String(val)
     }
   }
 
-  // URLSearchParams encodes '$' as '%24'. Junction uses $-prefixed params
-  // ($limit, $offset, $first, $select, …) as a documented convention, and '$'
-  // is a valid query character (RFC 3986 sub-delim). Decode it back for
-  // readability — servers decode %24 to $ anyway, so this is purely cosmetic
-  // but keeps URLs clean and matches the documented query syntax.
+  // Transport-only, with no structured form — $first, $wrap. Stated by the
+  // call site rather than living on QueryDirectives, which is the set that HAS
+  // a structured form on the other side.
+  if (extra) for (const [key, value] of Object.entries(extra)) p[key] = value
+
+  // URLSearchParams encodes '$' as '%24'. Junction uses $-prefixed params as a
+  // documented convention, and '$' is a valid query character (RFC 3986
+  // sub-delim). Decode it back — servers decode %24 to $ anyway, so this is
+  // cosmetic, but it keeps URLs matching the documented syntax.
   const qs = new URLSearchParams(p).toString().replace(/%24/g, '$')
   return qs ? `?${qs}` : ''
 }
@@ -1102,6 +1510,36 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
     this._notify()
   }
 
+  /**
+   * Put a record at the position `cmp` gives it, moving it if it was already
+   * here — a patch can change a sort key, and leaving the row where it was is
+   * as wrong as never adding it.
+   *
+   * `max` trims the tail afterwards. That is only correct for an ORDERED list,
+   * where the row pushed off the end genuinely belongs to the next page, so the
+   * caller decides; this does what it is told, in one notification.
+   */
+  place(
+    record: T,
+    idField = 'id',
+    cmp: (a: T, b: T) => number,
+    max?: number
+  ): void {
+    if (record == null || (record as Record<string, unknown>)[idField] == null) {
+      console.warn(
+        `[Junction] ignored an update with no ${idField} — it cannot be matched to a row. ` +
+        `An announcement carries the record it is about.`
+      )
+      return
+    }
+    const rest = this._data.filter((r) => r[idField] !== record[idField])
+    let at = rest.findIndex((r) => cmp(record, r) < 0)
+    if (at === -1) at = rest.length
+    rest.splice(at, 0, record)
+    this._data = max !== undefined && rest.length > max ? rest.slice(0, max) : rest
+    this._notify()
+  }
+
   /** Remove a record by its id value. */
   remove(id: unknown, idField = 'id'): void {
     this._data = this._data.filter((r) => r[idField] !== id)
@@ -1113,13 +1551,81 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
   }
 }
 
+// ─── Stale ───────────────────────────────────────────────────────────────────
+// How many changes this list could not account for.
+//
+// A live list can answer *is this row in the query* and *where does it go*; it
+// cannot answer *which row from page 2 slides up now*, or *does this new row
+// belong on page 1 at all* — those need the server. Guessing produces a list
+// that is quietly wrong past the fold, which is the failure the whole live path
+// exists to avoid, so the count is surfaced instead and a view renders it:
+//
+//   const { store, stale, load } = client.resource('orders')
+//   stale.subscribe(n => { banner.hidden = n === 0; banner.textContent = `${n} new — refresh` })
+//   refresh.onclick = () => load(query, params)   // clears it
+//
+// Same `{ get, subscribe }` shape as Store, so anything that bridges one to a
+// UI signal bridges this one unchanged.
+
+export class Stale {
+  private _n = 0
+  private _subs: Set<(n: number) => void> = new Set()
+
+  get(): number { return this._n }
+
+  subscribe(fn: (n: number) => void): () => void {
+    this._subs.add(fn)
+    fn(this._n)
+    return () => this._subs.delete(fn)
+  }
+
+  bump(by = 1): void {
+    this._n += by
+    this._notify()
+  }
+
+  reset(): void {
+    if (this._n === 0) return
+    this._n = 0
+    this._notify()
+  }
+
+  private _notify(): void {
+    for (const fn of this._subs) fn(this._n)
+  }
+}
+
+export interface ResourceOptions<T extends Record<string, unknown> = Record<string, unknown>> {
+  /**
+   * Does this pushed record belong in what the last `load()` asked for?
+   *
+   * `true` → upsert, `false` → take it out of the list, `null` → cannot be
+   * decided from the record alone, so the store reloads instead of guessing.
+   * Without one every event is applied, which is the pre-`FJS-011` behaviour.
+   *
+   * Sierra supplies `matchesQuery(fields, …)` from the model's own schema; this
+   * package holds no schema, which is why the decision is passed in.
+   */
+  match?: (
+    record: T,
+    query: Record<string, unknown>,
+    params: QueryDirectives
+  ) => boolean | null
+}
+
 export interface ResourceResult<T extends Record<string, unknown> = Record<string, unknown>> {
   /** ServiceProxy for CRUD calls */
   service: ServiceProxy
   /** Reactive store — auto-synced via real-time WS events */
   store: Store<T>
   /** Fetch current list from the server and populate the store */
-  load: (query?: Record<string, unknown>, params?: FindParams) => Promise<T[]>
+  load: (query?: Record<string, unknown>, params?: QueryDirectives) => Promise<T[]>
+  /**
+   * Changes the list could not account for on its own — a row that may belong
+   * on an earlier page, a gap left where a row was removed from a full one.
+   * `0` means the list is as current as a push can make it. Cleared by `load()`.
+   */
+  stale: Stale
 }
 
 // ─── File upload helpers ──────────────────────────────────────────────────────

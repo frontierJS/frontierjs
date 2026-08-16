@@ -144,10 +144,10 @@ export function createNotesService(app: App) {
     },
 
     // ── Custom methods ──────────────────────────────────────────────────
-    // Defined directly alongside CRUD — no separate ‘actions’ wrapper needed.
+    // Defined directly alongside CRUD — no separate wrapper needed.
     // Dispatch from the client by setting the X-Service-Method header on a
     // request to the standard collection or resource URL — the path stays
-    // /api/notes or /api/notes/:id; the header picks the action.
+    // /api/notes or /api/notes/:id; the header picks the method.
 
     // POST /api/notes/:id  + X-Service-Method: summary
     async summary(ctx: ServiceContext) {

@@ -60,7 +60,7 @@ title: Activity
       // A custom method's return shape is load-bearing and unwrapping is the
       // caller's problem today (junction FJS-020), so the same tolerant read
       // the admin screen uses rather than a second guess at the envelope.
-      const raw = await workspaces.service.action('members', session.workspaceId)
+      const raw = await workspaces.service.invoke('members', session.workspaceId)
       const members = Array.isArray(raw) ? raw : raw?.data ?? []
       people = Object.fromEntries(members.map(m => [m.userId, m.user?.name || m.user?.email || m.userId]))
     } catch {
@@ -76,7 +76,7 @@ title: Activity
       // role the reader lacks is worse than one that shows the half it can.
       let fleet = []
       try {
-        const raw = await servers.service.action('feed', null, null, { limit: 100 })
+        const raw = await servers.service.invoke('feed', null, null, { limit: 100 })
         fleet = (Array.isArray(raw) ? raw : raw?.data ?? []).map(e => ({
           id:          `srv-${e.id}`,
           createdAt:   e.createdAt,

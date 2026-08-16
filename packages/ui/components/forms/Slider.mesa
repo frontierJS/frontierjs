@@ -16,7 +16,7 @@
   //   <Slider bind:value format={(v) => `$${v.toLocaleString()}`} />
 
   import Field from './Field.mesa'
-  import { tone as toTone, cx } from '../../utils.js'
+  import { tone as toTone, cx, nameToLabel, resolveError, resolveRule, stated } from '../../utils.js'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -40,6 +40,20 @@
   export let error    = ''
   export let errors   = undefined
   export let onchange = undefined    // ({ value? } | { start, end }) => void
+
+  // The enclosing <Form> and this field's rule, both undefined standing alone.
+  // A slider inside a <Form> showed no server error and no schema label — and
+  // `label || name` below meant a caller who gave only a name saw the raw
+  // column, with `@label("…")` unreachable through this component at all.
+  //
+  // `min`/`max` deliberately stay the caller's: they default to 0 and 100
+  // rather than undefined, so there is no way to tell a stated 0 from the
+  // default and a schema `minimum` cannot be resolved against them.
+  const form = $context.form
+  const rule = resolveRule(form, name)
+
+  const resolvedLabel = stated(label || undefined, rule?.title, name ? nameToLabel(name) : undefined)
+  const displayError  = resolveError(form, name, error, errors)
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -202,7 +216,7 @@
           aria-valuemax={max}
           aria-valuenow={value}
           aria-valuetext={fmt(value)}
-          aria-label={label || name || 'Value'}
+          aria-label={resolvedLabel || 'Value'}
           aria-disabled={disabled || null}
           on:mousedown={startDrag('single')}
           on:touchstart={startDrag('single')}
@@ -266,9 +280,15 @@
 {/snippet}
 
 {#if label || name}
+  <!--
+    `label` goes through unresolved where the caller stated nothing, so Field
+    resolves it once off the same rule. It used to be `label || name`, which is
+    always truthy when a name is given — and so shadowed the schema's own
+    `@label` with the raw column name.
+  -->
   <Field
     name={name}
-    label={label || name}
+    label={label || undefined}
     hint={hint}
     error={error}
     errors={errors}

@@ -17,10 +17,8 @@ import { notificationsPlugin }  from '@frontierjs/notifications'
 import { mailerPlugin }         from '@frontierjs/junction'
 
 import { db, DEV_KEY }   from './db.ts'
-import { shopGateLevel } from './gate.ts'
+import { shopGateLevel, SYSTEM } from './gate.ts'
 import { seed, DEMO }    from './seed.ts'
-import { setApp }         from './app-ref.ts'
-import { sweepAbandoned } from './jobs/sweep-abandoned.ts'
 import { startMailSink }  from './mail-sink.ts'
 import { createConduitMailer, MAIL_TARGET } from './mailer.ts'
 
@@ -52,6 +50,11 @@ await seed(auth)
 const app = createApp({
   db,
   auth,
+  // Who the shop is when it acts on its own behalf. Deferred work started by
+  // nobody — the nightly sweep — runs as this, and it is graded by api/gate.ts
+  // like every other principal. Work a person asked for runs as that person:
+  // Caravan records who dispatched it and re-resolves them when it runs.
+  system: SYSTEM,
   config: { name: 'shop', port: PORT, apiPrefix: '/api' },
 })
 
@@ -64,9 +67,16 @@ app.configure(healthPlugin())
 // read off the source. devOnly by default, so a production build 404s here.
 app.configure(manifestPlugin({ db }))
 
-// Mounts POST /api/auth/register, /api/auth/login, /api/auth/logout,
-// GET /api/auth/me and the password-reset + email-verify routes. Deliberately
-// NOT services: login cannot be gated by login.
+// Mounts POST /api/auth/register, /api/auth/login, /api/auth/logout and the
+// password-reset + email-verify routes — deliberately NOT services, because
+// login cannot be gated by login — plus the three services for what the caller
+// does to their own credentials afterwards: /api/account, /api/sessions,
+// /api/api-keys.
+//
+// `level` is what makes GET /api/account/me answer this app's own grading. It
+// is opt-in for a reason: the ladder is `api/gate.ts`, the same function
+// GatePlugin grades every request with, and a default answer here would be a
+// second mapping that disagrees with the real one near a gate boundary.
 //
 // The login limiter is real and stays on — but its production default is 10 per
 // 15 minutes, and this app's own five drives sign in SEVEN times per full
@@ -77,6 +87,7 @@ app.configure(manifestPlugin({ db }))
 // shop on localhost is not a login-stuffing target.
 app.configure(createAuthPlugin(auth, {
   loginRateLimit: { max: 100, window: '15 minutes' },
+  services:       { level: shopGateLevel },
 }))
 
 // ─── Deferred work ────────────────────────────────────────────────────────
@@ -84,7 +95,8 @@ app.configure(createAuthPlugin(auth, {
 // Caravan is a SQLite queue in its own file — nothing about it touches
 // db/shop.db, so a wiped queue loses no shop data and a wiped shop loses no
 // jobs. `app.configure` claims `app.jobs`; `boot()` starts the workers and
-// autoloads `api/jobs/*.job.ts`.
+// autoloads `api/jobs/*.job.ts` — including the recurring one, which declares
+// its own `cron` and therefore needs no line here.
 //
 // `admin: true` mounts GET /jobs, GET /jobs/schedules, GET /jobs/{id} and the
 // retry/cancel posts — under this app's apiPrefix like everything else, so the
@@ -105,17 +117,6 @@ const queue = createCaravan({
 })
 
 app.configure(queue)
-
-// A job file cannot say WHEN it runs (defineJob has no `cron` key), so the
-// recurring one is declared here, in one call, with its handler imported from
-// api/jobs/sweep-abandoned.ts. 03:00 daily, because a shop cancels abandoned
-// checkouts at night and not while people are buying.
-queue.schedule('sweep-abandoned', '0 3 * * *',
-  (job: { data?: { days?: number } }) => sweepAbandoned(job.data?.days))
-
-// Jobs reach the service layer through this, and only this. See api/app-ref.ts
-// for why a Caravan handler cannot be handed the app directly.
-setApp(app)
 
 // ─── Outbound ─────────────────────────────────────────────────────────────
 //
@@ -165,7 +166,7 @@ process.env.SHOP_MAIL_KEY ??= 'dev-mail-key'
 // getting it wrong is a boot failure rather than a send failure an hour later.
 
 app.configure(mailerPlugin(createConduitMailer(app, { from: 'shop@example.test' })))
-app.configure(notificationsPlugin({ db, channels: { email: { mailer: 'default' } } }))
+app.configure(notificationsPlugin({ db, transports: { email: { mailer: 'default' } } }))
 
 app.configure(channels((a: App) => {
   a.channels!.on('connection', (session, conn) => {
@@ -179,27 +180,12 @@ app.configure(channels((a: App) => {
   })
 }))
 
-// ─── GET /api/session ─────────────────────────────────────────────────────
-//
-// Registered as '/session': app.get applies this app's apiPrefix, the same as
-// it does to every service route and to the auth plugin's own.
-//
-// The browser needs the caller's gate level to decide which buttons to offer.
-// It could compute one from `role`, but then the role→level mapping would exist
-// in two places and could drift — so the server, which owns that translation
-// (api/gate.ts), answers the question. The UI treats the answer as an
-// affordance; every request is graded again on arrival regardless.
-
-app.get('/session', async ctx => {
-  const header  = ctx.headers?.authorization ?? ctx.headers?.Authorization ?? ''
-  const token   = header.replace(/^Bearer /i, '')
-  const session = token ? await auth.verifySession(token).catch(() => null) : null
-  return ctx.json({
-    level: shopGateLevel(session),
-    email: session?.email ?? null,
-    role:  session?.role  ?? null,
-  })
-})
+// GET /api/session was here — a hand-written route that resolved the Bearer
+// token itself and answered `{ level, email, role }`. It is GET /api/account/me
+// now, with `services: { level: shopGateLevel }` above supplying exactly the
+// half the framework could not answer for itself. The route had to re-resolve
+// the token because it ran outside the service pipeline; the service is handed
+// `ctx.auth.user` like everything else.
 
 // ─── Serve ────────────────────────────────────────────────────────────────
 //

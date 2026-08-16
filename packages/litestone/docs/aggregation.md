@@ -183,3 +183,70 @@ db.order.query({ window: { rn: { rowNumber: true, ... } } })       // → findMa
 3. Everything else → `findMany(args)`
 
 All standard args pass through unchanged: `where`, `orderBy`, `limit`, `offset`, `select`, `include`, `window`, `distinct`, `withDeleted`, `$raw`.
+
+---
+
+## What an aggregate may name
+
+An aggregate names a column and takes the value straight out of SQLite. It
+builds no row, so neither of the two things `read()` does for a row happens
+here — resolving the name, and stripping what the caller may not see — and both
+had to be done by hand. Every name is now checked, at every argument that can
+carry one:
+
+```js
+db.order.aggregate({ _max: { total: true } })          // _min _max _sum _avg
+db.order.aggregate({ _stringAgg: { field: 'ref', orderBy: 'ref' } })
+db.order.aggregate({ _paid: { max: 'total' } })        // a named aggregate's field
+db.order.aggregate({ _count: { distinct: 'status' } })
+db.order.groupBy({ by: ['status'], interval: { placedAt: 'month' } })
+```
+
+**Why it matters more here than in a `where`.** SQLite reads a double-quoted
+identifier it cannot resolve as a **string constant**, so nothing fails:
+
+```js
+await db.order.aggregate({ _max: { totl: true } })
+// once:  { _max: { totl: 'totl' } }   ← MAX of the one-element set {'totl'}
+// now:   ValidationError — Unknown aggregate field 'totl' on Order. Did you mean: total?
+```
+
+`_sum` was worse, because it answered `0` — a plausible number with nothing
+about it to notice.
+
+Two tiers, and which one an argument takes is what a caller does with the answer:
+
+| Tier | Arguments | Refuses |
+| --- | --- | --- |
+| naming | `by`, `_count: { distinct }`, `interval` | not a column: `@computed`, `@from`, a relation, a typo |
+| value | `_min` `_max` `_sum` `_avg`, `_stringAgg`, a named aggregate's field | the above, **and** a column whose stored text is a storage detail |
+
+A `by:` over an array or `Json` column is kept, because grouping stored text is
+self-consistent — every distinct value is its own group, and the group key is
+hydrated back into the shape a row read gives it. `MAX` over the same column is
+refused: it orders that text, so `['10']` ranks below `['9']`, and `SUM` answers
+`0`. Same bucket the [sorting](sorting.md) rules use, said for an aggregate.
+
+### A protected column is protected here too
+
+`@guarded`, `@omit(all)` and `@encrypted` are stripped from a row by `read()`.
+They were not stripped from an aggregate, so a signed-in caller could ask for
+the maximum salary on a table whose rows never show one — and `_stringAgg` and
+`by:` are not aggregates at all in this respect, since one answers every value
+joined with commas and the other answers every distinct value with a count.
+
+```js
+const user = db.$setAuth(req.user)
+await user.person.aggregate({ _max: { salary: true } })
+// ValidationError — Cannot aggregate 'salary' on Person: it is @guarded, a
+// system-context column. Use asSystem() for a read that is not a caller's.
+
+await db.asSystem().person.aggregate({ _max: { salary: true } })   // 900
+```
+
+A field-level `@allow('read', …)` is **refused rather than evaluated**: it is a
+predicate over a row, and an aggregate has no row to decide it against, so there
+is no honest answer over some rows and not others.
+
+`@hashed` is refused for everyone, `asSystem()` included — there is no value to
+aggregate, only digests.

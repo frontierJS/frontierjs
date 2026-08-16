@@ -11,7 +11,7 @@
  * from the package.
  *
  * Inside the monorepo the root is the workspace, not the package, because the
- * guide imports glow from @frontierjs/utils by relative path. A browser clamps
+ * guide imports glow from @frontierjs/toolbelt by relative path. A browser clamps
  * `..` at the origin, so serving only packages/css would 404 that request
  * while the same page opened over file:// worked — the kind of split where
  * the guide looks fine until someone runs the server.

@@ -92,7 +92,7 @@ title: Orders
     try {
       // Dispatched as POST /api/orders/{id} with X-Service-Method: {name}.
       // Nothing in the app registers that route.
-      const row = await orders.service.action(name, id)
+      const row = await orders.service.invoke(name, id)
 
       // No refetch. The server announces the move as `orders pay` and the
       // client's '*' handler upserts it, so THIS table and every other open

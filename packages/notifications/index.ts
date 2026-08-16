@@ -4,7 +4,7 @@ export { Notification }          from './notification.ts'
 export { notificationsPlugin }   from './plugin.ts'
 
 import type { Notification as NotificationBase } from './notification.ts'
-import type { User } from './types.ts'
+import type { Recipient } from './types.ts'
 
 // Contribute the real call signature of `app.notify` to Junction's augmentable
 // slot. Junction declares `AppNotify` as an EMPTY interface and documents that
@@ -18,7 +18,7 @@ import type { User } from './types.ts'
 // See the AppConduit note in the repo CLAUDE.md.
 declare module '@frontierjs/junction' {
   interface AppNotify {
-    (user: User, notification: NotificationBase): Promise<void>
+    (recipient: Recipient, notification: NotificationBase): Promise<void>
   }
 }
 
@@ -29,16 +29,17 @@ export { inApp, mail }           from './builders.ts'
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
 export {
-  NotificationChannelNotImplementedError,
   NotificationDeliveryError,
   NotificationDriverNotFoundError,
+  NotificationRecipientError,
+  NotificationTransportNotImplementedError,
 } from './errors.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type {
-  Channel,
-  BuiltInChannel,
+  Transport,
+  BuiltInTransport,
   InAppMessage,
   InAppAction,
   MailMessage,
@@ -47,7 +48,8 @@ export type {
   NotificationRecord,
   NotificationDriver,
   NotificationsPluginOptions,
-  ChannelError,
-  User,
+  OutgoingMail,
+  TransportError,
+  Recipient,
   App,
 } from './types.ts'

@@ -33,7 +33,9 @@
  */
 
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { mkdtempSync } from 'node:fs'
+import { readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -45,11 +47,13 @@ const CHROME   = process.env.FJS_CHROME ?? 'google-chrome'
 const API_PORT = 8120
 const PORT     = Number(process.env.PREVIEW_PORT ?? 5311)
 const UI       = `http://localhost:${PORT}`
-const PROFILE  = '/tmp/fjs-basecamp-build-profile'
+// Per run, never a fixed path — see verify.mjs for what a shared one costs.
+const PROFILE  = mkdtempSync(join(tmpdir(), 'fjs-basecamp-build-'))
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []
 const results  = []
+let chromePid = null                        // set once Chrome is spawned
 
 function check(name, got, want) {
   const ok = typeof want === 'function' ? want(got) : got === want
@@ -60,7 +64,26 @@ function check(name, got, want) {
 async function cleanup() {
   for (const c of children) { try { c.kill() } catch {} }
   await sleep(300)
+  // A SIGTERM to the browser process leaves its zygote, GPU and renderer
+  // children alive, reparented to init. Chrome runs in its own process group so
+  // the group can be reaped here.
+  if (chromePid) { try { process.kill(-chromePid, 'SIGKILL') } catch {} }
+  await rm(PROFILE, { recursive: true, force: true }).catch(() => {})
 }
+
+// This file starts an API, a preview server and a Chrome, none of them children
+// of the shell. Without these, a `timeout`, a Ctrl-C or a throw from any check
+// leaves all three alive and the next run meets a port it cannot have.
+let quitting = false
+function stop(reason, code = 1) {
+  if (quitting) return
+  quitting = true
+  console.error(`\n  ${reason} — stopping the servers this run started\n`)
+  cleanup().then(() => process.exit(code))
+}
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => stop(signal))
+process.on('uncaughtException',  e => { console.error(e); stop('uncaught error') })
+process.on('unhandledRejection', e => { console.error(e); stop('unhandled rejection') })
 
 // ─── 1. The file ──────────────────────────────────────────────────────────
 // Comments stripped FIRST. The whole trap is that the tags exist in the file
@@ -106,8 +129,9 @@ const chrome = spawn(CHROME, [
   `--user-data-dir=${PROFILE}`,
   '--window-size=1280,800',
   'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
-children.push(chrome)
+], { stdio: ['ignore', 'ignore', 'pipe'], detached: true })
+chromePid = chrome.pid
+children.push({ kill: () => { try { process.kill(-chrome.pid, 'SIGTERM') } catch {} } })
 
 const browserWsUrl = await new Promise((resolve, reject) => {
   let buf = ''
@@ -147,9 +171,15 @@ ws.addEventListener('message', e => {
   const msg = JSON.parse(e.data)
   if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
 })
-const send = (method, params = {}) => new Promise(res => {
+// An untimed promise on a renderer that stopped answering hangs the run with no
+// output, so the wrapper is killed and its Chrome orphaned. Name it instead.
+const send = (method, params = {}, ms = 30_000) => new Promise((res, rej) => {
   const n = ++msgId
-  pending.set(n, res)
+  const timer = setTimeout(() => {
+    pending.delete(n)
+    rej(new Error(`CDP ${method} timed out after ${ms}ms — the page stopped answering`))
+  }, ms)
+  pending.set(n, msg => { clearTimeout(timer); res(msg) })
   ws.send(JSON.stringify({ id: n, method, params }))
 })
 

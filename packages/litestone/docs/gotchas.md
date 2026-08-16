@@ -101,19 +101,32 @@ db.user.findMany({
 
 Litestone stores `DateTime` as ISO-8601 strings (`2024-01-15T10:30:00.000Z`). ISO-8601 strings are lexicographically sortable, so `ORDER BY createdAt` and range queries like `{ gte: '2024-01-01' }` work correctly.
 
-Date arithmetic in raw SQL requires SQLite's date functions:
+**SQLite's own clock does not match what is stored, and `datetime('now')` is
+refused because of it.** It answers `2026-08-13 07:38:31` — space separator, no
+milliseconds, no zone — while the column holds `2026-08-13T07:38:31.984Z`. The
+comparison is string-wise and `'T'` (0x54) sorts above a space (0x20), so every
+row stored TODAY compares greater than a same-day `datetime('now')`: the
+predicate is right for yesterday's rows and wrong for this morning's, and
+nothing is raised. A demo seeded with last week's data passes.
+
+`now()` is the spelling that matches. Its modifiers are bound as parameters:
 
 ```js
+import { sql, now } from '@frontierjs/litestone'
+
 // Rows created in the last 7 days
 db.order.findMany({
-  where: { $raw: sql`createdAt >= datetime('now', '-7 days')` }
+  where: { $raw: sql`createdAt >= ${now('-7 days')}` }
 })
 
 // Rows where a deadline has passed
 db.task.findMany({
-  where: { $raw: sql`dueAt < datetime('now')` }
+  where: { $raw: sql`dueAt < ${now()}` }
 })
 ```
+
+`julianday()` needs no help — it answers a number, so
+`julianday('now') - julianday(createdAt) > 30` compares like with like.
 
 `@date` fields are stored as `YYYY-MM-DD` strings. Same applies.
 

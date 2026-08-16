@@ -7,7 +7,8 @@ Everything that is not the package README, `../PROJECT_STATE.md`, or `../CHANGES
 - [VISION.md](VISION.md) — **the language specification.** Numbered RULEs; §4 is the
   claims list the spec-check verifies. Amendments are recorded in place (RULE 26, RULE 54)
 - [SSR_SPEC.md](SSR_SPEC.md) — server rendering: the W-items, island markers (W3, done),
-  `tmpDir` (W1, open)
+  `tmpDir` (W1, done). Nothing in it is open in Mesa; what remains is Sierra's slot
+  protocol question
 - [STATIC_RENDERING.md](STATIC_RENDERING.md) — the static-rendering model, server
   semantics, the two component-children protocols, and the Sierra gap
 

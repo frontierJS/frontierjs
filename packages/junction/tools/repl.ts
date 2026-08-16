@@ -1157,7 +1157,7 @@ async function dispatch(rawLine: string): Promise<void> {
       const body = r.body as {
         services?: {
           registered?: string[]
-          details?: Record<string, { actions?: string[]; allowBulk?: boolean }>
+          details?: Record<string, { customMethods?: string[]; allowBulk?: boolean }>
         }
       }
       const names   = body?.services?.registered ?? []
@@ -1172,7 +1172,7 @@ async function dispatch(rawLine: string): Promise<void> {
 
       for (const name of names) {
         const svcDetails = details[name] ?? {}
-        const actions    = svcDetails.actions ?? []
+        const custom     = svcDetails.customMethods ?? []
         const allowBulk  = svcDetails.allowBulk ?? false
         const base       = `${prefix}/${name}`
 
@@ -1213,12 +1213,12 @@ async function dispatch(rawLine: string): Promise<void> {
           `  ${paint(c.gray, 'remove')}`
         )
 
-        // Custom actions
-        if (actions.length) {
-          for (const action of actions) {
+        // Custom methods
+        if (custom.length) {
+          for (const method of custom) {
             console.log(
-              `  ${paint(c.gray, '  POST  ')} ${paint(c.bwhite, `${base}/{id}/${action}`)}` +
-              `  ${paint(c.byellow, `action: ${action}`)}`
+              `  ${paint(c.gray, '  POST  ')} ${paint(c.bwhite, `${base}/{id}/${method}`)}` +
+              `  ${paint(c.byellow, `method: ${method}`)}`
             )
           }
         }

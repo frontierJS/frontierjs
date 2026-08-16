@@ -1,0 +1,8 @@
+/* A stylesheet the widget IMPORTS, as opposed to a component's own <style>.
+   Vite emits this as a .css asset in library mode; widgetCssPlugin folds it
+   into the script so the host page loads one file and the rules land in the
+   shadow root rather than in the host document. */
+.lead-form {
+  border: 2px solid rgb(0, 0, 255);
+  padding: 12px;
+}

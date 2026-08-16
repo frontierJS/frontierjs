@@ -75,21 +75,21 @@ export interface SchemaOptions {
 
 // ─── Compiled schema ──────────────────────────────────────────────────────
 
-export interface CompiledSchema {
-  validate:  (data: unknown) => ValidationResult
-  parse:     (data: unknown) => Record<string, unknown>    // validate + throw on error
+export interface CompiledSchema<T = Record<string, unknown>> {
+  validate:  (data: unknown) => ValidationResult<T>
+  parse:     (data: unknown) => T                          // validate + throw on error
   hook:      () => import('./hooks.ts').Hook               // returns a before hook
-  partial:   () => CompiledSchema                          // make all fields optional
-  pick:      (...fields: string[]) => CompiledSchema
-  omit:      (...fields: string[]) => CompiledSchema
+  partial:   () => CompiledSchema<Partial<T>>              // make all fields optional
+  pick:      (...fields: string[]) => CompiledSchema<Partial<T>>
+  omit:      (...fields: string[]) => CompiledSchema<Partial<T>>
   /** The raw Schema object this was compiled from.
    *  Used by the OpenAPI generator to produce property-level docs. */
   _schema:   Schema
 }
 
-export interface ValidationResult {
+export interface ValidationResult<T = Record<string, unknown>> {
   valid:   boolean
-  data:    Record<string, unknown>
+  data:    T
   errors:  ValidationError[]
 }
 
@@ -100,9 +100,30 @@ export interface ValidationError {
 
 // ─── createSchema ─────────────────────────────────────────────────────────
 
-export function createSchema(schema: Schema, opts: SchemaOptions = {}): CompiledSchema {
-  return buildCompiledSchema(schema, opts)
+/**
+ * Compile a field map into a validator.
+ *
+ * Optionally state what it parses TO — `createSchema<CreateOrder>({ … })` —
+ * and `parse()` answers `CreateOrder` instead of `Record<string, unknown>`,
+ * with the field map constrained to that type's keys so a missing or misspelt
+ * one is a compile error.
+ *
+ * The type is stated rather than inferred, and that is the ruling (`FJS-D10`).
+ * Deriving it from the field map means building zod inside a framework whose
+ * whole thesis is that types come from the seed: a model service is validated
+ * by `autoValidate` off the generated JSON Schema and writes no schema at all,
+ * so this is the hatch for a shape `db/schema.lite` does not describe — and for
+ * that shape the author already has the type.
+ */
+export function createSchema<T = Record<string, unknown>>(
+  schema: T extends Record<string, unknown> ? SchemaFor<T> : Schema,
+  opts:   SchemaOptions = {},
+): CompiledSchema<T> {
+  return buildCompiledSchema(schema as Schema, opts) as CompiledSchema<T>
 }
+
+/** A field map that covers every key of `T` and invents none. */
+export type SchemaFor<T> = { [K in keyof T]-?: FieldDef }
 
 // Nested object schemas are compiled ONCE per schema object and cached —
 // previously buildCompiledSchema() ran on every validate() call for every

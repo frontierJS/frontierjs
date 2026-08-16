@@ -34,7 +34,7 @@
 
 ## Infrastructure
 - [performance.md](performance.md) — WAL, dual connections, select:false, indexes, fast paths
-- [multi-tenancy.md](multi-tenancy.md) — createTenantRegistry, per-tenant DBs, migration, encryptionKey fn
+- [multi-tenancy.md](multi-tenancy.md) — the `tenancy { }` block: a database per tenant or a tenant column, and how a request names one
 - [replication.md](replication.md) — Litestream wrapper, WAL replication, point-in-time recovery
 
 ## Tooling

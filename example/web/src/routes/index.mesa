@@ -10,7 +10,7 @@ title: Home
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
-  $: (session.level, session.role)
+  $: (session.user, session.level)
 
   const ladderColumns = [
     { key: 'session', label: 'Session' },
@@ -76,9 +76,9 @@ title: Home
   {/snippet}
 </Table>
 
-{#if session.level > 0}
+{#if session.user}
   <Alert tone="success">
-    Signed in at level {session.level}{session.role ? ' as ' + session.role : ''}. The server graded this, not the browser — see <code>GET /api/session</code>.
+    Signed in at level {session.level}{session.user.role ? ' as ' + session.user.role : ''}. The server graded this, not the browser — see <code>GET /api/account/me</code>.
   </Alert>
 {:else}
   <Alert tone="info">

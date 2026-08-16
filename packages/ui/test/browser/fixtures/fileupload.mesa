@@ -1,0 +1,23 @@
+<script>
+  // fileupload.mesa — the dropzone, with the selection reported back so a
+  // spec can tell "the list rendered" from "the component accepted the file".
+  import FileUpload from '../../../components/forms/FileUpload.mesa'
+
+  export let multiple  = true
+  export let maxSizeMB = 0
+
+  let files   = []
+  let changes = 0
+</script>
+
+<FileUpload
+  label="Attachments"
+  hint="PDF or PNG"
+  multiple={multiple}
+  maxSizeMB={maxSizeMB}
+  bind:files={files}
+  onchange={() => changes++}
+/>
+
+<output id="changes">{changes}</output>
+<output id="names">{files.map(f => f.name).join(',')}</output>

@@ -17,7 +17,12 @@ import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { existsSync } from 'fs'
 import { createRequire } from 'module'
-import { injectHMR, canInject, HMR_CLIENT_ID } from './hmr-inject.js'
+// The HMR boundary and its browser client are MESA'S — this package
+// reimplements the plugin, never the boundary (`FJS-D16`). Loaded the way every
+// other mesa file here is loaded, off the filesystem via findMesaFile: a bare
+// `@frontierjs/mesa/vite/hmr` import resolves to the node_modules COPY bun
+// leaves for a workspace dep, which is a snapshot of the last install.
+const HMR_CLIENT_ID = '/@frontierjs/sierra/hmr-client'
 import { readFile } from 'fs/promises'
 
 const MESA_EXTENSIONS = /\.(mesa|md)$/
@@ -25,11 +30,29 @@ const MESA_EXTENSIONS = /\.(mesa|md)$/
 // src/build/mesa-plugin.js → the sierra package root
 const SIERRA_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-// The package name as it appears under node_modules. Named rather than inlined
+// The SCOPE as it appears under node_modules. Named rather than inlined
 // because the literal drifted to 'sierra' once and no suite in this repo could
 // see it — an app here resolves sierra to packages/sierra/, never to a
 // node_modules path (FJS-251).
-const SIERRA_PKG = '@frontierjs/sierra'
+//
+// The scope and not one package: `@frontierjs/ui` ships 64 components as `.mesa`
+// SOURCE, and `@frontierjs/email-kit` ships 22 more. Allowing only sierra meant
+// every one of them reached rolldown untransformed, so an installed app died on
+// `Unexpected JSX expression` at line 1 of `CopyButton.mesa` — the same failure
+// FJS-251 named, one package over. A `.mesa` file has exactly one meaning and
+// nothing else can read it, so the question is never *should this be compiled*
+// but *is it ours to compile*.
+const FJS_SCOPE = '/node_modules/@frontierjs/'
+
+// Is this file a layout — `_module.mesa`?
+//
+// The test is the BASENAME and not `id.includes('_module')`, because the string
+// `node_modules` contains `_module`. Every .mesa under node_modules therefore
+// read as a layout, took the layout slot rewrite instead of the page one, and
+// failed to compile with `'__slot_actions' is already declared` — a message
+// about a file the author never wrote a slot into. Invisible in this repo,
+// where the same components resolve through an alias to packages/ui/.
+const isLayoutFile = (id) => id.split('/').pop().startsWith('_module')
 
 /**
  * Locate a file in the installed @frontierjs/mesa, wherever it is.
@@ -112,6 +135,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
   // in-place swap, doing the work twice.
   const _hmrBoundaries = new Set()
   let compiler = null
+  let hmr      = null   // @frontierjs/mesa/vite/hmr — { injectHMR, canInject }
   let isDev = false
   let root = process.cwd()
   let absRoutesDir = resolve(root, mesaOptions.routesDir ?? 'src/routes')
@@ -160,9 +184,13 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
       }
     },
 
+    // Served at Sierra's own virtual id, with Mesa's source: the id is this
+    // plugin's, the runtime behind it is not.
     async load(id) {
       if (id !== HMR_CLIENT_ID) return null
-      return readFile(new URL('./hmr-client.js', import.meta.url), 'utf8')
+      const client = findMesaFile('mesa-vite/client.js', root)
+      if (!client) return null
+      return readFile(client, 'utf8')
     },
 
     async buildStart() {
@@ -225,21 +253,43 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
           `import it: ${err.message}`
         )
       }
+
+      // The HMR boundary, from the same install as the compiler that produces
+      // the output it wraps — the two have to agree about that output's shape.
+      //
+      // Absent, HMR is simply off and an edit takes the full-reload path, which
+      // is what `canInject` already does for a shape it cannot wrap. It is NOT
+      // fatal like the compiler above: a mesa old enough to lack this file still
+      // compiles, and refusing to build over a dev-only affordance would be a
+      // worse trade than a slower dev loop.
+      const hmrPath = findMesaFile('mesa-vite/hmr.js', root)
+      if (hmrPath) {
+        try { hmr = await import(pathToFileURL(hmrPath).href) }
+        catch { hmr = null }
+      }
+      if (!hmr && isDev) {
+        this.warn?.(
+          '[Sierra] @frontierjs/mesa/vite/hmr not found — .mesa edits will full-reload. ' +
+          'Upgrade @frontierjs/mesa for in-place hot updates.'
+        )
+      }
     },
 
     async transform(source, id) {
       if (!MESA_EXTENSIONS.test(id)) return null
       if (!compiler) return null
-      // Skip .mesa files from node_modules except Sierra's own components.
-      // Sierra's RouterView/ChainRenderer need compilation; other packages don't.
+      // Skip .mesa files from node_modules except FrontierJS's own — sierra's
+      // RouterView/ChainRenderer, the ui kit's 64 components, email-kit's 22.
+      // All of them ship as SOURCE and none of them can be read by anything but
+      // the Mesa compiler.
       //
-      // The exception has to name the SCOPE. In this repo an app resolves sierra
-      // to packages/sierra/, which is not under node_modules at all, so the skip
+      // The exception has to name the SCOPE, twice over. In this repo an app
+      // resolves sierra to packages/sierra/ and aliases the ui kit to
+      // packages/ui/, neither of which is under node_modules at all, so the skip
       // never fires and every suite passes — while an app installed from npm
-      // hands RouterView.mesa to rolldown untransformed and dies on "JSX syntax
-      // is disabled" at line 1 of a .mesa file. Dev survives, so it lands at the
-      // first build a real user runs.
-      if (id.includes('/node_modules/') && !id.includes(`/node_modules/${SIERRA_PKG}/`)) return null
+      // hands the file to rolldown untransformed and dies at line 1 of a .mesa.
+      // Dev survives, so it lands at the first build a real user runs.
+      if (id.includes('/node_modules/') && !id.includes(FJS_SCOPE)) return null
 
       // Strip frontmatter before passing to Mesa compiler
       const { frontmatter, content: rawContent } = parseFrontmatter(source)
@@ -266,7 +316,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
       // only ever sees valid Mesa syntax.
       // For layout files (_module.mesa): rewrite <slot name="X"> and <slot /> 
       // For page files: rewrite <mesa:slot name="X"> to snippet + provideSlot()
-      const isLayout = id.includes('_module')
+      const isLayout = isLayoutFile(id)
       const slotRewritten = isLayout
         ? rewriteLayoutSlots(processedContent)
         : rewriteMesaSlots(processedContent)
@@ -321,7 +371,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
 
           // If this is a layout file, extract its export let props
           // so warnDuplicateSnippets can check for conflicts
-          if (id.includes('_module')) {
+          if (isLayoutFile(id)) {
             const props = extractLayoutProps(source)
             sierraContext.layoutPropMap.set(id, props)
           }
@@ -351,7 +401,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
         }
 
         // Warning 1: snippets defined in route files but not exported
-        if (id.startsWith(absRoutesDir) && !id.includes('_module')) {
+        if (id.startsWith(absRoutesDir) && !isLayoutFile(id)) {
           warnUnexportedSnippets(source, id, absRoutesDir, (msg) => this.warn(msg))
         }
 
@@ -362,13 +412,14 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
         // old reload behaviour than emit broken code.
         const wantsHMR = isDev
           && !id.includes('/node_modules/')
-          && canInject(ctx.result)
+          && !!hmr
+          && hmr.canInject(ctx.result)
 
         if (wantsHMR) _hmrBoundaries.add(id)
         else _hmrBoundaries.delete(id)
 
         return {
-          code: wantsHMR ? injectHMR(ctx.result, id, root) : ctx.result,
+          code: wantsHMR ? hmr.injectHMR(ctx.result, id, root, HMR_CLIENT_ID) : ctx.result,
           map: wantsHMR ? null : (ctx.map ?? null),
         }
       } catch (err) {

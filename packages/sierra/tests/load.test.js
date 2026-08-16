@@ -1,7 +1,7 @@
 /**
  * tests/load.test.js — tests for load() data flow
  *
- * Tests: companion resolution in scanner, loaders map in manifest,
+ * Tests: companion resolution in scanner, loaders map in the route table,
  * sierraFetch wrapper, and load() invocation behaviour.
  */
 
@@ -9,7 +9,7 @@ import { describe, test, expect, beforeAll, vi } from 'vitest'
 import { fileURLToPath } from 'url'
 import { dirname, resolve } from 'path'
 import { scan } from '../src/scanner/index.js'
-import { renderManifest } from '../src/scanner/generate-manifest.js'
+import { renderRouteTable } from '../src/scanner/generate-route-table.js'
 import { sierraFetch, configureFetch } from '../src/fetch/index.js'
 import {
   page,
@@ -62,47 +62,47 @@ describe('companion resolution in scanner', () => {
   })
 })
 
-// ─── Manifest: loaders map ────────────────────────────────────────────────────
+// ─── Route table: loaders map ─────────────────────────────────────────────────
 
-describe('loaders map in manifest', () => {
+describe('loaders map in the route table', () => {
   let tree
-  let manifest
+  let routeTable
 
   beforeAll(async () => {
     tree = await scan(ROUTES_DIR, { cwd: FIXTURE_DIR })
-    manifest = renderManifest(tree, FIXTURE_DIR, 'config/routes.js')
+    routeTable = renderRouteTable(tree, FIXTURE_DIR, 'config/routes.js')
   })
 
-  test('manifest exports loaders', () => {
-    expect(manifest).toContain('export const loaders =')
+  test('the route table exports loaders', () => {
+    expect(routeTable).toContain('export const loaders =')
   })
 
   test('loaders map contains entry for route with companion', () => {
-    expect(manifest).toContain("'leads.[leadId]'")
+    expect(routeTable).toContain("'leads.[leadId]'")
     // The loaders section should contain the leadId entry
-    const loadersStart = manifest.indexOf('export const loaders =')
-    const loadersEnd = manifest.indexOf('\n\n', loadersStart)
-    const loadersSection = manifest.slice(loadersStart, loadersEnd)
+    const loadersStart = routeTable.indexOf('export const loaders =')
+    const loadersEnd = routeTable.indexOf('\n\n', loadersStart)
+    const loadersSection = routeTable.slice(loadersStart, loadersEnd)
     expect(loadersSection).toContain('leads.[leadId]')
     expect(loadersSection).toContain('.meta.js')
   })
 
   test('loaders map does NOT contain routes without companions', () => {
-    const loadersStart = manifest.indexOf('export const loaders =')
-    const loadersEnd = manifest.indexOf('\n\n', loadersStart)
-    const loadersSection = manifest.slice(loadersStart, loadersEnd)
+    const loadersStart = routeTable.indexOf('export const loaders =')
+    const loadersEnd = routeTable.indexOf('\n\n', loadersStart)
+    const loadersSection = routeTable.slice(loadersStart, loadersEnd)
     expect(loadersSection).not.toContain("'leads'")
     expect(loadersSection).not.toContain("'login'")
     expect(loadersSection).not.toContain("'root'")
   })
 
   test('tree nodes include companion field', () => {
-    expect(manifest).toContain('companion:')
-    expect(manifest).toContain('[leadId].meta.js')
+    expect(routeTable).toContain('companion:')
+    expect(routeTable).toContain('[leadId].meta.js')
   })
 
   test('tree nodes for routes without companions have companion: null', () => {
-    expect(manifest).toContain('companion: null')
+    expect(routeTable).toContain('companion: null')
   })
 })
 

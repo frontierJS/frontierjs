@@ -40,7 +40,7 @@
   //   <MultiSelect bind:value asyncOptions={{ trigger: searchFn, delay: 200, min: 1 }} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated } from '../../utils.js'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -49,6 +49,7 @@
   export let multiple     = false
   export let placeholder  = 'Select…'
   export let readonly     = false
+  export let required     = undefined
   export let disabled     = false
   export let type         = 'string'     // 'string' | 'number' — coerces values
   export let min          = undefined    // min selections (for multiple)
@@ -66,7 +67,14 @@
 
   // The enclosing <Form>, when there is one — see utils.js § Form context.
   const form     = $context.form
+  const rule     = resolveRule(form, name)
   const hasError = !!resolveError(form, name, error, errors)
+
+  // `aria-required` rather than a `required` attribute: the value here is the
+  // set of pills, and the input inside the box is a search field. A native
+  // `required` on it would refuse a submit whenever the search box is empty,
+  // which is its resting state with every selection already made.
+  const resolvedRequired = stated(required, rule?.required)
   export let badge    = undefined
   export let help     = undefined
 
@@ -338,6 +346,7 @@
           autocomplete="off"
           spellcheck="false"
           placeholder={selectedValues.size === 0 ? placeholder : ''}
+          aria-required={resolvedRequired ? 'true' : null}
           role="combobox"
           aria-expanded={open}
           aria-haspopup="listbox"
@@ -414,11 +423,12 @@
   </div>
 {/snippet}
 
-{#if label || (name && !label)}
+{#if label || name}
   <Field
     id={inputId}
     name={name}
-    label={label || name}
+    label={label || undefined}
+    required={resolvedRequired}
     hint={hint}
     error={error}
     errors={errors}

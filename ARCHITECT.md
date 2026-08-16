@@ -2,8 +2,9 @@
 
 The mental model and its vocabulary. This is the *what*; the layers around it:
 `PHILOSOPHY.md` (the axioms — why), `DECISIONS.md` (dated rulings — settled),
-`CLAUDE.md` (the map — where), `drift-report.md` (the current gap between this
-document and the code — audited 2026-07/08 against all twelve packages).
+`CLAUDE.md` (the map — where), `ISSUES.md` (the gap between this document and the
+code, one id at a time). The twelve-package audit that measured that gap in
+2026-07/08 is `IDEAS/coherence-review.md`, argued and not adopted.
 
 Do not paraphrase the vocabulary. Do not invent parallel terms.
 
@@ -34,7 +35,7 @@ The full-repo audit confirmed the triad holds for *the application a developer
 writes*. It also found the vocabulary stops at the application boundary: the
 framework's own machinery (jobs, outbound targets, providers, rendering
 substrate) has concepts the table below cannot yet name — see §2's
-under-review list and `drift-report.md` §synthesis.
+under-review list and `IDEAS/coherence-review.md`.
 
 ---
 
@@ -56,6 +57,7 @@ Use the left column. Never the right.
 | **Trust Hierarchy**         | roles, permissions, access levels           |
 | **Plugin**                  | middleware, extension, addon                |
 | **Context**                 | request context, state, payload             |
+|   ↳ *plural by realm*       | each package documents its own by LIFETIME (`FJS-D03`); see its `CLAUDE.md` |
 | **Chain of Responsibility** | pipeline, middleware stack, flow            |
 | **Signal**                  | observable, atom, ref, store (for the cell) |
 | **Projection**              | (nothing — new noun, see below)             |
@@ -73,6 +75,12 @@ Clarifications settled by the code:
   materialised view, a serialised subset, a report. What a compiler or a
   component computes and throws away stays **derived**. If it has no independent
   existence, it is not a Projection. (Ruled 2026-08-06.)
+- **A custom service method is a Method, not an Action.** A Service answers
+  CRUD plus whatever else it declares, in one `methods:` list; *custom* is the
+  adjective for the ones the CRUD set does not name, and there is no noun for
+  them. Dispatch is settled and unchanged: the `X-Service-Method` header,
+  case-preserved. On the browser client, `svc.invoke(name, id, data, query)`.
+  (Ruled 2026-08-15 — `DECISIONS.md`.)
 - **Policy has two meanings and will not get a third.** Gate = the ordinal
   per-operation check; policies = `@@allow`/`@@deny` row/field predicates. A
   proposed third sense ("declarative business rule vs imperative mechanism") is
@@ -97,8 +105,8 @@ vocabulary is mandatory for describing and fully open for challenging.
 ### Under review — found by the audit, not yet adopted
 
 These concepts exist in the code without names, or share a name that is doing
-two jobs. Arguments in `drift-report.md` §synthesis; status in `DECISIONS.md`
-§Open. Do not use them as settled vocabulary yet:
+two jobs. Arguments in `IDEAS/coherence-review.md`; status in `ISSUES.md`
+`FJS-D06`. Do not use them as settled vocabulary yet:
 
 - **Hook split** — Hook (may mutate/halt) / Guard (allow-deny) / Observer
   (fire-and-forget) / Delegate (required single-slot). Today "Hook" covers
@@ -162,7 +170,8 @@ Standing rules the framework is designed against.
    origin → event → channel → binding. Any parallel sync mechanism or second
    emitter for the same fact is a smell. (The current code is known to
    fall short of this — three origins for "a row changed"; the consolidation
-   is sequenced in `drift-report.md`.)
+   is sequenced in `IDEAS/coherence-review.md` §2, and its open half is
+   `FJS-010`.)
 8. **The UI binds, it does not own.** The browser holds a reference to data,
    never a second copy of the data model.
 9. **Solve for the 80, leave an escape for the 20.** Every decision needs a
@@ -217,14 +226,15 @@ Report these accurately; don't treat them as bugs.
 - **Authentication** — working; developer-facing API not finalized. Auth's own
   `/auth/*` routes intentionally bypass the Service abstraction (login cannot
   be gated by login).
-- **Custom service methods** — called `actions`; the *name* is under review;
-  the dispatch is settled: `X-Service-Method` header, case-preserved
-  (`DECISIONS.md`).
 - **Multi-tenancy** — db-per-tenant implemented at the Litestone level; config
   API under design; row-scoped tenancy has no primitive yet.
-- **Hook context shape** — differs across realms; Junction's four-field split
-  (`auth` frozen-propagates · `client` read-only-propagates · `route`
-  router-only · `locals` fresh-per-call) is the candidate framework standard.
+- **Hook context shape** — ~~differs across realms~~ **ruled 2026-08-15
+  (`FJS-D03`): plural by design, documented per realm by LIFETIME, not
+  unified.** Junction's four-field split is `auth` frozen-propagates · `client`
+  read-only-propagates · `route` router-only · `locals` fresh-per-call, asserted
+  by running it (`junction/tests/context-contract.test.ts`). Path captures are
+  `ctx.route` in Junction and `page.params` in Sierra — one word per realm.
+  Work that outlives a request opens its own scope: `app.runAs(userId, fn)`.
 - **UI plugin system** — limited today.
 - **JSON Schema → UI** — drives `make()` only; validation and transformation
   still to come.
@@ -242,7 +252,7 @@ Report these accurately; don't treat them as bugs.
 
 ## 6. Auditing this repo
 
-The method that produced `drift-report.md`, kept for reuse. One explorer per
+The method that produced `IDEAS/coherence-review.md`, kept for reuse. One explorer per
 package, this document as shared context, each returning the same shape:
 
 ```

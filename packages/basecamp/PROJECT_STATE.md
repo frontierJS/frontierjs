@@ -18,7 +18,7 @@ This file describes what it currently does.
 
 | Realm | State |
 | --- | --- |
-| **Data** (`db/`) | **Real.** `schema.lite` is the seed — 37 models, 21 enums, 0 errors / 0 warnings; the migration is generated from it and verified against a fresh database. **All 37 declare `@@gate`** (2026-08-10), graded per WORKSPACE by `api/src/core/gate.ts`. **One declares `@@allow`** — `Server`, the first of the row-level tenancy the other 36 still keep in service where-clauses |
+| **Data** (`db/`) | **Real.** `schema.lite` is the seed — 37 models, 21 enums, 0 errors / 0 warnings; the migration is generated from it and verified against a fresh database. **All 37 declare `@@gate`** (2026-08-10), graded per WORKSPACE by `api/src/core/gate.ts`. **15 declare `@@allow`** — every model carrying a `workspaceId` bar `WorkspaceMember` and `AuditEvent`; the other 22 carry no workspace column and want `check(parent)` |
 | **API** (`api/`) | **Real.** **21 services** + 3 engines on Litestone accessors, zero raw SQL. Twenty are workspace-scoped; `hub` is the one that is not — it takes no workspace at all and sits behind `requireSystemAdmin` |
 | **UI** (`web/`) | **Real.** Sierra SPA over every service — 39 route files, driven end to end in a browser by `bun run verify`, and the BUILT output probed by `bun run verify:build` |
 
@@ -81,12 +81,13 @@ in the audit log** — the redaction fix, in a real app.
    everyone**. Headers are `ctx.client.headers`; per-call scratch is
    `ctx.locals`.
 
-   The confusion is Junction's, not Basecamp's: a **TransportContext** *does*
-   have `params` (raw routes use `ctx.params.id`, as Junction's own webhooks
-   plugin does), and Junction's comments claim it for service contexts too —
-   `core/app.ts:218` shows `app.service('users').get(id, ctx.params)` and
-   `core/litestone.ts:11` says the query tap is "cached on ctx.params" when the
-   code writes `ctx.locals`. Stale Feathers idioms; worth fixing upstream.
+   The confusion was Junction's, not Basecamp's: a **TransportContext** used to
+   have `params` for path captures while a ServiceContext had none, and
+   Junction's own comments claimed it for service contexts too. **Fixed upstream
+   2026-08-15 (`FJS-D03`)**: `params` is gone from both, path captures are
+   `ctx.route` on either, and the stale comments are rewritten. The word was
+   removed rather than moved, because keeping it is what kept the Feathers idiom
+   arriving.
 2. **`before: { all: [...] }` really does mean all.** `servers.heartbeat`
    carried a comment claiming exemption from `authenticate` while sitting behind
    it, so the outpost could never check in — every heartbeat 401'd. `sessionScope`
@@ -623,6 +624,41 @@ came back with the column absent, which reads as a refusal. `litestone`'s own
 `@encrypted` implies it while `Secret.data` is plainly written by an admin, so
 the sentence is wrong rather than the behaviour — `FJS-248`.
 
+## It runs in a container (2026-08-14)
+
+`bun run image:up` builds an image from the working tree and brings up the
+stack; `bun run image:down` stops it. Same URL as `bun run dev` — 8020 — so
+containerised and not are the same address, deliberately.
+
+**The image carries the tree.** Nine `workspace:*` dependencies that a Docker
+build resolves no better than the `link:` specs `fli new --source local` writes
+(`FJS-241`). Both halves belong to `fli`'s `core/vendor.js`, which
+`deploy/build.mjs` calls: every publishable package packed into the build context
+and the manifest rewritten to `file:` those tarballs, `overrides` included —
+without that last part sierra installs mesa from npm and the image runs two trees
+at once, which is not guaranteed to be loud. `fli deploy:vendor` is the same
+module over a client app, so a scaffolded app and this one are packed one way.
+
+Two containers. The API is an image; the SPA is static files behind Caddy, whose
+config is generated from `web/config/api-paths.js` — the same list the Vite dev
+proxy reads, now one file with two readers rather than an array that had gone
+stale four times and was about to be copied a fifth. Both have to make the same
+call: `/projects` is a service AND a page, and only `Accept` tells them apart.
+
+**Packaging it found four framework defects and none of them were in this app.**
+All the same shape — *a path predicate that is true in the workspace for a
+different reason than it is true in an install* — and all invisible here, because
+an app in this repo resolves the framework out of `packages/`:
+
+| | |
+| --- | --- |
+| sierra | the Mesa plugin's node_modules allowance named `@frontierjs/sierra` alone, so the ui kit's 64 `.mesa` components and email-kit's 22 reached rolldown untransformed |
+| sierra | `id.includes('_module')` decided *is this a layout* — and **`node_modules` contains `_module`** |
+| ui | `"./stores/*": "./stores/*.js"` mapped `stores/toastStore.js` to `stores/toastStore.js.js` |
+| basecamp | the `@frontierjs/ui` alias pointed at `../../../ui` unconditionally, a path that exists only in the workspace |
+
+What it is NOT yet: a thing that can deploy an app. See the next section.
+
 ## The old UI mock, for reference
 
 `docs/mock/BasecampUI.jsx` is one **12,557-line** file: `import { useState } from
@@ -642,8 +678,48 @@ porting the JSX first would only produce more screens reading hardcoded arrays.
 
 ## Ordered next steps
 
+### The Outpost — what stands between this and deploying an app
 
-*Steps 1–2 are tracked as **`FJS-032`** (no invitation flow) and **`FJS-031`**
+**A deploy in Basecamp today reports six green steps and does nothing.** The
+deployment engine speaks a complete protocol over Conduit to `outpost:<server-id>`
+— `POST /pull`, `/deploy`, `/stop`, `/health-check`, `/exec` — the `Server` model
+carries `outpostVersion` and `lastHeartbeatAt`, `heartbeat` is written and
+HMAC-authenticated at the transport, `App.source` is already
+`{ kind: 'git', repo, branch }`, and **nothing implements the other end.** With
+no outpost resolved, `runStep` returns early and the caller marks the step
+`success`:
+
+```ts
+if (!outpostTarget) {
+  // No outpost — log only, don't fail (supports local/stub mode)
+  log.debug(`step skipped — no outpost`, { step: step.name })
+  return
+}
+```
+
+So the App goes to `running`, the release goes to `success` in 23ms, and the
+screen is telling the truth about a pipeline that ran no commands. Eight checks
+in `web/test/verify.mjs` currently assert that `success` — they are proving the
+step pipeline and the socket push, both real, against a deploy that does nothing.
+
+The order, decided 2026-08-14:
+
+1. **Make the stub loud.** A deploy with no outpost records `skipped` and
+   finishes `failed`, not `success`. Everything below depends on being able to
+   trust a green, and the drive's eight checks move to a real outpost with it.
+2. **`packages/outpost`** — a Bun service implementing the five endpoints
+   against the local Docker daemon, heartbeating in over HMAC. V1 runs
+   **co-resident with Basecamp** on `/var/run/docker.sock` (the CapRover shape);
+   a second machine is then just another `Server` row, and the architecture does
+   not change to get there.
+3. **Build from `source`.** Clone the git ref, `docker build`, run — the same
+   thing `fli deploy` does on a server today. `IDEAS/deploy-plane.md` argues for
+   build-once-promote-a-digest instead, and it is right; it needs a registry,
+   which V1 does not.
+4. **Deploy `example/` through it.** The end-to-end proof, and the first time
+   anything in this repo has been deployed by something in this repo.
+
+*Steps below are tracked as **`FJS-032`** (no invitation flow) and **`FJS-031`**
 (publishes on reads) in `../../ISSUES.md`.*
 
 **`@@gate` landed 2026-08-10 and closed `FJS-007`** — deferred to last, as
@@ -663,7 +739,39 @@ Litestone defects sitting under the gate work as well: an `include:` enforced
 nothing the model it reached declared (`FJS-150`), and a post-update denial did
 not roll back on a model with a Json column (`FJS-151`).
 
-1. **Declare `@@allow` on the other 36.** One at a time, with `bun run verify`
+**Fourteen more followed, in four batches** — the hierarchy (`Project`,
+`Environment`, `App`), then what a person does to an app (`Deployment`, `Job`,
+`Domain`), then the six the workspace owns outright (`Network`, `Recipe`,
+`FeatureFlag`, `NotificationChannel`, `AlertRule`, `Dashboard`), then the
+credential pair (`Secret`, `ApiKey`). **15 of 37, which is every model carrying a
+`workspaceId` except two**: `WorkspaceMember` is what standing is read from,
+before there is a workspace on the principal to compare it against, and
+`AuditEvent`'s workspace is nullable because a hub action belongs to none.
+
+Each batch turned up something the previous one could not. The second: those
+services read on **`appId` alone** in several places (an app's recent releases, a
+hostname's siblings), correct until then only because the app had been fetched
+scoped a few lines earlier. The fourth: `Secret` is the only model with both a
+protected field and a row policy, and Litestone's `verifyFieldProtection` could
+not seed a row for one — it forced the policy's value into a foreign key without
+creating the parent, so the whole model reported as unchecked. Fixed in
+Litestone the same day.
+
+Every batch is four tests over one table of shapes, an HTTP probe across two
+workspaces owned by one person, then the browser drive — a wrong policy is an
+empty screen, and nothing below a browser can see one.
+
+**What is left is a different declaration.** The 22 without a `workspaceId`
+column — `DeploymentStep`, `JobRun`, `RecipeRun`, `Volume`, `FlagOverride`,
+`AlertRuleChannel`, `DashboardWidget`, `AppServer` and the rest — reach their
+tenant through a parent, so they want `check(parent)` rather than a column
+restated on the child. Worth proving once on the simplest (`DeploymentStep`)
+before the rest follow.
+
+1. **`check(parent)` on the other 22.** Every model that can carry a
+   `workspaceId` now declares one; what is left reaches its tenant through a
+   parent. Prove the delegation once on `DeploymentStep`, then a batch at a time,
+   with `bun run verify`
    between them. The line is never the work: **a policy filters where a gate
    refuses**, so a read that legitimately crosses a workspace and is not
    `asSystem()` starts matching nothing, with no error — an empty screen. The
@@ -709,13 +817,13 @@ not roll back on a model with a Json column (`FJS-151`).
 
 | | |
 |---|---|
-| `bun run test` | 68 data-layer tests — schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
+| `bun run test` | 92 data-layer tests — schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
 | `bun run verify` | **271** browser checks across all three realms, incl. an a11y pass on every screen |
 | `bun run verify:build` | the PRODUCTION build — the tags survive comment-stripping, and the page comes up in a real browser |
 | `bun run db:check` | fails if the migration has drifted from `db/schema.lite` |
 | `bun run typecheck` | 20 diagnostics, at the committed baseline. Was 63 until `db/schema.d.ts` landed — two thirds of the count was rows read out of an untyped Proxy |
 | `bun run db:types` | regenerates `db/schema.d.ts` from the schema (`audience=system`). `bun run test` fails if the committed file is stale |
-| `bun run db:seed --force` | the only thing here that writes every model. Plain `db:seed` on a database that already holds an account fails on `account.slug` — that is the seeder saying *use `--force`* the long way |
+| `bun run db:seed --force` | the only thing here that writes every model — and `db/test/seed.test.ts` runs the script itself, from a throwaway directory, so it cannot rot unnoticed again |
 
 Nothing in this file was established by reading. The data claims were verified
 against a live database, the API claims over HTTP, and the UI claims by driving

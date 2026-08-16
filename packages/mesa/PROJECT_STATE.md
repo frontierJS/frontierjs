@@ -90,7 +90,7 @@ Re-run it after any change to `runtime.js`.
 - `export let` / `export const` / `export var` — all three prop kinds
 - `$:` annotation system — path watch, auto-effect, watch+handler, ordered group, writable derived, debug labels
 - `{#if}`, `{#each}` (with destructuring), `{#await}`, `{#key}`, `{#snippet}`, `{@render}`, `{@html}`, `{@attach}`
-- `{#virtual each}` — fixed-height virtualized lists (client-only, no-op in SSR)
+- `{#virtual each}` — fixed-height virtualized lists, `height=` / `viewport=` optional; SSR renders the first window
 - `<mesa:boundary>`, `<mesa:mounted>`, `<mesa:portal>`, `<mesa:window>`, `<mesa:document>`, `<mesa:body>`, `<mesa:head>`
 - `$mounted(fn)` builtin — imperative mount gate, one per component
 - `$context` — provide/consume with `const` (tracks) / `let` (init at mount) / `var` (snapshot)
@@ -189,9 +189,9 @@ Targets:
 - `js` — Map of compiled JS modules
 
 Key details:
-- `compileTree()` — recursive import resolution, all temp `.mjs` files written to mesa package dir
+- `compileTree()` — recursive import resolution; every temp `.mjs` in a tree goes to one directory, `options.tmpDir` or the default
 - `sourceOverride` param eliminates double temp-file on entry point
-- `_tmpDir` uses `findMesaDir()` to handle Vite rewriting `import.meta.url`
+- `defaultTmpDir()` uses `findMesaDir()` to handle Vite rewriting `import.meta.url`. It is the default because a temp module imports `@frontierjs/mesa/runtime.js`; a caller rendering an APP's tree passes `tmpDir` so bare specifiers resolve from the app's `node_modules` (SSR_SPEC W1)
 - CSS de-scoping: strips `.scopeId ` prefix from collected CSS before inlining
 
 ---
@@ -284,26 +284,16 @@ and `{@const}` inside `{#each}` calls the loop index as a getter. The third —
 Defects and gaps for this package are in the repo-wide register:
 **`FJS-024`** `mesa-vite` has no tests, HMR unconfirmed in a browser ·
 **`FJS-025`** nothing verified in a real browser (every suite is happy-dom) ·
-**`FJS-026`** `mesa-vite/`/`mesa-bench/` invisible to the workspace glob ·
-**`FJS-067`** the deferred set — `tick()`, `{#virtual each}` in SSR,
-variable-height virtual lists, full hydration SSR, TypeScript,
-`$: fn()` post-execution hooks ·
-**`FJS-068`** `renderComponent` resolves bare imports from Mesa's package root
-(SSR_SPEC W1) · **`FJS-069`** White Paper header version.
-Decision waiting: **`FJS-D18`** — `$: { (a, b) }` vs `$: (a, b)`.
+**`FJS-026`** `mesa-vite/`/`mesa-bench/` invisible to the workspace glob.
+
+Deferred by the language spec rather than open here: full hydration SSR and
+TypeScript (RULE 20), variable-height virtual lists (RULE 34).
 
 Still true and not an issue: `{@render children?.()}` vs `<slot />` in the
 `uiComponents` REPL example is a `ui/` kit task, deliberately left alone
 (`docs/STATIC_RENDERING.md` § Component children).
 
 Add a new item to `../../ISSUES.md`, not here.
-
-## White Paper
-
-**Version: v1.7** — `Mesa_White_Paper_v1_0.md`  
-(Version number in file header not yet updated — update before next publish)
-
----
 
 ## File Inventory
 

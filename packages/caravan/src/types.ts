@@ -1,6 +1,11 @@
 // src/types.ts
 // All shared types for @frontierjs/caravan.
 
+// Type-only, and the only reference to Junction in the package. It erases at
+// compile time, so nothing here imports Junction at runtime — see CaravanApp
+// below for why the rest of this file shape-matches instead.
+import type { App as JunctionApp, SessionContext } from '@frontierjs/junction'
+
 // ─── Job record (as stored in SQLite) ────────────────────────────────────────
 
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
@@ -21,9 +26,11 @@ export interface JobRecord {
   finished_at:  number | null
   error:        string | null
   created_at:   number
+  /** Who asked for the work. NULL when nobody did — cron, boot, standalone. */
+  actor_id:     string | null
 }
 
-// ─── Parsed job passed to handlers ───────────────────────────────────────────
+// ─── Parsed job ──────────────────────────────────────────────────────────────
 
 export interface Job<T = unknown> {
   id:       string
@@ -33,9 +40,46 @@ export interface Job<T = unknown> {
   attempts: number
 }
 
+// ─── The context a handler runs in ───────────────────────────────────────────
+//
+// One argument, and it is a Context in the sense the rest of the framework uses
+// the word: per-invocation state available to code running on behalf of a
+// caller. The job's own facts, plus the two things a handler cannot get any
+// other way — who this work is for, and the app to do it through.
+//
+// `app` is the half that used to have no answer at all. Junction hands `app` to
+// every plugin's `register()` and Caravan kept it, so an autoloaded `*.job.ts`
+// had no route to `app.service(…)` — which is the whole reason background work
+// exists in a framework that owns its announcements. Apps grew a module holding
+// a mutable app reference to get around it.
+//
+// `auth` is the other. It is informational: the principal is already in scope
+// by the time the handler runs, so a service call that names no auth inherits
+// it. Reading it is for a handler that wants to branch on who asked, or log it.
+
+export interface JobContext<T = unknown> extends Job<T> {
+  /** The principal this work runs on behalf of — re-resolved at run time. */
+  auth: { user: SessionContext | null }
+
+  /**
+   * The running Junction app. Absent when Caravan runs standalone, which is
+   * the one case a handler has to test for.
+   *
+   * Typed as Junction's own `App` rather than the duck-typed `CaravanApp` the
+   * rest of this file uses, because a handler's whole reason to hold it is
+   * `app.service('orders').call(…)` — and the shape-matched version answers
+   * `unknown` for that. The import is TYPE-ONLY and erases, so the runtime
+   * independence the duck-typing exists for is untouched.
+   */
+  app?: JunctionApp
+
+  /** The id recorded at dispatch. null when nobody asked — cron, boot. */
+  actorId: string | null
+}
+
 // ─── Handler + registration options ──────────────────────────────────────────
 
-export type JobHandler<T = unknown> = (job: Job<T>) => Promise<void> | void
+export type JobHandler<T = unknown> = (ctx: JobContext<T>) => Promise<void> | void
 
 export interface HandlerOptions {
   /** Which queue this handler listens on. Default: 'default' */
@@ -49,6 +93,21 @@ export interface HandlerOptions {
    * Default: [60_000, 300_000, 1_800_000]  (1m, 5m, 30m)
    */
   retryDelay?:  number[]
+  /**
+   * Standard 5-field cron expression — WHEN this job runs on its own.
+   *
+   * A registration carrying one is a recurring job: the scheduler dispatches it
+   * on the expression, with an empty payload and `actor: null`, onto the queue
+   * this same registration names. Declaring it here is what lets a `*.job.ts`
+   * file say everything about itself; a job that only ever runs on demand
+   * states nothing.
+   *
+   * The name is a schedule, not a list of them — registering the same name
+   * again replaces the schedule rather than adding a second one.
+   */
+  cron?:        string
+  /** IANA timezone the `cron` expression is read in. Default: server TZ. */
+  timeZone?:    string
 }
 
 export interface RegisteredHandler {
@@ -57,6 +116,41 @@ export interface RegisteredHandler {
   queue:       string
   maxAttempts: number
   retryDelay:  number[]
+  cron?:       string
+  timeZone?:   string
+}
+
+// ─── Job definition — what defineJob() returns ───────────────────────────────
+//
+// A job file's default export, and the one statement of that job's name. It is
+// also a dispatch handle: `dispatch(sendEmail, { to })` names nothing, so a
+// name cannot be typo'd at a call site and the payload is typed by the handler
+// rather than being `unknown` on both sides.
+
+export interface JobDefinition<T = unknown> {
+  /** Marker autoload uses to tell a job file's default export from anything else. */
+  __caravanJob: true
+  name:         string
+  handler:      JobHandler<T>
+  queue:        string
+  maxAttempts:  number
+  retryDelay:   number[]
+  cron?:        string
+  timeZone?:    string
+}
+
+/** What dispatch() addresses — a definition, or the name in one. */
+export type JobRef = string | { __caravanJob: true; name: string }
+
+/**
+ * The slice of Caravan that autoload registers through.
+ *
+ * Narrower than `Pick<CaravanInstance, 'handle'>` on purpose: `handle` is
+ * overloaded, and an overloaded member forces every stub in a test to
+ * implement both signatures to be assignable.
+ */
+export interface JobRegistrar {
+  handle(name: string, handler: JobHandler, opts?: HandlerOptions): void
 }
 
 // ─── Dispatch options ─────────────────────────────────────────────────────────
@@ -83,6 +177,19 @@ export interface DispatchOptions {
    * months apart.
    */
   unique?:   string
+
+  /**
+   * Whose behalf this work is on. Default: whoever is in scope at dispatch.
+   *
+   * Read from `app.principal()`, so a job queued inside a request already runs
+   * as the caller who asked for it and nothing has to be said. State it to
+   * override — a user id to act for someone else, or `null` for work that is
+   * the app's own even though a request happened to start it.
+   *
+   * An id, not a session: what is stored is who, and the standing is resolved
+   * when the job runs. See `App.runAs`.
+   */
+  actor?:    string | null
 }
 
 // ─── Queue config ─────────────────────────────────────────────────────────────
@@ -138,6 +245,8 @@ export interface CronEntry {
 export interface QueueStats {
   pending:   number
   running:   number
+  /** Completed, over the retention window — the one number that says work is moving. */
+  done:      number
   failed:    number
   cancelled: number
 }
@@ -166,8 +275,8 @@ export interface CaravanTelemetry {
  * touches instead; anything else goes through an explicit cast at the use site.
  */
 export interface CaravanApp {
-  /** Junction's metrics provider registry — if present, Caravan adds job stats */
-  _metricsProviders?: Map<string, () => unknown>
+  /** Junction's metrics seam — if present, Caravan contributes job stats */
+  registerMetricsSource?: (name: string, fn: () => unknown) => void
   /** Junction's telemetry bus — if present, Caravan emits job lifecycle events */
   telemetry?: CaravanTelemetry
   /** Where Caravan attaches itself — Junction's augmentable `App.jobs` slot */
@@ -177,19 +286,60 @@ export interface CaravanApp {
    * claiming `app.jobs` fails loudly instead of silently winning; falls back to
    * plain assignment against an older Junction.
    */
-  provide?: (name: string, value: unknown) => void
+  claim?: (name: string, value: unknown) => void
   /** Junction's resolved config — read for an optional `caravan` section */
   config?: unknown
+
+  /**
+   * WHO is in scope right now — read at dispatch to record who asked.
+   *
+   * Optional because Caravan runs standalone, where there is no request and no
+   * principal to read. A job dispatched with neither this nor an explicit
+   * `actor` records nobody and runs as the app itself.
+   */
+  principal?: () => { userId?: string } | null
+
+  /**
+   * Run the handler on behalf of a principal, re-resolved now.
+   *
+   * The seam that removes the oldest hazard in this package: a job had no
+   * principal, and no principal is STRANGER(0), so a handler writing back
+   * through `app.service('x').patch(…)` was refused by the model's own `@@gate`
+   * unless every job carried a hand-written `{ auth: { user: SYSTEM } }`.
+   *
+   * Junction's implementation opens an AsyncLocalStorage scope, so a service
+   * call inside the handler that names no auth inherits this principal — the
+   * same propagation any nested call gets.
+   *
+   * Absent (standalone Caravan) means the handler is called directly and
+   * `ctx.auth.user` is null. Nothing to be graded by, and nothing pretending.
+   */
+  runAs?: <T>(userId: string | null, fn: (user: SessionContext | null) => T | Promise<T>) => Promise<T>
+
+  /** Junction's service caller — reached from a handler as `ctx.app.service(…)`. */
+  service?: (name: string) => unknown
 }
 
 // ─── Public Caravan instance ──────────────────────────────────────────────────
 
 export interface CaravanInstance {
   /**
-   * Dispatch a job to the queue.
+   * Dispatch a job by its definition — the import IS the name, and `data` is
+   * typed by the handler that will receive it.
+   *
    * Can be called before start() — jobs are persisted immediately.
    */
+  dispatch<T>(job: JobDefinition<T>, data: T, opts?: DispatchOptions): Promise<string>
+
+  /**
+   * Dispatch a job by name. Nothing reconciles the string with the handler
+   * that answers to it, so a typo is a job no worker ever picks up; prefer the
+   * definition where the file can be imported.
+   */
   dispatch<T = unknown>(name: string, data: T, opts?: DispatchOptions): Promise<string>
+
+  /** Register a job definition — its own queue, retries and cron. */
+  handle<T>(job: JobDefinition<T>): void
 
   /** Register a handler for a job type. Must be called before start(). */
   handle<T = unknown>(name: string, handler: JobHandler<T>, opts?: HandlerOptions): void
@@ -222,6 +372,12 @@ export interface CaravanInstance {
   /**
    * Register a recurring cron job.
    * Uses standard 5-field cron syntax: '0 2 * * *' = 2am daily.
+   *
+   * Sugar over `handle(name, handler, { cron })`, which is the same
+   * registration a `*.job.ts` file makes for itself. Reach for this when the
+   * handler is not a job file — a closure, or a function imported from
+   * somewhere that is not `jobsDir`.
+   *
    * @param opts.timeZone IANA timezone string — job fires at the right local time
    */
   schedule(name: string, cron: string, handler: JobHandler, opts?: { queue?: string; timeZone?: string }): void

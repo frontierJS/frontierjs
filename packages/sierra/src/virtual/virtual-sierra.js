@@ -2,14 +2,14 @@
  * virtual-sierra.js — Vite virtual module: `virtual:sierra`
  *
  * Generates the runtime bootstrap module that:
- * - Imports the route manifest
+ * - Imports the route table
  * - Boots the router with the tree + sierra config
  * - Wires Junction if configured
  * - Wires analytics if configured
- * - Re-exports manifest arrays for app code
+ * - Re-exports the route table's arrays for app code
  *
  * The virtual module is regenerated whenever:
- * - The route manifest changes (scanner-plugin invalidates it)
+ * - The route table changes (scanner-plugin invalidates it)
  * - sierra.config.js changes
  */
 
@@ -197,7 +197,7 @@ export function resolveSierraConfigPath({ explicit, configFile, root }) {
  * @returns {import('vite').Plugin}
  */
 export function virtualSierraPlugin(config, sierraContext) {
-  const manifestOutput = config.manifest?.output ?? 'config/routes.js'
+  const tableOutput = config.routeTable?.output ?? 'config/routes.js'
   // Path to the sierra config file — resolved at configResolved time
   let sierraConfigPath = 'config/sierra.config.js'
   let root = process.cwd()
@@ -281,7 +281,7 @@ export function virtualSierraPlugin(config, sierraContext) {
     },
 
     load(id) {
-      if (id === RESOLVED_ID) return generateVirtualSierra(config, manifestOutput, sierraConfigPath, sierraContext)
+      if (id === RESOLVED_ID) return generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraContext)
       if (id === RESOLVED_CONFIG_ID) {
         // Re-export the real sierra.config.js — resolved at build time
         return `export { default } from '${sierraConfigPath}'`
@@ -295,16 +295,16 @@ export function virtualSierraPlugin(config, sierraContext) {
  * Generate the virtual:sierra module source code.
  *
  * @param {import('./index.js').SierraConfig} config
- * @param {string} manifestOutput
+ * @param {string} tableOutput
  * @param {string} sierraConfigPath — absolute path to sierra.config.js
  */
-function generateVirtualSierra(config, manifestOutput, sierraConfigPath, sierraContext) {
+function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraContext) {
   const lines = []
 
-  // Import the manifest and the live sierra.config.js.
+  // Import the route table and the live sierra.config.js.
   // Using the absolute path resolved by Vite ensures the correct file is
   // imported regardless of where vite.config.js lives.
-  lines.push(`import { tree, components, loaders, layouts, published, indexed, redirects } from '/${manifestOutput}'`)
+  lines.push(`import { tree, components, loaders, layouts, published, indexed, redirects } from '/${tableOutput}'`)
   lines.push(`import sierraConfig from '${sierraConfigPath}'`)
   lines.push(``)
 
@@ -409,16 +409,16 @@ function generateVirtualSierra(config, manifestOutput, sierraConfigPath, sierraC
   lines.push(`}`)
   lines.push(``)
 
-  // Re-export manifest for app code
-  lines.push(`// Re-export manifest — importable from 'virtual:sierra'`)
+  // Re-export the route table for app code
+  lines.push(`// Re-export the route table — importable from 'virtual:sierra'`)
   lines.push(`export { tree, components, loaders, layouts, published, indexed, redirects }`)
 
   return lines.join('\n')
 }
 
 // Named export for unit testing
-export function _generateVirtualSierra(config, manifestOutput) {
-  return generateVirtualSierra(config, manifestOutput, '/config/sierra.config.js')
+export function _generateVirtualSierra(config, tableOutput) {
+  return generateVirtualSierra(config, tableOutput, '/config/sierra.config.js')
 }
 
 // Named export for unit testing — see tests/frontier-resolution.test.js

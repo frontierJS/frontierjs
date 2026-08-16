@@ -116,7 +116,22 @@ rather than a stand-in's.
 
 **What a gate does not do is scope rows.** It answers *may this caller touch
 Server at all*, never *may they touch THAT server*. That is `@@allow`, and
-**`Server` is the first model here to declare one**:
+**15 models declare one** — every model carrying a `workspaceId` except two:
+
+| | |
+| --- | --- |
+| `Server` `Project` `Environment` `App` | the hierarchy every screen walks |
+| `Deployment` `Job` `Domain` | what a person does to an app |
+| `Network` `Recipe` `FeatureFlag` `NotificationChannel` `AlertRule` `Dashboard` | the workspace's own settings |
+| `Secret` `ApiKey` | credential material |
+
+The two that carry `workspaceId` and are deliberately left out: `WorkspaceMember`,
+because it is what standing is *read from* — `applyStanding()` reads it through
+`asSystem()` before there is a workspace on the principal to compare against, so
+a policy would be reading the field it is in the middle of deciding — and
+`AuditEvent`, whose `workspaceId` is nullable because a hub action belongs to no
+workspace, and a null compared to a caller's workspace hides exactly the rows the
+trail exists for. The line each of the 15 carries:
 
 ```
 @@allow('all', workspaceId == auth().workspaceId)
@@ -127,15 +142,53 @@ resolves the workspace being addressed once per request and puts both on the
 principal. So the declaration is the same fact the service where-clauses already
 filter on, moved to where it cannot be omitted: compiled into the SQL of every
 read, update and delete from a scoped client, and checked in JS before a create.
-Five tests in `db/test/schema.test.ts` run it with no service and no hook in the
-picture, which is the only way to tell the policy from the where-clause.
+`db/test/schema.test.ts` runs all three sets with no service and no hook in the
+picture, which is the only way to tell the policy from the where-clause the
+service was already writing — and each set drives its models through one table
+of shapes, so the next model is a row rather than a copy.
+
+**The audit is the work; the line is not.** Before declaring, every scoped read
+of that model has to be workspace-filtered already and every path that
+legitimately crosses has to be `asSystem()`. For all 14 it came out clean:
+the services read through `dbOf(ctx)` with `workspaceId: wsOf(ctx)` throughout,
+the three engines and the hub take `asSystem()`. Proven a second way, over HTTP
+with two workspaces owned by one person: each lists only its own rows, a
+cross-workspace `GET` is a 404, and a create naming the other workspace in the
+BODY lands in the caller's own — the service stamps the header's workspace and
+the policy would refuse the rest.
+
+`Deployment`, `Job` and `Domain` added one shape the hierarchy did not have: a
+read filtered on **`appId` alone**, with no workspace clause — an app's recent
+releases, a hostname's siblings to demote. Those are safe today only because the
+app was fetched scoped first, an argument that lives in the reader's head. The
+declaration is what makes them safe without it, and `an appId-only read cannot
+reach another workspace app` is the test that says so by handing the other
+tenant's `appId` in directly.
+
+`Secret` and `ApiKey` were held to last because both have real system readers
+that look a row up **by id with no workspace in the query**: the conduit
+resolver reading `secret:<id>` (`core/credentials.ts`), the channels service
+writing a channel's credential, and the API-key guard asking whether a key may
+act at all (`services/api-keys/scopes.ts`). All three are `asSystem()`, which is
+what makes the declaration safe — and a test says so, because a policy applied to
+any of them would fail every send and refuse every key with nothing to
+distinguish it from a bad token.
+
+Declaring `Secret` also found a defect in Litestone's own checks:
+`verifyFieldProtection` seeds a row carrying the policy's targeted value and did
+not create the parent that value points at, so a model with **both** a protected
+field and a row policy could not be graded at all (fixed the same day; its
+sibling `verifyRowPolicies` already did this). 15 models can carry the policy and
+exactly one has a `@guarded` column, which is why nothing before it had put the
+two attributes on one model.
 
 **A policy filters where a gate refuses**, and that is the whole risk in the
-remaining 36. A read that legitimately crosses a workspace and is not
+remaining 22. A read that legitimately crosses a workspace and is not
 `asSystem()` matches nothing — no error, an empty screen. The paths that do
 cross are the three engines, the hub and the outpost's heartbeat, and every one of
-them already takes `asSystem()`. Do one model at a time and run `bun run verify`
-between them.
+them already takes `asSystem()`. What is left carries no `workspaceId` column of
+its own — a `DeploymentStep`, a `JobRun`, a `Volume` — so the next move is
+`check(parent)`, delegating to the parent's policy rather than restating it.
 
 One thing had to be fixed in Litestone before the declaration was worth
 anything: **an `include:` applied no access rule of the model it reached** — not

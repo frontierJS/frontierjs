@@ -195,8 +195,8 @@ export async function loadConfig(configDir = './config'): Promise<AppConfig & { 
   const junctionCfg = await tryImport(join(absConfigDir, 'junction.config.js')) as JunctionConfig | null
   if (junctionCfg) {
     if (junctionCfg.app)        config = deepMerge(config, junctionCfg.app) as typeof config
-    if (junctionCfg.middleware?.cors)   config.http = deepMerge(config.http ?? {}, { cors: junctionCfg.middleware.cors })
-    if (junctionCfg.middleware?.rateLimit) config.http = deepMerge(config.http ?? {}, { ddos: { enabled: true, ...junctionCfg.middleware.rateLimit } })
+    if (junctionCfg.middleware?.cors)   config.http = deepMerge(config.http ?? {}, { cors: junctionCfg.middleware.cors } as Partial<typeof config.http>) as typeof config.http
+    if (junctionCfg.middleware?.rateLimit) config.http = deepMerge(config.http ?? {}, { ddos: { enabled: true, ...junctionCfg.middleware.rateLimit } } as Partial<typeof config.http>) as typeof config.http
     config._junction = junctionCfg
   }
 

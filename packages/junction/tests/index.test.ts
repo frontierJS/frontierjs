@@ -1233,7 +1233,7 @@ describe('Bridge', () => {
     return {
       method:   'GET',
       path:     '/api/users',
-      params:   {},
+      route:    {},
       query:    {},
       headers:  {},
       body:     null,
@@ -1255,14 +1255,14 @@ describe('Bridge', () => {
   }
 
   it('GET without id → find', () => {
-    const ctx = makeTransportCtx({ method: 'GET', params: {} })
+    const ctx = makeTransportCtx({ method: 'GET', route: {} })
     const sc  = bridge.toContext(ctx, 'users')
     expect(sc.method).toBe('find')
     expect(sc.service).toBe('users')
   })
 
   it('GET with id param → get', () => {
-    const ctx = makeTransportCtx({ method: 'GET', params: { id: '123' } })
+    const ctx = makeTransportCtx({ method: 'GET', route: { id: '123' } })
     const sc  = bridge.toContext(ctx, 'users')
     expect(sc.method).toBe('get')
     expect(sc.id).toBe('123')
@@ -1276,13 +1276,13 @@ describe('Bridge', () => {
   })
 
   it('PATCH → patch', () => {
-    const ctx = makeTransportCtx({ method: 'PATCH', params: { id: '1' }, body: { name: 'Bob' } })
+    const ctx = makeTransportCtx({ method: 'PATCH', route: { id: '1' }, body: { name: 'Bob' } })
     const sc  = bridge.toContext(ctx, 'users')
     expect(sc.method).toBe('patch')
   })
 
   it('DELETE → remove', () => {
-    const ctx = makeTransportCtx({ method: 'DELETE', params: { id: '1' } })
+    const ctx = makeTransportCtx({ method: 'DELETE', route: { id: '1' } })
     const sc  = bridge.toContext(ctx, 'users')
     expect(sc.method).toBe('remove')
   })
@@ -4344,7 +4344,7 @@ describe('authenticate hook usage', () => {
 
 // ─── Plugin lifecycle ─────────────────────────────────────────────────────
 // Tests for app.configure(), register/boot/ready/shutdown hooks, and the
-// _metricsProviders extension point used by Caravan, Conduit, etc.
+// _metricsSources extension point used by Caravan, Conduit, etc.
 
 describe('Plugin lifecycle', () => {
 
@@ -4418,27 +4418,27 @@ describe('Plugin lifecycle', () => {
 
 })
 
-// ─── _metricsProviders ────────────────────────────────────────────────────
+// ─── _metricsSources ────────────────────────────────────────────────────
 // Tests for the plugin metrics extension point used by Caravan and Conduit.
 
-describe('_metricsProviders', () => {
+describe('_metricsSources', () => {
 
   it('is an empty Map on a fresh app', async () => {
     const app = await createTestApp()
-    expect(app._metricsProviders).toBeInstanceOf(Map)
-    expect(app._metricsProviders.size).toBe(0)
+    expect(app._metricsSources).toBeInstanceOf(Map)
+    expect(app._metricsSources.size).toBe(0)
   })
 
   it('plugin can register a metrics provider', async () => {
     const app = await createTestApp()
-    app._metricsProviders.set('myplugin', () => ({ count: 42 }))
-    expect(app._metricsProviders.has('myplugin')).toBe(true)
+    app._metricsSources.set('myplugin', () => ({ count: 42 }))
+    expect(app._metricsSources.has('myplugin')).toBe(true)
   })
 
   it('registered provider appears in GET /metrics', async () => {
     const app = await createTestApp()
     app.configure(healthPlugin())
-    app._metricsProviders.set('myplugin', () => ({ widgets: 7, active: true }))
+    app._metricsSources.set('myplugin', () => ({ widgets: 7, active: true }))
     const res = await request(app).get('/metrics')
     expect(res.status).toBe(200)
     const body = res.body as Record<string, unknown>
@@ -4448,8 +4448,8 @@ describe('_metricsProviders', () => {
   it('multiple providers all appear in /metrics', async () => {
     const app = await createTestApp()
     app.configure(healthPlugin())
-    app._metricsProviders.set('jobs',    () => ({ pending: 3 }))
-    app._metricsProviders.set('conduit', () => ({ targets: { total: 2 } }))
+    app._metricsSources.set('jobs',    () => ({ pending: 3 }))
+    app._metricsSources.set('conduit', () => ({ targets: { total: 2 } }))
     const res = await request(app).get('/metrics')
     const body = res.body as Record<string, unknown>
     expect(body.jobs).toEqual({ pending: 3 })
@@ -4459,8 +4459,8 @@ describe('_metricsProviders', () => {
   it('a provider that throws does not crash /metrics', async () => {
     const app = await createTestApp()
     app.configure(healthPlugin())
-    app._metricsProviders.set('broken', () => { throw new Error('provider error') })
-    app._metricsProviders.set('fine',   () => ({ ok: true }))
+    app._metricsSources.set('broken', () => { throw new Error('provider error') })
+    app._metricsSources.set('fine',   () => ({ ok: true }))
     const res = await request(app).get('/metrics')
     // Should still return 200 — broken provider is skipped
     expect(res.status).toBe(200)
@@ -4472,7 +4472,7 @@ describe('_metricsProviders', () => {
   it('provider result is merged at top level of metrics response', async () => {
     const app = await createTestApp()
     app.configure(healthPlugin())
-    app._metricsProviders.set('caravan', () => ({
+    app._metricsSources.set('caravan', () => ({
       queues: { default: { pending: 1, running: 0, dead: 0 } },
       total:  { pending: 1, running: 0, dead: 0 },
     }))

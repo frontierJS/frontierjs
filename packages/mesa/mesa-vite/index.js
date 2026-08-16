@@ -9,7 +9,7 @@
  *
  * Features:
  *   - Transform .mesa and .md files to JavaScript modules
- *   - Scoped CSS extraction via virtual CSS modules
+ *   - Scoped CSS, inlined into the module as $runtime.addStyles(id, css)
  *   - HMR — hot-reloads components in place, preserving DOM position
  *   - Error overlay — compiler errors and warnings surfaced in the browser
  *
@@ -23,7 +23,8 @@
  *
  * Options:
  *   extensions  {string[]}  File extensions to process. Default: ['.mesa', '.md']
- *   css         {boolean}   Enable scoped CSS. Default: true
+ *   css         {boolean}   Emit a component's <style> block. Default: true.
+ *                           `false` DROPS it — the module renders unstyled.
  *   hmr         {boolean}   Enable HMR in dev mode. Default: true
  *   compilerPath {string}   Path to compiler.js. Auto-resolved if omitted.
  */
@@ -32,9 +33,10 @@ import path       from 'path'
 import fs         from 'fs'
 import { pathToFileURL, fileURLToPath } from 'url'
 
+import { injectHMR, canInject } from './hmr.js'
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const VIRTUAL_CSS_SUFFIX      = '?mesa-css'
 const VIRTUAL_CLIENT_ID       = '/@frontierjs/mesa-client'
 const RESOLVED_CLIENT_ID      = '\0@frontierjs/mesa-client'
 const DEVTOOLS_ROUTE          = '/__mesa/devtools'
@@ -83,98 +85,13 @@ async function getCompileSource(options) {
 }
 
 // ─── HMR wrapper injection ────────────────────────────────────────────────────
-
-/**
- * Wrap compiled Mesa JS with HMR boilerplate.
- *
- * The wrapper:
- *   1. Imports __mesa_register and __mesa_hot_update from the virtual client
- *   2. Wraps makeComponent so every mounted instance is registered
- *   3. Declares import.meta.hot.accept() to receive updates and remount
- *
- * The wrapping replaces:
- *   export default $runtime.makeComponent(($option) => { ... })
- * with:
- *   export default __mesa_wrap('id', $runtime.makeComponent(($option) => { ... }))
- *
- * __mesa_wrap intercepts the factory call, creates the instance, inserts
- * an anchor comment node, registers the instance, and hooks into destroy().
- */
-function injectHMR(js, id, root) {
-  // Normalize to root-relative so the registry key matches between
-  // transform() (called with Vite's resolved absolute id) and
-  // handleHotUpdate() (called with the absolute file path).
-  // Both are absolute — but Vite 8 may differ in trailing slashes or
-  // drive letter casing on Windows. Root-relative is the safe canonical form.
-  const normalId = root && id.startsWith(root)
-    ? id.slice(root.length).replace(/^\//, '/')
-    : id
-  const escapedId = normalId.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-  const shortName  = id.split('/').pop()
-
-  const clientImport = `import { __mesa_register, __mesa_hot_update } from '${VIRTUAL_CLIENT_ID}';\n`
-
-  // Compiled components have the shape:
-  //   export default function Name(__anchor, __props, __block) { ... }
-  //   $runtime.$$delegate([...]);  ← optional
-  //
-  // DOM after mount:
-  //   <!--mesa:hmr:Name-->   ← stable hmrMark (before anchor)
-  //   ... rendered DOM ...
-  //   <!---->                ← __anchor (runtime comment)
-  //
-  // Hot update: clear between hmrMark and anchor, re-call the new fn.
-
-  // Step 1 — rename export default fn so we can export a wrapper instead
-  let result = js.replace(
-    /export default function (\w+)\(__anchor,\s*__props,\s*__block\)/,
-    () => `function __mesaOrigFn(__anchor, __props, __block)`
-  )
-
-  // Step 2 — inject registration after pop_component()
-  // Pass hmrMark explicitly so the client doesn't need to search for it.
-  result = result.replace(
-    /(\.pop_component\(\);)([\s\S]*?\n\})(?=\n\$runtime\.\$\$delegate|\s*$)/,
-    (_, pop, rest) => {
-      const reg = `
-  // ── HMR registration ─────────────────────────────────────────────────────
-  if (import.meta.hot) {
-    __mesa_register('${escapedId}', __hmrMark, __anchor, __props, __block, __mesaOrigFn)
-  }`
-      return `${pop}${rest.replace(/^(\n\})/, `${reg}$1`)}`
-    }
-  )
-
-  // Step 3 — export wrapper (used on initial mount) + __setMark (used on hot update).
-  // __hmrMark is module-level so both __mesaHMRWrap and __mesaOrigFn see it.
-  // On hot update the client calls __setMark(existingMark) before __mesaOrigFn
-  // so registration uses the existing DOM marker instead of creating a new one.
-  result += `
-let __hmrMark
-export function __setMark(mark) { __hmrMark = mark }
-export default function __mesaHMRWrap(__anchor, __props, __block) {
-  __hmrMark = document.createComment(' mesa:hmr:${shortName} ')
-  __anchor.before(__hmrMark)
-  __mesaOrigFn(__anchor, __props, __block)
-}
-`
-
-  // Step 4 — hot.accept: pass __mesaOrigFn (bare fn) to hot_update.
-  // The client calls __setMark first to inject the existing hmrMark.
-  result += `
-if (import.meta.hot) {
-  import.meta.hot.accept((m) => {
-    if (m) {
-      __mesaOrigFn.__setMark = m.__setMark
-      __mesa_hot_update('${escapedId}', m.__mesaOrigFn ?? m.default)
-    }
-  })
-}
-`
-  result += `export { __mesaOrigFn }\n`
-
-  return clientImport + result
-}
+//
+// `injectHMR` and `canInject` live in ./hmr.js and are exported as
+// `@frontierjs/mesa/vite/hmr`, because Sierra's plugin needs the boundary
+// without needing this plugin: it reimplements the plugin (frontmatter, the
+// fence preprocessor, slot rewriting, auto-imports) and had copied the
+// boundary along with it (`FJS-D16`). The client id is a parameter, since each
+// plugin serves the HMR client at a virtual id of its own.
 
 
 // ─── Error overlay formatting ─────────────────────────────────────────────────
@@ -221,9 +138,6 @@ export default function mesaPlugin(options = {}) {
     hmr         = true,
   } = options
 
-  /** Map<cssVirtualId, cssString> */
-  const cssCache = new Map()
-
   /** Vite server instance (set in configureServer) */
   let server = null
 
@@ -249,18 +163,13 @@ export default function mesaPlugin(options = {}) {
     configureServer(s) {
       server = s
 
-      console.log('[Mesa] configureServer called — registering devtools middleware')
-
       // Resolve devtools.html path once — fileURLToPath handles Windows drive letters
       const devtoolsHtmlPath = fileURLToPath(new URL('./devtools.html', import.meta.url))
-      console.log('[Mesa] devtools.html resolved to:', devtoolsHtmlPath)
-      console.log('[Mesa] devtools.html exists:', fs.existsSync(devtoolsHtmlPath))
 
       // Universal middleware — manual URL check runs before Vite's transform pipeline
       s.middlewares.use((req, res, next) => {
         const url = req.url?.split('?')[0]
         if (url !== DEVTOOLS_ROUTE && url !== DEVTOOLS_ROUTE + '/') return next()
-        console.log('[Mesa] devtools route hit')
         try {
           const html = fs.readFileSync(devtoolsHtmlPath, 'utf8')
           res.setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -329,8 +238,6 @@ export default function mesaPlugin(options = {}) {
       if (id === VIRTUAL_CLIENT_ID) return RESOLVED_CLIENT_ID
       // Virtual dev client (BroadcastChannel relay)
       if (id === VIRTUAL_DEV_CLIENT_ID) return RESOLVED_DEV_CLIENT_ID
-      // Virtual CSS modules
-      if (cssCache.has(id)) return id
       return null
     },
 
@@ -383,8 +290,6 @@ export function __mesa_hot_update() {}
 })()
 `
       }
-      // Virtual CSS modules
-      if (cssCache.has(id)) return cssCache.get(id)
       return null
     },
 
@@ -405,6 +310,12 @@ export function __mesa_hot_update() {}
       try {
         ctx = await compileSource(code, {
           filename: id,
+          // The compiler's `css` is not a switch, it is a DESTINATION: truthy
+          // inlines the scoped rules as `$runtime.addStyles(id, …)`, falsy
+          // extracts them onto `ctx.css.result` for the caller to place. This
+          // plugin inlines, which is what Sierra's does too — the ids are
+          // content-addressed, so a prerendered page and the client agree about
+          // which styles are already on the page (Invariant 12).
           css,
           dev: isDev,
           warning: (w) => this.warn(
@@ -429,6 +340,25 @@ export function __mesa_hot_update() {}
         return null
       }
 
+      // Compiler ERRORS fail the transform, the same way Sierra's plugin fails
+      // it. The compiler collects into `analysis.errors` and does not throw —
+      // only the `catch` above sees a parse throw — so a plugin reading
+      // `warnings` alone serves a half-compiled module for every diagnostic the
+      // compiler DID catch: a `bind:` on a non-`let`, an inert `$: { }`. The
+      // page renders, looks right, and does not write anything back.
+      if (ctx.analysis?.errors?.length) {
+        const rel = id.replace(root + '/', '')
+        const detail = ctx.analysis.errors.map((e) => `  • ${e}`).join('\n')
+        const message =
+          `[Mesa] ${ctx.analysis.errors.length} error(s) in ${rel}:\n${detail}`
+        if (isDev) {
+          const esc = (s) => s.replace(/\\/g, '\\\\').replace(/`/g, '\\`')
+          return { code: `throw new Error(\`${esc(message)}\`)`, map: null }
+        }
+        this.error({ id, plugin: 'mesa', message })
+        return null
+      }
+
       let js = ctx.result
 
       // Prepend any compiler warnings as comments
@@ -437,17 +367,15 @@ export function __mesa_hot_update() {}
       )
       if (warnBlock) js = warnBlock + js
 
-      // CSS — extract into a virtual CSS module
-      if (css && ctx.css?.result) {
-        const cssId = id + VIRTUAL_CSS_SUFFIX
-        cssCache.set(cssId, ctx.css.result)
-        js += `\nimport '${cssId}';`
-      }
-
       // HMR — only in dev mode, only for .mesa files (not .md pages, which
-      // are typically rendered server-side and don't need client HMR)
-      if (isDev && hmr && id.endsWith('.mesa')) {
-        js = injectHMR(js, id, root)
+      // are typically rendered server-side and don't need client HMR).
+      //
+      // `canInject` is asked rather than assumed: the two patterns the wrap
+      // depends on are shapes of the compiler's OUTPUT, and a `.replace()` whose
+      // pattern stops matching is silent. Failing closed here keeps the file on
+      // the old full-reload path instead of shipping half a boundary.
+      if (isDev && hmr && id.endsWith('.mesa') && canInject(js)) {
+        js = injectHMR(js, id, root, VIRTUAL_CLIENT_ID)
       }
 
       return { code: js, map: null }
@@ -466,6 +394,9 @@ export function __mesa_hot_update() {}
         return modules
       }
 
+      // A throwaway compile, for the throw alone — the module Vite asks for
+      // afterwards is built by transform(). `css: false` keeps the scoped rules
+      // out of output nobody reads.
       const source = await read()
       try {
         await compileSource(source, { filename: file, css: false })
@@ -484,11 +415,10 @@ export function __mesa_hot_update() {}
         s?.moduleGraph?.invalidateModule(mod, undefined, timestamp, true)
       }
 
-      // Invalidate the CSS virtual module too so style changes hot-reload
-      const cssVirtualId = file + VIRTUAL_CSS_SUFFIX
-      const cssModule    = s?.moduleGraph?.getModuleById(cssVirtualId)
-      if (cssModule) s.moduleGraph.invalidateModule(cssModule)
-
+      // A style edit needs nothing more: the rules are inlined into the module
+      // being invalidated above, and `addStyles` keys on a content hash, so the
+      // edited block arrives under an id the page has not seen.
+      //
       // Return modules — Vite will send the HMR update to the browser,
       // which triggers import.meta.hot.accept() in the compiled component
       return modules

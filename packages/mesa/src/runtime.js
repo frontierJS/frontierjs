@@ -628,6 +628,43 @@ export function contextRead(key) {
 
 export const $context = { use: useContext, provide: provideContext }
 
+/**
+ * Capture the context stack as it stands NOW, for reinstating later.
+ *
+ * `_contextStack` is synchronous setup-time state: a component pushes its map,
+ * runs `init`, pops. That works while everything a component renders is built
+ * inside `init` — and every block that can create content LATER breaks it. An
+ * `{#if}` that flips, an `{#each}` row that arrives, an `{#await}` that
+ * resolves, a portal: each instantiates its content from inside a reactive
+ * effect, by which time the stack has unwound to the flush's depth, so a
+ * `$context` read in there walks a stack the provider is no longer on and
+ * finds nothing.
+ *
+ * What that cost, measured: every compound component whose parts live behind a
+ * conditional. `<DropdownMenu>` provides `close()` and renders its items inside
+ * `{#if open}`, so `DropdownItem` read `undefined` and **choosing an item never
+ * closed the menu** — the component's whole documented contract, silent because
+ * the optional call simply did nothing.
+ *
+ * Capture where the block is DECLARED (component setup, stack correct) and
+ * reinstate around every later instantiation. The array is mutated in place
+ * rather than reassigned: it is a module-level `const` that other functions
+ * close over.
+ *
+ * @returns {(fn: Function) => any} run `fn` with the captured stack installed
+ */
+function captureContext() {
+  const frames = _contextStack.slice()
+  return (fn) => {
+    const saved = _contextStack.splice(0, _contextStack.length, ...frames)
+    try {
+      return fn()
+    } finally {
+      _contextStack.splice(0, _contextStack.length, ...saved)
+    }
+  }
+}
+
 const _CACHE_MAX = 500
 const _templateCache = new Map(),
   _templateCacheSvg = new Map()
@@ -1352,6 +1389,7 @@ function _releaseDelegateRoot(root) {
  * Removes the inserted nodes on component destroy.
  */
 export function portal(getTarget, blockFactory) {
+  const withContext = captureContext()
   if (!_isBrowser) return
   let nodes = []
   let currentTarget = null
@@ -1367,7 +1405,7 @@ export function portal(getTarget, blockFactory) {
     unregisterRoot?.()
 
     // Build fresh DOM and insert into new target
-    const $dom = blockFactory()
+    const $dom = withContext(blockFactory)
     nodes = $dom.nodeType === Node.DOCUMENT_FRAGMENT_NODE
       ? [...$dom.childNodes]
       : [$dom]
@@ -2089,14 +2127,24 @@ export const eachDefaultKey = (item) => item
  *
  * Requirements:
  *   - The anchor must be inside a fixed-height, overflow-y:auto/scroll container
- *   - All rows must have the same height (measures the first rendered item)
+ *   - All rows must have the same height (measures the first rendered item
+ *     unless `height` says what it is)
  *
  * @param {Comment}  anchor     — template anchor comment node
  * @param {Function} getArray   — reactive getter returning the full array
  * @param {Function} keyFn      — (item, i) => key, or null for index keying
  * @param {Function} makeRow    — makeBlock factory for one row
+ * @param {object}   [options]  — the block's declared options
+ * @param {number}   [options.height]   — row height in px. Skips measurement,
+ *                                        which is what a row whose height comes
+ *                                        from a stylesheet the first paint has
+ *                                        not applied yet needs
+ * @param {string}   [options.viewport] — height for the container, which IS the
+ *                                        scroller; `overflow-y` is set with it
+ *                                        unless the caller wrote one inline
  */
-export function $$virtualEach(anchor, getItems, keyFn, makeRow) {
+export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
+  const withContext = captureContext()
   if (!_isBrowser) return
   // Same contract as {#each} — see eachItems().
   const getArray = () => eachItems(getItems())
@@ -2106,6 +2154,13 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow) {
   // anchor is the scroll container element itself — rows render INSIDE it
   const parent = anchor
   if (!parent) return
+
+  if (options.viewport && parent.style) {
+    parent.style.height = options.viewport
+    // Only when the caller wrote none: a stylesheet may already scroll this
+    // element, and an inline overflow would win over it.
+    if (!parent.style.overflowY && !parent.style.overflow) parent.style.overflowY = 'auto'
+  }
 
   // The container IS the scroller (overflow:auto/scroll set by the user)
   // Find the nearest scrollable ancestor
@@ -2129,8 +2184,8 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow) {
   parent.appendChild(topSpacer)
   parent.appendChild(botSpacer)
 
-  let rowHeight  = DEFAULT_ROW
-  let measured   = false
+  let rowHeight  = options.height > 0 ? options.height : DEFAULT_ROW
+  let measured   = options.height > 0
   let renderedBlocks = new Map()  // key → { node, item }
   let prevStart  = -1
   let prevEnd    = -1
@@ -2204,7 +2259,7 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow) {
         // makeRow() returns a factory; call it to get the DOM.
         // The factory calls fn($parentElement, getItem, getIndex) internally via makeBlock.
         // makeBlock factory takes (item getter, index getter)
-        const $dom = makeRow(getItem, getIndex)
+        const $dom = withContext(() => makeRow(getItem, getIndex))
         const node = $dom?.$dom ?? $dom
         if (node) frag.appendChild(node)
         renderedBlocks.set(key, { node, item })
@@ -2305,6 +2360,7 @@ function eachItems(v) {
 }
 
 export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) {
+  const withContext = captureContext()
   if (!_isBrowser)
     throw new Error(
       '@frontierjs/mesa-runtime: $$eachBlock() called in a non-browser environment. ' +
@@ -2350,7 +2406,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     const prevOwner = _owner
     _owner = owner
     try {
-      elseNode = elseBlock()
+      elseNode = withContext(elseBlock)
     } finally {
       _owner = prevOwner
     }
@@ -2383,7 +2439,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     if (outerOwner) outerOwner._children.push(blockOwner)
     _owner = blockOwner
     let result
-    try { result = makeItem(getItem, getIndex) }
+    try { result = withContext(() => makeItem(getItem, getIndex)) }
     finally { _owner = prevOwner }
     const [$dom, $domFirst, $domLast] = _guardRange(result?.$dom ?? result)
     return {
@@ -2728,6 +2784,8 @@ export function ifBlock(anchor, condFn, blocks, noAnchor) {
     console.warn('@frontierjs/mesa-runtime ifBlock(): anchor is null — check compiled output')
     return
   }
+  const withContext = captureContext()
+
   let current = -1,
     // A comment inserted immediately before the branch content, marking where
     // this branch starts. The branch used to be tracked by holding its first and
@@ -2819,7 +2877,10 @@ export function ifBlock(anchor, condFn, blocks, noAnchor) {
     let $dom
     try {
       const factory = blocks[next]
-      $dom = factory.$dom ?? (typeof factory === 'function' ? factory() : factory)
+      // The context stack is reinstated as well as the owner: a branch that
+      // flips later builds its content from inside a reactive effect, where
+      // the stack has already unwound past the provider.
+      $dom = withContext(() => factory.$dom ?? (typeof factory === 'function' ? factory() : factory))
     } finally {
       _owner = prevOwner
     }
@@ -2853,6 +2914,7 @@ export const ifBlockReadOnly = ifBlock
  * @param {boolean}  noAnchor  True when anchor is the parent element (root)
  */
 export function keyBlock(anchor, keyFn, makeBlock, noAnchor) {
+  const withContext = captureContext()
   if (!_isBrowser)
     throw new Error('@frontierjs/mesa-runtime: keyBlock() called in a non-browser environment.')
   if (!anchor) return
@@ -2902,7 +2964,7 @@ export function keyBlock(anchor, keyFn, makeBlock, noAnchor) {
     const prevOwner = _owner
     _owner = owner
     let $dom
-    try { $dom = makeBlock() } finally { _owner = prevOwner }
+    try { $dom = withContext(makeBlock) } finally { _owner = prevOwner }
 
     const node = $dom?.$dom ?? $dom
     if (!node) return
@@ -2921,6 +2983,7 @@ export function keyBlock(anchor, keyFn, makeBlock, noAnchor) {
 
 
 export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlock) {
+  const withContext = captureContext()
   if (!_isBrowser)
     throw new Error(
       '@frontierjs/mesa-runtime: awaitBlock() called in a non-browser environment. ' +
@@ -3002,7 +3065,7 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
     contentNode = node
     const prev = _owner
     _owner = node
-    try { _swap(_resolve(factory, ...args)) } finally { _owner = prev }
+    try { _swap(withContext(() => _resolve(factory, ...args))) } finally { _owner = prev }
   }
 
   createEffect(() => {
@@ -3120,6 +3183,7 @@ export function mountedBlock(anchor, getPromise, pendingBlock, contentBlock, fai
  * @param {Function}  failedBlock   (err) => DOM | null
  */
 export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, failedBlock) {
+  const withContext = captureContext()
   if (!_isBrowser)
     throw new Error('@frontierjs/mesa-runtime: boundaryBlock() called in a non-browser environment.')
 
@@ -3187,7 +3251,7 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
     branchNode = node
     const prev = _owner
     _owner = node
-    try { _swap(_callSnippetBlock(factory, ...args)) } finally { _owner = prev }
+    try { _swap(withContext(() => _callSnippetBlock(factory, ...args))) } finally { _owner = prev }
   }
 
   createEffect(() => {
@@ -3280,7 +3344,12 @@ export function makeSlots(__block) {
 export function restProps(props, declared) {
   const out = {}
   if (!props) return out
-  const skip = new Set([...(declared ?? []), 'class', '$class'])
+  // `children` is the slot-content channel, not an attribute. A component that
+  // receives content it did not declare as a prop would otherwise spread the
+  // snippet onto its own root element, and `children` is getter-only on
+  // Element — so passing a `{#snippet children}` to a component built around
+  // `<slot />` threw from inside spreadAttributes and took the render with it.
+  const skip = new Set([...(declared ?? []), 'class', '$class', 'children'])
   for (const k in props) if (!skip.has(k)) out[k] = props[k]
   return out
 }
@@ -3319,7 +3388,22 @@ export function spreadAttributes(el, fn) {
     // forwarded through {...$attributes} used to reach the DOM as
     // onclick="() => $$set_clicks(…)" — the handler stringified into an inline
     // attribute, where it silently never fires.
-    if (typeof v === 'function' || typeof prev[k] === 'function' || propDescs[k]?.set) {
+    // A getter with no setter is a dead end in both directions: assigning
+    // throws, and a function cannot be serialised into an attribute either.
+    // Skipping is the only move left, and it keeps one stray prop from taking
+    // the whole render down — `children` is getter-only on Element.
+    //
+    // The test is a getter WITHOUT a setter, not the absence of a setter: an
+    // event-handler property is a plain own property in some DOM
+    // implementations, and refusing to assign where no descriptor exists stops
+    // `onclick` being forwarded at all.
+    const desc = propDescs[k]
+    const readOnly = !!desc && !desc.set && !desc.writable
+    if (typeof v === 'function' || typeof prev[k] === 'function') {
+      if (!readOnly) el[k] = v ?? null
+      return
+    }
+    if (desc?.set) {
       el[k] = v ?? null
       return
     }

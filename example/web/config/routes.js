@@ -100,7 +100,7 @@ export const layouts = {
   "src/routes/_module.mesa": () => import('../src/routes/_module.mesa'),
 }
 
-// Flat URL arrays for manifest consumers (sitemap, llms.txt, deploys)
+// Flat URL arrays for route table consumers (sitemap, llms.txt, deploys)
 export const all = [
   "/",
   "/customers/",

@@ -62,6 +62,7 @@ if (!existsSync(envFilePath)) {
 }
 
 if (flag.dry) {
+  log.dry(`Would vendor: ${GENERATED_DIR}/ (manifest + any link:/workspace: package)`)
   log.dry(`Would build: docker build -t ${tag} -f ${dockerfile} .`)
   log.dry(`Would run:   docker run -d --name ${container} -p 127.0.0.1:${port}:3000 ...`)
   return
@@ -86,6 +87,15 @@ if (flag.clean) {
     // Good — doesn't exist yet
   }
 }
+
+// ─── Vendor ───────────────────────────────────────────────────────────────────
+// The Dockerfile installs from deploy/generated/, never from package.json. An
+// app scaffolded with `--source local` depends on the framework by `link:`,
+// which a build cannot resolve — this is what makes it buildable at all
+// (FJS-241), and it is why this command can now be run against the scaffold this
+// repo produces by default.
+log.info('Vendoring dependencies into the build context...')
+vendorApp(context.paths.root, log)
 
 // ─── Build ────────────────────────────────────────────────────────────────────
 log.info(`Building ${tag} from ${dockerfile}...`)

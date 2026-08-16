@@ -44,7 +44,7 @@ export const layouts = {
 
 }
 
-// Flat URL arrays for manifest consumers (sitemap, llms.txt, deploys)
+// Flat URL arrays for route table consumers (sitemap, llms.txt, deploys)
 export const all = [
   "/",
   "/plain/"

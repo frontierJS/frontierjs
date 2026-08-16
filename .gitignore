@@ -61,3 +61,9 @@ temp/
 # the rest is real and belongs on the machine that produced it, not in git.
 **/db/audit/
 *.jsonl
+
+# `fli ws:atlas --live` writes this: the same page plus git and registry state.
+# It holds a clock and an answer from the network, so it can be neither
+# byte-compared nor committed — its sibling `repo-atlas.snapshot.html` is the
+# one CI checks.
+repo-atlas.live.html

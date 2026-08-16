@@ -178,16 +178,16 @@ text      | ok       ok       ok       ok       ok       ref      ok       ok   
 int       | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
 bool      | ok       ok       ok       ref      ok       ref      ok       ok       ok       ok       ok       ok
 datetime  | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
-array     | ok       ok       ok       ref      ok       ok       ref      ok       ok       203:ref  ok       ok
-intArray  | ok       ok       ok       ref      ok       ok       ref      ok       ok       203:ref  ok       ok
+array     | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok
+intArray  | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok
 enum      | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ok       ok
-enumArray | ok       ok       ok       ref      ok       ok       ref      ok       ok       203:ref  ok       ok
-json      | ref      ref      ref      ref      ref      ref      ref      ok       ok       203:ref  ok       ok
-typedJson | ok       ref      ref      ref      ref      206:ref  ref      ok       ok       203:ref  ok       ok
-encrypted | ref      ref      ref      ref      ref      ref      ref      ok       ok       ok       ok       ok
-encDet    | ok       ok       ok       ref      ok       ref      ref      ok       ok       ok       ok       ok
+enumArray | ok       ok       ok       ref      ok       ok       ref      ok       ok       ref      ok       ok
+json      | ref      ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok
+typedJson | ok       ref      ref      ref      ref      206:ref  ref      ok       ok       ref      ok       ok
+encrypted | ref      ref      ref      ref      ref      ref      ref      ok       ok       ref      ok       ok
+encDet    | ok       ok       ok       ref      ok       ref      ref      ok       ok       ref      ok       ok
 hashed    | ok       ok       ok       ref      ok       ref      ref      ok       ref      ref      ok       ok
-computed  | ref      ref      ref      ref      ref      ref      ref      ok       ref      202:ref  ref      ref
+computed  | ref      ref      ref      ref      ref      ref      ref      ok       ref      ref      ref      ref
 generated | ok       ok       ok       ok       ok       ref      ok       ok       ok       ok       ref      ref
 `
 

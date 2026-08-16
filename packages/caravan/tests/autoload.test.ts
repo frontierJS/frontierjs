@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach } from 'bun:test'
 import { resolve } from 'node:path'
 import { autoloadJobs } from '../src/autoload.ts'
 import { createCaravan } from '../src/index.ts'
-import type { CaravanInstance, HandlerOptions, JobHandler } from '../src/types.ts'
+import type { HandlerOptions, JobHandler, JobRegistrar } from '../src/types.ts'
 
 const FIXTURES = resolve(import.meta.dir, 'fixtures/jobs')
 
@@ -22,8 +22,11 @@ const FIXTURES = resolve(import.meta.dir, 'fixtures/jobs')
 // autoload makes rather than about queue internals.
 function collector() {
   const registered: Array<{ name: string; opts: HandlerOptions }> = []
-  const stub: Pick<CaravanInstance, 'handle'> = {
-    handle<T = unknown>(name: string, _handler: JobHandler<T>, opts: HandlerOptions = {}) {
+  // JobRegistrar rather than Pick<CaravanInstance, 'handle'>: handle() is
+  // overloaded (a name, or a whole definition), and an overloaded member forces
+  // a stub to implement both signatures to be assignable at all.
+  const stub: JobRegistrar = {
+    handle(name: string, _handler: JobHandler, opts: HandlerOptions = {}) {
       registered.push({ name, opts })
     },
   }

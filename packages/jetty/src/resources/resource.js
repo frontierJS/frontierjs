@@ -53,6 +53,18 @@ import { runPhase, runAroundHooks, mergeHooks } from './hooks.js'
  *   hooks:   (incoming: object) => void,
  * }}
  */
+// `posts created` → `created`. Junction's browser client splits a wire event on
+// a space into (service, method), and this has to agree with it. Anything that
+// does not split that way answers null rather than guessing — including an event
+// for another service, which a channel is not required to keep out.
+export function wireEventMethod(event, serviceName) {
+  if (typeof event !== 'string') return null
+  const parts = event.split(' ')
+  if (parts.length !== 2) return null
+  const [service, method] = parts
+  return service === serviceName && method ? method : null
+}
+
 export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // Argument normalization (matches Sierra).
   let serviceName, model, optionsQuery, initialHooks, schema, idField
@@ -109,21 +121,37 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     if (!port) return
     _eventSubsAttached = true
 
-    // Channel naming convention: `<service>:<event>`. Harbor's job is to wire
-    // these up to whatever Junction-side mechanism produces them. We assume
-    // the standard Feathers/Junction event names.
-    port.subscribe(`${serviceName}:created`, (record) => store.upsert(record))
-    port.subscribe(`${serviceName}:patched`, (record) => store.upsert(record))
-    port.subscribe(`${serviceName}:updated`, (record) => store.upsert(record))
-    port.subscribe(`${serviceName}:removed`, (record) => {
-      const id = record?.[idField]
-      if (id != null) store.remove(id)
+    // ONE subscription, to the CHANNEL, and the event decides what to do with
+    // what arrives. This subscribed to four composed names — `posts:created`,
+    // `posts:patched`, … — which was wrong twice over (`FJS-059`):
+    //
+    //   · A colon is the IN-PROCESS BUS spelling. The wire carries a space
+    //     (`posts created`), and the separator is the discriminator rather than
+    //     decoration — DECISIONS.md, 2026-08-02.
+    //   · A channel and an event are not the same thing. In Junction you join
+    //     `posts` and RECEIVE `posts created`; there is no channel per event, so
+    //     none of the four could ever have matched.
+    //
+    // The past-tense names are Junction's own `AUTO_EVENT_MAP`, exported so a
+    // consumer does not restate them. Nothing here composes a name any more —
+    // it reads the one that arrived.
+    port.subscribe(serviceName, (record, meta) => {
+      const method = wireEventMethod(meta?.event, serviceName)
+      if (method === 'removed') {
+        const id = record?.[idField]
+        if (id != null) store.remove(id)
+        return
+      }
+      // created / updated / patched / restored, and a custom action, all mean
+      // "here is a record" — the same fallback Junction's own browser client
+      // applies, and the reason a REMOVE has to be recognised explicitly above.
+      if (method) store.upsert(record)
     })
   }
 
   // --- the call pipeline ---
 
-  async function _call(method, id, data, query = {}, findParams = {}) {
+  async function _call(method, id, data, query = {}, directives = {}) {
     // If the port isn't ready yet (e.g. resource imported during SSR / pre-mount),
     // throw a clear error rather than hanging. Apps should call resources from
     // within component lifecycle, not at module top level, when the port is ready.
@@ -144,7 +172,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       id:      id   ?? null,
       data:    data ?? null,
       query,             // filters — travels over the wire
-      findParams,        // limit / offset / orderBy / select — also the wire
+      directives,        // limit / offset / orderBy / select — also the wire
       params:  {},       // client-side only — never sent to server
       result:  null,
       error:   null,
@@ -187,7 +215,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // --- service proxy (mirrors Sierra's surface) ---
 
   // params is Junction's FindParams — { limit, offset, orderBy, select }. It
-  // rides ctx.findParams and is handed to the adapter alongside the query.
+  // rides ctx.directives and is handed to the adapter alongside the query.
   // find() used to name the argument `_params` and drop it on the floor, so
   // paging an ordered list through a jetty resource silently returned the
   // server's default page. Same bug lived in Sierra's copy of this file.
@@ -215,14 +243,23 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       params ?? optionsQuery?.params ?? {},
     ),
 
-    /** subscribe to a server-pushed event for this service */
+    /**
+     * Subscribe to a server-pushed event for this service — `on('created', fn)`,
+     * matching Junction's own `client.service(name).on(event, fn)`.
+     *
+     * The event is FILTERED here rather than composed into a subscription name.
+     * It used to subscribe to `${serviceName}:${event}`, a channel that does not
+     * exist: you join `posts` and receive `posts created` (`FJS-059`).
+     */
     on(event, handler) {
       const port = getActivePort()
       if (!port) {
         console.warn(`[resource:${serviceName}] .on(${event}) called before port active — skipping`)
         return () => {}
       }
-      return port.subscribe(`${serviceName}:${event}`, handler)
+      return port.subscribe(serviceName, (data, meta) => {
+        if (wireEventMethod(meta?.event, serviceName) === event) handler(data, meta)
+      })
     },
 
     /** explicit untyped call — bypasses the standard methods */
@@ -278,8 +315,8 @@ async function dispatch(port, serviceName, method, ctx) {
   // adapter owns the wire; doing it here would hardcode one adapter's dialect
   // into the resource layer. Omitted entirely when empty so adapters that
   // ignore it see the same args they always did.
-  const params = ctx.findParams && Object.keys(ctx.findParams).length > 0
-    ? ctx.findParams
+  const params = ctx.directives && Object.keys(ctx.directives).length > 0
+    ? ctx.directives
     : null
 
   let args

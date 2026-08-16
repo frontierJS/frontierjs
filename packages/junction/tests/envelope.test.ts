@@ -244,3 +244,45 @@ describe('constructors keep the shape well-formed', () => {
     expect(isServiceResult(list('posts', [], { total: 0 }))).toBe(true)
   })
 })
+
+// ─── a stream is not a result — FJS-D13 ──────────────────────────────────────
+//
+// Refused by name rather than wrapped. A Response and a ReadableStream both have
+// no enumerable own properties, so wrapping one produced `data: {}` and the
+// caller got an empty object with a 200 — the stream destroyed, nothing said.
+
+describe('a stream is not a result', () => {
+  test('a Response is refused, not wrapped into an empty data', () => {
+    expect(() => wrapResult(new Response('x'), 'reports', 'download'))
+      .toThrow(/A stream is not a result/)
+  })
+
+  test('a ReadableStream is refused', () => {
+    expect(() => wrapResult(new ReadableStream(), 'reports', 'tail'))
+      .toThrow(/A stream is not a result/)
+  })
+
+  test('an async generator is refused — the shape people reach for first', () => {
+    expect(() => wrapResult((async function* () {})(), 'reports', 'tail'))
+      .toThrow(/an async iterable/)
+  })
+
+  test('the refusal names where streaming does live, or it is just a wall', () => {
+    try {
+      wrapResult(new Response('x'), 'reports', 'download')
+      throw new Error('should have refused')
+    } catch (err: any) {
+      expect(err.message).toContain('ctx.sse()')
+      expect(err.message).toContain('channel')
+    }
+  })
+
+  test('nothing ordinary is caught by it', () => {
+    expect(wrapResult({ id: 1 }, 'posts', 'get').kind).toBe('single')
+    expect(wrapResult([1, 2], 'posts', 'find').kind).toBe('list')
+    expect(wrapResult(new Date(0), 'posts', 'get').kind).toBe('single')
+    // Sync-iterable and array-like objects are not streams.
+    expect(wrapResult(new Map([['a', 1]]), 'posts', 'get').kind).toBe('single')
+    expect(wrapResult(new Set([1]), 'posts', 'get').kind).toBe('single')
+  })
+})

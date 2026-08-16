@@ -23,8 +23,10 @@ const HERE = import.meta.dir
 //     sees User / Credential / Session / Verification. That is correct — the
 //     three credential models are @@gate("8"), and User reads at USER(4),
 //     which is still above anything a public page may publish.
-//   · `fli auth:install` pastes them in instead. If you scaffold with the CLI
-//     you get the copy; this file shows the alternative.
+//   · `fli auth:install` writes them to disk instead — User appended into
+//     db/schema.lite, the three @@gate("8") models into db/auth.lite, imported.
+//     Same bytes, both ways: auth ships them as .lite and schema.ts reads them.
+//     This file is the in-memory alternative, for an app assembling one string.
 
 export const appSchema = readFileSync(join(HERE, '../db/schema.lite'), 'utf8')
 export const fullSchema = appSchema + '\n' + authSchemaFragments('main')

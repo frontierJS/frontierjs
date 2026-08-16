@@ -130,21 +130,21 @@ title: Channels
   }
 
   async function test(channel) {
-    // `busy` is what says "in flight" — the kit's toasts are fire-and-forget
-    // (`add/success/error/warning/info`), with no updatable handle. The mock's
-    // `toast.loading(…).update(…)` is React state in a 12k-line file, not an
-    // API this kit has; calling it here threw from the click handler before the
-    // try even opened, so a failed delivery reported NOTHING. `FJS-119`.
+    // One toast for the whole delivery: `toasts.loading()` hands back a handle
+    // that settles in place. `busy` stays because it is what disables the row's
+    // buttons — the toast says what is happening, the flag says what may be
+    // clicked, and they are different jobs.
     error = null; busy = channel.id
+    const said = toasts.loading(`Testing ${channel.name}…`)
     try {
-      const updated = await channels.service.action('test', channel.id)
-      toasts.success(`Test delivered to ${channel.name}`)
+      const updated = await channels.service.invoke('test', channel.id)
+      said.update('success', `Test delivered to ${channel.name}`)
       const i = rows.findIndex(r => r.id === channel.id)
       if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
     } catch (e) {
       // Shown, not swallowed. A test that fails silently is the one failure
       // mode this whole screen exists to rule out.
-      toasts.error(`Test failed: ${e.message}`)
+      said.update('error', `Test failed: ${e.message}`)
       error = e.message
     } finally {
       busy = null

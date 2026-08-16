@@ -38,6 +38,22 @@
 //     own where clause.
 
 export class Plugin {
+  /**
+   * Identity — `FJS-D19`. Without it a plugin cannot be introspected, ordered,
+   * named in an error, or reported anywhere, and this had none at all.
+   *
+   * The default is the class name, which is the right answer for every plugin
+   * written the way all of these are (`GatePlugin`, `FileStorage`) and costs an
+   * author nothing. It is a DEFAULT rather than the definition because a
+   * minifier rewrites `constructor.name` — a bundled app would report `t` — so
+   * anything that ships bundled states its own:
+   *
+   *   class TenantScope extends Plugin { name = 'tenant-scope' }
+   *
+   * A field wins over this getter by ordinary property lookup.
+   */
+  get name() { return this.constructor?.name || 'anonymous' }
+
   onInit(schema, ctx) {}
 
   async onBeforeRead(model, args, ctx) {}
@@ -81,6 +97,17 @@ export class PluginRunner {
   }
 
   get hasPlugins() { return this._plugins.length > 0 }
+
+  /**
+   * What is installed, in run order — the answer `db.$plugins` gives.
+   *
+   * Order is install order and nothing else declares otherwise. That is the
+   * same gap Junction closed with `requires: string[]`, and when this grows one
+   * it takes that word rather than inventing `after`/`priority` beside it.
+   */
+  get names() {
+    return this._plugins.map(p => p?.name ?? p?.constructor?.name ?? 'anonymous')
+  }
 
   // Called once at client init
   init(schema, ctx) {

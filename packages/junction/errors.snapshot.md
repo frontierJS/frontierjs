@@ -100,9 +100,11 @@ something that will never work, or not to retry something that would.
 | Litestone class | Declares | Becomes | Status | Retryable |
 | --- | --- | --- | --- | --- |
 | `AccessDeniedError` | code `ACCESS_DENIED` | `Forbidden` | 403 | — |
-| `LockExpiredError` | retryable false | `GeneralError` | 500 | false |
-| `LockNotAcquiredError` | retryable true | `GeneralError` | 500 | true |
-| `LockReleasedByOtherError` | retryable false | `GeneralError` | 500 | false |
+| `CapabilityNotDeclaredError` | status 400 · retryable false | `BadRequest` | 400 | false |
+| `LockExpiredError` | status 409 · retryable false | `Conflict` | 409 | false |
+| `LockNotAcquiredError` | status 409 · retryable true | `Conflict` | 409 | true |
+| `LockReleasedByOtherError` | status 409 · retryable false | `Conflict` | 409 | false |
+| `SoftDeletedUniqueError` | status 409 · retryable false | `Conflict` | 409 | false |
 | `TransitionConflictError` | status 409 · retryable true | `Conflict` | 409 | true |
 | `TransitionGateError` | status 403 · retryable false | `Forbidden` | 403 | false |
 | `TransitionNotFoundError` | status 400 · retryable false | `BadRequest` | 400 | false |

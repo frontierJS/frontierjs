@@ -130,17 +130,37 @@ firefox: {
 }
 ```
 
+## Using it in an app
+
+An app gets jetty as the **`extension/` surface** — a sub-project at the app root
+beside `api/`, `web/` and `widgets/`, with the same six folders every sub-project
+has. Root `README.md` § Project Structure is canonical.
+
+```sh
+fli make:extension          # config/, src/harbor, src/dock, test/, deploy/
+fli extension:dev           # watch + reload over the dev port (8400)
+fli extension:build         # → extension/dist/chrome/ (--browser both for Firefox too)
+fli extension:audit         # permissions declared vs. chrome.* actually called
+```
+
+Those wrap the `jetty-*` binaries with `--root=extension`, so an app's build and
+this package's tests are one program. `fli new --extension` adds the surface to
+any template; `fli new --template extension-only` is a project whose whole
+product is the extension — no `api/`, no `web/`.
+
+**The app owns the install**, not the surface: one `package.json` at the app
+root, so `@frontierjs/mesa` lives at `<app>/node_modules` and jetty's compiler
+lookup walks up from the surface to find it.
+
 ## What's not yet done
 
-- **`fli` integration.** The standalone `jetty-*` binaries work; integration
-  with the cross-package `fli` CLI is a thin wrapper for when fli stabilizes.
 - **AST-based audit.** The current audit uses string matching, which has
   known false negatives on framework-internal indirection and minified code.
   A swap to a real JS parser (acorn/swc) would catch both.
-- **Mesa & Junction native packages.** This sandbox doesn't have
-  `@frontierjs/mesa` or `@frontierjs/junction` installed; jetty ships
-  graceful fallbacks (stub mount, default WS adapter). Real consumer
-  extensions install the packages and the integration paths activate.
+- **Junction native package.** jetty ships a default WS adapter as a fallback
+  and nothing here talks to a real Junction yet (`FJS-279`). Mesa is no longer
+  in this bracket: the compiler is found and used whenever the app that owns the
+  surface has it installed, and the fixture's dock is a real Mesa component.
 
 ## Architecture references
 

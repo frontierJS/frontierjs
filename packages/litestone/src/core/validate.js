@@ -70,6 +70,20 @@ const VALIDATORS = {
   lte:  (v, n) => Number(v) <= Number(n),
   gt:   (v, n) => Number(v) >  Number(n),
   gte:  (v, n) => Number(v) >= Number(n),
+
+  // Array validators. The value IS the array — every other validator here is
+  // handed one element's worth of value, and these are handed the whole column.
+  minItems:    (v, n) => v.length >= n,
+  maxItems:    (v, n) => v.length <= n,
+  uniqueItems: (v)    => new Set(v.map(String)).size === v.length,
+}
+
+// What an array column's elements have to be. Only the two kinds SQLite cannot
+// tell apart from the outside: the column is a JSON document either way, so
+// `Int[]` given ['a'] stores and reads back with nothing raised.
+export const ARRAY_ELEMENTS = {
+  Int:    { label: 'integers', test: (v) => Number.isInteger(v) },
+  String: { label: 'strings',  test: (v) => typeof v === 'string' },
 }
 
 export const DEFAULT_MESSAGES = {
@@ -94,6 +108,14 @@ export const DEFAULT_MESSAGES = {
   lte:        (n) => `must be at most ${n}`,
   gt:         (n) => `must be greater than ${n}`,
   gte:        (n) => `must be at least ${n}`,
+  minItems:    (n) => `must have at least ${n} item(s)`,
+  maxItems:    (n) => `must have at most ${n} item(s)`,
+  uniqueItems: ()  => 'must have unique items',
+  // The two array rules that come from the TYPE rather than an attribute. They
+  // are in this table for the same reason as the rest: it is the one definition
+  // of the wording, and `x-messages` falls back to it.
+  array:       ()  => 'must be an array',
+  arrayItems:  (t) => `must contain only ${t}`,
 }
 
 // ─── Transform engine ─────────────────────────────────────────────────────────
@@ -287,6 +309,17 @@ function validateField(fieldName, value, attributes) {
         defaultMsg = DEFAULT_MESSAGES[kind](attr.value)
         break
 
+      case 'minItems':
+      case 'maxItems':
+      case 'uniqueItems':
+        // A non-array here has already been reported for its shape; asking a
+        // count rule about it would answer the same complaint twice in
+        // different words.
+        if (!Array.isArray(value)) continue
+        pass       = VALIDATORS[kind](value, attr.value)
+        defaultMsg = DEFAULT_MESSAGES[kind](attr.value)
+        break
+
       default:
         continue
     }
@@ -320,6 +353,22 @@ export function validate(data, model, computedFns, typeMap) {
           path:    [field.name],
           message: 'must be a valid ISO 8601 datetime (e.g. 2024-01-15T09:30:00Z)',
         })
+      }
+    }
+
+    // An array column's SHAPE, before its rules. `@minItems` asked about a
+    // string answers by its length, which is a plausible wrong answer rather
+    // than a refusal; and the element check exists because SQLite stores the
+    // column as a JSON document whichever type the elements are.
+    if (field.type.array && value != null) {
+      if (!Array.isArray(value)) {
+        errors.push({ path: [field.name], message: DEFAULT_MESSAGES.array() })
+        continue
+      }
+      const el = ARRAY_ELEMENTS[field.type.name]
+      if (el && !value.every(el.test)) {
+        errors.push({ path: [field.name], message: DEFAULT_MESSAGES.arrayItems(el.label) })
+        continue
       }
     }
 
@@ -363,6 +412,7 @@ export function buildValidationMap(schema) {
   const VALIDATOR_KINDS = new Set([
     'email','url','phone','date','datetime','time','regex','length','startsWith','endsWith',
     'contains','lt','lte','gt','gte','trim','lower','upper',
+    'minItems','maxItems','uniqueItems',
   ])
 
   const map = {}
@@ -379,7 +429,11 @@ export function buildValidationMap(schema) {
     const hasTypedJson = model.fields.some(
       f => f.type.name === 'Json' && f.attributes.some(a => a.kind === 'type')
     )
-    map[model.name] = hasExplicitValidator || hasDateTimeField || hasTypedJson
+    // An array field with no attribute at all still needs validate() to run:
+    // its shape and its element type are checked there, and a model whose only
+    // array column is a bare `String[]` would otherwise skip the pass entirely.
+    const hasArrayField = model.fields.some(f => f.type.array)
+    map[model.name] = hasExplicitValidator || hasDateTimeField || hasTypedJson || hasArrayField
   }
   return map
 }

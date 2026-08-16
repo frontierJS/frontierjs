@@ -18,13 +18,17 @@ export function makeChannelRegistry({ adapter }) {
   // channel name → { ports: Set<port>, unsubscribe: (() => Promise<void>) | null }
   const channels = new Map()
 
-  function fanOut(channel, data) {
+  // `event` is carried, not dropped. A channel and an event are not the same
+  // thing — you join `posts` and receive `posts created` — so a fan-out that
+  // forwards only the channel leaves the page unable to tell a create from a
+  // remove, and a delete then reads as an upsert (`FJS-059`).
+  function fanOut(channel, data, event) {
     const entry = channels.get(channel)
     if (!entry) return 0
     let delivered = 0
     for (const port of entry.ports) {
       try {
-        port.postMessage({ type: 'channel:event', payload: { channel, data } })
+        port.postMessage({ type: 'channel:event', payload: { channel, data, event } })
         delivered++
       } catch { /* port closed; will be cleaned via disconnect handler */ }
     }
@@ -44,8 +48,8 @@ export function makeChannelRegistry({ adapter }) {
         // First subscriber → open upstream sub. If adapter doesn't support
         // subscribe(), this throws — caller decides what to surface.
         try {
-          entry.unsubscribe = await safeSubscribe(adapter, channel, (data) => {
-            fanOut(channel, data)
+          entry.unsubscribe = await safeSubscribe(adapter, channel, (data, event) => {
+            fanOut(channel, data, event)
           })
         } catch (e) {
           channels.delete(channel)

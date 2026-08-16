@@ -170,7 +170,7 @@ app.services.register(createService({
     after:  { create: [live] },
     error:  { all:    [ctx => { if (recoverable(ctx.error)) ctx.error = null }] },
   },
-  async getStats(ctx) { … },        // custom action, dispatched via X-Service-Method
+  async getStats(ctx) { … },        // custom method, dispatched via X-Service-Method
 }))
 ```
 
@@ -384,6 +384,32 @@ Fold it into the target axis and the list becomes: `spa`, `static`, `widget`,
 `extension`, and later `desktop`, `mobile`. Each new platform is then an entry on
 an existing list rather than a new package with a new hand-copy — which is exactly
 the small-mental-model outcome the project wants.
+
+**"and later" is doing too much work in that sentence, and it was noticed 2026-08-15
+comparing against an outside framework that makes Desktop a headline feature.**
+`desktop` and `mobile` appear in this repository in exactly two places: the clause
+above, and the trailing half of the overview row that summarises it. There is no
+record, no effort reading, and no stated refusal — which is the worst of the three
+available states, because a reader cannot tell whether it is planned, deferred or
+declined, and neither can we.
+
+The two are not one item. **Desktop is nearly free and mobile is not.** A desktop
+target is the `spa` build inside a shell process (Electron, or Tauri, or Bun's own
+single-binary path serving `dist/` to a system webview), and the framework's own
+shape helps rather than fights: the database is a file, the API is a process, and
+`IDEAS/offline-first-and-release.md` already names *single binary* as an artifact
+kind — a desktop app is that artifact with a window in front of it, which is why it
+belongs to the Release realm as much as to Sierra. Mobile is a different problem
+wearing the same word: a store review process, two signing identities, push
+credentials (`IDEAS/ecosystem-gaps.md` 16), a webview whose storage the OS may
+evict, and background execution rules that make the offline-first design (4.8) a
+prerequisite rather than a companion.
+
+So the honest position is probably: **`desktop` becomes a named entry on the target
+axis once jetty is folded in — because by then the only new work is the shell — and
+`mobile` is refused until offline-first exists**, stated as a refusal with that
+trigger rather than left as an "and later". Whichever way it goes, the outcome
+belongs in `DECISIONS.md`; an unwritten maybe is the thing to remove.
 
 ---
 

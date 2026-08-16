@@ -1,19 +1,27 @@
-// web/src/session.js — who the caller is, as far as the browser knows.
+// web/src/session.js — who the caller is, and which workspace they are in.
 //
-// Plain object, not a signal — the same contract as Sierra's own `status`.
-// Readers declare `$: session.user`; every write goes through the watchProxy
-// handle below, because assigning `session.user` directly updates the object
-// and notifies nobody (Mesa RULE 45).
+// WHO is no longer this file's: `@frontierjs/sierra/junction` owns the session
+// — the reactive object, the boot restore, sign in and sign out — and this
+// file's job is now the half no framework can answer, which is the tenant
+// everything downstream is scoped to.
+//
+// The app's fields are added to the FRAMEWORK's object rather than to one
+// beside it, so a component still has one noun and one import for "the
+// session". That works because a watchProxy is cached per object: sierra's
+// writes and this file's go through the same proxy and notify the same path
+// watches. The rule it costs — write only your own fields. Sierra owns
+// `user` / `level` / `checked` / `error`; everything below is this app's.
 //
 // Nothing here is a permission boundary. The server grades every request again
 // on arrival; this only decides what the UI offers.
 
 import { watchProxy } from '@frontierjs/mesa/runtime'
-import { login as storeToken, logout as clearToken, getClient } from '@frontierjs/sierra/junction'
+import {
+  session, ready as sessionReady, refresh, getClient,
+  signIn as authSignIn, signOut as authSignOut,
+} from '@frontierjs/sierra/junction'
 
-// Must match junction.tokenKey in config/sierra.config.js — Sierra reads the
-// same key at boot to restore the client's token and open the WebSocket.
-const TOKEN_KEY = 'basecamp_token'
+export { session }
 
 // The chosen workspace outlives the tab. Without this, every reload silently
 // snaps back to the first membership from /auth/workspace, so a switch appears
@@ -21,17 +29,15 @@ const TOKEN_KEY = 'basecamp_token'
 // ignored me".
 const WORKSPACE_KEY = 'basecamp_workspace'
 
-export const session = {
-  user:        null,   // SessionContext from /auth/me
+// This app's own fields, declared on the shared object so a `$:` watch on any
+// of them resolves the same way `session.user` does.
+Object.assign(session, {
   workspaceId: null,   // the workspace every scoped request is stamped with
   workspaces:  [],     // the caller's memberships — what the switcher offers
   needsSetup:  false,  // no account exists yet — the wizard owns the app
-  checked:     false,  // restore() has finished; guards wait on `ready` instead
-}
+})
 
 const _w = watchProxy(session)
-
-const token = () => (typeof localStorage !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null)
 
 // ─── One JSON helper ──────────────────────────────────────────────────────────
 // Explicit Accept: application/json is load-bearing, not decoration. The dev
@@ -41,7 +47,10 @@ const token = () => (typeof localStorage !== 'undefined' ? localStorage.getItem(
 async function api(path, { method = 'GET', body, auth = true } = {}) {
   const headers = { accept: 'application/json' }
   if (body) headers['content-type'] = 'application/json'
-  if (auth && token()) headers['authorization'] = `Bearer ${token()}`
+  // The token is the client's — this file no longer keeps one. Two copies of
+  // "am I signed in" is what the framework session exists to end.
+  const token = auth ? getClient()?.token : null
+  if (token) headers['authorization'] = `Bearer ${token}`
 
   const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined })
 
@@ -66,6 +75,11 @@ async function api(path, { method = 'GET', body, auth = true } = {}) {
 // A single in-flight promise, resolved once. The navigation guard awaits it, so
 // a direct load of any URL is judged with the session already known rather than
 // flashing a redirect after the fact.
+//
+// It waits on Sierra's own restore first — that is what puts `session.user`
+// there and clears a token the server no longer honours — and then adds the
+// two questions that are this app's: is there an account at all, and which
+// workspace are we in.
 export const ready = restore()
 
 async function restore() {
@@ -78,18 +92,15 @@ async function restore() {
     // login screen surface the error, which is where a human can act on it.
   }
 
-  if (token()) {
+  await sessionReady
+
+  if (session.user) {
     try {
-      _w.user = await api('/auth/me')
       await loadWorkspace()
     } catch (err) {
-      // 401 means the stored token is expired or was issued by a database that
-      // has since been reset — a state `bun run db:reset` produces every time.
-      if (err.status === 401) signOut()
+      if (err.status === 401) await signOut()
     }
   }
-
-  _w.checked = true
 }
 
 async function loadWorkspace() {
@@ -169,29 +180,27 @@ export async function completeSetup({ workspace_name, name, email, password }) {
     body:   { workspace_name, name, email, password },
   })
 
-  await adopt(result.token)
+  // /setup answers a token like /auth/login does, but it is this app's own
+  // route — so the client is handed the token directly and then asked who it
+  // is, which is exactly what signIn does one call earlier.
+  getClient().setToken(result.token)
+  await refresh()
+  await loadWorkspace()
   _w.needsSetup = false
   return result
 }
 
 export async function signIn(email, password) {
-  const result = await api('/auth/login', { method: 'POST', auth: false, body: { email, password } })
-  await adopt(result.token)
+  const result = await authSignIn(email, password)
+  await loadWorkspace()
   return result
 }
 
-// storeToken() is Sierra's login(): it writes localStorage AND hands the token
-// to the Junction client, which opens the WebSocket. Setting one without the
-// other is how a session ends up authenticated for HTTP and silent on the bus.
-async function adopt(newToken) {
-  storeToken(newToken)
-  _w.user = await api('/auth/me')
-  await loadWorkspace()
-}
-
-export function signOut() {
-  clearToken()
-  _w.user = null
+export async function signOut() {
+  // The framework half ends the session AT THE SERVER and then locally — this
+  // app used to drop the token and leave the session row alive until it
+  // expired, which is what `FJS-D20` found in both dogfood apps.
+  await authSignOut()
   _w.workspaces = []
   // Forget the workspace too. Leaving it behind means the next person to sign
   // in on this machine starts scoped to a workspace they may not belong to,

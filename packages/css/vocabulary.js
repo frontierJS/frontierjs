@@ -475,11 +475,16 @@ const ANATOMY = {
   },
 
   Popover: {
-    markup: `<article class="popover">
-  <div class="surface-header"><strong>Quick note</strong></div>
-  <div class="surface-body">Short, contextual information.</div>
-</article>`,
-    parts: [],
+    markup: `<div class="popover-anchor">
+  <button class="btn" aria-expanded="false">Actions</button>
+  <article class="popover">
+    <div class="surface-header"><strong>Quick note</strong></div>
+    <div class="surface-body">Short, contextual information.</div>
+  </article>
+</div>`,
+    parts: [
+      ['.popover-anchor', 'The positioning context, and the default placement. The Popover is absolute inside it. Optional only for a native [popover], which is in the top layer and escapes it', 'optional'],
+    ],
     uses: ['surface-header', 'surface-body'],
   },
 
@@ -672,6 +677,7 @@ const NOT_ANATOMY = {
   'from-right': 'A direction modifier on Drawer',
   'from-bottom': 'A direction modifier on Drawer',
   'from-left': 'A direction modifier on Drawer',
+  'align-end': 'An alignment modifier on Popover, and only inside .popover-anchor: it opens the dropdown against the trigger\u2019s end edge instead of its start. Named for what it does rather than reusing `end`, which on Tooltip means the SIDE the attachment sits on',
   'text-xs': 'A size utility', 'text-sm': 'A size utility', 'text-md': 'A size utility',
   'text-lg': 'A size utility', 'text-xl': 'A size utility',
   'gap-0': 'A gap utility', 'gap-3xs': 'A gap utility', 'gap-2xs': 'A gap utility',
@@ -688,7 +694,7 @@ const NOT_ANATOMY = {
   'theme-default': 'A theme', 'theme-dark': 'A theme', 'theme-midnight': 'A theme',
   'theme-forest': 'A theme', 'theme-sunset': 'A theme', 'theme-elite': 'A theme',
   'theme-basecamp': 'A theme', 'theme-notebook': 'A theme',
-  'theme-press': 'A theme',
+  'theme-press': 'A theme', 'theme-field': 'A theme',
 };
 
 /*

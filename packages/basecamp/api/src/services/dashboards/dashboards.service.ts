@@ -138,7 +138,7 @@ export function createDashboardsService(app: BasecampApp) {
     const config = validateConfig(spec.kind, spec.config, input.config ?? {})
 
     // Bounded here as well as in the schema: @gte/@lte are validators at the
-    // boundary and this payload is a custom action's, which the model's own
+    // boundary and this payload is a custom method's, which the model's own
     // create schema never sees.
     const cols = Math.min(3, Math.max(1, Math.round(Number(input.cols ?? spec.cols) || spec.cols)))
 

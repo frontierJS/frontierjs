@@ -123,7 +123,7 @@ title: Flags
   async function override(flag, environmentId, isEnabled) {
     error = null; busy = flag.id
     try {
-      const updated = await flags.service.action('setOverride', flag.id, { environmentId, isEnabled })
+      const updated = await flags.service.invoke('setOverride', flag.id, { environmentId, isEnabled })
       detail = { ...detail, [flag.id]: updated }
       picked = { ...picked, [flag.id]: '' }
       await load()
@@ -137,7 +137,7 @@ title: Flags
   async function clear(flag, environmentId) {
     error = null; busy = flag.id
     try {
-      const updated = await flags.service.action('clearOverride', flag.id, { environmentId })
+      const updated = await flags.service.invoke('clearOverride', flag.id, { environmentId })
       detail = { ...detail, [flag.id]: updated }
       await load()
     } catch (e) {

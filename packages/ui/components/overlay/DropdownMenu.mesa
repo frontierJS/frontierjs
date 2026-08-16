@@ -102,10 +102,21 @@
       panelEl?.querySelectorAll('[role="menuitem"]:not([disabled]):not([aria-disabled="true"])') ?? []
     )
     if (!items.length) return
-    const cur  = items.indexOf(document.activeElement)
-    const next = e.key === 'ArrowDown'
-      ? items[(cur + 1) % items.length]
-      : items[(cur - 1 + items.length) % items.length]
+
+    // Opening focuses the PANEL, so on the first press nothing in this list
+    // holds focus and `indexOf` is -1. Stepping from -1 arithmetically gives
+    // the first item going down — which is right by accident — and the
+    // second-to-last going up, which is not right by anything. Both ends are
+    // named rather than computed.
+    const cur = items.indexOf(document.activeElement)
+    let next
+    if (cur === -1) {
+      next = e.key === 'ArrowDown' ? items[0] : items[items.length - 1]
+    } else {
+      next = e.key === 'ArrowDown'
+        ? items[(cur + 1) % items.length]
+        : items[(cur - 1 + items.length) % items.length]
+    }
     next?.focus()
   }
 
@@ -114,7 +125,13 @@
   })
 
   // Keep the caller's control in sync with the menu's state.
-  $: open, () => {
+  //
+  // `triggerEl` is in the watch list, not just `open`. Watching `open` alone
+  // fires only when the menu is first OPENED — and the element is null on the
+  // run before that anyway — so a trigger announced nothing at all until
+  // somebody had already used it. A screen reader met an ordinary button,
+  // which is the one thing this component exists to prevent.
+  $: (open, triggerEl), () => {
     const control = triggerEl?.querySelector('button, a, [role="button"], [tabindex]') ?? triggerEl
     if (!control) return
     control.setAttribute('aria-haspopup', 'menu')

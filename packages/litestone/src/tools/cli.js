@@ -3,6 +3,7 @@
 
 import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync, readdirSync } from 'fs'
 import { resolve, relative, join, dirname, basename } from 'path'
+import { spawnSync }                                from 'child_process'
 import { Database }                                from 'bun:sqlite'
 
 // Imports of sibling source files MUST use literal relative specifiers — never
@@ -18,12 +19,14 @@ import { Database }                                from 'bun:sqlite'
 // import.meta.dir remains correct for locating files NEXT TO the source at
 // runtime — but see IS_COMPILED: inside a standalone binary there is no such
 // directory, so on-disk assets must be embedded instead (see studio.html).
-import { parse }                                       from '../core/parser.js'
+import { parse, parseFile, inlineImports, inlineImportsFromDisk } from '../core/parser.js'
 import { buildPristine, introspect, diffSchemas,
          generateMigrationSQL, summariseDiff }         from '../core/migrate.js'
 import { create, apply, status, verify,
-         createForDatabase, listMigrationFiles,
+         createForDatabase, listMigrationFiles, migrationStatements,
          describeSkipped, appliedMigrations }          from '../core/migrations.js'
+import { backupSqliteTo }                              from '../core/backup.js'
+import { resolveTenancy }                              from '../core/tenancy.js'
 import { modelToAccessor }                             from '../core/ddl.js'
 
 // Assets that must survive `bun build --compile`. A text import is embedded in
@@ -192,6 +195,7 @@ const HELP = `
     ${cyan('litestone migrate create')} [label]    diff schema → write migration file
     ${cyan('litestone migrate dry-run')} [label]   preview migration SQL, no file written
     ${cyan('litestone migrate apply')}             apply all pending migrations
+    ${dim('  --backup[=dir]')}                       copy every database first — there is no down
     ${cyan('litestone migrate status')}            show applied / pending / modified
     ${cyan('litestone migrate verify')}            check if live db matches schema
     ${cyan('litestone db push')}                    apply schema directly — no migration files (dev)
@@ -199,7 +203,7 @@ const HELP = `
     ${dim('  --only=users,posts')}                  only emit types for specified models
     ${dim('  --audience=client|system')}             field visibility (default: client)
     ${cyan('litestone studio')}                     open local web UI
-    ${cyan('litestone repl')}                       interactive Litestone REPL
+    ${cyan('litestone repl')} [--as|--level|--gate]  a console that boots at a gate level
     ${cyan('litestone doctor')}                     check setup, audit health
     ${cyan('litestone seed')} [SeederClass]             seed the database
     ${cyan('litestone seed run')} [name]               run an infrastructure seed (--force to re-run)
@@ -218,6 +222,9 @@ const HELP = `
     ${cyan('litestone jsonschema')}                   generate JSON Schema from schema.lite
     ${cyan('litestone access')}                       write the access snapshot ${dim('(--check in CI)')}
     ${cyan('litestone ddl')}                          write the DDL snapshot ${dim('(--check in CI)')}
+    ${cyan('litestone release')}                      classify the deploy: expand, contract or unknown
+    ${dim('  --from=<ref|path>')}                      the release to compare against ${dim('(default: HEAD)')}
+    ${dim('  --strict')}                               exit 1 unless the verdict is expand
     ${cyan('litestone mutate')}                       mutate the schema, report what the checks miss
 
   ${bold('Options')}
@@ -348,7 +355,12 @@ function loadSchema(schemaPath) {
   if (!existsSync(abs))
     fatal(`Schema file not found: ${abs}\n     Run ${cyan('litestone init')} to create one.`)
 
-  const result = parse(readFileSync(abs, 'utf8'))
+  // parseFile, not parse — a schema may `import "./other.lite"`, and createClient
+  // has always resolved those. This read the root file alone, so every CLI
+  // command saw a schema with the imported models missing and said nothing:
+  // `db push` compared against the partial view and reported "already in sync"
+  // while three tables were never created.
+  const result = parseFile(abs)
   if (!result.valid) {
     console.error(`\n  ${red('✗')}  schema.lite has errors:\n`)
     for (const e of result.errors) console.error(`     ${red('·')} ${e}`)
@@ -440,7 +452,7 @@ function openSqliteDbs(parseResult, cfg) {
   if (!hasDatabaseBlocks) {
     // Single-DB schema — just main, using cfg.db
     if (!cfg.db) fatal('No database path specified. Set db in litestone.config.js or pass --db=<path>')
-    return [{ name: 'main', rawDb: openDb(cfg.db), migrationsDir: cfg.migrations }]
+    return [{ name: 'main', rawDb: openDb(cfg.db), path: resolve(cfg.db), migrationsDir: cfg.migrations }]
   }
 
   const result = []
@@ -465,6 +477,7 @@ function openSqliteDbs(parseResult, cfg) {
     result.push({
       name:          db.name,
       rawDb,
+      path:          absPath,
       migrationsDir: join(cfg.migrations, db.name),
     })
   }
@@ -675,16 +688,69 @@ async function cmdDryRun(label, cfg) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// A migration file has no `down`, by ruling — the way back is a copy of the
+// database taken before the migration ran (DECISIONS.md § Migrations). These
+// two say so at the moment it is still true: `preApplyBackup` takes the copy,
+// `irreversibleMigrations` names what is about to happen when nobody asked for
+// one.
+
+// Every database is copied before the FIRST one is migrated. A run that fails
+// on the second database has already changed the first, so a per-database
+// backup taken inside the loop is a backup of a half-migrated fleet.
+async function preApplyBackup(dbs) {
+  const stamp   = new Date().toISOString().replace('T', '_').replace(/:/g, '').slice(0, 15)
+  const destDir = resolve(getFlag('backup') ?? join('./backups', stamp))
+
+  mkdirSync(destDir, { recursive: true })
+
+  for (const { name, rawDb } of dbs) {
+    const dest = resolve(destDir, `${name}.db`)
+    try {
+      const size = await backupSqliteTo(rawDb, dest)
+      console.log(`  ${green('✓')}  backup ${cyan(name)} ${dim(`${(size / 1024 / 1024).toFixed(2)} MB → ${rel(dest)}`)}`)
+    } catch (e) {
+      // The point of the flag is that nothing runs without the copy.
+      fatal(`backup of '${name}' failed — nothing was migrated.\n     ${e.message}`)
+    }
+  }
+  console.log()
+  return destDir
+}
+
+// A DROP is the statement there is no way back from, and a rebuild is a DROP —
+// so a dropped column is in this class too. The guard table a rebuild creates
+// is not: it holds one row and belongs to the migration.
+// The quote goes INSIDE the lookahead: `"?(?!_litestone_)` backtracks the
+// optional quote away and then passes on the `"` itself.
+const DROPS_A_TABLE = /^DROP\s+TABLE\s+(IF\s+EXISTS\s+)?(?!"?_litestone_)/i
+
+function irreversibleMigrations(migrationsDir, pending) {
+  const out = []
+  for (const file of pending) {
+    // A JS migration is arbitrary — it may rewrite every row in the database,
+    // and nothing here can read what it will do.
+    if (file.endsWith('.js')) { out.push(`${file} ${dim('(JS — contents unknown)')}`); continue }
+    const drops = migrationStatements(join(resolve(migrationsDir), file))
+      .filter(s => DROPS_A_TABLE.test(s.trim())).length
+    if (drops) out.push(`${file} ${dim(`(drops ${drops} table${drops > 1 ? 's' : ''})`)}`)
+  }
+  return out
+}
+
 async function cmdApply(cfg) {
   header('litestone migrate apply')
 
   const parseResult = loadSchema(cfg.schema)
   const dbs         = openSqliteDbs(parseResult, cfg)
   const multi       = parseResult.schema.databases.some(db => !db.driver || db.driver === 'sqlite')
+  const wantsBackup = flag('backup') || getFlag('backup') !== null
+  let   backupDir   = null
   let   totalOk     = 0
   let   anyFailed   = false
 
   try {
+    if (wantsBackup) backupDir = await preApplyBackup(dbs)
+
     for (const { name, rawDb, migrationsDir } of dbs) {
       if (multi) console.log(`  ${dim(`database: ${cyan(name)}`)}`)
 
@@ -692,10 +758,21 @@ async function cmdApply(cfg) {
       const pageCount = rawDb.query('PRAGMA page_count').get()
       if (pageCount && pageCount.page_count <= 1) rawDb.run('PRAGMA page_size = 8192')
 
+      const appliedSet = new Set(appliedMigrations(rawDb).map(m => m.name))
+      const pending    = listMigrationFiles(migrationsDir).filter(f => !appliedSet.has(f))
+
+      if (!wantsBackup) {
+        const risky = irreversibleMigrations(migrationsDir, pending)
+        if (risky.length) {
+          console.warn(`  ${yellow('!')}  no way back from this run without a copy of the database:`)
+          for (const r of risky) console.warn(`       ${r}`)
+          console.warn(`     ${dim(`Re-run with ${cyan('--backup')} to take one first.`)}\n`)
+        }
+      }
+
       // Create Litestone client if any JS migrations are pending
       // (needed so JS migrations receive full ORM access)
-      const hasPendingJs = listMigrationFiles(migrationsDir)
-        .some(f => f.endsWith('.js') && !new Set(appliedMigrations(rawDb).map(m => m.name)).has(f))
+      const hasPendingJs = pending.some(f => f.endsWith('.js'))
       let lsClient = null
       if (hasPendingJs) {
         const { createClient } = await import('../core/client.js')
@@ -742,12 +819,21 @@ async function cmdApply(cfg) {
   }
 
   if (anyFailed) {
+    if (backupDir) console.error(`\n  ${dim(`backup taken before the run: ${cyan(rel(backupDir))}`)}`)
     console.error(`\n  ${red('✗')}  One or more migrations failed or were unreadable — affected databases unchanged.\n`)
     process.exit(1)
   }
 
   if (totalOk > 0) {
     console.log(`\n  ${green(bold(`${totalOk} migration${totalOk !== 1 ? 's' : ''} applied`))}`)
+    if (backupDir) {
+      // Said here because it is the last moment somebody reads this output, and
+      // the -wal/-shm half is what makes a hand-rolled restore come back wrong.
+      console.log(`\n  ${dim('to go back: stop the app, then put each copy back over its database')}`)
+      for (const { name, path } of dbs)
+        console.log(`    ${dim(`cp ${rel(join(backupDir, name + '.db'))} ${rel(path)}`)}`)
+      console.log(`    ${dim('and delete the -wal and -shm files beside it')}`)
+    }
     console.log()
   }
 }
@@ -863,118 +949,261 @@ async function cmdVerify(cfg) {
 }
 
 
-// ─── REPL ─────────────────────────────────────────────────────────────────────
-// Starts an interactive Litestone REPL with:
-//   - Schema-aware tab completion (db.<table>.<method>, where fields)
-//   - Persistent per-project history (↑/↓ cycles through past queries)
-//   - Top-level await support
+// ─── the console ──────────────────────────────────────────────────────────────
 //
-// Launches src/repl-server.js as a subprocess, passing schema info via env.
-// History is stored in .litestone_history in the project root.
+// `litestone repl`, and `fli tinker` over it. What it resolves is the STANDING —
+// which principal, graded by which resolver, at which level — and the prompt
+// loop itself is `tools/repl.js`.
+//
+// Three standings, and the middle two are deliberately not the same thing:
+// `--as` runs a resolver over a real row, `--level` fixes the answer. The split
+// is `createTestEnv`'s between `actingAs` and `atLevel`, for the same reason —
+// a ladder walked with the second says nothing about whether the first works.
 
 async function cmdRepl(cfg) {
-  header('litestone repl')
+  header('litestone tinker')
 
-  // The REPL is the one command that cannot run from a compiled binary: it
-  // drives `bun repl` as a subprocess and feeds it a temp file that imports
-  // core/client.js by absolute path. Inside a binary those paths are /$bunfs
-  // entries that a separate bun process cannot see. Fail loudly rather than
-  // emitting a confusing "Cannot find module /$bunfs/root/..." from the child.
-  if (IS_COMPILED)
-    fatal(`${cyan('litestone repl')} is not available in the standalone binary.\n` +
-          `     It drives a separate ${cyan('bun repl')} process that needs the package on disk.\n` +
-          `     Run it from an installed package instead: ${cyan('bunx @frontierjs/litestone repl')}`)
-
+  // It drove `bun repl` as a subprocess once, fed through `.load` and two fixed
+  // sleeps. That worked and could never satisfy the rule this command lives by:
+  // a subprocess REPL owns its prompt, so it cannot say what it is running as.
+  // Hosted here instead — `node:readline` under bun.
   const parseResult = loadSchema(cfg.schema)
   const { isSoftDelete } = await import('../core/ddl.js')
+  const { createClient } = await import('../core/client.js')
+  const { startRepl, describeStanding } = await import('./repl.js')
 
-  // Model names are PascalCase singular; accessors on the client are camelCase.
-  const models    = parseResult.schema.models.map(m => m.name)
-  const accessors = parseResult.schema.models.map(m => modelToAccessor(m.name))
-  const softTbls  = parseResult.schema.models.filter(m => isSoftDelete(m)).map(m => modelToAccessor(m.name))
-  const enums     = parseResult.schema.enums.map(e => e.name)
+  const asWho = getFlag('as')
+  const level = getFlag('level') != null ? Number(getFlag('level')) : null
 
-  // import.meta.dir is only trustworthy here because IS_COMPILED gated us out
-  // above — under `--bytecode` it resolves to the build machine's source path.
-  const replServer = resolve(import.meta.dir, 'repl-server.js')  // same tools/ dir
+  if (level != null && (!Number.isInteger(level) || level < 0 || level > 9))
+    fatal(`--level takes 0-9. Got ${cyan(String(getFlag('level')))}.\n` +
+          `     0 STRANGER · 2 READER · 4 USER · 5 ADMINISTRATOR · 6 OWNER · 7 SYSADMIN · 8 SYSTEM`)
+
+  // The app's own resolver, if it will say where it is. Without this the console
+  // grades with `FrontierGateGetLevel`, which is the DEFAULT and not necessarily
+  // what the app installed — and "refuses exactly what that person is refused"
+  // is a false claim the moment the two disagree. `example` exports
+  // `shopGateLevel`; the flag is `--gate ./api/gate.ts#shopGateLevel`.
+  const appGetLevel = await loadGateResolver(getFlag('gate'))
+
+  // A synthetic standing REPLACES the GatePlugin the schema would auto-install,
+  // which is exactly what `atLevel(n)` does in the testing env and for the same
+  // reason: a level is fixed when a client is constructed, so it cannot be a
+  // property of a call.
+  const plugins = []
+  if (level != null || appGetLevel) {
+    const { GatePlugin } = await import('../plugins/gate.js')
+    plugins.push(new GatePlugin({ getLevel: level != null ? () => level : appGetLevel }))
+  }
+
+  // The house form, encryption key included: a console that cannot decrypt an
+  // `@encrypted` column shows ciphertext where the app shows a value, which is
+  // a console that lies about the row you came to look at.
+  const base = await createClient({
+    parsed:        parseResult,
+    db:            clientDb(parseResult, cfg),
+    encryptionKey: getEncKey(),
+    ...(plugins.length ? { plugins } : {}),
+  })
+
+  const sys = base.asSystem()
+
+  // Read through the system client. You are an operator looking somebody up —
+  // finding the row must not depend on the standing you are about to adopt.
+  const found = asWho ? await findPrincipal(sys, base.$schema, asWho) : { row: null, model: null }
+
+  if (asWho && !found.model)
+    fatal(`This schema does not say which model holds people.\n` +
+          `     Mark it ${cyan('@@auth')} — or name it here: ${cyan('--as Customer:' + asWho)}.\n` +
+          `     ${dim('Guessing which table holds principals is how a console boots as the wrong thing.')}`)
+
+  if (asWho && !found.row)
+    fatal(`No ${cyan(found.model)} row matches ${cyan(found.needle)}.\n` +
+          `     Tried ${found.tried.join(', ')}. ${dim('`--level <n>` takes a standing with no user.')}`)
+
+  const user = found.row
+
+  const db = user ? base.$setAuth(user) : base
+
+  // The level a principal is GRADED at, shown rather than assumed — the point of
+  // --as is that a resolver answers, and a person reading a refusal needs the
+  // number it was refused against and WHICH resolver said it.
+  const { FrontierGateGetLevel } = await import('../plugins/gate.js')
+  const { levelLabel }           = await import('../access.js')
+
+  const resolver = appGetLevel ?? FrontierGateGetLevel
+  const graded   = level != null ? level : (user ? await resolver(user) : 0)
+
+  const label    = user ? (user.email ?? user.username ?? user.name ?? `#${user.id}`) : null
+  const standing = describeStanding({ label, graded, synthetic: level != null })
+
+  const models    = parseResult.schema.models
+  const accessors = models.map(m => modelToAccessor(m.name))
+  const softTbls  = models.filter(m => isSoftDelete(m)).map(m => modelToAccessor(m.name))
 
   const dbDisplay = parseResult.schema.databases.length
     ? parseResult.schema.databases.filter(d => !d.driver || d.driver === 'sqlite').map(d => d.name).join(', ')
     : (cfg.db ? rel(resolve(cfg.db)) : '(from schema)')
-  console.log(`  ${dim('Database:')}  ${dbDisplay}`)
-  console.log(`  ${dim('Tables:')}    ${accessors.join(', ')}`)
-  if (softTbls.length)
-    console.log(`  ${dim('Soft delete:')} ${softTbls.join(', ')}`)
-  if (enums.length)
-    console.log(`  ${dim('Enums:')}     ${enums.join(', ')}`)
+
+  console.log(`  ${dim('Database:')}   ${dbDisplay}`)
+  console.log(`  ${dim('Tables:')}     ${accessors.join(', ')}`)
+  if (softTbls.length) console.log(`  ${dim('Soft delete:')} ${softTbls.join(', ')}`)
+  console.log(`  ${dim('Standing:')}   ${cyan(standing)} ${dim(levelLabel(graded))}`)
+  console.log(`  ${dim('Graded by:')}  ${level != null
+    ? dim('--level — synthetic, no resolver was asked')
+    : (appGetLevel ? cyan(getFlag('gate')) : dim('FrontierGateGetLevel (the default — pass --gate if your app installs its own)'))}`)
   console.log()
-  console.log(`  ${green('✓')}  ${cyan('db')} is ready — Tab to complete, ↑↓ for history`)
-  console.log(`  ${dim('History:')}    ~/.bun_repl_history  ${dim('(managed by Bun)')}`)
-  console.log()
-  console.log(`  ${dim('Examples:')}`)
-  console.log(`    ${cyan('db.' + accessors[0] + '.findMany()')}`)
-  console.log(`    ${cyan('db.' + accessors[0] + '.count()')}`)
-  if (accessors.length > 1)
-    console.log(`    ${cyan('db.' + accessors[1] + '.findFirst({ where: { id: 1 } })')}`)
-  console.log()
-  console.log(`  ${dim('Tab to complete · ↑↓ history · .help for commands · Ctrl+C to exit')}\n`)
 
-  // Bun's REPL runs in a sandboxed context — preload globals aren't visible.
-  // Solution: write a temp setup file, then use the REPL's built-in `.load`
-  // command to eval it directly in the REPL scope. Then forward stdin normally.
+  const hints = []
 
-  const { writeFileSync, unlinkSync } = await import('fs')
-  const tmpSetup = resolve(process.env.TMPDIR || '/tmp', `litestone-db-${Date.now()}.ts`)
+  // Said out loud, because the symptom is indistinguishable from a gate refusal
+  // and reads as one: a policy compiles into the WHERE, so with no principal
+  // every `auth().id ==` row policy matches nothing and answers an empty list.
+  if (level != null && !user && hasAuthPolicies(parseResult.schema))
+    hints.push(`  ${yellow('!')}  a standing with no user: every ${cyan('auth()')} row policy matches nothing,\n` +
+               `     so a model with one answers an empty list rather than refusing.\n`)
 
-  // This file runs inside the REPL context via .load — `db` becomes a REPL variable
-  writeFileSync(tmpSetup, [
-    `import { createClient } from ${JSON.stringify(resolve(import.meta.dir, '../core/client.js'))}`,
-    `import { parseFile }    from ${JSON.stringify(resolve(import.meta.dir, '../core/parser.js'))}`,
-    `var db = await createClient({ path: ${JSON.stringify(resolve(cfg.schema))}${cfg.db ? `, db: ${JSON.stringify(resolve(cfg.db))}` : ''} })`,
-    `globalThis.db = db`,  // also set on globalThis for Tab completion lookup
-    `console.log('  ✓ db ready — ' + ${JSON.stringify(accessors)}.join(', '))`,
-  ].join('\n'))
+  if (gatedModels(parseResult.schema).length && !user && level == null)
+    hints.push(`  ${yellow('!')}  anonymous is STRANGER(0) — ${gatedModels(parseResult.schema).length} gated model(s) will refuse.\n` +
+               `     ${dim('--as <email> to boot as somebody, --level <n> for a standing with no user.')}\n`)
 
-  const proc = Bun.spawn(['bun', 'repl'], {
-    stdin:  'pipe',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  })
+  hints.push(`  ${green('✓')}  ${cyan('db')} at this standing · ${cyan('sys')} bypasses everything · ${dim('.help')}`)
+  hints.push('')
 
-  // Wait for REPL to start and print welcome banner
-  await Bun.sleep(400)
+  await startRepl({ db, sys, standing, accessors, hints })
 
-  // .load evals the file in the REPL's own scope — db becomes a real REPL variable
-  proc.stdin.write(`.load ${tmpSetup}\n`)
+  try { base.$close() } catch {}
+}
 
-  // Give .load time to finish (createClient is async — awaited inside the file)
-  await Bun.sleep(600)
+// `--gate ./api/gate.ts#shopGateLevel`. A named export wins; otherwise the
+// conventional names, and then the sole exported function — which is the common
+// case and the one worth not making people spell. Anything else is refused with
+// the exports listed, because the alternative is a console that silently grades
+// with the default resolver while the flag suggests otherwise.
+async function loadGateResolver(spec) {
+  if (!spec) return null
 
-  // Forward the user's real stdin to the REPL process
-  for await (const chunk of Bun.stdin.stream()) {
-    proc.stdin.write(chunk)
-    if (proc.exitCode !== null) break
+  const hash = spec.lastIndexOf('#')
+  const path = hash === -1 ? spec : spec.slice(0, hash)
+  const name = hash === -1 ? null : spec.slice(hash + 1)
+
+  let mod
+  try { mod = await import(resolve(path)) }
+  catch (e) { fatal(`--gate ${cyan(path)} could not be imported.\n     ${e.message}`) }
+
+  if (name) {
+    if (typeof mod[name] !== 'function')
+      fatal(`--gate: ${cyan(path)} exports no function named ${cyan(name)}.\n` +
+            `     Exports: ${Object.keys(mod).join(', ') || '(none)'}`)
+    return mod[name]
   }
 
-  await proc.exited
-  try { unlinkSync(tmpSetup) } catch {}
+  if (typeof mod.getLevel === 'function') return mod.getLevel
+  if (typeof mod.default  === 'function') return mod.default
+
+  const fns = Object.keys(mod).filter(k => typeof mod[k] === 'function')
+  if (fns.length === 1) return mod[fns[0]]
+
+  fatal(`--gate: ${cyan(path)} exports ${fns.length} functions — name the one to use.\n` +
+        `     ${cyan(`--gate ${path}#${fns[0] ?? 'getLevel'}`)}   ${dim(`(${fns.join(', ') || 'none'})`)}`)
 }
+
+/** The @@auth model, or the one every app calls User. Studio picks it the same way. */
+function authModelOf(schema) {
+  return schema.models.find(m => m.attributes?.some(a => a.kind === 'auth'))
+      ?? schema.models.find(m => m.name === 'User' || m.name === 'users')
+      ?? null
+}
+
+// `--as alice@example.com` over the @@auth model, or `--as Customer:alice@…`
+// where the schema never said. Four columns tried in order, because an app names
+// its people whatever it names them and asking a person to know which column is
+// asking them to read the schema first. An all-digit argument is an id LAST, not
+// first: an email is never all digits and a username can be.
+//
+// It returns what it tried as well as what it found — "no row matches" and
+// "there is no such model" send a person to two different places, and a console
+// that conflates them sends them to the wrong one.
+async function findPrincipal(sys, schema, spec) {
+  const colon  = spec.indexOf(':')
+  const named  = colon > 0 ? spec.slice(0, colon) : null
+  const needle = colon > 0 ? spec.slice(colon + 1) : spec
+
+  const model = named
+    ? schema.models.find(m => m.name === named || modelToAccessor(m.name) === named)
+    : authModelOf(schema)
+
+  if (!model) return { row: null, model: null, needle, tried: [] }
+
+  const accessor = modelToAccessor(model.name)
+  const declared = new Set((model.fields ?? []).map(f => f.name))
+  const tried    = ['email', 'username', 'name'].filter(c => declared.has(c))
+
+  for (const column of tried) {
+    const row = await sys[accessor].findFirst({ where: { [column]: needle } }).catch(() => null)
+    if (row) return { row, model: model.name, needle, tried }
+  }
+
+  if (/^\d+$/.test(needle)) {
+    tried.push('id')
+    const row = await sys[accessor].findFirst({ where: { id: Number(needle) } }).catch(() => null)
+    if (row) return { row, model: model.name, needle, tried }
+  }
+
+  return { row: null, model: model.name, needle, tried }
+}
+
+const gatedModels = (schema) =>
+  schema.models.filter(m => m.attributes?.some(a => a.kind === 'gate'))
+
+const hasAuthPolicies = (schema) =>
+  schema.models.some(m => m.attributes?.some(a =>
+    (a.kind === 'allow' || a.kind === 'deny') && JSON.stringify(a.expr ?? '').includes('auth')))
 
 
 // ─── Tenant management ────────────────────────────────────────────────────────
+
+// Where a tenant lives, and who says so. Flag beats litestone.config.js beats
+// the schema's own `tenancy { }` block beats the default — one order, and this
+// is the only place it is written. The block is last-but-one deliberately: it
+// is what the APP declares, and an operator typing a flag is answering for one
+// run.
+//
+// This used to read the config slice alone, so a schema declaring its tenant
+// directory and a CLI creating tenants somewhere else both looked correct.
+async function tenantOptions(cfg) {
+  const parsed   = cfg.schema ? loadSchema(cfg.schema) : null
+  const declared = parsed ? resolveTenancy(parsed.schema, { schemaPath: cfg.schema }) : null
+
+  if (declared?.strategy === 'row')
+    fatal(
+      `This schema declares ${cyan('tenancy { strategy row }')} — one database with a ` +
+      `'${declared.column}' column, so there are no per-tenant files to manage.\n` +
+      `     ${dim('litestone tenant')} is for ${cyan('strategy database')}.`
+    )
+
+  const dir = getFlag('dir') ?? cfg.tenants?.dir ?? declared?.dir ?? './tenants'
+  const registry = getFlag('registry') ?? cfg.tenants?.registry ?? declared?.registry ?? null
+  const migrationsDir = getFlag('migrations') ?? cfg.tenants?.migrationsDir ?? cfg.migrations
+
+  return { dir, registry, migrationsDir, declared }
+}
 
 async function cmdTenant(subCmd, args, cfg) {
   const { createTenantRegistry } = await import('../tenant.js')
 
   if (!cfg.schema) fatal('No schema found. Use --schema ./db/schema.lite')
 
-  const dir           = getFlag('dir')           ?? cfg.tenants?.dir           ?? './tenants'
-  const migrationsDir = getFlag('migrations')    ?? cfg.tenants?.migrationsDir ?? cfg.migrations
+  const { dir, registry, migrationsDir } = await tenantOptions(cfg)
   const concurrency   = parseInt(getFlag('concurrency') ?? '8')
 
   const tenants = await createTenantRegistry({
     dir,
-    schema:        cfg.schema,
+    registry,
+    // The PATH, not the text: createTenantRegistry resolves the block's
+    // relative paths against the schema's own directory, and it can only do
+    // that if it is told which file the schema came from.
+    path:          cfg.schema,
     migrationsDir: migrationsDir && existsSync(resolve(migrationsDir)) ? resolve(migrationsDir) : null,
   })
 
@@ -1297,9 +1526,16 @@ async function cmdStudio(cfg) {
 
   // ── Tenant registry (lazy) ─────────────────────────────────────────────────
   const _schemaDir      = dirname(resolve(cfg.schema))
-  const _tenantDirOpt   = cfg.tenants?.dir      ? resolve(cfg.tenants.dir)      : join(_schemaDir, 'tenants')
-  const _tenantRegOpt   = cfg.tenants?.registry ? resolve(cfg.tenants.registry) : join(_schemaDir, 'tenants-registry.db')
-  const tenantsEnabled  = !!cfg.tenants || existsSync(_tenantRegOpt)
+  // The schema's own block is consulted before the defaults, so Studio's tenant
+  // switcher lists the files `litestone tenant list` does. `strategy row` has
+  // no files at all, hence the strategy test rather than mere presence.
+  const _declaredTenancy = parseResult.schema?.tenancy
+    ? resolveTenancy(parseResult.schema, { schemaPath: resolve(cfg.schema) })
+    : null
+  const _fileTenancy    = _declaredTenancy?.strategy === 'database' ? _declaredTenancy : null
+  const _tenantDirOpt   = cfg.tenants?.dir      ? resolve(cfg.tenants.dir)      : (_fileTenancy?.dir      ?? join(_schemaDir, 'tenants'))
+  const _tenantRegOpt   = cfg.tenants?.registry ? resolve(cfg.tenants.registry) : (_fileTenancy?.registry ?? join(_schemaDir, 'tenants-registry.db'))
+  const tenantsEnabled  = !!cfg.tenants || !!_fileTenancy || existsSync(_tenantRegOpt)
   let   _tenantRegistry = null
   async function getRegistry() {
     if (!_tenantRegistry) {
@@ -1372,7 +1608,10 @@ async function cmdStudio(cfg) {
     try {
       const text = readFileSync(resolve(cfg.schema), 'utf8')
       if (text === _liveParse.text) return _liveParse.parsed
-      const next = parse(text)
+      // The cache key is the ROOT file's text, so an edit to an imported file
+      // alone does not invalidate it. Studio reloads on a touch of the schema
+      // it was pointed at; that is the granularity, not a claim about imports.
+      const next = parseFile(resolve(cfg.schema))
       if (!next.valid) return _liveParse.parsed
       _liveParse = { text, parsed: next }
       return next
@@ -3089,14 +3328,23 @@ function checkSnapshot(outPath, body, { regen, moved }) {
 // litestone access --check     — exit 1 if the committed file is stale
 // litestone access --stdout    — print it
 // litestone access --json      — the structured table instead of the markdown
+// litestone access --from=<ref>— what this branch did to who may do what
 //
 // --check is the CI half. Committing the snapshot is what makes a gate change
 // reviewable; nothing enforces that it was regenerated except this.
+//
+// --from is the other question and it writes nothing. The snapshot says what IS
+// and a reviewer needs what MOVED — "this branch drops User.role's @allow" is a
+// sentence no diff of the schema file says out loud, because a removed line is
+// the absence of a rule and reads like tidying.
 
 async function cmdAccess(cfg) {
   const toStdout = flag('stdout')
   const asJson   = flag('json')
   const check    = flag('check')
+  const from     = getFlag('from')
+
+  if (from) return cmdAccessDiff(cfg, from, { asJson, strict: flag('strict') })
 
   // Same trap as cmdTypes and cmdJsonSchema: a banner printed to stdout ends up
   // inside the file when the caller redirects.
@@ -3144,11 +3392,67 @@ async function cmdAccess(cfg) {
     console.log(`  ${yellow('!')}  ${counts.unrestricted} model${counts.unrestricted!==1?'s':''} declare neither @@gate nor @@allow — every caller reaches every row`)
 
   console.log()
-  console.log(`  ${dim('--check')}       ${dim('exit 1 if the committed snapshot is stale (CI)')}`)
-  console.log(`  ${dim('--json')}        ${dim('the structured table instead of the markdown')}`)
-  console.log(`  ${dim('--stdout')}      ${dim('print instead of writing a file')}`)
-  console.log(`  ${dim('--out=<path>')}  ${dim('default: access.snapshot.md beside the schema')}`)
+  console.log(`  ${dim('--check')}          ${dim('exit 1 if the committed snapshot is stale (CI)')}`)
+  console.log(`  ${dim('--from=<ref>')}     ${dim('what moved since that release — widens, narrows or undecidable')}`)
+  console.log(`  ${dim('--json')}           ${dim('the structured table instead of the markdown')}`)
+  console.log(`  ${dim('--stdout')}         ${dim('print instead of writing a file')}`)
+  console.log(`  ${dim('--out=<path>')}     ${dim('default: access.snapshot.md beside the schema')}`)
   console.log()
+}
+
+// ─── the permission diff ─────────────────────────────────────────────────────
+//
+// The comparison is `classifyAccess`, which is `classifyPivot`'s own walk read
+// on the other axis — one derivation, two verdicts. They disagree constantly and
+// that is the point: removing a `@@gate` is an EXPAND for the deploy (nothing
+// N-1 does starts failing) and the widest thing a schema change can do, so a
+// reviewer handed the deploy severity reads green on the change that should stop
+// them.
+//
+// --strict fails on a widening OR on no baseline, for the reason `release
+// --strict` does: it asks a question about safety and "I could not tell" is not
+// an answer to it.
+
+async function cmdAccessDiff(cfg, from, { asJson, strict }) {
+  if (!asJson) header('litestone access')
+
+  const { deriveReleaseSurface, classifyAccess, formatAccessDiff } = await import('../release.js')
+
+  const schemaPath = resolve(cfg.schema)
+  const after      = deriveReleaseSurface(loadSchema(cfg.schema).schema)
+
+  const baseline = loadBaselineSchema(from, schemaPath)
+  const before   = baseline.text ? parseBaseline(baseline.text, false, deriveReleaseSurface) : null
+  const result   = before?.surface ? classifyAccess(before.surface, after) : null
+
+  if (asJson) {
+    process.stdout.write(JSON.stringify({
+      baseline: { from, label: baseline.label, resolved: !!before?.surface, note: before?.error ?? baseline.note ?? null },
+      verdict:  result?.verdict ?? 'unknown',
+      counts:   result?.counts  ?? { widens: 0, unknown: 0, narrows: 0 },
+      findings: result?.findings ?? [],
+    }, null, 2) + '\n')
+    if (strict && result?.verdict !== 'unchanged' && result?.verdict !== 'narrows') process.exit(1)
+    return
+  }
+
+  if (!result) {
+    console.log(`  ${yellow('!')}  no baseline — ${before?.error ?? baseline.note}`)
+    console.log()
+    if (strict) process.exit(1)
+    return
+  }
+
+  const mark  = result.verdict === 'widens' ? red('✗') : result.verdict === 'unknown' ? yellow('!') : green('✓')
+  const lines = formatAccessDiff(result, { baseline: baseline.label })
+  console.log(`  ${mark}  ${lines[0]}`)
+  for (const line of lines.slice(1)) console.log(line ? `  ${line}` : '')
+  console.log()
+  console.log(`  ${dim('--strict')}  ${dim('exit 1 unless the verdict is narrows or unchanged (CI)')}`)
+  console.log(`  ${dim('--json')}    ${dim('the diff as data')}`)
+  console.log()
+
+  if (strict && result.verdict !== 'unchanged' && result.verdict !== 'narrows') process.exit(1)
 }
 
 
@@ -3211,6 +3515,185 @@ async function cmdDdl(cfg) {
   console.log(`  ${dim('--pluralize')}   ${dim('pluralized table names (default: from config)')}`)
   console.log(`  ${dim('--out=<path>')}  ${dim('default: ddl.snapshot.sql beside the schema')}`)
   console.log()
+}
+
+
+// ─── Release — the pivot classifier ──────────────────────────────────────────
+//
+// litestone release                  — write release.snapshot.md, classify against HEAD
+// litestone release --check          — exit 1 if the committed snapshot is stale
+// litestone release --from=v1.2.0    — classify against the schema at any ref, or a file
+// litestone release --strict         — exit 1 unless the verdict is expand or unchanged
+// litestone release --json           — the verdict as data, nothing written
+//
+// A deploy replaces code and does not replace the rows already written, so the
+// question is whether the release still serving and the release starting can
+// share one database. Expand: yes, and the deploy can be taken back. Contract:
+// no, and that deploy is the pivot.
+//
+// --check is deliberately a staleness check and nothing else. It is what the
+// snapshots CI phase reruns out of the file's own header, and a check that also
+// needed git would fail in a tarball rather than in a repository.
+
+async function cmdRelease(cfg) {
+  const toStdout = flag('stdout')
+  const asJson   = flag('json')
+  const check    = flag('check')
+  const strict   = flag('strict')
+
+  // Same trap as cmdAccess: a banner printed to stdout ends up inside the file
+  // when the caller redirects.
+  if (!toStdout && !asJson) header('litestone release')
+
+  const { deriveReleaseSurface, renderReleaseSnapshot, classifyPivot, formatVerdict } =
+    await import('../release.js')
+
+  const parseResult = loadSchema(cfg.schema)
+  const pluralize   = flag('pluralize') || (cfg.pluralize ?? false)
+  const surface     = deriveReleaseSurface(parseResult.schema, { pluralize })
+
+  const schemaPath = resolve(cfg.schema)
+  const outPath    = getFlag('out')
+    ? resolve(getFlag('out'))
+    : resolve(dirname(schemaPath), 'release.snapshot.md')
+
+  // BASENAME, for the reason cmdAccess and cmdDdl use one: the file is
+  // byte-compared, and a cwd-relative path renders differently from the app
+  // directory and from the repo root.
+  const body = renderReleaseSnapshot(surface, { source: basename(schemaPath) })
+
+  if (check) {
+    checkSnapshot(outPath, body, {
+      regen: 'litestone release',
+      moved: 'The release surface changed. Run `litestone release` and read the verdict before committing.',
+    })
+    console.log()
+    return
+  }
+
+  if (toStdout && !asJson) { process.stdout.write(body); return }
+
+  const from     = getFlag('from') ?? 'HEAD'
+  const baseline = loadBaselineSchema(from, schemaPath)
+  const before   = baseline.text ? parseBaseline(baseline.text, pluralize, deriveReleaseSurface) : null
+  const result   = before?.surface ? classifyPivot(before.surface, surface) : null
+
+  if (asJson) {
+    process.stdout.write(JSON.stringify({
+      baseline: { from, label: baseline.label, resolved: !!before?.surface, note: before?.error ?? baseline.note ?? null },
+      verdict:  result?.verdict ?? 'unknown',
+      counts:   result?.counts  ?? { expand: 0, unknown: 0, contract: 0 },
+      findings: result?.findings ?? [],
+      surface,
+    }, null, 2) + '\n')
+    if (strict && (result?.verdict ?? 'unknown') !== 'expand' && (result?.verdict ?? 'unknown') !== 'unchanged')
+      process.exit(1)
+    return
+  }
+
+  writeFileSync(outPath, body, 'utf8')
+  const { size } = statSync(outPath)
+  console.log(`  ${green('✓')}  ${rel(outPath)}  ${dim(`(${(size/1024).toFixed(1)}kb)`)}`)
+  console.log()
+
+  if (!result) {
+    // Nothing to compare against. On its own that is the honest first run; under
+    // --strict it is a failure, because --strict asks for a REVERSIBLE deploy
+    // and "I could not tell" is not one.
+    console.log(`  ${yellow('!')}  no baseline — ${before?.error ?? baseline.note}`)
+    console.log(`     ${dim('Commit this snapshot; the next run classifies the change against it.')}`)
+    console.log()
+    if (strict) process.exit(1)
+    return
+  }
+
+  const mark = result.verdict === 'contract' ? red('✗') : result.verdict === 'unknown' ? yellow('!') : green('✓')
+  const lines = formatVerdict(result, { baseline: baseline.label })
+  console.log(`  ${mark}  ${lines[0]}`)
+  for (const line of lines.slice(1)) console.log(line ? `  ${line}` : '')
+  console.log()
+
+  if (result.verdict !== 'unchanged' && result.verdict !== 'expand')
+    console.log(`  ${dim('A contract deploy is one that cannot be taken back. Split it, or cross the pivot knowingly.')}\n`)
+
+  console.log(`  ${dim('--from=<ref|path>')}  ${dim('classify against another release (default: HEAD)')}`)
+  console.log(`  ${dim('--strict')}           ${dim('exit 1 unless the verdict is expand or unchanged (CI)')}`)
+  console.log(`  ${dim('--check')}            ${dim('exit 1 if the committed snapshot is stale (CI)')}`)
+  console.log(`  ${dim('--json')}             ${dim('the verdict as data, nothing written')}`)
+  console.log()
+
+  if (strict && result.verdict !== 'expand' && result.verdict !== 'unchanged') process.exit(1)
+}
+
+// Where the previous release's schema comes from. A path on disk wins, because
+// a ref and a filename are not distinguishable and only one of them can be
+// tested for cheaply; anything else is asked of git.
+function loadBaselineSchema(from, schemaPath) {
+  const missing = []
+  const noteFor = (base) => base ?? (missing.length
+    ? `${missing.length === 1 ? 'an import' : `${missing.length} imports`} could not be read there ` +
+      `(${missing.join(', ')}) — those models are absent from the baseline`
+    : null)
+
+  if (existsSync(from) && statSync(from).isFile()) {
+    // rel() walks up out of the project for a file in /tmp, which reads as a
+    // path nobody typed. Shortest of the two is the one a person recognises.
+    const abs = resolve(from), r = rel(abs)
+    const { text, missing: gone } = inlineImportsFromDisk(abs)
+    missing.push(...gone)
+    return { text, label: `\`${r.length < abs.length ? r : abs}\``, note: noteFor(null) }
+  }
+
+  const root = git(['rev-parse', '--show-toplevel'])
+  if (!root) return { text: null, label: from, note: `\`${from}\` is not a file and this is not a git repository` }
+
+  const tracked  = relative(root, schemaPath).split('\\').join('/')
+  const rootText = git(['show', `${from}:${tracked}`])
+
+  if (rootText === null)
+    return { text: null, label: from, note: `\`${tracked}\` is not committed at \`${from}\`` }
+
+  const text = inlineImports(rootText, tracked, {
+    resolveChild: (parent, spec) => posixJoin(posixDir(parent), spec),
+    read:         (p) => git(['show', `${from}:${p}`]),
+    seen:         new Set([tracked]),
+    missing,
+  })
+
+  return { text, label: `\`${from}\``, note: noteFor(null) }
+}
+
+// A git ref is addressed with posix paths regardless of the host, so the two
+// path helpers `inlineImports` needs for the ref reader live here rather than
+// coming from `node:path` — `resolve()` would produce a Windows path `git show`
+// cannot take.
+const posixDir = (p) => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '.'
+
+const posixJoin = (dir, spec) => {
+  const parts = []
+  for (const seg of `${dir}/${spec}`.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') parts.pop()
+    else parts.push(seg)
+  }
+  return parts.join('/')
+}
+
+// The baseline arrives with its imports already inlined, at the ref it came
+// from, so it is the same surface the current schema's parseFile produces and
+// the two are comparable. A schema that was invalid at that ref is reported
+// rather than guessed at.
+function parseBaseline(text, pluralize, derive) {
+  let parsed
+  try { parsed = parse(text) } catch (err) { return { surface: null, error: `the schema there does not parse (${err.message})` } }
+  if (!parsed.valid) return { surface: null, error: `the schema there has errors (${parsed.errors?.[0] ?? 'unknown'})` }
+  return { surface: derive(parsed.schema, { pluralize }), error: null }
+}
+
+function git(argv) {
+  const run = spawnSync('git', argv, { encoding: 'utf8', shell: false, cwd: process.cwd() })
+  if (run.error || run.status !== 0) return null
+  return run.stdout.replace(/\n$/, '')
 }
 
 
@@ -3916,10 +4399,15 @@ async function cmdSeedRun(seedName, cfg) {
   const raw = new Database(dbPath)
 
   // Ensure tracking table exists
+  // appliedAt is ISO-8601, the format every other timestamp litestone writes
+  // uses — _litestone_migrations stamps `new Date().toISOString()`. SQLite's own
+  // `datetime('now')` answers a different format, and two ledgers answering
+  // "when did this run" in two formats sort against each other wrongly the
+  // moment anything reads both (FJS-226).
   raw.run(`CREATE TABLE IF NOT EXISTS _litestone_seeds (
     name       TEXT PRIMARY KEY,
     status     TEXT NOT NULL DEFAULT 'applied',
-    appliedAt  TEXT NOT NULL DEFAULT (datetime('now')),
+    appliedAt  TEXT NOT NULL,
     notes      TEXT
   )`)
 
@@ -3958,9 +4446,9 @@ async function cmdSeedRun(seedName, cfg) {
 
     // Record as applied (upsert)
     raw.run(
-      `INSERT INTO _litestone_seeds (name, status, appliedAt) VALUES (?, 'applied', datetime('now'))
-       ON CONFLICT(name) DO UPDATE SET status = 'applied', appliedAt = datetime('now')`,
-      seedName
+      `INSERT INTO _litestone_seeds (name, status, appliedAt) VALUES (?, 'applied', ?)
+       ON CONFLICT(name) DO UPDATE SET status = 'applied', appliedAt = excluded.appliedAt`,
+      seedName, new Date().toISOString()
     )
 
     const ms = (performance.now() - t0).toFixed(0)
@@ -4571,6 +5059,12 @@ async function main() {
   if (cmd === 'ddl') {
     const cfg = await loadConfig()
     await cmdDdl(cfg)
+    return
+  }
+
+  if (cmd === 'release') {
+    const cfg = await loadConfig()
+    await cmdRelease(cfg)
     return
   }
 

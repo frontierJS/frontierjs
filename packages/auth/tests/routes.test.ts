@@ -2,13 +2,18 @@
 //
 // The /auth/* routes against a REAL Junction app.
 //
-// plugin.ts types its app and every ctx as `any`, so the typechecker verifies
-// nothing about this wiring. Until 2026-08-02 nothing else did either, and it
-// hid a live defect: auth.ts threw plain Errors, Junction's toFrameworkError()
-// turned every one into a GeneralError, and so **every** auth failure — wrong
-// password, duplicate email, bad reset token — reached the client as a 500.
+// plugin.ts typed its app and every ctx as `any` until 2026-08-16, so the
+// typechecker verified nothing about this wiring, and until 2026-08-02 nothing
+// else did either. That hid a live defect: auth.ts threw plain Errors, Junction's
+// toFrameworkError() turned every one into a GeneralError, and so **every** auth
+// failure — wrong password, duplicate email, bad reset token — reached the client
+// as a 500. The status-code assertions below are the regression barrier for that.
 //
-// The status-code assertions below are the regression barrier for that.
+// Typing it found a second one the same way (FJS-296): `ctx.body` is `unknown`,
+// and reading fields off it under `any` is how a where-operator object reached
+// the user lookup. A raw route has no validator in front of it — that is the
+// standing difference between these eight and the three services, and it is why
+// this file asserts on what a MALFORMED body does as well as a wrong one.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request, createService } from '@frontierjs/junction'
@@ -32,7 +37,7 @@ beforeAll(async () => {
     // Generous limits: these tests make far more calls than a real client.
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
-  }) as any)
+  }))
 })
 afterAll(() => h.cleanup())
 
@@ -115,13 +120,64 @@ describe('POST /auth/login', () => {
   test('a missing field is still 400', async () => {
     expect((await request(app).post('/auth/login').send({ email: email('l-user') })).status).toBe(400)
   })
+
+  // FJS-296. A raw route has no `autoValidate` in front of it, so whatever a
+  // caller posted went into `findFirst({ where: { email } })` unexamined — and
+  // Litestone reads an OBJECT there as a where-operator. The address became a
+  // filter: `contains` plus a correct password signed the caller in as the first
+  // matching row, and `startsWith` walked the user table with no address known.
+  // The password was still checked, which is the only reason this was not a
+  // straight bypass.
+  test('a where-operator in place of an email is 400, not a query', async () => {
+    const res = await request(app).post('/auth/login')
+      .send({ email: { contains: '@' }, password: 'pw-1' })
+
+    expect(res.status).toBe(400)
+    expect((res.body as any).message).toBe('email must be a string')
+  })
+
+  // The same input used to reach SQLite and come back as a 500 carrying
+  // Litestone's own message — the query builder's vocabulary, on a public
+  // sign-in route, to an unauthenticated caller.
+  test('an unknown where-operator does not surface as a 500', async () => {
+    const res = await request(app).post('/auth/login')
+      .send({ email: { $ne: null }, password: 'x' })
+
+    expect(res.status).toBe(400)
+  })
+
+  test('every declared field must be a string, and says which one is not', async () => {
+    const cases: Array<[Record<string, unknown>, string]> = [
+      [{ email: 123,        password: 'x' },  'email must be a string'],
+      [{ email: ['a@b.co'], password: 'x' },  'email must be a string'],
+      [{ email: email('l-user'), password: 9 }, 'password must be a string'],
+    ]
+    for (const [payload, message] of cases) {
+      const res = await request(app).post('/auth/login').send(payload)
+      expect(res.status).toBe(400)
+      expect((res.body as any).message).toBe(message)
+    }
+  })
+
+  // Register is the one that WROTE it: an array email created a user whose
+  // address was the array coerced to a string by SQLite, 201 and no complaint.
+  test('register refuses a non-string field rather than coercing it', async () => {
+    const res = await request(app).post('/auth/register')
+      .send({ email: [email('l-array')], password: 'pw-1' })
+
+    expect(res.status).toBe(400)
+  })
 })
 
 // ─── me / logout ──────────────────────────────────────────────────────────
 
-describe('GET /auth/me and POST /auth/logout', () => {
-  test('anonymous /auth/me is 401', async () => {
-    expect((await request(app).get('/auth/me')).status).toBe(401)
+// `/auth/me` was a route and is now `account.get('me')` — a request that can be
+// refused for want of a session is a service. What these tests are really
+// asserting is that the TRANSPORT resolved the caller, so they address whatever
+// authenticated surface exists; the service is the one that does now.
+describe('GET /account/me and POST /auth/logout', () => {
+  test('anonymous /account/me is 401', async () => {
+    expect((await request(app).get('/account/me')).status).toBe(401)
   })
 
   test('a Bearer token resolves ctx.user, and logout revokes it', async () => {
@@ -129,12 +185,12 @@ describe('GET /auth/me and POST /auth/logout', () => {
     const login = await request(app).post('/auth/login').send({ email: email('m-user'), password: 'pw-1' })
     const token = (login.body as any).token
 
-    const me = await request(app).get('/auth/me').auth(token)
+    const me = await request(app).get('/account/me').auth(token)
     expect(me.status).toBe(200)
     expect((me.body as any).email).toBe(email('m-user'))
 
     expect((await request(app).post('/auth/logout').auth(token)).status).toBe(200)
-    expect((await request(app).get('/auth/me').auth(token)).status).toBe(401)
+    expect((await request(app).get('/account/me').auth(token)).status).toBe(401)
   })
 })
 
@@ -210,7 +266,7 @@ describe('rate limiting', () => {
     limited.setAuth(scoped.auth as any)
     limited.configure(createAuthPlugin(scoped.auth, {
       registerRateLimit: { max: 3, window: '15 minutes' },
-    }) as any)
+    }))
 
     const codes: number[] = []
     for (let i = 0; i < 5; i++) {
@@ -285,7 +341,7 @@ describe('cookieAuth mode', () => {
       .send({ email: email('cookie'), password: 'pw-1' })
     const value = login.headers['set-cookie'].split(';')[0].split('=')[1]
 
-    const me = await request(cookieApp).get('/auth/me').set('cookie', `session=${value}`)
+    const me = await request(cookieApp).get('/account/me').set('cookie', `session=${value}`)
     expect(me.status).toBe(200)
     expect((me.body as any).email).toBe(email('cookie'))
   })
@@ -293,18 +349,18 @@ describe('cookieAuth mode', () => {
   test('no cookie is still 401', async () => {
     // The other half: turning cookies on must not authenticate a request that
     // carries no credential at all.
-    expect((await request(cookieApp).get('/auth/me')).status).toBe(401)
+    expect((await request(cookieApp).get('/account/me')).status).toBe(401)
   })
 
   test('a garbage cookie is 401, not a crash', async () => {
-    const me = await request(cookieApp).get('/auth/me').set('cookie', 'session=not-a-token')
+    const me = await request(cookieApp).get('/account/me').set('cookie', 'session=not-a-token')
     expect(me.status).toBe(401)
   })
 
   test('an emptied cookie does not authenticate — this is what logout leaves', async () => {
     // clearCookie() sets `session=` with Max-Age=0. If '' counted as a token
     // every post-logout request would carry a guaranteed-failing verifySession.
-    const me = await request(cookieApp).get('/auth/me').set('cookie', 'session=')
+    const me = await request(cookieApp).get('/account/me').set('cookie', 'session=')
     expect(me.status).toBe(401)
   })
 
@@ -318,7 +374,7 @@ describe('cookieAuth mode', () => {
     await request(cookieApp).post('/auth/register').send({ email: email('bearer-wins'), password: 'pw-1' })
     const other = await scoped.auth.login(email('bearer-wins'), 'pw-1')
 
-    const me = await request(cookieApp).get('/auth/me')
+    const me = await request(cookieApp).get('/account/me')
       .set('cookie', `session=${cookieValue}`)
       .set('authorization', `Bearer ${other.token}`)
     expect(me.status).toBe(200)

@@ -3,11 +3,11 @@
 // Autoloaded by @frontierjs/caravan from `jobsDir` (api/jobs). The file name
 // does not matter; `defineJob`'s first argument is the name a dispatch uses.
 //
-// ─── Why this is a job and not part of the `ship` action ──────────────────
+// ─── Why this is a job and not part of the `ship` method ──────────────────
 //
 // Booking a courier is somebody else's HTTP call: it is slow, it fails for
 // reasons that have nothing to do with the caller, and retrying it is correct
-// where retrying the state transition is not. Doing it inside the action would
+// where retrying the state transition is not. Doing it inside the method would
 // make the button hang on a third party and make a courier outage look like a
 // broken shop. So `ship` moves the order and returns; this runs after, and if
 // the courier is down it runs again in a minute, then five, then thirty.
@@ -25,8 +25,6 @@
 // browser that has been sitting idle since before the job was queued.
 
 import { defineJob } from '@frontierjs/caravan'
-import { getApp }    from '../app-ref.ts'
-import { SYSTEM }    from '../gate.ts'
 
 interface BookCourier {
   orderId:   number
@@ -45,18 +43,27 @@ async function bookWithCourier(reference: string): Promise<string> {
   return `TRK-${hash.toString(36).toUpperCase().padStart(4, '0')}`
 }
 
-export default defineJob<BookCourier>('book-courier', async (job) => {
-  const { orderId, reference } = job.data
+export default defineJob<BookCourier>('book-courier', async (ctx) => {
+  const { orderId, reference } = ctx.data
 
   const trackingCode = await bookWithCourier(reference)
 
-  // `auth` is why api/gate.ts declares SYSTEM. An in-process call defaults to
-  // no principal, and no principal is STRANGER(0) — refused by Order's @@gate
-  // exactly as an anonymous browser is. A job is not anonymous, it is the shop
-  // itself, and that is a sentence the app has to say somewhere.
-  await getApp().service('orders').patch(orderId, { trackingCode }, {
-    auth: { user: SYSTEM as never },
-  })
+  // No `auth` and no app-reference module. Both used to be here: the handler
+  // took one argument and it was the job, so reaching the service layer meant
+  // a module holding a mutable app; and an in-process call had no principal,
+  // and no principal is STRANGER(0) — refused by Order's @@gate exactly as an
+  // anonymous browser is — so every job passed `{ auth: { user: SYSTEM } }`.
+  //
+  // The dispatch recorded who asked, and this runs as them, re-resolved. The
+  // staff member who pressed Ship books the courier; the shop's own standing is
+  // not borrowed to do it, which is what SYSTEM everywhere quietly did.
+  //
+  // A named METHOD, not a patch: `trackingCode` is `@system` in the schema, so a
+  // patch carrying it is refused by name at the Data boundary — for this job
+  // exactly as for a person, which is what makes the annotation worth having.
+  // `recordTracking` names the column on the write and keeps every other rule
+  // (see api/services/orders.service.ts).
+  await ctx.app!.service('orders').call('recordTracking', orderId, { trackingCode })
 }, {
   queue:       'fulfilment',
   maxAttempts: 5,

@@ -298,10 +298,16 @@ export function devtools(opts: DevtoolsOptions = {}) {
 
           const url = new URL(req.url)
 
-          // WebSocket upgrade
+          // WebSocket upgrade. `data` is stated because bun-types infers the
+          // socket's data type from the `websocket` block and then requires the
+          // options argument; nothing here reads `ws.data`.
+          //
+          // The boolean matters: a refused upgrade used to fall through to
+          // `undefined as unknown as Response`, which is a lie to both the type
+          // system and Bun. Answering 400 is what a client can act on.
           if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
-            server.upgrade(req)
-            return undefined as unknown as Response
+            if (server.upgrade(req, { data: undefined })) return undefined as unknown as Response
+            return new Response('WebSocket upgrade failed', { status: 400 })
           }
 
           // REST state snapshot

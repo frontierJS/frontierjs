@@ -15,6 +15,7 @@
  */
 
 import { resolveRef, modelNameFor } from './schema-registry.js'
+import { DIRECTIVE_PARAMS }          from '@frontierjs/toolbelt/directives'
 
 /**
  * Follow a `$ref` (and the non-null branch of an `anyOf`) to the definition
@@ -61,6 +62,11 @@ const _CARRIED = [
   'format', 'pattern', 'minLength', 'maxLength',
   'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum',
   'minItems', 'maxItems', 'default', 'description',
+  // `readOnly` is what a computed / generated / `@from` / `@version` field
+  // carries, and `contentMediaType` is where `@markdown` arrives. Both are
+  // read by the control table below and by nothing else — a form has to know
+  // that a value is not the caller's to write, and that a string is a document.
+  'readOnly', 'contentMediaType',
 ]
 
 /**
@@ -184,6 +190,300 @@ export function buildRelations(schema, resolveName = modelNameFor) {
   }
 
   return out
+}
+
+// ── The control table ─────────────────────────────────────────────────────────
+//
+// One field rule → which control renders it. **This is the only place that
+// mapping is written**, so a generated form and a hand-written one cannot
+// disagree about what a `Float` is, and a UI package contributing a control for
+// a type is an entry here rather than an `{#if}` ladder inside a component.
+//
+// It lives beside the rules rather than in the kit for the reason the rules do:
+// this module imports nothing, so the table is readable from a plain Node
+// script and from a component alike, and `@frontierjs/ui` does not have to
+// depend on Sierra to render a form.
+//
+// The descriptor is deliberately thin. Everything a control can resolve for
+// itself from `$context.form` — label, required, maxlength, `type="email"`,
+// the error — is NOT repeated here; that resolution already has an owner and
+// restating it is what this whole row exists to remove.
+
+/** The one media type that says a string is a document rather than a line. */
+const _MARKDOWN = 'text/markdown'
+
+// ── Registered controls ───────────────────────────────────────────────────────
+//
+// The table above is the framework's answer, and it is deliberately small: a
+// kit that ships five controls can only claim five kinds of column. Everything
+// else — a `Json` document, a `String[]`, a `Decimal` an app renders as money,
+// a rich text editor over `@markdown` — is a control somebody else owns, and
+// until this registry existed there was nowhere to put it. `controlFor` was a
+// switch inside a published package, so "contribute a control" meant forking
+// Sierra.
+//
+// **A control is two registrations and they live in different packages**, which
+// is a dependency rule rather than a taste: this module is a leaf that must run
+// in plain Node, so it can name a control but cannot hold one. So the answer
+// here is a NAME, and the kit binds that name to a component
+// (`@frontierjs/ui/controls`). The name is also what makes the answer
+// inspectable — `formFields()` is callable from a test, a prerender or a
+// snapshot, where no component can be loaded at all.
+//
+// A resolver DECLINES by answering null, which is what keeps a registration
+// narrow: an entry that claims everything is a bug in that entry and not
+// something this module can grade.
+
+/** name → resolve. Iteration order is registration order; consulted reversed. */
+const _controls = new Map()
+
+/**
+ * Contribute a control.
+ *
+ *   registerControl('money', (rule) =>
+ *     rule.type === 'number' && rule['x-litestone-kind'] === 'money' ? 'money' : null)
+ *
+ * `resolve(rule, ctx)` answers a control NAME, a full descriptor
+ * (`{ control, …anything the component needs }`), or null to decline and let
+ * the next entry — and finally the built-in table — answer. `ctx` is
+ * `{ field, model }`: the column's name and the model it is on, which is what
+ * lets an app claim one column rather than a type.
+ *
+ * **The last thing registered is the first thing asked**, so an app's own
+ * registration beats a kit's: a kit registers when it is imported, and an app's
+ * module body runs after its imports. Registering a name twice replaces the
+ * first entry rather than stacking a second — a dev server re-evaluating a
+ * module must not end up consulting three copies of it.
+ *
+ * @returns {() => void} the undo, for a test teardown or an HMR dispose
+ */
+export function registerControl(name, resolve) {
+  if (typeof name !== 'string' || !name) {
+    throw new TypeError('registerControl(name, resolve) — name must be a non-empty string')
+  }
+  if (typeof resolve !== 'function') {
+    throw new TypeError(
+      `registerControl('${name}') — resolve must be a function (rule, ctx) => name | descriptor | null`)
+  }
+
+  // Delete before set: a Map keeps insertion order, so re-registering has to
+  // remove the old key or the entry keeps the position it first claimed.
+  _controls.delete(name)
+  _controls.set(name, resolve)
+
+  return () => { if (_controls.get(name) === resolve) _controls.delete(name) }
+}
+
+/** Remove a registration by name. Answers whether there was one. */
+export function unregisterControl(name) {
+  return _controls.delete(name)
+}
+
+/** What is registered, in the order `controlFor` asks them. Diagnostics. */
+export function registeredControls() {
+  return [..._controls.keys()].reverse()
+}
+
+function _fromRegistry(rule, ctx) {
+  if (!_controls.size) return null
+
+  for (const [name, resolve] of [..._controls].reverse()) {
+    let answer
+    try {
+      answer = resolve(rule, ctx)
+    } catch (err) {
+      // One bad resolver must not take every form in the app down with it, and
+      // it must not do that quietly either.
+      console.warn(`[field-rules] registered control '${name}' threw and was skipped — ${err?.message ?? err}`)
+      continue
+    }
+
+    if (answer == null || answer === false) continue
+    if (typeof answer === 'string') answer = { control: answer }
+
+    if (typeof answer !== 'object' || Array.isArray(answer)) {
+      console.warn(
+        `[field-rules] registered control '${name}' answered ${typeof answer} — a resolver answers a ` +
+        'control name, a descriptor object, or null to decline. Ignored.')
+      continue
+    }
+
+    const claimed = answer.control
+    if (claimed !== null && (typeof claimed !== 'string' || !claimed)) {
+      console.warn(
+        `[field-rules] registered control '${name}' answered a descriptor with no \`control\` name. ` +
+        'Answer null to decline; `{ control: null, reason }` to say a field deliberately has none.')
+      continue
+    }
+
+    // `by` is what makes an unrenderable field traceable: <Form> warns naming
+    // the field, and the entry that claimed it is the next question.
+    return { ...answer, by: name }
+  }
+
+  return null
+}
+
+/**
+ * What the built-in table alone would answer, registrations ignored.
+ *
+ * Exported so a resolver can extend rather than restate — an entry that wants a
+ * number input with its own `step` asks for the table's answer and adds to it,
+ * which is how a contribution stays one line instead of a copy of the switch.
+ */
+export function defaultControlFor(rule) {
+  return _builtinControl(rule)
+}
+
+/**
+ * Which control this field gets.
+ *
+ *   { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|'datetime'|null,
+ *     type?, options?, model?, valueField?, relation?, reason? }
+ *
+ * `control: null` is an answer, not an omission — an array column, a `Json`
+ * document and an unknown type have no control in this kit, and the caller is
+ * expected to say so rather than drop the field silently. That silence is the
+ * failure this table exists to prevent: a column added to `.lite` that simply
+ * never appears on the form.
+ *
+ * A registered control is asked first and `by` names the one that answered;
+ * `defaultControlFor` is this same table with the registry skipped.
+ *
+ * @param {object} rule  one entry from buildFieldRules()
+ * @param {{field?: string, model?: string}} [ctx]  which column, on which model
+ */
+export function controlFor(rule, ctx = {}) {
+  if (!rule || typeof rule !== 'object') return { control: null, reason: 'no rule' }
+
+  // Not the caller's to write: @system, @computed, @generated, @from, @version.
+  // Present in the schema so a client knows the field exists, absent from a
+  // form — and NOT offered to the registry, because a control is a thing that
+  // writes and the Data boundary refuses this column by name. A read-only value
+  // shown on a form is a detail renderer wearing a control's clothes, and it
+  // wants the surface that does not exist yet rather than this one.
+  if (rule.readOnly) return { control: null, reason: 'readOnly' }
+
+  const registered = _fromRegistry(rule, ctx)
+  if (registered) return registered
+
+  return _builtinControl(rule)
+}
+
+function _builtinControl(rule) {
+  if (!rule || typeof rule !== 'object') return { control: null, reason: 'no rule' }
+  if (rule.readOnly) return { control: null, reason: 'readOnly' }
+
+  // A foreign key is the one field where a picker is obviously right and a
+  // number spinner obviously wrong, and `references` is already derived.
+  if (rule.references) {
+    return {
+      control:    'picker',
+      model:      rule.references.model,
+      valueField: rule.references.field,
+      relation:   rule.references.relation,
+    }
+  }
+
+  if (Array.isArray(rule.enum)) return { control: 'select', options: rule.enum }
+
+  switch (rule.type) {
+    case 'boolean':
+      return { control: 'checkbox' }
+
+    // Input resolves `type="number"` from the rule itself; `step` is the one
+    // thing the schema does not say — how finely may this be nudged — so it is
+    // stated here rather than derived.
+    case 'integer':
+      return { control: 'input', step: 1 }
+    case 'number':
+      return { control: 'input', step: 'any' }
+
+    case 'string': {
+      if (rule.contentMediaType === _MARKDOWN) return { control: 'textarea' }
+      // A date has no zone, so `<input type="date">` round-trips it and the
+      // plain input is right. A date-time DOES have one and `datetime-local`
+      // has none — it accepts and emits a wall clock — so the two have to be
+      // converted at each edge or the value shifts silently, in opposite
+      // directions going in and coming out. That is a control rather than a
+      // type attribute, which is why this row names one.
+      if (rule.format === 'date') return { control: 'input', type: 'date' }
+      if (rule.format === 'date-time') return { control: 'datetime' }
+      return { control: 'input' }
+    }
+
+    case 'array':  return { control: null, reason: 'array — no control in the kit yet' }
+    case 'object': return { control: null, reason: 'object — a Json column has no single control' }
+    default:       return { control: null, reason: `no control for type ${rule.type ?? 'unknown'}` }
+  }
+}
+
+/**
+ * The form's field list, in schema order.
+ *
+ * The field SET is the last thing a form still restates about a model. A list
+ * typed into a component drifts the way every duplicated list in this repo has
+ * drifted — a column added to `.lite` does not appear, and nothing says so.
+ *
+ * `only` narrows and reorders (its order wins, because naming five fields is
+ * also naming the order you want them in); `except` removes. A name in either
+ * that the model does not have comes back as an `unknown` entry rather than
+ * being ignored, for the same reason a missing control does.
+ *
+ * @param {Record<string, object>} fields  from buildFieldRules()
+ * @param {{only?: string[], except?: string[], model?: string}} [opts]
+ *   `model` is not a filter — it is handed to a registered control, so an app
+ *   can claim one column on one model rather than a type everywhere.
+ * @returns {Array<{name, rule, control, …}>}
+ */
+export function formFieldList(fields, { only, except, model } = {}) {
+  const rules   = fields && typeof fields === 'object' ? fields : {}
+  const known   = Object.keys(rules)
+  const removed = new Set(Array.isArray(except) ? except : [])
+  const names   = Array.isArray(only) && only.length ? only : known
+
+  const out = []
+
+  for (const name of names) {
+    if (removed.has(name)) continue
+    if (!(name in rules)) {
+      out.push({ name, rule: null, control: null, reason: 'no such field on this model' })
+      continue
+    }
+    out.push({ name, rule: rules[name], ...controlFor(rules[name], { field: name, model }) })
+  }
+
+  // An `except` naming a field that is not there is the same mistake as an
+  // `only` that does — usually a rename that left the form behind.
+  for (const name of removed) {
+    if (!(name in rules)) out.push({ name, rule: null, control: null, reason: 'excluded, but no such field on this model' })
+  }
+
+  return out
+}
+
+/**
+ * Which column of a related model a picker should SHOW.
+ *
+ * A foreign key holds an id and nobody recognises an id, so something has to
+ * choose the human column. Nothing in `.lite` declares one today, so this is a
+ * convention and it says so: the first of a few conventional names that exists
+ * as a plain string column, then the first plain string column, then the value
+ * itself. Pass `labelField` to state it and this is not consulted.
+ *
+ * One owner, because the alternative is every picker in every app choosing
+ * differently — and a picker that shows `4` instead of `Ada Lovelace` is the
+ * shape of bug nobody files.
+ */
+const _LABEL_FIELDS = ['name', 'title', 'label', 'displayName', 'reference', 'email', 'slug', 'code']
+
+export function labelFieldFor(fields, fallback = 'id') {
+  const rules = fields && typeof fields === 'object' ? fields : {}
+  const plain = (r) => r?.type === 'string' && !r.enum && !r.references && !r.readOnly
+
+  for (const name of _LABEL_FIELDS) if (plain(rules[name])) return name
+  for (const [name, rule] of Object.entries(rules)) if (plain(rule)) return name
+  return fallback
 }
 
 // ── Gate ──────────────────────────────────────────────────────────────────────
@@ -689,5 +989,223 @@ export function normalizeBlanks(fields, data) {
   }
 
   return out ?? data
+}
+
+// ── Does this record belong in that query's results? ──────────────────────────
+//
+// A pushed record is an announcement about a row, not about a list. The store a
+// `load(query)` filled means "the rows matching that query", so applying every
+// event to it unconditionally is what let a row that LEFT the filter stay in the
+// list, updated in place and quietly wrong (`FJS-011`).
+//
+// The question is answered here rather than on the server because the client
+// already holds the constraint table, so a query-scoped subscription costs no
+// registry, no re-run and no second transport — only the events for rows this
+// list filtered out, which is bandwidth rather than correctness.
+//
+// The operators are exactly what Junction's `parseWhere` / `translateOps` accept
+// and Litestone's `buildWhere` compiles — the `$`-prefixed wire spelling, and the
+// bare Litestone spelling that reaches the same place through parseWhere's nested
+// branch. Nothing more: a keyword the server cannot be sent does not belong here.
+//
+// Three answers, not two. A matcher forced to return a boolean has to guess about
+// a filter it cannot see through — a `select` that dropped the filtered column, a
+// filter naming a relation, `$search`, a raw clause — and guessing wrong is
+// silent. `null` says *cannot decide*, and its caller asks the server again.
+
+const _WIRE_OPS = {
+  $in: 'in', $nin: 'notIn', $lt: 'lt', $lte: 'lte', $gt: 'gt', $gte: 'gte',
+  $ne: 'not', $like: 'contains', $ilike: 'contains', $start: 'startsWith', $end: 'endsWith',
+}
+
+// The same operators under the names Litestone knows them by. An unprefixed
+// operator block travels through `parseWhere` untouched (it only looks for a
+// leading `$`), so both spellings reach `buildWhere` and both are legal here.
+const _BARE_OPS = new Set([
+  'in', 'notIn', 'lt', 'lte', 'gt', 'gte', 'not', 'equals',
+  'contains', 'startsWith', 'endsWith',
+  'has', 'hasEvery', 'hasSome', 'hasNone', 'isEmpty',
+])
+
+// Filters whose answer is not in the record, so a pushed row cannot be graded
+// against them: `$search` is an FTS5 index, `$onlyDeleted`/`$onlyTemplates` are
+// visibility flags the record does not carry a decidable answer for (the marker
+// column can be renamed, and this side holds no schema), `$raw` is SQL.
+const _OPAQUE = new Set(['$search', '$onlyDeleted', '$onlyTemplates', '$raw'])
+
+// Not filters at all — `parseQuery` destructures these out before `parseWhere`
+// sees the rest. They ride in `query` only on the pre-directives fallback path.
+//
+// Read off the wire's own table rather than restated, because a Data-realm
+// feature that grows a per-call option is otherwise a filter on a column nobody
+// declared here, three layers from the cause (FJS-306). Only the decidability
+// question above is this module's to answer.
+const _DIRECTIVES = new Set(DIRECTIVE_PARAMS.filter(p => !_OPAQUE.has(p)))
+
+/** Three-valued AND — false wins over unknown, unknown wins over true. */
+function _and(a, b) {
+  if (a === false || b === false) return false
+  if (a === null  || b === null)  return null
+  return true
+}
+
+function _not(v) {
+  return v === null ? null : !v
+}
+
+/**
+ * A query operand as the column would hold it. The wire is strings — a query
+ * built from a URL or a form control sends `'5'` for an Int — and SQLite's type
+ * affinity converts on comparison, so `WHERE id = '5'` matches row 5 and a
+ * client matcher comparing `5 === '5'` would not.
+ */
+function _operand(rule, v) {
+  if (v instanceof Date) return v.toISOString()
+  if (typeof v !== 'string' || v === '') return v
+  if (rule?.type === 'integer') return /^[+-]?\d+$/.test(v.trim()) ? Number(v) : v
+  if (rule?.type === 'number')  { const n = Number(v); return Number.isFinite(n) ? n : v }
+  if (rule?.type === 'boolean') {
+    if (v === 'true')  return true
+    if (v === 'false') return false
+  }
+  return v
+}
+
+/** `IN (…)` for a scalar column, `hasSome` for an array one — as the bare-array shorthand compiles. */
+function _inList(rule, actual, list) {
+  if (!Array.isArray(list)) return null
+  const wanted = list.map(v => _operand(rule, v))
+  if (Array.isArray(actual)) return actual.some(v => wanted.includes(v))
+  return wanted.includes(actual)
+}
+
+// LIKE is case-insensitive for ASCII in SQLite, which is what makes `$like` and
+// `$ilike` compile to the same `contains` on the server.
+const _like = (actual, operand, test) =>
+  actual == null ? false : test(String(actual).toLowerCase(), String(operand).toLowerCase())
+
+function _matchOp(rule, actual, op, operand) {
+  switch (op) {
+    case 'in':     return _inList(rule, actual, operand)
+    // NOT IN excludes NULL rows in SQLite, so Litestone ORs `IS NULL` back in.
+    case 'notIn':  return operand?.length ? _not(_inList(rule, actual, operand)) : true
+    case 'gt':     return actual == null ? false : actual >  _operand(rule, operand)
+    case 'gte':    return actual == null ? false : actual >= _operand(rule, operand)
+    case 'lt':     return actual == null ? false : actual <  _operand(rule, operand)
+    case 'lte':    return actual == null ? false : actual <= _operand(rule, operand)
+    case 'contains':   return _like(actual, operand, (a, b) => a.includes(b))
+    case 'startsWith': return _like(actual, operand, (a, b) => a.startsWith(b))
+    case 'endsWith':   return _like(actual, operand, (a, b) => a.endsWith(b))
+    case 'equals':
+      if (operand === null) return actual == null
+      if (Array.isArray(operand)) {
+        // The exact set, in order — the one place an array is not a membership test.
+        if (!Array.isArray(actual)) return null
+        return actual.length === operand.length && actual.every((v, i) => v === operand[i])
+      }
+      return actual === _operand(rule, operand)
+    case 'not':
+      if (operand === null) return actual != null
+      if (Array.isArray(operand)) return operand.length ? _not(_inList(rule, actual, operand)) : true
+      // `col != ?` is NULL, not true, on a NULL column.
+      return actual == null ? false : actual !== _operand(rule, operand)
+    case 'has':      return Array.isArray(actual) ? actual.includes(operand) : null
+    case 'hasEvery': return Array.isArray(actual) ? operand.every(v => actual.includes(v)) : null
+    case 'hasSome':  return Array.isArray(actual) ? operand.some(v => actual.includes(v))  : null
+    case 'hasNone':  return Array.isArray(actual) ? !operand.some(v => actual.includes(v)) : null
+    case 'isEmpty':  return Array.isArray(actual) ? (operand ? actual.length === 0 : actual.length > 0) : null
+    default:         return null
+  }
+}
+
+function _matchField(rule, actual, expected) {
+  if (expected === null) return actual == null
+  if (expected instanceof Date) return actual === expected.toISOString()
+  if (Array.isArray(expected)) {
+    // A bare array is membership, never equality — Prisma reads it the other way
+    // and a schema ported from there filters wider than it did.
+    return expected.length ? _inList(rule, actual, expected) : false
+  }
+  if (typeof expected !== 'object') return actual === _operand(rule, expected)
+
+  if ('$null' in expected) return expected.$null ? actual == null : actual != null
+
+  const keys = Object.keys(expected)
+  if (!keys.length) return true
+
+  // Every key an operator, or none of them: the same disambiguation the server
+  // makes (`isTypedJsonPath`). Anything else is a path into a JSON document or a
+  // filter over a relation, neither of which this record can answer.
+  if (!keys.every(k => k in _WIRE_OPS || _BARE_OPS.has(k))) return null
+
+  let verdict = true
+  for (const k of keys) {
+    verdict = _and(verdict, _matchOp(rule, actual, _WIRE_OPS[k] ?? k, expected[k]))
+    if (verdict === false) return false
+  }
+  return verdict
+}
+
+/**
+ * Does this record satisfy that query?
+ *
+ * @param {Record<string, object>} fields  from buildFieldRules(); `{}` still
+ *        matches structurally, it just cannot convert a string operand
+ * @param {object} record
+ * @param {object} query  filters as they travel over the wire
+ * @returns {true|false|null}  in the results, not in them, or undecidable
+ */
+export function matchesQuery(fields, record, query) {
+  if (!query || typeof query !== 'object') return true
+  if (!record || typeof record !== 'object') return null
+
+  let verdict = true
+
+  for (const [key, val] of Object.entries(query)) {
+    if (val === undefined || _DIRECTIVES.has(key)) continue
+
+    let one
+    if (_OPAQUE.has(key)) {
+      one = null
+    } else if (key === '$or') {
+      one = Array.isArray(val) ? _some(fields, record, val) : null
+    } else if (key === '$and') {
+      one = Array.isArray(val) ? _every(fields, record, val) : null
+    } else if (key === '$not') {
+      one = _not(matchesQuery(fields, record, val))
+    } else if (key.startsWith('$')) {
+      one = null   // an operator the server may know and this does not
+    } else if (!(key in record)) {
+      // A `select` that dropped the filtered column, or a filter naming a
+      // relation — the row is here, the answer is not.
+      one = null
+    } else {
+      one = _matchField(fields?.[key], record[key], val)
+    }
+
+    verdict = _and(verdict, one)
+    if (verdict === false) return false
+  }
+
+  return verdict
+}
+
+function _some(fields, record, list) {
+  let verdict = false
+  for (const q of list) {
+    const one = matchesQuery(fields, record, q)
+    if (one === true) return true
+    if (one === null) verdict = null
+  }
+  return verdict
+}
+
+function _every(fields, record, list) {
+  let verdict = true
+  for (const q of list) {
+    verdict = _and(verdict, matchesQuery(fields, record, q))
+    if (verdict === false) return false
+  }
+  return verdict
 }
 

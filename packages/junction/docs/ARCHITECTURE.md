@@ -86,10 +86,14 @@ Migration map (every old `ctx.params.X`):
 `.paginate`→`ctx.locals.paginate`; path params→`ctx.route.X`;
 `__channels`→`ctx.locals`; any ad-hoc hook stash→`ctx.locals.X`.
 
-**`TransportContext.params` is UNCHANGED** — that's the router's path-param
-`Record<string,string>`, always a separate thing from the killed bag. Route and
-WS handlers (`app.get('/x/{id}', ctx => ctx.params.id)`) work exactly as before.
-Patterns are `{id}`; a `:id` segment is treated as a literal and never matches.
+**A `TransportContext` says `ctx.route` too.** It was `params` for a while — the
+router's path-param `Record<string,string>`, always a separate thing from the
+killed bag — but keeping the WORD meant the Feathers idiom kept arriving and
+finding a field of that name holding something else, which is how a role check
+reads `undefined` and passes for everyone. One word per realm now
+(`app.get('/x/{id}', ctx => ctx.route.id)`); Sierra says `page.params`. Ruled as
+`FJS-D03`. Patterns are `{id}`; a `:id` segment is treated as a literal and
+never matches.
 
 ### `query` vs `directives`
 
@@ -254,11 +258,11 @@ same split Feathers has between its core (publishes nothing) and its generator
 (writes a publisher). `fli make:*` scaffolds declare it, so a generated app is
 live out of the box.
 
-**A custom action announces too, under its own name** — `orders pay`, not a
-past tense invented for it. An action is a write: `db.order.transition(id,
-'pay')` changes the row exactly as a patch does, and the browser client's `*`
-handler has always upserted any non-CRUD event. Only `find` and `get` are
-excluded, by name. An action that merely READS (search, stats, export) is
+**A custom method announces too, under its own name** — `orders pay`, not a
+past tense invented for it. It is a write: `db.order.transition(id, 'pay')`
+changes the row exactly as a patch does, and the browser client's `*` handler
+has always upserted any non-CRUD event. Only `find` and `get` are excluded, by
+name. A method that merely READS (search, stats, export) is
 indistinguishable from one that writes at this layer, so it opts out with
 `ctx.dispatch = false` — the same one switch that suppresses any other
 broadcast, and it suppresses both consumers.
@@ -287,10 +291,10 @@ Needs a post-construction subscribe mirroring `$tapQuery`.
 
 **Custom methods** are defined directly alongside CRUD on the service object —
 any extra function-valued option. Dispatch is via the `X-Service-Method`
-header, whitelist-only: built-ins (`restore`, `upsert`) and custom actions
+header, whitelist-only: built-ins (`restore`, `upsert`) and custom methods
 match, CRUD names are blocked from override, and case is preserved so a
-camelCase action isn't a guaranteed 404. The naming ("actions") is still under
-review — see `../../ARCHITECT.md` §5.
+camelCase method isn't a guaranteed 404. They are METHODS and there is no
+second noun for them — `DECISIONS.md` § Naming & vocabulary, `FJS-D02`.
 
 **Config** — `createApp()` with no args reads `api/config/junction.config.js`.
 Sections: `app`, `middleware`, `plugins`, `services`, `conduit`, `caravan`.

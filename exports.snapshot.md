@@ -16,7 +16,7 @@ release moves sixteen at once, and a file that changes every release is a file
 nobody reads on the release that matters.
 
 ```
-15 publishable package(s) · 0 problem(s)
+17 publishable package(s) · 0 problem(s)
 ```
 
 ## Unpublished entry points
@@ -28,11 +28,14 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/auth`
 
-`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `crypto.ts` `errors.ts` `index.ts` `package.json` `plugin.ts` `schema.ts` `types.ts`
+`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `index.ts` | yes |
+| exports | `./schema` | `schema.ts` | yes |
+| exports | `./schema.lite` | `db/auth.lite` | yes |
+| exports | `./user.lite` | `db/user.lite` | yes |
 | main | `main` | `index.ts` | yes |
 
 - peers — `@frontierjs/litestone`: `^1.1.0` · `@frontierjs/junction`: `^0.1.0`
@@ -69,6 +72,18 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 - peers — `@frontierjs/junction`: `^0.1.0`
 
+## `@frontierjs/config`
+
+`packages/config` · ships `LICENSE` `README.md` `biome.json` `editorconfig` `package.json` `tsconfig.json`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `./tsconfig` | `tsconfig.json` | yes |
+| exports | `./tsconfig.json` | `tsconfig.json` | yes |
+| exports | `./biome` | `biome.json` | yes |
+| exports | `./biome.json` | `biome.json` | yes |
+| exports | `./editorconfig` | `editorconfig` | yes |
+
 ## `@frontierjs/css`
 
 `packages/css` · ships `AGENTS.md` `LICENSE` `README.md` `dist/` `package.json` `src/` `vocabulary.js` `vocabulary.json`
@@ -79,7 +94,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./index.css` | `src/index.css` | yes |
 | exports | `./utilities.css` | `src/utilities.css` | yes |
 | exports | `./foundation/*.css` | `src/foundation/*.css` | 6 files |
-| exports | `./themes/*.css` | `src/themes/*.css` | 9 files |
+| exports | `./themes/*.css` | `src/themes/*.css` | 10 files |
 | exports | `./components/*.css` | `src/components/*.css` | 20 files |
 | exports | `./patterns/*.css` | `src/patterns/*.css` | 9 files |
 | exports | `./a11y/*.css` | `src/a11y/*.css` | 2 files |
@@ -207,11 +222,12 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./render-component (import)` | `src/render-component.js` | yes |
 | exports | `./vite (import)` | `mesa-vite/index.js` | yes |
 | exports | `./vite/client (import)` | `mesa-vite/client.js` | yes |
+| exports | `./vite/hmr (import)` | `mesa-vite/hmr.js` | yes |
 | main | `main` | `src/compiler.js` | yes |
 
 ## `@frontierjs/notifications`
 
-`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `drivers/` `errors.ts` `index.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `types.ts`
+`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `drivers/` `errors.ts` `index.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `state.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -241,6 +257,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./components/ChainRenderer` | `src/components/ChainRenderer.mesa` | yes |
 | exports | `./presence` | `src/presence/index.js` | yes |
 | exports | `./devtools` | `src/devtools/index.js` | yes |
+| exports | `./widget` | `src/widget/index.js` | yes |
+| exports | `./widget/serve` | `src/widget/serve.js` | yes |
 | bin | `sierra` | `src/tools/cli.js` | yes |
 
 - peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0` · `@frontierjs/litestone`: `^1.1.0`
@@ -255,24 +273,37 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 - peers — `@frontierjs/junction`: `^0.1.0` · `@frontierjs/litestone`: `^1.1.0`
 
+## `@frontierjs/toolbelt`
+
+`packages/toolbelt` · ships `LICENSE` `README.md` `package.json` `src/`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `./directives` | `src/directives/directives.js` | yes |
+| exports | `./glow` | `src/glow/glow.js` | yes |
+| exports | `./inflect` | `src/inflect/inflect.js` | yes |
+
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `LICENSE` `README.md` `components/` `package.json` `stores/` `tokens.css` `utils.js`
+`packages/ui` · ships `LICENSE` `README.md` `components/` `controls.js` `package.json` `stores/` `tokens.css` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `./utils.js` | `utils.js` | yes |
 | exports | `./utils` | `utils.js` | yes |
-| exports | `./stores/*` | `stores/*.js` | 4 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 64 files |
-| exports | `./components/*` | `components/*.mesa` | 64 files |
+| exports | `./controls.js` | `controls.js` | yes |
+| exports | `./controls` | `controls.js` | yes |
+| exports | `./stores/*.js` | `stores/*.js` | 3 files |
+| exports | `./stores/*` | `stores/*.js` | 3 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 66 files |
+| exports | `./components/*` | `components/*.mesa` | 66 files |
 
 - peers — `@frontierjs/css`: `^0.15.0` · `@frontierjs/mesa`: `^0.1.0`
 
-## `@frontierjs/utils`
+## `create-frontier`
 
-`packages/utils` · ships `LICENSE` `README.md` `package.json` `src/`
+`packages/create-frontier` · ships `LICENSE` `README.md` `index.js` `package.json`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
-| exports | `./glow` | `src/glow/glow.js` | yes |
+| bin | `create-frontier` | `index.js` | yes |

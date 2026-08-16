@@ -90,5 +90,8 @@
     "feathers"
   ],
   "license": "MIT",
-  "_built": "2026-05-27"
+  "_built": "2026-05-27",
+  "dependencies": {
+    "@frontierjs/toolbelt": "workspace:*"
+  }
 }

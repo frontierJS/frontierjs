@@ -27,7 +27,7 @@
  */
 
 .disclosure {
-  border:        1px solid var(--rule);
+  border:        var(--border-width) solid var(--rule);
   border-radius: var(--card-radius);
   overflow:      hidden;
 }
@@ -61,8 +61,8 @@
   block-size:         0;
   overflow:           hidden;
   transition:
-    block-size         var(--overlay-time, 160ms) var(--overlay-ease, ease),
-    content-visibility var(--overlay-time, 160ms) allow-discrete;
+    block-size         var(--overlay-time, var(--motion-enter)) var(--overlay-ease, var(--motion-ease-enter)),
+    content-visibility var(--overlay-time, var(--motion-enter)) allow-discrete;
 }
 
 .disclosure[open]::details-content {
@@ -77,7 +77,7 @@
   border-right:  2px solid var(--ink-mute);
   border-bottom: 2px solid var(--ink-mute);
   transform:     rotate(-45deg);
-  transition:    transform 150ms ease;
+  transition:    transform var(--motion-base) var(--motion-ease);
   flex-shrink:   0;
 }
 .disclosure[open] .disclosure-summary::after {
@@ -86,7 +86,7 @@
 
 .disclosure-body {
   padding:    var(--space-xl);
-  border-top: 1px solid var(--rule);
+  border-top: var(--border-width) solid var(--rule);
 }
 
 /* When the caret sits beside content that itself ends in a value (like a

@@ -32,6 +32,11 @@ src/
 - **`stub` and `not_implemented` are different answers.** A stub transport
   succeeds with a canned response; NotImplemented refuses. Do not use the first
   as a placeholder for a transport you meant to write.
+- **`observers:` and `management.hooks` are two words for two tiers.** Everything
+  under `observers:` receives and cannot act — a throw is caught, a promise is
+  never awaited — so nothing there can change a request or suppress an error.
+  `management.hooks` is Junction's own pipeline and does refuse calls. A new
+  `on*` states which tier it is (`FJS-D06` §1).
 - **The credential must really resolve.** `example`'s drive posts to a dev mail
   sink on :8111 precisely so the request leaves the process carrying a resolved
   credential and can really answer 500 — an outbound path that is only ever

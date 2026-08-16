@@ -9,9 +9,9 @@ export { deriveAccess, renderAccessSnapshot, gateLadder, policyExprToString,
          expectedVerdict, levelLabel, REACHABLE_LEVELS } from './access.js'
 export { schemaMutants, mutationScore } from './mutate.js'
 
-import { parse }                    from './core/parser.js'
+import { parse, inlineImportsFromDisk } from './core/parser.js'
 import { modelToAccessor }          from './core/ddl.js'
-import { createClient }             from './core/client.js'
+import { createClient, buildRelationMap } from './core/client.js'
 import { cloneInto }                from './testdb.js'
 import { parseGateString, GatePlugin }  from './plugins/gate.js'
 import { AccessDeniedError }        from './core/plugin.js'
@@ -230,9 +230,25 @@ export async function createTestEnv(opts = {}) {
 
   if (!schema) throw new Error('createTestEnv: pass `schema` — the .lite text, or a path to it')
 
-  const schemaText = (!schema.includes('\n') && existsSync(schema))
-    ? readFileSync(schema, 'utf8')
-    : schema
+  // Imports are spliced in rather than left for parseFile, because ONE text is
+  // what the rest of this needs: it is the template cache key (`cloneInto`) and
+  // what `atLevel` re-parses. Read the root file alone and two things break
+  // together — every executed check grades a schema with the imported models
+  // MISSING and passes, so `verifyGateLadder` reports a clean ladder over models
+  // it never saw; and the cache key does not cover the imported file, so editing
+  // one reuses the previous run's database.
+  const isPath = !schema.includes('\n') && existsSync(schema)
+  const { text: schemaText, missing } = isPath
+    ? inlineImportsFromDisk(schema)
+    : { text: schema, missing: [] }
+
+  // Refused, not warned. An unreadable import is a set of models that silently
+  // will not be graded, and this is the thing whose whole job is grading them.
+  if (missing.length)
+    throw new Error(
+      `createTestEnv: ${schema} imports ${missing.map(m => `'${m}'`).join(', ')}, ` +
+      `which could not be read — those models would go untested.`
+    )
 
   const built  = await _buildEnv(schemaText, rest)
   const levels = new Map()     // level → client
@@ -323,6 +339,17 @@ export async function createTestEnv(opts = {}) {
         return Boolean(m?.policies?.[op]?.allows?.length || m?.policies?.[op]?.denies?.length)
       }
 
+      // The same problem one layer down. @guarded is a system-context lock on
+      // the write as well as the read, so a payload naming one is refused
+      // before the gate is reached — and the refusal is an AccessDeniedError,
+      // indistinguishable here from the gate itself. The column is dropped from
+      // the fixture where it can be; where the schema requires it, no
+      // non-system caller can create the model at all and the row is reported
+      // ungraded rather than as a deny no gate issued.
+      const _guardedFields = (model) =>
+        (schema.models.find(x => x.name === model)?.fields ?? [])
+          .filter(f => f.attributes?.some(a => a.kind === 'guarded'))
+
       const sys        = built.db.asSystem()
       const mismatches = []
       const before     = snapshot(built.db)
@@ -341,6 +368,12 @@ export async function createTestEnv(opts = {}) {
       try {
         for (const [modelName, modelRows] of byModel) {
         const factory = chain(modelName)
+        const guarded = _guardedFields(modelName)
+        // Required means the create cannot be assembled without it: no default,
+        // no `?`. An optional one is simply left out.
+        const guardedRequired = guarded.filter(f =>
+          !f.type.optional && !f.attributes.some(a => a.kind === 'default'))
+        const guardedOptional = guarded.filter(f => !guardedRequired.includes(f))
 
         for (const row of modelRows) {
           const acc    = modelToAccessor(row.model)
@@ -378,14 +411,22 @@ export async function createTestEnv(opts = {}) {
               // reaching the gate.
               const data = factory.buildOne(await _freshParents(schema, row.model, chain))
               delete data[idKey]
+              // The optional ones come out: they are refused below level 8 and
+              // the row does not need them. A REQUIRED one stays in, so the
+              // write reaches the field lock and is classified below — stripping
+              // it would fail the required check instead, which says nothing
+              // about either lock. Level 8 IS asSystem() and writes them all.
+              if (row.level < 8) for (const f of guardedOptional) delete data[f.name]
               run = () => client[acc].create({ data })
             } else if (row.op !== 'read') {
               // Update and delete need a row that is already there, made as
               // SYSTEM so a gate refusing the principal cannot refuse the setup.
               const seeded = await factory.createOne()
               const id     = seeded[idKey]
+              const patch = _touch(schema, row.model, seeded)
+              if (row.level < 8) for (const f of guarded) delete patch[f.name]   // an update names only what it changes
               run = row.op === 'update'
-                ? () => client[acc].update({ where: { [idKey]: id }, data: _touch(schema, row.model, seeded) })
+                ? () => client[acc].update({ where: { [idKey]: id }, data: patch })
                 : () => client[acc].delete({ where: { [idKey]: id } })
             }
           } catch (err) {
@@ -421,6 +462,17 @@ export async function createTestEnv(opts = {}) {
           else if (row.expect === 'allow' && got === 'deny' && policied(row.model, row.op)) mismatches.push({
             ...row, got: 'skipped', thrown,
             message: `${row.model}.${row.op} at level ${row.level} (${row.label}) — not graded: the model declares a row policy for ${row.op}, which refuses a synthetic principal before the gate is reached`,
+          })
+          // A required @guarded column cannot be dropped from a create the way an
+          // optional one is, so no non-system caller can assemble the row at all
+          // and the gate is never reached. Reported rather than skipped silently:
+          // the model IS uncreatable below level 8, which is a fact about the
+          // schema somebody should see.
+          else if (row.expect === 'allow' && got === 'deny' && row.op === 'create' && guardedRequired.length) mismatches.push({
+            ...row, got: 'skipped', thrown,
+            message: `${row.model}.${row.op} at level ${row.level} (${row.label}) — not graded: ` +
+                     `"${guardedRequired.map(f => f.name).join('", "')}" ${guardedRequired.length > 1 ? 'are' : 'is'} ` +
+                     `@guarded and required, so the field lock refuses the write before the gate is asked`,
           })
           else if (got !== row.expect) mismatches.push({
             ...row, got, thrown,
@@ -476,7 +528,7 @@ export async function createTestEnv(opts = {}) {
                                 ops = ['read', 'update', 'delete'] } = {}) => {
       const schema     = against ?? built.parsed.schema
       const who        = principal ?? DEFAULT_POLICY_PRINCIPAL
-      const policyMap  = buildPolicyMap(schema)
+      const policyMap  = buildPolicyMap(schema, buildRelationMap(schema))
       const access     = deriveAccess(schema)
       const sys        = built.db.asSystem()
       const mismatches = []
@@ -651,6 +703,13 @@ export async function createTestEnv(opts = {}) {
             const hit = candidates.find(c => c.targeted)
             if (hit) matching[field] = hit.value
           }
+
+          // The field a policy compares is very often a FOREIGN KEY, so the
+          // targeted value names a parent that does not exist and the child is
+          // refused by the constraint rather than by anything about access.
+          // Same call `verifyRowPolicies` makes, for the same reason.
+          for (const [field, value] of Object.entries(matching))
+            await _ensureParent(schema, model, field, value, chain)
 
           let seeded
           try { seeded = await chain(model.name).createOne(matching) }
@@ -1469,27 +1528,27 @@ export function generateValidationCases(schema, modelName) {
     if (field.type.kind === 'relation') continue
 
     // ── Array validators ──────────────────────────────────────────────────
-    // Enforced in client.js's writeData rather than validate.js, with their
-    // wording built inline — so these are the one family whose message is not
-    // customisable and does not reach `x-messages` (FJS-194).
+    // Same table as every other family, and for the same reason: the generator
+    // restating the wording is a second copy, and it was the copy that noticed
+    // the server was ignoring an authored message (FJS-194).
     if (field.type.array) {
       const name = field.name
       for (const attr of field.attributes) {
         if (attr.kind === 'minItems' && attr.value > 0) {
           invalid.push({ field: name, value: [], rule: `@minItems(${attr.value})`,
-            expect: 'fail', message: `${name} must have at least ${attr.value} item(s)` })
+            expect: 'fail', message: msg(attr, DEFAULT_MESSAGES.minItems(attr.value)) })
           boundary.push({ field: name, value: _arrayOf(field, attr.value), rule: `@minItems(${attr.value})`,
             expect: 'pass', message: '' })
         }
         if (attr.kind === 'maxItems') {
           invalid.push({ field: name, value: _arrayOf(field, attr.value + 1), rule: `@maxItems(${attr.value})`,
-            expect: 'fail', message: `${name} must have at most ${attr.value} item(s)` })
+            expect: 'fail', message: msg(attr, DEFAULT_MESSAGES.maxItems(attr.value)) })
           boundary.push({ field: name, value: _arrayOf(field, attr.value), rule: `@maxItems(${attr.value})`,
             expect: 'pass', message: '' })
         }
         if (attr.kind === 'uniqueItems') {
           invalid.push({ field: name, value: _arrayOf(field, 1).concat(_arrayOf(field, 1)), rule: '@uniqueItems',
-            expect: 'fail', message: `${name} must have unique items` })
+            expect: 'fail', message: msg(attr, DEFAULT_MESSAGES.uniqueItems()) })
         }
       }
       continue
@@ -1722,12 +1781,76 @@ function _interestingValues(rules, who, model) {
 
   const walk = (node) => {
     if (!node || typeof node !== 'object') return
+    // A ternary's branches are where the interesting values live —
+    // `level > 5 ? ownerId == auth().id : true` needs a row on each side of the
+    // CONDITION and each side of the branch it selects. The generic descent
+    // below reaches them by object-walking, but the condition's own field would
+    // only ever get its comparison values, never a value chosen to make the
+    // condition false, so every seeded row landed on one side and the policy
+    // was reported ungraded.
+    if (node.type === 'ternary') { walk(node.cond); walk(node.then); walk(node.else); return }
+    // Membership seeds differently from a comparison, and getting it wrong is
+    // not a wrong grade but NO grade: the generic branch below would put the
+    // principal's scalar id into an `Int[]` column, the insert fails, and the
+    // run reports one row all on the excluded side. The list is always the
+    // RIGHT operand; which column to seed depends on which side holds it.
+    if (node.type === 'compare' && node.op === 'in') {
+      const { left, right } = node
+      if (right.type === 'field') {
+        // the list is a column — a matching row is one whose list holds the value
+        const val = left.type === 'auth'    ? (left.field ? who[left.field] : who.id)
+                  : left.type === 'literal' ? left.value
+                  : undefined
+        if (val !== undefined && val !== null) add(right.name, [val], true)
+        add(right.name, [], false)
+      } else if (left.type === 'field') {
+        // the list is the caller's or written literally — a matching row is one
+        // whose column holds a member of it
+        const items = right.type === 'list' ? right.items
+                    : right.type === 'auth' ? (right.field ? who[right.field] : who.id)
+                    : null
+        const list = Array.isArray(items) ? items : items == null ? [] : [items]
+        if (list.length) add(left.name, list[0], true)
+        // The excluded side needs a value the column will actually accept: the
+        // string sentinel is refused by an Int column, `null` by a required one,
+        // and the factory's own row is only excluded by luck — a `@default(0)`
+        // against a list holding 0 leaves every row admitted and the policy
+        // ungraded.
+        const def = model.fields.find(f => f.name === left.name)
+        if (def && ['Int', 'Float'].includes(def.type?.name)) {
+          const nums = list.filter(v => typeof v === 'number')
+          add(left.name, (nums.length ? Math.max(...nums) : 0) + 9973, false)
+        }
+        add(left.name, '__no_policy_match__', false)
+        add(left.name, null, false)
+      }
+      return
+    }
     if (node.type === 'compare') {
       const { left, right } = node
       const pair = (fieldNode, otherNode) => {
         if (fieldNode?.type !== 'field') return
         if (otherNode?.type === 'auth')    add(fieldNode.name, otherNode.field ? who[otherNode.field] : who.id, true)
         if (otherNode?.type === 'literal') add(fieldNode.name, otherNode.value, true)
+        // An ORDERING comparison is not satisfied by the literal it names:
+        // `level > 5` seeded `level = 5`, which is on the excluded side, so the
+        // only admitted rows were whatever the factory happened to generate —
+        // and a policy graded by luck reports "all on one side" the day the
+        // factory changes. Seed the neighbours and mark whichever one the
+        // operator actually admits, evaluated rather than assumed.
+        if (otherNode?.type === 'literal' && typeof otherNode.value === 'number' &&
+            ['<', '>', '<=', '>='].includes(node.op)) {
+          const L = otherNode.value
+          // fieldNode on the left means `field OP literal`; on the right the
+          // comparison reads the other way round.
+          const onLeft = fieldNode === left
+          for (const v of [L - 1, L + 1]) {
+            const holds = onLeft
+              ? (node.op === '<' ? v < L : node.op === '>' ? v > L : node.op === '<=' ? v <= L : v >= L)
+              : (node.op === '<' ? L < v : node.op === '>' ? L > v : node.op === '<=' ? L <= v : L >= v)
+            add(fieldNode.name, v, holds)
+          }
+        }
         add(fieldNode.name, null, false)
         add(fieldNode.name, '__no_policy_match__', false)
       }

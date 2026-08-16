@@ -17,7 +17,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError } from '../../utils.js'
+  import { nameToLabel, uid, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let value       = null
   export let options     = []          // flat or grouped (see above)
@@ -39,16 +39,30 @@
   const selectId  = id || uid('select')
   const autoLabel = nameToLabel(name)
 
-  const isGrouped = options.length > 0 && typeof options[0] === 'object' && 'group' in options[0]
+  const form = $context.form
+  const rule = resolveRule(form, name)
+
+  // An enum column already carries its members — `fields.status.enum` exists
+  // because `{"$ref":"#/$defs/OrderStatus"}` was resolved against the registry
+  // — so inside a <Form> the option list is a schema fact like the label and
+  // the `required` beside it. Stated options always win; this is the fallback,
+  // not an override, and a select over anything that is not an enum is
+  // unaffected.
+  const resolved = options?.length ? options : (rule?.enum ?? [])
+
+  // …and the `required` that comment names. It was read off the rule for the
+  // option list alone, so a select stated no constraint the model insisted on.
+  const resolvedRequired = stated(required, rule?.required)
+
+  const isGrouped = resolved.length > 0 && typeof resolved[0] === 'object' && 'group' in resolved[0]
 
   function normalise(opts) {
     return opts.map(o => typeof o === 'string' ? { value: o, label: o, disabled: false } : o)
   }
 
-  const flatOptions    = isGrouped ? [] : normalise(options)
-  const groupedOptions = isGrouped ? options.map(g => ({ ...g, options: normalise(g.options) })) : []
+  const flatOptions    = isGrouped ? [] : normalise(resolved)
+  const groupedOptions = isGrouped ? resolved.map(g => ({ ...g, options: normalise(g.options) })) : []
 
-  const form     = $context.form
   const hasError = !!resolveError(form, name, error, errors)
 
   let el
@@ -70,7 +84,7 @@
     id={selectId}
     name={name || undefined}
     disabled={disabled}
-    required={required}
+    required={resolvedRequired}
     multiple={multiple}
     aria-invalid={hasError || null}
     on:input={oninput}
@@ -127,7 +141,7 @@
     id={selectId}
     name={name}
     label={label || undefined}
-    required={required}
+    required={resolvedRequired}
     badge={badge}
     help={help}
     hint={hint}

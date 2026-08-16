@@ -7,8 +7,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   plugins: [
-    // css: false tells the Mesa plugin not to emit virtual CSS modules
-    mesa({ compilerPath: './compiler.js', css: false })
+    // `css: false` was here to keep styles out of a virtual CSS module the
+    // plugin could never produce (FJS-291), and what it did instead was drop
+    // every bench component's <style> block.
+    mesa({ compilerPath: './compiler.js' })
   ],
   base: './',
   resolve: {

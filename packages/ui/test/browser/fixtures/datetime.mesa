@@ -1,0 +1,53 @@
+<script>
+  // datetime.mesa — DateTimeInput twice: standing alone with a value handed to
+  // it, and inside a generated <Form> where nothing about it is written at all.
+  //
+  // The second one is the half that proves the wiring rather than the
+  // component: Sierra's control table answers `datetime` for a `format:
+  // date-time` column and `@frontierjs/ui`'s dispatcher binds that name here,
+  // and a break in either link renders a text box that looks fine and shifts
+  // the value.
+  import DateTimeInput from '../../../components/forms/DateTimeInput.mesa'
+  import Form          from '../../../components/forms/Form.mesa'
+  import { formFieldList } from '@frontierjs/sierra/field-rules'
+
+  // Props reach a fixture as JSON, so an instant travels as its own ISO text —
+  // which is what it is on the wire anyway.
+  export let iso = '2026-03-04T09:30:00.000Z'
+
+  let value = iso
+  let seen  = ''
+
+  const FIELDS = {
+    reference:   { type: 'string', required: true,  title: 'Reference' },
+    scheduledFor:{ type: 'string', required: true,  format: 'date-time', title: 'Scheduled for' },
+    dueOn:       { type: 'string', required: false, format: 'date',      title: 'Due on' },
+  }
+
+  const RESOURCE = {
+    context: { model: 'Delivery', service: 'deliveries', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ reference: '', scheduledFor: iso, dueOn: '' }),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    validate: () => [],
+    service: {},
+  }
+
+  let record = RESOURCE.make()
+</script>
+
+<!-- Standing alone: the round trip, in both directions. -->
+<DateTimeInput
+  label="Starts at"
+  name="startsAt"
+  bind:value={value}
+  onvalue={(v) => seen = v}
+/>
+
+<!-- Generated: nothing here names a control. -->
+<Form resource={RESOURCE} bind:record={record} auto />
+
+<output id="value">{value}</output>
+<output id="seen">{seen}</output>

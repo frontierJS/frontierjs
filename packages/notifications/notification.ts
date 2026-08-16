@@ -1,17 +1,17 @@
-import type { Channel, InAppMessage, MailMessage, SmsMessage, User } from './types.ts'
+import type { InAppMessage, MailMessage, Recipient, SmsMessage, Transport } from './types.ts'
 
 /**
  * Abstract base class for all notification types.
  *
  * Subclass this and implement:
- *   - via()         — which channels to deliver on for this user
- *   - toInApp()     — if 'inApp' is returned by via()
- *   - toEmail()     — if 'email' is returned by via()
- *   - toSms()       — if 'sms' is returned by via()
- *   - toChannel()   — for any custom driver channel names
+ *   - via()           — which transports to deliver on for this recipient
+ *   - toInApp()       — if 'inApp' is returned by via()
+ *   - toEmail()       — if 'email' is returned by via()
+ *   - toSms()         — if 'sms' is returned by via()
+ *   - to<Transport>() — for any custom driver's transport name
  *
  * Usage:
- *   await app.notify(user, new PaymentReceived(payment))
+ *   await app.notify(recipient, new PaymentReceived(payment))
  *
  * @example
  * export class PaymentReceived extends Notification {
@@ -19,11 +19,11 @@ import type { Channel, InAppMessage, MailMessage, SmsMessage, User } from './typ
  *
  *   constructor(private payment: Payment) { super() }
  *
- *   via(user: User): Channel[] {
+ *   via(user: Recipient): Transport[] {
  *     return user.notificationPreferences ?? ['inApp', 'email']
  *   }
  *
- *   toInApp(user: User): InAppMessage {
+ *   toInApp(user: Recipient): InAppMessage {
  *     return inApp()
  *       .title('Payment received')
  *       .body(`$${this.payment.amount} has been received.`)
@@ -33,7 +33,7 @@ import type { Channel, InAppMessage, MailMessage, SmsMessage, User } from './typ
  *       .build()
  *   }
  *
- *   toEmail(user: User): MailMessage {
+ *   toEmail(user: Recipient): MailMessage {
  *     return mail()
  *       .subject('Payment received')
  *       .greeting(`Hi ${user.firstName}`)
@@ -55,50 +55,52 @@ export abstract class Notification {
   static type?: string
 
   /**
-   * Returns the channels this notification should be delivered on for the
-   * given user. Called once per notify() invocation.
+   * Returns the transports this notification should be delivered on for the
+   * given recipient. Called once per notify() invocation.
    *
-   * Return value drives which toChannel() methods are called and which
-   * drivers are invoked. All returned channel names are validated eagerly
-   * before any delivery begins.
+   * Return value drives which to*() methods are called and which drivers are
+   * invoked. Every returned transport name is validated eagerly — implemented,
+   * driver present, recipient addressable — before any delivery begins.
    */
-  abstract via(user: User): Channel[]
+  abstract via(recipient: Recipient): Transport[]
 
-  // ─── Built-in channel formatters ──────────────────────────────────────────
+  // ─── Built-in transport formatters ────────────────────────────────────────
 
   /**
-   * Format this notification for the 'inApp' channel.
-   * Required if via() returns 'inApp'.
+   * Format this notification for the 'inApp' transport.
+   * Required if via() returns 'inApp'. The recipient must carry an `id` — the
+   * row is keyed by it, and one keyed by nothing can never be read (FJS-096).
    */
-  toInApp?(user: User): InAppMessage
+  toInApp?(recipient: Recipient): InAppMessage
 
   /**
-   * Format this notification for the 'email' channel.
+   * Format this notification for the 'email' transport.
    * Required if via() returns 'email'. Requires mailerPlugin to be configured.
    */
-  toEmail?(user: User): MailMessage
+  toEmail?(recipient: Recipient): MailMessage
 
   /**
-   * Format this notification for the 'sms' channel.
-   * Required if via() returns 'sms'. Requires SMS Conduit provider.
+   * Format this notification for the 'sms' transport.
+   * Required if via() returns 'sms'. There is no built-in SMS driver, so this
+   * transport needs one registered under the name 'sms'.
    */
-  toSms?(user: User): SmsMessage
+  toSms?(recipient: Recipient): SmsMessage
 
-  // ─── Custom channel formatters ────────────────────────────────────────────
+  // ─── Custom transport formatters ──────────────────────────────────────────
 
   /**
-   * Dynamic channel formatter lookup — used by custom drivers.
-   * Falls back to `this['to' + Channel]()` by convention.
+   * Dynamic transport formatter lookup — used by custom drivers.
+   * Falls back to `this['to' + Transport]()` by convention.
    */
-  getMessageFor(channel: string, user: User): unknown {
-    const method = `to${channel.charAt(0).toUpperCase()}${channel.slice(1)}`
+  getMessageFor(transport: string, recipient: Recipient): unknown {
+    const method = `to${transport.charAt(0).toUpperCase()}${transport.slice(1)}`
     // One `unknown` hop to reach a dynamically-named method, then a checked
     // call. The old form asserted `this` straight to a record of functions,
     // which TypeScript rejected as insufficiently overlapping (TS2352) and
     // which also dropped `this` binding.
     const fn = (this as unknown as Record<string, unknown>)[method]
     if (typeof fn === 'function') {
-      return (fn as (u: User) => unknown).call(this, user)
+      return (fn as (r: Recipient) => unknown).call(this, recipient)
     }
     return undefined
   }

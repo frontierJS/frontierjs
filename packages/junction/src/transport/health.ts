@@ -81,8 +81,8 @@ export interface MetricsResponse {
     registered: string[]
     count:      number
     details:    Record<string, {
-      actions:   string[]
-      /** Everything callable, CRUD and actions, after the `methods:` policy. */
+      customMethods: string[]
+      /** Everything callable, CRUD and custom, after the `methods:` policy. */
       methods:   string[]
       allowBulk: boolean
     }>
@@ -241,19 +241,19 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
           services: {
             registered: app.services.list(),
             count:      app.services.list().length,
-            // Per-service detail: custom action names and bulk-operation flag.
+            // Per-service detail: custom method names and bulk-operation flag.
             // Powers the REPL `services` command's full route display.
             details: Object.fromEntries(
               app.services.list().map(name => {
                 const d = app.services.get(name)!.describe()
                 return [name, {
                   // describe() is the one answer, shared with /manifest and the
-                  // OpenAPI generator. This used to read `svc.actions`, a key no
-                  // service has, so /metrics reported `actions: []` for every
-                  // service, always, while /manifest listed them correctly.
-                  // Policy-filtered, so an action a `methods:` allow-list
+                  // OpenAPI generator. This used to read a key no service has,
+                  // so /metrics reported an empty list for every service,
+                  // always, while /manifest listed them correctly.
+                  // Policy-filtered, so a method a `methods:` allow-list
                   // withholds is not reported as available.
-                  actions:   d.actions.filter(m => d.methods.includes(m)),
+                  customMethods: d.customMethods.filter(m => d.methods.includes(m)),
                   methods:   d.methods,
                   allowBulk: d.allowBulk,
                 }]
@@ -271,11 +271,11 @@ export function healthPlugin(opts: HealthPluginOptions = {}) {
           },
         }
 
-        // Merge in stats from any registered plugin providers (e.g. Caravan)
-        const providers = (app as unknown as { _metricsProviders?: Map<string, () => unknown> })._metricsProviders
-        if (providers?.size) {
-          for (const [key, fn] of providers) {
-            try { body[key] = fn() } catch { /* provider error — skip silently */ }
+        // Merge in stats from any registered plugin sources (e.g. Caravan)
+        const sources = (app as unknown as { _metricsSources?: Map<string, () => unknown> })._metricsSources
+        if (sources?.size) {
+          for (const [key, fn] of sources) {
+            try { body[key] = fn() } catch { /* a broken source must not take /metrics down */ }
           }
         }
 

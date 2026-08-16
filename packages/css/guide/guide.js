@@ -32,7 +32,7 @@
  * browser clamps `..` at the origin, so demo/serve.js serves the workspace
  * root, and over file:// the path simply resolves.
  */
-import { glow } from '../../utils/src/glow/glow.js'
+import { glow } from '../../toolbelt/src/glow/glow.js'
 
 /* ══════════════════════════════════════════════════════════════════════
    1. Data
@@ -380,7 +380,7 @@ function preview(body) {
  * 137 samples and four languages: annotating every one would be noise, and
  * an annotation that drifts from the sample is worse than a guess. The
  * shapes are distinctive enough that this gets all 137 right — check it
- * against the corpus in @frontierjs/utils if you add a kind it has not seen.
+ * against the corpus in @frontierjs/toolbelt if you add a kind it has not seen.
  */
 function codeLang(src) {
   const t = src.trim()
@@ -979,8 +979,9 @@ function compositionPage() {
 }
 .btn.outlined {
   background:   var(--surface);
-  color:        var(--bg-mix, var(--color-primary));
-  border-color: var(--bg-mix, var(--color-primary));
+  /* the tone as TEXT, not as a fill — tones.css */
+  color:        var(--tone-ink, var(--accent-ink));
+  border-color: var(--tone-ink, var(--accent-ink));
 }`,
     },
   ];
@@ -1489,7 +1490,11 @@ function buttonsPage() {
         <p>
           Adding <code>outlined</code> reads the vars set by the tone and
           inverts the structure — background becomes surface; color and border
-          become the tone hue.
+          become the tone. Not the tone as declared: a tone is tuned as a fill
+          behind white text, and painting it straight onto a surface put
+          <code>.btn.outlined</code> under AA on 34 of the 72 tone × theme
+          pairs. Both take <code>--tone-ink</code>, which is that hue with its
+          lightness clamped into the window this theme reads at.
         </p>
         ${preview(
           `<div class="cluster">
@@ -3211,26 +3216,29 @@ function popoversPage() {
       ${pageHeader({
         eyebrow: "Components",
         title: "Popovers",
-        lead: "Floating UI. Extends surface, adds absolute positioning and a slide-in animation. Positioning is the consumer's job — Uno utilities make it easy.",
+        lead: "Floating UI. Extends surface, adds absolute positioning and a slide-in animation. .popover-anchor is the positioning context and the default placement; anything else is anchor positioning.",
       })}
 
       ${section(
         "Default",
         `
         <p>
-          Click a button to toggle its popover. The popover positions itself
-          via inline style (or Uno utilities like
-          <code>${esc(`class="popover absolute top-12 left-0"`)}</code>).
+          Click a button to toggle its popover. Wrap the trigger and the
+          panel in <code>.popover-anchor</code>: it establishes the
+          positioning context and opens the panel below the trigger,
+          aligned to its start edge. Add <code>.align-end</code> where the
+          trigger sits at the end of a bar. Until v0.16 both of those were
+          rules every consumer wrote, this page included.
         </p>
         ${preview(
           `<div class="cluster">
             ${pops
               .map(
                 (p) => `
-            <div style="position: relative">
+            <div class="popover-anchor">
               <button class="${p.triggerClass}" data-pop="${p.id}">${p.trigger}</button>
               <div class="${p.popClass}" data-pop-panel="${p.id}" hidden
-                   style="top: calc(100% + 8px); left: 0; min-width: ${p.width}px">
+                   style="min-width: ${p.width}px">
                 <strong style="display: block; margin-bottom: 4px">${p.title}</strong>
                 ${p.body}
               </div>
@@ -3239,12 +3247,12 @@ function popoversPage() {
               .join("")}
           </div>`,
         )}
-        ${code(`<div style="position: relative">
+        ${code(`<div class="popover-anchor">
   <button class="btn outlined" onclick="show()">Open</button>
-  <div class="popover" style="top: 100%; left: 0">
+  <article class="popover" hidden>
     <strong>Quick note</strong>
     <p>Popovers carry short, contextual info.</p>
-  </div>
+  </article>
 </div>`)}`,
       )}
 
@@ -3254,7 +3262,11 @@ function popoversPage() {
         <p>
           Modern browsers support the native
           <code>[popover]</code> attribute. Free toggle behavior, light
-          dismiss, top-layer rendering — all platform-provided.
+          dismiss, top-layer rendering — all platform-provided. The top
+          layer escapes every positioning context, so
+          <code>.popover-anchor</code> cannot place one: the placement
+          rules exclude <code>[popover]</code> by name, and anchor
+          positioning is what places it.
         </p>
         ${code(`<button popovertarget="menu">Open menu</button>
 
@@ -9586,7 +9598,7 @@ bun run demo
         `
         <p>
           Every sample on this site is highlighted by <code>glow()</code> from
-          <code>@frontierjs/utils</code>. It marks each token with the element
+          <code>@frontierjs/toolbelt</code>. It marks each token with the element
           that already means it — <code>&lt;em&gt;</code> for a value,
           <code>&lt;sup&gt;</code> for a comment — and wraps the block in
           <code>&lt;code language="css"&gt;</code>. So the theme in

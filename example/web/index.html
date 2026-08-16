@@ -4,10 +4,12 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <title>FrontierJS kitchen sink</title>
 <!--
-  `app` plus a theme class on the body element. The theme is one class on any
-  ancestor — swap theme-default for theme-dark / theme-forest / theme-midnight /
-  theme-sunset / theme-elite and everything below follows, because it is all
-  custom-property inheritance rather than a stylesheet swap.
+  `app`, and NO theme class. The theme is one class on any ancestor — it is all
+  custom-property inheritance rather than a stylesheet swap — and Sierra puts it
+  on the root element from `theme:` in sierra.config.js, before first paint.
+
+  A theme class written here as well would be a descendant of that one and would
+  therefore win, so the switcher would appear to do nothing at all.
 
   Do not write a literal body tag in this comment. Vite injects the built script
   and stylesheet at the first match for it and does not skip comments, so the
@@ -16,7 +18,7 @@
   reported it — the dev server was never affected, and the built page's console
   is empty because there is no script to throw.
 -->
-<body class="app theme-default">
+<body class="app">
   <div id="app"></div>
   <script type="module" src="/src/main.js"></script>
 </body>

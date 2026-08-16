@@ -21,19 +21,25 @@
 
 import { describe, it, expect } from 'bun:test'
 import { createApp, defaultConfig } from '../index.ts'
-import type { IAuth, SessionContext } from '../src/auth/types.ts'
+import type { SessionVerifier, SessionContext } from '../src/auth/types.ts'
 
-/** The smallest IAuth that can say yes to exactly one token. */
-function oneTokenAuth(token: string, user: Partial<SessionContext>): IAuth {
+/**
+ * The smallest provider that can say yes to exactly one token.
+ *
+ * A `SessionVerifier` rather than an `IAuth`, and no cast either way — this
+ * used to be written `: IAuth { … } as IAuth`, casting past five methods it
+ * does not implement and Junction never calls (`FJS-D10`).
+ */
+function oneTokenAuth(token: string, user: Partial<SessionContext>): SessionVerifier {
   return {
     async verifySession(t: string) {
       return t === token ? ({ userId: 'u1', ...user } as SessionContext) : null
     },
-  } as IAuth
+  }
 }
 
 /** An app with a single route that reports who the transport thinks you are. */
-function appWith(auth: IAuth, cookieName: string | null) {
+function appWith(auth: SessionVerifier, cookieName: string | null) {
   const app = createApp({
     config: { ...defaultConfig, port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
     auth,
@@ -78,13 +84,13 @@ describe('session from a cookie', () => {
   it('a Bearer token wins over the cookie', async () => {
     // Explicit beats ambient, so acting as someone else for one call stays
     // possible from a browser that is also holding a session cookie.
-    const auth: IAuth = {
+    const auth: SessionVerifier = {
       async verifySession(t: string) {
         if (t === 'cookie-tok') return { userId: 'from-cookie' } as SessionContext
         if (t === 'bearer-tok') return { userId: 'from-bearer' } as SessionContext
         return null
       },
-    } as IAuth
+    }
     const app = appWith(auth, 'session')
     await app.start()
     const res = await hit(app, { cookie: 'session=cookie-tok', authorization: 'Bearer bearer-tok' })
@@ -93,13 +99,13 @@ describe('session from a cookie', () => {
   })
 
   it('an x-api-key also wins over the cookie', async () => {
-    const auth: IAuth = {
+    const auth: SessionVerifier = {
       async verifySession(t: string) {
         if (t === 'cookie-tok') return { userId: 'from-cookie' } as SessionContext
         if (t === 'key-tok')    return { userId: 'from-key' } as SessionContext
         return null
       },
-    } as IAuth
+    }
     const app = appWith(auth, 'session')
     await app.start()
     const res = await hit(app, { cookie: 'session=cookie-tok', 'x-api-key': 'key-tok' })

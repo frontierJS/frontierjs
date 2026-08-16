@@ -7,7 +7,7 @@
  *
  * This module is used by the scanner to read frontmatter
  * from source files without invoking the full Mesa compiler.
- * Useful for fast manifest generation at build time.
+ * Useful for fast route table generation at build time.
  */
 
 import { load as parseYaml } from 'js-yaml'

@@ -20,6 +20,11 @@
   position: fixed;
   inset:    0;
 
+  /* Same ground as a Dialog — it is the same tier and a theme separating
+     the modal from the page means both. See dialogs.css for why this is
+     --surface-ground rather than --surface-bg. */
+  --surface-ground: var(--dialog-bg, var(--surface));
+
   /* Override dialog's centered margins */
   margin:        0;
   padding:       0;
@@ -50,7 +55,7 @@
 }
 
 .drawer::backdrop {
-  background:      rgba(0, 0, 0, 0.45);
+  background:      var(--scrim);
   backdrop-filter: blur(2px);
 }
 

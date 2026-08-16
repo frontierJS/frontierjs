@@ -60,7 +60,7 @@ title: Networking
   }
 
   async function loadMembers(id) {
-    const raw = await networks.service.action('members', id)
+    const raw = await networks.service.invoke('members', id)
     members = { ...members, [id]: Array.isArray(raw) ? raw : raw?.data ?? [] }
   }
 
@@ -95,7 +95,7 @@ title: Networking
     if (!pickedSrv) { toasts.error('Pick a server first'); return }
     error = null; busy = network.id
     try {
-      await networks.service.action('attach', network.id, { serverId: pickedSrv })
+      await networks.service.invoke('attach', network.id, { serverId: pickedSrv })
       await loadMembers(network.id)
       toasts.success('Server attached')
       attachTo = null; pickedSrv = ''
@@ -109,7 +109,7 @@ title: Networking
   async function detach(network, serverId) {
     error = null; busy = network.id
     try {
-      await networks.service.action('detach', network.id, { serverId })
+      await networks.service.invoke('detach', network.id, { serverId })
       await loadMembers(network.id)
     } catch (e) {
       error = e.message

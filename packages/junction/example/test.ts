@@ -207,15 +207,15 @@ describe('Notes service', () => {
     expect(get.status).toBe(404)
   })
 
-  it('GET /api/notes/:id/summary — custom action', async () => {
+  it('GET /api/notes/:id/summary — custom method', async () => {
     const app  = await makeApp()
     const post = await request(app)
       .post('/api/notes')
       .auth(app.tokenFor('user-1'))
       .send({ title: 'Summary test', body: 'One two three four five' })
     const id  = (post.body as Record<string, unknown>).id as string
-    // Custom actions dispatch via POST /{service}/{id} + X-Service-Method
-    // header — there are no path-style /{id}/{action} routes.
+    // Custom methods dispatch via POST /{service}/{id} + X-Service-Method
+    // header — there are no path-style /{id}/{method} routes.
     const res = await request(app)
       .post(`/api/notes/${id}`)
       .set('X-Service-Method', 'summary')
@@ -234,7 +234,7 @@ describe('Notes service', () => {
       .send({ title: 'Pin me', body: 'body' })
     const id = (post.body as Record<string, unknown>).id as string
 
-    // Admin succeeds — custom action via X-Service-Method header
+    // Admin succeeds — custom method via X-Service-Method header
     const adminRes = await request(app)
       .post(`/api/notes/${id}`)
       .set('X-Service-Method', 'pin')

@@ -8,6 +8,7 @@ import { join }              from 'node:path'
 import { createService, isBuiltService } from './service.ts'
 import type { Service }     from './service.ts'
 import type { ServiceRegistry } from './service.ts'
+import { diagnostic }       from './diagnostics.ts'
 
 // ─── Loader ───────────────────────────────────────────────────────────────
 
@@ -53,7 +54,7 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
       // The test is a MARKER createService stamps, not the shape of one field.
       // It used to ask `typeof service.hooks !== 'function'` — answering "was
       // this built?" by inspecting a single key's type, which is the same
-      // by-exclusion reasoning the action table exists to replace, and which
+      // by-exclusion reasoning the method table exists to replace, and which
       // wrapped anything that happened to carry a `hooks` map.
       if (service && typeof service === 'object' && !isBuiltService(service)) {
         service = createService({
@@ -70,7 +71,10 @@ export async function autoloadServices(opts: LoaderOptions): Promise<void> {
 
       if (!registry.has(service.name)) {
         registry.register(service)
-        console.log(`[Loader] Registered service: ${service.name} (${file})`)
+        // An inventory line, not news — `GET /manifest` answers the same
+        // question on demand, and an app with 21 services printed 21 of these
+        // before it had done anything. DEBUG=1 brings them back.
+        diagnostic(`[Loader] Registered service: ${service.name} (${file})`)
       } else {
         console.warn(`[Loader] Skipping duplicate service: ${service.name}`)
       }

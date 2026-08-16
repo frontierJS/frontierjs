@@ -89,5 +89,8 @@
     "typecheck": "node ../../scripts/typecheck.mjs",
     "verify:studio": "node test/verify-studio-access.mjs"
   },
-  "types": "./src/index.d.ts"
+  "types": "./src/index.d.ts",
+  "dependencies": {
+    "@frontierjs/toolbelt": "workspace:*"
+  }
 }

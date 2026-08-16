@@ -3,18 +3,18 @@
 // /metrics reported service detail by reading keys off the built service that
 // the built service does not have:
 //
-//   actions:   Object.keys(svc.actions ?? {})   → there is no `actions` key.
-//              createService copies custom methods straight onto the service
-//              object, so this was `[]` for every service, forever, while
-//              /manifest listed them correctly off customMethodNames().
+//   custom methods: read off a wrapper key no service has. createService copies
+//              custom methods straight onto the service object, so this was `[]`
+//              for every service, forever, while /manifest listed them correctly
+//              off customMethodNames().
 //   allowBulk: svc.allowBulk                    → never carried onto the built
 //              service, so this was `false` for every service, including ones
 //              configured `allowBulk: true`.
 //
-// Both failed silently and plausibly: an empty action list and a conservative
-// `false` are exactly what a correct implementation would report for a plain
-// CRUD service, so nothing looked wrong. These tests pin the values against a
-// service that genuinely has actions and genuinely allows bulk.
+// Both failed silently and plausibly: an empty list and a conservative `false`
+// are exactly what a correct implementation would report for a plain CRUD
+// service, so nothing looked wrong. These tests pin the values against a
+// service that genuinely has custom methods and genuinely allows bulk.
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createApp, createService, healthPlugin, defaultConfig } from '../index.ts'
@@ -55,20 +55,20 @@ const details = async () =>
   (await (await fetch(`http://localhost:${PORT}/metrics`)).json()).services.details
 
 describe('/metrics service details', () => {
-  it('lists custom action names', async () => {
+  it('lists custom method names', async () => {
     const d = await details()
-    expect(d.servers.actions.sort()).toEqual(['getStats', 'reboot'])
+    expect(d.servers.customMethods.sort()).toEqual(['getStats', 'reboot'])
   })
 
-  it('reports an empty action list only when there really are none', async () => {
+  it('reports an empty list only when there really are none', async () => {
     const d = await details()
-    expect(d.plain.actions).toEqual([])
+    expect(d.plain.customMethods).toEqual([])
   })
 
-  it('never reports a CRUD method as an action', async () => {
+  it('never reports a CRUD method as a custom one', async () => {
     const d = await details()
     for (const crud of ['find', 'get', 'create', 'update', 'patch', 'remove', 'restore']) {
-      expect(d.servers.actions).not.toContain(crud)
+      expect(d.servers.customMethods).not.toContain(crud)
     }
   })
 
@@ -84,6 +84,6 @@ describe('/metrics service details', () => {
     expect(typeof svc.reboot).toBe('function')
     expect(typeof svc.getStats).toBe('function')
     expect(svc.allowBulk).toBe(true)
-    expect(d.servers.actions.sort()).toEqual(['getStats', 'reboot'])
+    expect(d.servers.customMethods.sort()).toEqual(['getStats', 'reboot'])
   })
 })

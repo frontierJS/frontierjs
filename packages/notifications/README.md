@@ -1,6 +1,8 @@
 # @frontierjs/notifications
 
-Channel-agnostic notification system for FrontierJS apps. The same notification class delivers across multiple channels (in-app, email) based on user preferences and driver availability.
+Transport-agnostic notification system for FrontierJS apps. One notification class delivers across several transports — in-app, email, whatever you register a driver for — chosen per recipient.
+
+**A transport is a delivery medium; a channel is junction's broadcast set.** The in-app driver uses both: it writes a row, then publishes on `app.channel('notifications:user:<id>')`. The two words are not interchangeable here (`FJS-D06`).
 
 Standalone package — same pattern as `@frontierjs/auth`. No changes to Junction core required.
 
@@ -65,18 +67,20 @@ attribute and no JS-string predicate.
 // api/server.ts
 import { notificationsPlugin } from '@frontierjs/notifications'
 
-// mailerPlugin must be configured before notificationsPlugin if email channel is used
+// mailerPlugin must be configured before notificationsPlugin if the email transport is used
 app.configure(mailerPlugin(createResendMailer({ apiKey, from })))
 
 app.configure(notificationsPlugin({
   db,
-  channels: {
+  transports: {
     email: { mailer: 'default' },
   }
 }))
 
 // app.notify is now available everywhere
 ```
+
+The plugin declares `requires: ['mailer']` when the email transport uses the mailer, so Junction refuses to start on the wrong order rather than failing at the first send. `boot()` then checks that `app.mail` is actually set — a mailer plugin can register and install nothing. On shutdown each registered driver's own `shutdown()` is awaited; one that throws is logged and the rest still run.
 
 ---
 
@@ -85,7 +89,7 @@ app.configure(notificationsPlugin({
 ```typescript
 // api/src/notifications/PaymentReceived.ts
 import { Notification, inApp, mail } from '@frontierjs/notifications'
-import type { InAppMessage, MailMessage, User } from '@frontierjs/notifications'
+import type { InAppMessage, MailMessage, Recipient, Transport } from '@frontierjs/notifications'
 
 export class PaymentReceived extends Notification {
   // Stable identifier written to the DB — survives class renames
@@ -95,12 +99,12 @@ export class PaymentReceived extends Notification {
     super()
   }
 
-  via(user: User): string[] {
+  via(recipient: Recipient): Transport[] {
     // Respect per-user preferences when available
-    return user.notificationPreferences ?? ['inApp', 'email']
+    return recipient.notificationPreferences ?? ['inApp', 'email']
   }
 
-  toInApp(user: User): InAppMessage {
+  toInApp(recipient: Recipient): InAppMessage {
     return inApp()
       .title('Payment received')
       .body(`$${this.payment.amount} has been received.`)
@@ -110,10 +114,10 @@ export class PaymentReceived extends Notification {
       .build()
   }
 
-  toEmail(user: User): MailMessage {
+  toEmail(recipient: Recipient): MailMessage {
     return mail()
       .subject('Payment received')
-      .greeting(`Hi ${user.firstName ?? 'there'}`)
+      .greeting(`Hi ${recipient.firstName ?? 'there'}`)
       .line(`$${this.payment.amount} received for order #${this.payment.orderId}.`)
       .action('View order', `https://app.example.com/orders/${this.payment.orderId}`)
       .build()
@@ -123,7 +127,7 @@ export class PaymentReceived extends Notification {
 
 Notification classes live in `api/src/notifications/`. One file per class, same convention as `services/` and `hooks/`.
 
-If `via()` returns a channel but the corresponding `toChannel()` method is not implemented, `notify()` throws `NotificationChannelNotImplementedError` at send time.
+If `via()` returns a transport but the corresponding `to<Transport>()` method is not implemented, `notify()` throws `NotificationTransportNotImplementedError` — before anything is delivered, so a two-transport notification cannot half-land.
 
 ---
 
@@ -137,7 +141,8 @@ await app.notify(user, new PaymentReceived(payment))
 after: {
   create: [
     async (ctx) => {
-      const user = await db.asSystem().users.findUnique({ where: { id: ctx.result.data.userId } })
+      // `db.user`, singular — the accessor derived from `model User`.
+      const user = await db.asSystem().user.findUnique({ where: { id: ctx.result.data.userId } })
       await ctx.app.notify(user, new PaymentReceived(ctx.result.data))
     }
   ]
@@ -147,21 +152,28 @@ after: {
 export const sendInvoiceJob = job({
   name: 'send-invoice',
   perform: async ({ userId, invoiceId }, { app }) => {
-    const user    = await db.asSystem().users.findUnique({ where: { id: userId } })
-    const invoice = await db.asSystem().invoices.findUnique({ where: { id: invoiceId } })
+    const user    = await db.asSystem().user.findUnique({ where: { id: userId } })
+    const invoice = await db.asSystem().invoice.findUnique({ where: { id: invoiceId } })
     await app.notify(user, new InvoiceSent(invoice))
   }
 })
 
 // From a route handler
 app.post('/orders/{id}/complete', async (ctx) => {
-  // Route handlers get a TransportContext: ctx.params holds the path captures
-  // (:id) and ctx.user is the caller. There is no ctx.app here — close over
+  // Route handlers get a TransportContext: ctx.route holds the path captures
+  // ({id}) and ctx.user is the caller. There is no ctx.app here — close over
   // the app you created.
-  const order = await completeOrder(ctx.params.id)
-  await app.notify(ctx.user, new OrderCompleted(order))
+  const order = await completeOrder(ctx.route.id)
+
+  // ctx.user is a SessionContext — `userId`, not `id`. A Recipient wants `id`.
+  await app.notify({ id: ctx.user.userId, email: ctx.user.email }, new OrderCompleted(order))
   return ctx.json(order)
 })
+
+// To somebody with no account — a shop customer, a mailing-list address.
+// No `id`: email is the only transport that can address them, and notify()
+// enforces that rather than writing a row nobody could read.
+await app.notify({ email: customer.email, name: customer.name }, new OrderConfirmation(order))
 ```
 
 ---
@@ -175,9 +187,9 @@ app.post('/orders/{id}/complete', async (ctx) => {
 export class WelcomeUser extends Notification {
   static type = 'WelcomeUser'
 
-  via(_user: User) { return ['inApp', 'email'] }
+  via(_recipient: Recipient): Transport[] { return ['inApp', 'email'] }
 
-  toInApp(user: User): InAppMessage {
+  toInApp(user: Recipient): InAppMessage {
     return inApp()
       .title('Welcome!')
       .body(`Good to have you${user.firstName ? `, ${user.firstName}` : ''}.`)
@@ -185,7 +197,7 @@ export class WelcomeUser extends Notification {
       .build()
   }
 
-  toEmail(user: User): MailMessage {
+  toEmail(user: Recipient): MailMessage {
     return mail()
       .subject('Welcome to the app')
       .greeting(`Hi ${user.firstName ?? 'there'}`)
@@ -212,20 +224,39 @@ after: {
 
 ## Execution model
 
-`notify()` validates eagerly then executes all channels in parallel:
+`notify()` formats and validates eagerly, then executes every transport in parallel:
 
-1. Call `notification.via(user)` — get channel list
-2. Validate all channels before any delivery:
-   - Missing `toChannel()` → `NotificationChannelNotImplementedError`
-   - Unregistered custom channel → `NotificationDriverNotFoundError`
-3. `Promise.allSettled` across all channels — a failed email does not block inApp delivery
-4. Failures collected and thrown as `NotificationDeliveryError` with per-channel detail
+1. Call `notification.via(recipient)` — get the transport list
+2. Format each transport's message **once**, and validate before any delivery:
+   - Missing `to<Transport>()` → `NotificationTransportNotImplementedError`
+   - Unregistered custom transport → `NotificationDriverNotFoundError`
+   - Recipient not addressable on it → `NotificationRecipientError`
+3. `Promise.allSettled` across all transports — a failed email does not block inApp delivery
+4. Failures collected and thrown as `NotificationDeliveryError` with per-transport detail
+
+The message formatted in step 2 is the one delivered in step 3. It used to be built twice — once to check the method existed, once to send — so a `to*()` that rendered a template did it twice per notification.
 
 ---
 
-## inApp channel
+## The recipient
 
-Persists a record to the `notifications` table via `db.asSystem()` (bypasses gate and policy — create is locked at gate level). Then publishes a WS event via `app.channel()` if the `channels()` plugin is configured.
+`Recipient` is `{ id?, email?, phone?, ...yours }`. **It is not a `User`** — a shop customer, a mailing-list address and a signed-in account are all recipients, and only the last has a row anything can read. Extra keys travel untouched, which is what `via()` and the `to*()` methods read.
+
+`id` is optional, and each transport says what it needs:
+
+| Transport | Needs | If it is missing |
+|---|---|---|
+| `inApp` | `id` — the row is keyed by it | `NotificationRecipientError`, before any transport runs |
+| `email` | `message.to` or `recipient.email` | `NotificationRecipientError`, same point |
+| a registered driver | whatever it addresses by | the driver's own answer — only it knows |
+
+Addressing a customer used to mean passing them as a `User` with an invented id (`customer:42`), which is right for email and writes an unreadable in-app row for anybody who later adds `inApp` to `via()`. Leave the id off instead.
+
+---
+
+## inApp transport
+
+Persists a record to the `notifications` table via `db.asSystem()` (bypasses gate and policy — create is locked at gate level). Then publishes a WS event on junction's `app.channel()` — the broadcast sense of the word — if the `channels()` plugin is configured.
 
 Degrades gracefully when `channels()` is absent — DB record still persists, WS push is skipped without error.
 
@@ -245,9 +276,11 @@ UI reads `type` to decide how to render. `title` and `body` are generic fallback
 
 ---
 
-## email channel
+## email transport
 
-Delegates to `app.mail.send()`. Requires `mailerPlugin` to be configured before `notificationsPlugin`. Recipient resolves as `message.to` (explicit override) → `user.email`. Missing both throws at send time.
+Delegates to `app.mail.send()`. Requires `mailerPlugin` to be configured before `notificationsPlugin`. The address resolves as `message.to` (explicit override) → `recipient.email`; missing both is refused before delivery.
+
+The builder's `lines` are rendered to text and HTML here — `MailMessage` is this package's authoring shape, and no mailer understands it. `.html()` / `.text()` override either half, which is how an `@frontierjs/email-kit` template supplies the HTML and the builder still writes the plain-text alternative.
 
 ---
 
@@ -255,26 +288,29 @@ Delegates to `app.mail.send()`. Requires `mailerPlugin` to be configured before 
 
 ```typescript
 // api/src/drivers/SlackDriver.ts
-import type { NotificationDriver, User, App } from '@frontierjs/notifications'
+import type { NotificationDriver, Recipient, App } from '@frontierjs/notifications'
 
 export class SlackDriver implements NotificationDriver {
-  channel = 'slack'
+  transport = 'slack'
 
   constructor(private opts: { webhookUrl: string }) {}
 
-  async send(user: User, message: unknown, app: App): Promise<void> {
+  async send(recipient: Recipient, message: unknown, app: App): Promise<void> {
     await fetch(this.opts.webhookUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(message),
     })
   }
+
+  /** Optional — awaited once on app shutdown. */
+  async shutdown(): Promise<void> {}
 }
 
 // api/server.ts
 app.configure(notificationsPlugin({
   db,
-  channels: {
+  transports: {
     slack: new SlackDriver({ webhookUrl: process.env.SLACK_WEBHOOK! })
   }
 }))
@@ -282,11 +318,11 @@ app.configure(notificationsPlugin({
 // api/src/notifications/OrderAlert.ts
 export class OrderAlert extends Notification {
   static type = 'OrderAlert'
-  via(_user: User) { return ['inApp', 'slack'] }
+  via(_recipient: Recipient): Transport[] { return ['inApp', 'slack'] }
 
-  toInApp(user: User): InAppMessage { ... }
+  toInApp(recipient: Recipient): InAppMessage { ... }
 
-  toSlack(user: User) {
+  toSlack(recipient: Recipient) {
     return { text: `New order #${this.order.id} received.` }
   }
 }
@@ -296,14 +332,13 @@ export class OrderAlert extends Notification {
 
 ## Sierra resource
 
-`fli add notifications` creates `web/src/resources/Notification.mesa` with:
+`fli add notifications` creates `web/src/resources/Notification.mesa` — a resource file with no markup, per Invariant 18. `examples/Notification.mesa` is what it writes:
 
-- `store` — reactive notification list
-- `service` — Junction service client
-- `unreadCount` — derived store, reactive unread count for bell icon
-- `markRead(id)` — PATCH single notification
-- `markAllRead()` — PATCH all unread (one call per record — add a bulk endpoint for large counts)
-- `onEvent('notification:created')` — real-time WS push into store (requires `channels()` plugin)
+- `notifications` — `createResource('notifications', { model: 'Notification' })`; `.store` is the live list, `.service` the client
+- `isUnread(n)` — what the bell counts and the list styles
+- `markRead(id)` — `service.patch(id, { readAt })`
+
+Real-time needs no code: the resource's live store receives the `notification:created` event the inApp driver publishes, as long as the `channels()` plugin is configured on the server.
 
 ---
 
@@ -324,23 +359,26 @@ PATCH /notifications/456          { readAt: "2026-04-18T..." }
 
 | Error | When |
 |---|---|
-| `NotificationChannelNotImplementedError` | `via()` returns a channel but `toChannel()` is not implemented |
-| `NotificationDriverNotFoundError` | `via()` returns a channel name with no registered driver — thrown before delivery starts |
-| `NotificationDeliveryError` | One or more channels failed — contains per-channel error detail |
+| `NotificationTransportNotImplementedError` | `via()` returns a transport but `to<Transport>()` is not implemented |
+| `NotificationRecipientError` | the recipient cannot be addressed on a transport `via()` named — no `id` for `inApp`, no address for `email` |
+| `NotificationDriverNotFoundError` | `via()` returns a transport name with no registered driver |
+| `NotificationDeliveryError` | one or more transports failed — carries per-transport error detail |
+
+The first three are thrown before any delivery starts; the last is the only one raised after.
 
 ---
 
 ## Key distinctions
 
-`_method()` bypasses hooks, not gates. `db.asSystem()` bypasses gates, not hooks. The inApp driver uses `db.asSystem()` to bypass the `create=9` gate — this is intentional. App users cannot create notification records via the API.
+`_method()` bypasses hooks, not gates. `db.asSystem()` bypasses gates, not hooks. The inApp driver uses `db.asSystem()` to write past the `create=8` gate — deliberately. App users cannot create notification records through the API.
 
 ---
 
 ## Out of scope (future)
 
-- SMS driver — when Conduit SMS provider is available
-- Push notifications — APNs / FCM, requires device token model
-- Notification preferences model — per-user channel preferences in DB
+- SMS driver — when a Conduit SMS provider is available. `sms` is not built in, so it needs a registered driver like any other custom transport
+- Push notifications — APNs / FCM, requires a device token model
+- Notification preferences model — per-recipient transport preferences in the DB
 - Digest mode — batch into scheduled email digest
 - Bulk mark-as-read endpoint
 - Read receipts via WS — mark read when notification panel opened

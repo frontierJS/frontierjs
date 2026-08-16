@@ -6,7 +6,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError } from '../../utils.js'
+  import { nameToLabel, uid, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let value       = ''
   export let placeholder = ''
@@ -32,7 +32,14 @@
   const autoLabel  = nameToLabel(name)
 
   const form     = $context.form
+  const rule     = resolveRule(form, name)
   const hasError = !!resolveError(form, name, error, errors)
+
+  // The constraints the schema already states. `@length(3, 500)` reaches the
+  // browser as maxLength, and without this the only way to honour it on a
+  // textarea was to restate it — which is how a form and its .lite file drift.
+  const resolvedRequired  = stated(required,  rule?.required)
+  const resolvedMaxlength = stated(maxlength, rule?.maxLength)
 
   let el
   export function focus() { el?.focus() }
@@ -65,10 +72,10 @@
     id={textareaId}
     name={name || undefined}
     rows={rows}
-    maxlength={maxlength}
+    maxlength={resolvedMaxlength}
     placeholder={placeholder}
     disabled={disabled}
-    required={required}
+    required={resolvedRequired}
     readonly={readonly}
     aria-invalid={hasError || null}
     style:resize={resize ? null : 'none'}
@@ -79,13 +86,13 @@
     {...$attributes}
   >{value}</textarea>
 
-  {#if maxlength}
+  {#if resolvedMaxlength}
     <!--
       aria-live so a screen reader user hears they are approaching the cap;
       a silent counter only helps people who can see it.
     -->
     <p class="field-hint" style:text-align="end" aria-live="polite">
-      {value.length} / {maxlength}
+      {value.length} / {resolvedMaxlength}
     </p>
   {/if}
 {/snippet}
@@ -103,7 +110,7 @@
     id={textareaId}
     name={name}
     label={label || undefined}
-    required={required}
+    required={resolvedRequired}
     badge={badge}
     help={help}
     hint={hint}

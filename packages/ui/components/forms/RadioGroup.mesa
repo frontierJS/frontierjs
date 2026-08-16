@@ -24,7 +24,7 @@
   //   />
 
   import Field from './Field.mesa'
-  import { uid } from '../../utils.js'
+  import { uid, nameToLabel, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let items    = []
   export let value    = null
@@ -33,9 +33,21 @@
   export let error    = ''
   export let errors   = undefined
   export let name     = ''
+  export let required = undefined
   export let disabled = false
   export let layout   = 'stacked'  // 'stacked' | 'inline'
   export let onchange = undefined
+
+  // The enclosing <Form> and this field's rule, both undefined standing alone.
+  // The group used to wrap itself in a Field only when a `label` prop was
+  // given, so inside a <Form> — where the label is a schema fact nobody
+  // restates — it rendered bare: no label, no server error, no `required`.
+  const form = $context.form
+  const rule = resolveRule(form, name)
+
+  const resolvedLabel    = stated(label || undefined, rule?.title, name ? nameToLabel(name) : undefined)
+  const resolvedRequired = stated(required, rule?.required)
+  const displayError     = resolveError(form, name, error, errors)
 
   // `id` was declared and never used: it reached no element, so a caller could
   // not address the group at all, and Field rendered `<label for="">`.
@@ -61,7 +73,9 @@
   <div
     id={groupId || null}
     role="radiogroup"
-    aria-label={label || null}
+    aria-label={resolvedLabel || null}
+    aria-required={resolvedRequired ? 'true' : null}
+    aria-invalid={displayError ? 'true' : null}
     class={layout === 'inline' ? 'cluster' : 'stack'}
     style:gap="0.5rem"
     {...$attributes}
@@ -92,8 +106,22 @@
   </div>
 {/snippet}
 
-{#if label}
-  <Field name={name} label={label} hint={hint} error={error} errors={errors} {class}>
+<!--
+  A `name` is enough to wrap: it is what makes the Field resolvable, and a
+  group inside a <Form> states nothing else. `label` goes through unresolved
+  where the caller stated nothing so Field resolves it once off the same rule;
+  `|| undefined` because '' is a real answer that suppresses the label.
+-->
+{#if label || name}
+  <Field
+    name={name}
+    label={label || undefined}
+    required={resolvedRequired}
+    hint={hint}
+    error={error}
+    errors={errors}
+    {class}
+  >
     {@render group()}
   </Field>
 {:else}
@@ -109,10 +137,17 @@
     cursor:      pointer;
     transition:  border-color 120ms, background 120ms;
   }
-  /* Selected state from the checked input, not a class. */
+  /*
+   * Selected state from the checked input, not a class — and from the tint
+   * ramp rather than a hand-mixed colour. One input (`--bg-mix`) gives a fill
+   * and a rule that are already measured for contrast against every shipped
+   * theme; a local `color-mix()` is measured against none of them and nobody
+   * re-measures one when a theme is added.
+   */
   .fjs-radio-card:has(input:checked) {
-    border-color: var(--color-primary);
-    background:   color-mix(in srgb, var(--color-primary) 8%, var(--surface));
+    --bg-mix:     var(--color-primary);
+    border-color: var(--tint-rule);
+    background:   var(--tint-surface);
   }
   .fjs-radio-card:has(input:disabled) {
     opacity: 0.55;

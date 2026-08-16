@@ -1,0 +1,35 @@
+{
+  "name": "@frontierjs/toolbelt",
+  "version": "0.1.0",
+  "description": "FrontierJS pure-function kits \u2014 zero dependencies, no I/O, importable from any package",
+  "type": "module",
+  "scripts": {
+    "test": "bun test/run.js",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "exports": {
+    "./directives": "./src/directives/directives.js",
+    "./glow": "./src/glow/glow.js",
+    "./inflect": "./src/inflect/inflect.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "frontierjs",
+    "utils",
+    "toolbelt",
+    "syntax-highlighting"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/toolbelt"
+  }
+}

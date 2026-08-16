@@ -2,7 +2,7 @@
 // LitestoneAuthOptions  — passed to createLitestoneAuth(db, opts)
 // AuthPluginOptions — passed to createLitestoneAuthPlugin(auth, opts)
 
-import type { RateLimitHookOptions } from '@frontierjs/junction'
+import type { RateLimitHookOptions, SessionContext } from '@frontierjs/junction'
 
 // ─── createLitestoneAuth options ────────────────────────────────────────────────
 
@@ -69,6 +69,78 @@ export interface LitestoneAuthOptions {
   // Returning a key auth itself sets (userId, email, authMethod, …) overwrites
   // it. Don't — the caller identity is not the app's to restate.
   sessionFields?: (user: Record<string, any>) => Record<string, unknown>
+
+  // ─── Acting on an auth event ────────────────────────────────────────────
+  //
+  // Awaited, and A THROW REFUSES — which is what makes lockout and rate
+  // limiting possible at the auth layer rather than only in front of the route
+  // (`FJS-042`). The cost is stated rather than hidden: an app handler is now a
+  // failure mode on the login path, and a slow one slows every sign-in.
+  //
+  // ONE ORDERING RULE, and it is the whole contract: **a hook runs before the
+  // thing it can refuse.** So none of them receives what its refusal would have
+  // prevented — `onLogin` has no session id, `onRegister` has no user row —
+  // because a hook that both refuses and reports the result of the thing it
+  // refused cannot exist. What happened afterwards is the audit trail's job:
+  // **the hook is the gate, `db.$audit` is the record.**
+  //
+  // These are single handlers, not a bus: one owner per decision. A second
+  // listener that wants to observe rather than decide belongs on Junction's
+  // `app.events`, which is a different question and is not answered here.
+
+  /** After the password verifies, BEFORE a session is issued. Throw to refuse. */
+  onLogin?: (event: { user: SessionContext }) => Promise<void> | void
+
+  /**
+   * Before the refusal is raised. Throw to replace `InvalidCredentialsError`
+   * with your own — a lockout answers 429, not 401.
+   *
+   * `reason` is 'no-such-user' | 'no-password-credential' | 'bad-password'.
+   * `userId` is null when the address matched nobody. Do not leak which:
+   * telling a caller whether an address exists is an enumeration oracle.
+   */
+  onLoginFailed?: (event: {
+    email: string
+    userId: string | null
+    reason: string
+  }) => Promise<void> | void
+
+  /** Before the session row is deleted. `sessionId` is null for an unknown token. */
+  onLogout?: (event: {
+    userId:    string | null
+    sessionId: string | null
+  }) => Promise<void> | void
+
+  /** Before the user is created. Throw to refuse — a blocked domain, a closed list. */
+  onRegister?: (event: {
+    email: string
+    name:  string | null
+  }) => Promise<void> | void
+}
+
+// ─── createAuthServices options ───────────────────────────────────────
+
+export interface AuthServicesOptions {
+  /** Rename the service, or `false` to not register it at all. */
+  account?:  string | false
+  sessions?: string | false
+  apiKeys?:  string | false
+
+  /**
+   * Grade the caller onto the app's own 0–7 ladder for `account.me`.
+   *
+   * Opt-in and absent by default, and that is the design rather than an
+   * omission: the app owns the role→level mapping (whatever it passed to
+   * `GatePlugin({ getLevel })`), and answering with the framework's default
+   * resolver would put a SECOND mapping on the wire that disagrees with the
+   * one every request is actually graded by — silently, and only for callers
+   * near a gate boundary.
+   *
+   *   level: shopGateLevel
+   *
+   * A UI reads the answer to decide what to offer. It is never a boundary.
+   */
+  level?: (session: SessionContext) => number
 }
 
 // ─── createAuthPlugin options ─────────────────────────────────────────
@@ -92,4 +164,18 @@ export interface AuthPluginOptions {
   // Register default: { max: 5,  window: '15 minutes' }
   loginRateLimit?:    RateLimitHookOptions
   registerRateLimit?: RateLimitHookOptions
+
+  // The three services this plugin registers — `account`, `sessions`,
+  // `api-keys`. On by default: they are the other half of the auth surface,
+  // and an app that has to opt in to reading its own session has no surface
+  // at all until it does.
+  //
+  //   services: false                     register none of them
+  //   services: { apiKeys: false }        the app has its own
+  //   services: { sessions: 'devices' }   its own word for it
+  //
+  // A name already taken by another service is refused at boot, naming this
+  // option — the registry is a Map, so the alternative is one of the two
+  // silently replacing the other depending on registration order.
+  services?: false | AuthServicesOptions
 }

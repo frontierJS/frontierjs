@@ -1,4 +1,4 @@
-# Handoff — 2026-08-14
+# Handoff — 2026-08-16
 
 > **Basecamp declares `@@gate` on all 37 models and `@@allow` on one** — `Server`,
 > as of 2026-08-10. The gate ladder is per WORKSPACE, not per user, which is why
@@ -14,6 +14,177 @@ verify something, it says so.
 **Sessions are recorded here, newest first.**
 
 ---
+
+## The notifications plugin, cleaned up — five rows closed (2026-08-16)
+
+`@frontierjs/notifications` had five open issues and they turned out to be four
+readings of one question: **what does this package address, and what does it
+call the thing it addresses it on.** 54 tests (was 38), typecheck clean,
+`example`: `verify:notify` 9/9 and `verify:jobs` 8/8, `node scripts/ci.mjs
+--only notifications` green.
+
+**`channel` meant two things fourteen lines apart in `types.ts` (`FJS-285`).**
+`FJS-D06` had already ruled it: Channel is junction's broadcast set, a delivery
+medium is a **Transport**. So `Channel`/`BuiltInChannel`/`ChannelError` →
+`Transport`/`BuiltInTransport`/`TransportError`, `NotificationDriver.channel` →
+`.transport`, `channels:` → `transports:`,
+`NotificationChannelNotImplementedError` →
+`NotificationTransportNotImplementedError`. `app.channel(...)` in the in-app
+driver is untouched — it is now the only `channel` in the package, and it reads
+unambiguously. **The old option name throws naming the new one**: an unknown key
+configures nothing and would surface as a missing driver at the first send,
+which is the failure the rename exists to remove.
+
+**A recipient is not a user (`FJS-096`).** `notify()` took a `User`, so a shop
+customer was passed as one with an invented id (`customer:42`) — right for
+email, and for `inApp` a row keyed by an id nothing will ever query, written
+with no error. The unit of address is now `Recipient`, whose **`id` is
+optional**, and each transport states what it needs, checked **before any
+delivery**: `inApp` refuses an id-less recipient by name, `email` refuses one
+with no address, a registered driver is exempt because only it knows what it
+addresses by. Eager, so a two-transport notification cannot half-land. The
+near-miss is named in the message: a recipient carrying `userId` is reported as
+a probable `SessionContext` — `ctx.user` is `{ userId, email }` and reads as
+id-less, which is the same trap in a second costume.
+
+**The plugin implemented only `register()` (`FJS-049`).** `boot()` now fails
+startup when the email transport is configured and `app.mail` is not set —
+`requires: ['mailer']` proves the PLUGIN is configured, which is not the same
+claim — and `shutdown()` awaits each driver's own optional `shutdown()`,
+isolated so one that throws does not stop the next. `app._db`/`app._drivers`
+were two enumerable properties under a comment claiming they were symbol-keyed;
+they are one `Symbol.for` state object now, so nothing leaks onto the app
+surface and `notify()` on an unconfigured app names the missing plugin.
+
+**`ctx.app.notify` from a service hook had never been run (`FJS-050`)** —
+the way every doc comment in the package says to use it. `tests/hook.test.ts` is
+a real service with a real after hook; the row it writes is the evidence the
+hook ran, and it is asserted field by field, which is also the answer to that
+row's second half (no consumer of the in-app record shape existed).
+
+**The package's own runnable example could not run (`FJS-072`).**
+`examples/Notification.mesa` imported `resource`, `derived` and `get` off
+sierra's root, which exports none of the three. It is the resource file
+`example/` actually runs now. `examples/wiring.ts` had the same class of error
+in prose — `ctx.params` (nowhere in Junction; path captures are `ctx.route`),
+`db.asSystem().users` (the accessor is `db.user`), `ctx.user` handed straight to
+`notify()`.
+
+Found on the way and fixed: **each `to*()` was called twice per `notify()`** —
+once to check the method existed, once to deliver — so a formatter that renders
+an email-kit template did it twice, and the message that was validated was never
+the one sent. It is formatted once and carried into delivery.
+
+Not done, deliberately: **the version is still 0.1.1.** The renames are
+breaking for any consumer outside this repo, and cutting a release is a separate
+act. `packages/basecamp` has its own `NotificationChannel` MODEL — a Slack or
+webhook destination, its own domain vocabulary — and it was left alone.
+
+Unrelated and pre-existing: `packages/auth` typechecks at 12 against a baseline
+of 4 (`plugin.ts` body destructuring + `tests/schema-accessors.test.ts`), which
+fails the root `bun run typecheck`. Another session's work in flight — untouched.
+
+---
+
+## Tenancy is a declaration, not a call (2026-08-16)
+
+**`FJS-D05`, ruled and built — the litestone half is green, the junction half is
+written and NOT yet tested.** Say that first: `withTenantDb` and
+`tenantClaimGuard` exist, compile and are wired into `createApp`, and nothing
+has run them. Treat them as unproven.
+
+The row asked for a config shape for db-per-tenant. Two things were actually
+wrong. **db-per-tenant had three configurations that could disagree** — a
+`createTenantRegistry()` call, a `tenants:` slice in `litestone.config.js` that
+the CLI read three keys of, and nothing at all in the schema — so
+`litestone tenant create` and the running app could each be right about a
+different directory. And **row-level tenancy was not a framework concept in any
+form**: basecamp hand-writes `@@allow('all', workspaceId == auth().workspaceId)`
+on fifteen models, which is fifteen chances to leave one off.
+
+**Both answered by one `tenancy { }` block in the seed**, beside
+`database { }` — `strategy database` or `strategy row`. Everything downstream
+asks one resolution (`db.$tenancy`, `registry.tenancy`, `resolveTenancy`) and
+precedence is stated once: **option → declaration → default**.
+`createTenantRegistry({ path: './db/schema.lite' })` is now the whole call.
+
+**The part worth knowing before touching it: row tenancy compiles to `@@deny`,
+never `@@allow`.** Allows are OR'd within an operation, so a generated allow on
+a model that already declares one *widens* its reads to the whole tenant — a
+tenancy feature that grants access. And it is TWO rules, because
+`checkCreatePolicy` runs before `applyAuthDefaults`: on create the column the
+`@default(auth().<claim>)` stamp is about to fill is legitimately absent, on
+read a row holding no tenant belongs to nobody. Verified by running both
+directions against a real client — cross-tenant create refused by name,
+cross-tenant update and delete answer `null`, anonymous sees nothing,
+`asSystem()` still crosses.
+
+Deferred with a reason, filed as `FJS-282`: a model reached only through its
+parent. `check(parent)` is conservative-allow on create (the related row does
+not exist yet), so generating it would enforce reads and permit a cross-tenant
+create in silence — half-enforcement in the one feature whose job is
+enforcement.
+
+`packages/litestone/docs/multi-tenancy.md` is the reference;
+`DECISIONS.md` § Access control is the argument.
+
+---
+
+## A job now knows who sent it (2026-08-16)
+
+**`FJS-093`, and the principal half filed beside it.** A Caravan handler took one
+argument and it was the job — no `app`, no second parameter — so an autoloaded
+`*.job.ts` had no route to the service layer at all, and apps grew a module
+holding a mutable app reference (`example/api/app-ref.ts`, which said so in its
+own header). Separately, a job had no principal, and no principal is STRANGER(0),
+so every job carried `{ auth: { user: SYSTEM } }` by hand.
+
+Both were documented hazards rather than bugs, which is what made the cost
+invisible. **Reading `example`'s audit trail is where it shows**: booking a
+courier for one customer's order was recorded as an act of the shop, at
+SYSADMIN(7), with nothing anywhere naming who had asked for it.
+
+**Ruled: deferred work runs as the ENQUEUING principal, re-resolved.** Two
+alternatives were rejected and the reasons are the decision (`DECISIONS.md`
+§ API design). *SYSTEM by default* removes the refusal by removing the question
+and silently escalates every customer's work. *Snapshot the session at dispatch*
+is one line shorter and lets a caller demoted between asking and running keep
+that authority for as long as the retry schedule runs — revocation that does not
+reach queued work is not revocation.
+
+So an id travels, not a session. Three pieces, none Caravan-specific:
+
+- `app.principal()` — who is in scope, asked from somewhere holding no `ctx`
+- `app.runAs(userId, fn)` — re-resolves through `IAuth.sessionFor` and opens the
+  ALS scope, so `fn` makes ordinary service calls that name nobody
+- `createApp({ system })` — who the app is when it acts on its own behalf, for
+  work nobody asked for. Declaring none gives `null`, not an invented principal
+
+Caravan records `actor_id` at dispatch and runs the handler inside `runAs`. A
+handler's argument is a `JobContext` now — the job's facts plus `app` and `auth`.
+An actor that cannot be resolved fails the job **by name**: falling back to no
+principal is the defect being removed, falling back to `system` is the rejected
+option, so there is no fallback.
+
+**Proof, from the audit trail rather than an assertion:**
+
+```
+update order  actor= 39a9a6ea…   ← alex@shop.test, who pressed Ship
+update order  actor= system      ← the cron sweep
+```
+
+`example/api/app-ref.ts` is deleted and no job names a principal.
+
+**Verified:** caravan 92 (was 81, 11 new in `tests/job-context.test.ts` — the
+implementation was broken on purpose and 6 of the 11 went red), junction 1120,
+auth 131, conduit 193, notifications 38, testing 23. Typecheck clean across all
+17 packages. `example`: `verify:jobs` 8/8, `verify` 37/37. `bun run ci --fast`
+green except `fli new failed`, which is a syntax error in another session's
+in-flight edit to `packages/cli/commands/project/new.md` and is caught by that
+package's own parse sweep.
+
+**Not run:** basecamp's suite and its browser drive.
+
 
 ## `contains` on an array was a substring search wearing `has`'s clothes (2026-08-14)
 

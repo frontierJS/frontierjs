@@ -103,6 +103,38 @@
  * nothing rather than its parent's red. Registering them `inherits: false`
  * pins that even where this rule is overridden.
  */
+/*
+ * ── The tone as text ────────────────────────────────────────────────
+ *
+ * --tone-ink is the tone made legible AS TEXT on this theme's surface:
+ * hue and chroma untouched, lightness clamped into --tone-l-min/max
+ * (tokens.css). A tone is tuned as a fill behind white text and mostly
+ * fails the other job — measured on `.btn.outlined`, 34 of the 72
+ * tone x theme pairs were under AA, worst 1.19:1; through the window the
+ * worst is 6.02:1.
+ *
+ * Clamped rather than blended toward --ink, which is the same ruling
+ * code.css already runs on: the clamp is a no-op wherever the tone
+ * already reads, so a well-tuned theme keeps looking like itself. The
+ * 55% blend --tint-ink applies was measured against it here and does not
+ * hold — sunset's warning lands at 4.05:1.
+ *
+ * The window cannot be derived, only declared: relative colour syntax
+ * exposes the channels of the tone, never those of the surface it will
+ * land on, so a dark theme states the inverted pair.
+ *
+ * Declared on * for the same reason the tint ramp below is, and it is
+ * guaranteed-invalid on an untoned element, so `var(--tone-ink, X)` is
+ * how a component says what it looks like with no tone. Registered
+ * `inherits: false`, so a descendant — a ::after spinner included —
+ * computes its own or gets nothing; a component that needs to pass the
+ * value down derives it into a normal property first.
+ */
+@property --tone-ink {
+  syntax:   "*";
+  inherits: false;
+}
+
 @property --tint-surface {
   syntax:   "*";
   inherits: false;
@@ -121,7 +153,24 @@
 *,
 *::before,
 *::after {
+  --tone-ink: oklch(from var(--bg-mix)
+                clamp(var(--tone-l-min), l, var(--tone-l-max)) c h);
+
   --tint-surface: color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
   --tint-rule:    color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
-  --tint-ink:     color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
+  /*
+   * The tint ramp's text rung goes through the SAME legibility window
+   * --tone-ink does, and for the same reason: 55% toward --ink is a blend
+   * tuned for a tone, and a tone that starts very light lands short of it.
+   * Measured across 10 themes x 7 tones, one pair failed — sunset's warning
+   * at 3.86:1 — and the window puts it at 6.77:1.
+   *
+   * The clamp is a no-op wherever the blend already reads, which is 53 of
+   * the 70 pairs; the 17 it moves all move UP, none regresses, and no
+   * theme's tint ramp is flattened toward the ink to fix one hue. It is
+   * the 2026-08-08 ruling (clamped, not blended) reaching the last place
+   * in the package that had not applied it.
+   */
+  --tint-ink:     oklch(from color-mix(in srgb, var(--bg-mix) 55%, var(--ink))
+                    clamp(var(--tone-l-min), l, var(--tone-l-max)) c h);
 }

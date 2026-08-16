@@ -4,7 +4,7 @@
  * Format:
  *   /old-path/  /new-path/  301
  *
- * Source: manifest.redirects — [[from, to], ...] pairs
+ * Source: the route table's `redirects` — [[from, to], ...] pairs
  * from route frontmatter `redirect: /new-path/`
  */
 

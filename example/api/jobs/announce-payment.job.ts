@@ -13,8 +13,6 @@
 // never arrives is the failure mode worth being loud about.
 
 import { defineJob } from '@frontierjs/caravan'
-import { getApp }    from '../app-ref.ts'
-import { SYSTEM }    from '../gate.ts'
 import { db }        from '../db.ts'
 import { OrderPaid }                    from '../notifications/OrderPaid.ts'
 import { OrderConfirmation, asRecipient } from '../notifications/OrderConfirmation.ts'
@@ -23,10 +21,10 @@ interface AnnouncePayment {
   orderId: number
 }
 
-export default defineJob<AnnouncePayment>('announce-payment', async (job) => {
-  const app = getApp()
+export default defineJob<AnnouncePayment>('announce-payment', async (ctx) => {
+  const app = ctx.app!
 
-  const order = await db.asSystem().order.findUnique({ where: { id: job.data.orderId } }) as
+  const order = await db.asSystem().order.findUnique({ where: { id: ctx.data.orderId } }) as
     { id: number; reference: string; total: number; customerId: number } | null
 
   // The order was deleted between the payment and this job. Not an error and
@@ -73,10 +71,3 @@ export default defineJob<AnnouncePayment>('announce-payment', async (job) => {
   maxAttempts: 5,
   retryDelay:  [30_000, 120_000, 600_000],
 })
-
-// SYSTEM is imported for the same reason book-courier imports it — see
-// api/gate.ts. It is unused here only because notify() writes through
-// `db.asSystem()` (the inApp channel) and through the mailer (no db at all),
-// neither of which goes via a service. Kept as a deliberate note rather than
-// deleted: the moment this job touches app.service(), it needs the principal.
-void SYSTEM

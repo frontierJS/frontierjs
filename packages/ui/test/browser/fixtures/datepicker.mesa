@@ -1,0 +1,52 @@
+<script>
+  // datepicker.mesa — DatePicker, held open and pinned to a fixed day.
+  //
+  // `today` is a Date and props reach a fixture as JSON, so it arrives as
+  // YYYY-MM-DD and is rebuilt here — as a LOCAL date, because everything the
+  // component computes is a local midnight and `new Date('2026-01-15')` is
+  // UTC midnight, which is the previous day west of Greenwich. Pinning it is
+  // what makes the grid assertable at all: the number of cells, which cell is
+  // `.today`, and what the header reads are all facts about one month.
+  //
+  // `alwaysShow` keeps the calendar mounted, which is also what stops a click
+  // on a day closing it before the next assertion.
+  import DatePicker from '../../../components/forms/DatePicker.mesa'
+
+  export let todayISO          = '2026-01-15'
+  export let isRange           = false
+  export let enableFutureDates = false
+  export let disabledDates     = []
+
+  const [y, m, d] = todayISO.split('-').map(Number)
+  const today = new Date(y, m - 1, d)
+
+  let startDate = undefined
+  let endDate   = undefined
+  let changes   = 0
+  let picked    = ''
+
+  function record(e) {
+    changes++
+    const start = e.startDate ? new Date(e.startDate) : null
+    const end   = e.endDate   ? new Date(e.endDate)   : null
+    const ymd   = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : ''
+    picked = end ? `${ymd(start)}..${ymd(end)}` : ymd(start)
+  }
+</script>
+
+<DatePicker
+  today={today}
+  isRange={isRange}
+  alwaysShow
+  isOpen
+  enableFutureDates={enableFutureDates}
+  disabledDates={disabledDates}
+  bind:startDate={startDate}
+  bind:endDate={endDate}
+  onDateChange={record}
+>
+  <button type="button" class="btn" id="dp-trigger">Pick a date</button>
+</DatePicker>
+
+<output id="changes">{changes}</output>
+<output id="picked">{picked}</output>

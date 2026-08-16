@@ -32,7 +32,9 @@
  */
 
 import { spawn } from 'node:child_process'
+import { mkdtempSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -48,7 +50,11 @@ const WEB_PORT = 8020
 // webhook at a URL that does not resolve, one step further along.
 const OUTPOST_PORT = 3011
 const BASE     = `http://localhost:${WEB_PORT}`
-const PROFILE  = '/tmp/fjs-basecamp-verify-profile'
+// Per run, never a fixed path. A Chrome orphaned by a hard kill keeps the
+// directory open, so a shared one is deleted out from under a live browser and
+// every later run inherits the wreckage — five of them, one 22 hours old, were
+// found sharing this path.
+const PROFILE  = mkdtempSync(join(tmpdir(), 'fjs-basecamp-verify-'))
 
 const ACCOUNT = {
   workspace: 'Acme',
@@ -59,6 +65,7 @@ const ACCOUNT = {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const children = []
+let chromePid = null                        // set once Chrome is spawned
 
 function fail(message) {
   console.error(`\n  ${message}\n`)
@@ -68,7 +75,40 @@ function fail(message) {
 async function cleanup() {
   for (const c of children) { try { c.kill() } catch {} }
   await sleep(300)
+  // A SIGTERM to the browser process leaves its zygote, GPU and renderer
+  // children alive; they are reparented to init and never noticed. Chrome is
+  // spawned into its own process group so the group can be reaped here.
+  if (chromePid) { try { process.kill(-chromePid, 'SIGKILL') } catch {} }
+  await rm(PROFILE, { recursive: true, force: true }).catch(() => {})
 }
+
+// An interrupted run used to leave its API, its Vite and its Chrome alive.
+// Nothing here is a child of the shell — they are children of THIS process — so
+// a SIGTERM to the wrapper (a `timeout`, a Ctrl-C, an editor stopping the task)
+// killed the runner and orphaned all three. The next run then met its own port
+// check, or worse, talked to a server holding a database this script had
+// already deleted. That is the exact failure the port check exists to name, and
+// it was this file creating it.
+//
+// `once`: cleanup is not re-entrant, and a second signal while it awaits would
+// exit before the kills land.
+let quitting = false
+function stop(reason, code = 1) {
+  if (quitting) return
+  quitting = true
+  console.error(`\n  ${reason} — stopping the servers this run started\n`)
+  cleanup().then(() => process.exit(code))
+}
+
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => stop(signal))
+
+// A THROW is the common case, not the interesting one: any check calling
+// evaluate() on a control that moved throws, and an unhandled throw exits
+// without running a single kill. Every orphan found so far was made this way —
+// the run reports its error and leaves an API holding a database the next
+// --reset has already deleted.
+process.on('uncaughtException',  e => { console.error(e); stop('uncaught error') })
+process.on('unhandledRejection', e => { console.error(e); stop('unhandled rejection') })
 
 // ─── Ports ────────────────────────────────────────────────────────────────
 // A port still held by an earlier run is the worst failure mode here: the stale
@@ -200,15 +240,15 @@ if (!probe.needs_setup) {
 // this file then drives those. It failed twice as `no field #workspace on
 // /packages/css/guide/index.html` — a page from another package, in another
 // session's Chrome, with every check up to that point green.
-await rm(PROFILE, { recursive: true, force: true })
 const chrome = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0',
   `--user-data-dir=${PROFILE}`,
   '--window-size=1280,800',
   'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] })
-children.push(chrome)
+], { stdio: ['ignore', 'ignore', 'pipe'], detached: true })
+chromePid = chrome.pid
+children.push({ kill: () => { try { process.kill(-chrome.pid, 'SIGTERM') } catch {} } })
 chrome.on('error', e => fail(`Could not launch ${CHROME}: ${e.message}. Set $FJS_CHROME.`))
 
 const browserWsUrl = await new Promise((resolve, reject) => {
@@ -244,9 +284,17 @@ ws.addEventListener('message', e => {
   const msg = JSON.parse(e.data)
   if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id) }
 })
-const send = (method, params = {}) => new Promise(res => {
+// A reply that never comes is the failure that costs an hour: a starved or
+// crashed renderer answers nothing, and an untimed promise hangs the whole run
+// with no output, so the wrapper is killed and its Chrome orphaned. Name it
+// instead — an uncaught throw runs cleanup.
+const send = (method, params = {}, ms = 30_000) => new Promise((res, rej) => {
   const n = ++msgId
-  pending.set(n, res)
+  const timer = setTimeout(() => {
+    pending.delete(n)
+    rej(new Error(`CDP ${method} timed out after ${ms}ms — the page stopped answering`))
+  }, ms)
+  pending.set(n, msg => { clearTimeout(timer); res(msg) })
   ws.send(JSON.stringify({ id: n, method, params }))
 })
 
@@ -824,13 +872,13 @@ check('a notice appears with no reload, off the same push the page reads',
 await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }))`)
 await sleep(500)
 check('⌘K opens the palette',
-  await evaluate(`!!document.querySelector('.cp-panel')`), true)
+  await evaluate(`!!document.querySelector('.fjs-cp-panel')`), true)
 check('…and the fleet is in it, not just the nav',
-  await evaluate(`document.querySelector('.cp-panel')?.textContent ?? ''`),
+  await evaluate(`document.querySelector('.fjs-cp-panel')?.textContent ?? ''`),
   t => t.includes('Provision server') && t.includes('gateway-01'))
-await evaluate(`document.querySelector('.cp-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+await evaluate(`document.querySelector('.fjs-cp-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
 await sleep(400)
-check('…and Escape closes it', await evaluate(`!!document.querySelector('.cp-panel')`), false)
+check('…and Escape closes it', await evaluate(`!!document.querySelector('.fjs-cp-panel')`), false)
 
 // The queue is the same notices, unfolded, on the home screen.
 await goto('/')

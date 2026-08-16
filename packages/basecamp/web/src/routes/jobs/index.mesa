@@ -43,7 +43,7 @@ title: Jobs
     try {
       // Returns the job row plus `queued: true` — the run itself happens on
       // Caravan's thread, so what comes back is the job, not the run.
-      const updated = await jobs.service.action('trigger', job.id)
+      const updated = await jobs.service.invoke('trigger', job.id)
       const i = rows.findIndex(r => r.id === job.id)
       if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
     } catch (e) {

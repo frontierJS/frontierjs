@@ -584,6 +584,7 @@
         "workspaceId",
         "name"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 5,
         "create": 5,
@@ -698,6 +699,7 @@
         "name",
         "tokenHint"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 5,
         "create": 5,
@@ -1089,6 +1091,7 @@
         "name",
         "slug"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -1217,6 +1220,7 @@
         "name",
         "slug"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -1287,6 +1291,7 @@
         "name",
         "slug"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -1397,6 +1402,7 @@
         "name",
         "slug"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -1542,6 +1548,7 @@
         "appId",
         "hostname"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -1841,6 +1848,7 @@
         "appId",
         "workspaceId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -2071,6 +2079,7 @@
         "workspaceId",
         "name"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -2273,6 +2282,7 @@
         "slug",
         "script"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 4,
         "create": 5,
@@ -2651,6 +2661,7 @@
         "workspaceId",
         "key"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -2812,6 +2823,7 @@
         "name",
         "kind"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -2882,6 +2894,7 @@
         "name",
         "metricName"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -3113,6 +3126,7 @@
         "name",
         "slug"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,

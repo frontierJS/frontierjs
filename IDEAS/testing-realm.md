@@ -659,7 +659,7 @@ The eleven, ranked by how likely they are to be wrong today rather than by size:
 | --- | --- | --- |
 | 1 | `sessionGateLevel()` · `toDataPrincipal()` | **Both are hand copies on both sides**, `CLAUDE.md` says so, and both are security-relevant: the first grades a caller, the second is why every row policy compares against `undefined` when it is missed (FJS-097). Generating one from the other is the whole idea |
 | 2 | `buildFieldRules()` ⇄ junction's `autoValidate` | The canonical Rainsberger pair — client validates, server validates, they must agree. The sierra module was deliberately built leaf-shaped *so it could be compared rather than copied*, and the comparison was never written |
-| 3 | `authSchemaFragments()` ⇄ `cli/commands/auth/install.md` | Another declared hand copy. A scaffolded app gets the schema the CLI remembers, not the one auth ships |
+| 3 | ~~`authSchemaFragments()` ⇄ `cli/commands/auth/install.md`~~ | **Closed 2026-08-15 (`FJS-038`).** Auth ships the models as `.lite` and the CLI reads those bytes; a scaffolded app gets the schema auth ships |
 | 4 | `x-messages` keyword table | One owner, two consumers looking up the keyword they failed. A rename in litestone silently loses a message in junction *and* sierra, and a missing validation message is invisible |
 | 5 | `publish()` event names ⇄ subscribers | The only entry with a drift already named in `CLAUDE.md`: jetty hardcodes Feathers-style names, and litestone's `onEvent` has no Junction subscriber |
 | 6 | `$checkWhere` / `$checkOrderBy` | A real request/response shape, with a clause easy to get wrong: an unknown accessor answers `[]`, and *I cannot judge this* is not *this is wrong* |

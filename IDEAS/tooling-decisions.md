@@ -5,6 +5,20 @@ probed against the tree; the recommendations are marked as recommendations. This
 exists because tooling choices are the kind that get made by accident — the first
 person who needs one installs something, and five years later that is the standard.
 
+> **Items 1 and 3 are ruled, 2026-08-15 — `FJS-D32` and `FJS-D33`.** Read them in
+> `DECISIONS.md`; what stays here is the reasoning that led there, and it is worth
+> keeping because one premise below turned out to be wrong. Item 1 frames the
+> choice as a taste call the maintainer owns. It is not: **the code `fli new`
+> generates is aligned too**, so the first format run of any of the three
+> candidates rewrites the app the scaffold had just written, and the answer is
+> forced rather than chosen. The tool is **Biome, linter only**, shipped as
+> `@frontierjs/config`; the boundary sentence below survives intact and is now
+> the ruling's centre, with one correction — the app-facing command is **`fli
+> check`**, which exists, rather than `fli doctor` (0.5), which does not and is
+> about fli's own setup. What is still open from item 1 is only this repo
+> extending its own config: `FJS-266`, a counted cleanup of ~600 findings.
+> **Items 2, 4 and 5 are untouched and still unmade.**
+
 Companion to `IDEAS/diagnostics.md`, which owns the FJS-*semantic* checks. **The
 boundary between the two is item 1's whole subject** and is the most important thing
 in this file.
@@ -222,6 +236,46 @@ Recorded so the next sweep does not raise them again.
 - **`.editorconfig` is the one free thing on this page.** Six lines, understood by every
   editor, encodes indent and final-newline with no build step and no argument. Whatever
   happens to item 1, this should exist.
+
+---
+
+## 7. Dev URLs — the broker already knows the name
+
+Added 2026-08-15 from an outside framework's DX list, whose entry reads
+*"your-project.localhost instead of localhost:3000"*. Here it is
+`localhost:8010` and `localhost:8110`, and remembering which is which is a tax paid
+per context switch, per developer, forever.
+
+**The reason it is worth a line rather than a shrug is that the derivation already
+exists.** `packages/cli/core/ports.js` holds the formula, the category map and the
+`PROJECTS` registry, so the broker already knows that project 1 is `example` and that
+8010 is its frontend and 8110 its API. Nothing has to be configured, invented or kept
+in sync — `example.localhost` and `api.example.localhost` are a rendering of a table
+that is already the source of truth for the numbers. Any modern browser resolves
+`*.localhost` to loopback without an `/etc/hosts` entry, so the client half is free;
+what is not free is that a name has no port, which means a local reverse proxy on 80
+mapping host to port, started with the dev servers and torn down with them.
+
+**Three things it would actually fix**, none of which is remembering a number:
+`strictPort` exists because vite otherwise hops in silence and *"the second app's drive
+tests the first app's app"* — a name makes that failure impossible to reach rather than
+merely loud. Cookie scope stops being a lie: `localhost:8010` and `localhost:8110`
+share a cookie jar because a port is not part of origin for cookies, so cookie auth in
+dev behaves unlike cookie auth anywhere else, and a subdomain pair reproduces
+production. And a browser drive's assertions stop hard-coding the port the CLAUDE.md
+table also states, which is one fact in two places.
+
+**The reasons to be careful.** A proxy on port 80 needs a privileged bind or a
+capability, on a project whose whole pitch is that everything runs as a plain user
+process; the honest fallback is `:8080` and a name, which is less pretty and keeps the
+property that matters. It must be strictly additive — the numbers keep working, because
+`FLI_PORT_FE`/`FLI_PORT_BE`, `strictPort`, every drive and the whole ports table depend
+on them, and a DX nicety that becomes load-bearing is a worse trade than the tax it
+removes. And it belongs to the broker, not to vite: one owner, the same rule the ports
+table already follows.
+
+`S`, `●●○○`. The kind of item that is only cheap while the derivation is already
+written down.
 
 ---
 

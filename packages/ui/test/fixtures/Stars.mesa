@@ -1,0 +1,28 @@
+<script>
+  // A control this kit does not ship, standing in for the ones an app owns —
+  // a rating, a money box, a tag input, a Json editor. It is here to prove the
+  // contribution path renders, so it is the smallest thing that can hold a
+  // value and hand one back.
+  //
+  // These are the props a registered control gets with no `props` builder:
+  // `name`, `field`, `value`, `onvalue`, `options`.
+
+  export let name    = undefined
+  export let field   = undefined
+  export let value   = undefined
+  export let onvalue = undefined
+  export let options = undefined
+
+  const max = field?.max ?? 5
+</script>
+
+<div class="cluster" data-control="stars">
+  <input
+    type="range"
+    {name}
+    min="0"
+    {max}
+    value={value ?? 0}
+    on:input={(e) => onvalue?.(Number(e.target.value))}
+  />
+</div>

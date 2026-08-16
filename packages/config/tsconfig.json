@@ -1,0 +1,40 @@
+{
+  // How a FrontierJS application is type-checked. An app extends this and adds
+  // only what is about its own layout — `paths` and `include`.
+  //
+  //   { "extends": "@frontierjs/config/tsconfig", "include": ["api/**/*"] }
+  //
+  // It is a dependency rather than a file the scaffold copies, so a setting can
+  // improve for every app that already exists. `tsconfig.base.json` at this
+  // repo's root is the sibling for the workspace's own packages: an app checks
+  // one program, a package checks its own sources, and the two want different
+  // answers about `allowJs` and `checkJs`.
+  "compilerOptions": {
+    // DOM.Iterable is what makes Headers/FormData/URLSearchParams iterable —
+    // without it `headers.entries()` is a type error against working code.
+    "lib":              ["ESNext", "DOM", "DOM.Iterable"],
+    "target":           "ESNext",
+    "module":           "Preserve",
+    "moduleResolution": "bundler",
+    "moduleDetection":  "force",
+    "jsx":              "preserve",
+
+    // An app's web/ half is JavaScript beside .mesa, and tsc cannot read a
+    // .mesa at all. `allowJs` lets those imports resolve; `checkJs` stays off,
+    // so the JS is not itself type-checked.
+    "allowJs":          true,
+    "checkJs":          false,
+
+    "types":            ["bun-types"],
+
+    "strict":                     true,
+    "skipLibCheck":               true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Junction's services import each other as `./x.ts`, which is what the Bun
+    // runtime wants and what every generated file writes.
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax":       true,
+    "noEmit":                     true
+  }
+}

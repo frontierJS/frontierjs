@@ -6,12 +6,12 @@
 //    HTTP automatically. File uploads always use HTTP (multipart/form-data)."
 //
 // WebSockets are the default when one is available; HTTP is the fallback. Two
-// methods did not follow it — `restore` and `action` were unconditionally HTTP,
-// so a custom action was the only service call that ignored a live connection.
+// methods did not follow it — `restore` and `invoke` were unconditionally HTTP,
+// so a custom method was the only service call that ignored a live connection.
 //
 // And the fallback had a hole with no bottom: `_httpFallback`'s default branch
 // called `svc.call()`, which is `_wsCall()`, which routes to `_httpFallback`
-// when the socket is down. A custom action with no connection recursed between
+// when the socket is down. A custom method with no connection recursed between
 // the two forever — asynchronously, so there was no stack overflow to point at
 // it. The call simply never settled, which is the worst way for this to fail.
 
@@ -63,7 +63,7 @@ function withFakeSocket() {
 
 describe('with no socket, everything falls back to HTTP and settles', () => {
   // Each of these hung indefinitely before the fallback stopped recursing.
-  it('call() on a custom action', async () => {
+  it('call() on a custom method', async () => {
     const seen = traceHttp()
     await client().service('orders').call('pay', 3, {})
     expect(seen).toEqual([{ method: 'POST', path: '/orders/3', action: 'pay' }])
@@ -71,7 +71,7 @@ describe('with no socket, everything falls back to HTTP and settles', () => {
 
   it('action()', async () => {
     const seen = traceHttp()
-    await client().service('orders').action('pay', 3, {})
+    await client().service('orders').invoke('pay', 3, {})
     expect(seen).toEqual([{ method: 'POST', path: '/orders/3', action: 'pay' }])
   })
 
@@ -89,13 +89,13 @@ describe('with no socket, everything falls back to HTTP and settles', () => {
   // fleet-wide event feed, where there is no subject row to name.
   it('an action with no id posts to the service root', async () => {
     const seen = traceHttp()
-    await client().service('orders').action('summary')
+    await client().service('orders').invoke('summary')
     expect(seen).toEqual([{ method: 'POST', path: '/orders', action: 'summary' }])
   })
 
   it('an explicit null id is the same thing', async () => {
     const seen = traceHttp()
-    await client().service('orders').action('summary', null)
+    await client().service('orders').invoke('summary', null)
     expect(seen).toEqual([{ method: 'POST', path: '/orders', action: 'summary' }])
   })
 
@@ -103,13 +103,13 @@ describe('with no socket, everything falls back to HTTP and settles', () => {
     // Plainly: `?limit=50`, not the `$`-prefixed directive syntax
     // buildQueryString emits. An action declares its own query vocabulary.
     const seen = traceHttp()
-    await client().service('orders').action('summary', null, null, { limit: 50, status: 'paid' })
+    await client().service('orders').invoke('summary', null, null, { limit: 50, status: 'paid' })
     expect(seen).toEqual([{ method: 'POST', path: '/orders?limit=50&status=paid', action: 'summary' }])
   })
 
   it('an unset filter is dropped, not sent as the string "null"', async () => {
     const seen = traceHttp()
-    await client().service('orders').action('summary', null, null, { limit: 50, kind: null })
+    await client().service('orders').invoke('summary', null, null, { limit: 50, kind: null })
     expect(seen).toEqual([{ method: 'POST', path: '/orders?limit=50', action: 'summary' }])
   })
 })
@@ -122,8 +122,8 @@ describe('with a socket, the socket wins', () => {
     return { sent, httpSeen }
   }
 
-  it('a custom action goes over WS, not HTTP', async () => {
-    const { sent, httpSeen } = await overSocket(svc => svc.action('pay' as never, 3 as never))
+  it('a custom method goes over WS, not HTTP', async () => {
+    const { sent, httpSeen } = await overSocket(svc => svc.invoke('pay' as never, 3 as never))
     expect(httpSeen).toEqual([])
     expect(sent).toHaveLength(1)
     expect(sent[0]).toMatchObject({ type: 'service_call', service: 'orders', method: 'pay' })
@@ -147,7 +147,7 @@ describe('the documented exception', () => {
   it('a payload carrying a File goes over HTTP even with a socket up', async () => {
     const httpSeen = traceHttp()
     const { c, sent } = withFakeSocket()
-    await c.service('orders').action(
+    await c.service('orders').invoke(
       'attach' as never,
       3 as never,
       { receipt: new File(['x'], 'r.txt') } as never,

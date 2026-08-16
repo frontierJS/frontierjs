@@ -1,23 +1,8 @@
 {
-  "compilerOptions": {
-    "lib": ["ESNext", "DOM"],
-    "target": "ESNext",
-    "module": "Preserve",
-    "moduleResolution": "bundler",
-    "moduleDetection": "force",
-    "jsx": "preserve",
-    "allowJs": true,
-
-    "types": ["bun-types"],
-
-    "strict": true,
-    "skipLibCheck": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": false,
-
-    "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
-    "noEmit": true
-  },
+  // Extends the workspace base rather than restating it. It used to be a full
+  // copy, and the copy had drifted in exactly one place that mattered: `lib`
+  // named "DOM" without "DOM.Iterable", so `headers.entries()` was a type error
+  // against working code — the very case the base's own comment warns about.
+  "extends": "../../tsconfig.base.json",
   "include": ["index.ts", "src/**/*.ts", "tests/**/*.ts", "example/**/*.ts"]
 }

@@ -1,6 +1,305 @@
+# Changes — @frontierjs/basecamp
+
+## 2026-08-16 — conduit's `hooks:` is `observers:` (`FJS-287`)
+
+`core/app.ts` names the option conduit renamed. The three callbacks are
+unchanged — they log a request, an error result and a failed send, which is the
+Observer tier being exactly what it says. `management: { hooks: … }` on the same
+call keeps its word: that one is Junction's pipeline and refuses unauthenticated
+callers. Typecheck baseline unchanged at 20; it was 26 with the stale name, which
+is how the rename was caught here rather than at runtime.
+
+## 2026-08-16 — the API-keys service says which provider it needs (`FJS-D10`)
+
+92/92 tests pass. Typecheck baseline unchanged.
+
+Junction now requires only `verifySession` of an auth provider, so a provider
+that verifies sessions and issues no API keys is a legal one. `authOrRefuse()`
+already refused an ABSENT provider; it now also refuses one that cannot mint or
+revoke, by name. That is a real runtime hole closed rather than a type appeased
+— the previous code would have reached `undefined.createApiKey`.
+
 # Basecamp — changes
 
 Newest first. What changed and why; the current state is `PROJECT_STATE.md`.
+
+## 2026-08-14 — an interrupted drive left three servers running
+
+`web/test/verify.mjs` spawns an API, a Vite and a Chrome and killed them only on
+its own `fail()` path. Anything else — a `timeout`, a Ctrl-C, an editor stopping
+the task, **or any check throwing** — killed the runner and orphaned all three.
+
+The next run then met one of two things: its own port check, or worse, an API
+still holding a database this script had already deleted, answering from rows
+that no longer exist on disk. That is precisely the failure the port check was
+written to name, and this file was the thing creating it. It cost most of an
+afternoon: a drive that hung at a login, an API that answered `no such table`
+after a `--reset`, and a hundred headless Chrome processes at the end of it,
+none of which was a defect in the app.
+
+`SIGINT`/`SIGTERM`/`SIGHUP` and both uncaught-error hooks now run `cleanup()`
+before exiting. Proven both ways: a `timeout`-killed run and a run that threw
+mid-check each leave **no listener on 8120, 8020 or 3011**, and a clean run
+still reports 271/271.
+
+A throw is the common case, not the interesting one — a check calling
+`evaluate()` against a control that moved throws, and that path never ran a
+single `kill()`.
+
+
+## 2026-08-14 — Basecamp runs in a container, and packaging it found four framework bugs
+
+`node deploy/build.mjs --run` builds an image from the WORKING TREE and brings
+up the stack; `http://localhost:8020` is the same URL `bun run dev` serves, so
+containerised and not are the same address.
+
+**The image carries the tree, not the registry.** Basecamp depends on nine
+`@frontierjs` packages as `workspace:*`, which a Docker build can resolve no more
+than it can resolve the `link:` specs `fli new --source local` writes — that is
+`FJS-241`. The answer, now `fli`'s and no longer this app's: `bun pm pack` every
+package INTO the build context and depend on the tarballs, with `overrides` so
+the packages' own dependencies on each other resolve to the tree as well. A tarball is byte for
+byte what `npm publish` would upload, so the image runs what is being edited —
+and grades every package's `files:` field on the way past.
+
+Two containers, not one. The API is an image; the SPA is static files behind
+Caddy. Serving both from the API would need an `apiPrefix`, because Junction
+registers `GET /{service}` and that matches almost any single-segment path — so
+`/apps/` in a browser would answer JSON. The proxy makes the same `Accept`-header
+decision the Vite dev proxy makes, from **the same list**: `web/config/api-paths.js`
+is now one file with two readers, rather than a hand-kept array that had gone
+stale four times and would have been copied into the deploy as a fifth.
+
+**Four defects, and none of them was in this app.** Every one is the same shape:
+*a path predicate that is true in the workspace for a different reason than it is
+true in an install.* Nothing in the repo could see any of them, because an app
+here resolves the framework out of `packages/`.
+
+- **sierra** — the Mesa plugin's node_modules allowance named `@frontierjs/sierra`
+  alone, so the ui kit's 64 `.mesa` components and email-kit's 22 reached
+  rolldown untransformed. It names the scope now.
+- **sierra** — `id.includes('_module')` decided whether a file was a layout, and
+  **`node_modules` contains `_module`**. Every installed component took the
+  layout slot rewrite and died on `'__slot_actions' is already declared`, naming
+  a variable absent from the source. The test is the basename now.
+- **ui** — `"./stores/*": "./stores/*.js"` mapped `stores/toastStore.js` to
+  `stores/toastStore.js.js`. The components entry already handled both
+  spellings; the stores entry handled only the one nobody writes.
+- **basecamp** — `web/config/vite.config.js` aliased `@frontierjs/ui` to
+  `../../../ui` unconditionally. Outside the workspace that directory does not
+  exist, and the alias rewrote 22 imports to nothing. Guarded with `existsSync`:
+  an alias to a directory that is not there is never right, so it is not a
+  `NODE_ENV` question.
+
+`db/generate.js` stays out of the image on purpose. It imports litestone by
+relative workspace path so the DDL emitter is the tree's and never the stale copy
+`bun install` leaves under `node_modules/.bun` — a deliberate choice that cannot
+survive containerisation and should not. Drift is a question about the
+repository; `bun run db:check` answers it on the host.
+
+Proven by running the whole app loop against the container through the proxy —
+setup, login, two workspaces, projects, environments, apps, deployments, jobs,
+domains, 20 checks — plus the SPA shell on a deep route, a hashed asset, and a
+release the engine drove to `success` inside the container.
+
+## 2026-08-14 — the credential pair, and a hole it opened in Litestone's own checks
+
+`Secret` and `ApiKey` now declare
+`@@allow('all', workspaceId == auth().workspaceId)`. **15 of 37 — every model
+carrying a `workspaceId` except `WorkspaceMember` and `AuditEvent`**, and both of
+those are exclusions with a reason rather than a backlog: standing is *read from*
+`WorkspaceMember` before there is a workspace on the principal to compare
+against, and `AuditEvent`'s workspace is nullable because a hub action belongs to
+none.
+
+These two were held to last because they are the only models with system readers
+that look a row up **by id with no workspace in the query** — the conduit
+resolver reading `secret:<id>`, the channels service writing a channel's
+credential, the API-key guard deciding whether a key may act. All three are
+`asSystem()`. A test says so directly, because a policy reaching any of them
+would fail every send and refuse every key with nothing to tell it from a bad
+token.
+
+**Declaring `Secret` broke a Litestone check, and the break was the useful part.**
+`verifyFieldProtection` seeds a row carrying the policy's targeted value so the
+row is visible to the reader it is about to grade — and that value is almost
+always a foreign key, so the child was refused by the constraint and the model
+reported *no row could be built … FOREIGN KEY constraint failed*. Its sibling
+`verifyRowPolicies` already called `_ensureParent()` for exactly this; the field
+check did not. Fixed upstream the same day. `Secret` is the only model in 37 with
+both a protected field and a row policy, which is why nothing had put the two
+attributes together before.
+
+Three older tests changed with it, all the same shape as the ones the first batch
+touched: a principal built with no `workspaceId`. `applyStanding()` puts one on
+for every real request, a system administrator included — **standing decides the
+level, the policy decides which rows** — so a test omitting it was describing a
+request this app never makes. The sysadmin test now asserts both halves: with the
+workspace on the principal it reads the vault, and pointed at another workspace
+it reads nothing, because reading across tenants is the hub's job and the hub
+uses `asSystem()`.
+
+Over HTTP the thing worth proving is that a key still works: minted in A, it
+reads A's servers (200), is refused against B (403) and refused a service outside
+its scopes (403) — three answers that all come off a row the guard reads through
+`asSystem()`. And `@encrypted` still keeps `data` off the answer for the secret's
+own owner, which is the other half of the pair: losing either would look
+identical on a cross-workspace read.
+
+`bun run test` 92/92, litestone 1986/0, typecheck at baseline 20,
+`bun run verify --reset` 271/271, `db/access.snapshot.md` at **16 policied**.
+
+## 2026-08-14 — the tenancy sweep reaches every model that can carry it
+
+`Network`, `Recipe`, `FeatureFlag`, `NotificationChannel`, `AlertRule` and
+`Dashboard` now declare `@@allow('all', workspaceId == auth().workspaceId)`.
+**13 of 37 — which is every model carrying a `workspaceId` except four**, and the
+four are worth naming because they are exclusions rather than a backlog:
+
+- **`WorkspaceMember`** is what standing is *read from*. `applyStanding()` reads
+  it through `asSystem()` before there is a workspace on the principal to
+  compare against, so a policy graded off `auth().workspaceId` would be reading a
+  field it is in the middle of deciding.
+- **`Secret`** and **`ApiKey`** hold credential material and have real system
+  paths — `core/credentials.ts` resolving a `secret:<id>` ref, the scope resolver
+  asking whether a key may act. Those want reading line by line rather than
+  waved through with the batch.
+- **`AuditEvent`**'s `workspaceId` is nullable, because a hub action belongs to
+  no workspace. A policy comparing a null to a caller's workspace would hide
+  exactly the rows the trail exists for.
+
+The audit for these six was the shortest of the three batches: every read goes
+through `findScoped`/`getScoped`, the two that build their own where-clause spell
+`workspaceId: wsOf(ctx)` out (`flags.resolve`, `alerts.attachChannel`), and the
+only crossing readers are the hub's flag list and the fleet engine's recipe
+stamp, both `asSystem()`. Four of the six stamp through their own
+`stampWorkspace` variant rather than the shared one — `NotificationChannel` and
+`FeatureFlag` have no `slug` column — and each still sets `workspaceId`.
+
+Four more tests, driving all six through one table of shapes, plus 30 checks
+over HTTP with two workspaces owned by one person — each service lists only its
+own row, a cross-workspace `GET` is a 404, and a create naming the other
+workspace in the BODY lands in the caller's own. `bun run test` 87/87, typecheck
+at baseline 20, `bun run verify --reset` 271/271, and `db/access.snapshot.md` at
+**14 policied** (the 13 plus `User`'s own self-only rule).
+
+## 2026-08-14 — the second tenancy batch, and the read that had no workspace in it
+
+`Deployment`, `Job` and `Domain` now declare
+`@@allow('all', workspaceId == auth().workspaceId)`. Seven of 37; the other 30
+still hold their tenancy in a service where-clause.
+
+These three are not the hierarchy — they hang off an App rather than off the
+workspace — and that brought a shape the first batch did not have. Several reads
+filter on **`appId` alone**: the ten most recent deployments on an app's detail
+screen, the ten most recent jobs beside them, and the sibling hostnames
+`makePrimary` demotes. None of them names a workspace. They are correct today
+only because the app was fetched scoped a few lines earlier, which is an argument
+that lives in the reader's head and nowhere in the query — the exact thing that
+is one refactor from being false.
+
+The audit came out clean the same way the first batch did: every scoped read goes
+through `dbOf(ctx)`, every create stamps through `stampWorkspace`, and the paths
+that legitimately cross a workspace are the three engines and the hub, all
+`asSystem()`. `Domain` is the one with a different gate — `"2.5"`, because a
+hostname decides where traffic lands and a certificate decides whether it is
+private — so its tests act as an admin where the other two act as a developer.
+
+Four tests drive all three through one body, and one of them is new to this
+batch: **an `appId`-only read handed the other tenant's `appId` directly must
+answer nothing.** That is the claim the declaration adds and the where-clause
+never made. Over HTTP, the same question a third way — `GET
+/deployments?appId=<B's app>` from A's client is an empty list, `GET
+/jobs/<B's row>` is a 404, and a create naming B in the BODY lands in A.
+
+The two reads that had to keep working are the ones the policy could have
+emptied without a word: the app detail screen still carries its own releases and
+jobs, and the `domains` it reaches through `include:` are still there — an
+`include:` enforces the rules of the model it reaches (litestone `FJS-150`), so
+a join is exactly where a new policy goes unnoticed.
+
+`db/access.snapshot.md` carries all seven — and it was two entries stale when
+this started, `Project`/`Environment`/`App` never having been regenerated into
+it. `bun run test` 83/83, typecheck at baseline 20, `bun run verify --reset`
+271/271.
+
+## 2026-08-14 — the tenancy of the hierarchy moved into the schema
+
+`Project`, `Environment` and `App` now declare
+`@@allow('all', workspaceId == auth().workspaceId)`, joining `Server`. Four of
+37; the other 33 still hold their tenancy in a service where-clause.
+
+**The line is not the work — the audit before it is.** A policy FILTERS where a
+gate REFUSES, so a read that legitimately crosses a workspace and is not
+`asSystem()` starts matching nothing, with a 200 and an empty screen. For these
+three the audit came out clean: every scoped read already goes through
+`dbOf(ctx)` with `workspaceId: wsOf(ctx)` — including the indirect ones, the
+flags service resolving an environment and the dashboards service naming apps —
+and the only paths that cross a workspace are the three engines and the hub,
+which are `asSystem()` and unaffected.
+
+Proven twice, because a where-clause in a service would pass either test alone:
+
+- **At the Data boundary, with no service and no hook.** Four tests driving all
+  three models through one body — a caller with no `where` at all sees only
+  their own rows, another workspace's row is `null` by id and by name, a create
+  or a move into another workspace is refused by the policy, and `asSystem()`
+  still writes across (which is what the deployment engine does to `App.status`).
+- **Over HTTP, two workspaces owned by one person.** Each lists only its own,
+  a cross-workspace `GET` is 404, and a create naming the other workspace in the
+  BODY lands in the caller's own workspace rather than smuggling a row across.
+
+Two older gate tests had to change with it, and the change is the point: they
+built a principal with no workspace and created rows into one. `applyStanding()`
+puts the workspace on the principal for every real request, so a test that
+omitted it was describing a request this app never makes.
+
+`db/access.snapshot.md` carries all four models. `bun run test` 79/79 and
+`bun run verify --reset` 271/271 — the drive is what proves the three engines,
+the hub and every screen still read what they are meant to.
+
+## 2026-08-14 — the boot path could not see its own migration, and the seed had no channels
+
+Two things the new seed test found by running the whole path.
+
+**`db/test/seed.test.ts` is that test.** `bun run db:seed` is the only thing here
+that writes every model and nothing ran it, which is how it stayed broken for two
+phases — a dead enum value, a dead column, and a `--force` list eleven models
+behind the schema. It runs the real SCRIPT as a process from a throwaway
+directory (DATABASE_URL and the declared `audit` path both resolve against the
+CWD, so a developer's own fleet is untouched), three times over: an empty
+database, a `--force` re-seed, and a second plain run that must be a no-op.
+Every table is asserted non-empty individually rather than by a total — a
+seeder that stops three models in still writes hundreds of rows.
+
+What it catches was measured rather than assumed: removing `account` from the
+`--force` list fails it exactly as it failed by hand, on `account.slug`.
+Removing a CASCADING child (`server`) passes, and correctly — the workspace
+delete takes those rows anyway.
+
+**The app migrated from `db/migrations` and the migration lives in
+`db/migrations/main/`.** Migrations are per DATABASE because the schema declares
+`database main`; junction's `dbClient.migrate(dir)` globs one level and answers
+`{applied: [], skipped: []}` for a directory it cannot read. So a boot against a
+fresh database created **no tables and said nothing**, and the first request
+answered `no such table: workspace`. `bun run verify --reset` had stopped working
+for exactly this reason, and a first deploy would have started against an empty
+database — the same silent-success class as `FJS-193` itself.
+
+Both call sites — `api/src/core/app.ts` and `db/seed.js`, which had a comment
+saying it made "the same call app.ts makes on boot" and did — now use
+**litestone's** `apply()`, which knows the per-database layout and separates *no
+files* from *no files MATCHED*. Basecamp throws on `unmatched` rather than
+booting empty. Verified: delete the database, boot, 40 tables.
+
+**Nothing seeded a `NotificationChannel`.** Both halves of the delivery chain
+have existed since Phase 5 and the seeder wrote neither the channel nor the
+`AlertRuleChannel` join, so `/channels/` read as broken in a seeded fleet and
+the join that replaced a Json array of ids had no example anywhere. Now two
+channels per workspace, and only the Slack one carries a `secretId` — a channel
+without a credential is a state the screen has to render, and a fleet where
+every row is complete never shows it. The webhook URL goes into a `Secret`
+(`kind: 'notification'`), which is where a bearer credential lives here.
 
 ## 2026-08-14 — the client has the schema's own types
 

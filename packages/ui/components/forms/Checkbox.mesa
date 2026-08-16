@@ -8,10 +8,10 @@
   //
   // For a toggle-switch aesthetic, use Switch.mesa.
 
-  import { tone as toTone, cx, uid } from '../../utils.js'
+  import { tone as toTone, cx, uid, nameToLabel, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let checked     = false
-  export let label       = ''
+  export let label       = ''       // falls back to @label, then the column name
   export let description = ''  // secondary line under the label
   export let name        = undefined
   export let value       = undefined
@@ -25,7 +25,18 @@
   const checkId = id || uid('check')
   const descId  = uid('check-desc')
 
-  const t = error ? 'danger' : toTone(tone)
+  // The enclosing <Form> and this field's rule, both undefined standing alone.
+  // A boolean column is a checkbox, so a generated form emits this one — and
+  // without the resolution below it was the only control in a generated form
+  // that could not say its own name or show its own rejection.
+  const form = $context.form
+  const rule = resolveRule(form, name)
+
+  const resolvedLabel    = stated(label || undefined, rule?.title, name ? nameToLabel(name) : '') ?? ''
+  const resolvedRequired = stated(required, rule?.required)
+  const displayError     = resolveError(form, name, error, undefined)
+
+  const t = displayError ? 'danger' : toTone(tone)
 
   function handleChange(e) {
     checked = e.target.checked
@@ -47,20 +58,20 @@
       value={value}
       checked={checked}
       disabled={disabled}
-      required={required}
+      required={resolvedRequired}
       aria-describedby={description ? descId : null}
-      aria-invalid={error ? 'true' : null}
+      aria-invalid={displayError ? 'true' : null}
       on:change={handleChange}
       {...$attributes}
     />
-    {#if label}<span>{label}</span>{/if}
+    {#if resolvedLabel}<span>{resolvedLabel}</span>{/if}
   </label>
 
   {#if description}
     <p class="field-hint" id={descId}>{description}</p>
   {/if}
 
-  {#if error}
-    <p class={cx('field-hint', 'danger')} role="alert">{error}</p>
+  {#if displayError}
+    <p class={cx('field-hint', 'danger')} role="alert">{displayError}</p>
   {/if}
 </div>

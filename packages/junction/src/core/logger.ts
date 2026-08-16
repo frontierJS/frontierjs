@@ -137,7 +137,13 @@ export function consoleWriter(format: 'pretty' | 'json' = 'pretty'): LogWriter {
     }
 
     if (entry.error) {
-      line += '\n' + COLORS.error + entry.error.stack ?? `${entry.error.name}: ${entry.error.message}` + RESET
+      // `+` binds tighter than `??`, so the one-expression version of this read
+      // `('\n' + COLORS.error + stack) ?? (…)`: a concatenation is never nullish,
+      // so the fallback was dead and RESET was on the wrong side of the operator
+      // — an error with no `.stack` logged the word `undefined`, and every line
+      // after ANY error stayed the error colour.
+      const detail = entry.error.stack ?? `${entry.error.name}: ${entry.error.message}`
+      line += '\n' + COLORS.error + detail + RESET
     }
 
     if (entry.level === 'error' || entry.level === 'warn')

@@ -1,9 +1,11 @@
 // web/config/vite.config.js
 import { dirname, resolve } from 'node:path'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { createSierraViteConfig } from '@frontierjs/sierra/build'
 import sierraConfig from './sierra.config.js'
+import { API_PATHS, WS_PATH } from './api-paths.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
@@ -22,26 +24,10 @@ const sierra = createSierraViteConfig(sierraConfig)
 // text/html and is handed the SPA; the Junction client asks for
 // application/json and is proxied. Verified both ways in a browser.
 //
-// If this ever gets fragile, the durable fix is to give the API an apiPrefix
-// ('/api') and match it in sierra.config.js — one proxy rule, no ambiguity.
-// The prefix was removed deliberately; this is the cost of that, written down.
-// One entry per mounted service, plus the non-service routes. It is a hand-kept
-// copy of the registry and it HAS gone stale: `audit`, `channels`, `flags` and
-// `api-keys` were each missing for a phase or more. Nothing failed loudly,
-// because the Junction client is configured with the API's own origin and never
-// uses this proxy — what breaks is anything fetching a relative URL from the
-// page, which is every check in web/test/verify.mjs, and it breaks as a 404
-// from Vite rather than as a refusal from the API.
-const API_PATHS = [
-  '/auth', '/setup', '/health', '/metrics', '/conduit-targets',
-  '/workspaces', '/projects', '/environments', '/apps',
-  '/servers', '/deployments', '/jobs', '/portal',
-  '/alerts', '/networks', '/secrets', '/domains',
-  '/audit', '/channels', '/flags', '/api-keys',
-  '/volumes', '/dashboards', '/recipes', '/cleanup',
-  '/hub',
-]
-
+// The list is `./api-paths.js` and not an array here, because the deploy needs
+// the same one: the container is served behind a reverse proxy that has to make
+// this identical decision, and a second copy of a list that has already gone
+// stale four times would be the same bug one layer down.
 const proxy = Object.fromEntries(API_PATHS.map(path => [path, {
   target:       API,
   changeOrigin: true,
@@ -54,7 +40,7 @@ const proxy = Object.fromEntries(API_PATHS.map(path => [path, {
 }]))
 
 // The WebSocket has no HTML ambiguity to resolve — always proxy.
-proxy['/ws'] = { target: API, ws: true }
+proxy[WS_PATH] = { target: API, ws: true }
 
 export default defineConfig({
   ...sierra,
@@ -67,9 +53,19 @@ export default defineConfig({
   // node_modules/@frontierjs/ui today; it will not survive a reinstall, and
   // this alias is what makes that not matter. Merged into Sierra's aliases
   // rather than replacing them.
+  //
+  // ONLY when that directory is actually there. The path is `../../../ui`
+  // relative to this file, which is a fact about the workspace and about
+  // nowhere else: inside the container image this app is /app with no siblings,
+  // and the alias rewrote every `@frontierjs/ui/...` import to a path that does
+  // not exist — 22 UNLOADABLE_DEPENDENCY errors naming components that install
+  // correctly. An alias to a directory that is not there is never right, so the
+  // guard is existsSync rather than a NODE_ENV check.
   resolve: {
     ...sierra.resolve,
-    alias: { ...sierra.resolve?.alias, '@frontierjs/ui': UI },
+    alias: existsSync(UI)
+      ? { ...sierra.resolve?.alias, '@frontierjs/ui': UI }
+      : sierra.resolve?.alias,
   },
 
   // The alias turns the bare specifier into a path inside the repo, so Vite

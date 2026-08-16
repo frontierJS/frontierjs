@@ -24,7 +24,7 @@ FrontierJS already has every input to that, and the one nobody else has:
 
 | MCP needs | FJS already produces it |
 | --- | --- |
-| tool list | the service registry — `find/get/create/patch/remove` + custom actions |
+| tool list | the service registry — `find/get/create/patch/remove` + custom methods |
 | input schema per tool | `generateJsonSchema(schema)`, the same `$defs` table the browser gets |
 | tool descriptions | `@@description` / field docs + the `/manifest` plugin |
 | **what the caller may do** | **`@@gate`, enforced at the Data boundary** |
@@ -99,7 +99,7 @@ a dependency junction should not acquire.
   that session's level. But a background agent with no human behind it needs
   something, and inventing a tenth level on a scale that is already too linear
   (`PROS_AND_CONS.md` con #2) is the wrong move. This probably wants `warden`.
-- **Custom actions are the interesting tools and they dispatch by header**
+- **Custom methods are the interesting tools and they dispatch by header**
   (`X-Service-Method`). MCP has no such concept, so the projection must name them
   directly — `posts.publish` — which is an argument that the header dispatch was
   always an HTTP-shaped decision leaking into the service model.

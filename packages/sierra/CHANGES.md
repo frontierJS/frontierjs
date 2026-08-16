@@ -1,4 +1,548 @@
-# Changes — @frontierjs/sierra
+# Changes
+
+## 2026-08-16 — the theme switch drives the design system (`FJS-308`)
+
+`setTheme('dark')` set `data-theme` on `<html>`. **`@frontierjs/css` reads that
+nowhere** — a theme there is one of eleven `theme-*` classes, each a block of
+inheriting custom properties — so the call changed an attribute and not one
+pixel. `@frontierjs/ui` shipped a second switcher that added a `.dark` class,
+which the package also does not define. Neither had a caller, and `example`
+had written its own applier, which is the symptom that says a mechanism was
+never real.
+
+    theme: {
+      themes:  ['theme-default', 'theme-dark', 'theme-forest'],
+      default: 'system',
+      system:  { light: 'theme-default', dark: 'theme-dark' },
+      key:     'theme',
+      apply:   'class',        // 'attribute' keeps the old spelling
+    }
+
+The app declares which themes it offers; `setTheme` refuses a name that is not
+among them **and prints the list**, because returning quietly reads as a broken
+stylesheet rather than as a typo. `toggleTheme` cycles — *the other one* is not
+a question eleven themes can answer, and with two it is the toggle it always
+was. A persisted theme the app has since dropped is ignored rather than applied
+as a class with no stylesheet behind it, in the module and in the inline script
+alike.
+
+**The element is `<html>` and that is deliberately not a knob.** A `<head>`
+script is the only thing that beats first paint, and `<body>` has not been
+parsed when it runs — so a `target: 'body'` would be a setting whose only
+effect is to bring the flash back. Nothing is lost: a theme is inheriting
+tokens. Theming a subtree (`<nav class="sidebar theme-dark">`) is a class in
+the markup and not this switcher's job.
+
+`@frontierjs/ui/stores/themeStore.js` is **deleted**, not fixed — beating first
+paint needs a build step, so the kit could only ever have been a second answer.
+
+## 2026-08-16 — a `DateTime` column names a control (`FJS-079`)
+
+The control table answered `{ control: 'input' }` for `format: date-time`, with
+a comment beside it explaining that it could not do better: Litestone stores an
+instant, `<input type="datetime-local">` reads and writes a wall clock with no
+zone, and wiring the two together truncates the offset going in and hands back
+a zoneless string that is parsed as UTC. Two shifts, opposite directions,
+different sizes — so the column fell through to a text box and nothing said so.
+
+    format: 'date'      → { control: 'input', type: 'date' }   // no zone to lose
+    format: 'date-time' → { control: 'datetime' }              // converted at both edges
+
+The conversion cannot live in a type attribute, so the row names a control and
+`@frontierjs/ui` binds it (`FJS-D17`'s two registrations, the same path a
+contributed control takes). Nothing else in this package changed.
+
+## 2026-08-16 — the route table is called a route table (`FJS-284`)
+
+`FJS-D06` cedes *Manifest* to MV3, where it names a real file jetty emits for
+the `extension/` surface. What sierra generates is the route table — the name
+`routes.snapshot.md` and this package's own docs already used — so the code now
+says it too:
+
+| was | is |
+| --- | --- |
+| `generateManifest` / `renderManifest` | `generateRouteTable` / `renderRouteTable` |
+| `scanner/generate-manifest.js` | `scanner/generate-route-table.js` |
+| `config.manifest.output` | `config.routeTable.output` |
+| `runPostBuild(config, manifest, …)` | `runPostBuild(config, routeTable, …)` |
+| `plugin.closeBundle({ …, manifest })` | `plugin.closeBundle({ …, routeTable })` |
+
+The last two are the app-facing half: a post-build plugin reads the table off
+its `closeBundle` argument. **No alias for the old config key** — nothing in the
+tree sets it, and a key that configures nothing is quieter than one that half
+works.
+
+`manifest.environments` went with it: it was declared in the `SierraConfig`
+typedef and read nowhere.
+
+Two neighbours keep the word and are not a lapse. Junction's `/manifest` is a
+manifest of services, and an HTTP path is not vocabulary. A `package.json` read
+by `schema-plugin.js`, `virtual-sierra.js` and `vitest.config.js` is npm's
+manifest, not this repo's.
+
+962 tests, unchanged, plus `example`: `verify`, `verify:build` and
+`verify:public` — the last because the pipeline consuming the table is what
+writes the sitemap, `_redirects` and `llms.txt`.
+
+## 2026-08-16 — the live-store matcher reads the wire's own directive table (`FJS-306`)
+
+`matchesQuery` carried two hand-written lists of `$` keys: the directives to skip
+(not filters) and the ones whose answer is not in the record. The first restated
+`DIRECTIVE_PARAMS` and had drifted from it — a directive it did not name was
+graded as a filter on a column nobody declared, which removes every pushed row
+from the store. It now derives from `@frontierjs/toolbelt/directives`, leaving
+only the question this module is the one that can answer: `$onlyDeleted` and
+`$onlyTemplates` are undecidable from a record (the marker column can be renamed
+and this side holds no schema), so they stay opaque and reload rather than guess.
+
+## 2026-08-16 — one word each: `params`, `locals`, `directives`
+
+962 tests, unchanged — the rename is covered by the suite that already existed
+(`tests/resource-directives.test.js`, was `resource-params.test.js`).
+
+This package had **three** different things behind the word `params`:
+
+| was | is | means |
+| --- | --- | --- |
+| `page.params` | unchanged | path captures. `/leads/[leadId].mesa` at `/leads/24` → `{ leadId: '24' }`, always a string |
+| hook `ctx.params` | **`ctx.locals`** | per-call scratch |
+| `ctx.findParams`, and the 2nd argument to `find`/`load`/`getOptions` | **`ctx.directives`** | how to shape the answer |
+
+The third was the one that read worst: the router in this same package hands a
+view `page.directives`, and the resource next to it made that view pass them as
+`params`. `ctx.directives` is what the API boundary calls it and what
+`@frontierjs/toolbelt/directives` calls it (Invariant 10).
+
+The scratch bucket had **no caller anywhere in the repo** — its only writer was
+the test asserting it stays client-side — while its documented purpose (a
+loading flag) is served by an `around` hook and a signal, which the same file
+already showed 600 lines above. What it is actually for is the hand-off `before`
+and `after` cannot do any other way, since a closed-over variable is shared by
+two calls in flight. That is Junction's `ctx.locals`, word for word, so it is
+now spelled that way.
+
+`optionsQuery` takes `{ query, directives }`. No app in the repo passed the old
+key, so nothing outside this package moved.
+
+**Junction's browser client moved with it** — filed as `FJS-290` and then done,
+because it was not a rename: `FindParams` also CONTAINED `query`, so the
+container was both halves of a split the rest of the framework keeps apart. Its
+second argument is now a `QueryDirectives`, the same declaration the bridge
+reads. So `page.directives` → `resource.load(query, directives)` →
+`client.find(query, directives)` → `ctx.directives` is one object under one name
+the whole way down.
+
+## 2026-08-16 — a control has a registry, and a plugin can enter it (FJS-D17)
+
+`controlFor` was a `switch` inside a published package: the table it holds is
+the framework's answer to *which control does this column get*, and there was no
+way to add to it short of forking Sierra. So a `Json` document, a `String[]`,
+money and a rich editor had no home, and the CLAUDE.md line calling the UI
+plugin system limited was pointing at exactly this.
+
+`registerControl(name, resolve)` is consulted before the built-in table.
+`resolve(rule, { field, model })` answers a control NAME, a whole descriptor, or
+null to decline — and the last registration is the first asked, so an app beats
+the kit it imported without either of them coordinating. Registering a name
+twice replaces the first rather than stacking a second, because a dev server
+re-evaluating a module must not leave three copies behind. It hands back its own
+undo.
+
+**A resolver may not answer a component**, and that is the ruling rather than an
+omission: this module is a leaf that has to run in plain Node — `formFields()`
+is asked by a test, a prerender and a snapshot — so the name is the half that
+crosses, and `@frontierjs/ui/controls` binds it to something renderable. A
+`readOnly` column is not offered to the registry at all: the Data boundary
+refuses that write by name, so a control over one is a form that cannot submit.
+
+`defaultControlFor(rule)` is the built-in table with the registry skipped, for a
+resolver that extends rather than restates it. `registeredControls()` lists what
+is installed in consult order. A resolver that throws is skipped by name and the
+rest of the form still renders; an answer that is not a control name is refused
+out loud.
+
+`formFieldList(fields, { model })` and `resource.formFields()` thread the model
+name down, which is what lets a registration claim `Order.body` rather than
+every markdown column in the app.
+
+sierra 962 · `example` verify 37/37, verify:build 37/37, verify:ui 27/27.
+
+## 2026-08-16 — `session`, and `login(token)` / `logout()` are gone (FJS-D20)
+
+Both were token plumbing wearing the names of the operations: `login()` never
+signed anybody in — the app was expected to fetch `/auth/login` itself and hand
+the token over — and `logout()` never told the server, so the session row stayed
+valid until it expired.
+
+`@frontierjs/sierra/junction` now exports `session`, `ready`, `signIn`,
+`signUp`, `signOut` and `refresh`. `session` is a plain reactive object on the
+same contract as `status` (`$: session.user`), `initJunction` restores it from
+the stored token at boot, and `ready` resolves signed in or not — which is what
+the navigation guard awaits instead of judging on token PRESENCE, the guess that
+let an expired token render a protected page and 401 afterwards.
+
+The wire half is `client.auth` in Junction, so the token, the storage and the
+socket have one owner. What stays here is what a wire client cannot know: the
+reactive object, the boot restore, and dropping a prefetched payload when the
+identity changes — which now hangs off the client's `token` event and therefore
+covers every way it can change, including a 401 clearing it.
+
+`session.level` is the server's grading and is `null` unless the app configured
+`services: { level }` on the auth plugin. Once it has answered with one, a
+signed-out caller is 0 — STRANGER — and before that it stays null rather than
+handing an app a number it never agreed to.
+
+Both dogfood apps' `session.js` collapsed onto this: `example`'s is one
+re-export line, and `basecamp`'s keeps only what no framework can answer, which
+is which workspace everything is scoped to.
+
+## 2026-08-15 — `resource.service.action()` is `resource.service.invoke()` (FJS-D02)
+
+Junction ruled that a custom service method is a method and not an *action*, so
+the resource's spelling follows: `orders.service.invoke('pay', 3)`. Same
+signature, same transport rule, same hook pipeline — `id` may still be null for
+a call about the whole collection, and `call()` is still the explicit WS form.
+`DECISIONS.md` § Naming & vocabulary.
+
+## 2026-08-15 — widgets are a SURFACE, and they are served like one
+
+Widgets were built out of `web/src/Embeds/` — a folder inside the SPA's own Vite
+root, sharing its config, its port and its release. That is the wrong shape and
+it was wrong in every direction at once: the config is a different target, the
+tests are host pages rather than routes, and the release is static files on an
+origin a stranger's page links to, shipped when the pages embedding it are
+ready rather than when the app is.
+
+**`widgets/` is a sub-project at the app root, a peer of `api/` and `web/`**,
+carrying the same six folders. Every path in `widgets/config/sierra.config.js`
+is relative to it, and `sierra widgets` is run from there. An app may have this
+surface and no `web/` at all — `fli new --template widgets-only` is a whole
+project whose product is the embeddable scripts.
+
+```
+widgets/config/sierra.config.js   target: 'widget'
+widgets/src/Embeds/               one component per embeddable script
+widgets/test/                     a host page per widget
+widgets/deploy/                   serve.js + Dockerfile — the widget origin
+widgets/dist/embeds/              the built scripts
+```
+
+**`src/widget/serve.js` is the deployment, and the drive now runs it.** A widget
+origin needs two things nothing else here needs: CORS, because the host page is
+on another origin by definition, and a cache answer per file kind, because the
+entry's URL was pasted into somebody's CMS a year ago and cannot change while
+the file behind it must. Those were untested, because the fixture served the
+bundles from the same origin as the host page — the one arrangement no customer
+of a widget ever has. It now serves them through the module that ships, on its
+own port, and asserts what a browser gets: `Access-Control-Allow-Origin`, an
+entry that is revalidated rather than immutable, and `..` refused. 25 assertions.
+
+The surface is generated by one function, `packages/cli/core/widget-surface.js`,
+called by `fli new --widgets` and by `fli make:widget` — two generators writing
+one directory is how an app scaffolded one way stops being extendable by the
+command that adds the second widget.
+
+## 2026-08-15 — `target: 'widget'` builds something (FJS-057)
+
+It was a config shape: `createSierraViteConfig` accepted the target, returned a
+vite config, and the branch's own comment said *"widget builds are handled by a
+separate build loop"* — which did not exist. There was no discovery, no entry,
+no mount, and a `shadowDOM` CSS plugin keyed on `@unocss-placeholder` that
+nothing ever ran.
+
+**A widget is one component, built as one script, mounted on a page this app
+does not own.** That last clause decides everything else: it cannot assume a
+bundler (so the build emits IIFE), it cannot leak or be leaked into (so it
+mounts in a shadow root), and it cannot choose when it runs (so loading before
+its host element, after it, or twice are all the same call).
+
+```
+src/Embeds/Counter.mesa        → dist/embeds/Counter.js
+src/Embeds/LeadForm/index.mesa → dist/embeds/LeadForm.js
+                Field.mesa       …a part of LeadForm, not a second widget
+```
+
+`sierra widgets` runs the loop — N widgets is N library builds, because a
+self-contained IIFE is exactly what a bundler's shared chunks are not. The
+config's `widget` branch is what a widget is COMPILED with and what `vite dev`
+serves. A widget declares its tag, selector and shadow behaviour in
+`<script module>`; the generated entry supplies the rest, so a widget author
+writes a `.mesa` file and no boilerplate.
+
+**Two ways to be found, one mechanism.** The custom element is the default and
+the one to document. A CSS `selector` covers host markup its author cannot edit
+— a CMS template, a customer's page, somebody else's tool — and a
+MutationObserver covers an element that arrives after the script ran.
+
+Three things were wrong on the way and are now asserted rather than remembered:
+
+- **The entry passed the CSS placeholder through a comparison**, which the
+  bundler folded to an empty string before `generateBundle` could swap the
+  stylesheet in. Every widget shipped unstyled and every part of it read
+  correctly.
+- **The runtime held the whole placeholder**, and the runtime is bundled into
+  the widget — so the replacement hit it too, the widget compared its
+  stylesheet against itself, and dropped it. It holds a prefix now.
+- **Discovery was nearly a glob**, which would have shipped a form's four
+  components as four half-widgets on no host page.
+
+`tests/fixtures/widget-site/verify.mjs` is what found the first two: 21
+assertions in real Chrome over a plain host page with hostile CSS — element
+upgrade, props from `data-*`, a delegated click inside the shadow root,
+isolation in both directions, the selector form, a late-inserted host, one
+widget from a script included twice, and no `.css` emitted beside the script.
+Negative-controlled: removing the observer fails exactly the four assertions
+about it and nothing else. `bun run test:widgets`.
+
+## 2026-08-15 — the URL's search string is on `page`, and it is two things (FJS-083)
+
+Reading it back meant calling `parseQueryParams(window.location.search)` by
+hand, so a filtered or paginated list could not be URL-driven without wiring it
+per page. What the router DID put on `page.params` was the search params merged
+into the path captures — one value with two homes, neither saying which kind it
+was, and `?id=99` on `/orders/7/` quietly answered 99 to `page.params.id`.
+
+Two fields now, and the split is the API realm's own over the same table
+(`@frontierjs/toolbelt/directives`, which junction's bridge strips by):
+
+    page.query        the filters      — { status: 'active' }
+    page.directives   the `$` params   — { limit: 20, orderBy: '-createdAt' }
+
+so a whole URL-driven list is `resource.load(page.query, page.directives)` with
+nothing to translate, and it survives a reload, a back button and a pasted link
+because the URL is where it lives. Neither half contains a `$`: it is transport
+syntax at this boundary exactly as it is at the API's (Invariant 10).
+
+**Breaking, deliberately: `page.params` is PATH captures alone.** Nothing in
+this repo read a search param off it — every use is `page.params.id` — and the
+README only ever documented the path case.
+
+Both names are in `PAGE_RESERVED`, so a route declaring `query:` in its
+frontmatter is warned about by the scanner rather than silently overwritten on
+every navigation. They are assigned only when the search actually changed: a
+layout outlives a navigation, and a filter bar watching `page.query` would
+re-ask the server on every navigation under it if a fresh object arrived each
+time. 11 tests in `tests/page-query.test.js`; three in `navigation.test.js`
+changed, which are the ones that documented the conflation.
+
+## 2026-08-15 — a prefetch asks as the user, and its answer does not outlive them (FJS-041)
+
+`runPrefetch` handed `load()` `window.fetch`; the router hands a navigated
+`load()` `sierraFetch`. Two fetch paths for one job, so they disagreed about the
+only thing that mattered — the session token — and the answer to the wrong one
+was cached. The result was not a leak: the request was refused. It was that the
+refusal was then SERVED, so hovering a link could make the page you navigated to
+render as signed-out.
+
+It is `sierraFetch` in both now. The deferral in the file's header said the token
+was not reachable at module init without a cycle back to `initJunction`; the
+token is read per CALL out of localStorage and `fetch/index.js` imports nothing,
+so there was no cycle to avoid and never had been.
+
+**Attaching the token is half of it.** A payload is an answer to *what may this
+person see*, and a cache keyed only by URL says nothing about who asked.
+`invalidatePrefetch()` drops every cached payload — and the per-URL gate with it,
+or the URL could never be prefetched again this session — and `sierra/junction`
+calls it from `login()`, from `logout()` and from the client's mid-session
+`unauthorized`. The component chunks are deliberately kept: a route's JavaScript
+is the same file whoever asks for it.
+
+Six tests, three of which fail against the old line. Nothing in this repo
+prefetches a protected route, so no browser drive covers it.
+
+## 2026-08-15 — a live store now means the query that filled it (FJS-011)
+
+`load(query)` says what a store holds; every push was applied to it regardless.
+So a created row outside the filter appeared in the list, and — the one that
+reads as an update rather than as junk — a row a patch had just moved OUT of the
+filter stayed in it, updated in place and quietly wrong. There is no removal
+event for leaving a filter; that is exactly why the store has to ask.
+
+`matchesQuery(fields, record, query)` in `field-rules.js` is the question, and it
+belongs there for the reason everything else in that module does: the file is a
+leaf with no client import, so the client's answer can be *compared* against the
+server's rather than asserted against a copy of it. The operators are the ones
+`parseWhere`/`translateOps` accept and `buildWhere` compiles, in both the
+`$`-prefixed wire spelling and the bare Litestone one, and no others. The
+expectations are SQL's, not JavaScript's — `col != 'x'` does not match a NULL
+column and `NOT IN` does, so `$ne` and `$nin` disagree about a null on purpose.
+
+**Three answers, not two.** `null` is *cannot be decided from this record* — a
+`select` that dropped the filtered column, a filter naming a relation, `$search`,
+a raw clause — and the store reloads rather than guessing. A matcher forced to
+return a boolean has to guess, and guessing wrong is silent, which is the class
+of bug this is. A decided `false` still wins over an undecidable key, so a miss
+costs no request.
+
+The store itself is Junction's and Junction holds no schema, so `resource()`
+takes the decision as `match` and `createResource` supplies it. Passing nothing
+is the old behaviour exactly. 32 tests here, 8 in junction.
+
+Ordering and paging are the other half and are junction's — see its CHANGES for
+`FJS-270`. What reaches this package is one more thing on the resource: **`stale`,
+beside `store`**, counting what the live list could not place on its own (a row
+that may belong on an earlier page, a gap a removal left behind a full one). It
+has a store's `{ get, subscribe }` shape, so `useStore(orders.stale)` bridges it
+to a signal unchanged, and `load()` clears it.
+
+## 2026-08-15 — the client schemas missed an imported .lite file (FJS-264)
+
+`build/schema-plugin.js` read `db/schema.lite` and called litestone's `parse`,
+which resolves no `import "./other.lite"` — only `parseFile` does. So a schema
+split across files reached the browser as a `$defs` table with the imported
+models absent.
+
+Nothing failed. Every step after it degrades: `modelNameFor` misses and warns,
+`createResource` falls back to a bare `make()`, and `<Form {resource} />` renders
+no fields — against an app that builds clean. `fli auth:install` writes exactly
+that layout now, so it is the shape apps will have.
+
+An older Litestone with no `parseFile` keeps working for the schemas it could
+always handle, and warns **by name** for the one case it cannot. A silent
+fallback there is the same bug wearing a version number.
+
+`tests/schema-generation.test.js` § *a schema that imports another file*, checked
+against a negative control — including that an enum declared in the imported file
+lands in `$defs` and resolves as a `$ref`, since a dangling one is a control with
+no options.
+
+## 2026-08-15 — one inflection module behind the registry and `createResource` (FJS-192)
+
+Sierra held two of the five copies: `_pluralOf` in `schema-registry.js` and an
+inline `endsWith('ies') ? … : endsWith('s')` in `createResource`. The inline one
+was the weakest of the five — `statuses` singularised to `statuse`,
+`modelNameFor` missed, and the resource degraded to a bare `make()` with a
+console warning. Both call `@frontierjs/toolbelt/inflect` now.
+
+**`createResource('people')` resolves `Person` without being told.** The
+irregular table travels with the module, so the registry indexes `people`,
+`children` and the rest, and `{ model: … }` is back to meaning what it says: a
+service named for something other than its model, or a word no rule can reach
+(`lenses`/`Lens`). `tests/resource-model-name.test.js` moved the irregulars into
+the resolves-without-help table and took a misspelling — `companie` — as its
+example of a real miss.
+
+## 2026-08-15 — `make()` does not seed a column the caller may not write
+
+A value the caller may not write is not the caller's to seed either. `@system`,
+`@computed`, `@generated` and `@from` all reach the browser as `readOnly`, and a
+blank seeded for one is a KEY in the payload — which litestone now refuses by
+name for a `@system` column. So a form that correctly never showed the field
+could not submit at all: the create carried `trackingCode: null` and came back
+403 naming a column nobody had touched.
+
+`@version` is the deliberate exception and was never seeded here — `createResource`
+remembers the version it read and puts it on the patch itself.
+
+Found by running `example`'s order form the hour `@system` landed, which is the
+only place the two halves meet.
+
+## 2026-08-15 — the HMR boundary comes from Mesa now
+
+`src/build/hmr-inject.js` and `src/build/hmr-client.js` are deleted. Both were
+ports carrying a "keep in sync" comment, and both are Mesa's: this package
+reimplements the PLUGIN — frontmatter stripping, the fence preprocessor, slot
+rewriting, auto-imports — which was never an argument about the boundary
+(`FJS-D16`). `injectHMR` had been module-private in `mesa-vite/index.js`, which
+is the only reason there was a copy at all.
+
+The three fixes this package had made to its copy went UP into Mesa rather than
+being thrown away: `canInject` failing closed, `import.meta.hot.invalidate()`
+when no instance is registered, and `__setMark` on the new function rather than
+the old module's — the last of which meant Mesa's own HMR worked once per page
+load and then reported no connected instances.
+
+Both files are located with `findMesaFile`, off the filesystem, for the reason
+the compiler already is: a bare `@frontierjs/mesa/vite/hmr` resolves to the
+node_modules copy bun leaves for a `workspace:*` dep, which is the last
+install's snapshot. **A miss is not fatal** — HMR turns off and edits
+full-reload, the same thing `canInject` does for output it cannot wrap — so the
+wiring is the half that breaks quietly. `tests/hmr-boundary.test.js` boots a real
+dev server and asks what only a dev server can answer: did a `.mesa` module come
+back wrapped, and does `/@frontierjs/sierra/hmr-client` serve Mesa's client. The
+second is asserted on a line that exists only in Mesa's copy, so serving a stale
+local file fails rather than passes.
+
+## 2026-08-15 — the control table, and a form's field list derived
+
+`field-rules.js` gains the one place a field becomes a control:
+
+```
+controlFor(rule)                 → { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|null, … }
+formFieldList(fields, {only, except})  → the field set, in schema order
+labelFieldFor(fields)            → which column of a related model a picker SHOWS
+```
+
+and the resource hands both out — `resource.formFields()` and
+`resource.options(fk)`. `@frontierjs/ui`'s `<Form>` renders from them, which is
+how `<Form {leads} />` can be the whole form.
+
+**It lives here rather than in the kit** for the reason the rules do: this module
+imports nothing, so the table is readable from a plain Node script and from a
+component alike, and the kit does not have to depend on Sierra to render a form.
+A UI package contributing a control for a type is an entry in that table rather
+than an `{#if}` ladder inside a component.
+
+What the table decides, and what it refuses to: a foreign key is a **picker**
+(the one field where a spinner is obviously wrong), an enum is a select carrying
+its members, `@markdown` is a textarea — a *declaration*, where "this string
+looks long" would have been a guess — and `format: date` is a date input while
+`date-time` deliberately is not (`FJS-079`). An array, a `Json` column and a
+`readOnly` field come back with `control: null` **and a reason**, because a
+field dropped in silence is the failure the whole row exists to end.
+
+`resource.options(fk)` fills a picker with no name written anywhere: the
+relation says which model answers, the registry says which service serves it,
+and the related model's own fields say which column a person recognises. That
+last crossing needed `serviceNameFor(model)` in `schema-registry.js` — the
+plural rules were already there and every call site was spelling
+`model.toLowerCase() + 's'`, which is not even the rule the registry uses. One
+request per field for the life of the resource; a failure empties the picker and
+says so rather than taking the form down.
+
+`buildFieldRules` now carries `readOnly` and `contentMediaType`, which is what
+those two answers are read from.
+
+## 2026-08-14 — `node_modules` contains the substring `_module`
+
+Two defects in the Mesa plugin, both of them invisible in this repo and both
+fatal for an app that installs the framework rather than resolving it out of the
+workspace. Found by containerising basecamp, which is the first time anything
+here has built an app that could not see `packages/`.
+
+**The node_modules allowance named one package.** `FJS-251` fixed the literal
+`/node_modules/sierra/` to `@frontierjs/sierra` and stopped there — but
+`@frontierjs/ui` ships 64 components as `.mesa` SOURCE and `@frontierjs/email-kit`
+ships 22 more, and every one of them went to rolldown untransformed:
+
+```
+[PARSE_ERROR] Unexpected JSX expression
+  node_modules/@frontierjs/ui/components/display/CopyButton.mesa:1:1
+```
+
+The allowance is the SCOPE now. A `.mesa` file has exactly one meaning and
+nothing but the Mesa compiler can read it, so the question was never *should
+this be compiled*.
+
+**And `id.includes('_module')` decided whether a file was a layout.** The string
+`node_modules` contains `_module`. So every installed component read as a
+layout, took `rewriteLayoutSlots` instead of `rewriteMesaSlots`, and failed to
+compile with
+
+```
+'$: __slot_actions = ...' — '__slot_actions' is already declared.
+```
+
+— a message about a slot the author never wrote, in a file they did not edit,
+naming a variable that appears nowhere in the source. The test is the basename
+now. Three call sites had it; all three were the same substring.
+
+The pair is one shape twice: **a path predicate that is true in the workspace
+for a different reason than it is true in an install.** The suites cannot see
+either, because an app in this repo resolves sierra to `packages/sierra/` and
+aliases the ui kit to `packages/ui/` — neither is a node_modules path at all.
+`tests/node-modules-allowance.test.js` now writes its ids the way an INSTALLED
+app produces them, and covers both. — @frontierjs/sierra
 
 ## 2026-08-14 — `sierra routes` — the route table as a committed file
 

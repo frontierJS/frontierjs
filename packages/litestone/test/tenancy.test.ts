@@ -1,0 +1,351 @@
+// `tenancy { }` — the one declaration of what a tenant is.
+//
+// Two strategies and one block. What this suite exists to hold:
+//
+//   1. **Row tenancy is a NARROWING.** It desugars into `@@deny`, never
+//      `@@allow` — allows are OR'd within an operation, so an allow added to a
+//      model that already has one widens its reads to every row in the tenant.
+//      The isolation cases below are run against a real client for that reason:
+//      a policy that admits everything and a policy that is not applied at all
+//      look identical from one side.
+//   2. **Create and read want opposite answers about an absent value.**
+//      checkCreatePolicy runs BEFORE the @default stamp, so a create that omits
+//      the column is legitimate; a READ of a row holding no tenant is not.
+//   3. **One resolution, four readers.** The registry, the CLI, Studio and
+//      Junction all ask `resolveTenancy`, and the precedence — option, then
+//      declaration, then default — is asserted rather than repeated.
+
+import { describe, it, expect, afterAll } from 'bun:test'
+import { mkdtempSync, rmSync, existsSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { parse } from '../src/core/parser.js'
+import { createClient } from '../src/core/client.js'
+import { resolveTenancy, tenantFrom } from '../src/core/tenancy.js'
+import { createTenantRegistry } from '../src/tenant.js'
+
+const ROW_SCHEMA = `
+tenancy {
+  strategy row
+  column   workspaceId
+}
+
+model Project {
+  id          Int    @id
+  workspaceId Int
+  name        String
+  @@allow('read', name != '')
+}
+
+model Plan {
+  id   Int    @id
+  code String
+  @@tenant(none)
+}
+`
+
+const tmpDirs: string[] = []
+const tmp = () => {
+  const d = mkdtempSync(join(tmpdir(), 'lite-tenancy-'))
+  tmpDirs.push(d)
+  return d
+}
+afterAll(() => { for (const d of tmpDirs) rmSync(d, { recursive: true, force: true }) })
+
+describe('tenancy block — parsing', () => {
+  it('reads a database block whole', () => {
+    const r = parse(`
+      tenancy {
+        strategy database
+        dir      "./tenants"
+        registry "./reg.db"
+        maxOpen  50
+        key      env("TENANT_KEY")
+        resolve  subdomain
+      }
+      model Post { id Int @id }
+    `)
+    expect(r.valid).toBe(true)
+    expect(r.schema.tenancy.strategy).toBe('database')
+    expect(r.schema.tenancy.maxOpen).toBe(50)
+    expect(r.schema.tenancy.key).toEqual({ kind: 'env', var: 'TENANT_KEY', default: null })
+    expect(r.schema.tenancy.resolve).toEqual({ kind: 'subdomain', name: null })
+  })
+
+  it('defaults the claim to the column', () => {
+    const r = parse(`tenancy { strategy row  column accountId }  model A { id Int @id  accountId Int }`)
+    expect(r.schema.tenancy.claim).toBe('accountId')
+  })
+
+  it('refuses a property belonging to the other strategy', () => {
+    const r = parse(`tenancy { strategy database  column wid }  model A { id Int @id }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors[0]).toContain(`'column' is not a property of strategy database`)
+  })
+
+  it('refuses a second block rather than merging', () => {
+    const r = parse(`tenancy { strategy row column w } tenancy { strategy row column w } model A { id Int @id }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors[0]).toContain('declared twice')
+  })
+
+  it('names an unknown resolve form', () => {
+    const r = parse(`tenancy { strategy row column w resolve cookie("t") } model A { id Int @id w Int }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors[0]).toContain('subdomain, header("X-Name") or claim(fieldName)')
+  })
+
+  it('refuses @@tenant with no block, and under strategy database', () => {
+    expect(parse(`model A { id Int @id  @@tenant(none) }`).errors[0]).toContain('no \'tenancy\' block')
+    expect(parse(`tenancy { strategy database } model A { id Int @id @@tenant(none) }`).errors[0])
+      .toContain('strategy row attribute')
+  })
+
+  it('refuses @@tenant naming a column the model does not declare', () => {
+    const r = parse(`tenancy { strategy row column wid } model A { id Int @id @@tenant(column: "nope") }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors[0]).toContain('names no field on this model')
+  })
+})
+
+describe('tenancy { strategy row } — desugaring', () => {
+  const parsed = parse(ROW_SCHEMA)
+  const project = parsed.schema.models.find((m: any) => m.name === 'Project')!
+  const plan    = parsed.schema.models.find((m: any) => m.name === 'Plan')!
+
+  it('scopes with denies, never allows', () => {
+    expect(parsed.valid).toBe(true)
+    const generated = project.attributes.filter((a: any) => a.generated === 'tenancy')
+    expect(generated.every((a: any) => a.kind === 'deny')).toBe(true)
+    // The model's own @@allow is untouched — tenancy narrows what it admits.
+    expect(project.attributes.filter((a: any) => a.kind === 'allow')).toHaveLength(1)
+  })
+
+  it('splits create from the reading operations', () => {
+    const ops = project.attributes
+      .filter((a: any) => a.generated === 'tenancy')
+      .map((a: any) => a.operations.join(','))
+    expect(ops).toEqual(['read,update,delete', 'create'])
+  })
+
+  it('stamps the column', () => {
+    const field = project.fields.find((f: any) => f.name === 'workspaceId')!
+    expect(field.attributes).toContainEqual(
+      { kind: 'default', value: { kind: 'call', fn: 'auth', field: 'workspaceId' }, generated: 'tenancy' },
+    )
+  })
+
+  it('leaves an app-declared default alone', () => {
+    const r = parse(`
+      tenancy { strategy row  column wid }
+      model A { id Int @id  wid Int @default(7) }
+    `)
+    const defaults = r.schema.models[0].fields.find((f: any) => f.name === 'wid').attributes
+      .filter((a: any) => a.kind === 'default')
+    expect(defaults).toHaveLength(1)
+    expect(defaults[0].value).toEqual({ kind: 'number', value: 7 })
+  })
+
+  it('leaves @@tenant(none) entirely alone', () => {
+    expect(plan.attributes.filter((a: any) => a.generated === 'tenancy')).toHaveLength(0)
+  })
+
+  it('reports the models it did not scope, once, by name', () => {
+    const r = parse(`
+      tenancy { strategy row  column wid }
+      model A { id Int @id  wid Int }
+      model B { id Int @id }
+      model C { id Int @id }
+    `)
+    const warning = r.warnings.find(w => w.startsWith('tenancy:'))!
+    expect(warning).toContain('B, C')
+    expect(warning).toContain('@@tenant(none)')
+    expect(r.warnings.filter(w => w.startsWith('tenancy:'))).toHaveLength(1)
+  })
+
+  it('does not scope a jsonl or logger model — there is no policy engine there', () => {
+    const r = parse(`
+      tenancy { strategy row  column wid }
+      database main { path "./app.db" }
+      database logs { path "./logs/"  driver jsonl }
+      model A       { id Int @id  wid Int  @@db(main) }
+      model ApiCall { wid Int  path String  @@db(logs) }
+    `)
+    const log = r.schema.models.find((m: any) => m.name === 'ApiCall')!
+    expect(log.attributes.filter((a: any) => a.generated === 'tenancy')).toHaveLength(0)
+  })
+
+  it('does not fire the "@@deny with no @@allow" warning about its own rules', () => {
+    const r = parse(`tenancy { strategy row  column wid }  model A { id Int @id  wid Int }`)
+    expect(r.warnings.filter(w => w.includes('has @@deny but no @@allow'))).toHaveLength(0)
+  })
+})
+
+describe('tenancy { strategy row } — a real client', () => {
+  it('isolates reads, writes and creates by the caller\'s own claim', async () => {
+    const db  = await createClient({ schema: ROW_SCHEMA, db: ':memory:' })
+    const sys = db.asSystem()
+    await sys.project.create({ data: { workspaceId: 1, name: 'acme-a' } })
+    await sys.project.create({ data: { workspaceId: 2, name: 'globex-a' } })
+    await sys.plan.create({ data: { code: 'pro' } })
+
+    const acme   = db.$setAuth({ id: 1, workspaceId: 1 })
+    const globex = db.$setAuth({ id: 2, workspaceId: 2 })
+
+    expect((await acme.project.findMany()).map((r: any) => r.name)).toEqual(['acme-a'])
+    expect((await globex.project.findMany()).map((r: any) => r.name)).toEqual(['globex-a'])
+    expect(await acme.project.count()).toBe(1)
+
+    // Anonymous is not "every tenant", it is none of them.
+    expect(await db.project.findMany()).toEqual([])
+
+    // asSystem is the way across, and the only one.
+    expect(await sys.project.count()).toBe(2)
+
+    // A model that says it spans tenants does.
+    expect((await globex.plan.findMany()).map((r: any) => r.code)).toEqual(['pro'])
+
+    // The stamp: a create that omits the column is legitimate.
+    const created = await acme.project.create({ data: { name: 'acme-b' } })
+    expect(created.workspaceId).toBe(1)
+
+    // …and one that states another tenant's is refused BY NAME rather than
+    // written and then hidden.
+    await expect(acme.project.create({ data: { workspaceId: 2, name: 'sneaky' } }))
+      .rejects.toThrow('Outside your workspaceId')
+    await expect(db.project.create({ data: { workspaceId: 1, name: 'anon' } }))
+      .rejects.toThrow()
+
+    // A row in the other tenant is not reachable to write or delete.
+    const other = (await sys.project.findMany({ where: { workspaceId: 2 } }))[0] as any
+    expect(await acme.project.update({ where: { id: other.id }, data: { name: 'hacked' } })).toBeNull()
+    expect(await acme.project.delete({ where: { id: other.id } })).toBeNull()
+    expect((await sys.project.findUnique({ where: { id: other.id } }) as any).name).toBe('globex-a')
+
+    db.$close()
+  })
+
+  it('hides a row holding no tenant — a read is not a create', async () => {
+    const db = await createClient({
+      schema: `
+        tenancy { strategy row  column wid }
+        model A { id Int @id  wid Int?  name String }
+      `,
+      db: ':memory:',
+    })
+    await db.asSystem().a.create({ data: { name: 'orphan' } })
+    expect(await db.$setAuth({ id: 1, wid: 1 }).a.findMany()).toEqual([])
+    expect(await db.asSystem().a.count()).toBe(1)
+    db.$close()
+  })
+
+  it('publishes the declaration on every flavour of client', async () => {
+    const db = await createClient({ schema: ROW_SCHEMA, db: ':memory:' })
+    for (const flavour of [db, db.asSystem(), db.$setAuth({ id: 1 })]) {
+      expect(flavour.$tenancy.strategy).toBe('row')
+      expect(flavour.$tenancy.column).toBe('workspaceId')
+      // A row app already knows which tenant a caller is in — it is the claim.
+      expect(flavour.$tenancy.resolve).toEqual({ kind: 'claim', name: 'workspaceId' })
+    }
+    db.$close()
+  })
+
+  it('is null when the schema declares no tenancy', async () => {
+    const db = await createClient({ schema: `model A { id Int @id }`, db: ':memory:' })
+    expect(db.$tenancy).toBeNull()
+    db.$close()
+  })
+})
+
+describe('resolveTenancy', () => {
+  const parsed = (text: string) => parse(text).schema
+
+  it('fills the defaults and resolves paths against the schema file', () => {
+    const dir = tmp()
+    const t = resolveTenancy(parsed(`tenancy { strategy database }  model A { id Int @id }`), {
+      schemaPath: join(dir, 'schema.lite'),
+    })!
+    expect(t.dir).toBe(join(dir, 'tenants'))
+    expect(t.registry).toBe(join(dir, 'tenants-registry.db'))
+    expect(t.maxOpen).toBe(100)
+    // Nothing can infer how a REQUEST names a tenant when each file is one.
+    expect(t.resolve).toBeNull()
+  })
+
+  it('reads env() and lets an explicit option win', () => {
+    process.env.__TENANCY_TEST_DIR = '/srv/tenants'
+    const schema = parsed(`
+      tenancy { strategy database  dir env("__TENANCY_TEST_DIR", "./fallback") }
+      model A { id Int @id }
+    `)
+    expect(resolveTenancy(schema)!.dir).toBe('/srv/tenants')
+    expect(resolveTenancy(schema, { overrides: { dir: '/opt/x' } })!.dir).toBe('/opt/x')
+    delete process.env.__TENANCY_TEST_DIR
+    expect(resolveTenancy(schema)!.dir).toBe(join(process.cwd(), 'fallback'))
+  })
+
+  it('says which env var is missing rather than resolving an empty path', () => {
+    const schema = parsed(`tenancy { strategy database  dir env("__TENANCY_ABSENT") }  model A { id Int @id }`)
+    expect(() => resolveTenancy(schema)).toThrow('__TENANCY_ABSENT')
+  })
+
+  it('reads the key as a value, never as a path', () => {
+    const key = 'a'.repeat(64)
+    const t = resolveTenancy(parsed(`tenancy { strategy database  key "${key}" }  model A { id Int @id }`))!
+    expect(t.key).toBe(key)
+  })
+})
+
+describe('tenantFrom', () => {
+  it('takes the first label of a real subdomain only', () => {
+    const r = { kind: 'subdomain' as const, name: null }
+    expect(tenantFrom(r, { host: 'acme.example.com' })).toBe('acme')
+    expect(tenantFrom(r, { host: 'acme.example.com:8100' })).toBe('acme')
+    // A bare host is not a tenant called localhost.
+    expect(tenantFrom(r, { host: 'localhost:8100' })).toBeNull()
+    expect(tenantFrom(r, { host: 'example.com' })).toBeNull()
+  })
+
+  it('matches a header whatever case the transport used', () => {
+    const r = { kind: 'header' as const, name: 'X-Tenant-Id' }
+    expect(tenantFrom(r, { headers: { 'x-tenant-id': 'acme' } })).toBe('acme')
+    expect(tenantFrom(r, { headers: { 'X-Tenant-Id': 'acme' } })).toBe('acme')
+    expect(tenantFrom(r, { headers: {} })).toBeNull()
+  })
+
+  it('reads a claim off the principal, as a string', () => {
+    const r = { kind: 'claim' as const, name: 'workspaceId' }
+    expect(tenantFrom(r, { principal: { workspaceId: 7 } })).toBe('7')
+    expect(tenantFrom(r, { principal: null })).toBeNull()
+  })
+})
+
+describe('createTenantRegistry reads the block', () => {
+  it('opens the declared dir and registry with no options passed', async () => {
+    const dir  = tmp()
+    const text = `
+      tenancy {
+        strategy database
+        dir      "./fleet"
+        registry "./fleet-index.db"
+      }
+      model Post { id Int @id  title String }
+    `
+    await Bun.write(join(dir, 'schema.lite'), text)
+
+    const tenants = await createTenantRegistry({ path: join(dir, 'schema.lite') })
+    await tenants.create('acme')
+    expect(existsSync(join(dir, 'fleet', 'acme.db'))).toBe(true)
+    expect(existsSync(join(dir, 'fleet-index.db'))).toBe(true)
+    expect(tenants.list()).toEqual(['acme'])
+
+    const db = await tenants.get('acme')
+    await db.asSystem().post.create({ data: { title: 'hello' } })
+    expect(await db.asSystem().post.count()).toBe(1)
+    tenants.close()
+  })
+
+  it('refuses a row schema instead of writing files nobody reads', async () => {
+    await expect(createTenantRegistry({ schema: ROW_SCHEMA })).rejects.toThrow('strategy row')
+  })
+})

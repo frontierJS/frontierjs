@@ -9,7 +9,7 @@ defaults:
 
 <script>
 import { resolve } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 
 // ─── resolveDb ───────────────────────────────────────────────────────────────
 // Returns the db file path for the current environment.
@@ -24,6 +24,69 @@ const resolveDb = (context, flag) => {
   const dbFile  = process.env.DB_FILE || `${dbName}.db`
   const schema  = resolve(dbPath, 'schema.lite')
   return { dbPath, dbFile, dbName, full: `${dbPath}/${dbFile}`, schema }
+}
+
+// ─── resolveSeeder ───────────────────────────────────────────────────────────
+// Where is this app's seeder, and how is it run?
+//
+// There is no single convention and there are three competing ones, so this
+// ASKS the app rather than adding a fourth:
+//
+//   1. litestone.config.js `seeder:`  — litestone's own declaration, and the
+//      only one the Data realm actually owns.
+//   2. the package.json script         — `db:seed` or `seed`. An app that has
+//      one has already answered the question, flags and all.
+//   3. a probe of the known locations  — db/seed.js, db/seed.ts,
+//      db/seeders/seed.{ts,js}, db/seeders/DatabaseSeeder.js.
+//
+// This command used to hardcode `db/seeders/seed.ts` alone, which is a path
+// NOTHING in the FrontierJS repo produces: basecamp's is db/seed.js declared as
+// a `db:seed` script, litestone's own default is seeders/DatabaseSeeder.js, and
+// the example app has no seeder at all. So `fli db:seed` reported "Seeder not
+// found" for an app that seeds perfectly well with its own script.
+//
+// Returns { command, describe } or null.
+
+const resolveSeeder = (context, { force = false } = {}) => {
+  const root   = context.paths.root
+  const dbDir  = context.paths.db
+  const extra  = force ? ' --force' : ''
+
+  // 1 · litestone.config.js — the declaration wins over any guess.
+  const cfgPath = resolve(dbDir, 'litestone.config.js')
+  if (existsSync(cfgPath)) {
+    try {
+      const declared = readFileSync(cfgPath, 'utf8').match(/\bseeder\s*:\s*['"`]([^'"`]+)['"`]/)
+      if (declared) {
+        const abs = resolve(dbDir, declared[1])
+        if (existsSync(abs))
+          return { command: `cd ${root} && bun run ${abs}${extra}`, describe: `litestone.config.js seeder: ${declared[1]}` }
+      }
+    } catch { /* unparseable — fall through to the app's own script */ }
+  }
+
+  // 2 · the app's own script. It may do more than run a file (reset, migrate,
+  // set an env var), which is exactly why it is preferred over a path.
+  try {
+    const scripts = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).scripts ?? {}
+    const name    = ['db:seed', 'seed'].find(n => scripts[n])
+    // A script that calls THIS command would loop forever. Skip it and probe.
+    if (name && !/\bfli\s+db[:-]seed\b/.test(scripts[name])) {
+      const runner = existsSync(resolve(root, 'bun.lock')) || existsSync(resolve(root, 'bun.lockb'))
+        || existsSync(resolve(root, '..', '..', 'bun.lock'))
+        ? 'bun' : 'npm'
+      return { command: `cd ${root} && ${runner} run ${name}${extra ? ' -- --force' : ''}`, describe: `package.json script: ${name}` }
+    }
+  } catch { /* no manifest — probe */ }
+
+  // 3 · the known locations, in the order they are likely.
+  for (const rel of ['seed.js', 'seed.ts', 'seeders/seed.ts', 'seeders/seed.js', 'seeders/DatabaseSeeder.js']) {
+    const abs = resolve(dbDir, rel)
+    if (existsSync(abs))
+      return { command: `cd ${root} && bun run ${abs}${extra}`, describe: `db/${rel}` }
+  }
+
+  return null
 }
 
 // ─── requireSchema ────────────────────────────────────────────────────────────

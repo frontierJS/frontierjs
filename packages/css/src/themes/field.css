@@ -1,0 +1,94 @@
+/*
+ * field.css — Field manual: ink ground, sand ink, a serif display over a
+ * monospace body.
+ *
+ * Written for the pages a project generates about itself — a map, an atlas, a
+ * report — where the reader is scanning a dense index rather than using an app,
+ * and where a printed field guide is the thing being imitated. It is the
+ * counterpart to press.css: same discipline, opposite ground.
+ *
+ * Tokens only, no selector of its own. The one token it wanted and did not
+ * have was heading tracking, which is why --heading-letter-spacing exists.
+ */
+
+.theme-field {
+  /*
+   * Native form controls, scrollbars and the <select> dropdown render dark.
+   * Without it the theme only looks dark until you focus an input.
+   */
+  color-scheme: dark;
+
+  /*
+   * The tone-as-text lightness window, inverted — required by any theme
+   * that sets `color-scheme: dark`. See tokens.css and tones.css.
+   */
+  --tone-l-min: 0.72;
+  --tone-l-max: 1;
+
+  /* ── Ink and ground ─────────────────────────────────────────────────
+   * A warm near-black under a sand ink: paper read by lamplight rather than
+   * a screen inverted. --ink-mute is the lightest rung and is still body
+   * text, so it is fitted against --surface-raised, the lightest of the
+   * three grounds and therefore the tightest: 4.60:1.
+   */
+  --surface:        #141715;
+  --surface-raised: #1b201c;
+  --surface-sunken: #0c0e0d;
+  --ink:            #e4dcc4;
+  --ink-soft:       #b3ab93;
+  --ink-mute:       #8e876f;
+  --rule:           #2c312d;
+  --rule-strong:    #434942;
+
+  /* ── Tones ──────────────────────────────────────────────────────────
+   * Surveyor's inks: verdigris, olive, ochre. Every one of these is read as
+   * TEXT somewhere in the package — a badge, a link, a table's tinted cell —
+   * so all seven clear AA on --surface-raised. Danger is the one that had to
+   * move: the muted brick this palette wanted measured 3.29:1.
+   */
+  --color-primary:   #4fa8a0;
+  --color-secondary: #a79ae4;
+  --color-info:      #5e93bf;
+  --color-success:   #93a83f;
+  --color-warning:   #d2762e;
+  --color-danger:    #dc6a58;
+  --color-muted:     #8c8778;
+
+  /* ── Set type ───────────────────────────────────────────────────────
+   * Both faces are stated. A theme that sets only --font-primary leaves
+   * h1–h6 in whatever the host page declared — the trap elite.css documents.
+   * No webfont: a theme that needs one renders in a fallback face on first
+   * paint and in someone else's on a locked-down network.
+   */
+  --font-primary: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif;
+  --font-mono:    ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  /*
+   * The tracked serif display is the whole look, and it is the reason
+   * --heading-letter-spacing exists: before it, the only way to say this was
+   * a selector, which is the line a theme may not cross.
+   */
+  --heading-letter-spacing: 0.08em;
+
+  --btn-font-weight:      600;
+  --btn-text-transform:   uppercase;
+  --btn-letter-spacing:   0.1em;
+  --badge-font-weight:    600;
+  --badge-text-transform: uppercase;
+  --badge-letter-spacing: 0.1em;
+
+  /* Stamped, not printed: corners are barely eased rather than round. */
+  --btn-radius:   2px;
+  --card-radius:  2px;
+  --field-radius: 2px;
+
+  /*
+   * The default shadows are near-black at 4–10% alpha and invisible against
+   * this ground; a dark theme needs markedly more opacity to read as
+   * elevation at all. The long one is a lift rather than a drop.
+   */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.6), 0 10px 30px -20px rgba(0, 0, 0, 0.9);
+}

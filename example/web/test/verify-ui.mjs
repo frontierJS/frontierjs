@@ -318,15 +318,32 @@ try {
     return { open: !!document.querySelector('dialog[open]'), status: document.querySelector('.steps [aria-current="step"] .step-label')?.textContent.trim() };
   `))
 
-  // Confirming runs the move, the record reloads, and a toast reports it.
+  /*
+   * Confirming runs the move, the record reloads, and ONE toast reports it —
+   * first that the move is in flight, then how it went, in place.
+   *
+   * The node is marked while it is still the loading toast and looked for
+   * again after it settles, because that is the only way to tell an update
+   * from a remove-and-add: both look identical on screen, and only one of them
+   * keeps the reader's place in the stack. `toasts.loading()` is the handle
+   * FJS-119 added, and this is the drive it asked for.
+   */
   t('modal.confirmRuns', await evaluate(`
     byText('[role="tabpanel"] button', 'cancel').click();
     await waitFor(() => document.querySelector('dialog[open]'));
     byText('dialog button', 'Yes,').click();
     await waitFor(() => !document.querySelector('dialog[open]'));
-    await waitFor(() => document.querySelector('.toast'));
+    const loading = await waitFor(() => document.querySelector('.toast'));
+    const spun = !!loading.querySelector('.spinner');
+    loading.dataset.mark = 'move';
+    const settled = await waitFor(() => {
+      const el = document.querySelector('.toast[data-mark=move]');
+      return el && !el.querySelector('.spinner') ? el : null;
+    });
     return {
       toast: !!document.querySelector('.toast'),
+      startedWithSpinner: spun,
+      settledInPlace: settled.classList.contains('success') || settled.classList.contains('danger'),
       // cancelled is not on the lifecycle, so no step is current any more
       current: { step: document.querySelector('.steps [aria-current="step"]') ? 'some' : null },
     };
@@ -371,11 +388,22 @@ try {
 
   // A filter that matches nothing is a different situation from an empty
   // catalogue, and the empty snippet says so.
+  //
+  // `retired` ALONE is not an empty filter: the catalogue seeds one retired
+  // product on purpose, so that status matches exactly one row. The drive has
+  // to ask for a combination that really is empty — an ACTIVE product's name
+  // AND the retired status (FJS-260).
   t('emptyState.shows', await evaluate(`
+    const name = document.querySelector('#f-name');
+    name.focus(); name.click();
+    await waitFor(() => document.querySelector('.fjs-combobox-panel [role="option"]'));
+    byText('.fjs-combobox-panel [role="option"]', 'Field Notebook').click();
+    await waitFor(() => document.querySelectorAll('tbody tr').length === 1);
+
     const box = document.querySelector('#f-status');
     box.focus(); box.click();
-    await waitFor(() => document.querySelector('[role="listbox"] [role="option"]'));
-    byText('[role="listbox"] [role="option"]', 'retired').click();
+    await waitFor(() => document.querySelector('.fjs-multiselect-panel [role="option"]'));
+    byText('.fjs-multiselect-panel [role="option"]', 'retired').click();
     await waitFor(() => document.querySelector('.empty') || document.querySelectorAll('tbody tr').length === 0);
     return {
       title: document.querySelector('.empty-title, .empty h3, .empty p')?.textContent.trim() ?? null,
@@ -449,6 +477,45 @@ try {
     };
   `))
 
+  // The theme has to change a TOKEN, and the class has to land on the root.
+  //
+  // Nothing asserted this before, and nothing could: Sierra's theme module set
+  // `data-theme`, which `@frontierjs/css` reads nowhere, so this app shipped
+  // its own applier and the framework's was dead code with no caller. The two
+  // halves are separate questions — a class on the wrong element and a class
+  // no stylesheet defines look identical from the outside.
+  t('settings.themeApplies', await evaluate(`
+    const root   = document.documentElement;
+    const before = getComputedStyle(root).getPropertyValue('--color-primary').trim();
+
+    const pick = [...document.querySelectorAll('#p-theme input[type=radio]')]
+      .find(r => r.value === 'theme-forest');
+    pick.click();
+    document.querySelector('#p-save').click();
+    await new Promise(r => setTimeout(r, 50));
+
+    const after = getComputedStyle(root).getPropertyValue('--color-primary').trim();
+    return {
+      onRoot:   root.classList.contains('theme-forest'),
+      // The one it replaced is gone — two theme classes at once is a question
+      // about stylesheet order rather than about the setting.
+      replaced: !root.classList.contains('theme-default'),
+      changed:  before !== '' && after !== '' && before !== after,
+      // It survives a reload, which is the <head> script's job and the reason
+      // the key is in sierra.config.js rather than in this app's prefs bundle.
+      stored:   localStorage.getItem('shop_theme'),
+    };
+  `))
+
+  // Put it back, so the screens after this one are asserted on the theme every
+  // other check in this file was written against.
+  await evaluate(`
+    [...document.querySelectorAll('#p-theme input[type=radio]')]
+      .find(r => r.value === 'theme-default').click();
+    document.querySelector('#p-save').click();
+    return true;
+  `)
+
   // The preference has to change something. Dense tables put .compact on every
   // table the app draws — assert it on a different screen, after a real
   // navigation (assigning location.href from an evaluated expression kills the
@@ -469,30 +536,30 @@ try {
   await goto('/')
   t('palette.opensOnClick', await evaluate(`
     document.getElementById('palette-open').click();
-    await waitFor(() => document.querySelector('.cp-panel'));
+    await waitFor(() => document.querySelector('.fjs-cp-panel'));
     // The enter animation is 120ms; wait for it to finish rather than sampling
     // mid-fade, and read the backdrop too — it is the thing that covers the page.
-    await Promise.all(document.querySelector('.cp-panel').getAnimations().map(a => a.finished));
-    const panel = document.querySelector('.cp-panel'), backdrop = document.querySelector('.cp-backdrop');
+    await Promise.all(document.querySelector('.fjs-cp-panel').getAnimations().map(a => a.finished));
+    const panel = document.querySelector('.fjs-cp-panel'), backdrop = document.querySelector('.fjs-cp-backdrop');
     const box = panel.getBoundingClientRect();
     return {
       panelOpacity:    getComputedStyle(panel).opacity,
       backdropOpacity: getComputedStyle(backdrop).opacity,
       // A backdrop that covers the page and shows nothing is the failure being
       // guarded against, so ask the page what is actually on top.
-      topmostIsPalette: !!document.elementFromPoint(innerWidth / 2, 140)?.closest('.cp-panel'),
+      topmostIsPalette: !!document.elementFromPoint(innerWidth / 2, 140)?.closest('.fjs-cp-panel'),
       hasSize: box.width > 200 && box.height > 100,
     };
   `))
 
   await key('Escape', 'Escape', 27)
-  await evaluate(`await waitFor(() => !document.querySelector('.cp-panel'), 3000).catch(() => {}); return true`)
+  await evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel'), 3000).catch(() => {}); return true`)
 
   await evaluate(`document.body.focus(); return true`)
   await key('k', 'KeyK', 75, 2 /* Ctrl */)
 
   t('palette.opensOnCtrlK', await evaluate(`
-    await waitFor(() => document.querySelector('[role="dialog"] input, .cp-input, input[placeholder*="Search"]'));
+    await waitFor(() => document.querySelector('[role="dialog"] input, .fjs-cp-input, input[placeholder*="Search"]'));
     return { open: true, focused: document.activeElement.tagName };
   `))
 
@@ -503,8 +570,8 @@ try {
   // deliver keystrokes, that shows up as a wrong query rather than as a
   // component that "does not filter".
   t('palette.filters', await evaluate(`
-    const input = document.querySelector('.cp-input, [role="dialog"] input, input[placeholder*="Search"]');
-    await waitFor(() => document.querySelectorAll('[role="option"]').length || document.querySelector('.cp-empty'));
+    const input = document.querySelector('.fjs-cp-input, [role="dialog"] input, input[placeholder*="Search"]');
+    await waitFor(() => document.querySelectorAll('[role="option"]').length || document.querySelector('.fjs-cp-empty'));
     return {
       query:   input.value,
       options: [...document.querySelectorAll('[role="option"]')].map(o => o.textContent.trim().split('\\n')[0].trim()),
@@ -514,7 +581,7 @@ try {
   await key('Enter', 'Enter', 13)
   t('palette.runsCommand', await evaluate(`
     await waitFor(() => location.pathname !== '/');
-    return { path: location.pathname, open: !!document.querySelector('.cp-panel, [role="dialog"] input') };
+    return { path: location.pathname, open: !!document.querySelector('.fjs-cp-panel, [role="dialog"] input') };
   `))
 
   // ─── clean up the order this drive created ───────────────────────────────
@@ -566,7 +633,7 @@ const expected = {
 
   'modal.opens':        { title: 'Confirm cancel', focusInside: true, body: true },
   'modal.keepIt':       { open: false, status: 'pending' },
-  'modal.confirmRuns':  { toast: true, current: { step: null } },
+  'modal.confirmRuns':  { toast: true, startedWithSpinner: true, settledInPlace: true, current: { step: null } },
   'detail.afterCancel': 'cancelled',
 
   'filters.present':  { combobox: true, multiselect: true, slider: 2, rows: 4 },
@@ -582,6 +649,7 @@ const expected = {
   'settings.expand':    { expanded: true, numberInput: true, radiogroup: true },
   'settings.switch':    { role: 'switch', toggled: true },
   'settings.save':      { toast: 'Preferences saved', toastOpacity: '1', stored: true },
+  'settings.themeApplies': { onRoot: true, replaced: true, changed: true, stored: 'theme-forest' },
   'settings.densityApplies': { compact: true },
 
   'palette.opensOnClick': { panelOpacity: '1', backdropOpacity: '1', topmostIsPalette: true, hasSize: true },

@@ -28,6 +28,12 @@ flags:
 ```js
 // `args` is already bound in the compiled shim — a second declaration is a
 // SyntaxError the compiler reports as a clean build (Invariant 15).
+//
+// `resolve` is imported here rather than assumed: there is no `fli/_module.md`
+// to supply it, and the parse sweep compiles a command WITHOUT its namespace
+// module, so a free identifier parses clean and throws on the first run.
+const { resolve } = await import('node:path')
+
 const { RULES, runChecks, formatFindings } =
   await import(resolve(global.fliRoot, 'core/checks.js'))
 

@@ -56,7 +56,6 @@ or `.md` files alongside your other source. See [Vite plugin](#vite-plugin).
 | `src/render.js` | `renderToHTML(component, props, opts)` / `renderAll` / `wrapPage` — happy-dom static rendering. See `docs/STATIC_RENDERING.md` |
 | `src/render-component.js` | Source-in pipeline: `renderComponent` / `renderFile` for HTML, email, fragment, JS |
 | `src/css-inliner.js` | CSS-to-`style=""` inliner with custom-property resolution |
-| `src/glow.js` | Syntax highlighter used by `compiler-md.js` for fenced code blocks |
 | `example/index.html` | Browser REPL — `npm run serve`, then open `/packages/mesa/example/`. Mounts previews via `mount()`; see `test/repl.test.js` |
 | `example/examples.js` | All REPL examples — 66 across 22 groups |
 | `example/README.md` | What the REPL is, how to run it, how to add an example |
@@ -346,7 +345,8 @@ const pages = await renderAll([
 
 On the server, `$onMount` and path watches are inert while effects and block
 directives run and are then disposed; `{#await}` renders its `{:pending}`
-branch; `{#virtual each}` renders nothing. Comment anchors are stripped unless
+branch; `{#virtual each}` renders its first window, since there is no viewport to
+measure. Comment anchors are stripped unless
 you pass `{ keepAnchors: true }`.
 
 ### Islands — `{ islands: true }`

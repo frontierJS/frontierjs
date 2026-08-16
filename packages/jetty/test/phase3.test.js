@@ -62,9 +62,13 @@ function mockPagePort() {
       if (!set) return
       for (const fn of set) fn(payload, { type, payload })
     },
-    _emitChannel(channel, data) {
+    // (channel, data, event) — a channel carries MANY events, and `event` is the
+    // wire name Junction sends: `widgets created`, space-separated, past tense.
+    // The mock used to take only a channel, which is how a test came to pin the
+    // bug: it asserted four subscriptions to names the server never publishes.
+    _emitChannel(channel, data, event) {
       const handler = subscriptions.get(channel)
-      if (handler) handler(data, { channel, data })
+      if (handler) handler(data, { channel, data, event })
     },
     _emitDisconnect() { for (const fn of lifecycleHooks.disconnect) fn() },
     _emitReconnect()  { for (const fn of lifecycleHooks.reconnect) fn() },
@@ -433,7 +437,7 @@ group('createResource — dispatch through harbor port')
     r.service.on('custom-event', (data) => { received = data })
     if (port._activeSubscriptions().includes('leads:custom-event')) ok('service.on subscribes to <service>:<event>')
 
-    port._emitChannel('leads:custom-event', { foo: 1 })
+    port._emitChannel('leads', { foo: 1 }, 'leads custom-event')
     if (received?.foo === 1) ok('service.on handler fires on channel:event')
   }
 }
@@ -531,32 +535,107 @@ group('createResource — channel push events update store')
   _registerActivePort(port)
   const r = createResource('widgets')
 
-  // First service call triggers lazy subscribe to <service>:<event> channels
+  // ONE subscription, to the CHANNEL. This asserted four — `widgets:created`,
+  // `widgets:patched`, … — names Junction has never published: a colon is the
+  // in-process BUS spelling, the wire carries a space, and a channel is not an
+  // event anyway (you join `widgets` and receive `widgets created`). The test
+  // passed, which is how it came to pin the bug rather than catch it (FJS-059).
   port._enqueueResponse(() => [{ id: 1, name: 'a' }])
   await r.service.find({})
 
   const subs = port._activeSubscriptions()
-  if (subs.includes('widgets:created') &&
-      subs.includes('widgets:patched') &&
-      subs.includes('widgets:updated') &&
-      subs.includes('widgets:removed')) {
-    ok('lazy subscribe attaches created/patched/updated/removed')
+  if (subs.length === 1 && subs[0] === 'widgets') {
+    ok('lazy subscribe attaches ONE subscription, to the channel')
   } else {
-    bad('lazy channel subs incomplete', JSON.stringify(subs))
+    bad('expected exactly one subscription to "widgets"', JSON.stringify(subs))
   }
 
-  // Push event → store.upsert
+  if (!subs.some((c) => c.includes(':'))) ok('no colon-spelled channel is subscribed to')
+  else bad('a colon-spelled channel survived', JSON.stringify(subs))
+
+  // Push event → store.upsert. The EVENT decides, not the channel.
   let storeData = null
   r.store.subscribe((d) => { storeData = d })
 
-  port._emitChannel('widgets:created', { id: 2, name: 'b' })
-  if (storeData?.find((x) => x.id === 2)) ok('widgets:created → store.upsert')
+  port._emitChannel('widgets', { id: 2, name: 'b' }, 'widgets created')
+  if (storeData?.find((x) => x.id === 2)) ok('widgets created → store.upsert')
 
-  port._emitChannel('widgets:patched', { id: 2, name: 'B' })
-  if (storeData?.find((x) => x.id === 2)?.name === 'B') ok('widgets:patched → store.upsert (replaces)')
+  port._emitChannel('widgets', { id: 2, name: 'B' }, 'widgets patched')
+  if (storeData?.find((x) => x.id === 2)?.name === 'B') ok('widgets patched → store.upsert (replaces)')
 
-  port._emitChannel('widgets:removed', { id: 2 })
-  if (!storeData?.find((x) => x.id === 2)) ok('widgets:removed → store.remove')
+  port._emitChannel('widgets', { id: 2 }, 'widgets removed')
+  if (!storeData?.find((x) => x.id === 2)) ok('widgets removed → store.remove')
+
+  // THE REGRESSION THIS CLOSES. Every event arrived on one channel, so a
+  // subscriber that cannot read the event name upserts whatever it is handed —
+  // and a delete comes back onto the screen and stays until reload.
+  port._emitChannel('widgets', { id: 3, name: 'c' }, 'widgets created')
+  port._emitChannel('widgets', { id: 3 }, 'widgets removed')
+  if (!storeData?.find((x) => x.id === 3)) ok('a remove is not mistaken for an upsert')
+  else bad('remove was upserted — the event name is being ignored')
+
+  // The bus spelling must not be honoured on the wire, or the two vocabularies
+  // are interchangeable and the separator stops discriminating anything.
+  port._emitChannel('widgets', { id: 4 }, 'widgets:created')
+  if (!storeData?.find((x) => x.id === 4)) ok('the colon spelling is not accepted from the wire')
+  else bad('a colon-spelled wire event was accepted')
+
+  // An event for another service, which a channel is not required to keep out.
+  port._emitChannel('widgets', { id: 5 }, 'gadgets created')
+  if (!storeData?.find((x) => x.id === 5)) ok('an event for another service is ignored')
+  else bad('an event for another service was applied')
+}
+
+group('the wire event names are Junction\'s, not a restatement of them')
+{
+  // The defect FJS-059 named was a VOCABULARY drift: jetty spoke a set of event
+  // names Junction does not publish, and nothing could notice, because both
+  // sides were only ever asserted against themselves.
+  //
+  // So this asks Junction. Its `AUTO_EVENT_MAP` is exported for exactly this —
+  // "the channel publisher must agree with it" — and read here out of the
+  // source, because jetty's tests run on plain node and that file is TypeScript.
+  // A relative path, not the package name: `bun install` copies a workspace dep,
+  // so an import by name would check the last install's snapshot.
+  const { readFileSync } = await import('node:fs')
+  const { fileURLToPath } = await import('node:url')
+  const { dirname, join } = await import('node:path')
+
+  const here = dirname(fileURLToPath(import.meta.url))
+  const src  = readFileSync(join(here, '..', '..', 'junction', 'src', 'core', 'service.ts'), 'utf8')
+
+  const decl = src.match(/export const AUTO_EVENT_MAP[^{]*\{([^}]*)\}/)
+  const pairs = decl ? [...decl[1].matchAll(/(\w+)\s*:\s*'([^']+)'/g)].map((m) => [m[1], m[2]]) : []
+
+  if (pairs.length >= 5) ok(`read ${pairs.length} auto-event names out of Junction`)
+  else bad('could not read AUTO_EVENT_MAP from Junction — has it moved or changed shape?', decl ? decl[1] : 'no match')
+
+  const { wireEventMethod } = await import('../src/resources/resource.js')
+
+  // Every past-tense name Junction publishes must split back out of a wire
+  // event the way this package reads it.
+  let allSplit = true
+  for (const [, pastTense] of pairs) {
+    if (wireEventMethod(`widgets ${pastTense}`, 'widgets') !== pastTense) {
+      allSplit = false
+      bad(`wireEventMethod did not recover '${pastTense}'`, `widgets ${pastTense}`)
+    }
+  }
+  if (allSplit && pairs.length) ok('every Junction auto-event splits back to its method')
+
+  // And the store's REMOVE branch has to be keyed on the name Junction actually
+  // sends for a remove. Hard-coding 'removed' here would restate the map again;
+  // this reads it.
+  const removeName = pairs.find(([method]) => method === 'remove')?.[1]
+  if (removeName === 'removed') ok(`Junction publishes a remove as '${removeName}'`)
+  else bad('Junction publishes a remove under a name this package does not handle', String(removeName))
+
+  // The bus spelling is not the wire spelling, and must not split.
+  if (wireEventMethod('widgets:created', 'widgets') === null) ok('the colon spelling does not split')
+  else bad('a colon-spelled event split as though it were a wire event')
+
+  if (wireEventMethod('widgets created', 'gadgets') === null) ok('another service\'s event does not split')
+  if (wireEventMethod(undefined, 'widgets') === null) ok('a missing event name answers null rather than guessing')
 }
 
 group('createResource — load() populates store')
@@ -749,11 +828,11 @@ group('createResource — FindParams reach the adapter')
     let seen = null
     port._enqueueResponse((_t, payload) => { seen = payload.args; return [] })
     const r = createResource('leads', {
-      hooks: { before: { find: [ctx => { ctx.findParams.limit = 5 }] } },
+      hooks: { before: { find: [ctx => { ctx.directives.limit = 5 }] } },
     })
     await r.service.find({})
-    if (seen?.params?.limit === 5) ok('a before hook can set ctx.findParams.limit')
-    else bad('a before hook can set ctx.findParams.limit', JSON.stringify(seen))
+    if (seen?.params?.limit === 5) ok('a before hook can set ctx.directives.limit')
+    else bad('a before hook can set ctx.directives.limit', JSON.stringify(seen))
   }
 
   // load(query, params) — store.populate accepted params all along; load

@@ -1,0 +1,47 @@
+{
+  "name": "@frontierjs/config",
+  "version": "0.1.0",
+  "description": "The tooling opinion a FrontierJS app extends in one line — tsconfig and Biome, no source of its own",
+  "type": "module",
+  "scripts": {
+    "test": "bun test test/config.test.js",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "exports": {
+    "./tsconfig": "./tsconfig.json",
+    "./tsconfig.json": "./tsconfig.json",
+    "./biome": "./biome.json",
+    "./biome.json": "./biome.json",
+    "./editorconfig": "./editorconfig"
+  },
+  "files": [
+    "tsconfig.json",
+    "biome.json",
+    "editorconfig",
+    "README.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@biomejs/biome": ">=2.0.0",
+    "typescript": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@biomejs/biome": { "optional": true },
+    "typescript": { "optional": true }
+  },
+  "keywords": [
+    "frontierjs",
+    "config",
+    "tsconfig",
+    "biome"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/config"
+  }
+}

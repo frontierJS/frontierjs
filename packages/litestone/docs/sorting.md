@@ -159,3 +159,43 @@ db.order.groupBy({
   // orderBy: { status: 'asc' }           // by group field
 })
 ```
+
+## `orderBy: { $raw }` — the escape hatch
+
+`where` has had `$raw` all along; the sort side had nothing. Everything
+monotonic in a stored column already sorts, and what does not — *snoozed last
+regardless of due date*, a weighted score — could not be said at all.
+
+```js
+import { sql, now } from '@frontierjs/litestone'
+
+db.task.findMany({
+  orderBy: { $raw: sql`CASE WHEN "snoozedUntil" > ${now()} THEN 1 ELSE 0 END ASC, "dueAt" ASC` },
+})
+
+db.task.findMany({ orderBy: { $raw: sql`("weight" * ${10} + "id") DESC` } })
+```
+
+The fragment is the **whole ORDER BY tail**, direction included, because a sort
+no builder can express usually needs several keys in an order only the caller
+knows. It composes with ordinary keys in the position it is written:
+
+```js
+orderBy: [{ status: 'asc' }, { $raw: sql`"weight" DESC` }]
+```
+
+**It must be a `sql` tag. A plain string is refused by name.** The tag's static
+text is written by the app author and its interpolations are bound as
+parameters, so a caller-supplied value never enters the pattern (Invariant 8). A
+bare string is exactly how a caller-supplied one would arrive, so accepting it
+would turn the hatch into an injection.
+
+Two places refuse it, because it cannot mean anything there:
+
+| | why |
+| --- | --- |
+| `findManyCursor` | a cursor encodes every sort key's value off the last row and compares against it. An expression is not a column it can read back — use `limit`/`offset` for a computed sort |
+| `groupBy` | its ORDER BY is over the group keys and aggregates, not over the table's columns |
+
+`$checkOrderBy` passes `$raw` through: the fragment names its own columns, so
+there is nothing to check — the same standing `where`'s `$raw` has.

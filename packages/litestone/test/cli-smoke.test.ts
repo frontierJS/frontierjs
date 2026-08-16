@@ -12,6 +12,9 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, readFileSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
+import { execFileSync } from 'child_process'
+import { Database } from 'bun:sqlite'
+import { createTestEnv } from '../src/testing.js'
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
@@ -491,7 +494,60 @@ describe('CLI smoke — one-shot commands', () => {
     expect(jsonSchema.$defs.Address).toBeDefined()
     expect(jsonSchema.$defs.Address.type).toBe('object')
     expect(jsonSchema.$defs.User.properties.address).toEqual({ $ref: '#/$defs/Address' })
-  })
+  }, 30_000)
+
+  // There is no `down`. `--backup` is the way back, and the run has to be able
+  // to say so BEFORE it is the only thing that could have helped.
+  test('migrate apply: --backup copies first, and a drop without one is named', async () => {
+    const dir = makeFixtureDir('apply-backup', {
+      schema: `
+        model Post {
+          id    Int    @id
+          title String
+          views Int    @default(0)
+        }
+      `,
+    })
+
+    await runCli(dir, ['migrate', 'create', 'init'])
+    await runCli(dir, ['migrate', 'apply'])
+    const live = new Database(join(dir, 'test.db'))
+    live.run(`INSERT INTO post (title, views) VALUES ('Hello', 42)`)
+    live.close()
+
+    // Dropping a column is a rebuild, which is a DROP TABLE.
+    writeFileSync(join(dir, 'schema.lite'), `
+      model Post {
+        id    Int    @id
+        title String
+      }
+    `, 'utf8')
+    await runCli(dir, ['migrate', 'create', 'drop_views'])
+
+    const backed = await runCli(dir, ['migrate', 'apply', '--backup'])
+    expect(backed.exit).toBe(0)
+    expect(backed.stderr).not.toContain('no way back from this run')
+
+    const copies = readdirSync(join(dir, 'backups'))
+    expect(copies).toHaveLength(1)
+    const copy = new Database(join(dir, 'backups', copies[0], 'main.db'), { readonly: true })
+    const cols = copy.query(`PRAGMA table_info(post)`).all().map((c: { name: string }) => c.name)
+    copy.close()
+    // The copy is of the database as it was BEFORE the migration ran.
+    expect(cols).toContain('views')
+
+    // The same run with no copy asked for says what it is about to destroy.
+    writeFileSync(join(dir, 'schema.lite'), `
+      model Post {
+        id Int @id
+      }
+    `, 'utf8')
+    await runCli(dir, ['migrate', 'create', 'drop_title'])
+    const bare = await runCli(dir, ['migrate', 'apply'])
+    expect(bare.exit).toBe(0)
+    expect(bare.stderr).toContain('no way back from this run')
+    expect(bare.stderr).toContain('drops 1 table')
+  }, 30_000)
 })
 
 describe('CLI smoke — long-running servers', () => {
@@ -500,24 +556,26 @@ describe('CLI smoke — long-running servers', () => {
     await runCli(dir, ['migrate', 'create', 'init'])
     await runCli(dir, ['migrate', 'apply'])
 
-    // Wait until the Examples section has been fully printed. The banner
-    // prints findMany then count then (optionally) findFirst — wait for the
-    // last line that's deterministic across all schemas.
+    // The prompt is the last thing printed, and it is the standing rather than
+    // a `>` — waiting for `>` alone would match the banner's own punctuation.
     const { proc, output } = await spawnUntil(
       dir,
       ['repl'],
-      (buf) => buf.includes('db.user.count()'),
+      (buf) => buf.includes('anonymous(0) >'),
       { timeoutMs: 6_000 },
     )
     await killProc(proc)
 
-    // The accessor line MUST be camelCase singular. This is the exact bug we
-    // shipped: the REPL was printing `db.User.findMany()` (PascalCase).
-    expect(output).toContain('db.user.findMany()')
-    expect(output).toContain('db.user.count()')
-    // And the Tables line too
+    // The accessor list MUST be camelCase singular. This is the exact bug we
+    // shipped: the REPL printed `db.User.findMany()` (PascalCase). The banner's
+    // worked examples are gone, so the Tables line is where it would surface —
+    // `.help` prints the same list, and repl.test.ts asserts that side.
     expect(output).toMatch(/Tables:\s+[^\n]*\buser\b/)
     expect(output).not.toMatch(/Tables:\s+[^\n]*\bUser\b/)
+
+    // And the standing is on the prompt, not only in the banner — the rule the
+    // command exists for.
+    expect(output).toContain('anonymous(0) >')
   })
 
   test('studio serves /api/info and /api/table against a PascalCase model', async () => {
@@ -579,5 +637,227 @@ describe('CLI smoke — long-running servers', () => {
     } finally {
       await killProc(proc)
     }
+  })
+})
+
+// ─── imports in a schema ──────────────────────────────────────────────────────
+//
+// `createClient` has always resolved `import "./other.lite"` — it goes through
+// parseFile. Every CLI command went through `parse(readFileSync(...))` instead,
+// so it saw the root file alone, and nothing said so: `db push` compared the
+// database against a schema with the imported models missing and reported
+// "already in sync" while their tables were never created.
+//
+// This is the shape `fli auth:install` writes — the app's own models beside an
+// imported file it does not own — so it is not a hypothetical layout.
+
+const ROOT_WITH_IMPORT = `
+import "./auth.lite"
+
+model Note {
+  id     Int     @id
+  title  String
+}
+`
+
+const IMPORTED = `
+model Session {
+  id      String  @id @default(uuid())
+  userId  String
+  token   String  @unique
+}
+
+model Verification {
+  id          Int     @id
+  identifier  String
+}
+`
+
+function makeImportFixture(label: string) {
+  const dir = makeFixtureDir(label, { schema: ROOT_WITH_IMPORT })
+  writeFileSync(join(dir, 'auth.lite'), IMPORTED, 'utf8')
+  return dir
+}
+
+describe('a schema that imports another file', () => {
+
+  test('db push creates the imported models tables', async () => {
+    const dir = makeImportFixture('push-import')
+    const { exit } = await runCli(dir, ['db', 'push'])
+    expect(exit).toBe(0)
+
+    const db    = new Database(join(dir, 'test.db'))
+    const names = db.prepare("select name from sqlite_master where type = 'table'")
+      .all().map((r: any) => r.name)
+    db.close()
+
+    // note proves the root file was read at all — without it, an empty database
+    // would pass this test by failing everything equally.
+    expect(names).toContain('note')
+    expect(names).toContain('session')
+    expect(names).toContain('verification')
+  })
+
+  test('ddl emits the imported models', async () => {
+    const dir = makeImportFixture('ddl-import')
+    const { stdout, exit } = await runCli(dir, ['ddl', '--stdout'])
+    expect(exit).toBe(0)
+    expect(stdout).toContain('"note"')
+    expect(stdout).toContain('"session"')
+    expect(stdout).toContain('"verification"')
+  })
+
+  // The baseline `release` compares against comes out of git, where there is no
+  // tree for parseFile to walk — so its imports are fetched at the same ref. Read
+  // from the working tree instead and the previous release's root schema would be
+  // compared against TODAY's imported models, calling every one of them unchanged.
+  test('release resolves the baselines imports at the ref, not from disk', async () => {
+    const dir = makeImportFixture('release-import')
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })
+
+    git('init', '-q')
+    git('add', '-A')
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base')
+
+    const unchanged = await runCli(dir, ['release', '--from', 'HEAD', '--json'])
+    expect(JSON.parse(unchanged.stdout).verdict).toBe('unchanged')
+
+    // Drop the import and the three imported models must read as REMOVED — which
+    // is only possible if the baseline had them. A baseline that skipped imports
+    // reports this as unchanged, and reports the opposite edit as three additions.
+    writeFileSync(join(dir, 'schema.lite'), ROOT_WITH_IMPORT.replace(/^import .*$/m, ''), 'utf8')
+
+    const dropped = JSON.parse((await runCli(dir, ['release', '--from', 'HEAD', '--json'])).stdout)
+    expect(dropped.verdict).toBe('contract')
+    expect(dropped.counts.contract).toBe(2)
+  })
+})
+
+// ─── createTestEnv over a split schema ────────────────────────────────────────
+//
+// The Testing realm is the half that would have caught the CLI's blindness, and
+// it had the same one: `createTestEnv({ schema: 'path' })` read the root file and
+// parsed the text. So every executed check — verifyGateLadder, verifyRowPolicies,
+// verifyFieldProtection, verifyConstraints — graded a schema with the imported
+// models missing, and PASSED. A green ladder over models it never saw is worse
+// than no ladder, and `fli auth:install` puts the @@gate("8") credential models
+// on exactly that side of the line.
+
+describe('createTestEnv over a schema that imports another file', () => {
+
+  test('the imported models are in the environment and get graded', async () => {
+    const dir = makeFixtureDir('env-import', { schema: ROOT_WITH_IMPORT })
+    writeFileSync(join(dir, 'auth.lite'), IMPORTED, 'utf8')
+
+    const env = await createTestEnv({ schema: join(dir, 'schema.lite') })
+    try {
+      const names = env.db.$schema.models.map((m: any) => m.name).sort()
+      expect(names).toEqual(['Note', 'Session', 'Verification'])
+
+      // Present in the AST is not present in the DATABASE — the template is
+      // built from this text too, so ask the table.
+      await env.db.asSystem().session.create({ data: { userId: 'u1', token: 't1' } })
+      expect(await env.db.asSystem().session.count()).toBe(1)
+    } finally {
+      env.close()
+    }
+  })
+
+  // An unreadable import is a set of models that will silently not be graded,
+  // which is the one thing this helper must not do quietly.
+  test('an import it cannot read is refused, not warned', async () => {
+    const dir = makeFixtureDir('env-import-missing', { schema: ROOT_WITH_IMPORT })
+    // auth.lite deliberately not written
+    await expect(createTestEnv({ schema: join(dir, 'schema.lite') }))
+      .rejects.toThrow(/could not be read/)
+  })
+})
+
+// ─── importing a package's schema by name ─────────────────────────────────────
+//
+// The point of FJS-265: a package ships a fragment and apps import it by name,
+// so a `bun update` reaches their schema. Before this, `fli auth:install` copied
+// auth's models into the app and an upgrade reached nothing.
+//
+// Resolution is node's, from the importing FILE, so the package's own `exports`
+// decides what is importable — nothing guesses at a path inside a package. This
+// exercises it through a real CLI process against a real node_modules, which is
+// the half a parser unit test cannot answer.
+
+function makePackageFixture(label: string, into = '') {
+  const dir = makeFixtureDir(label, {
+    schema: `
+database main { path "./main.db" }
+database vault { path "./vault.db" }
+
+import "frag/schema.lite"${into}
+
+model Note {
+  id     Int     @id
+  title  String
+}
+`,
+    config: `export default { schema: './schema.lite', migrations: './migrations', db: './test.db' }\n`,
+  })
+
+  const pkg = join(dir, 'node_modules', 'frag')
+  mkdirSync(join(pkg, 'db'), { recursive: true })
+  writeFileSync(join(pkg, 'package.json'),
+    JSON.stringify({ name: 'frag', exports: { './schema.lite': './db/models.lite' } }), 'utf8')
+  writeFileSync(join(pkg, 'db', 'models.lite'), `
+model Shipped {
+  id     Int     @id
+  label  String
+  @@db(main)
+}
+`, 'utf8')
+  return dir
+}
+
+describe('a schema importing a package by name', () => {
+
+  test('db push creates the packages models', async () => {
+    const dir = makePackageFixture('pkg-import')
+    const { exit } = await runCli(dir, ['db', 'push'])
+    expect(exit).toBe(0)
+
+    const db    = new Database(join(dir, 'main.db'))
+    const names = db.prepare("select name from sqlite_master where type = 'table'")
+      .all().map((r: any) => r.name)
+    db.close()
+
+    expect(names).toContain('note')
+    expect(names).toContain('shipped')
+  })
+
+  // `into` is the one parameter that varies between apps, and it beats the @@db
+  // the package shipped — a package has to name some database, and only the app
+  // knows what its own are called.
+  test('into lands them in the apps own database, over the packages @@db', async () => {
+    const dir = makePackageFixture('pkg-import-into', ' into vault')
+    const { exit } = await runCli(dir, ['db', 'push'])
+    expect(exit).toBe(0)
+
+    const tables = (file: string) => {
+      const db = new Database(join(dir, file))
+      const n  = db.prepare("select name from sqlite_master where type = 'table'")
+        .all().map((r: any) => r.name)
+      db.close()
+      return n
+    }
+
+    expect(tables('vault.db')).toContain('shipped')   // the package said main
+    expect(tables('main.db')).toContain('note')
+    expect(tables('main.db')).not.toContain('shipped')
+  })
+
+  test('an unresolvable specifier names both causes and fails', async () => {
+    const dir = makeFixtureDir('pkg-import-missing', {
+      schema: 'import "@nope/nothing/schema.lite"\nmodel Note { id Int @id }',
+    })
+    const { exit, stderr, stdout } = await runCli(dir, ['db', 'push'])
+    expect(exit).not.toBe(0)
+    expect(stdout + stderr).toMatch(/is the package installed, and does it export that subpath\?/)
   })
 })

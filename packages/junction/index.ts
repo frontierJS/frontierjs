@@ -37,11 +37,15 @@ export {
   // Built-in hooks
   authenticate, requireRole, paginate, protect, allow, timestamps, logTiming,
   circuitBreaker,
-  // Pipeline-level rate limiter — operates inside the hook pipeline on ServiceContext.
-  // Named rateLimitHook to distinguish from the transport-level rateLimit middleware plugin.
+  // The rate limiter both a service pipeline and a raw route can use — it answers
+  // for either context (BridgeHook). Named rateLimitHook to distinguish it from
+  // the transport-level rateLimit middleware plugin.
   rateLimit as rateLimitHook
 } from './src/core/hooks.ts'
-export type { Hook, AroundHook, HookMap, ResolvedPipeline, CircuitBreakerOptions, RateLimitHookOptions } from './src/core/hooks.ts'
+// RateLimitHookOptions is NOT re-exported here even though `hooks.ts` forwards
+// it: it is declared in `src/auth/types.ts` and exported from there below, and
+// naming it on both lines is a duplicate identifier rather than two types.
+export type { Hook, AroundHook, BridgeHook, HookMap, ResolvedPipeline, CircuitBreakerOptions } from './src/core/hooks.ts'
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
 export { bridge, jsonResponse, errorResponse, redirectResponse } from './src/transport/bridge.ts'
@@ -63,7 +67,7 @@ export type {
 } from './src/transport/types.ts'
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
-export type { IAuth, SessionContext, CreateUserInput, ApiKeyOptions, RateLimitHookOptions } from './src/auth/types.ts'
+export type { IAuth, SessionVerifier, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo, RateLimitHookOptions } from './src/auth/types.ts'
 
 // ─── Events ───────────────────────────────────────────────────────────────
 export { createScheduler }                                        from './src/scheduler/index.ts'

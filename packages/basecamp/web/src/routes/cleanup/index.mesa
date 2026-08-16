@@ -52,11 +52,11 @@ title: Disk cleanup
       // The vocabulary is fetched once and then reused — it is a property of
       // the deployment, not of the workspace.
       if (!targets.length) {
-        targets = (await cleanup.service.action('targets', null)).targets
+        targets = (await cleanup.service.invoke('targets', null)).targets
         picked  = targets.filter(t => t.defaultOn).map(t => t.target)
       }
       const [u, h] = await Promise.all([
-        cleanup.service.action('usage', null),
+        cleanup.service.invoke('usage', null),
         cleanup.service.find({}, { limit: 10 }),
       ])
       if (mine !== inflight.seq) return
@@ -104,7 +104,7 @@ title: Disk cleanup
   async function sweep(serverId) {
     error = null; busy = serverId ?? 'fleet'
     try {
-      const res = await cleanup.service.action('run', null, {
+      const res = await cleanup.service.invoke('run', null, {
         ...(serverId ? { serverId } : {}),
         targets: picked,
       })

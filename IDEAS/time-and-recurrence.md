@@ -14,9 +14,10 @@ This is the answer that came back first and by the widest margin.
 
 - **The word `timezone` appears nowhere in `IDEAS/`.** Not as a gap, not as a
   question, not in passing. Thirty-one design records and none of them is about time.
-- **`packages/datetime-kit/` is a `README.md` and nothing else** — no `package.json`,
-  so it does not install, test, or count as a workspace member. It is one of the four
-  claimed-but-unbuilt folders `FJS-D14` asks about, and it is the one whose subject
+- **There is no date/time code in the tree.** `packages/datetime-kit/` was a
+  `README.md` and nothing else; 2026-08-15 it folded into `@frontierjs/toolbelt` as the
+  `/datetime` kit — intent in `packages/toolbelt/docs/datetime.md`, prototype parked at
+  `packages/toolbelt/mockup/datetime/`, nothing exported. The subject is still one
   nothing else covers.
 - **The whole repo holds exactly one timezone concept**, in `packages/caravan/src/cron.ts`:
   an optional `timeZone` threaded into `Intl.DateTimeFormat` so a cron expression can
@@ -172,9 +173,10 @@ is which subset earns a name.
   vocabulary for the difference. This is the same class of question `@computed` already
   answers — *SQLite can neither sort nor paginate by it* — and it should get the same
   kind of answer.
-- **Is `datetime-kit` this, or something else?** The folder is claimed and empty. If
-  this record is what it was reserved for, `FJS-D14` gets one fewer open question; if
-  it was reserved for a component kit, the two should not share a name.
+- ~~**Is `datetime-kit` this, or something else?**~~ **Answered**: it is this, and it
+  is a subpath rather than a package — `@frontierjs/toolbelt/datetime`. See
+  `IDEAS/datetime-kit.md` for the scope and `DECISIONS.md` § Repo conventions for why
+  it is not its own folder.
 
 ## See also
 
@@ -186,4 +188,4 @@ is which subset earns a name.
   viewer's zone would reuse
 - `packages/caravan/src/cron.ts` — the one place in the repo that already gets a
   timezone right
-- `packages/datetime-kit/README.md` — a claim with no package under it (`FJS-D14`)
+- `packages/toolbelt/docs/datetime.md` — the claim, now a kit inside toolbelt (`FJS-D14`, ruled)

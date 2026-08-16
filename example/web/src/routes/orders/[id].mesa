@@ -68,13 +68,17 @@ title: Order
   async function run(move) {
     confirm = null
     busy = move.name
+    // One toast for the whole move: it says the work has started, then says
+    // how it went, in place. Announcing only at the end leaves a transition
+    // that crosses the network looking like a click that did nothing.
+    const said = toasts.loading(`${move.name}…`)
     try {
-      await orders.service.action(move.name, order.id)
+      await orders.service.invoke(move.name, order.id)
       await load()
-      toasts.success(`${move.name} → ${order.status}`)
+      said.update('success', `${move.name} → ${order.status}`)
     } catch (e) {
       // 403 from a per-move @gate, 409 from a move that is not legal from here.
-      toasts.error(e.message)
+      said.update('error', e.message)
       error = e.message
     } finally {
       busy = null

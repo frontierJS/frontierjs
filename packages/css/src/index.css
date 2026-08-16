@@ -75,6 +75,7 @@
 @import './themes/basecamp.css' layer(themes);
 @import './themes/notebook.css' layer(themes);
 @import './themes/press.css'    layer(themes);
+@import './themes/field.css'    layer(themes);
 
 /* Foundation — the rest of it; tokens.css is imported above */
 @import './foundation/tones.css'   layer(tones);

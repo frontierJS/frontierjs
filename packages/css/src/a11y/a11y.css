@@ -86,7 +86,7 @@
   padding:        var(--space-sm) var(--space-2xl);
   background:     var(--surface);
   color:          var(--ink);
-  border:         1px solid var(--rule-strong);
+  border:         var(--border-width) solid var(--rule-strong);
   border-radius:  var(--btn-radius);
   /*
    * No shadow at rest. The link is moved off the top of the viewport with
@@ -103,7 +103,7 @@
 
   /* Out of sight, but still focusable — not display:none. */
   transform:  translateY(calc(-100% - 1rem));
-  transition: transform 120ms ease-out;
+  transition: transform var(--motion-fast) var(--motion-ease-out);
 }
 /* Slide into view on focus; the ring comes from focus.css. */
 .skip-link:focus {

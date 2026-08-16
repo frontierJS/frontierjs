@@ -33,11 +33,17 @@
 
   background:    var(--field-bg);
   color:         var(--field-color);
-  border:        1px solid var(--field-border);
+  /*
+   * A Field's border is its own decision — an input that reads as a box
+   * and a Card hairline are not the same weight in every design — so it
+   * has an escape, and it follows --border-width by default rather than
+   * being pinned at 1px.
+   */
+  border:        var(--field-border-width, var(--border-width)) solid var(--field-border);
   border-radius: var(--field-radius);
   font-family:   var(--font-primary);
 
-  transition: border-color 120ms, box-shadow 120ms;
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
 .field::placeholder { color: var(--ink-mute); }
 
@@ -189,7 +195,8 @@ select.field {
   background-repeat:   no-repeat;
   background-position: 0.125rem center;
 
-  transition: background-color 150ms ease, background-position 150ms ease;
+  transition: background-color var(--motion-base) var(--motion-ease),
+              background-position var(--motion-base) var(--motion-ease);
 }
 /*
  * The checked track reads the same three-step chain the checkbox does:
@@ -263,7 +270,7 @@ select.field {
   align-items: center;
   padding-inline: var(--space-lg);
   background:  var(--surface-sunken);
-  border:      1px solid var(--rule-strong);
+  border:      var(--border-width) solid var(--rule-strong);
   color:       var(--ink-soft);
   font-family: var(--font-primary);
   font-size:   var(--text-md);

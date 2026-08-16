@@ -1,0 +1,112 @@
+<script>
+  // FormField.mesa
+  // One generated field → the control that renders it.
+  //
+  // `<Form>` used to hold an `{#if}` ladder over the five control names Sierra's
+  // table can answer, which made the kit's own controls the only ones there
+  // could ever be: a plugin could name a control and nothing would render it.
+  // The ladder is a TABLE here instead, and `@frontierjs/ui/controls` is a
+  // registry consulted before it — so a contributed control takes exactly the
+  // path a built-in takes, and a registered name replaces a built-in of the
+  // same name rather than losing to it.
+  //
+  // What the schema already resolved is not repeated here. A label, a
+  // `required`, a `maxlength`, a `type="email"` and the server's message all
+  // come off `$context.form` inside the control itself; what this passes is the
+  // three things the schema does not say — which control, its value, and how
+  // the value comes back.
+
+  import Checkbox      from './Checkbox.mesa'
+  import DateTimeInput from './DateTimeInput.mesa'
+  import Input         from './Input.mesa'
+  import Select        from './Select.mesa'
+  import Textarea      from './Textarea.mesa'
+  import { formControl, defaultControlProps } from '../../controls.js'
+
+  // One entry from `resource.formFields()` — `{ name, rule, control, … }`.
+  export let field
+
+  export let value   = undefined
+  export let write   = undefined      // (v) => void
+  export let options = undefined      // a foreign key's rows, once they arrive
+
+  // The kit's own controls, in the registry's shape. `props` receives the same
+  // object a contributed control's builder does.
+  const BUILTIN = {
+    select: {
+      component: Select,
+      // A `<select>` renders the enum members the schema declared…
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, placeholder: '—', options: f.options ?? [],
+        value: v, oninput: (e) => onvalue(e.target.value),
+      }),
+    },
+    picker: {
+      component: Select,
+      // …and a picker the same control over rows that arrive from the related
+      // service after mount. Until they do it is an empty select showing its
+      // placeholder, which is what it should be.
+      props: ({ field: f, value: v, onvalue, options: rows }) => ({
+        name: f.name, placeholder: '—', options: rows ?? [],
+        value: v, oninput: (e) => onvalue(e.target.value),
+      }),
+    },
+    checkbox: {
+      component: Checkbox,
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, checked: v, onchange: (next) => onvalue(next),
+      }),
+    },
+    textarea: {
+      component: Textarea,
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, value: v, oninput: (e) => onvalue(e.target.value),
+      }),
+    },
+    input: {
+      component: Input,
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, type: f.type, step: f.step, value: v,
+        oninput: (e) => onvalue(e.target.value),
+      }),
+    },
+    datetime: {
+      component: DateTimeInput,
+      // `onvalue` rather than `oninput` on purpose: the element holds a wall
+      // clock and the column holds an instant, so `e.target.value` here is the
+      // one value that must never reach the write.
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, value: v, onvalue: (iso) => onvalue(iso),
+      }),
+    },
+  }
+
+  // Registered first, then the kit's table, then the kit's default — a control
+  // name the table does not know but a resolver answered is the plugin case,
+  // and `input` is what an unnamed one falls back to for exactly the reason the
+  // old ladder's `{:else}` did.
+  const entry = field?.control ? (formControl(field.control) ?? BUILTIN[field.control] ?? null) : null
+
+  // A name nobody bound renders nothing at all, and a form with a field missing
+  // is the failure generating the list exists to end — so say which half is
+  // absent. The resolver named a control; the kit was never told what it is.
+  if (!entry && field?.control) {
+    console.warn(
+      `[FormField] ${field.name} asked for the control '${field.control}' and no component is bound to ` +
+      `that name. registerFormControl('${field.control}', Component) from '@frontierjs/ui/controls', ` +
+      'in the same place the resolver was registered.',
+    )
+  }
+
+  const Control = entry?.component
+
+  const props = entry
+    ? (entry.props ?? defaultControlProps)({
+        field, value, options, onvalue: (v) => write?.(v),
+      })
+    : {}
+</script>
+
+{#if Control}
+  <Control {...props} />
+{/if}

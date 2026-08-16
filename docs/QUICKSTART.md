@@ -215,7 +215,7 @@ and a raw query as well as for an HTTP request.
 | You want to | Edit |
 | --- | --- |
 | Add a field, a model, an access rule | `db/schema.lite`, then `fli db:push` |
-| Add behaviour to a service | `api/src/services/<name>.service.ts` — hooks, or a custom action |
+| Add behaviour to a service | `api/src/services/<name>.service.ts` — hooks, or a custom method |
 | Register a plugin | `api/src/app.ts`, top to bottom, in order |
 | Add a page | `web/src/routes/` — the file tree is the route table |
 | Bind a page to data | `web/src/resources/` — one Resource per model |

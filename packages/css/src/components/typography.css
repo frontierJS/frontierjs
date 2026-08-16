@@ -20,6 +20,12 @@ h1, h2, h3, h4, h5, h6,
   margin:      0;
   line-height: var(--leading-heading);
   /*
+   * Tracking is NOT set here. Three of the six levels declare their own below
+   * and would override a shared declaration — the token has to be the
+   * fallback in each of those instead, or setting it moves h3–h5 and silently
+   * leaves h1, h2 and h6 where they were.
+   */
+  /*
    * Even the lines rather than filling each one, so a two-line heading does
    * not leave a single orphaned word under a full line. The browser caps
    * this at a handful of lines, which is why it is on headings and not on
@@ -34,16 +40,28 @@ h1, h2, h3, h4, h5, h6,
  * The rungs are --text-* in tokens.css, shared with the `.text-*` utilities,
  * which is why h4 and .text-xl are one number. Retune the token, not this.
  */
-h1, .h1 { font-size: var(--text-4xl); font-weight: 700; letter-spacing: -0.02em;  line-height: var(--leading-display); }
-h2, .h2 { font-size: var(--text-3xl); font-weight: 700; letter-spacing: -0.015em; line-height: var(--leading-heading); }
-h3, .h3 { font-size: var(--text-2xl); font-weight: 600; }
-h4, .h4 { font-size: var(--text-xl);  font-weight: 600; }
-h5, .h5 { font-size: var(--text-lg);  font-weight: 600; }
+/*
+ * --heading-letter-spacing is the theme's handle on all six at once. It is
+ * written as the FALLBACK arm of each level's own value, so unset every level
+ * keeps the optical tracking it has always had — tight on the display sizes,
+ * open on the small-caps h6 — and set, one declaration moves the whole scale.
+ * Same shape as --font-display: named, unset, read at the use site.
+ *
+ * --heading-font-weight is the same shape again, and the pair is why: the
+ * SIZE ladder was themable through --text-* and the treatment was not, so a
+ * theme could restate the whole scale and still not say whether its headings
+ * are heavy. Unset, h1/h2 stay 700 and the rest 600.
+ */
+h1, .h1 { font-size: var(--text-4xl); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.02em);  line-height: var(--leading-display); }
+h2, .h2 { font-size: var(--text-3xl); font-weight: var(--heading-font-weight, 700); letter-spacing: var(--heading-letter-spacing, -0.015em); line-height: var(--leading-heading); }
+h3, .h3 { font-size: var(--text-2xl); font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); }
+h4, .h4 { font-size: var(--text-xl);  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); }
+h5, .h5 { font-size: var(--text-lg);  font-weight: var(--heading-font-weight, 600); letter-spacing: var(--heading-letter-spacing, normal); }
 h6, .h6 {
   font-size:      var(--text-md);
-  font-weight:    600;
+  font-weight:    var(--heading-font-weight, 600);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--heading-letter-spacing, 0.05em);
 }
 
 /*

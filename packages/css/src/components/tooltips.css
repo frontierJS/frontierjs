@@ -73,7 +73,7 @@
   /* Invisible but still resolvable by aria-describedby. */
   opacity:        0;
   pointer-events: none;
-  transition:     opacity 120ms ease;
+  transition:     opacity var(--motion-fast) var(--motion-ease);
 }
 
 /* The arrow inherits the fill, so tones and auto-contrast carry over. */

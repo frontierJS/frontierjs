@@ -35,9 +35,6 @@ for use with FJSChain or Basecamp.
 ```js
 const root          = context.paths.root
 const schemaLite    = resolve(context.paths.db, 'schema.lite')
-const servicesDir   = existsSync(resolve(context.paths.api, 'src/services'))
-  ? resolve(context.paths.api, 'src/services')
-  : resolve(context.paths.api, 'services')
 const resourcesDir  = context.paths.webResources
 const migrationsDir = resolve(context.paths.db, 'migrations')
 
@@ -80,11 +77,19 @@ if (!layer || layer === 'api') {
 
 // ── Services ───────────────────────────────────────────────────────────────────
 
+// Read off the committed surface snapshot, never scanned from service source —
+// what a service ANSWERS is decided at construction and is not a fact about how
+// a file reads (FJS-254).
 let services = []
+let surface  = null
 if (!layer || layer === 'api') {
-  const files = scanFiles(servicesDir, '.service.ts')
-  services = files.map(f => extractServiceMeta(readFileSync(f, 'utf8'), f))
-  if (!toJson) log.info(`API:  ${services.length} service${services.length !== 1 ? 's' : ''} found`)
+  surface = readApiSurface(root)
+  if (surface) {
+    services = surface.services
+    if (!toJson) log.info(`API:  ${services.length} service${services.length !== 1 ? 's' : ''} on the committed surface`)
+  } else if (!toJson) {
+    log.warn(surfaceMissingHint(root))
+  }
 }
 
 // ── Resources ──────────────────────────────────────────────────────────────────
@@ -117,6 +122,19 @@ if (services.length)     map.services   = services
 if (resources.length)    map.resources  = resources
 if (migrations.length)   map.migrations = migrations
 if (packages.length)     map.packages   = packages
+
+// The rest of what the surface knows and nothing else here does: the hooks that
+// run around EVERY call, the paths the router actually mounted, and the plugins
+// in configure order. `packages` above is a signal scan over the API tree and
+// answers a different question — is this dependency present — so the two are
+// both carried rather than merged.
+if (surface) map.surface = {
+  file:        surface.file,
+  generatedBy: surface.generatedBy,
+  appHooks:    surface.appHooks,
+  routes:      surface.routes,
+  plugins:     surface.plugins,
+}
 
 // ── JSON output ────────────────────────────────────────────────────────────────
 
@@ -170,7 +188,7 @@ if (schema) {
 }
 
 if (services.length) {
-  echo(`  ${chalk.bold.blue('Services')}  ·  ${services.length} registered`)
+  echo(`  ${chalk.bold.blue('Services')}  ·  ${services.length} registered  ${chalk.dim(`· ${basename(surface.file)}`)}`)
   echo('')
 
   for (const svc of services) {
@@ -186,6 +204,22 @@ if (services.length) {
     ].filter(Boolean).join('  ')
 
     echo(`    ${chalk.blue(svc.name.padEnd(22))} ${chalk.dim('→ ' + svc.model.padEnd(20))} ${hookParts}${custom}`)
+  }
+
+  // Around EVERY call, machine-facing endpoints included — so a chain here is
+  // the one thing a per-service line cannot show.
+  const appChains = Object.entries(surface.appHooks)
+    .flatMap(([phase, byMethod]) => Object.entries(byMethod)
+      .map(([method, fns]) => `${phase}:${method} [${fns.join(', ')}]`))
+  if (appChains.length) {
+    echo('')
+    echo(`    ${chalk.dim('app hooks   ' + appChains.join('  '))}`)
+  }
+  if (surface.routes.length) {
+    echo(`    ${chalk.dim(`routes      ${surface.routes.length} mounted`)}`)
+  }
+  if (surface.plugins.length) {
+    echo(`    ${chalk.dim('plugins     ' + surface.plugins.join(' → '))}`)
   }
 
   echo('')

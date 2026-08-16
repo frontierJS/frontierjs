@@ -112,12 +112,13 @@ NaNs`, every failure path exited 0, and `--port` had never worked. A pipeline
 nobody could prove worked turned out to contain a rehearsal command that could
 not fail.
 
-**It installs from npm, not from the working tree**, and that is the one thing
-still owed. A Docker build cannot see a `file:` tarball outside its context —
-the same wall `link:` hits — so the phase proves the *pipeline* containerises a
-real app rather than proving the working tree does. When `FJS-241` resolves by
-packing into the app instead of linking, the two phases converge and this
-becomes a working-tree test too.
+**It now runs for both package sources.** It began as an npm-only test, because a
+Docker build cannot see a `file:` tarball outside its context — the same wall
+`link:` hits — so it proved the *pipeline* containerises a real app rather than
+proving the working tree does. `FJS-241` closed that by packing into the app,
+and the phase gained a second run against `--source local`: the working tree,
+containerised. The npm half stays, and is now the only thing in the repo testing
+the PUBLISHED framework (`FJS-252`).
 
 ---
 

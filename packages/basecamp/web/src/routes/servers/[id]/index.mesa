@@ -21,7 +21,7 @@ title: Server
       server = await servers.service.get(page.params.id)
       // `events` is a custom method: POST /servers/:id with
       // X-Service-Method: events. The sub-path form is a 404.
-      events = rowsOf(await servers.service.action('events', page.params.id))
+      events = rowsOf(await servers.service.invoke('events', page.params.id))
     } catch (e) {
       error = e.message
     } finally {
@@ -53,8 +53,8 @@ title: Server
   async function act(method) {
     error = null; busy = method
     try {
-      server = await servers.service.action(method, server.id)
-      events = rowsOf(await servers.service.action('events', server.id))
+      server = await servers.service.invoke(method, server.id)
+      events = rowsOf(await servers.service.invoke('events', server.id))
       // A transition is confirmed where the operator is looking, not only by
       // the status pill changing further down the page. `error` stays as the
       // inline record of a refusal — a toast is transient, and a refusal is

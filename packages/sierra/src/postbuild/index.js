@@ -6,7 +6,7 @@
  * Always runs:
  *   1. move404       — 404/index.html → 404.html (Cloudflare/Netlify)
  *   2. copyRobots    — public/robots.txt → dist/robots.txt
- *   3. redirects     — generate _redirects from manifest
+ *   3. redirects     — generate _redirects from the route table
  *   4. sitemap       — generate sitemap.xml from indexed routes
  *
  * Conditional:
@@ -30,11 +30,11 @@ import { generateMarkdownPages } from './markdown-pages.js'
  * Run the full post-build pipeline.
  *
  * @param {object} config   — sierra.config.js config object
- * @param {object} manifest — parsed config/routes.js (tree, all, indexed, redirects)
+ * @param {object} routeTable — parsed config/routes.js (tree, all, indexed, redirects)
  * @param {string} outDir   — absolute path to Vite's build output directory
  * @param {string} root     — absolute path to project root
  */
-export async function runPostBuild(config, manifest, outDir, root) {
+export async function runPostBuild(config, routeTable, outDir, root) {
   const results = []
 
   // 1. 404 page
@@ -46,17 +46,17 @@ export async function runPostBuild(config, manifest, outDir, root) {
   if (rRobots) results.push(rRobots)
 
   // 3. _redirects
-  const rRedirects = await generateRedirects(manifest.redirects ?? [], outDir)
+  const rRedirects = await generateRedirects(routeTable.redirects ?? [], outDir)
   if (rRedirects) results.push(rRedirects)
 
   // 4. sitemap.xml
   const siteUrl = config.siteUrl ?? ''
-  const rSitemap = await generateSitemap(manifest.indexed ?? [], outDir, siteUrl)
+  const rSitemap = await generateSitemap(routeTable.indexed ?? [], outDir, siteUrl)
   if (rSitemap) results.push(rSitemap)
 
   // 5. llms.txt (conditional)
   if (config.llms !== false) {
-    const rLlms = await generateLlms(config, manifest, outDir, root)
+    const rLlms = await generateLlms(config, routeTable, outDir, root)
     if (rLlms) results.push(rLlms)
   }
 
@@ -68,15 +68,15 @@ export async function runPostBuild(config, manifest, outDir, root) {
       if (node.path && node.meta) routeMetaMap[node.path] = node.meta
       for (const child of node.children ?? []) flattenTree(child)
     }
-    if (manifest.tree) flattenTree(manifest.tree)
+    if (routeTable.tree) flattenTree(routeTable.tree)
 
-    const rMd = await generateMarkdownPages(config, manifest, outDir, routeMetaMap)
+    const rMd = await generateMarkdownPages(config, routeTable, outDir, routeMetaMap)
     if (rMd) results.push(rMd)
   }
 
   // 7. Speculation Rules (conditional — when static routes exist)
   if (config.speculationRules !== false) {
-    const staticRoutes = (manifest.indexed ?? []).filter(
+    const staticRoutes = (routeTable.indexed ?? []).filter(
       p => !p.includes(':') && !p.includes('*')
     )
     if (staticRoutes.length > 0) {
@@ -100,7 +100,7 @@ export async function runPostBuild(config, manifest, outDir, root) {
   // 10. User plugins
   for (const plugin of config.plugins ?? []) {
     if (typeof plugin.closeBundle === 'function') {
-      await plugin.closeBundle({ outDir, root, config, manifest })
+      await plugin.closeBundle({ outDir, root, config, routeTable })
     }
   }
 

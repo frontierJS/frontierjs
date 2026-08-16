@@ -46,7 +46,7 @@ app.configure(mailerPlugin(createResendMailer({
 
 app.configure(notificationsPlugin({
   db,
-  channels: {
+  transports: {
     email: { mailer: 'default' },       // uses app.mail
     // slack: new SlackDriver({ ... }) // custom driver example
   }
@@ -59,6 +59,7 @@ app.configure(notificationsPlugin({
 
 /*
 // 1. From a service hook (authMethod: 'created' integration with @frontierjs/auth)
+//    ctx.result is the envelope — a single travels as { kind: 'single', data }.
 after: {
   create: [
     async (ctx) => {
@@ -70,14 +71,21 @@ after: {
 }
 
 // 2. From any service hook with a related record
+//    `db.user`, singular — the accessor is derived from `model User`.
 after: {
   create: [
     async (ctx) => {
-      const user = await db.asSystem().users.findUnique({ where: { id: ctx.result.data.userId } })
+      const user = await db.asSystem().user.findUnique({ where: { id: ctx.result.data.userId } })
       await ctx.app.notify(user, new PaymentReceived(ctx.result.data))
     }
   ]
 }
+
+// 2b. To somebody who has no account at all — a shop customer, a mailing-list
+//     address. A Recipient is not a User: leave `id` off and email is the only
+//     transport that can address them, which notify() enforces rather than
+//     writing a notification row nobody could ever read.
+await app.notify({ email: customer.email, name: customer.name }, new OrderConfirmation(order))
 
 // 3. From a Caravan job
 export const sendInvoiceJob = job({
@@ -91,10 +99,15 @@ export const sendInvoiceJob = job({
 
 // 4. From a Junction route handler
 app.post('/orders/{id}/complete', async (ctx) => {
-  // TransportContext: ctx.params = path captures (:id), ctx.user = caller.
-  // No ctx.app on a route handler — close over the app you created.
-  const order = await completeOrder(ctx.params.id)
-  await app.notify(ctx.user, new OrderCompleted(order))
+  // TransportContext: path captures are ctx.route — there is no ctx.params
+  // anywhere in Junction. `{id}`, not `:id`, or the segment is a literal.
+  // No ctx.app on a route handler either — close over the app you created.
+  const order = await completeOrder(ctx.route.id)
+
+  // ctx.user is a SessionContext: `userId`, not `id`. Handing it to notify()
+  // straight would address a recipient with no id — refused on inApp by name
+  // rather than written as a row nobody can read.
+  await app.notify({ id: ctx.user.userId, email: ctx.user.email }, new OrderCompleted(order))
   return ctx.json(order)
 })
 */

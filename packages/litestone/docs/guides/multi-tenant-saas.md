@@ -70,15 +70,27 @@ import { createTenantRegistry } from '@frontierjs/litestone'
 import { getEncryptionKey } from './vault.js'
 
 export const tenants = await createTenantRegistry({
-  dir:    './tenants/',
-  schema: './schema.lite',
-  maxOpen: 50,
+  path:          './schema.lite',
+  // A per-tenant key comes from a vault, so it stays a function — the block's
+  // `key` is the one-key-for-everyone case.
   encryptionKey: async (tenantId) => getEncryptionKey(tenantId),
-  migrationsDir: './migrations',
 })
 ```
 
-`createTenantRegistry` creates tenant databases on first access and applies migrations automatically. `getEncryptionKey` fetches the per-tenant key from your KMS or secrets manager.
+The directory, the registry file, the pool size and how a request names its
+tenant come from the schema itself:
+
+```
+tenancy {
+  strategy database
+  dir      "./tenants"
+  registry "./tenants-registry.db"
+  maxOpen  50
+  resolve  header("X-Tenant-Id")
+}
+```
+
+Every option is still accepted here and beats the declaration. `createTenantRegistry` creates tenant databases on first access and applies migrations automatically; `getEncryptionKey` fetches the per-tenant key from your KMS or secrets manager. `docs/multi-tenancy.md` is the reference — including `strategy row`, which is one database and a tenant column instead.
 
 ---
 

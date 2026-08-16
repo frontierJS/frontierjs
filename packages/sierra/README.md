@@ -1,7 +1,7 @@
 # @frontierjs/sierra
 
 The UI realm of FrontierJS. Sierra turns a directory of Mesa components into a routed
-application: it scans `src/routes/`, emits a route manifest, produces the whole Vite
+application: it scans `src/routes/`, emits a route table, produces the whole Vite
 config, and binds the running app to a Junction API.
 
 ```
@@ -96,7 +96,7 @@ cd web && vite -c config/vite.config.js
 cd web && vite build -c config/vite.config.js
 ```
 
-Paths in `sierra.config.js` (`routesDir`, `outDir`, `manifest.output`) are relative to
+Paths in `sierra.config.js` (`routesDir`, `outDir`, `routeTable.output`) are relative to
 the Vite root — `web/` — never to `config/` and never to the app root.
 
 **`config/vite.config.js`**
@@ -270,12 +270,31 @@ a plain object, and components make the fields they use reactive with a `$:` pat
 {#if page.error}<p class="error">{page.error.message}</p>{/if}
 ```
 
+**A list that lives in its URL.** `query` and `directives` are the same split the
+API realm makes — filters, and how much of the answer in what order — over the same
+table, so the pair goes straight into a call with nothing to translate:
+
+```html
+<script>
+  import { page } from '@frontierjs/sierra/router'
+  import { orders } from '@/resources/Order.mesa'
+
+  $: (page.query, page.directives, () => orders.load(page.query, page.directives))
+</script>
+```
+
+Filtering, sorting and paging then survive a reload, a back button and a pasted link,
+because the URL is where they live. `setParams(obj)` and `updateParams(fn)` write them.
+The `$` is transport syntax and reaches neither field (Invariant 10).
+
 Router-owned fields — these are reserved, and the scanner warns if frontmatter shadows one:
 
 | Field | Value |
 | --- | --- |
 | `path` | current pathname + search |
-| `params` | path params + parsed query params |
+| `params` | path params — `/leads/:leadId/` → `{ leadId }`. Path captures only |
+| `query` | the URL's filters, coerced — `?status=active&tier=3` → `{ status: 'active', tier: 3 }` |
+| `directives` | the URL's `$` params, structured — `?$limit=20&$orderBy=-name` → `{ limit: 20, orderBy: '-name' }` |
 | `meta` | the raw frontmatter object, un-spread |
 | `route` | the matched route node |
 | `pending` | the in-flight route during navigation, else `null` |
@@ -340,10 +359,11 @@ Add the attribute to a link:
 Prefetch loads both the route chunk and its `load()` payload. Payloads are cached per URL,
 capped at 32 entries, and expire after 30s.
 
-> **Auth limitation, by design and documented in source:** prefetch calls `window.fetch`
-> directly, not `sierraFetch`, so the auth token is **not** attached during a prefetched
-> `load()`. A `load()` that hits a protected endpoint will 401 during prefetch; navigation
-> itself is unaffected because the router uses `sierraFetch`.
+A prefetched `load()` runs with the same `fetch` a navigated one does — `sierraFetch`,
+which attaches the session token — so a protected route prefetches as the person who is
+signed in. And because a payload is an answer to *what may this person see*, the cache is
+dropped on `login()`, on `logout()` and on a mid-session 401: prefetching cannot serve one
+identity's data to another. The route chunks survive that, being nobody's in particular.
 
 ### Named slots
 
@@ -460,7 +480,7 @@ around:enter → before → [network call] → after → around:exit
                            error
 ```
 
-Returns `{ service, store, make, load, fields, relations, gate, can, validate, normalize, coerce, context, hooks }`.
+Returns `{ service, store, stale, make, load, fields, relations, gate, can, validate, normalize, coerce, context, hooks }`.
 
 **Return shapes — read this before `.map()`.** The service methods are a pass-through of
 Junction's browser client, and Junction's envelope rule applies unchanged: a list keeps
@@ -475,10 +495,23 @@ await leads.load()        // → the rows, and populates leads.store
 leads.store.get()         // → the rows
 ```
 
+**The store is live, and it means the query that filled it.** A pushed row outside
+that query is not added, one a patch moved out of it is removed, and where `orderBy`
+says so the row is placed rather than appended. Two things a browser cannot answer:
+whether a new row belongs on an earlier page, and which row slides up when one leaves
+a full one. Neither is guessed at — they are counted on `stale`, which has a store's
+shape and is cleared by `load()`:
+
+```js
+const { get } = useStore(orders.stale)   // 0 = as current as a push can make it
+// render `${get()} new — refresh`, and call load() again on the click
+```
+
 Reach for `load()`/`store` when rendering a list, and `service.find()` when you need the
-count alongside it. `ctx.query` is filters (goes over the wire), `ctx.findParams` is
-`{ limit, offset, orderBy, select }` (also the wire), `ctx.params` is a client-only bucket
-that never leaves the browser.
+count alongside it. `ctx.query` is filters (goes over the wire), `ctx.directives` is
+`{ limit, offset, orderBy, select }` (also the wire, and the same word `page.directives`
+uses), and `ctx.locals` is per-call scratch that never leaves the browser — how `before`
+hands something to `after`.
 
 ### Schema seeding
 
@@ -762,7 +795,7 @@ Everything in `sierra.config.js`:
 | `base` | `'/'` | public base path |
 | `trailingSlash` | `'always'` | `'always'` \| `'never'` \| `'preserve'` |
 | `document` | — | `static` only — the document a prerendered page is wrapped in: `{ bodyClass, lang }`. The build's own CSS assets are linked automatically |
-| `manifest.output` | `'config/routes.js'` | where the generated manifest is written |
+| `routeTable.output` | `'config/routes.js'` | where the generated route table is written |
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
 | `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, auth, services, debug, onConnect, … }` |
 | `theme` | — | `{ default, persist, attribute, key }` |
@@ -806,6 +839,67 @@ SPA.
 > origin, so `sierraFetch` throws and directs you to `getStaticPaths()`. When a render
 > does fail, the summary still reports "no route declares `render: static`", which is
 > misleading — read the `prerender:` warning above it.
+
+**`widget`** — an embeddable script for a page this app does not own. One `.mesa` file
+in `src/Embeds/` becomes one self-contained IIFE: the component, the Mesa runtime and
+the CSS in a single file a host page loads with one `<script src>` and nothing else.
+
+```
+web/src/Embeds/
+  Counter.mesa                → dist/embeds/Counter.js
+  LeadForm/
+    index.mesa                → dist/embeds/LeadForm.js
+    Field.mesa                  …a part of LeadForm, not a second widget
+```
+
+```html
+<!-- the host page: no bundler, no framework, no init call -->
+<mt-counter data-start="5"></mt-counter>
+<script defer src="https://cdn.example.com/embeds/Counter.js"></script>
+```
+
+It mounts in a **shadow root**, so the host page's `button { … !important }` cannot
+reach the widget and the widget's styles cannot reach the host page. Props are
+`data-*` attributes, camelCased — `data-api-url` → `apiUrl` — and they arrive as
+strings, because that is what an HTML attribute is.
+
+A widget says how it is found in `<script module>`, and everything it does not say
+comes from the config:
+
+```html
+<script module>
+  export const widget = {
+    // Also mount into pages that already say <div class="mt-counter"> — host
+    // markup often lives somewhere its author cannot edit. New pages use the
+    // element; both are the same mechanism.
+    selector: '.mt-counter',
+    // tag:    'mt-counter'   the whole tag, overriding prefix + file name
+    // shadow: false          mount in the light DOM instead
+  }
+</script>
+```
+
+```js
+// config/sierra.config.js
+export default {
+  target:  'widget',
+  widgets: { dir: 'src/Embeds', outDir: 'dist/embeds', prefix: 'mt-' },
+}
+```
+
+**Built by `sierra widgets`, not by `vite build`** — a widget is a library build and
+Vite's library mode takes one entry, so N widgets is N builds. That is also the cost:
+the runtime is in every bundle, once per widget on a page that embeds several. It buys
+the property the target exists for — a widget is one file, and a page embedding it
+needs to know nothing about the others.
+
+```sh
+sierra widgets --config config/sierra.config.js   # from the app's web root
+vite --config config/sierra.config.js             # dev, over the app's own index.html
+```
+
+An element that arrives after the script has run is mounted too (a tag manager, a CMS,
+a host-page route change), and a script included twice produces one widget, not two.
 
 ### The document around a prerendered page
 
@@ -883,9 +977,11 @@ proves the claims the only way they can be proved — clicking prerendered butto
 headless Chrome, and reading resource timing to confirm which chunks were fetched. It
 covers all five directives, per-island splitting, and CSS scoping. See its README.
 
-**`widget`** — `createSierraViteConfig` accepts it and returns a library-ish Vite config
-with optional shadow-DOM CSS inlining, but there is **no widget build loop, entry
-discovery, or component scanning** anywhere in the package. Treat it as unimplemented.
+`tests/fixtures/widget-site/` is the same thing for the `widget` target: two widgets, a
+plain host page written to be hostile (`button { background: red !important }`), and a
+drive that builds the scripts and proves the lot in Chrome — element upgrade, the
+selector form, a late-inserted host, shadow isolation in both directions, a delegated
+click, and a script included twice producing one widget. See its README.
 
 ---
 
@@ -912,7 +1008,7 @@ Runs automatically after `vite build`:
 
 - **HMR.** Editing a route file swaps the component in place. Sierra injects a Mesa HMR
   boundary and suppresses its own `sierra:hmr` event for files that received one, so an
-  update is applied once rather than twice. The route manifest is written byte-stable so
+  update is applied once rather than twice. The route table is written byte-stable so
   a no-op rewrite doesn't escalate to a full reload.
 - **Error overlay.** Runtime errors are forwarded to an in-page overlay and the terminal.
   `load()` failures are excluded — they are data errors, and the page renders `page.error`.
@@ -980,7 +1076,7 @@ applies the persisted preference before first paint, so there is no flash.
 
 Importing it boots the app. Sierra generates the module from your config, so it contains
 only what you configured — router init always, then Junction, schemas, analytics and theme
-if present, plus the dev-only overlay and HMR bridge. It also re-exports the manifest:
+if present, plus the dev-only overlay and HMR bridge. It also re-exports the route table:
 
 ```js
 import { tree, components, loaders, layouts, published, indexed, redirects } from 'virtual:sierra'

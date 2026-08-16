@@ -40,17 +40,45 @@ import { resolve, dirname } from 'path'
 // `db/` is copied, not just `api/`: the entrypoint migrates and the deploy's
 // pre-swap backup runs `litestone backup`, and both resolve databases by
 // reading the schema.
+//
+// It installs from deploy/generated/ rather than from package.json, and that is
+// not an optimisation. An app scaffolded with `--source local` depends on the
+// framework by `link:`, which resolves to the workspace on the machine that made
+// it and to nothing inside a build — so `bun install` failed five times over and
+// this image could not be built at all (FJS-241). `fli deploy:local` and the
+// deploy's build step now run the vendor step first, which packs those packages
+// into deploy/generated/vendor and writes a manifest pointing at the tarballs.
+// With nothing linked it writes a verbatim copy and the lockfile beside it, so
+// ONE template serves both source modes — which it has to, because the source
+// mode can change long after `fli make:deploy` ran once.
 const makeDockerfile = (appId) => `# FrontierJS API — ${appId}
 # Built on the server via: docker build -t ${appId}:latest -f deploy/Dockerfile .
 # No registry required — image lives on the server.
+#
+# Requires deploy/generated/, which \`fli deploy:local\` and \`fli deploy\` write
+# before they build. A bare \`docker build\` from a clean tree has none of it —
+# run \`fli deploy:vendor\` first.
 
 FROM oven/bun:1 AS base
 WORKDIR /app
 
-# Dependencies — the app root holds the only manifest. bun 1.x writes the text
-# bun.lock; the glob also matches the older binary bun.lockb.
-COPY package.json bun.lock* ./
-RUN bun install --frozen-lockfile --production
+# Dependencies first, so a source edit does not re-resolve the tree. The manifest
+# and the tarballs it names have to land in the same layer: the specs are
+# relative to the manifest, which sits right here.
+COPY deploy/generated/ ./deploy/generated/
+
+# A rewritten manifest has no lockfile that matches it — \`--frozen-lockfile\`
+# refuses rather than resolving — so the freeze is conditional. A lock present
+# means npm sources and a lock worth honouring; absent means \`file:\` specs,
+# which name their own content and are the stronger pin. The tarballs are removed
+# in the same layer they were installed from, so the runtime image never carries
+# them.
+RUN cp deploy/generated/app-manifest.json package.json \\
+ && (cp deploy/generated/bun.lock* ./ 2>/dev/null || true) \\
+ && if [ -f bun.lock ] || [ -f bun.lockb ]; \\
+    then bun install --frozen-lockfile --production; \\
+    else bun install --production; fi \\
+ && rm -rf deploy/generated
 
 # Source. db/ carries schema.lite and migrations/ — the entrypoint and the
 # deploy's backup both read the schema to find the databases.

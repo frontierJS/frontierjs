@@ -31,7 +31,7 @@
   border:        2px solid color-mix(in srgb, currentColor 25%, transparent);
   border-block-start-color: currentColor;
   border-radius: 50%;
-  animation:     fjs-spin 600ms linear infinite;
+  animation:     fjs-spin var(--motion-spin) linear infinite;
   /* Keep it on the text baseline rather than hanging below it. */
   vertical-align: -0.125em;
 }
@@ -69,7 +69,7 @@
 .progress::-webkit-progress-value {
   background:    var(--bg-mix, var(--color-primary));
   border-radius: 999px;
-  transition:    inline-size 200ms ease;
+  transition:    inline-size var(--motion-slow) var(--motion-ease);
 }
 .progress::-moz-progress-bar {
   background:    var(--bg-mix, var(--color-primary));
@@ -97,7 +97,7 @@
     var(--surface-sunken) 63%
   );
   background-size: 400% 100%;
-  animation:       fjs-shimmer 1.4s ease infinite;
+  animation:       fjs-shimmer var(--motion-shimmer) var(--motion-ease) infinite;
   border-radius:   var(--btn-radius);
   /* Any text inside is a sizing hint, not content to read. */
   color:           transparent;

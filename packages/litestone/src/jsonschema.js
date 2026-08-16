@@ -119,6 +119,7 @@ const MESSAGE_KEYWORDS = {
   lt:         ['exclusiveMaximum'],
   minItems:   ['minItems'],
   maxItems:   ['maxItems'],
+  uniqueItems: ['uniqueItems'],
 }
 
 /**
@@ -136,6 +137,7 @@ const MESSAGE_KEYWORDS = {
  * @returns {object}  JSON Schema object (not stringified)
  */
 import { parseGateString } from './plugins/gate.js'
+import { dependsOnClock } from './core/policy.js'
 
 export function generateJsonSchema(schema, options = {}) {
   const {
@@ -264,6 +266,25 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       continue
     }
 
+    // ── @derived — readOnly, and it says whether it goes stale on its own ───
+    //
+    // A flag, deliberately, not the expression. A consumer needs to know two
+    // things and only two: this value is not something you write, and — when
+    // `x-litestone-volatile` is set — it depends on the clock, so the copy you
+    // are holding can become wrong with no write, no event and nothing to
+    // announce it. Shipping the expression instead would invite a third
+    // implementation of the language in the browser; the server's answer is the
+    // only one, and this says how long to trust it.
+    const derivedAttr = field.attributes.find(a => a.kind === 'derived')
+    if (derivedAttr) {
+      if (mode !== 'create' && mode !== 'update') {
+        const fs = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs)
+        properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': 'derived' }
+        if (dependsOnClock(derivedAttr.expr)) properties[field.name]['x-litestone-volatile'] = 'clock'
+      }
+      continue
+    }
+
     // ── @version — readOnly everywhere, present in update ───────────────────
     // A caller never chooses the value: create writes 1, every write bumps it.
     // But an update must CARRY the one it read, so unlike a computed field it
@@ -367,6 +388,16 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       }
     }
 
+    // @system — readable by anyone, written by the application rather than by
+    // its caller. `readOnly` is the standard keyword and the one Sierra's
+    // control table already skips, so a generated form stops offering a text
+    // box whose value a worker overwrites a second later.
+    const isSystemWritten = field.attributes.some(a => a.kind === 'system')
+    if (isSystemWritten) {
+      fieldSchema.readOnly = true
+      fieldSchema['x-litestone-kind'] = 'system'
+    }
+
     properties[field.name] = fieldSchema
 
     // Required: non-optional, no @default, not in update mode
@@ -374,7 +405,15 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       const hasDefault = field.attributes.find(a => a.kind === 'default')
       // @default(auth().field) is auto-stamped — not required in API payloads
       const isAuthDefault = hasDefault?.value?.kind === 'call' && hasDefault?.value?.fn === 'auth'
-      if (!field.type.optional && !hasDefault && !isId) {
+      // A @system column is never required OF THE CALLER. It is still NOT NULL
+      // in SQLite, so a service that forgets to fill it fails at the write —
+      // loud, at the layer that owns the value. Listing it here instead made
+      // the browser refuse before the request, naming fields the caller was
+      // never meant to send: basecamp's ApiKey has three of them, and every
+      // create was refused with "the button does nothing" (FJS-095).
+      if (isSystemWritten) {
+        // nothing — the application fills it
+      } else if (!field.type.optional && !hasDefault && !isId) {
         required.push(field.name)
       } else if (hasDefault && isAuthDefault && !field.type.optional) {
         // auth() default: field not required in create payload but not optional either

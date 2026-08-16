@@ -4,7 +4,7 @@
 
 import type { Database } from 'bun:sqlite'
 import type { Statements } from './db.ts'
-import type { Job, RegisteredHandler, QueueConfig, CaravanTelemetry } from './types.ts'
+import type { JobContext, RegisteredHandler, QueueConfig, CaravanTelemetry, CaravanApp } from './types.ts'
 
 const DEFAULT_RETRY_DELAY = [60_000, 300_000, 1_800_000] // 1m, 5m, 30m
 
@@ -18,6 +18,7 @@ export class QueueWorker {
   private _stmts:       Statements
   private _handlers:    Map<string, RegisteredHandler>
   _telemetry:   CaravanTelemetry | null  // set by plugin register()
+  _app:         CaravanApp | null = null // set by plugin register(), like _telemetry
   private _timer:       ReturnType<typeof setInterval> | null = null
   private _running:     Set<string> = new Set()   // in-flight job IDs
   private _stopping:    boolean = false
@@ -135,19 +136,41 @@ export class QueueWorker {
       data = {}
     }
 
-    const job: Job = {
-      id:       record.id,
-      queue:    record.queue,
-      name:     record.name,
-      data,
-      attempts: record.attempts,
+    // The handler runs on behalf of whoever asked for the work — the principal
+    // recorded at dispatch, re-resolved now rather than replayed from a stored
+    // session, so a caller demoted in between is graded at what they hold now.
+    // `null` (cron, boot, standalone) is the app's own system principal.
+    //
+    // Junction's runAs opens an AsyncLocalStorage scope, so a service call
+    // inside the handler that names no auth inherits this principal without
+    // being handed anything. Standalone, there is no runAs and no principal;
+    // the handler is called directly and ctx.auth.user is null.
+    const runAs = this._app?.runAs
+    const run = async (user: unknown | null) => {
+      const ctx: JobContext = {
+        id:       record.id,
+        queue:    record.queue,
+        name:     record.name,
+        data,
+        attempts: record.attempts,
+        actorId:  record.actor_id ?? null,
+        auth:     { user: user as JobContext['auth']['user'] },
+        // undefined rather than null when there is no app: a handler tests
+        // `ctx.app?` and an optional property that is present-but-null reads
+        // as a bug in the app wiring rather than as standalone Caravan.
+        app:      (this._app ?? undefined) as JobContext['app'],
+      }
+      await handler.handler(ctx)
     }
 
     try {
-      await handler.handler(job)
+      if (runAs) await runAs.call(this._app, record.actor_id ?? null, run)
+      else       await run(null)
       const doneMs = Date.now()
-      this._stmts.markDone.run({ id: record.id, now: doneMs })
-      this._telemetry?.emit('caravan.job.done', {
+      // 0 changes means cancel() took the row out of 'running' mid-attempt and
+      // the guard held. The outcome is 'cancelled', so announce nothing.
+      const { changes } = this._stmts.markDone.run({ id: record.id, now: doneMs })
+      if (changes > 0) this._telemetry?.emit('caravan.job.done', {
         id:         record.id,
         queue:      record.queue,
         name:       record.name,
@@ -161,14 +184,14 @@ export class QueueWorker {
       const failedAt = Date.now()
       if (attempt >= max) {
         // Out of retries — mark failed (terminal)
-        this._stmts.markFailed.run({
+        const { changes } = this._stmts.markFailed.run({
           id:     record.id,
           status: 'failed',
           run_at: record.run_at,
           error,
           now:    failedAt,
         })
-        this._telemetry?.emit('caravan.job.failed', {
+        if (changes > 0) this._telemetry?.emit('caravan.job.failed', {
           id:         record.id,
           queue:      record.queue,
           name:       record.name,
@@ -186,14 +209,14 @@ export class QueueWorker {
         const delayMs = delays[Math.min(attempt - 1, delays.length - 1)]
         const runAt   = failedAt + delayMs
 
-        this._stmts.markFailed.run({
+        const { changes } = this._stmts.markFailed.run({
           id:     record.id,
           status: 'pending',
           run_at: runAt,
           error,
           now:    failedAt,
         })
-        this._telemetry?.emit('caravan.job.failed', {
+        if (changes > 0) this._telemetry?.emit('caravan.job.failed', {
           id:         record.id,
           queue:      record.queue,
           name:       record.name,
@@ -219,12 +242,31 @@ export class WorkerPool {
     this._workers.set(worker.queue, worker)
   }
 
+  /** Is there already a worker for this queue? */
+  has(queue: string): boolean {
+    return this._workers.has(queue)
+  }
+
+  /** Visit every worker — how the plugin backfills `_app` and `_telemetry`. */
+  each(fn: (worker: QueueWorker) => void): void {
+    for (const w of this._workers.values()) fn(w)
+  }
+
   start(): void {
     for (const w of this._workers.values()) w.start()
   }
 
   async stop(): Promise<void> {
     await Promise.all([...this._workers.values()].map(w => w.stop()))
+  }
+
+  /**
+   * Forget every worker. Called after stop() closes the database: a worker
+   * holds the Database and its prepared statements, so a restart must build
+   * new ones rather than poll through a closed handle.
+   */
+  clear(): void {
+    this._workers.clear()
   }
 
   get totalInFlight(): number {

@@ -34,7 +34,7 @@ title: Hub flags
   async function load() {
     error = null; loading = true
     try {
-      const page = await hub.service.action('flags', null, {}, {})
+      const page = await hub.service.invoke('flags', null, {}, {})
       rows = page.data ?? []
     } catch (e) {
       error = e.message
@@ -49,7 +49,7 @@ title: Hub flags
     error = null; busy = flag.id
     const next = !flag.isEnabled
     try {
-      await hub.service.action('setFlag', null, { flagId: flag.id, isEnabled: next })
+      await hub.service.invoke('setFlag', null, { flagId: flag.id, isEnabled: next })
       const kill = flag.key.startsWith('killswitch.')
       toasts[kill && next ? 'warning' : next ? 'success' : 'info'](
         kill ? (next ? 'Killswitch activated' : 'Killswitch deactivated')

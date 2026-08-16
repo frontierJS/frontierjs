@@ -203,38 +203,42 @@ export interface ConduitError {
   raw?:      unknown
 }
 
-// ─── Hooks ──────────────────────────────────────────────────
+// ─── Observers ──────────────────────────────────────────────
 
-// Hooks may be async. They are invoked fire-and-forget — a hook is never
-// awaited, so exporting a span or writing a log cannot slow a request — and
-// a throw or rejection is caught and logged rather than failing the caller.
+// Every callback here is an Observer in the FJS-D06 sense: it receives and
+// cannot act. None of them can change a request, suppress an error or halt a
+// send — a Hook is the tier that may, and conduit has none.
+//
+// Observers may be async. They are invoked fire-and-forget — never awaited, so
+// exporting a span or writing a log cannot slow a request — and a throw or
+// rejection is caught and logged rather than failing the caller.
 //
 // Declared `void` rather than `void | Promise<void>` deliberately. TypeScript
 // only ignores a returned value when the expected return type is exactly
-// `void`; widening it to a union means the most natural way to write a hook —
+// `void`; widening it to a union means the most natural way to write one —
 // `(req) => seen.push(req)` — becomes a type error. `void` still accepts an
-// async hook, since `Promise<void>` is assignable in a void return position.
-export type HookResult = void
+// async observer, since `Promise<void>` is assignable in a void return position.
+export type ObserverResult = void
 
-export interface ConduitHooks {
-  onRequest?:      (req: ConduitRequest) => HookResult
-  onResponse?:     (req: ConduitRequest, res: ConduitResult<unknown>) => HookResult
-  onError?:        (req: ConduitRequest, err: ConduitError) => HookResult
+export interface ConduitObservers {
+  onRequest?:      (req: ConduitRequest) => ObserverResult
+  onResponse?:     (req: ConduitRequest, res: ConduitResult<unknown>) => ObserverResult
+  onError?:        (req: ConduitRequest, err: ConduitError) => ObserverResult
 
   // Fires once per retried attempt, before the backoff sleep. `attempt` is
   // 1-based: the first retry reports 1. Without this, retries were invisible
   // to any observability the caller wired up.
-  onRetry?:        (req: ConduitRequest, err: ConduitError, attempt: number) => HookResult
+  onRetry?:        (req: ConduitRequest, err: ConduitError, attempt: number) => ObserverResult
 
   // Stream lifecycle. onStreamEnd reports how many chunks were yielded;
   // a stream that fails to establish or drops mid-flight reports through
   // onError instead.
-  onStreamStart?:  (req: ConduitRequest) => HookResult
-  onStreamEnd?:    (req: ConduitRequest, chunks: number) => HookResult
+  onStreamStart?:  (req: ConduitRequest) => ObserverResult
+  onStreamEnd?:    (req: ConduitRequest, chunks: number) => ObserverResult
 
-  onReconnect?:    (target: string) => HookResult
-  onRegistered?:   (descriptor: TargetDescriptor) => HookResult
-  onDeregistered?: (target: string) => HookResult
+  onReconnect?:    (target: string) => ObserverResult
+  onRegistered?:   (descriptor: TargetDescriptor) => ObserverResult
+  onDeregistered?: (target: string) => ObserverResult
 }
 
 // ─── Options ────────────────────────────────────────────────
@@ -265,7 +269,10 @@ export interface ConduitOptions {
   // buffering an unbounded response from a misbehaving provider.
   max_response_bytes?: number
 
-  hooks?:       ConduitHooks
+  // Lifecycle observers. They receive and cannot act — nothing here can
+  // change a request or suppress an error. `management.hooks` below is the
+  // other word and means the other thing: Junction's own hook pipeline.
+  observers?:   ConduitObservers
 
   // Per-target load shedding. Without it, a provider outage produces
   // retry_limit+1 amplification against the failing dependency while

@@ -74,7 +74,7 @@ title: Dashboard
 
   async function loadKinds() {
     try {
-      const answer = await dashboards.service.action('kinds', null)
+      const answer = await dashboards.service.invoke('kinds', null)
       // `answer.kinds`, not `answer.data`: the vocabulary is deliberately not
       // shaped like a list, because a list envelope keeps `total` and `data`
       // and drops every other key without saying so.
@@ -137,7 +137,7 @@ title: Dashboard
   async function add() {
     error = null; busy = 'add'
     try {
-      board = await dashboards.service.action('addWidget', board.id, {
+      board = await dashboards.service.invoke('addWidget', board.id, {
         kind: chosen.kind,
         ...(chosen.subject === 'server' ? { serverId: subject || null } : {}),
         ...(chosen.subject === 'app'    ? { appId:    subject || null } : {}),
@@ -159,7 +159,7 @@ title: Dashboard
   async function removeWidget(widget) {
     error = null; busy = widget.id
     try {
-      board = await dashboards.service.action('removeWidget', board.id, { widgetId: widget.id })
+      board = await dashboards.service.invoke('removeWidget', board.id, { widgetId: widget.id })
     } catch (e) {
       error = e.message
     } finally {
@@ -170,7 +170,7 @@ title: Dashboard
   async function resizeWidget(widget, next) {
     error = null; busy = widget.id
     try {
-      board = await dashboards.service.action('updateWidget', board.id, { widgetId: widget.id, cols: next })
+      board = await dashboards.service.invoke('updateWidget', board.id, { widgetId: widget.id, cols: next })
     } catch (e) {
       error = e.message
     } finally {
@@ -190,7 +190,7 @@ title: Dashboard
     ids.splice(to, 0, ...ids.splice(at, 1))
     error = null; busy = widget.id
     try {
-      board = await dashboards.service.action('reorder', board.id, { ids })
+      board = await dashboards.service.invoke('reorder', board.id, { ids })
     } catch (e) {
       error = e.message
     } finally {

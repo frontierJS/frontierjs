@@ -1,0 +1,18 @@
+<script module>
+  // The directory form: a widget with parts. Only index.mesa is the widget —
+  // Field.mesa beside it is its component, and must NOT become a second script.
+  export const widget = {}
+</script>
+
+<script>
+  import Field from './Field.mesa'
+  import '../../styles/global.css'
+
+  export let pid = ''
+  let sent = false
+</script>
+
+<div class="lead-form">
+  <Field label="Reference" value={pid} />
+  <button id="submit" onclick={() => sent = true}>{sent ? 'sent' : 'send'}</button>
+</div>

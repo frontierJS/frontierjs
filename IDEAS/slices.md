@@ -223,6 +223,49 @@ conformance-tested — without touching Sierra.
 
 ---
 
+## The slice that should come first — teams, memberships, invitations
+
+Added 2026-08-15. `IDEAS/ecosystem-gaps.md` nominates **billing** as the canonical
+first slice and the proof the format works. Billing is the right *commercial* first
+slice and the wrong *structural* one, and there is a better candidate that nothing in
+`IDEAS/` currently mentions at all: a grep across every record for `invite`,
+`invitation`, `membership`, `organisation` or `organization` returns nothing on point.
+
+**It is the largest thing this repo has already built by hand.** Basecamp declares
+`Workspace` and `WorkspaceMember`, a five-rung role ladder (viewer/billing → READER,
+developer → USER, admin → ADMINISTRATOR, owner → OWNER), `applyStanding()` resolving
+membership onto the principal once per request, a `/hub/` tier above every workspace,
+and fifteen models carrying `@@allow('all', workspaceId == auth().workspaceId)`. That
+is a slice with the packaging removed. Every B2B application built on FJS writes it
+again, and writes it slightly differently.
+
+**Why it is the better proof than billing.** Billing contributes models, a service and
+a screen — three parts of a format that has four. Teams contributes all four *and* the
+one thing no slice has had to carry: **an input to the gate**. Only one
+`GatePlugin({ getLevel })` may be installed, so a slice that supplies standing either
+owns the ladder outright — which forbids an app having any second source of standing —
+or contributes a **fragment** the app composes into its own `getLevel`, the way
+`authSchemaFragments(db)` already contributes into the seed rather than replacing it.
+That question has no answer today, it is the sharpest unanswered thing about the slice
+format, and billing would never have surfaced it.
+
+**Invitations are the part everyone underestimates**, and they are the part that makes
+this a slice worth shipping rather than a snippet worth copying: a token, an expiry, an
+email, an accept that creates a membership at a stated role, a re-invite that does not
+duplicate, and a revoke. That is `pending → accepted | expired | revoked` — a state
+machine, which means the slice *demonstrates* `@@transitions` at the Data boundary
+rather than merely using the framework. A slice whose value is visible in the schema
+diff is the one to lead with.
+
+**Design it with two neighbours, not after them.** `IDEAS/row-level-tenancy.md` (4.18)
+is the mechanism for *which rows*; `warden` (4.5) is the mechanism for *which
+permissions*; this is the *noun* both of them are about. Settled apart, they produce
+three vocabularies for one idea — the same failure `IDEAS/release-transitions.md`
+records between an Audience and a tenant. Blocked on the same two items everything
+here is blocked on: bare-specifier `.lite` imports and the installer.
+
+---
+
 ## Open questions
 
 - Does `Slice` get adopted in `ARCHITECT.md` §2, and what happens to `Plugin`?

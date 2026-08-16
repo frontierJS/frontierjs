@@ -26,6 +26,10 @@
 //     setToken(token): Promise<void>
 //
 //     // OPTIONAL — Subscribe to a server-pushed channel. Returns unsubscribe.
+//     // The handler is called (data, event) where `event` is the WIRE event
+//     // name Junction sends — `posts created`, space-separated, past tense.
+//     // A channel carries many events; a subscriber that is handed only the
+//     // data cannot tell a create from a remove (FJS-059).
 //     subscribe(channel, handler): Promise<unsubscribe>
 //
 //     // OPTIONAL — Lifecycle observability.

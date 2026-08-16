@@ -15,6 +15,14 @@ export interface SessionContext {
   authMethod:   'session' | 'apiKey' | 'oauth' | 'created' | 'verified'
 
   /**
+   * Which session row this token is — set on the `session` path.
+   * A caller listing where they are signed in has to be told which row is the
+   * one they are asking from, and comparing raw tokens to work that out would
+   * mean putting a bearer token in front of application code.
+   */
+  sessionId?: string
+
+  /**
    * Which credential proved this session — set on the `apiKey` path.
    * An app that records per-key usage, or shows a key's last-used time, has no
    * other way to ask: two keys belonging to one user produce two sessions that
@@ -60,6 +68,25 @@ export interface IAuth {
   createUser(data: CreateUserInput):         Promise<SessionContext>
   deleteUser(userId: string):                Promise<void>
 
+  /**
+   * Build a session for a user who is not presenting a credential.
+   *
+   * The re-resolution `app.runAs(userId, …)` needs, and the only way deferred
+   * work can run as the caller who asked for it: a job outlives the request, so
+   * by the time it runs there is no token to verify and no session to inherit —
+   * only an id that was recorded when it was enqueued.
+   *
+   * Deliberately not a stored snapshot of the original session. A caller demoted
+   * between asking and running must be graded at the standing they hold NOW;
+   * replaying yesterday's session is a captured privilege that outlives its own
+   * revocation. So this reads the user afresh and grades them afresh.
+   *
+   * Returns null for a user who no longer exists. **This proves no credential**
+   * — it is reached only from code that has already decided whose behalf it acts
+   * on, and it must never be wired to anything a request can name.
+   */
+  sessionFor?(userId: string):               Promise<SessionContext | null>
+
   // Registration flow (optional — provider may handle differently)
   requestPasswordReset?(email: string):                Promise<void>
   confirmPasswordReset?(token: string, newPassword: string): Promise<void>
@@ -68,8 +95,34 @@ export interface IAuth {
 
   // API Keys
   createApiKey(userId: string, opts?: ApiKeyOptions):  Promise<{ key: string; id: string }>
-  revokeApiKey(keyId: string):                         Promise<void>
+  revokeApiKey(keyId: string, opts?: { userId?: string }): Promise<void>
   verifyApiKey(key: string):                           Promise<SessionContext | null>
+
+  // ── The caller acting on their own credentials ────────────────────────
+  //
+  // Optional, because a provider may hold none of it — the services in
+  // @frontierjs/auth answer 400 by name for the ones their provider lacks,
+  // the same way the /auth routes already do for password reset.
+  //
+  // Every one takes the userId as its FIRST argument and scopes to it. That is
+  // the ownership boundary: these are reached from a service where the caller
+  // supplies the id of the thing, and a revoke that only matched on that id
+  // would revoke somebody else's.
+
+  /** Verify the current password, then replace it. Throws if it does not verify. */
+  changePassword?(userId: string, currentPassword: string, newPassword: string): Promise<void>
+
+  /** The user's live sessions. Never carries the token — see AuthSessionInfo. */
+  listSessions?(userId: string):                       Promise<AuthSessionInfo[]>
+
+  /** Revoke one session of this user's. Throws if it is not theirs. */
+  revokeSession?(userId: string, sessionId: string):   Promise<void>
+
+  /** Revoke every session of this user's, optionally keeping the one presenting. */
+  revokeSessions?(userId: string, opts?: { exceptSessionId?: string }): Promise<number>
+
+  /** The user's API keys. Never carries the key — it exists once, at creation. */
+  listApiKeys?(userId: string):                        Promise<ApiKeyInfo[]>
 
   // TOTP (optional — provider may not support)
   setupTotp?(userId: string):                Promise<{ secret: string; qr: string }>
@@ -83,6 +136,33 @@ export interface IAuth {
   addMember?(workspaceId: string, userId: string, role: string): Promise<void>
   removeMember?(workspaceId: string, userId: string):            Promise<void>
 }
+
+/**
+ * What JUNCTION requires of an auth provider — which is what Junction CALLS.
+ *
+ * `verifySession` and nothing else. It is invoked on both inbound paths
+ * (`transport/http.ts`, HTTP and the WS upgrade); `sessionFor` is reached only
+ * from `app.runAs`, which throws by name when a provider lacks it rather than
+ * downgrading the caller to STRANGER(0).
+ *
+ * `IAuth` declares six required methods and this package invokes two of them —
+ * `login`, `logout`, `createUser` and `deleteUser` are called by
+ * `@frontierjs/auth`'s own `/auth/*` routes and by nothing here. So an app
+ * authenticating against something it already has had to stub four methods
+ * that would never run, and a stub that throws cannot be told apart from a
+ * provider that works until the day something calls it. `FJS-D10`.
+ *
+ *   createApp({ auth: { verifySession: t => lookup(t) } })
+ *
+ * DERIVED from `IAuth` rather than declared beside it, and that is load-bearing
+ * twice over. A hand-written member list would drift the moment `IAuth` gained
+ * a method. And `Partial<IAuth>` is what makes a FULLER provider assignable:
+ * TypeScript's excess-property check rejects an object literal carrying a key
+ * the target does not name, so a narrow interface listing only `verifySession`
+ * would refuse `{ verifySession, login, … }` — the very providers this exists
+ * to accept.
+ */
+export type SessionVerifier = Pick<IAuth, 'verifySession'> & Partial<IAuth>
 
 // ─── Supporting input types ───────────────────────────────────────────────
 
@@ -99,6 +179,30 @@ export interface ApiKeyOptions {
   name?:      string
   expiresAt?: Date
   scopes?:    string[]
+}
+
+// ─── What the caller may be shown about their own credentials ─────────────
+//
+// Both are deliberately not the row. A session row holds the bearer token and
+// a credential row holds the API key's hash; either one on the wire turns a
+// list into a way to take over the account it describes, and a service that
+// selected columns by hand would be one `select` away from doing it.
+
+export interface AuthSessionInfo {
+  id:         string
+  createdAt?: Date | string | null
+  expiresAt?: Date | string | null
+  /** True for the session that made this request — the one a UI must not offer to revoke without saying so. */
+  current:    boolean
+}
+
+export interface ApiKeyInfo {
+  id:         string
+  /** The name the key was issued with — `label` on the Credential row. */
+  name:       string | null
+  scopes:     string[]
+  createdAt?: Date | string | null
+  expiresAt?: Date | string | null
 }
 
 // ─── Rate limit hook options ──────────────────────────────────────────────

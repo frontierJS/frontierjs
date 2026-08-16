@@ -9,13 +9,13 @@
   color-scheme: dark;
 
   /*
-   * The lightness window for syntax highlighting, inverted. On a light
-   * surface a code token is clamped DARK; here it has to be clamped light,
-   * and nothing in CSS can work that out — see tokens.css and code.css.
+   * The lightness window for a tone used as TEXT, inverted. On a light
+   * surface such a tone is clamped DARK; here it has to be clamped light,
+   * and nothing in CSS can work that out — see tokens.css and tones.css.
    * Any theme that sets `color-scheme: dark` needs this pair too.
    */
-  --code-l-min: 0.74;
-  --code-l-max: 1;
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
 
   --surface:        #1a1a1a;
   --surface-raised: #252525;

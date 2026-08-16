@@ -32,7 +32,7 @@ wizard built on `needsSetup()` would never have appeared.
 
 Rather than alias the path, the prefix was dropped: auth is `/auth/*` and setup
 is `/setup`, so every path in the app now agrees with every other and with the
-client's defaults. Verified end to end — setup, login, `/auth/me`,
+client's defaults. Verified end to end — setup, login, `/account/me`,
 `/auth/workspace`, project create and list, 401 unauthenticated.
 
 ### 2. The client already handles workspace scoping and custom methods
@@ -102,7 +102,7 @@ durable fix is to give the API an `apiPrefix: '/api'` and match it in
 The only paths that work with zero data.
 
 - Probe → wizard → `POST /setup` (a raw route, not a resource) → token.
-- `client.authenticate()` → `GET /auth/workspace` → `setWorkspace()`.
+- `signIn()` → `GET /auth/workspace` → `setWorkspace()`.
 - `session.js` holding user / workspace / level — plain object behind a
   `watchProxy`, the same contract as `sierra/example/web/src/session.js`
   (assigning the object directly notifies nobody, Mesa RULE 45).

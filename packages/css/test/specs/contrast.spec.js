@@ -1,6 +1,11 @@
 /*
- * contrast.spec.js — text on a solid fill clears WCAG AA, for every tone,
- * in every theme.
+ * contrast.spec.js — a tone clears WCAG AA in every theme, in both of the
+ * jobs a tone has: as a solid fill under text, and as text itself.
+ *
+ * The two are separate derivations and fail apart. chip.css answers the
+ * first (what colour goes ON this fill), tones.css the second (what this
+ * tone becomes when it IS the text). A component that mixes them up looks
+ * right in the theme it was written in.
  *
  * This is the invariant with the worst failure history in the package.
  * Through v0.6 tones.css asserted `--on-bg-mix: white` regardless of hue,
@@ -16,7 +21,7 @@
  */
 
 var TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
-var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'press'];
+var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'notebook', 'press', 'field'];
 
 /* The chip lineage — everything that renders a tone as a solid fill. */
 var FILLED = [
@@ -25,7 +30,34 @@ var FILLED = [
   { name: '.badge', html: '<span class="badge TONE">Overdue</span>' },
 ];
 
+/*
+ * The other job: a tone rendered as TEXT on a surface. Every one of these
+ * painted --bg-mix directly until v0.16 and failed AA across most of the
+ * grid — .btn.outlined on 34 of the 72 pairs, worst 1.19:1 (FJS-027). They
+ * read --tone-ink now, which is the tone through the legibility window.
+ *
+ * Untoned is in the list because it is where the failure was first
+ * measured: `.btn.outlined` with no tone class is the brand accent, and
+ * that was 1.99:1 on a real client theme.
+ */
+var TEXTUAL = [
+  { name: '.btn.outlined', html: '<button class="btn outlined TONE">Save</button>' },
+  { name: '.btn.link', html: '<button class="btn link TONE">Save</button>' },
+  { name: '.btn.ghost', html: '<button class="btn ghost TONE">Save</button>' },
+];
+
+/*
+ * Was THEMES plus notebook, which the neutral-pairs test below could not
+ * take: its --ink-mute was 2.67:1 on the sunken surface. The ramp is fitted
+ * now (FJS-125) and notebook is an ordinary member of the list, which is what
+ * makes the exclusion impossible to forget to remove.
+ */
+var TEXTUAL_THEMES = THEMES;
+
 var AA = 4.5;
+
+/* WCAG 1.4.11: a control's own boundary is non-text contrast, 3:1. */
+var AA_NON_TEXT = 3;
 
 FILLED.forEach(function (subject) {
   THEMES.forEach(function (theme) {
@@ -46,6 +78,140 @@ FILLED.forEach(function (subject) {
       });
     });
   });
+});
+
+/*
+ * A transparent variant paints nothing of its own, so what its label
+ * actually sits on is the theme surface behind it. Reading
+ * backgroundColor there gives rgba(0,0,0,0) and scores every ratio
+ * against black — which passes, and means nothing.
+ */
+function groundOf(node) {
+  var cs = getComputedStyle(node);
+  if (toRGB(cs.backgroundColor)[3] > 0) return cs.backgroundColor;
+  return cs.getPropertyValue('--surface').trim();
+}
+
+TEXTUAL.forEach(function (subject) {
+  TEXTUAL_THEMES.forEach(function (theme) {
+    test('contrast: ' + subject.name + ' in ' + theme + ' clears AA untoned and on all seven tones', function () {
+      var failures = [];
+
+      [''].concat(TONES).forEach(function (tone) {
+        var node = themed(theme, subject.html.replace('TONE', tone));
+        var cs = getComputedStyle(node);
+        var ground = groundOf(node);
+        var ratio = contrast(cs.color, ground);
+
+        if (ratio < AA) {
+          failures.push(
+            (tone || '(untoned)') + '  text ' + ratio.toFixed(2) + ':1' +
+            '  — ' + toRGB(cs.color).join(',') + ' on ' + toRGB(ground).join(',')
+          );
+        }
+
+        /*
+         * The border is the whole of .outlined: at 1.99:1 the variant is
+         * not being drawn, whatever the label does.
+         */
+        if (subject.name === '.btn.outlined') {
+          var edge = contrast(cs.borderTopColor, ground);
+          if (edge < AA_NON_TEXT) {
+            failures.push((tone || '(untoned)') + '  border ' + edge.toFixed(2) + ':1');
+          }
+        }
+        cleanup();
+      });
+
+      assert.equal(
+        failures.length,
+        0,
+        subject.name + ' in theme-' + theme + ', ' + failures.length + ' below threshold:' +
+          '\n        ' + failures.join('\n        ')
+      );
+    });
+  });
+});
+
+/*
+ * The third job, and the one nothing checked: a toned BLOCK, whose text is
+ * --tint-ink on --tint-surface. Both sides move with the tone, which is why
+ * it reads as safe and is not — measured across the grid, sunset's warning
+ * sat at 3.86:1 (FJS-288). --tint-ink now goes through the same legibility
+ * window --tone-ink does.
+ */
+var TINTED = [
+  { name: '.alert', html: '<div class="alert TONE">Careful</div>' },
+  { name: '.card', html: '<article class="card TONE">Careful</article>' },
+  { name: '.tile', html: '<article class="tile TONE">Careful</article>' },
+];
+
+TINTED.forEach(function (subject) {
+  THEMES.forEach(function (theme) {
+    test('contrast: a toned ' + subject.name + ' in ' + theme + ' clears AA on all seven tones', function () {
+      var failures = [];
+
+      TONES.forEach(function (tone) {
+        var node = themed(theme, subject.html.replace('TONE', tone));
+        var cs = getComputedStyle(node);
+        var ratio = contrast(cs.color, groundOf(node));
+        if (ratio < AA) failures.push(tone + '  ' + ratio.toFixed(2) + ':1');
+        cleanup();
+      });
+
+      assert.equal(
+        failures.length, 0,
+        'toned ' + subject.name + ' in theme-' + theme + ':\n        ' + failures.join('\n        ')
+      );
+    });
+  });
+});
+
+test('contrast: a tone rendered as text generalises to a hue no theme defines', function () {
+  /*
+   * The sibling of the fill test below, and the same claim: --tone-ink is
+   * a derivation, so a brand nobody here has seen must clear AA too. A
+   * fixed table of seven tones cannot show that.
+   *
+   * Both windows are exercised — the shipped light default and a dark
+   * theme's inverted pair — because the two are declared, not derived,
+   * and a hue that reads through one can fail the other.
+   */
+  var hues = ['#ffff00', '#00ff00', '#c0ff3e', '#000080', '#7f7f7f', '#ff00ff', '#00ffff', '#8b4513'];
+
+  ['default', 'dark'].forEach(function (theme) {
+    hues.forEach(function (hue) {
+      var node = themed(
+        theme,
+        '<button class="btn outlined" style="--bg-mix: ' + hue + '">Save</button>'
+      );
+      var cs = getComputedStyle(node);
+      var ratio = contrast(cs.color, groundOf(node));
+      assert.ok(
+        ratio >= AA,
+        'an undeclared hue ' + hue + ' rendered at ' + ratio.toFixed(2) + ':1 in theme-' +
+          theme + ' — the tone-as-text window does not generalise'
+      );
+      cleanup();
+    });
+  });
+});
+
+test('contrast: --tone-ink is unset on an untoned element', function () {
+  /*
+   * The mechanism the whole family rests on: --bg-mix is registered with
+   * no initial value, so on an untoned element --tone-ink is
+   * guaranteed-invalid and `var(--tone-ink, X)` falls through to X. If it
+   * ever computed to something, every untoned .ghost would silently take
+   * the brand accent instead of --ink-soft, and nothing would look broken.
+   */
+  var node = el('<button class="btn ghost">Save</button>');
+  assert.equal(prop(node, '--tone-ink'), '', '--tone-ink computed on an untoned element');
+  assert.sameColor(
+    style(node, 'color'),
+    style(node, '--ink-soft'),
+    'an untoned ghost button no longer falls back to --ink-soft'
+  );
 });
 
 test('contrast: the derivation covers a hue no theme defines', function () {

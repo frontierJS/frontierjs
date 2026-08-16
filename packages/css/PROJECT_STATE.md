@@ -1,4 +1,4 @@
-# FrontierJS CSS — Project State (v0.14)
+# FrontierJS CSS — Project State (v0.16)
 
 > A minimal, composable, semantics-first CSS framework. Plain CSS, no build
 > step; UnoCSS optional and supported alongside (ruled 2026-08-08). Drop this
@@ -640,6 +640,30 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
 - ✅ frontier-demo.html single-file build for CodePen/local testing
 - ✅ FJL image-to-layout converter prompt
 
+### A tenth theme — `field` — and the token it needed (2026-08-14)
+
+- ✅ `themes/field.css` — ink ground, sand ink, a serif display over a monospace
+  body. Written for the pages a project generates about itself (`fli ws:atlas`
+  is the first consumer), and the dark counterpart to `press`: same discipline,
+  opposite ground, no selector of its own
+- ✅ **`--heading-letter-spacing`**, which is why the theme exists in this
+  package rather than in the page that wanted it. Buttons, badges and pills each
+  had a tracking token and headings did not, so a theme wanting a tracked
+  display face had to ship a selector — the one thing a theme may not do. The
+  first attempt put it on the shared `h1–h6` block and was **dead**: three of
+  the six levels declare their own `letter-spacing` below and override it. It is
+  now the FALLBACK arm of each level's own value, so unset every level keeps the
+  optical tracking it has always had, and set, one declaration moves all six
+- ✅ Contrast fitted rather than eyeballed: all seven tones read as text
+  somewhere, and `--color-danger` had to move (`#c0463a` measured 3.29:1 on
+  `--surface-raised`, the tightest of the three grounds). `--ink-mute` sits at
+  4.60:1 there, the same bar `dark.css` documents
+- ✅ Added to `THEMES` in the `contrast`, `components` and `core-gaps` specs, so
+  it is held to the same bar as the others from the first commit rather than
+  exempted, and to `NOT_ANATOMY` — the anatomy spec fails an unclaimed
+  hyphenated class, which is how it caught `theme-field` immediately.
+  **346 passing** (was 342)
+
 ### A seventh theme — `basecamp` (v0.12, 2026-08-06)
 - ✅ `themes/basecamp.css`, ported from the Basecamp UI prototype's `T` object
   (`packages/basecamp/docs/mock/BasecampUI.jsx`) — a design that carried its
@@ -654,7 +678,8 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   specs, so it is held to the same bar as the other six from the first commit
   rather than exempted. **208 passing** (was 205)
 - ✅ First theme in the package where `.btn.outlined` clears AA (5.63:1) —
-  recorded in the FJS-027 finding, which stays open at six of seven
+  recorded in the FJS-027 finding, open at six of seven at the time and
+  closed in v0.16
 - ⚠️ `T.sidebar` and `T.modal` had nowhere to land: frame.css paints the topbar
   and the sidebar with `--surface` and there is no `--sidebar-bg`/`--dialog-bg`
   token. Left as one surface; noted in the theme file as the argument for the
@@ -663,7 +688,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
 ---
 
 ### Syntax highlighting — `components/code.css` (2026-08-08)
-- ✅ Code blocks are highlighted, by `glow()` in `@frontierjs/utils` — the
+- ✅ Code blocks are highlighted, by `glow()` in `@frontierjs/toolbelt` — the
   first export that package has ever had. `css` takes it as a **devDependency**
   for the guide and the suite; nothing shipped imports it
 - ✅ **The theme ships no class.** glow marks a token with the element that
@@ -677,7 +702,7 @@ outside a surface composite, and they aren't chained onto it, they nest inside.
   as a fill behind white text; measured as text on `--surface-sunken` across
   the eight themes the raw values ran as low as 1.65:1, and only one theme had
   all six roles above AA. Each now passes through a lightness window in oklch
-  (`--code-l-min`/`--code-l-max`), hue and chroma untouched — a no-op wherever
+  (`--tone-l-min`/`--tone-l-max`, `--code-l-*` until v0.16), hue and chroma untouched — a no-op wherever
   the tone already reads, so a well-tuned theme is not flattened. A blend
   toward `--ink` also works, at 55%, and muddies everything equally
 - ⚠️ The window cannot be derived: relative colour syntax exposes the channels
@@ -1888,11 +1913,208 @@ It cannot tell you the vocabulary is right. Only a real consumer can.
 
 ---
 
-## Open finding — `.btn.outlined` fails WCAG AA in six of seven themes (2026-08-03)
+## Added — `--scrim`, the dim behind an overlay (2026-08-16)
 
+`.dialog::backdrop` and `.drawer::backdrop` each carried `rgba(0, 0, 0, 0.45)`
+as a literal, and `@frontierjs/ui`'s command palette — which portals its own
+backdrop rather than using a `<dialog>` — carried `rgba(0,0,0,0.72)`. So the
+package dimmed by one amount, a kit component by another, and no theme could
+retune either.
 
-*Tracked as **`FJS-027`** in `../../ISSUES.md`. The analysis below is the
-argued detail; the register is where it is counted.*
+`--scrim` is that value, in tokens.css, read by both backdrops and by the kit.
+**It is a literal rather than a blend of `--ink`**, and that is the whole note
+worth keeping: `--ink` inverts with the theme and a scrim never does, so mixed
+from ink it would go WHITE on a dark theme.
+
+## Fixed — `.avatars` overlapped nothing and ringed nothing (2026-08-16)
+
+The overlap and the ring were `.avatars > .avatar + .avatar` and
+`.avatars > .avatar`. `.avatar` has to stay a plain box — chip.css owns its
+layout — so anything pinning a status dot to its corner needs a positioning
+element around it, which is exactly what `@frontierjs/ui`'s `Avatar` does. The
+direct-child selectors then matched **nothing at all**: a six-person group
+rendered as an ordinary evenly-spaced row with no rings, and every class
+assertion in both packages passed the whole time.
+
+Both rules now match an avatar OR a wrapper holding one
+(`:is(.avatar, :has(> .avatar))`). Found by `@frontierjs/ui`'s new browser
+drive, by the only form of the question a test can ask: measure the first two
+avatars' rects and check that the second starts before the first ends
+(`FJS-302`).
+
+## Fixed — the last five token gaps, and both ink failures (v0.16, 2026-08-16)
+
+*`FJS-162`, `-163`, `-164`, `-288`, `-125`, closed. With the four before them
+the theme surface is now closed on everything press.css found.*
+
+**Motion** (`FJS-162`) — every transition in the package was a literal, so nine
+themes moved identically. Four rungs named for the job — `--motion-fast` (a
+colour changing), `--motion-base` (a control changing shape), `--motion-enter`
+(overlays), `--motion-slow` (a measurement moving) — plus two loops,
+`--motion-spin` and `--motion-shimmer`, and three easings. **The sweep found one
+the grep did not**: `.skeleton`'s 1.4s shimmer. Two exclusions in the test are
+the substance rather than housekeeping — a literal inside
+`prefers-reduced-motion` is correct (the reader's setting, and tokens.css hands
+the spinner back a slower 1.6s there), and the harness's own `transition: none
+!important` is the one stylesheet on the page with no `href`.
+
+**The overlay tier caught the alias trap in the act.** The first version was
+`:root { --overlay-time: var(--motion-enter) }`, which resolves once against
+`:root` and inherits past every `.theme-*` — so a theme retuning the ladder
+would have moved everything except the overlays. It reads
+`var(--overlay-time, var(--motion-enter))` at each use site instead, which puts
+a comma INSIDE a transition segment and turned `overlays.spec.js` red: the spec
+split the list on `,` and reported every property as missing its
+`allow-discrete`, against CSS that was exactly right.
+
+**Typography treatment** (`FJS-163`) — a table head, a tile's label and a nav
+group's heading are one role and had three undocumented answers to it
+(600/0.04em, 500/0.04em, 700/0.06em), none reachable from a theme. One triple,
+three readers, **weights unified rather than each kept behind its own escape**:
+three values for one role was the defect. Plus `--heading-font-weight`, written
+as the fallback arm exactly like `--heading-letter-spacing`, so unset keeps
+700/600.
+
+**The focus ring's style** (`FJS-164`) — the row's counter-argument was real: a
+token a theme can write is a token a theme can weaken. `@property` is what makes
+*a keyword from a fixed list* enforceable rather than advisory.
+`--ring-style` is registered `syntax: "solid | dashed | double"`, so a value
+outside it is invalid at computed-value time and falls back to the initial
+value: **a theme writing `none` gets a solid ring, not no ring.** There is no
+spelling of "off", and `dotted` is excluded for the reason `none` is.
+
+**The toned block** (`FJS-310`) — `--tint-ink` is the 55% blend toward `--ink`
+and one pair of it was under AA: sunset's warning at 3.86:1. It now goes through
+the same legibility window `--tone-ink` does, which is the 2026-08-08 ruling
+(*clamped, not blended*) reaching the last place in the package that had not
+applied it. Measured across 10 themes × 7 tones: a no-op on 53 of the 70 pairs,
+17 move and all 17 move UP, none regresses, sunset/warning lands at 6.77:1.
+
+**notebook's ink ramp** (`FJS-125`) — `--ink-mute` was 3.06:1 on `--surface` and
+2.67:1 on `--surface-sunken`, and nine files use it as body text. The finding
+offered two ways out and the whole ramp moves, which is the first: fitting the
+failing rung alone puts it within 0.06 of the old `--ink-soft` and the three
+tiers collapse into two. Both rungs are the same colour scaled uniformly in
+linear RGB — chromaticity exact — so this is the identical sage, dark enough to
+read: `--ink-soft` 4.94 → 6.62 and `--ink-mute` 2.67 → 4.61 on the tightest
+ground, a 1.44× step between them. **notebook is now an ordinary member of
+`contrast.spec.js`'s theme list**, which is what makes the exclusion impossible
+to forget to remove.
+
+`contrast.spec.js` now asks all three questions a tone faces and they fail
+apart: as a FILL under text, as TEXT on a surface, and as a toned BLOCK — the
+third had never been checked. press.css takes the new knobs: linear easing at
+80–120ms, a 700/0.1em stamp on the small labels, and a `double` ring.
+**464 passing** (was 412).
+
+---
+
+## Fixed — a Popover is usable without writing two rules first (v0.16, 2026-08-16)
+
+*`FJS-132`, closed.*
+
+`.popover` was `position: absolute` with no inset, so a term the vocabulary
+NAMES needed two rules from every consumer before it worked: a positioned
+ancestor, or it resolved against the page, and an offset, or it resolved to its
+STATIC position — centred on its own trigger, measured in the demo at 265px tall
+and `y = -39`, hanging off the top of the viewport. `.tooltip-anchor` had solved
+the identical problem for Tooltip since v0.4.
+
+- **`.popover-anchor`** mirrors it: `position: relative; display: inline-flex`.
+  A `<div>` where the tooltip's is a `<span>`, because a Popover is an
+  `<article>` and a `<span>` cannot contain flow content — the same anatomy
+  constraint that made Tooltip a span, pointing the other way.
+- **The default placement ships with it**, scoped to `.popover-anchor >` rather
+  than written on `.popover`, so a popover placed by anchor positioning or a
+  style attribute is untouched. Opting into the anchor is what opts into the
+  placement.
+- **The row's open question — whether a default offset belongs on a term with
+  four plausible edges — is answered "below, and one modifier".** A popover in
+  practice is a dropdown; the other three edges are what anchor positioning is
+  for, and this file is not growing a placement ladder. `.align-end` exists
+  because it is the case the package's own demo needed: a trigger at the end of
+  a bar opens a menu that would otherwise run off the viewport. Named for what
+  it does rather than reusing `.end`, which on Tooltip means the SIDE the
+  attachment sits on.
+- **The top-layer trap is now enforced rather than documented.** The placement
+  rules say `:not([popover])`: a native popover is in the top layer, where an
+  inset resolves against the viewport, so the anchor would move it somewhere
+  arbitrary.
+
+`demo/demo.css` is back to one rule — the file exists to measure what the
+package makes a consumer write, and the Popover pair was two of its three. The
+guide's own Popover page had hand-written `style="position: relative"` and an
+inline offset for as long as it existed; both are gone.
+
+Five assertions in `components.spec.js`, all geometry: below the trigger,
+start-aligned, `.align-end` flips it, a native popover is left alone, and a
+popover outside an anchor is still unplaced. **412 passing** (was 407).
+
+*One trap came out of writing them:* `getComputedStyle` resolves `top: auto` to
+a USED pixel value on a positioned, laid-out element, so an unplaced popover
+answers `0px` rather than `auto` and the obvious assertion passes on layout
+noise. Ask the geometry, or ask whether the selector matches.
+
+---
+
+## Fixed — the theme surface reaches four more decisions (v0.16, 2026-08-16)
+
+*`FJS-158`, `-159`, `-160`, `-161`, closed together. They are one piece: all
+four were found writing `press.css`, whose whole job is to answer how far the
+token surface reaches on its own.*
+
+**Only one of the four was a missing token.** The other three were tokens that
+stopped at the element they were written on, which is invisible in any demo one
+element deep — and it is why every assertion in the new `theming.spec.js`
+measures a **descendant** of the element carrying the token.
+
+- **`--border-width`** (1px), the structural hairline: 15 sites across surface,
+  buttons, pills, fields, tables, frame, code, popovers, disclosure, bars,
+  lists, facts, tabs and a11y. `--field-border-width` and `--table-border-width`
+  fall back to it, because the row was right that a Field's box, a Card's edge
+  and a Table's divider are three decisions.
+- **`--surface-shadow`** (`none`), resting elevation on the Block tier. `.raised`
+  keeps `--shadow-md`, so a theme setting both gets the stamp at rest and the
+  ladder on lift.
+- **`--app-bg` / `--topbar-bg` / `--sidebar-bg` / `--dialog-bg`**, the frame's
+  own grounds. basecamp has its prototype's three dark surfaces back.
+- **`--space-*-base`**, the ladder's shape. A rung is `base × density` and only
+  the base inherits, so a theme sets the base and never the rung.
+
+**Three general rules came out of it**, each one a way to get this wrong:
+
+1. **A default that is another token is a use-site fallback, never a `:root`
+   declaration.** `--topbar-bg: var(--surface)` at `:root` resolves once and
+   inherits that colour past every `.theme-*`.
+2. **A token a theme must reach cannot be declared on the component.** The first
+   `--table-border-width` was `.table { --table-border-width: var(--border-width) }`,
+   which reads correctly and is unreachable from an ancestor — caught by the
+   test, not by inspection. `--table-bg` stays declared: the difference is
+   whether the token is for a caller styling one table or a theme styling every
+   table.
+3. **What is drawn with `border` and is not a border does not scale.** A spinner
+   ring, a tooltip arrow, a step marker's disc — pinned by a test, because the
+   tempting version of `--border-width` is a blanket sweep of every `border:` in
+   the package. The one pair that must stay related is the tab indicator:
+   `calc(var(--border-width) + 1px)`, bleeding by the strip's own weight, or a
+   3px theme draws a rule with a 2px underline over it and the selected tab
+   reads as a gap in the line.
+
+**A ground carries no ink, which is the half `FJS-161` had slightly wrong.**
+`--sidebar-bg` does not give a light app a dark sidebar — the labels inside still
+read the light ramp. That needs no new mechanism: a theme is a class of
+inheriting tokens, so `<nav class="sidebar theme-dark">` inverts the ramp for the
+region. Grounds separate surfaces within one ramp; a theme class inverts one.
+Both are in `frame.css`'s header and both are pinned.
+
+`theming.spec.js` is 29 assertions. **407 passing** (was 378).
+
+---
+
+## Fixed — a tone rendered as text goes through a window (v0.16, 2026-08-16)
+
+*`FJS-027`, closed. The finding below is the argued detail; what follows it is
+what the fix turned out to be, which is not what the finding proposed.*
 
 Found by the FrontierJS website (`website/`), which is this package's second
 consuming app. Measured with `getComputedStyle` in headless Chrome, not estimated.
@@ -1925,7 +2147,8 @@ comment above `.btn.ghost`:
 That is the same 3.96 measured above. `.ghost` applies the conclusion; `.outlined`
 does not, and inherited the failure.
 
-**Suggested fix** — the same move `.ghost` already makes:
+**The suggested fix was the same move `.ghost` makes** — neutral ink untoned,
+the raw tone where a tone class is present:
 
 ```css
 .btn.outlined {
@@ -1934,12 +2157,34 @@ does not, and inherited the failure.
 }
 ```
 
-A tone class still opts into the accent deliberately, exactly as with `.ghost`,
-`.field-hint` and `.tile-delta`. Untoned falls back to neutral ink.
+**It was not taken, because measuring the whole grid showed it fixes the column
+the finding looked at and leaves the rest.** Untoned was one of eight cases per
+theme; across 9 themes × (untoned + 7 tones), `.btn.outlined` was under AA on
+**34 of 72 pairs**, worst 1.19:1 (`dark`/`secondary`) — and `.btn.link` on 30,
+`.btn.ghost` on 24, all of the ghost failures toned. The suggested fix touches
+none of those: `var(--bg-mix, …)` still paints the raw tone whenever a tone
+class is present, which is the majority of the failures.
 
-This is a visual change to a shipped v0.10 component, so it is a judgement call
-whether it lands as a patch or a breaking change. The website currently carries
-the override locally in `site.css`, with the measurements in a comment.
+**What shipped is one derivation, in `tones.css`.** `--tone-ink` is the tone
+with its lightness clamped into `--tone-l-min/max` — hue and chroma untouched
+— which is the ruling `code.css` had already been running under a code-only
+name since 2026-08-08. Renaming the window (`--code-l-*` → `--tone-l-*`) is
+what makes it one owner rather than two. The three variants read
+`var(--tone-ink, X)` and differ only in `X`: `.outlined` and `.link` take the
+brand accent through the same window, `.ghost` keeps `--ink-soft`.
+
+`.outlined`'s **border takes the same colour**, which the finding did not ask
+for: a boundary at 1.99:1 is the variant not being drawn at all (WCAG 1.4.11,
+3:1). So does the loading spinner, via `--btn-ink`.
+
+Measured after: every one of the 72 pairs is at **6.02:1 or better** on all
+three variants, and the borders clear 3:1. The alternative — blending 55%
+toward `--ink`, which is what `--tint-ink` does — was measured on the same grid
+and does **not** hold: `sunset`/`warning` lands at 4.05:1. `contrast.spec.js`
+pins all of it, 27 new assertions, including a hue no theme defines through
+both the light and the inverted window.
+
+The website's local `site.css` override is removed; it now reads the package.
 
 ### Smaller ergonomics note — `.code` is the block variant
 

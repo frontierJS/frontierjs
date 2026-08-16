@@ -129,7 +129,7 @@ any event would refetch in response to its own refetch.
 
 ```
 POST /auth/login     {email, password}      → {token, user}
-GET  /auth/me        Bearer token           → SessionContext
+GET  /account/me     Bearer token           → SessionContext (was /auth/me)
 GET  /auth/workspace Bearer token           → {workspace_id}
 POST /auth/logout    Bearer token           → 200
 POST /auth/register  {email, password, name}

@@ -25,13 +25,14 @@ describe('createSierraViteConfig', () => {
     expect(names).toContain('sierra:mesa')
   })
 
-  test('widget target includes inject-css plugin', () => {
-    const cfg = createSierraViteConfig({
-      target: 'widget',
-      mesa: { shadowDOM: true },
-    })
+  test('widget target compiles Mesa and folds no CSS — that is the loop\'s job', () => {
+    // The CSS fold belongs to the build that EMITS a widget (one library build
+    // per widget, `sierra widgets`), not to the config it is compiled with.
+    // Having it here meant it ran on a config that never emitted a bundle.
+    const cfg = createSierraViteConfig({ target: 'widget' })
     const names = cfg.plugins.map(p => p?.name).filter(Boolean)
-    expect(names).toContain('sierra:inject-css')
+    expect(names).toContain('sierra:mesa')
+    expect(names).not.toContain('sierra:widget-css')
   })
 
   test('widget target does NOT include scanner or virtual:sierra', () => {
@@ -68,9 +69,11 @@ describe('createSierraViteConfig', () => {
     expect(cfg.build?.outDir).toBe('dist/client')
   })
 
-  test('widget: outDir defaults to dist', () => {
+  test('widget: outDir defaults to dist/embeds', () => {
+    // Their own directory: an app that ships a site AND widgets builds both,
+    // and `dist/` is the site's.
     const cfg = createSierraViteConfig({ target: 'widget' })
-    expect(cfg.build?.outDir).toBe('dist')
+    expect(cfg.build?.outDir).toBe('dist/embeds')
   })
 
   test('widget: custom outDir from widgets.outDir', () => {
@@ -148,7 +151,7 @@ describe('virtual:sierra generation', () => {
     expect(out).not.toContain('createSignal')
   })
 
-  test('always imports from manifest', () => {
+  test('always imports from the route table', () => {
     const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
     expect(src).toContain("from '/config/routes.js'")
   })
@@ -163,10 +166,10 @@ describe('virtual:sierra generation', () => {
     expect(src).toContain('}, layouts)')
   })
 
-  test('imports layouts from manifest', () => {
+  test('imports layouts from the route table', () => {
     const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
     expect(src).toContain('layouts')
-    // layouts should appear in the manifest import destructuring
+    // layouts should appear in the route table import destructuring
     const importLine = src.split('\n').find(l => l.includes("from '/config/routes.js'"))
     expect(importLine).toContain('layouts')
   })
@@ -211,7 +214,7 @@ describe('virtual:sierra generation', () => {
     expect(src).toContain("window.addEventListener('error'")
   })
 
-  test('re-exports manifest arrays including layouts', () => {
+  test('re-exports the route table arrays including layouts', () => {
     const src = _generateVirtualSierra({ target: 'spa' }, 'config/routes.js')
     expect(src).toContain('export {')
     expect(src).toContain('published')

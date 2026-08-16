@@ -2,7 +2,7 @@
   "name": "@frontierjs/mesa",
   "version": "0.1.2",
   "type": "module",
-  "description": "Mesa — reactive UI language compiler and runtime",
+  "description": "Mesa \u2014 reactive UI language compiler and runtime",
   "main": "./src/compiler.js",
   "module": "./src/compiler.js",
   "exports": {
@@ -50,6 +50,9 @@
     },
     "./vite/client": {
       "import": "./mesa-vite/client.js"
+    },
+    "./vite/hmr": {
+      "import": "./mesa-vite/hmr.js"
     }
   },
   "scripts": {
@@ -59,6 +62,7 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {
+    "@frontierjs/toolbelt": "workspace:*",
     "acorn": "^8.0.0",
     "astring": "^1.0.0",
     "css-select": "^7.0.0",

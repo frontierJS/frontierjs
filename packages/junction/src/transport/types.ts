@@ -8,7 +8,7 @@ import type { SessionContext } from '../auth/types.ts'
 // ─── Raw request — lives entirely inside transport ───────────────────────────
 
 // Only fields not already on TransportContext directly.
-// ctx.method, ctx.path, ctx.query, ctx.headers, ctx.body, ctx.params etc.
+// ctx.method, ctx.path, ctx.query, ctx.headers, ctx.body, ctx.route etc.
 // are all accessible on the context itself — no need to duplicate them here.
 export interface RawRequest {
   // The original Bun Request object — use when you need the raw fetch API
@@ -83,7 +83,18 @@ export type SseSendFn = (event: SseEvent | unknown) => void
 export interface TransportContext {
   method:   string
   path:     string
-  params:   Record<string, string>
+  /**
+   * Path-pattern captures — `{id}`, `{room}`. Path only; the search string is
+   * `query`.
+   *
+   * Named `route` rather than `params` because in Feathers `params` is the
+   * whole context bag, and that idiom keeps arriving here: `ctx.params.user`,
+   * `ctx.params.headers`, `app.service(x).get(id, ctx.params)`. A field of that
+   * name holding something else is how a role check reads `undefined` and
+   * passes for everyone. One word per realm — `ctx.route` on both of
+   * Junction's contexts, `page.params` in Sierra (`FJS-D03`).
+   */
+  route:    Record<string, string>
   query:    Record<string, string>
   headers:  Record<string, string>
   body:     unknown
@@ -133,6 +144,28 @@ export interface TransportContext {
 
   // escape hatch to raw request
   $raw: RawRequest
+
+  // ── the middleware → transport side channel ──────────────────────────────
+  //
+  // A middleware runs before the response object exists, so it cannot set a
+  // header on one; it leaves the header here and `_finalizeWithHeaders` applies
+  // every bucket at the end. That is one contract with six fields and it was
+  // written down nowhere — each side reached it through
+  // `(ctx as Record<string, unknown>).__cors`, so a middleware writing a
+  // misspelled bucket compiled, ran, and dropped its headers in silence.
+  //
+  // Declared here so both ends are checked against the same names. They are
+  // internal to the transport: an application does not write them, which is
+  // what the `__` says, and a handler is free to read them.
+  __cors?:                Record<string, string>
+  __securityHeaders?:     Record<string, string>
+  __rateLimit?:           Record<string, string>
+  __correlationHeaders?:  Record<string, string>
+  __pendingCookies?:      Array<[string, string, Record<string, unknown>]>
+
+  // The status the response actually carried, stashed on the way out so a
+  // middleware that already ran `await next()` can log it.
+  __status?:              number
 }
 
 // ─── Stats ─────────────────────────────────────────────────────────────────
@@ -210,7 +243,8 @@ export interface WsData {
 export interface WsContext {
   // Routing
   path:     string
-  params:   Record<string, string>
+  /** Path-pattern captures. Same word as TransportContext.route — one realm, one name. */
+  route:    Record<string, string>
 
   // Request info — same fields as TransportContext
   query:    Record<string, string>

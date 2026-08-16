@@ -1,9 +1,16 @@
 # Idea — Live queries: a subscription scoped to a query, not to a service
 
-**Status: IDEA + LIVE DEFECT.** Dated 2026-08-04. The *transport* described below
-exists and works; the *query scoping* does not, and its absence is three silent
-data-correctness bugs in shipped code. Claims about current behaviour were read off
-the source with line numbers named; the design half is unbuilt. See `VERIFYING.md`.
+**Status: IDEA, and all three of its defects are now closed.** Dated 2026-08-04;
+revised 2026-08-15. The *transport* described below exists and works. **Query
+scoping now exists in the narrow form § The design proposes** — `matchesQuery` in
+`field-rules.js`, handed to junction's `resource()` as `match` (`FJS-011`), plus
+sorted placement and a refusal past page 1 counted on `stale` (`FJS-270`). What
+is still unbuilt is the FRAMING — the
+matcher is wired into the store rather than dispatched through the resource's hook
+pipeline (§ *There is no new API*), so a pushed record still runs no `after` hook
+and an app cannot replace the matcher for a query it can decide and the framework
+cannot. Read the tables below as the design; read `packages/sierra/CHANGES.md`
+2026-08-15 for what shipped. See `VERIFYING.md`.
 
 ---
 
@@ -44,7 +51,11 @@ and works.
 
 ### Three defects this produces today
 
-None of them throws. All three are the silent-wrong-data class.
+None of them throws. All three are the silent-wrong-data class, and **all three
+are closed** (2026-08-15). 1 and 2 by `FJS-011` — the store asks whether a pushed
+record is still in the query its rows answer, and takes out one that is not. 3 by
+`FJS-270`, in the shape this file argues for: sorted insertion where the order is
+known, and past the first page a refusal counted on `stale` rather than a guess.
 
 1. **Filter leak.** `load({ status: 'active' })`, then anyone creates a row with
    `status: 'draft'` → `client/index.ts:480` upserts it unconditionally. A draft
@@ -266,19 +277,23 @@ Three things fall out that were being treated as separate problems:
 
 ## What would have to be built
 
-1. **`matchesQuery(fields, record, query)`** in `field-rules.js`. Must cover exactly
-   the operators `parseWhere` / `translateOps` accept — no more. Same discipline as
-   the validator: *if the server does not emit it, it does not belong here.* Returns
-   `true | false | unknown`.
-2. **Sort-aware insertion** — `orderBy` is already known to the caller and already
-   parsed server-side by `parseSort`.
+1. ~~**`matchesQuery(fields, record, query)`** in `field-rules.js`~~ — **built
+   2026-08-15**, to this description: exactly the operators `parseWhere` /
+   `translateOps` accept, returning `true | false | null`. Junction's `resource()`
+   takes it as `match` and reloads on `null`; the reload is coalesced per burst.
+2. ~~**Sort-aware insertion**~~ — **built 2026-08-15.** `parseSort` and the
+   client's comparator are one module (`core/sort.ts`), so the caller's `orderBy`
+   is read once for both ends.
 3. **Inbound dispatch through the pipeline** — the store remembers the `query` and
    `findParams` its last `find` ran with; an arriving event enters as
    `ctx.method = 'created' | 'patched' | 'removed'` and is applied to the store on the
    way out. This needs one mechanical change: the dispatcher is a `switch` on method
    with no short-circuit (`resource.js` ~664–670), so there is currently no path where
    a `before` hook decides an outcome and the network call is skipped.
-4. **A `stale` signal** for the paginated case.
+4. ~~**A `stale` signal** for the paginated case.~~ — **built 2026-08-15.**
+   `resource().stale`, `{ get, subscribe }` like a store, cleared by `load()`.
+   Counts what the list could not place: a new row past page 1, a gap a removal
+   left behind a full page.
 
 Steps 1 and 3 fix the three defects on their own and are worth doing regardless of
 whether anything is branded a "live query".
@@ -316,7 +331,7 @@ result deserves its own noun. It probably does not.
   declared? That would let the server refuse to broadcast for services where
   per-subscriber policy cannot be satisfied — which is the security constraint above,
   expressed as a declaration instead of a warning.
-- **Custom action events are treated as upserts** (`client/index.ts:486-489`). Under
+- **Custom method events are treated as upserts** (`client/index.ts:486-489`). Under
   a matcher they get the same treatment as `patched`, which is probably right and
   should be stated rather than inherited.
 

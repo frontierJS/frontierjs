@@ -21,9 +21,10 @@ title: Sign in
       await signIn(email, password)
       goto('/')
     } catch (err) {
-      // 401 from /auth/login is a wrong password, not a broken app. Anything
-      // else carries its own message — including "API not reachable".
-      error = err.status === 401 ? 'Wrong email or password.' : err.message
+      // 401 from /auth/login is a wrong password, not a broken app. The client
+      // carries the status on `code`; anything else keeps the server's own
+      // message — including "API not reachable".
+      error = (err.code ?? err.status) === 401 ? 'Wrong email or password.' : err.message
     } finally {
       busy = false
     }

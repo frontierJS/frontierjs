@@ -137,7 +137,7 @@ A `TargetDescriptor` holds a credential **reference**, never the secret:
 auth: { type: 'bearer', ref: 'HETZNER_TOKEN' }
 ```
 
-The reference is resolved at send time by a `CredentialResolver`, so secret material never enters the registry, `resolve()`, `list()`, the hooks, or the management routes.
+The reference is resolved at send time by a `CredentialResolver`, so secret material never enters the registry, `resolve()`, `list()`, the observers, or the management routes.
 
 ```ts
 interface CredentialResolver {
@@ -398,8 +398,8 @@ conduit({
   // rather than buffering an unbounded response.
   max_response_bytes?: number
 
-  // Lifecycle hooks for observability and debugging.
-  hooks?: ConduitHooks
+  // Lifecycle observers for observability and debugging.
+  observers?: ConduitObservers
 
   // Per-target circuit breaker and concurrency cap. See Load shedding.
   resilience?: ResilienceOptions
@@ -464,11 +464,11 @@ Two requirements: `set()` must preserve the existing `registered_at` on upsert, 
 
 ---
 
-## Hooks
+## Observers
 
 ```ts
 conduit({
-  hooks: {
+  observers: {
     onRequest(req) {
       // Fires before every send() and stream()
     },
@@ -501,7 +501,9 @@ conduit({
 })
 ```
 
-Hooks may be `async`. They are **never awaited** — an exporter that takes 200 ms does not add 200 ms to your request — and a throw or rejection is caught and logged rather than failing the caller.
+Every callback here is an **Observer**: it receives and cannot act. None of them can change a request, suppress an error or halt a send — that tier is a Hook, and Conduit has none. A new `on*` here says which tier it is.
+
+Observers may be `async`. They are **never awaited** — an exporter that takes 200 ms does not add 200 ms to your request — and a throw or rejection is caught and logged rather than failing the caller. `management.hooks` below is the other word and means the other thing: Junction's own hook pipeline, which does decide whether a call proceeds.
 
 ### Trace context
 
@@ -624,14 +626,14 @@ const { conduit } = await createTestConduit(
 )
 ```
 
-Hooks work in tests too:
+Observers work in tests too:
 
 ```ts
 const errors: ConduitError[] = []
 
 const { conduit } = await createTestConduit(
   { 'outpost:srv-abc': {} },
-  { hooks: { onError: (_req, err) => errors.push(err) } }
+  { observers: { onError: (_req, err) => errors.push(err) } }
 )
 ```
 

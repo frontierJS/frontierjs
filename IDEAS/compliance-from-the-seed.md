@@ -55,23 +55,58 @@ interesting part is what erasure means for columns that *must* survive — an
 correct, and means the schema must be able to express **anonymise** distinctly from
 **delete**. That is a ruling to make, not an implementation detail.
 
-### 4. A permission diff on every pull request
+### 4. A permission diff on every pull request — **shipped 2026-08-15**
 
-The one to build first, because it is nearly free and it is the most persuasive.
+`fli test:access --from origin/main`, and the `access` phase of `bun run ci`,
+which prints it per app on every run. Authorization-as-data means a change to who
+can see what is **reviewable in a diff**, by a person who is not the author,
+before it merges. No framework whose authz lives in middleware can offer this,
+because the change is spread across files that do not look like permissions.
 
 ```
-$ fli marshal:diff main
-User.email        read  5 → 2      ⚠ widened
-Invoice.total     delete —  → 7    narrowed
-Secret.data       @guarded(all) removed   ⚠⚠ now readable at level 5
+✗  WIDENS — this change hands callers access they did not have
+
+Against `origin/main` — 5 widen · 0 undecidable · 1 narrow
+
+  widens   model User      gate "4.4.5.6" → "2.4.5.6" — read drops to READER
+  widens   model User      @@allow('read') removed
+  widens   User.apiKey     @secret removed
+  widens   User.role       @allow('write') removed
+  narrows  model Order     @@allow('read') added
 ```
 
-Authorization-as-data means a change to who can see what is **reviewable in a
-diff**, by a person who is not the author, before it merges. No framework whose
-authz lives in middleware can offer this, because the change is spread across files
-that do not look like permissions. It is also the single most convincing artifact
-to put in front of a security-conscious buyer, and it costs one parse of two schema
-versions.
+**It cost less than the parse of two schema versions this record budgeted, and
+the design was not the obvious one.** `classifyPivot` already compared two
+release surfaces, so the cheap move was to point it at the base ref — and that is
+wrong, in a way worth recording: the pivot classifier grades *can N-1 and N serve
+one database*, and on the five-widening change above **every finding is an
+`expand`**, while the one change that narrows is its only `contract`. The two
+axes are not correlated and not opposite; they are different questions over the
+same declarations. So the finding carries both, one walk produces it, and
+`classifyAccess` is a second grading rather than a second traversal — two walks
+over one set of declarations being how two answers to one question drift apart.
+
+Two things fell out of building it:
+
+- **A field-level `@allow` was absent from the release surface entirely**, so
+  `release:check` could not see it either. It is where the sharpest columns in
+  this repo are guarded — `isSystemAdmin`, `role`, `emailVerified` — which made
+  it the one omission that would have discredited the feature on its first real
+  use. It is a compatibility change as well as a permission one, so both axes
+  gained it.
+- **The direction of a `@@transitions` change depends on whether the field was
+  constrained at all.** The first transition declared on a free enum column
+  refuses every other move; the second permits one more. The two read identically
+  as a single added row and are counted per field instead.
+
+What it deliberately refuses to answer is a predicate whose text moved:
+`@@allow('read', total > 0)` → `total > 100` is reported as undecidable, because
+two expressions are not comparable by reading them and a guess in this direction
+is the one that ships. Same limit at the field level.
+
+Not built: posting it as a PR comment. The workflow calls `scripts/ci.mjs` and
+nothing else, deliberately, so a GitHub-shaped surface would be the first thing
+in CI that does not run identically on a laptop.
 
 ### 5. The outbound surface report
 

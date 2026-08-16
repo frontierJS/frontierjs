@@ -33,7 +33,7 @@ siteName: Kitchen sink
   // different list. Signed out it is empty and the bell does not render.
   // A block, not a bare `if` — Mesa's `$:` takes an expression or a block, and
   // the compiler says so by name rather than emitting something that half works.
-  $: { if (session.level > 0) notifications.load().catch(() => {}) }
+  $: { if (session.user) notifications.load().catch(() => {}) }
 
   $: unread = notes().filter(isUnread).length
 
@@ -47,7 +47,7 @@ siteName: Kitchen sink
   }
 
   $: (page.siteName, page.route)
-  $: (status.connected, session.level, session.email, session.role, session.error)
+  $: (status.connected, session.user, session.level, session.error)
   $: commandPalette.open
 
   // ⌘K. The commands are ordinary functions — the palette is a way to reach
@@ -74,7 +74,9 @@ siteName: Kitchen sink
 
   async function submit() {
     busy = true
-    try { await signIn(email, password) } finally { busy = false }
+    // signIn puts the refusal on session.error as well as throwing it, and
+    // the shell renders that — so this catch is the whole error handling.
+    try { await signIn(email, password) } catch {} finally { busy = false }
   }
 
   function as(who) {
@@ -83,8 +85,10 @@ siteName: Kitchen sink
     return submit()
   }
 
-  function out() {
-    signOut()
+  // Awaited: signOut ends the session at the SERVER first — dropping the token
+  // locally and leaving the row alive is what this app used to do.
+  async function out() {
+    await signOut()
     goto('/')
   }
 </script>
@@ -134,7 +138,7 @@ siteName: Kitchen sink
         Search <kbd class="kbd">⌘K</kbd>
       </Button>
 
-      {#if session.level > 0}
+      {#if session.user}
         <DropdownMenu>
           {#snippet trigger()}
             <Button variant="ghost" id="bell" aria-label="Notifications">
@@ -154,7 +158,7 @@ siteName: Kitchen sink
           {/if}
         </DropdownMenu>
 
-        <Badge tone="info">{session.email} · level {session.level}</Badge>
+        <Badge tone="info">{session.user.email} · level {session.level}</Badge>
         <!-- A kit component takes its handler as a PROP (`onclick`), not as
              `on:click` — that directive belongs to elements. -->
         <Button variant="ghost" onclick={out}>Sign out</Button>

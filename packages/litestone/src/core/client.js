@@ -15,7 +15,7 @@ import { detectM2MPairs, buildEdgeMap } from './ddl.js'
 import {
   buildWhere, buildOrderBy, buildRelationOrderBy,
   buildWindowCols,
-  isRawClause, sql,
+  isRawClause, sql, assertNoBareClock, expandNowTokens,
   isNamedAgg, buildNamedAggExpr, extractNamedAggs,
   parseSelectArg, trimAllToSelect,
   deserializeRow, serializeRow,
@@ -26,12 +26,14 @@ import {
 import { validate, applyTransforms, buildValidationMap, ValidationError } from './validate.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel } from '../plugins/gate.js'
-import { buildPolicyMap, buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, evalJs } from './policy.js'
+import { buildPolicyMap, buildScopeMap, compileScope, compileDerived, checkDerivedType, dependsOnClock, policyExprToString, buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, evalJs } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, hashField,
   isCiphertext, normaliseKey, comparisonEncoderFor,
 } from './encryption.js'
 import { randomBytes } from 'crypto'
+import { backupSqliteTo } from './backup.js'
+import { resolveTenancy } from './tenancy.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { runSqliteRetention } from '../tools/retention.js'
 export { ValidationError } from './validate.js'
@@ -132,7 +134,147 @@ export class TransitionNotFoundError extends Error {
   }
 }
 
+// ─── Soft delete × @unique ───────────────────────────────────────────────────
+//
+// A soft-deleted row KEEPS its unique values, and that is the ruling rather
+// than an oversight: the row is still there, so freeing the slot would make
+// `@unique` false for every read that includes deleted rows — `findUnique(…,
+// withDeleted: true)` would legitimately match two — and would make `restore()`
+// conditionally impossible, which is soft delete's whole contract. SQLite also
+// cannot make an inline UNIQUE partial, so the alternative is re-emitting every
+// constraint as an index and rebuilding every table that has one.
+//
+// What was wrong is the REPORT. `UNIQUE constraint failed: doc.code` against a
+// table `count()` says is empty sends every first diagnosis to the index
+// (FJS-204).
+
+export class SoftDeletedUniqueError extends Error {
+  // Every argument is normalised rather than trusted. This is constructed on a
+  // failure path, so a throw inside it replaces a diagnosable error with an
+  // opaque one — and `junction errors` probes it with generic arguments, where
+  // a class that cannot be constructed is reported as an unclassified 500.
+  constructor(model, fields, values, id, idField = 'id') {
+    fields = Array.isArray(fields) ? fields : fields == null ? [] : [fields]
+    values = Array.isArray(values) ? values : values == null ? [] : [values]
+    const named = fields.length
+      ? fields.map((f, i) => `${f} = ${JSON.stringify(values[i])}`).join(', ')
+      : 'a @unique value'
+    super(
+      `${model}: a soft-deleted row still holds ${named}${id == null ? '' : ` (${idField} ${id})`}. ` +
+      `A soft-deleted row keeps its @unique values — it still exists, and restore() has to be able to bring it back. ` +
+      `Restore it, or release the value first: update({ where: { ${idField}: ${JSON.stringify(id)} }, ` +
+      `data: { … }, withDeleted: true }) to change it, or delete({ … , withDeleted: true }) to remove the row for good.`)
+    this.name      = 'SoftDeletedUniqueError'
+    this.model     = model
+    this.fields    = fields
+    this.values    = values
+    this.id        = id ?? null
+    // A conflict with a row that is there — the same category as the version and
+    // transition families. Retrying changes nothing until the slot is released,
+    // which is a decision the caller has to make.
+    this.status    = 409
+    this.retryable = false
+  }
+}
+
+// `UNIQUE constraint failed: doc.code` / `doc.team, doc.slot` → ['code'] /
+// ['team','slot']. SQLite gives the only machine-readable account of WHICH
+// constraint fired, and it is this string.
+export function uniqueConflictColumns(err) {
+  const m = /UNIQUE constraint failed:\s*(.+)$/m.exec(err?.message ?? '')
+  if (!m) return null
+  return m[1].split(',').map(s => s.trim().split('.').pop()).filter(Boolean)
+}
+
+export function isUniqueConflict(err) {
+  return err?.code === 'SQLITE_CONSTRAINT_UNIQUE' || err?.errno === 2067 ||
+         !!(err?.message && err.message.includes('UNIQUE constraint failed'))
+}
+
+// ─── A capability the schema does not declare ────────────────────────────────
+//
+// Two failures with one cause: the caller asked this model for something its
+// `.lite` never opted into. Both used to be answered wrongly and in opposite
+// directions.
+//
+// A METHOD threw a bare Error, which `toFrameworkError` has no name entry for,
+// so `?$search=widget` on a model with no @@fts came back 500 GeneralError —
+// the server saying it broke about a request it understood perfectly. A 500 is
+// paged, counted against availability and retried by clients that would not
+// retry a 400.
+//
+// A FLAG was dropped in silence. `onlyDeleted` on a model with no @@softDelete
+// answered the LIVE rows — not an empty list, the exact opposite of what was
+// asked, with nothing anywhere saying the directive had not applied. A filter
+// typo is a 400 by name and a sort key typo is a 400 by name; a directive the
+// model cannot honour was the one that said nothing.
+
+// ─── What a bulk write tells the world ───────────────────────────────────────
+//
+// A bulk statement answers `{count}` and never builds its rows, so by default it
+// announces a COLLECTION — *count rows under this filter changed* — and every
+// open list re-asks the server (FJS-307). That is always correct and costs
+// nothing, and it is also the coarsest possible answer: a three-row cancel makes
+// every subscribed tab reload its page.
+//
+// `rows` is the opt-in that buys precision, and what it costs is MEMORY
+// proportional to the batch — a `deleteMany` over 100k rows materialises 100k
+// rows because somebody subscribed. That is why it cannot be the default, and
+// why it cannot be decided by size: the count is unknowable before the statement
+// without a second query, so this is declared rather than guessed (FJS-D34).
+//
+// `none` is the other end and it is not the same as having no subscribers: a
+// nightly purge nobody is watching should not send every tab back to the server
+// either.
+//
+// The dial is per CALL with a client-level floor, because the call site is the
+// only place the batch size is knowable — the same model carries both a
+// three-row cancel and a two-million-row purge.
+const ANNOUNCE_MODES = ['collection', 'rows', 'none']
+
+/**
+ * Validate an `announce` option, answering it unchanged or `undefined` when the
+ * caller named none. A typo is refused by NAME rather than falling back to the
+ * default: `announce: 'row'` means somebody wanted per-row announcements, and
+ * silently giving them the coarse one is the class of bug FJS-307 closed.
+ */
+function checkAnnounce(value, where) {
+  if (value === undefined || value === null) return undefined
+  if (ANNOUNCE_MODES.includes(value)) return value
+  // 400 rather than a 500: the request named something that does not exist, and
+  // the identical call fails identically until the caller changes it.
+  const err = new Error(
+    `${where}: announce must be one of ${ANNOUNCE_MODES.map(m => `'${m}'`).join(', ')} — got ${JSON.stringify(value)}.`)
+  err.name      = 'InvalidAnnounceError'
+  err.status    = 400
+  err.retryable = false
+  throw err
+}
+
+export class CapabilityNotDeclaredError extends Error {
+  constructor(model, asked, requires, hint = '') {
+    super(`${model}: ${asked} is not available — the model declares no ${requires}.${hint ? ` ${hint}` : ''}`)
+    this.name       = 'CapabilityNotDeclaredError'
+    this.model      = model
+    this.asked      = asked
+    this.requires   = requires
+    // 400: the request named something this schema does not offer. Nothing is
+    // broken and nothing is contended, so the identical request will fail the
+    // identical way until the schema changes.
+    this.status     = 400
+    this.retryable  = false
+  }
+}
+
 // ─── Lock error types ────────────────────────────────────────────────────────
+//
+// All three are 409, for the same reason the transition and version families
+// are: the request conflicts with a state somebody else owns. They carried
+// `retryable` and no `status`, so toFrameworkError fell through to its name
+// branch, found no entry and answered GeneralError — a caller was told the
+// server had broken about a lock another request was holding (FJS-255).
+// `retryable` is the half a status cannot express and stays: 409 says what
+// happened, `retryable` says whether doing it again is a strategy.
 
 export class LockNotAcquiredError extends Error {
   constructor(key, currentOwner, expiresAt) {
@@ -141,6 +283,10 @@ export class LockNotAcquiredError extends Error {
     this.key          = key
     this.currentOwner = currentOwner ?? null
     this.expiresAt    = expiresAt ?? null
+    // Contention, not an outage: the resource exists and someone else has it.
+    // 503 would say back off from the server; the caller has to back off from
+    // this key, and `expiresAt` says for how long.
+    this.status       = 409
     this.retryable    = true
   }
 }
@@ -148,9 +294,12 @@ export class LockNotAcquiredError extends Error {
 export class LockReleasedByOtherError extends Error {
   constructor(key, owner) {
     super(`Lock '${key}' was released or expired by another owner before explicit release`)
-    this.name     = 'LockReleasedByOtherError'
-    this.key      = key
-    this.owner    = owner
+    this.name      = 'LockReleasedByOtherError'
+    this.key       = key
+    this.owner     = owner
+    // The work is already done under a lock that is no longer this caller's.
+    // Repeating the release cannot make it true again.
+    this.status    = 409
     this.retryable = false
   }
 }
@@ -161,6 +310,7 @@ export class LockExpiredError extends Error {
     this.name      = 'LockExpiredError'
     this.key       = key
     this.owner     = owner
+    this.status    = 409
     this.retryable = false
   }
 }
@@ -547,11 +697,15 @@ function applySequences(data, modelName, sequenceMap, writeDb) {
 // ─── Field policy map ─────────────────────────────────────────────────────────
 // Per model, per field:
 //   omit:      'lists' | 'all' | null
-//   guarded:   'select' | 'all' | null
+//   guarded:   'select' | 'all' | null   — DECLARED @guarded/@secret only
 //   encrypted: { deterministic: bool } | null
 //   hashed:    bool
 //
-// @encrypted implies guarded: 'all'
+// `guarded` is a system-context lock in BOTH directions: the read strips it and
+// writeData refuses it. That is why @encrypted no longer sets it. @encrypted
+// hides a value from a non-system reader too — applyFieldPolicyTo tests it on
+// its own branch — but the caller who supplies a secret is routinely not the
+// system, and folding it in here made every @encrypted column system-write-only.
 
 // ─── Does this schema declare anything raw SQL would bypass? ─────────────────
 //
@@ -592,7 +746,7 @@ const ACCESS_MODEL_ATTRS = new Set(['gate', 'allow', 'deny'])
  * for a soft-delete column would fire on most schemas for a lifecycle rule
  * rather than an access one.
  */
-const ACCESS_FIELD_ATTRS = new Set(['guarded', 'encrypted', 'secret', 'fieldAllow', 'scoped'])
+const ACCESS_FIELD_ATTRS = new Set(['guarded', 'encrypted', 'secret', 'fieldAllow', 'scoped', 'system'])
 
 function schemaDeclaresAccessRules(schema) {
   for (const model of schema.models ?? []) {
@@ -627,9 +781,10 @@ function buildFieldPolicyMap(schema) {
       const guardedAttr   = field.attributes.find(a => a.kind === 'guarded')
       const encryptedAttr = field.attributes.find(a => a.kind === 'encrypted')
       const hashedAttr    = field.attributes.find(a => a.kind === 'hashed')
+      const systemAttr    = field.attributes.find(a => a.kind === 'system')
       const fieldAllows   = field.attributes.filter(a => a.kind === 'fieldAllow')
 
-      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !fieldAllows.length) continue
+      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !systemAttr && !fieldAllows.length) continue
 
       // Build per-op allow expression lists: { read: [expr,...], write: [expr,...] }
       const allow = fieldAllows.length ? { read: [], write: [] } : null
@@ -640,12 +795,14 @@ function buildFieldPolicyMap(schema) {
 
       map[model.name][field.name] = {
         omit:      omitAttr?.level    ?? null,
-        guarded:   encryptedAttr      ? 'all'
-                   : guardedAttr?.level ?? null,
+        guarded:   guardedAttr?.level ?? null,
         encrypted: encryptedAttr ? { deterministic: encryptedAttr.deterministic ?? false } : null,
         // @hashed is not a flavour of encrypted — no ciphertext, no decrypt, and it
         // strips from asSystem() too, which no other protection does.
         hashed:    !!hashedAttr,
+        // @system — readable by anyone, writable only by the system. The
+        // orthogonal sibling of @guarded, which locks both directions.
+        system:    !!systemAttr,
         allow,    // null if no @allow on this field
         // Whether the DECLARED type is Json. Captured here, beside the other
         // per-field facts, because the encrypt/decrypt steps both need it and
@@ -714,12 +871,45 @@ function buildGeneratedMap(schema) {
 // either dropped the field silently or died on `no such column: <table>.<pk>`,
 // depending on whether the caller had named the field in `select`.
 
+// ─── @derived rides this map ─────────────────────────────────────────────────
+//
+// A derived field is the same KIND of thing as an `@from`: a virtual column
+// carried in the SELECT, filterable and sortable through the same
+// `_fromExprMap`, stripped from writes by the same `stripVirtual`. So it is
+// built into the same map rather than beside it — which is the whole reason it
+// reaches all six SELECT-building sites, the WHERE substitution and the ORDER BY
+// without any new plumbing. A seventh site that forgot it would be silent, the
+// way a forgotten `@from` is.
+//
+// It carries no parameters: the expression is compiled once at startup, and
+// `now()` becomes SQLite's own clock, which SQLite fixes for the duration of a
+// statement. That is what keeps `subquerySql` a static string like the rest.
+function addDerivedFields(map, model, schema) {
+  const derived = model.fields.filter(f => f.attributes.find(a => a.kind === 'derived'))
+  if (!derived.length) return
+  map[model.name] ??= {}
+  for (const field of derived) {
+    const attr = field.attributes.find(a => a.kind === 'derived')
+    checkDerivedType(model, schema, field, attr.expr)
+    const sql  = `(${compileDerived(model, field.name, attr.expr)})`
+    map[model.name][field.name] = {
+      subquerySql:        sql,
+      subquerySqlAliased: sql.replace(/"([A-Za-z_][A-Za-z0-9_]*)"/g, 't."$1"'),
+      isObject: false,
+      isBool:   field.type?.name === 'Boolean',
+      derived:  true,
+      clock:    dependsOnClock(attr.expr),
+    }
+  }
+}
+
 function buildFromMap(schema, pluralize = false) {
   const map = {}
   for (const model of schema.models) {
+    addDerivedFields(map, model, schema)
     const fromFields = model.fields.filter(f => f.attributes.find(a => a.kind === 'from'))
     if (!fromFields.length) continue
-    map[model.name] = {}
+    map[model.name] ??= {}
 
     // Outer table — model.name is PascalCase, SQL uses the derived table name.
     const selfTable = modelToTableName(model, pluralize)
@@ -766,7 +956,11 @@ function buildFromMap(schema, pluralize = false) {
       const whereParts = [`_from."${fkCol}" = %SELF%."${refCol}"`]
       if (targetSoftDelete && !withDeleted)   whereParts.push(`_from."deletedAt" IS NULL`)
       if (targetHtField    && !withTemplates) whereParts.push(`_from."${targetHtField}" = 0`)
-      if (where) whereParts.push(`(${where})`)
+      // A @from's `where:` is a raw SQL string in the schema, so the clock trap
+      // reaches it too — and refused HERE it is refused at startup, on the
+      // schema, rather than on a query nobody ran yet.
+      if (where) assertNoBareClock(where, `@from(${target}, where: …) on ${model.name}.${field.name}`)
+      if (where) whereParts.push(`(${expandNowTokens(where)})`)
       const whereClause = whereParts.join(' AND ')
 
       let subquerySql, isObject = false, rowRef = null
@@ -790,7 +984,20 @@ function buildFromMap(schema, pluralize = false) {
           const orderField = orderBy ?? targetPk
           const dir = op === 'last' ? 'DESC' : 'ASC'
           subquerySql = `(SELECT _from."${targetPk}" FROM "${targetTable}" AS _from WHERE ${whereClause} ORDER BY _from."${orderField}" ${dir} LIMIT 1)`
-          rowRef = { model: targetModel.name, pk: targetPk }
+          // Everything the pick needs, so it can be REDONE under the caller's
+          // row policy — see resolveFromRowRefs. The parts carry `%T%` rather
+          // than the `_from` alias above, because the repick cannot alias the
+          // table: a policy compiles `check(parent)` against the table's own
+          // name and an alias puts it out of scope.
+          rowRef = {
+            model: targetModel.name, pk: targetPk,
+            fkCol, refCol, orderField, dir,
+            extra: [
+              ...(targetSoftDelete && !withDeleted ? [`%T%."deletedAt" IS NULL`] : []),
+              ...(targetHtField    && !withTemplates ? [`%T%."${targetHtField}" = 0`] : []),
+              ...(where ? [`(${where})`] : []),
+            ],
+          }
           break
         }
         case 'count':
@@ -849,10 +1056,20 @@ function fromSelectExpr(fromFields, aliased = false) {
 // of its @guarded / @omit / @encrypted ones. One query per field across all the
 // rows in hand, not one per row.
 //
-// The pick happens in SQL, before the target's ROW policy can be applied: the
-// subquery is built once at startup and a policy binds ctx.auth per request. So
-// a row the caller may not read makes the field null rather than falling
-// through to the next visible one. FJS-224.
+// **The pick is redone here whenever the target declares a read policy.** The
+// subquery in the SELECT is built once at startup and a `@@allow` binds
+// ctx.auth per request, so the id it chose is the newest row that EXISTS, not
+// the newest one this caller may read. Fetching that id and finding it filtered
+// answers `null` — *no last order* — where the truth is *your last order is the
+// one below it*. So the policy goes into the WHERE and ROW_NUMBER() picks per
+// parent, which is the same answer a direct `findFirst` would give. FJS-224.
+//
+// It costs one window function over the children of the parents in hand, and
+// only on a policied target: with no policy the id from SQL is already right
+// and the cheaper fetch-by-id runs. The repick needs the parent's correlation
+// column in the row, so `parseSelectArg` injects it the way it injects an FK —
+// a `select` naming the @from field and not the key still repicks, and does not
+// get the key back in the answer.
 //
 // `depth` bounds a chain of references — A.last → B, B.last → A is a cycle, and
 // a cycle here is an infinite fetch rather than a wrong answer.
@@ -860,12 +1077,7 @@ function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
   if (!rows?.length || !fromFields || depth > 3) return rows
   for (const [name, def] of Object.entries(fromFields)) {
     if (!def.rowRef) continue
-    const { model: target, pk } = def.rowRef
-    const ids = [...new Set(rows.map(r => r[name]).filter(v => v != null))]
-    if (!ids.length) {
-      for (const r of rows) if (name in r) r[name] = null
-      continue
-    }
+    const { model: target, pk, fkCol, refCol, orderField, dir, extra } = def.rowRef
     const tModel = ctx.schema?.models.find(m => m.name === target)
     const tTable = tModel ? modelToTableName(tModel, ctx.pluralize ?? false) : target
     const tFrom  = ctx.fromMap?.[target] ?? null
@@ -873,14 +1085,47 @@ function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
       ? buildPolicyFilter(target, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       : null
     const fromCols = tFrom ? fromSelectExpr(tFrom) : null
-    const ph  = ids.map(() => '?').join(', ')
-    const sql = `SELECT *${fromCols ? `, ${fromCols}` : ''} FROM "${tTable}" ` +
-                `WHERE "${pk}" IN (${ph})${policy ? ` AND (${policy.sql})` : ''}`
+    const T        = `"${tTable}"`
 
-    let got = readDb.query(sql).all(...ids, ...(policy?.params ?? []))
-      .map(r => deserializeFromRow(
-        coerceBooleans(deserializeRow(r, ctx.jsonMap?.[target] ?? new Set()), ctx.boolMap?.[target] ?? new Set()),
-        tFrom))
+    // Repick under the policy, or fetch the id SQL already chose. `refCol` is
+    // usually the parent's primary key, so the second condition only fails for
+    // a `select` that named the @from field and not the key it correlates on.
+    const refVals = refCol ? rows.map(r => r[refCol]) : []
+    const refs    = [...new Set(refVals.filter(v => v != null))]
+    const repick  = Boolean(policy && fkCol && refs.length && refVals.every(v => v !== undefined))
+
+    let sql, binds
+    if (repick) {
+      const parts = [
+        `${T}."${fkCol}" IN (${refs.map(() => '?').join(', ')})`,
+        ...(extra ?? []).map(part => part.replaceAll('%T%', T)),
+        ...(policy ? [`(${policy.sql})`] : []),
+      ]
+      // The window runs INSIDE the policy, not over it: partitioning first and
+      // filtering after would rank the rows this caller cannot see and then
+      // delete the winner, which is the null this fixes wearing a second hat.
+      sql = `SELECT * FROM (SELECT ${T}.*${fromCols ? `, ${fromCols}` : ''}, ` +
+            `ROW_NUMBER() OVER (PARTITION BY ${T}."${fkCol}" ORDER BY ${T}."${orderField}" ${dir}) AS "__fromrn" ` +
+            `FROM ${T} WHERE ${parts.join(' AND ')}) WHERE "__fromrn" = 1`
+      binds = [...refs, ...(policy?.params ?? [])]
+    } else {
+      const ids = [...new Set(rows.map(r => r[name]).filter(v => v != null))]
+      if (!ids.length) {
+        for (const r of rows) if (name in r) r[name] = null
+        continue
+      }
+      sql = `SELECT *${fromCols ? `, ${fromCols}` : ''} FROM ${T} ` +
+            `WHERE "${pk}" IN (${ids.map(() => '?').join(', ')})${policy ? ` AND (${policy.sql})` : ''}`
+      binds = [...ids, ...(policy?.params ?? [])]
+    }
+
+    let got = readDb.query(sql).all(...binds)
+      .map((r) => {
+        if (repick) delete r.__fromrn
+        return deserializeFromRow(
+          coerceBooleans(deserializeRow(r, ctx.jsonMap?.[target] ?? new Set()), ctx.boolMap?.[target] ?? new Set()),
+          tFrom)
+      })
     // A referenced row may reference one of its own.
     resolveFromRowRefs(readDb, got, tFrom, ctx, depth + 1)
     got = got.map(r => applyComputed(r, target, ctx.computedFns, ctx))
@@ -888,8 +1133,13 @@ function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
     if (fp && Object.keys(fp).length)
       got = got.map(r => applyFieldPolicyTo(r, target, fp, ctx, { mode: 'single' }))
 
-    const byId = new Map(got.map(r => [r[pk], r]))
-    for (const r of rows) if (name in r) r[name] = r[name] == null ? null : (byId.get(r[name]) ?? null)
+    if (repick) {
+      const byRef = new Map(got.map(r => [r[fkCol], r]))
+      for (const r of rows) if (name in r) r[name] = r[refCol] == null ? null : (byRef.get(r[refCol]) ?? null)
+    } else {
+      const byId = new Map(got.map(r => [r[pk], r]))
+      for (const r of rows) if (name in r) r[name] = r[name] == null ? null : (byId.get(r[name]) ?? null)
+    }
   }
   return rows
 }
@@ -1065,7 +1315,7 @@ function getCascadeTargets(modelName, relationMap, softDeleteMap, modelToTable) 
   return targets
 }
 
-function buildRelationMap(schema) {
+export function buildRelationMap(schema) {
   const map = {}
   for (const model of schema.models) {
     if (!map[model.name]) map[model.name] = {}
@@ -1245,6 +1495,33 @@ function filterableKeysFor(model) {
   return { filterable, computed, encrypted, encryptedAny }
 }
 
+// The keys a GLOBAL filter may name. `filterableKeysFor` reads the model; an
+// edge namespace is a write-side shape the model does not declare, and
+// `withArgValidation` folds it into the caller's own where-key check the same
+// way — so a filter naming one is legitimate and must not be refused.
+function globalFilterKeysFor(model, edgeMap) {
+  const keys = filterableKeysFor(model)
+  for (const d of Object.values(edgeMap?.[model.name] ?? {})) keys.filterable.add(d.as)
+  return keys
+}
+
+// Why an unknown key is fatal in a global filter and a warning in a caller's
+// `where`. A caller has a hint and a stack; the filter is the app's own
+// configuration, applied to every read of the model for the life of the
+// process, and both of its failures are silent: `{ nope: 'x' }` compiles to
+// `'nope' = 'x'` and empties the model, `{ nope: 'nope' }` compiles to
+// `'nope' = 'nope'` and returns every row of it past a filter that was supposed
+// to narrow. There is nobody to warn.
+function globalFilterRefusal(accessor, modelName, problem) {
+  return `the global filter for "${accessor}" cannot be applied — ` +
+         problem.message.replace('%MODEL%', modelName) +
+         (problem.reason === 'unknown'
+           ? `. SQLite reads an identifier it cannot bind as a string literal, so this filter matches ` +
+             `no row at all — or every row, if the value happens to equal the key` +
+             (problem.suggestion ? `. Did you mean: ${problem.suggestion}?` : '')
+           : '')
+}
+
 const WHERE_REASONS = {
   computed:  (k) => `'${k}' is a @computed field on %MODEL% — it is derived in JS after the row is read, so SQLite cannot filter by it. `
                   + `It is not a column, and comparing one is comparing string constants: it matches every row when the value happens to equal '${k}', and none otherwise. `
@@ -1255,11 +1532,29 @@ const WHERE_REASONS = {
   unknown:   (k) => `Unknown field '${k}' in where for %MODEL%`,
 }
 
-function collectWhereKeyProblems(where, filterable, computed, encrypted, out = []) {
+function collectWhereKeyProblems(where, filterable, computed, encrypted, out = [], scopes = null) {
   if (!where || typeof where !== 'object' || Array.isArray(where)) return out
   for (const [k, v] of Object.entries(where)) {
     if (k === 'AND' || k === 'OR' || k === 'NOT') {
-      for (const w of Array.isArray(v) ? v : [v]) collectWhereKeyProblems(w, filterable, computed, encrypted, out)
+      for (const w of Array.isArray(v) ? v : [v]) collectWhereKeyProblems(w, filterable, computed, encrypted, out, scopes)
+      continue
+    }
+    // A scope is a NAME in the table the schema declared, so this is the one
+    // key whose VALUE is checked rather than the key itself (Invariant 8: the
+    // name is looked up, never interpolated).
+    if (k === '$scope') {
+      for (const n of Array.isArray(v) ? v : [v]) {
+        if (typeof n === 'string' && scopes?.has(n)) continue
+        out.push({
+          key:        '$scope',
+          reason:     'scope',
+          suggestion: typeof n === 'string' ? suggestKey(n, scopes ?? new Set()) : null,
+          allowed:    [...(scopes ?? [])].sort(),
+          message:    `Unknown scope '${n}' — ` + (scopes?.size
+            ? `%MODEL% declares: ${[...scopes].sort().join(', ')}`
+            : `%MODEL% declares no @@scope`),
+        })
+      }
       continue
     }
     if (k === '$raw' || filterable.has(k)) continue
@@ -1345,6 +1640,9 @@ function collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaqu
   for (const item of Array.isArray(orderBy) ? orderBy : [orderBy]) {
     if (!item || typeof item !== 'object') continue
     for (const [key, val] of Object.entries(item)) {
+      // The escape hatch names its own columns, so there is nothing here to
+      // check — the same standing `where`'s `$raw` has.
+      if (key === '$raw')                         continue
       if (allowAggregates && key.startsWith('_')) continue
       if (relations.has(key))                     continue
       if (sortable.has(key))                      continue
@@ -1391,8 +1689,96 @@ function collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaqu
   return out
 }
 
-function checkWhereKeys(where, keys, modelName, method, isWrite) {
-  const problems = collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted)
+// ─── aggregate / groupBy key validation ───────────────────────────────────────
+//
+// The third sibling of collectWhereKeyProblems and collectOrderByKeyProblems,
+// and the narrowest of the three, because an aggregate does two things neither
+// of the others does: it NAMES a column in the SELECT, and it never builds a
+// row. So `MAX("whatever")` reaches SQLite verbatim — an unresolvable
+// double-quoted identifier is read as a string CONSTANT, and the query succeeds
+// (FJS-202) — and `read()` never runs, so nothing strips a protected column
+// before the value is handed back (FJS-273).
+//
+// Two tiers, and the split is what a caller does with the answer:
+//
+//   naming  — `by:` and `_count: { distinct }` need a real column and nothing
+//             more. GROUP BY over stored text is self-consistent (every
+//             distinct value is its own group), so the opaque bucket passes.
+//   value   — everything that produces a value out of the column takes the
+//             opaque bucket too: MAX over ciphertext orders by ciphertext, SUM
+//             over a JSON array answers 0.
+//
+// Protection is asked separately, in makeTable, because it depends on the
+// CALLER and this does not.
+const AGG_REASONS = {
+  computed: (k, op) => `Cannot ${op} '${k}' on %MODEL% — it is a @computed field, a JS function over a row, so it is not a ` +
+                       `column SQLite can aggregate. Make it @generated to aggregate it in SQL, or aggregate in JS after the read.`,
+  from:     (k, op) => `Cannot ${op} '${k}' on %MODEL% — it is a @from field, a correlated subquery aliased into the SELECT ` +
+                       `rather than a column, so it cannot be aggregated in the same statement. Aggregate the target model instead.`,
+  relation: (k, op) => `Cannot ${op} '${k}' on %MODEL% — it is a relation, not a column. Aggregate the related model, or use ` +
+                       `orderBy: { ${k}: { _count: … } } to sort by it.`,
+  opaque:   (k, op, why) => `Cannot ${op} '${k}' on %MODEL% — it is ${OPAQUE_AGG[why]}. Aggregate a column that holds the value itself.`,
+}
+
+// The opaque bucket said for an aggregate rather than for a sort. Same columns
+// and the same reason — the stored TEXT is a storage detail — but MIN/MAX and
+// SUM/AVG fail differently from ORDER BY and the sentence has to say which.
+const OPAQUE_AGG = {
+  array:     `an array column, stored as a JSON document — MIN/MAX compare that text, so '[10]' ranks below '[9]', and SUM answers 0`,
+  json:      `a Json column, stored as a document — an aggregate compares the serialised text, so the answer is about whichever key serialised first`,
+  file:      `a File column, stored as a reference document — an aggregate compares that JSON text, never anything about the file`,
+  encrypted: `@encrypted — an aggregate compares ciphertext, which orders nothing and re-shuffles on every re-encryption`,
+  hashed:    `@hashed — the column holds a one-way digest, so an aggregate would answer a fact about digests rather than about values. ` +
+             `A digest can be matched in a where and never read back, by any caller`,
+}
+
+// Which keys of a model may be named by an aggregate. Deliberately NOT
+// sortableKeysFor: a @from field sorts fine (it is in the SELECT) and cannot be
+// aggregated, and an opaque column is a real column, so it is kept and marked
+// rather than dropped.
+function aggregatableKeysFor(model) {
+  const columns   = new Set()
+  const computed  = new Set()
+  const from      = new Set()
+  const relations = new Set()
+  const opaque    = new Map()
+  for (const f of model.fields) {
+    if (f.type?.kind === 'relation' || f.type?.kind === 'implicitM2M')   { relations.add(f.name); continue }
+    if (f.attributes?.some(a => a.kind === 'computed'))                  { computed.add(f.name);  continue }
+    if (f.attributes?.some(a => a.kind === 'from'))                      { from.add(f.name);      continue }
+    if (f.attributes?.some(a => a.kind === 'edge' || a.kind === 'scoped')) continue
+    const why = opaqueSortKind(f)
+    if (why) opaque.set(f.name, why)
+    columns.add(f.name)
+  }
+  return { columns, computed, from, relations, opaque }
+}
+
+function collectAggKeyProblems(names, sets, op, valueRead, out = []) {
+  const { columns, computed, from, relations, opaque } = sets
+  for (const key of names) {
+    if (key == null) continue
+    if (computed.has(key))  { out.push({ key, reason: 'computed', message: AGG_REASONS.computed(key, op) }); continue }
+    if (from.has(key))      { out.push({ key, reason: 'from',     message: AGG_REASONS.from(key, op) });     continue }
+    if (relations.has(key)) { out.push({ key, reason: 'relation', message: AGG_REASONS.relation(key, op) }); continue }
+    if (!columns.has(key)) {
+      const hint = suggestKey(key, columns)
+      out.push({
+        key,
+        reason:  'unknown',
+        message: `Unknown ${op} field '${key}' on %MODEL%.` +
+                 (hint ? ` Did you mean: ${hint}?` : ` Columns: ${[...columns].sort().join(', ')}`),
+      })
+      continue
+    }
+    const why = valueRead && opaque.get(key)
+    if (why) out.push({ key, reason: 'opaque', message: AGG_REASONS.opaque(key, op, why) })
+  }
+  return out
+}
+
+function checkWhereKeys(where, keys, modelName, method, isWrite, scopes = null) {
+  const problems = collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted, [], scopes)
   for (const p of problems) {
     const msg = p.reason === 'unknown'
       ? `Unknown field '${p.key}' in where for ${modelName}.${method}.` +
@@ -1430,6 +1816,7 @@ function withArgValidation(table, model, ctx) {
   if (!table || !model) return table
   const whereKeys = filterableKeysFor(model)
   for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) whereKeys.filterable.add(d.as)
+  const scopeNames = new Set(Object.keys(ctx.scopeMap?.[model.name] ?? {}))
   const modelName = model.name
   const { sortable, relations, computed, opaque } = sortableKeysFor(model)
 
@@ -1468,7 +1855,7 @@ function withArgValidation(table, model, ctx) {
     if (typeof fn !== 'function') return
     out[method] = async (args = {}) => {
       checkTakeSkip(args, method)
-      checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite)
+      checkWhereKeys(args?.where, whereKeys, modelName, method, isWrite, scopeNames)
       checkOrderBy(args, method)
       return fn.call(table, args)
     }
@@ -1481,7 +1868,7 @@ function withArgValidation(table, model, ctx) {
     const fn = table.search
     out.search = async (q, opts = {}) => {
       checkTakeSkip(opts, 'search')
-      checkWhereKeys(opts?.where, whereKeys, modelName, 'search', false)
+      checkWhereKeys(opts?.where, whereKeys, modelName, 'search', false, scopeNames)
       return fn.call(table, q, opts)
     }
   }
@@ -2196,6 +2583,18 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       ? relInclude.withTemplates ? 'withTemplates' : relInclude.onlyTemplates ? 'onlyTemplates' : 'instances'
       : 'instances'
 
+    // An include takes the same flags as a read, so it owes the same refusal:
+    // `onlyDeleted` against a target that declares no @@softDelete answers that
+    // target's live rows, which is the opposite of the question (FJS-293). The
+    // top-level read refuses in sdMode/htMode; this path builds its own SQL and
+    // reaches neither.
+    if (nestedMode === 'onlyDeleted' && !(softDeleteMap[rel.targetModel] ?? false))
+      throw new CapabilityNotDeclaredError(rel.targetModel, 'onlyDeleted', '@@softDelete',
+        'Every row here is live, so there is no deleted-only view to include.')
+    if (nestedHtMode === 'onlyTemplates' && (ctx.hasTemplatesMap?.[rel.targetModel] ?? null) === null)
+      throw new CapabilityNotDeclaredError(rel.targetModel, 'onlyTemplates', '@@hasTemplates',
+        'This model has no template rows, so there is no template-only view to include.')
+
     const targetJsonFields  = jsonMap[rel.targetModel]      ?? new Set()
     // The target's @from fields. These paths build their own SQL, so nothing
     // appends the subqueries unless this does — before which an included row
@@ -2222,7 +2621,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
       const parsedNested = nestedSelect
         ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude,
-                         targetFrom ? { [rel.targetModel]: new Set(Object.keys(targetFrom)) } : null,
+                         targetFrom ? { [rel.targetModel]: new Map(Object.entries(targetFrom)) } : null,
                          computedFns)
         : null
 
@@ -2348,7 +2747,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
       const parsedNested = nestedSelect
         ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude,
-                         targetFrom ? { [rel.targetModel]: new Set(Object.keys(targetFrom)) } : null,
+                         targetFrom ? { [rel.targetModel]: new Map(Object.entries(targetFrom)) } : null,
                          computedFns)
         : null
 
@@ -2570,24 +2969,116 @@ function makeTable(
   const plugins = ctx.plugins   // PluginRunner
   const hasFieldPolicy = Object.keys(fieldPolicy).length > 0
 
-  // @hashed says the value never comes back. `read()` enforces that for rows, but
-  // groupBy and aggregate do not build rows — they project the column straight out
-  // of SQLite, so `by: ['token']` answered a list of digests and `_max` answered
-  // one. Both are reads of a value declared unreadable, and both were silent.
-  // Refuse by name at every path that can name a column, not only the row path.
-  function refuseUnreadable(op, names) {
-    if (!hasFieldPolicy) return
-    for (const name of names) {
-      if (!fieldPolicy[name]?.hashed) continue
-      throw new ValidationError([{ path: [op, name], message:
-        `'${name}' is @hashed on ${modelName} — the column holds a one-way digest, so ${op} would answer the digest ` +
-        `rather than the value. A digest can be matched in a where and never read back, by any caller` }])
+  // A @derived field is an EXPRESSION, not a column, so anywhere a bare
+  // `"name"` would be emitted it has to be substituted instead — otherwise
+  // SQLite reads the quoted identifier as a string constant and the aggregate
+  // answers the field's own NAME, which is FJS-202 arriving through a new field
+  // kind. The read pipeline gets this from `_fromExprMap`; aggregate and groupBy
+  // build their own SELECTs and ask here.
+  const _derivedSql = (name) => (fromFields[name]?.derived ? fromFields[name].subquerySql : null)
+  const _aggCol     = (name) => _derivedSql(name) ?? `"${name}"`
+
+  // ── a UNIQUE conflict, re-read as a soft-delete question ────────────────────
+  //
+  // Only ever runs on the failing path, so the happy path pays nothing. The
+  // extra SELECT is against the deleted rows alone: if one holds the value the
+  // caller tried to write, the raw SQLite message is replaced by one that says
+  // so and names both ways out. If none does, the conflict is an ordinary one
+  // and the original error is rethrown untouched.
+  //
+  // Every write path that can hit the constraint routes through here, because
+  // they gave four different answers to one question — two of them silently
+  // (FJS-276).
+  function asSoftDeletedConflict(err, data) {
+    if (!softDelete || !isUniqueConflict(err)) return err
+    const cols = uniqueConflictColumns(err)
+    if (!cols?.length) return err
+    const rows = Array.isArray(data) ? data : [data]
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue
+      if (cols.some(c => row[c] === undefined)) continue
+      const where = {}
+      for (const c of cols) where[c] = row[c]
+      let hit = null
+      try { hit = readDb.query(
+        `SELECT * FROM "${tableName}" WHERE ${cols.map(c => `"${c}" = ?`).join(' AND ')} AND "deletedAt" IS NOT NULL LIMIT 1`
+      ).get(...cols.map(c => row[c] ?? null)) } catch { return err }
+      if (!hit) continue
+      const idField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+      return new SoftDeletedUniqueError(modelName, cols, cols.map(c => row[c]), hit[idField], idField)
     }
+    return err
+  }
+
+  // ── what an aggregate may name ──────────────────────────────────────────────
+  //
+  // `read()` answers "may this caller see this field" per ROW, in
+  // applyFieldPolicyTo. aggregate and groupBy build no row: they project the
+  // column straight out of SQLite, so the same question has to be asked of the
+  // NAME here or it is not asked at all. It was not — `_max` over a @guarded
+  // salary answered it, and `_stringAgg` over one answered the whole column
+  // joined with commas, which is not an aggregate but a dump (FJS-273).
+  //
+  // The ladder mirrors applyFieldPolicyTo's, with one addition it cannot have:
+  // a field-level @allow('read') is a predicate over a row, and an aggregate has
+  // no row to evaluate it against, so it is refused rather than guessed at.
+  const _aggKeySets = ctx.models?.[modelName] ? aggregatableKeysFor(ctx.models[modelName]) : null
+
+  function fieldReadRefusal(name) {
+    const p = fieldPolicy[name]
+    if (!p) return null
+    if (p.hashed)                     return `is @hashed — the column holds a one-way digest, so the answer would be about digests ` +
+                                             `rather than values. A digest can be matched in a where and never read back, by any caller`
+    if (ctx.isSystem) return null
+    if (p.encrypted)                  return `is @encrypted — a non-system read is stripped, and the stored column is ciphertext`
+    if (p.guarded)                    return `is @guarded — a system-context column. Use asSystem() for a read that is not a caller's`
+    if (p.omit === 'all')             return `is @omit(all) — excluded from every read`
+    if (p.allow?.read?.length)        return `carries a field-level @allow('read', …), which is decided per row — an aggregate has no ` +
+                                             `row to decide it against, so it cannot be answered for some rows and not others`
+    return null
+  }
+
+  // op names the argument in the error path, so a caller sees which one it was.
+  // valueRead is false for `by:` and `_count: { distinct }` — they need a real
+  // column and nothing more.
+  function refuseAggregateKeys(op, names, valueRead = true) {
+    const flat = names.filter(n => typeof n === 'string')
+    if (_aggKeySets) {
+      const problems = collectAggKeyProblems(flat, _aggKeySets, op, valueRead)
+      if (problems.length) throw new ValidationError(problems.map(p => ({
+        path: [op, p.key], message: p.message.replace('%MODEL%', modelName),
+      })))
+    }
+    if (!hasFieldPolicy) return
+    for (const name of flat) {
+      const why = fieldReadRefusal(name)
+      if (why) throw new ValidationError([{ path: [op, name], message:
+        `Cannot ${op} '${name}' on ${modelName} — it ${why}.` }])
+    }
+  }
+
+  // The field names a named aggregate reads, if any. `count: true` / `'*'`
+  // counts rows rather than a column.
+  function namedAggFields(specs) {
+    const out = []
+    for (const spec of specs) {
+      if (!spec || typeof spec !== 'object') continue
+      for (const fn of ['count', 'sum', 'avg', 'min', 'max']) {
+        if (!(fn in spec)) continue
+        const v = spec[fn]
+        if (typeof v === 'string' && v !== '*') out.push(v)
+      }
+    }
+    return out
   }
 
   // @@hasTemplates marker column name, or null if this model doesn't opt in.
   // Read paths inject `<field> = false` by default; `withTemplates` /
   // `onlyTemplates` query args opt out / invert the filter.
+  // Whether this model declares any @@scope. Checked before walking a where for
+  // `$scope`, so a schema with none pays one boolean per read.
+  const _hasScopes = Object.keys(ctx.scopeMap?.[modelName] ?? {}).length > 0
+
   const hasTemplatesField = ctx.hasTemplatesMap?.[modelName] ?? null
   const hasTemplates      = hasTemplatesField !== null
 
@@ -2616,12 +3107,23 @@ function makeTable(
     for (const f of _modelForKeys.fields) {
       const isComputed  = f.attributes?.find(a => a.kind === 'computed')
       const isGenerated = f.attributes?.find(a => a.kind === 'generated' || a.kind === 'funcCall')
-      if (!isComputed && !isGenerated) _allowedWriteKeys.add(f.name)
-      else _virtualWriteKeys.set(f.name, isComputed
-        ? `${f.name} is @computed — it is derived in JS on read and is not a column, so it cannot be written`
-        : `${f.name} is @generated — its value comes from its expression and cannot be written`)
+      const isDerived   = f.attributes?.find(a => a.kind === 'derived')
+      if (!isComputed && !isGenerated && !isDerived) _allowedWriteKeys.add(f.name)
+      else _virtualWriteKeys.set(f.name,
+          isComputed  ? `${f.name} is @computed — it is derived in JS on read and is not a column, so it cannot be written`
+        : isDerived   ? `${f.name} is @derived — its value comes from its expression over this row, so writing it would be overwritten by the next read`
+        :               `${f.name} is @generated — its value comes from its expression and cannot be written`)
     }
   }
+  // The write half of @guarded. Precomputed because the set is empty on most
+  // models, so the per-write cost is a size test.
+  const _guardedWriteKeys = new Set(
+    Object.keys(fieldPolicy).filter(name => fieldPolicy[name].guarded)
+  )
+  // @system — the same lock on the write side and nothing on the read side.
+  const _systemWriteKeys = new Set(
+    Object.keys(fieldPolicy).filter(name => fieldPolicy[name].system)
+  )
   const _modelRels = ctx.relationMap?.[modelName] ?? {}
 
   // ── @edge / @scoped write helpers ─────────────────────────────────────────────
@@ -2914,20 +3416,111 @@ function makeTable(
     }
   }
 
+  // ── Write event emitter ───────────────────────────────────────────────────
+  // Two audiences for one event: the config-time `onEvent` listeners, fixed at
+  // createClient, and any runtime `$tapEvents` taps. Zero-cost when neither
+  // exists — the guard runs before the payload is built, which is what keeps
+  // the fast paths below reachable for an app that subscribes to nothing.
+  //
+  // A tap gets `event` folded INTO the payload rather than as a second
+  // argument: a subscriber that must handle every kind (Junction announcing a
+  // write it did not make) would otherwise re-derive the name from `operation`,
+  // which a transition event does not carry.
+  function fireEvent(event, eventCtx) {
+    if (!emitter && !ctx._eventListeners.size) return
+    if (emitter) emitter.emit(event, eventCtx, ctx)
+    if (!ctx._eventListeners.size) return
+    const e = { event, ...eventCtx }
+    // Deferred and swallowed, exactly like the emitter's own dispatch: a
+    // subscriber is an Observer (FJS-D06) and may not fail the write that
+    // announced it.
+    setImmediate(() => {
+      for (const fn of ctx._eventListeners) {
+        try { const r = fn(e, ctx); if (r?.catch) r.catch(() => {}) }
+        catch (err) { console.warn(`litestone event tap error (${event}):`, err) }
+      }
+    })
+  }
+
   function emitTransitionEvent(transitionResult, record) {
-    if (!transitionResult || !emitter) return
+    // The audience check leads, so the SYSTEM-bypass warning below stays tied
+    // to somebody listening for transitions — it was reached only when an
+    // emitter existed, and an app that subscribes to nothing should not start
+    // seeing it.
+    if (!transitionResult || (!emitter && !ctx._eventListeners.size)) return
     if (ctx.isSystem) {
       console.warn(`[litestone] SYSTEM bypassed transition on ${tableName}.${transitionResult.field}: '${transitionResult.from}' -> '${transitionResult.to}'`)
       return
     }
-    emitter.emit('transition', {
+    fireEvent('transition', {
       model:      tableName,
       transition: transitionResult.transitionName,
       field:      transitionResult.field,
       from:       transitionResult.from,
       to:         transitionResult.to,
       record,
-    }, ctx)
+      // `scope` is on every event or a consumer has to treat its absence as a
+      // third case. A transition is always one row's.
+      scope:      'row',
+      count:      1,
+    })
+  }
+
+  // ── The two shapes a write announcement can take ──────────────────────────
+  // A write that read its row back can say WHICH row changed. A bulk statement
+  // answers `{count}` and never builds the rows, so it can only say how many
+  // and under what filter — and a consumer holding no row has to re-ask rather
+  // than guess. Saying NOTHING is the third option and it is the one that was
+  // there: every bulk write and every hard delete was invisible, so a job that
+  // `createMany`d a hundred rows left every open tab stale (FJS-307).
+  //
+  // `scope` is the discriminator and it is stated rather than inferred, because
+  // `result: null` is not the same fact on both — a `select: false` write is a
+  // ROW write that has no row to hand over.
+  //
+  // The audience check leads in both, so an app that subscribes to nothing does
+  // not pay for the payload it would build.
+  function fireRowEvent(event, operation, result) {
+    if (!emitter && !ctx._eventListeners.size) return
+    fireEvent(event, { model: modelName, operation, result, scope: 'row', count: 1, schema: ctx.models[modelName] })
+  }
+
+  function fireCollectionEvent(event, operation, where, count) {
+    // Nothing matched, so nothing changed. A filter that hit no rows must not
+    // send every open tab back to the server.
+    if (!count) return
+    if (!emitter && !ctx._eventListeners.size) return
+    fireEvent(event, { model: modelName, operation, result: null, scope: 'collection', count, where, schema: ctx.models[modelName] })
+  }
+
+  /**
+   * What this bulk call should announce, and whether it has to fetch rows to do
+   * it: `{ mode, wantRows }`. Precedence is **option → client → 'collection'**,
+   * the same shape `resolveTenancy` uses one realm over.
+   *
+   * `wantRows` is ANDed with the audience, so an app that opted in and has no
+   * subscriber does not pay for the RETURNING it would throw away.
+   */
+  function announceFor(option) {
+    const mode = checkAnnounce(option, `${modelName}`) ?? ctx.announce ?? 'collection'
+    return { mode, wantRows: mode === 'rows' && !!(emitter || ctx._eventListeners.size) }
+  }
+
+  /**
+   * Announce a bulk write, given whatever rows the statement returned.
+   *
+   * One place, because the alternative is the same three-way branch written out
+   * at five call sites — which is how one of them ends up announcing a raw row.
+   * Rows go through `read()` first: a subscriber must not receive a `@guarded`
+   * or `@encrypted` column that every other event path strips.
+   */
+  function announceBulk({ mode, event, operation, where, count, rows }) {
+    if (mode === 'none') return
+    if (mode === 'rows' && rows) {
+      for (const r of rows) fireRowEvent(event, operation, read(r, { mode: 'single', hydrateFrom: true }))
+      return
+    }
+    fireCollectionEvent(event, operation, where, count)
   }
 
   // ── Query event emitter ───────────────────────────────────────────────────
@@ -3265,7 +3858,7 @@ function makeTable(
   // ── Write helper ──────────────────────────────────────────────────────────
   // requireAll: create-shaped writes (create/createMany/upsert-insert) enforce
   // required fields up front; update-shaped writes stay partial.
-  function writeData(data, { requireAll = false } = {}) {
+  function writeData(data, { requireAll = false, system = null } = {}) {
     const model = ctx.models[modelName]
 
     // Unknown keys in the data payload are silently stripped — mass-assignment
@@ -3298,6 +3891,72 @@ function makeTable(
       if (cleaned) data = cleaned
     }
 
+    // ── @guarded, the write half ──────────────────────────────────────────
+    // @guarded is a system-context lock in both directions. The read strips the
+    // column; without this the same caller could still SET it, so the column was
+    // invisible and writable at once — nobody could see what they overwrote and
+    // the owner could not see that they had (FJS-235). The strip made a landed
+    // write look exactly like a refusal, which is why it went unnoticed.
+    //
+    // Refused by name rather than dropped the way a field @allow('write') is:
+    // naming a guarded column is not a form body passing through, and a silent
+    // drop is the shape being fixed. @encrypted alone does NOT reach here — it
+    // hides a value from a reader, and the caller supplying a secret is
+    // routinely not the system.
+    //
+    // The check reads the payload writeData was handed, which is after the
+    // create path stamps @createdBy / @version / @sequence / @default(auth().x).
+    // A guarded column carrying one of those therefore refuses its own stamp —
+    // fail-closed and loud, naming the field, rather than a hole that opens
+    // whichever entry point forgot to ask.
+    if (!ctx.isSystem && _guardedWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) {
+      const denied = Object.keys(data).filter(k => _guardedWriteKeys.has(k))
+      if (denied.length) throw new AccessDeniedError(
+        `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @guarded — ` +
+        `a system-context column on write as well as read. Write it through asSystem(), or leave it out of the ` +
+        `payload. For a column some callers may write, @allow('write', …) is the tool; @guarded answers both ` +
+        `halves at once, which is why the two cannot sit on one field.`,
+        { model: modelName, operation: 'write' }
+      )
+    }
+
+    // ── @system, the write half ───────────────────────────────────────────
+    // The column reads like any other and is written by the application, not by
+    // the person using it — a tracking code a courier job books, an API key's
+    // hint, a workspace stamped from a header. Before this the schema could not
+    // say so, so a generated form offered a text box whose value a worker
+    // overwrote a second later (FJS-095).
+    //
+    // Refused by name rather than dropped, for @guarded's reason: the client is
+    // told `readOnly` and a generated form does not offer the column at all, so
+    // a payload naming it is code that meant to write it. A field
+    // @allow('write', …) still DROPS — there the same payload is legitimate for
+    // another caller, and a form body passing through an ordinary one is
+    // expected traffic.
+    //
+    // Nothing above this refuses it earlier. Junction's autoValidate does not
+    // read `readOnly`, and must not start: `@version` is readOnly in the update
+    // schema and a patch is REQUIRED to carry it back. So this is the boundary
+    // that answers, and it answers 403 rather than 400.
+    //
+    // The narrow hatch is `system: ['col']` on the call, which keeps every
+    // other protection — the gate, the row policies, soft-delete, the audit
+    // actor — where asSystem() drops all of them to write one column. Naming
+    // the field IS the statement: an escape hatch may not disable a guarantee
+    // silently.
+    if (!ctx.isSystem && _systemWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) {
+      const allowed = new Set(Array.isArray(system) ? system : system ? [system] : [])
+      const denied  = Object.keys(data).filter(k => _systemWriteKeys.has(k) && !allowed.has(k))
+      if (denied.length) throw new AccessDeniedError(
+        `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @system — ` +
+        `readable by anyone, written by the application rather than by its caller. Name the column on the call ` +
+        `to write it and keep every other rule:\n\n` +
+        `    db.${modelName.charAt(0).toLowerCase() + modelName.slice(1)}.update({ where, data, system: [${denied.map(f => `'${f}'`).join(', ')}] })\n\n` +
+        `asSystem() writes it too, and drops the gate, the row policies and the audit actor with it.`,
+        { model: modelName, operation: 'write' }
+      )
+    }
+
     // Required-field pre-flight. The schema knows requiredness; without this
     // a missing NOT NULL field surfaced as SQLite's raw "NOT NULL constraint
     // failed" instead of a ValidationError shaped like every other field rule.
@@ -3311,7 +3970,7 @@ function makeTable(
         if (attrs.some(a =>
           a.kind === 'default'  || a.kind === 'updatedAt' || a.kind === 'sequence' ||
           a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' ||
-          a.kind === 'from'     || a.kind === 'edge')) continue
+          a.kind === 'from'     || a.kind === 'edge'      || a.kind === 'derived')) continue
         // Int @id with no default is SQLite's autoincrementing rowid alias
         if (attrs.some(a => a.kind === 'id') && f.type.name === 'Int') continue
         if (data?.[f.name] == null) {
@@ -3320,41 +3979,29 @@ function makeTable(
           // `?` above did.
           const custom = attrs.find(a => a.kind === 'required')?.message
           const label  = attrs.find(a => a.kind === 'label')?.text ?? f.name
-          missing.push({ path: [f.name], message: custom ?? `${label} is required` })
+          // A required @system column is the one case where "is required" names
+          // the wrong party. The caller was never asked for it — the client
+          // schema leaves it out of `required` on purpose — so the app forgot to
+          // fill it, and the message has to say which side is missing.
+          missing.push({
+            path:    [f.name],
+            message: attrs.some(a => a.kind === 'system')
+              ? `${label} is @system and was not supplied — the application fills it, with \`system: ['${f.name}']\` on the call`
+              : custom ?? `${label} is required`,
+          })
         }
       }
       if (missing.length) throw new ValidationError(missing)
     }
 
     const transformed = model ? applyTransforms(data, model) : { ...data }
+    // Array rules — shape, element type, @minItems/@maxItems/@uniqueItems —
+    // live in validate.js with every other rule, and `buildValidationMap` flags
+    // a model with any array field so this call is reached. They were enforced
+    // here once, with their wording built at the throw site, so an authored
+    // `@minItems(2, "Pick at least two tags")` reached the browser through
+    // `x-messages` and was ignored by the server (FJS-194).
     if (model && ctx.hasValidation[modelName]) validate(transformed, model, computedFns, ctx.typeMap)
-    // Validate array fields
-    if (model) {
-      for (const field of model.fields) {
-        if (!field.type.array) continue
-        const val = transformed[field.name]
-        if (val == null) continue
-        if (!Array.isArray(val))
-          throw new ValidationError([{ path: [field.name], message: `${field.name} must be an array` }])
-        // @minItems
-        const minItems = field.attributes.find(a => a.kind === 'minItems')
-        if (minItems && val.length < minItems.value)
-          throw new ValidationError([{ path: [field.name], message: `${field.name} must have at least ${minItems.value} item(s)` }])
-        // @maxItems
-        const maxItems = field.attributes.find(a => a.kind === 'maxItems')
-        if (maxItems && val.length > maxItems.value)
-          throw new ValidationError([{ path: [field.name], message: `${field.name} must have at most ${maxItems.value} item(s)` }])
-        // @uniqueItems
-        const uniqueItems = field.attributes.find(a => a.kind === 'uniqueItems')
-        if (uniqueItems && new Set(val.map(String)).size !== val.length)
-          throw new ValidationError([{ path: [field.name], message: `${field.name} must have unique items` }])
-        // Type validation: String[] → all strings, Int[] → all integers
-        if (field.type.name === 'Int' && !val.every(v => Number.isInteger(v)))
-          throw new ValidationError([{ path: [field.name], message: `${field.name} (Integer[]) must contain only integers` }])
-        if (field.type.name === 'String' && !val.every(v => typeof v === 'string'))
-          throw new ValidationError([{ path: [field.name], message: `${field.name} (Text[]) must contain only strings` }])
-      }
-    }
 
     // Encrypt @encrypted / hash @hashed fields before write
     if (ctx.enc.key && hasFieldPolicy) {
@@ -3386,7 +4033,8 @@ function makeTable(
       // An enum ARRAY has no CHECK behind it — SQLite cannot read the elements
       // of a JSON array without a subquery, and a CHECK may not contain one. So
       // this loop IS the boundary for a set-valued enum, not a nicer message in
-      // front of one. Array-ness, @minItems and friends were checked above.
+      // front of one. Array-ness, @minItems and friends were checked in
+      // validate() above.
       if (meta.array) {
         if (!Array.isArray(val)) continue
         const bad = val.filter(v => !meta.values.has(String(v)))
@@ -3411,7 +4059,11 @@ function makeTable(
         }])
       }
     }
-    // @allow('write', expr) — silently drop restricted fields before write
+    // @allow('write', expr) — silently drop restricted fields before write.
+    // Dropped rather than refused because the predicate is per-caller: the same
+    // payload is legitimate for an admin, so a form body reaching an ordinary
+    // caller is expected traffic. @guarded above is the other answer, for a
+    // column no caller may write at all.
     if (!ctx.isSystem) {
       for (const [fieldName, policy] of Object.entries(fieldPolicy)) {
         if (!policy.allow?.write?.length) continue
@@ -3522,9 +4174,51 @@ function makeTable(
     return clauses.join(' AND ')
   }
 
+  // A `$scope` becomes a `$raw` before anything else looks at the where.
+  // Desugaring rather than adding a case to buildWhere is what makes it compose
+  // for free: `{ $scope: 'overdue', status: 'open' }` conjoins, a scope nested
+  // under AND/OR/NOT nests, and the parameters land in the position `$raw`'s
+  // already do — one owner of each, instead of a second implementation.
+  function expandScopes(where) {
+    if (!where || typeof where !== 'object') return where
+    if (Array.isArray(where)) return where.map(expandScopes)
+    if (!('$scope' in where)) {
+      let changed = false
+      const out = {}
+      for (const [k, v] of Object.entries(where)) {
+        out[k] = (k === 'AND' || k === 'OR' || k === 'NOT') ? expandScopes(v) : v
+        if (out[k] !== v) changed = true
+      }
+      return changed ? out : where
+    }
+    const { $scope, ...rest } = where
+    const names = Array.isArray($scope) ? $scope : [$scope]
+    if (!names.length)
+      throw new ValidationError([{ path: ['where', '$scope'], message:
+        `$scope was given an empty list — omit it, or name a scope` }])
+    for (const n of names)
+      if (typeof n !== 'string')
+        throw new ValidationError([{ path: ['where', '$scope'], message:
+          `$scope names a declared @@scope, so it is a string — got ${n === null ? 'null' : typeof n}` }])
+    const clauses = names.map(n =>
+      compileScope(modelName, n, ctx, ctx.scopeMap, ctx.policyMap, ctx.schema, relationMap))
+    // Several scopes AND, and they AND with the rest of the where. A disjunction
+    // is written as its own scope, where the OR is in the expression language
+    // and both compilers can see it.
+    const merged = clauses.length === 1
+      ? clauses[0]
+      : { _litestoneRaw: true, sql: clauses.map(c => `(${c.sql})`).join(' AND '), params: clauses.flatMap(c => c.params) }
+    const out = expandScopes(rest)
+    // `$raw` is a single slot, so a caller using both needs them conjoined.
+    return out.$raw
+      ? { ...out, $raw: { _litestoneRaw: true, sql: `(${merged.sql}) AND (${out.$raw.sql})`, params: [...merged.params, ...out.$raw.params] } }
+      : { ...out, $raw: merged }
+  }
+
   function buildWhereWithEncryption(where, params, tableAlias = null, outerIsAliased = tableAlias === 't') {
     const fromMap = outerIsAliased ? _fromExprMapAliased : _fromExprMap
     if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds)
+    where = _hasScopes ? expandScopes(where) : where
     let rewritten = where
     if (ctx.enc.key) {
       rewritten = rewriteEncryptedWhere(where)
@@ -3600,6 +4294,40 @@ function makeTable(
   const _rawFilter = globalFilters[accessor]
   const _staticGlobalFilter = (typeof _rawFilter !== 'function') ? (_rawFilter ?? null) : null
   const _dynamicGlobalFilter = (typeof _rawFilter === 'function') ? _rawFilter : null
+
+  // ── The one place a global filter becomes a value ─────────────────────────
+  //
+  // A STATIC filter is judged at createClient, which refuses one that cannot
+  // match any row. A FUNCTION filter is handed `ctx` and has no answer until a
+  // query asks it, so it is judged here — the first moment there is something
+  // to judge, and the same rule.
+  //
+  // What it catches is not a filter that returns too few rows. `{ comp: 'A' }`
+  // over a @computed field compiles to `WHERE "comp" = ?`, and SQLite resolves
+  // an identifier it cannot bind as a string LITERAL: the predicate becomes
+  // `'comp' = 'A'`, false for every row, so the model reads as empty for every
+  // caller. `{ comp: 'comp' }` becomes `'comp' = 'comp'` and returns EVERY row
+  // of it, including rows whose computed value is something else (FJS-215).
+  //
+  // The check is skipped outright on a model with nothing that can produce the
+  // problem, so the ordinary read pays for it once, at construction.
+  const _filterCheckKeys = _dynamicGlobalFilter && ctx.models[modelName]
+    ? globalFilterKeysFor(ctx.models[modelName], ctx.edgeMap)
+    : null
+
+  function resolveGlobalFilter() {
+    if (!_dynamicGlobalFilter) return _staticGlobalFilter
+    const filter = _dynamicGlobalFilter(ctx)
+    if (!filter || !_filterCheckKeys) return filter ?? null
+    const [bad] = collectWhereKeyProblems(
+      filter, _filterCheckKeys.filterable, _filterCheckKeys.computed, _filterCheckKeys.encrypted,
+    )
+    if (bad) throw new ValidationError([{
+      path:    ['filters', accessor, bad.key],
+      message: globalFilterRefusal(accessor, modelName, bad),
+    }])
+    return filter
+  }
 
   // Unique/PK columns eligible as an ON CONFLICT target for the upsert fast
   // path. Built lazily — schema is immutable after createClient.
@@ -3733,7 +4461,7 @@ function makeTable(
     }
 
     // Merge global filter + plugin read filters + query where
-    const globalFilter = _dynamicGlobalFilter ? _dynamicGlobalFilter(ctx) : _staticGlobalFilter
+    const globalFilter = resolveGlobalFilter()
     const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
     const allFilters = globalFilter
       ? (pluginFilters.length ? [globalFilter, ...pluginFilters] : [globalFilter])
@@ -3753,7 +4481,14 @@ function makeTable(
     // Build relation orderBy first so we know if JOINs will be present.
     // When JOINs are added, column refs in WHERE must be qualified with `t.`
     // to avoid ambiguous column errors (e.g. `id` exists on both joined tables).
-    const { joinClauses, orderParts } = buildRelationOrderBy(orderBy, modelName, relationMap, _modelToTable)
+    // Two builders see the same orderBy and only one of them is authoritative,
+    // so each collects its own params: with JOINs buildRelationOrderBy emits the
+    // whole list, without them buildOrderBy emits the flat parts and
+    // buildRelationOrderBy contributes only the relation subqueries, which bind
+    // nothing. Sharing one array would push a `$raw`'s params twice.
+    const _relOrderParams  = []
+    const _flatOrderParams = []
+    const { joinClauses, orderParts } = buildRelationOrderBy(orderBy, modelName, relationMap, _modelToTable, _relOrderParams)
     const hasJoins  = joinClauses.length > 0
     // The table is aliased for a relation AGGREGATE orderBy too, which adds an
     // order part and no join — so the alias question and the join question are
@@ -3765,8 +4500,9 @@ function makeTable(
     const whereSql  = buildWhereWithEncryption(effectiveWhere, params, whereAlias, needsAlias)
     // When JOINs exist, buildRelationOrderBy returns the full ordered list
     // (flat + relation, flat prefixed with `t.`). Don't double-emit flat parts.
-    const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy)
+    const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy, _flatOrderParams)
     const orderSql = [flatOrderSql, ...orderParts].filter(Boolean).join(', ')
+    const orderParams = hasJoins ? _relOrderParams : _flatOrderParams
     const sqlCols   = parsedSelect?.sqlCols ?? '*'
     const distinctKw = distinct ? 'DISTINCT ' : ''
     // A @from subquery correlates to the outer table by name, so an aliased
@@ -3803,7 +4539,9 @@ function makeTable(
     else if (whereSql)                 sql += ` WHERE ${whereSql}`
     else if (policyResult)             sql += ` WHERE ${policyResult.sql}`
     if (policyResult) params.push(...policyResult.params)
-    if (orderSql)       sql += ` ORDER BY ${orderSql}`
+    // After the policy's params, because the policy is ANDed into the WHERE and
+    // ORDER BY comes after it in the statement.
+    if (orderSql)       { sql += ` ORDER BY ${orderSql}`; params.push(...orderParams) }
     if (limit  != null) sql += ` LIMIT ${Number(limit)}`
     if (offset != null) sql += ` OFFSET ${Number(offset)}`
 
@@ -3838,8 +4576,9 @@ function makeTable(
     return { sql, params }
   }
 
-  // Pre-build fromSets for this table — passed to parseSelectArg
-  const _fromSets = _hasFrom ? { [modelName]: new Set(Object.keys(fromFields)) } : null
+  // Pre-build the @from map for this table — passed to parseSelectArg, which
+  // reads the defs and not only the names.
+  const _fromSets = _hasFrom ? { [modelName]: new Map(Object.entries(fromFields)) } : null
 
   function parseArgs(select, include) {
     return parseSelectArg(select, modelName, relationMap, computedSets, include, _fromSets, computedFns)
@@ -3862,18 +4601,37 @@ function makeTable(
     )
   }
 
-  // Soft-delete mode from args
+  // Soft-delete mode from args.
+  //
+  // `onlyDeleted` on a model that declares no @@softDelete is REFUSED, not
+  // dropped: it means *the deleted ones and nothing else*, and answering the
+  // live rows is the opposite of what was asked, with nothing anywhere saying
+  // the flag did not apply (FJS-293).
+  //
+  // `withDeleted` is the asymmetry, and it is deliberate. It asks to WIDEN, and
+  // on a model that hides nothing the full row set already IS everything — so
+  // the answer is right rather than accidentally right, and generic code that
+  // does not know the model (Studio's row browser, an admin screen with a *show
+  // deleted* toggle) is not writing a mistake. Only the flag that cannot be
+  // satisfied refuses.
   function sdMode(args) {
-    if (!softDelete) return 'live'
+    if (!softDelete) {
+      if (args?.onlyDeleted) throw new CapabilityNotDeclaredError(modelName, 'onlyDeleted', '@@softDelete',
+        'Every row here is live, so there is no deleted-only view to ask for.')
+      return 'live'
+    }
     if (args?.withDeleted) return 'withDeleted'
     if (args?.onlyDeleted) return 'onlyDeleted'
     return 'live'
   }
 
-  // @@hasTemplates mode from args. Same shape as sdMode: default hides templates,
-  // explicit flags opt into mixed or template-only views.
+  // @@hasTemplates mode from args. Same shape as sdMode, same asymmetry.
   function htMode(args) {
-    if (!hasTemplates) return 'instances'
+    if (!hasTemplates) {
+      if (args?.onlyTemplates) throw new CapabilityNotDeclaredError(modelName, 'onlyTemplates', '@@hasTemplates',
+        'This model has no template rows, so there is no template-only view to ask for.')
+      return 'instances'
+    }
     if (args?.withTemplates) return 'withTemplates'
     if (args?.onlyTemplates) return 'onlyTemplates'
     return 'instances'
@@ -3923,6 +4681,38 @@ function makeTable(
   function applyHtFilter(where, mode) {
     if (!hasTemplates) return where
     return injectHasTemplatesFilter(where, mode, hasTemplatesField)
+  }
+
+  // The soft-delete half of the same pair. It exists so that sdMode is asked on
+  // EVERY read, not only on the models that can answer it: guarding the call
+  // with `softDelete ? … : where` is what let a flag this model cannot honour
+  // through without a word.
+  function applySdFilter(where, args) {
+    const mode = sdMode(args)
+    if (!softDelete) return where
+    return injectSoftDeleteFilter(where, mode)
+  }
+
+  // ── What a HARD delete narrows by ─────────────────────────────────────────
+  //
+  // The two exclusions are not the same kind of thing, and this is the one
+  // place they part company.
+  //
+  // Soft delete: `delete` is the purge hatch and bypasses the `deletedAt`
+  // filter by design — that is its stated contract, and the reason it exists
+  // beside `remove`. A FLAG still narrows it, so `deleteMany({ onlyDeleted:
+  // true })` purges exactly the rows already soft-deleted, which is the thing
+  // people were writing raw SQL for.
+  //
+  // Templates: the filter applies, like every other statement. A template is a
+  // live row in a parallel category, not an end state — so `deleteMany({ where:
+  // { cost: { lt: 5 } } })` destroying template rows that no read of the model
+  // can see is data loss the caller has no way to anticipate (FJS-176). Opt in
+  // with `withTemplates` / `onlyTemplates`, the same words the reads take.
+  function _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }) {
+    const sdFlagMode = sdMode({ withDeleted, onlyDeleted })
+    const sdW = sdFlagMode === 'live' ? where : injectSoftDeleteFilter(where, sdFlagMode)
+    return applyHtFilter(sdW, htMode({ withTemplates, onlyTemplates }))
   }
 
   // ── Nested writes ──────────────────────────────────────────────────────────
@@ -4416,8 +5206,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const htm       = htMode(hctx ? hctx.args : args)
       const params    = []
       // Merge global filter + plugin read filters + policy filter (same as buildSQL does)
-      const rawFilter    = globalFilters[accessor]
-      const globalFilter = typeof rawFilter === 'function' ? rawFilter(ctx) : rawFilter
+      const globalFilter = resolveGlobalFilter()
       const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
       const allFilters   = [globalFilter, ...pluginFilters].filter(Boolean)
       const mergedWhere  = allFilters.length
@@ -4457,8 +5246,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const mode      = sdMode(hctx ? hctx.args : args)
       const htm       = htMode(hctx ? hctx.args : args)
       const params    = []
-      const rawFilter    = globalFilters[accessor]
-      const globalFilter = typeof rawFilter === 'function' ? rawFilter(ctx) : rawFilter
+      const globalFilter = resolveGlobalFilter()
       const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
       const allFilters   = [globalFilter, ...pluginFilters].filter(Boolean)
       const mergedWhere  = allFilters.length
@@ -4510,7 +5298,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
 
       // ── count query (same WHERE, no limit/offset) ─────────────────────
       const countParams = []
-      const globalFilter = _dynamicGlobalFilter ? _dynamicGlobalFilter(ctx) : _staticGlobalFilter
+      const globalFilter = resolveGlobalFilter()
       const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
       const allFilters = globalFilter ? [globalFilter, ...pluginFilters] : pluginFilters
       const mergedWhere = allFilters.length
@@ -4568,20 +5356,40 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     // Returns: { _sum: { amount: 1200 }, _avg: { amount: 40 }, _count: 30, _min: { amount: 5 }, _max: { amount: 200 } }
     async aggregate(args = {}) {
       refuseRecursive('aggregate', args)
+      // A @@gate is a plugin's beforeRead, and three read methods never called
+      // it: a model gated at SYSADMIN answered a level-4 caller's COUNT, its
+      // GROUP BY and its full-text search. A row policy compiles into the WHERE
+      // and did apply, which is what hid this — the gate is the layer that
+      // refuses OUTRIGHT, and it is the one an aggregate over a gated model
+      // needs (FJS-262).
+      if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where, _count, _sum, _avg, _min, _max, _stringAgg } = args
-      refuseUnreadable('aggregate', [_sum, _avg, _min, _max, _stringAgg]
-        .filter(v => v && typeof v === 'object').flatMap(v => Object.keys(v)))
+      // Every name this method can put inside a quoted identifier. Missing one
+      // is silent: SQLite reads the unresolvable identifier as a string constant
+      // and the aggregate answers it (FJS-202).
+      refuseAggregateKeys('aggregate', [
+        ...[_sum, _avg, _min, _max].filter(v => v && typeof v === 'object').flatMap(v => Object.keys(v)),
+        ...(_stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : []),
+        ...namedAggFields(extractNamedAggs(args).map(([, spec]) => spec)),
+      ])
+      if (_count && typeof _count === 'object' && _count.distinct)
+        refuseAggregateKeys('aggregate', [_count.distinct], false)
       const params = []
 
       // Build WHERE (reuses count() pattern)
-      const rawFilter    = _dynamicGlobalFilter ? _dynamicGlobalFilter(ctx) : _staticGlobalFilter
+      const rawFilter    = resolveGlobalFilter()
       const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
       const allFilters   = rawFilter ? [rawFilter, ...pluginFilters] : pluginFilters
       const mergedWhere  = allFilters.length
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
-      const sdEffective = softDelete ? injectSoftDeleteFilter(mergedWhere, 'live') : mergedWhere
-      const effectiveWhere = applyHtFilter(sdEffective, 'instances')
+      // The flags, not a hardcoded 'live'/'instances'. Both were pinned here, so
+      // `aggregate({ _count: true, onlyDeleted: true })` counted the LIVE rows
+      // and `onlyTemplates` counted the instances — the opposite answer to the
+      // question asked, from the method whose whole output is one number
+      // nothing can cross-check (FJS-263).
+      const sdEffective = applySdFilter(mergedWhere, args)
+      const effectiveWhere = applyHtFilter(sdEffective, htMode(args))
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
       const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
 
@@ -4591,7 +5399,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         // _count: true → COUNT(*)
         // _count: { distinct: 'field' } → COUNT(DISTINCT "field")
         if (typeof _count === 'object' && _count.distinct) {
-          selects.push(`COUNT(DISTINCT "${_count.distinct}") AS "__count"`)
+          selects.push(`COUNT(DISTINCT ${_aggCol(_count.distinct)}) AS "__count"`)
         } else {
           selects.push(`COUNT(*) AS "__count"`)
         }
@@ -4602,7 +5410,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         const fn = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }[agg]
         for (const [field, wanted] of Object.entries(spec)) {
           if (!wanted) continue
-          selects.push(`${fn}("${field}") AS "${agg}__${field}"`)
+          selects.push(`${fn}(${_aggCol(field)}) AS "${agg}__${field}"`)
         }
       }
       // _stringAgg: { field: 'name', separator: ', ', orderBy: 'name' }
@@ -4666,11 +5474,23 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     // Returns: [{ status: 'paid', _count: 10, _sum: { amount: 500 } }, ...]
     async groupBy(args = {}) {
       refuseRecursive('groupBy', args)
+      if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { by, where, having, orderBy, limit, offset, _count, _sum, _avg, _min, _max, _stringAgg, fillGaps } = args
       const interval = args.interval   // { fieldName: 'unit' }
       if (!by?.length) throw new Error('groupBy() requires a "by" array of field names')
-      refuseUnreadable('groupBy', [...by, ...[_sum, _avg, _min, _max, _stringAgg]
-        .filter(v => v && typeof v === 'object').flatMap(v => Object.keys(v))])
+      // `by` is the naming tier — a GROUP BY over stored text is at least
+      // self-consistent, so an opaque column passes here and not below. It
+      // reached SQLite unchecked, which answered `no such column: order.label`:
+      // a refusal, but one naming a table rather than the model and never the
+      // reason.
+      refuseAggregateKeys('groupBy', by, false)
+      refuseAggregateKeys('groupBy', [
+        ...[_sum, _avg, _min, _max].filter(v => v && typeof v === 'object').flatMap(v => Object.keys(v)),
+        ...(_stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : []),
+        ...namedAggFields(extractNamedAggs(args).map(([, spec]) => spec)),
+      ])
+      if (_count && typeof _count === 'object' && _count.distinct)
+        refuseAggregateKeys('groupBy', [_count.distinct], false)
 
       // ── Interval / date truncation ───────────────────────────────────────
       // interval: { createdAt: 'month' }
@@ -4686,6 +5506,12 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         const VALID_UNITS = ['year', 'quarter', 'month', 'week', 'day', 'hour']
         if (!VALID_UNITS.includes(intervalUnit))
           throw new Error(`groupBy() interval unit '${intervalUnit}' is invalid. Use: ${VALID_UNITS.join(', ')}`)
+
+        // It becomes STRFTIME('%Y', "table"."field") — a quoted identifier like
+        // any other, so an unknown name is a string constant and every row
+        // groups together. The type check below only ever ran when the field
+        // WAS found.
+        refuseAggregateKeys('groupBy interval', [intervalField], false)
 
         // Validate field is DateTime on the model
         const modelDef = ctx.models[modelName]
@@ -4734,14 +5560,15 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const params = []
 
       // WHERE clause
-      const rawFilter    = _dynamicGlobalFilter ? _dynamicGlobalFilter(ctx) : _staticGlobalFilter
+      const rawFilter    = resolveGlobalFilter()
       const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
       const allFilters   = rawFilter ? [rawFilter, ...pluginFilters] : pluginFilters
       const mergedWhere  = allFilters.length
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
-      const sdEffective = softDelete ? injectSoftDeleteFilter(mergedWhere, 'live') : mergedWhere
-      const effectiveWhere = applyHtFilter(sdEffective, 'instances')
+      // Same as aggregate: the flags, not a hardcoded mode (FJS-263).
+      const sdEffective = applySdFilter(mergedWhere, args)
+      const effectiveWhere = applyHtFilter(sdEffective, htMode(args))
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
       const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
 
@@ -4755,14 +5582,17 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           selectCols.push(`${expr} AS "${intervalField}"`)
           groupByCols.push(expr)
         } else {
-          selectCols.push(`"${tableName}"."${f}"`)
-          groupByCols.push(`"${tableName}"."${f}"`)
+          // A derived key groups by its expression and is aliased to its name,
+          // so the returned row carries the field the caller asked for.
+          const d = _derivedSql(f)
+          selectCols.push(d ? `${d} AS "${f}"` : `"${tableName}"."${f}"`)
+          groupByCols.push(d ?? `"${tableName}"."${f}"`)
         }
       }
 
       if (_count) {
         if (typeof _count === 'object' && _count.distinct) {
-          selectCols.push(`COUNT(DISTINCT "${_count.distinct}") AS "__count"`)
+          selectCols.push(`COUNT(DISTINCT ${_aggCol(_count.distinct)}) AS "__count"`)
         } else {
           selectCols.push(`COUNT(*) AS "__count"`)
         }
@@ -4773,7 +5603,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         const fn = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }[agg]
         for (const [field, wanted] of Object.entries(spec)) {
           if (!wanted) continue
-          selectCols.push(`${fn}("${field}") AS "${agg}__${field}"`)
+          selectCols.push(`${fn}(${_aggCol(field)}) AS "${agg}__${field}"`)
         }
       }
       if (_stringAgg) {
@@ -4932,6 +5762,16 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (orderBy) {
         const orderParts = []
         for (const [key, val] of Object.entries(orderBy)) {
+          if (key === '$raw') {
+            // groupBy's ORDER BY is over aggregates and group keys, not over
+            // the table, so a fragment written for findMany would name columns
+            // this statement does not have. Refused by name rather than emitted
+            // as `"$raw" ASC`, which SQLite reads as a string constant and
+            // sorts by nothing at all.
+            throw new ValidationError([{ path: ['orderBy', '$raw'], message:
+              `orderBy $raw is not supported on groupBy — its ORDER BY is over the group keys and aggregates, ` +
+              `not over ${modelName}'s columns. Put the expression in the aggregate, or sort the result in JS` }])
+          }
           if (key === '_count') {
             orderParts.push(`COUNT(*) ${val === 'desc' ? 'DESC' : 'ASC'}`)
           } else if (key === '_stringAgg') {
@@ -4992,7 +5832,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     },
 
     // ── create ──────────────────────────────────────────────────────────────
-    async create({ data, include, select, scopedBy } = {}) {
+    async create({ data, include, select, scopedBy, system } = {}) {
       if (ctx.hasPolicies) checkCreatePolicy(modelName, data, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select }, ctx)
       // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
@@ -5031,7 +5871,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (hctx && hookRunner.hasBefore('create')) { hookRunner.runBefore(hctx, ctx); data = hctx.args.data }
       if (ctx.selfRelationMap?.[modelName])
         assertNoParentCycle([data?.[ctx.selfRelationMap[modelName][0].referencedField]], data)
-      const row   = writeData(data, { requireAll: true })
+      const row   = writeData(data, { requireAll: true, system })
       const cols  = Object.keys(row)
       // cols can be empty when all fields are optional and none were supplied,
       // or when all fields were stripped by @allow write policies.
@@ -5046,18 +5886,24 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       // select: false — skip RETURNING, use run() for zero overhead
       if (_noReturn) {
-        const result = writeDb.run(_crSql, ..._crParams)
+        let result
+        try { result = writeDb.run(_crSql, ..._crParams) }
+        catch (e) { throw asSoftDeletedConflict(e, row) }
         fireQuery({ operation: 'create', args: { data, include, select }, sql: _crSql, params: _crParams, duration: _nt ? performance.now() - _crT0 : 0, rowCount: result.changes })
         if (!result.changes) return null
         if (hctx) { hctx.result = null; if (hookRunner?.hasAfter('create')) hookRunner.runAfter(hctx, ctx) }
-        if (emitter) emitter.emit('create', { model: modelName, operation: 'create', result: null, schema: ctx.models[modelName] }, ctx)
+        // A row write with no row: `select: false` skipped the RETURNING. Still
+        // a row event — one row changed and this cannot say which.
+        fireRowEvent('create', 'create', null)
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'create', null, ctx)
         return null
       }
 
       // RETURNING * gives the inserted row directly — no follow-up SELECT needed.
       // Uses writeDb so it works inside open transactions.
-      let created = read(writeDb.query(_crSql).get(..._crParams), { mode: 'single', hydrateFrom: true })
+      let created
+      try { created = read(writeDb.query(_crSql).get(..._crParams), { mode: 'single', hydrateFrom: true }) }
+      catch (e) { throw asSoftDeletedConflict(e, row) }
       fireQuery({ operation: 'create', args: { data, include, select }, sql: _crSql, params: _crParams, duration: _nt ? performance.now() - _crT0 : 0, rowCount: created ? 1 : 0 })
       if (!created) return null
       // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
@@ -5068,7 +5914,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (ps || include) withIncludes([created], ps, include)
       created = finaliseOne(created, ps)
       if (hctx) { hctx.result = created; if (hookRunner.hasAfter('create')) hookRunner.runAfter(hctx, ctx); created = hctx.result }
-      if (emitter) emitter.emit('create', { model: modelName, operation: 'create', result: created, schema: ctx.models[modelName] }, ctx)
+      fireRowEvent('create', 'create', created)
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'create', created, ctx)
       // ── Logging ──────────────────────────────────────────────────────────────
       if (tableHasAnyLog && created) emitLogs('create', [created], { after: created })
@@ -5076,8 +5922,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     },
 
     // ── createMany ──────────────────────────────────────────────────────────
-    async createMany({ data } = {}) {
+    async createMany({ data, system, announce } = {}) {
       if (!data?.length) return { count: 0 }
+      // Resolved before any work: an unknown value is a caller that meant
+      // something, and refusing it after the write has landed helps nobody.
+      const { mode: _cmMode, wantRows: _cmWantRows } = announceFor(announce)
+      // A logged model already takes RETURNING, so opting in costs it nothing.
+      const _cmNeedRows = tableHasAnyLog || _cmWantRows
       if (ctx.hasPolicies) for (const row of data) checkCreatePolicy(modelName, row, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
 
@@ -5106,7 +5957,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           if (versionField) d = { ...(d ?? {}), [versionField]: 1 }
           // Apply @sequence per row — each row gets its own counter increment
           d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
-          return writeData(d, { requireAll: true })
+          return writeData(d, { requireAll: true, system })
         })
 
         // One prepared statement PER ROW SHAPE, not one for the batch. Rows are
@@ -5125,7 +5976,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           let entry = stmts.get(key)
           if (!entry) {
             const sql = `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`
-                      + (tableHasAnyLog ? ` RETURNING *` : '')
+                      + (_cmNeedRows ? ` RETURNING *` : '')
             entry = { cols, sql, stmt: writeDb.prepare(sql) }
             stmts.set(key, entry)
           }
@@ -5133,12 +5984,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         }
         // RETURNING on a logged model: an @id @default(autoincrement()) row has no
         // id until SQLite assigns one, and a log entry naming no rows is not a trail.
-        if (tableHasAnyLog) _cmInserted = []
+        if (_cmNeedRows) _cmInserted = []
         for (const row of rows) {
           const { cols, stmt } = stmtFor(Object.keys(row))
           const args = cols.map(c => row[c] ?? null)
-          if (tableHasAnyLog) { const r = stmt.get(...args); if (r) _cmInserted.push(r) }
-          else stmt.run(...args)
+          try {
+            if (_cmNeedRows) { const r = stmt.get(...args); if (r) _cmInserted.push(r) }
+            else stmt.run(...args)
+          } catch (e) { throw asSoftDeletedConflict(e, row) }
           count++
         }
         // A mixed batch has no single SQL to report. Uniform — the ordinary
@@ -5146,7 +5999,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         _cmSql = [...stmts.values()].map(e => e.sql).join('\n')
       })
       fireQuery({ operation: 'createMany', args: { data }, sql: _cmSql, params: null, duration: _nt ? performance.now() - _cmT0 : 0, rowCount: count })
-      if (_cmInserted?.length) emitLogs('create', _cmInserted)
+      if (tableHasAnyLog && _cmInserted?.length) emitLogs('create', _cmInserted)
+      // No `where` on the collection form — a batch names its rows by supplying
+      // them, and their ids exist only after SQLite assigns them.
+      announceBulk({ mode: _cmMode, event: 'create', operation: 'createMany', count, rows: _cmInserted })
       return { count }
     },
 
@@ -5157,7 +6013,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   • A post-update policy rollback was triggered
     // Callers that need to distinguish can check count() before/after,
     // or enable policyDebug to see which policy blocked.
-    async update({ where, data, include, select, scopedBy, _bypassVersion } = {}) {
+    async update({ where, data, include, select, scopedBy, system, _bypassVersion,
+                   withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select }, ctx)
       const hctx = hookRunner ? { model: modelName, operation: 'update', args: { where, data, include, select }, schema: ctx.models[modelName] } : null
       if (hctx && hookRunner.hasBefore('update')) { hookRunner.runBefore(hctx, ctx); where = hctx.args.where; data = hctx.args.data }
@@ -5184,14 +6041,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const extraFKs = await processBelongsToNested(nested)
       data = { ..._scalarNoEdge, ...extraFKs }
 
-      const row       = writeData(data)
+      const row       = writeData(data, { system })
       const setParams = []
       const setCols   = Object.keys(row)
         .map(c => { setParams.push(row[c] ?? null); return `"${c}" = ?` })
         .join(', ')
       const whereParams = []
-      const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
-      const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
+      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+      const sdWhereW = applySdFilter(where, _flags)
+      const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
       const whereSql = buildWhereWithEncryption(effectiveWhere, whereParams)
       if (!whereSql) throw new Error(`update on "${tableName}" requires a where clause`)
       if (ctx.selfRelationMap?.[modelName] && ctx.selfRelationMap[modelName].some(r => r.fkField in (data ?? {}))) {
@@ -5274,7 +6132,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             return null
           }
           if (hctx) { hctx.result = null; if (hookRunner?.hasAfter('update')) hookRunner.runAfter(hctx, ctx) }
-          if (emitter) emitter.emit('update', { model: modelName, operation: 'update', result: null, schema: ctx.models[modelName] }, ctx)
+          fireRowEvent('update', 'update', null)
           if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', null, ctx)
           return null
         }
@@ -5327,7 +6185,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (ps || include) withIncludes([updated], ps, include)
       const finalRow = select === false ? null : finaliseOne(updated, ps)
       if (hctx) { hctx.result = finalRow; if (hookRunner.hasAfter('update')) hookRunner.runAfter(hctx, ctx) }
-      if (emitter) emitter.emit('update', { model: modelName, operation: 'update', result: finalRow, schema: ctx.models[modelName] }, ctx)
+      fireRowEvent('update', 'update', finalRow)
       emitTransitionEvent(_transResult, updated)
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', finalRow, ctx)
       // ── Logging: emit after ───────────────────────────────────────────────
@@ -5336,7 +6194,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     },
 
     // ── updateMany ──────────────────────────────────────────────────────────
-    async updateMany({ where, data } = {}) {
+    async updateMany({ where, data, system, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+      const { mode: _umMode, wantRows: _umWantRows } = announceFor(announce)
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data }, ctx)
       // Same stamp update() runs. Missing it here was worse than missing it
       // anywhere else: @updatedAt is a SQL trigger, so the timestamp moved while
@@ -5349,7 +6208,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // would leave every open editor's version looking current.
       const _umVersion = ctx.versionMap?.[modelName]
       if (_umVersion && data && _umVersion in data) { data = { ...data }; delete data[_umVersion] }
-      const row       = writeData(data)
+      const row       = writeData(data, { system })
       // SET params and WHERE params are collected apart and joined at the end.
       // Sharing one array made the statement depend on the order the two halves
       // happened to be built in, which is why the empty-SET case below could not
@@ -5360,8 +6219,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         ...(_umVersion ? [`"${_umVersion}" = "${_umVersion}" + 1`] : []),
       ].join(', ')
       const whereParams = []
-      const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
-      const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
+      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+      const sdWhereW = applySdFilter(where, _flags)
+      const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
       const whereSql = buildWhereWithEncryption(effectiveWhere, whereParams)
       const updateManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (updateManyPolicy) whereParams.push(...updateManyPolicy.params)
@@ -5384,19 +6244,26 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // A logged model takes RETURNING so the trail can name the rows it changed.
       // Still one statement — bulk ops record WHICH rows and WHAT operation, never
       // their contents (same shape as createMany; see emitLogs).
+      const _umNeedRows = tableHasAnyLog || _umWantRows
       const _umSql = `UPDATE "${tableName}" SET ${setCols}${finalWhere ? ` WHERE ${finalWhere}` : ''}`
-                   + (tableHasAnyLog ? ` RETURNING *` : '')
+                   + (_umNeedRows ? ` RETURNING *` : '')
       const _nt = needsTiming()
       const _umT0 = _nt ? performance.now() : 0
-      const _umRows = tableHasAnyLog ? writeDb.query(_umSql).all(...params) : null
+      const _umRows = _umNeedRows ? writeDb.query(_umSql).all(...params) : null
       const count = _umRows ? _umRows.length : writeDb.run(_umSql, ...params).changes
       fireQuery({ operation: 'updateMany', args: { where, data }, sql: _umSql, params, duration: _nt ? performance.now() - _umT0 : 0, rowCount: count })
-      if (_umRows?.length) emitLogs('update', _umRows)
+      if (tableHasAnyLog && _umRows?.length) emitLogs('update', _umRows)
+      announceBulk({ mode: _umMode, event: 'update', operation: 'updateMany', where, count, rows: _umRows })
       return { count }
     },
 
     // ── upsert ──────────────────────────────────────────────────────────────
-    async upsert({ where, create: createData, update: updateData, include, select } = {}) {
+    async upsert({ where, create: createData, update: updateData, include, select, system,
+                   withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+      // Threaded through to both halves: the lookup has to SEE the row the
+      // update would write, or an upsert against an excluded row reads as
+      // absent and tries to INSERT one that is already there.
+      const _upFlags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
       // ── Single-statement fast path ─────────────────────────────────────────
       // When no hooks / plugins / policies / events / logs / transitions /
       // soft-delete / global filters / field policies / sequences / nested
@@ -5406,7 +6273,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // (measured ~6x). Any feature that needs the split path falls through
       // to the original read-then-write implementation below.
       fastPath: if (
-        !plugins?.hasPlugins && !hookRunner && !emitter &&
+        !plugins?.hasPlugins && !hookRunner && !emitter && !ctx._eventListeners.size &&
         !ctx.hasPolicies && !tableHasAnyLog && !_tableTransitions &&
         !softDelete && !hasTemplates && !hasFieldPolicy && !_rawFilter &&
         !ctx.sequenceMap?.[modelName]?.length &&
@@ -5442,8 +6309,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         }
 
         // writeData runs transforms + validation on both branches' data
-        const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true })
-        const updRow = writeData(updateData)
+        const insRow = writeData({ ...cData, [wKey]: cData[wKey] ?? wVal }, { requireAll: true, system })
+        const updRow = writeData(updateData, { system })
         const insCols = Object.keys(insRow)
         const updCols = Object.keys(updRow).filter(c => c !== wKey)
         if (!insCols.length || !updCols.length) break fastPath
@@ -5481,17 +6348,24 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // the row exists, so it cannot have read a version to assert. It still
       // BUMPS — an editor holding version 3 must lose to an upsert that landed
       // after them. Concurrent editing is what update() is for.
-      const existing = await this.findFirst({ where })
+      const existing = await this.findFirst({ where, ..._upFlags })
       if (existing) {
-        return this.update({ where, data: updateData, include, select, _bypassVersion: true })
+        return this.update({ where, data: updateData, include, select, _bypassVersion: true, ..._upFlags })
       }
-      // Attempt create; if unique constraint fires (race), fall back to update
+      // Attempt create; if unique constraint fires (race), fall back to update.
+      //
+      // The fallback assumes the conflict means a LIVE row appeared between the
+      // findFirst above and this insert, which is true of a race and false of a
+      // soft-deleted row: the update filters deleted rows too, so it matched
+      // nothing and upsert answered `null` having written nothing at all
+      // (FJS-276). `create` names that case now, and it must not be swallowed
+      // here — an upsert cannot resurrect a row the caller did not ask it to.
       try {
         return await this.create({ data: createData, include, select })
       } catch (e) {
-        if (e?.code === 'SQLITE_CONSTRAINT_UNIQUE' || e?.errno === 2067 ||
-            (e?.message && e.message.includes('UNIQUE constraint failed'))) {
-          return this.update({ where, data: updateData, include, select, _bypassVersion: true })
+        if (e instanceof SoftDeletedUniqueError) throw e
+        if (isUniqueConflict(e)) {
+          return this.update({ where, data: updateData, include, select, _bypassVersion: true, ..._upFlags })
         }
         throw e
       }
@@ -5518,8 +6392,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //     update: ['title'],   // only update these fields on conflict
     //   })
 
-    async upsertMany({ data, conflictTarget, update: updateFields } = {}) {
+    async upsertMany({ data, conflictTarget, update: updateFields, system, announce } = {}) {
       if (!data?.length) return { count: 0 }
+      const { mode: _usMode, wantRows: _usWantRows } = announceFor(announce)
+      // The create/update split costs one SELECT per row and is what a logged
+      // model already pays for its trail. At the `rows` tier it is worth paying
+      // again: the caller asked for precision, and knowing which half a row fell
+      // in is the difference between announcing `create` and announcing `update`
+      // — the compromise the collection form has to make and this one does not.
+      const _usNeedRows = tableHasAnyLog || _usWantRows
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
 
       const autoId       = ctx.autoIdMap?.[modelName]
@@ -5559,12 +6440,31 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           d = stampFromAuth(d, updatedBys, ctx.auth)
           if (usVersion) d = { ...(d ?? {}), [usVersion]: 1 }
           d = applySequences(d, modelName, ctx.sequenceMap, writeDb)
-          return writeData(d, { requireAll: true })
+          return writeData(d, { requireAll: true, system })
         })
 
         const target  = conflictTarget
           ? (Array.isArray(conflictTarget) ? conflictTarget : [conflictTarget])
           : [idField]
+
+        // ON CONFLICT DO UPDATE is resolved by SQLite, which has never heard of
+        // soft delete — so a batch whose conflict key matched a DELETED row
+        // wrote the update INTO that row and reported `{count: 1}`. The write
+        // landed where no read returns it and `deletedAt` was never cleared, so
+        // it was invisible for good and the caller was told it succeeded
+        // (FJS-276). Asked BEFORE the statement runs, because afterwards the
+        // write has already happened.
+        if (softDelete) {
+          for (const row of rows) {
+            if (target.some(c => row[c] === undefined)) continue
+            const hit = writeDb.query(
+              `SELECT * FROM "${tableName}" WHERE ${target.map(c => `"${c}" = ?`).join(' AND ')} ` +
+              `AND "deletedAt" IS NOT NULL LIMIT 1`
+            ).get(...target.map(c => row[c] ?? null))
+            if (hit) throw new SoftDeletedUniqueError(
+              modelName, target, target.map(c => row[c]), hit[idField], idField)
+          }
+        }
 
         // One statement per row shape — see createMany. The SET clause is
         // derived from the shape's own columns, so a row carrying a column the
@@ -5601,7 +6501,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
           // RETURNING on a logged model, so the entry names rows by their real id —
           // see createMany. ON CONFLICT DO NOTHING returns nothing for a skipped row.
-          if (tableHasAnyLog) s += ` RETURNING *`
+          if (_usNeedRows) s += ` RETURNING *`
           entry = { cols, sql: s, stmt: writeDb.prepare(s) }
           stmts.set(key, entry)
           return entry
@@ -5611,7 +6511,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // row would look like an update.
         let present = null
         const keyOf = row => JSON.stringify(target.map(c => row[c] ?? null))
-        if (tableHasAnyLog) {
+        if (_usNeedRows) {
           const clause = target.map(c => `"${c}" = ?`).join(' AND ')
           const lookup = writeDb.prepare(`SELECT 1 FROM "${tableName}" WHERE ${clause} LIMIT 1`)
           present = new Set()
@@ -5625,7 +6525,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         for (const row of rows) {
           const { cols, stmt } = stmtFor(Object.keys(row))
           const args = cols.map(c => row[c] ?? null)
-          if (tableHasAnyLog) {
+          if (_usNeedRows) {
             const written = stmt.get(...args)
             if (written) (present.has(keyOf(row)) ? _usUpdated : _usCreated).push(written)
           } else {
@@ -5636,8 +6536,21 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         sql = [...stmts.values()].map(e => e.sql).join('\n')
       })
       fireQuery({ operation: 'upsertMany', args: { data, conflictTarget, update: updateFields }, sql, params: null, duration: _nt ? performance.now() - _usT0 : 0, rowCount: count })
-      if (_usCreated?.length) emitLogs('create', _usCreated)
-      if (_usUpdated?.length) emitLogs('update', _usUpdated)
+      if (tableHasAnyLog) {
+        if (_usCreated?.length) emitLogs('create', _usCreated)
+        if (_usUpdated?.length) emitLogs('update', _usUpdated)
+      }
+      // At the `rows` tier the split is known, so each half announces truthfully.
+      // The COLLECTION form has to pick one for the whole batch and picks
+      // `update`: to a list every row named here now exists with new values, and
+      // `create` would be wrong for the conflicting majority, which is the
+      // ordinary case for an upsert.
+      if (_usMode === 'rows' && _usCreated) {
+        announceBulk({ mode: 'rows', event: 'create', operation: 'upsertMany', count: _usCreated.length, rows: _usCreated })
+        announceBulk({ mode: 'rows', event: 'update', operation: 'upsertMany', count: _usUpdated.length, rows: _usUpdated })
+      } else {
+        announceBulk({ mode: _usMode, event: 'update', operation: 'upsertMany', count })
+      }
       return { count }
     },
 
@@ -5646,11 +6559,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   soft-delete tables  → sets deletedAt = now() (+ cascades if @@softDeleteCascade)
     //   hard-delete tables  → real DELETE FROM
     // Use delete() only when you explicitly need to bypass soft delete.
-    async remove({ where } = {}) {
+    async remove({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
-      const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
+      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+      const sdWhereW = applySdFilter(where, _flags)
+      const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
       if (!whereSql) throw new Error(`remove on "${tableName}" requires a where clause`)
       const removePolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
@@ -5699,7 +6613,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           }
         }
 
-        if (emitter) emitter.emit('remove', { model: modelName, operation: 'remove', result: softResult, schema: ctx.models[modelName] }, ctx)
+        fireRowEvent('remove', 'remove', softResult)
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', softResult, ctx)
         // ── Logging ──────────────────────────────────────────────────────────
         if (tableHasAnyLog) emitLogs('delete', [softResult], { before: { ...softResult, deletedAt: null } })
@@ -5712,7 +6626,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const row = read(writeDb.query(_rmHSql).get(...removeFinalParams), { mode: 'single', hydrateFrom: true })
       fireQuery({ operation: 'remove', args: { where }, sql: _rmHSql, params: removeFinalParams, duration: _nt ? performance.now() - _rmHT0 : 0, rowCount: row ? 1 : 0 })
       if (!row) return null
-      if (emitter) emitter.emit('remove', { model: modelName, operation: 'remove', result: row, schema: ctx.models[modelName] }, ctx)
+      fireRowEvent('remove', 'remove', row)
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', row, ctx)
       if (plugins?.hasPlugins) await plugins.afterDelete(modelName, [row], ctx)
       // ── Logging ───────────────────────────────────────────────────────────
@@ -5723,11 +6637,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // ── removeMany ─────────────────────────────────────────────────────────
     // Bulk version of remove() — same semantics: soft delete on soft-delete tables,
     // real DELETE FROM on hard-delete tables.
-    async removeMany({ where } = {}) {
+    async removeMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+      const { mode: _rmMode, wantRows: _rmWantRows } = announceFor(announce)
+      const _rmNeedRows = tableHasAnyLog || _rmWantRows
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const sdWhereW = softDelete ? injectSoftDeleteFilter(where, 'live') : where
-      const effectiveWhere = applyHtFilter(sdWhereW, 'instances')
+      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+      const sdWhereW = applySdFilter(where, _flags)
+      const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
       const whereSql = buildWhereWithEncryption(effectiveWhere, params)
       const removeManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (removeManyPolicy) params.push(...removeManyPolicy.params)
@@ -5774,30 +6691,33 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
         // RETURNING only on a logged model — see updateMany.
         const _rmsSql = `UPDATE "${tableName}" SET "deletedAt" = ?${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`
-                      + (tableHasAnyLog ? ` RETURNING *` : '')
-        const _rmsRows = tableHasAnyLog ? writeDb.query(_rmsSql).all(ts, ...params) : null
+                      + (_rmNeedRows ? ` RETURNING *` : '')
+        const _rmsRows = _rmNeedRows ? writeDb.query(_rmsSql).all(ts, ...params) : null
         const softCount = _rmsRows ? _rmsRows.length : writeDb.run(_rmsSql, ts, ...params).changes
-        if (_rmsRows?.length) emitLogs('delete', _rmsRows)
+        if (tableHasAnyLog && _rmsRows?.length) emitLogs('delete', _rmsRows)
+        announceBulk({ mode: _rmMode, event: 'remove', operation: 'removeMany', where, count: softCount, rows: _rmsRows })
         return { count: softCount }
       }
 
       const _rmnSql = `DELETE FROM "${tableName}"${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`
-                    + (tableHasAnyLog ? ` RETURNING *` : '')
+                    + (_rmNeedRows ? ` RETURNING *` : '')
       const _nt = needsTiming()
       const _rmnT0 = _nt ? performance.now() : 0
-      const _rmnRows = tableHasAnyLog ? writeDb.query(_rmnSql).all(...params) : null
+      const _rmnRows = _rmNeedRows ? writeDb.query(_rmnSql).all(...params) : null
       const count = _rmnRows ? _rmnRows.length : writeDb.run(_rmnSql, ...params).changes
       fireQuery({ operation: 'removeMany', args: { where }, sql: _rmnSql, params, duration: _nt ? performance.now() - _rmnT0 : 0, rowCount: count })
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)
-      if (_rmnRows?.length) emitLogs('delete', _rmnRows)
+      if (tableHasAnyLog && _rmnRows?.length) emitLogs('delete', _rmnRows)
+      announceBulk({ mode: _rmMode, event: 'remove', operation: 'removeMany', where, count, rows: _rmnRows })
       return { count }
     },
 
     // ── restore ─────────────────────────────────────────────────────────────
     // Soft-delete tables only — sets deletedAt = NULL.
     async restore({ where } = {}) {
-      if (!softDelete) throw new Error(`restore() is only available on soft-delete tables (deletedAt field). Use delete() for hard deletes.`)
+      if (!softDelete) throw new CapabilityNotDeclaredError(modelName, 'restore()', '@@softDelete',
+        'A row here is either present or gone — delete() is the only removal, and it has no way back.')
       const params   = []
       // Restore targets deleted rows
       const effectiveWhere = injectSoftDeleteFilter(where, 'onlyDeleted')
@@ -5845,7 +6765,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // — no JSON parse, no boolean coercion, no computed fields — so anything
       // that had reached for them would have got a shape no other read
       // produces. restore mirrors remove, which returns its row.
-      return restored.map(r => read(r, { mode: 'single', hydrateFrom: true }))
+      const restoredRows = restored.map(r => read(r, { mode: 'single', hydrateFrom: true }))
+      // One event per row rather than a collection one: `where` can match many,
+      // but RETURNING already built every row and the caller is handed them, so
+      // the memory a per-row announcement would cost is spent either way.
+      // `update` for the same reason the log entry says update — a restored row
+      // is one that changed state, not one that was created — and to a list
+      // holding the default (live) filter it arrives exactly as a patch does.
+      for (const r of restoredRows) fireRowEvent('update', 'restore', r)
+      return restoredRows
     },
 
 
@@ -5871,6 +6799,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     async findManyCursor(args = {}) {
       refuseRecursive('findManyCursor', args)
+      // The gate lives in a plugin's beforeRead, and this path did not call it —
+      // so a model gated at SYSADMIN answered a level-4 caller in full, and the
+      // one read method built for paging through a large table was the one that
+      // asked nothing (FJS-262).
+      if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const {
         cursor,
         limit    = 20,
@@ -5882,9 +6815,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         onlyDeleted = false,
       } = args
 
-      const mode   = softDelete
-        ? (withDeleted ? 'withDeleted' : onlyDeleted ? 'onlyDeleted' : 'live')
-        : 'live'
+      const mode   = sdMode({ withDeleted, onlyDeleted })
 
       // Normalise orderBy — always an array of { col, dir }
       const fields = normaliseOrderBy(orderBy)
@@ -5893,11 +6824,30 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const cursorValues = cursor ? decodeCursor(cursor) : null
 
       // Build the combined WHERE clause:
-      //   soft delete filter AND user where AND cursor where
+      //   global filter AND plugin filters AND soft delete AND @@hasTemplates
+      //   AND user where AND cursor where AND the row policy
+      //
+      // This path builds its own SQL, which is how it came to apply none of the
+      // first four and neither the policy: `findMany` answered one row where
+      // `findManyCursor` answered every row in the table, another owner's and
+      // another tenant's included. Composed in the same ORDER as buildSQL, and
+      // the policy is appended last as raw SQL with its params after the
+      // cursor's — positional binds, so the order is the correctness (FJS-262).
       const params = []
 
-      const sdWhere   = softDelete ? injectSoftDeleteFilter(where, mode) : where
-      const baseWhere = buildWhereWithEncryption(sdWhere, params)
+      const globalFilter  = resolveGlobalFilter()
+      const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
+      const allFilters    = globalFilter ? [globalFilter, ...pluginFilters] : pluginFilters
+      const mergedWhere   = allFilters.length
+        ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
+        : where
+      const policyResult = ctx.hasPolicies
+        ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+        : null
+
+      const sdWhere   = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
+      const htWhere   = applyHtFilter(sdWhere, htMode(args))
+      const baseWhere = buildWhereWithEncryption(htWhere, params)
 
       const cursorClause = cursorValues
         ? buildCursorWhere(fields, cursorValues, params)
@@ -5910,6 +6860,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         whereSql = baseWhere
       } else if (cursorClause) {
         whereSql = cursorClause
+      }
+      if (policyResult) {
+        whereSql = whereSql ? `(${whereSql}) AND (${policyResult.sql})` : policyResult.sql
+        params.push(...policyResult.params)
       }
 
       // Build SELECT — ensure all orderBy fields are present for cursor extraction
@@ -6022,14 +6976,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       onlyTemplates = false,
     } = {}) {
       if (!ftsFields) {
-        throw new Error(
-          `search() is not available on "${tableName}" — add @@fts([field1, field2]) to the model`
-        )
+        throw new CapabilityNotDeclaredError(modelName, 'search()', '@@fts',
+          `Add @@fts([field1, field2]) to ${modelName} to make it searchable.`)
       }
 
+      if (plugins?.hasPlugins) await plugins.beforeRead(modelName, { where, limit, offset }, ctx)
+
       const ftsTable = `${tableName}_fts`
-      const mode     = withDeleted ? 'withDeleted' : onlyDeleted ? 'onlyDeleted' : 'live'
-      const htm      = withTemplates ? 'withTemplates' : onlyTemplates ? 'onlyTemplates' : 'instances'
+      const mode     = sdMode({ withDeleted, onlyDeleted })
+      const htm      = htMode({ withTemplates, onlyTemplates })
 
       // ── Step 1: query FTS table for matching rowids + rank ─────────────────
       // FTS5 rank column is BM25 — lower (more negative) = better match.
@@ -6072,11 +7027,34 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // throws away — a search asking for 20 answering 13, with nothing to say
       // why. Narrowing here rather than after also makes `offset` mean pages of
       // matching rows rather than pages of index entries.
+      //
+      // The global filter, the plugin read filters and the row policy are part
+      // of that narrowing, and were part of neither step: `findMany` answered
+      // one row where `search` answered every row in the table, another owner's
+      // and another tenant's included (FJS-262). Merged ONCE here and used by
+      // both steps, so the two cannot drift.
+      const searchGlobal  = resolveGlobalFilter()
+      const searchPlugins = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
+      const searchFilters = searchGlobal ? [searchGlobal, ...searchPlugins] : searchPlugins
+      const withFilters   = (w) => searchFilters.length
+        ? (w ? { AND: [...searchFilters, w] } : searchFilters.length === 1 ? searchFilters[0] : { AND: searchFilters })
+        : w
+      const searchPolicy = ctx.hasPolicies
+        ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+        : null
+
       const filterParams = []
-      const filterSql    = buildWhereWithEncryption(
-        applyHtFilter(softDelete ? injectSoftDeleteFilter(where ?? {}, mode) : (where ?? {}), htm),
+      const preFilter    = withFilters(where) ?? {}
+      let   filterSql    = buildWhereWithEncryption(
+        applyHtFilter(softDelete ? injectSoftDeleteFilter(preFilter, mode) : preFilter, htm),
         filterParams
       )
+      if (searchPolicy) {
+        filterSql = filterSql && filterSql !== '1=1'
+          ? `(${filterSql}) AND (${searchPolicy.sql})`
+          : searchPolicy.sql
+        filterParams.push(...searchPolicy.params)
+      }
       if (filterSql && filterSql !== '1=1') {
         ftsSql += ` AND rowid IN (SELECT "${idField}" FROM "${tableName}" WHERE ${filterSql})`
         ftsParams.push(...filterParams)
@@ -6105,17 +7083,21 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // Build base query — apply soft delete filter + any extra where
       const baseParams   = []
       const idFilter     = { id: { in: rowids } }
+      const merged       = withFilters(where ? { AND: [idFilter, where] } : idFilter)
       const effectiveWhere = applyHtFilter(
-        softDelete
-          ? injectSoftDeleteFilter(
-              where ? { AND: [idFilter, where] } : idFilter,
-              mode
-            )
-          : (where ? { AND: [idFilter, where] } : idFilter),
+        softDelete ? injectSoftDeleteFilter(merged, mode) : merged,
         htm
       )
 
-      const whereSql = buildWhereWithEncryption(effectiveWhere, baseParams)
+      let whereSql = buildWhereWithEncryption(effectiveWhere, baseParams)
+      // The pre-filter above already narrowed the rowids, so this is belt and
+      // braces — and it is the half that must not be dropped: step 2 is what
+      // returns the rows, and a future edit that skips the pre-filter for a
+      // cheap query would otherwise hand them all back.
+      if (searchPolicy) {
+        whereSql = whereSql ? `(${whereSql}) AND (${searchPolicy.sql})` : searchPolicy.sql
+        baseParams.push(...searchPolicy.params)
+      }
 
       const ps         = parseArgs(select, include)
       let   sqlCols    = ps?.sqlCols ?? '*'
@@ -6166,11 +7148,16 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // ── delete ──────────────────────────────────────────────────────────────
     // Always a real DELETE FROM — bypasses soft delete on all tables.
     // Requires a where clause to prevent accidental mass deletion.
-    async delete({ where } = {}) {
+    async delete({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const whereSql = buildWhere(where, params, null, null, null, null, fieldKinds)
-      if (!whereSql) throw new Error(`delete on "${tableName}" requires a where clause — use deleteMany({}) to delete all rows`)
+      // The guard reads the CALLER's where. The filters below add clauses of
+      // their own, and a `delete({})` whose emptiness they papered over would
+      // stop being refused.
+      if (!buildWhere(where, [], null, null, null, null, fieldKinds))
+        throw new Error(`delete on "${tableName}" requires a where clause — use deleteMany({}) to delete all rows`)
+      const whereSql = buildWhere(_hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }),
+                                  params, null, null, null, null, fieldKinds)
       const delPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const delFinalSql = delPolicy ? `(${whereSql}) AND (${delPolicy.sql})` : whereSql
       const delFinalParams = delPolicy ? [...params, ...delPolicy.params] : params
@@ -6186,6 +7173,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       fireQuery({ operation: 'delete', args: { where }, sql: _delSql, params: delFinalParams, duration: _nt ? performance.now() - _delT0 : 0, rowCount: 1 })
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', row, ctx)
       if (plugins?.hasPlugins) await plugins.afterDelete(modelName, [row].filter(Boolean), ctx)
+      // Announced as `remove`: the event names what happened to the row from a
+      // reader's side, and a hard delete and a soft one are the same thing to
+      // anything holding a list. This had the row all along — the pre-DELETE
+      // SELECT above — and announced nothing, while its sibling `remove` fired
+      // from the same region (FJS-307).
+      if (row) fireRowEvent('remove', 'delete', row)
       // ── Logging ───────────────────────────────────────────────────────────
       if (tableHasAnyLog && row) emitLogs('delete', [row], { before: row })
       return row
@@ -6193,10 +7186,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     // ── deleteMany ──────────────────────────────────────────────────────────
     // Real DELETE FROM — bypasses soft delete. where is optional (deletes all if omitted).
-    async deleteMany({ where } = {}) {
+    async deleteMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+      const { mode: _dmMode, wantRows: _dmWantRows } = announceFor(announce)
+      const _dmNeedRows = tableHasAnyLog || _dmWantRows
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const whereSql = buildWhere(where, params, null, null, null, null, fieldKinds)
+      const whereSql = buildWhere(_hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }),
+                                  params, null, null, null, null, fieldKinds)
       const delManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (delManyPolicy) params.push(...delManyPolicy.params)
       const dmFinalSql = whereSql && delManyPolicy ? `(${whereSql}) AND (${delManyPolicy.sql})`
@@ -6209,15 +7205,16 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         : []
 
       const _dmnSql = `DELETE FROM "${tableName}"${dmFinalSql ? ` WHERE ${dmFinalSql}` : ''}`
-                    + (tableHasAnyLog ? ` RETURNING *` : '')
+                    + (_dmNeedRows ? ` RETURNING *` : '')
       const _nt = needsTiming()
       const _dmnT0 = _nt ? performance.now() : 0
-      const _dmnRows = tableHasAnyLog ? writeDb.query(_dmnSql).all(...params) : null
+      const _dmnRows = _dmNeedRows ? writeDb.query(_dmnSql).all(...params) : null
       const result = { changes: _dmnRows ? _dmnRows.length : writeDb.run(_dmnSql, ...params).changes }
       fireQuery({ operation: 'deleteMany', args: { where }, sql: _dmnSql, params, duration: _nt ? performance.now() - _dmnT0 : 0, rowCount: result.changes })
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)
-      if (_dmnRows?.length) emitLogs('delete', _dmnRows)
+      if (tableHasAnyLog && _dmnRows?.length) emitLogs('delete', _dmnRows)
+      announceBulk({ mode: _dmMode, event: 'remove', operation: 'deleteMany', where, count: result.changes, rows: _dmnRows })
       return { count: result.changes }
     },
 
@@ -6235,7 +7232,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //
     // updateMany() is NOT covered — transition safety requires single-row update().
     async transition(id, transitionName) {
-      if (!_tableTransitions) throw new Error(`transition() is not available on "${tableName}" — no transitions block declared on any enum field`)
+      if (!_tableTransitions) throw new CapabilityNotDeclaredError(modelName, 'transition()', '@@transitions',
+        'No enum field on this model declares a transitions block, so there are no named moves to make.')
 
       // Find which field + enum has this transition name
       let targetField = null, targetValue = null
@@ -6302,9 +7300,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     optimizeFts() {
       if (!ftsFields) {
-        throw new Error(
-          `optimizeFts() is not available on "${tableName}" — add @@fts([field1, field2]) to the model`
-        )
+        throw new CapabilityNotDeclaredError(modelName, 'optimizeFts()', '@@fts',
+          `Add @@fts([field1, field2]) to ${modelName} — there is no index to merge without one.`)
       }
       writeDb.run(`INSERT INTO "${tableName}_fts"("${tableName}_fts") VALUES('optimize')`)
       return { optimized: true, table: `${tableName}_fts` }
@@ -6641,6 +7638,8 @@ export async function createClient({
   encryptionKey,       // 64-char hex string — required for @encrypted / @secret fields
   hooks,
   onEvent,
+  announce:   announceDefault,  // 'collection' (default) | 'rows' | 'none' — what a BULK
+                                // write tells a subscriber. The floor; a call overrides it
   filters,
   plugins:    plugins,
   databases:  dbOverrides,   // ':memory:' | { dbName: { path } } — override db paths
@@ -7037,7 +8036,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const validationMap  = buildValidationMap(schema)
   const fieldPolicyMap = buildFieldPolicyMap(schema)
   const secretMap      = buildSecretMap(schema)
-  const policyMap      = buildPolicyMap(schema)
+  const policyMap      = buildPolicyMap(schema, relationMap)
+  const scopeMap       = buildScopeMap(schema, relationMap)
   const hookRunner     = buildHookRunner(hooks ?? null)
   const emitter        = buildEventEmitter(onEvent ?? null)
 
@@ -7152,12 +8152,9 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     const model = schema.models.find(m =>
       m.name === accessor || m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
     if (!model?.fields) continue
-    const keys = filterableKeysFor(model)
-    const bad  = collectWhereKeyProblems(f, keys.filterable, keys.computed, keys.encrypted)
-                   .find(p => p.reason !== 'unknown')
-    if (bad) throw new Error(
-      `createClient: the global filter for "${accessor}" cannot match any row — ` +
-      bad.message.replace('%MODEL%', model.name))
+    const keys = globalFilterKeysFor(model, edgeMap)
+    const [bad] = collectWhereKeyProblems(f, keys.filterable, keys.computed, keys.encrypted)
+    if (bad) throw new Error(`createClient: ${globalFilterRefusal(accessor, model.name, bad)}`)
   }
 
   for (const [modelName, ops] of Object.entries(policyMap)) {
@@ -7282,6 +8279,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     fieldPolicyMap,
     policyMap,
     hasPolicies:   Object.keys(policyMap).length > 0,
+    scopeMap,
     policyDebug,
     // A CELL, not a value. Every derived context — asSystem(), $setAuth(),
     // $scopedBy() — is a spread of this one, and a spread copies a string by
@@ -7301,6 +8299,12 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     onLog:        onLog ?? null,
     onQuery:       onQuery ?? null,
     _queryListeners: new Set(),    // runtime taps — shared ref across all scoped ctx copies
+    _eventListeners: new Set(),    // $tapEvents taps. Shared by REFERENCE for the same reason
+                                   // the query set is: asSystem() and $setAuth() spread this
+                                   // object, and a per-copy Set would mean a subscriber
+                                   // attached to the root never sees an asSystem() write —
+                                   // which is the one write nothing else announces (FJS-010)
+    announce:      checkAnnounce(announceDefault, 'createClient') ?? 'collection',
     modelDbMap,
     pluralize:     pluralizeTableNames,   // used by makeTable to derive child SQL table names during cascades
     // Map of dbName → { logModel } for driver:logger databases — used by makeTable
@@ -7837,13 +8841,43 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     if (!model?.fields) return []
     const keys = filterableKeysFor(model)
     for (const d of Object.values(ctx.edgeMap?.[model.name] ?? {})) keys.filterable.add(d.as)
-    return collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted)
+    return collectWhereKeyProblems(where, keys.filterable, keys.computed, keys.encrypted, [],
+                                   new Set(Object.keys(ctx.scopeMap?.[model.name] ?? {})))
       .map(p => ({ ...p, message: p.message.replace('%MODEL%', model.name) }))
+  }
+
+  // The declared scope names for a model, as source text. The published list
+  // `$checkWhere` validates a `$scope` against — asked rather than copied, so a
+  // UI offering scopes and the client refusing one cannot disagree. A schema
+  // fact, so it is on every flavour of client, like both $check* helpers.
+  function $scopes(accessor) {
+    const model = modelForAccessor(accessor)
+    if (!model) return {}
+    const out = {}
+    for (const [name, expr] of Object.entries(ctx.scopeMap?.[model.name] ?? {}))
+      out[name] = policyExprToString(expr)
+    return out
   }
 
   function modelForAccessor(accessor) {
     return ctx.models?.[accessor]
       ?? schema.models.find(m => m.name.charAt(0).toLowerCase() + m.name.slice(1) === accessor)
+  }
+
+  // The tenancy declaration, resolved — null when the schema declares none.
+  // A schema fact, so it is on every flavour of client, and memoised because
+  // resolving reads env vars and the filesystem's idea of cwd.
+  //
+  // What it is FOR: everything above the Data realm has to know whether this
+  // app is one database or one per tenant, and the answer used to exist only
+  // in whichever JS call happened to build the registry. Junction asks it to
+  // resolve a request; the CLI asks it to know which files `tenant migrate`
+  // walks.
+  let _tenancy
+  function tenancyInfo() {
+    if (_tenancy === undefined)
+      _tenancy = resolveTenancy(schema, { schemaPath: schemaFilePath ?? null })
+    return _tenancy
   }
 
   // ─── $checkOrderBy ──────────────────────────────────────────────────────
@@ -7867,6 +8901,68 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     const { sortable, relations, computed, opaque } = sortableKeysFor(model)
     return collectOrderByKeyProblems(orderBy, sortable, relations, computed, opaque, opts.aggregates === true)
       .map(p => ({ ...p, message: p.message.replace('%MODEL%', model.name) }))
+  }
+
+  // ─── $audit ─────────────────────────────────────────────────────────────
+  //
+  // $audit({ operation, model, records, actorId, meta }) → the written row
+  //
+  // Record something the audit trail cannot see for itself. `@@log(audit)` is a
+  // side effect of a write, so it covers exactly the events that ARE writes —
+  // and the ones an app most wants are not. A failed login performs no write, so
+  // it left no trace at all; a successful one left `create:session` with
+  // `actorId: null`, because the write goes through asSystem() and a system
+  // context has no principal to name (`FJS-276`, `FJS-277`).
+  //
+  // THE ONE OWNER of "put a row in the audit trail". A caller can reach the log
+  // model directly — it is an ordinary accessor — and two writers with no shared
+  // definition is how a second `operation` vocabulary starts drifting from the
+  // first. Everything that records goes through here.
+  //
+  // It THROWS, where @@log(audit) is fire-and-forget, and that difference is the
+  // point: there, logging is a side effect of a write that already succeeded and
+  // must not fail it. Here, the record IS what the caller asked for — swallowing
+  // the failure would mean a security event silently unrecorded.
+  //
+  // `meta` is yours and is written as given: nothing redacts it, so do not put a
+  // password, a token or a key in it. Field-level redaction protects columns the
+  // SCHEMA declared protected, and this has no schema behind it.
+
+  const AUDIT_KEYS = ['operation', 'model', 'field', 'records', 'before', 'after', 'actorId', 'actorType', 'meta']
+
+  async function auditWith(principal, entry, opts = {}) {
+    if (typeof entry?.operation !== 'string' || !entry.operation)
+      throw new Error(`$audit: 'operation' is required — the name of what happened, e.g. 'login.failed'.`)
+
+    // Refused by name rather than dropped: a misspelled key is a caller that
+    // meant to record something, and a silently thinner row is worse than none.
+    for (const key of Object.keys(entry))
+      if (!AUDIT_KEYS.includes(key))
+        throw new Error(
+          `$audit: unknown key '${key}'. Anything of your own belongs in 'meta'. ` +
+          `Known keys: ${AUDIT_KEYS.join(', ')}.`)
+
+    const loggers = Object.keys(ctx.loggerDbMap ?? {})
+    const dbName  = opts.database ?? loggers[0]
+
+    if (!dbName)
+      throw new Error(`$audit: no database in this schema declares 'driver logger', so there is nowhere to write.`)
+    if (!loggers.includes(dbName))
+      throw new Error(`$audit: '${dbName}' is not a logger database. Declared: ${loggers.join(', ') || 'none'}.`)
+
+    const table = jsonlTableCache[ctx.loggerDbMap[dbName].logModel ?? `${dbName}Logs`]
+    if (!table) throw new Error(`$audit: the log table for '${dbName}' is not available.`)
+
+    const built = buildLogEntry(entry, { ...ctx, auth: principal ?? ctx.auth }, ctx.onLog)
+
+    // A STATED value wins over onLog's. onLog is a generic enricher that runs
+    // over every entry; a $audit caller is naming this one event and knows more
+    // about it than the enricher does. Same rule as sessionFields.
+    if (entry.actorId   != null) built.actorId   = entry.actorId
+    if (entry.actorType != null) built.actorType = entry.actorType
+    if (entry.meta      != null) built.meta      = JSON.stringify(entry.meta)
+
+    return await table.create({ data: built })
   }
 
   // $transaction — wraps async callback in BEGIN IMMEDIATE / COMMIT
@@ -8199,21 +9295,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       )
     }
 
-    async function backupOne(db, dest) {
-      if (vacuum) {
-        db.run(`PRAGMA wal_checkpoint(TRUNCATE)`)
-        db.prepare(`VACUUM INTO ?`).run(dest)
-      } else {
-        if (typeof db.serialize === 'function') {
-          const bytes = db.serialize()
-          await Bun.write(dest, bytes)
-        } else {
-          db.run(`PRAGMA wal_checkpoint(TRUNCATE)`)
-          db.prepare(`VACUUM INTO ?`).run(dest)
-        }
-      }
-      return (await Bun.file(dest).stat()).size
-    }
+    const backupOne = (db, dest) => backupSqliteTo(db, dest, { vacuum })
 
     if (sqliteDbs.length > 1) {
       mkdirSync(abs, { recursive: true })
@@ -8342,8 +9424,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$close')  return () => _closeAll()
         if (prop === '$schema') return schema
         if (prop === '$checkWhere') return $checkWhere
+        if (prop === '$scopes') return $scopes
         if (prop === '$checkOrderBy') return $checkOrderBy
+        // A system context names no principal, so an actor has to be STATED —
+        // which is the whole reason a system write's audit row read null.
+        if (prop === '$audit')  return (entry, opts) => auditWith(null, entry, opts)
         if (prop === '$enums')  return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
+        if (prop === '$plugins') return pluginRunner.names
+        if (prop === '$tenancy') return tenancyInfo()
         throw new Error(`"${prop}" is not a table in this schema.`)
       },
       // This proxy had a `get` trap and nothing else, which made it lie rather
@@ -8355,7 +9443,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         return dedupeKeys(
           Reflect.ownKeys(target),
           Object.keys(sysTables),
-          ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$enums'],
+          ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$scopes', '$audit', '$enums', '$plugins', '$tenancy'],
         )
       },
       has(target, prop) { return prop === 'asSystem' || prop in target || prop in sysTables },
@@ -8442,16 +9530,21 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$schema')         return schema
         if (prop === '$auth')           return user
         if (prop === '$checkWhere')     return $checkWhere
+        if (prop === '$scopes')         return $scopes
         if (prop === '$checkOrderBy')   return $checkOrderBy
+        if (prop === '$audit')          return (entry, opts) => auditWith(user, entry, opts)
         if (prop === '$cacheSize')      return _cacheSize()
         if (prop === '$enums')          return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
+      if (prop === '$plugins')        return pluginRunner.names
+        if (prop === '$plugins')        return pluginRunner.names
+        if (prop === '$tenancy')        return tenancyInfo()
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(authTables).join(', ')}`)
       },
       ownKeys(target) {
         return dedupeKeys(
           Reflect.ownKeys(target),
           Object.keys(authTables),
-          ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$cacheSize', '$enums'],
+          ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy'],
         )
       },
       has(target, prop) { return prop in target || prop in authTables },
@@ -8497,8 +9590,12 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$scope')  return overrides.scopedBy ?? {}
         if (prop === '$auth')   return overrides.auth ?? null
         if (prop === '$checkWhere') return $checkWhere
+        if (prop === '$scopes') return $scopes
         if (prop === '$checkOrderBy') return $checkOrderBy
+        if (prop === '$audit')  return (entry, opts) => auditWith(overrides.auth ?? null, entry, opts)
         if (prop === '$enums')  return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
+        if (prop === '$plugins') return pluginRunner.names
+        if (prop === '$tenancy') return tenancyInfo()
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(tables).join(', ')}`)
       },
       ownKeys(t)   { return dedupeKeys(Reflect.ownKeys(t), Object.keys(tables)) },
@@ -8558,7 +9655,9 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop === '$schema')         return schema
       if (prop === '$relations')      return relationMap
       if (prop === '$checkWhere')     return $checkWhere
+        if (prop === '$scopes')         return $scopes
       if (prop === '$checkOrderBy')   return $checkOrderBy
+      if (prop === '$audit')          return (entry, opts) => auditWith(ctx.auth ?? null, entry, opts)
       if (prop === '$softDelete')     return softDeleteMap
       if (prop === '$cacheSize')      return _cacheSize()
       if (prop === '$config') {
@@ -8572,9 +9671,15 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop === '$rawDbs')         return Object.fromEntries(Object.entries(dbRegistry).map(([k, v]) => [k, v.rawWriteDb ?? null]))
       if (prop === '$db')             return rawWriteDb
       if (prop === '$tapQuery')       return (fn) => { ctx._queryListeners.add(fn); return () => ctx._queryListeners.delete(fn) }
+      // Subscribe to write events AFTER construction — the half `onEvent` does
+      // not have. `onEvent` is fixed at createClient, so a layer handed a
+      // finished client (Junction, which announces a mutation) had no way in.
+      if (prop === '$tapEvents')      return (fn) => { ctx._eventListeners.add(fn); return () => ctx._eventListeners.delete(fn) }
       if (prop === '$lock')           return lockPrimitive
       if (prop === '$locks')          return lockPrimitive.$locks
       if (prop === '$enums')          return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
+      if (prop === '$plugins')        return pluginRunner.names
+      if (prop === '$tenancy')        return tenancyInfo()
       throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(scopedTables).join(', ')}`)
     },
     ownKeys(target) {
@@ -8583,7 +9688,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         Reflect.ownKeys(target),
         Object.keys(scopedTables),
         viewNames,
-        ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$enums', '$setAuth', '$scopedBy', '$lock', '$locks', '$db'],
+        ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db'],
       )
     },
     has(target, prop) {

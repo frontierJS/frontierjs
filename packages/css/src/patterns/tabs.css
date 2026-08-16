@@ -55,9 +55,18 @@
 .tablist {
   --tab-accent: var(--bg-mix, var(--color-primary));
 
+  /*
+   * The indicator has to be THICKER than the strip it sits on, or a heavy
+   * theme draws a 3px rule with a 2px underline over it and the selected
+   * tab reads as a gap in the line. One rung above --border-width, and the
+   * bleed below is the strip's own weight, so the pair stays correct at
+   * any width.
+   */
+  --tab-indicator-width: calc(var(--border-width) + 1px);
+
   display:          flex;
   gap:              var(--space-2xs);
-  border-block-end: 1px solid var(--rule);
+  border-block-end: var(--border-width) solid var(--rule);
 
   /*
    * Many tabs on a narrow screen scroll rather than wrap or squash.
@@ -90,11 +99,12 @@
   font-weight:      600;
   color:            var(--ink-soft);
   white-space:      nowrap;
-  border-block-end: 2px solid transparent;
-  /* Pull the 2px underline down onto the tablist's 1px rule. */
-  margin-block-end: -1px;
+  border-block-end: var(--tab-indicator-width) solid transparent;
+  /* Pull the underline down onto the tablist's own rule. */
+  margin-block-end: calc(var(--border-width) * -1);
 
-  transition: color 120ms, border-color 120ms, background 120ms;
+  transition: color var(--motion-fast), border-color var(--motion-fast),
+              background var(--motion-fast);
 }
 
 .tab:hover {
@@ -181,7 +191,7 @@
 
   /* The rule moves from under the strip to beside it. */
   border-block-end:  none;
-  border-inline-end: 1px solid var(--rule);
+  border-inline-end: var(--border-width) solid var(--rule);
 
   /*
    * A vertical strip grows downward; it does not need to scroll on either
@@ -196,11 +206,11 @@
 }
 
 .tabs.vertical .tab {
-  /* The 2px indicator moves from the bottom edge to the inline end. */
+  /* The indicator moves from the bottom edge to the inline end. */
   border-block-end:   none;
   margin-block-end:   0;
-  border-inline-end:  2px solid transparent;
-  margin-inline-end:  -1px;
+  border-inline-end:  var(--tab-indicator-width) solid transparent;
+  margin-inline-end:  calc(var(--border-width) * -1);
 
   justify-content: flex-start;
   text-align:      start;

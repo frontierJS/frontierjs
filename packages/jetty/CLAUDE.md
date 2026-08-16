@@ -38,6 +38,21 @@ It is the only place that scheme is written down.
 
 ## What bites here
 
+- **An app gets this package as the `extension/` surface** — a sub-project at the
+  app root beside `api/`, `web/` and `widgets/`, with the same six folders
+  (Invariant 3). `fli make:extension` writes it; `fli extension:{dev,build,audit}`
+  wrap the `jetty-*` binaries with `--root` pointed at it. That layout is the
+  reason **the Mesa compiler lookup walks UP from both roots**: an app has one
+  `package.json`, at its root, so the install is never at
+  `extension/node_modules` and the two fixed guesses this used to make found
+  nothing. The failure was silent and then misleading — stub mode passes the
+  `.mesa` through as JavaScript and Vite reports `Unexpected JSX expression` at
+  line 1 of the component.
+- **The fixture's dock is real Mesa, and must stay that way.** It was plain
+  JavaScript in a `.mesa` file, which built only because the compiler was never
+  found — so the suite's only Mesa surface proved that Mesa never ran, and the
+  lookup bug lived under it. If a change here makes that file "simpler", the
+  compiler path is untested again.
 - **One known failure**: the built `islands/demo.js` contains `import.meta`, and
   an MV3 content script is a *classic* script. Not a flake — a real packaging gap.
 - **`default-adapter.js` is a placeholder**, and says so. Do not build on it as
@@ -47,8 +62,26 @@ It is the only place that scheme is written down.
 - **`resources/` is a copy of Sierra's**, and the HMR algorithm is copied here
   too — both are on the duplication list in the root `CLAUDE.md`. A fix in one
   is a fix owed in the other until they are merged.
-- **The Junction event names here are hardcoded Feathers-style** and do not match
-  what `callService` announces today.
+- **A channel is not an event, and the separator is not decoration.** You join
+  `posts` and RECEIVE `posts created` — space, past tense, Junction's own
+  `AUTO_EVENT_MAP`. `resources/` used to subscribe to four composed names
+  (`posts:created`, …): a colon is the IN-PROCESS BUS spelling, and there is no
+  channel per event to subscribe to, so none of the four could ever match
+  (`FJS-059`). One subscription now, and the event decides what to do with what
+  arrives — `wireEventMethod()` splits it, and anything that does not split
+  answers null rather than guessing. **The event name is carried the whole way**
+  — adapter → `channel-registry.fanOut` → `channel:event` → `PagePort.subscribe`
+  handler as `meta.event`; drop it at any hop and a remove reads as an upsert,
+  which puts a deleted record back on screen until reload.
+  `test/phase3.test.js` reads `AUTO_EVENT_MAP` out of Junction's source rather
+  than restating it — a vocabulary asserted only against itself is how this
+  drifted, and the old test PINNED the bug instead of catching it.
+- **Nothing here can talk to a real Junction yet** (`FJS-279`). `default-adapter.js`
+  says it is a placeholder, and the gap is wider than that: its envelope
+  (`{ kind: 'call' | 'subscribe' | 'event' }`) is not Junction's
+  (`{ type: 'event', event, data }` / `service_call`), and Junction's browser
+  client exposes no `subscribe(channel)` for `adapter.js`'s contract to bind to.
+  So the event-name fix above is correct and still unobservable end to end.
 
 ## Proving a change
 

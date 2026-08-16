@@ -1,0 +1,58 @@
+<script>
+  // display.mesa — the long tail of display components, on one page.
+  //
+  // These are not behavioural in the way an overlay is, but every one of them
+  // draws something: an SVG path, a fill width, an overlap offset, a status
+  // dot's corner. A render test asserts the class; only a browser can say
+  // whether the geometry the component computed is on screen.
+  import Sparkline     from '../../../components/display/Sparkline.mesa'
+  import Bar           from '../../../components/display/Bar.mesa'
+  import Avatar        from '../../../components/display/Avatar.mesa'
+  import AvatarGroup   from '../../../components/display/AvatarGroup.mesa'
+  import CopyButton    from '../../../components/display/CopyButton.mesa'
+  import Dot           from '../../../components/display/Dot.mesa'
+  import Kbd           from '../../../components/display/Kbd.mesa'
+  import Mono          from '../../../components/display/Mono.mesa'
+  import Divider       from '../../../components/display/Divider.mesa'
+  import Tag           from '../../../components/display/Tag.mesa'
+  import Steps         from '../../../components/display/Steps.mesa'
+  import AccountStatus from '../../../components/display/AccountStatus.mesa'
+  import Callout       from '../../../components/display/Callout.mesa'
+
+  export let orientation = 'horizontal'
+
+  const USERS = [
+    { name: 'Ada Lovelace' }, { name: 'Bob Kahn' }, { name: 'Cleo Ray' },
+    { name: 'Dai Wu' }, { name: 'Eve Chen' }, { name: 'Fin Ó Súilleabháin' },
+  ]
+
+  const STEPS = [
+    { id: 'cart',    label: 'Cart' },
+    { id: 'pay',     label: 'Payment', description: 'Card or invoice' },
+    { id: 'confirm', label: 'Confirm' },
+  ]
+
+  let removed = 0
+  let copied  = 0
+  let stepped = ''
+</script>
+
+<div id="probe-sparkline"><Sparkline data={[1, 4, 2, 8, 5]} tone="success" label="Signups, last five days" /></div>
+<div id="probe-bar"><Bar value={74} max={100} label="Disk" unit="%" /></div>
+<div id="probe-avatar"><Avatar name="Ada Lovelace" status="online" /></div>
+<div id="probe-avatars"><AvatarGroup users={USERS} max={4} /></div>
+<div id="probe-copy"><CopyButton text="fjs-2049" label="Copy id" oncopy={() => copied++} /></div>
+<div id="probe-dot"><Dot tone="danger" pulse label="Live" /></div>
+<div id="probe-kbd"><Kbd keys={['⌘', 'K']} /></div>
+<div id="probe-mono"><Mono>a1b2c3</Mono></div>
+<div id="probe-divider"><Divider label="or" /></div>
+<div id="probe-tag"><Tag tone="warning" label="Remove beta" onremove={() => removed++}>beta</Tag></div>
+<div id="probe-steps">
+  <Steps steps={STEPS} currentStep="pay" orientation={orientation} clickable onStepClick={(id) => stepped = id} />
+</div>
+<div id="probe-account"><AccountStatus status="trial" sub="12 days left" /></div>
+<div id="probe-callout"><Callout tone="success" title="Nearly there">One more step.</Callout></div>
+
+<output id="removed">{removed}</output>
+<output id="copied">{copied}</output>
+<output id="stepped">{stepped}</output>

@@ -11,7 +11,7 @@ import { NotImplementedTransport } from './transports/not_implemented.ts'
 import { BaseTransport }           from './transports/base.ts'
 import type { ConduitStore, CredentialResolver } from './types.ts'
 import type {
-  TargetDescriptor, ConduitHooks, ConduitError, ConduitRequest
+  TargetDescriptor, ConduitObservers, ConduitError, ConduitRequest
 } from './types.ts'
 
 export class Router {
@@ -26,7 +26,7 @@ export class Router {
       deadline_ms?:        number
       max_response_bytes?: number
     } = {},
-    private hooks:       ConduitHooks = {},
+    private observers:   ConduitObservers = {},
     // Internal only — not part of ConduitOptions.
     // Use createTestConduit() to inject stubs; do not pass this directly.
     private overrides:   Map<string, BaseTransport> = new Map()
@@ -68,7 +68,7 @@ export class Router {
   // ─── Private ─────────────────────────────────────────────
 
   private createTransport(descriptor: TargetDescriptor): BaseTransport {
-    // Retries happen inside the transport, so the hook has to be handed
+    // Retries happen inside the transport, so the observer has to be handed
     // down — the conduit layer only ever sees the final result.
     const httpOpts = {
       timeout_ms:         this.opts.timeout_ms,
@@ -77,14 +77,14 @@ export class Router {
       max_response_bytes: this.opts.max_response_bytes,
       onRetry: (req: ConduitRequest, err: ConduitError, attempt: number) => {
         try {
-          // Hooks are declared `=> void` so `(req) => arr.push(req)` stays
-          // legal, but an async hook really does return a promise at runtime.
-          const result: unknown = this.hooks.onRetry?.(req, err, attempt)
+          // Observers are declared `=> void` so `(req) => arr.push(req)` stays
+          // legal, but an async one really does return a promise at runtime.
+          const result: unknown = this.observers.onRetry?.(req, err, attempt)
           if (result instanceof Promise) {
-            result.catch(e => console.error(`[conduit] hook 'onRetry' rejected:`, e))
+            result.catch(e => console.error(`[conduit] observer 'onRetry' rejected:`, e))
           }
-        } catch (hookErr) {
-          console.error(`[conduit] hook 'onRetry' threw:`, hookErr)
+        } catch (obsErr) {
+          console.error(`[conduit] observer 'onRetry' threw:`, obsErr)
         }
       },
     }
@@ -96,13 +96,13 @@ export class Router {
       case 'websocket': {
         const ws = new WebSocketTransport(descriptor, this.credentials)
         // Guarded: this fires from a reconnect timer with no caller to
-        // catch it, so a throwing hook would surface as an unhandled
+        // catch it, so a throwing observer would surface as an unhandled
         // rejection rather than a failed request.
         ws.onReconnect = (target) => {
           try {
-            this.hooks.onReconnect?.(target)
+            this.observers.onReconnect?.(target)
           } catch (err) {
-            console.error(`[conduit] hook 'onReconnect' threw:`, err)
+            console.error(`[conduit] observer 'onReconnect' threw:`, err)
           }
         }
         return ws

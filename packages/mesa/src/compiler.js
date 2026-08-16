@@ -45,10 +45,23 @@ const MESA_DYNAMIC_TAG = 'mesa-dynamic-element'
 
 // Events that do not bubble and therefore cannot be delegated to a root listener.
 // All other events (click, input, change, keydown, mousedown, etc.) are delegated.
+//
+// A miss here is silent in the worst way: the handler is registered on a root
+// the event never reaches, so the element renders, the browser does its half,
+// and the component's half never runs. `<dialog on:close>` is the case that was
+// missing — Escape closed the dialog natively and `bind:open` was never written
+// back, so the caller's state said "open" forever and the drawer could not be
+// reopened. Every name below is measured, not assumed
+// (`ui/test/browser/specs/events.spec.mjs`).
 const NON_DELEGATED_EVENTS = new Set([
   'focus', 'blur', 'scroll', 'resize',
   'abort', 'error', 'load', 'unload', 'beforeunload',
   'mouseenter', 'mouseleave', 'pointerenter', 'pointerleave',
+  // Platform-dismissal and disclosure: <dialog>, [popover], <details>.
+  'close', 'cancel', 'toggle', 'beforetoggle',
+  // Constraint validation reports per field, so a form-level listener is
+  // delegation by another name and would never fire.
+  'invalid',
 ])
 
 export function assert(condition, msg) {
@@ -4332,14 +4345,17 @@ export function makeEachBlock(data, option) {
 }
 
 export function makeVirtualEachBlock(data, option) {
-  // {#virtual each arr as item (key)} — same as makeEachBlock but emits $$virtualEach.
+  // {#virtual each arr as item (key) height=48 viewport="500px"} — same as
+  // makeEachBlock but emits $$virtualEach, plus the trailing options.
   const ctx = this
   const rx = data.value.match(/^#each\s+(.+)\s+as\s+(.+)$/s)
   assert(rx, `Wrong #virtual each expression '${data.value}'`)
   const arrayName = rx[1].trim()
 
-  // Parse asStr: strip trailing (key), then split item/index
+  // Parse asStr: strip trailing options, then (key), then split item/index
   let right = rx[2].trim()
+  const { optionsExpr, rest } = parseVirtualOptions(right, data.value)
+  right = rest
   let keyFunctionStr = 'null'
   const keyRx = right.match(/^(.*?)\s*\((.+)\)\s*$/s)
   if (keyRx) {
@@ -4379,14 +4395,75 @@ export function makeVirtualEachBlock(data, option) {
   ctx.detectDependency(arrayName)
 
   return xNode('virtual-each',
-    { label: option.label, arrayExpr, keyFunctionStr, block: block.block },
+    { label: option.label, arrayExpr, keyFunctionStr, optionsExpr, block: block.block },
     (w, n) => {
       w.write(true, `$runtime.$$virtualEach(${n.label.name}, () => (${n.arrayExpr}), `)
       w.write(`${n.keyFunctionStr},`)
       w.add(n.block)
+      if (n.optionsExpr) w.write(`, ${n.optionsExpr}`)
       w.writeLine(');')
     }
   )
+}
+
+/**
+ * Split `{#virtual each}`'s trailing options off the `as` binding.
+ *
+ * `height=48 viewport="500px"` are documented (VISION §9.7) and used to land in
+ * the item binding, where `row height=48` became the identifier list — so a
+ * component written from the docs died as `Unexpected identifier 'height'`,
+ * naming neither the block nor the option. An unrecognised option is refused by
+ * name here rather than silently becoming part of the binding again.
+ *
+ * Scanned at bracket depth 0 only, so a destructuring default (`as { n = 1 }`)
+ * and a key expression containing `=` are not mistaken for options.
+ */
+const VIRTUAL_EACH_OPTIONS = ['height', 'viewport']
+
+function parseVirtualOptions(right, raw) {
+  let depth = 0
+  let quote = null
+  let cut   = -1
+
+  for (let i = 0; i < right.length; i++) {
+    const ch = right[i]
+    if (quote) { if (ch === quote && right[i - 1] !== '\\') quote = null; continue }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue }
+    if (ch === '(' || ch === '[' || ch === '{') { depth++; continue }
+    if (ch === ')' || ch === ']' || ch === '}') { depth--; continue }
+    if (depth !== 0) continue
+
+    const m = /^\s+([A-Za-z_$][\w$]*)\s*=(?!=)/.exec(right.slice(i))
+    if (!m) continue
+    assert(
+      VIRTUAL_EACH_OPTIONS.includes(m[1]),
+      `Unknown {#virtual each} option '${m[1]}' in '${raw}' — the options are ${VIRTUAL_EACH_OPTIONS.join(', ')}`
+    )
+    if (cut < 0) cut = i
+    i += m[0].length - 1
+  }
+
+  if (cut < 0) return { optionsExpr: '', rest: right }
+
+  const parts = []
+  const OPT_RE = /([A-Za-z_$][\w$]*)\s*=\s*("[^"]*"|'[^']*'|[^\s]+)/g
+  let m
+  while ((m = OPT_RE.exec(right.slice(cut)))) {
+    const [, name, rawValue] = m
+    if (name === 'height') {
+      assert(
+        /^\d+(\.\d+)?$/.test(rawValue) && Number(rawValue) > 0,
+        `{#virtual each} height must be a positive number of pixels, got '${rawValue}' in '${raw}'`
+      )
+      parts.push(`height: ${Number(rawValue)}`)
+    } else {
+      // A bare `viewport=500px` is not a JS string; quote whatever was written.
+      const value = /^["'].*["']$/.test(rawValue) ? rawValue.slice(1, -1) : rawValue
+      parts.push(`viewport: ${JSON.stringify(value)}`)
+    }
+  }
+
+  return { optionsExpr: `{ ${parts.join(', ')} }`, rest: right.slice(0, cut).trim() }
 }
 
 export function makeAwaitBlock(data, label) {
@@ -4482,9 +4559,18 @@ export function makeComponent(node, option = {}) {
   node.attributes
     .filter((a) => (a.name[0] === '@' || a.name.startsWith('on:')) && a.type !== 'attach' && a.name !== '@attach')
     .forEach((prop) => {
-      const event = prop.name.startsWith('on:') ? prop.name.slice(3) : prop.name.slice(1)
+      const spelled = prop.name.startsWith('on:') ? prop.name.slice(3) : prop.name.slice(1)
+      // The prop this becomes is named after THIS event, not after click. The
+      // message used to say `onclick={fn}` whatever the event was, so the fix
+      // for `on:paid` was a second wrong guess.
+      const event = spelled.split('|')[0]
+      const modifiers = spelled.slice(event.length)
       ctx.analysis.errors.push(
-        `on:${event} is not valid on a component. Use onclick={fn} (a plain callback prop) instead.`
+        `on:${spelled} is not valid on a component. Use on${event}={fn} (a plain callback prop) instead.` +
+        // A modifier is a thing the compiler does to a DOM event before calling
+        // the handler; a component decides for itself what it passes, so there
+        // is nothing to attach one to.
+        (modifiers ? ` A modifier (${modifiers}) has no meaning on a component — the child decides what it passes, so handle it in the callback.` : '')
       )
     })
 
@@ -4620,10 +4706,21 @@ export function makeComponent(node, option = {}) {
     // Also check for <mesa:slot name="X"> wrappers (Sierra syntax)
     // These are handled by slot-rewrite.js in Sierra, but handle here too for purity
 
+    // A slot made only of comments is not content.
+    //
+    // Comments are dropped from the output unless `preserveComments` is on, so
+    // such a block renders nothing and still makes `$slots.<name>` true — and a
+    // component that BRANCHES on that turns itself off because somebody
+    // explained themselves above the buttons. `<Form>` generating its field
+    // list when the caller wrote no controls is the case that found this: one
+    // HTML comment inside the form and every field silently vanished.
+    const hasContent = (nodes) =>
+      nodes.some(n => n.type !== 'comment' || ctx.config?.preserveComments)
+
     // Emit named slot blocks
     for (const [slotName, nodes] of Object.entries(namedSlotMap)) {
       const trimmed = trimEmptyNodes(nodes)
-      if (trimmed.length) {
+      if (hasContent(trimmed)) {
         const block = ctx.buildBlock({ body: trimmed }, { inline: true })
         const name = slotName
         slotBlocks.push(
@@ -4645,7 +4742,7 @@ export function makeComponent(node, option = {}) {
 
     // Emit default slot block
     const trimmedDefault = trimEmptyNodes(defaultNodes)
-    if (trimmedDefault.length) {
+    if (hasContent(trimmedDefault)) {
       const block = ctx.buildBlock({ body: trimmedDefault }, { inline: true })
       slotBlocks.push(
         xNode('default-slot', { block }, (w, n) => {

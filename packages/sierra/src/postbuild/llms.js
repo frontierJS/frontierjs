@@ -16,12 +16,12 @@ import { join } from 'path'
 
 /**
  * @param {object}   config   — sierra.config.js
- * @param {object}   manifest — { indexed, tree }
+ * @param {object}   routeTable — { indexed, tree }
  * @param {string}   outDir
  * @param {string}   root
  * @returns {Promise<string|null>}
  */
-export async function generateLlms(config, manifest, outDir, root) {
+export async function generateLlms(config, routeTable, outDir, root) {
   if (!config.llms) return null
 
   const dest = join(outDir, 'llms.txt')
@@ -48,18 +48,18 @@ export async function generateLlms(config, manifest, outDir, root) {
     }
   }
 
-  const content = buildLlmsTxt(config, manifest)
+  const content = buildLlmsTxt(config, routeTable)
   await writeFile(dest, content, 'utf8')
   return 'llms.txt (generated)'
 }
 
-function buildLlmsTxt(config, manifest) {
+function buildLlmsTxt(config, routeTable) {
   const siteName    = config.name ?? config.llmsName ?? 'Site'
   const description = config.description ?? config.llmsDescription ?? ''
   const today       = new Date().toISOString().split('T')[0]
 
   // Build page list from indexed routes using tree metadata
-  const pages = collectPages(manifest.indexed ?? [], manifest.tree)
+  const pages = collectPages(routeTable.indexed ?? [], routeTable.tree)
 
   const lines = [
     `# ${siteName}`,

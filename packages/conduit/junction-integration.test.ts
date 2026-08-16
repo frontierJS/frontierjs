@@ -2,7 +2,7 @@
 // Conduit ↔ Junction — Integration
 //
 // The plugin tests in conduit.test.ts drive a hand-rolled fake app
-// (`{ _metricsProviders: new Map() }`). Those verify the plugin's own
+// (`{ _metricsSources: new Map() }`). Those verify the plugin's own
 // shape and nothing about Junction: they pass unchanged even if the
 // Plugin lifecycle, the App surface, or service routing changes.
 //
@@ -11,7 +11,7 @@
 //
 //   • Plugin lifecycle      — register/boot/ready/shutdown are called
 //   • app.conduit           — the module augmentation resolves
-//   • app._metricsProviders — private-field reach-in still lands
+//   • app._metricsSources — private-field reach-in still lands
 //   • app.services.register — the management service routes and runs
 //   • app.hooks             — app-level auth reaches that service
 // ============================================================
@@ -90,7 +90,7 @@ describe('plugin lifecycle against a real app', () => {
   it('shutdown() destroys the conduit — later sends fail closed', async () => {
     // Drive the full lifecycle on a fresh app, the way app.stop() does, without
     // binding a port. It must be a fresh app: register() claims app.conduit via
-    // app.provide(), which now refuses to overwrite an existing claim.
+    // app.claim(), which now refuses to overwrite an existing claim.
     const app = await createTestApp()
     const plugin = conduitPlugin({ credentials: secrets(), targets: [providerTarget()] })
 
@@ -139,20 +139,20 @@ describe('plugin lifecycle against a real app', () => {
 // ─── Metrics wiring ──────────────────────────────────────────
 
 describe('metrics provider', () => {
-  // register() reaches into app._metricsProviders behind an `instanceof Map`
+  // register() reaches into app._metricsSources behind an `instanceof Map`
   // guard. If Junction renames or retypes that field the guard fails silently
   // and conduit metrics vanish with no error anywhere.
-  it('lands in the real app._metricsProviders map', async () => {
+  it('lands in the real app._metricsSources map', async () => {
     const app = await bootApp({ targets: [providerTarget()] })
 
-    expect(app._metricsProviders).toBeInstanceOf(Map)
-    expect(app._metricsProviders.has('conduit')).toBe(true)
+    expect(app._metricsSources).toBeInstanceOf(Map)
+    expect(app._metricsSources.has('conduit')).toBe(true)
   })
 
   it('the registered provider returns the current stats shape', async () => {
     const app = await bootApp({ targets: [providerTarget()] })
 
-    const stats = app._metricsProviders.get('conduit')!() as {
+    const stats = app._metricsSources.get('conduit')!() as {
       targets:  { total: number; byKind: Record<string, number> }
       requests: { total: number }
     }
@@ -164,7 +164,7 @@ describe('metrics provider', () => {
 
   it('stats stay in sync with runtime registration', async () => {
     const app = await bootApp()
-    const read = () => (app._metricsProviders.get('conduit')!() as {
+    const read = () => (app._metricsSources.get('conduit')!() as {
       targets: { total: number }
     }).targets.total
 

@@ -17,6 +17,8 @@
  * can import.
  */
 
+import { pluralize } from '@frontierjs/toolbelt/inflect'
+
 /**
  * Every `$defs` entry, by name — models, enums, `type` declarations, FileRef.
  * This is the document's definition table, and it is kept whole because it is
@@ -66,28 +68,51 @@ export function registerSchemas(defs, modelNames) {
     // Every spelling a caller might reasonably use: the model name as declared,
     // the Litestone accessor, and the conventional plural service name.
     //
-    // These are English's regular plural rules, and only those. Irregular
-    // plurals (people/Person, children/Child) are not guessable and are not
-    // guessed — name the model explicitly instead:
-    //   createResource('people', { model: 'Person' })
+    // English's regular rules plus toolbelt's irregular table, so `people`
+    // does index `Person`. What the table does not hold is still not guessed —
+    // name the model explicitly instead:
+    //   createResource('lenses', { model: 'Lens' })
     _index[modelName] = modelName
     _index[accessor]  = modelName
+
+    // The lenient spelling as well as the conventional one: `companys` is not
+    // English, and someone who names their service that should still resolve.
     _index[accessor + 's'] = _index[accessor + 's'] ?? modelName
 
-    // consonant + y → -ies    (Company → companies)
-    if (/[^aeiou]y$/.test(accessor)) {
-      const ies = accessor.slice(0, -1) + 'ies'
-      _index[ies] = _index[ies] ?? modelName
-    }
-
-    // sibilant → -es    (Status → statuses, Box → boxes, Church → churches)
-    // Missing this made a plainly regular plural need a manual override: a
-    // `model Status` behind a `statuses` service resolved to nothing.
-    if (/(s|x|z|ch|sh)$/.test(accessor)) {
-      const es = accessor + 'es'
-      _index[es] = _index[es] ?? modelName
-    }
+    const plural = _pluralOf(accessor)
+    _index[plural] = _index[plural] ?? modelName
   }
+}
+
+/**
+ * The conventional plural of a client accessor.
+ *
+ * One definition, two directions: `registerSchemas` indexes it so a service
+ * name resolves to its model, and `serviceNameFor` reads it so a relation can
+ * name the service that answers for a model. The rules are
+ * `@frontierjs/toolbelt`'s, which is what makes them the same rules litestone
+ * used to name the table (Invariant 2) rather than a fourth opinion — a word
+ * they cannot reach is said by hand: `createResource('lenses', { model:
+ * 'Lens' })`.
+ */
+function _pluralOf(accessor) {
+  return pluralize(accessor)
+}
+
+/**
+ * The service name a model is conventionally served under — `Customer` →
+ * `customers`.
+ *
+ * A relation carries a MODEL name (`x-relations` says `belongsTo Customer`) and
+ * a resource is created against a SERVICE, so something has to cross the two.
+ * That crossing was being written by hand at every call site — `model
+ * .toLowerCase() + 's'`, which is not even the rule this registry uses — and it
+ * belongs here, where the plural rules already are.
+ */
+export function serviceNameFor(modelName) {
+  if (typeof modelName !== 'string' || !modelName) return null
+  const accessor = modelName.charAt(0).toLowerCase() + modelName.slice(1)
+  return _pluralOf(accessor)
 }
 
 /**

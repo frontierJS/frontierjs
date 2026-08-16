@@ -17,7 +17,7 @@
 // The rule: an announcement is about a row, so it carries one where one can be
 // found — the payload when it already is a row, otherwise the row re-read by id.
 // Where no row can be found the payload travels as the SIGNAL it is, because an
-// action that changes many rows has none to carry and its subscribers re-read
+// method that changes many rows has none to carry and its subscribers re-read
 // rather than merge. The service is told once, by name, with both ways out.
 //
 // Against a REAL Litestone client, deliberately: this reads a model's declared
@@ -157,7 +157,7 @@ describe('a method that answers a projection announces the row anyway', () => {
   })
 })
 
-// An action that changes MANY rows has no single row to carry, and its
+// A method that changes MANY rows has no single row to carry, and its
 // subscribers use the event as a trigger to re-read. Dropping those was the
 // first design and it would have stopped basecamp's `/volumes/` updating live
 // with nothing but a server-side line to say why — the same silent failure this
@@ -165,7 +165,7 @@ describe('a method that answers a projection announces the row anyway', () => {
 // row it could have become is refused on the client instead.
 describe('when no row can be found, the payload travels as a signal', () => {
 
-  test('a collection action with no id still announces, and says why', async () => {
+  test('a collection method with no id still announces, and says why', async () => {
     const db  = await mkDb()
     const svc = createService({
       name: 'servers', model: 'server',
@@ -185,7 +185,7 @@ describe('when no row can be found, the payload travels as a signal', () => {
       async heartbeat() { return { status: 'online' } },
     } as never)
 
-    // A custom action that DELETES its row lands here, and its id is the one
+    // A custom method that DELETES its row lands here, and its id is the one
     // thing a subscriber's remove handler needs.
     const seen = await announce(svc, ctxFor(db, { id: 999 }))
     expect(seen).toEqual([{ status: 'online' }])

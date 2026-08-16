@@ -175,7 +175,7 @@
 
 /* Divided variant — hairline rules between rows */
 .rows.divided .list-row + .list-row {
-  border-top: 1px solid var(--rule);
+  border-top: var(--border-width) solid var(--rule);
 }
 
 /* Hover variant — highlight on row hover (for clickable rows) */

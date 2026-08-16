@@ -27,7 +27,7 @@
 //
 // The cost, stated: nothing below is graded at the Data boundary. The gate is
 // requireSystemAdmin on the way in, and every write here is in the application
-// audit trail because the app-level after hook covers custom actions.
+// audit trail because the app-level after hook covers custom methods.
 //
 // ─── What this deliberately does not do ───────────────────────────────────
 //

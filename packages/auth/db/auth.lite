@@ -1,0 +1,65 @@
+// ─── @frontierjs/auth — the credential machinery ─────────────────────────────
+//
+// Credentials:   how you prove who you are — passwords, API keys, OAuth tokens
+// Sessions:      are you currently logged in
+// Verifications: ephemeral tokens — password reset, email verify
+//
+// All three are @@gate("8"): nothing outside asSystem() has anything to say to
+// them, and this package is the only thing that calls asSystem() on them. That
+// is the line between this file and user.lite beside it — User is the model an
+// app extends, relates to and puts on screens, so it goes into the app's own
+// schema.lite where it can be read and edited. These three change when this
+// package changes, so they are imported rather than pasted.
+//
+// This file is REAL .lite and parses standalone. `fli auth:install` copies it
+// into an app's db/ and rewrites @@db(main) when --db names another database;
+// the same swap is what schema.ts does in memory. Keep @@db(main) spelled
+// exactly — it is what both substitutions match on.
+//
+// Session carries @@log(audit), so a host schema must declare `database audit`.
+
+model Credential {
+  id              Int        @id
+  userId          String
+  type            String
+  value           String     @guarded(all)
+  label           String?
+  accessToken     String?    @secret
+  refreshToken    String?    @secret
+  tokenExpiresAt  DateTime?
+  scope           String?
+  createdAt       DateTime   @default(now())
+
+  @@db(main)
+  @@gate("8")
+  @@index([userId, type])
+  @@index([type, value])
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  token      String    @unique @guarded(all)
+  expiresAt  DateTime
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  @@db(main)
+  @@gate("8")
+  @@log(audit)
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Verification {
+  id          Int       @id
+  identifier  String
+  value       String    @guarded(all)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  @@db(main)
+  @@gate("8")
+  @@index([identifier])
+}

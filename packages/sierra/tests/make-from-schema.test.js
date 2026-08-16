@@ -184,4 +184,28 @@ describe('foreign keys default to null, not 0', () => {
     const withZero = validateAgainstFields(rules, { ...make(), customerId: 0 }, 'create')
     expect(withZero.find(e => e.field === 'customerId')).toBeUndefined()
   })
+
+  // ── readOnly ────────────────────────────────────────────────────────────────
+
+  test('a readOnly column is not seeded — it is not the caller\'s to write', () => {
+    // @system, @computed, @generated and @from all arrive readOnly. A blank
+    // seeded for one is a KEY in the payload, and the Data boundary refuses a
+    // @system key by name — so a form that never showed the field could not
+    // submit at all. Found by example's order form the day @system landed.
+    const props = {
+      reference:    { type: 'string' },
+      trackingCode: { type: ['string', 'null'], readOnly: true, 'x-litestone-kind': 'system' },
+      lineCount:    { type: 'integer', readOnly: true, 'x-litestone-kind': 'from' },
+    }
+    const make = createMakeFromSchema(props)
+
+    expect(make()).toEqual({ reference: '' })
+    expect('trackingCode' in make()).toBe(false)
+  })
+
+  test('and an explicit value still wins, because make(spec) is the caller talking', () => {
+    const props = { trackingCode: { type: ['string', 'null'], readOnly: true } }
+    const make  = createMakeFromSchema(props)
+    expect(make({ trackingCode: 'TRK-1' }).trackingCode).toBe('TRK-1')
+  })
 })

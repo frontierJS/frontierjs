@@ -85,6 +85,45 @@
   --pill-radius:  9999px;
 
   /*
+   * ── Border weight ─────────────────────────────────────────
+   *
+   * The structural hairline: a Card's edge, a Field's border, a Table's
+   * divider, the Topbar's rule under it. `--rule`/`--rule-strong` theme
+   * the border's COLOUR and `--*-radius` themes its corner, so a theme
+   * could go dark, warm or square and could not go heavy — the whole
+   * stamped/neo-brutalist family needs 2–3px and could only get there by
+   * shipping a selector, which is the one thing a theme must not do.
+   *
+   * It is deliberately ONE token for the structure and two use-site
+   * escapes for the parts that are their own decision:
+   * `--field-border-width` and `--table-border-width` both fall back to
+   * this, so a heavy theme gets heavy fields and heavy dividers for free
+   * and can pull either back on its own.
+   *
+   * What does NOT read it: a spinner ring, a disclosure chevron, a
+   * tooltip's arrow, a step marker's disc. Those are drawn WITH the
+   * border property and are geometry rather than a border — scaling them
+   * with the theme's hairline distorts a shape instead of thickening a
+   * line.
+   */
+  --border-width: 1px;
+
+  /*
+   * ── Resting elevation on the Block tier ───────────────────
+   *
+   * `none`, and it is a token rather than an omission. A resting Card is
+   * a border and nothing else, which is a good default — elevation is for
+   * things that float — but it was not STATABLE: a theme could restyle
+   * every overlay's shadow through --shadow-sm/md/lg and not a single
+   * card's, so press.css's stamped offset landed on every button and
+   * every dialog while the cards it was designed for stayed flat.
+   *
+   * Read by the surface lineage's base rule. `.raised` is the elevation
+   * ladder and still takes --shadow-md.
+   */
+  --surface-shadow: none;
+
+  /*
    * --badge-radius is deliberately NOT declared here. Badges follow
    * --btn-radius via a use-site fallback in badges.css, so a theme that
    * squares off buttons squares off badges too, for free.
@@ -113,6 +152,62 @@
   --badge-letter-spacing: 0.04em;
 
   /*
+   * ── The small label ───────────────────────────────────────
+   *
+   * A table head, a tile's label and a nav group's heading are one
+   * typographic role — the small caps that name a region — and they had
+   * three different answers to it: 600/0.04em, 500/0.04em and
+   * 700/0.06em, none of them documented and none reachable from a theme.
+   * So a theme could stamp its buttons and could not touch the three
+   * places a house voice shows next.
+   *
+   * One triple, three readers. The weights are unified rather than each
+   * kept behind its own escape: three values for one role is the thing
+   * being fixed, not a constraint to preserve.
+   */
+  --label-font-weight:    600;
+  --label-text-transform: uppercase;
+  --label-letter-spacing: 0.04em;
+
+  /*
+   * ── Motion ────────────────────────────────────────────────
+   *
+   * Every transition in the package used to be a literal, so nine themes
+   * moved identically and a house style that wanted no motion at all had
+   * nowhere to say so. Four durations, because the package genuinely uses
+   * four, and each is named for the JOB rather than for its length:
+   *
+   *   --motion-fast   a colour, a border, a background changing
+   *   --motion-base   a control changing shape — a switch, a chevron
+   *   --motion-enter  something arriving or leaving (overlays.css)
+   *   --motion-slow   a measurement moving — a progress bar
+   *
+   * `--motion-spin` is separate and its easing is not a token: a spinner
+   * that eases reads as broken hardware rather than as a slower spinner,
+   * so `linear` is written at the use site.
+   *
+   * This is the design's setting. `prefers-reduced-motion` below is the
+   * READER's, it wins, and the two are not the same question — which is
+   * why a theme setting every duration to 0 is a house style and does not
+   * make the media query redundant.
+   */
+  --motion-fast:  120ms;
+  --motion-base:  150ms;
+  --motion-enter: 160ms;
+  --motion-slow:  200ms;
+  /*
+   * Two loops, two durations, both named for the job. A spinner's
+   * revolution and a skeleton's sweep are 2.3x apart and neither is a
+   * transition: they run until the work finishes.
+   */
+  --motion-spin:    600ms;
+  --motion-shimmer: 1.4s;
+
+  --motion-ease:       ease;
+  --motion-ease-out:   ease-out;
+  --motion-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /*
    * ── Container ─────────────────────────────────────────────
    * --container-pad steps up at the breakpoints; see layout.css.
    */
@@ -126,25 +221,38 @@
   --screen-pad:     1.5rem;
 
   /*
-   * ── Syntax highlighting ───────────────────────────────────
+   * ── Tone as text ──────────────────────────────────────────
    *
-   * The lightness window a code token may occupy, in oklch. The tones are
-   * tuned as fills behind white text and mostly fail as text on a surface,
-   * so components/code.css clamps each one into this range before using
-   * it — a no-op where the tone already reads.
+   * The lightness window a tone may occupy, in oklch, when it is rendered
+   * as TEXT rather than as a fill. The tones are tuned as fills behind
+   * white text and mostly fail the other job, so a component clamps into
+   * this range before colouring text with one — a no-op where the tone
+   * already reads. `--tone-ink` in tones.css is the derivation; code.css
+   * and buttons.css are the readers.
    *
    * These are the LIGHT-surface bounds. A dark theme must invert them,
    * because CSS cannot work it out: relative colour syntax exposes the
    * channels of the tone being transformed, never those of the surface it
-   * will land on. dark.css and basecamp.css do; see code.css's header.
+   * will land on. dark.css, basecamp.css and field.css do; see tones.css.
    */
-  --code-l-min: 0;
-  --code-l-max: 0.46;
+  --tone-l-min: 0;
+  --tone-l-max: 0.46;
 
   /* ── Shadows ──────────────────────────────────────────────── */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.06);
+
+  /*
+   * The dim behind an overlay. A literal rather than a blend of --ink,
+   * because --ink inverts with the theme and a scrim never does: mixed from
+   * ink it would go WHITE on a dark theme, which is the one thing a backdrop
+   * cannot be. It is a token so a theme can retune the depth — and so the
+   * package's own dialogs and a kit component that portals its own backdrop
+   * dim by the same amount, which they did not: @frontierjs/ui's command
+   * palette sat at 0.72 against these at 0.45.
+   */
+  --scrim: rgba(0, 0, 0, 0.45);
 
   /* ── Focus ring ───────────────────────────────────────────── */
   /*
@@ -191,6 +299,12 @@
    * The heading rule reads `var(--font-display, var(--font-primary))` at the
    * USE site instead, which is the form that follows a scope. Same trap as
    * --ring, documented above.
+   *
+   * --heading-letter-spacing is the sibling and takes the same shape: unset
+   * it is `normal`, and typography.css reads it at the use site. Buttons,
+   * badges and pills each had one and headings did not, so a theme wanting a
+   * tracked display face had to ship a selector — which is the one thing a
+   * theme may not do.
    */
   --font-primary: system-ui, sans-serif;
   --font-mono:    ui-monospace, monospace;
@@ -332,26 +446,42 @@
  * because the token still has a perfectly good value. Declared on every
  * element, each one recomputes the rung from the density it inherits.
  *
- * The knob is --density, not the rungs. An app that wants everything
- * roomier sets `html { --density: 1.15 }`; one that wants a different
- * ladder SHAPE redeclares these rungs on `*` too, because a redeclaration
- * on :root would lose to this rule everywhere except <html> itself.
+ * ── Two knobs, and why the shape needs the second one ─────────
+ *
+ * --density scales the whole ladder uniformly. That is the axis, and for
+ * a while it was the ONLY thing a theme could reach: a rung redeclared in
+ * a theme file is (0,1,0) and wins on the themed element alone, because
+ * every descendant matches the rule below and gets the package's rung
+ * back. So a theme could make everything tighter and could not make a
+ * ladder that is tight at the small rungs and generous at the large ones
+ * — the difference between a data-dense console and an editorial page.
+ *
+ * The rung is therefore `base × density`, where the BASE is an ordinary
+ * inheriting custom property. A theme sets `--space-2xl-base` on its own
+ * class, it inherits like any value, and every descendant recomputes its
+ * rung from the base it inherited and the density it inherited. Neither
+ * half is resolved early, so neither hits the alias trap.
+ *
+ * An app still has both: `html { --density: 1.15 }` for everything
+ * roomier, `--space-*-base` for a different ladder shape. A rung set
+ * DIRECTLY on an element (`--space-2xl: 3rem`) still loses to this rule
+ * on that element's descendants — set the base instead.
  */
 *,
 *::before,
 *::after {
-  --space-3xs: calc(0.125rem * var(--density));  /*  2px */
-  --space-2xs: calc(0.25rem  * var(--density));  /*  4px */
-  --space-xs:  calc(0.375rem * var(--density));  /*  6px */
-  --space-sm:  calc(0.5rem   * var(--density));  /*  8px */
-  --space-md:  calc(0.625rem * var(--density));  /* 10px */
-  --space-lg:  calc(0.75rem  * var(--density));  /* 12px */
-  --space-xl:  calc(0.875rem * var(--density));  /* 14px */
-  --space-2xl: calc(1rem     * var(--density));  /* 16px */
-  --space-3xl: calc(1.25rem  * var(--density));  /* 20px */
-  --space-4xl: calc(1.5rem   * var(--density));  /* 24px */
-  --space-5xl: calc(2rem     * var(--density));  /* 32px */
-  --space-6xl: calc(3rem     * var(--density));  /* 48px */
+  --space-3xs: calc(var(--space-3xs-base, 0.125rem) * var(--density));  /*  2px */
+  --space-2xs: calc(var(--space-2xs-base, 0.25rem)  * var(--density));  /*  4px */
+  --space-xs:  calc(var(--space-xs-base,  0.375rem) * var(--density));  /*  6px */
+  --space-sm:  calc(var(--space-sm-base,  0.5rem)   * var(--density));  /*  8px */
+  --space-md:  calc(var(--space-md-base,  0.625rem) * var(--density));  /* 10px */
+  --space-lg:  calc(var(--space-lg-base,  0.75rem)  * var(--density));  /* 12px */
+  --space-xl:  calc(var(--space-xl-base,  0.875rem) * var(--density));  /* 14px */
+  --space-2xl: calc(var(--space-2xl-base, 1rem)     * var(--density));  /* 16px */
+  --space-3xl: calc(var(--space-3xl-base, 1.25rem)  * var(--density));  /* 20px */
+  --space-4xl: calc(var(--space-4xl-base, 1.5rem)   * var(--density));  /* 24px */
+  --space-5xl: calc(var(--space-5xl-base, 2rem)     * var(--density));  /* 32px */
+  --space-6xl: calc(var(--space-6xl-base, 3rem)     * var(--density));  /* 48px */
 }
 
 /* ── Respect prefers-reduced-motion ─────────────────────────── */

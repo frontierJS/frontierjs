@@ -33,9 +33,13 @@ src/
   patterns/        nav · tabs · steps · lists · feed · facts · bars · disclosure
   a11y/            a11y.css · focus.css
   themes/          default · dark · midnight · forest · sunset · elite · basecamp
-                   · notebook · press. press.css is the token-surface probe —
-                   it changes face, scale, leading, density, rules, ring and
-                   shadow shape and ships no selector of its own
+                   · notebook · press · field. press.css is the token-surface
+                   probe — it changes face, scale, leading, density, rules, ring
+                   and shadow shape and ships no selector of its own. field.css
+                   is its dark counterpart, written for the pages a project
+                   generates about itself; it is the reason
+                   --heading-letter-spacing exists, and it clears AA on
+                   --surface-raised for all seven tones (danger had to move)
   utilities.css    the deliberately small escape hatch
 vocabulary.js      THE OTHER HALF — two exports, one subject.
                    VOCAB: 54 terms in 8 tiers, which element each is.
@@ -121,17 +125,24 @@ test/run.js        the harness
   no term, and `chip`/`surface` were not in the list at all.
 
 - **The code theme styles markup this package does not produce.** `glow()` in
-  `@frontierjs/utils` emits it; `test/run.js` imports glow, renders three
+  `@frontierjs/toolbelt` emits it; `test/run.js` imports glow, renders three
   samples and hands them to the page on `window.__FJS_GLOW__`, so
   `code.spec.js` asserts against the real thing. Hand-written markup that
   looked like glow's would pass while glow emitted something else.
-- **The code palette clamps a tone's lightness; it does not blend it.** A tone
-  is tuned as a fill behind white text and mostly fails as text on a surface —
-  as low as 1.65:1 across the shipped themes. `--code-l-min`/`--code-l-max` is
-  the window, and **a dark theme must invert it**, because relative colour
-  syntax cannot read the surface a colour will land on. `dark.css` and
-  `basecamp.css` do; a new dark theme that forgets is caught by `code: every
-  token clears AA in theme-*`, not by anything visual.
+- **A tone used as TEXT goes through a window; it is never painted raw.** A tone
+  is tuned as a fill behind white text and mostly fails the other job — as low
+  as 1.19:1 across the shipped themes. `--tone-ink` (tones.css) is that tone
+  with its lightness clamped into `--tone-l-min`/`--tone-l-max`, hue and chroma
+  untouched, and it is unset on an untoned element so `var(--tone-ink, X)` is
+  how a rule says what it looks like with no tone. Clamped rather than blended,
+  which is measured both ways: `--tint-ink`'s 55% toward `--ink` leaves
+  `sunset`/`warning` at 4.05:1. **A dark theme must invert the window**,
+  because relative colour syntax cannot read the surface a colour will land on;
+  `dark.css`, `basecamp.css` and `field.css` do, and a new one that forgets is
+  caught by `contrast:` / `code: every token clears AA in theme-*`, not by
+  anything visual. code.css writes the clamp out per role instead of reading
+  `--tone-ink`, because it needs six roles at once off six theme colours and
+  `--tone-ink` is one tone per element.
 - **`theme-notebook`'s `--ink-mute` is 2.67:1 and under AA wherever it is
   text** — nine files use it. Pre-existing, `FJS-125`; the code theme reads it
   for comments and does not compensate.
@@ -255,10 +266,18 @@ test/run.js        the harness
   and it ships at all because a snippet that grows makes a list jump as a
   query narrows, which is the list's failure, not the paragraph's.
 - **`[popover]` is in the top layer, so a `position: relative` parent does
-  nothing.** `.relative` is the only positioning utility shipped and it
-  establishes a containing block, which the top layer escapes — so an
-  un-positioned popover opens in the corner of the viewport and looks broken.
-  Anchor positioning is the demo the guide gives.
+  nothing** — and `.popover-anchor` is the plain-element half, not a fix for
+  that. The anchor gives a `.popover` a containing block AND a default
+  placement (below the trigger, start-aligned; `.align-end` flips it), which
+  is what made the term usable at all: absolute with no inset resolves to its
+  STATIC position, centred on its own trigger. The placement rules say
+  `:not([popover])`, so the stylesheet cannot place a top-layer popover
+  against the viewport by accident. Anchor positioning is still the answer for
+  a native one, and for any edge other than below.
+- **`getComputedStyle` answers a USED pixel value for `top: auto` on a
+  positioned element**, so "is this unplaced" cannot be asked by reading an
+  inset — an unplaced popover reports `0px` or `-20.06px`, not `auto`. Ask
+  the geometry, or ask whether the selector matches.
 
 - **The compare page counts its own numbers.** `Why this one` derives every
   claim about THIS package from `VOCAB` and the live CSSOM at render time — a
@@ -277,6 +296,63 @@ test/run.js        the harness
   canvas, because Chrome serialises the derived fill as `color(xyz-d65 …)`
   and reading those floats as 8-bit channels is wrong for every colour.
 
+- **A theme ships no selector, so every look is a token — and three of the
+  four gaps were tokens that stopped at one element.** `--border-width` is
+  the structural hairline (card, field, table, topbar, code block, tab
+  strip); `--surface-shadow` is resting elevation on the Block tier, `none`
+  by default, with `--shadow-*` the ladder above it; `--app-bg` /
+  `--topbar-bg` / `--sidebar-bg` / `--dialog-bg` are the frame's grounds;
+  `--space-*-base` is the ladder's shape. `theming.spec.js` measures each on
+  a DESCENDANT of the element carrying the token, which is the only way the
+  original defects are visible. Three rules came out of it:
+  - **A default that is another token is a use-site fallback, never a `:root`
+    declaration** — `--topbar-bg: var(--surface)` at `:root` resolves once and
+    inherits past every `.theme-*`. Same alias trap as `--ring`.
+  - **A token a THEME must reach cannot be declared on the component** —
+    `.table { --table-border-width: var(--border-width) }` wins over the same
+    token set on an ancestor, so it is read as `var(--table-border-width,
+    var(--border-width))` at the two use sites instead. `--table-bg` and
+    friends stay declared, because those are for a caller styling one table.
+  - **What is drawn WITH `border` and is not a border does not scale** — a
+    spinner ring, a tooltip arrow, a step marker's disc. Scaling geometry with
+    the hairline distorts a shape. The one pair that must stay related is the
+    tab indicator, which is `calc(var(--border-width) + 1px)` and bleeds by the
+    strip's own weight: at 3px a literal 2px underline reads as a gap in the
+    line.
+- **Motion is four rungs and two loops, named for the job.** `--motion-fast`
+  (a colour changing) · `--motion-base` (a control changing shape) ·
+  `--motion-enter` (overlays) · `--motion-slow` (a measurement moving), plus
+  `--motion-spin` and `--motion-shimmer`. `theming.spec.js` sweeps every rule
+  for a literal duration, with two exclusions that are the point rather than
+  housekeeping: anything inside `prefers-reduced-motion` (the READER's setting
+  — tokens.css crushes durations there and hands the spinner back a slower
+  1.6s, and a theme must move neither) and any rule from a stylesheet with no
+  `href`, which is the harness's own `transition: none !important`.
+  **A spinner's easing is deliberately not a token** — `linear` at the use
+  site, because a spinner that eases reads as broken hardware.
+- **`--overlay-time` is read at the use site, never aliased at `:root`.**
+  `:root { --overlay-time: var(--motion-enter) }` resolves once and inherits
+  past every `.theme-*`, so a theme retuning the ladder would move everything
+  except the overlays. It is `var(--overlay-time, var(--motion-enter))` in
+  each declaration instead — which puts a comma INSIDE a transition segment,
+  so a spec that splits the list on `,` cuts a segment in half and reports
+  every property as missing its `allow-discrete`. `overlays.spec.js` splits on
+  top-level commas only.
+- **The focus ring's style is a fixed list, enforced by `@property`.**
+  `--ring-style` is registered `syntax: "solid | dashed | double"`, so a value
+  outside it is invalid at computed-value time and falls back to `solid`: a
+  theme writing `none` gets a solid ring, not no ring. That is what makes the
+  ring restylable without being weakenable — there is no spelling of "off",
+  and `dotted` is excluded for the same reason `none` is.
+- **A tone rendered as text goes through the window in BOTH ramps.**
+  `--tone-ink` is the tone on `--surface`; `--tint-ink` is the 55% blend on
+  `--tint-surface`, and it is clamped too — the blend alone put sunset's
+  warning at 3.86:1. Three jobs, three checks in `contrast.spec.js`: a tone as
+  a FILL, a tone as TEXT, and a toned BLOCK. They fail apart.
+- **An unregistered custom property computes to its TOKEN STREAM.**
+  `getPropertyValue('--space-2xl')` answers `calc(1rem * 1)`, so a test that
+  parses a number off it is measuring the source text. Read a rung through a
+  use site — set `padding-top: var(--rung)` on the element and measure that.
 - **The space ladder is declared on `*`, and that is not a style choice.**
   `--space-sm: calc(0.5rem * var(--density))` at `:root` substitutes
   `--density` once, against `:root`, and inherits the resulting fixed length

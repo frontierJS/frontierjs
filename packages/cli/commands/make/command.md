@@ -1,9 +1,9 @@
 ---
 title: make:command
 description: Scaffold a new FLI command file
-alias: new
+alias: mkcmd
 examples:
-  - fli make:command
+  - fli mkcmd
   - fli make:command hello:notify
   - fli make:command hello:notify --description "Send a notification"
 args:

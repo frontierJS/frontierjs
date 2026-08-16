@@ -25,25 +25,17 @@
  * A tone is tuned as a FILL behind white text. As text on a surface it is
  * a different job and mostly fails it: measured across the eight shipped
  * themes, the raw tones came in as low as 1.65:1, and only one theme had
- * all six roles above AA.
+ * all six roles above AA. So each one is passed through the tone-as-text
+ * lightness window — hue and chroma untouched, lightness clamped into
+ * --tone-l-min/max. tones.css owns that decision and tokens.css holds the
+ * bounds; a dark theme that forgets to invert them renders dark code on a
+ * dark block, which is why every shipped theme is pinned by `code: every
+ * token clears AA in theme-*`.
  *
- * So each one is passed through a lightness window in oklch — hue and
- * chroma untouched, lightness clamped into the range that reads on this
- * theme's surface. It is a no-op wherever the tone is already inside the
- * window, which is what keeps a well-tuned theme looking like itself
- * rather than being uniformly muddied by a blend toward the ink.
- *
- * The window is two tokens because CSS cannot derive it. Relative colour
- * syntax exposes the channels of ONE origin colour, and the origin here is
- * the tone — the surface it will sit on is not readable from inside the
- * expression, so nothing can ask "how light is the background". A theme
- * that inverts the surface therefore has to say so:
- *
- *   .theme-yours { --code-l-min: 0.74; --code-l-max: 1; }
- *
- * The defaults in tokens.css are the light-surface window. A dark theme
- * that forgets renders dark code on a dark block, which is why every
- * shipped theme is pinned by `code: every token clears AA in theme-*`.
+ * The clamp is written out per role here rather than read from
+ * --tone-ink, because --tone-ink derives from --bg-mix — one tone per
+ * element — and this palette needs six roles at once off six different
+ * theme colours, one of them hue-shifted.
  */
 
 /* One tone → one readable text colour. Written out per role rather than
@@ -78,8 +70,10 @@ kbd, .kbd {
   color:       var(--ink);
 
   background:              var(--surface-sunken);
-  border:                  1px solid var(--rule-strong);
-  border-block-end-width:  2px;
+  border:                  var(--border-width) solid var(--rule-strong);
+  /* The cap is the doubled edge, not a literal 2px — a heavy theme thickens
+     the box and would otherwise flatten the key it is drawing. */
+  border-block-end-width:  calc(var(--border-width) * 2);
   border-radius:           4px;
 }
 
@@ -123,7 +117,7 @@ code, .code-inline {
    * wants its own code palette sets the two variables and nothing else.
    */
   background:    var(--code-bg, var(--surface-sunken));
-  border:        1px solid var(--rule);
+  border:        var(--border-width) solid var(--rule);
   border-radius: var(--card-radius);
 
   font-family: var(--font-mono);
@@ -228,13 +222,13 @@ code[language] i      { color: var(--code-punct, var(--ink-soft)); }
 /* identifier — variable, property, function, key */
 code[language] b {
   color: var(--code-name,
-    oklch(from var(--color-primary) clamp(var(--code-l-min), l, var(--code-l-max)) c h));
+    oklch(from var(--color-primary) clamp(var(--tone-l-min), l, var(--tone-l-max)) c h));
 }
 
 /* value — string, number, CSS custom property */
 code[language] em {
   color: var(--code-value,
-    oklch(from var(--color-success) clamp(var(--code-l-min), l, var(--code-l-max)) c h));
+    oklch(from var(--color-success) clamp(var(--tone-l-min), l, var(--tone-l-max)) c h));
 }
 
 /*
@@ -247,13 +241,13 @@ code[language] em {
 code[language] strong {
   color: var(--code-keyword,
     oklch(from var(--color-primary)
-      clamp(var(--code-l-min), l, var(--code-l-max)) c calc(h + 75)));
+      clamp(var(--tone-l-min), l, var(--tone-l-max)) c calc(h + 75)));
 }
 
 /* @rule, decorator, !important — the things that are neither */
 code[language] label {
   color: var(--code-special,
-    oklch(from var(--color-danger) clamp(var(--code-l-min), l, var(--code-l-max)) c h));
+    oklch(from var(--color-danger) clamp(var(--tone-l-min), l, var(--tone-l-max)) c h));
   font-weight: 600;
 }
 

@@ -84,12 +84,17 @@ export function protect(...fields: string[]): Hook {
 
 /** Keep only permitted fields from request data */
 export function allow(...fields: string[]): Hook {
+  const pick = (row: Record<string, unknown>): Record<string, unknown> => {
+    const kept: Record<string, unknown> = {}
+    for (const f of fields) if (f in row) kept[f] = row[f]
+    return kept
+  }
   return (ctx: ServiceContext): void => {
     if (!ctx.data) return
-    const kept: Record<string, unknown> = {}
-    for (const f of fields)
-      if (f in ctx.data) kept[f] = ctx.data[f]
-    ctx.data = kept
+    // `ctx.data` is a row OR an array of rows — bulk create sends the second.
+    // Indexing the union was a type error, and the shape it hid is that this
+    // hook did nothing useful on a bulk payload.
+    ctx.data = Array.isArray(ctx.data) ? ctx.data.map(pick) : pick(ctx.data)
   }
 }
 
@@ -99,10 +104,16 @@ export function timestamps(opts: { created?: string; updated?: string } = {}): H
   const updated = opts.updated ?? 'updated_at'
   return (ctx: ServiceContext): void => {
     if (!ctx.data) return
-    const now = new Date().toISOString()
-    if (ctx.method === 'create')
-      ctx.data[created] = now
-    ctx.data[updated] = now
+    const now   = new Date().toISOString()
+    const stamp = (row: Record<string, unknown>) => {
+      if (ctx.method === 'create') row[created] = now
+      row[updated] = now
+    }
+    // On a bulk create `ctx.data` is an ARRAY, and the un-narrowed version set
+    // the two columns as properties OF THE ARRAY — so every row in a bulk
+    // create went in with no timestamps and nothing said so.
+    if (Array.isArray(ctx.data)) ctx.data.forEach(stamp)
+    else                         stamp(ctx.data)
   }
 }
 

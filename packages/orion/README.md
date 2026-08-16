@@ -1,6 +1,10 @@
 # Orion
 
-> **Status: stub.** Folder claimed, nothing implemented. This file is the intent, not a description of behaviour.
+> **Status: V2, deferred.** Folder claimed, nothing implemented, and nothing is owed here **until FrontierJS core
+> leaves alpha** (`FJS-D14`, ruled 2026-08-15 — `DECISIONS.md` § Repo conventions). Orion is an app built ON the
+> framework, so building it now spends alpha time on a consumer of seams that are still moving; its primary
+> trigger also waits on a Junction subscriber for litestone's `onEvent` (`FJS-010`, blocked on `FJS-D04`).
+> This file is the intent, not a description of behaviour — and the thing to reopen when core is out of alpha.
 
 An automations engine. Triggers, conditions, actions — wired into flows that run on their own. Think Zapier or n8n, except it runs inside your own app, against your own schema, with your own gates enforced.
 
@@ -71,6 +75,9 @@ Root layout per Invariant 3; `src/resources/` is `.mesa`, per Invariant 18.
 ---
 
 ## Open questions
+
+None of these is owed an answer before core leaves alpha; they are here so that
+the deferral is not also a loss of the thinking.
 
 - **Flow representation.** A `.lite`-adjacent DSL, or rows in the database? A DSL gets diffs, review, and version control for free; rows get a builder UI without a parser round-trip. Both means two sources of truth, which is the thing to avoid.
 - **Who owns scheduling** — Caravan's cron, or an Orion scheduler over it? Caravan, unless something concrete says otherwise.

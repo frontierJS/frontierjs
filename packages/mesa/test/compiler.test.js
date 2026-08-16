@@ -739,6 +739,52 @@ describe('compile() output shape', () => {
     })
   })
 
+  // VISION RULE 23. Implemented since the compiler was written and pinned by
+  // nothing until now, which is the shape a rule regresses in: it is enforced
+  // by one `.filter()` over a component's attributes, and dropping that filter
+  // makes the directive compile to a prop the child never declared — silently,
+  // because the handler is simply never called.
+  describe('on:event on a component (RULE 23)', () => {
+    const onComponent = (body) =>
+      compile(`<script>import Child from './Child.mesa'; function go() {}</script>${body}`,
+        { debug: false, css: false })
+
+    it('is a compiler error', async () => {
+      const ctx = await onComponent(`<Child on:click={go} />`)
+      expect(ctx.analysis.errors.some(e => e.includes('not valid on a component'))).toBe(true)
+    })
+
+    it('names the prop for THIS event, not for click', async () => {
+      const ctx = await onComponent(`<Child on:paid={go} />`)
+      // The message said `onclick={fn}` whatever the event was, so the advice
+      // for every non-click event was a second wrong guess.
+      expect(ctx.analysis.errors.some(e => e.includes('onpaid={fn}'))).toBe(true)
+      expect(ctx.analysis.errors.some(e => e.includes('onclick'))).toBe(false)
+    })
+
+    it('says a modifier has nowhere to go', async () => {
+      const ctx = await onComponent(`<Child on:click|preventDefault={go} />`)
+      expect(ctx.analysis.errors.some(e => e.includes('preventDefault'))).toBe(true)
+      // …and still names the plain prop, since that is the actual fix.
+      expect(ctx.analysis.errors.some(e => e.includes('onclick={fn}'))).toBe(true)
+    })
+
+    it('catches the @ shorthand too', async () => {
+      const ctx = await onComponent(`<Child @click={go} />`)
+      expect(ctx.analysis.errors.some(e => e.includes('not valid on a component'))).toBe(true)
+    })
+
+    // The other three shapes must stay legal, or the rule has eaten the
+    // language. An element is where a directive belongs; `onclick` as a prop is
+    // the documented replacement; `mesa:window` is not a component.
+    it('leaves an element, a callback prop and mesa:window alone', async () => {
+      for (const body of [`<button on:click={go}>x</button>`, `<Child onclick={go} />`, `<mesa:window on:keydown={go} />`]) {
+        const ctx = await onComponent(body)
+        expect(ctx.analysis.errors).toHaveLength(0)
+      }
+    })
+  })
+
   describe('$: watch proxy', () => {
     it('emits watchProxy for $: path on import', async () => {
       const out = await cx(`<script>import { user } from './s.js'; $: user.name</script><p>{user.name}</p>`)
@@ -1205,6 +1251,21 @@ function provide(n, f) { return null }
       expect(out).toContain("$runtime.addEvent(")
       expect(out).not.toContain('__focus')
     })
+    // Delegating one of these registers the handler on a root the event never
+    // reaches: the element renders, the browser does its half, and the
+    // component's half silently never runs. `<dialog on:close>` was delegated,
+    // so Escape closed the dialog and `bind:open` was never written back —
+    // the caller's state said "open" forever and the overlay could not reopen.
+    // Bubbling is measured in a real browser by
+    // `@frontierjs/ui`'s `test/browser/specs/events.spec.mjs`.
+    it.each(['close', 'cancel', 'toggle', 'beforetoggle', 'invalid'])(
+      '%s does not bubble — uses addEvent, not delegation',
+      async (event) => {
+        const out = await cx(`<script>function fn(){}</script><dialog on:${event}={fn}>x</dialog>`)
+        expect(out).toContain('$runtime.addEvent(')
+        expect(out).not.toContain(`__${event}`)
+      }
+    )
   })
 
   describe('$context', () => {
@@ -3829,6 +3890,45 @@ describe('end-to-end — named slots', () => {
     app2.destroy()
   })
 
+  it('a slot made only of comments is not content', async () => {
+    // Comments are dropped from the output, so such a block renders nothing and
+    // used to make `$slots.default` true anyway — turning off every component
+    // that branches on it. `<Form>` generating its own field list when nobody
+    // wrote controls is the case that found it: one HTML comment inside the
+    // form and every field silently vanished.
+    const LayoutFn = await compileLayout(`
+<div>
+  {#if $slots.default}<p id="had-children">children</p>{/if}
+  {#if $slots.sidebar}<p id="had-sidebar">sidebar</p>{/if}
+  <main id="main-area"><slot /></main>
+</div>`)
+
+    const fn = await compileAndExec(`
+<script>import Layout from './Layout.mesa'</script>
+<Layout>
+  <!-- why the buttons below are in a named slot -->
+  <p slot="sidebar"><!-- and this one is empty too --></p>
+</Layout>`, runtime, { './Layout.mesa': { default: LayoutFn } })
+
+    const app = mount(fn, runtime)
+    expect(app.find('#had-children')).toBeNull()
+    // The named slot still has a real element in it, comment inside or not.
+    expect(app.find('#had-sidebar')).not.toBeNull()
+    app.destroy()
+
+    const withChild = await compileAndExec(`
+<script>import Layout from './Layout.mesa'</script>
+<Layout>
+  <!-- a comment beside real content changes nothing -->
+  <p id="real">real</p>
+</Layout>`, runtime, { './Layout.mesa': { default: LayoutFn } })
+
+    const app2 = mount(withChild, runtime)
+    expect(app2.find('#had-children')).not.toBeNull()
+    expect(app2.find('#real').textContent).toBe('real')
+    app2.destroy()
+  })
+
   it('default slot receives all non-named content', async () => {
     const LayoutFn = await compileLayout(`
 <div>
@@ -3922,6 +4022,104 @@ describe('{#virtual each}', () => {
     // First visible row should be Item 1
     expect(rows[0].textContent.trim()).toBe('Item 1')
     app.destroy()
+  })
+
+  // The options are documented (VISION §9.7) and used to be swallowed into the
+  // `as` binding, so `height=48` compiled to the identifier list `row height=48`
+  // and every component written from the docs died as "Unexpected identifier
+  // 'height'" — naming neither the block nor the option.
+  describe('options', () => {
+    it('parses height and viewport, and keeps them out of the binding', async () => {
+      const { result } = await compile(`
+<div>
+  {#virtual each rows as row height=48 viewport="500px"}
+    <div>{row.name}</div>
+  {/virtual}
+</div>`)
+      expect(result).toContain('{ height: 48, viewport: "500px" }')
+      expect(result).not.toContain('height=48')
+    })
+
+    it('takes a key and options together, in that order', async () => {
+      const { result } = await compile(`
+<div>
+  {#virtual each rows as row (row.id) height=48 viewport=300px}
+    <div>{row.name}</div>
+  {/virtual}
+</div>`)
+      expect(result).toContain('(row) => row.id')
+      expect(result).toContain('{ height: 48, viewport: "300px" }')
+    })
+
+    it('passes no options object when none are declared', async () => {
+      const { result } = await compile(`
+<div>
+  {#virtual each rows as row}
+    <div>{row.name}</div>
+  {/virtual}
+</div>`)
+      expect(result).toContain('$$virtualEach')
+      expect(result).not.toContain('height:')
+    })
+
+    it('refuses an unknown option by name, and says which exist', async () => {
+      await expect(compile(`
+<div>
+  {#virtual each rows as row bogus=1}
+    <div>{row.name}</div>
+  {/virtual}
+</div>`)).rejects.toThrow(/Unknown \{#virtual each\} option 'bogus'.*height, viewport/)
+    })
+
+    it('refuses a height that is not a positive number of pixels', async () => {
+      for (const bad of ['0', 'abc']) {
+        await expect(compile(`
+<div>
+  {#virtual each rows as row height=${bad}}
+    <div>{row.name}</div>
+  {/virtual}
+</div>`)).rejects.toThrow(/height must be a positive number of pixels/)
+      }
+    })
+
+    // Depth-0 scanning: an `=` inside a destructuring default or a key
+    // expression is part of the binding, not an option.
+    it('does not mistake a destructuring default for an option', async () => {
+      const { result } = await compile(`
+<div>
+  {#virtual each rows as { name = 'anon' }}
+    <div>{name}</div>
+  {/virtual}
+</div>`)
+      expect(result).toContain('$$virtualEach')
+      expect(result).not.toContain('height:')
+    })
+
+    it('declared height is used instead of measuring the first row', async () => {
+      const fn = await compileAndExec(`
+<script>
+  let rows = Array.from({ length: 500 }, (_, i) => ({ id: i + 1 }))
+</script>
+<div class="container">
+  {#virtual each rows as row (row.id) height=48 viewport="480px"}
+    <div class="row">{row.id}</div>
+  {/virtual}
+</div>`, runtime)
+
+      const app = mount(fn, runtime)
+      const container = app.container.querySelector('.container')
+      // viewport= makes the block's own element the scroller, which is what the
+      // spacer heights are computed against.
+      expect(container.style.height).toBe('480px')
+      expect(container.style.overflowY).toBe('auto')
+
+      // happy-dom measures every row at 0, so an undeclared height would leave
+      // the 40px fallback and the bottom spacer would be a different number.
+      const rendered = container.querySelectorAll('.row').length
+      const spacer   = container.lastElementChild
+      expect(spacer.style.height).toBe(`${(500 - rendered) * 48}px`)
+      app.destroy()
+    })
   })
 })
 
@@ -4373,6 +4571,62 @@ describe('compileMd remark/rehype plugins', () => {
     const r = await compileSource(src, { filename: 'test.md' })
     expect(r.analysis.errors).toHaveLength(0)
     expect(r.result).toContain('Title')
+  })
+})
+
+describe('markdown code fences — highlighting comes from @frontierjs/toolbelt', () => {
+  // compiler-md decodes the fence body before calling glow(), because rehype
+  // has already HTML-encoded it. That is only safe while glow encodes what it
+  // emits: mesa ran a fork that encoded per token, in elem(), and a token
+  // matching more than one character therefore reached the page raw.
+
+  it('an HTML comment in a fence never reaches the page as markup', async () => {
+    const src = ['```html', '<!-- not a real comment -->', '```'].join('\n')
+    const r = await compileSource(src, { filename: 'test.md' })
+    expect(r.analysis.errors).toHaveLength(0)
+    expect(r.result).not.toContain('<!-- not a real comment -->')
+  })
+
+  it('a `<` or `&` in a fence reaches the reader as itself', async () => {
+    // rehype writes `<` as `&#x3C;` and `&` as `&#x26;`. The decode table used
+    // to know neither, so both survived into glow, which tokenised `&`, `#` and
+    // `;` as three separate punctuation tokens in three <i> elements — which is
+    // also why no browser could put them back together (FJS-261).
+    const r = await compileSource(['```html', '<div>x</div>', '```'].join('\n'), { filename: 'test.md' })
+    expect(r.result).not.toContain('x3C')
+    expect(r.result).toContain('<i>&lt;</i><strong>div</strong><i>&gt;</i>')
+
+    const amp = await compileSource(['```js', 'const a = b && c', '```'].join('\n'), { filename: 'test.md' })
+    expect(amp.result).not.toContain('x26')
+    expect(amp.result).toContain('<i>&amp;</i><i>&amp;</i>')
+  })
+
+  it('a fence that literally writes an entity keeps it written', async () => {
+    // The half a chain of replaces cannot get right: `&lt;` in the source
+    // arrives as `&#x26;lt;`, and decoding numeric-then-named turns it into a
+    // `<` the author never typed. One pass cannot decode its own output.
+    const r = await compileSource(['```html', '&lt;b&gt;', '```'].join('\n'), { filename: 'test.md' })
+    expect(r.result).toContain('<i>&amp;</i>lt<i>;</i>b<i>&amp;</i>gt<i>;</i>')
+  })
+
+  it('a comment opening mid-line does not swallow the code before it', async () => {
+    const src = ['```js', 'const a = 1 /* trailing */', '```'].join('\n')
+    const r = await compileSource(src, { filename: 'test.md' })
+    expect(r.analysis.errors).toHaveLength(0)
+    // The fork had no isTrailingComment(), so `/*` started a block and the whole
+    // line came back as one <sup> — a live line reading as a dead one. Asserting
+    // the text survives is not enough (it survived inside the comment too): the
+    // keyword before the comment has to still be a keyword.
+    expect(r.result).toContain('<strong>const</strong>')
+    expect(r.result).toContain('<sup>/* trailing */</sup>')
+  })
+
+  it('braces inside a highlighted fence are still escaped for Mesa', async () => {
+    const src = ['```js', 'const o = { a: 1 }', '```'].join('\n')
+    const r = await compileSource(src, { filename: 'test.md' })
+    expect(r.analysis.errors).toHaveLength(0)
+    expect(r.result).toContain('&#123;')
+    expect(r.result).toContain('&#125;')
   })
 })
 

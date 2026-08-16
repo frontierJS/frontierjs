@@ -1,5 +1,618 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-16 — `changed`: a write that cannot name its row still announces (`FJS-307`)
+
+1160 tests (10 new), 0 fail. Baseline unchanged; `src/` stays at zero.
+
+The tap installed for `FJS-010` dropped every event whose `result` was null,
+which is one line and two whole classes of write: a bulk statement that answers
+`{count}` and never built the rows, and a `select: false` write that skipped its
+RETURNING. So a job doing `createMany` left every open tab stale — the same
+defect `FJS-010` closed, one method over.
+
+Litestone now says which it is (`scope`), and a rowless event is broadcast as
+**`changed`**, carrying `{ model, operation, count }`. One name for all three
+operations, because the only honest answer on the other side is the same for
+each: ask the query again. Which operation it was travels in the payload for a
+bus subscriber that wants it.
+
+**`where` reaches the bus and never the wire.** The bus is in-process and can
+hold the caller's filter; a channel goes to every subscribed browser, and a
+filter is made of the caller's own values — `deleteMany({ where: { resetToken } })`
+would otherwise put one on a socket. The two payloads differ by that field and
+the test asserts both halves.
+
+The browser store answers `changed` with the reload it already gives an
+undecidable record, coalesced per burst, and the `*` catch-all skips the name —
+without that, `{ model, operation, count }` would be upserted into the store as
+if it were a row. Not `stale`: that counter is for a gap the list knows the
+shape of, and *some unknown rows moved* is not one.
+
+Not proved end to end. `example` has no bulk write reachable from a request, so
+the frame is asserted here and the store's answer in the client suite; the link
+between them is the frame dispatch every other event already uses.
+
+## 2026-08-16 — a write nothing announced now announces (`FJS-010`)
+
+1144 tests (9 new), 0 fail. Baseline 138, unchanged; `src/` stays at zero.
+
+`callService` is the single announcement point, so a mutation that never went
+through a service told nobody — a `db.asSystem()` write in a job, a raw route
+writing through the client, a Litestone plugin. Every open tab kept the stale
+row with a 200. `announceDataWrites(app, db)` installs a `$tapEvents` tap at
+`createApp({ db })` and routes what it sees into the same bus + channel fan-out
+callService uses, so there is still one shape of announcement.
+
+**Suppression is keyed on the service NAME, and that is the substance.** Every
+service write passes the tap too, so without a check each mutation would go out
+twice. The first version asked *am I inside a service call* and swallowed the
+audit row an `orders` after-hook writes — a different service, genuinely
+unannounced, and `orders created` says nothing about it. Measured, then
+narrowed: the ALS holds the announcing service and the tap compares. A nested
+call re-runs it with its own name, so the innermost scope is the one that will
+announce.
+
+The ALS is read inside a `setImmediate` callback and works because the scope
+propagates through scheduling. If that ever stops holding, every service write
+announces twice — `tests/data-write-announcement.test.ts` is what says so.
+
+**Two limits, both reported rather than guessed.** A **function** `channel:`
+resolver takes `(rows, ctx)` and an orphan write has no ServiceContext to hand
+it, so that service gets the bus and one named warning per process; inventing a
+ctx would pass the app's own resolver a principal nobody authenticated. And a
+model no service is built over is silent by design — an app may have tables its
+API does not expose.
+
+The `$tapEvents` probe is wrapped in a `try`: a Litestone client throws on an
+unknown property, so feature-detection is itself a throwing expression, and an
+older client has to leave `createApp` standing rather than take it down. That
+was a real failure, caught by the stub client in `accessor-resolution.test.ts`.
+
+Not installed for `createApp({ tenants })` — there the client is per request
+rather than per app, so there is no single client to tap.
+
+## 2026-08-16 — `rateLimit` is typed for both contexts, because it always ran on both (`FJS-063`)
+
+It returns a **`BridgeHook`** — `(ctx: ServiceContext | TransportContext) => void`
+— rather than `Hook`. The parameter is wider, so it stays assignable to `Hook`
+and a `before:` map is unchanged.
+
+Nothing about the behaviour moves. This hook is a service before-hook AND the
+limiter `@frontierjs/auth` puts on its own `/auth/*` routes, which are plain
+handlers; both things it reads go through accessors written for either shape,
+and the comment above it has named auth as the reason since `FJS-017`. The
+signature was the only part that had not caught up, and nothing said so because
+auth typed those handlers `any` — which is what closing `FJS-063` removed.
+
+## 2026-08-16 — the template directives, and what `$search` was answering (`FJS-306`, `FJS-292`)
+
+**`$withTemplates` / `$onlyTemplates` reach the Data boundary.** `QueryDirectives`
+declares them, `parseQuery` reads them off `ctx.directives` and off the `$`-in-
+query fallback alike, the service forwards them to `findMany`/`findUnique`/
+`findFirst`, and the browser client emits them on both wires. Same pair as
+`withDeleted`/`onlyDeleted`, one Data-realm feature over — an app declaring
+`@@hasTemplates` could not ask for a template from anywhere above Litestone.
+
+**`$search` on a model that HAS `@@fts` was answering nothing.** `table.search()`
+returns the rows, ranked; the find branch destructured `{ rows, total }` off that
+array, so a search that matched came back `{"limit":20,"offset":0}` — no data, no
+total, status 200. The same shape as the `restoreMany` that never existed
+(`FJS-245`): a method typed on `LitestoneTable` that nothing executed. The type
+now says `Promise<unknown[]>`, the rows are the rows, and the envelope's total is
+a second id-only pass, skipped when the first page is short enough to BE the
+total. The four visibility flags reach `search()` too.
+
+Below `@@fts`, Litestone now refuses by name with a 400 rather than a bare Error
+that arrived as a 500 (`FJS-292`); `errors.snapshot.md` records the new class,
+and picks up the lock and soft-delete-unique rows that had gone stale in it.
+
+
+## 2026-08-16 — the browser client speaks `directives`, and can finally say all eight (`FJS-290`)
+
+1129 tests. Typecheck **138, baseline lowered from 139**.
+
+`FindParams` was two things wearing one name. It held `query` — the filters —
+alongside `limit`/`offset`/`orderBy`/`select`/`populate`, so the container was
+both halves of a split the rest of the framework keeps apart (Invariant 10). And
+it named five of the eight directives, so `$search`, `$withDeleted` and
+`$onlyDeleted` had a server that read them (`parseDirectives`), a URL grammar
+that carried them, a type in `core/context.ts` that named them — and no way for
+`client.service(x).find(…)` to ask. Sierra inherited the hole: a `.lite`
+declaring `@@softDelete` gave an app a restore flow it could not build a list
+screen for, and FTS5 search was reachable only by hand-writing a URL.
+
+Both are one fix. The second argument is now a **`QueryDirectives`** — the same
+declaration the bridge reads — and filters are the first argument, always.
+
+`QueryDirectives` moved to **`src/core/directives.ts`**, a module that imports
+nothing. It had to: the browser client needs the type and `core/context.ts`
+imports `node:async_hooks`, which does not exist in a browser and would ride
+into every bundle on a type-only import a build step failed to erase.
+`context.ts` re-exports it, so every existing import keeps resolving.
+
+`directiveParams(d)` is the one table both wire builders read, replacing two
+hand-written field-by-field walks. That duplication is how `$populate` came to
+be emitted over HTTP and not over the socket once — a difference nothing can see
+from the call site, since the client prefers the socket whenever one is up. The
+parity test now asserts against `DIRECTIVE_PARAMS` rather than a hand-written
+list, in both directions: every name emitted is a name the bridge strips, and
+every directive declared is a directive emitted.
+
+`$first` and `$wrap` stay out of the type and are passed by the one call site
+that needs them — they are transport-only and have no structured form on the
+other side, which is exactly the line `@frontierjs/toolbelt/directives` already
+draws between `DIRECTIVE_PARAMS` and `TRANSPORT_PARAMS`.
+
+One escape hatch is new and has one caller: `get(id, directives, _wire)`. The
+WebSocket→HTTP fallback holds a frame whose directives are already in `$`
+spelling, and parsing them back so this method could re-emit them would be a
+second translation of the convention on the client — where the point of the
+shared table is one per boundary.
+
+Also fixed: the module header's own example was `find({ query: { status: 'online' } })`,
+a Feathers idiom that filters on a column named `query`. With `FJS-289` landed
+the same afternoon, that now answers a 400 naming the key instead of an empty list.
+
+## 2026-08-16 — a provider is what Junction calls (`FJS-D10`)
+
+1129/1129 tests pass (+5, `tests/session-verifier.test.ts`). Typecheck baseline
+unchanged.
+
+`IAuth` declares six required methods. This package invokes two of them:
+`verifySession`, on the HTTP path and the WS upgrade, and `sessionFor`, behind
+`runAs`. `login`, `logout`, `createUser` and `deleteUser` are called by
+`@frontierjs/auth`'s own `/auth/*` routes and by nothing here — so an app
+authenticating against something it already had was stubbing four methods that
+would never run, and a stub that throws cannot be told apart from a provider
+that works until the day something calls it.
+
+`createApp({ auth })` and `setAuth()` now take **`SessionVerifier`**, and the
+whole of it is `{ verifySession }` with `sessionFor` optional. The absence of
+`sessionFor` stays LOUD — `runAs` throws by name rather than downgrading a
+caller to STRANGER(0).
+
+**It is derived, not declared beside `IAuth`** — `Pick<IAuth, 'verifySession'> &
+Partial<IAuth>` — and both halves earn their place. A hand-written member list
+drifts the moment `IAuth` grows a method. And `Partial` is what keeps a FULLER
+provider assignable: TypeScript's excess-property check rejects an object
+literal carrying a key the target does not name, so a narrow interface listing
+only `verifySession` refused `{ verifySession, login, … }`, which is exactly the
+provider it exists to accept. That was measured, not predicted — the first shape
+broke four call sites in this repo's own examples and tests.
+
+`tests/auth-cookie.test.ts` is the receipt: three of its stub providers were
+written `: IAuth { … } as IAuth`, casting past five methods they do not
+implement. The casts are gone.
+
+**`createSchema` takes an optional type parameter.** `createSchema<CreateOrder>({
+… })` makes `parse()` answer `CreateOrder` instead of `Record<string, unknown>`,
+with the field map constrained to that type's keys so a missing or invented one
+is a compile error. The type is STATED rather than inferred, and that is the
+ruling: a model service is validated by `autoValidate` off the generated JSON
+Schema and writes no schema at all, so this is the hatch for a shape the seed
+does not describe — and for that shape the author already holds the type.
+Inferring it instead means building zod inside a framework whose thesis is that
+types come from the seed. Untyped calls are unchanged.
+
+
+## 2026-08-16 — `resolveAccessor`: the derived hooks were asking a question the client could not answer (`FJS-289`)
+
+1129 tests, 4 of them new here. Typecheck clean.
+
+`autoFilter` and `autoSort` passed `accessorOpt ?? ctx.service` straight to
+`$checkWhere` / `$checkOrderBy`. A service that declares no `model:` is named
+for its URL, which is plural, and both check functions answer `[]` for an
+accessor they do not know — the same value they answer for *no problems*. So the
+hooks read *I cannot judge this* as *this is fine* and validated nothing.
+
+Measured on `example`, whose four services all omit `model:`:
+`GET /api/orders?bogusColumn=7` answered **200 with an empty list**, plus a
+Litestone warning on stderr that no client can see. That is the exact
+silent-empty-screen `FJS-109` created the hook to end — working for nobody who
+used the default.
+
+**The sort half was masked.** Litestone throws on a bad `orderBy` at execution
+where a bad `where` only warns, so `?$orderBy=-bogus` answered 400 from the
+backstop while the hook above it did nothing. One of the two looked correct and
+neither was.
+
+`resolveAccessor(client, accessor)` is the fix and the one owner. It resolves
+off `$schema` rather than probing, because no probe can separate the two
+meanings of `[]`. `getTable` and `_gateLevels` had walked `accessorCandidates`
+since the naming slip that silently disabled authentication; the hooks that ASK
+rather than LOOK UP never got it.
+
+Every existing test declared `model:` explicitly, which is why the coverage was
+green throughout. The new describe omits it — the shape the autoloader produces.
+Verified by reverting: the filter test goes red, the sort test does not, which
+reproduces the masking.
+
+## 2026-08-16 — `app.provide` is `app.claim`, and metrics get a real seam (`FJS-D06`)
+
+1120/1120 tests pass. Typecheck baseline unchanged.
+
+`app.provide(name, value)` never provided anything. It takes a name on the app
+object and throws if something already holds it — Fastify's `decorate`, and the
+error message it has always thrown says *already claimed*. Now the verb agrees:
+**`app.claim(name, value)`**. The rename exists because `FJS-D06` gave `Provider`
+a meaning — a third party the app speaks to, an identity provider or a payment
+provider — and a verb that means *claim a namespace* standing next to a noun
+that means *Stripe* is two concepts one keystroke apart.
+
+**`_metricsProviders` was the same word in a third sense** — a thing that
+supplies a number — and it was also a private field two packages reached into
+behind an `instanceof Map` guard. Conduit's own `docs/AUDIT.md` had written down
+what that costs: rename the field and metrics disappear with **no error
+anywhere**, because a guard that fails just skips. So the field became
+`_metricsSources` and the reach-in became a declared seam,
+**`app.registerMetricsSource(name, fn)`**.
+
+That is the half worth keeping. Conduit now calls it unguarded — it imports
+Junction's own `App` type, so a missing seam is a compile error — while Caravan
+keeps a presence check, because Caravan legitimately runs against hosts that are
+not Junction apps at all. The integration tests on both sides drive a REAL app,
+which is what makes a skew between the packages loud instead of silent.
+
+Breaking for anything calling `app.provide()` or writing `app._metricsProviders`
+directly: caravan, conduit, notifications, webhooks and basecamp, all updated.
+
+
+## 2026-08-16 — per-request tenants (`FJS-D05`)
+
+`createApp({ tenants })` takes a Litestone tenant registry and installs
+`withTenantDb` **in place of** `withLitestoneDb`: one `ctx.locals.db`, and two
+hooks assigning it would leave which wins to hook order. Each call resolves its
+tenant, and the resolution is **asked rather than re-derived** —
+`registry.tenantFor({ host, headers, principal })` applies the `resolve` the
+schema declares (a subdomain, a header, a claim), so this side contributes only
+what a transport has and what a refusal's status code is. A second reading of
+`resolve subdomain` living up here is how two answers to one question drift.
+
+Work with no request behind it — a job, a scheduled sweep, a webhook replay —
+names its tenant with `{ locals: { tenantId } }`, which is what `locals` being
+hand-down-able is for. No tenant resolvable is a 400 naming how the schema says
+to name one; an unknown tenant is a 404.
+
+Row tenancy needs no hook and fails the other way round: the schema's own
+policies scope every query, so a **signed-in** principal carrying no claim
+matches no row and every screen is an empty list with a 200 — indistinguishable
+from a tenant with no data, and almost always a missing `sessionFields` entry.
+`tenantClaimGuard` refuses that by name on a scoped service. Anonymous is
+deliberately not its business: nobody is not a caller missing a claim.
+
+## 2026-08-16 — `app.principal()` / `app.runAs()`, the seam deferred work runs through
+
+1120 tests, unchanged — the behaviour is proved from Caravan, which is its only
+caller. Typecheck clean.
+
+`auth` propagating (below) fixed calls *inside* a request. Work that outlives
+one — a job, a retry, a scheduled sweep — still had no principal, because the
+store is gone by the time it runs. Two members answer it, and neither is
+Caravan-specific: `app.principal()` reads who is in scope from somewhere holding
+no `ctx`, and `app.runAs(userId, fn)` opens a scope for a principal **resolved
+now**, so `fn` makes ordinary service calls that name nobody.
+
+`createApp({ system })` is the third piece: the principal an app is when it acts
+on its own behalf, for work nobody asked for. Declaring none gives `null` rather
+than an invented identity — inventing one would hand every app a privileged
+principal it never requested.
+
+`IAuth.sessionFor(userId)` is new and optional: build a session for a caller
+presenting no credential. **It proves nothing**, so it must never be wired to
+anything a request can name. A provider lacking it makes `runAs(userId, …)`
+throw by name rather than quietly downgrade to STRANGER(0), which is the bug
+this exists to remove.
+
+`createTestApp({ system })` forwards it — a test that cannot declare a system
+principal cannot tell that answer apart from *no principal*.
+
+
+
+## 2026-08-15 — `auth` propagates, and `ctx.params` is gone (`FJS-D03`)
+
+**The contract said `auth` propagated and it did not.** Measured: a nested
+`ctx.app.service('inner').find()` from inside a service saw `null`, while
+`core/context.ts` documented the field as *"Frozen. PROPAGATES across internal
+calls (carry caller identity so authz stays consistent)."* An internal context
+was built from `opts.auth` alone — there was no ambient anything — so every
+boundary that starts a call chain began at STRANGER(0) unless a human threaded it
+by hand. That is the same root cause as the Caravan job hazard, and why
+`example` carries an `app-ref.ts` singleton and `{ auth: { user: SYSTEM as never } }`
+in every job.
+
+It propagates now, and it needed no new machinery: the principal joins
+`RequestMeta` in the `AsyncLocalStorage` store the transport **already** wraps a
+whole request in, so nothing is threaded and no caller object is rebuilt. Three
+rules, all executed in `tests/context-contract.test.ts`:
+
+- a call naming no principal inherits the one in scope, **at any depth**
+- an explicit `{ user: null }` stays anonymous — **absent is not null**, tested
+  with `in` rather than `??`, which is what preserves *read this as a stranger
+  would*
+- a call whose principal DIFFERS re-scopes, so a sub-call made as somebody else
+  passes **that** principal to its own children rather than the request's
+
+`client` propagates by the same route, for the same reason: an audit hook three
+calls deep has no other way to reach the IP of the request that caused the write.
+It is information, never authority.
+
+A test that pinned the old behaviour — *"app.service() without params makes an
+anonymous call"* — is rewritten. Its own comment called that an "anonymous system
+call", which is the opposite thing: STRANGER(0), not level 8.
+
+**`ctx.params` is gone from both contexts.** Path captures are `ctx.route`
+everywhere in Junction — `TransportContext`, `WsContext` and `ServiceContext` —
+and Sierra keeps `page.params`. Deleted rather than aliased: in Feathers `params`
+is the whole context bag, that idiom keeps arriving here (`ctx.params.user`,
+`ctx.params.headers`, `app.service(x).get(id, ctx.params)`), and a field of that
+name holding *something else* is how a role check reads `undefined` and passes
+for everyone. Absent, the idiom throws.
+
+The guidance that told people to thread `ctx.params` — in this package's own
+`app.ts` comments — is rewritten, since there is now nothing to thread.
+
+`CLAUDE.md` gains **§ The two contexts**: which one you are holding and when,
+where they must agree, where they deliberately differ, and the four fields with
+their four different rules.
+
+## 2026-08-16 — `client.auth`, and the token gets one owner (FJS-D20)
+
+The browser client could sign in and could not do anything else: no register, no
+`me`, no password reset, and `logout()` cleared the token locally without telling
+the server — so a sign-out left the session row valid until it expired. Nothing
+in this repo had ever called `POST /auth/logout`.
+
+`client.auth` is the whole surface now — `signIn` / `signUp` / `signOut` / `me` /
+`changePassword` / `sessions` / `revokeSession` / `revokeOtherSessions` /
+`apiKeys` / `createApiKey` / `revokeApiKey` / `requestPasswordReset` /
+`confirmPasswordReset` / `requestEmailVerification` / `verifyEmail`. It lives
+here rather than in `@frontierjs/auth` because this is the object that holds the
+token, opens the socket and knows both prefixes; an app writing its own sign-in
+had to reproduce all three. `authenticate()` is gone — it is `auth.signIn`.
+
+**`tokenStorage` gives the token one owner.** Sierra used to write localStorage
+in its own `login()` while the client held its copy in memory, so signing in
+through the client left storage empty and writing storage by hand left the socket
+unauthenticated. `setToken` now persists, clears, and emits `token` so a cache
+keyed on identity (Sierra's prefetch) can drop what belonged to whoever left.
+
+**A 401 keeps the server's own sentence.** `_request` threw `Unauthorized`
+without reading the body, so "Invalid credentials" never reached anyone — which
+is most of what a hand-written sign-in page was doing when it re-mapped the
+status itself.
+
+`IAuth` gains five optional methods (`changePassword`, `listSessions`,
+`revokeSession`, `revokeSessions`, `listApiKeys`) and `SessionContext` gains
+`sessionId`; `AuthSessionInfo` and `ApiKeyInfo` are what the caller may be shown
+about their own credentials — deliberately not the rows, which hold the bearer
+token and the key hash.
+
+## 2026-08-15 — a stream is not a result (`FJS-D13`)
+
+Ruled: a stream sits **outside** the envelope and `ResultKind` stays
+`single | list`. The envelope answers what a call RETURNED — one record or a page
+of them, with `total`/`limit`/`offset` and the bulk protocol's `errors` — and a
+stream returns nothing and then repeatedly, so every field of it is meaningless
+for one.
+
+**A third `kind` would have been silent.** It is branched on at ten sites, listed
+in `core/envelope.ts`'s own header, and a new value lands in each as *not a
+list* — treated as a single, `data: undefined`. That is the class of drift the
+module exists to end.
+
+**The framework already streams and already answered this the other way.**
+`publish()` is an after-hook, so a pushed frame IS `ctx.result` — through
+`protect()` and the whole pipeline — and `unwrapResult` strips the envelope at
+the wire. Unwrap at the edge, not grow a kind.
+
+`wrapResult` now **refuses** a `Response`, a `ReadableStream`, anything with
+`getReader`, and an async iterable, by name. It used to wrap them, and both a
+Response and a ReadableStream have no enumerable own properties: a service
+method returning one answered `{"kind":"single","data":{}}` — an empty object
+with a 200, the stream destroyed, nothing said. The refusal names where streaming
+does live, because a wall that does not is worse than the bug. 5 tests.
+
+The corollary is the half with teeth: **each frame is a result and the stream is
+not.** `ctx.sse()` is a raw-route transport primitive with no `gateAuth`, no
+`autoValidate`, no `protect()` and no app hooks — right for a heartbeat, wrong
+for records.
+
+## 2026-08-15 — a custom service method is a METHOD (FJS-D02)
+
+`action` was a second noun for a set the CRUD list already defines by
+exclusion, and every surface a developer touches had said *method* all along:
+the declaration is `methods: ['find', 'get', 'reboot']`, the wire is
+`X-Service-Method` over HTTP and a `service_call` frame naming `method` over the
+socket, the pipeline carries `ctx.method`, and a refusal is `MethodNotAllowed`.
+Ruled: they are methods; *custom* is the adjective where the distinction
+matters.
+
+**The wire did not change and neither did the announcement** — a custom method
+still announces under its own name (`orders pay`). What changed is the
+vocabulary and one public name:
+
+- `svc.action(name, id, data, query)` → **`svc.invoke(...)`** on the browser
+  client. Not `call`, which is the WS-only escape hatch already.
+- `collectActions` → `collectCustomMethods`, `_actions` → `_customMethods`,
+  `actionNames` → `customMethodNames` (the table-first answer), and the old
+  scan-only `customMethodNames` → `scanCustomMethods`.
+- `describe()` reports `customMethods`; `/metrics` `services.details.*` reports
+  `customMethods`; `surface.snapshot.md` prints **custom methods**. Regenerate
+  the snapshot after upgrading — the `snapshots` CI phase fails a stale one.
+
+`ARCHITECT.md` §2 carries the vocabulary rule; `DECISIONS.md` § Naming &
+vocabulary carries the ruling.
+
+## 2026-08-15 — a live list keeps its order and knows where its page ends (FJS-270)
+
+`Store.upsert` appended. So a list loaded `orderBy: '-createdAt'` received new
+rows at the BOTTOM and one loaded `limit: 20` grew past 20 — the row was
+genuinely in the query, it was in the wrong place in it, which is `FJS-011` one
+field along.
+
+`Store.place(record, idField, cmp, max)` inserts at the sorted position and moves
+a row whose sort key a patch changed, in one notification. The comparator comes
+from **`core/sort.ts`, which is also `parseSort`** — one reading of `-createdAt`,
+or the browser orders a list differently from the query that filled it. Its value
+ordering follows SQLite rather than JavaScript: NULLs first ascending and
+therefore last descending, numbers before text, a Boolean as the 0/1 it is
+stored as, ISO-8601 DateTime compared as text. Where it cannot be exact it says
+so in the header — a non-BINARY collation, and UTF-16 code units against bytes
+past ASCII.
+
+**Paging is unanswerable from a browser and is not guessed at.** On the first
+page the row pushed off the end genuinely belongs to page 2, so trimming is
+right. Past page 1 a new row is refused: nothing here knows whether it belongs on
+an earlier page, and putting it in would push out a row that does. A removal
+leaving a gap only the server can fill is the same case. Both are counted, and
+the count is `stale` on the resource — `{ get, subscribe }`, the same shape as a
+Store, so anything that bridges one to a UI signal bridges this — cleared by
+`load()`, for a view to render as *3 new — refresh*.
+
+The limit and offset are read off the **envelope**, not the params: the effective
+limit is the server's, and a caller naming none still got one. A service
+answering no pagination metadata leaves it unknown, which turns trimming off
+rather than inventing a page size. An unordered list that outgrows its page
+counts rather than dropping a row at random — throwing away the row the user just
+created, to honour a page size, is the worse half of that trade.
+
+
+## 2026-08-15 — the consumer surface type-checks, and seven defects were under it (FJS-268, FJS-272)
+
+An app that imports junction compiles junction: the `exports` map points at
+`.ts` and nothing emits `.d.ts`, so tsc follows those imports and checks the
+framework as part of the app's own program. Measured on a freshly scaffolded
+app, that was **61 diagnostics from inside `node_modules` and none of its own**
+— and all 61 were junction's. The other five TypeScript packages were already
+clean, so this was never the framework-wide problem it was filed as.
+
+`index.ts` + `src/**` is now **0**, from 67. The baseline fell **198 → 139**, and
+what is left is `tests/` and `example/`, which no consumer compiles.
+
+Seven things were hiding in there. In severity order:
+
+**STARTTLS was broken against every submission server.** `src/mail/smtp.ts`
+called `socket.startTls(...)`. Probed on Bun 1.3.11 that property is `undefined`
+— the API is `upgradeTLS`, it takes the socket handlers again, and it returns a
+PAIR whose second element is the encrypted socket. So Gmail, SendGrid, Postmark,
+Office 365, anything on port 587, died with `socket.startTls is not a function`.
+Nothing caught it because the only mail server the drives talk to is the dev
+sink, and a sink advertises no capabilities, so the branch never ran.
+`tests/smtp-starttls.test.ts` pins it and **runs out of process**:
+`tests/email.test.ts` mocks the smtp shim with `mock.module`, which is
+process-wide and never undone, so an in-process version passed alone and graded
+a mock inside the suite.
+
+**`timestamps()` skipped every row of a bulk create.** `ctx.data` is a row OR an
+array of rows; un-narrowed, the hook set `created_at`/`updated_at` as properties
+of the ARRAY. `allow()` had the identical shape and filtered nothing on a bulk
+payload. Both map over the array now.
+
+**An error's stack never reset the terminal colour.** `line += '\n' + COLOR +
+stack ?? fallback + RESET` parses as `(concatenation) ?? (…)`, and a
+concatenation is never nullish — so the fallback was dead and `RESET` sat on the
+wrong side of the operator. An error with no `.stack` logged the word
+`undefined`, and every line after ANY error stayed the error colour.
+
+**`plugins/email/campaign/sender.ts` imported `App` one `../` short.** A
+type-only import, so it never failed at runtime and every type in that file was
+dead. Fixing the path revealed the file reaching `app.conduit.resolve` with no
+guard — a `Cannot read properties of undefined` the first time campaign email is
+configured without conduit. It states the slice of Conduit it needs, structurally
+and locally, because `AppConduit` is empty here on purpose.
+
+**The OpenAPI generator could not express a header parameter**, so the
+`X-Service-Method` line — the whole custom-action calling convention — was an
+excess property the spec silently dropped. Path-level `parameters` were
+untypeable for the same reason.
+
+**`RateLimitHookOptions` was exported twice from `index.ts`** (a duplicate
+identifier), and `RouteSegment` was imported from `router.ts`, which does not
+export it.
+
+**`tsconfig.json` was a stale copy of `tsconfig.base.json`** with `DOM.Iterable`
+missing from `lib` — so `headers.entries()` was a type error against working
+code, which is the exact case the base's own comment warns about. It extends the
+base now.
+
+**The casts, and what they were hiding.** Twenty-five `as Record<string,
+unknown>` assertions came out. Nine were reaching fields the types already
+declared (`app.telemetry`, `app._plugins`, `app.channels`, `ctx.requestId`,
+`Channel.name`). Twelve were an **undeclared middleware → transport side
+channel** — a middleware runs before the response exists, so it leaves headers on
+the context and `_finalizeWithHeaders` applies them at the end. That is one
+contract with six fields (`__cors`, `__securityHeaders`, `__rateLimit`,
+`__correlationHeaders`, `__pendingCookies`, `__status`) and it was written down
+nowhere, so a middleware that misspelled a bucket compiled, ran, and dropped its
+headers in silence. They are on `TransportContext` now. `Connection.__joinMeta`,
+`Channel.__presenceWrapped` and the `service`/`method`/`params` fields of a
+`service_call` frame got the same treatment. What remains as a cast is what is
+genuinely dynamic — an action name written onto a service, a method name onto the
+router — and each is a two-step with a sentence saying why.
+
+Also: `HookType` never admitted `'method'`, which `runPipeline` sets while the
+method itself runs, so a hook reading `ctx.type` could see a value the union
+denied. `Bun.serve<WsData>` is stated, so the four websocket handlers agree with
+the `_ws*` methods about what is on `ws.data`.
+
+`FJS-271` is filed rather than fixed: `createThread(path, data)` passes
+`workerData`, which Bun does not deliver under any name — a public API's second
+parameter goes nowhere, and closing it is a protocol decision, not a type one.
+
+## 2026-08-15 — `resource()`'s store is scoped to the query that filled it (FJS-011)
+
+A push is an announcement about a ROW; the store is the answer to a QUERY. The
+wiring applied every event to it, so a row outside the filter was added and a row
+a patch had just moved out of the filter stayed in, updated in place.
+
+`resource(name, idField, { match })` takes the decision from its caller —
+`true` upserts, `false` removes, `null` means *cannot be decided from this
+record* and the store reloads instead of guessing, once per burst rather than
+once per event. Sierra passes a matcher built from the model's own field rules;
+this package holds no schema, which is why it is passed in and not decided here.
+A caller passing nothing gets exactly the old behaviour.
+
+The query is recorded when the rows are, inside the `FJS-082` stamp check, so a
+superseded load leaves neither its rows nor its filter behind. A custom action
+event goes through the same door as a patch: a row can leave a list through one.
+
+## 2026-08-15 — `deriveModelName` uses the shared inflection rules (FJS-192)
+
+It carried its own copy — `ies`/`ses`, no irregular table — so a `people`
+service resolved to the model `people`, which does not exist, and the lookup
+failed open the way `accessorCandidates` exists to prevent. It now calls
+`singularize` from `@frontierjs/toolbelt/inflect`; the `Service` suffix and the
+camelCase are still junction's business.
+
+The guards this copy had and the others did not — `us`, `is`, `as`, `ss`, which
+stop `status` becoming `statu` — went INTO the shared module rather than being
+lost to it.
+
+## 2026-08-14 — two things on stdout that were not news
+
+An app booting printed one `[Loader] Registered service:` line per service and
+one `[Junction] anonymous hook on x.before.y` line per PHASE per METHOD. On a
+21-service app that is dozens of lines before anything has been served, and the
+real warnings — a duplicate service, a file with no factory, a hook map on a
+method the service does not have — competed with them for the same scrollback.
+
+They are not the same kind of thing, so they are separated now.
+`core/diagnostics.ts` is the one owner of *should Junction print developer
+diagnostics*, reading `DEBUG=1` — which junction's own config already maps to
+`config.debug`, so this adds a reader rather than a convention.
+
+- The loader's registration line is a diagnostic. `GET /manifest` answers the
+  same question on demand.
+- The anonymous-hook note is a style note, not a warning: the hook works, it
+  just reads as `anonymous` in the telemetry waterfall. It now says everything
+  it has to say about one service in ONE line, naming every position —
+  `8 anonymous hook(s) on alerts (before.all, before.create, …)`.
+
+**Nothing that indicates a probable defect changed.** A duplicate service, a
+load failure, a missing factory, a bad hook target and every `console.warn` in
+`litestone.ts` are as loud as they were. The old gate was
+`NODE_ENV !== 'production'`, which is true for every developer all of the time
+and is therefore not a gate.
 
 ## 2026-08-14 — `junction errors` — what a thrown value becomes, executed
 
@@ -53,8 +666,9 @@ factory returning one — the same contract `@frontierjs/testing` takes as `api:
 (it resolves against `Bun.main`) and an app whose services are all autoloaded
 otherwise describes as empty.
 
-This is what `FJS-254` closes against: `fli project:view` re-derives service
-metadata with regexes over source, including its own copy of the action rule.
+This is what `FJS-254` closed against: `fli project:view` re-derived service
+metadata with regexes over source, including its own copy of the action rule. It
+reads this file now.
 
 
 ## 2026-08-14 — a filtered bulk PATCH/REMOVE writes row by row

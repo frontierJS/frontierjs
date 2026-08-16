@@ -78,6 +78,22 @@ describe('dispatch', () => {
     expect(stats.total.pending).toBe(1)
   })
 
+  // A JS caller can leave the payload off, and `JSON.stringify(undefined)` is
+  // undefined — which bound as NULL and came back as
+  // `NOT NULL constraint failed: jobs.data`, a SQLite message naming neither
+  // the job nor the caller. An absent payload is an empty one.
+  it('stores an empty payload when none is given', async () => {
+    const dispatch = q.dispatch as unknown as (name: string) => Promise<string>
+    const id = await dispatch('test-job')
+    expect(q.find(id)!.data).toBe('{}')
+  })
+
+  // `null` is not absent — somebody passed it, and it round-trips.
+  it('keeps an explicit null payload', async () => {
+    const id = await q.dispatch('test-job', null)
+    expect(q.find(id)!.data).toBe('null')
+  })
+
   it('dispatching multiple jobs increments pending count', async () => {
     await q.dispatch('job-a', {})
     await q.dispatch('job-b', {})
@@ -329,6 +345,43 @@ describe('cancel', () => {
     expect(job?.status).toBe('cancelled')
   })
 
+  // FJS-039: the attempt still in flight used to write its own outcome over the
+  // cancellation — markDone/markFailed had no status guard, so a cancelled job
+  // came back 'done', or worse, back to 'pending' and ran again.
+
+  it('a cancelled running job stays cancelled when its handler finishes', async () => {
+    let started = false
+    let finished = false
+    q.handle('slow-success', async () => {
+      started = true
+      await Bun.sleep(150)
+      finished = true
+    })
+    await q.start()
+    const id = await q.dispatch('slow-success', {})
+    await waitFor(() => started)
+    await q.cancel(id)
+    await waitFor(() => finished)
+    await Bun.sleep(50)
+    expect(q.find(id)?.status).toBe('cancelled')
+  })
+
+  it('a cancelled running job is not requeued when its handler throws', async () => {
+    let attempts = 0
+    q.handle('slow-failure', async () => {
+      attempts++
+      await Bun.sleep(150)
+      throw new Error('boom')
+    }, { maxAttempts: 3, retryDelay: [10, 10] })
+    await q.start()
+    const id = await q.dispatch('slow-failure', {})
+    await waitFor(() => attempts === 1)
+    await q.cancel(id)
+    await Bun.sleep(300)
+    expect(q.find(id)?.status).toBe('cancelled')
+    expect(attempts).toBe(1)
+  })
+
   it('returns false when job does not exist', async () => {
     const result = await q.cancel('non-existent-id')
     expect(result).toBe(false)
@@ -425,6 +478,19 @@ describe('stats', () => {
     expect(stats.total.pending).toBe(3)
   })
 
+  // Without this the only numbers reported are the ones a queue with nothing
+  // to do also reports — a busy healthy queue and an empty one read alike,
+  // through `stats()` and through Junction's /metrics with it.
+  it('counts completed work', async () => {
+    q = makeQueue()
+    q.handle('ok', () => {})
+    await q.start()
+    await q.dispatch('ok', {})
+
+    await waitFor(() => q.stats().total.done === 1)
+    expect(q.stats().queues['default'].done).toBe(1)
+  })
+
 })
 
 // ─── named queues ─────────────────────────────────────────────────────────────
@@ -469,20 +535,20 @@ describe('Junction plugin protocol', () => {
     expect(app.jobs).toBe(q)
   })
 
-  it('register() adds to _metricsProviders when present', () => {
+  it('register() contributes a metrics source when the seam is present', () => {
     const q = makeQueue()
-    const providers = new Map<string, () => unknown>()
-    const app = { _metricsProviders: providers }
+    const sources = new Map<string, () => unknown>()
+    const app = { registerMetricsSource: (n: string, fn: () => unknown) => { sources.set(n, fn) } }
     q.register(app)
-    expect(providers.has('jobs')).toBe(true)
-    expect(typeof providers.get('jobs')).toBe('function')
+    expect(sources.has('jobs')).toBe(true)
+    expect(typeof sources.get('jobs')).toBe('function')
   })
 
-  it('metrics provider returns stats shape', () => {
+  it('the metrics source returns the stats shape', () => {
     const q = makeQueue()
-    const providers = new Map<string, () => unknown>()
-    q.register({ _metricsProviders: providers })
-    const statsResult = providers.get('jobs')!() as ReturnType<typeof q.stats>
+    const sources = new Map<string, () => unknown>()
+    q.register({ registerMetricsSource: (n: string, fn: () => unknown) => { sources.set(n, fn) } })
+    const statsResult = sources.get('jobs')!() as ReturnType<typeof q.stats>
     expect(statsResult).toHaveProperty('queues')
     expect(statsResult).toHaveProperty('total')
   })

@@ -65,7 +65,7 @@ export type {
 
   // Config
   ConduitOptions,
-  ConduitHooks,
+  ConduitObservers,
 
   // Protocols
   Protocol,

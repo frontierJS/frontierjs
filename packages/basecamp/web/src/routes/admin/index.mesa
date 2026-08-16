@@ -23,7 +23,7 @@ title: Members
     try {
       // `members` is a custom method on the workspaces service — the workspace
       // is ctx.id, which is why this one service needs no X-Workspace-Id.
-      members = rowsOf(await workspaces.service.action('members', session.workspaceId))
+      members = rowsOf(await workspaces.service.invoke('members', session.workspaceId))
     } catch (e) {
       error = e.message
     } finally {
@@ -37,7 +37,7 @@ title: Members
   async function setRole(member, role) {
     error = null; busy = member.id
     try {
-      await workspaces.service.action('setMemberRole', session.workspaceId, { userId: member.userId, role })
+      await workspaces.service.invoke('setMemberRole', session.workspaceId, { userId: member.userId, role })
       await load()
     } catch (e) {
       // 'Cannot demote the last owner' arrives here. The service refuses it
@@ -51,7 +51,7 @@ title: Members
   async function remove(member) {
     error = null; busy = member.id
     try {
-      await workspaces.service.action('removeMember', session.workspaceId, { userId: member.userId })
+      await workspaces.service.invoke('removeMember', session.workspaceId, { userId: member.userId })
       await load()
     } catch (e) {
       error = e.message

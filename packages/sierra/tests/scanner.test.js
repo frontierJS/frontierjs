@@ -9,7 +9,7 @@ import { resolve } from 'path'
 import { classify, isDynamicSegment, isSpreadSegment, isGroupSegment } from '../src/scanner/classify.js'
 import { parseFrontmatter } from '../src/scanner/parse-frontmatter.js'
 import { buildTree } from '../src/scanner/build-tree.js'
-import { renderManifest } from '../src/scanner/generate-manifest.js'
+import { renderRouteTable } from '../src/scanner/generate-route-table.js'
 import { walk } from '../src/scanner/walk.js'
 import { scan } from '../src/scanner/index.js'
 
@@ -260,83 +260,83 @@ describe('buildTree', () => {
   })
 })
 
-// ─── renderManifest ──────────────────────────────────────────────────────────
+// ─── renderRouteTable ────────────────────────────────────────────────────────
 
-describe('renderManifest', () => {
+describe('renderRouteTable', () => {
   let tree
-  let manifest
+  let routeTable
 
   beforeAll(async () => {
     tree = await scan(ROUTES_DIR, { cwd: FIXTURE_DIR })
-    manifest = renderManifest(tree)
+    routeTable = renderRouteTable(tree)
   })
 
   test('exports tree', () => {
-    expect(manifest).toContain('export const tree =')
+    expect(routeTable).toContain('export const tree =')
   })
 
   test('exports components map with lazy imports', () => {
-    expect(manifest).toContain('export const components =')
-    // Paths are relative to manifest location (config/routes.js → ../src/routes/...)
-    expect(manifest).toContain("() => import('")
-    expect(manifest).toContain(".mesa')")
+    expect(routeTable).toContain('export const components =')
+    // Paths are relative to route table location (config/routes.js → ../src/routes/...)
+    expect(routeTable).toContain("() => import('")
+    expect(routeTable).toContain(".mesa')")
   })
 
   test('exports all, published, indexed, redirects', () => {
-    expect(manifest).toContain('export const all =')
-    expect(manifest).toContain('export const published =')
-    expect(manifest).toContain('export const indexed =')
-    expect(manifest).toContain('export const redirects =')
+    expect(routeTable).toContain('export const all =')
+    expect(routeTable).toContain('export const published =')
+    expect(routeTable).toContain('export const indexed =')
+    expect(routeTable).toContain('export const redirects =')
   })
 
   test('default export is tree', () => {
-    expect(manifest).toContain('export default tree')
+    expect(routeTable).toContain('export default tree')
   })
 
   test('noindex routes excluded from indexed', () => {
     // blog/index has robots: noindex
-    const indexedLine = manifest.indexOf('export const indexed =')
-    const indexedEnd = manifest.indexOf('\n\n', indexedLine)
-    const indexedSection = manifest.slice(indexedLine, indexedEnd)
+    const indexedLine = routeTable.indexOf('export const indexed =')
+    const indexedEnd = routeTable.indexOf('\n\n', indexedLine)
+    const indexedSection = routeTable.slice(indexedLine, indexedEnd)
     expect(indexedSection).not.toContain('/blog/')
   })
 
   test('dynamic routes excluded from indexed', () => {
-    const indexedLine = manifest.indexOf('export const indexed =')
-    const indexedEnd = manifest.indexOf('\n\n', indexedLine)
-    const indexedSection = manifest.slice(indexedLine, indexedEnd)
+    const indexedLine = routeTable.indexOf('export const indexed =')
+    const indexedEnd = routeTable.indexOf('\n\n', indexedLine)
+    const indexedSection = routeTable.slice(indexedLine, indexedEnd)
     expect(indexedSection).not.toContain(':leadId')
     expect(indexedSection).not.toContain(':slug')
   })
 
   test('tree nodes do not contain component imports', () => {
-    const treeStart = manifest.indexOf('export const tree =')
-    const treeEnd = manifest.indexOf('\nexport const components', treeStart)
-    const treeSection = manifest.slice(treeStart, treeEnd)
+    const treeStart = routeTable.indexOf('export const tree =')
+    const treeEnd = routeTable.indexOf('\nexport const components', treeStart)
+    const treeSection = routeTable.slice(treeStart, treeEnd)
     expect(treeSection).not.toContain('() => import')
   })
 
   test('exports layouts map with lazy imports for each unique layout file', () => {
-    expect(manifest).toContain('export const layouts =')
+    expect(routeTable).toContain('export const layouts =')
     // Should include the two layout files in the basic-spa fixture
-    expect(manifest).toContain('src/routes/_module.mesa')
-    expect(manifest).toContain('src/routes/leads/_module.mesa')
+    expect(routeTable).toContain('src/routes/_module.mesa')
+    expect(routeTable).toContain('src/routes/leads/_module.mesa')
     // Values should be lazy import factories
-    expect(manifest).toContain("() => import('")
+    expect(routeTable).toContain("() => import('")
   })
 
   test('layouts map does NOT include null layouts (reset:true routes)', () => {
-    const layoutsStart = manifest.indexOf('export const layouts =')
-    const layoutsEnd = manifest.indexOf('\n\n', layoutsStart)
-    const layoutsSection = manifest.slice(layoutsStart, layoutsEnd)
+    const layoutsStart = routeTable.indexOf('export const layouts =')
+    const layoutsEnd = routeTable.indexOf('\n\n', layoutsStart)
+    const layoutsSection = routeTable.slice(layoutsStart, layoutsEnd)
     // login has reset:true (layout: null) — should not appear in layouts map
     expect(layoutsSection).not.toContain('login')
   })
 
   test('layouts map contains only unique layout paths, no duplicates', () => {
-    const layoutsStart = manifest.indexOf('export const layouts =')
-    const layoutsEnd = manifest.indexOf('\n\n', layoutsStart)
-    const layoutsSection = manifest.slice(layoutsStart, layoutsEnd)
+    const layoutsStart = routeTable.indexOf('export const layouts =')
+    const layoutsEnd = routeTable.indexOf('\n\n', layoutsStart)
+    const layoutsSection = routeTable.slice(layoutsStart, layoutsEnd)
     // The root _module.mesa path appears exactly once (not duplicated for each route that uses it)
     // Use an anchored pattern to match only the root layout, not leads/_module.mesa
     const matches = layoutsSection.match(/"src\/routes\/_module\.mesa"/g) || []
@@ -344,12 +344,12 @@ describe('renderManifest', () => {
   })
 
   test('valid JS — no syntax errors', () => {
-    // If this doesn't throw, the manifest is parseable
+    // If this doesn't throw, the route table is parseable
     expect(() => {
       // Quick structural check — all export statements present
       const exports = ['tree', 'components', 'loaders', 'layouts', 'all', 'published', 'indexed', 'redirects']
       for (const name of exports) {
-        if (!manifest.includes(`export const ${name}`)) {
+        if (!routeTable.includes(`export const ${name}`)) {
           throw new Error(`Missing export: ${name}`)
         }
       }

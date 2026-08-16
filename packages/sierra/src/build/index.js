@@ -34,10 +34,14 @@ import { autoImportPlugin } from './auto-import-plugin.js'
  * @property {'always'|'never'|'preserve'} [trailingSlash='always']
  * @property {'spa'|'static'} [render='spa']
  * @property {string} [outDir='dist/client']
- * @property {{ dir?: string, entry?: string, outDir?: string }} [widgets]
+ * @property {{ dir?: string, outDir?: string, prefix?: string, minify?: boolean }} [widgets]
+ *   — the `widget` target: where the widgets are (default `src/Embeds`), where
+ *   their scripts go (default `dist/embeds`), and the tag/class prefix every
+ *   one of them takes (e.g. `mt-`). Built by `sierra widgets`, not by `vite build`.
  * @property {{ shadowDOM?: boolean }} [mesa]
  * @property {{ components?: string[], modules?: Record<string, string[]|object|string> }} [autoImport]
- * @property {{ output?: string, environments?: object }} [manifest]
+ * @property {{ output?: string }} [routeTable] — where the generated route
+ *   table is written (default `config/routes.js`)
  * @property {object} [junction]
  * @property {string} [db] — module exporting a Litestone client, used by the
  *   `static` target to observe what a route's `load()` reads (FJS-081). The
@@ -111,13 +115,6 @@ export function createSierraViteConfig(config = {}) {
   sierraPlugins.push(devtoolsPlugin(config))
 
   sierraPlugins.push(mesaPlugin({ ...mesaOptions, routesDir }, sierraContext))
-
-  // CSS injection for widget target
-  if (target === 'widget' && mesaOptions.shadowDOM) {
-    // injectCssIntoJs plugin — dynamically imported so it's only
-    // loaded when actually needed
-    sierraPlugins.push(injectCssPlugin())
-  }
 
   // Build the base Vite config per target
   const baseConfig = buildBaseConfig(config, sierraPlugins, userPlugins)
@@ -197,70 +194,29 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
         build: { ...shared.build },
       }
 
-    case 'widget': {
-      const widgetsDir = config.widgets?.dir ?? 'src/Embeds'
-      // Widget builds are handled by a separate build loop
-      // vite.config.js for widgets just sets up the dev server
+    case 'widget':
+      // This config is what a widget is COMPILED with — the Mesa compiler, the
+      // auto-imports, the app's own plugins. It is not what emits the bundles:
+      // a widget is a self-contained IIFE for a page with no bundler, so each
+      // one is its own library build and `sierra widgets` runs the loop
+      // (build/widget-build.js). What this branch is for on its own is `vite
+      // dev` rooted at the `widgets/` surface, where that surface's own
+      // index.html hosts the widgets while they are written — the app's `web/`
+      // is a different Vite root with a different config and may not exist.
+      //
+      // `cssCodeSplit: false` is here as well as in the loop, so a dev server
+      // and a build agree about where the stylesheet is.
       return {
         ...shared,
         build: {
           ...shared.build,
-          outDir: config.widgets?.outDir ?? 'dist',
+          outDir: config.widgets?.outDir ?? 'dist/embeds',
           cssCodeSplit: false,
         },
       }
-    }
 
     default:
       throw new Error(`[Sierra] Unknown target: ${target}. Must be 'spa', 'static', or 'widget'.`)
-  }
-}
-
-/**
- * CSS injection plugin for widget/shadow DOM builds.
- * Strips the CSS asset from the bundle and injects it as a string
- * via the @unocss-placeholder marker.
- *
- * This is the Sierra-owned version of the frontier injectCssIntoJs plugin.
- */
-function injectCssPlugin() {
-  let cssToInject = ''
-
-  return {
-    name: 'sierra:inject-css',
-    enforce: 'post',
-
-    generateBundle(opts, bundle) {
-      let styleCode = ''
-
-      // Collect all CSS assets and remove them from bundle
-      for (const [key, chunk] of Object.entries(bundle)) {
-        if (chunk.type === 'asset' && chunk.fileName.endsWith('.css')) {
-          styleCode += chunk.source
-          delete bundle[key]
-        }
-      }
-
-      if (styleCode) {
-        cssToInject = styleCode
-      }
-
-      // Replace @unocss-placeholder marker in the JS bundle with the CSS string
-      for (const key of Object.keys(bundle)) {
-        const chunk = bundle[key]
-        if (
-          chunk.type === 'chunk' &&
-          chunk.fileName.match(/\.[cm]?js$/) &&
-          !chunk.fileName.includes('polyfill')
-        ) {
-          chunk.code = chunk.code.replace(
-            '"@unocss-placeholder"',
-            JSON.stringify(cssToInject.trim())
-          )
-          break
-        }
-      }
-    },
   }
 }
 
@@ -332,15 +288,15 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
     async closeBundle() {
       if (!isBuild) return  // skip in dev server
 
-      // Build a minimal manifest from the tree Sierra already has
+      // Build a minimal route table from the tree Sierra already has
       const tree = sierraContext.tree
       if (!tree) return
 
-      // Re-derive the flat arrays from the tree (same logic as generate-manifest)
+      // Re-derive the flat arrays from the tree (same logic as generate-route-table)
       const allNodes = flattenTree(tree)
       const routeNodes = allNodes.filter(n => n.file !== null)
 
-      const manifest = {
+      const routeTable = {
         tree,
         all:       routeNodes.map(n => n.path),
         indexed:   routeNodes
@@ -446,7 +402,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         }
       }
 
-      const results = await runPostBuild(config, manifest, outDir, root)
+      const results = await runPostBuild(config, routeTable, outDir, root)
 
       if (results.length > 0) {
         console.log('\n  [Sierra] Post-build:')

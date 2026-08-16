@@ -112,9 +112,8 @@ example/
 │   │                         schema fragments rather than pasting a copy
 │   ├── gate.ts             ← the ONE place a session becomes a number
 │   ├── seed.ts             ← 4 products, 2 customers, 3 orders, 2 demo users
-│   ├── app.ts              ← createApp, auth plugin, caravan, channels, GET /api/session
-│   ├── app-ref.ts          ← how a job reaches app.service() (FJS-093)
-│   ├── jobs/               ← book-courier + announce-payment (autoloaded), sweep-abandoned (cron)
+│   ├── app.ts              ← createApp, auth plugin (+ its three services), caravan, channels
+│   ├── jobs/               ← book-courier, announce-payment, sweep-abandoned (its own cron) — all autoloaded
 │   ├── mailer.ts           ← IMail over app.conduit.send() — the provider is a TARGET
 │   ├── mail-sink.ts        ← the dev mail catcher on :8111, provider-shaped
 │   ├── notifications/      ← OrderPaid (staff, inApp) + OrderConfirmation (customer, email)
@@ -288,12 +287,17 @@ in, seconds later, in a tab that has been idle since before the job was queued.
 
 - `api/jobs/book-courier.job.ts` — autoloaded from `jobsDir`, queue
   `fulfilment`, `maxAttempts: 5`, retries at 1m / 5m / 30m
-- `api/jobs/sweep-abandoned.ts` — the cron (`0 3 * * *`): cancel orders left
-  `pending` past the horizon. Not a `*.job.ts` on purpose (`FJS-094`)
-- `api/gate.ts` grew `SYSTEM` — background work has no session, and an
-  in-process call with no principal grades STRANGER(0) and is refused by the
-  model's own `@@gate`. A job is not anonymous, it is the shop, and that
-  sentence belongs in the one file where every principal is graded
+- `api/jobs/sweep-abandoned.job.ts` — the cron (`0 3 * * *`): cancel orders
+  left `pending` past the horizon. The schedule is `cron` on its own
+  `defineJob`, so autoloading the file is the whole of the wiring
+- `api/gate.ts` declares `SYSTEM` and `app.ts` hands it to
+  `createApp({ system })` — the principal the shop is when it acts on its own
+  behalf. **Only the cron sweep reaches it.** Work a person asked for runs as
+  that person: Caravan records who dispatched a job and Junction re-resolves
+  them when it runs, so the courier booking is made with the standing of the
+  staff member who pressed Ship, and the audit trail says so. Every job here
+  used to pass `{ auth: { user: SYSTEM } }` by hand instead, which quietly gave
+  a customer's checkout the authority of the shop (`FJS-093`)
 - `bun run verify:jobs` — 8 assertions, **no browser**; the browser half is one
   assertion in `verify:live`, where the watcher tab already exists
 
@@ -329,7 +333,9 @@ socket, the credential really resolves, and `POST /fail-next` makes it answer
 500 so the retry path is a test rather than a claim.
 
 **Two audiences, two classes.** `OrderConfirmation` is email-only and addressed
-to a customer, who is not a user (`FJS-096` is the trap that hides in that).
+to a customer, who is not a user — so its recipient carries an email and **no
+id**, which is what makes `inApp` refuse it by name if anybody adds that
+transport, rather than writing a row nobody could read (`FJS-096`).
 `OrderPaid` is inApp-only and addressed to every staff user; the header bell
 reads them back through the model's own `@@allow('read', userId == auth().id)`,
 so *neither* the service nor the component says "only mine".

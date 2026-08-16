@@ -113,10 +113,43 @@ inheritance.
 ```
 
 `theme-default` · `theme-sunset` · `theme-forest` · `theme-midnight` ·
-`theme-dark` · `theme-elite` · `theme-basecamp`
+`theme-dark` · `theme-elite` · `theme-basecamp` · `theme-notebook` ·
+`theme-press` · `theme-field`
 
-A theme overrides tokens, not just colours — Elite changes radii, weights,
-tracking and the font family.
+A theme overrides tokens, not just colours. **A theme ships no selector** —
+that is the contract, and it decides what a look can be: if a design needs a
+rule of its own, the token that would have carried it is missing.
+`themes/press.css` exists to probe exactly that.
+
+### What a theme can move, besides colour
+
+| Token | Moves |
+| --- | --- |
+| `--*-radius` | corners, per component |
+| `--border-width` | every structural border — card, field, table, topbar, code block, tab strip. `--field-border-width` and `--table-border-width` fall back to it and can diverge |
+| `--surface-shadow` | resting elevation on the Block tier, `none` by default. `--shadow-sm/md/lg` are the ladder above it and reach everything that floats |
+| `--density` | the whole space ladder, uniformly |
+| `--space-*-base` | the ladder's **shape** — a rung is `base × density`, so this is how a theme is tight at the small rungs and generous at the large ones |
+| `--text-*` · `--leading-*` · `--font-*` | the type scale, the leading ladder, both faces |
+| `--app-bg` · `--topbar-bg` · `--sidebar-bg` · `--dialog-bg` | the frame's own grounds, so the shell can differ from the content |
+| `--label-font-weight` · `--label-text-transform` · `--label-letter-spacing` | the small caps that name a region — table head, tile label, nav group. One role, one triple |
+| `--heading-font-weight` · `--heading-letter-spacing` | all six heading levels at once. Unset, each keeps its own optical value |
+| `--motion-fast` · `--motion-base` · `--motion-enter` · `--motion-slow` | how quickly the product moves. `--motion-spin` and `--motion-shimmer` are the two loops |
+| `--motion-ease` · `--motion-ease-out` · `--motion-ease-enter` | and how it moves |
+| `--ring` · `--ring-width` · `--ring-offset` · `--ring-style` | the focus ring. **`--ring-style` takes `solid`, `dashed` or `double` and nothing else** — it is registered with `@property`, so `none` is invalid and falls back to `solid`. A theme can restyle the ring and cannot turn it off |
+| `--tone-l-min` / `--tone-l-max` | the window a tone is legible as text in. **Required if you set `color-scheme: dark`** |
+
+Set the rung's **base**, never the rung: `--space-2xl` written in a theme wins
+on the themed element and nowhere below it, because every element recomputes
+its rungs from the base and density it inherited.
+
+A ground is a background and carries no ink, so a **dark shell in a light app**
+is not `--sidebar-bg` — the labels inside still read the light ramp. Use the
+mechanism that already exists:
+
+```html
+<nav class="sidebar theme-dark" aria-label="Main">
+```
 
 ---
 
@@ -239,8 +272,12 @@ result wants Uno's `text-sm` as the body class.
 `icon`
 &nbsp;&nbsp;— one lineage, shared layout and auto-contrast
 
-**Surfaces** `card` `tile` `alert` `toast` `dialog` `popover` `drawer`
-&nbsp;&nbsp;— one lineage, shared background/border/radius and the tone recipe
+**Surfaces** `card` `tile` `alert` `toast` `dialog` `popover` (+
+`popover-anchor`, `align-end`) `drawer`
+&nbsp;&nbsp;— one lineage, shared background/border/radius and the tone recipe.
+Wrap a popover and its trigger in `popover-anchor`: it is the positioning
+context and opens the panel below the trigger. A native `[popover]` is in the
+top layer and escapes it — place that one with anchor positioning
 
 **Forms** `field` `field-group` `field-hint` `field-check` `switch`
 `field-row` `field-addon`
@@ -280,11 +317,11 @@ ring
 
 ## Syntax highlighting
 
-Code blocks are highlighted by [`glow()`](../utils/) in `@frontierjs/utils`,
+Code blocks are highlighted by [`glow()`](../toolbelt/) in `@frontierjs/toolbelt`,
 and this package themes the result:
 
 ```js
-import { glow } from '@frontierjs/utils/glow'
+import { glow } from '@frontierjs/toolbelt/glow'
 
 el.innerHTML = glow(source, { language: 'css', prefix: false })
 ```
@@ -321,16 +358,30 @@ Plus `--code-ins` `--code-del` `--code-note` for whole-line callouts,
 A tone is tuned as a **fill behind white text**. As text on a surface it is a
 different job and mostly fails it — measured across the eight shipped themes,
 the raw tones came in as low as 1.65:1, and only one theme had all six
-roles above AA. So each tone passes through a lightness window in oklch, hue
-and chroma untouched:
+roles above AA. So a tone used as text passes through a lightness window in
+oklch, hue and chroma untouched:
 
 ```css
-oklch(from var(--color-primary) clamp(var(--code-l-min), l, var(--code-l-max)) c h)
+oklch(from var(--color-primary) clamp(var(--tone-l-min), l, var(--tone-l-max)) c h)
 ```
 
 It is a **no-op wherever the tone already reads**, which is what keeps a
 well-tuned theme looking like itself instead of being uniformly muddied by a
 blend toward the ink.
+
+The window is not the code theme's own. `--tone-ink` is the same derivation
+off whatever tone the element carries, and it is what `.btn.outlined`,
+`.btn.link` and a toned `.btn.ghost` colour their text with — those three
+painted the raw tone until v0.16 and were under AA on 34 of the 72 tone ×
+theme pairs, as low as 1.19:1. Anything of your own that renders a tone as
+text wants it too:
+
+```css
+.my-thing { color: var(--tone-ink, var(--ink-soft)); }
+```
+
+`--tone-ink` is unset on an untoned element, so the fallback is what you look
+like with no tone class.
 
 **A dark theme must invert the window**, because CSS cannot work it out —
 relative colour syntax exposes the channels of one origin colour, and the
@@ -339,8 +390,8 @@ origin is the tone, not the surface it will land on:
 ```css
 .theme-yours {
   color-scheme: dark;
-  --code-l-min: 0.74;
-  --code-l-max: 1;
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
 }
 ```
 

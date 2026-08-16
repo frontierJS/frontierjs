@@ -75,14 +75,15 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
       const instance = createConduit(opts)
       instances.set(app, instance)
 
-      // provide() rather than `app.conduit = instance`: a second plugin
+      // claim() rather than `app.conduit = instance`: a second plugin
       // claiming the same name used to win silently and leave this one dead.
-      app.provide('conduit', instance)
+      app.claim('conduit', instance)
 
-      // Wire into Junction's /metrics endpoint
-      if (app._metricsProviders instanceof Map) {
-        app._metricsProviders.set('conduit', () => instance.stats())
-      }
+      // Wire into Junction's /metrics endpoint. Called straight rather than
+      // behind a presence check: this plugin imports Junction's own App type,
+      // so a missing seam is a compile error here instead of metrics that
+      // quietly stop appearing.
+      app.registerMetricsSource('conduit', () => instance.stats())
 
       if (opts.management) {
         registerManagementService(app, instance, opts.management)

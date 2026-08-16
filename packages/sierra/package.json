@@ -18,7 +18,9 @@
     "./components/RouterView": "./src/components/RouterView.mesa",
     "./components/ChainRenderer": "./src/components/ChainRenderer.mesa",
     "./presence": "./src/presence/index.js",
-    "./devtools": "./src/devtools/index.js"
+    "./devtools": "./src/devtools/index.js",
+    "./widget": "./src/widget/index.js",
+    "./widget/serve": "./src/widget/serve.js"
   },
   "bin": {
     "sierra": "./src/tools/cli.js"
@@ -26,12 +28,14 @@
   "scripts": {
     "test": "vitest run",
     "test:safety": "bun tests/static-safety-real.mjs",
+    "test:widgets": "cd tests/fixtures/widget-site && node ../../../src/tools/cli.js widgets --config config/sierra.config.js && node test/verify.mjs",
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/typecheck.mjs",
     "example:api": "bun run example/api/app.ts",
     "example": "vite --config example/vite.config.js"
   },
   "dependencies": {
+    "@frontierjs/toolbelt": "workspace:*",
     "js-yaml": "^4.1.0"
   },
   "devDependencies": {

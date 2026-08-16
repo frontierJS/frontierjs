@@ -152,7 +152,7 @@ absent)"*. Probed: `packages/orion/mockup/api-engine` is 63 tracked files with a
 `package.json`, a `src/`, a `vitest.config.ts` and tests — a DAG executor with a typed
 expression language, an event layer, a plugin system and a worker pool — sitting two
 levels below the `packages/*` glob, so nothing installs it, runs it, or tests it
-(`ISSUES.md` `FJS-D14`). The word *workflow* appears in three `IDEAS/` files and is the
+(`FJS-D14`, ruled 2026-08-15 — orion is V2, deferred until core leaves alpha). The word *workflow* appears in three `IDEAS/` files and is the
 subject of none.
 
 **What exists is the two ends without the middle.** A Caravan job is one unit of work,

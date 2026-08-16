@@ -10,7 +10,7 @@
 
 import { resolve, relative } from 'path'
 import { scan } from '../scanner/index.js'
-import { generateManifest } from '../scanner/generate-manifest.js'
+import { generateRouteTable } from '../scanner/generate-route-table.js'
 import { classify } from '../scanner/classify.js'
 import { warnDuplicateSnippets, warnReservedFrontmatter } from './warnings.js'
 // From page-fields.js, not router/index.js: this runs in Node during the
@@ -24,16 +24,16 @@ import { PAGE_RESERVED } from '../router/page-fields.js'
  */
 export function scannerPlugin(config, sierraContext) {
   const routesDir = config.routesDir ?? 'src/routes'
-  const manifestOutput = config.manifest?.output ?? 'config/routes.js'
+  const tableOutput = config.routeTable?.output ?? 'config/routes.js'
   const trailingSlash = config.trailingSlash ?? 'always'
 
   let root = process.cwd()
   let watcher = null
-  // Last manifest emitted. The dev watchers rescan on every route-file save,
+  // Last route table emitted. The dev watchers rescan on every route-file save,
   // but the vast majority of saves are body edits that leave the route tree
   // untouched — invalidating virtual:sierra and forcing a full reload for those
   // throws away the component-level HMR that mesa-plugin just set up.
-  let _lastManifest = null
+  let _lastTable = null
 
   async function runScan(root, warn, error) {
     const tree = await scan(routesDir, {
@@ -41,11 +41,11 @@ export function scannerPlugin(config, sierraContext) {
       trailingSlash,
     })
 
-    // Write manifest to disk. generateManifest is a no-op when the bytes are
-    // unchanged, so this does not touch the watcher on a body-only edit.
-    const code = await generateManifest(tree, resolve(root, manifestOutput), root)
-    const manifestChanged = _lastManifest !== null && _lastManifest !== code
-    _lastManifest = code
+    // Write the route table to disk. generateRouteTable is a no-op when the
+    // bytes are unchanged, so this does not touch the watcher on a body-only edit.
+    const code = await generateRouteTable(tree, resolve(root, tableOutput), root)
+    const tableChanged = _lastTable !== null && _lastTable !== code
+    _lastTable = code
 
     // Store tree on shared context for virtual:sierra
     sierraContext.tree = tree
@@ -63,7 +63,7 @@ export function scannerPlugin(config, sierraContext) {
       await checkStaticPaths(tree, root, error)
     }
 
-    return { tree, manifestChanged }
+    return { tree, tableChanged }
   }
 
   /**
@@ -160,13 +160,13 @@ export function scannerPlugin(config, sierraContext) {
 
         if (role !== 'route' && role !== 'layout') return
 
-        // A body edit leaves the tree identical, so the manifest is unchanged
+        // A body edit leaves the tree identical, so the route table is unchanged
         // and there is nothing for virtual:sierra to pick up — mesa-plugin's
         // HMR boundary already handles the component. Only reload when the scan
-        // actually produced a different manifest (frontmatter affecting routing,
+        // actually produced a different table (frontmatter affecting routing,
         // a new layout, a changed redirect…).
-        const { manifestChanged } = await runScan(root, (msg) => console.warn(msg), null)
-        if (manifestChanged) invalidateVirtualSierra(server)
+        const { tableChanged } = await runScan(root, (msg) => console.warn(msg), null)
+        if (tableChanged) invalidateVirtualSierra(server)
       })
     },
   }

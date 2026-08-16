@@ -1,0 +1,28 @@
+# The build context is packages/basecamp. Everything the image needs is copied
+# explicitly by deploy/Dockerfile; this keeps the rest out of the context, which
+# is both a speed question and a correctness one — a stray node_modules or a
+# live database file in the context ends up in the image.
+
+node_modules
+**/node_modules
+
+# The live databases and the audit trail. Copying a development database into
+# an image is how a container comes up holding somebody's laptop data.
+db/*.db
+db/*.db-shm
+db/*.db-wal
+db/audit
+db/basecamp-jobs.db*
+
+# Built output — the image builds its own, from the source it copied, so a
+# stale dist on the host cannot become the thing that ships.
+web/dist
+
+# The generated build inputs are copied by an explicit COPY and must NOT be
+# excluded; everything else under deploy/ is host-side tooling.
+deploy/build.mjs
+deploy/docker-compose.yml
+
+.env
+.env.*
+!.env.example

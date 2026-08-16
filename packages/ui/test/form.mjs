@@ -18,6 +18,16 @@
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { renderComponent } from '../../mesa/src/render-component.js'
+// The REAL control table, by relative path — the same rule Sierra hands a real
+// resource. A fixture that decided for itself which control a `Float` gets
+// would pass while the two disagreed, which is the whole failure this table
+// exists to prevent. field-rules.js is a leaf and imports nothing.
+import {
+  formFieldList, registerControl, unregisterControl, registeredControls,
+} from '../../sierra/src/junction/field-rules.js'
+// The kit's half of a contributed control. Same module instance the fixtures
+// below import through '../../controls.js' — both resolve to this file.
+import { unregisterFormControl, registeredFormControls } from '../controls.js'
 
 const ROOT   = fileURLToPath(new URL('..', import.meta.url))
 // Two levels under the package root, so the relative imports a fixture writes
@@ -40,11 +50,52 @@ const RESOURCE = {
   fieldErrors: () => ({ fields: {}, message: '' }),
   service: {},
 }
+RESOURCE.formFields = (opts) => formFieldList(RESOURCE.fields, opts)
+RESOURCE.options    = () => Promise.resolve([])
+
+// A model with one of everything the control table has an answer for, plus one
+// it does not. Field ORDER here is the order a generated form must render.
+const ORDER = {
+  context: { model: 'Order', service: 'orders', idField: 'id' },
+  fields: {
+    reference:  { type: 'string',  required: true, maxLength: 20 },
+    status:     { type: 'string',  required: false, enum: ['pending', 'paid', 'shipped'] },
+    total:      { type: 'number',  required: false, minimum: 0 },
+    active:     { type: 'boolean', required: false, title: 'Is live' },
+    body:       { type: 'string',  required: false, contentMediaType: 'text/markdown' },
+    dueOn:      { type: 'string',  required: false, format: 'date' },
+    customerId: { type: 'integer', required: true, title: 'Customer',
+                  references: { model: 'Customer', field: 'id', relation: 'customer' } },
+    computed:   { type: 'string',  required: false, readOnly: true },
+    tags:       { type: 'array',   required: false },
+  },
+  make: () => ({}),
+  fieldErrors: () => ({ fields: {}, message: '' }),
+  service: {},
+}
+ORDER.formFields = (opts) => formFieldList(ORDER.fields, opts)
+ORDER.options    = () => Promise.resolve([])
 
 let failed = 0
 let cases  = 0
 
+// What the render said out loud. A generated form REPORTS the columns it could
+// not give a control, so the warnings are part of the behaviour under test —
+// captured rather than printed, and asserted below.
+let warnings = []
+
 async function render(source, data) {
+  warnings = []
+  const realWarn = console.warn
+  console.warn = (...args) => { warnings.push(args.join(' ')) }
+  try {
+    return await _render(source, data)
+  } finally {
+    console.warn = realWarn
+  }
+}
+
+async function _render(source, data) {
   const out = await renderComponent(source, {
     data,
     // Both the entry source's imports and the nested ones resolve from here,
@@ -225,6 +276,229 @@ await check(
       (html) => (html.match(/<button[^>]*disabled/g) ?? []).length === 1,
   },
 )
+
+// ── The generated field list ────────────────────────────────────────────────
+//
+// `<Form {resource} />` with no children. What is asserted is that the field
+// SET and the control each field gets both come off the schema — the last two
+// things a form still restated about a model.
+
+const GEN = `<script>
+   import Form from '../forms/Form.mesa'
+   export let resource
+ </script>
+ <Form {resource} />`
+
+await check(
+  'every writable column is rendered, in schema order, with nothing named',
+  GEN,
+  { resource: ORDER },
+  {
+    'the string column is there':   has(/name="reference"/),
+    'the enum column is there':     has(/name="status"/),
+    'the numeric column is there':  has(/name="total"/),
+    'the boolean column is there':  has(/name="active"/),
+    'the date column is there':     has(/name="dueOn"/),
+    'the foreign key is there':     has(/name="customerId"/),
+    'in schema order': (html) =>
+      html.indexOf('name="reference"') < html.indexOf('name="status"') &&
+      html.indexOf('name="status"')    < html.indexOf('name="total"') &&
+      html.indexOf('name="total"')     < html.indexOf('name="customerId"'),
+  },
+)
+
+await check(
+  'each column gets the control its type implies',
+  GEN,
+  { resource: ORDER },
+  {
+    'an enum became a select carrying its members':
+      has(/<select[^>]*name="status"[\s\S]*?<option value="pending"[\s\S]*?<option value="shipped"/),
+    'a boolean became a checkbox':      has(/type="checkbox"[^>]*name="active"|name="active"[^>]*type="checkbox"/),
+    'and the checkbox says its @label': has(/Is live/),
+    'markdown became a textarea':       has(/<textarea[^>]*name="body"/),
+    'a date became type="date"':        has(/name="dueOn"[^>]*type="date"|type="date"[^>]*name="dueOn"/),
+    'a number became type="number"':    has(/name="total"[^>]*type="number"|type="number"[^>]*name="total"/),
+    // The one field where a spinner is obviously wrong: the rows arrive from
+    // the related service after mount, so server-side it is an empty select.
+    'a foreign key became a select, not a number input':
+      has(/<select[^>]*name="customerId"/),
+    'and it is not a number input':
+      hasNot(/name="customerId"[^>]*type="number"/),
+  },
+)
+
+await check(
+  'the labels and constraints still come from the schema, not from the generator',
+  GEN,
+  { resource: ORDER },
+  {
+    'the @label on the foreign key won':  has(/Customer/),
+    'a labelless column was title-cased': has(/>\s*Reference\s*</),
+    '@length reached the input':          has(/maxlength="20"/),
+    'required came off the schema':       has(/required/),
+  },
+)
+
+await check(
+  'a column with no control is left out — and says so, rather than vanishing',
+  GEN,
+  { resource: ORDER },
+  {
+    'an array column is not rendered':    hasNot(/name="tags"/),
+    'a readOnly column is not rendered':  hasNot(/name="computed"/),
+    // The silence is the bug this row exists to end: a column added to .lite
+    // that never appears, in the one place a person would look for it.
+    'the array column was named out loud': () =>
+      warnings.some(w => w.includes('Order.tags') && w.includes('array')),
+    // …but a readOnly column is the SCHEMA saying it is not the caller's to
+    // write — @system, @computed, @generated, @from. The form leaving it out is
+    // the annotation working, not a gap in the kit, so it says nothing.
+    'a readOnly column is not complained about': () =>
+      !warnings.some(w => w.includes('Order.computed')),
+  },
+)
+
+await check(
+  '`only` narrows and orders; `except` removes',
+  `<script>
+     import Form from '../forms/Form.mesa'
+     export let resource
+   </script>
+   <div>
+     <Form {resource} only={['status', 'reference']} />
+     <Form {resource} except={['reference', 'status', 'total', 'active', 'body', 'dueOn']} />
+   </div>`,
+  { resource: ORDER },
+  {
+    'only kept what it named':      has(/name="reference"/),
+    'only dropped what it did not': hasNot(/name="total"/),
+    'only ordered by its own list': (html) =>
+      html.indexOf('name="status"') < html.indexOf('name="reference"'),
+    'except left the rest':         has(/name="customerId"/),
+  },
+)
+
+await check(
+  'children win — a caller writing the form gets no generated fields',
+  `<script>
+     import Form from '../forms/Form.mesa'
+     import Input from '../forms/Input.mesa'
+     export let resource
+   </script>
+   <Form {resource}><Input name="reference" /></Form>`,
+  { resource: ORDER },
+  {
+    'the stated control rendered':  has(/name="reference"/),
+    'nothing else was generated':   hasNot(/name="total"/),
+    'not even the foreign key':     hasNot(/name="customerId"/),
+  },
+)
+
+await check(
+  'auto with children renders both, generated first',
+  `<script>
+     import Form from '../forms/Form.mesa'
+     import Input from '../forms/Input.mesa'
+     export let resource
+   </script>
+   <Form {resource} auto={true} only={['reference']}>
+     <Input name="afterwards" />
+   </Form>`,
+  { resource: ORDER },
+  {
+    'the generated field rendered': has(/name="reference"/),
+    'so did the child':             has(/name="afterwards"/),
+    'generated first':              (html) =>
+      html.indexOf('name="reference"') < html.indexOf('name="afterwards"'),
+  },
+)
+
+// ── A contributed control ───────────────────────────────────────────────────
+//
+// `FJS-D17`. A control is two registrations in two packages — the NAME comes
+// from Sierra's table (a leaf that runs in plain Node and cannot hold a
+// component) and the COMPONENT from this kit. What is asserted here is that
+// both halves meet: a column the built-in table has no answer for renders, and
+// a registered name replaces a built-in of the same name rather than losing to
+// it.
+//
+// Registration happens inside the fixture's own script so it runs before the
+// <Form> under it instantiates — which is also where an app would put it.
+
+const clearRegistrations = () => {
+  for (const name of registeredControls()) unregisterControl(name)
+  for (const name of registeredFormControls()) unregisterFormControl(name)
+}
+
+await check(
+  'a column the kit has no control for renders once an app contributes one',
+  `<script>
+     import Form  from '../forms/Form.mesa'
+     import Stars from '../../test/fixtures/Stars.mesa'
+     import { registerControl }     from '../../../sierra/src/junction/field-rules.js'
+     import { registerFormControl } from '../../controls.js'
+     export let resource
+
+     registerControl('stars', (rule, ctx) =>
+       (ctx.field === 'tags' ? { control: 'stars', max: 3 } : null))
+     registerFormControl('stars', Stars)
+   </script>
+   <Form {resource} />`,
+  { resource: ORDER },
+  {
+    'the contributed control rendered':      has(/data-control="stars"/),
+    'and it was handed the column name':     has(/<input[^>]*name="tags"/),
+    'and the descriptor reached it whole':   has(/<input[^>]*max="3"/),
+    'the built-in columns still render':     has(/name="reference"/),
+    // The array column was the one <Form> used to warn about by name. It has a
+    // control now, so the warning has to stop — a warning that never goes quiet
+    // is one nobody reads.
+    'and it is no longer reported as unrenderable': () =>
+      !warnings.some(w => w.includes('Order.tags')),
+  },
+)
+clearRegistrations()
+
+await check(
+  'a registered name replaces the built-in of that name, everywhere at once',
+  `<script>
+     import Form  from '../forms/Form.mesa'
+     import Stars from '../../test/fixtures/Stars.mesa'
+     import { registerFormControl } from '../../controls.js'
+     export let resource
+
+     registerFormControl('checkbox', Stars)
+   </script>
+   <Form {resource} only={['active', 'reference']} />`,
+  { resource: ORDER },
+  {
+    'the replacement rendered for the boolean column': has(/data-control="stars"/),
+    'the kit control it replaced did not':             hasNot(/type="checkbox"/),
+    'and nothing else moved':                          has(/name="reference"/),
+  },
+)
+clearRegistrations()
+
+await check(
+  'a control nobody bound a component to says which half is missing',
+  `<script>
+     import Form from '../forms/Form.mesa'
+     import { registerControl } from '../../../sierra/src/junction/field-rules.js'
+     export let resource
+
+     registerControl('half', (rule, ctx) => (ctx.field === 'reference' ? 'tag-input' : null))
+   </script>
+   <Form {resource} only={['reference', 'total']} />`,
+  { resource: ORDER },
+  {
+    'the unbound field rendered nothing':  hasNot(/name="reference"/),
+    'the rest of the form still rendered': has(/name="total"/),
+    'and the missing half was named': () =>
+      warnings.some(w => w.includes('tag-input') && w.includes('registerFormControl')),
+  },
+)
+clearRegistrations()
 
 console.log(
   failed

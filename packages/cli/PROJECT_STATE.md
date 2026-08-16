@@ -127,9 +127,9 @@ These provide functions and constants that prepend to every command in the names
 
 - **Nested-app support for `project:*` (2026-08-05)** — `project:map` / `project:view` could not run inside `example/` or `packages/basecamp`: `findProjectRoot` walked past both to the repo's `.git` root, so `paths.db` held no `schema.lite`. Root resolution now recognises `db/schema.lite` as an app marker (below `.fli.json`, above `.git`), and a global `--project <dir>` / `FLI_PROJECT` pins it explicitly from anywhere. Three defects surfaced underneath: the compiler deleted every line after a `<script>` tag *mentioned* in a comment, which is why `project:view` built its map and exited without starting the server; `scanFiles` was not recursive, so basecamp's `services/<name>/<name>.service.ts` layout reported 0 services; and `--no-open` was declared as flag `no-open`, which minimist never binds. All four fixed, with regression tests for root resolution and for the compiler truncation (a truncated file still parses, so the shipped-command parse sweep could not see it).
 
-- **`site:audit`** (alias `audit`) — first-time setup walkthrough for fresh ksite clones. Per-action confirmation, `--force` to bypass `config_ranSetup` guard, `--skip` for category, `--yes` to auto-accept. Cross-platform JS file edits (no `sed -i` hacks).
+- **`site:setup`** — first-time setup walkthrough for fresh ksite clones. Per-action confirmation, `--force` to bypass `config_ranSetup` guard, `--skip` for category, `--yes` to auto-accept. Cross-platform JS file edits (no `sed -i` hacks).
 - **`site:update`** (alias `site-update`) — pulls KSITE_DIR canonical, mirrors framework dirs to local site. `--force` to skip version-gate and dirty-checkout warning, `--no-install` to skip final npm install. Major-version compatibility check between local and canonical site/package.json.
-- **`deploy:doctor`** (alias `doctor`) — read-only deploy readiness checker. Local checks (config, Dockerfile, /health route, env reference, git state), Junction-aware checks (`@frontierjs/junction` detection, `/ws` route, proxy_read_timeout reminder), and `--remote` for server-side probes (SSH, required tools, deploy dir, .env.production, container state, lock).
+- **`deploy:doctor`** — read-only deploy readiness checker. Local checks (config, Dockerfile, /health route, env reference, git state), Junction-aware checks (`@frontierjs/junction` detection, `/ws` route, proxy_read_timeout reminder), and `--remote` for server-side probes (SSH, required tools, deploy dir, .env.production, container state, lock).
 - **`make:fetch-config`** (alias `mkfetchconfig`) — scaffolds a `fetch.config.js` template with all options shown commented-out.
 - **`fli:update`** (alias `update`) — monorepo-aware self-update via `git pull` + `bun install` in the fli source tree. `--branch`, `--no-install`, `--no-link` flags.
 - **`site:fetch`** (alias `site-fetch`) — sitemap/URL→markdown converter using turndown + linkedom. Validates config (errors abort, warnings continue), prints destination upfront, sitemap-index recursion, namespace-loc filtering, HTTP timeout/retry. Uses `context.paths.siteContent` and `context.paths.siteMedia`.
@@ -402,10 +402,8 @@ ESM parser. Reverting the matcher fails 5 of them.
 
 ## Known issues / pending notes — see `ISSUES.md`
 
-**`FJS-036`** scaffolds unverified end to end · **`FJS-037`** the sixth
-reserved-key list (`commands/project/_module.md:65`) · **`FJS-038`** the
-hand-copied auth schema in `commands/auth/install.md` · **`FJS-061`**
-`/api/env` ReferenceError and a duplicate `dev` alias (both **`stale?`**) ·
+**`FJS-036`** scaffolds unverified end to end · **`FJS-038`** the
+hand-copied auth schema in `commands/auth/install.md` ·
 **`FJS-065`** `admin:generate` emits `.svelte` · **`FJS-066`** the low pile —
 `sourceURL` on Bun, the frontmatter regex, `mod.prose`, `utils:qrcode`.
 
@@ -419,7 +417,7 @@ Add a new item to `../../ISSUES.md`, not here.
 
 ## On the horizon
 
-1. **`fli dev` orchestrator** — reads `.fli.json` for required service categories, uses port broker to start them. Infrastructure is in place; needs the user-facing command + config conventions.
+1. **`fli dev` orchestrator** — reads `.fli.json` for required service categories, uses port broker to start them. Infrastructure is in place; needs the user-facing command + config conventions. It is also the merge that ends the `ports:claim` / `utils:dev` split: one claims the ports and starts nothing, the other starts the dev script and knows nothing about ports, and both run the same database preflight.
 2. **`fli init`** — bootstrap experience for new contributors. Currently it's "clone, cd packages/cli, bun install, bun link" — could be a one-shot command.
 3. **TUI** — full-screen Ink shell vs. `--interactive` flag wizard mode. Open question.
 4. **Test namespace** (`fli test:plan` / `fli test:run`) — turning the "tests as canonical AI context" workflow into actual fli commands.

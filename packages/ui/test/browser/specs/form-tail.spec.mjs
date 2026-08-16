@@ -1,0 +1,208 @@
+/*
+ * form-tail.spec.mjs — the controls a <Form> could not reach.
+ *
+ * `test/form.mjs` renders a form server-side and asserts the wiring; what it
+ * cannot see is a control that resolves nothing, because a control which never
+ * reads `$context.form` renders perfectly well — with the title-cased column
+ * name where the schema's `@label` should be, no `required`, and no server
+ * error. Every one of those looks correct in isolation and is wrong in a form.
+ *
+ * `FJS-077` is two defects in one row. Six controls read no rule at all, and
+ * five more passed `label={label || name}` to `<Field>` — always truthy when a
+ * name is given, so the raw column name arrived as an EXPLICIT label and shut
+ * the schema out. Both are asked here the same way: every field in the fixture
+ * declares a `title` that is not its title-cased name, so a control that
+ * shadows the schema is a different string on screen rather than a coincidence.
+ *
+ * The second half drives a rejected submit. A control's own error line is the
+ * thing no render test can produce, because it takes a request, a throw, and a
+ * form that mapped it.
+ */
+export const name = 'form tail — the schema-deaf controls'
+// FormField is NOT here: this fixture writes its children by hand, so the
+// dispatcher never runs. `datetime.spec.mjs` covers it, through a generated
+// form — which is the only path that reaches it.
+export const covers = [
+  'forms/Form', 'forms/Field', 'forms/Input', 'forms/Textarea',
+  'forms/Select', 'forms/Checkbox', 'forms/Switch', 'forms/RadioGroup',
+  'forms/Slider', 'forms/NumberInput', 'forms/Combobox', 'forms/MultiSelect',
+]
+
+// The label a control resolved, read off the `.field-group` that holds it.
+// Scoped through the control's own element so a form with ten fields cannot
+// answer with the wrong one. `(Optional)` is Label's own badge for a field
+// that is not required and is asserted separately below.
+const labelFor = (sel) => `
+  const el = document.querySelector(${JSON.stringify(sel)});
+  const group = el && el.closest('.field-group');
+  const text = group?.querySelector('label')?.textContent;
+  return text == null ? null : text.replace(/\\(Optional\\)/, '').replace(/\\s+/g, ' ').trim();
+`
+
+export async function run(t) {
+  await t.mount('form-tail')
+
+  /* ── the schema's own label reaches every control ─────────────────────── */
+
+  // Each of these declares `title` in the fixture, and every one of them is a
+  // different string from what `nameToLabel(name)` would produce. A control
+  // that shadowed the schema answers the title-cased column instead.
+  const LABELS = [
+    ['input[name=headline]',        'Public headline',    'Input'],
+    ['textarea[name=summary]',      'Short summary',      'Textarea'],
+    ['select[name=plan]',           'Billing cycle',      'Select'],
+    ['input[name=seats]',           'Seat count',         'NumberInput'],
+    ['[role=slider]',               'Relative weight',    'Slider'],
+    ['[role=radiogroup]',           'Account owner',      'RadioGroup'],
+    ['input[name=regions]',         'Served regions',     'Combobox'],
+    ['.fjs-multiselect-box',        'Delivery channels',  'MultiSelect'],
+  ]
+  for (const [sel, expected, who] of LABELS) {
+    t.is(await t.evaluate(labelFor(sel)), expected, `${who} takes its label from @label`)
+  }
+
+  // Checkbox and Switch wrap their own text rather than using a `.field-group`,
+  // so they are asked directly.
+  t.is(await t.evaluate(`
+    return document.querySelector('input[name=live]')?.closest('label')?.textContent.trim();
+  `), 'Is live', 'Checkbox takes its label from @label')
+  t.is(await t.evaluate(`
+    return document.querySelector('input[name=notify]')?.closest('label')?.textContent.trim();
+  `), 'Send notices', 'Switch takes its label from @label')
+
+  /* ── required, which is the same schema fact ──────────────────────────── */
+
+  // A native `required` where the element is the value…
+  const REQUIRED = [
+    ['input[name=headline]',  'Input'],
+    ['textarea[name=summary]', 'Textarea'],
+    ['select[name=plan]',      'Select'],
+    ['input[name=seats]',      'NumberInput'],
+    ['input[name=notify]',     'Switch'],
+    ['input[name=regions]',    'Combobox'],
+  ]
+  for (const [sel, who] of REQUIRED) {
+    t.ok(await t.evaluate(`return document.querySelector('${sel}')?.required === true;`),
+      `${who} takes required from the schema`)
+  }
+
+  // …and `aria-required` where it is not. A group is not a labelable control
+  // and a MultiSelect's inner box is a search field whose resting state is
+  // empty, so a native `required` there refuses every submit.
+  t.is(await t.evaluate(`
+    return document.querySelector('[role=radiogroup]')?.getAttribute('aria-required');
+  `), 'true', 'RadioGroup announces required without claiming to be the value')
+  t.is(await t.evaluate(`
+    return document.querySelector('.fjs-multiselect-box input')?.getAttribute('aria-required');
+  `), 'true', 'MultiSelect announces required on its combobox, not on its search box')
+
+  // This kit marks the OPTIONAL one rather than starring the required ones,
+  // and that badge comes off the same resolution — so a control that resolved
+  // no rule labels every field "(Optional)", including the ones the model
+  // insists on. Asked both ways round, because only one of the two directions
+  // catches that.
+  const optional = await t.evaluate(`
+    const badge = (sel) => {
+      const g = document.querySelector(sel)?.closest('.field-group');
+      return !!g && g.querySelector('label')?.textContent.includes('(Optional)');
+    };
+    return { weight: badge('[role=slider]'), headline: badge('input[name=headline]'),
+             seats: badge('input[name=seats]'), owner: badge('[role=radiogroup]') };
+  `)
+  t.is(optional.weight, true, 'the one field the schema does not require is badged Optional')
+  t.is(optional.headline, false, 'and a required one is not')
+  t.is(optional.seats, false, 'NumberInput included')
+  t.is(optional.owner, false, 'RadioGroup included — it badged every field before')
+
+  /* ── constraints that are not required ────────────────────────────────── */
+
+  t.is(await t.evaluate(`return document.querySelector('textarea[name=summary]').maxLength;`), 40,
+    'Textarea takes maxlength from @length rather than needing it restated')
+
+  // The bounds feed the ± buttons as well as the input, so a schema bound the
+  // component could not see was a stepper that stepped straight past it.
+  const seats = await t.evaluate(`
+    const el = document.querySelector('input[name=seats]');
+    return { min: el.min, max: el.max };
+  `)
+  t.is(seats.min, '2', 'NumberInput takes its minimum from the schema')
+  t.is(seats.max, '9', 'and its maximum')
+
+  await t.evaluate(`
+    const dec = [...document.querySelectorAll('button')].find(b => b.closest('.fjs-number'));
+    return true;
+  `)
+  // Step down from the seeded 2 — the schema's minimum — and it must hold.
+  await t.evaluate(`
+    const el = document.querySelector('input[name=seats]');
+    const dec = el.parentElement.querySelector('button');
+    click(dec); click(dec);
+    return true;
+  `)
+  await t.eventually(`document.querySelector('input[name=seats]').value`, '2',
+    'and the stepper stops at the schema minimum rather than walking past it')
+
+  /* ── a server error reaches each of them ──────────────────────────────── */
+
+  // Every field named at once: a control that shows its neighbour's message,
+  // or none, is what the per-control resolution is for.
+  await t.evaluate(`
+    window.kitFailWith({
+      headline: 'Headline is taken',
+      summary:  'Summary is too vague',
+      seats:    'Not enough seats',
+      live:     'Cannot go live yet',
+      notify:   'Notices are off for this plan',
+      owner:    'Owner has left',
+      regions:  'Unserved region',
+      channels: 'No channel selected',
+    });
+    click(document.querySelector('#save'));
+    return true;
+  `)
+  await t.eventually(`document.querySelector('#errorKeys').textContent`,
+    'channels,headline,live,notify,owner,regions,seats,summary',
+    'the rejection maps onto every field by name')
+
+  const shown = await t.evaluate(`
+    const text = (sel) => {
+      const el = document.querySelector(sel);
+      const group = el && el.closest('.field-group, .stack');
+      return [...(group?.querySelectorAll('.field-hint.danger') ?? [])].map(p => p.textContent.trim()).join('|');
+    };
+    return {
+      headline: text('input[name=headline]'),
+      summary:  text('textarea[name=summary]'),
+      live:     text('input[name=live]'),
+      notify:   text('input[name=notify]'),
+    };
+  `)
+  t.is(shown.headline, 'Headline is taken',           'Input shows its own server error')
+  t.is(shown.summary,  'Summary is too vague',        'Textarea shows its own')
+  t.is(shown.live,     'Cannot go live yet',          'Checkbox shows its own')
+  t.is(shown.notify,   'Notices are off for this plan', 'Switch shows its own — it showed none at all before')
+
+  // aria-invalid is the half a screen reader gets, and it was missing wherever
+  // the message was.
+  t.is(await t.evaluate(`
+    return document.querySelector('input[name=notify]')?.getAttribute('aria-invalid');
+  `), 'true', 'and marks itself invalid')
+  t.is(await t.evaluate(`
+    return document.querySelector('[role=radiogroup]')?.getAttribute('aria-invalid');
+  `), 'true', 'RadioGroup marks the group invalid rather than an option')
+
+  // A group that renders no Field renders no error either — this is the one
+  // that was structurally impossible before, because the wrapper appeared only
+  // when a `label` prop was passed and inside a <Form> nobody passes one.
+  t.ok(await t.evaluate(`
+    return !!byText('.field-group .field-hint.danger', 'Owner has left');
+  `), 'RadioGroup renders a server error at all, which needed the Field wrapper')
+
+  /* ── a clean submit still goes through ────────────────────────────────── */
+
+  await t.evaluate(`window.kitFailWith({}); click(document.querySelector('#save')); return true;`)
+  await t.eventually(`document.querySelector('#done').textContent`, '1',
+    'and clearing the failure lets the same form submit')
+  await t.eventually(`document.querySelector('#errorKeys').textContent`, '',
+    'with every field error cleared')
+}

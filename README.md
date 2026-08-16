@@ -220,7 +220,8 @@ Every example below is verified end-to-end, not sketched. A broken one is a bug.
 README assumes it, and Sierra's schema auto-detection (`../db/schema.lite`) only finds the
 schema because the UI sits one level down in `web/`.
 
-Three directories at the app root, one per realm, all orbiting the shared schema:
+Three directories at the app root, one per realm, all orbiting the shared schema —
+and a fourth, `widgets/`, wherever an app ships embeddable scripts:
 
 ```
 my-app/
@@ -257,15 +258,65 @@ my-app/
     test/
     dist/                    ← build output
 
+  widgets/                   ← UI realm — embeddable scripts (optional)
+    index.html               ← the dev harness
+    config/
+      vite.config.js         ← the Vite root is widgets/, port 8200
+      sierra.config.js       ← target: 'widget'
+    src/
+      Embeds/                ← one component per embeddable script
+      styles/
+    test/                    ← a host page per widget, hostile CSS on purpose
+    deploy/                  ← serve.js + Dockerfile — the widget origin
+    dist/embeds/             ← the built scripts, one <script src> each
+
+  extension/                 ← UI realm — a browser extension, MV3 (optional)
+    config/
+      jetty.config.js        ← name, permissions, islands, both browsers' blocks
+    src/
+      harbor/index.js        ← the service worker — required, and the only thing
+                               here holding a Junction connection
+      dock/App.mesa          ← the popup
+      options/  piers/       ← the options page · full-page surfaces
+      islands/*.js           ← content scripts, FLAT — a subfolder throws
+    public/icons/            ← a 128px PNG; a store upload needs one
+    test/                    ← what to load unpacked, and what to check by hand
+    deploy/                  ← packaging for the two web stores
+    dist/chrome/ dist/firefox/
+
   deploy/                    ← everything about shipping — Dockerfile, deploy steps
   tests/                     ← cross-project integration tests
   wiki/                      ← project documentation
 ```
 
 **The database lives at the root** — shared by all sub-projects, owned by none of them.
-`api/` and `web/` are peers; neither contains the other, and neither contains `db/`.
+`api/`, `web/`, `widgets/` and `extension/` are peers; none contains another, and none
+contains `db/`.
 
-**Every sub-project has the same six folders**, so knowing one means knowing all of them:
+**Which surfaces an app has is the app's business.** `fli new --template api-only`
+leaves out `web/`; `--template widgets-only` and `--template extension-only` leave out
+both `api/` and `web/`, because a project whose whole product is embeddable widgets —
+or a browser extension — is a normal FrontierJS project. `fli check`'s `app-layout`
+rule asks only that the schema is at the root and that no surface is hiding inside
+another: folded into `web/`, a surface inherits the SPA's build, its port and its
+release, and the first symptom is it shipping when the app does.
+
+A surface is its own sub-project when its **config**, its **tests** and its **release**
+are a different set of answers from the SPA's. Both optional ones are:
+
+| | `widgets/` | `extension/` |
+| --- | --- | --- |
+| Config | `target: 'widget'` — N self-contained IIFEs, not one app | `jetty.config.js` — emits a *manifest*; one source, two browsers |
+| Tests | a host page it does not own, with hostile CSS | loaded unpacked into a browser profile; no URL to point at |
+| Release | static files on an origin a stranger's page links to | signed upload to two web stores, review in days |
+| Ports | 8200 dev · 8300 served | 8400 dev (the reload channel; nothing is served) |
+| Create it | `fli make:widget <Name>` | `fli make:extension` |
+
+Both generators create the surface the first time and top it up after, so the app a
+scaffold wrote is the app the next command extends.
+
+**Every sub-project has the same six folders**, `widgets/` and `extension/` included,
+so knowing one means knowing all of them:
 
 | Folder | Holds |
 | --- | --- |

@@ -18,6 +18,7 @@ import {
   type CallOptions, type RequestMeta, type QueryDirectives,
 } from '../core/context.ts'
 import { isListResult, unwrapResult } from '../core/envelope.ts'
+import { splitParams } from '@frontierjs/toolbelt/directives'
 
 export {
   RESERVED_PARAMS, runWithMeta, requestMeta, freezeUser,
@@ -41,41 +42,16 @@ const METHOD_MAP: Record<string, ServiceMethod> = {
 }
 
 // CRUD methods that cannot be overridden via X-Service-Method header.
-// Custom action names pass through — callService validates existence.
+// Custom method names pass through — callService validates existence.
 const CRUD_METHOD_BLOCK = new Set(['find', 'get', 'create', 'update', 'patch', 'remove'])
 
 // ─── Wire `$directive` → structured QueryDirectives ──────────────────────
-// The ONLY place the `$` convention is understood. Everything past the bridge
-// reads ctx.directives, which has no prefixes and no strings-that-mean-numbers.
-
-const truthy = (v: unknown) => v === true || v === 'true' || v === '1'
-
-function num(v: unknown): number | undefined {
-  if (v === undefined || v === null || v === '') return undefined
-  const n = Number(v)
-  return Number.isFinite(n) ? n : undefined
-}
-
-function parseDirectives(rawQuery: Record<string, unknown>): QueryDirectives {
-  const d: QueryDirectives = {}
-
-  const limit  = num(rawQuery.$limit)
-  const offset = num(rawQuery.$offset)
-  if (limit  !== undefined) d.limit  = limit
-  if (offset !== undefined) d.offset = offset
-
-  if (rawQuery.$orderBy  !== undefined) d.orderBy  = rawQuery.$orderBy
-  if (rawQuery.$select   !== undefined) d.select   = rawQuery.$select
-  if (rawQuery.$populate !== undefined) d.populate = rawQuery.$populate
-
-  if (typeof rawQuery.$search === 'string' && rawQuery.$search !== '') {
-    d.search = rawQuery.$search
-  }
-  if (rawQuery.$withDeleted !== undefined) d.withDeleted = truthy(rawQuery.$withDeleted)
-  if (rawQuery.$onlyDeleted !== undefined) d.onlyDeleted = truthy(rawQuery.$onlyDeleted)
-
-  return d
-}
+// This is where the API realm applies the `$` convention, and everything past
+// it reads ctx.directives — no prefixes, no strings that mean numbers.
+//
+// The grammar itself is `@frontierjs/toolbelt/directives`, one level below both
+// realms, because Sierra's router applies the same one to a URL's search string
+// on the way to `page.query` + `page.directives`. One table, two boundaries.
 
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
@@ -83,7 +59,7 @@ function parseDirectives(rawQuery: Record<string, unknown>): QueryDirectives {
 export const bridge = {
 
   // ── Transport → ServiceContext ────────────────────────────────────────
-  // X-Service-Method header dispatches restore, upsert, and all custom actions.
+  // X-Service-Method header dispatches restore, upsert, and every custom method.
   // CRUD method names are blocked from header override.
   // Strips reserved params ($first, $wrap, etc.) from ctx.query.
   // Merges multipart files into ctx.data as File objects.
@@ -100,8 +76,8 @@ export const bridge = {
     const rawQuery   = raw.query as Record<string, unknown> ?? {}
 
     // ── X-Service-Method header — whitelist only ──────────────────────
-    // Case is preserved for custom actions (getStats stays getStats — the
-    // old blanket toLowerCase() made every camelCase action a guaranteed
+    // Case is preserved for custom methods (getStats stays getStats — the
+    // old blanket toLowerCase() made every camelCase method a guaranteed
     // 404). Built-ins (restore/upsert) and the CRUD block-list still match
     // case-insensitively.
     const rawHeaderMethod = (raw.headers?.['x-service-method'] ?? '').trim()
@@ -117,7 +93,7 @@ export const bridge = {
     // ── Routing ────────────────────────────────────────────────────────
     let resolvedMethod: AnyMethod = serviceMethod
     if (serviceMethod === 'find') {
-      if (raw.params.id) {
+      if (raw.route.id) {
         resolvedMethod = 'get'
       } else if (rawQuery.$first) {
         resolvedMethod = 'get'
@@ -133,11 +109,10 @@ export const bridge = {
     // parseQuery downstream looked for those exact keys on ctx.query. The
     // transport deleted precisely what the query builder was written to read,
     // so $limit / $offset / $orderBy / $select were all silently inert.
-    const query: Record<string, unknown> = {}
-    for (const k in rawQuery) {
-      if (!RESERVED_PARAMS.has(k)) query[k] = rawQuery[k]
+    const { query, directives } = splitParams(rawQuery) as {
+      query: Record<string, unknown>
+      directives: QueryDirectives
     }
-    const directives = parseDirectives(rawQuery)
 
     // ── Build ctx.data — merge body + multipart files ──────────────────
     const data = (() => {
@@ -178,7 +153,7 @@ export const bridge = {
       type:      'before',
       transport,
       model,
-      id:        raw.params.id ?? null,
+      id:        raw.route.id ?? null,
       query,
       directives,
       data,
@@ -190,7 +165,7 @@ export const bridge = {
         userAgent: raw.headers?.['user-agent'],
         headers:   raw.headers,
       },
-      route:  { ...raw.params },   // path-pattern captures (:id, :room, …)
+      route:  { ...raw.route },   // path-pattern captures — same word both sides
       locals: {},
       app:       appRef ?? ({} as import('../core/app.ts').App),
       result:    null,
@@ -260,10 +235,9 @@ export const bridge = {
     // An internal caller may still hand us a `$`-spelled query (older code,
     // and tests that predate ctx.directives). Translate rather than ignore:
     // explicit opts.directives wins, `$` keys are the fallback.
-    const fromQuery = parseDirectives(query)
-    const filters: Record<string, unknown> = {}
-    for (const k in query) {
-      if (!RESERVED_PARAMS.has(k)) filters[k] = query[k]
+    const { query: filters, directives: fromQuery } = splitParams(query) as {
+      query: Record<string, unknown>
+      directives: QueryDirectives
     }
     return {
       service,

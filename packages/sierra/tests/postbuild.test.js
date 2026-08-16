@@ -157,7 +157,7 @@ describe('generateSitemap', () => {
 // ─── generateLlms ────────────────────────────────────────────────────────────
 
 describe('generateLlms', () => {
-  const manifest = {
+  const routeTable = {
     indexed: ['/', '/about/', '/blog/'],
     tree: {
       id: 'root', path: '/', file: 'index.mesa',
@@ -174,7 +174,7 @@ describe('generateLlms', () => {
   test('generates llms.txt when config.llms = auto', async () => {
     const root = await setup('llms-auto')
     const outDir = await setup('llms-auto-out')
-    const result = await generateLlms({ llms: 'auto', name: 'My Site' }, manifest, outDir, root)
+    const result = await generateLlms({ llms: 'auto', name: 'My Site' }, routeTable, outDir, root)
     expect(result).toBe('llms.txt (generated)')
     const content = await readFile(join(outDir, 'llms.txt'), 'utf8')
     expect(content).toContain('# My Site')
@@ -186,7 +186,7 @@ describe('generateLlms', () => {
   test('generates llms.txt when config.llms = true and file does not exist', async () => {
     const root = await setup('llms-true')
     const outDir = await setup('llms-true-out')
-    await generateLlms({ llms: true }, manifest, outDir, root)
+    await generateLlms({ llms: true }, routeTable, outDir, root)
     const exists = await access(join(outDir, 'llms.txt')).then(() => true).catch(() => false)
     expect(exists).toBe(true)
   })
@@ -196,7 +196,7 @@ describe('generateLlms', () => {
     const outDir = await setup('llms-no-overwrite-out', {
       'llms.txt': 'EXISTING CONTENT',
     })
-    const result = await generateLlms({ llms: true }, manifest, outDir, root)
+    const result = await generateLlms({ llms: true }, routeTable, outDir, root)
     expect(result).toBeNull()
     const content = await readFile(join(outDir, 'llms.txt'), 'utf8')
     expect(content).toBe('EXISTING CONTENT')
@@ -205,7 +205,7 @@ describe('generateLlms', () => {
   test('returns null when config.llms = false', async () => {
     const root = await setup('llms-false')
     const outDir = await setup('llms-false-out')
-    const result = await generateLlms({ llms: false }, manifest, outDir, root)
+    const result = await generateLlms({ llms: false }, routeTable, outDir, root)
     expect(result).toBeNull()
   })
 
@@ -214,7 +214,7 @@ describe('generateLlms', () => {
       'public/llms.txt': '# Custom LLMs',
     })
     const outDir = await setup('llms-public-out')
-    const result = await generateLlms({ llms: true }, manifest, outDir, root)
+    const result = await generateLlms({ llms: true }, routeTable, outDir, root)
     expect(result).toBe('llms.txt ← public/llms.txt')
     const content = await readFile(join(outDir, 'llms.txt'), 'utf8')
     expect(content).toBe('# Custom LLMs')
@@ -225,7 +225,7 @@ describe('generateLlms', () => {
     const outDir = await setup('llms-desc-out')
     await generateLlms(
       { llms: 'auto', name: 'MySite', description: 'A great site' },
-      manifest, outDir, root
+      routeTable, outDir, root
     )
     const content = await readFile(join(outDir, 'llms.txt'), 'utf8')
     expect(content).toContain('> A great site')

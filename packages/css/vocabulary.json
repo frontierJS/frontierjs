@@ -1,6 +1,6 @@
 {
   "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "counts": {
     "terms": 55,
     "tiers": 8,
@@ -657,8 +657,14 @@
       ]
     },
     "Popover": {
-      "markup": "<article class=\"popover\">\n  <div class=\"surface-header\"><strong>Quick note</strong></div>\n  <div class=\"surface-body\">Short, contextual information.</div>\n</article>",
-      "parts": [],
+      "markup": "<div class=\"popover-anchor\">\n  <button class=\"btn\" aria-expanded=\"false\">Actions</button>\n  <article class=\"popover\">\n    <div class=\"surface-header\"><strong>Quick note</strong></div>\n    <div class=\"surface-body\">Short, contextual information.</div>\n  </article>\n</div>",
+      "parts": [
+        [
+          ".popover-anchor",
+          "The positioning context, and the default placement. The Popover is absolute inside it. Optional only for a native [popover], which is in the top layer and escapes it",
+          "optional"
+        ]
+      ],
       "uses": [
         "surface-header",
         "surface-body"
@@ -832,6 +838,7 @@
     "from-right": "A direction modifier on Drawer",
     "from-bottom": "A direction modifier on Drawer",
     "from-left": "A direction modifier on Drawer",
+    "align-end": "An alignment modifier on Popover, and only inside .popover-anchor: it opens the dropdown against the trigger’s end edge instead of its start. Named for what it does rather than reusing `end`, which on Tooltip means the SIDE the attachment sits on",
     "text-xs": "A size utility",
     "text-sm": "A size utility",
     "text-md": "A size utility",
@@ -868,7 +875,8 @@
     "theme-elite": "A theme",
     "theme-basecamp": "A theme",
     "theme-notebook": "A theme",
-    "theme-press": "A theme"
+    "theme-press": "A theme",
+    "theme-field": "A theme"
   },
   "notATerm": {
     "tone": [

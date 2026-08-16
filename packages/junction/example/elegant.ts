@@ -3,7 +3,7 @@
 // The 80% path, spelled the short way: schema in, API out.
 //
 // Everything below the schema is wiring you write once per app, not per
-// service. The service itself is six lines plus one custom action.
+// service. The service itself is six lines plus one custom method.
 //
 // What you get without writing it:
 //   • Full CRUD at /api/leads          (createService + model)
@@ -33,7 +33,7 @@
 //     -d '{"name":"Acme","email":"buy@acme.com","value":12000}'  # → 201
 //
 //   curl -X POST http://localhost:3200/api/leads \
-//     -H 'x-service-method: getStats'                            # custom action
+//     -H 'x-service-method: getStats'                            # custom method
 
 import { createApp, createService, publish, channels, healthPlugin } from '../index.ts'
 import type { App, IAuth } from '../index.ts'

@@ -1,0 +1,27 @@
+<script module>
+  // A widget declares how a host page finds it. Everything not said here comes
+  // from the build config — the tag is `mt-` + the file name, kebab-cased.
+  export const widget = {
+    // The legacy form: pages that already say <div class="mt-counter"> keep
+    // working, and new pages use the element.
+    selector: '.mt-counter',
+  }
+</script>
+
+<script>
+  // Props are `data-*` attributes, so they arrive as strings. What a widget
+  // does with that is its own business — this one counts, so it parses.
+  export let start = '0'
+  let n = Number(start) || 0
+</script>
+
+<button id="counter" onclick={() => n++}>count: {n}</button>
+
+<style>
+  button {
+    background: rgb(0, 128, 0);
+    color: rgb(255, 255, 255);
+    font-size: 20px;
+    padding: 8px 16px;
+  }
+</style>

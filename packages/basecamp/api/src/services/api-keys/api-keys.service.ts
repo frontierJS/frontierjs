@@ -23,7 +23,7 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } f
 import { findScoped, getScoped, narrowPatch, dbOf, wsOf, actorOf } from '../../core/resource.ts'
 import { scopeVocabulary } from './scopes.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
+import type { ServiceContext, IAuth } from '@frontierjs/junction'
 
 // ─── Expiry ──────────────────────────────────────────────────────────────
 // Server-side, deliberately. A browser computing "90 days" means 90 days by
@@ -64,13 +64,21 @@ function whereStatus(status: string): Record<string, unknown> {
 
 export function createApiKeysService(app: BasecampApp) {
 
-  /** app.auth is optional on the App interface — an app can run without one.
-   *  This service cannot: minting and revoking are auth's, entirely. Named so
-   *  the refusal is a sentence rather than a TypeError on `undefined.createApiKey`. */
-  function authOrRefuse() {
-    if (!app.auth)
+  /** app.auth is optional on the App interface — an app can run without one,
+   *  and Junction requires only `verifySession` of the one it has (`FJS-D10`).
+   *  This service needs more than that: minting and revoking are auth's,
+   *  entirely. Both refusals are sentences rather than a TypeError on
+   *  `undefined.createApiKey` — and the second is not hypothetical, since a
+   *  provider that verifies sessions and issues no keys is now a legal one. */
+  type ApiKeyIssuer = IAuth & Required<Pick<IAuth, 'createApiKey' | 'revokeApiKey'>>
+
+  function authOrRefuse(): ApiKeyIssuer {
+    const auth = app.auth
+    if (!auth)
       throw new BadRequest('API keys need an auth provider — none is configured on this server')
-    return app.auth
+    if (typeof auth.createApiKey !== 'function' || typeof auth.revokeApiKey !== 'function')
+      throw new BadRequest('the configured auth provider does not issue API keys')
+    return auth as ApiKeyIssuer
   }
 
   /**

@@ -52,7 +52,7 @@ src/
   tools/           — dev/ops utilities, never imported by app code
     cli.js         — litestone CLI (all commands)
     studio.html    — browser-based Studio UI
-    repl-server.js — REPL server helper
+    repl.js        — the console prompt: eval loop, completion, history
     ddl-snapshot.js — renderDdlSnapshot(): the emitted DDL as a committed file
     introspect.js  — generateLiteSchema(): reverse-engineer DB → .lite
     typegen.js     — generateTypeScript() → .d.ts
@@ -65,7 +65,12 @@ src/
     split-worker.js — Bun worker for parallel shard execution
     run.js         — standalone entrypoint (used by CLI)
 
+  release.js       — the release surface + classifyPivot(): can N-1 and N serve
+                     one database at once? Never imported by production code
   tenant.js        — createTenantRegistry()
+  core/tenancy.js  — resolveTenancy() + tenantFrom(): what a `tenancy { }` block
+                     MEANS, resolved once. Four readers — the registry, the CLI,
+                     Studio, Junction — and none of them may answer differently
   testing.js       — makeTestClient, Factory, Seeder, factoryFrom, generateFactory, etc.
   seeder.js        — Factory, Seeder, runSeeder (re-exported from testing.js)
   jsonschema.js    — generateJsonSchema()
@@ -80,6 +85,23 @@ test/
 ---
 
 ## Schema DSL (`.lite`)
+
+### Imports
+
+```
+import "./models/users.lite"                       // a path, relative to this file
+import "@frontierjs/auth/schema.lite"              // a package, resolved through node
+import "@frontierjs/auth/schema.lite" into auth    // …and land its models in `auth`
+```
+
+A package specifier resolves the way an ESM import would, so the package's
+`exports` decides what is importable. `into` names the database everything that
+import brings in lands in; the nearest one wins (an inner `into` beats an outer
+one) and any of them beats a `@@db` written in the imported file, since only the
+importing app knows what its own databases are called.
+
+Resolved by `parseFile`, and by `createClient` through it — not by `parse`, which
+takes text with no file behind it.
 
 ### Database blocks
 
@@ -109,6 +131,24 @@ database audit {
 
 Drivers: `sqlite` (default), `jsonl`, `logger`.
 Single-DB schemas omit database blocks and pass `db:` to `createClient`.
+
+### Tenancy block
+
+At most one per schema, and it may not arrive through an import — only the app
+knows what its own tenants are. See § Tenancy below.
+
+```
+tenancy {
+  strategy database | row
+  dir      "./tenants"              // database only; env() accepted
+  registry "./tenants-registry.db"  // database only
+  maxOpen  100                      // database only
+  key      env("TENANT_KEY")        // database only — a value, never a path
+  column   workspaceId              // row only, required
+  claim    workspaceId              // row only; default: the column's own name
+  resolve  subdomain | header("X-Tenant-Id") | claim(workspaceId)
+}
+```
 
 ### Field types
 ```
@@ -147,9 +187,16 @@ Type?      — optional (nullable)
 @sequence(scope: fieldName)      per-scope auto-increment (e.g. per-tenant doc numbers)
 @omit                            excluded from findMany/findFirst results
 @omit(all)                       excluded everywhere
-@guarded                         excluded unless asSystem()
-@guarded(all)                    excluded from everything unless asSystem()
-@encrypted                       AES-256-GCM encrypted at rest (implies @guarded(all))
+@system                          the application writes it, its caller does not. Readable
+                                 by anyone; refused by name on every write unless the
+                                 column is named on the call — `update({ …, system: ['col'] })`
+                                 — or asSystem(). Reaches the client as `readOnly` and is
+                                 never in create-mode `required`
+@guarded                         system-context column — stripped from every read AND
+                                 refused on every write, unless asSystem()
+@guarded(all)                    the same; an explicit select cannot unlock the read
+@encrypted                       AES-256-GCM at rest — hidden from a non-system read,
+                                 and writable by a non-system caller
 @encrypted(deterministic: true)  IV derived from the value — equality search AND readable
 @hashed                          HMAC-SHA256, one-way — matchable, never readable, not rotatable
 @secret                          @encrypted + @guarded(all) + @log(audit) + $rotateKey support
@@ -159,6 +206,14 @@ Type?      — optional (nullable)
 @log(dbName)                     log reads/writes to a logger database
 @keepVersions                    on File? fields: skip old S3 object cleanup on update
 @computed                        derived field — implement in computed.js, not stored in DB
+@derived(expr)                   a value computed in SQL from this row's own columns, in the
+                                 @@allow expression language — so unlike @computed it can be
+                                 FILTERED and SORTED by. Static: `now()` is allowed and emits
+                                 SQLite's clock, `auth()`/`check()` are refused (that is @@scope).
+                                 Reaches the client as readOnly + `x-litestone-kind: 'derived'`,
+                                 plus `x-litestone-volatile: 'clock'` when it reads the clock —
+                                 a FLAG, never the expression. The declared type is checked
+                                 against the branches at startup
 @generated("sql expr")           SQL-generated column
 @hardDelete                      on a relation field: hard-delete children during @@softDelete(cascade)
 @markdown                        semantic annotation — String field contains Markdown (no validation)
@@ -172,7 +227,8 @@ Type?      — optional (nullable)
 @length(min, max)                string length validator
 @gte @gt @lte @lt                numeric validators
 @regex("pattern")                regex validator
-@minItems @maxItems              array validators
+@minItems @maxItems @uniqueItems array validators (also: the value must be an array,
+                                 and Int[]/String[] elements must be of that type)
 @from(Model, count: true)        derived count from relation — first arg is the MODEL, not the
 @from(Model, sum: field)         relation field. sum/max/min take a field; count needs Int,
 @from(Model, last: true)         exists needs Boolean, first/last are typed Model? (whole row)
@@ -208,12 +264,24 @@ declared. One authored string, all three realms.
 @@updatedBy                      sugar: adds updatedById @updatedBy + an updatedBy relation
 @@createdBy(owner)               same pair, renamed → ownerId + owner
 @@map("table_name")              custom DB table name
+@@hasTemplates                   categorical definition-vs-instance: adds isTemplate
+                                 Boolean @default(false); every read AND write excludes
+                                 templates unless given withTemplates/onlyTemplates
+@@hasTemplates(field: "isPreset")  same, under a name you choose
+@@scope(name, expr)              a named predicate in the @@allow expression language,
+                                 asked for as `where: { $scope: 'name' }`. Predicate-only —
+                                 no value, no property in the generated schema. Several
+                                 names AND; a disjunction goes INSIDE one scope. The name is
+                                 looked up in the declared table, never interpolated, and
+                                 `db.$scopes(accessor)` publishes the list `$checkWhere` uses
 @@external                       table managed outside Litestone (skip DDL/migrations)
 @@allow('read'|'create'|'update'|'delete'|'write'|'all', expr)
 @@allow('read'|..., expr, "custom error message")
 @@deny('read'|'create'|..., expr)
 @@deny('read'|..., expr, "custom error message")
 @@log(dbName)                    model-level audit log: all writes fire a log entry
+@@tenant(none)                   under `tenancy { strategy row }`: this model spans tenants
+@@tenant(column: "accountId")    …or is scoped by a column of its own
 ```
 
 ### `@@softDelete` and `@hardDelete`
@@ -338,6 +406,11 @@ orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]
 // NULLS FIRST / LAST
 orderBy: { deletedAt: { dir: 'asc', nulls: 'last' } }
 
+// The escape hatch `where` has. The fragment is the whole ORDER BY tail,
+// direction included; a plain string is refused (it is how an injected one
+// would arrive). Not available with a cursor or on groupBy.
+orderBy: { $raw: sql`CASE WHEN "snoozedUntil" > ${now()} THEN 1 ELSE 0 END ASC, "dueAt" ASC` }
+
 // Relation field (belongsTo) — LEFT JOIN
 orderBy: { author: { name: 'asc' } }
 orderBy: { company: { country: { name: 'asc' } } }  // two-hop
@@ -350,11 +423,16 @@ orderBy: { tags:  { _count: 'asc' } }               // manyToMany — _count onl
 
 ### Raw SQL in where
 ```js
-import { sql } from '@frontierjs/litestone'
+import { sql, now } from '@frontierjs/litestone'
 
 db.product.findMany({ where: { $raw: sql`price > IF(state = ${state}, ${min}, 100)` } })
 db.order.findMany({ where: { status: 'active', $raw: sql`json_extract(meta, '$.tier') = ${3}` } })
 db.user.findMany({ where: { AND: [{ accountId: 1 }, { $raw: sql`score > ${50}` }] } })
+
+// The clock. `datetime('now')` is REFUSED by name — it cannot match a stored
+// DateTime. Modifiers are bound, not spliced.
+db.task.findMany({ where: { $raw: sql`dueAt < ${now()} AND completedAt IS NULL` } })
+db.task.findMany({ where: { $raw: sql`startedAt > ${now('-7 days')}` } })
 ```
 
 ### Window functions
@@ -410,7 +488,18 @@ db.$transaction(async (tx) => { ... })
 db.$attach('./other.db', 'other')
 db.$detach('other')
 db.$rotateKey(newKey)      // re-encrypt all @secret(rotate: true) fields; returns per-model stats
+await db.$audit({ operation: 'login.failed', model: 'User', records: [id],
+                 actorId: id, meta: { reason: 'bad-password' } })
+                           // the ONE owner of putting a row in the audit trail.
+                           // For what @@log(audit) cannot see: an event that
+                           // performs no write, or one whose asSystem() write
+                           // names no actor. THROWS — unlike @@log, the record
+                           // is what the caller asked for. actorId defaults to
+                           // this client's principal; a system context has none.
 db.$schema                 // parsed schema object
+db.$plugins                // installed plugin names, in run order — every client
+                           // flavour. A gated schema auto-installs GatePlugin, so
+                           // what you passed is not necessarily what is running
 db.$rawDbs                 // { main: Database, ... } raw write connections
 db.$databases              // { main: { driver, path }, ... }
 db.$close()
@@ -455,6 +544,19 @@ auth() != null            — authenticated check
 now()                     — current UTC timestamp
 check(field)              — delegates to related model's read policy
 field == value  field != value  field > value  field >= value  field < value  field <= value
+value in list             — membership. The list is ALWAYS the right operand:
+                            `auth().id in memberIds` (an array column),
+                            `ownerId in auth().teamIds` (a list on the principal),
+                            `status in ['draft', 'review']` (written literally).
+                            An array column compiles to the json_each EXISTS a
+                            `where: { col: { has } }` produces; the other two to
+                            `IN (?, …)`, and an empty list admits nothing.
+                            What the schema can refuse is refused at startup
+cond ? a : b              — a value chosen by a condition. Looser than `||` and
+                            RIGHT-associative, so `a ? x : b ? y : z` nests into
+                            the else. A parenthesised group is an operand on
+                            either side of a comparison. In BOTH compilers —
+                            CASE WHEN in SQL, `?:` in JS
 expr1 && expr2  expr1 || expr2  !expr
 ```
 
@@ -756,7 +858,7 @@ litestone migrate apply
 litestone migrate status
 litestone migrate verify
 litestone studio [--port=5001]
-litestone repl
+litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>]
 litestone doctor
 litestone types [out.d.ts] [--only=User,Post]
 litestone seed [SeederClass]
@@ -766,7 +868,9 @@ litestone transform config.js [--preview] [--dry-run]
 litestone jsonschema [--out=./schemas/] [--format=flat]
 litestone jsonschema --snapshot [--check] [--stdout] [--out=<path>]
 litestone access [--check] [--json] [--stdout] [--out=<path>]
+litestone access --from=<ref|path> [--strict] [--json]   # the permission diff
 litestone ddl [--check] [--stdout] [--pluralize] [--out=<path>]
+litestone release [--from=<ref|path>] [--strict] [--check] [--json] [--out=<path>]
 litestone replicate config.js
 litestone backup [dest] [--vacuum]
 litestone optimize [table]
@@ -946,25 +1050,50 @@ const access  = deriveAccess(schema)
 
 ---
 
-## Tenant registry
+## Tenancy
+
+**Declared in the seed, one block, two strategies** — `docs/multi-tenancy.md`
+is the full reference.
+
+```
+tenancy {                          tenancy {
+  strategy database                  strategy row
+  dir      "./tenants"               column   workspaceId
+  registry "./tenants-registry.db"   claim    workspaceId   // default: the column
+  maxOpen  100                     }
+  key      env("TENANT_KEY")
+  resolve  subdomain               // subdomain | header("X-T") | claim(field)
+}
+```
+
+`strategy database` is a SQLite file per tenant plus a registry that indexes
+them; `strategy row` is one database and a tenant column. Every reader asks the
+same resolution — `resolveTenancy(schema, { schemaPath })`, on `db.$tenancy` and
+`registry.tenancy` — and precedence is **option → declaration → default**, in
+one place.
 
 ```js
-import { createTenantRegistry } from '@frontierjs/litestone'
-
-const tenants = await createTenantRegistry({
-  dir:           './tenants/',
-  schema:        './schema.lite',
-  maxOpen:       100,
-  encryptionKey: async (id) => getKey(id),
-  migrationsDir: './migrations',
-})
-
-const db = await tenants.get('acme')
+const tenants = await createTenantRegistry({ path: './db/schema.lite' })  // reads the block
+const db      = await tenants.get('acme')
 await tenants.query(db => db.user.count())
 await tenants.migrate()
 ```
 
-`jsonl`/`logger` databases are schema-global — not per-tenant. Create separately if needed.
+**Row tenancy desugars into `@@deny`, never `@@allow`.** Allows are OR'd within
+an operation, so an allow added to a model that already has one WIDENS its reads
+to every row in the tenant. Two rules per scoped model, because create and read
+want opposite answers about an absent value — `checkCreatePolicy` runs before
+the `@default(auth().<claim>)` stamp, so an omitted column on create is
+legitimate and a row holding no tenant on read belongs to nobody.
+
+`@@tenant(none)` marks a model that spans tenants; `@@tenant(column: "x")` names
+a different column. Models declaring neither are reported by name, once, at
+parse. `jsonl`/`logger` models are never scoped — no policy engine there — and
+those databases stay schema-global under `strategy database` too.
+
+`registry.tenantFor({ host, headers, principal })` applies the declared
+`resolve`; Junction's `createApp({ tenants })` calls exactly that rather than
+carrying a second reading of it.
 
 ---
 
@@ -1026,6 +1155,32 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 
 ---
 
+## The context in this package
+
+**One, and it is not a request context** (`FJS-D03`). A Litestone plugin's `ctx`
+is the **client's compiled state** — `relationMap`, `policyMap`, `typeMap`,
+`computedFns`, `softDeleteMap`, `schema`, `now`, `tx`, and about forty more —
+plus `auth` and `isSystem`.
+
+| | |
+| --- | --- |
+| Created per | **client scope.** Built once in `createClient`; `asSystem()`, `$setAuth()` and `$scopedBy()` each SPREAD it with `auth`/`isSystem` changed |
+| Lives until | that client is closed |
+| Carries | the compiled schema, the maps every query is built against, and the principal that scoped this client |
+| Does NOT carry | a method, arguments, a request, or anything per-call. There is no `ctx.query`, no `ctx.method`, no `ctx.locals` |
+
+The lifetime is the thing to hold on to: **`ctx.auth` is the principal that
+scoped the CLIENT, not a per-call value**, which is exactly why `$setAuth(user)`
+returns a new client instead of mutating one. A plugin hook receives the
+per-operation data as its own arguments (`model`, `args`, `rows`) and the ctx
+beside them.
+
+`enc` is a CELL rather than a value for the same reason the spread exists — see
+the note in `client.js`: a spread copies a string by value, so `$rotateKey` would
+update the root and leave every derived client decrypting with the old key.
+
+---
+
 ## Proving a change
 
 `bun run test` (bun; `test:smoke` is the CLI only). Then, because this is the
@@ -1057,6 +1212,24 @@ from belief asserts a wish.
   anything that assembles a row without it will leak them. The three include
   branches share `finishRelated` for the same reason — each had its own copy of
   deserialize → compute → shape, and a step added to one missed the other two.
+  **On a policied target the id from SQL is discarded and the pick is redone**
+  under the caller's policy, with `ROW_NUMBER()` choosing per parent — the
+  startup subquery cannot know `ctx.auth`, so it picked the newest row that
+  exists and a denied one read as `null` rather than falling through to the next
+  visible one (`FJS-224`). The repick correlates on the column the target points
+  back at, which `parseSelectArg` injects like an FK, so a narrow `select` still
+  gets it right.
+- **A read that builds its own SELECT has to compose what `buildSQL` composes.**
+  Global filter, plugin read filters, soft-delete, `@@hasTemplates`, the
+  caller's where, then the policy — in that order, because positional binds make
+  the order the correctness. `findManyCursor` and `search()` applied none of the
+  first four and neither the policy, so `findMany` answered one row where they
+  answered every row in the table (`FJS-262`). And a `@@gate` lives in a
+  plugin's `beforeRead`: `aggregate`, `groupBy` and `search` never called it, so
+  a gated model answered a refused caller's COUNT while its row policy — which
+  DID apply — made the number look scoped. The grid in
+  `test/litestone.test.ts` § *every read applies the filter, the policy and the
+  gate* is what a new read method has to pass.
 - **A tree read goes through the ordinary read path, and it has to stay that
   way.** `findMany({ recursive })` resolves ids in a CTE and fetches the rows
   with `findMany`, so the gate, the policy, the select and the derived fields
@@ -1066,6 +1239,56 @@ from belief asserts a wish.
   invisible node hides its branch — reparenting orphans upward hands back the
   children of a refused row. Only `findMany` walks a tree; every other read
   refuses `recursive` by name.
+- **`@system` and `@guarded` are the two halves of one grid, and only one of them
+  touches reads.**
+
+  |            | read        | write       |
+  | ---------- | ----------- | ----------- |
+  | `@guarded` | system only | system only |
+  | `@system`  | anyone      | system only |
+
+  Both refuse a write BY NAME rather than dropping it, because the client is told
+  `readOnly` and a generated form does not offer the column — so a payload
+  naming one is code that meant to write it. A field `@allow('write', …)` still
+  drops silently, and must: there the same payload is legitimate for another
+  caller. The pair `@guarded(all) @system` is legal and means both halves; a
+  field `@allow('write')` beside `@system` is refused, because one says nobody
+  ever and the other says it depends who is asking.
+- **The console's standing is only as true as its resolver, and the default is
+  usually the wrong one.** `litestone repl --as <who>` grades with
+  `FrontierGateGetLevel` unless `--gate <path[#export]>` points at the app's own.
+  Measured on `example`: the default grades `ops@acme.test` at **3 (CREATOR)**
+  and the app's `shopGateLevel` grades the same row at **4 (USER)** — and `Order`
+  is `@@gate("0.4.4.5")`, so a create is refused in the console and permitted in
+  the app. A console that is *approximately* somebody's session is worse than
+  none, because you act on what it shows you, so the banner names which resolver
+  answered. Related: a `--level` standing has **no `auth()`**, so every
+  `auth().id ==` row policy matches nothing and its model answers an empty list
+  rather than refusing — indistinguishable from a gate refusal by the result, and
+  said out loud for that reason.
+- **A REPL that does not serialise its lines executes them out of order, and
+  `rl.pause()` does not fix it.** Pausing does not hold back lines readline has
+  already buffered, so a pasted block or a piped heredoc fires every handler and
+  the statements complete in whatever order their awaits finish — against a
+  database, writes landing in an order nobody wrote. A promise chain is the fix
+  and `close` has to await it too, or the session reports over with a write in
+  flight. Both shapes are pinned in `test/repl.test.ts`, verified by breaking it.
+- **One comparison, two gradings, and they are close to inverted.** `release.js`
+  walks two release surfaces once; `classifyPivot` grades *can N-1 and N serve
+  one database* and `classifyAccess` grades *who may now do more*. They disagree
+  by construction — removing a `@@gate` is an `expand` and the widest thing a
+  schema change can do — and on the five-part widening in `test/release.test.ts`
+  **every widening is an expand**. A new comparison belongs in the existing walk
+  with a direction attached, never in a second traversal: two walks over one set
+  of declarations is how two answers to one question drift apart. The finding a
+  field-level `@allow` was missing from the surface entirely came out of building
+  the second grading, which is the argument.
+- **A snapshot that carries a verdict cannot be rechecked.** `release.snapshot.md`
+  holds the release surface and never the classification, because a verdict is a
+  fact about two schemas while the file describes one — write it in and the file
+  depends on its own previous contents, which is not a fixed point. Same reason
+  `repo-map.snapshot.html` carries no dates and no timings. `--check` is
+  therefore staleness alone, and the classification is printed.
 - **A generated expectation must not come from the code it grades.**
   `expectedVerdict()` in `access.js` restates what `@@gate` means and does not
   call `levelPasses()` in the gate plugin, which is the opposite of the rule
@@ -1123,6 +1346,16 @@ from belief asserts a wish.
   serialises what SQLite already does — two `BEGIN IMMEDIATE`s cannot overlap on
   one connection. `createMany`/`upsertMany` go through the same lock, awaiting the
   acquire while their batch body stays synchronous.
+- **Row tenancy is a NARROWING, so it desugars into `@@deny` and never
+  `@@allow`.** An allow added to a model that already declares one is OR'd with
+  it, which widens every read to the whole tenant — the opposite of the feature.
+  Two rules per scoped model, because `checkCreatePolicy` runs BEFORE
+  `applyAuthDefaults`: on create the column is legitimately absent (the stamp
+  has not happened yet), on read a row holding no tenant belongs to nobody. Get
+  that ordering wrong in one direction and every create is refused, in the other
+  and orphan rows are visible to everybody. Both directions are pinned in
+  `test/tenancy.test.ts` against a real client — a policy that admits everything
+  and a policy that is not applied at all look identical from one side.
 - **`$setAuth(user)` RETURNS a scoped client, it does not mutate.** `db.$setAuth(u)`
   then `db.thing.create(…)` grades as anonymous, silently.
 - **A schema declaring any `@@gate` auto-installs `GatePlugin`.** You cannot run
@@ -1156,14 +1389,63 @@ from belief asserts a wish.
   exact match**, so a schema ported from there filters wider than it did. The
   exact, ordered comparison is `{ equals: [...] }`.
 - **Columns are emitted verbatim camelCase; `DateTime` is ISO-8601 TEXT.** Hand-
-  written SQL assuming snake_case or epoch-ms will not match.
+  written SQL assuming snake_case or epoch-ms will not match — **and neither do
+  SQLite's own clock functions.** `datetime('now')` answers `2026-08-13
+  07:38:31`, the stored value is `2026-08-13T07:38:31.984Z`, the comparison is
+  string-wise, and `'T'` sorts above a space: every row stored TODAY compares
+  greater than a same-day `datetime('now')`, so the predicate is right for
+  yesterday and wrong for this morning (`FJS-226`). `now()` is the spelling that
+  matches, and the six forms that cannot are refused by name — in the `sql` tag,
+  in a plain-string `$raw`, and in a `@from(where:)` at startup. `julianday()`
+  is untouched: it answers a number, so it compares like with like.
+- **`@@log(audit)` covers WRITES, so the events an app most wants are the ones
+  it cannot see.** A failed login performs no write and left no trace at all; a
+  successful one left `create:session` with `actorId: null`, because the write
+  goes through `asSystem()` and a system context names no principal (`FJS-276`,
+  `FJS-277`). `db.$audit()` is the one owner of recording deliberately, and it
+  **throws** where `@@log` is fire-and-forget — there the record is a side effect
+  of a write that already succeeded and must not fail it, here it is the point.
+  A caller on a hot path that must not fail (auth's login) is the one that
+  catches, and says so. `meta` is written as given: nothing redacts it, because
+  field redaction protects columns the SCHEMA declared protected and this has no
+  schema behind it.
+- **A write event says whether it can name the row, and it says so in `scope`.**
+  `row` is one row — `result` is it, or `null` where `select: false` skipped the
+  RETURNING. `collection` is `count` rows matching `where`, from a statement that
+  never built them. Do not read the discriminator off `result`: `result: null` is
+  two different facts, and treating it as *no rows* is exactly what dropped every
+  `select: false` write a layer up (`FJS-307`). Every one of the eleven write
+  methods announces now — seven did not, `restore` and `delete` among them, both
+  of which had their rows the whole time. `test/write-events.test.ts` is the grid
+  and a new write path has to appear in it. **A write matching no rows announces
+  nothing**: a count of zero sending every open tab back to the server is worse
+  than saying nothing.
+- **`announce` is the dial on a bulk write, and it is per CALL** — `collection`
+  (default, one event, O(1), every list re-asks) · `rows` (one event per row, off
+  `RETURNING`) · `none`. `createClient({ announce })` is the floor and a call
+  beats it; an unknown value is refused by name before the statement runs.
+  **Not decidable by size**: the count is unknowable before the write without a
+  second query, so this is declared and never guessed — which is also why it is
+  the CALL and not the model, since one model carries both a three-row cancel and
+  a two-million-row purge. `rows` is ANDed with the audience, so an app that opts
+  in and has nobody listening still takes no `RETURNING`. A logged model already
+  takes one, so there it is free. **An announced bulk row goes through `read()`**
+  — straight off `RETURNING` it still carries `@guarded` and `@encrypted`
+  columns, which every other event path strips. `announceBulk` is the one owner
+  of the three-way branch for that reason.
 - **The audit logger defers one event-loop tick** — `fireLog()` writes via
   `setImmediate`, then the jsonl driver appends synchronously. A read in the same
   tick sees 0 rows and the `.jsonl` may not exist yet; anything after an `await`
   sees the row. Yield once rather than waiting: there is no timed buffer, and no
   flush on exit to wait for.
 - **`@guarded` is not a level** — it takes only `(all)`; `@guarded(5)` does not
-  parse. Per-role column access is field-level `@allow`.
+  parse. Per-role column access is field-level `@allow`. It is a system-context
+  lock in BOTH directions: a non-system write naming a guarded column is refused
+  with an `AccessDeniedError` that names the field. `@encrypted` alone is not —
+  it hides a value from a reader, and whoever supplies a secret is routinely not
+  the system. A **required** `@guarded` column therefore makes the model
+  uncreatable below level 8, and `verifyGateLadder` reports that create column
+  ungraded rather than reading the field lock as a gate verdict.
 - **A `@computed` field cannot be sorted, and `orderBy` now says so.** It is a JS
   function over a fetched row; SQLite cannot order or paginate by one. Both that
   and an unknown key THROW — stricter than the where-key check, which only warns
@@ -1177,6 +1459,61 @@ from belief asserts a wish.
   `reason: 'opaque'` (`FJS-200`). An implicit m2m (`Tag[]`) is an array in the
   AST and a join table in SQLite — it is claimed as a RELATION before the array
   bucket sees it, or `orderBy: { tags: { _count } }` stops compiling.
+- **An aggregate NAMES a column and builds no row, so it has to do both halves
+  of `read()` itself.** Neither was done. A name that is not a column reaches
+  SQLite as a quoted identifier, which it resolves as a string CONSTANT — so
+  `_max: { comp: true }` answered `"comp"`, `_sum` answered `0`, and a plain
+  typo did the same (`FJS-202`); and nothing stripped a protected column, so
+  `_max` over a `@guarded` salary answered it, `_stringAgg` over one answered
+  the whole column joined with commas, and `by: ['salary']` answered every
+  distinct value with a count (`FJS-273`). **Eight arguments can carry a field
+  name** — `_min`/`_max`/`_sum`/`_avg`, `_stringAgg`'s `field` and `orderBy`, a
+  named aggregate's field, `_count: { distinct }` — plus `groupBy`'s `by` and
+  `interval`. Two tiers: `by`/`distinct`/`interval` need a real column and
+  nothing more (grouping stored text is self-consistent), everything producing a
+  VALUE also refuses the opaque bucket. `fieldReadRefusal` mirrors
+  `applyFieldPolicyTo`'s strip ladder over a name; a field-level
+  `@allow('read', …)` is refused rather than evaluated, because it is a
+  predicate over a row. The grid in `test/litestone.test.ts` § *an aggregate
+  names a column* is what a new argument has to pass.
+- **A soft-deleted row KEEPS its `@unique` values, and every write path says so
+  the same way.** Ruled rather than fixed: freeing the slot makes `@unique`
+  false for any read that includes deleted rows — `findUnique(withDeleted)`
+  would legitimately match two — and makes `restore()` conditionally
+  impossible, which is the whole contract. SQLite also cannot make an inline
+  `UNIQUE` partial, so the alternative rebuilds every affected table.
+  `SoftDeletedUniqueError` (409) names the field, the value and the holding
+  row; releasing a slot is deliberate — `update({ …, withDeleted: true })` to
+  move the value, `delete({ …, withDeleted: true })` to stop keeping the row
+  (`FJS-204`, `DECISIONS.md` § Query & write semantics). **The four write paths
+  gave four answers before, two silently** (`FJS-278`): `upsert` returned `null`
+  having written nothing, because its race-recovery fallback assumes a UNIQUE
+  conflict means a LIVE row appeared and retried as an `update` that filtered
+  the deleted row; `upsertMany` is `ON CONFLICT DO UPDATE`, which SQLite
+  resolves knowing nothing about soft delete, so the write landed IN the deleted
+  row and reported success. A new write path that can hit the constraint routes
+  through `asSoftDeletedConflict`, which only runs on the failing path.
+- **`@@hasTemplates` and `@@softDelete` are the same two flags on every method,
+  reads and writes alike** — `withTemplates`/`onlyTemplates`,
+  `withDeleted`/`onlyDeleted`. Neither is an access rule, so **`asSystem()` does
+  not lift either**; the flags are the only way past. They part company in one
+  place: a hard `delete`/`deleteMany` bypasses the soft-delete filter by design
+  (it is the purge hatch, and exists beside `remove` for that), while the
+  template filter applies to it — a template is a live row in a parallel
+  category, and destroying rows no read of the model returns is data loss the
+  caller cannot anticipate (`FJS-176`). `restore()` is soft delete's way back;
+  a template's is `update({ isTemplate: false, withTemplates: true })`.
+- **A `@derived` field is built into the SAME map as `@from`, and that is why it
+  reaches every read.** Both are virtual columns carried in the SELECT,
+  filterable through `_fromExprMap` and stripped from writes by `stripVirtual`,
+  so the six SELECT-building sites, the WHERE substitution and the ORDER BY all
+  work unchanged — a seventh that forgot it would be silent, the way a forgotten
+  `@from` is. It carries no params: compiled once at startup, `now()` emitting
+  SQLite's own clock, which SQLite fixes for the duration of a statement.
+  `aggregate`/`groupBy` build their own SELECTs and substitute the expression
+  where a column name would go, or `MAX("urgency")` answers `'urgency'`
+  (`FJS-202` through a new field kind). `auth()` is refused — a derived field is
+  one value for the ROW, and per-caller is `@@scope` (`FJS-233`).
 - **A `@from` applies the TARGET model's `@@softDelete` and `@@hasTemplates`.**
   Same as `include: { _count: true }` over the same relation. `withDeleted: true`
   / `withTemplates: true` opt back in; an explicit `where:` composes on top.
@@ -1224,3 +1561,45 @@ from belief asserts a wish.
   literal and reports nothing.
 - **`encryptionKey` is parsed as hex**, so a 64-*character* key is not necessarily
   a 32-byte one.
+- **Anything that loads a schema from a PATH loads it with `parseFile`, never
+  `parse`.** A schema may `import "./other.lite"`, and only `parseFile` resolves
+  that. Three readers had it wrong and each failed differently, all silently
+  (`FJS-264`): the CLI read the root file for every command, so `db push`
+  reported *already in sync* while three tables were never created; sierra's
+  build handed the browser a `$defs` table with the imported models missing, so
+  `createResource` degraded to a bare `make()` and a generated `<Form>` rendered
+  nothing; and **`createTestEnv` graded a partial schema and passed** — a green
+  `verifyGateLadder` over models it never saw, which is the worst of the three
+  because it is the thing that exists to catch the other two.
+- **`parse` is for TEXT with no file behind it** — an editor buffer, a git blob —
+  and there the caller owes the imports. `inlineImports` / `inlineImportsFromDisk`
+  in `parser.js` are the one owner of following an import line as text; reading
+  and resolving are the caller's, because a git ref is addressed with posix paths
+  through `git show` and a file on disk is not. Two callers: `release`'s baseline,
+  which inlines **at the ref** (from the working tree it would compare the
+  previous release's root schema against today's imported models and call every
+  one unchanged), and `createTestEnv`, which needs ONE text because that text is
+  the template cache key — keyed on the root file alone, editing an imported file
+  reuses the previous run's database.
+- **An import specifier is a path OR a package.** Relative and absolute are
+  resolved against the importing file; anything else goes through node, so the
+  package's own `exports` decides what is importable and nothing guesses at a
+  path inside one. That is what lets a package SHIP a schema fragment
+  (`import "@frontierjs/auth/schema.lite"`) instead of every app keeping a copy a
+  package upgrade cannot reach (`FJS-265`). The failure message names both causes
+  — not installed, or not exported — **always**, because node distinguishes them
+  and bun collapses both into `MODULE_NOT_FOUND`; branching on the code makes the
+  error depend on which runtime read the schema.
+- **`import "..." into <db>` is how the importing app says where.** A shipped
+  fragment has to spell some database name and only the app knows what its own are
+  called, so `into` is the one parameter that varies. One rule, stated twice: the
+  NEAREST statement wins — an inner `into` on a nested import beats an outer one,
+  and any `into` beats a `@@db` written in the imported file. A model naming no
+  database gets one. Importing one file twice under two different `into`s is an
+  ERROR, not a precedence puzzle: it is merged once, so only one could hold.
+- **`parse` and `parseFile` answer the same shape.** `parseFile` used to let a
+  `ParseError` throw where `parse` returned `{valid: false, errors}`, so every
+  caller that warns and keeps going — the CLI's error box, sierra's build, which
+  is meant to leave the app running on explicitly-passed schemas — got a stack
+  trace the moment a schema had a typo. An error in an imported file names that
+  file, since imports chain.

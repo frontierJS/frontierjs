@@ -1,0 +1,13 @@
+{
+  // Mesa component kit over @frontierjs/css (all JS, plus the .mesa files
+  // themselves, which TypeScript does not read).
+  //
+  // checkJs is off: turning it on today reports 615 errors, 84% of them
+  // implicit `any` on untyped parameters — noise rather than a gate. The
+  // config still gives editors import resolution and go-to-definition, and any
+  // .ts added here is checked for real. Flip checkJs on per-directory when the
+  // JS here grows types worth enforcing.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "checkJs": false },
+  "include": ["utils.js", "components/**/*.js", "stores/**/*.js", "test/**/*.js"]
+}

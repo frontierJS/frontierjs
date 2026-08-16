@@ -26,17 +26,22 @@ src/types.ts     public types
 tests/caravan.test.ts             queue + cron logic, direct
 tests/autoload.test.ts            autoload against a real fixture directory
 tests/junction-integration.test.ts  the plugin against a real booted Junction app
+tests/job-context.test.ts         who a job runs as, against a real app + auth
+tests/declaration.test.ts         what a job file declares: its cron, and its name
 tests/fixtures/jobs/              committed *.job.ts fixtures for autoload
+tests/fixtures/cron-jobs/         a job file that declares its own schedule
+tests/fixtures/bad-jobs/          a job whose name disagrees with its file
 ```
 
 ## Verified state
 
 | | |
 |---|---|
-| Tests | **79 pass, 0 fail**, 3 files (`bun run test`) — verified. See `CHANGES.md` 2026-08-06 for the three defects `example/` found |
+| Tests | **92 pass, 0 fail**, 4 files (`bun run test`) — verified. See `CHANGES.md` 2026-08-06 for the three defects `example/` found, and 2026-08-16 for the job principal |
 | Typecheck | **clean, 0 errors, no baseline** (`bun run typecheck`) — verified |
 | Public exports | `createCaravan`, `defineJob`, plus types — verified |
-| Plugin seam | `register()` attaches `app.jobs`, wires `app._metricsProviders.set('jobs', …)`, and optionally mounts admin routes — all three now asserted against a real app |
+| Who a job runs as | the principal recorded at `dispatch()`, **re-resolved** through `app.runAs` when it runs. Nobody asked → `createApp({ system })`. `tests/job-context.test.ts` |
+| Plugin seam | `register()` claims `app.jobs`, calls `app.registerMetricsSource('jobs', …)`, and optionally mounts admin routes — all three now asserted against a real app |
 
 Reproduce: `cd packages/caravan && bun run test && bun run typecheck`.
 
@@ -65,8 +70,9 @@ committed fixtures (including a nested dir and an invalid default export).
 
 `src/index.ts`. The guard read `ctx.params.headers['x-caravan-secret']`, but
 these are raw `app.get`/`app.post` routes, so `ctx` is Junction's
-`TransportContext` where `params` is path params only and headers live on
-`ctx.headers`. Fixed to `ctx.headers[...]`.
+`TransportContext`, where headers live on `ctx.headers` and path captures on
+`ctx.route` (`params` has since been removed from both contexts entirely —
+`FJS-D03`). Fixed to `ctx.headers[...]`.
 
 ### 3. Every by-id admin route 404'd — Junction uses `{id}`, not `:id`
 
@@ -101,7 +107,7 @@ Junction's `App` has none, and `register(app: CaravanApp)` puts the app in a
 **contravariant** position, so the plugin was not assignable to Junction's
 `PluginInput`. Every TypeScript consumer got an error on the one line the README
 tells them to write. Fixed by dropping the index signature and naming the four
-fields Caravan actually touches (`_metricsProviders`, `telemetry`, `jobs`,
+fields Caravan actually touches (`registerMetricsSource`, `telemetry`, `jobs`,
 `config`).
 
 **If you add a field to `CaravanApp`, do not reintroduce an index signature.**
@@ -150,8 +156,8 @@ still pass — verified.
 - plugin lifecycle — `register()` attaches `app.jobs` at `configure()` time,
   `boot()` actually starts the worker (a dispatched job runs), `shutdown()`
   stops it
-- `app._metricsProviders` — the private-field reach-in still lands, and the
-  provider's stats track dispatched work
+- `app.registerMetricsSource` — the contribution still lands, and the source's
+  stats track dispatched work
 - admin routes over real routing — list, by-id, schedules-not-shadowed-by-`{id}`,
   retry, cancel, custom path, and not-mounted-when-omitted
 - the secret guard — admits a correct header, rejects wrong and missing ones
@@ -163,23 +169,32 @@ was identical: fake-app plugin tests passed while the real endpoint 404'd.
 
 ---
 
-## Known limitation: the `junction.config.js` caravan section is partial
+## The `junction.config.js` caravan section is whole
 
-
-*Tracked as **`FJS-048`** in `../../ISSUES.md`, with **`FJS-039`** (autoload
-scoping, admin guard ctx shape, `cancel()` revert race) still `stale?` and
-unprobed. Add a new item there, not here.*
+*`FJS-048`, closed 2026-08-16. **`FJS-039`** (autoload scoping, admin guard ctx
+shape, `cancel()` revert race) is still `stale?` and unprobed in
+`../../ISSUES.md`. Add a new item there, not here.*
 
 Junction publishes `JunctionCaravanConfig` with `db`, `jobsDir`, `pollInterval`,
-`cleanupAfter`, `queues`, and `admin` (`src/config/index.ts`). Caravan's
-`register()` honours **only `jobsDir` and `cleanupAfter`** (both tested, opts
-correctly winning over config).
+`cleanupAfter`, `queues` and `admin` (`src/config/index.ts`), and `register()`
+honours every one of them, opts always winning.
 
-The other four cannot work as written: `createCaravan()` opens the database and
-builds the worker pool at construction time, long before any app — and therefore
-any config — exists. Honouring them means deferring construction to `boot()`.
-That is a real refactor, not a patch; it is **not** done. Don't assume a config
-file can set `db` or `admin`.
+Four of the six could not work before, and the reason was construction order:
+`createCaravan()` opened the database and built the worker pool immediately, so
+`db`, `pollInterval`, `queues` and `admin` were all spent before an app existed
+to hand a config over. **The database now opens on first use and the workers are
+built in `start()`**, after autoload — nothing reads an option until the moment
+it needs it, which is what makes a config file able to set any of them.
+
+Two things follow from that and are worth knowing:
+
+- A dispatch or a read **before** `app.configure(createCaravan(…))` opens the
+  database at the default path, and a configured path can no longer take effect.
+  `register()` says so by path rather than running against a file the app did
+  not name.
+- `stop()` closes the database, so the pool forgets its workers — they hold that
+  handle and its prepared statements. A `start()` after a `stop()` builds both
+  again.
 
 ---
 
@@ -193,9 +208,10 @@ file can set `db` or `admin`.
   third works only because Junction's error boundary was fixed to read it.
 - If you add an `app.<thing>` from this package, augment an **interface**
   Junction exports; do not redeclare the property.
-- `app._metricsProviders` is a private-field reach-in behind an `instanceof Map`
-  guard. If Junction renames it, metrics vanish with no error — the integration
-  test is the only thing that catches that.
+- `app.registerMetricsSource` is a declared seam rather than the private-field
+  reach-in this used to be (`FJS-D06`). The call is still optional, because
+  Caravan runs against hosts that are not Junction apps — so the integration
+  test against a real app is what proves the seam is really there.
 
 ## Unconfirmed
 

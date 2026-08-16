@@ -167,7 +167,7 @@ export function create${pascalPlural}Service() {
     //
     // The list is the surface — anything absent answers 405 naming what is
     // offered, which is also how a verb is removed. Left out entirely, every
-    // CRUD verb is answered and actions are found by scanning.
+    // CRUD verb is answered and custom methods are found by scanning.
   })
 }
 `

@@ -16,8 +16,8 @@ export type Hook        = (ctx: ServiceContext) => Promise<void> | void
 export type AroundHook  = (ctx: ServiceContext, next: () => Promise<void>) => Promise<void>
 
 // HookMap supports all five standard CRUD methods as typed keys (autocomplete),
-// plus an index signature for arbitrary action names ('reboot', 'drain', etc.).
-// The [action: string] signature must be compatible with the typed keys,
+// plus an index signature for arbitrary method names ('reboot', 'drain', etc.).
+// The [method: string] signature must be compatible with the typed keys,
 // so each stage uses a union of the known type and undefined.
 
 export interface HookMap {
@@ -70,24 +70,24 @@ export interface ResolvedPipeline {
 }
 
 // ─── Merge hook map into resolved pipelines per method ──────────────────
-// Processes all five CRUD methods plus any extra action names found in the map.
+// Processes all five CRUD methods plus any extra method names found in the map.
 
 export function resolvePipelines(hooks: HookMap): Record<string, ResolvedPipeline> {
 
   const crudMethods: ServiceMethod[] = ['find', 'get', 'create', 'patch', 'remove', 'restore']
 
-  // Collect any custom action names from the hook map
-  const actionNames = new Set<string>()
+  // Collect any custom method names from the hook map
+  const customNames = new Set<string>()
   for (const stage of ['around', 'before', 'after', 'error'] as const) {
     if (!hooks[stage]) continue
     for (const key of Object.keys(hooks[stage]!)) {
       if (key !== 'all' && !crudMethods.includes(key as ServiceMethod)) {
-        actionNames.add(key)
+        customNames.add(key)
       }
     }
   }
 
-  const methods = [...crudMethods, ...actionNames]
+  const methods = [...crudMethods, ...customNames]
   const result: Record<string, ResolvedPipeline> = {}
 
   for (const method of methods) {
@@ -100,7 +100,7 @@ export function resolvePipelines(hooks: HookMap): Record<string, ResolvedPipelin
   }
 
   // '*' — the all-hooks-only pipeline. callService falls back to this for
-  // custom actions that declare no hooks of their own; without it they ran
+  // custom methods that declare no hooks of their own; without it they ran
   // with an EMPTY pipeline, silently skipping every app-level hook
   // (Litestone scoping, logging, error handlers).
   result['*'] = {
@@ -314,5 +314,5 @@ export {
 
 export {
   circuitBreaker, rateLimit,
-  type CircuitBreakerOptions, type RateLimitHookOptions,
+  type CircuitBreakerOptions, type RateLimitHookOptions, type BridgeHook,
 } from './hooks-resilience.ts'

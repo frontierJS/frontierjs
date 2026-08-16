@@ -31,6 +31,11 @@ export function find(spec) {
     } catch {
       return
     }
+    // readdir order is the filesystem's, not sorted — and the command registry
+    // resolves a contested alias by load order, so an unsorted walk makes the
+    // winner depend on the machine. `fli new` meant project:new on one checkout
+    // and make:command on another, from the same tree.
+    entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     for (const entry of entries) {
       const path = join(current, entry.name)
       if (entry.isDirectory()) {

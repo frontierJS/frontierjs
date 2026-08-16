@@ -27,7 +27,8 @@
  *   - $onMount, watchProxy and path watches are inert (RULE 19). Effects, memos
  *     and block directives run, then are disposed when the render returns.
  *   - {#await} renders its {:pending} branch — nothing settles mid-render.
- *   - {#virtual each} renders nothing (client-only, by design).
+ *   - {#virtual each} renders its first window plus spacers — no viewport can be
+ *     measured here, so the window comes from the row height.
  *   - Comment anchors are stripped unless `{ keepAnchors: true }`.
  *   - Renders are serial by construction; see renderToHTML and renderAll.
  *   - The window is process-global. For true concurrency, run one worker per
@@ -158,8 +159,8 @@ export function escapeHTML(str) {
  * `watchProxy`/`watchPath` proxies, and path watches. Effects, memos and block
  * directives DO run — that is how the markup gets built — they are simply
  * disposed before this returns. `{#await}` renders its `{:pending}` branch: a
- * promise cannot settle inside a synchronous render. `{#virtual each}` produces
- * nothing by design (client-only).
+ * promise cannot settle inside a synchronous render. `{#virtual each}` renders
+ * its first window plus the spacers that carry the rest of the list's height.
  *
  * The body is synchronous end to end despite the `async` signature. That is
  * load-bearing: the reactive core (`_owner`, `_listener`) and the happy-dom

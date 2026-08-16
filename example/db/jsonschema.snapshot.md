@@ -87,7 +87,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `total` | `number` = `0` | — | — | `minimum: 0` | — |
 | `note` | `string`? | — | — | — | — |
 | `customerId` | `integer` | yes | Customer | — | `required` |
-| `trackingCode` | `string`? | — | Tracking | — | — |
+| `trackingCode` | `string`? | — | Tracking | `x-litestone-kind` | — |
 
 **On create**: required — `reference`, `customerId` · not accepted — `id`
 

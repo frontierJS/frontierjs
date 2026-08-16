@@ -222,7 +222,7 @@ app.patch('/api/users/{id}/avatar', async ctx => {
 
   // Construct a File object for Litestone's plugin to detect
   const file     = new File([upload.data], upload.filename, { type: upload.type })
-  const userId   = parseInt(ctx.params.id)
+  const userId   = parseInt(ctx.route.id)
   const scopedDb = db
 
   const user = await scopedDb.user.update({

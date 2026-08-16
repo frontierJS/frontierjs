@@ -1,0 +1,26 @@
+<script>
+  // drawer.mesa — a Drawer as an app writes one: a trigger, a bound `open`,
+  // and something focusable inside it.
+  //
+  // `side` and `dismissible` are props so one fixture covers all four edges
+  // and the undismissable case; `side` is snapshot at mount in the component,
+  // which is why the spec remounts rather than reassigning.
+  import Drawer from '../../../components/overlay/Drawer.mesa'
+  import Button from '../../../components/forms/Button.mesa'
+
+  export let side        = 'right'
+  export let dismissible = true
+
+  let open   = false
+  let closes = 0
+</script>
+
+<Button id="open-drawer" onclick={() => open = true}>Open</Button>
+
+<Drawer bind:open={open} side={side} dismissible={dismissible} title="Settings" onclose={() => closes++}>
+  <p>Drawer content</p>
+  <button type="button" id="inside">Inside</button>
+</Drawer>
+
+<output id="closes">{closes}</output>
+<output id="state">{open ? 'open' : 'shut'}</output>

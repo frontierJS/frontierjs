@@ -151,7 +151,7 @@ describe("methods: 'readOnly'", () => {
   })
 })
 
-describe('methods: actions are in the same list', () => {
+describe('methods: custom methods are in the same list', () => {
 
   it('allows a listed action', async () => {
     const res = await post('/tickets/t1', {}, { 'X-Service-Method': 'approve' })
@@ -161,7 +161,7 @@ describe('methods: actions are in the same list', () => {
   it('refuses an action the list omits, though the method exists', async () => {
     // escalate() is defined on the service. Being defined is not being offered
     // — which is the whole difference between this and the NotFound check that
-    // already existed for actions.
+    // already existed for custom methods.
     const res = await post('/tickets/t1', {}, { 'X-Service-Method': 'escalate' })
     expect(res.status).toBe(405)
   })
@@ -249,10 +249,10 @@ describe('methods: what the app advertises matches what it answers', () => {
     expect(open.methods).toContain('ping')
   })
 
-  it('/metrics omits a refused action', async () => {
+  it('/metrics omits a refused custom method', async () => {
     const d = (await (await fetch(`http://localhost:${PORT}/metrics`)).json()).services.details
-    expect(d.tickets.actions).toEqual(['approve'])
-    expect(d.tickets.actions).not.toContain('escalate')
+    expect(d.tickets.customMethods).toEqual(['approve'])
+    expect(d.tickets.customMethods).not.toContain('escalate')
   })
 
   it('/manifest advertising and the 405 cannot drift', async () => {

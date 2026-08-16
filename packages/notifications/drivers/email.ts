@@ -1,7 +1,7 @@
-import type { App, MailLine, MailMessage, User } from '../types.ts'
+import type { App, MailLine, MailMessage, Recipient } from '../types.ts'
 
 /**
- * Email channel driver.
+ * Email transport driver.
  *
  * Delegates to app.mail.send() — requires mailerPlugin to be configured
  * before notificationsPlugin in server.ts:
@@ -9,12 +9,14 @@ import type { App, MailLine, MailMessage, User } from '../types.ts'
  *   app.configure(mailerPlugin(createResendMailer({ apiKey, from })))
  *   app.configure(notificationsPlugin({ db }))
  *
- * The recipient address resolves as:
- *   1. message.to      — explicit override from the mail() builder
- *   2. user.email      — from the user object passed to notify()
+ * The address resolves as:
+ *   1. message.to        — explicit override from the mail() builder
+ *   2. recipient.email   — from the recipient passed to notify()
  *
  * If neither is available, the driver throws — a notification addressed
- * to nobody is a misconfiguration, not a graceful-degrade case.
+ * to nobody is a misconfiguration, not a graceful-degrade case. This is the
+ * one transport that needs no account behind the address, which is why
+ * `Recipient.id` is optional at all.
  *
  * ── Why this renders instead of forwarding ──────────────────────────────
  * The mail() builder produces `{ subject, lines, to }`. Junction's IMail
@@ -58,21 +60,21 @@ export function renderHtml(lines: MailLine[]): string {
   return `<div style="font-family:system-ui,-apple-system,sans-serif;line-height:1.5">\n${body}\n</div>`
 }
 export async function sendEmail(
-  user:    User,
-  message: MailMessage,
-  app:     App
+  recipient: Recipient,
+  message:   MailMessage,
+  app:       App
 ): Promise<void> {
   if (!app.mail) {
     throw new Error(
-      'Email channel requires mailerPlugin to be configured before notificationsPlugin.'
+      'Email transport requires mailerPlugin to be configured before notificationsPlugin.'
     )
   }
 
-  const to = message.to ?? (user.email as string | undefined)
+  const to = message.to ?? recipient.email
   if (!to) {
     throw new Error(
       `Email notification could not resolve a recipient address. ` +
-      `user.email is missing and no .to() override was set on the mail() builder.`
+      `recipient.email is missing and no .to() override was set on the mail() builder.`
     )
   }
 

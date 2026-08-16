@@ -1,0 +1,77 @@
+# Basecamp — the local stack.
+#
+#   node deploy/build.mjs --run     brings this up
+#   node deploy/build.mjs --down    takes it away
+#
+# Two services, and the split is the one the shipped `fli deploy` pipeline
+# already makes: the API is a container, the SPA is static files behind a proxy.
+# Serving both from the API instead would need an apiPrefix, because Junction
+# registers `GET /{service}` and that matches almost any single-segment path —
+# so /apps/ in a browser would answer JSON. The prefix is the durable fix and it
+# moves ~30 URLs in the drive; the proxy is the same decision made one layer out.
+#
+# Ports follow packages/cli/core/ports.js — env 8 (dev), project 2 (basecamp):
+# 8020 is basecamp's frontend and 8120 its backend, the same pair `bun run dev`
+# uses, so the URL is the same whether the stack is containerised or not.
+
+services:
+  api:
+    image: basecamp:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8120
+      DATABASE_URL: /data/basecamp.db
+    # The secrets, written once by deploy/build.mjs into a git-ignored file and
+    # never regenerated — ENCRYPTION_KEY is what @encrypted columns in the
+    # `basecamp-data` volume are readable with, so rotating it silently orphans
+    # every secret in there.
+    #
+    # `env_file` and NOT `environment: ${VAR:?...}`: required interpolation is
+    # evaluated for EVERY compose command, so an unset variable fails `down`,
+    # `logs` and `ps` too — which reads as a stack that will not stop.
+    env_file:
+      - ./.env
+    volumes:
+      # The database lives OUTSIDE the image. Without this every write is lost
+      # on the next swap, and the loss is silent — the app comes up empty.
+      - basecamp-data:/data
+    expose:
+      - '8120'
+
+  web:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+      # Not `- web-assets`: that only waits for it to START, and Caddy would
+      # come up on an empty volume and serve 404s for the shell.
+      web-assets:
+        condition: service_completed_successfully
+    ports:
+      - '8020:80'
+    volumes:
+      - ./generated/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The built SPA, taken out of the API image rather than built twice.
+      - basecamp-web:/srv
+
+  # Copies web/dist out of the API image into the volume Caddy serves, then
+  # exits. A one-shot rather than a build step: the SPA is built once, inside
+  # the image, and both services then read the same bytes — which is the whole
+  # complaint IDEAS/deploy-plane.md makes about building per environment.
+  web-assets:
+    image: basecamp:local
+    # `dist/client`, not `dist`. Sierra's build writes a client/ subdirectory —
+    # a `static` target would put a second one beside it — so copying dist/
+    # itself puts index.html one level too deep and Caddy serves nothing, with a
+    # 200 and an empty body for every route.
+    command: sh -c "rm -rf /srv/* && cp -R /app/web/dist/client/. /srv/"
+    volumes:
+      - basecamp-web:/srv
+    restart: 'no'
+
+volumes:
+  basecamp-data:
+  basecamp-web:

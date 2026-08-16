@@ -55,7 +55,7 @@ title: Hub users
   async function load() {
     error = null; loading = true
     try {
-      const page = await hub.service.action('users', null, {}, kind === 'all' ? {} : { kind })
+      const page = await hub.service.invoke('users', null, {}, kind === 'all' ? {} : { kind })
       rows = page.data ?? []
     } catch (e) {
       error = e.message
@@ -69,7 +69,7 @@ title: Hub users
   // is the ordinary case.
   async function loadWorkspaces() {
     try {
-      const page = await hub.service.action('workspaces', null, {}, {})
+      const page = await hub.service.invoke('workspaces', null, {}, {})
       workspaces = page.data ?? []
       botWs ||= workspaces[0]?.id ?? ''
     } catch { /* the list below is the screen; the form can wait for a reload */ }
@@ -83,7 +83,7 @@ title: Hub users
   async function act(user, method, data, ok) {
     error = null; busy = user.id
     try {
-      await hub.service.action(method, null, { userId: user.id, ...data })
+      await hub.service.invoke(method, null, { userId: user.id, ...data })
       toasts.success(ok.title, ok.body)
       await load()
     } catch (e) {
@@ -111,7 +111,7 @@ title: Hub users
   async function createBot() {
     error = null; busy = 'bot'
     try {
-      const bot = await hub.service.action('createBot', null, {
+      const bot = await hub.service.invoke('createBot', null, {
         workspaceId: botWs, name: botName, role: botRole,
       })
       toasts.success(`${bot.displayName} created`, `Issue it a key from the API keys screen of that workspace.`)

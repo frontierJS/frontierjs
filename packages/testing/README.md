@@ -59,7 +59,7 @@ ask the Data boundary directly — plus:
 | --- | --- |
 | `env.app` | the Junction app, started through every phase that does not need a port |
 | `env.as(user).service(name)` | a service caller with the principal bound into every call |
-| `env.service(name)` | the same with no principal — STRANGER, which is what a job is |
+| `env.service(name)` | the same with no principal — STRANGER(0), which is what an unauthenticated caller is |
 | `env.http` | Junction's own `request(app)`, unchanged. Auth is the app's to issue |
 | `env.announced(event?)` | what `callService` announced since the current act began |
 | `env.clearAnnounced()` | for a test not using `phases()` |
@@ -88,7 +88,7 @@ expect(found).toEqual([])
 
 Calls default to every CRUD method of every service registered with a `model:`,
 with fixtures derived from the schema, plus a `$limit`-bearing `find`. Pass
-`calls:` for a custom action or a narrower run, `only:` to name services.
+`calls:` for a custom method or a narrower run, `only:` to name services.
 
 **Neither transport is treated as right.** A mismatch names both answers:
 

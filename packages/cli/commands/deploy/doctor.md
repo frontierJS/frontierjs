@@ -1,10 +1,8 @@
 ---
 title: deploy:doctor
 description: Diagnose deployment readiness — local config, project state, and (with --remote) server-side setup
-alias: doctor
 examples:
   - fli deploy:doctor
-  - fli doctor
   - fli deploy:doctor --remote
   - fli deploy:doctor --remote --production
 flags:
@@ -189,6 +187,38 @@ if (dockerfileSrc && !/^\s*COPY\s+db\b/m.test(dockerfileSrc)) {
   warn()
 } else if (dockerfileSrc) {
   renderCheck('Dockerfile copies db/', 'pass')
+}
+
+// ─── The Dockerfile must install from the generated manifest ─────────────────
+// An app depending on the framework by `link:`/`workspace:` cannot install those
+// specs inside a build — they resolve to a workspace the image has never seen,
+// and `bun install` fails once per package (FJS-241). The deploy path packs them
+// into deploy/generated/ first, which only helps a Dockerfile that installs from
+// there. A template predating that copies `package.json` and fails at the
+// install layer, which is late and reads as a broken package rather than a stale
+// Dockerfile.
+// Comments are stripped first. The template EXPLAINS deploy/generated/ in its
+// own header, so asking the whole source whether it mentions the path passes for
+// a Dockerfile that only talks about it — the same shape as the body tag written
+// inside a comment, which is a rule this repo already enforces elsewhere.
+const linked = rootPkg ? linkedDeps(rootPkg) : []
+const instructions = dockerfileSrc
+  .split('\n')
+  .filter(line => !/^\s*(#|$)/.test(line))
+  .join('\n')
+const installsGenerated = /deploy\/generated/.test(instructions)
+
+if (dockerfileSrc && linked.length && !installsGenerated) {
+  renderCheck('Dockerfile installs from deploy/generated/', 'fail',
+    `${linked.length} dependenc(ies) are link:/workspace: (${linked.join(', ')}) and cannot install inside a build — ` +
+    `fix: regenerate deploy/Dockerfile with fli make:deploy, or copy deploy/generated/app-manifest.json over package.json in it`)
+  fail()
+} else if (dockerfileSrc && !installsGenerated) {
+  renderCheck('Dockerfile installs from deploy/generated/', 'warn',
+    `it installs from package.json — fine while every dependency is published, and a fail the day one is not`)
+  warn()
+} else if (dockerfileSrc) {
+  renderCheck('Dockerfile installs from deploy/generated/', 'pass')
 }
 
 // ─── /health route — required for auto-rollback ───────────────────────────

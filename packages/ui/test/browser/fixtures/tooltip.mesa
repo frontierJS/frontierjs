@@ -1,0 +1,15 @@
+<script>
+  // tooltip.mesa — the anchored tooltip, wired so the trigger carries the
+  // tooltip's id.
+  //
+  // The id is handed over as a `children` snippet parameter, which is the only
+  // handoff Mesa has: an attribute on a `<slot>` is silently ignored and there
+  // is no `let:` directive to read one with (`FJS-299`, `FJS-304`).
+  import Tooltip from '../../../components/overlay/Tooltip.mesa'
+</script>
+
+<Tooltip label="Saved to cloud">
+  {#snippet children(tipId)}
+    <button type="button" class="btn" id="tip-trigger" aria-describedby={tipId}>Save</button>
+  {/snippet}
+</Tooltip>

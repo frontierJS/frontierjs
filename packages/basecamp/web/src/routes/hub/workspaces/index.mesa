@@ -32,7 +32,7 @@ title: Hub workspaces
     try {
       // A collection-level action: no subject row, so it posts to /hub rather
       // than /hub/{id}. `null` as the id is what expresses that (FJS-122).
-      const page = await hub.service.action('workspaces', null, {}, q ? { q } : {})
+      const page = await hub.service.invoke('workspaces', null, {}, q ? { q } : {})
       rows = page.data ?? []
     } catch (e) {
       error = e.message
@@ -48,7 +48,7 @@ title: Hub workspaces
   async function setStatus(ws, status) {
     error = null; busy = ws.id
     try {
-      await hub.service.action('setWorkspaceStatus', null, { workspaceId: ws.id, status })
+      await hub.service.invoke('setWorkspaceStatus', null, { workspaceId: ws.id, status })
       toasts[status === 'suspended' ? 'warning' : 'success'](
         status === 'suspended' ? `${ws.name} suspended` : `${ws.name} reinstated`,
         status === 'suspended'

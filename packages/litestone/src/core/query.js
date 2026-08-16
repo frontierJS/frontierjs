@@ -17,17 +17,130 @@ import { ValidationError } from './validate.js'
 // Returns a RawClause: { _litestoneRaw: true, sql: string, params: any[] }
 
 export function sql(strings, ...values) {
-  let sqlStr = ''
+  let sqlStr   = ''
+  const params = []
   for (let i = 0; i < strings.length; i++) {
     sqlStr += strings[i]
-    if (i < values.length) sqlStr += '?'
+    if (i >= values.length) continue
+    const value = values[i]
+    // A fragment is litestone's own SQL, not a caller's — the only thing that
+    // may reach the pattern rather than the parameter list (Invariant 8). Its
+    // own operands are still bound, and pushed HERE so they keep their place in
+    // the positional order.
+    if (isSqlFragment(value)) { sqlStr += value.sql; params.push(...value.params) }
+    else                      { sqlStr += '?';       params.push(value) }
   }
-  return { _litestoneRaw: true, sql: sqlStr.trim(), params: values }
+  assertNoBareClock(sqlStr)
+  return { _litestoneRaw: true, sql: expandNowTokens(sqlStr).trim(), params }
 }
 
 // Check if a value is a RawClause produced by the sql tag
 export function isRawClause(val) {
   return val !== null && typeof val === 'object' && val._litestoneRaw === true
+}
+
+// ─── now() — the clock, spelled so it can match a stored DateTime ────────────
+//
+// `DateTime` is stored as ISO-8601 TEXT with a `T` and a `Z`
+// (2026-08-13T07:38:31.984Z) and every comparison against it is string-wise.
+// SQLite's own `datetime('now')` answers `2026-08-13 07:38:31` — space
+// separator, no milliseconds, no zone — and `'T'` (0x54) sorts ABOVE a space
+// (0x20), so every value stored TODAY compares greater than a same-day
+// `datetime('now')`. A predicate written with it is right for yesterday's rows
+// and wrong for this morning's, which is why nobody notices: a demo seeded with
+// last week's data passes (FJS-226).
+//
+//   where: { $raw: sql`dueAt < ${now()} AND completedAt IS NULL` }
+//   where: { $raw: sql`startedAt > ${now('-7 days')}` }
+//
+// It emits SQLite's clock rather than a JS timestamp, so every occurrence in
+// one statement is the SAME instant — SQLite fixes `'now'` for the duration of
+// a statement, which two `new Date()` calls cannot promise. The consequence is
+// that `createClient({ now })` does NOT reach it: that clock is the policy
+// evaluator's, and a test that needs a frozen instant here binds its own ISO
+// string instead.
+//
+// Modifiers are BOUND, not spliced. `strftime` takes them as parameters, so a
+// caller-supplied '-7 days' never enters the SQL pattern.
+const SQL_FRAGMENT = Symbol.for('litestone.sqlFragment')
+
+/** litestone's own SQL, safe to splice into a pattern. Never built from caller text. */
+function sqlFragment(sqlText, params = []) {
+  return { [SQL_FRAGMENT]: true, sql: sqlText, params }
+}
+
+export function isSqlFragment(val) {
+  return val !== null && typeof val === 'object' && val[SQL_FRAGMENT] === true
+}
+
+export function now(...modifiers) {
+  for (const m of modifiers) {
+    if (typeof m !== 'string')
+      throw new Error(`now(): a modifier is a SQLite date modifier string like '-7 days' or 'start of month' — got ${typeof m}`)
+  }
+  return sqlFragment(
+    `strftime('%Y-%m-%dT%H:%M:%fZ','now'${modifiers.map(() => ',?').join('')})`,
+    modifiers,
+  )
+}
+
+// ─── The spellings that can never match ──────────────────────────────────────
+//
+// Each of these produces a format no stored DateTime can equal, so a comparison
+// against one is not a filter that returns too few rows — it is a filter that
+// answers a different question. Refused rather than warned: the wrong answer is
+// plausible, which is the case where a warning is read after the bug ships.
+//
+// `julianday('now')` and `unixepoch()` are NOT here: they produce numbers, and
+// `julianday(dueAt) - julianday('now') < 7` compares like with like. Nor is
+// `strftime`, whose format string is the caller's to get right — and getting it
+// right is what `now()` is.
+const BARE_CLOCK = [
+  // `\bdate(` also matches the tail of `datetime(`, so datetime is tested first
+  // and each name is anchored on a word boundary.
+  [/\bdatetime\s*\(\s*'now'/i, "datetime('now')"],
+  [/\bdate\s*\(\s*'now'/i,     "date('now')"],
+  [/\btime\s*\(\s*'now'/i,     "time('now')"],
+  [/\bCURRENT_TIMESTAMP\b/i,    'CURRENT_TIMESTAMP'],
+  [/\bCURRENT_DATE\b/i,         'CURRENT_DATE'],
+  [/\bCURRENT_TIME\b/i,         'CURRENT_TIME'],
+]
+
+// `now()` written as a TOKEN rather than interpolated. A `@from(where: …)` is a
+// string in the schema and a plain-string `$raw` has no interpolation either, so
+// without this the refusal below would name a spelling those two callers cannot
+// write. Litestone's own text replaces litestone's own token — nothing reaches
+// the pattern that was not already in it.
+const NOW_TOKEN     = /\bnow\s*\(\s*\)/gi
+const NOW_TOKEN_ARG = /\bnow\s*\(/gi
+export const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`
+
+export function expandNowTokens(sqlText) {
+  if (!sqlText || !/\bnow\s*\(/i.test(sqlText)) return sqlText
+  // Empty first: the second pattern would otherwise leave a trailing comma.
+  return sqlText
+    .replace(NOW_TOKEN, NOW_SQL)
+    .replace(NOW_TOKEN_ARG, `strftime('%Y-%m-%dT%H:%M:%fZ','now',`)
+}
+
+export function assertNoBareClock(sqlText, where = 'raw SQL') {
+  if (!sqlText) return
+  for (const [re, name] of BARE_CLOCK) {
+    if (!re.test(sqlText)) continue
+    throw new Error(
+      `${where}: \`${name}\` cannot match a stored DateTime.\n\n` +
+      `litestone writes DateTime as ISO-8601 TEXT — 2026-08-13T07:38:31.984Z — and SQLite answers\n` +
+      `\`${name}\` in its own format. The comparison is string-wise and 'T' sorts above a space, so\n` +
+      `every row stored today compares GREATER than a same-day ${name}: the predicate is right for\n` +
+      `older rows and wrong for recent ones, with nothing raised.\n\n` +
+      `Use now(), which emits the spelling that matches:\n\n` +
+      `    import { sql, now } from '@frontierjs/litestone'\n` +
+      `    where: { $raw: sql\`dueAt < \${now()} AND completedAt IS NULL\` }\n` +
+      `    where: { $raw: sql\`startedAt > \${now('-7 days')}\` }\n\n` +
+      `Comparing whole days rather than instants is \`now('start of day')\`. For arithmetic on a\n` +
+      `duration, julianday() is untouched — it answers a number, so it compares like with like.`
+    )
+  }
 }
 
 // ─── Typed JSON helpers ──────────────────────────────────────────────────────
@@ -319,7 +432,12 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           params.push(...val.params)
         }
       } else if (typeof val === 'string' && val) {
-        clauses.push(`(${val})`)
+        // A plain string skips the sql tag, so it skips the tag's clock check
+        // with it. Same rule, asked again — the string form is the one written
+        // when there is nothing to interpolate, which is exactly the shape
+        // `dueAt < datetime('now')` takes.
+        assertNoBareClock(val, 'where.$raw')
+        clauses.push(`(${expandNowTokens(val)})`)
       } else {
         throw new Error('where.$raw must be a value returned by the sql`` tag or a plain SQL string')
       }
@@ -494,13 +612,48 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 }
 
 // ─── Order by ─────────────────────────────────────────────────────────────────
+//
+// `$raw` is the escape hatch `where` has had all along and the sort side did
+// not, which is the actual gap behind FJS-D28: everything monotonic in a stored
+// column already sorts, and what does not — *snoozed last regardless of due
+// date*, a weighted score — could not be said at all (FJS-230).
+//
+//   orderBy: { $raw: sql`CASE WHEN "snoozedUntil" > ${now()} THEN 1 ELSE 0 END ASC, "dueAt" ASC` }
+//
+// The fragment is the whole ORDER BY tail, direction included, because that is
+// what a sort no builder can express needs: several keys, in an order only the
+// caller knows. It composes with ordinary keys in the position it is written.
+//
+// **It must be a `sql` tag, and a plain string is refused by name.** The tag's
+// static text is written by the app author and its interpolations are bound, so
+// Invariant 8 holds unchanged — caller-supplied values never enter the pattern.
+// A bare string is exactly how a caller-supplied one would arrive, so accepting
+// it would turn the hatch into an injection.
+//
+// Params travel in a SEPARATE array the caller splices in at the ORDER BY, not
+// into the statement's params as they are built: positional binds make the
+// order the correctness, and ORDER BY comes after both the WHERE and the row
+// policy that is appended to it (FJS-215 is the same lesson).
 
-export function buildOrderBy(orderBy) {
+function rawOrderPart(val, outParams) {
+  if (typeof val === 'string')
+    throw new Error(
+      `orderBy $raw must be a sql\`\` tag, not a string — the tag binds its values, ` +
+      `a string would put them in the pattern. Write: orderBy: { $raw: sql\`…\` }`)
+  if (!isRawClause(val) && !isSqlFragment(val))
+    throw new Error(`orderBy $raw must be a sql\`\` tag result, got ${val === null ? 'null' : typeof val}`)
+  if (!val.sql.trim()) throw new Error('orderBy $raw is empty')
+  outParams.push(...val.params)
+  return val.sql.trim()
+}
+
+export function buildOrderBy(orderBy, outParams = []) {
   if (!orderBy) return ''
   const items = Array.isArray(orderBy) ? orderBy : [orderBy]
   const parts  = []
   for (const item of items) {
     for (const [col, dir] of Object.entries(item)) {
+      if (col === '$raw') { parts.push(rawOrderPart(dir, outParams)); continue }
       // Relation orderBy — { relation: { field: 'asc' } } — handled separately
       if (dir !== null && typeof dir === 'object') {
         // Object form: { field: { dir: 'asc', nulls: 'last' } }
@@ -619,7 +772,7 @@ export function extractNamedAggs(args) {
 //     LEFT JOIN "teams" _ob_author_team ON _ob_author_team."id" = _ob_author."teamId"
 //   → ORDER BY _ob_author_team."name" ASC
 
-export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTable = (m) => m) {
+export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTable = (m) => m, outParams = []) {
   if (!orderBy) return { joinClauses: [], orderParts: [] }
 
   const items       = Array.isArray(orderBy) ? orderBy : [orderBy]
@@ -633,6 +786,16 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
 
   for (const item of items) {
     for (const [key, val] of Object.entries(item)) {
+      // A raw fragment is flat — it names its own columns, and under a JOIN the
+      // caller qualifies them, because only the caller knows what the fragment
+      // is about. Marked `raw` so the `t.` rewrite below leaves it alone: that
+      // regex would turn `"snoozedUntil" > ?` into `t."snoozedUntil" > ?` and
+      // stop after the first column, qualifying one name in a fragment that has
+      // several.
+      if (key === '$raw') {
+        entries.push({ flat: true, raw: true, sql: rawOrderPart(val, outParams) })
+        continue
+      }
       // Flat scalar form:  { col: 'asc'|'desc' }
       if (val === null || typeof val !== 'object') {
         const d = String(val).toUpperCase()
@@ -679,10 +842,14 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
   // uses buildOrderBy() for the flat parts (which is already positionally fine).
   if (joinClauses.length > 0) {
     const orderParts = entries.map(e =>
-      e.flat ? e.sql.replace(/^"([^"]+)"/, 't."$1"') : e.sql
+      e.flat && !e.raw ? e.sql.replace(/^"([^"]+)"/, 't."$1"') : e.sql
     )
     return { joinClauses, orderParts }
   }
+  // A raw part is flat and still has to come back here: the caller only falls
+  // through to buildOrderBy for the flat ones when there are no joins, and that
+  // is the same list built twice. Returning it in both places would emit it
+  // twice, so it rides the non-flat channel only when buildOrderBy is skipped.
   const orderParts = entries.filter(e => !e.flat).map(e => e.sql)
   return { joinClauses, orderParts }
 }
@@ -794,6 +961,10 @@ function _walkRelationOrder(relName, spec, currentModel, currentAlias, relationM
 //     needsAllDbCols:   boolean      — true when a computed field that declares
 //                                      no `needs` is selected (we fetch * so its
 //                                      fn has whatever it reads)
+//
+// `fromSets` is the model's @from map keyed by field name — a Map, because the
+// defs are read for more than membership: a @from(first/last) field needs the
+// column its target points back at in the SELECT (see below).
 //   }
 //
 // Rules:
@@ -808,7 +979,7 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
 
   const tableRels      = relationMap?.[modelName] ?? {}
   const tableComputed  = computedSets?.[modelName] ?? new Set()
-  const tableFrom      = fromSets?.[modelName] ?? new Set()
+  const tableFrom      = fromSets?.[modelName] ?? new Map()
   const tableFns       = computedFns?.[modelName] ?? null
 
   const dbFields        = {}    // user-requested DB column names
@@ -892,6 +1063,21 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
           }
         }
       }
+    }
+  }
+
+  // A @from(first/last) field is resolved by REPICKING the row under the
+  // caller's row policy, and the repick correlates on the column the target
+  // points back at (resolveFromRowRefs). Injected the same way an FK is — into
+  // the SQL, out of the answer — because without it the resolver has nothing to
+  // correlate on and falls back to the id the startup subquery chose, which is
+  // the pick made before the policy was known.
+  if (!needsAllDbCols) {
+    for (const name of requestedFrom) {
+      const refCol = tableFrom.get?.(name)?.rowRef?.refCol
+      if (!refCol || dbFields[refCol]) continue
+      dbFields[refCol] = true
+      if (!requestedFields.has(refCol)) injectedFKs.add(refCol)
     }
   }
 
@@ -981,6 +1167,16 @@ export function decodeCursor(token) {
 export function normaliseOrderBy(orderBy) {
   if (!orderBy) return [{ col: 'id', dir: 'ASC' }]
   const items = Array.isArray(orderBy) ? orderBy : [orderBy]
+  // A cursor is the ORDER BY read back off the last row and compared against —
+  // it needs a COLUMN it can extract a value from, and an expression has none.
+  // Emitted as `"$raw" ASC` it would sort by a string constant and page by a
+  // value that is not there, which is a wrong answer rather than a missing one.
+  for (const item of items)
+    if (item && '$raw' in item)
+      throw new Error(
+        `orderBy $raw cannot be used with a cursor — a cursor encodes the value of every sort key ` +
+        `off the last row, and an expression is not a column it can read back. Use limit/offset for a ` +
+        `computed sort, or sort by a stored column`)
   return items.flatMap(item =>
     Object.entries(item)
       .filter(([, dir]) => {

@@ -11,11 +11,24 @@
 // previous stub behavior (read .mesa file as JS) with a one-time warning. This lets
 // fixtures keep working while Mesa-linked development uses real compilation.
 
-import { resolve } from 'node:path'
+import { resolve, dirname } from 'node:path'
 import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 const MESA_EXTENSIONS = /\.(mesa|md)$/
+
+/** `dir` and every directory above it, nearest first. `null` answers nothing. */
+function ancestors(dir) {
+  if (!dir) return []
+  const out = []
+  let cur = resolve(dir)
+  for (;;) {
+    out.push(cur)
+    const up = dirname(cur)
+    if (up === cur) return out
+    cur = up
+  }
+}
 
 export function mesaPlugin(options = {}) {
   const {
@@ -67,10 +80,17 @@ export function mesaPlugin(options = {}) {
       // install` copies a workspace dep rather than symlinking it.
       const candidates = []
       if (mesaCompilerPath) candidates.push(mesaCompilerPath)
+      // **Both roots are WALKED UP, not probed once.** `extension/` is a
+      // sub-project of an app that has one package.json at its root, the way
+      // `web/` and `widgets/` are — so the install lives at `<app>/node_modules`
+      // and a guess at `<extRoot>/node_modules` finds nothing. Stub mode then
+      // hands Vite a `.mesa` as plain JS and the build fails with a parse error
+      // pointing at the component, which is the one place the problem is not.
       for (const rel of ['src/compiler.js', 'compiler.js']) {
         if (mesaPackageRoot) candidates.push(resolve(mesaPackageRoot, rel))
-        if (extRoot)         candidates.push(resolve(extRoot,  'node_modules/@frontierjs/mesa', rel))
-        candidates.push(resolve(viteRoot, 'node_modules/@frontierjs/mesa', rel))
+        for (const dir of [...ancestors(extRoot), ...ancestors(viteRoot)]) {
+          candidates.push(resolve(dir, 'node_modules/@frontierjs/mesa', rel))
+        }
       }
 
       for (const p of candidates) {
@@ -102,9 +122,21 @@ export function mesaPlugin(options = {}) {
       if (!MESA_EXTENSIONS.test(id))                                  return null
       if (id.includes('/node_modules/'))                              return null  // never compile vendor .mesa files
 
-      // Stub mode: same behavior as Phase 0/1/2 — pass through as JS.
-      // This keeps the dev sandbox green when Mesa isn't linked.
-      if (!compiler) return null
+      // Stub mode: pass the file through as JS. It keeps a fixture whose
+      // `.mesa` files ARE JavaScript building without Mesa installed.
+      //
+      // Said again HERE, naming the file, because the boot warning scrolls past
+      // and what follows it is a parse error inside the component — a
+      // `<script>` reported as "Unexpected JSX expression", which sends every
+      // first diagnosis to the component and none to the missing compiler.
+      if (!compiler) {
+        this.warn(
+          `[jetty:mesa] ${id} is being loaded as plain JavaScript — no Mesa compiler was found. ` +
+          `A parse error below is this, not the component. Install @frontierjs/mesa in the app ` +
+          `that owns this surface.`
+        )
+        return null
+      }
 
       try {
         const ctx = await compiler.compileSource(source, {

@@ -50,21 +50,28 @@ export function shopGateLevel(user: Gradable): number {
 }
 
 /**
- * The principal background work runs as.
+ * The principal the shop is when it acts on its own behalf.
  *
- * A Caravan job has no session — nobody is making the request. Junction's
- * in-process caller defaults to `auth: { user: null }`, which grades STRANGER(0)
- * here, so `book-courier` writing back through the orders service was refused by
- * the model's own `@@gate` exactly as an anonymous browser would be. Correct, and
- * the reason it must be said out loud rather than worked around: the alternative
- * is the job reaching for `db.asSystem()` and writing at the DATA boundary, where
- * nothing announces the change and no tab ever hears about it.
+ * Passed once, as `createApp({ system: SYSTEM })`, and reached by exactly one
+ * path: deferred work that NOBODY asked for. The nightly abandoned-order sweep
+ * is the only such work here — a timer fired it, so there is no caller to run
+ * as, and no caller is STRANGER(0), refused by Order's own `@@gate` exactly as
+ * an anonymous browser would be.
  *
- * So background work gets a principal, and it is graded in the same file every
- * other principal is graded in. `api/jobs/*.job.ts` pass it as
- * `app.service('orders').patch(id, data, { auth: { user: SYSTEM } })`.
+ * Work a PERSON asked for does not use this. Caravan records who dispatched a
+ * job and Junction re-resolves them when it runs, so booking a courier happens
+ * with the standing of the staff member who pressed Ship. Every job here used
+ * to pass `{ auth: { user: SYSTEM } }` by hand instead, which quietly gave a
+ * customer's checkout the authority of the shop.
  *
- * It is NOT a row in the users table and cannot log in — nothing issues a
+ * Graded in this file like every other principal — `role: 'system'` is SYSADMIN
+ * above. It is NOT a row in the users table and cannot log in: nothing issues a
  * session with this role, so it is unreachable from the wire.
  */
-export const SYSTEM = { role: 'system', userId: 'system', email: 'system@shop.test' }
+export const SYSTEM = {
+  userId:     'system',
+  userType:   'service',
+  role:       'system',
+  email:      'system@shop.test',
+  authMethod: 'created' as const,
+}

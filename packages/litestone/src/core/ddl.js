@@ -1,6 +1,11 @@
 // ddl.js — schema AST → SQLite DDL
 // Takes the output of parse() and produces CREATE TABLE / CREATE INDEX / etc.
 
+// The plural rules are @frontierjs/toolbelt's, not a copy — a table name and
+// the model name a resolver derives back from it have to be the same rules run
+// twice (Invariant 2). @@map is the escape hatch for anything they cannot reach.
+import { pluralize as pluralizeWord } from '@frontierjs/toolbelt/inflect'
+
 // ─── Type mapping ─────────────────────────────────────────────────────────────
 // Prisma-style names → SQLite storage classes
 // Json is stored as TEXT — SQLite has no native JSON type but json_extract() works on TEXT
@@ -37,25 +42,6 @@ function toSnakeCase(name) {
 // PascalCase → camelCase  ("ServiceAgreement" → "serviceAgreement")
 function toCamelCase(name) {
   return name.charAt(0).toLowerCase() + name.slice(1)
-}
-
-// Basic English pluralizer — covers 95% of real model names.
-// @@map is the escape hatch for anything irregular.
-function pluralizeWord(word) {
-  if (/(?:s|x|z|ch|sh)$/i.test(word)) return word + 'es'  // bus→buses, box→boxes
-  if (/[^aeiou]y$/i.test(word))        return word.slice(0, -1) + 'ies'  // category→categories
-  // common irregulars
-  const irregulars = {
-    person: 'people', child: 'children', man: 'men', woman: 'women',
-    tooth: 'teeth',   foot: 'feet',      mouse: 'mice', goose: 'geese',
-    ox: 'oxen',       leaf: 'leaves',    life: 'lives', knife: 'knives',
-    index: 'indices', matrix: 'matrices', vertex: 'vertices',
-    analysis: 'analyses', basis: 'bases', crisis: 'crises',
-    datum: 'data', medium: 'media', criterion: 'criteria',
-  }
-  const lower = word.toLowerCase()
-  if (irregulars[lower]) return word.slice(0, word.length - lower.length) + irregulars[lower]
-  return word + 's'
 }
 
 /**
@@ -136,6 +122,28 @@ function defaultExpr(attr) {
   return null
 }
 
+// ─── Column default ───────────────────────────────────────────────────────────
+//
+// Whether an INSERT that omits this column succeeds — which is the question
+// `release.js` asks of a new required field, and it has to be the same answer
+// the DDL gives or the two disagree about the same schema.
+//
+// `@updatedAt` implies DEFAULT now() and `@version` implies DEFAULT 1; an array
+// column defaults to '[]' unless it declares its own, because an empty array is
+// its null state. Everything else with no SQL expression (`auth()`, `cuid()`,
+// a sibling field) is stamped by the client at write time and is therefore NOT
+// a default as far as a hand-written INSERT is concerned.
+
+export function columnDefaultExpr(field) {
+  const attrs = field.attributes ?? []
+  const expr  = defaultExpr(attrs.find(a => a.kind === 'default'))
+    ?? (attrs.some(a => a.kind === 'updatedAt') ? `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` : null)
+    ?? (attrs.some(a => a.kind === 'version')   ? '1' : null)
+
+  if (field.type?.array) return expr ?? `'[]'`
+  return expr
+}
+
 // ─── Column definition ────────────────────────────────────────────────────────
 
 function columnDef(field, schema = null, compositePk = false) {
@@ -160,20 +168,12 @@ function columnDef(field, schema = null, compositePk = false) {
   const isUnique = field.attributes.find(a => a.kind === 'unique')
   if (isUnique) parts.push('UNIQUE')
 
-  // DEFAULT — @updatedAt implies DEFAULT now() and @version implies DEFAULT 1,
-  // so an INSERT works without supplying either value
-  const updatedAtAttr = field.attributes.find(a => a.kind === 'updatedAt')
-  const versionAttr   = field.attributes.find(a => a.kind === 'version')
-  const def  = field.attributes.find(a => a.kind === 'default')
-  const expr = defaultExpr(def)
-    ?? (updatedAtAttr ? `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` : null)
-    ?? (versionAttr ? '1' : null)
+  // DEFAULT — one owner, columnDefaultExpr, because release.js asks the same
+  // question of the same field and a second copy of the rule would drift
+  const expr = columnDefaultExpr(field)
   if (expr) parts.push(`DEFAULT ${expr}`)
 
-  // Array default — always '[]', overrides any @default
   if (field.type.array) {
-    const hasDefault = field.attributes.find(a => a.kind === 'default')
-    if (!hasDefault) parts.push(`DEFAULT '[]'`)
     parts.push(`CHECK (json_valid("${field.name}") AND json_type("${field.name}") = 'array')`)
   }
 
@@ -273,6 +273,7 @@ function createTable(model, schema, tableName, pluralize = false) {  // schema n
     f.type.kind !== 'implicitM2M' &&             // implicit m2m is stored in a join table, not a host column
     !f.attributes.find(a => a.kind === 'computed') &&
     !f.attributes.find(a => a.kind === 'from') &&
+    !f.attributes.find(a => a.kind === 'derived') &&   // computed in the SELECT, never stored
     !f.attributes.find(a => a.kind === 'edge')   // @edge/@scoped live on a join/side table
   )
 

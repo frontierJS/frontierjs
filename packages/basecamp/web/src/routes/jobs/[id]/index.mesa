@@ -39,7 +39,7 @@ title: Job
   async function act(method) {
     error = null; busy = method
     try {
-      await jobs.service.action(method, job.id)
+      await jobs.service.invoke(method, job.id)
       // Re-read rather than merge: `trigger` queues work that runs on Caravan's
       // thread, so the interesting change (a new JobRun) lands after the reply.
       await load()

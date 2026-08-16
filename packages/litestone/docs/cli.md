@@ -116,9 +116,17 @@ Run the anonymize/shard pipeline (dev tool). `--preview` shows output without wr
 ```bash
 litestone tenant list
 litestone tenant create <id>
+litestone tenant info <id>
 litestone tenant delete <id>
-litestone tenant migrate [--only=id1,id2]
+litestone tenant migrate [--only=id1,id2] [--concurrency=8]
 ```
+
+Reads the schema's own `tenancy { }` block for the tenant directory, the
+registry file, the pool size and the key. `--dir` / `--registry` and a
+`tenants:` key in `litestone.config.js` override it, in that order — **flag,
+config, schema, default**. A schema declaring `tenancy { strategy row }` has one
+database and a tenant column, so these commands refuse by name rather than
+writing files nothing will read. See `docs/multi-tenancy.md`.
 
 ## Global flags
 

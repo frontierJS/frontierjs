@@ -3,7 +3,7 @@
 // `junction surface` — the API surface as a committed file.
 //
 // What these guard is the reason the file is committed at all: every fact in it
-// is one nothing in the source text can answer. `collectActions` decides at
+// is one nothing in the source text can answer. `collectCustomMethods` decides at
 // construction whether `pay` is an action or an option key, `svc.pipelines()`
 // resolves a hook chain whose ORDER is behaviour, and `apiPrefix` moves routes
 // registered by plugins that never mention it. A renderer that read source, or
@@ -57,13 +57,13 @@ async function buildApp() {
 
 describe('junction surface', () => {
 
-  it('reports actions as construction resolved them, not as the source reads', async () => {
+  it('reports custom methods as construction resolved them, not as the source reads', async () => {
     const app = await buildApp()
     const svc = describeSurface(app).services.find(s => s.name === 'orders')!
 
     // `pay` is a function key beside `find`/`get`/`create`. Nothing in the file
-    // says which of them is CRUD; `collectActions` is what knows.
-    expect(svc.actions).toEqual(['pay'])
+    // says which of them is CRUD; `collectCustomMethods` is what knows.
+    expect(svc.customMethods).toEqual(['pay'])
     expect(svc.methods).toContain('pay')
     expect(svc.channel).toEqual(['orders'])
     expect(svc.model).toBe('Order')

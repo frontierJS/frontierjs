@@ -48,6 +48,12 @@ export interface Connection {
   socket:   BunWS
   data:     Record<string, unknown>
   user?:    import('../auth/types.ts').SessionContext | null
+
+  // Written by Channel.join(), read by the presence manager. Declared rather
+  // than stashed through a cast so both ends are checked against one name — a
+  // misspelling on either side is a member that joins with no metadata and
+  // nothing that says so.
+  __joinMeta?: Record<string, unknown>
 }
 
 // Minimal interface used by Channel.send() broadcast loop.
@@ -73,6 +79,16 @@ export interface WSMessage {
   id?:      string
   channel?: string
   meta?:    Record<string, unknown>
+  // The browser client has sent call parameters under both names; the WS
+  // dispatcher reads `meta` first and falls back. See the id-in-params note in
+  // the dispatcher.
+  params?:  Record<string, unknown>
+
+  // A `service_call` frame: which service, which method. Read by the dispatcher
+  // and by the telemetry line beside it, and previously reached through a cast,
+  // so the frame's own shape did not say that a call travels this way.
+  service?: string
+  method?:  string
 }
 
 // ─── Presence ─────────────────────────────────────────────────────────────
@@ -102,6 +118,11 @@ export class Channel {
   readonly name:        string
   readonly connections: Set<Connection>
 
+  // Set by the presence plugin the first time it wraps this channel's
+  // join/leave. `channel(name)` is called on every publish, so without the
+  // guard the wrappers stack and one join counts N times.
+  __presenceWrapped?: boolean
+
   constructor(name: string) {
     this.name        = name
     this.connections = new Set()
@@ -110,7 +131,7 @@ export class Channel {
   join(connection: Connection, opts?: { meta?: Record<string, unknown> }): this {
     this.connections.add(connection)
     // Store join opts on connection for presence manager to read
-    if (opts?.meta) (connection as Record<string, unknown>).__joinMeta = opts.meta
+    if (opts?.meta) connection.__joinMeta = opts.meta
     return this
   }
 
@@ -217,8 +238,8 @@ export function createChannelManager() {
 
       // Wrap join/leave exactly once to automatically update presence.
       // __presenceWrapped guards against re-wrapping on repeated channel() calls.
-      if (!(ch as Record<string, unknown>).__presenceWrapped) {
-        (ch as Record<string, unknown>).__presenceWrapped = true
+      if (!ch.__presenceWrapped) {
+        ch.__presenceWrapped = true
 
         const originalJoin  = ch.join.bind(ch)
         const originalLeave = ch.leave.bind(ch)
@@ -247,7 +268,7 @@ export function createChannelManager() {
     // Called by the WS handler in _wsOpen (after auth resolves)
     async handleConnection(
       socket:  BunWS,
-      session: unknown,
+      session: import('../auth/types.ts').SessionContext | null,
       data:    Record<string, unknown> = {}
     ): Promise<Connection> {
 
@@ -328,12 +349,11 @@ export function createChannelManager() {
       for (const ch of targets) ch.sendRaw(frame)
 
       // ── Telemetry ──────────────────────────────────────────────
-      const telemetry = (ctx.app as Record<string, unknown>)?.telemetry as
-        { emit: (e: string, d: unknown) => void; hasListeners?: (e?: string) => boolean } | undefined
+      const telemetry = ctx.app?.telemetry
       if (telemetry && (typeof telemetry.hasListeners !== 'function' || telemetry.hasListeners())) {
         const recipientCount = targets.reduce((n, ch) => n + ch.length, 0)
         telemetry.emit('junction.channel.publish', {
-          channel:        targets.map(ch => (ch as Record<string, unknown>).name ?? '?').join(','),
+          channel:        targets.map(ch => ch.name ?? '?').join(','),
           event,
           recipientCount,
           payloadSize:    frame.length,   // frame ≈ payload size; no re-serialization
@@ -554,8 +574,7 @@ export function channels(setup?: ChannelSetupFn): Plugin {
             // It stayed hidden while the channels() plugin was unregistered,
             // because the client silently fell back to HTTP, where the id
             // travels in the URL.
-            const parsedAny   = parsed as Record<string, unknown>
-            const extraParams = ((parsedAny.meta ?? parsedAny.params) ?? {}) as Record<string, unknown>
+            const extraParams = parsed.meta ?? parsed.params ?? {}
 
             app.telemetry?.emit('junction.ws.message', {
               connectionId: connId,
@@ -644,6 +663,10 @@ export function channels(setup?: ChannelSetupFn): Plugin {
                 correlationId:  (extra.correlationId as string) ?? crypto.randomUUID(),
                 idempotencyKey: extra.idempotencyKey as string | undefined,
                 origin:         'websocket',
+                // Same as the HTTP path — the principal is request-wide, and it
+                // is what an internal call inherits when it names none.
+                user:           svcCtx.auth.user,
+                client:         svcCtx.client,
               }
 
               try {
@@ -824,7 +847,7 @@ export function publish<T = unknown>(
     // patch look correct and turned every REMOVE into an upsert. A deleted
     // record was re-added to the store and stayed on screen until reload.
     //
-    // Custom actions have no past tense and fall through unchanged
+    // Custom methods have no past tense and fall through unchanged
     // ('posts archive'), which is what the client's '*' handler expects.
     const eventName = event
       ?? `${ctx.service} ${AUTO_EVENT_MAP[ctx.method as string] ?? ctx.method}`

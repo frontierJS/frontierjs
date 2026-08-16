@@ -1,0 +1,37 @@
+<script>
+  // events.mesa — one handler per non-bubbling event, on the element that
+  // fires it, driven from a single click so the spec needs no trusted input
+  // beyond that one.
+  let dialogEl
+  let detailsEl
+  let inputEl
+
+  let closes  = 0
+  let cancels = 0
+  let toggles = 0
+  let invalids = 0
+
+  function drive() {
+    dialogEl.showModal()
+    dialogEl.close()
+    detailsEl.open = true
+    inputEl.reportValidity()
+  }
+</script>
+
+<dialog bind:this={dialogEl} on:close={() => closes++} on:cancel={() => cancels++}>closable</dialog>
+
+<details bind:this={detailsEl} on:toggle={() => toggles++}>
+  <summary>more</summary>
+  body
+</details>
+
+<form>
+  <input bind:this={inputEl} required on:invalid={() => invalids++} />
+</form>
+
+<button type="button" id="drive" on:click={drive}>drive</button>
+
+<output id="closes">{closes}</output>
+<output id="toggles">{toggles}</output>
+<output id="invalids">{invalids}</output>

@@ -191,6 +191,25 @@ class SecretFactory extends Factory {
   }
 }
 
+// A channel is half a delivery: the row says WHERE to send, and the credential
+// it needs — a Slack webhook URL is a bearer token — lives in a Secret, with
+// only the reference kept here. Same ruling as Domain's certificate material.
+// Seeding one is what makes /channels/ and the alert screens show the chain
+// this app actually has, rather than an empty table that reads as broken.
+class NotificationChannelFactory extends Factory {
+  model = 'NotificationChannel'
+  definition() {
+    const n     = uid()
+    const specs = [
+      { name: 'Ops — Slack',    kind: 'slack',   config: { channel: '#ops' } },
+      { name: 'On-call — email', kind: 'email',   config: { to: 'oncall@example.com' } },
+      { name: 'Status webhook',  kind: 'webhook', config: { url: 'https://example.com/hooks/status' } },
+    ]
+    const spec = specs[n % specs.length]
+    return { ...spec, name: `${spec.name} ${n}`, isActive: true }
+  }
+}
+
 class VolumeFactory extends Factory {
   model = 'Volume'
   // The only model here whose rows a person never authors — a volume exists
@@ -379,9 +398,42 @@ export class BasecampSeeder extends Seeder {
           .seed(RNG_SEED + index)
           .create(3, { workspaceId: ws.id, createdBy: owner.id })
 
-        await new AlertRuleFactory(sys)
+        const rules = await new AlertRuleFactory(sys)
           .seed(RNG_SEED + index)
           .create(3, { workspaceId: ws.id })
+
+        // The credential a channel sends with, in the one place it may live.
+        // `kind: 'notification'` is what core/credentials.ts resolves a
+        // `secret:<id>` ref to at send time.
+        const hookSecret = await sys.secret.create({
+          data: {
+            workspaceId: ws.id,
+            name:        `slack-webhook-${index}`,
+            kind:        'notification',
+            data:        JSON.stringify({ url: 'https://hooks.example.com/seeded/not-a-real-webhook' }),
+            isVerified:  true,
+            createdBy:   owner.id,
+          },
+        })
+
+        const channels = await new NotificationChannelFactory(sys)
+          .seed(RNG_SEED + index)
+          .create(2, { workspaceId: ws.id, createdBy: owner.id })
+
+        // Only the Slack one carries the secret; the other is left without, on
+        // purpose — a channel with no credential is the state the screen has to
+        // render, and a seeded fleet where every row is complete never shows it.
+        const slack = channels.find(c => c.kind === 'slack')
+        if (slack) await sys.notificationChannel.update({
+          where: { id: slack.id }, data: { secretId: hookSecret.id },
+        })
+
+        // The join Phase 5 replaced a Json array of ids with. One rule reaches
+        // somebody; the others reach nobody, which is what the alerts screen
+        // says out loud and could not demonstrate with no channels seeded.
+        if (rules[0] && channels[0]) await sys.alertRuleChannel.create({
+          data: { ruleId: rules[0].id, channelId: channels[0].id },
+        })
 
         // API keys are not a Factory. Each one needs a REAL credential from
         // auth — the row is only the operational half, and a key pointing at no
@@ -717,7 +769,8 @@ if (import.meta.main) {
   const counts = {}
   for (const model of ['user', 'workspace', 'project', 'environment', 'app',
                        'server', 'volume', 'deployment', 'deploymentStep', 'job', 'jobRun',
-                       'secret', 'apiKey', 'alertRule', 'dashboard', 'dashboardWidget',
+                       'secret', 'apiKey', 'alertRule', 'notificationChannel',
+                       'alertRuleChannel', 'dashboard', 'dashboardWidget',
                        'recipe', 'recipeRun', 'diskUsage', 'cleanupRun',
                        'auditEvent']) {
     counts[model] = await sys[model].count()

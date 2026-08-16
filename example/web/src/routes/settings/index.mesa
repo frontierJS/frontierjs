@@ -11,7 +11,8 @@ title: Settings
   // control put on a page to be looked at.
   import { session } from '../../session.js'
   import { orders } from '../../resources/Order.mesa'
-  import { prefs, savePrefs, THEMES } from '../../prefs.js'
+  import { prefs, savePrefs } from '../../prefs.js'
+  import { theme as appTheme, setTheme, themes } from '@frontierjs/sierra/theme'
 
   import Accordion     from '@frontierjs/ui/components/layout/AccordionItem.mesa'
   import AccordionRoot from '@frontierjs/ui/components/layout/Accordion.mesa'
@@ -31,7 +32,11 @@ title: Settings
   // needs a writable top-level `let`, and `prefs.dense` is a member
   // expression — the compiler says so, and a form bound to one collects
   // nothing. It also means Cancel is possible: nothing changes until Save.
-  let theme         = prefs.theme
+  // The theme is Sierra's, not this app's — it is the one preference here with
+  // a mechanism behind it (a class on <html>, applied before first paint by a
+  // <head> script). Read once into local state like the rest, so Cancel still
+  // means nothing changed until Save.
+  let theme         = appTheme.value
   let dense         = prefs.dense
   let perPage       = prefs.perPage
   let defaultStatus = prefs.defaultStatus
@@ -44,7 +49,7 @@ title: Settings
     ...orders.fields.status.enum.map(s => ({ value: s, label: s })),
   ]
 
-  const themeChoices = THEMES.map(t => ({ value: t, label: t.replace('theme-', '') }))
+  const themeChoices = themes().map(t => ({ value: t, label: t.replace('theme-', '') }))
 
   // How much of the seeded catalogue this session may act on, as a number
   // rather than a sentence. Reads the same gate table the buttons do.
@@ -52,7 +57,8 @@ title: Settings
   const allowed = REACHABLE.filter(op => orders.can(op, session.level)).length
 
   function save() {
-    savePrefs({ theme, dense, perPage, defaultStatus, noteTemplate })
+    savePrefs({ dense, perPage, defaultStatus, noteTemplate })
+    setTheme(theme)
     toasts.success('Preferences saved')
   }
 </script>
@@ -79,7 +85,7 @@ title: Settings
 <AccordionRoot multiple defaultOpen={['appearance']}>
   <Accordion id="appearance" label="Appearance">
     <div class="stack">
-      <!-- The theme is one class on <body>; the six are the css package's. -->
+      <!-- One class on the root element, applied by Sierra; the six are the css package's. -->
       <RadioGroup
         id="p-theme"
         label="Theme"

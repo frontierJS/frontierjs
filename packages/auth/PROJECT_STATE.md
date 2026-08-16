@@ -24,7 +24,8 @@ index.ts     public barrel
 auth.ts      createLitestoneAuth() — the IAuth implementation
 plugin.ts    createAuthPlugin() — the /auth/* routes (no error mapping: see errors.ts)
 errors.ts    named domain errors (AuthError and friends)
-schema.ts    authSchemaFragments(db) — contributes INTO the seed
+db/*.lite    the models this package ships — user.lite (the app's) + auth.lite
+schema.ts    reads those two — authUserModel / authMachineryModels / both
 cleanup.ts   createAuthCleanupJobs() — expiry sweeps
 crypto.ts    hashing / token generation
 types.ts
@@ -98,11 +99,11 @@ Rate limiting works: 5 registers then `429`, keyed per-IP off `ctx.ip`.
 
 
 *Still open here, in `../../ISSUES.md`: **`FJS-002`** (cookie auth),
-**`FJS-042`** (API keys, no events — `stale?`), **`FJS-063`** (timing oracle,
-`any` types). Decision waiting: **`FJS-D20`**. The writeups below are the argued
-detail.*
+**`FJS-042`** (API keys, no events — `stale?`). **`FJS-063`** closed 2026-08-16,
+both halves, and **`FJS-296`** was filed and closed out of it. Decision waiting:
+**`FJS-D20`**. The writeups below are the argued detail.*
 
-**Status: 1, 3, 4 and 5 are fixed. 2, 6 and 7 remain open.**
+**Status: all seven are fixed except 2.**
 
 ### 1. Every auth failure reached the client as HTTP 500 — **FIXED**
 
@@ -254,20 +255,45 @@ two facts this file previously told readers to assume were broken.
 
 Still uncovered: `createAuthCleanupJobs` has no test, and there is no test for
 concurrent logins or session-fixation behaviour.
-### 6. Minor: login is a user-enumeration timing oracle
+### 6. Login is a user-enumeration timing oracle — **FIXED**
 
-`login()` returns early when the user is absent, skipping the bcrypt (cost 12)
-comparison entirely, so "unknown email" answers measurably faster than "wrong
-password". Standard mitigation is a dummy hash comparison on the absent-user
-path. Low severity — the 10-per-15-minutes rate limit blunts it — and worth
-noting only because `requestPasswordReset` goes to real trouble not to reveal
-the same fact.
+Was: `login()` returned early when the user was absent, skipping the bcrypt
+(cost 12) comparison entirely, so "unknown email" answered measurably faster
+than "wrong password". Measured rather than reasoned about: 9ms against 119ms,
+the floor of three runs each. The `no-password-credential` branch bailed the
+same way and was not in the original writeup.
 
-### 7. Minor: `plugin.ts` types `app` and `ctx` as `any`
+Both branches now `await payPasswordCost(password)` before refusing —
+`Bun.password.verify` against a cost-12 hash of a value nobody holds, answer
+discarded. What is left between the paths is one database read.
 
-`register(app: any)`, every handler `(ctx: any)`. That is precisely why findings
-1–3 produce **zero** typecheck diagnostics. Tightening to `App` and
-`TransportContext` is cheap and would have caught the cookie assumption.
+The rate limit blunted it, and the reason it was worth fixing anyway is that
+`requestPasswordReset` goes to real trouble not to reveal the same fact: the
+package had decided address existence is a secret and then leaked it out a
+different door. `tests/flows.test.ts` § login holds the timing assertion and the
+one that catches `DUMMY_HASH` drifting off `BCRYPT_COST`.
+
+### 7. `plugin.ts` types `app` and `ctx` as `any` — **FIXED**
+
+Was: `register(app: any)`, every handler `(ctx: any)`, which is precisely why
+findings 1–3 produced **zero** typecheck diagnostics. Now `App`,
+`TransportContext`, a `Plugin` return and `createAuthServices(): Service[]`;
+three `as any` casts at call sites deleted as needless.
+
+It was filed as *cheap and would have caught the cookie assumption*. The first
+clean compile pointed at two live defects instead:
+
+- **A where-operator object in place of an email** (`FJS-296`). `ctx.body` is
+  `unknown` and nothing here was reading it as such, so `{ email: { contains:
+  '@' } }` reached `findFirst({ where: { email } })` intact and the address
+  became a filter. Fixed here, because a raw route has no `autoValidate` to put
+  in front of it — the check is one reader, and every declared field is a string
+  or the request is a 400 naming it.
+- **`rateLimitHook` was typed for one context and documented for two.** Its own
+  comments name these routes as the reason it reaches `auth` optionally, and
+  `clientIp()` exists to serve both shapes — but the signature said
+  `ServiceContext`, and auth's `any` was the only reason this file compiled.
+  Fixed in junction (`BridgeHook`), not cast around here.
 
 ---
 

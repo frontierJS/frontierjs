@@ -1,0 +1,14 @@
+<script>
+  // smoke.mesa — the fixture that proves the harness itself.
+  //
+  // A fixture is a component, so it can express what a props object cannot:
+  // slots, snippets, and a piece of local state a spec can read back out of
+  // the DOM. This one asserts nothing; it gives the smoke spec something whose
+  // failure means the DRIVE is broken rather than a component.
+  import Button from '../../../components/forms/Button.mesa'
+
+  let clicks = 0
+</script>
+
+<Button variant="danger" onclick={() => clicks++}>Delete</Button>
+<output id="clicks">{clicks}</output>

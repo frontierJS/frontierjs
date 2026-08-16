@@ -58,7 +58,7 @@ export function createPresenceTracker(deps: PresenceDeps) {
     const session = conn.user
     if (!session?.userId) return   // anonymous — not tracked
 
-    const meta = (conn as Record<string, unknown>).__joinMeta as Record<string, unknown> ?? {}
+    const meta = conn.__joinMeta ?? {}
     const member: PresenceMember = {
       connectionId: conn.id,
       userId:       session.userId,

@@ -1,0 +1,29 @@
+<script>
+  // grouping.mesa — Accordion over native <details>, and a Fieldset whose
+  // `disabled` is the platform's rather than a class.
+  import Accordion     from '../../../components/layout/Accordion.mesa'
+  import AccordionItem from '../../../components/layout/AccordionItem.mesa'
+  import Fieldset      from '../../../components/forms/Fieldset.mesa'
+  import Input         from '../../../components/forms/Input.mesa'
+
+  export let multiple    = false
+  export let defaultOpen = []
+  export let disabled    = false
+</script>
+
+<Accordion multiple={multiple} defaultOpen={defaultOpen}>
+  <AccordionItem id="faq-1" label="What is Mesa?">
+    <p id="body-1">Mesa is a reactive UI language.</p>
+  </AccordionItem>
+  <AccordionItem id="faq-2" label="How does reactivity work?">
+    <p id="body-2">Signals, and a flush.</p>
+  </AccordionItem>
+  <AccordionItem id="faq-3" label="Locked" disabled>
+    <p id="body-3">Nothing here.</p>
+  </AccordionItem>
+</Accordion>
+
+<Fieldset legend="Billing address" description="Where the invoice goes" disabled={disabled}>
+  <Input label="Street" name="street" />
+  <Input label="City" name="city" />
+</Fieldset>

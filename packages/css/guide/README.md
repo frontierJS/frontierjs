@@ -121,7 +121,7 @@ common-word rules — so a plain diagram would come out with "Bootstrap"
 coloured as a keyword.
 
 `guide.js` is an **ES module**, because it imports `glow()` from
-`@frontierjs/utils` by relative path to highlight the samples. `vocabulary.js`,
+`@frontierjs/toolbelt` by relative path to highlight the samples. `vocabulary.js`,
 `decisions.js` and `search.js` stay classic scripts: `test/run.js` inlines their source
 into a page whose specs are classic scripts, and a module's `export` would
 throw there. A module can still read a classic script's top-level binding, so

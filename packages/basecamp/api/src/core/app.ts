@@ -114,9 +114,9 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   const app = createApp({ config, auth, db }) as BasecampApp
 
   // Attach DB and Basecamp-specific subsystems.
-  // app.provide() is the guarded namespace claim — it throws on a collision
+  // app.claim() is the guarded namespace claim — it throws on a collision
   // instead of silently last-write-wins.
-  app.provide('data', db)
+  app.claim('data', db)
   app.db     = dbClient
   app.logger = logger
   app.infra  = await buildInfra(
@@ -142,7 +142,9 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
     // NB: `authenticate`, not `authenticate()` — it IS the hook, not a factory.
     // Conduit's own error message suggests the calling form, which throws.
     management: { hooks: { before: { all: [authenticate] } } },
-    hooks: {
+    // Observers: they receive and cannot act. `management.hooks` above is the
+    // other word and means the other thing — a pipeline that can refuse.
+    observers: {
       onRequest:  (req)       => logger.debug('conduit →', { target: req.target, method: req.method }),
       onResponse: (_req, res) => { if (res.error) logger.warn('conduit error', { kind: res.error.kind }) },
       onError:    (req, err)  => logger.error('conduit failed', { target: req.target, kind: err.kind }),
@@ -175,7 +177,7 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
 
   // ── Health + metrics ──────────────────────────────────────────────────
   // GET /health  → liveness + readiness (503 if DB unreachable)
-  // GET /metrics → conduit + caravan stats merged in via _metricsProviders
+  // GET /metrics → conduit + caravan stats merged in via registerMetricsSource
   app.configure(healthPlugin({
     checks: {
       db: () => !!rawDb.query('SELECT 1').get(),
@@ -259,7 +261,7 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
       all: [apiKeyGuard(app), refuseSuspended()],
     },
     after: {
-      // `all`, not the three CRUD verbs: a custom action is a mutation too, and
+      // `all`, not the three CRUD verbs: a custom method is a mutation too, and
       // drain / cancel / deploy / trigger are most of what an operator does.
       // The hook itself decides what counts (find/get and dispatch:false are
       // out) and takes the exceptions by name.
@@ -293,7 +295,8 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   // a configure() block go onto the un-patched router and never receive
   // CORS headers on preflight requests.
 
-  // @frontierjs/auth mounts /auth/{login,logout,register,me,...}. The
+  // @frontierjs/auth mounts /auth/{login,logout,register,…} plus the `account`
+  // and `sessions` services — GET /account/me is what /auth/me was. The
   // hand-rolled versions of these are gone — they read password_hash off the
   // user table, a column that moved to Credential when the schema adopted
   // auth's fragments.
@@ -302,7 +305,15 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   // apiPrefix is ''), so prefixing only these two made the app's own paths
   // disagree with each other and with the browser client, whose needsSetup()
   // asks for `${apiPrefix}/setup/probe` and swallows the 404.
-  app.configure(createAuthPlugin(auth, { prefix: '/auth' }))
+  // `apiKeys: false` because this app already has an `api-keys` service, and
+  // its keys are a WORKSPACE's rather than a person's — a different noun that
+  // happens to share a word. The plugin refuses the collision by name rather
+  // than one of the two silently replacing the other.
+  //
+  // No `level`: a level here is per workspace (core/gate.ts), so there is no
+  // single number `account.me` could answer with. `applyStanding` resolves it
+  // per request instead.
+  app.configure(createAuthPlugin(auth, { prefix: '/auth', services: { apiKeys: false } }))
 
   app.configure(function setupRoutes(a) {
     const sys = db.asSystem()

@@ -9,7 +9,7 @@
 // Loaded lazily by plugin.ts so Conduit types never enter the
 // Tier 1 bundle path when campaign is not configured.
 
-import type { App }                from '../../core/app.ts'
+import type { App }                from '../../../core/app.ts'
 import type { ICampaignEmail,
               CampaignEmailConfig,
               EmailMessage,
@@ -92,6 +92,44 @@ function buildPayload(address: string, message: EmailMessage, from: string): Pro
   }
 }
 
+// ─── The slice of Conduit this file needs ─────────────────────────────────────
+//
+// `App.conduit` is typed `AppConduit`, which Junction declares EMPTY on purpose:
+// @frontierjs/conduit augments it with the real `IConduit`, and an app that has
+// not installed conduit must see an empty object rather than a lie. That is the
+// right call and it has a consequence here — inside Junction's own compilation
+// there is no `resolve` and no `send` to reach, so this file was reading methods
+// off `{}`.
+//
+// The requirement is therefore stated where it is used, structurally. It is not
+// a second declaration of the contract: it is the two calls this file makes, and
+// if conduit's real signatures move, THIS is what stops matching.
+
+type ConduitTargetDescriptor = { address: string }
+
+type ConduitSlice = {
+  resolve: (target: string) => Promise<ConduitTargetDescriptor | null | undefined>
+  send:    (req: { target: string; method: string; path: string; body: unknown }) =>
+             Promise<{ error?: { message: string }; meta: { status: number } }>
+}
+
+// A capability probe, not a cast: `app.conduit` is optional, and campaign email
+// is configured independently of the conduit plugin. Without this the first send
+// died with `Cannot read properties of undefined`, naming nothing an app can act
+// on — and the message below already existed for the target-missing case, one
+// step further in.
+function conduitOf(app: App, target: string): ConduitSlice {
+  const conduit = app.conduit as ConduitSlice | undefined
+  if (!conduit || typeof conduit.resolve !== 'function' || typeof conduit.send !== 'function') {
+    throw new Error(
+      `Junction email: campaign email is configured to send through Conduit target '${target}', ` +
+      `but no Conduit is installed on this app. Add @frontierjs/conduit and ` +
+      `app.configure(conduit({ targets: [...] })).`
+    )
+  }
+  return conduit
+}
+
 // ─── Sender ───────────────────────────────────────────────────────────────────
 
 export function createCampaignSender(
@@ -100,7 +138,8 @@ export function createCampaignSender(
 ): ICampaignEmail {
 
   async function send(message: EmailMessage): Promise<EmailResult> {
-    const descriptor = await app.conduit.resolve(config.target)
+    const conduit    = conduitOf(app, config.target)
+    const descriptor = await conduit.resolve(config.target)
     if (!descriptor) {
       throw new Error(
         `Junction email: Conduit target '${config.target}' not found. ` +
@@ -110,7 +149,7 @@ export function createCampaignSender(
 
     const { path, body } = buildPayload(descriptor.address, message, config.from)
 
-    const result = await app.conduit.send({
+    const result = await conduit.send({
       target: config.target,
       method: 'POST',
       path,

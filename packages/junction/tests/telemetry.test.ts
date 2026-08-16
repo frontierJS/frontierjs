@@ -602,31 +602,66 @@ describe('no telemetry when emitter not configured', () => {
 
 // ─── 8. Anonymous hook dev-mode warning ───────────────────────────────────────
 
-describe('anonymous hook warning (dev mode)', () => {
+// It is a STYLE note, not a warning: an anonymous hook works, it just reads as
+// 'anonymous' in the telemetry waterfall. It printed one line per phase per
+// method on every boot — a service with one inline hook on `all` produced one
+// per method — so it now goes to stdout under DEBUG=1 only, and says everything
+// it has to say about one service in one line.
+describe('anonymous hook diagnostic', () => {
 
-  it('warns when a hook has no name in non-production', () => {
-    const originalEnv = process.env.NODE_ENV
-    process.env.NODE_ENV = 'development'
+  it('names every anonymous position in one line, under DEBUG', () => {
+    const originalDebug = process.env.DEBUG
+    process.env.DEBUG = '1'
 
-    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {})
 
     try {
       createService({
         name: 'items',
-        find: async () => [],
+        find:  async () => [],
+        patch: async () => ({}),
         hooks: {
-          before: { find: [async () => {}] }  // anonymous
+          before: { find: [async () => {}], patch: [async () => {}] }  // both anonymous
         }
       })
 
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('anonymous hook')
-      )
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('items.before.find')
-      )
+      const lines = logSpy.mock.calls.map(c => String(c[0])).filter(l => l.includes('anonymous hook'))
+      // ONE line, not one per method — that is the whole change.
+      expect(lines.length).toBe(1)
+      expect(lines[0]).toContain('2 anonymous hook(s) on items')
+      expect(lines[0]).toContain('before.find')
+      expect(lines[0]).toContain('before.patch')
     } finally {
+      if (originalDebug === undefined) delete process.env.DEBUG
+      else process.env.DEBUG = originalDebug
+      logSpy.mockRestore()
+    }
+  })
+
+  it('says nothing at all without DEBUG, whatever NODE_ENV says', () => {
+    const originalDebug = process.env.DEBUG
+    const originalEnv   = process.env.NODE_ENV
+    delete process.env.DEBUG
+    process.env.NODE_ENV = 'development'
+
+    const logSpy  = spyOn(console, 'log').mockImplementation(() => {})
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      createService({
+        name:  'items',
+        find:  async () => [],
+        hooks: { before: { find: [async () => {}] } },
+      })
+
+      const said = [...logSpy.mock.calls, ...warnSpy.mock.calls]
+        .map(c => String(c[0])).filter(l => l.includes('anonymous'))
+      expect(said).toEqual([])
+    } finally {
+      if (originalDebug === undefined) delete process.env.DEBUG
+      else process.env.DEBUG = originalDebug
       process.env.NODE_ENV = originalEnv
+      logSpy.mockRestore()
       warnSpy.mockRestore()
     }
   })

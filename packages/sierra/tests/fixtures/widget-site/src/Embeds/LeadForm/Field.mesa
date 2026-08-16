@@ -1,0 +1,6 @@
+<script>
+  export let label = ''
+  export let value = ''
+</script>
+
+<label>{label}: <input id="field" value={value} /></label>

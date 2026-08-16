@@ -21,8 +21,9 @@ litestone migrate dry-run   # preview what autoMigrate would do, no changes
 ## File migrations — production
 
 ```bash
-litestone migrate create add-users       # generate 20240101000001_add-users.sql
+litestone migrate create add-users       # generate 20240101000001_add_users.sql
 litestone migrate apply                  # apply all pending migrations in order
+litestone migrate apply --backup         # …copying every database first
 litestone migrate status                 # show applied / pending / modified
 litestone migrate verify                 # confirm live db matches schema
 ```
@@ -37,6 +38,63 @@ verify(db, parseResult, './migrations')
 ```
 
 Migration files are plain SQL — review and edit before applying. Applied migrations are recorded in `_litestone_migrations`. Modified applied migrations show as `modified` in status and block `apply`.
+
+### Filenames are the run order
+
+`20240101000001_add_users.sql` — 14-digit timestamp, then a lower_snake label.
+The files are applied in **filename order**, and nothing else records when one
+was written, so the name is the ordering.
+
+The clock is second-granular, which is not fine enough on its own: two
+migrations created inside one second would either overwrite each other (same
+label) or run in alphabetical order (different labels — `evolve` before
+`initial`). So a new migration is named after the **last file already in the
+directory**, not after the clock alone: if this second is not past the highest
+stamp there, the stamp steps forward until it is. The timestamp still says
+roughly when; it also says after what.
+
+A file the pattern rejects is never applied, and is named rather than skipped
+in silence — see `litestone migrate status`.
+
+## There is no `down` — rolling back is a file you took first
+
+Litestone generates no down migration and will not. A rebuild is a `DROP TABLE`,
+so the inverse of *drop a column* is *invent the values it held*; the inverse of
+a JS migration that rewrote every row is unwritable by anything but the person
+who wrote it. What a generated down would reliably do is run, report success,
+and leave a database that looks restored.
+
+The reversal on offer is a copy of the database taken before the run:
+
+```bash
+litestone migrate apply --backup              # → ./backups/2026-08-16_120000/main.db
+litestone migrate apply --backup=./snapshots  # explicit destination
+```
+
+Every SQLite database the schema declares is copied before the **first** one is
+migrated — a copy taken as each database's turn comes round is a copy of a
+half-migrated fleet — and if any copy fails, nothing is migrated at all. It is
+off by default: copying a multi-gigabyte database on every deploy is a cost the
+deploy should ask for.
+
+To go back: stop the app, put each copy back over its database, and delete the
+`-wal` and `-shm` files beside it. The command prints those paths after a
+successful run.
+
+Without `--backup`, apply names the pending files it cannot take back — one that
+drops a table (a rebuild is one, so a dropped column counts) and every `.js`
+migration, whose contents nothing here can read:
+
+```
+  !  no way back from this run without a copy of the database:
+       20260816120000_drop_views.sql (drops 1 table)
+     Re-run with --backup to take one first.
+```
+
+It warns and proceeds. Whether a schema change is reversible by *redeploying the
+previous release* is the other question, and `litestone release --from <ref>`
+is what answers it: an **expand** is taken back by redeploying the code, a
+**contract** is the pivot after which only forward.
 
 ## JS migrations
 
@@ -157,6 +215,37 @@ The generated migration says so, before the SQL that does it:
 `autoMigrate` applies the same SQL without showing it to you. If a table carries
 schema objects you created, use file migrations for it, or run
 `litestone migrate dry-run` first.
+
+### A rebuild counts its own rows before it drops the original
+
+A rebuild is `INSERT INTO t__new SELECT … FROM t` followed by `DROP TABLE t`, and
+a copy that read fewer rows than the original holds is an error to nobody —
+SQLite inserted what it was asked for, and the runner saw a statement return. One
+statement later those rows are gone and the migration reports success.
+
+So the generated rebuild compares the two counts in between:
+
+```sql
+CREATE TEMP TABLE "_litestone_rowcount" (
+  ok INTEGER CONSTRAINT "rebuild of post lost rows" CHECK (ok = 1)
+);
+INSERT INTO "_litestone_rowcount" (ok)
+  SELECT CASE WHEN (SELECT count(*) FROM "post__new") = (SELECT count(*) FROM "post") THEN 1 ELSE 0 END;
+DROP TABLE "_litestone_rowcount";
+```
+
+SQLite has no assertion — `RAISE()` is legal only inside a trigger body — so the
+comparison is a CHECK, and the constraint's **name is the message**:
+
+```
+error: CHECK constraint failed: rebuild of post lost rows
+```
+
+It aborts inside the migration's transaction, so the original table is still
+there afterwards. The commonest way to reach it is by hand-editing the copy step
+of a generated file, which is a thing these files invite. It is also emitted
+when there is nothing to copy at all — a rebuild sharing no column name with the
+old table used to empty it under a comment reading *nothing to copy*.
 
 **A view is not in that class and does survive.** A view is a stored `SELECT`
 with no state, so Litestone drops every view over the table before the rebuild

@@ -10,6 +10,263 @@ Format: **decision — why — where it lives.**
 
 ## Naming & vocabulary
 
+**2026-08-16 · `FJS-D06` — the coherence-review vocabulary, ruled. Three hook
+tiers not five, `Provider` is a third party, and `Slice` waits for a second
+author.** The eight findings of `IDEAS/coherence-review.md` sat open for six
+weeks because they were filed as one row. They are not one question, and the
+prior art disagrees with the proposal on two of them.
+
+**§1 — `Hook` splits into three, on the axis the proposal named: can it change
+the outcome?** Every framework that has split this word split it in two, on that
+exact axis, and none shipped more: WordPress `apply_filters()` / `do_action()`,
+Directus filter hooks / action hooks, Payload's one access function whose RETURN
+TYPE decides (`false` refuses, a `Where` filters). Rails went the other way and
+*removed* Observers from core; Prisma deprecated `$use` for extensions. The trend
+is subtraction. So:
+
+| Tier         | Rule                                           | Here                                                                                                                                                                        |
+| ------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hook**     | may mutate the arguments or halt the operation | junction `before`/`after`/`around`/`error`; litestone transform hooks and plugin interceptors; sierra `beforeNavigate`; **auth's four callbacks**, which refuse by throwing |
+| **Guard**    | answers allow/deny and nothing else            | `@@gate` enforcement, the navigation check. Angular's `CanActivate` named it; NestJS took it                                                                                |
+| **Observer** | receives, cannot act                           | litestone `onEvent`; conduit's `observers: { onError }`, which is handed an error it has no way to change                                                                   |
+
+**Delegate is refused.** `onPasswordResetRequested` is a required performer —
+absent, password reset silently does nothing — and it is the only one in the
+tree. One instance does not earn a vocabulary tier; auth's own docs saying
+*required* does the same job for free.
+
+**The tier is the value; the renames are incidental.** Two things move
+(`conduit.hooks` → `observers`, done — `management.hooks` keeps the word because
+it really is Junction's pipeline; litestone's post-commit notifications settle on
+`onEvent`, which is half done) and one rule arrives: **a new `on*` states which
+tier it is.** The receipt for not having the rule is already in the tree —
+`rateLimit` and `rateLimitHook` needed two names because one word covered two
+mechanisms.
+
+**§4 — `Provider` is a third-party entity the app includes, and that beats the
+filed definition.** The proposal was *a swappable implementation of a contract*
+("a Plugin adds; a Provider replaces"). The plainer reading is the one the
+industry already uses — identity provider, payment provider, cloud provider,
+OAuth provider — and the two nearly coincide here, because almost every
+swappable implementation in this tree IS an integration point: `IAuth`,
+notifications' drivers, junction's mail adapters, conduit's targets. Conduit had
+already got there on its own: `'provider'` is one of its target kinds, defined as
+*external REST API — Hetzner, GitHub, NetBird*. The native or in-memory case
+survives the word ("the native provider") the same way Spring and Django survive
+it.
+
+**`Adapter` was the alternative and is refused**: it is the ecosystem plurality
+(Rails, Ecto, SvelteKit, Feathers) but it names a shape rather than a party, and
+the shape is not what needed a word.
+
+**What `Provider` must never mean here is the registration unit.** That is
+Laravel's Service Provider — `register()` + `boot()` — which is this repo's
+**Plugin**, protocol and all. Anyone arriving from Laravel will read the two
+backwards, so the boundary is stated rather than assumed: **a Plugin attaches a
+capability to the app; a Provider is a party outside the app that a capability
+speaks to.**
+
+**Two in-tree collisions are cleared by this ruling rather than tolerated.**
+`app.provide(name, value)` never provided anything — it claims a name on the app
+object and throws if it is taken, which is Fastify's `decorate`. It becomes
+**`app.claim(name, value)`**, where the verb matches the error message it already
+throws. And `_metricsProviders` was `Provider` in a third sense — *a thing that
+supplies a number* — so it becomes **`_metricsSources`**, reached through a
+blessed `app.registerMetricsSource(name, fn)`, which also retires the
+private-field reach-in §5 objected to and conduit's own `docs/AUDIT.md` warned
+about by name.
+
+**§6 — two collisions were already resolved in practice; one needed a side
+picked; one is refused.**
+
+- **`Manifest` is ceded to MV3, and both halves are now done** — `Release` is the
+  Deployment realm's noun in `CLAUDE.md`, and sierra's route table is
+  `generateRouteTable` / `renderRouteTable` in
+  `scanner/generate-route-table.js`, configured by `routeTable.output` and
+  carried through the postbuild pipeline as `routeTable` ([FJS-284](ISSUES.md)).
+  Junction's `/manifest` endpoint keeps the word: it is a manifest of services,
+  it collides with nothing, and an HTTP path is not vocabulary. A `package.json`
+  is still a manifest where the code reads one — that is npm's word, not this
+  repo's.
+- **`Gate` and `Policy` stay, both of them.** A gate refuses on an ordinal, a
+  policy compiles into a WHERE; litestone's own docs already call them
+  orthogonal. Laravel ships the same two words and cuts them differently —
+  ability-without-a-model versus rules-for-one-model — which is a hazard worth a
+  doc line and not a reason to rename either.
+- **`Channel` is a broadcast set. The delivery medium is a `Transport`.**
+  Junction owns the wire meaning, it is the more entrenched and the harder to
+  move. The loser is written down because it is genuinely contested — Laravel has
+  the identical unresolved collision, and in notifications-land the delivery
+  reading is the plurality (Novu, Laravel). `packages/notifications/types.ts`
+  currently carries both, fourteen lines apart.
+- **`Edge` is refused.** `Boundary` is qualified at every use — the Data
+  boundary, the app↔world boundary — and one qualified word beats two words.
+- **`Trust Hierarchy` is retired.** It appears in `ARCHITECT.md` and basecamp's
+  `VISION.md` and nowhere in code, which says `LEVELS`. The prose says **the gate
+  ladder**.
+
+**§7 — `Slice` is deferred, and the map is fixed now regardless.** The axis is
+well precedented — Django Apps, Rails Engines, Phoenix Contexts, NestJS Modules —
+but every one of those earned its name because a THIRD PARTY shipped one. Devise
+is why Rails needed Engine. Here the only two slices are `auth` and
+`notifications`, both written in this repo, and the word would name something
+already known. What is not deferred is the column: realm and domain are
+orthogonal coordinates jammed into one field, and `CLAUDE.md` already files
+notifications under a Realm/Domain of *vertical slice* because the field could
+not hold it. **The test for adopting the word is `fli add <slice>` being on the
+table, or someone outside this repo shipping one.**
+
+**§2, §3, §5 and §8 are not ruled here** and keep their own ids —
+they are mechanism findings wearing vocabulary clothes, and none of them is
+blocking. This ruling closes the vocabulary row alone.
+
+Unblocks `FJS-D10`: `IAuth` partial acceptance and the `setters`/`getters`
+naming are answerable now, the `publish()` shorthand follows §1's tiering, and
+typed `createSchema` inference never depended on this at all.
+*Lives in:* `packages/junction/src/core/app.ts` (`claim`, `_metricsSources`) ·
+`ARCHITECT.md` §2 · `IDEAS/coherence-review.md` is the argument, still not a
+register.
+
+**2026-08-15 · `FJS-D03` — Context is a per-realm concept. It is plural, it is
+documented, and it is not unified.**
+
+**Definition.** A Context is *per-invocation state and metadata available to the
+code executing on behalf of a caller.* The filed question proposed Junction's
+split as a standard other realms conform to as subsets; they cannot, because two
+of the things called `ctx` are not the same noun.
+
+**What the definition decides:**
+
+|                                               | Verdict                                                                                                                                                                           |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| junction `ServiceContext`, `TransportContext` | Contexts. Per request / per call                                                                                                                                                  |
+| sierra resource hook ctx                      | a Context. Per operation                                                                                                                                                          |
+| `fli` `context`                               | a Context. Per invocation — the environment, not a request                                                                                                                        |
+| sierra `page`                                 | a Context of its realm. Per navigation                                                                                                                                            |
+| **litestone plugin `ctx`**                    | borderline, and the doc must say so: per **client scope**, not per invocation. It carries the compiled maps and the principal that scoped the client, and no per-call data at all |
+| **mesa compile `ctx`**                        | **not** a Context. Compile state, ambient singleton, no caller                                                                                                                    |
+| **mesa `$context`**                           | not per-invocation either — it is scoped by the component TREE. The name is right for what it does; the axis is stated instead                                                    |
+
+**The rule that replaces conformity: every package documents its own, by
+LIFETIME.** What creates it · how long it lives · what is on it · what it is
+*not*. Lifetime is the line that prevents the actual mistakes — reading
+`ctx.auth` in a Litestone plugin expecting a per-request value, or reaching for
+`ctx.method` on one.
+
+**Naming: one word per realm, and the crossing is stated.** Path captures are
+`ctx.route` on BOTH of Junction's contexts — the transport's `params` is renamed —
+and `page.params` in Sierra. `params` is not reintroduced anywhere in Junction on
+purpose: in Feathers it means the whole context bag, that idiom keeps arriving
+(`ctx.params.user`, `ctx.params.headers`, `app.service(x).get(id, ctx.params)`),
+and a field of that name holding *something else* is how a role check reads
+`undefined` and passes for everyone. Absent, the idiom throws. Sierra keeps
+`params` because it is what every router a person has used calls it, and
+`page.route` there means the matched route NODE.
+
+**Semantics, not just names — the Junction contract, now true.** Four fields,
+four rules:
+
+- **`auth`** — WHO. Frozen. **Propagates**: a call naming no principal inherits
+  the one in scope, at any depth. An explicit `{ user: null }` means *as nobody*
+  and is kept — **absent is not null**, tested with `in` rather than `??`, the
+  same rule Invariant 9 makes about a patch.
+- **`client`** — WHERE FROM. Read-only, propagates. Information, never authority.
+- **`route`** — path captures. Router-only, `{}` on an internal call.
+- **`locals`** — per-call scratch. Fresh `{}` every call, does NOT propagate; it
+  can be handed down deliberately, which is the difference between passing and
+  inheriting.
+
+**`auth` did not propagate, and the file said it did.** Measured: a nested
+`ctx.app.service('inner').find()` saw `null` while `context.ts` documented
+*"Frozen. PROPAGATES across internal calls."* Every boundary that starts a call
+chain therefore began at STRANGER(0) unless a human threaded it by hand — which
+is the same root cause as the Caravan job hazard, and why `example` carries an
+`app-ref.ts` singleton and `{ auth: { user: SYSTEM as never } }` in every job.
+Fixed by putting the principal in the `RequestMeta` ALS store the transport
+already wraps a whole request in, so nothing is threaded; a call whose principal
+differs re-scopes, so a sub-call made as somebody else passes **that** principal
+to its own children rather than the request's.
+
+**Enforcement is a test, not a rule.** A `fli check` rule cannot see a TypeScript
+interface from the file tree — but propagation, freezing and freshness are
+runtime behaviours, so `packages/junction/tests/context-contract.test.ts` asserts
+all four by running them. Verified by breaking it: three go red against the old
+behaviour. That is the enforcement that was actually available, and it is what
+would have caught a documented contract drifting from its code.
+
+
+**2026-08-15 · `FJS-D19` — Litestone's `Plugin` gets a `name`. The concept is
+NOT renamed.**
+
+Two questions were filed as one and they have opposite answers.
+
+**The name: yes, and it was never cosmetic.** A Litestone plugin had no identity
+at all, so nothing could introspect, order, report or name one in an error. It
+defaults to the class name — right for every plugin anyone writes, and free —
+and a stated `name = '…'` field wins, because a minifier rewrites
+`constructor.name` and a bundled app would report `t`. `db.$plugins` lists what
+is installed, in run order, on **every flavour of client**: what is installed
+does not vary with auth. Its first useful answer is the one nobody could get
+before — *a gated schema auto-installs `GatePlugin`, so what you passed is not
+what is running.*
+
+**The rename: no, and the proposal does not survive contact with what ships.**
+`IDEAS/one-mental-model.md` §5 argued that Litestone's Plugin is really a **Hook**
+— it intercepts queries — while Junction's attaches capability. Tested against
+the three that exist: `GatePlugin({ getLevel })` is access control,
+`FileStorage({ provider, bucket, endpoint, keyPattern })` is a storage
+capability, `ExternalRefPlugin` backs a field with external data. Each attaches a
+capability, holds configuration, and is installed once at construction with an
+`onInit` lifecycle. That is Junction's definition of Plugin, exactly. And
+**Litestone already has `hooks`** — `createClient({ hooks: { before: { setters:
+[fn] } } })` — so renaming Plugin to Hook would collide with a live, differently
+shaped concept one option key away in the same package.
+
+What actually differs between the two realms' plugins is the **interception
+surface**: eight `on*` methods here, four lifecycle methods there. That is a
+realm difference, not a concept difference — a Data-realm plugin intercepts
+queries because queries are what the Data boundary owns, and an API-realm plugin
+registers routes and services because that is what the API boundary owns. Same
+noun, realm-appropriate surface. That is the mental model working, and the
+finding it was filed under mistook it for the mental model breaking.
+
+**What should still converge, and did not need a rename to say so**: ordering.
+Junction has `requires: string[]` and Litestone has install order and nothing
+else. When Litestone grows one it takes that word rather than inventing
+`after`/`priority` beside it. The class-vs-object-literal shape difference stays:
+`ExternalRefPlugin` is a published base class people extend, and the gain is
+aesthetic.
+
+This ruling deliberately does not lean on **Provider**, which `ARCHITECT.md`
+listed as proposed and `FJS-D06` had not settled at the time. It has since:
+a Provider is a third party the app speaks to, and a Plugin is still what
+attaches a capability — so the two nouns here stay exactly as this ruling put
+them.
+
+**2026-08-15 · `FJS-D02` — a custom service method is a METHOD. There is no
+fourth noun.** The realms name three things — Model, Service, Resource — and
+`action` was a fourth, for a concept every surface a developer touches already
+called a method. The declaration is `methods: ['find', 'get', 'reboot']`, one
+list with CRUD in it. The wire is `X-Service-Method` over HTTP and a
+`service_call` frame naming `method` over the socket. The pipeline carries
+`ctx.method` and a refusal is `MethodNotAllowed`. Only the resolution table
+needed a separate word, and *is this name in the CRUD set* is an adjective, not
+a noun.
+
+**The adjective is "custom", and it is derived rather than declared.** A custom
+method is one the CRUD set does not name; nothing else distinguishes it, which
+is why nothing needs to say so. `_customMethods` / `collectCustomMethods` /
+`customMethodNames` is the table and its resolver, `ServiceDescription`
+reports `customMethods`, and `/metrics` and `surface.snapshot.md` say the same
+word.
+
+**What it cost was one public name**: `svc.action(name, id, data, query)` is
+`svc.invoke(...)` on the browser client and on a Sierra resource's `service`.
+Not `call` — that is already the explicit WS-only escape hatch, and
+`Function.prototype.call` is the wrong thing to make a reader think about. The
+wire did not change, and neither did the announcement: a custom method still
+announces under its own name (`orders pay`, `FJS-D21`).
+
 **2026-08-13 · `FJS-D29` — the process a fleet server runs is an OUTPOST, and
 infrastructure gets place nouns while AI gets personified ones.** Basecamp's
 resident process was called an *agent*. So is the thing `IDEAS/agent-surface.md`
@@ -128,7 +385,7 @@ component kit too and is not called `mesa-ui`.
 prose, comments and one filename, which is the shape this kind of thing takes
 once the code is correct. Swept: README, `index.js`, `render.js` (including the
 user-facing peer-dependency error), `PROJECT_STATE.md`, mesa's own docs, and
-`mesa-email.test.js` → `email-kit.test.js`. `drift-report.md` keeps the old
+`mesa-email.test.js` → `email-kit.test.js`. The 2026-07 audit keeps the old
 name: it is a dated audit and rewriting its findings would falsify the record.
 *Lives in:* `packages/email-kit/`.
 
@@ -151,7 +408,7 @@ read→create→update→delete, read defaults to STRANGER.
 `$:` tracks. **Event** is Junction's announcement — the thing `publish()` fans out
 and a channel carries. `ARCHITECT.md` §2 previously listed *signal* as a banned
 synonym for Event, which was written to stop "signal" meaning *notification* and
-accidentally outlawed the word Mesa's own runtime, docs and White Paper use for
+accidentally outlawed the word Mesa's own runtime and docs use for
 its core primitive. The ban is narrowed rather than dropped: **do not call an
 Event a signal.** Calling a reactive cell a Signal is correct and required.
 They cannot be confused in practice because they live in different realms — a
@@ -178,6 +435,127 @@ for derived — if it has no independent existence, it is not a Projection.
 *Lives in:* `ARCHITECT.md` §2 (to add); `IDEAS/scoped-sql.md`.
 
 ## Access control
+
+**2026-08-16 · `FJS-D05` — tenancy is DECLARED in the seed, one block, two
+strategies; row tenancy compiles to `@@deny` and never to `@@allow`.**
+
+The row as filed asked for a config shape. What it turned out to need was an
+owner: db-per-tenant worked, and its configuration existed in three places that
+could disagree — a `createTenantRegistry()` call, a `tenants:` slice in
+`litestone.config.js` that the CLI read three keys of, and nothing at all in the
+schema. So `litestone tenant create` and the running app could each be correct
+about a different directory. The other half was worse: **row-level tenancy was
+not a framework concept in any form**, and basecamp hand-writes
+`@@allow('all', workspaceId == auth().workspaceId)` on fifteen models, which is
+fifteen chances to leave one off and no way to notice.
+
+**The block lives in `schema.lite`, beside `database { }`.** Which strategy an
+app runs is a fact about the app, and everything downstream needs it: the
+registry, `litestone tenant`, Studio's switcher, and Junction, which has to
+resolve a tenant per request. Precedence is stated once — **an explicit option
+beats the declaration beats the default** — so a test can still point one schema
+at a temporary directory. `litestone.config.js` keeps its `tenants:` slice and
+sits between the flag and the schema.
+
+```
+tenancy { strategy database  dir "./tenants"  registry "./tenants-registry.db"
+          maxOpen 100  key env("TENANT_KEY")  resolve subdomain }
+
+tenancy { strategy row  column workspaceId  claim workspaceId }
+```
+
+**Row tenancy desugars into `@@deny`, and that is the whole correctness
+argument.** `@@allow` rules are OR'd within an operation, so adding one to a
+model that already declares `@@allow('read', ownerId == auth().id)` *widens* its
+reads to every row in the tenant — a tenancy feature that grants access. Deny
+overrides every allow and applies to a model declaring no policy at all.
+Basecamp's hand-written spelling is the allow form, which is safe only because
+those models declare no other read rule; as a generated rule it would not be.
+
+**Two rules per model, because create and read want opposite answers about an
+absent value.** `checkCreatePolicy` runs BEFORE `applyAuthDefaults`, so on a
+create the column the stamp is about to fill is legitimately `null` — denying
+that refuses every create the stamp exists to serve. On a read a row holding no
+tenant belongs to nobody and stays invisible. The anonymous branch
+(`auth().<claim> == null`) is stated rather than left to SQL's three-valued
+logic, which reaches the same answer by a route nobody should have to hold in
+their head, and is what refuses an anonymous create in the JS evaluator.
+
+**What the block cannot judge is answered per model, not inferred.**
+`@@tenant(none)` says a model spans tenants on purpose; `@@tenant(column: "x")`
+names a different column; a model declaring the column is scoped. Models
+declaring none are **reported once by name** at parse rather than warned about
+individually or silently skipped — cross-tenant data is sometimes exactly right
+(a plan table) and sometimes the column somebody forgot, and only the app can
+tell. `jsonl`/`logger` models are never scoped: there is no policy engine there,
+so a rule would read as enforcement and not be it.
+
+**Resolution is asked, not copied.** *Which tenant is this request for* is an
+API-realm question over a Data-realm declaration, so `registry.tenantFor({host,
+headers, principal})` applies the declared `resolve` and Junction contributes
+only what a transport has and what the refusal's status is. `createApp({ tenants })`
+installs `withTenantDb`, which **replaces** `withLitestoneDb` — one
+`ctx.locals.db`, and two hooks assigning it is a race decided by hook order.
+Work with no request behind it names its tenant with `{ locals: { tenantId } }`.
+
+**Under `strategy row` Junction adds a refusal rather than a hook.** A
+*signed-in* principal carrying no claim matches no row, so every screen is an
+empty list with a 200 — indistinguishable from a tenant with no data, and almost
+always a missing `sessionFields` entry. Refused by name on a scoped service.
+Anonymous is left to the gate: nobody is not a caller missing a claim.
+
+**Deferred, with a reason.** A model reached only through its parent
+(`check(parent)`) is not generated: `check()` is conservative-allow on create,
+because the related row does not exist when the create policy is evaluated, so a
+generated rule would hold for reads and not for writes — half-enforcement in the
+one feature where that is worse than none. `FJS-282`.
+
+*Lives in:* `packages/litestone/src/core/parser.js` (`parseTenancy`,
+`expandTenancy`), `src/core/tenancy.js` (`resolveTenancy`, `tenantFrom`),
+`src/tenant.js`, `packages/junction/src/core/litestone.ts` (`withTenantDb`,
+`tenantClaimGuard`); tests in `packages/litestone/test/tenancy.test.ts`;
+reference in `packages/litestone/docs/multi-tenancy.md`.
+
+**2026-08-15 · `FJS-D22` — a column says *the system writes this* with `@system`,
+and the application fills it by naming the column on the write.**
+
+Four things were decided together, because ruling the annotation without ruling
+the fill path ships a column nothing can legitimately populate.
+
+**The word, not the expression.** `@allow('write', false)` already enforced this
+at the Data boundary and nobody had documented it, but a client marker keyed off
+*is this policy expression statically false* is an analysis of an AST that grows
+cases forever. `@system` is decidable, and it makes the vocabulary orthogonal:
+`@guarded` locks read and write, `@system` locks the write and leaves the read
+alone. The pair is legal and means both halves — the combination `FJS-235`
+recorded as unspellable. A dynamic route (`@allow('write', auth().isSystem)`) was
+refused: measured, the model's `@@gate` refuses the whole update before the field
+policy is ever consulted, so the rule would depend on the app grading its own job
+principal correctly.
+
+**The fill path is a narrow hatch.** `update({ where, data, system: ['col'] })`
+unlocks one column and keeps the gate, the row policies, soft-delete and the
+audit actor. `asSystem()` writes the same value by dropping all of them. Same
+shape as ``where: { $raw: sql }`` keeping every policy while `asSystem().sql`
+drops them — the narrow hatch beside the coarse one — and naming the field is
+what stops an escape hatch disabling a guarantee silently.
+
+**A refused write throws for `@system` and still drops for `@allow('write', …)`.**
+Static means nobody ever, so a payload naming the column is code that meant to
+write it, and the client was told `readOnly`. Dynamic means it depends who is
+asking, and the same payload is legitimate for another caller: basecamp's
+`User.kind` / `status` / `isSystemAdmin` are written that way, and an ordinary
+member saving a profile round-trips all three. Making both loud would 403 every
+one of those saves on a column nobody touched.
+
+**A `@system` column is never in create-mode `required`.** Listing it there is
+what refused every create in the browser naming fields the caller was never meant
+to send. SQLite's NOT NULL still catches an application that forgets, at the
+layer that owns the value, with a message that says which side is missing.
+
+Not ruled here, deliberately: `FJS-D23`, the same seam from the other side — a
+payload key that is not a column. It wants the same vocabulary and a second word
+(`@transient`), not this one stretched.
 
 **2026-08-14 · The identity ladder: `@@gate("8")` is for credential material,
 not for `User`. A model is bounded by three declarations, and a level is only
@@ -453,6 +831,33 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+**2026-08-16 · A write announcement has two shapes, and the write says which
+(`FJS-307`).** `scope: 'row'` — one row changed, `result` is it, or `null` where
+`select: false` skipped the RETURNING. `scope: 'collection'` — `count` rows
+matching `where` changed, from a statement that never built them. The
+discriminator is STATED, never read off `result`, because `result: null` is not
+one fact: a `select: false` write is row-scoped and has no row, and treating that
+as *no rows* is exactly what dropped it a layer up. Every write method announces;
+seven did not, and a write matching no rows announces nothing.
+
+**2026-08-16 · `announce` is per CALL, with a client-level floor (`FJS-D34`).**
+`collection` (default) · `rows` · `none`; precedence option → `createClient({
+announce })` → `collection`. **Not per model**, and not adaptive on size. Per
+model was the tempting one — it is where `@@log` and `@@softDelete` live, and
+declared-in-the-seed is the house thesis — but the batch size is a property of
+the CALL: one `Order` model carries both a three-row cancel and a
+two-million-row purge, and a model-level flag materialises the purge. Adaptive
+was the other tempting one and it is not decidable: the count is unknowable
+before the statement without a second query, so a threshold would have to spend
+the memory before it could apply. Prior art is uniform on the shape and split on
+the dial — Sequelize per call (`individualHooks`), Django per method, Rails per
+verb, Ecto and Prisma refuse the question. `none` exists because a nightly purge
+nobody is watching should not send every tab back to the server either, and
+because *no subscribers* is not something a caller can express. An unrecognised
+value is refused BY NAME before the statement runs: `announce: 'row'` is somebody
+who wanted per-row announcements, and quietly handing them the coarse one is the
+class of bug `FJS-307` closed.
+
 **2026-08-01 · Unknown `where` fields: WARN on reads, ERROR on writes.**
 Reads log once per model+field (did-you-mean hint) and still execute; writes
 (update/delete/restore/upsert families) reject — a typo'd filter on a write is a
@@ -613,6 +1018,35 @@ concurrent caller as a nested one, so a second request's writes rode the first
 request's rollback. This feature opens a transaction on every mutating request
 and would have made that the normal path.
 
+**2026-08-15 · A soft-deleted row KEEPS its `@unique` values.** The slot is not
+released, and `create` naming a value a deleted row holds is refused — by name,
+with the row's id and both ways to release it (`FJS-204`).
+
+The alternative was a partial unique index (`CREATE UNIQUE INDEX … WHERE
+"deletedAt" IS NULL`), which frees the slot and is what "the row is gone" would
+imply. Rejected on two grounds and the first is decisive: **it makes `@unique`
+false for any read that includes deleted rows.** `findUnique({ code },
+withDeleted: true)` would legitimately match two rows, and every export, audit
+query, migration and `release:check` that reads with deleted rows would see
+duplicates on a column declared unique — a worse incoherence than the one being
+fixed. Second, it makes `restore()` conditionally impossible: soft delete's
+whole contract is a way back, and a way back that fails because a stranger took
+the value in the meantime is not one.
+
+Cost of the rejected option, for the record: SQLite cannot make an inline
+`UNIQUE` partial, so every constraint would have to be re-emitted as an index
+and every affected table rebuilt — 15 of basecamp's 37 models, `User`,
+`Workspace`, `Domain` and `App` among them.
+
+**Releasing a slot is therefore explicit**, which is the point: the row still
+owns the value, so change it (`update({ where, data, withDeleted: true })`) or
+stop keeping the row (`delete({ where, withDeleted: true })`). An app that lets
+a departed user's email be re-registered says so in its account-deletion flow
+rather than getting it as a side effect of a DDL choice.
+
+No per-field opt-out. It would reintroduce the two-rows-claim-one-identity
+problem per column, and nothing in the repo needs it yet.
+
 ## Migrations (Litestone)
 
 **2026-08-01 · The executor owns the transaction.**
@@ -631,7 +1065,301 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 *Both live in:* `packages/litestone/src/core/migrate.js` + `migrations.js`;
 tests in `test/migrations-fixes.test.ts`.
 
+**2026-08-16 · `FJS-D09` — there is no `down`. The way back is a copy taken
+before the run, and `--backup` is where it comes from.**
+
+A generated `down` cannot undo the migration it reverses. A rebuild is a `DROP
+TABLE`, so the inverse of *drop a column* is *invent the values it held*, and
+the inverse of a JS migration that rewrote every row is unwritable by anything
+but the person who wrote it. What a down migration reliably does is run, report
+success, and leave a database that looks restored — which is worse than having
+none, because the operator stops looking for the backup.
+
+**The framework already grades this question, and the two halves fit.**
+`release:check` classifies a schema change as expand — N-1 still serves, so the
+deploy is taken back by redeploying the CODE — or contract, the pivot, after
+which only forward. A down migration is not needed for an expand and not
+sufficient for a contract. So the only reversal litestone offers is the file:
+`litestone migrate apply --backup[=dir]` copies **every** SQLite database the
+schema declares before the **first** one is migrated — a copy taken inside the
+per-database loop is a copy of a half-migrated fleet — and refuses to migrate
+anything at all if a copy fails, which is the whole point of having asked. It is
+off by default: a multi-gigabyte copy on every deploy is a cost nobody asked
+for, and the deploy that wants one says so.
+
+**The other half is saying it while it is still true.** Without `--backup`,
+apply names the pending files it cannot take back: one that drops a table (which
+a rebuild is, so a dropped column is in this class) and every `.js` migration,
+whose contents nothing here can read. It warns and proceeds — refusing would
+make the flag mandatory for the ordinary case, a dev database nobody wants
+copied.
+
+**2026-08-16 · `FJS-D09` — a rebuild asserts its own row count before it drops
+the original.**
+
+`INSERT INTO t__new SELECT … FROM t` followed by `DROP TABLE t` has a gap in it:
+a copy that read fewer rows than the original holds is an error to nobody. Not
+to SQLite, which inserted what it was asked for, and not to the runner, which
+saw a statement return. One statement later those rows are gone and the
+migration reports ✓ — measured by editing a generated copy step, which is a
+thing the file's own header invites.
+
+The generated rebuild now compares the two counts between the copy and the drop.
+SQLite has no assertion — `RAISE()` is legal only inside a trigger body — so the
+comparison is a CHECK on a one-row temp table whose CONSTRAINT NAME is the
+message SQLite prints: `CHECK constraint failed: rebuild of post lost rows`. It
+aborts inside the migration's own transaction, so the rollback leaves the
+original table where it was. It is emitted even when nothing is copied, which is
+the case it changes most — a rebuild sharing no column name with the old table
+used to empty it under a comment reading *nothing to copy*.
+
+**2026-08-16 · `FJS-D09` — a migration is named after the last file in its
+directory, not after the clock.**
+
+Filename order IS apply order, and the stamp is second-granular. Two migrations
+created inside one second break that in one of two ways, both silent: with the
+same label the second `writeFileSync` overwrites the first and the change in it
+is simply gone; with different labels they sort by LABEL, so `evolve` applies
+before `initial` and a migration runs against a table its predecessor was to
+have created. Neither is hypothetical — a script that creates two migrations, or
+a test that seeds and then evolves, is enough.
+
+`nextMigrationName` reads the directory and steps the stamp past the highest one
+already there. The timestamp still says roughly when; now it also says after
+what. Loosening the name pattern was the alternative and is not available: the
+14-digit prefix is where the ordering guarantee comes from.
+
+Closes `FJS-D09`.
+*Lives in:* `packages/litestone/src/core/backup.js` (`backupSqliteTo`, the one
+owner of copying a live SQLite file — `db.$backup` and the CLI hold different
+handles and would otherwise answer *is this copy safe under an open WAL* twice)
+· `src/core/migrate.js` (`rowCountGuard`) · `src/core/migrations.js`
+(`nextMigrationName`) · `src/tools/cli.js` (`preApplyBackup`,
+`irreversibleMigrations`); tests in `test/migrations-fixes.test.ts` and
+`test/cli-smoke.test.ts`.
+
 ## API design (Junction)
+
+**2026-08-16 · `FJS-D10` — the deferred API cluster, ruled. Two adopted, two
+refused, and the fourth item turned out to be a defect wearing a naming
+question.** Four proposals deferred 2026-08-01 pending `FJS-D06`. Graded one at
+a time, because they were only ever related by having been deferred together.
+
+**1 · `IAuth` partial acceptance — ADOPTED. `{ verifySession }` is a complete
+provider as far as Junction is concerned, because that is what Junction calls.**
+The interface declares six methods. Junction invokes exactly two of them:
+`verifySession` (`transport/http.ts`, on the HTTP and the WS path) and
+`sessionFor` (`core/app.ts`, behind `runAs`, which already throws by name when a
+provider lacks it). `login`, `logout`, `createUser` and `deleteUser` are called
+by `@frontierjs/auth`'s own `/auth/*` routes and by nothing in this package — so
+Junction was demanding six to use two, and an app wanting to authenticate
+against something it already has had to stub four methods that would never run.
+A stub that throws is indistinguishable from a provider that works until the day
+something calls it.
+
+Under `FJS-D06` an auth backend is a **Provider**, and the rule a Provider
+contract follows is **declare what you call**. So the type splits: Junction's
+requirement is `verifySession`, with `sessionFor` optional, and the full
+six-method contract stays `IAuth` — the thing a complete auth package
+implements and the thing `/auth/*` needs. `IAuth` extends the narrow one, so
+`@frontierjs/auth` is unaffected and every existing caller still typechecks.
+
+**2 · `publish()` string shorthand — REFUSED.** The proposal is
+`publish('posts')` beside today's `publish(fn)`. The declarative spelling
+already exists and is `channel: 'posts'` on the service, and
+`svc.pipelines()` **refuses a service that declares both**, naming the method.
+So a shorthand would be a third way to say what two already say, one of which
+exists only to police the other. `publish(fn)` earns its place by deciding a
+channel per record; a constant does not need a function, and `channel:` is
+where a constant goes.
+
+**3 · Typed `createSchema` inference — REFUSED as filed, adopted in the cheap
+form.** Full zod-style inference means `parse()` returning a type derived from
+the field map. The argument against it is the thesis: **the seed is where types
+come from.** A model service is validated by `autoValidate` off the generated
+JSON Schema and has no hand-written schema at all; `createSchema` is the hatch
+for a shape the seed does not describe. Conduit already documents the seam as
+validator-agnostic — *`createSchema`, zod, valibot or a hand-written predicate
+all satisfy it* — so building an inference engine here means competing with zod
+on zod's ground, for the case the framework tells you to avoid.
+
+What the filing was really reaching for is that `parse()` answers
+`Record<string, unknown>`, so a custom method's body casts. That is answered by
+letting the author state the type they already have —
+`createSchema<CreateOrder>({ … })`, with the field map constrained to
+`CreateOrder`'s keys so coverage is checked — which is a signature change, not
+an engine.
+
+**4 · `createClient` options grouping — REFUSED. `setters`/`getters` →
+`read`/`write` — ADOPTED IN NAME, BLOCKED IN FACT.** Grouping 22 flat options
+into namespaces does not touch the thing that is actually hard to hold, which is
+the precedence ladder between four of them (`databases: ':memory:'` >
+`databases: { main: { path } }` > `db` > the declaration). Renaming the
+container leaves the ladder exactly as subtle and breaks every app to do it.
+
+`setters`/`getters` are the wrong words and `read`/`write` are the right ones —
+a delete is not a set, and `SETTER_OPS` has always listed the deletes. That is
+`FJS-D06` §1's tiering applied: these are **Hooks**, they mutate `args`, and
+`write` is the alias the filing asked for.
+
+**But the rename is held, because grading the name uncovered that the mechanism
+does not work.** `hooks.before.all` expands over sixteen declared operations and
+**four of them ever reach the runner** — `create`, `update`, `findMany`,
+`findFirst`, `count`. Every delete, every bulk write, `upsert`, `findUnique` and
+`search` are silent; `exists` runs for a directly-named key and is in neither
+set, so `all` misses it too. Measured, not read. An audit or stamping hook
+registered on `all` therefore does not see a `deleteMany`, and nothing says so.
+Renaming the keys first would give an accurate name to a broken mechanism and
+make the hole harder to find, so `FJS-288` is wired first and the rename lands
+with it.
+*Lives in:* `packages/junction/src/auth/types.ts` (`SessionVerifier`) ·
+`packages/junction/src/core/schema.ts` (`createSchema<T>`) ·
+`packages/litestone/src/core/client.js` (`buildHookRunner`, `FJS-288`).
+
+**2026-08-16 · deferred work runs as the ENQUEUING PRINCIPAL, re-resolved — not
+as a system identity, and not as nobody.**
+
+A job had no principal, and no principal is STRANGER(0), refused by the model's
+own `@@gate`. The documented workaround was to pass `{ auth: { user: SYSTEM } }`
+by hand from every job. Three candidates were on the table; the choice is
+between them, not merely for the fix.
+
+**Rejected — SYSTEM by default.** It removes the refusal by removing the
+question. Every background write is then made with the app's full standing,
+including work a customer asked for: booking a courier for one person's order
+would carry the authority of the shop, and the audit trail would name `system`
+for all of it, which is exactly what `example` showed before the change. A
+default that silently escalates is worse than one that silently refuses, because
+the refusal is at least visible.
+
+**Rejected — snapshot the session at dispatch.** One line shorter, and it grades
+the caller at the standing they held when they ASKED. A user demoted, suspended
+or stripped of a role between the dispatch and the run keeps that authority for
+as long as the retry schedule runs — a captured privilege that outlives its own
+revocation. Revocation that does not reach queued work is not revocation.
+
+**Ruled — record the id, re-resolve when it runs.** `dispatch()` stores
+`app.principal()?.userId`; the worker calls `app.runAs(actorId, …)`, which
+rebuilds the principal through `IAuth.sessionFor(userId)` and opens the ALS scope
+the handler runs in — so a service call inside a handler names no `auth` and
+inherits one, through the same propagation `FJS-D03` gave nested calls. The
+standing is whatever the caller holds NOW.
+
+Three consequences, all deliberate:
+
+- **Nobody asked → `createApp({ system })`.** A cron fire, a boot-time enqueue.
+  This is the one place an app says who it is when acting on its own behalf, and
+  an app declaring none gets `null` rather than an invented privileged identity.
+  A cron STATES `actor: null` rather than inferring it, so a timer cannot depend
+  on whether an unrelated request happened to be in scope.
+- **An unresolvable actor fails the job by name.** A deleted user, or a provider
+  with no `sessionFor`. Downgrading to STRANGER(0) is the defect being removed;
+  upgrading to the system principal is the rejected option above. Neither is a
+  safe fallback, so there is none.
+- **`IAuth.sessionFor` proves no credential** and must never be reachable from
+  anything a request can name. It is optional on the interface for that reason:
+  a provider that cannot honestly answer should not pretend to.
+
+Where it shows: `example`'s audit trail. The `book-courier` write now names the
+staff member who pressed Ship, where every background write used to say
+`system`. `caravan/tests/job-context.test.ts` runs all of it, including a user
+demoted between the dispatch and the run.
+
+**2026-08-16 · `FJS-D20` — the developer-facing auth API. A route is what
+ESTABLISHES a session; everything after it is a service. The browser half
+belongs to the client that holds the token.**
+
+The question was left open as *what should the surface be*, on the grounds that
+`/auth/*` bypasses the Service abstraction. That half was never the problem —
+**login cannot be gated by login**, so register, login, logout and the two
+recovery flows stay raw routes and always will. The line is whether a call can
+be refused for want of a session: if it can, nothing is lost by making it a
+service, and a great deal is gained — the hook pipeline, the audit trail, the
+schema validation, the WebSocket transport and the browser client, none of which
+a hand-written route has. So `GET /auth/me` is now `account.get('me')`, and the
+three things an app could not do at all — see where else it is signed in, revoke
+one of those, change a password, issue an API key — are services rather than
+absences. `logout` stays a route because it is the other half of `login`: one
+pair, one owner of the token's life.
+
+**What was actually broken was the other end.** There was no developer-facing
+auth API in the browser at all. `client.authenticate()` signed in and stored
+nothing; Sierra's `login(token)` stored a token and signed nobody in; and the
+two dogfood apps each carried their own `session.js` — 87 and 201 lines — to
+bridge that gap, differently. Neither ever called `POST /auth/logout`: signing
+out dropped the local token and left the session row valid until it expired, in
+both apps, for the whole life of the framework. A surface nobody can use without
+rewriting it is not a surface, and the seam it was missing from is not `auth` —
+it is the client that holds the token, opens the socket and knows both prefixes.
+
+So the wire half is `client.auth.*` on the Junction client, next to the `IAuth`
+contract Junction already declares, and it works with no UI framework at all.
+The UI half is Sierra's `session` — a reactive object, a boot restore, and a
+`ready` promise the navigation guard awaits, which is the redirect flash both
+apps had solved by hand. **The token has one owner**: `tokenStorage` on the
+client, so signing in and restoring at boot cannot disagree.
+
+Three smaller rulings fall out, each because the alternative was measured here:
+
+- **A level is opt-in.** `account.me` answers the caller's gate level only when
+  the app passes a resolver, because the app owns the role→level mapping and a
+  default answer would be a second one that disagrees near a gate boundary.
+- **A service name collision is refused at boot, naming the option.** The
+  registry is a Map; the alternative is one of the two silently replacing the
+  other depending on registration order. Basecamp has its own `api-keys` — a
+  workspace's keys rather than a person's — and turns auth's off by name.
+- **A 401 keeps the server's own sentence.** The client threw `Unauthorized`
+  without reading the body, which is why every sign-in page in the repo
+  re-mapped the status to produce "wrong email or password".
+
+Left open deliberately: OAuth (`Credential` already carries the columns), and a
+bus for many observers of an auth event — `FJS-042` ruled single handlers, and
+that ruling stands.
+
+**2026-08-15 · `FJS-D13` — a stream sits OUTSIDE the result envelope. `kind`
+stays `single | list`.**
+
+The envelope answers *what did this call return*: one record or a page of them,
+with `total`/`limit`/`offset` and the bulk protocol's `errors`. A stream returns
+nothing and then repeatedly, so every field of the envelope is either meaningless
+for it or a lie. There is no third `kind`.
+
+**The cost of the alternative is measurable and it is silent.** `kind` is
+branched on at ten sites — `envelope.ts`'s own header lists them: the bridge,
+`app.service()`, `callService`, `channels.publish`, the WS handler, the browser
+client's `find()` and `resource()`, `hooks-builtin`, devtools, `service.ts`. A
+third value lands in each of them as *not a list*, which every one of them treats
+as a single. That is precisely the drift this module was created to end, and it
+would arrive with no error.
+
+**The framework already streams, and it already answered this question the other
+way.** `publish()` is an after-hook, so a pushed frame IS `ctx.result` — it has
+been through `protect()` and the whole pipeline — and `unwrapResult` strips the
+envelope at the wire. Streaming here is *unwrap at the edge*, not *grow a kind*.
+
+**The corollary is the half with teeth: each FRAME is a result; the stream is
+not.** `ctx.sse()` is a transport primitive on a raw route, so a stream built
+there has no `gateAuth`, no `autoValidate`, no `protect()` and no app hooks.
+That is correct for a heartbeat and wrong for records — and the July password
+leak this envelope module was written after came from exactly one confusion about
+where protection applies. A stream of records belongs on a channel, where the
+pipeline produced each frame, or the app writes the protection itself and knows
+that it has.
+
+**Enforced, not asserted.** `wrapResult` refuses a `Response`, a
+`ReadableStream`, anything with `getReader`, and an async iterable, by name.
+Before this it wrapped them: both a Response and a ReadableStream have no
+enumerable own properties, so a service method that returned one answered
+`{"kind":"single","data":{}}` — an empty object with a 200, the stream destroyed
+and nothing said. 5 tests in `tests/envelope.test.ts`.
+
+**What this does not decide.** Whether a service method may *declare* itself
+streaming — an action that yields frames through the hook pipeline — is a
+feature, and this ruling neither blocks it nor requires it: it says only that
+whatever such a thing returns is not a `ServiceResult`. Nor does it decide
+per-subscriber filtering of a frame, which is `FJS-011`'s residue and 4.6's
+argument; a pushed frame and a streamed frame have the same problem and should
+get one owner rather than two.
 
 **2026-08-13 · A service is a definition and a compiled runtime, and `methods:`
 declares.** (`FJS-D01`, closing `FJS-016`.)
@@ -1129,6 +1857,23 @@ handed the record to every server-side subscriber including webhook fan-out;
 and an app that forgot to wire the publish hook had half a real-time layer with
 no signal. `ctx.dispatch` is now the single switch for both — `false` announces
 nothing, any other value replaces the payload.
+
+**The separator is the discriminator, and it is not decoration.** A colon means
+the in-process bus, a space means the wire — `posts:created` is a server-side
+reaction (webhooks register exactly these), `posts created` is a frame a browser
+receives. Two audiences with different semantics: the bus is synchronous and
+unfiltered, the socket obeys channel membership and can be suppressed. Keeping
+one spelling for both would make a log line and a subscription unreadable as to
+which layer they belong to, and would make a subscriber wired to the wrong one
+look correct — which is precisely how jetty came to subscribe on the WIRE to
+`${name}:created`, the bus spelling (`FJS-059`). Colon is also the conventional
+NESTING character and junction already nests with it (`webhook:delivered`),
+while the browser client's parse is exact-two (`split(' ')`, `parts.length === 2`
+in `client/index.ts`) — so the two separators are doing different jobs rather
+than the same job twice. Do not unify them, and do not swap them: the swap
+lands Feathers muscle memory on the side where it is most misleading, since
+junction's payload semantics are not Feathers'.
+
 A service declares its target with **`channel:`** — `'posts'`, a
 `(rows, ctx) => Channel` function, or `false` for a declared opt-out. Named
 `channel` and NOT `publish` because "publish" is an ordinary action name
@@ -1155,6 +1900,78 @@ the line is in front of the developer who has to narrow it.
 rationale in `publishToChannels()`.
 
 ## UI substrate (Mesa)
+
+**2026-08-16 · A UI plugin contributes a CONTROL, and a control is two
+registrations in two packages.** (`FJS-D17`)
+`registerControl(name, resolve)` in Sierra's `field-rules.js` answers *which
+control does this column get* — a name, a whole descriptor, or null to decline.
+`registerFormControl(name, Component)` in `@frontierjs/ui/controls` answers *what
+does that name render as*. Both are consulted before the built-in table, and the
+last thing registered is the first thing asked, so an app beats the kit it
+imported without either of them coordinating.
+
+Why two and not one: the split is a dependency rule, not a taste. `field-rules.js`
+is a leaf that has to run in plain Node — `formFields()` is called from a test, a
+prerender and a snapshot, where no component can be loaded at all — and
+`@frontierjs/ui` peers only on mesa and css, so it cannot import Sierra to learn
+what a `Float` is. A NAME is the only thing that crosses that boundary, and naming
+the answer is also what keeps it inspectable.
+
+What was there before is why the row said *limited*: `controlFor` was a `switch`
+inside a published package and `<Form>` was an `{#if}` ladder over the five names
+that switch could answer, so contributing a control meant forking both. The five
+are now entries in the same table a contribution enters (`FormField.mesa`), which
+is what stops the extension path being a second-class one that rots — a
+registered name **replaces** a built-in of the same name, so swapping the kit's
+`select` for a combobox everywhere is one line.
+
+Two things the ruling refuses. **A control over a `readOnly` column**: `@system`,
+`@computed`, `@generated` and `@from` are the Data boundary saying the value is
+not the caller's to write, so a control over one is a form that cannot submit —
+the registry is not consulted for those fields at all. And **a resolver's answer
+is a name, never a component**, even where a bundler could carry one, because the
+half that can be asked without a browser is the half three other callers use.
+
+The rest of the question — *what else should a plugin contribute?* — is three
+surfaces and one mechanism: a form control (this), a **cell / detail renderer**
+and a **filter control**. Each is the same `(rule, ctx) → name` plus a
+name→component binding. Neither of the other two ships until its generator does,
+because a registry with no consumer is a name nobody can call and there is no
+generated table, detail view or filter bar to call it. `IDEAS/overview.md` 1.1.
+
+*Lives in:* `packages/sierra/src/junction/field-rules.js` (`registerControl`,
+`defaultControlFor`), `packages/ui/controls.js`,
+`packages/ui/components/forms/FormField.mesa`; pinned in
+`packages/sierra/tests/form-fields.test.js` and `packages/ui/test/form.mjs`
+(a contributed control rendered in a real `<Form>`, negative-controlled).
+
+**2026-08-15 · Braces mean *run code*; parentheses mean *watch*. A block whose
+body only reads values is refused by name.** (`FJS-D18`)
+`$: (a, b)` is a multi-path watch. `$: { (a, b) }` is a compile error — as are
+`$: { }`, `$: { count }` and `$: { cart.total }`. The two forms parse to the
+*same AST* (a `SequenceExpression` of identifiers), so the parentheses are the
+only thing that separates them and the check reads them from source position.
+
+Why: effects do not drive renders in Mesa — a template's `{a}` tracks its own
+reads — so an effect with no side effect is unobservable, and every one of those
+forms is somebody reaching for braces to express a watch. Reporting it costs
+nothing, because it is decidable, and the previous behaviour was worse than
+either alternative: `$: { (a, b) }` compiled to
+`orderedGroup([{ deps: [a], handler: <the value of b> }])` and threw
+`fn is not a function` the first time `a` changed. The message names the form
+the author wanted, and it distinguishes the two intents — an unparenthesised
+sequence with an identifier tail is an attempted `dep, handlerRef` and is told
+to write `() => f()`, anything else is told to drop the braces.
+
+Consequence — the handler shorthand is **unbraced-only** (RULE 52). `$: a, syncFn`
+is fine; `$: { a, syncFn }` is refused, because `{ a, syncFn }` and `{ a, b }`
+are indistinguishable and a block is where several handlers are ordered, which is
+worth one arrow per line. An empty block is its own message: `[].every()` is
+true, so length is checked explicitly or an empty block reads as a watch group.
+
+*Lives in:* `packages/mesa/src/compiler.js` (`_isInertBlock`, the `$:` label
+walk), spec at `packages/mesa/docs/VISION.md` §4.4 / §4.8 (RULE 14b, 50, 52) and
+the §4.9 table, pinned in `packages/mesa/test/inert-block.test.js`.
 
 **2026-08-05 · A component's composition API is snippet props, and a snippet's
 arguments are getters.**
@@ -1436,8 +2253,12 @@ import — the exact rule that package was created around, and its first export.
 stylesheet. `css` takes `utils` as a **devDependency** for the guide and the
 test suite; nothing it ships imports it.
 
-**The guide imports the sibling package's real file** — `../../utils/src/glow/
-glow.js` — rather than vendoring a copy. A browser clamps `..` at the origin,
+*(The package was `@frontierjs/utils` when this was ruled and is
+`@frontierjs/toolbelt` now — `glow` is the `/glow` kit, the ruling is unchanged.
+See § Repo conventions, 2026-08-15.)*
+
+**The guide imports the sibling package's real file** — `../../toolbelt/src/
+glow/glow.js` — rather than vendoring a copy. A browser clamps `..` at the origin,
 so `demo/serve.js` now serves the workspace root; over `file://` the path just
 resolves. That is also why `guide.js` became an ES module. `vocabulary.js`
 stays a classic script, because `test/run.js` inlines its source.
@@ -1451,17 +2272,82 @@ lightness window in oklch — hue and chroma untouched — which is a **no-op
 wherever the tone already reads**, so a theme that was fine stays looking like
 itself.
 
-The window is two tokens (`--code-l-min`, `--code-l-max`) rather than a
-derivation because CSS cannot derive it: relative colour syntax exposes the
-channels of one origin colour, and the origin is the tone, not the surface it
-will land on. So a dark theme has to declare the inverted window, the way it
-already declares `color-scheme: dark`. `code: every token clears AA in
-theme-*` pins all eight.
+The window is two tokens rather than a derivation because CSS cannot derive it:
+relative colour syntax exposes the channels of one origin colour, and the origin
+is the tone, not the surface it will land on. So a dark theme has to declare the
+inverted window, the way it already declares `color-scheme: dark`. `code: every
+token clears AA in theme-*` pins all eight.
+
+*(Amended 2026-08-16, `@frontierjs/css` v0.16, closing `FJS-027`. The window is
+`--tone-l-min` / `--tone-l-max` and was `--code-l-*`: the ruling is about a tone
+rendered as **text**, and code was only the first place it happened.
+`.btn.outlined`, `.btn.link` and a toned `.btn.ghost` were painting the raw tone
+onto a surface and were under AA on 34, 30 and 24 of 72 tone × theme pairs
+respectively, worst 1.19:1. `--tone-ink` in `tones.css` is the same clamp off
+whatever tone the element carries, declared on `*` like the tint ramp so it is
+guaranteed-invalid untoned and `var(--tone-ink, X)` states the untoned look. The
+blend was re-measured on that grid and still loses — `--tint-ink`'s 55% toward
+`--ink` puts `sunset`/`warning` at 4.05:1, where the clamp's worst case across
+all three variants is 6.02:1. `.outlined`'s border takes the same colour, which
+is WCAG 1.4.11 rather than 1.4.3: a boundary at 1.99:1 is the variant not being
+drawn.)*
 
 Comments and punctuation are deliberately **not** derived — they are the
 theme's own `--ink-mute` and `--ink-soft` verbatim, so retuning a theme's ink
 ramp moves them, and a theme whose muted ink does not read is visible as a
 theme defect rather than absorbed here (`FJS-125`).
+
+---
+
+**2026-08-16 · A theme ships no selector, so anything a look needs is a token — and a token has to reach a descendant to count.**
+
+The contract was already this, and `themes/press.css` exists to probe it: if a
+design needs a rule of its own, the token that would have carried it is missing.
+Four were (`FJS-158`, `-159`, `-160`, `-161`), and only one of the four was
+simply absent. The other three are the interesting shape: **a token that stops
+at the element it is written on**, which looks identical to a working one in any
+demo that is one element deep.
+
+`--border-width` is the structural hairline — card, field, table, topbar, code
+block, tab strip, seventeen literals before it — with `--field-border-width` and
+`--table-border-width` falling back to it, because a Field's box and a Card's
+edge are not the same decision in every design. `--surface-shadow` is resting
+elevation on the Block tier, `none` by default, so `--shadow-*` stops being an
+overlay-only ladder. `--app-bg` / `--topbar-bg` / `--sidebar-bg` / `--dialog-bg`
+are the frame's own grounds; basecamp's prototype had three distinct dark
+surfaces and had recorded losing two of them to `--surface`. `--space-*-base` is
+the ladder's shape, because a rung is `base × density` and only the base
+inherits.
+
+**Three rules follow, and each one is a way to get it wrong:**
+
+*A default that is another token is a use-site fallback, never a `:root`
+declaration.* `--topbar-bg: var(--surface)` at `:root` resolves once, against
+`:root`'s own `--surface`, and inherits that colour past every `.theme-*`. The
+same alias trap `--ring` and `--badge-radius` are already written around.
+
+*A token a theme must reach cannot be declared on the component.* `.table {
+--table-border-width: var(--border-width) }` reads correctly and makes the token
+unreachable — the component's own declaration beats the same token set on any
+ancestor. Read it at the use site instead. `--table-bg` stays declared, and the
+difference is who the token is for: one is for a caller styling one table, the
+other for a theme styling every table.
+
+*What is drawn with `border` and is not a border does not scale.* A spinner
+ring, a tooltip arrow, a step marker's disc. Widening those with the theme's
+hairline distorts a shape rather than thickening a line. The one pair that must
+stay related is the tab indicator: `calc(var(--border-width) + 1px)`, bleeding by
+the strip's own weight, or a heavy theme draws a 3px rule with a 2px underline
+over it and the selected tab reads as a gap in the line.
+
+**What a token deliberately does not do is carry ink.** A dark sidebar in a
+light app does not follow from `--sidebar-bg` — the labels inside still read the
+light ramp. The answer needs no new mechanism, because a theme is a class of
+inheriting tokens and nothing else: `<nav class="sidebar theme-dark">`. Grounds
+separate surfaces WITHIN one ramp; a theme class inverts one.
+
+`theming.spec.js` holds all of it, and every assertion measures a descendant of
+the element carrying the token.
 
 ---
 
@@ -1713,6 +2599,56 @@ work, not a decision.)*
 
 ## Repo conventions
 
+**2026-08-15 · A surface is a sub-project — `widgets/` and `extension/`, peers of `api/`
+and `web/` — and an app may have it and nothing else.** Widgets were built out of
+`web/src/Embeds/`, inside the SPA's Vite root, which made them share three things
+they do not share in practice. **The config is a different target**: `widget`
+emits N self-contained IIFEs, `spa` emits one app, and one Vite root is one of
+those. **The tests are a different shape**: a widget is proved on a host page it
+does not own, with markup and CSS written to be unhelpful, not by driving a
+router. **The release is a different release**: static files on an origin a
+stranger's page links to, shipped when the pages embedding it are ready, which is
+not when the API is. Under `web/`, a widget shipped when the SPA shipped and
+nothing said so.
+
+So `widgets/` carries the same six folders every sub-project carries, `db/` stays
+at the root owned by nobody, and **which surfaces an app has is the app's
+business**: `fli new --template widgets-only` is a whole FrontierJS project whose
+product is the embeddable scripts, with no `api/` and no `web/`.
+
+**The same ruling covers `extension/`** — a `@frontierjs/jetty` browser
+extension — and the three answers are further from the SPA's than a widget's
+are. Its config emits a *manifest*, and one source becomes two builds under
+`--browser chrome|firefox|both`. It is loaded unpacked into a browser profile
+rather than served, so there is no URL for a drive to point at and its tests are
+instructions plus what the build can assert. And it ships as a signed upload to
+two web stores under a review measured in days, which no deploy here waits for.
+`--template extension-only` is the project whose product is the extension.
+
+**The rule this generalises to**, for whatever surface comes next: a directory
+at the app root earns the name when its **config**, its **tests** and its
+**release** are all different answers. One of the three differing is a folder;
+all three is a sub-project. `db/` stays at the root under every one of them,
+owned by none.
+
+**The app owns the install.** One `package.json`, at the app root, for every
+surface — `web/`, `widgets/` and `extension/` alike. A `package.json` inside a
+surface would look tidier and would break resolution that walks up from it; jetty
+found this the hard way, by probing two fixed directories for the Mesa compiler
+and silently finding none in the very layout this ruling defines.
+
+**`fli check`'s `app-layout` changed with it.** It used to demand `db/` + `api/` +
+`web/` and warn about any missing one, which contradicted its own comment that
+api-only and web-only are legitimate, and would have been wrong for widgets-only
+three ways. It now asks the two questions that are decidable and silent when
+wrong: is the schema at the root, and is a surface hiding inside another one.
+
+**The generator is one function** — `packages/cli/core/widget-surface.js`, called
+by `fli new --widgets` and by `fli make:widget`. An app scaffolded by one and
+extended by the other cannot be two shapes.
+
+— `packages/cli/core/widget-surface.js`, `core/checks.js`, `packages/sierra/src/build/widget-build.js`, `README.md` §Project Structure, `CLAUDE.md` Invariant 3.
+
 **2026-08-14 · Invariant 17 is a standard, not a wall — `package-root-md` warns.**
 The four files at a package root (`README.md`, `CLAUDE.md`, `PROJECT_STATE.md`,
 `CHANGES.md`) stay the standard, and the reason stands: the root is the index, and
@@ -1736,6 +2672,151 @@ still be unable to say which of the five earned its place. A warning that names
 the file puts the judgement where judgement lives.
 
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
+
+**2026-08-15 · `FJS-D32` — FrontierJS adopts a linter and refuses a formatter,
+and the refusal is measured rather than preferred.** `IDEAS/tooling-decisions.md`
+framed this as a taste call the maintainer owns — keep aligned columns and take a
+linter only, or drop alignment and take one tool that does both jobs. It is not a
+taste call, because the alignment rule is not only in `CLAUDE.md`: **the code
+`fli new` generates is written that way**, so the first `format` run of any of the
+three candidates rewrites the app the scaffold had just written. A default whose
+first use undoes the tool that produced it is not a default.
+
+So: **Biome, linter only.** `formatter.enabled: false`, and `assist.enabled:
+false` with it — Biome's import sorting reorders an aligned import block, which is
+a format change wearing a lint rule's clothes. Per-block `biome-ignore format:`
+comments are refused under every branch: a comment whose only reader is a tool, in
+a house whose rule is that a comment must be load-bearing or deleted.
+
+**The rule set is curated, and coverage is not the objective.** Measured on this
+tree: `recommended` gives 7,249 findings; correctness + security + suspicious +
+a11y, minus the rules that are taste, gives ~600. `style`, `complexity` and
+`performance` are off, because with the formatter refused a linter that argues
+about style is a formatter that cannot fix anything.
+
+**The boundary is the half that outlives the tool.** A linter owns generic
+JavaScript correctness; `fli check` owns everything derived from the seed; neither
+reimplements the other. It is not a maturity gap — Biome reads neither `.mesa` nor
+`.lite`, and doctor-class questions are cross-file anyway (*does this resource
+name resolve to a model?* cannot be answered from the file it appears in). Without
+the sentence, four of `IDEAS/diagnostics.md`'s checks get written as lint rules,
+two registries disagree, and neither is authoritative — the shape Invariant 4
+exists to prevent. A scaffolded app's `bun run check` therefore runs `fli check`
+**first**.
+
+**What is still open** is only this repo's own adoption: ~600 findings, 123 of
+them unused imports. That is a countable cleanup with a direction, not an
+argument — `FJS-266`.
+— `packages/config/`, `IDEAS/tooling-decisions.md` 1 · `ISSUES.md` `FJS-266`.
+
+**2026-08-15 · `FJS-D33` — what a scaffolded app is given is a dependency it
+extends, never a file copied into it.** The generated `package.json` and config
+files are the framework's real opinion about tooling, and far more people will
+read them than will ever read this repo. A copy is frozen at the moment it was
+written; `@frontierjs/config` can be corrected for every app that already exists.
+`tsconfig.json` and `biome.json` are one line of `extends` each, and the app keeps
+only what is about its own layout — `paths` and `include`.
+
+`.editorconfig` is the single exception and it is a mechanical one: EditorConfig
+has no extends. It is therefore a hand copy, byte-pinned by a test on both sides
+(`packages/config/test` and `packages/cli/tests/app-config.test.js`) — the same
+shape as every other hand copy in this repo.
+
+**An app gets a CI workflow**, because the alternative is that it never gets one,
+and the workflow calls `bun run check` and nothing else — the rule this repo holds
+itself to, one level down: a gate that only exists inside a CI provider cannot be
+run before pushing. **`@frontierjs/cli` is a devDependency** rather than a global
+assumed on PATH: three of the four scripts call `fli`, and a globally installed
+one of a different vintage generating files for this app's framework version is
+exactly the drift a pin removes.
+
+**`typecheck` is `fli typecheck`, not `tsc --noEmit`**, and that is forced. Every
+`@frontierjs` package ships TypeScript source — each `exports` map points at a
+`.ts` — so tsc follows those imports and checks the framework as part of the app's
+program: a freshly scaffolded app gets several hundred diagnostics from inside
+`node_modules` and none of its own. `skipLibCheck` covers `.d.ts` only and there
+is no tsc option for *check my files, not the ones they import*, so the filtering
+happens on the output, in `packages/cli/core/typecheck.js`, whose other caller is
+this repo's own `scripts/typecheck.mjs`. `FJS-268` holds the underlying question
+of whether the framework should ship declarations.
+— `packages/cli/core/app-config.js`, `packages/config/`, `IDEAS/overview.md` 5.13.
+
+**2026-08-15 · `drift-report.md` is retired; its synthesis is
+`IDEAS/coherence-review.md` and the rest is deleted.** The twelve-package audit
+of 2026-07-31 wrote four things into one root-level file, and by now they had
+four different half-lives. The resolution log (fixed 2026-08-01) is in the
+packages' own `CHANGES.md`. The twelve per-package sections are snapshots of a
+tree four months old, and each package's `PROJECT_STATE.md` is the live version.
+The appendix bug list said so itself — *the live register is `ISSUES.md`* — and
+named two entries that had already proved wrong.
+
+**What was worth keeping is the cross-package synthesis, because it is the only
+copy of an argument still in play.** `FJS-D06` points at it — ruled 2026-08-16
+for the vocabulary alone, and §2/§3/§5/§8 keep their own ids; §7's
+Slice axis and §8's *every convention-wired bridge found was broken somewhere;
+every named or typed one had survived* exist nowhere else. Those eight findings
+are now an `IDEAS/` record, which is what `IDEAS/` is for — argued, not started —
+and the record says in its own header that it is not a register.
+
+**Why delete rather than archive.** A root-level file is read as current; that is
+what a root is for. This one had already misled once — `FJS-070` warned for ten
+days that its line-number citations were stale, and it had no line numbers at
+all. Keeping it as `docs/` would preserve the per-package snapshots, which is
+precisely the material that goes wrong quietly: a paragraph describing junction
+in July, read in November, with nothing in the text to say which. Git holds it.
+— `IDEAS/coherence-review.md` · `ARCHITECT.md` §6 keeps the audit METHOD, which
+is reusable and outlives any run of it.
+
+**2026-08-15 · `FJS-D14` — the four claimed folders are named: two collapse into
+one package, two are V2.** `orion` is the automations engine and platform.
+`toolbelt` is the core pure-function library, shared across repos and meant to
+stand on its own outside FrontierJS — which is the reason it is not folded into a
+framework package. `datetime-kit` is the date / time / timezone solution.
+`oracle` is the solutionizer: it takes a requirement and hands back the mental
+model of it.
+
+**Two of the four are now settled by the naming itself.** `toolbelt` as
+described *is* `@frontierjs/utils` — core pure functions, shared across repos,
+worth having outside FrontierJS — so **`utils` is gone and toolbelt is the
+package**, holding everything it held and inheriting the substrate standing
+`FJS-D26` granted. `datetime-kit` is not a neighbour of it but a room inside it:
+**one package, one kit per subpath**, `@frontierjs/toolbelt/glow` and
+`@frontierjs/toolbelt/datetime`. A consumer importing one kit pays for one kit,
+and they ship together because a project that wants one usually ends up wanting
+two.
+
+The alternative was an umbrella package depending on separately published kits.
+It was refused for the size the thing actually is: N package.jsons, N versions
+and N release rows buy independent versioning for a set of pure functions that
+will be released together anyway, and they put the umbrella itself — a package
+with dependencies — in the position substrate is supposed to occupy.
+
+**Purity is not per subpath. It is the whole package**, because it is the whole
+of the argument that litestone and mesa may import it (`FJS-D26`). The
+framework-aware tier the old `toolbelt/README.md` reserved — env reading, path
+resolution, a Junction `ctx` — does not exist and does not get a room here on
+spec; a helper that needs a runtime stays in the package that needs it until
+something rules otherwise.
+
+**`orion` and `oracle` are V2 and are deferred until FrontierJS core leaves
+alpha.** Neither is a gap in the framework: one is an automations *application*
+(basecamp's partner) and the other is a domain-modelling tool that stops one
+step short of `db/schema.lite`. Both would be built ON the framework, so
+building them now spends alpha time on consumers of a thing whose seams are
+still moving — and each carries a decision the core has not made yet. Orion's
+primary trigger is a model event, which needs a Junction subscriber for
+litestone's `onEvent` (`FJS-010`, blocked on `FJS-D04`); Oracle would be the
+first `fli` command to call an LLM, which is a posture question about the CLI
+rather than about Oracle.
+
+So they stay claimed folders, exempt by name in `scripts/ci-allowances.json`,
+and **that exemption is now the answer rather than a placeholder**. Nothing is
+owed on either until core is out of alpha; at that point this ruling is the
+thing to reopen, and the two READMEs already state what each would cost.
+
+This closes `FJS-D14` — all four folders are named, two collapsed into
+`toolbelt`, two deferred.
+— `packages/toolbelt/` · `packages/orion/README.md` · `packages/oracle/README.md`.
 
 ## Dependencies & the ecosystem
 
@@ -1779,14 +2860,256 @@ measurably costs adoption — and even then a per-platform downloader wrapper (t
 esbuild/biome shape) beats a fork, because it still ships upstream's bytes.
 *Lives in:* `litestone/src/tools/replicate.js`, `cli/commands/deploy/_steps-setup/`.
 
+**2026-08-15 · SQLite is the only database FrontierJS supports, and serverless
+follows from that rather than being refused separately.** Both were recorded
+because they were *silences*: an outside framework's feature catalogue listing
+*"DynamoDB, SQLite, MySQL, Postgres"* and *"Serverless — on-demand, auto-scaling,
+zero maintenance"* mapped to nothing here, and a grep for `postgres` or `mysql`
+across all of `IDEAS/` returns one incidental mention inside a Fly anecdote. *Which
+databases do you support* is the first question any evaluation asks, and an
+unwritten refusal reads to everyone outside this repo as an oversight.
+
+**SQLite only. Not a stage, not a default.** Three reasons, in the order they bite.
+**Litestone is a compiler, not a query builder over a driver** — `@@allow` compiles
+to a `WHERE`, `@@gate` to a refusal, `@encrypted` and `@guarded` to column handling,
+`@@fts` to FTS5 virtual tables with sync triggers, `@@softDelete` into every
+generated statement, `@version` into an optimistic-concurrency `UPDATE`. Each of
+those is emitted SQL, so a second dialect is not a driver but a second compiler
+backend, and every derived guarantee the project sells is asserted against one
+emitter's output: the access snapshot, the DDL snapshot, schema mutation testing,
+the 14 × 12 matrix. **The other guarantees rest on the file, not on the database** —
+`createTestEnv` clones a template database per test (476ms → 13ms) because that is a
+filesystem copy; backup and restore (2.11) and time travel (4.13) are affordable
+because the Data realm is a file; Litestream replicates a file. A Postgres path
+keeps none of it and needs a second answer to each. And **it is the pitch**: one
+binary beside one file is the deployment story, and the reason the Release realm can
+be honest about what a revert restores.
+
+The cost stated plainly: an application that outgrows one machine's write throughput
+outgrows the framework. That ceiling is acceptable because it is high — measured,
+5,000 rows at 3.3 µs/op through `createMany()`, reads at 1.13× raw SQLite, live
+memory under 10 MB — and because the applications it excludes already have a
+platform team. Read scaling, if it is ever wanted, is replicas of the file, never a
+second dialect. **Revisit only on a named trigger**: a real user hits the write
+ceiling with 2.16's batching already applied, or a requirement arrives that the
+database be operated by the customer's own DBA — which is a procurement fact rather
+than a technical one, and should be answered as one.
+
+**Serverless is refused as a consequence, not as a taste.** Three things that
+already ship assume a stateful, long-lived process, and any one of them alone rules
+out request-scoped execution: the database is a file on local disk in WAL mode;
+Junction holds WebSocket sockets and channel membership in process memory; Caravan is
+an in-process queue and cron. Making them serverless means an external database, an
+external pub/sub and an external queue — at which point every advantage above is
+gone and the result is a weaker version of a framework that started there.
+
+**Keep the distinction**: serverless as a *runtime* is refused; **static asset
+delivery over a CDN is not a framework question at all.** Sierra's `static` target
+already emits a directory any host or CDN serves, and nothing prevents putting one in
+front of an app's assets. The single place it touches the design is 2.3d, whose
+retention window becomes a cache-invalidation window as well — to be stated there
+when that row is built, not pre-empted here.
+*Lives in:* `litestone/src/core/ddl.js` and `client.js` (the emitters) ·
+`IDEAS/speed-and-footprint.md` (the numbers).
+
+**2026-08-15 · `FJS-D26` — `@frontierjs/toolbelt` is substrate, not a member of
+the dependency graph. Any package may import it, mesa and litestone included.** The question was what *leaf* meant, and it was undecidable while two
+documents wrote down two answers: Invariant 1 said mesa carried zero workspace
+dependencies and the pure-function package's README claimed the same standing to
+grant itself an exemption from it. Invariant 1 now states the dependency
+direction alone, which settles it in the README's favour — `Litestone ← Junction
+← Sierra` is a rule about *framework packages*, and substrate sits below the
+arrow rather than on it.
+
+What makes the exemption safe is what the substrate may itself depend on:
+**nothing**. Zero dependencies, workspace or otherwise, and pure functions only —
+no clock, no filesystem, no network. That is the whole of the argument that
+importing it cannot create a cycle or route a package around the direction, so a
+single `Date.now()` in its `src/` retires the argument rather than bending it.
+`scripts/ci.mjs` § hygiene enforces it (`FJS-258`): no dependency in the
+manifest, and under `src/` no clock, no global, no network call and no import
+that is not relative — one blunt rule instead of a list of forbidden names.
+
+Unblocks `FJS-191` (mesa runs a forked `glow` with the bugs the other copy fixed)
+and `FJS-192` (four inflection rule sets resolving one invariant). Both are one
+import away and were waiting only on this.
+
+**The package's NAME is not ruled here** — `FJS-D14` carries whether this is
+`utils` or `toolbelt`, and the standing travels with whichever wins.
+*Lives in:* `packages/toolbelt/` (`@frontierjs/utils` until the same day, see
+§ Repo conventions) · `CLAUDE.md` § Invariants 1.
+
+**2026-08-15 · `FJS-D16` — all three duplications CLOSE, by three different
+mechanisms, because the obstacle is different in each. The rule underneath is
+one: the owner is whoever already computes the fact, and a copy exists because a
+door was shut — so open the door rather than keeping the copy in sync.**
+
+A "keep in sync" comment is not a mechanism. All three carried one, and two had
+already drifted: `auth/install.md` once emitted `@@gate("9")` — LOCKED, above
+`asSystem()` — so a generated schema locked the auth tables against the auth
+package itself, and jetty's resource copy is 302 lines against sierra's 1003
+under a header still claiming it "mirrors sierra … exactly".
+
+**The HMR algorithm → import it from `@frontierjs/mesa`.** No new package, no new
+edge: mesa already ships `mesa-vite/` in its `files:` and exports `./vite` and
+`./vite/client`, and sierra and jetty both already peer-depend on mesa. The copy
+exists because half the algorithm was reachable and half was not — `client.js`
+is exported, `injectHMR` is module-private. Export the second half, push sierra's
+improvements to the first half UP into mesa, and delete sierra's two files.
+Sierra's stated reason for reimplementing — frontmatter stripping, the fence
+preprocessor, slot rewriting — is about the PLUGIN, which stays sierra's; it was
+never an argument about these two files.
+
+**The copy was ahead of the original in three ways, which is the argument for
+merging rather than choosing.** Sierra's client falls back to
+`import.meta.hot.invalidate()` where mesa's only warned and lost the edit; its
+`canInject` fails CLOSED where mesa ran two `.replace()` calls that are silent
+when they stop matching; and its `hot.accept` sets `__setMark` on the NEW
+function rather than the old module's, without which the first update registers
+with `hmrMark: undefined` and the SECOND drops the entry as stale — **mesa's HMR
+worked once per page load and then reported no connected instances.** Nothing
+tested the boundary in either package, which is how that survived.
+
+**Jetty's is an ADAPTATION and stays**, which is the line this ruling draws: its
+registry is on `globalThis` rather than module exports, `hot_update(id,
+moduleOrFn)` resolves two shapes and answers a count, and there is no
+`import.meta.hot` anywhere in it — an MV3 content script is a classic script and
+Vite's HMR client is not in the page. The one fact with two owners in there is
+the ~30-line DOM swap between the mark and the anchor. Extracting it is worth
+doing and is filed (`FJS-259`); it is not done here because that surface has no
+test and the package's suite is already red for an unrelated reason, so it would
+be untested surgery on the one thing jetty's dev loop depends on.
+
+**jetty's copy of sierra's `resources/` → the pure half to the substrate, and
+NOT a new package.** `docs/future-refactors.md` plans
+`@frontierjs/resources-core`; that is refused. A fifth published package costs a
+release cadence, a peer range, an install entry and a `files:` field, for ~190
+lines that are pure and zero-dependency — which is the definition the substrate
+package already wrote for itself (`FJS-D26`). `createMakeFromSchema`,
+`createStore` and the `mergeHooks`/`runPhase`/`runAroundHooks` pipeline move
+there and both sides import them.
+
+**The orchestrator stays duplicated, deliberately**, and that is the part of the
+extraction plan being rejected rather than deferred: sierra calls
+`client.service(name)`, jetty calls `harbor.request('service:call')`, and that
+is where the 1003 lines and the 302 actually differ. A `defineResource({
+transport })` seam is worth having when something needs it; forcing it now
+couples sierra's release cadence to jetty's for no coverage gained, which is the
+reason the plan was deferred and is still true. **Duplication is not the defect —
+a fact with two owners is.** A transport is not a fact; it is two of them.
+
+Jetty's Feathers-style event names are a **separate bug**, not a duplication, and
+must not ride the extraction: it subscribes on the WIRE to `${name}:created`,
+which is the BUS spelling (§ API design, 2026-08-02).
+
+**The auth schema copy → resolve the owner out of the APP, then delete the
+concept.** The obstacle here is resolution, not direction: `fli` is a global CLI,
+is not installed beside the app, and the app's auth version varies, so neither a
+dependency nor a peer range can reach it. `auth:install` installs
+`@frontierjs/auth` already — install FIRST, then resolve it from the app's own
+`node_modules` and call `authSchemaFragments(db)`. One owner, and the fragments
+match the auth the app will actually run.
+
+That is the interim. **The end state is that nothing is copied at all**, and it
+is small: litestone already resolves `import "./models/users.lite"` inside a
+schema, but only as a path (`resolve(dirname(currentPath), imp.path)`). Teach it
+that a non-relative specifier goes through node resolution and an app's
+`schema.lite` can say `import "@frontierjs/auth/schema.lite"` — which also fixes
+what the interim cannot: today the fragments are pasted as TEXT, so an auth
+upgrade never reaches a schema that was generated once.
+
+Closes `FJS-D16`; fixes `FJS-038` and the duplication half of `FJS-059`.
+*Lives in:* `packages/mesa/mesa-vite/` · `packages/toolbelt/src/` ·
+`packages/cli/commands/auth/install.md` · `packages/litestone/src/core/parser.js`
+(`parseFile`).
+
+**2026-08-15 · `FJS-D12` — FrontierJS ships English, and the seam is reserved by
+six constraints rather than by a catalogue.** The premise the row was filed under
+expired before the ruling did: it said i18n had to be decided *before* schema→UI
+shipped, and schema→UI shipped without it, because the generator authors no
+string — a label is `@label` where the schema declares one and the title-cased
+column name otherwise, which is exactly what a hand-written control already
+resolved. What generation multiplies is call sites, not strings. So this is no
+longer a gate on anything; it is the question of what may be written down now so
+that a catalogue can arrive later without a `.lite` syntax change.
+
+**Nobody in this space has solved it at the schema level, and that survey is what
+makes deferring safe.** ZenStack is the closest cousin — the same shape of
+attributes over a schema, `@@allow` included — and it takes a literal message per
+validation attribute (`@length(min: 8, max: 32, message: '…')`), single-locale,
+exactly our `@required("…")`; it has no i18n at all, and the community answer is
+to key off the error CODE and translate on the client. Prisma declares no labels,
+so it has no problem to have. Rails is the one that proves the cheap path:
+`human_attribute_name` resolves a DERIVED key path and falls back to the
+humanised column name, and validation messages are keyed by the validator's name
+— zero authored keys, and zero cost for an app that never translates. Django adds
+lazy resolution (`gettext_lazy`), so the declaration holds a promise and the
+locale is decided at render rather than at parse. Payload does two separate
+things and is right to: a label keyed by locale for the configuration string, and
+`localized: true` per field for the DATA, negotiated with `?locale=` plus a
+fallback locale. Drupal's three-way split states the shape most clearly —
+interface strings, configuration strings, content — three mechanisms on purpose,
+and conflating any two is the classic mistake. Paraglide is the modern mechanism:
+compile messages into typed tree-shakeable functions, so a page carries the
+strings it uses instead of a catalogue and a parser.
+
+**What we take is the derived key, and the rest is six constraints that cost
+nothing today:**
+
+1. **`@label` is a default English string, never a key.** A string's address is
+   derived — `Model.field.label` — the way litestone already derives a table
+   name. No `.lite` syntax changes when a catalogue arrives.
+2. **An error carries a stable code and its params; the sentence is a fallback,
+   not the contract.** `x-messages` is already keyed by rule name *and* by the
+   JSON Schema keyword it compiles to, and `toFieldErrors` is already the one
+   owner of thrown value → per-field messages. This is error design that happens
+   to make translation possible later.
+3. **Configuration strings and content are two mechanisms, never one attribute.**
+   `@label` is configuration. A per-locale column VALUE is content, stays
+   unbuilt, and whatever it ends up called is not `@label` with a second
+   argument.
+4. **`@frontierjs/toolbelt/inflect` is structural English and never takes a
+   locale.** It crosses `model Post` ⇄ `posts` ⇄ `db.post` for five callers, so a
+   locale there renames tables (Invariant 2). Message pluralisation is CLDR
+   plural categories and belongs in a different module.
+5. **A kit component's strings are props with English defaults.**
+   `@frontierjs/ui` peers on mesa and css alone, and a component that needs a
+   catalogue installed before it can render `Close` is unusable by an app that
+   has none — Invariant 13's argument, applied to strings.
+6. **Formatting gets one owner the day it arrives.** There is no `Intl.` anywhere
+   in the tree today; keeping it that way by rule is what stops locale-aware
+   dates and numbers landing at every call site.
+
+Deferred to V2: catalogues, locale negotiation, pluralisation, per-locale data,
+and `lexicon` as a package. The deferral is safe because of (1) and (2) — every
+user-facing string is addressable and every error is identifiable, so the
+catalogue is GENERATED rather than excavated.
+
+**Three things are reserved as ours, as candidates rather than commitments.** A
+`strings.snapshot.md` gated by the `snapshots` phase, derived from the seed, so a
+new column with no label is a diff rather than an archaeology dig — the
+Rails-world equivalent is a third-party grep over source, and nothing derives the
+register from the schema. Locale as a client flavour, `db.$setLocale('es')`
+beside `$setAuth` / `asSystem` / `$scopedBy`, where Payload uses a query
+parameter and Directus a join table. And per-locale prerender on the `static`
+target, which is Paraglide's bundle win out of a loop the build already runs.
+
+Closes `FJS-D12`, and retires the *1.5 precedes 1.1* dependency in
+`IDEAS/overview.md`.
+*Lives in:* `packages/litestone/src/core/parser.js` (`@label`) ·
+`packages/sierra/src/junction/field-rules.js` (`labelFieldFor`, `toFieldErrors`)
+· `packages/toolbelt/src/inflect/inflect.js` · `IDEAS/ecosystem-gaps.md` 4.
+
 ## Open (discussed, not yet ruled)
 
 **Moved to `ISSUES.md` § Needs a decision (2026-08-05)** — every unruled question
 in the repo is listed there with an id, so that "what is waiting on me?" is one
 table rather than six. A ruling comes back **here** and closes the row there.
 
-What was listed here, by its new id: `FJS-D01` junction structural refactor ·
-`FJS-D11` bulk PATCH/REMOVE partial success (ruled 2026-08-14) · `FJS-D04`
-litestone `onEvent`
-post-construction subscribe · `FJS-D06` coherence-review vocabulary ·
-`FJS-D09` migrations second tier · `FJS-D10` the deferred API cluster.
+What was listed here has since been ruled, every one of it, and each ruling is
+above: `FJS-D01` junction structural refactor (2026-08-13) · `FJS-D11` bulk
+PATCH/REMOVE partial success (2026-08-14) · `FJS-D04` litestone `onEvent`
+post-construction subscribe (2026-08-16) · `FJS-D06` coherence-review vocabulary
+(2026-08-16) · `FJS-D09` migrations second tier (2026-08-16) · `FJS-D10` the
+deferred API cluster (2026-08-16). What is still unruled is `ISSUES.md`
+§ Needs a decision, which is five rows.

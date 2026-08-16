@@ -165,9 +165,11 @@ Open, and the reason this is a note rather than a proposal:
   in an SSR pass should presumably emit the `pending` snippet, which makes it the
   first thing a prerendered page shows and therefore a layout decision, not only a
   loading one.
-- **Interaction with `{#virtual each}`** — `ISSUES.md` `FJS-067` records that it
-  produces no SSR output and wants a `{:static}` fallback. Same shape of question:
-  what does a region render when its data is not there yet.
+- **Interaction with `{#virtual each}`** — it renders its first window on the
+  server, computed from the row height because there is no viewport to measure
+  (`FJS-067` recorded the opposite and was wrong). Same shape of question: what
+  does a region render when its data is not there yet, and a window of rows is
+  the answer that block already gives.
 - **Does the derivation want to be visible?** A compiler that silently inserts
   boundaries is a compiler whose output does not match the source. A `--explain`
   listing what was placed where would keep it honest, and is the same reporting

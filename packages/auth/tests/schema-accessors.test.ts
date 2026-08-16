@@ -23,7 +23,7 @@
 import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { authSchemaFragments } from '../schema.ts'
+import { authSchemaFragments, authUserModel, authMachineryModels, retargetDb } from '../schema.ts'
 import { parse } from '@frontierjs/litestone/parser'
 import { modelToAccessor } from '@frontierjs/litestone/ddl'
 
@@ -131,57 +131,111 @@ describe('accessor consistency', () => {
   })
 })
 
-// ─── the hand copy ───────────────────────────────────────────────────────────
-// `fli auth:install` carries its own copy of these fragments, because the CLI
-// scaffolds a schema before anything is installed and cannot import this file.
-// The two have drifted before — pre-rename scalars that no longer parse, a
-// missing `role`, and `@@gate("9")`, which is LOCKED and walled the auth tables
-// off from the auth package itself. Prose said "keep them in sync"; this asks.
+
+// ─── the split ───────────────────────────────────────────────────────────────
+// The two `.lite` files this package ships are the source, and they are split by
+// WHO OWNS THE MODEL — which the gate already states. User is the app's: it gets
+// columns added, relations point at it, and `fli auth:install` appends it into
+// the app's own schema.lite. The other three are @@gate("8"), meaning nothing
+// outside asSystem() speaks to them, so they go in a file the app imports.
 //
-// It compares the DECLARATIONS, not the bytes: comments are allowed to differ
-// (the copy says it is one), an access rule is not.
+// A model that drifted across that line would be a real change with no other
+// symptom: put User at 8 and an app cannot list its own people, put a credential
+// model below 8 and its material becomes reachable from a request.
 
-describe('the CLI hand copy declares the same access as the shipped fragment', () => {
+const modelsIn = (source: string) => {
+  const result = parse(PREAMBLE + source)
+  expect(result.errors ?? []).toEqual([])
+  return (result.schema as any).models as any[]
+}
 
-  function cliFragment(): string {
-    const md    = readFileSync(join(import.meta.dir, '..', '..', 'cli', 'commands', 'auth', 'install.md'), 'utf8')
-    const start = md.indexOf('const authSchemaFragments = (db) => `')
-    const open  = md.indexOf('`', start) + 1
-    const close = md.indexOf('\n`\n', open)
-    expect(start).toBeGreaterThan(-1)
-    return md.slice(open, close).replaceAll('${db}', 'main')
-  }
+const gateOf = (model: any) => model.attributes.find((a: any) => a.kind === 'gate')?.value
 
-  /** Model name → the access rules it declares, in a comparable shape. */
-  function accessOf(source: string) {
-    const result = parse(PREAMBLE + source)
-    expect(result.errors ?? []).toEqual([])
-    // `any`: a parsed schema is the parser's own shape, and this comparison is
-    // about attribute payloads no exported type describes.
-    const models: any[] = (result.schema as any)?.models ?? []
-    expect(models.length).toBe(4)
-    const out: Record<string, unknown> = {}
-    for (const model of models) {
-      out[model.name] = {
-        gate:   model.attributes.find((a: any) => a.kind === 'gate')?.value,
-        // JSON is the comparison: a policy is an expression tree, and two trees
-        // that stringify the same are the same rule.
-        model:  model.attributes.filter((a: any) => a.kind === 'allow' || a.kind === 'deny')
-                     .map((a: any) => JSON.stringify(a)).sort(),
-        fields: model.fields.flatMap((f: any) =>
-                  (f.attributes ?? [])
-                    .filter((a: any) => a.kind === 'fieldAllow' || a.kind === 'guarded' || a.kind === 'secret' || a.kind === 'encrypted')
-                    .map((a: any) => `${f.name}:${JSON.stringify(a)}`)).sort(),
-      }
-    }
-    return out
-  }
+describe('the two shipped .lite files', () => {
 
-  test('gate, row policies and field policies match model for model', () => {
-    expect(accessOf(cliFragment())).toEqual(accessOf(authSchemaFragments('main')))
+  test('each half parses standalone against a host schema', () => {
+    expect(modelsIn(authUserModel('main')).map(m => m.name)).toEqual(['User'])
+    expect(modelsIn(authMachineryModels('main')).map(m => m.name).sort())
+      .toEqual(['Credential', 'Session', 'Verification'])
   })
 
-  test('and the copy is not empty or truncated', () => {
-    expect(Object.keys(accessOf(cliFragment())).sort()).toEqual(['Credential', 'Session', 'User', 'Verification'])
+  test('the halves are exactly the composed fragment', () => {
+    expect(modelsIn(authSchemaFragments('main')).map(m => m.name).sort())
+      .toEqual(['Credential', 'Session', 'User', 'Verification'])
+  })
+
+  // The line the split is drawn on. Asserted rather than described, because a
+  // model moving across it changes what an app can do and nothing else fails.
+  test('the machinery is locked to asSystem() and User is not', () => {
+    for (const m of modelsIn(authMachineryModels('main'))) expect(gateOf(m)).toBe('8')
+    expect(gateOf(modelsIn(authUserModel('main'))[0])).toBe('4.4.4.5')
+  })
+})
+
+describe('retargetDb', () => {
+
+  test('--db moves every model, and main is a no-op', () => {
+    const dbOf = (src: string) =>
+      modelsIn(`database other { path "./other.db" }\n` + src)
+        .map(m => `${m.name}→${m.attributes.find((a: any) => a.kind === 'db')?.name}`)
+
+    expect(dbOf(authSchemaFragments('other')).sort())
+      .toEqual(['Credential→other', 'Session→other', 'User→other', 'Verification→other'])
+    expect(authSchemaFragments('main')).toBe(retargetDb(authSchemaFragments('main'), 'main'))
+  })
+
+  // The files spell @@db(main) although an absent @@db already means main — the
+  // literal exists solely so this substitution has something to match. Tidy it
+  // out of the .lite files and --db silently stops working.
+  test('every shipped model spells @@db(main) for the substitution to find', () => {
+    expect(modelsIn(authSchemaFragments('main')).length).toBe(4)
+    expect([...authSchemaFragments('main').matchAll(/^[ \t]*@@db\(main\)/gm)]).toHaveLength(4)
+  })
+
+  // Both .lite headers describe the substitution, so they contain the literal in
+  // prose. A substring replace rewrote those sentences as well, which is why the
+  // rule is line-anchored on both sides.
+  test('a prose mention of the attribute is left alone', () => {
+    const moved = authMachineryModels('other')
+    expect(moved).toContain('rewrites @@db(main) when --db names another database')
+    expect(moved).not.toContain('@@db(other) when --db')
+  })
+})
+
+// ─── the CLI copy, which is gone ─────────────────────────────────────────────
+// `fli auth:install` carried a hand copy of these models and it drifted three
+// times. It reads the shipped `.lite` files out of the app's node_modules now
+// (`FJS-038`), and both halves of that are checked here: that the copy has not
+// come back, and that the ONE rule the CLI still restates — the @@db swap, which
+// it cannot import because `fli` runs on node and schema.ts is TypeScript —
+// still agrees with this package's.
+
+describe('fli auth:install carries no copy of the schema', () => {
+
+  const installMd = () =>
+    readFileSync(join(import.meta.dir, '..', '..', 'cli', 'commands', 'auth', 'install.md'), 'utf8')
+
+  test('it declares no models of its own', () => {
+    const src = installMd()
+    for (const model of ['User', 'Credential', 'Session', 'Verification']) {
+      expect(src).not.toMatch(new RegExp(`^\\s*model\\s+${model}\\s*\\{`, 'm'))
+    }
+  })
+
+  // Executed, not sighted. The CLI's arrow is lifted out of the markdown and run
+  // against the shipped file; a mismatched literal fails here rather than in an
+  // app that asked for --db and quietly got main.
+  test('its @@db swap produces exactly what this package produces', () => {
+    const src   = installMd()
+    const match = src.match(/const retargetDb = \(source, db\) =>\n(.*)\n/)
+    expect(match).not.toBeNull()
+
+    const cliRetarget = new Function('source', 'db', `return ${match![1].trim()}`) as
+      (source: string, db: string) => string
+
+    const shipped = readFileSync(join(import.meta.dir, '..', 'db', 'auth.lite'), 'utf8')
+    for (const db of ['main', 'auth']) {
+      expect(cliRetarget(shipped, db)).toBe(authMachineryModels(db))
+    }
   })
 })

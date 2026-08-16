@@ -4,14 +4,16 @@
 // they are already working; they do not want an email per order. So `via()`
 // returns `inApp` and there is no `toEmail()` — and if somebody adds 'email' to
 // that list without writing one, `notify()` throws
-// NotificationChannelNotImplementedError at send time rather than dropping it.
+// NotificationTransportNotImplementedError before anything is sent, rather than
+// dropping it.
 //
 // The customer's copy is a different class (OrderConfirmation), not a branch in
-// this one. They are told different things, on a different channel, and one of
-// them is not a User at all.
+// this one. They are told different things, on a different transport, and one
+// of them is not a User at all — which is why OrderConfirmation's recipient has
+// no id and this one's does.
 
 import { Notification, inApp } from '@frontierjs/notifications'
-import type { InAppMessage, User } from '@frontierjs/notifications'
+import type { InAppMessage, Recipient, Transport } from '@frontierjs/notifications'
 
 interface Order {
   id:        number
@@ -26,9 +28,9 @@ export class OrderPaid extends Notification {
 
   constructor(private order: Order) { super() }
 
-  via(_user: User): string[] { return ['inApp'] }
+  via(_recipient: Recipient): Transport[] { return ['inApp'] }
 
-  toInApp(_user: User): InAppMessage {
+  toInApp(_recipient: Recipient): InAppMessage {
     return inApp()
       .title('Order paid')
       .body(`${this.order.reference} — ${this.order.total.toFixed(2)}`)

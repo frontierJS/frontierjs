@@ -21,6 +21,23 @@ export interface RawClause {
  */
 export declare function sql(strings: TemplateStringsArray, ...values: unknown[]): RawClause
 
+/** litestone's own SQL, safe to splice into a `sql` pattern. Only litestone builds one. */
+export interface SqlFragment { sql: string; params: unknown[] }
+
+/**
+ * The clock, spelled so it can match a stored `DateTime`.
+ *
+ * `DateTime` is ISO-8601 TEXT and comparisons against it are string-wise, so
+ * SQLite's own `datetime('now')` — space separator, no milliseconds, no zone —
+ * compares BELOW every value stored today. `sql` refuses it by name; this is
+ * what to write instead. Modifiers are bound as parameters.
+ *
+ * @example
+ * db.task.findMany({ where: { $raw: sql`dueAt < ${now()} AND completedAt IS NULL` } })
+ * db.task.findMany({ where: { $raw: sql`startedAt > ${now('-7 days')}` } })
+ */
+export declare function now(...modifiers: string[]): SqlFragment
+
 // ─── Window functions ─────────────────────────────────────────────────────────
 
 export interface WindowFnSpec {
@@ -90,6 +107,49 @@ export interface QueryEvent {
   params:    unknown[]
   duration:  number       // ms
   actorId:   number | string | null
+}
+
+// ─── Write event ──────────────────────────────────────────────────────────────
+
+/**
+ * What a BULK write tells a subscriber.
+ *
+ * - `collection` (default) — one event: *`count` rows under this filter changed*.
+ *   Always correct, costs nothing, and every open list re-asks the server.
+ * - `rows` — one event per row, off `RETURNING`. Buys precision with memory
+ *   proportional to the batch, which is why it is opt-in and why it is decided
+ *   per CALL: the call site is the only place the batch size is knowable.
+ * - `none` — silent, deliberately. Not the same as having no subscribers.
+ *
+ * Precedence: the call's value → `createClient({ announce })` → `collection`.
+ * An unrecognised value is refused by name (`InvalidAnnounceError`, 400).
+ */
+export type AnnounceMode = 'collection' | 'rows' | 'none'
+
+// What `onEvent` listeners receive, plus the `event` name — which a $tapEvents
+// subscriber needs because a 'transition' carries no `operation`.
+export interface WriteEvent {
+  event:      'create' | 'update' | 'remove' | 'transition'
+  model:      string
+  // The method that ran, which is not the event: `deleteMany` announces as
+  // `remove` and `upsertMany` as `update`.
+  operation?: string
+  // Whether this event can name the row. `row` — one row, `result` is it, or
+  // null where `select: false` skipped the RETURNING. `collection` — `count`
+  // rows matching `where`, from a statement that never built them. Never read
+  // the distinction off `result`: `result: null` is both of those.
+  scope?:     'row' | 'collection'
+  count?:     number
+  // collection only — the caller's filter, as written
+  where?:     unknown
+  result?:    unknown
+  schema?:    unknown
+  // transition only
+  transition?: string
+  field?:      string
+  from?:       string
+  to?:         string
+  record?:     unknown
 }
 
 // ─── Hook context ─────────────────────────────────────────────────────────────
@@ -204,6 +264,8 @@ export interface CreateClientOptions {
     remove?: (event: HookContext, ctx: LitestoneCtx) => void
     change?: (event: HookContext, ctx: LitestoneCtx) => void
   }
+  /** The FLOOR for what a bulk write announces; any call may override it */
+  announce?:   AnnounceMode
   /** Fires on every SQL query — use for logging, slow query detection */
   onQuery?:    (event: QueryEvent, ctx: LitestoneCtx) => void | Promise<void>
   /** Fires when a @log / @@log entry is written — return extra fields to merge */
@@ -292,17 +354,17 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere, TOrderBy> {
   findManyCursor(args?: { where?: TWhere; limit?: number; cursor?: string; orderBy?: TOrderBy | TOrderBy[] }): Promise<CursorResult<TRow>>
   search(query: string, args?: { where?: TWhere; limit?: number; offset?: number; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow[]>
   create(args: { data: TCreate; include?: Record<string, boolean>; select?: Record<string, boolean> | false }): Promise<TRow | null>
-  createMany(args: { data: TCreate[] }): Promise<{ count: number }>
+  createMany(args: { data: TCreate[]; announce?: AnnounceMode }): Promise<{ count: number }>
   update(args: { where: TWhere; data: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | false }): Promise<TRow | null>
-  updateMany(args: { where: TWhere; data: TUpdate }): Promise<{ count: number }>
+  updateMany(args: { where: TWhere; data: TUpdate; announce?: AnnounceMode }): Promise<{ count: number }>
   upsert(args: { where: TWhere; create: TCreate; update: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | false }): Promise<TRow | null>
-  upsertMany(args: { data: TCreate[]; conflictTarget: string[]; update?: string[] }): Promise<{ count: number }>
+  upsertMany(args: { data: TCreate[]; conflictTarget: string[]; update?: string[]; announce?: AnnounceMode }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
-  removeMany(args: { where: TWhere }): Promise<{ count: number }>
+  removeMany(args: { where: TWhere; announce?: AnnounceMode }): Promise<{ count: number }>
   /** The restored rows, shaped like any other read. `where` can match many. */
   restore(args: { where: TWhere }): Promise<TRow[]>
   delete(args: { where: TWhere }): Promise<TRow | null>
-  deleteMany(args: { where: TWhere }): Promise<{ count: number }>
+  deleteMany(args: { where: TWhere; announce?: AnnounceMode }): Promise<{ count: number }>
   transition(id: number | string, name: string): Promise<TRow>
   transitions(idOrRow: number | string | TRow): Promise<Array<{ name: string; field: string; from: string; to: string; gate: number | null; allowed: boolean }>>
   optimizeFts(): void
@@ -345,6 +407,42 @@ export interface LitestoneClient {
     key: string; reason: 'computed' | 'unknown'; suggestion: string | null
     sortable: string[]; message: string
   }[]
+  /**
+   * The `@@scope` names declared on a model → the predicate as source text.
+   *
+   * The published list `$checkWhere` validates a `where: { $scope }` against, so
+   * a UI offering scopes and the client refusing one cannot disagree. A schema
+   * fact, so every flavour of client answers it identically.
+   */
+  $scopes(accessor: string): Record<string, string>
+  /**
+   * Record something in the audit trail that `@@log(audit)` cannot see for
+   * itself — an event that performs no write (a failed login), or one whose
+   * write goes through `asSystem()` and so names no actor.
+   *
+   * The ONE owner of putting a row in the trail. The log model is an ordinary
+   * accessor a caller could write directly; two writers with no shared
+   * definition is how a second `operation` vocabulary starts drifting.
+   *
+   * THROWS, where `@@log(audit)` is fire-and-forget: there the record is a side
+   * effect of a write that already succeeded and must not fail it, here the
+   * record is what the caller asked for. `actorId` defaults to this client's
+   * principal — a system context has none, so state it.
+   *
+   * `meta` is written as given and nothing redacts it. Never put a password, a
+   * token or a key in it.
+   */
+  $audit(entry: {
+    operation: string
+    model?: string
+    field?: string | null
+    records?: unknown[]
+    before?: unknown
+    after?: unknown
+    actorId?: unknown
+    actorType?: string
+    meta?: Record<string, unknown>
+  }, opts?: { database?: string }): Promise<Record<string, unknown>>
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ size: number }>
   $walStatus(): { busy: boolean; frames: number; checkpointed: number } | Record<string, { busy: boolean; frames: number; checkpointed: number } | null>
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>
@@ -383,6 +481,7 @@ export interface LitestoneClient {
     list(): Promise<Array<{ key: string; owner: string | null; expiresAt: string | null }>>
   }
   $tapQuery(fn: (event: QueryEvent) => void): () => void
+  $tapEvents(fn: (event: WriteEvent, ctx: LitestoneCtx) => void): () => void
   $setAuth(user: LitestoneAuth): LitestoneClient
   asSystem(): LitestoneClient
   sql: unknown
@@ -703,6 +802,38 @@ export declare class LockExpiredError extends Error {
   retryable: false
 }
 
+/**
+ * A write named a @unique value a SOFT-DELETED row still holds. The row keeps
+ * its unique values — it still exists, and restore() has to be able to bring it
+ * back — so the value is released by changing it or by hard-deleting the row,
+ * both with `withDeleted: true`.
+ */
+export declare class SoftDeletedUniqueError extends Error {
+  model:     string
+  fields:    string[]
+  values:    unknown[]
+  id:        unknown
+  status:    409
+  retryable: false
+}
+
+/**
+ * The caller asked this model for something its `.lite` never declared —
+ * `search()` below `@@fts`, `restore()` below `@@softDelete`, `transition()`
+ * below `@@transitions`, or an `onlyDeleted`/`onlyTemplates` flag on a model
+ * with no such category. A 400: nothing broke, and the identical request will
+ * fail the identical way until the schema changes.
+ */
+export declare class CapabilityNotDeclaredError extends Error {
+  model:     string
+  /** What was asked for — `'search()'`, `'onlyDeleted'`, … */
+  asked:     string
+  /** The attribute that would make it legal — `'@@fts'`, `'@@softDelete'`, … */
+  requires:  string
+  status:    400
+  retryable: false
+}
+
 // ─── Seeder / Factory ─────────────────────────────────────────────────────────
 
 export interface FactoryRng {
@@ -850,6 +981,44 @@ export interface TypegenOptions {
 
 export declare function generateTypeScript(schema: LitestoneSchema, options?: TypegenOptions): string
 
+// ─── Tenancy ──────────────────────────────────────────────────────────────────
+
+export interface TenantResolution {
+  kind: 'subdomain' | 'header' | 'claim'
+  /** Header name, or the field on the principal. Null for subdomain. */
+  name: string | null
+}
+
+export interface DatabaseTenancy {
+  strategy: 'database'
+  dir:      string
+  registry: string
+  maxOpen:  number
+  key:      string | null
+  resolve:  TenantResolution | null
+}
+
+export interface RowTenancy {
+  strategy: 'row'
+  column:   string
+  claim:    string
+  resolve:  TenantResolution | null
+}
+
+export type ResolvedTenancy = DatabaseTenancy | RowTenancy
+
+/** The schema's `tenancy { }` block, with env vars read and paths resolved. */
+export declare function resolveTenancy(
+  schema: LitestoneSchema,
+  opts?: { schemaPath?: string | null; overrides?: Record<string, unknown> },
+): ResolvedTenancy | null
+
+/** Which tenant a request names, per the declared `resolve`. */
+export declare function tenantFrom(
+  resolution: TenantResolution | null,
+  from: { host?: string | null; headers?: Record<string, unknown> | null; principal?: Record<string, unknown> | null },
+): string | null
+
 // ─── Tenant registry ──────────────────────────────────────────────────────────
 
 export interface TenantRegistryOptions {
@@ -857,9 +1026,9 @@ export interface TenantRegistryOptions {
   path?:          string
   schema?:        string
   parsed?:        ParseResult
-  // Tenant directory — defaults to <schemaDir>/tenants
+  // Tenant directory — the schema's `tenancy { dir }`, else <schemaDir>/tenants
   dir?:           string
-  // Registry db — defaults to <schemaDir>/tenants-registry.db
+  // Registry db — the schema's `tenancy { registry }`, else <schemaDir>/tenants-registry.db
   registry?:      string
   maxOpen?:       number
   // String key or per-tenant function

@@ -2,7 +2,7 @@
  * code.spec.js — the syntax highlighting theme, against real glow output.
  *
  * The markup under test is not written here. test/run.js imports glow from
- * @frontierjs/utils, renders three samples and hands them to the page on
+ * @frontierjs/toolbelt, renders three samples and hands them to the page on
  * `window.__FJS_GLOW__`, so what these tests style is exactly what a consumer
  * gets. Markup written by hand to look like glow's would pass this file while
  * glow emitted something else, which is the stand-in failure this repo has

@@ -1,5 +1,42 @@
 # Changes — @frontierjs/conduit
 
+## 2026-08-16 — `hooks:` is `observers:` (`FJS-287`, `FJS-D06` §1)
+
+193/193 tests pass, junction integration included; `example`: `verify:notify`
+green, so the rename was proven over a real outbound send and not only in types.
+
+Nothing in this option could ever change a request, suppress an error or halt a
+send — `safe()` catches a throw and drops a rejection precisely so a failed
+metrics export is not a failed deployment. That is the **Observer** tier, and it
+was wearing the Hook name. `ConduitHooks` → `ConduitObservers`, `HookResult` →
+`ObserverResult`, `createTestConduit({ hooks })` → `{ observers }`.
+
+Breaking for anyone who set it, with no alias: pre-alpha, and the two callers
+are basecamp and this package's own suite. Basecamp is where the change proved
+itself — its typecheck went red on the now-excess `hooks` property and green
+again on the rename, which is what says an app cannot miss this silently.
+
+**`management.hooks` keeps the word on purpose.** That one IS Junction's hook
+pipeline: it runs before the management routes and can refuse the call. Two
+options, two tiers, two words — where before one word covered both.
+
+## 2026-08-16 — the metrics reach-in is a declared seam (`FJS-D06`)
+
+193/193 tests pass, junction integration included.
+
+`register()` used to write into `app._metricsProviders` behind an
+`instanceof Map` guard — the private-field reach-in this package's own
+`docs/AUDIT.md` flagged, with the exact failure named: *if Junction renames the
+field, metrics silently disappear with no error*. It is now
+`app.registerMetricsSource('conduit', …)`, and it is called **unguarded on
+purpose**. This plugin imports Junction's `App` type, so a seam that is not
+there is a compile error rather than a number that quietly stops being reported.
+
+`app.provide('conduit', …)` is `app.claim('conduit', …)` for the same ruling:
+a Provider is now a third party the app speaks to, which conduit already
+believed — `'provider'` has been one of its target kinds all along.
+
+
 ## 2026-08-13 — `TargetKind`'s `'agent'` member is now `'outpost'`
 
 `FJS-D29` retires *agent* for infrastructure across the repo, because the word

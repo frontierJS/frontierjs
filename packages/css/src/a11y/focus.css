@@ -104,8 +104,33 @@
   .pill-close
 ):focus-visible,
 :where(.field, .skip-link):focus {
-  outline:        var(--ring-width) solid var(--ring-color, var(--ring, var(--color-primary)));
+  outline:        var(--ring-width) var(--ring-style) var(--ring-color, var(--ring, var(--color-primary)));
   outline-offset: var(--ring-offset);
+}
+
+/*
+ * ── The ring's style is a theme's, and the list is the guarantee ──────
+ *
+ * Width, offset and colour were tokens and `solid` was a literal, so a
+ * dashed or struck ring — a legitimate house choice — was unreachable.
+ * The counter-argument is real and is why this is registered rather than
+ * simply named: the ring is an accessibility guarantee in the last layer,
+ * and a token a theme can write is a token a theme can weaken.
+ *
+ * `@property` is what makes "a keyword from a fixed list" enforceable
+ * rather than advisory. A value outside the syntax below is invalid at
+ * computed-value time and falls back to the initial value, so a theme
+ * writing `--ring-style: none` — or `hidden`, or a typo — gets a SOLID
+ * ring, not no ring. There is deliberately no way to spell "off".
+ *
+ * The three that are in the list all read at 2px. `dotted` is excluded
+ * for the same reason `none` is: at this width it is materially harder to
+ * see than the others, which is the whole property being protected.
+ */
+@property --ring-style {
+  syntax:        "solid | dashed | double";
+  inherits:      true;
+  initial-value: solid;
 }
 
 /*

@@ -11,13 +11,16 @@
 //
 //   • Plugin lifecycle      — register/boot/ready/shutdown are called
 //   • app.jobs              — the module augmentation resolves
-//   • app._metricsProviders — private-field reach-in still lands
+//   • app._metricsSources — private-field reach-in still lands
 //   • raw app.get/app.post  — admin routes route, and ctx is a
 //                             TransportContext (headers, not params.headers)
 // ============================================================
 
 import { describe, it, expect } from 'bun:test'
-import { resolve } from 'node:path'
+import { Database } from 'bun:sqlite'
+import { existsSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { createTestApp, request } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import { createCaravan } from '../src/index.ts'
@@ -131,20 +134,20 @@ describe('plugin lifecycle against a real app', () => {
 // ─── Metrics wiring ──────────────────────────────────────────
 
 describe('metrics provider', () => {
-  // register() reaches into app._metricsProviders behind an `instanceof Map`
+  // register() reaches into app._metricsSources behind an `instanceof Map`
   // guard. If Junction renames or retypes that field the guard fails silently
   // and job metrics vanish with no error anywhere.
-  it('lands in the real app._metricsProviders map', async () => {
+  it('lands in the real app._metricsSources map', async () => {
     const app = await bootApp()
 
-    expect(app._metricsProviders).toBeInstanceOf(Map)
-    expect(app._metricsProviders.has('jobs')).toBe(true)
+    expect(app._metricsSources).toBeInstanceOf(Map)
+    expect(app._metricsSources.has('jobs')).toBe(true)
   })
 
   it('the registered provider returns the current stats shape', async () => {
     const app = await bootApp()
 
-    const stats = app._metricsProviders.get('jobs')!() as {
+    const stats = app._metricsSources.get('jobs')!() as {
       queues: Record<string, { pending: number }>
       total:  { pending: number; running: number; failed: number; cancelled: number }
     }
@@ -157,7 +160,7 @@ describe('metrics provider', () => {
   it('stats stay in sync with dispatched work', async () => {
     // No handler registered, so the job stays pending and the count is stable.
     const app = await bootApp()
-    const read = () => (app._metricsProviders.get('jobs')!() as {
+    const read = () => (app._metricsSources.get('jobs')!() as {
       total: { pending: number }
     }).total.pending
 
@@ -169,11 +172,13 @@ describe('metrics provider', () => {
 
 // ─── junction.config.js → caravan section ────────────────────
 //
-// register() reads `app.config._junction.caravan`. Junction really does
-// publish that section (JunctionCaravanConfig in src/config/index.ts), but
-// Caravan can only honour the keys that are still changeable at register()
-// time — jobsDir and cleanupAfter. db/pollInterval/queues/admin are consumed
-// by createCaravan() before any app exists, so a config file cannot set them.
+// register() reads `app.config._junction.caravan` and honours every key of it
+// (JunctionCaravanConfig in junction's src/config/index.ts). It could once
+// honour only jobsDir and cleanupAfter: createCaravan() opened the database and
+// built the workers before any app existed, so db, pollInterval, queues and
+// admin were already spent by the time a config file was visible. The database
+// now opens on first use and the workers are built in start(), which is what
+// these assert (FJS-048).
 
 describe('junction config caravan section', () => {
   const withConfig = async (caravanCfg: Record<string, unknown>, o: Partial<CaravanOptions> = {}) => {
@@ -182,6 +187,21 @@ describe('junction config caravan section', () => {
     app.configure(createCaravan(opts(o)))
     await app._startForTest()
     return app
+  }
+
+  // The same, without the in-memory db and fast poll `opts()` forces on — a
+  // config file cannot be tested against options that already state the answer.
+  const withRawConfig = async (caravanCfg: Record<string, unknown>, o: CaravanOptions = {}) => {
+    const app = await createTestApp()
+    ;(app.config as Record<string, unknown>)._junction = { caravan: caravanCfg }
+    app.configure(createCaravan(o))
+    await app._startForTest()
+    return app
+  }
+
+  const tmpDb = (label: string) => join(tmpdir(), `caravan-cfg-${label}-${process.pid}.db`)
+  const rmDb  = (path: string) => {
+    for (const suffix of ['', '-wal', '-shm']) rmSync(`${path}${suffix}`, { force: true })
   }
 
   it('picks up jobsDir from config when opts does not set it', async () => {
@@ -203,6 +223,97 @@ describe('junction config caravan section', () => {
   it('boots normally when no _junction config is present', async () => {
     const app = await bootApp()
     expect(jobsOf(app).stats().total.pending).toBe(0)
+  })
+
+  it('opens the jobs database where the config says', async () => {
+    const path = tmpDb('db')
+    rmDb(path)
+    const app = await withRawConfig({ db: path })
+
+    await jobsOf(app).dispatch('report', { id: 1 })
+    await jobsOf(app).stop()
+
+    // Read the file with a second connection: what proves the path is the rows
+    // being in it, not the instance agreeing with itself.
+    const disk  = new Database(path, { readonly: true })
+    const count = disk.query<{ n: number }, []>(`SELECT COUNT(*) as n FROM jobs`).get()!.n
+    disk.close()
+    rmDb(path)
+
+    expect(count).toBe(1)
+  })
+
+  it('opts.db wins over the config file', async () => {
+    const path = tmpDb('db-opts')
+    rmDb(path)
+    const app = await withRawConfig({ db: path }, { db: ':memory:' })
+
+    await jobsOf(app).dispatch('report', { id: 1 })
+    expect(existsSync(path)).toBe(false)
+  })
+
+  it('picks up queues from the config file', async () => {
+    const app = await withConfig({ queues: { reports: { concurrency: 1 } } })
+
+    // stats() pre-populates every queue the instance knows about, so a named
+    // queue with no work in it is the config having been read.
+    expect(jobsOf(app).stats().queues.reports).toEqual({
+      pending: 0, running: 0, done: 0, failed: 0, cancelled: 0,
+    })
+  })
+
+  it('picks up pollInterval from the config file', async () => {
+    // A minute between polls. A worker polls once when it starts and then on
+    // the interval, so the first job proves the worker is alive and the second
+    // — dispatched after that poll — cannot be picked up for a minute. That
+    // wait IS the configured interval, seen from outside.
+    const app = await withRawConfig({ pollInterval: 60_000 }, { db: ':memory:' })
+    jobsOf(app).handle('report', () => {})
+
+    const first = await jobsOf(app).dispatch('report', {})
+    expect(await until(() => jobsOf(app).find(first)!.status === 'done')).toBe(true)
+
+    const second = await jobsOf(app).dispatch('report', {})
+    await new Promise(r => setTimeout(r, 300))
+
+    expect(jobsOf(app).find(second)!.status).toBe('pending')
+  })
+
+  it('opts.pollInterval wins over the config file', async () => {
+    const app = await withRawConfig({ pollInterval: 60_000 }, { db: ':memory:', pollInterval: 10 })
+    jobsOf(app).handle('report', () => {})
+
+    const id = await jobsOf(app).dispatch('report', {})
+
+    expect(await until(() => jobsOf(app).find(id)!.status === 'done')).toBe(true)
+  })
+
+  it('picks up admin from the config file', async () => {
+    const app = await withRawConfig({ admin: true }, { db: ':memory:' })
+    await jobsOf(app).dispatch('report', { id: 1 })
+
+    const res = await request(app).get('/jobs')
+
+    expect(res.status).toBe(200)
+    expect(res.body).toHaveLength(1)
+  })
+
+  it('honours cleanupAfter from the config file', async () => {
+    // Was read with `!opts.cleanupAfter &&`, so a config file could set it only
+    // when opts had not — and `cleanupAfter: 0`, the way to turn the sweep off,
+    // read as unset from either side.
+    const app = await createTestApp()
+    ;(app.config as Record<string, unknown>)._junction = { caravan: { cleanupAfter: 1 } }
+    app.configure(createCaravan(opts()))
+
+    const id = await jobsOf(app).dispatch('report', {})
+    await jobsOf(app).cancel(id)
+    await new Promise(r => setTimeout(r, 5))
+
+    // The sweep runs on start, and a cancelled job is terminal.
+    await app._startForTest()
+
+    expect(jobsOf(app).find(id)).toBeNull()
   })
 })
 

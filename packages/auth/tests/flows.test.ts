@@ -10,7 +10,15 @@
 // (or confirmed) something lives on as a test.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { makeAuth, rejectsWith, type Harness } from './harness.ts'
+import { createClient, parse, generateDDLForDatabase } from '@frontierjs/litestone'
+import { splitStatements } from '@frontierjs/litestone/migrate'
+import { Database } from 'bun:sqlite'
+import { mkdtempSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { createLitestoneAuth } from '../auth.ts'
+import { BCRYPT_COST, DUMMY_HASH } from '../crypto.ts'
+import { TEST_KEY, makeAuth, rejectsWith, type Harness } from './harness.ts'
 import {
   InvalidCredentialsError, EmailTakenError,
   InvalidTokenError, UserNotFoundError, AuthConfigError,
@@ -57,6 +65,44 @@ describe('login', () => {
   test('a user with no password credential cannot log in', async () => {
     await h.auth.createUser({ email: email('no-cred') })   // no password
     await rejectsWith(() => h.auth.login(email('no-cred'), 'anything'), InvalidCredentialsError)
+  })
+
+  // FJS-063. The error message was already identical; the clock was not. An
+  // absent user returned before the bcrypt and answered ~100× faster, so a
+  // caller with a stopwatch could read off which addresses have accounts.
+  //
+  // MIN of several runs, not a mean: the floor is what an attacker samples for
+  // and it is the measure least disturbed by whatever else the machine is doing.
+  // The band is deliberately loose — the two paths differ by a database read,
+  // and a test that pins the ratio tightly fails on a loaded CI box for no
+  // reason. Before the fix the ratio was ~0.01, so anything near 1 catches it.
+  test('a refusal costs the same whichever branch refuses it', async () => {
+    const u = await freshUser('login-timing')
+    await h.auth.createUser({ email: email('timing-no-cred') })   // no password
+
+    const floorOf = async (fn: () => Promise<unknown>) => {
+      let min = Infinity
+      for (let i = 0; i < 3; i++) {
+        const t0 = performance.now()
+        await fn().catch(() => {})
+        min = Math.min(min, performance.now() - t0)
+      }
+      return min
+    }
+
+    const wrongPassword = await floorOf(() => h.auth.login(u.email, 'not-the-password'))
+    const unknownEmail  = await floorOf(() => h.auth.login(email('timing-ghost'), 'x'))
+    const noCredential  = await floorOf(() => h.auth.login(email('timing-no-cred'), 'x'))
+
+    expect(unknownEmail).toBeGreaterThan(wrongPassword * 0.5)
+    expect(noCredential).toBeGreaterThan(wrongPassword * 0.5)
+  })
+
+  // The dummy hash is a literal, so it carries its own cost and cannot follow
+  // hashPassword's. Raise BCRYPT_COST without regenerating it and the gap
+  // reopens, narrower and silent — this is what makes that loud instead.
+  test('the dummy hash is written at the cost every password is', () => {
+    expect(DUMMY_HASH.startsWith(`$2b$${BCRYPT_COST}$`)).toBe(true)
   })
 })
 
@@ -527,5 +573,323 @@ describe('the gate walls the credential tables off, and User is readable by a us
   test('registration is unaffected by the ladder — it writes asSystem()', async () => {
     const ctx = await h.auth.createUser!({ email: `gate-${Date.now()}@example.com`, password: 'hunter22!' })
     expect(ctx.userId).toBeTruthy()
+  })
+})
+
+// ─── the audit trail ─────────────────────────────────────────────────────────
+//
+// `@@log(audit)` covers writes, so it covered exactly the auth events that ARE
+// writes and none of the ones an app most wants (FJS-276, FJS-277). A failed
+// login performs no write and left no trace at all; a successful one left
+// `create:session` with `actorId: null`, because the write goes through
+// asSystem() and a system context names no principal.
+//
+// These go through litestone's `db.$audit` — the one owner of putting a row in
+// the trail — beside the @@log rows rather than instead of them: that one
+// records the WRITE and cannot name the actor, this one records the EVENT.
+
+describe('auth records what @@log(audit) cannot see', () => {
+
+  const settle = () => new Promise(r => setImmediate(r))
+
+  async function trail(h: any, run: () => Promise<unknown>) {
+    await settle()
+    const before = (await h.sys.auditLogs.findMany({})).length
+    try { await run() } catch { /* a refusal is the case under test */ }
+    await settle()
+    return (await h.sys.auditLogs.findMany({})).slice(before)
+  }
+
+  test('a successful sign-in is recorded WITH the actor', async () => {
+    const h = await makeAuth()
+    const u: any = await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+
+    const rows = await trail(h, () => h.auth.login('a@b.co', 'correct-horse-1'))
+    const row  = rows.find((r: any) => r.operation === 'login.succeeded')
+
+    expect(row).toBeDefined()
+    expect(row.actorId).toBe(u.userId)
+
+    // Beside the @@log row, not instead of it.
+    expect(rows.some((r: any) => r.operation === 'create' && r.model === 'session')).toBe(true)
+    h.cleanup()
+  })
+
+  // The whole of FJS-277: this left nothing at all, and it is the event an app
+  // most wants — rate-limiting, lockout, alerting.
+  test('a failed sign-in is recorded, with why and against whom', async () => {
+    const h = await makeAuth()
+    const u: any = await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+
+    const rows = await trail(h, () => h.auth.login('a@b.co', 'wrong-password'))
+    const row  = rows.find((r: any) => r.operation === 'login.failed')
+
+    expect(row).toBeDefined()
+    expect(row.actorId).toBe(u.userId)
+    expect(JSON.parse(row.meta).reason).toBe('bad-password')
+    h.cleanup()
+  })
+
+  // An attempt against an address that does not exist has no user to name, and
+  // the attempted address is the only identifier it has — a spray across many
+  // addresses is invisible without it.
+  test('an attempt on an unknown address records the address', async () => {
+    const h = await makeAuth()
+    const rows = await trail(h, () => h.auth.login('ghost@b.co', 'whatever'))
+    const row  = rows.find((r: any) => r.operation === 'login.failed')
+
+    expect(row).toBeDefined()
+    expect(row.actorId).toBe(null)
+    expect(JSON.parse(row.meta)).toEqual({ reason: 'no-such-user', email: 'ghost@b.co' })
+    h.cleanup()
+  })
+
+  test('the attempted password is never written anywhere', async () => {
+    const h = await makeAuth()
+    await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+
+    const rows = await trail(h, () => h.auth.login('a@b.co', 'hunter2-do-not-log-me'))
+    expect(JSON.stringify(rows)).not.toContain('hunter2-do-not-log-me')
+    h.cleanup()
+  })
+
+  test('logout names the session that ended and who owned it', async () => {
+    const h = await makeAuth()
+    const u: any = await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+    const { token } = await h.auth.login('a@b.co', 'correct-horse-1')
+
+    const rows = await trail(h, () => h.auth.logout(token))
+    const row  = rows.find((r: any) => r.operation === 'logout')
+
+    expect(row).toBeDefined()
+    expect(row.actorId).toBe(u.userId)
+    expect(JSON.parse(row.records)).toHaveLength(1)
+    h.cleanup()
+  })
+
+  // An unknown token is what a replayed or already-expired one looks like, so it
+  // is recorded rather than passed over in silence.
+  test('logging out an unknown session is still recorded', async () => {
+    const h = await makeAuth()
+    const rows = await trail(h, () => h.auth.logout('not-a-real-token'))
+    const row  = rows.find((r: any) => r.operation === 'logout')
+
+    expect(row).toBeDefined()
+    expect(JSON.parse(row.meta).reason).toBe('unknown-session')
+    h.cleanup()
+  })
+})
+
+// ─── an app with no audit database ───────────────────────────────────────────
+//
+// The guard that matters most, because it sits on the login path. Auth's own
+// schema fragment declares `database audit`, but an app may bring its own User
+// model and no logger database at all — and `db.$audit` THROWS when there is
+// nowhere to write, which is right for a caller whose purpose is the record and
+// wrong for one whose purpose is the login. Get this backwards and every such
+// app can no longer sign anybody in.
+
+describe('an app that declares no logger database', () => {
+
+  async function plainAuth() {
+    const dir  = mkdtempSync(join(tmpdir(), 'fjs-auth-noaudit-'))
+    const path = join(dir, 'app.db')
+
+    // The shipped fragment carries @@log(audit); this is the other shape — an
+    // app's own identity models, no audit database anywhere.
+    const source = `
+database main { path "${path}" }
+
+model User {
+  id             String    @id @default(uuid())
+  email          String    @email @unique @lower
+  name           String?
+  emailVerified  Boolean   @default(false)
+  role           String    @default("user")
+  createdAt      DateTime  @default(now())
+}
+
+model Credential {
+  id        Int       @id
+  userId    String
+  type      String
+  value     String    @guarded(all)
+  createdAt DateTime  @default(now())
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  token      String    @unique @guarded(all)
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+}
+
+model Verification {
+  id          Int       @id
+  identifier  String
+  value       String    @guarded(all)
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+}
+`
+    const parsed = parse(source)
+    if (!parsed.valid) throw new Error(parsed.errors.join('\n'))
+
+    const raw = new Database(path)
+    for (const stmt of splitStatements(generateDDLForDatabase(parsed.schema, 'main')))
+      if (!stmt.startsWith('PRAGMA')) raw.run(stmt)
+    raw.close()
+
+    const db = await createClient({ parsed, encryptionKey: TEST_KEY })
+    return { db, auth: createLitestoneAuth(db, {}) }
+  }
+
+  // Two separate things hold this up and only one of them is obvious. The
+  // try/catch means a failed audit write never fails a login — so removing the
+  // `hasAuditLog` guard leaves every test green while printing a warning on
+  // every sign-in an app makes, forever. The quiet is the assertion.
+  test('sign-in works, refusals still refuse, and nothing is warned about', async () => {
+    const { auth } = await plainAuth()
+    const warnings: unknown[][] = []
+    const realWarn = console.warn
+    console.warn = (...args: unknown[]) => { warnings.push(args) }
+
+    try {
+      await auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+
+      const { token } = await auth.login('a@b.co', 'correct-horse-1')
+      expect(token).toBeTruthy()
+
+      await expect(auth.login('a@b.co', 'wrong')).rejects.toThrow()
+      await expect(auth.login('ghost@b.co', 'wrong')).rejects.toThrow()
+      await auth.logout(token)
+    } finally {
+      console.warn = realWarn
+    }
+
+    expect(warnings.filter(w => String(w[0]).includes('[auth]'))).toEqual([])
+  })
+})
+
+// ─── acting on an auth event ─────────────────────────────────────────────────
+//
+// `FJS-042`: the package emitted nothing, so an app could not rate-limit,
+// lock out or notify without wrapping the routes. Four awaited callbacks now —
+// the same shape `onPasswordResetRequested` already had, so no new vocabulary.
+//
+// A THROW REFUSES. That is what makes lockout possible at the auth layer rather
+// than only in a Junction hook in front of the route, and it is the cost too: an
+// app handler is now a failure mode on the login path.
+//
+// ONE ORDERING RULE: a hook runs before the thing it can refuse. So no hook
+// receives what its refusal would have prevented — the gate cannot also be the
+// report. What happened afterwards is the audit trail's job.
+
+describe('the auth hooks', () => {
+
+  const settle = () => new Promise(r => setImmediate(r))
+
+  test('onLogin runs before a session exists, and refusing leaves none', async () => {
+    const seen: any[] = []
+    const h = await makeAuth({
+      onLogin: (e) => { seen.push(e); throw new Error('locked out') },
+    })
+    await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+
+    await expect(h.auth.login('a@b.co', 'correct-horse-1')).rejects.toThrow('locked out')
+
+    // The credentials were right, so the refusal is the hook's alone.
+    expect(seen).toHaveLength(1)
+    expect(seen[0].user.email).toBe('a@b.co')
+
+    // Nothing issued. A hook that refuses after the session is written would
+    // leave one behind for a login that never happened.
+    expect(await h.sys.session.count()).toBe(0)
+    h.cleanup()
+  })
+
+  // A veto that leaves no trace is the class of defect FJS-277 was.
+  test('a refused login is still recorded', async () => {
+    const h = await makeAuth({ onLogin: () => { throw new Error('locked out') } })
+    await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+    await settle()
+
+    const before = (await h.sys.auditLogs.findMany({})).length
+    await expect(h.auth.login('a@b.co', 'correct-horse-1')).rejects.toThrow()
+    await settle()
+
+    const row = (await h.sys.auditLogs.findMany({})).slice(before)
+      .find((r: any) => r.operation === 'login.failed')
+    expect(JSON.parse(row.meta)).toMatchObject({ reason: 'refused-by-app', message: 'locked out' })
+    h.cleanup()
+  })
+
+  // The headline use case in the issue: a lockout answers 429, not 401.
+  test('onLoginFailed can replace the error a caller sees', async () => {
+    const attempts: string[] = []
+    const h = await makeAuth({
+      onLoginFailed: ({ email, reason }) => {
+        attempts.push(reason)
+        if (attempts.length >= 2) throw new Error('Too many attempts')
+      },
+    })
+    await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+
+    await expect(h.auth.login('a@b.co', 'wrong')).rejects.toThrow(/credentials/i)
+    await expect(h.auth.login('a@b.co', 'wrong')).rejects.toThrow('Too many attempts')
+    expect(attempts).toEqual(['bad-password', 'bad-password'])
+    h.cleanup()
+  })
+
+  // The record is what happened; the hook only decides what the caller is told.
+  // A hook that replaces the error must not also erase the attempt.
+  test('onLoginFailed cannot erase the attempt from the trail', async () => {
+    const h = await makeAuth({ onLoginFailed: () => { throw new Error('nope') } })
+    await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+    await settle()
+
+    const before = (await h.sys.auditLogs.findMany({})).length
+    await expect(h.auth.login('a@b.co', 'wrong')).rejects.toThrow('nope')
+    await settle()
+
+    expect((await h.sys.auditLogs.findMany({})).slice(before)
+      .some((r: any) => r.operation === 'login.failed')).toBe(true)
+    h.cleanup()
+  })
+
+  test('onRegister runs before anything is written, so refusing makes no user', async () => {
+    const h = await makeAuth({
+      onRegister: ({ email }) => { if (email.endsWith('@blocked.co')) throw new Error('domain not allowed') },
+    })
+
+    await expect(h.auth.createUser({ email: 'x@blocked.co', password: 'correct-horse-1' }))
+      .rejects.toThrow('domain not allowed')
+    expect(await h.sys.user.count()).toBe(0)
+    expect(await h.sys.credential.count()).toBe(0)
+
+    await h.auth.createUser({ email: 'ok@fine.co', password: 'correct-horse-1' })
+    expect(await h.sys.user.count()).toBe(1)
+    h.cleanup()
+  })
+
+  test('onLogout runs before the delete, so refusing keeps the session', async () => {
+    const h = await makeAuth({ onLogout: () => { throw new Error('not now') } })
+    await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+    const { token } = await h.auth.login('a@b.co', 'correct-horse-1')
+
+    await expect(h.auth.logout(token)).rejects.toThrow('not now')
+    expect(await h.sys.session.count()).toBe(1)
+    h.cleanup()
+  })
+
+  test('no hooks configured is the behaviour that already existed', async () => {
+    const h = await makeAuth()
+    await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
+    const { token } = await h.auth.login('a@b.co', 'correct-horse-1')
+    expect(token).toBeTruthy()
+    await h.auth.logout(token)
+    expect(await h.sys.session.count()).toBe(0)
+    h.cleanup()
   })
 })

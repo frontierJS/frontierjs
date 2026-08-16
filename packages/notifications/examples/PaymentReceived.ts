@@ -1,5 +1,5 @@
 import { Notification, inApp, mail } from '@frontierjs/notifications'
-import type { InAppMessage, MailMessage, User } from '@frontierjs/notifications'
+import type { InAppMessage, MailMessage, Recipient, Transport } from '@frontierjs/notifications'
 
 interface Payment {
   id:      number
@@ -31,14 +31,14 @@ export class PaymentReceived extends Notification {
     super()
   }
 
-  via(user: User): string[] {
+  via(recipient: Recipient): Transport[] {
     // notificationPreferences is a future per-user preferences column.
     // When the preferences model is added, via() reads from it here.
     // Until then, all users receive the default channel set.
-    return (user.notificationPreferences as string[] | undefined) ?? ['inApp', 'email']
+    return (recipient.notificationPreferences as Transport[] | undefined) ?? ['inApp', 'email']
   }
 
-  toInApp(user: User): InAppMessage {
+  toInApp(user: Recipient): InAppMessage {
     return inApp()
       .title('Payment received')
       .body(`$${this.payment.amount} has been received.`)
@@ -48,7 +48,7 @@ export class PaymentReceived extends Notification {
       .build()
   }
 
-  toEmail(user: User): MailMessage {
+  toEmail(user: Recipient): MailMessage {
     return mail()
       .subject('Payment received')
       .greeting(`Hi ${(user.firstName as string) ?? 'there'}`)

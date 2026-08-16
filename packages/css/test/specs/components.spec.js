@@ -11,7 +11,7 @@
  */
 
 var TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
-var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp'];
+var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'field'];
 
 var STEPS =
   '<ol class="steps" aria-label="Progress">' +
@@ -764,4 +764,97 @@ test('items: a disabled control row reads as disabled', function () {
   var btn = box.querySelector('button.item');
   assert.equal(style(btn, 'cursor'), 'not-allowed');
   assert.ok(Number(style(btn, 'opacity')) < 1, 'a disabled row is not dimmed');
+});
+
+/*
+ * ── Popover placement ──────────────────────────────────────────────
+ *
+ * The term was NAMED and unusable: `.popover` is absolute with no inset,
+ * so outside a positioned ancestor it resolved against the page, and with
+ * no inset it resolved to its STATIC position — centred on its own
+ * trigger. Measured in the demo before the anchor existed: 265px tall at
+ * y = -39, hanging off the top of the viewport. Both halves are the
+ * package's now (FJS-132), and both are geometry, so they are measured
+ * as geometry rather than as declarations.
+ */
+
+var POPOVER_HTML =
+  '<div class="popover-anchor">' +
+  '<button class="btn" id="trigger">Actions</button>' +
+  '<article class="popover" id="pop"><div class="surface-body">Body</div></article>' +
+  '</div>';
+
+test('popover: .popover-anchor is the positioning context', function () {
+  var anchor = el(POPOVER_HTML);
+  assert.equal(style(anchor, 'position'), 'relative', '.popover-anchor establishes no containing block');
+  assert.equal(style(anchor, 'display'), 'inline-flex', '.popover-anchor does not shrink to its trigger');
+});
+
+test('popover: inside an anchor it opens BELOW the trigger, not on it', function () {
+  var anchor = el(POPOVER_HTML);
+  var trigger = anchor.querySelector('#trigger').getBoundingClientRect();
+  var pop = anchor.querySelector('#pop').getBoundingClientRect();
+
+  assert.ok(
+    pop.top >= trigger.bottom,
+    'the popover starts at y=' + Math.round(pop.top) + ', above the trigger bottom at ' +
+      Math.round(trigger.bottom) + ' — it is resolving to its static position again'
+  );
+  assert.ok(
+    Math.abs(pop.left - trigger.left) < 1,
+    'the default placement is not aligned to the trigger start edge'
+  );
+});
+
+test('popover: .align-end flips it to the trigger end edge', function () {
+  var anchor = el(POPOVER_HTML.replace('class="popover"', 'class="popover align-end"'));
+  var trigger = anchor.querySelector('#trigger').getBoundingClientRect();
+  var pop = anchor.querySelector('#pop').getBoundingClientRect();
+
+  assert.ok(
+    Math.abs(pop.right - trigger.right) < 1,
+    '.align-end did not align the popover to the end edge'
+  );
+});
+
+test('popover: a native [popover] is left alone inside an anchor', function () {
+  /*
+   * The top layer escapes every positioning context, so an inset there
+   * resolves against the VIEWPORT and the anchor's placement would put a
+   * menu somewhere arbitrary. The rules say :not([popover]) so the
+   * stylesheet cannot fall into the trap it documents.
+   */
+  var anchor = el(POPOVER_HTML.replace('<article class="popover"', '<article class="popover" popover'));
+  var pop = anchor.querySelector('#pop');
+
+  assert.equal(style(pop, 'position'), 'fixed', 'a native popover lost its fixed positioning');
+  /*
+   * The guard is read as a selector rather than as a computed inset:
+   * getComputedStyle resolves `top: auto` on a positioned, laid-out
+   * element to the USED pixel value, so an unplaced popover answers a
+   * number and the assertion would pass or fail on layout noise.
+   */
+  assert.ok(
+    !pop.matches('.popover-anchor > .popover:not([popover])'),
+    'the anchor placement matches a top-layer popover, where an inset resolves against the viewport'
+  );
+});
+
+test('popover: outside an anchor it is still unplaced', function () {
+  /*
+   * The placement is scoped to the anchor rather than written on
+   * `.popover`, so a popover positioned by anchor positioning or a style
+   * attribute keeps its own answer. Opting into the anchor is what opts
+   * into the placement.
+   */
+  var loose = el(POPOVER_HTML.replace('class="popover-anchor"', 'class="cluster"'));
+  var trigger = loose.querySelector('#trigger').getBoundingClientRect();
+  var pop = loose.querySelector('#pop').getBoundingClientRect();
+
+  assert.equal(style(loose.querySelector('#pop'), 'position'), 'absolute', '.popover is no longer absolute');
+  assert.ok(
+    pop.top < trigger.bottom,
+    'a popover outside an anchor was placed below its trigger anyway — the placement is on .popover ' +
+      'itself, so anchor positioning and a style attribute now fight it'
+  );
 });

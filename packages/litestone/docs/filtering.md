@@ -294,6 +294,57 @@ db.user.findMany({
 
 `$raw` works everywhere `where:` is accepted: `findMany`, `findFirst`, `count`, `exists`, `update`, `updateMany`, `remove`, `removeMany`, `aggregate`, `groupBy`.
 
+### The clock — `now()`
+
+**`datetime('now')` is refused by name, and this is why.** `DateTime` is stored
+as ISO-8601 TEXT — `2026-08-13T07:38:31.984Z` — and every comparison against it
+is string-wise. SQLite answers `datetime('now')` as `2026-08-13 07:38:31`: space
+separator, no milliseconds, no zone. `'T'` (0x54) sorts above a space (0x20), so
+**every row stored today compares greater than a same-day `datetime('now')`**.
+The predicate is right for yesterday's rows and wrong for this morning's, which
+is why it survives a demo: seed it with last week's data and it passes.
+
+```js
+import { sql, now } from '@frontierjs/litestone'
+
+db.task.findMany({ where: { $raw: sql`dueAt < ${now()} AND completedAt IS NULL` } })
+db.task.findMany({ where: { $raw: sql`startedAt > ${now('-7 days')}` } })
+db.task.findMany({ where: { $raw: sql`dueAt < ${now('start of day')}` } })
+```
+
+`now()` emits SQLite's clock in the format the column holds, so every occurrence
+in one statement is the same instant — SQLite fixes `'now'` for the duration of a
+statement, which two `new Date()` calls cannot promise. The consequence is that
+`createClient({ now })` does **not** reach it: that clock belongs to the policy
+evaluator, and a test that needs a frozen instant binds its own ISO string.
+
+Modifiers are **bound as parameters**, not spliced, so a caller-supplied string
+never enters the SQL pattern.
+
+`now()` also works written as a **token** in raw SQL, which is the only spelling
+available to the two callers that cannot interpolate — a plain-string `$raw`,
+and a `@from(where: …)` string in the schema:
+
+```prisma
+model Account {
+  overdueCount Int @from(Task, count: true, where: "dueAt < now()")
+}
+```
+
+```js
+db.task.findMany({ where: { $raw: `dueAt < now()` } })
+```
+
+Six spellings are refused — `datetime('now')`, `date('now')`, `time('now')`,
+`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME` — in the `sql` tag, in a
+plain-string `$raw`, and in a `@from(where: …)` string at client construction.
+Each produces a format no stored `DateTime` can equal, so a comparison against
+one does not return too few rows; it answers a different question.
+
+**`julianday()` is untouched.** It answers a number, so
+`julianday('now') - julianday(createdAt) > 30` compares like with like — which is
+why the date-arithmetic example above is correct as written.
+
 Plain string also works for parameterless expressions:
 
 ```js
@@ -377,3 +428,65 @@ const author = await db.author.findFirst({
 
 Works on `hasMany` and many-to-many includes. On a `belongsTo` include a
 non-matching `where` yields `null` for that relation.
+
+## `@@scope` — a named predicate
+
+A scope is a `where` the schema names, asked for by that name:
+
+```
+model Task {
+  id          Int       @id
+  ownerId     Int
+  status      String
+  dueAt       DateTime?
+  completedAt DateTime?
+
+  @@scope(overdue, dueAt < now() && completedAt == null)
+  @@scope(mine,    ownerId == auth().id)
+  @@scope(active,  status == 'open' || status == 'review')
+}
+```
+
+```js
+db.task.findMany({ where: { $scope: 'overdue' } })
+db.task.findMany({ where: { $scope: ['overdue', 'mine'] } })     // AND
+db.task.findMany({ where: { $scope: 'mine', status: 'open' } })  // AND
+db.task.findMany({ where: { OR: [{ $scope: 'overdue' }, { id: 5 }] } })
+```
+
+The body is the expression language `@@allow` uses, so this is the policy
+compiler **named and made explicit** rather than implicit and always-on.
+`now()` resolves to one instant for the whole statement, and `auth()` is the
+calling client's principal — so `mine` means whoever is asking.
+
+**Why it exists when `createClient({ scopes })` already chains.** A browser
+cannot invoke `db.task.overdue()`. A client sends a `where` **object** over
+HTTP, so a scope declared in JavaScript is server-only; `$scope` is the one
+spelling that travels. Which tier to reach for:
+
+| | |
+| --- | --- |
+| the UI ever RENDERS the value | `@derived` — it becomes a real property |
+| it only ever appears in a `WHERE` | `@@scope` |
+| the server alone ever asks for it | `createClient({ scopes })` |
+
+A disjunction is written **inside** a scope (`@@scope(active, a \|\| b)`), where
+both compilers can see it — several `$scope` names always AND.
+
+### Safety
+
+The value of `$scope` is caller-supplied, and it is a **name looked up in the
+declared table** — never text interpolated into a pattern (Invariant 8). An
+unknown name is refused before any SQL is built, and the refusal lists what the
+model declares:
+
+```
+Unknown scope 'ovrdue' — Task.findMany declares: active, mine, overdue
+```
+
+`db.$scopes('task')` publishes the same list as `{ name: 'source text' }`, which
+is what `$checkWhere` validates against, so a UI offering scopes and the client
+refusing one cannot disagree. Everything the schema can decide is decided at
+startup: a name declared twice, or a predicate naming a column the model does
+not have — which would otherwise reach SQLite as a quoted identifier it reads as
+a string constant, silently admitting or excluding every row.

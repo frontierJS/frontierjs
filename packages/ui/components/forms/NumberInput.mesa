@@ -22,7 +22,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError } from '../../utils.js'
+  import { nameToLabel, uid, resolveError, resolveRule, stated } from '../../utils.js'
 
   // ── Core props ────────────────────────────────────────────────────────────
 
@@ -32,6 +32,7 @@
   export let step        = 1
   export let disabled    = false
   export let readonly    = false
+  export let required    = undefined
   export let placeholder = ''
 
   // format/parse — for display-only formatting (e.g. currency, percentage).
@@ -55,6 +56,20 @@
   export var id = ''
   const inputId = id || uid('num')
 
+  // Server-error state. Client-side invalidity is `:user-invalid` in
+  // @frontierjs/css and needs nothing here.
+  const form     = $context.form
+  const rule     = resolveRule(form, name)
+  const hasError = !!resolveError(form, name, error, errors)
+
+  // The bounds are as much a schema fact as the type is — `@min(1) @max(99)`
+  // reaches the browser as minimum/maximum, and they feed the ± buttons as
+  // well as the input, so a schema bound the component could not see was a
+  // stepper that stepped past it.
+  const resolvedRequired = stated(required, rule?.required)
+  const resolvedMin      = stated(min,      rule?.minimum)
+  const resolvedMax      = stated(max,      rule?.maximum)
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   function getPrecision(n) {
@@ -65,8 +80,8 @@
 
   function clamp(v) {
     let r = parseFloat(v.toFixed(precision))
-    if (min !== undefined && r < min) r = min
-    if (max !== undefined && r > max) r = max
+    if (resolvedMin !== undefined && r < resolvedMin) r = resolvedMin
+    if (resolvedMax !== undefined && r > resolvedMax) r = resolvedMax
     return r
   }
 
@@ -89,13 +104,8 @@
   $: value, () => { inputValue = toDisplay(value) }
 
   // Button disabled states — re-derive when value/min/max change
-  const canDecrement = min === undefined || value > min
-  const canIncrement = max === undefined || value < max
-
-  // Server-error state. Client-side invalidity is `:user-invalid` in
-  // @frontierjs/css and needs nothing here.
-  const form     = $context.form
-  const hasError = !!resolveError(form, name, error, errors)
+  const canDecrement = resolvedMin === undefined || value > resolvedMin
+  const canIncrement = resolvedMax === undefined || value < resolvedMax
 
   let inputEl
   export function focus() { inputEl?.focus() }
@@ -169,8 +179,9 @@
       placeholder={placeholder}
       disabled={disabled}
       readonly={readonly}
-      min={format ? undefined : min}
-      max={format ? undefined : max}
+      required={resolvedRequired}
+      min={format ? undefined : resolvedMin}
+      max={format ? undefined : resolvedMax}
       step={format ? undefined : step}
       aria-invalid={hasError || null}
       on:input={handleInput}
@@ -213,7 +224,8 @@
   <Field
     id={inputId}
     name={name}
-    label={label || name}
+    label={label || undefined}
+    required={resolvedRequired}
     hint={hint}
     error={error}
     errors={errors}

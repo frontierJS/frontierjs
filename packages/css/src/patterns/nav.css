@@ -104,7 +104,7 @@
   color:           var(--ink-soft);
   text-decoration: none;
   cursor:          pointer;
-  transition:      background 120ms, color 120ms;
+  transition:      background var(--motion-fast), color var(--motion-fast);
 }
 
 .pagination-link:hover:not([aria-current="page"]):not([aria-disabled="true"]) {
@@ -168,7 +168,7 @@
   font-weight:     500;
   color:           var(--ink-soft);
   text-decoration: none;
-  transition:      background 120ms, color 120ms;
+  transition:      background var(--motion-fast), color var(--motion-fast);
 }
 
 .navlink:hover {
@@ -194,8 +194,8 @@
 .navlist-label {
   padding:        var(--space-lg) var(--space-md) var(--space-2xs);
   font-size:      var(--text-2xs);
-  font-weight:    700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-weight:    var(--label-font-weight);
+  text-transform: var(--label-text-transform);
+  letter-spacing: var(--label-letter-spacing);
   color:          var(--ink-mute);
 }

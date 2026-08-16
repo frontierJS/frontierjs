@@ -67,6 +67,21 @@
   //
   // USAGE — inline (always visible):
   //   <DatePicker alwaysShow isOpen />
+  //
+  // USAGE — inside a <Form>, where the label and `required` are schema facts:
+  //   <DatePicker name="dueOn" bind:startDate={dueOn} />
+  //
+  // `bind:` takes a writable top-level `let` in the caller — a field of a
+  // record (`bind:startDate={record.dueOn}`) is a compile error, not a
+  // binding.
+  //
+  // A `Date` column is not routed here by the generated form: Sierra's table
+  // answers `input type="date"`, which round-trips a zoneless date with no JS
+  // at all. This is the control an app CHOOSES — a range, presets, two panes —
+  // and choosing it should not cost the schema wiring every other control has.
+
+  import Field from './Field.mesa'
+  import { resolveError, resolveRule, stated } from '../../utils.js'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -95,6 +110,16 @@
   export let dowLabels        = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
   export let monthLabels      = ['January','February','March','April','May','June',
                                   'July','August','September','October','November','December']
+
+  // Field integration — the picker draws buttons, so without these it was the
+  // one control in this folder that a <Form> could not label, could not mark
+  // required, and could not show a server rejection on.
+  export let name     = ''
+  export let label    = ''
+  export let hint     = ''
+  export let error    = ''
+  export let errors   = undefined
+  export let required = undefined
 
   // Callback props
   export let onDateChange       = undefined  // ({ startDate, endDate?, rangeDates? }) => void
@@ -154,18 +179,32 @@
   }
 
   /** Expand disabledDates / enabledDates string arrays into timestamp arrays. */
+  /**
+   * Parse a bare YYYY-MM-DD as a LOCAL date.
+   *
+   * `new Date('2026-01-22')` is UTC midnight by specification, and every other
+   * date in this component is a local midnight from `createTimestamp` — so
+   * west of Greenwich the two disagree by a day and `disabledDates` disabled
+   * the day before the one it named. Anything carrying a time is left to the
+   * platform parser, which is the case where an offset was actually stated.
+   */
+  function parseLocalDate(value) {
+    const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim())
+    return ymd ? new Date(+ymd[1], +ymd[2] - 1, +ymd[3]) : new Date(value)
+  }
+
   function getDatesFromArray(collection) {
     return collection.reduce((acc, entry) => {
       if (typeof entry !== 'string') return acc
       if (entry.includes(':')) {
-        const [a, b] = entry.split(':').map(s => new Date(s))
+        const [a, b] = entry.split(':').map(parseLocalDate)
         const cur = new Date(a)
         while (cur <= b) {
           acc.push(normalizeTimestamp(cur.getTime()))
           cur.setDate(cur.getDate() + 1)
         }
       } else {
-        acc.push(normalizeTimestamp(new Date(entry).getTime()))
+        acc.push(normalizeTimestamp(parseLocalDate(entry).getTime()))
       }
       return acc
     }, [])
@@ -200,6 +239,24 @@
   // Sync external props → internal state
   $: startDate, () => { _startDate = startDate ? getTimestamp(startDate) : null }
   $: endDate,   () => { _endDate   = endDate   ? getTimestamp(endDate)   : null }
+
+  // ── Form context ────────────────────────────────────────────────────────────
+  //
+  // The enclosing <Form> and this field's rule, both undefined standing alone.
+  const form = $context.form
+  const rule = resolveRule(form, name)
+
+  // The label is NOT resolved here — Field reads the same rule off the same
+  // form and resolves it once. Two components resolving one fact from one
+  // source is how they drift.
+  const resolvedRequired = stated(required, rule?.required)
+  const displayError     = resolveError(form, name, error, errors)
+
+  // What the hidden input carries. A date with no zone, matching what
+  // `<input type="date">` submits for the same column — the picker works in
+  // local midnight timestamps and `formatYMD` is the local-time formatter, so
+  // this is the day the reader clicked and not the day it is in UTC.
+  const formValue = _startDate ? formatYMD(new Date(_startDate)) : ''
 
   // Calendar navigation
   let startDateYear  = today.getFullYear()
@@ -459,7 +516,7 @@
   }
 
   function onClick(e, day, month, year) {
-    const btn     = e.target?.closest('.date')
+    const btn     = e.target?.closest('.fjs-dp-day')
     const classes = btn?.className ?? ''
     if (classes.includes('future') || classes.includes('past') || classes.includes('disabled')) {
       e.preventDefault()
@@ -530,20 +587,55 @@
 </script>
 
 <!--
+  The four nav arrows. They were base64 PNGs — black pixels, so they were
+  invisible against a dark theme and could not follow a tone; `currentColor`
+  is the whole reason these are inline.
+-->
+{#snippet chevronStart()}
+  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" width="16" height="16">
+    <path d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z"/>
+  </svg>
+{/snippet}
+
+{#snippet chevronEnd()}
+  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" width="16" height="16">
+    <path d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z"/>
+  </svg>
+{/snippet}
+
+{#snippet chevronUp()}
+  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" width="12" height="12">
+    <path d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 1 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"/>
+  </svg>
+{/snippet}
+
+{#snippet chevronDown()}
+  <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" width="12" height="12">
+    <path d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"/>
+  </svg>
+{/snippet}
+
+<!--
+  The picker itself, in a snippet so it can be wrapped in a <Field> or not.
+  Its body keeps its own indentation rather than being pushed a level in — a
+  200-line whitespace diff would bury the change that actually happened.
+
   The caller's attributes land on the wrapper: this component has no control of
   its own — the trigger is whatever the caller puts in the slot.
 -->
+{#snippet picker()}
 <div
   bind:this={wrapperEl}
-  class="datepicker"
+  class="fjs-dp"
   data-picker-theme={theme}
+  aria-invalid={displayError ? 'true' : null}
   {...$attributes}
 >
   <!-- Trigger slot — whatever the parent puts inside the component -->
   <slot />
 
   <div
-    class="calendars-container"
+    class="fjs-dp-panel"
     class:right={align === 'right'}
     class:range={isRange && isMultipane}
     class:presets={isRange && showPresets}
@@ -551,7 +643,7 @@
   >
     <!-- ── Preset sidebar ── -->
     {#if isRange && showPresets}
-      <div class="calendar-presets" class:presets-only={showPresetsOnly}>
+      <div class="fjs-dp-presets" class:presets-only={showPresetsOnly}>
         {#each presetRanges as option (option.value)}
           <button
             type="button"
@@ -565,22 +657,22 @@
     {/if}
 
     <!-- ── Primary calendar ── -->
-    <div class="calendar" class:presets-only={isRange && showPresetsOnly}>
+    <div class="fjs-dp-cal" class:presets-only={isRange && showPresetsOnly}>
       <header class:timepicker={showTimePicker}>
         <button
           type="button"
           aria-label="Previous month"
           on:click|preventDefault={toPrev}
         >
-          <div class="icon-previous-month" aria-label="Previous month"></div>
+          {@render chevronStart()}
         </button>
 
         <span>
           <div>{monthLabels[startDateMonth]} {startDateYear}</div>
           {#if showYearControls}
-            <div class="years">
-              <button type="button" aria-label="Next year"     on:click|preventDefault={toNextYear}><i class="icon-next-year"></i></button>
-              <button type="button" aria-label="Previous year" on:click|preventDefault={toPrevYear}><i class="icon-previous-year"></i></button>
+            <div class="fjs-dp-years">
+              <button type="button" aria-label="Next year"     on:click|preventDefault={toNextYear}>{@render chevronUp()}</button>
+              <button type="button" aria-label="Previous year" on:click|preventDefault={toPrevYear}>{@render chevronDown()}</button>
             </div>
           {/if}
         </span>
@@ -591,12 +683,12 @@
           class:hide={isRange && isMultipane}
           on:click|preventDefault={toNext}
         >
-          <div class="icon-next-month" aria-label="Next month"></div>
+          {@render chevronEnd()}
         </button>
       </header>
 
       {#if showTimePicker}
-        <div class="timepicker" class:show={isRange && !isMultipane}>
+        <div class="fjs-dp-time" class:show={isRange && !isMultipane}>
           <input
             type="time"
             bind:value={startDateTime}
@@ -605,7 +697,7 @@
           {#if isRange}
             <input
               type="time"
-              class="end-time"
+              class="fjs-dp-endtime"
               bind:value={endDateTime}
               on:input={() => _endDate = endDate = updateTime(endDateTime, _endDate)}
             />
@@ -614,20 +706,27 @@
       {/if}
 
       <!-- Day-of-week headers -->
-      <div class="month">
+      <div class="fjs-dp-grid">
         {#each dowLabels as _, labelIndex (labelIndex)}
-          <span class="dow">{dowLabels[(labelIndex + startOfWeek) % 7]}</span>
+          <span class="fjs-dp-dow">{dowLabels[(labelIndex + startOfWeek) % 7]}</span>
         {/each}
 
-        <!-- Calendar days -->
-        {#each { length: 6 } as _w, weekIndex (weekIndex)}
-          {#if startDateCalendar[weekIndex]}
-            {#each { length: 7 } as _d, dayIndex (dayIndex)}
-              {#if startDateCalendar[weekIndex][dayIndex] !== 0}
-                {@const day = startDateCalendar[weekIndex][dayIndex]}
+        <!--
+          Iterate the weeks the month actually has. A fixed `{#each {length: 6}}`
+          over a guard reads `calendar[week][day]` from inside the guarded
+          block, and on navigation the inner reads recompute before the outer
+          guard tears the row down — so moving from a 5-row month to a 4-row one
+          threw `Cannot read properties of undefined`, in a handler, where it
+          surfaces as a calendar that stops responding.
+        -->
+        {#each startDateCalendar as week, weekIndex (weekIndex)}
+          {#if week}
+            {#each week as cell, dayIndex (dayIndex)}
+              {#if cell !== 0}
+                {@const day = cell}
                 <button
                   type="button"
-                  class="date"
+                  class="fjs-dp-day"
                   class:today={isToday(day, startDateMonth, startDateYear)}
                   class:start={isFirstInRange(day, startDateMonth, startDateYear)}
                   class:end={isLastInRange(day, startDateMonth, startDateYear)}
@@ -643,10 +742,10 @@
                   on:mouseleave={onMouseLeave}
                   on:click|preventDefault={(e) => onClick(e, day, startDateMonth, startDateYear)}
                 >
-                  <span class="date-square">{day}</span>
+                  <span class="chip fjs-dp-square">{day}</span>
                 </button>
               {:else}
-                <div class="date other">&nbsp;</div>
+                <div class="fjs-dp-day other">&nbsp;</div>
               {/if}
             {/each}
           {/if}
@@ -656,7 +755,7 @@
 
     <!-- ── Second pane (multipane range) ── -->
     {#if isRange && isMultipane}
-      <div class="calendar" class:presets-only={showPresetsOnly}>
+      <div class="fjs-dp-cal" class:presets-only={showPresetsOnly}>
         <header class:timepicker={showTimePicker}>
           <button
             type="button"
@@ -664,26 +763,26 @@
             class:hide={true}
             on:click|preventDefault={toPrev}
           >
-            <div class="icon-previous-month"></div>
+            {@render chevronStart()}
           </button>
 
           <span>
             <div>{monthLabels[endDateMonth]} {endDateYear}</div>
             {#if showYearControls}
-              <div class="years">
-                <button type="button" aria-label="Next year"     on:click|preventDefault={toNextYear}><i class="icon-next-year"></i></button>
-                <button type="button" aria-label="Previous year" on:click|preventDefault={toPrevYear}><i class="icon-previous-year"></i></button>
+              <div class="fjs-dp-years">
+                <button type="button" aria-label="Next year"     on:click|preventDefault={toNextYear}>{@render chevronUp()}</button>
+                <button type="button" aria-label="Previous year" on:click|preventDefault={toPrevYear}>{@render chevronDown()}</button>
               </div>
             {/if}
           </span>
 
           <button type="button" aria-label="Next month" on:click|preventDefault={toNext}>
-            <div class="icon-next-month"></div>
+            {@render chevronEnd()}
           </button>
         </header>
 
         {#if showTimePicker}
-          <div class="timepicker">
+          <div class="fjs-dp-time">
             <input
               type="time"
               bind:value={endDateTime}
@@ -692,19 +791,20 @@
           </div>
         {/if}
 
-        <div class="month">
+        <div class="fjs-dp-grid">
           {#each dowLabels as _, labelIndex (labelIndex)}
-            <span class="dow">{dowLabels[(labelIndex + startOfWeek) % 7]}</span>
+            <span class="fjs-dp-dow">{dowLabels[(labelIndex + startOfWeek) % 7]}</span>
           {/each}
 
-          {#each { length: 6 } as _w, weekIndex (weekIndex)}
-            {#if endDateCalendar[weekIndex]}
-              {#each { length: 7 } as _d, dayIndex (dayIndex)}
-                {#if endDateCalendar[weekIndex][dayIndex] !== 0}
-                  {@const day = endDateCalendar[weekIndex][dayIndex]}
+          <!-- Same rule as the primary pane: iterate the real weeks. -->
+          {#each endDateCalendar as week, weekIndex (weekIndex)}
+            {#if week}
+              {#each week as cell, dayIndex (dayIndex)}
+                {#if cell !== 0}
+                  {@const day = cell}
                   <button
                     type="button"
-                    class="date"
+                    class="fjs-dp-day"
                     class:today={isToday(day, endDateMonth, endDateYear)}
                     class:range={inRange(day, endDateMonth, endDateYear)}
                     class:rangehover={inRangeHover(day, endDateMonth, endDateYear)}
@@ -720,10 +820,10 @@
                     on:mouseleave={onMouseLeave}
                     on:click|preventDefault={(e) => onClick(e, day, endDateMonth, endDateYear)}
                   >
-                    <span>{day}</span>
+                    <span class="chip fjs-dp-square">{day}</span>
                   </button>
                 {:else}
-                  <div class="date other">&nbsp;</div>
+                  <div class="fjs-dp-day other">&nbsp;</div>
                 {/if}
               {/each}
             {/if}
@@ -733,475 +833,362 @@
     {/if}
   </div>
 </div>
+{/snippet}
+
+<!--
+  A `name` is enough to wrap, the same rule every other control here follows:
+  it is what makes the field resolvable, and a picker inside a <Form> states
+  nothing else. `label` goes through unresolved so Field resolves it once off
+  the same rule.
+
+  The hidden input is what makes the field EXIST for the form — the picker
+  draws buttons, and a button is not a value the form can read or a name its
+  dirty tracking can see. Single-date mode only: a range is two values and one
+  name, which no column holds.
+-->
+{#if label || name}
+  <Field
+    name={name}
+    label={label || undefined}
+    required={resolvedRequired}
+    hint={hint}
+    error={error}
+    errors={errors}
+    {class}
+  >
+    {@render picker()}
+    {#if name && !isRange}
+      <input type="hidden" name={name} value={formValue} />
+    {/if}
+  </Field>
+{:else}
+  {@render picker()}
+{/if}
 
 <style>
-  /* ── Design tokens ── override via --datepicker-* on any ancestor ────────── */
-  .datepicker {
-    --datepicker-border-color: var(--rule);
-    --datepicker-border-radius-small: 0.125rem;
-    --datepicker-border-radius-base: 0.25rem;
-    --datepicker-border-radius-large: 0.5rem;
-    --datepicker-border-radius-xlarge: 0.75rem;
-    --datepicker-border-radius-xxlarge: 1rem;
-    --datepicker-border-radius-xxxlarge: 1.125rem;
-    --datepicker-state-active: var(--color-primary);
-    --datepicker-state-hover: var(--rule);
-    --datepicker-color: var(--ink);
-    --datepicker-font-family: sans-serif;
-    --datepicker-font-size-large: 1.125rem;
-    --datepicker-font-size-base: 14px;
-    --datepicker-font-size-medium: 0.89rem;
-    --datepicker-font-size-small: 0.75rem;
-    --datepicker-font-weight-base: 400;
-    --datepicker-font-weight-medium: 500;
-    --datepicker-font-weight-bold: 700;
-    --datepicker-spacing: 6px;
-    --datepicker-margin-xsmall: calc(var(--datepicker-spacing) / 4);
-    --datepicker-margin-small:  calc(var(--datepicker-spacing) / 2);
-    --datepicker-margin-base:   var(--datepicker-spacing);
-    --datepicker-margin-large:  calc(var(--datepicker-spacing) * 2);
-    --datepicker-margin-xlarge: calc(var(--datepicker-spacing) * 3);
-    --datepicker-padding-xsmall: calc(var(--datepicker-spacing) / 4);
-    --datepicker-padding-small:  calc(var(--datepicker-spacing) / 2);
-    --datepicker-padding-base:   var(--datepicker-spacing);
-    --datepicker-padding-large:  calc(var(--datepicker-spacing) * 2);
-    --datepicker-padding-xlarge: calc(var(--datepicker-spacing) * 3);
+  /*
+   * A calendar is geometry @frontierjs/css has no term for — a seven-column
+   * grid of round day cells with a range band bleeding between them — which
+   * is why this block exists at all. Everything that is NOT that geometry is
+   * read from the package: the type ladder, the space ladder (so `.dense`
+   * reaches the whole panel), the radii, the shadow ladder, the rule colour,
+   * the tones, and the focus ring's own tokens.
+   *
+   * Four knobs, each one a design token. Override them on any ancestor.
+   */
+  .fjs-dp {
+    --dp-cell:   2.5rem;                  /* one day cell, square */
+    --dp-accent: var(--color-primary);    /* the selected day's fill */
+    --dp-band:   var(--rule);             /* the in-range band behind the cells */
+    --dp-layer:  99;                      /* the panel sits above page content */
 
-    /* Container */
-    --datepicker-container-background: var(--surface);
-    --datepicker-container-border: 1px solid var(--rule);
-    --datepicker-container-border-radius: 12px;
-    --datepicker-container-box-shadow: 0 1px 20px var(--shadow-md, 0 4px 12px rgba(0,0,0,0.1));
-    --datepicker-container-left: 0;
-    --datepicker-container-top: 105%;
-    --datepicker-container-position: absolute;
-    --datepicker-container-width: fit-content;
-    --datepicker-container-zindex: 99;
+    position:    relative;
+    font-family: var(--font-primary);
+    font-size:   var(--text-md);
+  }
+  .fjs-dp * { box-sizing: border-box; }
 
-    /* Calendar */
-    --datepicker-calendar-border: 0;
-    --datepicker-calendar-padding: var(--datepicker-padding-base) var(--datepicker-padding-large) var(--datepicker-padding-xlarge);
-    --datepicker-calendar-width: 310px;
-    --datepicker-calendar-split-border: 1px solid var(--datepicker-border-color);
-
-    /* Header */
-    --datepicker-calendar-header-font-size: var(--datepicker-font-size-large);
-    --datepicker-calendar-header-margin: 0 0 var(--datepicker-margin-xlarge) 0;
-    --datepicker-calendar-header-padding: var(--datepicker-padding-large) var(--datepicker-padding-base);
-
-    /* Month nav buttons */
-    --datepicker-calendar-header-month-nav-background: transparent;
-    --datepicker-calendar-header-month-nav-background-hover: var(--surface-sunken);
-    --datepicker-calendar-header-month-nav-border: 0;
-    --datepicker-calendar-header-month-nav-border-radius: 20px;
-    --datepicker-calendar-header-month-nav-height: 32px;
-    --datepicker-calendar-header-month-nav-width: 32px;
-    --datepicker-calendar-header-month-nav-padding: var(--datepicker-padding-small);
-
-    /* Year nav */
-    --datepicker-calendar-header-year-nav-height: 12px;
-    --datepicker-calendar-header-year-nav-width: 12px;
-    --datepicker-calendar-header-year-nav-margin: -2px 0 0 0;
-    --datepicker-calendar-header-year-nav-padding: 0;
-
-    /* Presets */
-    --datepicker-presets-border: 1px solid var(--datepicker-border-color);
-    --datepicker-presets-padding: 16px;
-    --datepicker-presets-minwidth: 180px;
-    --datepicker-presets-maxwidth: 200px;
-    --datepicker-presets-button-background: transparent;
-    --datepicker-presets-button-background-hover: var(--datepicker-state-hover);
-    --datepicker-presets-button-background-active: var(--datepicker-state-active);
-    --datepicker-presets-button-border: 0;
-    --datepicker-presets-button-border-radius: 40px;
-    --datepicker-presets-button-color: var(--datepicker-color);
-    --datepicker-presets-button-color-active: var(--surface);
-    --datepicker-presets-button-font-size: var(--datepicker-font-size-base);
-    --datepicker-presets-button-margin: var(--datepicker-margin-xsmall) 0;
-    --datepicker-presets-button-padding: 0.25rem 0.75rem;
-
-    /* Timepicker */
-    --datepicker-timepicker-input-border: 1px solid var(--datepicker-border-color);
-    --datepicker-timepicker-input-border-radius: var(--datepicker-border-radius-base);
-    --datepicker-timepicker-input-padding: var(--datepicker-padding-small) var(--datepicker-padding-base);
-    --datepicker-timepicker-container-margin-bottom: var(--datepicker-margin-xlarge);
-
-    /* Day of week */
-    --datepicker-calendar-dow-color: var(--ink-soft);
-    --datepicker-calendar-dow-font-size: var(--datepicker-font-size-base);
-    --datepicker-calendar-dow-font-weight: var(--datepicker-font-weight-medium);
-    --datepicker-calendar-dow-margin-bottom: var(--datepicker-margin-large);
-
-    /* Day cells */
-    --datepicker-calendar-day-background-hover: var(--surface-sunken);
-    --datepicker-calendar-day-border: 1px solid transparent;
-    --datepicker-calendar-day-border-radius: 100%;
-    --datepicker-calendar-day-color: var(--ink);
-    --datepicker-calendar-day-color-disabled: var(--ink-mute);
-    --datepicker-calendar-day-height: 40px;
-    --datepicker-calendar-day-width: 40px;
-    --datepicker-calendar-day-font-size: var(--datepicker-font-size-base);
-    --datepicker-calendar-day-margin-bottom: 1px;
-    --datepicker-calendar-day-padding: var(--datepicker-padding-base);
-
-    /* Today */
-    --datepicker-calendar-today-background: transparent;
-    --datepicker-calendar-today-border: 1px solid var(--ink-mute);
-    --datepicker-calendar-today-font-weight: var(--datepicker-font-weight-bold);
-
-    /* Range fill */
-    --datepicker-calendar-range-background: var(--datepicker-state-hover);
-    --datepicker-calendar-range-border-radius: 0;
-    --datepicker-calendar-range-color: var(--datepicker-color);
-    --datepicker-calendar-range-start-box-shadow: inset -20px 0 0 var(--datepicker-state-hover);
-    --datepicker-calendar-range-end-box-shadow: inset 20px 0 0 var(--datepicker-state-hover);
-    --datepicker-calendar-range-start-box-shadow-selected: inset -20px 0 0 var(--rule);
-    --datepicker-calendar-range-end-box-shadow-selected: inset 20px 0 0 var(--rule);
-    --datepicker-calendar-range-start-end-background: var(--color-info);
-    --datepicker-calendar-range-start-end-color: var(--ink);
-    --datepicker-calendar-range-selected-background: var(--datepicker-state-active);
-    --datepicker-calendar-range-selected-border-radius: 20px;
-    --datepicker-calendar-range-selected-color: var(--surface);
-    --datepicker-calendar-range-selected-font-weight: var(--datepicker-font-weight-medium);
-    --datepicker-calendar-range-included-background: var(--rule);
-    --datepicker-calendar-range-included-color: var(--ink);
-    --datepicker-calendar-range-included-font-weight: var(--datepicker-font-weight-base);
+  /*
+   * The ring is drawn from the package's tokens rather than restated as a
+   * recipe — focus.css opts elements in BY CLASS and cannot name a class this
+   * kit invented, so the rule lives here and the look stays the theme's.
+   * A day cell is flush against its neighbours, so the ring goes inset.
+   */
+  .fjs-dp button:focus-visible {
+    outline:        var(--ring-width) var(--ring-style, solid)
+                    var(--ring-color, var(--ring, var(--color-primary)));
+    outline-offset: calc(var(--ring-offset) * -1);
+    z-index:        1;
   }
 
-  /* ── Layout ──────────────────────────────────────────────────────────────── */
+  /* ── Panel ───────────────────────────────────────────────────────────── */
 
-  .datepicker { font-size: var(--datepicker-font-size-base); position: relative; }
-  .datepicker * { box-sizing: border-box; }
-
-  .datepicker .calendars-container {
-    background: var(--datepicker-container-background);
-    border: var(--datepicker-container-border);
-    border-radius: var(--datepicker-container-border-radius);
-    box-shadow: var(--datepicker-container-box-shadow);
-    display: none;
-    font-family: var(--datepicker-font-family);
+  .fjs-dp-panel {
+    display:       none;
+    position:      absolute;
+    left:          0;
+    z-index:       var(--dp-layer);
+    width:         fit-content;
     grid-template-columns: 1fr;
-    left: var(--datepicker-container-left);
-    position: var(--datepicker-container-position);
-    width: var(--datepicker-container-width);
-    z-index: var(--datepicker-container-zindex);
+    background:    var(--surface-raised);
+    color:         var(--ink);
+    border:        var(--border-width) solid var(--rule);
+    border-radius: var(--card-radius);
+    box-shadow:    var(--shadow-lg);
   }
-  .datepicker .calendars-container.right { left: auto; right: 0; }
-  .datepicker .calendars-container.show  { display: grid; top: var(--datepicker-container-top); }
-  .datepicker .calendars-container.range { grid-template-columns: repeat(2, 1fr); }
-  .datepicker .calendars-container.presets {
-    grid-template-columns: minmax(var(--datepicker-presets-minwidth), var(--datepicker-presets-maxwidth)) 1fr 1fr;
-  }
-  .datepicker .calendars-container.presets:not(.range) {
-    grid-template-columns: minmax(var(--datepicker-presets-minwidth), var(--datepicker-presets-maxwidth)) 1fr;
-  }
+  .fjs-dp-panel.right    { left: auto; right: 0; }
+  .fjs-dp-panel.show     { display: grid; top: calc(100% + var(--space-2xs)); }
+  .fjs-dp-panel.range    { grid-template-columns: repeat(2, 1fr); }
+  .fjs-dp-panel.presets  { grid-template-columns: minmax(11rem, 12.5rem) 1fr 1fr; }
+  .fjs-dp-panel.presets:not(.range) { grid-template-columns: minmax(11rem, 12.5rem) 1fr; }
 
-  /* ── Presets ─────────────────────────────────────────────────────────────── */
+  /* ── Presets ─────────────────────────────────────────────────────────── */
 
-  .datepicker .calendars-container .calendar-presets {
-    border-right: var(--datepicker-presets-border);
-    display: none;
+  .fjs-dp-presets {
+    display:        none;
     flex-direction: column;
-    padding: var(--datepicker-presets-padding);
+    padding:        var(--space-2xl);
+    border-right:   var(--border-width) solid var(--rule);
   }
-  .datepicker .calendars-container.presets .calendar-presets          { display: flex; }
-  .datepicker .calendars-container.presets .calendar-presets.presets-only { border-right: 0; min-width: 100%; }
+  .fjs-dp-panel.presets .fjs-dp-presets { display: flex; }
+  .fjs-dp-panel.presets .fjs-dp-presets.presets-only { border-right: 0; min-width: 100%; }
 
-  .datepicker .calendars-container .calendar-presets button {
-    appearance: none;
-    background-color: var(--datepicker-presets-button-background);
-    border: var(--datepicker-presets-button-border);
-    border-radius: var(--datepicker-presets-button-border-radius);
-    color: var(--datepicker-presets-button-color);
-    cursor: pointer;
-    font-family: var(--datepicker-font-family);
-    font-size: var(--datepicker-presets-button-font-size);
-    margin: var(--datepicker-presets-button-margin);
-    padding: var(--datepicker-presets-button-padding);
-    text-align: left;
+  .fjs-dp-presets button {
+    appearance:    none;
+    background:    transparent;
+    border:        0;
+    border-radius: var(--pill-radius);
+    color:         inherit;
+    cursor:        pointer;
+    font:          inherit;
+    text-align:    left;
+    margin:        var(--space-3xs) 0;
+    padding:       var(--space-2xs) var(--space-lg);
   }
-  .datepicker .calendars-container .calendar-presets button:hover  { background-color: var(--datepicker-presets-button-background-hover); }
-  .datepicker .calendars-container .calendar-presets button.active {
-    background-color: var(--datepicker-presets-button-background-active);
-    color: var(--datepicker-presets-button-color-active);
-    cursor: default;
-    font-weight: var(--datepicker-font-weight-medium);
-  }
-  .datepicker .calendars-container .calendar-presets button:focus-visible {
-    border-radius: 20px;
-    outline: 5px auto -webkit-focus-ring-color;
-    z-index: 10;
+  .fjs-dp-presets button:hover  { background: var(--surface-sunken); }
+  .fjs-dp-presets button.active {
+    background:  var(--dp-accent);
+    color:       var(--surface);
+    cursor:      default;
+    font-weight: 500;
   }
 
-  /* ── Calendar ────────────────────────────────────────────────────────────── */
+  /* ── Calendar ────────────────────────────────────────────────────────── */
 
-  .datepicker .calendars-container .calendar {
-    border: var(--datepicker-calendar-border);
-    padding: var(--datepicker-calendar-padding);
+  .fjs-dp-cal {
     position: relative;
-    width: var(--datepicker-calendar-width);
+    padding:  var(--space-lg) var(--space-2xl) var(--space-2xl);
+    /*
+     * Seven cells and the padding either side. Stated rather than measured so
+     * the two panes of a range picker are the same width whatever month each
+     * is showing.
+     */
+    width:    calc((var(--dp-cell) * 7) + (var(--space-2xl) * 2));
   }
-  .datepicker .calendars-container .calendar.presets-only           { display: none; }
-  .datepicker .calendars-container .calendar + .calendar            { border-left: var(--datepicker-calendar-split-border); }
+  .fjs-dp-cal.presets-only          { display: none; }
+  .fjs-dp-cal + .fjs-dp-cal         { border-left: var(--border-width) solid var(--rule); }
 
-  /* ── Header ──────────────────────────────────────────────────────────────── */
+  /* ── Header ──────────────────────────────────────────────────────────── */
 
-  .datepicker .calendars-container .calendar header {
-    align-items: center;
-    color: var(--datepicker-color);
-    display: flex;
-    font-size: var(--datepicker-calendar-header-font-size);
+  .fjs-dp-cal header {
+    display:         flex;
+    align-items:     center;
     justify-content: space-between;
-    margin: var(--datepicker-calendar-header-margin);
-    padding: var(--datepicker-calendar-header-padding);
-    user-select: none;
+    gap:             var(--space-sm);
+    margin-block-end: var(--space-2xl);
+    font-size:       var(--text-lg);
+    user-select:     none;
   }
-  .datepicker .calendars-container .calendar header.timepicker        { margin-bottom: 0; }
+  .fjs-dp-cal header.timepicker { margin-block-end: 0; }
 
-  .datepicker .calendars-container .calendar header button {
-    appearance: none;
-    background: var(--datepicker-calendar-header-month-nav-background);
-    border: var(--datepicker-calendar-header-month-nav-border);
-    border-radius: var(--datepicker-calendar-header-month-nav-border-radius);
-    color: var(--datepicker-color);
-    cursor: pointer;
-    font-size: var(--datepicker-calendar-header-font-size);
-    height: var(--datepicker-calendar-header-month-nav-height);
-    margin-left: -8px;
-    padding: var(--datepicker-calendar-header-month-nav-padding);
-    text-align: center;
-    width: var(--datepicker-calendar-header-month-nav-width);
-  }
-  .datepicker .calendars-container .calendar header button:hover  { background: var(--datepicker-calendar-header-month-nav-background-hover); }
-  .datepicker .calendars-container .calendar header button.hide   { opacity: 0; }
-  .datepicker .calendars-container .calendar header > span + button { margin-left: 0; margin-right: -8px; }
-
-  .datepicker .calendars-container .calendar header > span {
+  .fjs-dp-cal header > span {
+    display:     flex;
     align-items: center;
-    color: var(--datepicker-color);
-    display: flex;
-    font-weight: var(--datepicker-font-weight-medium);
-    gap: 8px;
-  }
-  .datepicker .calendars-container .calendar header > span .years {
-    align-items: center;
-    display: flex;
-    flex-direction: column;
-    margin: 0;
-  }
-  .datepicker .calendars-container .calendar header > span .years button {
-    display: block;
-    height: var(--datepicker-calendar-header-year-nav-height);
-    margin: var(--datepicker-calendar-header-year-nav-margin);
-    padding: var(--datepicker-calendar-header-year-nav-padding);
-    width: var(--datepicker-calendar-header-year-nav-width);
+    gap:         var(--space-sm);
+    font-weight: 500;
   }
 
-  /* ── Timepicker ──────────────────────────────────────────────────────────── */
-
-  .datepicker .calendars-container .calendar .timepicker {
-    align-items: center;
-    display: flex;
-    justify-content: space-around;
-    margin-bottom: var(--datepicker-timepicker-container-margin-bottom);
-  }
-  .datepicker .calendars-container .calendar .timepicker input[type="time"] {
-    border: var(--datepicker-timepicker-input-border);
-    border-radius: var(--datepicker-timepicker-input-border-radius);
-    display: block;
-    font-family: var(--datepicker-font-family);
-    margin: 0 auto;
-    padding: var(--datepicker-timepicker-input-padding);
-  }
-  .datepicker .calendars-container .calendar .timepicker input[type="time"].end-time         { display: none; }
-  .datepicker .calendars-container .calendar .timepicker.show input[type="time"].end-time    { display: block; }
-
-  /* ── Month grid ──────────────────────────────────────────────────────────── */
-
-  .datepicker .calendars-container .calendar .month {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 0;
-    width: fit-content;
-  }
-
-  .datepicker .calendars-container .calendar .dow {
-    color: var(--datepicker-calendar-dow-color);
-    font-size: var(--datepicker-calendar-dow-font-size);
-    font-weight: var(--datepicker-calendar-dow-font-weight);
-    margin-bottom: var(--datepicker-calendar-dow-margin-bottom);
-    text-align: center;
-  }
-
-  /* ── Day cells ───────────────────────────────────────────────────────────── */
-
-  .datepicker .calendars-container .calendar .date {
-    appearance: none;
-    background: inherit;
-    border: 0;
-    margin: 0;
-    padding: 0;
-    position: relative;
-    text-align: center;
-  }
-  .datepicker .calendars-container .calendar .date span {
-    align-items: center;
-    border: var(--datepicker-calendar-day-border);
-    border-radius: var(--datepicker-calendar-day-border-radius);
-    color: var(--datepicker-calendar-day-color);
-    cursor: pointer;
-    display: flex;
-    height: var(--datepicker-calendar-day-height);
+  .fjs-dp-cal header button {
+    display:         inline-flex;
+    align-items:     center;
     justify-content: center;
-    font-family: var(--datepicker-font-family);
-    font-size: var(--datepicker-calendar-day-font-size);
-    margin-bottom: var(--datepicker-calendar-day-margin-bottom);
-    padding: var(--datepicker-calendar-day-padding);
+    appearance:      none;
+    background:      transparent;
+    border:          0;
+    border-radius:   var(--pill-radius);
+    color:           inherit;
+    cursor:          pointer;
+    padding:         var(--space-2xs);
+  }
+  .fjs-dp-cal header button:hover { background: var(--surface-sunken); }
+  .fjs-dp-cal header button.hide  { opacity: 0; }
+
+  .fjs-dp-years {
+    display:        flex;
+    flex-direction: column;
+    align-items:    center;
+  }
+  .fjs-dp-years button { padding: 0; }
+
+  /* ── Timepicker ──────────────────────────────────────────────────────── */
+
+  .fjs-dp-time {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-around;
+    margin-block-end: var(--space-2xl);
+  }
+  .fjs-dp-time input[type="time"] {
+    display:       block;
+    margin:        0 auto;
+    font:          inherit;
+    color:         inherit;
+    background:    var(--surface);
+    border:        var(--border-width) solid var(--rule);
+    border-radius: var(--field-radius);
+    padding:       var(--space-2xs) var(--space-sm);
+  }
+  .fjs-dp-time input[type="time"].fjs-dp-endtime      { display: none; }
+  .fjs-dp-time.show input[type="time"].fjs-dp-endtime { display: block; }
+
+  /* ── The grid ────────────────────────────────────────────────────────── */
+
+  .fjs-dp-grid {
+    display:               grid;
+    grid-template-columns: repeat(7, var(--dp-cell));
+    gap:                   0;
+    width:                 fit-content;
+  }
+
+  .fjs-dp-dow {
+    color:            var(--ink-soft);
+    font-size:        var(--text-sm);
+    font-weight:      500;
+    text-align:       center;
+    margin-block-end: var(--space-lg);
+  }
+
+  /* ── Day cells ───────────────────────────────────────────────────────── */
+
+  /*
+   * The button is the grid cell and carries the range band; the `.chip` inside
+   * it is the disc. Splitting them is what lets the band run edge to edge
+   * between two round cells — a single element cannot be both a circle and a
+   * full-width strip.
+   */
+  .fjs-dp-day {
+    appearance: none;
+    background: none;
+    border:     0;
+    margin:     0;
+    padding:    0;
+    position:   relative;
     text-align: center;
-    width: var(--datepicker-calendar-day-width);
   }
-  .datepicker .calendars-container .calendar .date:not(.other):not(.range):not(.future):not(.past):not(.disabled) span:hover {
-    background-color: var(--datepicker-calendar-day-background-hover);
+
+  .fjs-dp-square {
+    /*
+     * `.chip` on the same element derives --fill and --on-fill from --bg-mix
+     * (chip.css), which is how a selected day stays legible against any tone a
+     * theme defines. Unset, --bg-mix is invalid and the fallbacks below hold.
+     */
+    --tone-fill: var(--bg-mix, transparent);
+
+    block-size:    var(--dp-cell);
+    inline-size:   var(--dp-cell);
+    background:    var(--fill, var(--tone-fill));
+    color:         var(--ink);
+    border:        var(--border-width) solid transparent;
+    border-radius: var(--pill-radius);
+    font-size:     var(--text-md);
+    cursor:        pointer;
   }
-  .datepicker .calendars-container .calendar .date:focus-visible,
-  .datepicker .calendars-container .calendar header button:focus-visible {
-    border-radius: 20px;
-    outline: 5px auto -webkit-focus-ring-color;
-    z-index: 10;
+
+  .fjs-dp-day:not(.other):not(.range):not(.future):not(.past):not(.disabled) .fjs-dp-square:hover {
+    background: var(--surface-sunken);
   }
-  .datepicker .calendars-container .calendar .date.disabled span,
-  .datepicker .calendars-container .calendar .date.past span,
-  .datepicker .calendars-container .calendar .date.future span {
-    color: var(--datepicker-calendar-day-color-disabled);
+  .fjs-dp-day.disabled .fjs-dp-square,
+  .fjs-dp-day.past     .fjs-dp-square,
+  .fjs-dp-day.future   .fjs-dp-square {
+    color:  var(--ink-mute);
     cursor: default;
   }
-  .datepicker .calendars-container .calendar .date.today span {
-    background: var(--datepicker-calendar-today-background);
-    border: var(--datepicker-calendar-today-border);
-    font-weight: var(--datepicker-calendar-today-font-weight);
+  .fjs-dp-day.today .fjs-dp-square {
+    border-color: var(--ink-mute);
+    font-weight:  700;
   }
-  .datepicker .calendars-container .calendar .date.other {
-    border: 0;
+  .fjs-dp-day.other {
+    border:     0;
     box-shadow: none;
-    color: var(--rule-strong);
+    color:      var(--rule-strong);
   }
 
-  /* ── Range fill ──────────────────────────────────────────────────────────── */
+  /* ── The range band ──────────────────────────────────────────────────── */
 
-  .datepicker .calendars-container .calendar .date.rangehover span,
-  .datepicker .calendars-container .calendar .date.range span {
-    background: var(--datepicker-calendar-range-background);
-    border: 0;
-    border-radius: var(--datepicker-calendar-range-border-radius);
-    color: var(--datepicker-calendar-range-color);
-    cursor: default;
+  /*
+   * Every bleed below is half a cell, derived — the band has to meet the disc
+   * exactly, and a literal drifts the moment --dp-cell is overridden or a
+   * theme moves the type scale under it.
+   */
+  .fjs-dp-day.rangehover .fjs-dp-square,
+  .fjs-dp-day.range      .fjs-dp-square {
+    background:    var(--dp-band);
+    border-color:  transparent;
+    border-radius: 0;
+    color:         var(--ink);
+    cursor:        default;
   }
-  .datepicker .calendars-container .calendar .date.rangehover.start,
-  .datepicker .calendars-container .calendar .date.range.start {
-    box-shadow: var(--datepicker-calendar-range-start-box-shadow);
-    height: var(--datepicker-calendar-day-height);
-  }
-  .datepicker .calendars-container .calendar .date.rangehover.end,
-  .datepicker .calendars-container .calendar .date.range.end {
-    box-shadow: var(--datepicker-calendar-range-end-box-shadow);
-    height: var(--datepicker-calendar-day-height);
-  }
-  .datepicker .calendars-container .calendar .date.rangehover.start span,
-  .datepicker .calendars-container .calendar .date.range.start span,
-  .datepicker .calendars-container .calendar .date.rangehover.end span,
-  .datepicker .calendars-container .calendar .date.range.end span {
-    background-color: var(--datepicker-calendar-range-selected-background);
-    border-radius: var(--datepicker-calendar-range-selected-border-radius);
-    color: var(--datepicker-calendar-range-selected-color);
-    font-weight: var(--datepicker-calendar-range-selected-font-weight);
-  }
-  .datepicker .calendars-container .calendar .date.rangehover.first span,
-  .datepicker .calendars-container .calendar .date.range.first span,
-  .datepicker .calendars-container .calendar .date.rangehover:nth-last-child(7n):not(.start):not(.end) span,
-  .datepicker .calendars-container .calendar .date.range:nth-last-child(7n):not(.start):not(.end) span {
-    border-bottom-left-radius: 20px;
-    border-top-left-radius: 20px;
-  }
-  .datepicker .calendars-container .calendar .date.rangehover.last span,
-  .datepicker .calendars-container .calendar .date.range.last span,
-  .datepicker .calendars-container .calendar .date.rangehover:nth-child(7n):not(.start):not(.end) span,
-  .datepicker .calendars-container .calendar .date.range:nth-child(7n):not(.start):not(.end) span {
-    border-bottom-right-radius: 20px;
-    border-top-right-radius: 20px;
-  }
-  .datepicker .calendars-container .calendar .date.rangehover.start.end,
-  .datepicker .calendars-container .calendar .date.range.start.end { box-shadow: none; }
+  .fjs-dp-day.rangehover.start,
+  .fjs-dp-day.range.start { box-shadow: inset calc(var(--dp-cell) / -2) 0 0 var(--dp-band); }
+  .fjs-dp-day.rangehover.end,
+  .fjs-dp-day.range.end   { box-shadow: inset calc(var(--dp-cell) / 2) 0 0 var(--dp-band); }
 
-  .datepicker .calendars-container .calendar .date:not(.rangehover) + .rangehover:not(.end),
-  .datepicker .calendars-container .calendar .date:not(.rangehover) + .rangehover.start {
-    box-shadow: var(--datepicker-calendar-range-start-box-shadow-selected) !important;
-    height: var(--datepicker-calendar-day-height);
-  }
-  .datepicker .calendars-container .calendar .date:not(.rangehover) + .rangehover span,
-  .datepicker .calendars-container .calendar .date:not(.rangehover) + .rangehover.start span { border-radius: 20px; }
-
-  .datepicker .calendars-container .calendar .date.rangehover span {
-    background-color: var(--datepicker-calendar-range-included-background);
-    color: var(--datepicker-calendar-range-included-color);
-    font-weight: var(--datepicker-calendar-range-included-font-weight);
-  }
-  .datepicker .calendars-container .calendar .date.rangehover:hover {
-    box-shadow: inset 20px 0 0 var(--datepicker-calendar-range-included-background);
-    height: var(--datepicker-calendar-day-height);
-  }
-  .datepicker .calendars-container .calendar .date.rangehover:hover span { border-radius: 20px; font-weight: var(--datepicker-font-weight-medium); }
-  .datepicker .calendars-container .calendar .date.rangehover.first:hover,
-  .datepicker .calendars-container .calendar .date.rangehover.start {
-    box-shadow: var(--datepicker-calendar-range-start-box-shadow-selected);
-    height: var(--datepicker-calendar-day-height);
-  }
-  .datepicker .calendars-container .calendar .date.rangehover:not(.start) + .start,
-  .datepicker .calendars-container .calendar .date.rangehover.end {
-    box-shadow: var(--datepicker-calendar-range-end-box-shadow-selected);
-    height: var(--datepicker-calendar-day-height);
-  }
-  .datepicker .calendars-container .calendar .date.rangehover:not(.start) + .start span { border-radius: 20px; }
-  .datepicker .calendars-container .calendar .date.rangehover.start span,
-  .datepicker .calendars-container .calendar .date.rangehover.end span {
-    background-color: var(--datepicker-calendar-range-start-end-background);
-    color: var(--datepicker-calendar-range-start-end-color);
-  }
-  .datepicker .calendars-container .calendar .date.rangehover.start.norange { box-shadow: none !important; }
-
-  /* ── Nav icons (base64 PNGs, same as original) ───────────────────────────── */
-
-  .icon-next-month {
-    background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAACLSURBVHgB7ZTLCYAwEERHbcASUpIlaAd2YDoxlmIX3ixFEwwYQQL5kCWwD94ph5mwywIMUzmLlYRBe1lXENBrT+oSgktwiepLNJ63EWkl3AOltBMCkHh/kEv5F9SCGN8IzKntEYfAdwQb0kYaHO4uoUJBBIdzOAoiKMMNQ47wDvEceA7Zrp3BMLVyA56LVFYQOkngAAAAAElFTkSuQmCC") no-repeat center;
-    background-size: 16px 16px;
-    height: 16px; width: 16px; margin: auto;
-  }
-  .icon-previous-month {
-    background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAACKSURBVHgB7ZbBDYAgDEW/xgEcgZHcQDYRJ5ER3EhHcAPtAQMHQwIiSNKXvAMH+CUNDQDDVM5kLMJCnsYBmXHDN1IgIxzO4QIZ+Ty8gT9cOuuZ3BHHQa4hGxTszVOpnoJaFMbXAk2OzvpNC+7zojYVewFcBBdRVRE9CqCR4EvWIR4JO5iC5jzD/IoLU/FXPXheCj0AAAAASUVORK5CYII=") no-repeat center;
-    background-size: 16px 16px;
-    height: 16px; width: 16px; margin: auto;
-  }
-  .icon-next-year {
-    background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAABuSURBVHgB7c7BCYAwDIXhBy7gKB2hm9Vx3UJzqCASRWOTHvo+yDG8HyAiGt2Ef7LcLLeigyK31SsIdh4Pj9DGwyKu40u9kAht/OAe8TTuHvFm3C3iy3jziGQYv4vIMMjGcS0iwSjBWN/on4hoADu88UW4KXFVfgAAAABJRU5ErkJggg==") no-repeat center;
-    background-size: 12px 12px;
-    display: block; height: 12px; width: 12px;
-  }
-  .icon-previous-year {
-    background: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAABYlAAAWJQFJUiTwAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAB3SURBVHgB7dTRCYAwDATQAxdwlI6QzZpx3UIrKJSC1aS2fngP7kvi3VcBIqK/m26+S8qcssBHWu5Dynokwi5m9wIHyX5gHRGL2wAndYwoyxWN1DDi9XLLiG7lT0Z0L6+NGFZ+NWJoeW2EYjD9svy0PzACIiJqsAHF2EaCcjFGaQAAAABJRU5ErkJggg==") no-repeat center;
-    background-size: 12px 12px;
-    display: block; height: 12px; width: 12px;
+  .fjs-dp-day.rangehover.start .fjs-dp-square,
+  .fjs-dp-day.range.start      .fjs-dp-square,
+  .fjs-dp-day.rangehover.end   .fjs-dp-square,
+  .fjs-dp-day.range.end        .fjs-dp-square {
+    /*
+     * `background` is restated because the band rule above already set it and
+     * is equally specific — setting only --bg-mix leaves the end of a range
+     * painted in the band's colour with the text colour of a fill, which is
+     * low-contrast and looks like a rendering fault rather than a CSS one.
+     */
+    --bg-mix:      var(--dp-accent);
+    background:    var(--fill, var(--tone-fill));
+    color:         var(--on-fill, var(--surface));
+    border-radius: var(--pill-radius);
+    font-weight:   500;
   }
 
-  /* ── Responsive ──────────────────────────────────────────────────────────── */
+  /* A band that stops at the row's edge is rounded off rather than cut. */
+  .fjs-dp-day.rangehover.first .fjs-dp-square,
+  .fjs-dp-day.range.first      .fjs-dp-square,
+  .fjs-dp-day.rangehover:nth-last-child(7n):not(.start):not(.end) .fjs-dp-square,
+  .fjs-dp-day.range:nth-last-child(7n):not(.start):not(.end)      .fjs-dp-square {
+    border-start-start-radius: var(--pill-radius);
+    border-end-start-radius:   var(--pill-radius);
+  }
+  .fjs-dp-day.rangehover.last .fjs-dp-square,
+  .fjs-dp-day.range.last      .fjs-dp-square,
+  .fjs-dp-day.rangehover:nth-child(7n):not(.start):not(.end) .fjs-dp-square,
+  .fjs-dp-day.range:nth-child(7n):not(.start):not(.end)      .fjs-dp-square {
+    border-start-end-radius: var(--pill-radius);
+    border-end-end-radius:   var(--pill-radius);
+  }
+  .fjs-dp-day.rangehover.start.end,
+  .fjs-dp-day.range.start.end { box-shadow: none; }
+
+  /* The hover preview: the same band, drawn while the second end is chosen. */
+  .fjs-dp-day:not(.rangehover) + .rangehover:not(.end),
+  .fjs-dp-day:not(.rangehover) + .rangehover.start {
+    box-shadow: inset calc(var(--dp-cell) / -2) 0 0 var(--dp-band) !important;
+  }
+  .fjs-dp-day:not(.rangehover) + .rangehover      .fjs-dp-square,
+  .fjs-dp-day:not(.rangehover) + .rangehover.start .fjs-dp-square { border-radius: var(--pill-radius); }
+
+  .fjs-dp-day.rangehover:hover { box-shadow: inset calc(var(--dp-cell) / 2) 0 0 var(--dp-band); }
+  .fjs-dp-day.rangehover:hover .fjs-dp-square { border-radius: var(--pill-radius); font-weight: 500; }
+  .fjs-dp-day.rangehover.first:hover,
+  .fjs-dp-day.rangehover.start { box-shadow: inset calc(var(--dp-cell) / -2) 0 0 var(--dp-band); }
+  .fjs-dp-day.rangehover:not(.start) + .start,
+  .fjs-dp-day.rangehover.end   { box-shadow: inset calc(var(--dp-cell) / 2) 0 0 var(--dp-band); }
+  .fjs-dp-day.rangehover:not(.start) + .start .fjs-dp-square { border-radius: var(--pill-radius); }
+  .fjs-dp-day.rangehover.start.norange { box-shadow: none !important; }
+
+  /* ── Narrow ──────────────────────────────────────────────────────────── */
 
   @media only screen and (max-width: 800px) {
-    .datepicker .calendars-container.show              { display: flex; flex-direction: column; }
-    .datepicker .calendars-container.presets .calendar-presets { border-right: 0; border-bottom: var(--datepicker-presets-border); }
-    .datepicker .calendars-container .calendar .timepicker { align-items: center; display: flex; }
-    .datepicker .calendars-container .calendar .timepicker input[type="time"].end-time { display: block; }
-    .datepicker .calendars-container .calendar + .calendar { display: none; }
-    .datepicker .calendars-container .calendar header button.hide { opacity: 1; }
+    .fjs-dp-panel.show { display: flex; flex-direction: column; }
+    .fjs-dp-panel.presets .fjs-dp-presets {
+      border-right:  0;
+      border-bottom: var(--border-width) solid var(--rule);
+    }
+    .fjs-dp-time { display: flex; align-items: center; }
+    .fjs-dp-time input[type="time"].fjs-dp-endtime { display: block; }
+    .fjs-dp-cal + .fjs-dp-cal { display: none; }
+    .fjs-dp-cal header button.hide { opacity: 1; }
   }
   @media only screen and (max-width: 600px) {
-    .datepicker .calendars-container.presets .calendar-presets:not(.presets-only) { display: none; }
+    .fjs-dp-panel.presets .fjs-dp-presets:not(.presets-only) { display: none; }
   }
 </style>

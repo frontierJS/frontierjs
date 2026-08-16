@@ -47,9 +47,20 @@ describe('junction errors — the snapshot', () => {
     expect(body).toContain('| `TransitionViolationError` | status 409 · retryable false | `Conflict` | 409 | false |')
     expect(body).toContain('| `VersionConflictError` | status 409 · retryable true | `Conflict` | 409 | true |')
 
-    // FJS-255, asserted still open: the lock errors declare `retryable` and no
-    // status, so they reach a caller as 500. Fixing that turns this red, which
-    // is the point — the row has to be promoted rather than left stale.
-    expect(body).toContain('| `LockNotAcquiredError` | retryable true | `GeneralError` | 500 | true |')
+    // The lock family, which is where this file found FJS-255: all three
+    // declared `retryable` and no `status`, so each reached a caller as a 500
+    // about a lock another request was holding. They are 409s now, and the two
+    // halves are asserted together — a status says what happened, `retryable`
+    // says whether doing it again is a strategy, and a lock that is held is the
+    // one of the three where it is.
+    expect(body).toContain('| `LockNotAcquiredError` | status 409 · retryable true | `Conflict` | 409 | true |')
+    expect(body).toContain('| `LockExpiredError` | status 409 · retryable false | `Conflict` | 409 | false |')
+    expect(body).toContain('| `LockReleasedByOtherError` | status 409 · retryable false | `Conflict` | 409 | false |')
+
+    // Nothing in Litestone's list may land on 500: every class there is one this
+    // repo owns, so a 500 means a status was never set. The row that reaches a
+    // caller is the only thing above the boundary anyone reads.
+    const table = body.split('## Litestone\'s errors, through this boundary')[1] ?? ''
+    expect(table.split('\n').filter(l => l.startsWith('| `') && l.includes('| 500 |'))).toEqual([])
   })
 })

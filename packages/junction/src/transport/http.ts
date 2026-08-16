@@ -19,9 +19,9 @@ import { createStats }                    from './types.ts'
 import { wsSend, flushOutbox, dropOutbox, setMaxQueuedBytes } from './outbox.ts'
 import type { TransportStats }            from './types.ts'
 import type { TransportContext, RawRequest, RouteHandler, MiddlewareFn,
-              WsData, WsContext, WsHandlerSet }  from './types.ts'
-import type { RouteSegment }              from './router.ts'
-import type { IAuth }                     from '../auth/types.ts'
+              WsData, WsContext, WsHandlerSet,
+              RouteSegment }              from './types.ts'
+import type { SessionVerifier }           from '../auth/types.ts'
 
 // ─── Module-level constants ────────────────────────────────────────────────
 
@@ -86,7 +86,7 @@ export interface HttpTransportOptions {
     window:     number     // ms
   }
   static?:      StaticOptions
-  auth?:        IAuth
+  auth?:        SessionVerifier
   /**
    * Cookie name to read the session token from, in addition to
    * `Authorization: Bearer` and `x-api-key`. Null/omitted = cookies are not
@@ -210,7 +210,12 @@ export class HttpTransport {
 
     setMaxQueuedBytes(this._opts.wsMaxQueued)
 
-    this._server = Bun.serve({
+    // The generic is what types `ws` in the four handlers below. Without it Bun
+    // infers `ServerWebSocket<unknown>` and every one of them is an argument
+    // mismatch against the _ws* methods, which DO know what they put on
+    // `ws.data` — so the socket's payload type was stated in four places and
+    // agreed with by none.
+    this._server = Bun.serve<WsData>({
       port:     port ?? this._opts.port,
       hostname: this._opts.hostname,
 
@@ -246,7 +251,7 @@ export class HttpTransport {
   // Swap the auth implementation used for session resolution. Public API —
   // core's app.setAuth() previously reached into the private _opts field
   // via type-erasing casts, which no type-checker could protect.
-  setAuth(auth: IAuth): void {
+  setAuth(auth: SessionVerifier): void {
     this._opts.auth = auth
   }
 
@@ -300,8 +305,12 @@ export class HttpTransport {
   // Usage in tests:
   //   const res = await app.http.fetch(new Request('http://localhost/users'))
   async fetch(req: Request): Promise<Response> {
+    // `fetch()` drives the handler with no listener behind it, so there is no
+    // Server to hand it — only the one method the handler can call. Asserting
+    // straight onto Server claims an overlap that does not exist; the two-step
+    // is what says "this is a stand-in", which is the honest description.
     const mockServer = { upgrade: () => false }
-    return this._handle(req, mockServer as ReturnType<typeof Bun.serve>)
+    return this._handle(req, mockServer as unknown as ReturnType<typeof Bun.serve>)
   }
 
   private async _handle(req: Request, server: ReturnType<typeof Bun.serve>): Promise<Response> {
@@ -463,7 +472,7 @@ export class HttpTransport {
         } else {
           finalResponse = toResponse(await handler(ctx), ctx)
           // Stamp status so middleware (e.g. requestLogger) can read it
-          ;(ctx as Record<string, unknown>).__status = finalResponse.status
+          ;(ctx).__status = finalResponse.status
         }
       }
 
@@ -486,12 +495,11 @@ export class HttpTransport {
   private async _finalizeWithHeaders(response: Response, ctx: TransportContext, acceptEncoding: string): Promise<Response> {
     const canDecorate = response.status !== 204 && response.status !== 304
 
-    const extra         = ctx as Record<string, unknown>
-    const cookieHeaders = extra.__pendingCookies    as Array<[string, string, Record<string, unknown>]> | undefined
-    const cors          = extra.__cors               as Record<string, string> | undefined
-    const security      = extra.__securityHeaders    as Record<string, string> | undefined
-    const rateLimit     = extra.__rateLimit          as Record<string, string> | undefined
-    const correlation   = extra.__correlationHeaders as Record<string, string> | undefined
+    const cookieHeaders = ctx.__pendingCookies
+    const cors          = ctx.__cors
+    const security      = ctx.__securityHeaders
+    const rateLimit     = ctx.__rateLimit
+    const correlation   = ctx.__correlationHeaders
 
     const needsCacheControl = canDecorate && response.status >= 200 && response.status < 300
     const hasExtras =
@@ -608,7 +616,7 @@ export class HttpTransport {
 
       method:   req.method.toUpperCase(),
       path:     url.pathname,
-      params,
+      route:   params,
       query,
       headers,
       body:     parsed.data,
@@ -822,7 +830,7 @@ export class HttpTransport {
   private _buildWsContext(ws: Bun.ServerWebSocket<WsData>): WsContext {
     return {
       path:    ws.data.path,
-      params:  ws.data.params,
+      route:   ws.data.params,
       query:   ws.data.query,
       headers: ws.data.headers,
       ip:      ws.data.ip,

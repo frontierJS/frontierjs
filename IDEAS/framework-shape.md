@@ -201,5 +201,5 @@ slices first (as that document already sequences), and let schema→UI decide wh
 - `IDEAS/testing-and-ci.md` — item 6 in full: automated CI, and the Suite realm
 - `ARCHITECT.md` §5 — "UI plugin system limited; JSON Schema → UI drives `make()`
   only" is the existing, understated statement of item 1
-- `drift-report.md` — the hand-copy and duck-typing findings
+- `coherence-review.md` — the hand-copy and duck-typing findings (§8)
 - `HANDOFF.md` — the numbered issue ledger this should inform, not duplicate

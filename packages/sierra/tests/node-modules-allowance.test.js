@@ -65,9 +65,30 @@ describe('node_modules allowance', () => {
     expect(await transformed('/app/node_modules/@frontierjs/sierra/src/components/ChainRenderer.mesa')).toBe(true)
   })
 
+  // The kit and the email components ship as SOURCE too, and allowing only
+  // sierra left every one of them untransformed — `Unexpected JSX expression`
+  // at line 1 of CopyButton.mesa, for an app that had installed it correctly.
+  // Same bug as the one above, one package over, found the same way: by
+  // containerising an app so it could not resolve the workspace.
+  test('every @frontierjs package that ships .mesa is compiled', async () => {
+    expect(await transformed('/app/node_modules/@frontierjs/ui/components/display/CopyButton.mesa')).toBe(true)
+    expect(await transformed('/app/node_modules/@frontierjs/ui/components/forms/Input.mesa')).toBe(true)
+    expect(await transformed('/app/node_modules/@frontierjs/email-kit/components/Button.mesa')).toBe(true)
+  })
+
   test('another package’s .mesa is left alone', async () => {
     expect(await transformed('/app/node_modules/some-kit/dist/Widget.mesa')).toBe(false)
     expect(await transformed('/app/node_modules/@someone/kit/Widget.mesa')).toBe(false)
+  })
+
+  // `node_modules` CONTAINS the substring `_module`, and the layout test was
+  // `id.includes('_module')` — so every installed .mesa read as a layout, took
+  // the layout slot rewrite rather than the page one, and failed to compile
+  // with `'__slot_actions' is already declared`: a message about a slot the
+  // author never wrote. The kit's Form.mesa is the file it fired on, and the
+  // only way to see it was to build an app that could not resolve the alias.
+  test('a component under node_modules is not mistaken for a layout', async () => {
+    expect(await transformed('/app/node_modules/@frontierjs/ui/components/forms/Form.mesa')).toBe(true)
   })
 
   test('an app’s own sources are compiled', async () => {
@@ -76,10 +97,11 @@ describe('node_modules allowance', () => {
 
   // The behavioural tests above pass for a plugin that transforms everything, so
   // this is what pins the literal the bug lived in. The bare name must not
-  // come back.
-  test('the plugin names the scoped package, once', async () => {
+  // come back, and neither may the single-package form that replaced it.
+  test('the plugin names the scope, once', async () => {
     const src = await readFile(resolve(SIERRA_ROOT, 'src/build/mesa-plugin.js'), 'utf8')
-    expect(src).toContain("SIERRA_PKG = '@frontierjs/sierra'")
+    expect(src).toContain("FJS_SCOPE = '/node_modules/@frontierjs/'")
     expect(src).not.toContain("'/node_modules/sierra/'")
+    expect(src).not.toContain('SIERRA_PKG')
   })
 })

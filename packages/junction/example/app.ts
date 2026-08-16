@@ -3,7 +3,7 @@
 // Junction Demo API
 //
 // Demonstrates every major framework feature in one runnable app:
-//   • Services with full CRUD, custom actions, and hook pipeline
+//   • Services with full CRUD, custom methods, and hook pipeline
 //   • Schema validation, timestamps, protect hooks
 //   • Authentication (token-based demo auth)
 //   • Role-based access control via requireRole()
@@ -53,7 +53,7 @@
 //   # List notes with pagination
 //   curl "http://localhost:3000/api/notes?$limit=5&$skip=0"
 //
-//   # Note summary action (custom action — dispatched via X-Service-Method header)
+//   # Note summary (custom method — dispatched via X-Service-Method header)
 //   curl -X POST http://localhost:3000/api/notes/<id> \
 //     -H 'x-service-method: summary'
 //
@@ -171,7 +171,7 @@ app.configure(channels((a: App & { channels?: ReturnType<typeof import('../src/t
 app.configure(openapi({
   title:       'Junction Demo API',
   version:     config.version,
-  description: 'Demonstrates framework features: hooks, channels, actions, SSE, webhooks',
+  description: 'Demonstrates framework features: hooks, channels, custom methods, SSE, webhooks',
   ui:          '/api/docs',
 }))
 
@@ -322,7 +322,7 @@ app.get('/events', ctx => {
 // Try: curl http://localhost:3000/prices/AAPL
 app.get('/prices/{symbol}', ctx => {
   const { response, send, close } = ctx.sse()
-  const symbol = ctx.params.symbol.toUpperCase()
+  const symbol = ctx.route.symbol.toUpperCase()
 
   let ticks = 0
   const interval = setInterval(async () => {
@@ -367,7 +367,7 @@ const chatRooms = new Map<string, Set<WsContext>>()
 
 app.ws('/chat/{room}', {
   open(ctx) {
-    const room = ctx.params.room
+    const room = ctx.route.room
     if (!chatRooms.has(room)) chatRooms.set(room, new Set())
     chatRooms.get(room)!.add(ctx)
 
@@ -376,7 +376,7 @@ app.ws('/chat/{room}', {
   },
 
   message(ctx, msg) {
-    const room = ctx.params.room
+    const room = ctx.route.room
     let parsed: Record<string, unknown>
     try { parsed = JSON.parse(typeof msg === 'string' ? msg : msg.toString()) }
     catch { ctx.send({ type: 'error', msg: 'invalid JSON' }); return }
@@ -397,7 +397,7 @@ app.ws('/chat/{room}', {
   },
 
   close(ctx) {
-    const room = ctx.params.room
+    const room = ctx.route.room
     chatRooms.get(room)?.delete(ctx)
     log.debug(`ws:chat/${room} left`)
   },

@@ -19,8 +19,11 @@
   //
   // Inside <Form>, name is enough — everything else comes from the schema:
   //   <Form {resource}>
-  //     <Input name="email" bind:value={record.email} />
+  //     <Input name="email" bind:value={email} />
   //   </Form>
+  //
+  // `bind:` takes a writable top-level `let` in the caller, so it is the local
+  // and not `record.email` — a member expression there is a compile error.
   //
   // `email` there gets its label, `required`, `maxlength`/`minlength` and
   // `type="email"` from db/schema.lite, and its server error from the form.

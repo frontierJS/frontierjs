@@ -310,7 +310,7 @@ The `/metrics` wiring exists but exposes almost nothing you would want at 3 a.m.
 - **Hooks are sync-only, unguarded, and incomplete** — `(req) => void` cannot export a span; a throwing hook takes down `send()`; there is no `onRetry`, so retries are invisible; and `stream()` fires only `onRequest`, never response, error or completion.
 - **No correlation or trace context** is propagated to targets. Nothing ties a Hub request to the outpost call it produced.
 
-`register()` reaches into `app._metricsProviders` behind an `instanceof Map` guard (`plugin.ts:47`) — the same private-field reach-in the Junction audit flagged in §6. If Junction renames the field, metrics silently disappear with no error.
+`register()` calls `app.registerMetricsSource()`, the declared seam that replaced the `app._metricsProviders` reach-in this section used to describe (`FJS-D06`). It is called unguarded: this plugin imports Junction's own `App` type, so a missing seam is a compile error rather than metrics that quietly stop appearing.
 
 ---
 

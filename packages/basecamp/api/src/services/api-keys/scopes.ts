@@ -52,7 +52,7 @@ export function scopeVocabulary(app: BasecampApp): Scope[] {
  * The scope a call needs. One definition, used to grant and to explain — the
  * screen names the same string the guard tests.
  *
- * A custom action counts as a write. Reads are `find` and `get` only, which is
+ * A custom method counts as a write. Reads are `find` and `get` only, which is
  * the same line Junction draws for announcing on a channel and the audit hook
  * draws for what to record: three places, one rule.
  */

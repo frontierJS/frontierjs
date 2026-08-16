@@ -1,8 +1,10 @@
 /**
- * @frontierjs/mesa-vite/client — HMR client runtime (runs in the browser).
+ * mesa-vite/client — HMR client runtime (runs in the browser).
+ *
+ * Exported as `@frontierjs/mesa/vite/client`, and served by both this package's
+ * Vite plugin and Sierra's at their own virtual ids (`FJS-D16`).
  *
  * DOM structure after mount:
- *   [label node]
  *   <!--mesa:hmr:Name-->   ← hmrMark  (stable, lives in old module closure)
  *   ... rendered DOM ...
  *   <!---->                ← anchor   (runtime comment, passed as __anchor)
@@ -10,6 +12,12 @@
  * Hot update: clear everything between hmrMark and anchor, re-call newFn.
  * We pass the existing hmrMark from the registry into the new render so
  * the new module's __hmrMark variable doesn't need to be set.
+ *
+ * NOTE ON SCOPE: this is not state-preserving. The component's own signals are
+ * rebuilt from scratch — a counter inside the edited component resets. What
+ * survives is everything around it: router state, scroll position, sibling
+ * components, and the rest of the page. That is the whole win over a full
+ * reload, and it is worth being precise about.
  */
 
 const _registry = new Map()   // id → Set<entry>
@@ -27,7 +35,12 @@ export function __mesa_register(id, hmrMark, anchor, props, block, fn) {
 export function __mesa_hot_update(id, newFn) {
   const entries = _registry.get(id)
   if (!entries?.size) {
-    console.warn(`[Mesa HMR] No registered instances for ${id}`)
+    // Nothing to swap in place. Invalidating this module escalates to the full
+    // reload Vite would have done anyway — without it the edit is simply lost,
+    // and the page keeps rendering the previous version with only a console
+    // warning to say so.
+    console.warn(`[Mesa HMR] No registered instances for ${id} — falling back to reload`)
+    import.meta.hot?.invalidate?.()
     return
   }
 

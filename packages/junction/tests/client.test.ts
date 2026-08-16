@@ -557,6 +557,183 @@ describe('client.resource()', () => {
     expect(store.get()[0].id).toBe('2')
   })
 
+  // ── the store is scoped to the query that filled it (FJS-011) ─────────────
+  // Without `match` every event applies, which is what put a row outside the
+  // filter in the list and — the one that reads as an update rather than as
+  // junk — kept a row that had just left it.
+
+  // Stands in for Sierra's schema-derived matcher: `undefined` for a query key
+  // the record does not carry, so "cannot decide" is exercised too.
+  const matchStatus = (record: Record<string, unknown>, query: Record<string, unknown>) =>
+    !('status' in query) ? true
+      : !('status' in record) ? null
+      : record.status === query.status
+
+  function loaded(rows: Array<Record<string, unknown>>, query: Record<string, unknown>) {
+    const { restore } = mockFetch({ kind: 'list', object: 'items', data: rows, total: rows.length })
+    const r = makeClient().resource('items', 'id', { match: matchStatus })
+    return { ...r, ready: r.load(query).then(() => restore()) }
+  }
+
+  it('a created row outside the query is not added', async () => {
+    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    await ready
+    service._receive('created', { id: '2', status: 'draft' })
+    expect(store.get()).toEqual([{ id: '1', status: 'active' }])
+  })
+
+  it('a created row inside the query is added', async () => {
+    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    await ready
+    service._receive('created', { id: '2', status: 'active' })
+    expect(store.get()).toHaveLength(2)
+  })
+
+  it('a patch that moves a row out of the query removes it', async () => {
+    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    await ready
+    service._receive('patched', { id: '1', status: 'archived' })
+    expect(store.get()).toEqual([])
+  })
+
+  it('a custom method event leaves by the same door', async () => {
+    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    await ready
+    service._receive('archived', { id: '1', status: 'archived' })
+    expect(store.get()).toEqual([])
+  })
+
+  it('nothing is filtered before a load — the store has no query to mean', () => {
+    const { service, store } = makeClient().resource('items', 'id', { match: matchStatus })
+    service._receive('created', { id: '2', status: 'draft' })
+    expect(store.get()).toHaveLength(1)
+  })
+
+  it('an undecidable record reloads instead of being guessed at', async () => {
+    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    await ready
+
+    const { restore } = mockFetch({
+      kind: 'list', object: 'items', total: 1,
+      data: [{ id: '1', status: 'active' }, { id: '3', status: 'active' }],
+    })
+    // No `status` on the record — a projected push the matcher cannot judge.
+    service._receive('patched', { id: '3', name: 'Bob' })
+    expect(store.get()).toHaveLength(1)          // not applied on the strength of a guess
+
+    await new Promise((r) => setTimeout(r, 5))
+    expect(store.get()).toHaveLength(2)          // the server answered instead
+    restore()
+  })
+
+  it('a burst of undecidable pushes is one reload', async () => {
+    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    await ready
+
+    let calls = 0
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => {
+      calls++
+      return new Response(
+        JSON.stringify({ kind: 'list', object: 'items', data: [{ id: '1', status: 'active' }], total: 1 }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    }) as typeof fetch
+
+    for (const id of ['3', '4', '5']) service._receive('patched', { id })
+    await new Promise((r) => setTimeout(r, 5))
+
+    expect(calls).toBe(1)
+    expect(store.get()).toHaveLength(1)
+    globalThis.fetch = original
+  })
+
+  it('with no match every event applies, as before', async () => {
+    const { restore } = mockFetch({ kind: 'list', object: 'items', data: [{ id: '1', status: 'active' }], total: 1 })
+    const { service, store, load } = makeClient().resource('items')
+    await load({ status: 'active' })
+    restore()
+    service._receive('created', { id: '2', status: 'draft' })
+    expect(store.get()).toHaveLength(2)
+  })
+
+  // ── `changed` — a push that names no row (FJS-307) ─────────────────────────
+  // Every other event carries a record. `changed` is what the server sends for
+  // a write that could not build one — a bulk statement, or a `select: false`
+  // write — and it carries a count instead. The store's only honest answer is
+  // the one it already gives an undecidable record: ask the server again.
+
+  it('a changed event reloads the list', async () => {
+    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    await ready
+
+    const { restore } = mockFetch({
+      kind: 'list', object: 'items', total: 2,
+      data: [{ id: '1', status: 'active' }, { id: '9', status: 'active' }],
+    })
+    service._receive('changed', { model: 'Item', operation: 'createMany', count: 4 })
+    expect(store.get()).toHaveLength(1)          // nothing applied from a count
+
+    await new Promise((r) => setTimeout(r, 5))
+    expect(store.get()).toHaveLength(2)          // the server answered instead
+    restore()
+  })
+
+  // The payload is a count, not a record. Reaching the catch-all handler would
+  // upsert `{model, operation, count}` into the store as if it were a row.
+  it('the count never lands in the store as a row', async () => {
+    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    await ready
+    const { restore } = mockFetch({ kind: 'list', object: 'items', data: [{ id: '1', status: 'active' }], total: 1 })
+
+    service._receive('changed', { model: 'Item', operation: 'deleteMany', count: 12 })
+    await new Promise((r) => setTimeout(r, 5))
+
+    expect(store.get()).toEqual([{ id: '1', status: 'active' }])
+    restore()
+  })
+
+  // Same coalescing every other reload gets: a job doing three bulk writes is
+  // one question, not three.
+  it('a burst of changed events is one reload', async () => {
+    const { service, store, ready } = loaded([{ id: '1', status: 'active' }], { status: 'active' })
+    await ready
+
+    let calls = 0
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => {
+      calls++
+      return new Response(
+        JSON.stringify({ kind: 'list', object: 'items', data: [{ id: '1', status: 'active' }], total: 1 }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    }) as unknown as typeof fetch
+
+    for (const op of ['createMany', 'updateMany', 'deleteMany'])
+      service._receive('changed', { model: 'Item', operation: op, count: 2 })
+    await new Promise((r) => setTimeout(r, 5))
+
+    expect(calls).toBe(1)
+    expect(store.get()).toHaveLength(1)
+    globalThis.fetch = original
+  })
+
+  // The store has no query to re-ask with, so there is nothing to reload — and
+  // an invented `load({})` would fetch a list nobody asked for.
+  it('a changed event before the first load does nothing', async () => {
+    let calls = 0
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => { calls++; return new Response('[]', { status: 200 }) }) as unknown as typeof fetch
+
+    const { service, store } = makeClient().resource('items', 'id', { match: matchStatus })
+    service._receive('changed', { model: 'Item', operation: 'createMany', count: 3 })
+    await new Promise((r) => setTimeout(r, 5))
+
+    expect(calls).toBe(0)
+    expect(store.get()).toEqual([])
+    globalThis.fetch = original
+  })
+
   // ── load() staleness (FJS-082) ────────────────────────────────────────────
   // The store is shared; the returned rows belong to one caller. A load that
   // has been superseded may still answer its own caller and may NOT write the
@@ -724,10 +901,10 @@ describe('apiPrefix', () => {
     restore()
   })
 
-  it('prefixes custom actions', async () => {
+  it('prefixes custom methods', async () => {
     const { restore, mock: m } = mockFetch({})
     await createJunctionClient({ url: 'http://localhost:3000', apiPrefix: '/api' })
-      .service('servers').action('reboot', 'srv_1')
+      .service('servers').invoke('reboot', 'srv_1')
     expect(pathOf(m)).toBe('/api/servers/srv_1')
     restore()
   })
@@ -738,10 +915,10 @@ describe('authPrefix', () => {
   const pathOf = (m: ReturnType<typeof mock>) =>
     new URL(m.mock.calls[0][0] as string).pathname
 
-  it('authenticate() targets /auth/login — where @frontierjs/auth mounts it', async () => {
+  it('auth.signIn() targets /auth/login — where @frontierjs/auth mounts it', async () => {
     const { restore, mock: m } = mockFetch({ token: 't', user: {}, workspaceId: null })
     await createJunctionClient({ url: 'http://localhost:3000' })
-      .authenticate({ email: 'a@b.c', password: 'x' })
+      .auth.signIn('a@b.c', 'x')
     expect(pathOf(m)).toBe('/auth/login')
     restore()
   })
@@ -753,7 +930,7 @@ describe('authPrefix', () => {
     // has to agree or the two defaults never meet.
     const { restore, mock: m } = mockFetch({ token: 't', user: {}, workspaceId: null })
     await createJunctionClient({ url: 'http://localhost:3000', apiPrefix: '/api' })
-      .authenticate({ email: 'a@b.c', password: 'x' })
+      .auth.signIn('a@b.c', 'x')
     expect(pathOf(m)).toBe('/api/auth/login')
     restore()
   })
@@ -762,7 +939,7 @@ describe('authPrefix', () => {
     const { restore, mock: m } = mockFetch({ token: 't', user: {}, workspaceId: null })
     await createJunctionClient({
       url: 'http://localhost:3000', apiPrefix: '/api', authPrefix: '/account',
-    }).authenticate({ email: 'a@b.c', password: 'x' })
+    }).auth.signIn('a@b.c', 'x')
     expect(pathOf(m)).toBe('/api/account/login')
     restore()
   })
@@ -770,7 +947,7 @@ describe('authPrefix', () => {
   it('follows the plugin prefix when the app changes it', async () => {
     const { restore, mock: m } = mockFetch({ token: 't', user: {}, workspaceId: null })
     await createJunctionClient({ url: 'http://localhost:3000', authPrefix: '/account' })
-      .authenticate({ email: 'a@b.c', password: 'x' })
+      .auth.signIn('a@b.c', 'x')
     expect(pathOf(m)).toBe('/account/login')
     restore()
   })

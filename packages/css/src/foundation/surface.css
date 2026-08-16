@@ -36,17 +36,32 @@
   --surface-tint-border: var(--tint-rule);
   --surface-tint-color:  var(--tint-ink);
 
-  --surface-bg:     var(--surface-tint-bg,     var(--surface));
+  /*
+   * --surface-ground is the untoned ground, one step before --surface, so
+   * a composite can give itself a different one without touching
+   * --surface-bg. Dialog and Drawer are the callers (`--dialog-bg`), and
+   * the indirection is what keeps `.outlined`/`.ghost` working on them:
+   * those variants set --surface-bg, and a composite assigning it in a
+   * later layer would beat them.
+   */
+  --surface-bg:     var(--surface-tint-bg,     var(--surface-ground, var(--surface)));
   --surface-border: var(--surface-tint-border, var(--rule));
   --surface-color:  var(--surface-tint-color,  var(--ink));
 
   display:       block;
   background:    var(--surface-bg);
   color:         var(--surface-color);
-  border:        1px solid var(--surface-border);
+  border:        var(--border-width) solid var(--surface-border);
   border-radius: var(--card-radius);
   font-family:   var(--font-primary);
-  transition:    background 120ms, border-color 120ms;
+  /*
+   * Resting elevation, `none` by default (tokens.css). A theme with a
+   * shadow shape of its own — press's printing offset — reaches the Block
+   * tier through this; before it, --shadow-* reached every overlay and no
+   * card. `.raised` below is the elevation ladder and overrides it.
+   */
+  box-shadow:    var(--surface-shadow);
+  transition:    background var(--motion-fast), border-color var(--motion-fast);
 
   /*
    * ── Variants ────────────────────────────────────────────────────
@@ -124,7 +139,8 @@
  */
 :where(a, button):where(.surface, .card, .tile) {
   cursor: pointer;
-  transition: background 120ms, border-color 120ms, transform 120ms;
+  transition: background var(--motion-fast), border-color var(--motion-fast),
+              transform var(--motion-fast);
 }
 
 /*
@@ -182,13 +198,13 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 }
 .surface-header {
   justify-content: space-between;
-  border-bottom:   1px solid var(--surface-border);
+  border-bottom:   var(--border-width) solid var(--surface-border);
   font-weight:     600;
   color:           var(--surface-color);
 }
 .surface-footer {
   justify-content: flex-end;
-  border-top:      1px solid var(--surface-border);
+  border-top:      var(--border-width) solid var(--surface-border);
   background:      color-mix(in srgb, var(--ink) 3%, transparent);
 }
 .surface-body {

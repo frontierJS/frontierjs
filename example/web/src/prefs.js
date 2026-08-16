@@ -4,19 +4,15 @@
 // not a resource and not a model: nothing here is a fact about the shop, so
 // nothing here belongs in db/schema.lite.
 //
-// The theme is applied to <body> as a class, which is the whole mechanism —
-// @frontierjs/css is custom-property inheritance, so one class on any ancestor
-// re-themes everything below it.
+// The theme does not belong here. It is the one preference with a mechanism
+// under it — a class on <html>, applied by a <head> script before first paint —
+// and that script is written by the build, which this file is not part of.
+// Adding a `theme` key back would apply it after the bundle loads, which is the
+// flash the script exists to remove. It lives in sierra.config.js.
 
 const KEY = 'shop_prefs'
 
-export const THEMES = [
-  'theme-default', 'theme-dark', 'theme-forest',
-  'theme-midnight', 'theme-sunset', 'theme-elite',
-]
-
 const DEFAULTS = {
-  theme:         'theme-default',
   dense:         false,
   perPage:       10,
   defaultStatus: '',
@@ -41,18 +37,5 @@ function read() {
 export function savePrefs(edits = {}) {
   Object.assign(prefs, edits)
   localStorage.setItem(KEY, JSON.stringify(prefs))
-  applyTheme()
   return prefs
-}
-
-/**
- * Put the chosen theme on <body>, removing whichever one is there. Called on
- * boot and on save; the class list is the source of truth for what is applied,
- * so nothing has to remember the previous value.
- */
-export function applyTheme() {
-  if (typeof document === 'undefined') return
-  const body = document.body
-  for (const t of THEMES) body.classList.remove(t)
-  body.classList.add(THEMES.includes(prefs.theme) ? prefs.theme : DEFAULTS.theme)
 }

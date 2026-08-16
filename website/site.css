@@ -46,14 +46,6 @@ h1 { font-size: clamp(1.8rem, 4.4vw, 2.6rem); line-height: 1.06; letter-spacing:
 .pitch { font-size: 1rem; color: var(--ink-soft); max-width: 58ch; margin: .55rem 0 0; }
 .hint { font-size: .76rem; color: var(--ink-mute); margin: .6rem 0 0; }
 
-/*
- * Untoned .btn.outlined paints --color-primary on --surface — 3.96:1 in the
- * default theme and 1.99:1 in elite, both below AA. Take the neutral ink, as
- * .btn.ghost already does and for the same reason. Safe to set color alone:
- * outlined's background is --surface, not the derived --fill.
- */
-.btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
-
 pre {
   background: var(--surface-sunken); border: 1px solid var(--rule); border-radius: 9px;
   padding: .8rem .95rem; overflow-x: auto; margin: 0;

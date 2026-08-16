@@ -82,6 +82,13 @@ await app.start()
 
 ## Routes
 
+**A route is what ESTABLISHES a session; a service is what the caller does to
+their own credentials afterwards.** Login cannot be gated by login, so the
+first list bypasses the Service abstraction on purpose — and everything in the
+second list can be refused for want of a session, so it is an ordinary service
+and gets the hook pipeline, the audit trail and both transports rather than a
+hand-rolled route. `DECISIONS.md` § API design.
+
 Paths below are the plugin's own `prefix` (default `/auth`). They are
 registered with `app.post`/`app.get`, so the app's `apiPrefix` applies to them
 like it does to every other route — an app configured with `apiPrefix: '/api'`
@@ -93,11 +100,45 @@ relative to `apiPrefix` for the same reason.
 | `POST` | `/auth/register` | Create account + issue session |
 | `POST` | `/auth/login` | Login, returns token |
 | `POST` | `/auth/logout` | Revoke current session |
-| `GET`  | `/auth/me` | Current user (requires auth) |
 | `POST` | `/auth/password-reset/request` | Send reset email |
 | `POST` | `/auth/password-reset/confirm` | Confirm reset with token |
 | `POST` | `/auth/email/verify/request` | Re-send verification email |
 | `GET`  | `/auth/email/verify?token=` | Verify email with token |
+
+## Services
+
+Registered by the same plugin, at the app's own service root. Every method is
+scoped to the CALLER — nothing here takes a user id, because acting on somebody
+else's account is a different service with a different gate.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/account/me` | The caller's session — what `/auth/me` was |
+| `POST` | `/account/me` + `X-Service-Method: changePassword` | Verify the current password, then replace it |
+| `GET`  | `/sessions` | Where else this caller is signed in; the current one is marked |
+| `DELETE` | `/sessions/{id}` | End one of them |
+| `POST` | `/sessions` + `X-Service-Method: revokeOthers` | Sign out everywhere else |
+| `GET`  | `/api-keys` | The caller's keys — never the key itself |
+| `POST` | `/api-keys` | Issue one. **The raw key is in this response and nowhere else** |
+| `DELETE` | `/api-keys/{id}` | Revoke one |
+
+In a browser they are `client.auth.me()`, `.changePassword()`, `.sessions()`,
+`.revokeSession(id)`, `.revokeOtherSessions()`, `.apiKeys()`, `.createApiKey()`
+and `.revokeApiKey(id)` — and a Sierra app gets a reactive `session` object over
+the top (`@frontierjs/sierra/junction`).
+
+Rename or drop any of the three with `services`, and add a `level` resolver to
+have `account.me` answer the caller's gate level:
+
+```ts
+app.configure(createAuthPlugin(auth, {
+  services: { apiKeys: false, level: myGateLevel },
+}))
+```
+
+A name another service already claimed is refused at boot, naming the option —
+the registry is a Map, so the alternative is one of the two silently replacing
+the other depending on which registered last.
 
 ## Schema models
 

@@ -5,14 +5,14 @@
 import {
   flushSync, watchPath, createEffect, setRenderEnvironment,
 } from '@frontierjs/mesa/runtime.js'
-import { describe, test, expect, beforeAll, afterAll, vi } from 'vitest'
+import { describe, test, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
 import { mkdir, writeFile, rm, readFile } from 'fs/promises'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 
 import { injectAutoImports } from '../src/build/auto-import-plugin.js'
-import { buildThemeScript, initTheme, setTheme, toggleTheme, theme } from '../src/theme/index.js'
+import { buildThemeScript, initTheme, setTheme, toggleTheme, themes, theme } from '../src/theme/index.js'
 import { injectThemeScript } from '../src/postbuild/inject-theme.js'
 import { prefetchHref } from '../src/router/prefetch.js'
 
@@ -33,44 +33,74 @@ describe('buildThemeScript', () => {
   })
 
   test('reads localStorage when persist: true', () => {
-    const script = buildThemeScript({ default: 'light', persist: true, key: 'app_theme' })
+    const script = buildThemeScript({ default: 'theme-default', persist: true, key: 'app_theme' })
     expect(script).toContain('localStorage.getItem("app_theme")')
   })
 
   test('skips localStorage when persist: false', () => {
-    const script = buildThemeScript({ default: 'dark', persist: false })
+    const script = buildThemeScript({ default: 'theme-dark', persist: false })
     expect(script).not.toContain('localStorage')
   })
 
   test('uses system preference when default: system', () => {
     const script = buildThemeScript({ default: 'system' })
     expect(script).toContain('prefers-color-scheme')
-    expect(script).toContain('dark')
+    expect(script).toContain('"theme-dark"')
   })
 
-  test('uses fixed value when default: light or dark', () => {
-    const light = buildThemeScript({ default: 'light' })
+  test('uses a fixed value when default names a theme', () => {
+    const light = buildThemeScript({ default: 'theme-default' })
     expect(light).not.toContain('matchMedia')
-    expect(light).toContain('"light"')
+    expect(light).toContain('"theme-default"')
 
-    const dark = buildThemeScript({ default: 'dark' })
-    expect(dark).toContain('"dark"')
+    const dark = buildThemeScript({ default: 'theme-dark' })
+    expect(dark).toContain('"theme-dark"')
     expect(dark).not.toContain('matchMedia')
   })
 
-  test('uses custom attribute name', () => {
-    const script = buildThemeScript({ attribute: 'color-scheme', default: 'system' })
-    expect(script).toContain('"color-scheme"')
+  // The class is what `@frontierjs/css` reads; the attribute is what this
+  // module used to write and what nothing read. Both spellings are asserted
+  // because the default changing back would be silent — an app would keep
+  // building, keep serving, and stop being themed.
+  test('applies a CLASS on documentElement by default', () => {
+    const script = buildThemeScript({ default: 'system' })
+    expect(script).toContain('document.documentElement')
+    expect(script).toContain('classList.add')
+    expect(script).not.toContain('setAttribute')
   })
 
-  test('sets attribute on documentElement', () => {
-    const script = buildThemeScript({ default: 'system' })
-    expect(script).toContain('document.documentElement.setAttribute')
+  test('applies an attribute when asked, with a custom name', () => {
+    const script = buildThemeScript({ apply: 'attribute', attribute: 'color-scheme', default: 'system' })
+    expect(script).toContain('setAttribute("color-scheme"')
+    expect(script).not.toContain('classList.add')
+  })
+
+  // The class it adds is the class it removes. Without the removal every
+  // switch would stack a second theme onto the first, and which one wins is
+  // then a question about stylesheet order rather than about the setting.
+  test('removes the app\'s other themes before adding one', () => {
+    const script = buildThemeScript({ themes: ['a', 'b', 'c'], default: 'a' })
+    expect(script).toContain('classList.remove')
+    expect(script).toContain('["a","b","c"]')
+  })
+
+  // A theme dropped from the config but still in somebody's localStorage is a
+  // class with no stylesheet behind it, applied before paint, for ever.
+  test('ignores a persisted theme the app no longer offers', () => {
+    const script = buildThemeScript({ themes: ['theme-default', 'theme-dark'], default: 'theme-default' })
+    expect(script).toContain('indexOf(s)>-1')
   })
 
   test('script is compact (no unnecessary whitespace)', () => {
     const script = buildThemeScript({ default: 'system' })
-    expect(script.length).toBeLessThan(300)
+    expect(script.length).toBeLessThan(400)
+  })
+
+  // Two copies of a default is the shape that drifts, and script.js may not
+  // import index.js — so the copies are compared here instead.
+  test('its defaults are the module\'s defaults', () => {
+    initTheme({})
+    expect(buildThemeScript({})).toContain(JSON.stringify(themes()))
   })
 })
 
@@ -115,19 +145,46 @@ describe('injectThemeScript (post-build)', () => {
 // ─── theme state ─────────────────────────────────────────────────────────────
 
 describe('theme state', () => {
+  // Every test here boots the module first: `initTheme` is what turns the
+  // config into the list `setTheme` validates against, and a suite that skips
+  // it is asserting against whatever the previous test left behind.
+  beforeEach(() => initTheme({ themes: ['theme-default', 'theme-dark'], default: 'theme-default' }))
+
   test('setTheme updates the value', () => {
-    setTheme('dark')
-    expect(theme.value).toBe('dark')
-    setTheme('light')
-    expect(theme.value).toBe('light')
+    setTheme('theme-dark')
+    expect(theme.value).toBe('theme-dark')
+    setTheme('theme-default')
+    expect(theme.value).toBe('theme-default')
   })
 
-  test('toggleTheme flips between light and dark', () => {
-    setTheme('light')
+  test('toggleTheme advances through the configured themes', () => {
+    setTheme('theme-default')
     toggleTheme()
-    expect(theme.value).toBe('dark')
+    expect(theme.value).toBe('theme-dark')
     toggleTheme()
-    expect(theme.value).toBe('light')
+    expect(theme.value).toBe('theme-default')
+  })
+
+  // With more than two, "the other one" is not a question the list can answer,
+  // so it is a cycle — and it must wrap rather than stop at the end.
+  test('and wraps, with more than two', () => {
+    initTheme({ themes: ['a', 'b', 'c'], default: 'a' })
+    // Set the start explicitly: `initTheme` resolves nothing without a window
+    // (it is SSR-safe by design), so the value here is whatever ran last.
+    setTheme('a')
+    toggleTheme(); expect(theme.value).toBe('b')
+    toggleTheme(); expect(theme.value).toBe('c')
+    toggleTheme(); expect(theme.value).toBe('a')
+  })
+
+  // Which is the case above: with no theme resolved yet, "the next one" can
+  // only be the first one. Stated so it is a decision rather than an
+  // indexOf(-1) that happens to land somewhere sensible.
+  test('toggleTheme from an unresolved value starts at the first', () => {
+    initTheme({ themes: ['a', 'b', 'c'], default: 'a' })
+    theme.value = 'not-a-theme'
+    toggleTheme()
+    expect(theme.value).toBe('a')
   })
 
   test('setTheme fires a theme.value path watch', () => {
@@ -142,22 +199,46 @@ describe('theme state', () => {
     flushSync()
     const before = runs
 
-    setTheme(theme.value === 'dark' ? 'light' : 'dark')
+    setTheme(theme.value === 'theme-dark' ? 'theme-default' : 'theme-dark')
     flushSync()
 
     expect(runs).toBeGreaterThan(before)
     dispose()
   })
 
-  test('setTheme ignores invalid values', () => {
+  // A name nobody declared has to be refused BY NAME. Returning quietly is the
+  // failure that reads as a broken stylesheet rather than as a typo, and the
+  // warning names the list so the fix is in the message.
+  test('setTheme refuses a theme the app does not declare', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    setTheme('light')
+    setTheme('theme-default')
     setTheme('rainbow')
-    expect(theme.value).toBe('light')  // unchanged
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("invalid value 'rainbow'")
-    )
+    expect(theme.value).toBe('theme-default')  // unchanged
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("'rainbow'"))
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('theme-default, theme-dark'))
     warnSpy.mockRestore()
+  })
+
+  // The old contract wrote an attribute and nothing else, and the two are
+  // indistinguishable from inside the app — the symptom is a stylesheet that
+  // silently stops matching.
+  test('warns when a config names an attribute but not apply', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    initTheme({ attribute: 'data-theme' })
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("apply: 'attribute'"))
+    warnSpy.mockRestore()
+  })
+
+  test('and does not warn when apply is stated', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    initTheme({ attribute: 'data-theme', apply: 'attribute' })
+    expect(warnSpy).not.toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  test('themes() answers what the app declared, in order', () => {
+    initTheme({ themes: ['theme-forest', 'theme-midnight'] })
+    expect(themes()).toEqual(['theme-forest', 'theme-midnight'])
   })
 })
 

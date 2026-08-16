@@ -1,0 +1,245 @@
+<script module>
+  // ── ISO-8601 ⇄ the control's local wall clock ────────────────────────────
+  //
+  // `<input type="datetime-local">` has no zone: it reads and writes a wall
+  // clock and nothing else. Litestone stores an INSTANT — ISO-8601 with an
+  // offset — so handing one straight to the element truncates the offset and
+  // reading `el.value` back hands the server a wall clock it will parse as
+  // UTC. Both halves shift the value, in opposite directions and by different
+  // amounts, which is why `Input` refuses to map the format at all.
+  //
+  // The conversion is exact in both directions as long as the zone shown is
+  // the reader's own: an instant is rendered into local components going in,
+  // and local components are read as local going out. What it cannot do is
+  // preserve some OTHER zone the value was authored in — an instant does not
+  // carry one, so there is nothing to preserve. The addon names the zone being
+  // shown, because "14:30" without one is the ambiguity this whole file exists
+  // to close.
+
+  /**
+   * An instant → the string the element takes. `''` for an absent or
+   * unparseable value, which is what the element shows for "nothing".
+   *
+   * @param {string|Date|null|undefined} value
+   * @param {{seconds?: boolean}} [opts]  include `:ss`, for a stored value that has them
+   */
+  export function toLocalInput(value, { seconds = false } = {}) {
+    const d = _asDate(value)
+    if (!d) return ''
+    const p = (n) => String(n).padStart(2, '0')
+    const ymd = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+    const hm  = `${p(d.getHours())}:${p(d.getMinutes())}`
+    return seconds ? `${ymd}T${hm}:${p(d.getSeconds())}` : `${ymd}T${hm}`
+  }
+
+  /**
+   * The element's string → an instant, as ISO-8601 with an offset.
+   *
+   * `new Date('2026-08-16T14:30')` is parsed as LOCAL — a date-time with no
+   * offset is local by the language spec, where a date ALONE ('2026-08-16') is
+   * UTC. That asymmetry is the whole reason this is a named function with a
+   * test on it rather than an inline `new Date()`.
+   *
+   * An incomplete entry answers `''`: `datetime-local` reports an empty value
+   * for every state short of a whole date and time, so there is no partial to
+   * preserve and nothing to send.
+   */
+  export function fromLocalInput(local) {
+    if (!local) return ''
+    const d = new Date(local)
+    return Number.isNaN(d.getTime()) ? '' : d.toISOString()
+  }
+
+  /**
+   * Does this value carry seconds worth showing?
+   *
+   * The element hides its seconds segment unless `step` says otherwise, so a
+   * stored `09:30:45` would be edited down to `09:30:00` by someone who only
+   * came to change the day. Asked of the VALUE rather than declared, because
+   * the schema says `DateTime` and not how precise this column's rows are.
+   */
+  export function hasSeconds(value) {
+    const d = _asDate(value)
+    return !!d && (d.getSeconds() !== 0 || d.getMilliseconds() !== 0)
+  }
+
+  /**
+   * The short name of the zone the browser is in — `GMT+1`, `MST`, `AEST`.
+   * Falls back to the offset where `Intl` cannot name it.
+   */
+  export function localZoneLabel(date = new Date()) {
+    try {
+      const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' }).formatToParts(date)
+      const named = parts.find(p => p.type === 'timeZoneName')?.value
+      if (named) return named
+    } catch {
+      // Intl is present everywhere this runs; the guard is for a locale with
+      // no short name, where formatToParts throws rather than omitting it.
+    }
+    const offset = -date.getTimezoneOffset()
+    const sign   = offset < 0 ? '-' : '+'
+    const abs    = Math.abs(offset)
+    return `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`
+  }
+
+  function _asDate(value) {
+    if (value === '' || value === null || value === undefined) return null
+    const d = value instanceof Date ? value : new Date(value)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+</script>
+
+<script>
+  // DateTimeInput.mesa
+  // The control a `DateTime` column gets.
+  //
+  // Same shape as Input — naked inside an explicit Field, or self-wrapping when
+  // a `label` or a `name` is given — and the same resolutions off `$context.form`.
+  // What it adds is the zone: the value travels as an instant and the element
+  // shows a wall clock, so the two conversions above happen at each edge and
+  // the reader is told which zone they are looking at.
+  //
+  //   <Form {resource}>
+  //     <DateTimeInput
+  //       name="scheduledFor"
+  //       value={record.scheduledFor}
+  //       onvalue={(iso) => record.scheduledFor = iso}
+  //     />
+  //   </Form>
+  //
+  // `bind:` takes a writable top-level `let` in the CALLER, so a field of a
+  // record is written back through `onvalue` rather than bound — which is also
+  // the shape that makes the conversion visible at the call site.
+  //
+  // Inside a generated form nothing is written at all: Sierra's control table
+  // answers `datetime` for `format: date-time` and the kit binds it here.
+  //
+  // ── Why there is no `oninput` ────────────────────────────────────────────
+  //
+  // A handler taking the native event would read `e.target.value` and get the
+  // wall clock — the exact value this component exists to stop anyone sending.
+  // `onvalue(iso)` is the one that carries the value. `onblur`/`onfocus` are
+  // forwarded because they carry none.
+  //
+  // bind:this exposes: focus()
+
+  import Field from './Field.mesa'
+  import { uid, resolveError, resolveRule, stated } from '../../utils.js'
+
+  export let value    = ''            // ISO-8601 with an offset, or a Date, or ''
+  export let disabled = false
+  export let required = undefined
+  export let readonly = false
+  export let min      = undefined     // an instant, same as `value`
+  export let max      = undefined
+  export let step     = undefined     // seconds; derived from the value when unstated
+  export let showZone = true
+
+  // Field integration
+  export let name        = ''
+  export let label       = ''
+  export let hint        = ''
+  export let error       = ''
+  export let errors      = undefined
+  export let badge       = undefined
+  export let help        = undefined
+  export let removable   = false
+  export let onremovekey = undefined
+
+  export let onvalue = undefined      // (iso: string) => void — '' while incomplete
+  export let onblur  = undefined
+  export let onfocus = undefined
+
+  export var id = ''
+  const inputId = id || uid('datetime')
+
+  const form = $context.form
+  const rule = resolveRule(form, name)
+
+  const displayError = resolveError(form, name, error, errors)
+  const resolvedRequired = stated(required, rule?.required)
+
+  // A column whose rows carry seconds gets a seconds segment; one that does not
+  // keeps the shorter control. `step` stated by the caller wins either way.
+  const seconds       = hasSeconds(value)
+  const resolvedStep  = stated(step, seconds ? 1 : undefined)
+  const localValue    = toLocalInput(value, { seconds })
+  const zone          = localZoneLabel()
+
+  // A bound converts the same way the value does, and an ABSENT one has to
+  // stay absent: `toLocalInput(undefined)` is `''`, and `min=""` is an
+  // attribute the element then carries with no constraint in it.
+  const localMin = min === undefined ? undefined : toLocalInput(min, { seconds })
+  const localMax = max === undefined ? undefined : toLocalInput(max, { seconds })
+
+  let inputEl
+  export function focus() { inputEl?.focus() }
+
+  function handleInput(e) {
+    value = fromLocalInput(e.target.value)
+    onvalue?.(value)
+  }
+</script>
+
+{#snippet control()}
+  <!-- .field-row joins the control to its addon; the zone is part of reading the value. -->
+  <div class="field-row">
+    <input
+      bind:this={inputEl}
+      class="field"
+      id={inputId}
+      name={name || undefined}
+      type="datetime-local"
+      value={localValue}
+      disabled={disabled}
+      required={resolvedRequired}
+      readonly={readonly}
+      step={resolvedStep}
+      min={localMin}
+      max={localMax}
+      aria-invalid={!!displayError || null}
+      on:input={handleInput}
+      on:blur={onblur}
+      on:focus={onfocus}
+      {...$attributes}
+    />
+
+    {#if showZone}
+      <!--
+        `.field-addon` already sizes and tones itself, so there is no local rule
+        here — the package owns what an addon looks like. `fjs-dt-zone` is a
+        selector hook and nothing else.
+
+        Not aria-hidden: the zone is part of what the value MEANS, and a reader
+        who cannot see the addon is the one who most needs telling.
+      -->
+      <span class="field-addon fjs-dt-zone">{zone}</span>
+    {/if}
+  </div>
+{/snippet}
+
+{#if label || name}
+  <!--
+    label and required go through unresolved where the caller stated nothing —
+    Field reads the same rule off the same form. `|| undefined` because '' is a
+    real answer that suppresses the label.
+  -->
+  <Field
+    id={inputId}
+    name={name}
+    label={label || undefined}
+    required={resolvedRequired}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={error}
+    errors={errors}
+    removable={removable}
+    onremovekey={onremovekey}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  {@render control()}
+{/if}

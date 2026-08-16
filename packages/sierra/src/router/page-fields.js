@@ -15,5 +15,6 @@
  */
 
 export const PAGE_RESERVED = Object.freeze([
-  'path', 'params', 'meta', 'route', 'pending', 'data', 'error', 'slots',
+  'path', 'params', 'query', 'directives',
+  'meta', 'route', 'pending', 'data', 'error', 'slots',
 ])

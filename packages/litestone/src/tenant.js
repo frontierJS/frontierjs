@@ -33,6 +33,7 @@ import { generateDDL, generateDDLForDatabase } from './core/ddl.js'
 import { apply }           from './core/migrations.js'
 import { splitStatements } from './core/migrate.js'
 import { parse, parseFile } from './core/parser.js'
+import { resolveTenancy, tenantFrom } from './core/tenancy.js'
 
 // ─── Tenant ID sanitization ───────────────────────────────────────────────────
 // Tenant IDs are free-form strings that become filenames.
@@ -140,8 +141,10 @@ class TenantRegistry {
   #clientOptions
   #defaultConcurrency = 8
   #inMemory
+  #tenancy
 
-  constructor({ dir, registryDb, maxOpen, encryptionKey, migrationsDir, inMemory, clientOptions }) {
+  constructor({ dir, registryDb, maxOpen, encryptionKey, migrationsDir, inMemory, clientOptions, tenancy }) {
+    this.#tenancy       = tenancy ?? null
     this.#dir           = dir
     this.#registryDb    = registryDb
     this.#pool          = new LRUPool(maxOpen)
@@ -242,6 +245,23 @@ class TenantRegistry {
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
+
+  /**
+   * The tenancy declaration this registry was built from, resolved — or null
+   * when the schema declares none and the caller passed options by hand.
+   */
+  get tenancy() { return this.#tenancy }
+
+  /**
+   * Which tenant is this request for?
+   *
+   * Asked rather than copied: an API layer holds the request and this holds the
+   * declaration, and a second reading of `resolve subdomain` living above the
+   * Data realm is how the two drift. Junction calls exactly this.
+   */
+  tenantFor({ host = null, headers = null, principal = null } = {}) {
+    return tenantFrom(this.#tenancy?.resolve ?? null, { host, headers, principal })
+  }
 
   /**
    * Get a client for an existing tenant. Throws if tenant doesn't exist.
@@ -580,11 +600,11 @@ export async function createTenantRegistry({
   path:          schemaPath,
   schema:        schemaInline,
   parsed:        schemaParsed,
-  // Tenant directory — defaults to <schemaDir>/tenants
+  // Tenant directory — defaults to the schema's `tenancy { dir }`, then <schemaDir>/tenants
   dir,
-  // Registry db — defaults to <schemaDir>/registry.db (next to schema.lite)
+  // Registry db — defaults to `tenancy { registry }`, then <schemaDir>/tenants-registry.db
   registry,
-  maxOpen        = 100,
+  maxOpen,
   // encryptionKey: string | (tenantId) => string | Promise<string>
   encryptionKey  = null,
   migrationsDir  = null,
@@ -606,14 +626,30 @@ export async function createTenantRegistry({
   if (!parseResult.valid)
     throw new Error(`schema.lite has errors:\n${parseResult.errors.join('\n')}`)
 
+  // What the SEED says, with these options on top of it. An app that declares
+  // `tenancy { }` needs no arguments here at all, which is the point: the CLI's
+  // `tenant` commands, Studio and Junction read the same block, so a registry
+  // built by hand and one built by a tool open the same files.
+  const declared = resolveTenancy(parseResult.schema, { schemaPath })
+
+  // A `strategy row` schema has no per-tenant file to open, and building a
+  // registry over one would silently create a second, empty database per
+  // tenant beside the real single one.
+  if (declared?.strategy === 'row')
+    throw new Error(
+      `createTenantRegistry: this schema declares tenancy { strategy row }, which is one database ` +
+      `with a '${declared.column}' column — there are no per-tenant files to register. ` +
+      `Scope a client with db.$setAuth(principal) instead.`
+    )
+
   const inMemory  = databases === ':memory:'
   const schemaDir = schemaPath ? dirname(resolve(schemaPath)) : process.cwd()
-  const absDir    = resolve(dir ?? join(schemaDir, 'tenants'))
+  const absDir    = resolve(dir ?? declared?.dir ?? join(schemaDir, 'tenants'))
   const registryPath = registry
     ? resolve(registry)
     : inMemory
       ? ':memory:'
-      : join(schemaDir, 'tenants-registry.db')
+      : (declared?.registry ?? join(schemaDir, 'tenants-registry.db'))
 
   // Ensure tenant directory exists (skip in inMemory mode)
   if (!inMemory) mkdirSync(absDir, { recursive: true })
@@ -624,11 +660,12 @@ export async function createTenantRegistry({
   const reg = new TenantRegistry({
     dir:           absDir,
     registryDb,
-    maxOpen,
-    encryptionKey,
+    maxOpen:       maxOpen ?? declared?.maxOpen ?? 100,
+    encryptionKey: encryptionKey ?? declared?.key ?? null,
     migrationsDir: migrationsDir ? resolve(migrationsDir) : null,
     inMemory,
     clientOptions,
+    tenancy:       declared,
   })
 
   await reg._init(parseResult)

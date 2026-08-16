@@ -1,12 +1,13 @@
-# Idea — What actually belongs in `@frontierjs/utils`
+# Idea — What actually belongs in `@frontierjs/toolbelt`
 
 **Status: ASSESSMENT + RANKED WORK.** Dated 2026-08-11. Every claim below was
 grepped against the tree and the implementations were read side by side, not
 counted by name (`VERIFYING.md`). Two live defects were found while surveying
 and are filed as `FJS-191` and `FJS-192`; they are not proposals.
 
-The question this answers: *utils is meant to hold the shareable pure functions
-of the whole repo — will that make the project meaningfully smaller?*
+The question this answers: *the substrate package is meant to hold the shareable
+pure functions of the whole repo — will that make the project meaningfully
+smaller?*
 
 **Short answer: no, and that is the wrong measure.** The extractable pure-function
 surface is roughly **250–400 lines**. What the survey found instead is that
@@ -45,18 +46,18 @@ agree are the ones to leave alone.
 
 ### 1. `glow` is forked, and mesa runs the version with the known bugs
 
-`packages/mesa/src/glow.js` (211 lines) and `packages/utils/src/glow/glow.js`
-(371 lines) are the same highlighter. The utils copy is the one that received
-the fixes recorded in `packages/utils/CLAUDE.md`; the mesa copy predates them.
+`packages/mesa/src/glow.js` (211 lines) and `packages/toolbelt/src/glow/glow.js`
+(371 lines) are the same highlighter. The toolbelt copy is the one that received
+the fixes recorded in `packages/toolbelt/CLAUDE.md`; the mesa copy predates them.
 Both bugs that file documents as *fixed* are live in mesa:
 
 - **Encoding is still in `elem()`, per token** — `glow.js:73` encodes only a
-  lone `<` or `>`. utils moved it to `renderRow`, because a rule matching more
+  lone `<` or `>`. toolbelt moved it to `renderRow`, because a rule matching more
   than one character sends raw markup to the page. `compiler-md.js:302`
   explicitly HTML-*decodes* the fence body before calling `glow()`, so an HTML
   comment inside a markdown code block is decoded, not re-encoded, and reaches
   the page as live markup.
-- **No `isTrailingComment`** — zero occurrences in mesa, two in utils. A `/*`
+- **No `isTrailingComment`** — zero occurrences in mesa, two in toolbelt. A `/*`
   opening mid-line still starts a block and swallows the code before it, which
   renders as a disabled line.
 
@@ -64,12 +65,10 @@ The exported API is identical in both files — `parseRow`, `renderRow`,
 `parseSyntax`, `glow` — so this is a one-line import change in `compiler-md.js`
 and a deletion, not a port. Filed as **`FJS-191`**.
 
-**But it collides with Invariant 1**, which says *Mesa is a leaf with zero
-workspace deps*. `packages/utils/README.md` already claims the resolution —
-utils holds "the same standing that Mesa holds" and sits below the whole tree,
-so importing it cannot create a cycle — but the invariant as written does not
-carry the exemption and CLAUDE.md's package table still calls mesa a true leaf.
-**This needs a ruling before the first core package imports utils — filed as
+**It collided with Invariant 1**, which said *Mesa is a leaf with zero workspace
+deps* while the substrate package's own README claimed the exemption. **Ruled
+2026-08-15**: toolbelt is substrate below the graph and mesa may import it, so
+`FJS-191` is now a straight import change. Was filed as
 `FJS-D26`**, and it is the single most consequential thing here: without
 it, the packages with the most duplication (mesa, litestone, sierra) are exactly
 the ones that cannot use the package meant to hold it.
@@ -98,7 +97,7 @@ Currently **latent, not live** — no model in `basecamp` or `example` ends in
 `s`, `x`, `ch`, `sh` or `z`, so the `statuses` case has never been hit. It fires
 the day someone writes `model Status` or `model Address`. Filed as **`FJS-192`**.
 
-One `inflect.js` in utils — `pluralize(word)` / `singularize(word)`, one
+One `inflect.js` in toolbelt — `pluralize(word)` / `singularize(word)`, one
 irregular table — imported by litestone's ddl and introspect, junction's
 `deriveModelName` and sierra's registry, makes a disagreement between the three
 resolvers structurally impossible rather than tested for.
@@ -127,7 +126,7 @@ day `@slug` is added to a field whose form shows a preview — which is precisel
 the shape `create.mesa` already has, minus the annotation. The symptom then is
 the worst kind: the field looks right until it is saved.
 
-Extraction: `slugify(str, { max })` in utils, with litestone's `@slug` transform
+Extraction: `slugify(str, { max })` in toolbelt, with litestone's `@slug` transform
 and every UI preview calling the same one.
 
 ### 4. `escapeHTML` — two copies, one incomplete
@@ -191,7 +190,7 @@ all impure. Toolbelt's territory, per its README.
 
 ---
 
-## What utils cannot fix
+## What toolbelt cannot fix
 
 The repo's largest duplications are the ones CLAUDE.md § Open questions already
 names, and **none of them are pure functions**:
@@ -203,7 +202,7 @@ names, and **none of them are pure functions**:
 
 The interesting exception is **`sessionGateLevel()`**, hand-copied on both sides
 of the litestone/junction boundary and *is* pure. It still cannot simply move:
-utils would have to hold the `SessionContext` shape, which is the same coupling
+toolbelt would have to hold the `SessionContext` shape, which is the same coupling
 under a different name. That is a decision about where the shape lives, not a
 refactor — and `toDataPrincipal()` is its other half, so both move or neither.
 
@@ -226,12 +225,12 @@ two. Every Tier 1 item above passes it; every Refuse item fails it.
 ## The hazards this package inherits
 
 - **`bun install` copies `workspace:*` under `node_modules/.bun/` rather than
-  symlinking** (CLAUDE.md § Repo). A utils edit is invisible to importers until
-  reinstall. utils is the highest-fan-in package in the tree by design, so one
+  symlinking** (CLAUDE.md § Repo). A toolbelt edit is invisible to importers until
+  reinstall. toolbelt is the highest-fan-in package in the tree by design, so one
   stale copy is a stale copy in every consumer at once, and a green suite proves
   nothing. In-repo consumers must import by relative path, which is what
   `packages/css` already does.
-- **Publishing silences a loose peer range.** While utils is unpublished a peer
+- **Publishing silences a loose peer range.** While toolbelt is unpublished a peer
   of `"*"` fails at install by name; once published, it resolves from the
   registry silently. Below 1.0 a caret pins the minor.
 - **The purity rule is unenforced.** "No I/O, no clock, no globals" is stated in
@@ -245,13 +244,17 @@ two. Every Tier 1 item above passes it; every Refuse item fails it.
 
 ## Order of work
 
-1. **Rule `FJS-D26`** — may a core package import `@frontierjs/utils`? Nothing
-   else here can start until this is answered, because mesa, litestone and
-   sierra hold most of the duplication.
-2. **`FJS-191`** — point `compiler-md.js` at `@frontierjs/utils/glow`, delete the
-   fork. Smallest change, closes two live bugs, and proves step 1 end to end.
-3. **`inflect.js`** — the highest-value extraction. Four callers, one invariant,
-   and it closes `FJS-192`.
+1. ~~**Rule `FJS-D26`**~~ — **ruled 2026-08-15**: a core package may import the
+   substrate, which is now `@frontierjs/toolbelt`. Everything below was waiting
+   on it.
+2. ~~**`FJS-191`**~~ — **done 2026-08-15**: `compiler-md.js` imports
+   `@frontierjs/toolbelt/glow`, `packages/mesa/src/glow.js` is deleted, and the
+   first core package importing the substrate proved step 1 end to end. It also
+   surfaced `FJS-260`, which the fork was hiding behind its own bugs.
+3. ~~**`inflect.js`**~~ — **done 2026-08-15**, and it was five callers rather
+   than four: sierra holds two. The shared module is the union of what the
+   copies knew — litestone's irregular table and junction's `us`/`is`/`as`
+   guards — which is what closed `FJS-192`.
 4. **`slugify` + `escapeHTML`** — same shape, much smaller.
 5. **The purity lint**, before the package grows past two exports.
 6. Case conversion and the validator regexes, once 1–5 have shown the seam holds.

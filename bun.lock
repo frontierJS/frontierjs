@@ -31,7 +31,7 @@
     },
     "packages/auth": {
       "name": "@frontierjs/auth",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "devDependencies": {
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",
@@ -103,7 +103,7 @@
       "name": "@frontierjs/css",
       "version": "0.15.1",
       "devDependencies": {
-        "@frontierjs/utils": "workspace:*",
+        "@frontierjs/toolbelt": "workspace:*",
       },
     },
     "packages/email-kit": {
@@ -174,6 +174,9 @@
       "bin": {
         "junction": "./tools/cli.ts",
       },
+      "dependencies": {
+        "@frontierjs/toolbelt": "workspace:*",
+      },
       "devDependencies": {
         "@frontierjs/litestone": "workspace:*",
       },
@@ -190,11 +193,15 @@
       "bin": {
         "litestone": "./src/tools/cli.js",
       },
+      "dependencies": {
+        "@frontierjs/toolbelt": "workspace:*",
+      },
     },
     "packages/mesa": {
       "name": "@frontierjs/mesa",
       "version": "0.1.2",
       "dependencies": {
+        "@frontierjs/toolbelt": "workspace:*",
         "acorn": "^8.0.0",
         "astring": "^1.0.0",
         "css-select": "^7.0.0",
@@ -238,6 +245,7 @@
         "sierra": "./src/tools/cli.js",
       },
       "dependencies": {
+        "@frontierjs/toolbelt": "workspace:*",
         "js-yaml": "^4.1.0",
       },
       "devDependencies": {
@@ -287,6 +295,10 @@
         "@frontierjs/litestone": "^1.1.0",
       },
     },
+    "packages/toolbelt": {
+      "name": "@frontierjs/toolbelt",
+      "version": "0.1.0",
+    },
     "packages/ui": {
       "name": "@frontierjs/ui",
       "version": "0.1.1",
@@ -297,10 +309,6 @@
         "@frontierjs/css": "^0.15.0",
         "@frontierjs/mesa": "^0.1.0",
       },
-    },
-    "packages/utils": {
-      "name": "@frontierjs/utils",
-      "version": "0.1.1",
     },
   },
   "packages": {
@@ -430,9 +438,9 @@
 
     "@frontierjs/testing": ["@frontierjs/testing@workspace:packages/testing"],
 
-    "@frontierjs/ui": ["@frontierjs/ui@workspace:packages/ui"],
+    "@frontierjs/toolbelt": ["@frontierjs/toolbelt@workspace:packages/toolbelt"],
 
-    "@frontierjs/utils": ["@frontierjs/utils@workspace:packages/utils"],
+    "@frontierjs/ui": ["@frontierjs/ui@workspace:packages/ui"],
 
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.5", "", {}, "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og=="],
 

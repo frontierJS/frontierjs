@@ -625,10 +625,10 @@ export function webhooks(opts: WebhookOptions): Plugin {
         _attemptAndRecord: attemptAndRecord,
       }
 
-      // provide() rather than a plain assignment: two plugins claiming one
+      // claim() rather than a plain assignment: two plugins claiming one
       // name used to be a silent last-write-wins, leaving the loser dead with
       // no error anywhere.
-      app.provide('webhooks', manager)
+      app.claim('webhooks', manager)
 
       // ── HTTP routes ─────────────────────────────────────────────
       // Powers REPL commands and any management UI the app builds.
@@ -673,23 +673,23 @@ export function webhooks(opts: WebhookOptions): Plugin {
 
       app.get(`/webhooks/{id}`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
-        const hook = await store.getRegistration(ctx.params.id)
+        const hook = await store.getRegistration(ctx.route.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
         return ctx.json(redact(hook))
       })
 
       app.delete(`/webhooks/{id}`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
-        const hook = await store.getRegistration(ctx.params.id)
+        const hook = await store.getRegistration(ctx.route.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
-        await store.unregister(ctx.params.id)
+        await store.unregister(ctx.route.id)
         return ctx.empty()
       })
 
       // Test ping
       app.post(`/webhooks/{id}/test`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
-        const hook = await store.getRegistration(ctx.params.id)
+        const hook = await store.getRegistration(ctx.route.id)
         if (!hook) return ctx.json({ error: 'Not found' }, 404)
         const delivery = await store.createDelivery(hook.id, 'webhook:test', { test: true, ts: Date.now() })
         const result   = await attemptDelivery(hook, delivery)
@@ -718,7 +718,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
 
       app.get(`/webhook-deliveries/{id}`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
-        const d = await store.getDelivery(ctx.params.id)
+        const d = await store.getDelivery(ctx.route.id)
         if (!d) return ctx.json({ error: 'Not found' }, 404)
         return ctx.json(d)
       })
@@ -726,7 +726,7 @@ export function webhooks(opts: WebhookOptions): Plugin {
       // Manual retry
       app.post(`/webhook-deliveries/{id}/retry`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
-        const result = await manager.retry(ctx.params.id)
+        const result = await manager.retry(ctx.route.id)
         if (!result) return ctx.json({ error: 'Not found' }, 404)
         return ctx.json(result)
       })

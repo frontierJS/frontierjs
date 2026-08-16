@@ -1013,13 +1013,13 @@ describe('conduit.stream()', () => {
 
 // ─── Hooks ───────────────────────────────────────────────────
 
-describe('conduit hooks', () => {
+describe('conduit observers', () => {
   it('onRequest fires before send', async () => {
     const seen: ConduitRequest[] = []
 
     const { conduit } = await createTestConduit(
       { 'outpost:srv-abc': { '/ping': { pong: true } } },
-      { hooks: { onRequest: (req) => seen.push(req) } }
+      { observers: { onRequest: (req) => seen.push(req) } }
     )
 
     await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
@@ -1030,7 +1030,7 @@ describe('conduit hooks', () => {
   it('onError fires on target_not_found', async () => {
     const errors: ConduitError[] = []
     const c = createConduit({
-      hooks: { onError: (_req, err) => errors.push(err) }
+      observers: { onError: (_req, err) => errors.push(err) }
     })
     await c.init()
 
@@ -1042,7 +1042,7 @@ describe('conduit hooks', () => {
   it('onRegistered fires when a target is registered', async () => {
     const registered: string[] = []
     const c = createConduit({
-      hooks: { onRegistered: (d) => registered.push(d.id) }
+      observers: { onRegistered: (d) => registered.push(d.id) }
     })
     await c.init()
     await c.register(outpostTarget())
@@ -1052,7 +1052,7 @@ describe('conduit hooks', () => {
   it('onDeregistered fires when a target is removed', async () => {
     const removed: string[] = []
     const c = createConduit({
-      hooks: { onDeregistered: (id) => removed.push(id) }
+      observers: { onDeregistered: (id) => removed.push(id) }
     })
     await c.init()
     await c.register(outpostTarget())
@@ -1897,7 +1897,7 @@ describe('retry backoff, deadline and onRetry', () => {
         credentials: secrets(),
         targets:     [target],
         retry_limit: 2,
-        hooks: { onRetry: (_req, err, attempt) => seen.push({ kind: err.kind, attempt }) },
+        observers: { onRetry: (_req, err, attempt) => seen.push({ kind: err.kind, attempt }) },
       })
       await c.init()
 
@@ -1920,7 +1920,7 @@ describe('retry backoff, deadline and onRetry', () => {
         credentials: secrets(),
         targets:     [target],
         retry_limit: 1,
-        hooks: { onRetry: (req) => paths.push(req.path) },
+        observers: { onRetry: (req) => paths.push(req.path) },
       })
       await c.init()
 
@@ -1999,15 +1999,15 @@ describe('unknown HTTP methods', () => {
   })
 })
 
-// ─── Stream lifecycle hooks ──────────────────────────────────
+// ─── Stream lifecycle observers ──────────────────────────────
 
-describe('stream lifecycle hooks', () => {
+describe('stream lifecycle observers', () => {
   it('onStreamStart and onStreamEnd report the chunk count', async () => {
     const events: string[] = []
     const { conduit, stubs } = await createTestConduit(
       { 'outpost:srv-abc': {} },
       {
-        hooks: {
+        observers: {
           onStreamStart: () => events.push('start'),
           onStreamEnd:   (_req, chunks) => events.push(`end:${chunks}`),
         }
@@ -2026,7 +2026,7 @@ describe('stream lifecycle hooks', () => {
     const errors: ConduitError[] = []
     const { conduit, stubs } = await createTestConduit(
       { 'outpost:srv-abc': {} },
-      { hooks: { onError: (_req, err) => errors.push(err) } }
+      { observers: { onError: (_req, err) => errors.push(err) } }
     )
     stubs['outpost:srv-abc'].mockError('/logs', 'stream_error', { message: 'outpost vanished' })
 
@@ -2443,13 +2443,13 @@ describe('trace context', () => {
   })
 })
 
-// ─── Hook safety ─────────────────────────────────────────────
+// ─── Observer safety ─────────────────────────────────────────
 
-describe('a throwing hook does not take down the caller', () => {
+describe('a throwing observer does not take down the caller', () => {
   it('onRequest', async () => {
     const { conduit } = await createTestConduit(
       { 'outpost:srv-abc': { '/ping': { pong: true } } },
-      { hooks: { onRequest() { throw new Error('boom') } } }
+      { observers: { onRequest() { throw new Error('boom') } } }
     )
 
     const result = await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
@@ -2460,7 +2460,7 @@ describe('a throwing hook does not take down the caller', () => {
   it('onResponse', async () => {
     const { conduit } = await createTestConduit(
       { 'outpost:srv-abc': { '/ping': { pong: true } } },
-      { hooks: { onResponse() { throw new Error('boom') } } }
+      { observers: { onResponse() { throw new Error('boom') } } }
     )
 
     const result = await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
@@ -2468,17 +2468,17 @@ describe('a throwing hook does not take down the caller', () => {
   })
 
   it('onError', async () => {
-    const c = createConduit({ hooks: { onError() { throw new Error('boom') } } })
+    const c = createConduit({ observers: { onError() { throw new Error('boom') } } })
     await c.init()
 
     const result = await c.send({ target: 'outpost:missing', method: 'POST' })
     expect(result.error!.kind).toBe('target_not_found')
   })
 
-  it('an async hook that rejects is caught, not left unhandled', async () => {
+  it('an async observer that rejects is caught, not left unhandled', async () => {
     const { conduit } = await createTestConduit(
       { 'outpost:srv-abc': { '/ping': { pong: true } } },
-      { hooks: { onResponse: async () => { throw new Error('async boom') } } }
+      { observers: { onResponse: async () => { throw new Error('async boom') } } }
     )
 
     const result = await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
@@ -2487,28 +2487,28 @@ describe('a throwing hook does not take down the caller', () => {
     await new Promise(r => setTimeout(r, 10))
   })
 
-  it('an async hook is not awaited by send()', async () => {
-    let hookDone = false
+  it('an async observer is not awaited by send()', async () => {
+    let observerDone = false
     const { conduit } = await createTestConduit(
       { 'outpost:srv-abc': { '/ping': { pong: true } } },
       {
-        hooks: {
+        observers: {
           onResponse: async () => {
             await new Promise(r => setTimeout(r, 200))
-            hookDone = true
+            observerDone = true
           }
         }
       }
     )
 
     await conduit.send({ target: 'outpost:srv-abc', method: 'POST', path: '/ping' })
-    // send() returned without waiting for the 200ms hook
-    expect(hookDone).toBe(false)
+    // send() returned without waiting for the 200ms observer
+    expect(observerDone).toBe(false)
   })
 
   it('onRegistered and onDeregistered', async () => {
     const c = createConduit({
-      hooks: {
+      observers: {
         onRegistered()   { throw new Error('boom') },
         onDeregistered() { throw new Error('boom') },
       }
@@ -2524,7 +2524,7 @@ describe('a throwing hook does not take down the caller', () => {
 
 // Everything that requires a real App — lifecycle ordering, the metrics
 // reach-in, service routing, app-level hooks — lives in
-// junction-integration.test.ts. Driving a hand-rolled `{ _metricsProviders:
+// junction-integration.test.ts. Driving a hand-rolled `{ _metricsSources:
 // new Map() }` here would assert the fake's behaviour, not Junction's, and
 // would keep passing after a breaking change on either side.
 describe('conduit Junction plugin', () => {
@@ -2538,14 +2538,16 @@ describe('conduit Junction plugin', () => {
     expect(typeof plugin.ready).toBe('function')
   })
 
-  // A minimal stand-in for Junction's app.provide(): plugins claim their
-  // namespace through it now, so a fake app has to offer one.
+  // A minimal stand-in for the two seams register() uses — app.claim() for the
+  // namespace and app.registerMetricsSource() for /metrics.
   const fakeApp = (): Record<string, unknown> => {
-    const a: Record<string, unknown> = { _metricsProviders: new Map() }
-    a.provide = (name: string, value: unknown) => {
+    const sources = new Map<string, () => unknown>()
+    const a: Record<string, unknown> = { _metricsSources: sources }
+    a.claim = (name: string, value: unknown) => {
       if (a[name] !== undefined) throw new Error(`already claimed: ${name}`)
       a[name] = value
     }
+    a.registerMetricsSource = (name: string, fn: () => unknown) => { sources.set(name, fn) }
     return a
   }
 

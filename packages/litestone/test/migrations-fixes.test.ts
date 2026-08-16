@@ -13,7 +13,8 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { parse } from '../src/core/parser.js'
 import { splitStatements } from '../src/core/migrate.js'
-import { create, apply, status, autoMigrate, appliedMigrations } from '../src/core/migrations.js'
+import { create, apply, status, autoMigrate, appliedMigrations,
+         listMigrationFiles, nextMigrationName } from '../src/core/migrations.js'
 
 const V1 = `
 model Post {
@@ -128,6 +129,114 @@ model Post {
     expect(cols).toContain('views')      // old shape untouched
     expect(cols).not.toContain('rating')
     expect((db.query(`SELECT COUNT(*) c FROM post`).get() as { c: number }).c).toBe(2)
+  })
+})
+
+// ─── The copy is checked before the original is dropped (FJS-D09) ─────────────
+//
+// A rebuild is INSERT…SELECT then DROP TABLE. A copy that read fewer rows than
+// the original holds is not an error to SQLite or to the runner, and one
+// statement later the rows it missed are gone.
+
+describe('rebuild — the row count is asserted before the drop', () => {
+  const V2_DROPS_A_COLUMN = `
+model Post {
+  id     Int    @id
+  title  String
+}
+`
+
+  it('the generated rebuild carries the guard, named for the table', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+
+    const made = create(db, parse(V2_DROPS_A_COLUMN), 'drop_views', dir)
+    expect(made.sql).toContain('_litestone_rowcount')
+    expect(made.sql).toContain('rebuild of post lost rows')
+    // Before the DROP, or it is describing rows that no longer exist.
+    expect(made.sql!.indexOf('_litestone_rowcount')).toBeLessThan(made.sql!.indexOf('DROP TABLE "post"'))
+  })
+
+  it('a copy that loses rows fails the migration and leaves the table whole', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)
+
+    const made = create(db, parse(V2_DROPS_A_COLUMN), 'drop_views', dir)
+    // A migration file is meant to be reviewed and edited — this is the edit
+    // that used to destroy a row and report success.
+    const tampered = readFileSync(made.filePath!, 'utf8')
+      .replace(/ SELECT (.*) FROM "post";/, ' SELECT $1 FROM "post" WHERE "id" > 1;')
+    expect(tampered).toContain('WHERE "id" > 1')
+    writeFileSync(made.filePath!, tampered, 'utf8')
+
+    const res = await apply(db, dir)
+    expect(res.failed).toBe(made.name)
+    expect(res.error).toContain('rebuild of post lost rows')
+
+    const rows = db.query(`SELECT id, title, views FROM post ORDER BY id`).all()
+    expect(rows).toEqual([
+      { id: 1, title: 'Hello', views: 42 },
+      { id: 2, title: 'World', views: 7 },
+    ])
+    expect(appliedMigrations(db).map(m => m.name)).not.toContain(made.name)
+  })
+})
+
+// ─── Filename order is apply order (FJS-D09) ──────────────────────────────────
+//
+// The clock is second-granular and nothing else records when a file was
+// written, so two migrations made inside one second either overwrite each other
+// (same label) or apply in alphabetical order (different labels).
+
+describe('migration filenames', () => {
+  it('sort in creation order even when three are made in the same second', async () => {
+    const { dir, db } = freshLab()
+    await seedV1(db, dir)                                        // "initial"
+
+    const evolve = create(db, parse(`
+model Post {
+  id     Int     @id
+  title  String
+  bio    String?
+}
+`), 'evolve', dir)
+    await apply(db, dir)
+
+    const again = create(db, parse(`
+model Post {
+  id     Int     @id
+  title  String
+  bio    String?
+  stars  Int     @default(1)
+}
+`), 'again', dir)
+
+    // Alphabetically this is again, evolve, initial — the reverse of the order
+    // they have to run in.
+    const files = listMigrationFiles(dir)
+    expect(files).toHaveLength(3)
+    expect(files[1]).toBe(evolve.name)
+    expect(files[2]).toBe(again.name)
+  })
+
+  it('name after the last file in the directory, not after the clock', () => {
+    const { dir } = freshLab()
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '29990101000000_future.sql'), '')
+
+    expect(nextMigrationName(dir, 'next')).toBe('29990101000001_next.sql')
+  })
+
+  it('never hand back a name that is already taken', () => {
+    const { dir } = freshLab()
+    mkdirSync(dir, { recursive: true })
+
+    const first = nextMigrationName(dir, 'same')
+    writeFileSync(join(dir, first), '')
+    const second = nextMigrationName(dir, 'same')
+
+    expect(second).not.toBe(first)
+    expect(second > first).toBe(true)
   })
 })
 

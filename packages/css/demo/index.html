@@ -475,24 +475,25 @@
           <h2 id="h-customers" class="h4">Customers</h2>
           <div class="cluster">
             <!--
-              A Popover is an ARTICLE, not a [popover] element here — the
-              native top layer would escape this positioning context
-              entirely, and the package ships no anchor positioning, so an
-              un-positioned one opens in the corner of the viewport. The
-              anchor is `position: relative` in demo.css, which is the one
-              thing the consumer owes.
+              A Popover is an ARTICLE, not a [popover] element here: the
+              native top layer escapes every positioning context, so
+              .popover-anchor would not reach it and the placement below
+              would resolve against the viewport.
+
+              .align-end because this trigger sits at the end of the bar —
+              the start-aligned default would open the menu off-screen.
             -->
-            <span class="demo-anchor">
+            <div class="popover-anchor">
               <button class="btn ghost square" id="help-btn" aria-expanded="false" aria-controls="help-pop" aria-label="About lifetime value">
                 <svg aria-hidden="true"><use href="#i-info"></use></svg>
               </button>
-              <article class="popover" id="help-pop" hidden>
+              <article class="popover align-end" id="help-pop" hidden>
                 <div class="surface-header"><strong>Lifetime value</strong></div>
                 <div class="surface-body text-sm">
                   Every invoice ever settled by this customer, net of refunds.
                 </div>
               </article>
-            </span>
+            </div>
             <button class="btn primary"><svg aria-hidden="true"><use href="#i-plus"></use></svg> Add customer</button>
           </div>
         </div>

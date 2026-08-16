@@ -11,6 +11,7 @@
   // on top of the others.
 
   import { tone as toTone, cx } from '../../utils.js'
+  import Spinner from './Spinner.mesa'
 
   export let id        = 0
   export let message   = ''
@@ -26,7 +27,12 @@
     danger:  'M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z',
   }
 
-  const t    = toTone(type || tone) || 'info'
+  // `loading` is a STATE, not a tone: work in flight has no outcome yet, so
+  // there is nothing for a tone to say. It reaches here as the type the store
+  // wrote, and what it changes is the icon — a spinner rather than a verdict —
+  // and, through `duration: 0`, the absence of a drain bar.
+  const isLoading = (type || tone) === 'loading'
+  const t    = isLoading ? '' : (toTone(type || tone) || 'info')
   const path = iconPathMap[t] ?? iconPathMap.info
 
   const toastAnim = $.entrance({
@@ -55,9 +61,17 @@
 <div class={cx('toast', t, 'fjs-toast')} role="alert" aria-live="polite" {@attach toastAnim} {...$attributes}>
   <div class="fjs-toast-row">
     <span class="alert-icon">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d={path} />
-      </svg>
+      {#if isLoading}
+        <!--
+          The spinner announces nothing of its own here: the toast is already a
+          live region, so a second one inside it would read the message twice.
+        -->
+        <Spinner size="sm" label="" />
+      {:else}
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d={path} />
+        </svg>
+      {/if}
     </span>
 
     <p style:flex="1" style:margin="0">{message}</p>

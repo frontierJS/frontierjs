@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 4 models · 4 gated · 0 unrestricted
-1 with row policies · 1 with protected fields · 4 gated transitions
+1 with row policies · 2 with protected fields · 4 gated transitions
 ```
 
 ## Gates
@@ -46,6 +46,7 @@ rather than refusing the row.
 | Model | Field | Rule |
 | --- | --- | --- |
 | `Customer` | `notes` | `@allow('read', auth().role == 'admin')` |
+| `Order` | `trackingCode` | `@system` |
 
 ## State transitions
 

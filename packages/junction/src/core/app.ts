@@ -5,10 +5,10 @@
 
 import { HttpTransport }            from '../transport/http.ts'
 import { bridge } from '../transport/bridge.ts'
-import { freezeUser, runWithMeta, type ServiceContext, type ServiceMethod, type CallOptions, type RequestMeta } from './context.ts'
+import { freezeUser, runWithMeta, requestMeta, resolvePrincipal, inheritedClient, type ServiceContext, type ServiceMethod, type CallOptions, type RequestMeta } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { withLitestoneDb, describeDataRealm } from './litestone.ts'
+import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites } from './litestone.ts'
 import { createEventBus }           from '../events/index.ts'
 import { createMemoryCache }        from '../cache/index.ts'
 import { createScheduler }          from '../scheduler/index.ts'
@@ -21,7 +21,7 @@ import { defaultConfig, deepMerge, loadConfig } from '../config/index.ts'
 import { createLogger, noopLogger }             from './logger.ts'
 import type { ILogger, LoggerOptions }          from './logger.ts'
 import type { AppConfig }                          from '../config/index.ts'
-import type { IAuth }               from '../auth/types.ts'
+import type { IAuth, SessionVerifier } from '../auth/types.ts'
 import type { IMail }               from '../mail/index.ts'
 import type { IFileStorage }        from '../storage/filestorage/index.ts'
 import type { ICache }              from '../cache/index.ts'
@@ -142,6 +142,9 @@ export interface App {
    */
   db?:       unknown
 
+  /** The tenant registry, when `createApp({ tenants })` was given one. */
+  tenants?:  import('./litestone.ts').TenantRegistryLike
+
   // Subsystems — accessed directly
   logger:    ILogger
   services:  ServiceRegistry
@@ -152,7 +155,7 @@ export interface App {
   http:      HttpTransport
 
   // Optional — registered via configure()
-  auth?:     IAuth
+  auth?:     SessionVerifier
   mail?:     IMail
   ai?:       AIRegistry
   email?:    import('../plugins/email/types.ts').IEmail
@@ -212,24 +215,59 @@ export interface App {
   //
   // Passing params threads the caller's context through (user, workspaceId,
   // query, etc.) — same as Feathers's default behaviour.
-  // Omitting params makes an anonymous system call (user: null).
+  // The principal PROPAGATES: a call that names none inherits the one in scope,
+  // at any depth. There is nothing to thread — passing `ctx.params` was the old
+  // advice and `ctx.params` is not a thing a ServiceContext has.
   //
-  //   // From inside a service method — thread user context:
-  //   const owner = await app.service('users').get(ctx.data.userId, ctx.params)
+  //   // Inherits the caller — the ordinary case:
+  //   const owner = await app.service('users').get(ctx.data.userId)
   //
-  //   // Anonymous system call — no user, bypasses auth hooks:
-  //   await app.service('audit').create({ action: 'x' })
+  //   // Deliberately as nobody. Absent is not null:
+  //   await app.service('audit').create({ action: 'x' }, { auth: { user: null } })
   //
-  //   // Custom method:
-  //   await app.service('servers').call('reboot', serverId, ctx.params)
+  //   // Deliberately as someone else:
+  //   await app.service('servers').call('reboot', serverId, { auth: { user: SYSTEM } })
   service: (name: string) => ServiceCaller
+
+  /**
+   * WHO is in scope right now — the request-wide principal, or null.
+   *
+   * The same value `ctx.auth.user` shows, asked from somewhere that holds no
+   * ctx: a plugin's own route, a scheduler tick, the code that enqueues a job.
+   * Reading it is how work that outlives the request records who asked for it.
+   */
+  principal: () => import('../auth/types.ts').SessionContext | null
+
+  /**
+   * Run `fn` on behalf of a principal, RESOLVED NOW.
+   *
+   * The seam deferred work runs through. A job, a retry or a scheduled sweep
+   * executes long after the request that asked for it, and until it opens a
+   * scope it has no principal at all — which is STRANGER(0), refused by the
+   * model's own `@@gate`, and the reason every job used to carry a hand-written
+   * `{ auth: { user: SYSTEM } }`.
+   *
+   *   a userId → re-resolved through `auth.sessionFor()`. Deliberately not a
+   *              stored snapshot: a caller demoted between asking and running
+   *              must be graded at the standing they hold NOW, and a snapshot
+   *              is a captured privilege that outlives the revocation.
+   *   null     → the app's own system principal, `createApp({ system })`.
+   *              Nobody, if the app declared none.
+   *
+   * Inside, `auth` propagates as it does anywhere else, so a service call made
+   * by `fn` names no principal and inherits this one.
+   */
+  runAs: <T>(
+    userId: string | null,
+    fn: (user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>,
+  ) => Promise<T>
 
   // App-level hooks — applied to every service call
   hooks:     (map: HookMap) => void
 
   // Plugin registration — can be called anytime before start()
   configure: (plugin: PluginInput) => App
-  setAuth:   (auth: import('../auth/types.ts').IAuth) => void
+  setAuth:   (auth: import('../auth/types.ts').SessionVerifier) => void
 
   /**
    * Claim a namespace on the app, failing loudly if it is already taken.
@@ -241,11 +279,25 @@ export interface App {
    * pattern (AppConduit / AppJobs / AppNotify) that already handles the types.
    *
    * It assigns the REAL property, so augmented types keep resolving:
-   * `app.provide('conduit', c)` still leaves `app.conduit` typed as AppConduit.
+   * `app.claim('conduit', c)` still leaves `app.conduit` typed as AppConduit.
    *
-   *   app.provide('conduit', instance)   // throws if anything already claimed it
+   *   app.claim('conduit', instance)   // throws if anything already claimed it
+   *
+   * The verb is `claim` and not `provide` because nothing is provided here — a
+   * Provider is a third party the app speaks to (`FJS-D06`), and this only takes
+   * a name on the app object.
    */
-  provide:   (name: string, value: unknown) => void
+  claim:     (name: string, value: unknown) => void
+
+  /**
+   * Contribute a section to `GET /metrics`, keyed by plugin name.
+   *
+   * The blessed replacement for reaching into `app._metricsSources` — a plugin
+   * doing that is guessing at a private field, and the guess fails SILENTLY:
+   * caravan and conduit both guarded with `instanceof Map`, so a renamed field
+   * meant metrics quietly stopped appearing with no error anywhere.
+   */
+  registerMetricsSource: (name: string, fn: () => unknown) => void
 
   // Route shortcuts (delegate to http.router)
   get:     (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
@@ -273,10 +325,10 @@ export interface App {
   // Internal
   _appHooks: HookMap
   _plugins:  string[]   // names of all configured plugins
-  /** Plugin-registered metrics providers — keyed by plugin name.
-   *  Each provider returns an object merged into GET /metrics.
-   *  Plugins like Caravan register here to expose their stats. */
-  _metricsProviders: Map<string, () => unknown>
+  /** Plugin-registered metrics sources — keyed by plugin name. Each returns an
+   *  object merged into GET /metrics. Write through `registerMetricsSource`;
+   *  this is the store, not the seam. */
+  _metricsSources: Map<string, () => unknown>
   /** Test-only: runs plugin register(), registerServiceRoutes, and setAppHooks
    *  without binding a port. Call once before the first request() in tests. */
   _startForTest: () => Promise<void>
@@ -289,7 +341,24 @@ export interface AppOptions {
   configPath?:  string              // path to junction.config.js dir, default './api/config'
   logger?:      ILogger             // custom logger — defaults to createLogger()
   logLevel?:    import('./logger.ts').LogLevel   // override log level
-  auth?:        IAuth
+  auth?:        SessionVerifier
+
+  /**
+   * The principal the app's OWN background work runs as.
+   *
+   * Deferred work started by nobody — a cron sweep, a boot-time reconciliation
+   * — has no caller to inherit, and no caller is STRANGER(0). This is the one
+   * place an app says who it is when it acts on its own behalf, and it is
+   * graded by the app's own `getLevel` like any other principal:
+   *
+   *   createApp({ system: { userId: 'system', role: 'system', … } })
+   *
+   * Declaring none is a valid answer — an app whose background work touches
+   * nothing gated needs no system identity, and inventing one would hand every
+   * app a privileged principal it never asked for.
+   */
+  system?:      import('../auth/types.ts').SessionContext
+
   /**
    * The application's database client, exposed as `app.db`.
    *
@@ -310,6 +379,21 @@ export interface AppOptions {
    * handle and is the older, lower-level path.
    */
   db?:          unknown
+  /**
+   * The tenant registry, for a schema declaring `tenancy { strategy database }`
+   * — one SQLite file per tenant, so the CLIENT changes per request.
+   *
+   * Passing it installs `withTenantDb` in place of `withLitestoneDb`: each call
+   * resolves its tenant the way the schema's `resolve` declares (a subdomain, a
+   * header, a claim), and `ctx.locals.db` is that tenant's caller-scoped
+   * client. A call with no request behind it names its tenant with
+   * `{ locals: { tenantId } }`.
+   *
+   * `db` and `tenants` are alternatives, not a pair: one `ctx.locals.db` cannot
+   * be assigned by two hooks. `strategy row` needs neither — the schema's own
+   * policies scope every query — so pass `db` there as usual.
+   */
+  tenants?:     import('./litestone.ts').TenantRegistryLike
   mail?:        IMail
   ai?:          AIRegistry
   /**
@@ -326,11 +410,14 @@ export interface AppOptions {
 // The canonical way to call a service from inside a hook, another service,
 // a scheduler job, or anywhere else that has access to app.
 //
-//   ctx.app.service('users').get(userId, ctx.params)   ← thread caller context
-//   ctx.app.service('audit').create({ action: 'x' })   ← anonymous system call
+//   ctx.app.service('users').get(userId)               ← inherits the caller
+//   ctx.app.service('audit').create({ action: 'x' },
+//                   { auth: { user: null } })          ← deliberately as nobody
 //   ctx.app.service('servers').call('reboot', id)      ← call a custom method
 //
-// Mirrors Feathers’ app.service(name).method(id, params) API.
+// The second argument is CallOptions, not Feathers' `params`. What varies per
+// call goes there — auth, directives, locals — and identity is not one of those
+// things by default, because it belongs to the request rather than the call.
 // call() is consistent with client.service(name).call() on the browser client.
 
 // ─── Internal service call options ───────────────────────────────────────
@@ -473,6 +560,7 @@ export function createApp(opts: AppOptions = {}): App {
   const app: App = {
     config,
     db,
+    tenants: opts.tenants,
     logger,
     services,
     events,
@@ -519,12 +607,17 @@ export function createApp(opts: AppOptions = {}): App {
           //   app.service('posts').find({}, { directives: { limit: 10 } })
           directives: opts.directives ?? {},
           data,
-          auth: {
-            user: opts.auth?.user ? freezeUser(opts.auth.user) : null,
-          },
-          client: {
-            headers: {},
-          },
+          // PROPAGATES. A caller that says nothing inherits the request's
+          // principal from the ALS store the bridge already wraps the whole
+          // pipeline in; a caller that says `{ user: null }` means *as
+          // nobody* and gets it. Absent ≠ null, tested with `in` rather than
+          // `??` — the same rule Invariant 9 makes about a patch, and here it
+          // is what lets a service deliberately read as a stranger would.
+          auth: { user: resolvePrincipal(opts) },
+          // Propagates, like the principal and for the same reason: an audit
+          // hook three calls deep has no other route to the IP of the request
+          // that caused the write. `{}` when there is no request at all.
+          client: inheritedClient(),
           route:  {},
           locals: opts.locals ? { ...opts.locals } : {},
           app:       app,
@@ -666,16 +759,59 @@ export function createApp(opts: AppOptions = {}): App {
       if (services.hasAppHooks) services.setAppHooks(appHooks)
     },
 
+    principal(): import('../auth/types.ts').SessionContext | null {
+      return requestMeta()?.user ?? null
+    },
+
+    async runAs<T>(
+      userId: string | null,
+      fn: (user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>,
+    ): Promise<T> {
+      let user: import('../auth/types.ts').SessionContext | null = null
+
+      if (userId !== null) {
+        // Re-resolved, never restored from a snapshot — see the doc on App.runAs.
+        // A provider that cannot answer says so by name rather than falling back:
+        // falling back to the system principal would run a demoted user's work
+        // with more authority than they ever had, and falling back to nobody
+        // reinstates the STRANGER(0) refusal this exists to remove.
+        const resolve = app.auth?.sessionFor
+        if (!resolve) throw new Error(
+          `[Junction] app.runAs('${userId}') — the auth provider has no sessionFor(), ` +
+          `so a principal cannot be re-resolved. Implement IAuth.sessionFor, or run ` +
+          `this work as the app itself with runAs(null, …).`
+        )
+        user = await resolve.call(app.auth, userId)
+        if (!user) throw new Error(
+          `[Junction] app.runAs('${userId}') — no such principal. The user was ` +
+          `resolvable when this work was enqueued and is not now (deleted, or ` +
+          `disabled). Deferred work outlives the caller; handle the absence.`
+        )
+      } else {
+        user = opts.system ?? null
+      }
+
+      const frozen = user ? freezeUser(user) : null
+      return runWithMeta(
+        { correlationId: crypto.randomUUID(), origin: 'internal', user: frozen },
+        () => Promise.resolve(fn(frozen)),
+      )
+    },
+
     _appHooks: appHooks,
     _plugins:  [],
 
-    _metricsProviders: new Map<string, () => unknown>(),
+    _metricsSources: new Map<string, () => unknown>(),
 
-    provide(name: string, value: unknown): void {
+    registerMetricsSource(name: string, fn: () => unknown): void {
+      app._metricsSources.set(name, fn)
+    },
+
+    claim(name: string, value: unknown): void {
       const existing = (app as unknown as Record<string, unknown>)[name]
       if (existing !== undefined) {
         throw new Error(
-          `[Junction] app.provide('${name}') — that name is already claimed. ` +
+          `[Junction] app.claim('${name}') — that name is already claimed. ` +
           `Two plugins cannot both own app.${name}; the second used to win ` +
           `silently and the first would stop working. Rename one, or have the ` +
           `owning plugin expose the other's surface deliberately.`
@@ -684,7 +820,7 @@ export function createApp(opts: AppOptions = {}): App {
       ;(app as unknown as Record<string, unknown>)[name] = value
     },
 
-    setAuth(auth: import('../auth/types.ts').IAuth): void {
+    setAuth(auth: import('../auth/types.ts').SessionVerifier): void {
       // Patch auth into the HTTP transport via its public API — must be
       // called before start()
       http.setAuth(auth)
@@ -745,7 +881,7 @@ export function createApp(opts: AppOptions = {}): App {
       }
 
       plugins.push(p)
-      ;(app as Record<string, unknown>)._plugins = plugins.map(p => p.name)
+      app._plugins = plugins.map(p => p.name)
       return app
     },
 
@@ -857,8 +993,32 @@ export function createApp(opts: AppOptions = {}): App {
   // withLitestoneDb does the $setAuth itself, so this covers services built
   // for every service. Scoping used to live in one of two service factories,
   // so which one you chose silently decided whether your row policies worked.
-  if (db && typeof (db as { $setAuth?: unknown }).$setAuth === 'function') {
+  //
+  // A tenant registry takes the same slot: the client is per REQUEST rather
+  // than per app, so `withTenantDb` resolves it and assigns the same
+  // `ctx.locals.db`. Installing both would leave the assignment to hook order.
+  if (opts.tenants) {
+    app.hooks({ around: { all: [withTenantDb(opts.tenants)] } })
+  } else if (db && typeof (db as { $setAuth?: unknown }).$setAuth === 'function') {
     app.hooks({ around: { all: [withLitestoneDb(db as never)] } })
+    // Row tenancy scopes with policies rather than with a second database, so
+    // there is nothing to swap — the failure mode is the opposite one, a
+    // principal with no claim seeing an empty version of every screen.
+    //
+    // Installed only when the schema DECLARES row tenancy. A hook that no-ops
+    // is not free: it is a line in every app's `surface.snapshot.md` and a
+    // frame in every stack trace, for a question most apps never ask. Probed
+    // inside a try because reading an unknown property off a Litestone client
+    // throws rather than answering undefined.
+    let rowTenancy = false
+    try { rowTenancy = (db as { $tenancy?: { strategy?: string } }).$tenancy?.strategy === 'row' } catch { /* not a Litestone client */ }
+    if (rowTenancy) app.hooks({ before: { all: [tenantClaimGuard(db)] } })
+
+    // A write that never went through a service announces nothing, so a job
+    // writing with asSystem() left every open tab holding the stale row
+    // (FJS-010). Not installed for a tenant registry: there the client is per
+    // request rather than per app, so there is no single client to tap.
+    announceDataWrites(app, db)
   }
 
 
@@ -977,7 +1137,7 @@ export function createApp(opts: AppOptions = {}): App {
         const explicitDir = opts.autoload === false
           ? undefined
           : (opts.autoload
-              ?? (config as Record<string, unknown>)._junction?.services?.dir as string | undefined)
+              ?? (config as { _junction?: { services?: { dir?: string } } })._junction?.services?.dir)
 
         const servicesDir = opts.autoload === false
           ? undefined
@@ -1158,7 +1318,7 @@ export function registerServiceRoutes(app: App): void {
 
   // ── CRUD handler ──────────────────────────────────────────────────
   const crudHandler: RouteHandler = async (ctx) => {
-    const serviceName = ctx.params.service
+    const serviceName = ctx.route.service
     const service     = app.services.get(serviceName)
 
     if (!service)
@@ -1186,6 +1346,10 @@ export function registerServiceRoutes(app: App): void {
       idempotencyKey: ctx.headers['idempotency-key'],
       locale:         ctx.headers['accept-language']?.split(',')[0]?.trim(),
       origin:         'http',
+      // WHO, request-wide. This is what makes `ctx.auth` propagate: an internal
+      // call naming no principal reads it back out of the store, at any depth.
+      user:           svcCtx.auth.user,
+      client:         svcCtx.client,
     }
 
     try {
@@ -1201,7 +1365,7 @@ export function registerServiceRoutes(app: App): void {
 
   // ── Restore handler ───────────────────────────────────────────────
   // PUT /{service}/{id} + X-Service-Method: restore
-  // POST /{service}/{id} + X-Service-Method: {action} — custom actions
+  // POST /{service}/{id} + X-Service-Method: {method} — custom methods
   // All dispatched via crudHandler — bridge reads the header and sets ctx.method.
 
   // ── Route registration ────────────────────────────────────────────
@@ -1213,9 +1377,9 @@ export function registerServiceRoutes(app: App): void {
   app.delete(`/{service}`,     crudHandler)
   app.put(`/{service}`,        crudHandler)   // bulk restore
 
-  // Resource — get, patch, delete, restore, custom actions (via X-Service-Method)
+  // Resource — get, patch, delete, restore, custom methods (via X-Service-Method)
   app.get(`/{service}/{id}`,    crudHandler)
-  app.post(`/{service}/{id}`,   crudHandler)  // custom actions
+  app.post(`/{service}/{id}`,   crudHandler)  // custom methods
   app.patch(`/{service}/{id}`,  crudHandler)
   app.put(`/{service}/{id}`,    crudHandler)  // restore via header
   app.delete(`/{service}/{id}`, crudHandler)

@@ -8,6 +8,8 @@
  * It started at four items. Three moved into core in v0.10 — icon sizing,
  * the text-size scale, the field-width token — plus the sidebar toggle's
  * media query, which frame.css now owns because frame.css created the need.
+ * The Popover pair went the same way in v0.16: `.popover-anchor` and its
+ * placement ship, so the demo writes a class instead of two rules.
  * What is left is one rule, and it is arguably not a gap at all.
  *
  * Unlayered on purpose — the documented consumer position, so nothing here
@@ -35,43 +37,6 @@ body > svg.sprite {
   inline-size: 0;
   block-size:  0;
   overflow:    hidden;
-}
-
-/*
- * A Popover needs a positioning context and the package ships none.
- *
- * `.popover` is `position: absolute`, so without a positioned ancestor it
- * anchors to the nearest one — in practice the page — and opens in the
- * corner of the viewport looking broken. Tooltip does not have this
- * problem: `.tooltip-anchor` ships in the package and IS the context.
- *
- * The second finding of this kind, and unlike the sprite rule above it is
- * arguably a real gap: the package names Popover as a term, and every
- * consumer of that term has to write this same line before it can be used
- * at all. `packages/css/CLAUDE.md` already records the trap; what it does
- * not have is a `.popover-anchor` to match `.tooltip-anchor`.
- */
-.demo-anchor {
-  position:     relative;
-  display:      inline-flex;
-  align-items:  center;
-}
-
-/*
- * ...and the offset, which is the second half of the same gap.
- *
- * `.popover` sets `position: absolute` and no inset at all, so it resolves
- * to its static position and lands centred ON the button. Measured before
- * this rule: 265px tall at y = -39, hanging off the top of the viewport.
- * `.tooltip` does not have this problem because tooltips.css ships the
- * placement with it; `.popover` ships only the skin.
- *
- * Every consumer of the Popover term has to write these two rules before
- * the term is usable, which is what makes it a gap rather than a taste.
- */
-.demo-anchor > .popover {
-  inset-block-start: calc(100% + var(--space-2xs));
-  inset-inline-end:  0;
 }
 
 /*

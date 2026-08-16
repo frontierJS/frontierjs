@@ -49,6 +49,15 @@
   --rule:        #2a251d;
   --rule-strong: #16130f;
 
+  /*
+   * And struck rather than hairline. Every structural border in the package
+   * reads this — card, field, table, topbar, code block, tab strip — so the
+   * weight is one line rather than a rule per component. The tab indicator
+   * derives from it and stays a rung above, so the selected tab still sits
+   * ON the strip rather than leaving a gap in it.
+   */
+  --border-width: 2px;
+
   /* ── Square everything ──────────────────────────────────────────────
    * --badge-radius is deliberately unset: badges follow --btn-radius through
    * a use-site fallback, so squaring buttons squares badges for free.
@@ -118,6 +127,44 @@
    */
   --density: 1.15;
 
+  /*
+   * Density scales the whole ladder; these change its SHAPE. A broadsheet
+   * sets tight and leads generously — the small rungs are gaps inside a
+   * control and stay where they are, the large ones are the space between
+   * blocks and open up. The base is what a theme sets: a rung itself is
+   * recomputed on every element from the base it inherited, so a rung
+   * declared here would win on the themed element and nowhere below it.
+   */
+  --space-4xl-base: 1.75rem;
+  --space-5xl-base: 2.5rem;
+  --space-6xl-base: 4rem;
+
+  /*
+   * ── Set in metal, so it barely moves ───────────────────────────────
+   * A press sheet does not animate. The durations come down and the easing
+   * is linear — a decelerating curve is a screen idiom, and what is left
+   * reads as the ink landing rather than as an element gliding. The
+   * reader's `prefers-reduced-motion` still wins over all of it.
+   */
+  --motion-fast:  80ms;
+  --motion-base:  90ms;
+  --motion-enter: 100ms;
+  --motion-slow:  120ms;
+
+  --motion-ease:       linear;
+  --motion-ease-out:   linear;
+  --motion-ease-enter: linear;
+
+  /*
+   * The small caps that name a region — table head, tile label, nav group.
+   * Heavier and wider than the default, the same stamp the buttons take.
+   */
+  --label-font-weight:    700;
+  --label-letter-spacing: 0.1em;
+
+  /* Headlines are set heavier than the interface. */
+  --heading-font-weight: 700;
+
   /* ── Hard shadows ───────────────────────────────────────────────────
    * No blur and no alpha ramp: the elevation is a printing offset, so the
    * card looks stamped rather than lit. Every raised surface in the package
@@ -129,6 +176,15 @@
   --shadow-lg: 6px 6px 0 #16130f;
 
   /*
+   * The resting Block tier takes the stamp too. --shadow-* reaches every
+   * floating thing and reached no card, so the offset landed on buttons and
+   * dialogs while the cards it was designed for stayed flat. A literal, not
+   * `var(--shadow-sm)`: an alias in a theme resolves once here and would not
+   * follow a nested theme.
+   */
+  --surface-shadow: 2px 2px 0 #16130f;
+
+  /*
    * The ring is ink rather than the brand hue and sits flush, so focus reads
    * as a struck border. --ring must be stated: it follows --color-primary by
    * use-site fallback, and here that would be right by accident.
@@ -136,6 +192,12 @@
   --ring:        #16130f;
   --ring-width:  3px;
   --ring-offset: 0px;
+  /*
+   * Two struck lines rather than one, which is what 3px of `double` draws.
+   * The keyword comes from a fixed list registered in focus.css — a theme
+   * cannot spell "off", so this is a restyle and not a weakening.
+   */
+  --ring-style:  double;
 
   /* Measure and frame. A narrower column than the default 1280px. */
   --container-max:    1080px;

@@ -44,6 +44,13 @@ const CLEAN = {
   'web/config/vite.config.js':          'export default { server: { port: 8010, strictPort: true } }\n',
   'web/src/resources/Lead.mesa':        resource('leads'),
   'web/src/resources/Account.mesa':     resource('accounts'),
+  // The third surface. It is in the clean app because every rule must RUN
+  // here — a rule that only ever skips is the failure this file exists to
+  // catch, and `widget-entry-name` skips wherever widgets/ is absent.
+  'widgets/config/vite.config.js':      'export default { server: { port: 8200, strictPort: true } }\n',
+  'widgets/src/Embeds/Booking.mesa':    '<button>book</button>\n',
+  'widgets/src/Embeds/LeadForm/index.mesa': '<form></form>\n',
+  'widgets/src/Embeds/LeadForm/Field.mesa': '<input>\n',
 }
 
 const only = (root, id, extra = {}) => runChecks({ root, only: [id], ...extra })
@@ -234,6 +241,71 @@ describe('what the runner reports about itself', () => {
     tree('apps/node_modules/pkg', { 'db/schema.lite': SCHEMA })
     const found = findApps(join(ROOT, 'apps')).map(p => p.replace(ROOT + '/', ''))
     expect(found).toEqual(['apps/one'])
+  })
+})
+
+describe('the widget surface', () => {
+  test('a widgets-only project is a whole project, not a broken one', () => {
+    // No api/, no web/. The product is the embeddable scripts; a rule that
+    // demands the other two surfaces here would be turned off rather than obeyed.
+    const root = tree('w-only', {
+      'db/schema.lite':                  SCHEMA,
+      'widgets/config/vite.config.js':   'export default { server: { strictPort: true } }\n',
+      'widgets/src/Embeds/Booking.mesa': '<button>book</button>\n',
+    })
+    expect(only(root, 'app-layout').findings).toEqual([])
+    expect(only(root, 'widget-entry-name').findings).toEqual([])
+  })
+
+  test('widgets inside web/ are a surface in the wrong place', () => {
+    // Silent when wrong: they build with the SPA, share its port and its
+    // release, and the first symptom is a widget shipping when the app does.
+    const root = tree('w-nested', { ...CLEAN, 'web/src/Embeds/Booking.mesa': '<button>b</button>\n' })
+    const { findings } = only(root, 'app-layout')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/peer of web\//)
+  })
+
+  test('a lowercase widget name is an error, because it is also the tag', () => {
+    const root = tree('w-case', { ...CLEAN, 'widgets/src/Embeds/booking.mesa': '<button>b</button>\n' })
+    const { findings } = only(root, 'widget-entry-name')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/no dash/)
+  })
+
+  test('a directory of components with no index builds nothing, and says so', () => {
+    // Discovery is per directory. Without an index this is another widget's
+    // parts — correct for `Shared/`, and wrong for a widget half-written.
+    const root = tree('w-noindex', { ...CLEAN, 'widgets/src/Embeds/Chat/Bubble.mesa': '<p></p>\n' })
+    const { findings } = only(root, 'widget-entry-name')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/no index\.mesa/)
+  })
+
+  test('a widget with parts is one widget', () => {
+    // CLEAN already carries LeadForm/index.mesa + Field.mesa. The assertion is
+    // that the part does not fire anything — it is not a widget with a bad name.
+    expect(only(tree('w-parts', CLEAN), 'widget-entry-name').findings).toEqual([])
+  })
+})
+
+describe('the extension surface', () => {
+  test('an extension-only project is a whole project', () => {
+    const root = tree('e-only', {
+      'db/schema.lite':                    SCHEMA,
+      'extension/config/jetty.config.js':  'export default { name: "x" }\n',
+      'extension/src/harbor/index.js':     '// harbor\n',
+    })
+    expect(only(root, 'app-layout').findings).toEqual([])
+  })
+
+  test('an extension inside web/ is a surface in the wrong place', () => {
+    // `src/harbor/` is jetty's service worker and belongs to nothing else, so
+    // it is the one marker that cannot mean something in another realm.
+    const root = tree('e-nested', { ...CLEAN, 'web/src/harbor/index.js': '// harbor\n' })
+    const { findings } = only(root, 'app-layout')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/MANIFEST/)
   })
 })
 

@@ -11,9 +11,10 @@
 // handlers to translate them — which only covered these routes, and left an
 // auth error raised from a SERVICE surfacing as a 500.
 
-import type { IAuth, SessionContext, RateLimitHookOptions }   from '@frontierjs/junction'
-import { parseTtl, Unauthorized, BadRequest, rateLimitHook } from '@frontierjs/junction'
-import type { AuthPluginOptions }                             from './types.ts'
+import type { IAuth, SessionContext, App, Plugin, TransportContext } from '@frontierjs/junction'
+import { parseTtl, Unauthorized, BadRequest, rateLimitHook }        from '@frontierjs/junction'
+import type { AuthPluginOptions }                                   from './types.ts'
+import { createAuthServices }                                       from './services.ts'
 
 // Rate limiting is junction's `rateLimitHook`, not a copy of it.
 //
@@ -29,13 +30,14 @@ import type { AuthPluginOptions }                             from './types.ts'
 export function createAuthPlugin(
   auth: IAuth,
   opts: AuthPluginOptions = {}
-): { name: string; register: (app: any) => void; shutdown: () => void } {
+): Plugin {
 
   const {
     prefix            = '/auth',
     cookieAuth        = false,
     loginRateLimit    = { max: 10, window: '15 minutes' },
     registerRateLimit = { max: 5,  window: '15 minutes' },
+    services          = {},
   } = opts
 
   // sessionTtl: prefer the explicit plugin opt, then read from the auth
@@ -59,7 +61,29 @@ export function createAuthPlugin(
       ;(registerLimiter as unknown as { dispose?(): void }).dispose?.()
     },
 
-    register(app: any) {
+    // ── The service half ────────────────────────────────────────────
+    //
+    // In boot() rather than register(), because that is the first phase where
+    // the app's OWN services all exist: autoload runs before boot-plugins, so
+    // a collision can be seen from here whichever order the two were written
+    // in. The registry is a Map — without this check one of the two silently
+    // replaces the other and the app serves whichever registered last.
+    boot(app: App) {
+      if (services === false) return
+
+      for (const svc of createAuthServices(auth, services)) {
+        if (app.services?.has?.(svc.name)) {
+          throw new Error(
+            `[auth] service '${svc.name}' is already registered by this app. ` +
+            `Rename or drop auth's — createAuthPlugin(auth, { services: { ` +
+            `${svc.name === 'api-keys' ? 'apiKeys' : svc.name}: false } }).`
+          )
+        }
+        app.services.register(svc)
+      }
+    },
+
+    register(app: App) {
 
       // ── Tell the transport to read the cookie we are about to set ────
       //
@@ -84,10 +108,10 @@ export function createAuthPlugin(
       // createUser + login in one step. Issues a session token.
       // Triggers email verification if the IAuth method is implemented.
 
-      app.post(`${prefix}/register`, async (ctx: any) => {
+      app.post(`${prefix}/register`, async (ctx: TransportContext) => {
         registerLimiter(ctx)
 
-        const { email, password, name } = ctx.body ?? {}
+        const { email, password, name } = body(ctx)
         if (!email)    throw new BadRequest('email is required')
         if (!password) throw new BadRequest('password is required')
 
@@ -108,10 +132,10 @@ export function createAuthPlugin(
 
       // ── POST /auth/login ─────────────────────────────────────────────
 
-      app.post(`${prefix}/login`, async (ctx: any) => {
+      app.post(`${prefix}/login`, async (ctx: TransportContext) => {
         loginLimiter(ctx)
 
-        const { email, password } = ctx.body ?? {}
+        const { email, password } = body(ctx)
         if (!email)    throw new BadRequest('email is required')
         if (!password) throw new BadRequest('password is required')
 
@@ -121,25 +145,23 @@ export function createAuthPlugin(
 
       // ── POST /auth/logout ────────────────────────────────────────────
 
-      app.post(`${prefix}/logout`, async (ctx: any) => {
+      app.post(`${prefix}/logout`, async (ctx: TransportContext) => {
         const token = extractToken(ctx)
         if (token) await auth.logout(token)
         if (cookieAuth) clearCookie(ctx)
         return ctx.json({ ok: true })
       })
 
-      // ── GET /auth/me ─────────────────────────────────────────────────
-
-      app.get(`${prefix}/me`, async (ctx: any) => {
-        if (!ctx.user) throw new Unauthorized('Authentication required')
-        return ctx.json(ctx.user)
-      })
+      // GET /auth/me was here. It is `account.get('me')` now — a request that
+      // can be refused for want of a session is a service, and as a service it
+      // gets the hook pipeline, the audit trail and the WebSocket transport
+      // that a hand-rolled route never had (DECISIONS.md § API design).
 
       // ── POST /auth/password-reset/request ────────────────────────────
       // Always returns ok — never reveals whether the email is registered.
 
-      app.post(`${prefix}/password-reset/request`, async (ctx: any) => {
-        const { email } = ctx.body ?? {}
+      app.post(`${prefix}/password-reset/request`, async (ctx: TransportContext) => {
+        const { email } = body(ctx)
         if (!email) throw new BadRequest('email is required')
 
         if (auth.requestPasswordReset) {
@@ -151,8 +173,8 @@ export function createAuthPlugin(
 
       // ── POST /auth/password-reset/confirm ────────────────────────────
 
-      app.post(`${prefix}/password-reset/confirm`, async (ctx: any) => {
-        const { token, password } = ctx.body ?? {}
+      app.post(`${prefix}/password-reset/confirm`, async (ctx: TransportContext) => {
+        const { token, password } = body(ctx)
         if (!token)    throw new BadRequest('token is required')
         if (!password) throw new BadRequest('password is required')
 
@@ -168,7 +190,7 @@ export function createAuthPlugin(
       // Requires authentication — user must be logged in to request
       // a new verification email.
 
-      app.post(`${prefix}/email/verify/request`, async (ctx: any) => {
+      app.post(`${prefix}/email/verify/request`, async (ctx: TransportContext) => {
         if (!ctx.user) throw new Unauthorized('Authentication required')
 
         const user = ctx.user as SessionContext
@@ -182,7 +204,7 @@ export function createAuthPlugin(
 
       // ── GET /auth/email/verify?token= ────────────────────────────────
 
-      app.get(`${prefix}/email/verify`, async (ctx: any) => {
+      app.get(`${prefix}/email/verify`, async (ctx: TransportContext) => {
         const token = ctx.query?.token as string | undefined
         if (!token) throw new BadRequest('token is required')
 
@@ -200,8 +222,49 @@ export function createAuthPlugin(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
+// `ctx.body` is `unknown` — it is whatever a caller posted, and these routes are
+// upstream of every validator the app has. One reader, so the assertion that it
+// is shaped like this is written once rather than at each of the four handlers.
+//
+// It CHECKS rather than asserts, because these routes have no validator in front
+// of them: a service gets `autoValidate` off the model's JSON Schema, and a raw
+// route by definition does not. `{ "email": { "contains": "@" } }` was reaching
+// `sys.user.findFirst({ where: { email } })` as a Litestone where-operator, so
+// the address became a FILTER — with a correct password it signed the caller in
+// as the first matching row, and `startsWith` walked the user table without
+// knowing a single address (FJS-296).
+//
+// So a declared field is a string or the request is a 400 naming it, and a key
+// not declared here does not travel. Presence is still each handler's own
+// question — this one only answers what KIND of thing arrived.
+const BODY_FIELDS = ['email', 'password', 'name', 'token'] as const
+
+interface AuthBody {
+  email?:    string
+  password?: string
+  name?:     string
+  token?:    string
+}
+
+function body(ctx: TransportContext): AuthBody {
+  const raw = ctx.body
+  if (raw === null || raw === undefined) return {}
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new BadRequest('body must be a JSON object')
+  }
+
+  const out: AuthBody = {}
+  for (const key of BODY_FIELDS) {
+    const value = (raw as Record<string, unknown>)[key]
+    if (value === undefined || value === null) continue
+    if (typeof value !== 'string') throw new BadRequest(`${key} must be a string`)
+    out[key] = value
+  }
+  return out
+}
+
 function respond(
-  ctx:         any,
+  ctx:         TransportContext,
   data:        unknown,
   cookieAuth:  boolean,
   cookieMaxAge: number,
@@ -230,12 +293,16 @@ function respond(
   return ctx.json(data, status)
 }
 
-function extractToken(ctx: any): string | null {
-  const header = (ctx.headers?.authorization ?? '') as string
+// The optional chains stay although `headers`, `cookies` and `setCookie` are all
+// required on a TransportContext: these run against whatever the transport in
+// front of them built, and a hand-made context in a test has never had to be a
+// whole one.
+function extractToken(ctx: TransportContext): string | null {
+  const header = ctx.headers?.authorization ?? ''
   if (header.startsWith('Bearer ')) return header.slice(7).trim()
   return ctx.cookies?.session ?? null
 }
 
-function clearCookie(ctx: any): void {
+function clearCookie(ctx: TransportContext): void {
   ctx.setCookie?.('session', '', { maxAge: 0 })
 }

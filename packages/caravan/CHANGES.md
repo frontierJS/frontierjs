@@ -1,5 +1,160 @@
 # Changes — @frontierjs/caravan
 
+## 2026-08-16 — two numbers that were not there
+
+115 tests (was 112). Both found by probing the package rather than reading it,
+which is also how the two rows filed alongside them were found —
+[`FJS-294`](../../ISSUES.md) (two instances on one `jobs.db`) and `FJS-295` (a
+handler with no timeout), neither fixed here.
+
+**`stats()` counts `done`.** It never had, so the only numbers reported were the
+ones an idle queue reports too: after a successful job the totals read
+`{pending: 0, running: 0, failed: 0, cancelled: 0}`, identical to a queue that
+has done nothing at all. Junction's `/metrics` reads this source and basecamp's
+hub screen renders it, so *is the queue working* had no answer anywhere. It
+counts the retention window rather than all time — the cleanup sweep deletes
+terminal jobs past `cleanupAfter`, which is what makes it a rate.
+
+**An absent payload is an empty one.** `dispatch('x')` from JavaScript threw
+`NOT NULL constraint failed: jobs.data` — a SQLite message naming neither the
+job nor the caller, because `JSON.stringify(undefined)` is `undefined` and bound
+as NULL. An explicit `null` is left alone: it is a value somebody passed, and it
+round-trips.
+
+
+## 2026-08-16 — a job file declares itself (`FJS-094`, `FJS-090`, `FJS-048`)
+
+112 tests (was 92 — 13 in a new `tests/declaration.test.ts`, 7 added to the
+integration file). Typecheck clean. `example`: `verify:jobs` 8/8.
+
+Three rows, one shape: **a job's declaration was split across files.**
+
+**`cron` is a registration option.** `HandlerOptions` grows `cron` and
+`timeZone`, so a `*.job.ts` file says WHEN it runs beside what it does and
+needs no line in `app.ts`. The schedule is registered in **`handle()`** rather
+than in `schedule()`, which is the part that makes it reachable at all —
+`handle` is the only call `autoload` makes. `schedule(name, expr, fn)` is now
+sugar over `handle(name, fn, { cron: expr })`, so a cron declared in a file and
+one declared in a call are the same registration.
+
+Two defects came out of that collapse. A name is a schedule and **not a list of
+them**: registering the same name twice used to add a second entry and fire the
+job twice a minute. And an unparseable expression is refused naming the JOB —
+the expression alone no longer says which file to open.
+
+**The definition is the dispatch handle.** `defineJob` returns a
+`JobDefinition<T>`, and `dispatch(bookCourier, { orderId })` reads the name off
+it: no call site restates the string, and `data` is typed by the handler that
+will receive it rather than `unknown` on both sides. `handle(definition)`
+registers one whole. Dispatch-by-name still works — a worker process holding
+the handler while a web process dispatches is a real shape, and refusing it
+would be worse than the typo it prevents.
+
+**A job in `jobsDir` is named by its file.** `autoload` compares the `defineJob`
+name against the file it is in and throws on a mismatch, naming both. That is
+the whole of `FJS-090`'s original symptom: `send-email.job.ts` defining
+`send-emial` registered a handler no dispatch ever reached, and nothing failed.
+
+**Construction is deferred, so a config file can set anything.** The database
+opens on first use, the workers are built in `start()` after autoload, and
+`register()` honours every key of `JunctionCaravanConfig` — `db`, `jobsDir`,
+`cleanupAfter`, `pollInterval`, `queues`, `admin` — with opts winning. Two more
+defects fell out: the merge tested truthiness, so `cleanupAfter: 0` (the way to
+turn the sweep off) read as unset from either side; and `stop()` closed the
+database while the pool kept the workers holding it, so a restart polled through
+a closed handle.
+
+In `example`, `api/jobs/sweep-abandoned.ts` was named `.ts` on purpose to keep
+it out of the autoload glob. It is `sweep-abandoned.job.ts` now with its cron in its
+own `defineJob` options, the `queue.schedule` line in `app.ts` is gone, and the
+two dispatch sites in `orders.service.ts`
+import the definitions, which also deleted a hand-written
+`ctx.app as { jobs?: … }` cast at each: importing a job file is what puts
+Caravan's augmentation of `app.jobs` in that file's program.
+
+
+## 2026-08-16 — `app.claim` and `registerMetricsSource` (`FJS-D06`)
+
+92/92 tests pass. Typecheck clean.
+
+Junction renamed `app.provide` to `app.claim` and replaced the
+`app._metricsProviders` map with `app.registerMetricsSource(name, fn)`.
+`CaravanApp` names both new shapes and `register()` calls them.
+
+**Both stay optional, and that is not laziness.** Caravan runs standalone
+against a host that is not a Junction app, which is why `CaravanApp` lists the
+fields it touches rather than carrying an index signature. What makes the
+optionality safe is `tests/junction-integration.test.ts` driving a real app: a
+presence check against a fake would pass forever after Junction moved the seam.
+
+
+## 2026-08-16 — a job runs as whoever asked for it
+
+92 tests (was 81 — 11 new, `tests/job-context.test.ts`). Typecheck clean.
+
+The oldest hazard in this package is gone. A handler had no principal, and no
+principal is STRANGER(0), so a job writing back through `app.service('x')` was
+refused by the model's own `@@gate`. It was documented rather than fixed, and
+every job in every app carried `{ auth: { user: SYSTEM } }` by hand — which
+*also* meant work a customer asked for ran with the authority of the shop.
+
+`dispatch()` now records `app.principal()?.userId` in a new `actor_id` column,
+and the worker runs the handler inside `app.runAs(actorId, …)`. So a service
+call in a handler names no `auth` and inherits one, through the same
+AsyncLocalStorage propagation any nested call gets. **The audit trail is where
+this shows**: in `example`, the `book-courier` write now names the staff member
+who pressed Ship, where it used to say `system` for every background write.
+
+**An id is stored, never a session.** A snapshot would be one line shorter and
+would let a caller demoted between asking and running keep the authority they
+had when they asked — a captured privilege outliving its own revocation, for as
+long as the retry schedule runs. The test that pins this demotes a user between
+the dispatch and the run and asserts the *new* standing.
+
+Nobody asked → `createApp({ system })`. A cron fire states `actor: null` rather
+than inferring it, so a timer cannot depend on whether an unrelated request
+happened to be in scope. An actor that cannot be resolved — deleted user, or a
+provider with no `sessionFor` — **fails the job by name**; downgrading to
+STRANGER(0) is the bug and upgrading to `system` would be worse.
+
+A handler's argument is now a `JobContext`: the job's own facts plus `app` and
+`auth`. `ctx.app` is the other half of the fix — Junction hands `app` to every
+plugin's `register()` and Caravan kept it, so an autoloaded `*.job.ts` had no
+route to the service layer at all and apps grew a module holding a mutable app
+reference. `example/api/app-ref.ts` is deleted.
+
+Standalone Caravan is unchanged in kind: no `runAs`, so the handler is called
+directly with `ctx.app` undefined and `ctx.auth.user` null.
+
+Old `jobs.db` files get `actor_id` by `ALTER TABLE` on open. Jobs already queued
+have NULL and run as the app, which is the only honest answer — nothing recorded
+who asked for them.
+
+## 2026-08-15 — a cancelled job stayed cancelled (FJS-039)
+
+81 tests (was 79 — 2 new). Typecheck clean.
+
+`cancel()` on a RUNNING job set `cancelled`, and then the attempt still in flight
+wrote its own outcome over it. `markDone` and `markFailed` were
+`WHERE id = $id` with no status guard, so the answer to "what happened to this
+job" was whichever write landed last.
+
+The comment beside `cancel` said the worker checked status before marking
+done/failed. It never did — a comment describing an intended fix, which is worse
+than none, because the next reader stops looking.
+
+Both statements now carry `AND status = 'running'`. The failed half was the
+worse of the two: without the guard a cancelled job whose handler then threw was
+written back to `pending`, re-claimed, and **ran again** — the new test sees
+`running`, not `done`.
+
+The worker reads `changes` off each UPDATE and skips the telemetry event when it
+is 0. A `caravan.job.done` for a job that ended up cancelled is the same lie one
+layer up, and anything counting completions would have believed it.
+
+Both tests were run against the unguarded statements first and fail there.
+`example`: `verify:jobs` 8/8.
+
 ## 2026-08-06 — `unique` worked in neither direction, and a cron could not be run
 
 79 tests (was 67 — 12 new). Typecheck clean.

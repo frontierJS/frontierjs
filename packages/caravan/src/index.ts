@@ -3,27 +3,34 @@
 //
 // Standalone usage:
 //   const queue = createCaravan({ queues: { email: { concurrency: 1 } } })
-//   queue.handle('send-email', async (job) => { ... })
+//   queue.handle('send-email', async (ctx) => { ... })
 //   await queue.start()
 //   await queue.dispatch('send-email', { to: 'alice@example.com' })
 //
 // As a Junction plugin:
 //   app.configure(createCaravan({ jobsDir: './jobs' }))
 //   await app.jobs.dispatch('send-email', { to: 'alice@example.com' })
+//
+// A handler then reaches the app as `ctx.app` and runs as whoever dispatched
+// the job — see JobContext in types.ts.
 
-import { openDb, buildStatements, aggregateStats } from './db.ts'
+import type { Database }                            from 'bun:sqlite'
+import { openDb, buildStatements, aggregateStats }  from './db.ts'
+import type { Statements }                          from './db.ts'
 import { QueueWorker, WorkerPool }                  from './worker.ts'
 import { autoloadJobs }                             from './autoload.ts'
-import { CronScheduler, nextFireTime }              from './cron.ts'
+import { CronScheduler }                            from './cron.ts'
 import type {
   CaravanOptions, CaravanInstance, CaravanApp, CaravanTelemetry,
   CaravanStats, DispatchOptions, HandlerOptions,
-  JobHandler, JobRecord, JobStatus, RegisteredHandler,
+  JobDefinition, JobHandler, JobRecord, JobRef, JobStatus,
+  QueueConfig, RegisteredHandler,
 } from './types.ts'
 
 export type {
   CaravanOptions, CaravanInstance, CaravanStats,
-  Job, JobHandler, HandlerOptions, DispatchOptions,
+  Job, JobContext, JobDefinition, JobHandler, JobRef, JobRegistrar,
+  HandlerOptions, DispatchOptions,
   JobRecord, JobStatus, QueueConfig, QueueStats,
   CronEntry,
 } from './types.ts'
@@ -39,24 +46,67 @@ declare module '@frontierjs/junction' {
 // ─── createCaravan ────────────────────────────────────────────────────────────
 
 export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
-  const dbPath       = opts.db           ?? './db/jobs.db'
-  const pollInterval = opts.pollInterval ?? 1_000
-  const queueConf    = { default: { concurrency: 2 }, ...(opts.queues ?? {}) }
-  let   jobsDir      = opts.jobsDir
-  let   cleanupAfter = opts.cleanupAfter ?? 7 * 24 * 60 * 60 * 1_000  // 7 days
-  const adminOpts    = opts.admin
+  // Every option is held in a `let` and read at the moment it is first needed.
+  // register() may still change it: the caravan section of junction.config.js
+  // does not exist until an app hands it over, and opening the database and
+  // building the workers in this function is exactly what made `db`,
+  // `pollInterval`, `queues` and `admin` unsettable from a config file at all.
+  let dbPath       = opts.db           ?? './db/jobs.db'
+  let pollInterval = opts.pollInterval ?? 1_000
+  let jobsDir      = opts.jobsDir
+  let cleanupAfter = opts.cleanupAfter ?? 7 * 24 * 60 * 60 * 1_000  // 7 days
+  let adminOpts    = opts.admin
 
-  const db       = openDb(dbPath)
-  const stmts    = buildStatements(db)
+  const queueConf: Record<string, QueueConfig> = {
+    default: { concurrency: 2 },
+    ...(opts.queues ?? {}),
+  }
+
   const handlers = new Map<string, RegisteredHandler>()
   const pool     = new WorkerPool()
   const cron     = new CronScheduler()
   let   started  = false
   let   telemetry: CaravanTelemetry | null = null
+  // The running app, or null standalone. Held so dispatch can read who is in
+  // scope and the worker can open a scope to run the handler in.
+  let   host: CaravanApp | null = null
 
-  // Build a worker for each configured queue
-  for (const [name, config] of Object.entries(queueConf)) {
-    pool.add(new QueueWorker(name, config, db, stmts, handlers, pollInterval, telemetry))
+  // ── The database, opened on first use ──────────────────────────────────────
+  //
+  // Nothing but a queue operation needs it, and every one of those happens
+  // after register(): a plugin is configured before it is booted, and a
+  // standalone queue has no config to wait for. `openedPath` is what the config
+  // merge reads to tell a caller their path arrived too late, rather than
+  // silently running against a different file than the one they named.
+
+  let runtime:    { db: Database; stmts: Statements } | null = null
+  let openedPath: string | null = null
+
+  const rt = (): { db: Database; stmts: Statements } => {
+    if (!runtime) {
+      const db = openDb(dbPath)
+      runtime    = { db, stmts: buildStatements(db) }
+      openedPath = dbPath
+    }
+    return runtime
+  }
+
+  // ── Queues ─────────────────────────────────────────────────────────────────
+  //
+  // A queue is a NAME until the pool is running. Workers are built in start(),
+  // after autoload, so a queue a job file or a config file names still gets
+  // one; a queue named for the first time after that (a runtime dispatch, a
+  // late handle()) gets its worker immediately.
+
+  const ensureQueue = (queue: string): void => {
+    if (!queueConf[queue]) queueConf[queue] = { concurrency: 2 }
+    if (!started || pool.has(queue)) return
+
+    const { db, stmts } = rt()
+    const worker = new QueueWorker(queue, queueConf[queue], db, stmts, handlers, pollInterval, telemetry)
+    worker._app = host
+    pool.add(worker)
+    worker.start()
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -67,31 +117,27 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
     // ── dispatch ─────────────────────────────────────────────────────────────
 
-    async dispatch<T = unknown>(
-      name: string,
-      data: T,
+    async dispatch(
+      job:  JobRef,
+      data: unknown,
       dispatchOpts: DispatchOptions = {}
     ): Promise<string> {
+      // A definition carries the one statement of its own name; a string is the
+      // caller restating it. Both end up as the same row.
+      const name  = typeof job === 'string' ? job : job.name
       const id    = crypto.randomUUID()
       const delay = dispatchOpts.delay    ?? 0
       const prio  = dispatchOpts.priority ?? 0
       const now   = Date.now()
 
+      const { stmts } = rt()
+
       // If a handler is registered with a specific queue for this name,
       // respect that over the dispatch-time queue
-      const registered = handlers.get(name)
+      const registered  = handlers.get(name)
       const targetQueue = dispatchOpts.queue ?? registered?.queue ?? 'default'
 
-      // Auto-create a worker for unknown queues dispatched at runtime
-      if (!pool['_workers'].has(targetQueue)) {
-        const worker = new QueueWorker(
-          targetQueue,
-          { concurrency: 2 },
-          db, stmts, handlers, pollInterval, telemetry
-        )
-        pool.add(worker)
-        if (started) worker.start()
-      }
+      ensureQueue(targetQueue)
 
       // Deduplication — if a pending job with this unique key exists, return its id
       if (dispatchOpts.unique) {
@@ -99,11 +145,25 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         if (existing) return existing.id
       }
 
+      // WHO asked. Absent means "whoever is in scope", which is the ordinary
+      // case and needs saying nowhere; an explicit `actor: null` means this is
+      // the app's own work even though a request started it. Tested with `in`
+      // rather than `??` for that reason — the same absent-is-not-null rule the
+      // rest of the framework makes about a principal.
+      const actorId = 'actor' in dispatchOpts
+        ? dispatchOpts.actor ?? null
+        : host?.principal?.()?.userId ?? null
+
       stmts.insert.run({
         id,
         queue:        targetQueue,
         name,
-        data:         JSON.stringify(data),
+        // An absent payload is an empty one. `JSON.stringify(undefined)` is
+        // undefined, which bound as NULL and surfaced as
+        // `NOT NULL constraint failed: jobs.data` — a SQLite message naming
+        // neither the job nor the caller. `null` is left alone: it is a value
+        // somebody passed, and it round-trips.
+        data:         JSON.stringify(data === undefined ? {} : data),
         status:       'pending',
         priority:     prio,
         max_attempts: registered?.maxAttempts ?? 3,
@@ -113,6 +173,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         unique_key:   dispatchOpts.unique ?? null,
         run_at:       now + delay,
         created_at:   now,
+        actor_id:     actorId,
       })
 
       return id
@@ -120,46 +181,74 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
     // ── handle ───────────────────────────────────────────────────────────────
 
-    handle<T = unknown>(
-      name:         string,
-      handler:      JobHandler<T>,
-      handlerOpts:  HandlerOptions = {}
+    handle(
+      nameOrJob:   string | JobDefinition<never>,
+      handler?:    JobHandler<never>,
+      handlerOpts: HandlerOptions = {}
     ): void {
-      const queue       = handlerOpts.queue       ?? 'default'
-      const maxAttempts = handlerOpts.maxAttempts ?? 3
-      const retryDelay  = handlerOpts.retryDelay  ?? []
+      // A definition already states everything a registration needs, so the
+      // two forms differ only in where the values are read from.
+      const def  = typeof nameOrJob === 'string' ? null : nameOrJob
+      const name = typeof nameOrJob === 'string' ? nameOrJob : nameOrJob.name
+      const fn   = (def ? def.handler : handler) as JobHandler | undefined
+      const o    = def
+        ? {
+            queue:       def.queue,
+            maxAttempts: def.maxAttempts,
+            retryDelay:  def.retryDelay,
+            cron:        def.cron,
+            timeZone:    def.timeZone,
+          }
+        : handlerOpts
+
+      if (typeof fn !== 'function')
+        throw new Error(`[Caravan] handle('${name}') was given no handler function`)
+
+      const queue       = o.queue       ?? 'default'
+      const maxAttempts = o.maxAttempts ?? 3
+      const retryDelay  = o.retryDelay  ?? []
 
       handlers.set(name, {
         name,
-        handler:     handler as JobHandler,
+        handler:  fn,
         queue,
         maxAttempts,
         retryDelay,
+        cron:     o.cron,
+        timeZone: o.timeZone,
       })
 
-      // Auto-create a worker if this handler targets a queue we don't have yet
-      if (!pool['_workers'].has(queue)) {
-        const worker = new QueueWorker(
-          queue,
-          { concurrency: 2 },
-          db, stmts, handlers, pollInterval, telemetry
-        )
-        pool.add(worker)
-        if (started) worker.start()
+      // WHEN it runs is declared beside WHAT it does. The schedule is
+      // registered here rather than in schedule() because handle() is the only
+      // call autoload makes — a job file that could not reach this could
+      // declare everything about itself except when it runs.
+      if (o.cron) {
+        cron.add({
+          name,
+          cron:     o.cron,
+          timeZone: o.timeZone,
+          // `actor: null` stated rather than inferred: a cron fire is the app's
+          // own work by definition, and nothing about a timer should depend on
+          // whether some unrelated request happened to be in scope when it fired.
+          fn: () => caravan.dispatch(name, {}, { queue, actor: null })
+            .catch(err => console.error(`[Caravan] Cron dispatch "${name}" failed:`, err)),
+        })
       }
+
+      ensureQueue(queue)
     },
 
     // ── cancel ───────────────────────────────────────────────────────────────
 
     async cancel(id: string): Promise<boolean> {
-      const result = stmts.cancel.run({ id, now: Date.now() })
+      const result = rt().stmts.cancel.run({ id, now: Date.now() })
       return result.changes > 0
     },
 
     // ── retry ────────────────────────────────────────────────────────────────
 
     async retry(id: string): Promise<boolean> {
-      const result = stmts.retryTerminal.run({ id, now: Date.now() })
+      const result = rt().stmts.retryTerminal.run({ id, now: Date.now() })
       return result.changes > 0
     },
 
@@ -171,7 +260,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       limit?:  number
       offset?: number
     } = {}): JobRecord[] {
-      return stmts.listJobs.all({
+      return rt().stmts.listJobs.all({
         queue:  listOpts.queue  ?? null,
         status: listOpts.status ?? null,
         limit:  listOpts.limit  ?? 50,
@@ -182,10 +271,14 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     // ── find ─────────────────────────────────────────────────────────────────
 
     find(id: string): JobRecord | null {
-      return (stmts.getById.get({ id }) as JobRecord | null) ?? null
+      return (rt().stmts.getById.get({ id }) as JobRecord | null) ?? null
     },
 
     // ── schedule (cron) ───────────────────────────────────────────────────────
+    //
+    // Sugar over handle(), so a recurring job registered here and one declared
+    // in its own file are the same registration — there is no second place a
+    // schedule can come from.
 
     schedule(
       name:      string,
@@ -193,18 +286,11 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       handler:   JobHandler,
       schedOpts: { queue?: string; timeZone?: string } = {}
     ): void {
-      cron.add({
-        name,
-        cron:      cronExpr,
-        timeZone:  schedOpts.timeZone,
-        fn:        () => caravan.dispatch(name, {}, { queue: schedOpts.queue ?? 'default' })
-          .catch(err => console.error(`[Caravan] Cron dispatch "${name}" failed:`, err)),
+      caravan.handle(name, handler, {
+        queue:    schedOpts.queue,
+        timeZone: schedOpts.timeZone,
+        cron:     cronExpr,
       })
-
-      // Register the handler so workers can process it
-      if (!handlers.has(name)) {
-        caravan.handle(name, handler, { queue: schedOpts.queue ?? 'default' })
-      }
     },
 
     // ── nextRuns ──────────────────────────────────────────────────────────────
@@ -216,7 +302,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     // ── stats ────────────────────────────────────────────────────────────────
 
     stats(): CaravanStats {
-      const rows = stmts.statsByQueue.all() as {
+      const rows = rt().stmts.statsByQueue.all() as {
         queue: string; status: string; count: number
       }[]
       return aggregateStats(rows, Object.keys(queueConf))
@@ -226,9 +312,13 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
     async start(): Promise<void> {
       if (started) return
-      started = true
 
-      // Autoload job files if a directory is configured
+      const { db, stmts } = rt()
+
+      // Autoload job files FIRST. A job file names its own queue and may
+      // declare its own cron, and both have to be known before the workers are
+      // built and the scheduler starts. `started` is still false here, so
+      // handle() records the queue name rather than building a worker per file.
       if (jobsDir) {
         const loaded = await autoloadJobs(jobsDir, caravan)
         if (loaded.length > 0) {
@@ -252,6 +342,16 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         if (sweepTimer.unref) sweepTimer.unref()
       }
 
+      // One worker per queue anything has named: opts, the config file, a job
+      // file, an earlier dispatch.
+      for (const [name, config] of Object.entries(queueConf)) {
+        if (pool.has(name)) continue
+        const worker = new QueueWorker(name, config, db, stmts, handlers, pollInterval, telemetry)
+        worker._app = host
+        pool.add(worker)
+      }
+
+      started = true
       pool.start()
       cron.start()
     },
@@ -262,41 +362,75 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       cron.stop()
       await pool.stop()
       started = false
-      db.close()
+      runtime?.db.close()
+      // The database the workers hold is now closed, so they cannot be reused;
+      // a start() after this builds fresh ones against a freshly opened db.
+      pool.clear()
+      runtime    = null
+      openedPath = null
     },
 
     // ── Junction plugin protocol ──────────────────────────────────────────────
 
     register(app: CaravanApp): void {
-      // If junction.config.js has a caravan section, apply values not already
-      // set by opts (opts always wins — explicit beats config file)
+      // The caravan section of junction.config.js. Every key is honoured, and
+      // opts always wins — explicit beats config file. Absent is not a value:
+      // the tests are `=== undefined`, so `cleanupAfter: 0` from a config file
+      // disables the sweep rather than reading as "unset" (`admin: false` the
+      // same way).
       const junctionCaravan = (app as {
         config?: { _junction?: { caravan?: Partial<CaravanOptions> } }
       }).config?._junction?.caravan
 
       if (junctionCaravan) {
-        if (!opts.jobsDir      && junctionCaravan.jobsDir)      jobsDir      = junctionCaravan.jobsDir
-        if (!opts.cleanupAfter && junctionCaravan.cleanupAfter) cleanupAfter = junctionCaravan.cleanupAfter
+        if (opts.db           === undefined && junctionCaravan.db           !== undefined) dbPath       = junctionCaravan.db
+        if (opts.jobsDir      === undefined && junctionCaravan.jobsDir      !== undefined) jobsDir      = junctionCaravan.jobsDir
+        if (opts.cleanupAfter === undefined && junctionCaravan.cleanupAfter !== undefined) cleanupAfter = junctionCaravan.cleanupAfter
+        if (opts.pollInterval === undefined && junctionCaravan.pollInterval !== undefined) pollInterval = junctionCaravan.pollInterval
+        if (opts.admin        === undefined && junctionCaravan.admin        !== undefined) adminOpts    = junctionCaravan.admin
+
+        // Per queue rather than wholesale: a queue named in both places keeps
+        // the opts config, a queue only the file names is added.
+        for (const [name, config] of Object.entries(junctionCaravan.queues ?? {})) {
+          if (!opts.queues?.[name]) queueConf[name] = config
+        }
+
+        // The database opens on first use, which is normally after this. A
+        // dispatch before configure() opens it at the default path, and a
+        // config file naming a different one can no longer take effect — say so
+        // rather than run against a file the app did not name.
+        if (openedPath && openedPath !== dbPath) {
+          console.warn(
+            `[Caravan] jobs database was already opened at '${openedPath}', so the configured '${dbPath}' is not in use — ` +
+            `something dispatched or read the queue before app.configure(createCaravan(…))`
+          )
+          dbPath = openedPath
+        }
       }
 
-      // Expose caravan instance on app.jobs. provide() refuses to overwrite an
+      // Expose caravan instance on app.jobs. claim() refuses to overwrite an
       // existing claim — two plugins owning one name used to be last-write-wins,
       // and the loser just stopped working with no error anywhere.
-      if (typeof app.provide === 'function') app.provide('jobs', caravan)
+      if (typeof app.claim === 'function') app.claim('jobs', caravan)
       else app.jobs = caravan
+
+      // The app itself, held for the two things a job needs it for: reading who
+      // is in scope at dispatch, and opening a scope to run the handler in.
+      // Workers are normally built later, in start(), and read `host` then; the
+      // backfill covers a queue that a dispatch before configure() built.
+      host = app
+      pool.each(worker => { worker._app = app })
 
       // Wire Junction telemetry — job lifecycle events flow to devtools feed
       if (app.telemetry) {
         telemetry = app.telemetry
-        // Backfill telemetry ref on workers already created before plugin boot
-        for (const worker of (pool as unknown as { _workers: Map<string, { _telemetry: typeof telemetry }> })._workers.values()) {
-          worker._telemetry = telemetry
-        }
+        pool.each(worker => { worker._telemetry = telemetry })
       }
 
-      // Wire into Junction's /metrics if available
-      if (app._metricsProviders instanceof Map) {
-        app._metricsProviders.set('jobs', () => caravan.stats())
+      // Wire into Junction's /metrics if available. Optional because Caravan
+      // runs standalone against a host that is not a Junction app at all.
+      if (typeof app.registerMetricsSource === 'function') {
+        app.registerMetricsSource('jobs', () => caravan.stats())
       }
 
       // Admin HTTP endpoints — opt-in via opts.admin
@@ -307,7 +441,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
         // These are raw app.get/app.post routes, so ctx is Junction's
         // TransportContext: headers live on ctx.headers (lowercased by the
-        // transport), NOT nested under ctx.params — params is path params only.
+        // transport), NOT nested under ctx.route — route is path captures only.
         //
         // Throwing an error that CARRIES its status. Junction's error boundary
         // reads a numeric `status`/`statusCode`/`code` off any thrown value, so
@@ -354,7 +488,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         appRouter.get(`${basePath}/{id}`, (ctx: unknown) => {
           const c = ctx as Record<string, unknown>
           guard(c)
-          const id  = (c.params as Record<string, string>)?.id
+          const id  = (c.route as Record<string, string>)?.id
           const job = caravan.find(id)
           if (!job) deny(404, `Job '${id}' not found`)
           return Response.json(job)
@@ -363,7 +497,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         appRouter.post(`${basePath}/{id}/retry`, async (ctx: unknown) => {
           const c = ctx as Record<string, unknown>
           guard(c)
-          const id = (c.params as Record<string, string>)?.id
+          const id = (c.route as Record<string, string>)?.id
           const ok = await caravan.retry(id)
           return Response.json({ ok })
         })
@@ -371,7 +505,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         appRouter.post(`${basePath}/{id}/cancel`, async (ctx: unknown) => {
           const c = ctx as Record<string, unknown>
           guard(c)
-          const id = (c.params as Record<string, string>)?.id
+          const id = (c.route as Record<string, string>)?.id
           const ok = await caravan.cancel(id)
           return Response.json({ ok })
         })
@@ -392,7 +526,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         appRouter.post(`${basePath}/run/{name}`, async (ctx: unknown) => {
           const c = ctx as Record<string, unknown>
           guard(c)
-          const name = (c.params as Record<string, string>)?.name
+          const name = (c.route as Record<string, string>)?.name
           if (!handlers.has(name))
             deny(404, `No handler registered for '${name}'`)
 
@@ -423,20 +557,34 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 }
 
 // ─── defineJob ────────────────────────────────────────────────────────────────
-// Used in *.job.ts files for autoloading.
-// The __caravanJob marker lets autoload.ts identify valid exports.
+//
+// Used in *.job.ts files for autoloading. The __caravanJob marker lets
+// autoload.ts identify valid exports, and the NAME must match the file it is
+// in — autoload refuses a mismatch rather than registering one name while every
+// dispatch says another.
+//
+// The result is also the dispatch handle. `dispatch(sendEmail, { to })` states
+// the name nowhere and types the payload from this handler, where a bare string
+// is stated again at every call site and carries `unknown` on both sides.
+//
+//   export default defineJob('nightly-sweep', sweep, { cron: '0 3 * * *' })
+//
+// A job that declares `cron` needs nothing in app.ts: WHEN it runs is part of
+// the declaration, next to WHAT it does.
 
 export function defineJob<T = unknown>(
   name:    string,
   handler: JobHandler<T>,
   opts:    HandlerOptions = {}
-): RegisteredHandler & { __caravanJob: true } {
+): JobDefinition<T> {
   return {
     __caravanJob: true as const,
     name,
-    handler:     handler as JobHandler,
+    handler,
     queue:       opts.queue       ?? 'default',
     maxAttempts: opts.maxAttempts ?? 3,
     retryDelay:  opts.retryDelay  ?? [],
+    cron:        opts.cron,
+    timeZone:    opts.timeZone,
   }
 }

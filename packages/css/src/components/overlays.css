@@ -37,11 +37,16 @@
  * transition-duration for everything here.
  */
 
-:root {
-  --overlay-time: 160ms;
-  /* Decelerating, so the element arrives rather than stops. */
-  --overlay-ease: cubic-bezier(0.16, 1, 0.3, 1);
-}
+/*
+ * The overlay tier's own pair, read at every use site with the shared motion
+ * ladder as the fallback arm. NOT declared at :root as
+ * `--overlay-time: var(--motion-enter)` — that resolves ONCE, against :root's
+ * own --motion-enter, and inherits the resulting 160ms past every .theme-*, so
+ * a theme retuning the ladder would move everything except the overlays. The
+ * same alias trap --ring and --badge-radius are written around.
+ *
+ * --motion-ease-enter is decelerating, so the element arrives rather than stops.
+ */
 
 /*
  * background/border-color repeat surface.css's own transition because this
@@ -53,12 +58,12 @@ dialog.drawer,
 [popover].popover,
 .toast {
   transition:
-    opacity    var(--overlay-time) var(--overlay-ease),
-    transform  var(--overlay-time) var(--overlay-ease),
-    background 120ms,
-    border-color 120ms,
-    display    var(--overlay-time) allow-discrete,
-    overlay    var(--overlay-time) allow-discrete;
+    opacity    var(--overlay-time, var(--motion-enter)) var(--overlay-ease, var(--motion-ease-enter)),
+    transform  var(--overlay-time, var(--motion-enter)) var(--overlay-ease, var(--motion-ease-enter)),
+    background var(--motion-fast),
+    border-color var(--motion-fast),
+    display    var(--overlay-time, var(--motion-enter)) allow-discrete,
+    overlay    var(--overlay-time, var(--motion-enter)) allow-discrete;
 }
 
 /* ── Dialog and Drawer — the open attribute is the state ──────── */
@@ -91,9 +96,9 @@ dialog.dialog::backdrop,
 dialog.drawer::backdrop {
   opacity:    0;
   transition:
-    opacity var(--overlay-time) var(--overlay-ease),
-    display var(--overlay-time) allow-discrete,
-    overlay var(--overlay-time) allow-discrete;
+    opacity var(--overlay-time, var(--motion-enter)) var(--overlay-ease, var(--motion-ease-enter)),
+    display var(--overlay-time, var(--motion-enter)) allow-discrete,
+    overlay var(--overlay-time, var(--motion-enter)) allow-discrete;
 }
 
 dialog.dialog[open]::backdrop,

@@ -148,6 +148,68 @@ their list; here it is the one that closes a hole the repo has already written d
 
 ---
 
+## 6. `fli tinker` — a console that boots at a gate level — **shipped 2026-08-15**
+
+`litestone repl --as alice@example.com --gate ./api/gate.ts`, and `fli tinker`
+over it. `db` is the standing you asked for; `sys` is `asSystem()`.
+
+**Three of this record's claims were wrong and the corrections are the useful
+part.** It said there is no REPL anywhere and every grep hit for `repl` is inside
+the word `replace` — `litestone repl` had shipped, with a preload and a
+subprocess. It said there is no `bun repl` and the subcommand falls through to
+`bun run` — on bun 1.3.11 it prints a welcome banner and works. And it said the
+interesting version, booting as a principal, does not exist: **Studio had it
+already.** `POST /api/repl` evaluates arbitrary expressions with `db` bound to
+`activeDb.$setAuth(pickedUser)`, `sys` bound to `asSystem()` beside it, every
+statement tapped through `$tapQuery`, and an auth picker fed from the `@@auth`
+model.
+
+So the engine existed twice and the item was a terminal door. Which leaves the
+lesson: **this record was written from a grep and the grep was for the wrong
+word.** The `only` claim was right, the inventory was not, and a survey that had
+opened Studio would have found the whole thing.
+
+**What genuinely was not there, and it is the rule the item rests on.** A
+subprocess REPL owns its prompt, so it cannot say what it is running as — and a
+console that does not show its standing is a god-mode console with an extra flag.
+`bun repl` + a temp file + `.load` + two fixed sleeps became `node:readline`
+hosted in the command's own process, which also removed the restriction that the
+REPL could not run from a standalone binary.
+
+**`--gate <path[#export]>` is the flag the feature turned out to need, and it is
+the whole honesty of it.** Without it a console grades with
+`FrontierGateGetLevel` — the default resolver, not necessarily the one the app
+installed. Measured on `example`: the default grades `ops@acme.test` at 3
+(CREATOR); the app's own `shopGateLevel` grades the same row at 4 (USER); `Order`
+is `@@gate("0.4.4.5")`, so a create is refused in the console and permitted in
+the app. A console that is *approximately* somebody's session is worse than no
+console, because you act on what it shows you. The banner names which resolver
+answered.
+
+**`--as` and `--level` stayed separate**, which this record had right for the
+right reason. One runs a resolver over a real row; the other fixes the answer. A
+ladder walked with the second says nothing about whether the first works — the
+same split `createTestEnv` keeps between `actingAs` and `atLevel`. A `--level`
+standing also has no `auth()`, so every `auth().id ==` row policy matches nothing
+and its model answers an empty list rather than refusing, which the console says
+out loud because the two are indistinguishable from the result.
+
+**A trap that has nothing to do with consoles and would bite any of them.**
+`rl.pause()` does not hold back lines readline has already buffered, so a pasted
+block fires every handler and the statements complete in whatever order their
+awaits finish — against a database, writes landing in an order nobody wrote.
+Serialising is a promise chain, and `close` has to await it too.
+
+**What is left is the `M` this record predicted, and it is the API realm.** `db`
+and nothing above it: a console over the app's *services* — hooks, the result
+envelope, custom methods — is `@frontierjs/testing`'s `as(user).service(name)`
+handed to this prompt, which needs the app booted rather than the schema read.
+And `asSystem()` is reachable here but not attributed to the operator, which is
+the same question `IDEAS/compliance-from-the-seed.md` §6 asks about support mode
+and should be answered once for both rather than twice.
+
+---
+
 ## Smaller, still worth doing
 
 | Item | Why |

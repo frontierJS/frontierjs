@@ -1,11 +1,12 @@
 {
-  // Table-based email components (.mesa) plus the renderer, all JS.
+  // Table-based email components and the `target: 'email'` wrapper (all JS).
   //
-  // checkJs is off, matching mesa and css: the value here is that Invariant
-  // 14's ratchet can SEE this package at all. Without a typecheck script it
-  // was the one workspace member the ceiling could not be raised or lowered
-  // for, because nothing measured it.
+  // checkJs is off: turning it on today reports 33 errors, almost all implicit
+  // `any` on untyped parameters — noise rather than a gate. The config still
+  // gives editors import resolution and go-to-definition, and any .ts added
+  // here is checked for real. Flip checkJs on per-directory when the JS here
+  // grows types worth enforcing.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "checkJs": false },
-  "include": ["*.js"]
+  "include": ["index.js", "render.js", "components/**/*.js", "templates/**/*.js", "*.test.js"]
 }

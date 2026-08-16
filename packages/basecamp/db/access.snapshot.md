@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 37 models · 37 gated · 0 unrestricted
-2 with row policies · 5 with protected fields · 0 gated transitions
+16 with row policies · 5 with protected fields · 0 gated transitions
 ```
 
 ## Gates
@@ -64,6 +64,118 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 A policy compiles into the WHERE clause. It never raises — a wrong one is an
 empty result with a 200, so read these as "which rows", not "which callers".
 An operation with no `@@allow` is unrestricted at this layer.
+
+### `AlertRule`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `ApiKey`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `App`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `Dashboard`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `Deployment`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `Domain`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `Environment`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `FeatureFlag`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `Job`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `Network`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `NotificationChannel`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `Project`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `Recipe`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
+### `Secret`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
 
 ### `Server`
 

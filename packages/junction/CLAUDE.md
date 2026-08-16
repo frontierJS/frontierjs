@@ -19,10 +19,13 @@ src/
                     Lifecycle: configure → start → ready → running → shutdown
     service.ts      the heart — createBaseService (5 CRUD) + createService (compose)
     context.ts      ServiceContext, OWNED BY CORE. auth / client / route / locals
+    directives.ts   QueryDirectives — the `$` fields, and nothing else.
+                    Imports NOTHING, so the browser client can name them without
+                    dragging node:async_hooks into a bundle. context.ts re-exports
     hooks.ts        Feathers-style pipeline + `around`
     hooks-builtin.ts, hooks-resilience.ts
-    litestone.ts    the Data adapter — withLitestoneDb, gateAuth, sessionGateLevel,
-                    toDataPrincipal, accessorCandidates
+    litestone.ts    the Data adapter — withLitestoneDb, withTenantDb, gateAuth,
+                    sessionGateLevel, toDataPrincipal, accessorCandidates
     envelope.ts     the result envelope — one module, one owner
     errors.ts       named HTTP error classes + `retryable`
     schema.ts       request validation from the generated JSON Schema
@@ -37,7 +40,11 @@ src/
     channels.ts     real-time channels; publish()
     middleware.ts, body.ts, health.ts, presence.ts, static.ts, types.ts
 
-  client/index.ts   the browser client — WS first, HTTP fallback
+  client/index.ts   the browser client — WS first, HTTP fallback. `client.auth`
+                    is the auth surface: the routes that establish a session and
+                    the services for what the caller does to their own
+                    credentials, both, because to the person signing in that is
+                    one subject
   ../tools/surface.ts  `junction surface` — the committed surface.snapshot.md,
                     read off a BUILT app (describe() + buildRoutes()), --check in CI
   ../tools/errors-snapshot.ts  `junction errors` — the committed errors.snapshot.md,
@@ -51,13 +58,15 @@ src/
 
 ## What bites here
 
-- **A SERVICE context has no `ctx.params`.** It splits into `auth` (the
-  principal) / `client` (`ip`, `userAgent`, `headers`) / `route` (path captures) /
-  `locals` (per-call scratch — `withLitestoneDb` puts `db` there). A **raw-route**
-  `TransportContext` *does* have `params`, and that asymmetry is the trap. This
-  package's own docs get it wrong in places (`core/app.ts` around the
-  `app.service('users').get(id, ctx.params)` examples, `core/litestone.ts`'s
-  "cached on `ctx.params`" comment) — fix them when you pass, they cost real time.
+- **There is no `ctx.params`, on either context.** Deleted rather than renamed
+  (`FJS-D03`): in Feathers `params` is the whole context bag, and that idiom kept
+  arriving here — `ctx.params.user`, `ctx.params.headers`,
+  `app.service(x).get(id, ctx.params)` — where a field of that name holding
+  something *else* is how a role check reads `undefined` and passes for everyone.
+  Path captures are **`ctx.route`** on both contexts. Sierra says `page.params`;
+  one word per realm, and the crossing is stated in both docs.
+
+  See **§ The two contexts** below for which one you are holding and when.
 - **Raw routes use `{id}`, not `:id`.** A `:id` registers as a literal segment
   and 404s silently forever.
 - **`app.get`/`app.post`/… apply `apiPrefix`; `app.http.router.get` does not.**
@@ -99,6 +108,12 @@ src/
   transport names (`limit`/`keyFn`/`skipFn`) **throw**: silently ignoring `limit`
   would leave `max` undefined and `count > undefined` is never true, so the
   limiter would accept everything and say nothing.
+- **`rateLimitHook` returns a `BridgeHook`, not a `Hook`** —
+  `(ctx: ServiceContext | TransportContext) => void`. It runs in a pipeline and
+  on a raw route, and the parameter is WIDER than `Hook`'s, which is what keeps
+  it assignable into a `before:` map. It ran on both long before it said so; the
+  signature claimed `ServiceContext` and auth's `any`-typed handlers were the
+  only reason its routes compiled (`FJS-063`).
 - **`clientIp(ctx)` reads either context shape.** A TransportContext carries `ip`
   at the top level; a ServiceContext splits client facts into `ctx.client`. That
   one-line gap is what grew a third limiter inside `@frontierjs/auth`, whose
@@ -143,9 +158,10 @@ src/
   nothing typed it.
 - **The API surface is committed, and nothing in a source file can answer it.**
   `junction surface --app <module> [--services <dir>]` writes `surface.snapshot.md`
-  off a built app — methods after the policy, actions as `collectActions` resolved
-  them, the hook chain in RUN order with the derived hooks leading it, every
-  mounted path with `apiPrefix` applied, plugins in configure order. `--check` is
+  off a built app — methods after the policy, custom methods as
+  `collectCustomMethods` resolved them, the hook chain in RUN order with the
+  derived hooks leading it, every mounted path with `apiPrefix` applied, plugins
+  in configure order. `--check` is
   the CI half (`snapshots` phase). Two constraints on the app it is pointed at:
   it must expose the app **without listening** (a built `App` or a factory — the
   same contract `@frontierjs/testing` takes as `api:`; guard an entry's
@@ -158,16 +174,25 @@ src/
   `hasExactRoute(method, path)` / `routePaths(method)`. For the whole surface at
   once, `buildRoutes(app)` (plugins/manifest) — it rides `/manifest`, and
   `fli api:routes` is the CLI caller.
+- **An auth provider is what Junction CALLS, and that is `verifySession`.**
+  `createApp({ auth })` and `setAuth()` take `SessionVerifier`, not `IAuth` —
+  the full interface declares six required methods and this package invokes two
+  (`verifySession` on both inbound paths, `sessionFor` behind `runAs`, whose
+  absence throws by name). The other four are `/auth/*`'s. The type is DERIVED
+  (`Pick<IAuth,'verifySession'> & Partial<IAuth>`) so it cannot drift from
+  `IAuth`, and the `Partial` half is load-bearing: without it TypeScript's
+  excess-property check refuses an object literal carrying `login`, which is the
+  provider it exists to accept. `FJS-D10`.
 - **`register` is sync** — `configure()` never awaits it. Async setup goes in
   `boot()`. `requires: ['mailer']` is checked at startup against presence *and*
   configure order.
 - **One owner per translation** (Invariant 4): errors → `toFrameworkError`,
   envelope → `envelope.ts`, `$`-params → the bridge, announcement → `callService`,
-  actions → `_actions` (built by `collectActions`), pipelines → `svc.pipelines()`,
-  "what is this service" → `svc.describe()`. Add to the owner, never beside it.
-- **`methods:` DECLARES the actions; the scan is the fallback.** With a list,
-  every non-CRUD name in it is an action resolved off the definition — which is
-  the only way to name an action after an option key (`cache`, `schema`,
+  custom methods → `_customMethods` (built by `collectCustomMethods`),
+  pipelines → `svc.pipelines()`, "what is this service" → `svc.describe()`. Add to the owner, never beside it.
+- **`methods:` DECLARES the custom methods; the scan is the fallback.** With a
+  list, every non-CRUD name in it is a custom method resolved off the definition
+  — which is the only way to name one after an option key (`cache`, `schema`,
   `channel` are otherwise eaten by the deny-list with no error). Without one,
   function keys are scanned for, exactly as before. A name in the list with no
   function throws at construction, naming what IS available.
@@ -180,6 +205,36 @@ src/
   non-enumerable. `createService` on a marked object returns it unchanged, and
   the autoloader tests the marker rather than sniffing one field's type. A spread
   copy is correctly NOT built.
+- **`client.auth` is the browser half of `@frontierjs/auth`, and it lives here
+  because the token does.** This client holds the token, opens the socket and
+  knows both prefixes; an app writing its own sign-in had to reproduce all three,
+  and both dogfood apps did, differently (`FJS-D20`). Two properties to keep:
+  **signing out tells the server** (dropping the token locally leaves the session
+  row valid until it expires — nothing in this repo called `POST /auth/logout`
+  before this), and **`tokenStorage` is the token's one owner**, so `setToken`
+  persists, clears and emits `token` for anything cached per identity.
+- **A 401 keeps the server's own sentence.** `_request` used to throw
+  `Unauthorized` before reading the body, so `Invalid credentials` never reached
+  a caller — which is most of what a hand-written sign-in page was doing when it
+  re-mapped the status itself.
+- **`createApp({ tenants })` replaces `createApp({ db })`, it does not join it.**
+  A schema declaring `tenancy { strategy database }` has one SQLite file per
+  tenant, so the CLIENT is per request: `withTenantDb` resolves the tenant and
+  assigns `ctx.locals.db`. That is the same slot `withLitestoneDb` assigns, and
+  installing both would leave which one wins to hook order. **Which tenant a
+  request is for is asked, never re-derived** — `registry.tenantFor({ host,
+  headers, principal })` applies the `resolve` the schema declares, and this
+  side contributes only what a transport has and what the refusal's status code
+  is. Work with no request behind it (a job, a sweep) carries
+  `{ locals: { tenantId } }`, which is the one thing `locals` being
+  hand-down-able is for.
+- **Row tenancy needs no hook and fails the other way round.** One database, a
+  tenant column, and the schema's own policies scope every query — so a
+  **signed-in** principal carrying no claim matches no row and every screen is
+  an empty list with a 200, which is indistinguishable from a tenant with no
+  data. `tenantClaimGuard` refuses that by name on a scoped service. Anonymous
+  is deliberately not its business: nobody is not a caller missing a claim, and
+  refusing there breaks every public read the app's `@@gate` exists to grade.
 - **`sessionGateLevel()` is a hand copy** of the same function in Litestone
   (which cannot import Junction). Change one, change both. `toDataPrincipal()` is
   the other half of that boundary — `userId` → `id`, without which every
@@ -204,16 +259,85 @@ src/
   an action's extra keys (`FJS-140`) and turned a non-list `find` into an empty
   list in the browser (`FJS-144`). The browser client calls this same function
   rather than copying the rule — that copy is how the two ends drifted.
+- **A stream is not a result and `wrapResult` refuses one by name** (`FJS-D13`).
+  `Response`, `ReadableStream`, anything with `getReader`, an async iterable. It
+  used to wrap them, and both a Response and a ReadableStream have no enumerable
+  own properties — so a method returning one answered `{"kind":"single","data":
+  {}}`, an empty object with a 200 and the stream destroyed. **`kind` stays
+  two-valued**: a third value is branched on at ten sites and lands in every one
+  as *not a list*. Each FRAME is a result and the stream is not — which is why
+  `publish()` is an after-hook (a pushed frame IS `ctx.result`, already through
+  `protect()`) and why `ctx.sse()` on a raw route has no hooks, no `gateAuth` and
+  no field protection: right for a heartbeat, wrong for records.
+- **A `resource()` store is scoped to the query its last `load()` ran with**, and
+  only if the caller passed a `match` — this package holds no schema, so it
+  cannot decide; Sierra's `matchesQuery` is what it is given. `true` upserts,
+  `false` REMOVES (a patch is how a row leaves a list, and nothing else announces
+  that), `null` means *undecidable from this record* and reloads instead of
+  guessing, once per burst. With no `match` every event applies, which is the old
+  behaviour and the one every non-Sierra caller still gets.
+- **A push is also PLACED, and a page past the first refuses one.** `orderBy`
+  decides where the row goes (`core/sort.ts`, which is `parseSort` — one reading
+  of `-createdAt`), and on the first page the row pushed past `limit` belongs to
+  page 2. Past page 1 nothing here can know whether a new row belongs on an
+  earlier one, so it is refused and counted on `stale`, which a view renders as
+  *3 new — refresh* and `load()` clears. The limit and offset come off the
+  ENVELOPE, not the params — the effective limit is the server's.
 - **`resource().load()` writes the store only if it is still the newest load.**
   Stamped when issued (`FJS-082`); an overtaken load still RETURNS its rows to
   the caller that awaited them, and its request is not cancelled. Code reading
   the return value of a load it may have superseded is reading stale rows on
   purpose — the store is what is current.
-- **A custom action announces under its own name** (`orders pay`) since
-  2026-08-06. Only `find`/`get` are excluded; a read-shaped action opts out with
+- **A custom method announces under its own name** (`orders pay`) since
+  2026-08-06. Only `find`/`get` are excluded; a read-shaped one opts out with
   `ctx.dispatch = false`.
+- **`changed` is the announcement for a write that cannot name its row.**
+  `announceDataWrites` used to drop every event whose `result` was null, which is
+  a bulk statement answering `{count}` and a `select: false` write, both — so a
+  job doing `createMany` left every tab stale (`FJS-307`). One event name for all
+  three operations, since the receiving store's only honest answer is the same
+  for each; the operation is in the payload. **The caller's `where` goes on the
+  bus and never on a channel** — the bus is in-process, a channel is every
+  subscribed browser, and a filter is made of the caller's own values. The
+  browser store reloads on it and the `*` catch-all skips the name, or the count
+  object lands in the store as a row.
+- **Boot-time console output splits into two kinds and only one is loud.**
+  `core/diagnostics.ts` owns the question, reading `DEBUG=1`. A DIAGNOSTIC
+  describes what happened — the loader's per-service registration line, the
+  anonymous-hook style note — and is silent unless asked for; `/manifest`
+  answers the first on demand and the second is one line per SERVICE naming
+  every position, not one per phase per method. A WARNING describes a probable
+  defect — a duplicate service, a file with no factory, a hook map on a method
+  the service does not have — and is unchanged. The old gate was
+  `NODE_ENV !== 'production'`, which is every developer all of the time.
+- **`ctx.data` is a row OR an array of rows, and a hook that forgets the second
+  is silent.** Bulk create sends the array. `timestamps()` set `created_at` and
+  `updated_at` as properties OF THE ARRAY — so every row of every bulk create
+  went in with no timestamps — and `allow()` filtered nothing on the same shape.
+  Narrow with `Array.isArray` and map; both now do.
+- **A `__`-prefixed field on a context is a CONTRACT, so declare it.** A
+  middleware runs before the response exists, so it leaves headers on
+  `TransportContext` and `_finalizeWithHeaders` applies every bucket at the end:
+  `__cors`, `__securityHeaders`, `__rateLimit`, `__correlationHeaders`,
+  `__pendingCookies`, `__status`. All six were reached through
+  `(ctx as Record<string, unknown>)` on both sides, which means a middleware
+  writing a misspelled bucket compiled, ran, and dropped its headers with nothing
+  said. Same for `Connection.__joinMeta` and `Channel.__presenceWrapped`.
+  **An assertion to `Record<string, unknown>` is the smell**: nine of the
+  twenty-five here were reaching a field the type already had.
+- **This package's consumer surface must stay at zero.** `index.ts` + `src/**`
+  is what an app compiles — the `exports` map points at `.ts` and nothing emits
+  `.d.ts`, so junction's own errors land in every app's `tsc` and editor. The
+  baseline in `scripts/typecheck-baselines.json` covers `tests/` and `example/`
+  as well, so it can be green while the half that ships is not; check the split
+  before assuming a number is fine. `FJS-268`.
 - **Fake clients hide real bugs.** Cross-package behaviour goes in
   `tests/real-litestone-client.test.ts`, against a real client.
+- **`tests/email.test.ts` calls `mock.module()` on the smtp shim, and bun does
+  not undo that.** The replacement is process-wide for the rest of the run, so
+  any later test importing `src/mail/smtp.ts` grades the mock — one passed alone
+  and failed inside the suite, which is the good outcome; the bad one is passing
+  in both. `tests/smtp-starttls.test.ts` drives a subprocess for that reason.
 - **`ctx.result` must be `null`, not absent**, when hand-building a context in a
   test — `runPipeline` reads non-null as "a before hook already answered".
 - **The HTTP and WS paths build their context separately** — `bridge.toContext()`
@@ -236,6 +360,101 @@ src/
   category nobody named. The cross-package rows are the ones that drift, and they
   are where `FJS-255` was found: the three lock errors declare `retryable` and no
   `status`, so each reaches a caller as a 500. `--check` in CI (`snapshots`).
+
+## The two contexts
+
+Junction hands out two, and which one you have is decided by **where your code is
+mounted**, not by what you asked for.
+
+| | `TransportContext` | `ServiceContext` |
+| --- | --- | --- |
+| You get one by | `app.get` / `app.post` / a middleware / a WS handler | a service method, any hook, `app.service(x).method()` |
+| Created per | **request** | **call** — one request may make several |
+| Ends when | the response is returned | the pipeline finishes |
+| The principal | `ctx.user` — flat, may be `null` | `ctx.auth.user` — frozen, propagates |
+| Caller environment | `ctx.ip`, `ctx.headers` — flat | `ctx.client.{ip,userAgent,headers}` |
+| Path captures | `ctx.route` | `ctx.route` — `{}` on an internal call |
+| The URL's search | `ctx.query` — **raw, `$` keys present** | `ctx.query` (filters) + `ctx.directives` (shape) |
+| Scratch | — | `ctx.locals`, fresh every call |
+| Responding | `ctx.json` / `text` / `html` / `file` / `sse` / `paginate` | return a value; the envelope is built for you |
+| Reaching the other | — | `ctx.$raw` — the transport ctx, or `null` |
+
+**Where they must agree.** `route` is the same word for the same thing and the
+bridge copies it across; `client.headers` is the transport's `headers`, same
+bytes; the principal is the same object, resolved once by the transport, frozen,
+and handed on.
+
+**Where they deliberately differ, and why.**
+
+- **`query`.** On the transport it is the search string as it arrived, `$limit`
+  and all. On a service the bridge has split it into `query` (filters — becomes
+  the WHERE) and `directives` (`{limit, offset, orderBy, select}` — shape).
+  Nothing past the bridge reads a `$` (Invariant 10). Conflating the two is what
+  once made `?limit=1` a filter on a column named `limit` — zero rows, no error.
+- **The principal's spelling.** `ctx.user` is flat because a raw route has no
+  pipeline and nothing to propagate. `ctx.auth.user` is nested because `auth` is
+  one of four fields with four different lifetimes, and grouping them is what
+  makes the contract statable at all.
+- **`locals` exists on one side only.** A raw route has no phases, so there is
+  nothing for scratch to live *between*.
+
+### The four fields, and their rules
+
+The substance of a `ServiceContext` is not its field list, it is that each of
+these behaves differently. `tests/context-contract.test.ts` asserts all four by
+running them, because none of it is expressible as a type — and one of them was
+documented here for months while being false.
+
+| Field | Rule |
+| --- | --- |
+| `auth` | WHO. **Frozen** — a hook mutating it throws rather than leaking into a sibling call. **Propagates**: a call naming no principal inherits the one in scope, at any depth. An explicit `{ user: null }` means *as nobody* and is kept — **absent is not null** |
+| `client` | WHERE FROM. Read-only, propagates. `{ headers: {} }` when there is no request. **Information, never authority** — nothing here grades a caller by it |
+| `route` | Path captures. Router-only, `{}` on an internal call |
+| `locals` | Per-call scratch. **Fresh `{}` every call, and it does NOT propagate** — a sub-service physically cannot reach its caller by writing to it. It CAN be handed down deliberately (`{ locals: … }`), which is the whole difference between passing and inheriting |
+
+Propagation rides the `AsyncLocalStorage` store the transport already wraps a
+request in, so nothing is threaded and no caller is rebuilt. A call whose
+principal *differs* re-scopes — which is what makes a sub-call issued as somebody
+else pass **that** principal to its own children rather than the request's.
+
+### One object, three boundaries
+
+`QueryDirectives` is declared in `core/directives.ts` and read by the bridge
+(off a request), the browser client (writing `$` names out) and — through
+`page.directives` — Sierra's router and resource. So `resource.load(page.query,
+page.directives)` is the same object all the way down with nothing to translate,
+which is Invariant 10's point.
+
+**Filters are always the first argument.** The client's second argument used to
+be a `FindParams` that also held `query`, which made the container both halves
+of the split; and it named five of them, so `$search`, `$withDeleted` and
+`$onlyDeleted` could not be asked for at all (`FJS-290`). `$first` and `$wrap`
+stay out of the type — transport-only, no structured form on the other side,
+which is the same line `DIRECTIVE_PARAMS` / `TRANSPORT_PARAMS` already draws.
+
+### Work that outlives the request
+
+A job, a retry, a scheduled sweep runs after the store is gone, so it has no
+principal at all — and no principal is STRANGER(0), refused by the model's own
+`@@gate`. Two members answer it, and neither is Caravan-specific:
+
+- **`app.principal()`** — who is in scope, asked from somewhere holding no `ctx`.
+  Read when work is *enqueued*, to record who asked.
+- **`app.runAs(userId, fn)`** — opens a scope for a principal **re-resolved now**,
+  through `IAuth.sessionFor(userId)`. Inside it, `auth` propagates as it does
+  anywhere else, so `fn` makes ordinary service calls that name no principal.
+  `null` means the app's own `createApp({ system })`; an app declaring none gets
+  `null` rather than an invented identity.
+
+**Re-resolved, never replayed.** Storing the session would be shorter and would
+let a caller demoted between asking and running keep the authority they had when
+they asked — a captured privilege that outlives its own revocation, for as long
+as the retry schedule runs. So an id is what travels. A provider with no
+`sessionFor`, or a user who no longer exists, **throws by name**: downgrading to
+STRANGER(0) is the bug being removed and upgrading to the system principal would
+be worse.
+
+---
 
 ## Proving a change
 

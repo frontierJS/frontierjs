@@ -102,7 +102,7 @@
 .facts.divided > dt,
 .facts.divided > dd {
   padding-block-start: var(--space-md);
-  border-block-start:  1px solid var(--rule);
+  border-block-start:  var(--border-width) solid var(--rule);
 }
 .facts.divided > :nth-child(-n + 2) {
   padding-block-start: 0;

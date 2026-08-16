@@ -1,0 +1,21 @@
+<script>
+  // popover.mesa — Popover with both snippets, plus a target OUTSIDE it for
+  // the click-away path, which is the half a click on the trigger cannot test.
+  import Popover from '../../../components/overlay/Popover.mesa'
+  import Button  from '../../../components/forms/Button.mesa'
+
+  export let placement = 'bottom-start'
+</script>
+
+<div style:padding="6rem 3rem">
+  <Popover placement={placement} label="More options">
+    {#snippet trigger()}
+      <Button id="pop-trigger">More options</Button>
+    {/snippet}
+    {#snippet content()}
+      <p id="pop-body" class="text-sm">Popover body</p>
+    {/snippet}
+  </Popover>
+</div>
+
+<button type="button" id="outside">Elsewhere</button>

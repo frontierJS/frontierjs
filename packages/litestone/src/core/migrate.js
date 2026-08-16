@@ -508,6 +508,33 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
 
 // ─── SQL generation ───────────────────────────────────────────────────────────
 
+// The next statement after the copy is `DROP TABLE`, so a copy that lost rows
+// destroys them one line later and reports success. Nothing above SQLite is
+// watching: the runner executes statements, and a smaller row count is not an
+// error to any of them.
+//
+// SQLite has no assertion — `RAISE()` is legal only inside a trigger body — so
+// the comparison is written as a CHECK on a temp table that holds exactly one
+// row. The constraint NAME is the message, because that is what SQLite prints:
+// `CHECK constraint failed: rebuild of order lost rows`. It aborts the
+// statement, the runner's transaction rolls back, and the old table is still
+// there.
+//
+// Emitted even when nothing is copied — a rebuild sharing no column with the
+// old table is precisely the case that empties it in silence today.
+function rowCountGuard(tableName, tmp) {
+  return [
+    `-- the copy must not have lost rows — the next statement drops the original`,
+    `CREATE TEMP TABLE "_litestone_rowcount" (`,
+    `  ok INTEGER CONSTRAINT "rebuild of ${tableName} lost rows" CHECK (ok = 1)`,
+    `);`,
+    `INSERT INTO "_litestone_rowcount" (ok)`,
+    `  SELECT CASE WHEN (SELECT count(*) FROM "${tmp}") = (SELECT count(*) FROM "${tableName}") THEN 1 ELSE 0 END;`,
+    `DROP TABLE "_litestone_rowcount";`,
+    ``,
+  ]
+}
+
 function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
   // Must match createTable's physical columns exactly — implicit m2m and @edge
   // fields have no host column, so they can't appear in the INSERT ... SELECT.
@@ -548,6 +575,7 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
     lines.push(`-- no columns shared with the old table — nothing to copy`)
   }
   lines.push(``)
+  lines.push(...rowCountGuard(tableName, tmp))
   lines.push(`DROP TABLE "${tableName}";`)
   lines.push(`ALTER TABLE "${tmp}" RENAME TO "${tableName}";`)
   return lines.join('\n')

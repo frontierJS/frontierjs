@@ -482,7 +482,22 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     return record
   }
 
-  async function createMany({ data }) {
+  async function createMany({ data, announce } = {}) {
+    // A jsonl table announces nothing at all — there is no emitter down here and
+    // no RETURNING to build rows from. `collection` and `none` are both
+    // truthfully answered by silence; `rows` is a caller expecting per-row
+    // announcements they will never receive, so it is refused BY NAME rather
+    // than accepted and ignored (FJS-D34).
+    if (announce === 'rows') {
+      const err = new Error(
+        `db.${model.name}.createMany({ announce: 'rows' }) — this model lives in a jsonl ` +
+        `database, which is append-only and has no RETURNING, so no row can be announced. ` +
+        `Use announce: 'collection' or 'none'.`)
+      err.name      = 'CapabilityNotDeclaredError'
+      err.status    = 400
+      err.retryable = false
+      throw err
+    }
     if (!data?.length) return []
     // Serialize the whole batch into ONE buffer + ONE append, and wrap index
     // inserts in ONE transaction — previously this was N fd open/write/close

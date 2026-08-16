@@ -31,7 +31,7 @@ title: Hub overview
       // answer into a list envelope and turns anything that is not a list into
       // an EMPTY one — so this object arrived as `{ data: [] }` with a 200 and
       // this screen rendered nothing at all (`FJS-144`).
-      info = await hub.service.action('overview', null)
+      info = await hub.service.invoke('overview', null)
     } catch (e) {
       error = e.message
     } finally {

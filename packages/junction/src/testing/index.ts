@@ -134,6 +134,11 @@ export interface TestAppOptions {
   // Override the stub auth with your own
   auth?:       IAuth
 
+  // The principal the app's own background work runs as — see AppOptions.system.
+  // Forwarded because a job dispatched by nobody resolves to it, and a test
+  // that cannot declare one cannot tell that answer apart from "no principal".
+  system?:     import('../auth/types.ts').SessionContext
+
   // Pre-seeded test users (shorthand for createStubAuth)
   users?:      StubUser[]
 
@@ -169,7 +174,7 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
     ...(opts.config ?? {}),
   }
 
-  const app = createApp({ config, auth, autoload: opts.autoload }) as TestApp
+  const app = createApp({ config, auth, system: opts.system, autoload: opts.autoload }) as TestApp
 
   // app.db isn't set by createApp — Junction core doesn't know about Litestone.
   // For test ergonomics, wire an in-memory database here so tests that read

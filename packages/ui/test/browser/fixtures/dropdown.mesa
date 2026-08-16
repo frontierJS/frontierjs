@@ -1,0 +1,70 @@
+<script>
+  // dropdown.mesa — DropdownMenu with all three of its parts.
+  //
+  // The trigger is a `{#snippet}`, which is the documented shape and also the
+  // interesting one: the menu writes `aria-haspopup` and `aria-expanded` onto
+  // the caller's OWN control, because the wrapper it renders is not focusable
+  // and state announced there is state nobody hears. That is the one place
+  // this component reaches into markup it does not own.
+  //
+  // One of everything a menu row can be — a plain action, a link, a disabled
+  // row, a toned one, a shortcut hint — because the keyboard walk has to skip
+  // exactly the disabled one and the arrow keys are what nobody has ever run.
+  import DropdownMenu      from '../../../components/overlay/DropdownMenu.mesa'
+  import DropdownItem      from '../../../components/overlay/DropdownItem.mesa'
+  import DropdownLabel     from '../../../components/overlay/DropdownLabel.mesa'
+  import DropdownSeparator from '../../../components/overlay/DropdownSeparator.mesa'
+
+  export let placement = 'bottom-start'
+
+  let chose = ''
+  let runs  = 0
+
+  function pick(what) {
+    return () => { chose = what; runs++ }
+  }
+</script>
+
+<!--
+  Spacers so the trigger is not at the top of the viewport: the panel flips
+  above when there is no room below, and a trigger at y=0 can never test the
+  unflipped case.
+-->
+<div style="height: 6rem"></div>
+
+<DropdownMenu placement={placement}>
+  {#snippet trigger()}
+    <button type="button" class="btn" id="dd-trigger">Actions</button>
+  {/snippet}
+
+  <DropdownLabel>Manage</DropdownLabel>
+  <DropdownItem onclick={pick('edit')} kbd="⌘E">Edit</DropdownItem>
+  <DropdownItem href="/settings/">Settings</DropdownItem>
+  <DropdownItem disabled onclick={pick('never')}>Coming soon</DropdownItem>
+  <DropdownSeparator />
+  <DropdownLabel>Danger zone</DropdownLabel>
+  <DropdownItem tone="danger" onclick={pick('delete')}>Delete</DropdownItem>
+</DropdownMenu>
+
+<!--
+  A SECOND menu, low on a scrollable page, for the flip-above case alone.
+  Scrolling the first one down cannot test it: `scrollIntoView({ block: 'end' })`
+  aligns an element's bottom with the viewport's, which a trigger near the TOP
+  of the document can never reach — the page has no content above it to scroll
+  away. So the flip needs a trigger that is genuinely near the bottom.
+-->
+<div style="height: 100vh"></div>
+
+<DropdownMenu>
+  {#snippet trigger()}
+    <button type="button" class="btn" id="dd-low">Low</button>
+  {/snippet}
+  <DropdownItem onclick={pick('low-a')}>One</DropdownItem>
+  <DropdownItem onclick={pick('low-b')}>Two</DropdownItem>
+  <DropdownItem onclick={pick('low-c')}>Three</DropdownItem>
+</DropdownMenu>
+
+<div style="height: 1rem"></div>
+
+<output id="chose">{chose}</output>
+<output id="runs">{runs}</output>

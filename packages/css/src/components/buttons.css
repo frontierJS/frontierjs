@@ -13,15 +13,16 @@
   font-size:     var(--text-md);
   line-height:   1.25rem;
   cursor:        pointer;
-  transition:    background-color 150ms, border-color 150ms, color 150ms,
-                 box-shadow 150ms, filter 150ms;
+  transition:    background-color var(--motion-base), border-color var(--motion-base),
+                 color var(--motion-base), box-shadow var(--motion-base),
+                 filter var(--motion-base);
 
   /* Skin. --fill is the effective background; chip.css derives readable
      text from it. See the auto-contrast note there. */
   --tone-fill:    var(--bg-mix, var(--color-primary));
   background:     var(--fill, var(--tone-fill));
   color:          var(--on-fill, white);
-  border:         1px solid transparent;
+  border:         var(--border-width) solid transparent;
   font-family:    var(--font-primary);
   font-weight:    var(--btn-font-weight);
   text-transform: var(--btn-text-transform);
@@ -48,11 +49,37 @@
  * has to honour all three too, or the claim is false — this is the same
  * rule as "a tone consumer takes all seven tones or it's a bug".
  *
+ * ── Why three of them do not paint the tone directly ──────────────
+ *
+ * .outlined, .link and a toned .ghost render the tone as TEXT on a
+ * surface, which is not the job a tone is tuned for. Painting --bg-mix
+ * straight on failed AA across most of the grid — .btn.outlined was under
+ * 4.5:1 on 34 of the 72 tone x theme pairs, as low as 1.19:1. So they read
+ * --tone-ink, the tone through the legibility window (tones.css), and the
+ * border takes the same colour: a boundary at 1.99:1 is the variant not
+ * being drawn at all.
+ *
+ * --btn-ink is the resolved answer as a NORMAL property, so the ::after
+ * spinner below inherits it — --tone-ink is registered `inherits: false`
+ * and a pseudo-element would compute nothing from its own absent tone.
+ *
+ * Untoned, .outlined and .link keep the brand accent through the same
+ * window; .ghost keeps --ink-soft, because a ghost button's text IS the
+ * button and a neutral one is the common case (see below).
  */
+.btn:is(.outlined, .link) {
+  --accent-ink: oklch(from var(--color-primary)
+                  clamp(var(--tone-l-min), l, var(--tone-l-max)) c h);
+  --btn-ink:    var(--tone-ink, var(--accent-ink));
+}
+.btn.ghost {
+  --btn-ink: var(--tone-ink, var(--ink-soft));
+}
+
 .btn.outlined {
   background:   var(--surface);
-  color:        var(--bg-mix, var(--color-primary));
-  border-color: var(--bg-mix, var(--color-primary));
+  color:        var(--btn-ink);
+  border-color: var(--btn-ink);
   box-shadow:   none;
 }
 
@@ -66,14 +93,14 @@
  * actions, "Cancel" beside a primary.
  *
  * Untoned it takes --ink-soft rather than the brand accent. A ghost
- * button's text IS the button, and an accent on a surface has no contrast
- * guarantee (--color-primary on --surface is 3.96:1); --ink-soft is 7.3:1
- * and a neutral ghost is the common case anyway. A tone class opts into
- * the accent deliberately, exactly like .field-hint and .tile-delta.
+ * button's text IS the button, and --ink-soft is 7.3:1 where the raw
+ * accent on --surface is 3.96:1; a neutral ghost is the common case
+ * anyway. A tone class opts into the tone deliberately, exactly like
+ * .field-hint and .tile-delta — and gets it through the window above.
  */
 .btn.ghost {
   background:   transparent;
-  color:        var(--bg-mix, var(--ink-soft));
+  color:        var(--btn-ink);
   border-color: transparent;
   box-shadow:   none;
 }
@@ -86,7 +113,7 @@
 
 .btn.link {
   background:    transparent;
-  color:         var(--bg-mix, var(--color-primary));
+  color:         var(--btn-ink);
   box-shadow:    none;
   padding-left:  0;
   padding-right: 0;
@@ -124,12 +151,14 @@
   border:        2px solid color-mix(in srgb, var(--on-fill, white) 30%, transparent);
   border-block-start-color: var(--on-fill, white);
   border-radius: 50%;
-  animation:     fjs-spin 600ms linear infinite;
+  animation:     fjs-spin var(--motion-spin) linear infinite;
 }
-/* Outlined and link buttons draw their spinner in the tone, not on it. */
+/* Outlined and link buttons draw their spinner in the tone, not on it —
+   the same --btn-ink their label takes, so a spinner cannot be the one
+   thing on the button drawn at 1.99:1. */
 .btn.loading:is(.outlined, .link)::after {
-  border-color: color-mix(in srgb, var(--bg-mix, var(--color-primary)) 30%, transparent);
-  border-block-start-color: var(--bg-mix, var(--color-primary));
+  border-color: color-mix(in srgb, var(--btn-ink) 30%, transparent);
+  border-block-start-color: var(--btn-ink);
 }
 
 /*

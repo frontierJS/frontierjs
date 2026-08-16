@@ -6,7 +6,10 @@ HMR, error overlay, and DevTools.
 ## Features
 
 - **Transform** — `.mesa` and `.md` → ES module JavaScript
-- **Scoped CSS** — `<style>` blocks extracted as virtual CSS modules
+- **Scoped CSS** — a `<style>` block is inlined into the module as
+  `$runtime.addStyles(id, css)`, keyed by a content hash. Same route Sierra's
+  plugin takes, which is what lets a prerendered page and the client agree
+  about which styles are already there
 - **HMR** — re-renders live instances in place across module reloads,
   preserving their position in the parent's DOM
 - **Error overlay** — compiler errors and warnings shown in the browser
@@ -78,7 +81,7 @@ const ctx = await compileSource(src, {
 ```js
 mesa({
   extensions:   ['.mesa', '.md'],   // file extensions to process
-  css:          true,               // extract <style> blocks as virtual CSS modules
+  css:          true,               // emit <style> blocks. false DROPS them
   hmr:          true,               // enable HMR in dev (.mesa only)
   compilerPath: undefined,          // explicit compiler path (overrides auto-resolution)
 })

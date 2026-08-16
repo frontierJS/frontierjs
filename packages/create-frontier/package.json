@@ -1,0 +1,39 @@
+{
+  "name": "create-frontier",
+  "version": "0.1.0",
+  "description": "npm create frontier@latest — scaffold a FrontierJS application",
+  "type": "module",
+  "bin": {
+    "create-frontier": "./index.js"
+  },
+  "scripts": {
+    "test": "bun test test/create.test.js",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "dependencies": {
+    "@frontierjs/cli": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "frontierjs",
+    "create",
+    "scaffold",
+    "starter"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/create-frontier"
+  }
+}

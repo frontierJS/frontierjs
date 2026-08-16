@@ -8,6 +8,10 @@ examples:
   - fli new my-app --no-auth
   - fli new my-app --auth --yes
   - fli new my-app --template api-only
+  - fli new my-app --widgets
+  - fli new my-app --template widgets-only
+  - fli new my-app --extension
+  - fli new my-app --template extension-only
   - fli new my-app --workspace --server prod.example.com --domain myapp.com
   - fli new my-app --minimal
   - fli new my-app --full --yes
@@ -60,12 +64,24 @@ flags:
     type: boolean
     description: Scaffold web/ folder with Sierra+Mesa shell (default true; use --no-web for api-only)
     defaultValue: true
+  widgets:
+    type: boolean
+    description: Also scaffold the widgets/ surface — embeddable scripts for pages this app does not own
+    defaultValue: false
+  extension:
+    type: boolean
+    description: Also scaffold the extension/ surface — a jetty browser extension, MV3
+    defaultValue: false
   example:
     type: boolean
     description: Force-include or force-skip the User example (use --example or --no-example); default depends on auth state
   git:
     type: boolean
     description: Run git init and create initial commit (default true; use --no-git to skip)
+    defaultValue: true
+  ci:
+    type: boolean
+    description: Write .github/workflows/ci.yml, which runs `bun run check` (default true; use --no-ci to skip)
     defaultValue: true
   install:
     type: boolean
@@ -89,7 +105,7 @@ flags:
     defaultValue: ''
   source:
     type: string
-    description: "Where @frontierjs packages install from: npm (published, default) | local (symlink to <root>/packages, live edits — dev only, cannot be containerised). Default: $FJS_SOURCE or npm"
+    description: "Where @frontierjs packages install from: npm (published, default) | local (symlink to <root>/packages, live edits; a build packs them into the image). Default: $FJS_SOURCE or npm"
     defaultValue: ''
 ---
 
@@ -101,6 +117,21 @@ import { join } from 'path'
 // `resolve, basename` come from _module.md
 // `execSync` comes from _module.md (used via context.exec which wraps it)
 
+// What the app is given besides its own source — dev dependencies, the check
+// scripts, tsconfig, biome.json, .editorconfig, the workflow. One module, so
+// the framework's opinion about tooling is written down once and can be read.
+const { EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, appTsconfig, appBiomeJson, appCheckScripts, appWorkflow } =
+  await import(resolve(global.fliRoot, 'core/app-config.js'))
+
+// The widgets/ surface — one owner, shared with `fli make:widget`, so an app
+// scaffolded here can be extended by the command that adds the second widget.
+const { scaffoldWidgetSurface, widgetScripts } =
+  await import(resolve(global.fliRoot, 'core/widget-surface.js'))
+
+// The extension surface, same rule: one owner, shared with `fli make:extension`.
+const { scaffoldExtensionSurface, extensionScripts } =
+  await import(resolve(global.fliRoot, 'core/extension-surface.js'))
+
 // Split closing-script tags inside template strings — stops the FLI compiler
 // from treating them as the outer script block's closing tag.
 const sc = '</' + 'script>'
@@ -111,68 +142,94 @@ function isValidProjectName(name) {
   return /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(name)
 }
 
-// ─── Package versions ─────────────────────────────────────────────────────────
-// Frontier packages installed from npm. Using `latest` keeps fresh installs
-// pulling the most recent published version while we're in beta.
-
-const FJS_VERSIONS = {
-  '@frontierjs/junction':       'latest',
-  '@frontierjs/sierra':         'latest',
-  '@frontierjs/mesa':           'latest',
-  '@frontierjs/litestone':      'latest',
-  '@frontierjs/css':            'latest',
-  '@frontierjs/auth':           'latest',
-  '@frontierjs/conduit':        'latest',
-  '@frontierjs/caravan':        'latest',
-  '@frontierjs/notifications':  'latest',
-}
 
 const VITE_VERSION = '^8.0.0'
 
 // ─── Root template builders ───────────────────────────────────────────────────
 
 function makePackageJson(spec) {
-  const { name, scope, useAuth, useWeb, withPkgs, source } = spec
+  const {
+    name, scope, useAuth, useWeb, useApi = true, useWidgets = false, useExtension = false,
+    withPkgs, source,
+  } = spec
   const pkgName = scope ? `${scope}/${name}` : name
+  // Sierra and Mesa are the UI realm, and a widget is UI: a widgets-only
+  // project has no SPA and still compiles .mesa with the same compiler.
+  const useUI   = useWeb || useWidgets
 
   // local source → `link:@frontierjs/x` (resolves to a live symlink via bun link);
-  // npm source → the pinned/`latest` version from FJS_VERSIONS.
-  const specFor = (key) => source === 'local' ? `link:${key}` : (FJS_VERSIONS[key] || 'latest')
+  // npm source → the version FJS_PACKAGES pins, which is `latest` while pre-alpha.
+  const specFor = (key) => source === 'local' ? `link:${key}` : (FJS_PACKAGES[key] || 'latest')
 
   const deps = {
-    '@frontierjs/junction':  specFor('@frontierjs/junction'),
     '@frontierjs/litestone': specFor('@frontierjs/litestone'),
   }
+  if (useApi)  deps['@frontierjs/junction'] = specFor('@frontierjs/junction')
   if (useAuth) deps['@frontierjs/auth'] = specFor('@frontierjs/auth')
-  if (useWeb) {
+  if (useUI) {
     deps['@frontierjs/sierra'] = specFor('@frontierjs/sierra')
     deps['@frontierjs/mesa']   = specFor('@frontierjs/mesa')
     // web/src/main.js imports it — the styling language, not an optional extra.
     deps['@frontierjs/css']    = specFor('@frontierjs/css')
   }
+  if (useExtension) {
+    // jetty builds the extension and Mesa renders its surfaces. Both are the
+    // APP's dependencies rather than the CLI's: `fli extension:build` runs the
+    // installed jetty, and jetty's compiler lookup walks up from the surface to
+    // find Mesa in the app's own node_modules.
+    deps['@frontierjs/jetty'] = specFor('@frontierjs/jetty')
+    deps['@frontierjs/mesa'] ??= specFor('@frontierjs/mesa')
+  }
   for (const pkg of withPkgs) {
     const key = `@frontierjs/${pkg}`
-    if (FJS_VERSIONS[key]) deps[key] = specFor(key)
+    if (FJS_PACKAGES[key]) deps[key] = specFor(key)
   }
 
-  const devDeps = { 'bun-types': 'latest' }
-  if (useWeb) {
+  // APP_DEV_DEPS is the tooling opinion — cli, the shared config, biome,
+  // typescript. `link:` applies to the @frontierjs half of it for the same
+  // reason it applies to the dependencies.
+  const devDeps = {}
+  for (const [key, spec] of Object.entries(APP_DEV_DEPS)) {
+    devDeps[key] = key.startsWith('@frontierjs/') ? specFor(key) : spec
+  }
+  if (useUI) {
     devDeps['vite'] = VITE_VERSION
   }
 
-  // Scripts
+  // Scripts. Each surface contributes its own pair and `dev`/`build` run
+  // whichever ones exist — a surface an app does not have must not leave a
+  // script that fails naming a directory nobody removed.
   const scripts = {}
-  if (useWeb) {
-    scripts['dev']     = 'bun run --parallel dev:api dev:web'
+  const devs   = []
+  const builds = []
+
+  if (useApi) {
     scripts['dev:api'] = 'bun --watch run api/index.ts'
-    scripts['dev:web'] = 'cd web && vite -c config/vite.config.js'
-    scripts['build']     = 'bun run build:web'
-    scripts['build:web'] = 'cd web && vite build -c config/vite.config.js'
     scripts['start']   = 'bun run api/index.ts'
-  } else {
-    scripts['dev']   = 'bun --watch run api/index.ts'
-    scripts['start'] = 'bun run api/index.ts'
+    devs.push('dev:api')
   }
+  if (useWeb) {
+    scripts['dev:web']   = 'cd web && vite -c config/vite.config.js'
+    scripts['build:web'] = 'cd web && vite build -c config/vite.config.js'
+    devs.push('dev:web')
+    builds.push('build:web')
+  }
+  if (useExtension) {
+    Object.assign(scripts, extensionScripts())
+    devs.push('dev:extension')
+    builds.push('build:extension')
+  }
+  if (useWidgets) {
+    // A widget is its own library build, one per file in widgets/src/Embeds/,
+    // so this is `sierra widgets` and not `vite build`. `serve:widgets` answers
+    // with the CORS and cache headers the deployment sends.
+    Object.assign(scripts, widgetScripts())
+    devs.push('dev:widgets')
+    builds.push('build:widgets')
+  }
+
+  scripts['dev'] = devs.length > 1 ? `bun run --parallel ${devs.join(' ')}` : (scripts[devs[0]] ?? '')
+  if (builds.length) scripts['build'] = builds.map(b => `bun run ${b}`).join(' && ')
 
   // The deploy container's entrypoint is `bun run db:migrate && bun run start`,
   // so this script is part of the contract with deploy/Dockerfile rather than a
@@ -181,6 +238,10 @@ function makePackageJson(spec) {
   // sibling of the schema, so this finds db/migrations without a second flag.
   scripts['db:migrate'] = 'bunx litestone migrate apply --schema db/schema.lite'
   scripts['db:backup']  = 'bunx litestone backup db/backups --schema db/schema.lite'
+
+  // lint · typecheck · check — see core/app-config.js for what each is for and
+  // why `fli check` leads the third one.
+  Object.assign(scripts, appCheckScripts())
 
   return JSON.stringify({
     name:    pkgName,
@@ -206,6 +267,11 @@ function makeGitignore() {
     'dist/',
     '.fli-tmp/',
     '.deploy.lock',
+    // Written by `fli deploy:vendor` before every build — a rewritten manifest
+    // and the packed framework tarballs it points at. Regenerated per build, so
+    // committing it commits a version of the framework nobody can read off a
+    // spec.
+    'deploy/generated/',
     '',
   ].join('\n')
 }
@@ -235,37 +301,23 @@ function makeFliJson(name) {
   }, null, 2) + '\n'
 }
 
-function makeTsconfig() {
-  return JSON.stringify({
-    compilerOptions: {
-      target:           'ESNext',
-      module:           'ESNext',
-      moduleResolution: 'bundler',
-      strict:           true,
-      esModuleInterop:  true,
-      skipLibCheck:     true,
-      types:            ['bun-types'],
-      paths:            { '@/*': ['./web/src/*'] },
-      jsx:              'preserve',
-      allowImportingTsExtensions: true,
-      noEmit:           true,
-    },
-    include: ['api/**/*', 'web/**/*'],
-  }, null, 2) + '\n'
-}
-
 function makeReadme(spec) {
-  const { name, useAuth, useWeb, withPkgs } = spec
+  const { name, useAuth, useWeb, useApi = true, useWidgets = false, useExtension = false, withPkgs } = spec
+  const surface = [useApi && 'api/', useWeb && 'web/', useWidgets && 'widgets/', useExtension && 'extension/'].filter(Boolean)
   const features = [
     `- ${useAuth ? 'Auth (sessions, password reset, email verify) via `@frontierjs/auth`' : 'No auth (add later with `fli auth:install`)'}`,
     `- Litestone client with gate plugin for level-based authorization`,
-    `- ${useWeb ? 'Sierra + Mesa frontend with Vite' : 'API-only (no frontend)'}`,
+    `- ${useWeb ? 'Sierra + Mesa frontend with Vite' : 'No SPA'}`,
   ]
+  if (useWidgets) features.push(
+    `- Embeddable widgets in \`widgets/\` — one self-contained script per component, for pages this app does not own`)
+  if (useExtension) features.push(
+    `- A browser extension in \`extension/\` — MV3, Chrome and Firefox, built by \`@frontierjs/jetty\``)
   if (withPkgs.length) features.push(`- Additional packages: ${withPkgs.map(p => `\`@frontierjs/${p}\``).join(', ')}`)
 
   return `# ${name}
 
-A FrontierJS application — Junction + Litestone${useAuth ? ' + Auth' : ''}${useWeb ? ' + Sierra' : ''}.
+A FrontierJS application — ${surface.join(' + ')} over one \`db/schema.lite\`.
 
 ## What's included
 
@@ -285,11 +337,33 @@ cp .env.example .env
 bun run dev
 \`\`\`
 
-${useWeb
-  ? 'This runs both the api (port 8100) and the web (port 8000) concurrently.'
-  : 'This runs the api server with watch mode.'}
+${[
+  useApi     && 'the api on 8100',
+  useWeb     && 'the web app on 8000',
+  useWidgets && 'the widget surface on 8200',
+  useExtension && 'the extension watcher on 8400',
+].filter(Boolean).join(', ')} — ${surface.length > 1 ? 'concurrently' : 'in watch mode'}. The
+ports are derived, not chosen: \`env*1000 + category*100 + project*10 + service\`.
 
 Schema DDL runs automatically on first start — no migration step.
+
+## Checking it
+
+\`\`\`bash
+bun run check     # fli check, then lint, then typecheck
+\`\`\`
+
+That is exactly what \`.github/workflows/ci.yml\` runs, so a green local run is a
+green pipeline. The order matters: **\`fli check\` goes first because it is the
+half a linter cannot reach** — Biome reads neither \`.mesa\` nor \`.lite\`, and a
+model name that is not PascalCase singular or a \`vite.config.js\` without
+\`strictPort\` is silent until it is expensive.
+
+\`tsconfig.json\` and \`biome.json\` are each one line of \`extends\` over
+\`@frontierjs/config\`, which is a dependency rather than a copy so that a rule
+can improve without you re-scaffolding. **There is no formatter**, on purpose —
+this house aligns columns and no formatter can express that; see that package's
+README.
 
 ## Common commands
 
@@ -317,13 +391,18 @@ ${name}/
 ├── package.json
 ├── frontier.config.js          # FLI deploy config
 ├── .env.example
+├── tsconfig.json               # one line of extends — @frontierjs/config
+├── biome.json                  # ditto; linter only, no formatter
+├── .editorconfig
 ├── README.md
+├── .github/workflows/ci.yml    # runs \`bun run check\`
 ├── db/
 │   └── schema.lite             # Single source of truth — data + auth
-├── deploy/
-│   └── Dockerfile              # Built on the server
 ├── cli/
 │   └── src/routes/             # Project-specific FLI commands
+${useApi
+  ? `├── deploy/
+│   └── Dockerfile              # Built on the server
 ├── api/
 │   ├── index.ts                # bun --watch entry
 │   ├── config/
@@ -336,7 +415,8 @@ ${name}/
 │       │   ├── auth.ts         # createLitestoneAuth + plugin (if auth)
 │       │   └── hooks.ts        # withLitestoneDb
 │       └── services/           # Service files autoloaded at boot
-${useWeb
+`
+  : ''}${useWeb
   ? `└── web/
     ├── index.html
     ├── config/
@@ -347,8 +427,31 @@ ${useWeb
         ├── App.mesa            # Root: <RouterView />
         ├── routes/             # Sierra file-based routes (.mesa)
         └── resources/          # One Resource per model — Note.mesa (.mesa)
-\`\`\``
-  : '\`\`\`'}
+`
+  : ''}${useWidgets
+  ? `└── widgets/                    # A surface of its own — its own config,
+    ├── config/                 #   host pages and static release
+    │   ├── vite.config.js
+    │   └── sierra.config.js    # target: 'widget'
+    ├── index.html              # the dev harness
+    ├── src/Embeds/             # one component per embeddable script
+    ├── test/                   # a host page per widget
+    ├── deploy/                 # serve.js + Dockerfile — the widget origin
+    └── dist/embeds/            # the built scripts
+`
+  : ''}${useExtension
+  ? `└── extension/                  # MV3, Chrome + Firefox — its own manifest,
+    ├── config/                 #   permissions and store release
+    │   └── jetty.config.js
+    ├── src/
+    │   ├── harbor/index.js     # the service worker — required
+    │   ├── dock/App.mesa       # the popup
+    │   └── islands/            # content scripts, flat
+    ├── test/                   # what to load unpacked, and what to check by hand
+    ├── deploy/                 # packaging for the two stores
+    └── dist/chrome|firefox/
+`
+  : ''}\`\`\`
 
 ## Where to grow
 
@@ -433,7 +536,7 @@ app.configure(manifestPlugin())
 app.configure(channels())
 
 // ─── Auth routes ──────────────────────────────────────────────────────────
-// Mounts {apiPrefix}/auth/register, /auth/login, /auth/logout, /auth/me and the
+// Mounts {apiPrefix}/auth/register, /auth/login, /auth/logout and the
 // rest — apiPrefix moves the plugin's routes with everything else.
 app.configure(authPlugin)
 
@@ -718,7 +821,7 @@ export default defineConfig({
     // FJS scheme, so the web port is stated here rather than inherited.
     // 8000 = dev / frontend / project 0; the API is 8100. See ports.js.
     ...base.server,
-    port:       parseInt(process.env.WEB_PORT ?? process.env.FLI_PORT_FE ?? '8000'),
+    port:       parseInt(process.env.WEB_PORT ?? process.env.FLI_PORT_FE ?? '8000', 10),
     strictPort: true,
     proxy: {
       // One entry: apiPrefix moves every route the app registers, raw ones
@@ -805,12 +908,19 @@ siteName: ${appName}
 ---
 <script>
   import { goto, isActive, page } from '@frontierjs/sierra/router'
-  import { status, logout } from '@frontierjs/sierra/junction'
+  import { status, session, signOut } from '@frontierjs/sierra/junction'
 
   // Naming a property in a $: line is what SUBSCRIBES this component to it.
   // Without it status.connected renders once, at its initial false, and never
   // updates — the socket connects and the page still says otherwise.
-  $: (page.siteName, status.connected)
+  $: (page.siteName, status.connected, session.user)
+
+  // Awaited: signOut ends the session at the SERVER and then locally, and
+  // navigating first would send the guard past a session that is still there.
+  async function out() {
+    await signOut()
+    goto('/login/')
+  }
 ${sc}
 
 <div class="shell">
@@ -824,7 +934,7 @@ ${sc}
 
     <div class="status">
       <span class="dot" class:connected={status.connected}></span>
-      <button on:click={() => { logout(); goto('/login/') }}>Sign out</button>
+      <button on:click={out}>Sign out</button>
     </div>
   </nav>
 
@@ -917,7 +1027,7 @@ title: Sign in
 ---
 <script>
   import { goto }      from '@frontierjs/sierra/router'
-  import { getClient } from '@frontierjs/sierra/junction'
+  import { signIn } from '@frontierjs/sierra/junction'
 
   let email    = ''
   let password = ''
@@ -928,11 +1038,11 @@ title: Sign in
     loading = true
     error   = ''
     try {
-      // The client composes apiPrefix + authPrefix itself and stores the token
-      // on success. A hand-written fetch('/api/auth/login') here would be a
-      // second copy of the prefix — correct only while the config happens to
-      // agree with it, and a silent 404 the moment somebody changes one.
-      await getClient().authenticate({ email, password })
+      // signIn does the whole thing: POST to the auth plugin's own login
+      // route (the client composes apiPrefix + authPrefix, so no path is
+      // written here), store the token, open the socket, and load the session
+      // — so \`session.user\` is there on the next line.
+      await signIn(email, password)
       goto('/')
     } catch (e) {
       error = e.message
@@ -980,7 +1090,10 @@ Creates a brand-new FrontierJS project from scratch — Junction API, optional a
 
 The default install set is just `@frontierjs/junction`. Auth is asked about during execution unless `--auth` or `--no-auth` is passed. Use `--minimal` (junction only) or `--full` (all tier-1 packages) to skip prompts entirely. `--yes` accepts every prompt.
 
-Templates: `full-stack` (default — api + web) and `api-only` (no web/ folder).
+Templates: `full-stack` (default — api + web), `api-only` (no web/ folder),
+`widgets-only` and `extension-only` (no api/, no web/ — the product is that one
+surface, and what it talks to is somebody else's API). Add `--widgets` or
+`--extension` to any of them for that surface alongside.
 
 ```js
 // ─── 1. Validate inputs ───────────────────────────────────────────────────────
@@ -1019,7 +1132,16 @@ if (useHere && !flag.force) {
 // ─── 3. Resolve template + flags ──────────────────────────────────────────────
 
 const template  = flag.template
-const useWeb    = (template === 'full-stack' || template === undefined) && flag.web !== false
+// `widgets-only` is a whole project: the product is the embeddable scripts, and
+// there is no API of its own and no SPA. It is a template rather than a pile of
+// --no- flags because that is the shape somebody asks for by name.
+// A SURFACE-ONLY template is a project whose whole product is that one surface:
+// no API of its own and no SPA, because what it talks to is somebody else's.
+const surfaceOnly  = template === 'widgets-only' || template === 'extension-only'
+const useApi       = !surfaceOnly
+const useWeb       = !surfaceOnly && (template === 'full-stack' || template === undefined) && flag.web !== false
+const useWidgets   = template === 'widgets-only'   || flag.widgets === true
+const useExtension = template === 'extension-only' || flag.extension === true
 const useDeploy = flag.deploy !== false
 const useFli    = flag.fli !== false
 const useGit    = flag.git !== false
@@ -1034,7 +1156,7 @@ const validExtras = ['conduit', 'caravan', 'notifications']
 // `--with` names @frontierjs packages to add as dependencies, and litestream is
 // not one — it is a Go binary that runs beside the app on the server, driven by
 // `litestone replicate`. Listing it here put `@frontierjs/litestream` into
-// FJS_VERSIONS and therefore into the manifest, so `--full` aborted under
+// FJS_PACKAGES and therefore into the manifest, so `--full` aborted under
 // --source local (no packages/litestream) and 404'd at install under --source
 // npm. Recognised by name rather than dropped, so the flag says where it went.
 const notAPackage = {
@@ -1055,7 +1177,11 @@ if (flag.full) {
 // Three states: --auth (true), --no-auth (false), neither (prompt)
 
 let useAuth
-if (flag.auth === true)  useAuth = true
+// Auth is a property of an API, and this template has none — the widgets talk
+// to somebody else's. Asked first, so the prompt is not offered for a thing the
+// scaffold would then have nowhere to install.
+if (!useApi)             useAuth = false
+else if (flag.auth === true)  useAuth = true
 else if (flag.auth === false) useAuth = false
 else if (flag.minimal) useAuth = false
 else if (flag.full)    useAuth = true
@@ -1102,15 +1228,18 @@ if (useWorkspace) {
 // Default resolves from $FJS_SOURCE (set once during buildout), else 'npm'.
 // GitHub is not supported yet.
 //
-// npm is the default because a `link:` spec is a development affordance and not
-// a shippable one: it resolves to the workspace on the machine that made it and
-// to nothing anywhere else, so `bun install` inside a container fails on every
-// linked package. That made `fli deploy:local` — the command that proves an
-// image before it reaches a server — impossible to run against the scaffold this
-// repo produced, which is how four defects sat undetected on the deploy path
-// (FJS-232, 237, 238, 239 — all found by reading, none by anything failing).
-// `--source local` is still the right thing when testing a change to a package;
-// it is the wrong thing to hand somebody as a starting point.
+// npm is the default because published packages are what a starting point
+// should be made of, not because a local scaffold cannot ship. It could not, for
+// a while: a `link:` spec resolves to the workspace on the machine that made it
+// and to nothing inside a container, so `bun install` failed on every linked
+// package and `fli deploy:local` — the command that proves an image before it
+// reaches a server — could not be run against the scaffold this repo produced.
+// That is how four defects sat undetected on the deploy path (FJS-232, 237, 238,
+// 239 — all found by reading, none by anything failing). The deploy path now
+// packs those packages into the build context instead (`fli deploy:vendor`,
+// FJS-241), so a local scaffold containerises; what it still installs is one
+// machine's working tree, which is the right thing while testing a change to a
+// package and the wrong thing to hand somebody as a starting point.
 const fjsSource = (flag.source || process.env.FJS_SOURCE || 'npm').toLowerCase()
 
 if (fjsSource !== 'local' && fjsSource !== 'npm') {
@@ -1128,6 +1257,11 @@ if (useAuth) neededPkgs.push('@frontierjs/auth')
 // a `link:` spec for a package nobody linked fails the install outright.
 if (useWeb)  neededPkgs.push('@frontierjs/sierra', '@frontierjs/mesa', '@frontierjs/css')
 for (const p of withPkgs) neededPkgs.push(`@frontierjs/${p}`)
+// The dev half counts as much as the runtime half — `bun run check` is the
+// first thing anyone runs and it needs both of these resolved.
+for (const p of Object.keys(APP_DEV_DEPS)) {
+  if (p.startsWith('@frontierjs/')) neededPkgs.push(p)
+}
 
 // Where local package sources live. fli lives at <root>/packages/cli, so the
 // FJS packages are its siblings under <root>/packages/. Override with
@@ -1158,13 +1292,15 @@ echo('')
 log.info(`Creating ${appName} at ${finalTarget}`)
 echo('')
 echo(`  Template:  ${template}`)
-echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (dev only, not containerisable)` : 'npm (published)'}`)
+echo(`  FJS pkgs:  ${fjsSource === 'local' ? `local — symlink to ${packagesDir} (live edits; a build packs them)` : 'npm (published)'}`)
 echo(`  Auth:      ${useAuth ? 'yes' : 'no'}`)
 echo(`  Web:       ${useWeb ? 'yes (Sierra + Mesa + Vite)' : 'no'}`)
 echo(`  Deploy:    ${useDeploy ? 'yes (deploy/Dockerfile + frontier.config.js)' : 'no'}`)
 echo(`  FLI:       ${useFli ? 'yes (cli/src/routes/)' : 'no'}`)
 echo(`  Example:   ${useExample ? 'yes (User CRUD vertical slice)' : 'no'}`)
 echo(`  Git:       ${useGit ? 'yes' : 'no'}`)
+echo(`  CI:        ${flag.ci !== false ? 'yes (.github/workflows/ci.yml → bun run check)' : 'no'}`)
+echo(`  Tooling:   @frontierjs/config — tsconfig + Biome (linter only, no formatter)`)
 echo(`  Install:   ${useInstall ? 'yes' : 'no'}`)
 echo(`  Workspace: ${useWorkspace ? `yes (${process.env.WORKSPACE_DIR})` : 'no'}`)
 if (withPkgs.length) echo(`  Extras:    ${withPkgs.join(', ')}`)
@@ -1179,16 +1315,11 @@ if (flag.dry) {
 
 mkdirSync(finalTarget, { recursive: true })
 
-const dirs = [
-  'db',
-  'api',
-  'api/config',
-  'api/src',
-  'api/src/core',
-  'api/src/services',
-]
-if (useFli)    dirs.push('cli/src/routes')
-if (useDeploy) dirs.push('deploy')
+const dirs = ['db']
+if (useApi) dirs.push('api', 'api/config', 'api/src', 'api/src/core', 'api/src/services')
+if (useFli)        dirs.push('cli/src/routes')
+if (useDeploy && useApi) dirs.push('deploy')
+if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
   dirs.push('web', 'web/config', 'web/src', 'web/src/routes', 'web/src/resources', 'web/src/components')
   if (useAuth) dirs.push('web/src/routes/login')
@@ -1200,23 +1331,30 @@ for (const d of dirs) {
 
 // ─── 9. Write base files ──────────────────────────────────────────────────────
 
-const spec = { name: appName, scope: flag.scope, useAuth, useWeb, withPkgs, source: fjsSource }
+const spec = { name: appName, scope: flag.scope, useAuth, useWeb, useApi, useWidgets, useExtension, withPkgs, source: fjsSource }
 
 const filesToWrite = [
   ['package.json',                makePackageJson(spec)],
   ['.gitignore',                  makeGitignore()],
   ['.env.example',                makeEnvExample(useAuth)],
   ['.fli.json',                   makeFliJson(appName)],
-  ['tsconfig.json',               makeTsconfig()],
+  ['tsconfig.json',               appTsconfig({ useWeb })],
+  ['biome.json',                  appBiomeJson()],
+  ['.editorconfig',               EDITORCONFIG],
   ['README.md',                   makeReadme(spec)],
   ['db/schema.lite',              makeSchemaLiteEmpty()],
-  ['api/index.ts',                makeApiIndexTs()],
-  ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb)],
-  ['api/src/core/env.ts',         makeApiEnvTs()],
-  ['api/src/core/db.ts',          makeApiCoreDbTs()],
-  ['api/src/core/hooks.ts',       makeApiCoreHooksTs()],
-  ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb)],
 ]
+
+if (useApi) {
+  filesToWrite.push(
+    ['api/index.ts',                makeApiIndexTs()],
+    ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb)],
+    ['api/src/core/env.ts',         makeApiEnvTs()],
+    ['api/src/core/db.ts',          makeApiCoreDbTs()],
+    ['api/src/core/hooks.ts',       makeApiCoreHooksTs()],
+    ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb)],
+  )
+}
 
 if (useAuth) {
   filesToWrite.push(['api/src/core/auth.ts', makeApiCoreAuthTs()])
@@ -1237,6 +1375,13 @@ if (useWeb) {
   }
 }
 
+// The app's own gate, calling the script a person runs before pushing. Written
+// whether or not --git ran: a repository is created later far more often than a
+// workflow is added later.
+if (flag.ci !== false) {
+  filesToWrite.push(['.github/workflows/ci.yml', appWorkflow({ name: appName })])
+}
+
 // .env (copy of .env.example, gitignored)
 filesToWrite.push(['.env', makeEnvExample(useAuth)])
 
@@ -1248,6 +1393,25 @@ for (const [relPath, content] of filesToWrite) {
 }
 
 log.success(`Wrote ${written.length} base files`)
+
+// ─── 9b. The widgets/ surface ─────────────────────────────────────────────────
+//
+// Written by the same function `fli make:widget` calls, so the app can be
+// extended by the command that adds the second widget. It is a sub-project of
+// its own — its own Vite root, its own host pages, its own static release — and
+// this project may have it and no web/ at all.
+
+if (useWidgets) {
+  const { written: widgetFiles } = scaffoldWidgetSurface({
+    root: finalTarget, name: 'Hello', appName,
+  })
+  log.success(`Wrote ${widgetFiles.length} files in widgets/`)
+}
+
+if (useExtension) {
+  const { written: extFiles } = scaffoldExtensionSurface({ root: finalTarget, appName })
+  log.success(`Wrote ${extFiles.length} files in extension/`)
+}
 
 // ─── 10. Compose subcommands ──────────────────────────────────────────────────
 // At this point the directory has a package.json — fli's findProjectRoot will
@@ -1291,8 +1455,10 @@ if (useExample) {
   }
 }
 
-// make:deploy — Dockerfile + frontier.config.js deploy block
-if (useDeploy) {
+// make:deploy — Dockerfile + frontier.config.js deploy block. It containerises
+// the API, so a project with none has nothing for it to write: the widget
+// surface ships its own static origin from widgets/deploy/.
+if (useDeploy && useApi) {
   try {
     log.info('→ make:deploy')
     const args = ['make:deploy']
@@ -1363,14 +1529,15 @@ echo('  bun run dev')
 echo('')
 if (fjsSource === 'local') {
   echo(`  @frontierjs packages are symlinked from ${packagesDir} — edits are live.`)
-  echo('  This app CANNOT be containerised: a `link:` spec resolves to your')
-  echo('  workspace and to nothing inside an image, so `bun install` fails there')
-  echo('  and `fli deploy:local` cannot run. Scaffold with `--source npm` for')
-  echo('  anything you intend to ship. Local sources can also diverge from a real')
-  echo('  npm install, so do an npm run before publishing either way.')
+  echo('  A build packs them into the image rather than resolving the symlinks,')
+  echo('  which a container cannot do — `fli deploy:local` runs the pack step for')
+  echo('  you, `fli deploy:vendor` does it alone. What ships is that workspace at')
+  echo('  the moment you built, so local sources can diverge from a real npm')
+  echo('  install: do an npm run before publishing either way.')
   echo('')
 }
 echo('  Then:')
+echo('    bun run check          fli check, then lint, then typecheck — the same gate CI runs')
 echo('    fli scaffold <Model>    add a new model + service + resource + routes')
 echo('    fli admin:generate      generate CRUD admin UI from schema.lite')
 echo('    fli deploy:doctor       check deploy readiness')

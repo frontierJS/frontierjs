@@ -21,13 +21,13 @@
   color-scheme: dark;
 
   /*
-   * The lightness window for syntax highlighting, inverted. On a light
-   * surface a code token is clamped DARK; here it has to be clamped light,
-   * and nothing in CSS can work that out — see tokens.css and code.css.
+   * The lightness window for a tone used as TEXT, inverted. On a light
+   * surface such a tone is clamped DARK; here it has to be clamped light,
+   * and nothing in CSS can work that out — see tokens.css and tones.css.
    * Any theme that sets `color-scheme: dark` needs this pair too.
    */
-  --code-l-min: 0.74;
-  --code-l-max: 1;
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
 
   /* ── Accents ───────────────────────────────────────────────────────
    * Taken verbatim from the prototype's T object. They need no contrast
@@ -54,17 +54,20 @@
    * backgrounds .screen with it, which is exactly what T.bg was for.
    * T.card and T.elevated then land on --surface and --surface-raised.
    *
-   * Two of the prototype's surfaces have nowhere to go, and that is a
-   * finding rather than an omission: T.sidebar (#0e1019) and T.modal
-   * (#12151f) were distinct from the card, but frame.css paints both the
-   * topbar and the sidebar with --surface and there is no --sidebar-bg or
-   * --dialog-bg token. Adding one would be a change to the design system,
-   * not a theme, so the shell here is one surface. If the separation turns
-   * out to matter, that is the argument for the token.
+   * The prototype's other two surfaces are back. T.sidebar and T.modal
+   * were distinct from the card and had nowhere to go — frame.css painted
+   * the topbar and the sidebar with --surface and there was no ground
+   * token for either, which this file recorded as the argument for one.
+   * A second theme hit the same wall, so the tokens exist and the shell is
+   * three surfaces again rather than one.
    */
   --surface:        #151820;  /* T.card     */
   --surface-raised: #1b1f2c;  /* T.elevated */
   --surface-sunken: #0b0d14;  /* T.bg       */
+
+  --topbar-bg:      #0e1019;  /* T.sidebar  */
+  --sidebar-bg:     #0e1019;  /* T.sidebar  */
+  --dialog-bg:      #12151f;  /* T.modal    */
 
   /* ── Ink ───────────────────────────────────────────────────────────
    * The one place this theme departs from the prototype, deliberately.

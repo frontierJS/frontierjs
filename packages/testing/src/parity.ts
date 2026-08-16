@@ -59,7 +59,7 @@ export interface ParityPrincipal {
 /** One call, in the browser client's own vocabulary. */
 export interface ParityCall {
   service: string
-  /** `find` | `get` | `create` | `patch` | `remove` | `restore` | a custom action. */
+  /** `find` | `get` | `create` | `patch` | `remove` | `restore` | a custom method. */
   method:  string
   id?:     string | number | null
   data?:   Record<string, unknown> | null
@@ -270,10 +270,10 @@ function invoke(svc: Record<string, (...a: unknown[]) => Promise<unknown>>, call
     case 'update':  return svc.update(call.id, call.data ?? {})
     case 'remove':  return svc.remove(call.id)
     case 'restore': return svc.restore(call.id)
-    // A custom action. `action()` is the HTTP spelling and `call()` the WS one;
+    // A custom method. `invoke()` is the HTTP spelling and `call()` the WS one;
     // the proxy picks between them on whether a socket is live, which is the
     // behaviour under test rather than something to route around here.
-    default:        return svc.action(call.method, call.id, call.data ?? {}, call.query ?? undefined)
+    default:        return svc.invoke(call.method, call.id, call.data ?? {}, call.query ?? undefined)
   }
 }
 

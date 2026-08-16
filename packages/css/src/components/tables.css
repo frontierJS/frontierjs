@@ -7,10 +7,19 @@
   --table-bg:      var(--surface);
   --table-border:  var(--rule);
   --table-head-bg: var(--surface-sunken);
-
   width:           100%;
   background:      var(--table-bg);
-  border:          1px solid var(--table-border);
+  /*
+   * A divider between rows and the frame around the table are the same
+   * weight, and both are their own decision — a heavy theme's card edge
+   * is not automatically a heavy line between every row of a dense grid.
+   *
+   * Read at the use site rather than declared beside --table-bg above: a
+   * declaration here would win over the same token set on an ancestor, so
+   * a THEME could never set it. The three tokens above are for a caller
+   * styling one table; this one has to be reachable from a theme.
+   */
+  border:          var(--table-border-width, var(--border-width)) solid var(--table-border);
   border-radius:   var(--card-radius);
   border-collapse: separate;
   border-spacing:  0;
@@ -24,9 +33,9 @@
   background:     var(--table-head-bg);
   color:          var(--ink-mute);
   font-size:      var(--text-2xs);
-  font-weight:    600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-weight:    var(--label-font-weight);
+  text-transform: var(--label-text-transform);
+  letter-spacing: var(--label-letter-spacing);
   text-align:     left;
   padding:        var(--space-md) var(--space-xl);
 }
@@ -36,7 +45,9 @@
   text-align: left;
 }
 
-.table tbody tr + tr td { border-top: 1px solid var(--table-border); }
+.table tbody tr + tr td {
+  border-top: var(--table-border-width, var(--border-width)) solid var(--table-border);
+}
 
 /*
  * ── Row background — one declaration, three inputs ──────────────

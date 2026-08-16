@@ -1,14 +1,15 @@
 // api/notifications/OrderConfirmation.ts — the shop telling its customer.
 //
 // Email only, and the recipient is not a User: a shop customer has no login,
-// no `notifications` row and no session. `notify()` takes a `User`, which is
-// `{ id, email?, … }` structurally — so a customer is passed as one, with an
-// id namespaced so it can never collide with an auth uuid. (`FJS-096`: that
-// works for `email` and would write an unreadable row if anyone added `inApp`.)
+// no `notifications` row and no session. `notify()` takes a `Recipient`, whose
+// `id` is optional for exactly this case — a customer is addressed by email
+// alone. Leaving the id off is not a shortcut: it is what makes `inApp` refuse
+// this recipient by name if anybody adds it to `via()`, instead of writing a
+// notification row keyed by an invented id that nobody could ever read.
 //
 // ─── Why the body is a template and not the line builder ──────────────────
 //
-// `mail().greeting().line().action()` is a small vocabulary — greeting,
+// `mail().greeting().line().invoke()` is a small vocabulary — greeting,
 // paragraph, button — and it is the right one for "your password was reset".
 // An order confirmation is a RECEIPT: it has a table of facts, and the table is
 // the message. So the body is `api/emails/order-confirmation.mesa`, rendered by
@@ -21,7 +22,7 @@
 
 import { Notification, mail }  from '@frontierjs/notifications'
 import { renderEmailFile }     from '@frontierjs/email-kit/render'
-import type { MailMessage, User } from '@frontierjs/notifications'
+import type { MailMessage, Recipient, Transport } from '@frontierjs/notifications'
 
 interface Order {
   id:        number
@@ -30,8 +31,8 @@ interface Order {
 }
 
 /** Address a Customer the way notify() expects, without inventing a user row. */
-export function asRecipient(customer: { id: number; name: string; email: string }): User {
-  return { id: `customer:${customer.id}`, email: customer.email, name: customer.name }
+export function asRecipient(customer: { name: string; email: string }): Recipient {
+  return { email: customer.email, name: customer.name }
 }
 
 const TEMPLATE = new URL('../emails/order-confirmation.mesa', import.meta.url).pathname
@@ -73,9 +74,9 @@ export class OrderConfirmation extends Notification {
     return new OrderConfirmation(line, html, text)
   }
 
-  via(_user: User): string[] { return ['email'] }
+  via(_recipient: Recipient): Transport[] { return ['email'] }
 
-  toEmail(_user: User): MailMessage {
+  toEmail(_recipient: Recipient): MailMessage {
     return mail()
       .subject(this.subject)
       .html(this.html)

@@ -131,9 +131,11 @@ open editor correctly stale after one lands.
 ```
 @omit                            excluded from findMany/findFirst (still in findUnique)
 @omit(all)                       excluded from all reads
-@guarded                         excluded unless asSystem()
-@guarded(all)                    excluded from all operations unless asSystem()
-@encrypted                       AES-256-GCM at rest (implies @guarded(all))
+@guarded                         system-context column: stripped from every read AND refused
+                                 on every write, unless asSystem()
+@guarded(all)                    the same, and an explicit select cannot unlock the read
+@encrypted                       AES-256-GCM at rest — hidden from a non-system read, and
+                                 writable by a non-system caller
 @encrypted(deterministic: true)  IV derived from the value — equality WHERE works, and it reads back
 @hashed                          HMAC-SHA256, one-way — matchable in a WHERE, never readable
 @secret                          @encrypted + @guarded(all) + @log(auditDb)
@@ -250,7 +252,22 @@ All of it holds on every read path — `findMany`, `findFirst`, `findUnique`,
 @length(min, max)                string length (either bound optional)
 @gt(n)  @gte(n)  @lt(n)  @lte(n)
 @startsWith(s)  @endsWith(s)  @contains(s)
+@minItems(n)  @maxItems(n)  @uniqueItems     array columns only
 ```
+
+An array column also carries two rules that come from its TYPE rather than an
+attribute: the value must be an array, and on `Int[]` / `String[]` the elements
+must be of that type. SQLite stores the column as a JSON document whichever they
+are, so nothing below this boundary would notice.
+
+**Every validator here takes an optional trailing message** —
+`@length(3, 20, "A reference is 3 to 20 characters")`,
+`@minItems(2, "Pick at least two tags")`, `@uniqueItems("No duplicate codes")`.
+It is enforced by the server AND emitted to the client in `x-messages`, so one
+authored string is what every realm says. The wording when there is none comes
+from `DEFAULT_MESSAGES` in `core/validate.js`, which is the single definition of
+it — a rule enforced anywhere else, with its wording built at the throw site, is
+how the two realms end up refusing the same write in different words.
 
 ### Transforms (applied before validation + write)
 ```
@@ -329,6 +346,47 @@ model Person {
 @@softDelete(cascade)            cascade remove/restore through FK children
 ```
 See [soft-delete.md](./soft-delete.md).
+
+### Templates
+```
+@@hasTemplates                   adds isTemplate Boolean @default(false)
+@@hasTemplates(field: "isPreset")  same, under a name you choose
+```
+
+The categorical *definition vs instance* pattern. A quote template and a quote
+are the same shape, so they are the same table, and the marker column says which
+one a row is. **Every read and every write excludes templates by default** —
+reporting, list screens and operational queries see only real rows without
+saying so — and both take the same two flags to opt out:
+
+```js
+await db.quote.findMany()                            // instances
+await db.quote.findMany({ withTemplates: true })     // instances + templates
+await db.quote.findMany({ onlyTemplates: true })     // templates
+
+await db.quote.update({ where: { id }, data, withTemplates: true })   // edit a template
+await db.quote.updateMany({ where: {}, data, onlyTemplates: true })   // edit all templates
+await db.quote.delete({ where: { id }, withTemplates: true })         // destroy one
+```
+
+**Writes take the flags because a template is a live row, not an end state.**
+That is the difference from `@@softDelete`, which the flags otherwise mirror
+exactly: a deleted row is out of play and `restore()` is its way back, so
+"cannot be edited" is coherent there. A template is a parallel category you
+maintain — the thing every instance was cloned from — and the marker is
+writable, so an instance can be promoted and a template demoted:
+
+```js
+await db.quote.update({ where: { id }, data: { isTemplate: true } })                        // promote
+await db.quote.update({ where: { id }, data: { isTemplate: false }, withTemplates: true })  // demote
+```
+
+`asSystem()` does **not** lift the filter. It lifts the access rules —
+`@@gate`, `@@allow`/`@@deny`, `@guarded` — and this is not one; it shapes which
+rows a statement is about. The flags are the only way past it, for every client.
+
+A `@from(Target, …)` reads its target the way the target reads: templates are
+out unless the `@from` declares `withTemplates: true`.
 
 ### Full-text search
 ```
@@ -567,3 +625,67 @@ model User {
   role  Role    /// Access level — affects what the user can see and do.
 }
 ```
+
+## `@derived(expr)` — computed in SQL, so it can be queried
+
+`@computed` is a JS function over a fetched row: SQLite has never heard of it,
+so it cannot be filtered or sorted by. `@derived` is the same idea one layer
+down — an expression over the row's own columns, emitted into the SELECT:
+
+```
+model Task {
+  priority    Int
+  dueAt       DateTime?
+  completedAt DateTime?
+
+  overdue Boolean @derived(dueAt < now() && completedAt == null)
+  urgency Int     @derived(priority > 8 ? 3 : priority > 5 ? 2 : 1)
+}
+```
+
+```js
+db.task.findMany({ where: { overdue: true }, orderBy: { urgency: 'desc' } })
+db.task.groupBy({ by: ['urgency'], _count: true })
+```
+
+It is not a column: no DDL, no migration, and a write naming it is refused by
+name. A non-optional derived field is never "required" on create.
+
+**It is not `@generated`.** That creates a real stored column and must stay
+deterministic; the point here is a value that changes on its own because the
+clock moved.
+
+### What the client is told
+
+A **flag**, not the expression:
+
+```json
+"overdue": {
+  "type": "boolean",
+  "readOnly": true,
+  "x-litestone-kind": "derived",
+  "x-litestone-volatile": "clock"
+}
+```
+
+`x-litestone-volatile` is the one thing a consumer cannot work out for itself —
+this value goes stale with **no write, no event and nothing to announce it**, so
+a cached copy has a shelf life. Shipping the expression instead would mean a
+third implementation of the language in the browser, beside the SQL compiler and
+the JS evaluator; the server's answer is the only one.
+
+### What it may contain
+
+The `@@allow` expression language, and it must be **static** — one value for the
+row, not one per reader:
+
+| | |
+| --- | --- |
+| `now()` | allowed — emits SQLite's clock, one instant per statement |
+| `auth()`, `check()` | refused, naming `@@scope` as the per-caller tier |
+| another `@derived` field | refused — not yet |
+| a `@computed` field | refused — SQLite cannot see it |
+
+The declared type is checked against the branches at startup, so
+`Level @derived(p > 8 ? 'hgih' : 'low')` is a schema error rather than a row
+that reads back a string no enum member matches.

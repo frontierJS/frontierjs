@@ -193,6 +193,23 @@ export function buildRegistry() {
               && aliasExisting.meta?.title === meta.alias) {
             // The alias collides with another command's TITLE — keep title, skip alias
             console.error(`\x1b[33m⚠\x1b[0m alias "${meta.alias}" on ${meta.title} collides with command title "${aliasExisting.meta.title}" — alias ignored`)
+          } else if (aliasExisting && aliasExisting.filePath !== filePath
+                     && aliasExisting.meta?.alias === meta.alias
+                     && aliasExisting.source === source) {
+            // TWO COMMANDS CLAIMING ONE ALIAS. The winner is whichever loads
+            // LAST, which is discovery order — and `find()` sorts for that
+            // reason, because readdir order made `fli new` mean `project:new`
+            // on one checkout and `make:command` on another, from one tree.
+            //
+            // Sorted is reproducible, not meaningful: nothing about `utils`
+            // sorting after `ports` says which command should own `dev`. So
+            // the warning stands, and a contested alias is a thing to resolve
+            // by renaming one side rather than to leave to the alphabet.
+            //
+            // Only within one source: a project overriding a core command is
+            // intentional, which is the rule the title branch above follows.
+            console.error(`\x1b[33m⚠\x1b[0m alias "${meta.alias}" claimed by both ${aliasExisting.meta.title} and ${meta.title} — "${meta.alias}" runs ${meta.title}; use "${aliasExisting.meta.title}" for the other`)
+            registry.set(meta.alias, entry)
           } else {
             registry.set(meta.alias, entry)
           }

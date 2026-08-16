@@ -37,11 +37,20 @@ export function createThread(
 
   const path = resolveWorkerPath(nameOrPath)
 
+  // `workerData` is not part of the web WorkerOptions, and measured on Bun
+  // 1.3.11 it is NOT DELIVERED either: inside the worker, `globalThis.workerData`,
+  // `self.workerData` and `Bun.workerData` are all undefined. So `data` goes
+  // nowhere and this file's own header — "Worker scripts receive data" — is
+  // wrong. `FJS-271` holds the fix, which is a protocol decision rather than a
+  // type one: an initial `postMessage` would arrive as a task on the pool's
+  // message loop.
+  //
+  // Passed anyway rather than deleted, so the day Bun delivers it this starts
+  // working; the cast is what the web type does not admit.
   const worker = new Worker(path, {
-    // @ts-ignore — Bun-specific
     type:       'module',
-    workerData: data
-  })
+    workerData: data,
+  } as WorkerOptions & { workerData?: unknown })
 
   return {
     postMessage: (msg) => worker.postMessage(msg),
@@ -129,7 +138,7 @@ export function createPool(
 
     exec<T = unknown>(data: unknown): Promise<T> {
       return new Promise<T>((resolve, reject) => {
-        const task: QueuedTask = { data, resolve, reject }
+        const task: QueuedTask = { data, resolve: resolve as (value: unknown) => void, reject }
         queue.push(task)
         stats.queued++
         drain()

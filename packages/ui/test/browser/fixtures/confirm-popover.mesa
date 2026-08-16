@@ -1,0 +1,28 @@
+<script>
+  // confirm-popover.mesa — the two-button confirmation, with both callbacks
+  // counted. A confirmation that fires BOTH, or neither, looks identical on
+  // screen to one that fires the right one.
+  import ConfirmationPopover from '../../../components/overlay/ConfirmationPopover.mesa'
+  import Btn from '../../../components/forms/Btn.mesa'
+
+  let confirms = 0
+  let cancels  = 0
+</script>
+
+<div style:padding="6rem 3rem">
+  <ConfirmationPopover
+    title="Remove member?"
+    message="They will lose access immediately."
+    confirmLabel="Remove"
+    onconfirm={() => confirms++}
+    oncancel={() => cancels++}
+  >
+    {#snippet trigger()}
+      <Btn id="confirm-trigger">Remove</Btn>
+    {/snippet}
+  </ConfirmationPopover>
+</div>
+
+<button type="button" id="outside">Elsewhere</button>
+<output id="confirms">{confirms}</output>
+<output id="cancels">{cancels}</output>

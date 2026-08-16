@@ -4,7 +4,7 @@
 // `_meta`, `_schemas`, `_hookMap` and the action rule directly, through casts.
 // Three readers of four internals is three chances to describe a different
 // service than the one that answers the request — and /metrics did exactly that
-// for actions, reporting `[]` for every service while /manifest listed them.
+// for custom methods, reporting `[]` for every service while /manifest listed them.
 //
 // describe() is the one answer now. These assert the readers agree with it
 // rather than restating what each should say.
@@ -40,7 +40,7 @@ describe('describe()', () => {
     const d = mkService().describe()
     expect(d.name).toBe('widgets')
     expect(d.model).toBe('Widget')
-    expect(d.actions).toEqual(['reboot'])
+    expect(d.customMethods).toEqual(['reboot'])
     expect(d.methods).toEqual(['find', 'get', 'create', 'reboot'])
     expect(d.softDelete).toBe('deletedAt')
     expect(d.idField).toBe('ref')
@@ -53,7 +53,7 @@ describe('describe()', () => {
     expect(d.softDelete).toBeNull()
     expect(d.cache).toBe(false)
     expect(d.idField).toBe('id')
-    expect(d.actions).toEqual([])
+    expect(d.customMethods).toEqual([])
   })
 
   test('/manifest, /metrics and the OpenAPI spec all agree with it', async () => {
@@ -69,7 +69,7 @@ describe('describe()', () => {
       services: { name: string; methods: string[]; softDelete: boolean; idField: string }[]
     }
     const metrics = (await request(app).get('/metrics')).body as {
-      services: { details: Record<string, { actions: string[]; methods: string[]; allowBulk: boolean }> }
+      services: { details: Record<string, { customMethods: string[]; methods: string[]; allowBulk: boolean }> }
     }
     const oa = (await request(app).get('/openapi.json')).body as { paths: Record<string, unknown> }
 
@@ -78,12 +78,12 @@ describe('describe()', () => {
     expect(m.idField).toBe(d.idField)
     expect(m.softDelete).toBe(!!d.softDelete)
 
-    expect(metrics.services.details.widgets!.actions).toEqual(d.actions)
+    expect(metrics.services.details.widgets!.customMethods).toEqual(d.customMethods)
     expect(metrics.services.details.widgets!.methods).toEqual(d.methods)
     expect(metrics.services.details.widgets!.allowBulk).toBe(d.allowBulk)
 
     const paths = Object.keys(oa.paths).join(' ')
-    for (const a of d.actions) expect(paths).toContain(a)
+    for (const a of d.customMethods) expect(paths).toContain(a)
     expect(paths).not.toContain('prune')
   })
 })

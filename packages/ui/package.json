@@ -6,12 +6,17 @@
   "exports": {
     "./utils.js": "./utils.js",
     "./utils": "./utils.js",
+    "./controls.js": "./controls.js",
+    "./controls": "./controls.js",
+    "./stores/*.js": "./stores/*.js",
     "./stores/*": "./stores/*.js",
     "./components/*.mesa": "./components/*.mesa",
     "./components/*": "./components/*.mesa"
   },
   "scripts": {
-    "test": "node test/compile-all.mjs && node test/render.mjs && node test/attributes.mjs && node test/form.mjs",
+    "test": "node test/compile-all.mjs && node test/render.mjs && node test/attributes.mjs && node test/form.mjs && node test/browser/run.mjs",
+    "test:browser": "node test/browser/run.mjs",
+    "serve": "node test/browser/server.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "peerDependencies": {
@@ -32,6 +37,7 @@
   "files": [
     "components",
     "stores",
+    "controls.js",
     "utils.js",
     "tokens.css",
     "README.md",

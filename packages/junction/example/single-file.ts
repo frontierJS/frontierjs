@@ -5,7 +5,7 @@
 // One file, no folders. Boots a working API in ~300 lines covering:
 //   • Litestone schema, in-memory SQLite, gate-based authorization
 //   • Service with full CRUD via createService()
-//   • Custom service action (stats aggregation) — services aren't only CRUD
+//   • Custom service method (stats aggregation) — services aren't only CRUD
 //   • Auth (token-based, swap for @frontierjs/auth in real apps)
 //   • Built-in hooks: authenticate, protect (strips email from reads)
 //   • WebSocket channels — clients get live CRUD events
@@ -43,7 +43,7 @@
 //     -H "authorization: Bearer $TOKEN" \
 //     -d '{"name":"Wayne Enterprises","company":"Wayne Enterprises","email":"bruce@wayne.com","value":50000}'
 //
-//   # Custom action — stats aggregation across all leads
+//   # Custom method — stats aggregation across all leads
 //   curl -X POST http://localhost:3000/api/leads \
 //     -H 'x-service-method: getStats'
 //
@@ -262,7 +262,7 @@ app.configure(channels((a: App) => {
 }))
 
 // ─── Litestone db middleware ──────────────────────────────────────────────
-// Builds a per-request auth-scoped db client and attaches it to ctx.params.db.
+// Builds a per-request auth-scoped db client and attaches it to ctx.route.db.
 // Service code reads it via createService — no manual plumbing needed.
 
 app.hooks({
@@ -286,7 +286,7 @@ app.hooks({
 //     authenticated endpoints; the public list is sanitized.
 //   • publish (after write) — broadcasts the change to WS subscribers.
 //
-// Custom action `getStats` demonstrates that services aren't only CRUD —
+// Custom method `getStats` demonstrates that services aren't only CRUD —
 // any function on the service options object becomes a callable method,
 // dispatched via the `X-Service-Method` header.
 
@@ -311,13 +311,13 @@ app.services.register(
       },
     },
 
-    // Custom action: POST /api/leads with header `x-service-method: getStats`
+    // Custom method: POST /api/leads with header `x-service-method: getStats`
     // Returns aggregate stats across all leads. The service has access to
     // the per-request scoped Litestone client via ctx.locals.db (set by
     // withLitestoneDb), so authorization is honoured automatically — a
     // STRANGER caller will only see what `0.4.4.5`'s read level allows.
     async getStats(ctx: ServiceContext) {
-      const scopedDb = (ctx.params as { db?: typeof db }).db ?? db
+      const scopedDb = (ctx.route as { db?: typeof db }).db ?? db
       const all      = await scopedDb.asSystem().lead.findMany()
 
       const byStatus = all.reduce<Record<string, number>>((acc, lead) => {

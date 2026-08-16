@@ -27,6 +27,35 @@
  *
  * Shell is the only one that positions anything; the rest just claim a grid
  * area. That means Topbar, Sidebar and Screen are still usable on their own.
+ *
+ * ── The frame has its own grounds ────────────────────────────────────
+ *
+ * --app-bg, --topbar-bg and --sidebar-bg, each falling back to the
+ * neutral it used to hardcode. Until they existed the shell could not be
+ * themed apart from the content at all: two themes hit it independently,
+ * and basecamp.css records in its own header that the prototype's
+ * distinct sidebar (#0e1019) and modal (#12151f) surfaces both had to be
+ * collapsed into --surface. The Dialog half is --dialog-bg, in
+ * dialogs.css.
+ *
+ * They are use-site fallbacks rather than :root declarations because a
+ * `--topbar-bg: var(--surface)` at :root resolves ONCE, against :root's
+ * own --surface, and inherits that colour past every .theme-* — the
+ * alias trap tokens.css rules on.
+ *
+ * ── What a token cannot do, and what to write instead ────────────────
+ *
+ * A ground is a background. It is not an ink ramp, so a LIGHT app with a
+ * dark sidebar does not follow from --sidebar-bg: the nav labels inside
+ * still read --ink-soft, tuned for the light surface, and land dark on
+ * dark. The answer is already in the package and costs nothing, because
+ * a theme is a class of inheriting tokens and nothing else:
+ *
+ *   <nav class="sidebar theme-dark" aria-label="Main">
+ *
+ * Every descendant inherits the whole dark ramp — ink, rules, surfaces,
+ * the tone-as-text window. Use --sidebar-bg to separate grounds WITHIN
+ * one ramp (basecamp's three darks); use a theme class to invert.
  */
 
 /* ── App — the page surface ──────────────────────────────────────────
@@ -37,7 +66,7 @@
   margin:           0;
   min-block-size:   100vh;
   min-block-size:   100dvh;
-  background:       var(--surface-sunken);
+  background:       var(--app-bg, var(--surface-sunken));
   color:            var(--ink);
   font-family:      var(--font-primary);
   -webkit-font-smoothing: antialiased;
@@ -95,8 +124,8 @@
   gap:             var(--space-2xl);
   block-size:      var(--topbar-height);
   padding-inline:  var(--space-2xl);
-  background:      var(--surface);
-  border-block-end: 1px solid var(--rule);
+  background:      var(--topbar-bg, var(--surface));
+  border-block-end: var(--border-width) solid var(--rule);
 
   /* Sticks when the document scrolls. In .shell.viewport it never needs to. */
   position: sticky;
@@ -109,8 +138,8 @@
   grid-area:         sidebar;
   inline-size:       var(--sidebar-width);
   padding:           var(--space-2xl) var(--space-lg);
-  background:        var(--surface);
-  border-inline-end: 1px solid var(--rule);
+  background:        var(--sidebar-bg, var(--surface));
+  border-inline-end: var(--border-width) solid var(--rule);
 }
 
 /* ── Screen — the routed page body ───────────────────────────────── */

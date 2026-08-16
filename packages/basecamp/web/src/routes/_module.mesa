@@ -119,8 +119,11 @@ siteName: Basecamp
     { id: 'sign-out', group: 'Session', label: 'Sign out', action: out },
   ]
 
-  function out() {
-    signOut()
+  // Awaited: signOut ends the session at the server first, and navigating
+  // before it returns would put the guard in front of a session that is still
+  // there — which sends /login/ straight back to /.
+  async function out() {
+    await signOut()
     goto('/login/')
   }
 

@@ -90,6 +90,10 @@ function _cacheSet(key, value) {
 const dirs = {
   web:       env.WEB_DIR       || 'web',
   api:       env.API_DIR       || 'api',
+  // A surface of its own at the app root, never a folder inside web/: its
+  // config, its host pages and its release are a different set of answers, and
+  // an app may have this one and no web/ at all. See core/widget-surface.js.
+  widgets:   env.WIDGETS_DIR   || 'widgets',
   site:      env.SITE_DIR      || 'site',
   mobile:    env.MOBILE_DIR    || 'mobile',
   extension: env.EXTENSION_DIR || 'extension',
@@ -995,6 +999,9 @@ function buildPaths() {
     webPages:      resolve(r, d.web, 'src/routes'),
     webComponents: resolve(r, d.web, 'src/components'),
     webResources:  resolve(r, d.web, 'src/resources'),
+    widgets:       resolve(r, d.widgets),
+    widgetEmbeds:  resolve(r, d.widgets, 'src/Embeds'),
+    widgetTests:   resolve(r, d.widgets, 'test'),
     site:          resolve(r, d.site),
     siteContent:   resolve(r, d.site, 'content'),
     siteMedia:     resolve(r, d.site, 'content/media'),

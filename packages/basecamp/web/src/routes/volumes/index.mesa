@@ -50,7 +50,7 @@ title: Volumes
       // Both reads. The totals are the FLEET's and the list is a page, so
       // deriving one from the other would state "12 GB across the fleet" from
       // whatever fifty rows came back.
-      const totals = await volumes.service.action('usage', null)
+      const totals = await volumes.service.invoke('usage', null)
       const page   = await volumes.service.find({
         ...(filter === 'all' ? {} : { inUse: filter === 'used' }),
         ...(server ? { serverId: server } : {}),
@@ -104,7 +104,7 @@ title: Volumes
   async function prune() {
     error = null; busy = 'prune'
     try {
-      const res = await volumes.service.action('prune', null, server ? { serverId: server } : {})
+      const res = await volumes.service.invoke('prune', null, server ? { serverId: server } : {})
       toasts.success(
         `Pruned ${res.forgotten.length} volume(s)`,
         `Freed ${size(res.freedBytes)}` + (res.unreachable.length ? ` · no outpost on ${res.unreachable.join(', ')}` : ''),

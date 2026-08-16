@@ -1,0 +1,133 @@
+<script>
+  // form-tail.mesa — a <Form> over the six controls that never read the form
+  // context, plus the four that resolved everything but the schema's own
+  // `required`.
+  //
+  // The resource is shaped the way `createResource` shapes one — `fields` is
+  // buildFieldRules() output, `formFields` is the REAL control table by
+  // relative path, never a fixture's own idea of what a `Float` is. Nothing
+  // here reaches a server: `onsubmit` replaces the request and nothing else,
+  // so the in-flight state, the error mapping and the dirty tracking are still
+  // the component's own.
+  //
+  // Every control is handed a `name` and nothing else. That is the point of
+  // the fixture: the label, the `required` and the server error must all
+  // arrive through `$context.form`, and a control that resolves none of them
+  // renders a title-cased column name with no constraints and no rejection.
+  import Form         from '../../../components/forms/Form.mesa'
+  import Field        from '../../../components/forms/Field.mesa'
+  import Input        from '../../../components/forms/Input.mesa'
+  import Textarea     from '../../../components/forms/Textarea.mesa'
+  import Select       from '../../../components/forms/Select.mesa'
+  import Checkbox     from '../../../components/forms/Checkbox.mesa'
+  import Switch       from '../../../components/forms/Switch.mesa'
+  import RadioGroup   from '../../../components/forms/RadioGroup.mesa'
+  import Slider       from '../../../components/forms/Slider.mesa'
+  import NumberInput  from '../../../components/forms/NumberInput.mesa'
+  import Combobox     from '../../../components/forms/Combobox.mesa'
+  import MultiSelect  from '../../../components/forms/MultiSelect.mesa'
+  import { formFieldList } from '@frontierjs/sierra/field-rules'
+
+  // `@label("…")` reaches the browser as `title`. Every field below declares
+  // one that is NOT the title-cased column name, because those two are
+  // indistinguishable on screen and a control that shadows the schema would
+  // still look right.
+  const FIELDS = {
+    headline:  { type: 'string',  required: true,  maxLength: 20, title: 'Public headline' },
+    summary:   { type: 'string',  required: true,  maxLength: 40, title: 'Short summary' },
+    plan:      { type: 'string',  required: true,  title: 'Billing cycle',
+                 enum: ['monthly', 'yearly'] },
+    seats:     { type: 'integer', required: true,  minimum: 2, maximum: 9, title: 'Seat count' },
+    weight:    { type: 'number',  required: false, title: 'Relative weight' },
+    live:      { type: 'boolean', required: false, title: 'Is live' },
+    notify:    { type: 'boolean', required: true,  title: 'Send notices' },
+    owner:     { type: 'string',  required: true,  title: 'Account owner' },
+    regions:   { type: 'string',  required: true,  title: 'Served regions' },
+    channels:  { type: 'string',  required: true,  title: 'Delivery channels' },
+  }
+
+  // Assigned by the spec before it submits, so one mount covers both the clean
+  // render and the rejected one. Declared ahead of the resource that closes
+  // over it rather than beside the other state.
+  let SERVER_ERRORS = {}
+  window.kitFailWith = (map) => { SERVER_ERRORS = map }
+
+  const RESOURCE = {
+    context: { model: 'Listing', service: 'listings', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({
+      headline: '', summary: '', plan: 'monthly', seats: 2, weight: 0,
+      live: false, notify: false, owner: '', regions: '', channels: '',
+    }),
+    // The shape a 400 arrives in through the browser client, unwrapped the way
+    // `toFieldErrors` unwraps it. Returned rather than thrown so the fixture
+    // can drive the error path with no network at all.
+    fieldErrors: () => ({ fields: SERVER_ERRORS, message: 'Could not save' }),
+    validate: () => [],
+    service: {},
+  }
+
+  // Flat top-level lets, one per control: `bind:` requires a writable
+  // top-level binding in THIS component, so `bind:value={record.headline}` is
+  // a compile error rather than a working form. That is the shape a
+  // hand-written form takes, and it is why <Form> generating its own fields is
+  // the path an app should reach for first.
+  let headline = ''
+  let summary  = ''
+  let plan     = 'monthly'
+  let seats    = 2
+  let weight   = 0
+  let live     = false
+  let notify   = false
+  let owner    = ''
+  let regions  = ''
+
+  let errors = {}
+  let done   = 0
+
+  const PLANS   = [{ value: 'monthly', label: 'Monthly' }, { value: 'yearly', label: 'Yearly' }]
+  const OWNERS  = [{ value: 'ada', label: 'Ada' }, { value: 'grace', label: 'Grace' }]
+  const REGIONS = [{ value: 'eu', label: 'Europe' }, { value: 'us', label: 'Americas' }]
+
+  // Fails whenever the spec has armed an error map; succeeds otherwise. The
+  // form's own pipeline maps the throw, which is what puts a message on each
+  // field rather than the fixture writing one there.
+  async function submit(record) {
+    if (Object.keys(SERVER_ERRORS).length) throw new Error('rejected')
+    done++
+    return record
+  }
+</script>
+
+<Form
+  resource={RESOURCE}
+  bind:errors={errors}
+  onsubmit={submit}
+  validateOn="submit"
+>
+  <Input name="headline" bind:value={headline} />
+  <Textarea name="summary" bind:value={summary} />
+  <Select name="plan" options={PLANS} bind:value={plan} />
+  <NumberInput name="seats" bind:value={seats} />
+  <Slider name="weight" bind:value={weight} min={0} max={10} />
+  <Checkbox name="live" bind:checked={live} />
+  <Switch name="notify" bind:checked={notify} />
+  <RadioGroup name="owner" items={OWNERS} bind:value={owner} />
+  <Combobox name="regions" options={REGIONS} bind:value={regions} />
+
+  <!--
+    The one field written the long way, so Field standing on its own is under
+    test too — and so is what happens when a control inside one resolves the
+    same rule the wrapper did.
+  -->
+  <Field name="channels" hint="Shown in search results">
+    <MultiSelect name="channels" options={REGIONS} />
+  </Field>
+
+  <button type="submit" class="btn primary" id="save">Save</button>
+</Form>
+
+<output id="done">{done}</output>
+<output id="errorKeys">{Object.keys(errors).sort().join(',')}</output>

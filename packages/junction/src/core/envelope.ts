@@ -83,7 +83,7 @@ export function isListResult<T = unknown>(value: unknown): value is ListResult<T
 
 // ─── Constructors ─────────────────────────────────────────────────────────
 // Use these rather than object literals. A hook that short-circuits by setting
-// ctx.result (caching, custom actions, stubs) has to produce a well-formed
+// ctx.result (caching, custom methods, stubs) has to produce a well-formed
 // envelope, and hand-rolling one is how fields go missing.
 
 export function single<T>(object: string, data: T, errors: unknown[] = []): SingleResult<T> {
@@ -162,6 +162,21 @@ export function describeShape(value: unknown): string {
 // data, total }`, and reading its own field names as strays would refuse it.
 const LIST_KEYS = new Set(['data', 'total', 'limit', 'offset', 'skip', 'errors', 'kind', 'object'])
 
+// Named rather than duck-typed on one property, because each of these reaches a
+// service by a different mistake: a Response is a raw-route handler's return
+// value used in the wrong place, a ReadableStream is a body someone built by
+// hand, and an async generator is the shape people reach for first when they
+// want to stream and have not read that a channel already does it.
+function describeStream(raw: unknown): string | null {
+  if (raw === null || typeof raw !== 'object') return null
+  if (typeof Response      !== 'undefined' && raw instanceof Response)      return 'a Response'
+  if (typeof ReadableStream !== 'undefined' && raw instanceof ReadableStream) return 'a ReadableStream'
+  const r = raw as Record<string | symbol, unknown>
+  if (typeof r.getReader === 'function')             return 'a stream'
+  if (typeof r[Symbol.asyncIterator] === 'function') return 'an async iterable'
+  return null
+}
+
 /** `{ data: [...], …pagination }` or not a list at all. `data` MUST be an array. */
 function listShape(raw: unknown): { data: unknown[]; extra: string[] } | null {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
@@ -183,17 +198,33 @@ function listShape(raw: unknown): { data: unknown[]; extra: string[] } | null {
  *
  * **The METHOD decides, not the shape.** It used to be shape alone: any
  * `{ data, total }` was rebuilt as a paginated list, whatever method produced
- * it, and every sibling key was dropped in the rebuild. So a custom action
+ * it, and every sibling key was dropped in the rebuild. So a custom method
  * answering rows plus a summary lost the summary (`FJS-140`), and a `find`
  * answering one object was quietly wrapped as a `single` that the browser then
  * read as an empty list (`FJS-144`). Both are the same mistake — guessing what
  * a method meant from what it happened to return — and `find` is the only
  * method that promises a list, so it is the only one that gets one built for it.
- * An action answering `{ data, total, anythingElse }` is now a `single`, which
+ * A custom method answering `{ data, total, anythingElse }` is now a `single`, which
  * unwraps whole and loses nothing.
  */
 export function wrapResult(raw: unknown, object: string, method = ''): ServiceResult {
   if (Array.isArray(raw)) return list(object, raw)
+
+  // A stream is not a result — `FJS-D13`. Refused by name rather than wrapped,
+  // because wrapping one is silent and total: a Response and a ReadableStream
+  // both have no enumerable own properties, so they serialise to `data: {}` and
+  // the caller gets an empty object with a 200.
+  const streaming = describeStream(raw)
+  if (streaming) {
+    throw new ResultShapeError(
+      object, method || 'method', raw,
+      `answered ${streaming}. A stream is not a result: the envelope says what a ` +
+      `call RETURNED — one record or a page of them, with total/limit/offset — and ` +
+      `a stream returns nothing and then repeatedly. Stream from a raw route with ` +
+      `ctx.sse(), or announce on a channel, where each frame is a result and goes ` +
+      `through the hooks that protect it.`
+    )
+  }
 
   const shaped = listShape(raw)
   const isBulk = shaped !== null && Array.isArray((raw as Record<string, unknown>).errors)
@@ -204,7 +235,7 @@ export function wrapResult(raw: unknown, object: string, method = ''): ServiceRe
         object, method || 'find', raw,
         `answered ${describeShape(raw)}, not a list. find returns an array, or ` +
         `{ data: [...] } with total/limit/offset. A method that answers one thing ` +
-        `gives it a name and is called as an action.`
+        `gives it a name and is called as a custom method.`
       )
     }
     if (shaped.extra.length) {
@@ -212,7 +243,7 @@ export function wrapResult(raw: unknown, object: string, method = ''): ServiceRe
         object, method || 'find', raw,
         `answered a list carrying ${shaped.extra.join(', ')}, which a list envelope ` +
         `does not carry — it holds data, total, limit, offset and errors, and a rebuild ` +
-        `drops the rest. A summary alongside rows is its own named action.`
+        `drops the rest. A summary alongside rows is its own named method.`
       )
     }
     const p = raw as { total?: number; limit?: number; offset?: number; skip?: number; errors?: unknown[] }

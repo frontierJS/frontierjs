@@ -102,11 +102,20 @@ img.avatar {
   align-items: center;
 }
 
-.avatars > .avatar {
+/*
+ * Both rules match an avatar OR a wrapper holding one.
+ *
+ * `.avatar` has to stay a plain box — chip.css owns its layout — so anything
+ * pinning a status dot to its corner needs a positioning element around it,
+ * which is what @frontierjs/ui's Avatar does. A strict `> .avatar + .avatar`
+ * then matched nothing at all: the group rendered as an ordinary spaced row,
+ * ringless, and every class assertion still passed.
+ */
+.avatars :where(.avatar) {
   box-shadow: 0 0 0 2px var(--avatar-ring, var(--surface));
 }
 
-.avatars > .avatar + .avatar {
+.avatars > :is(.avatar, :has(> .avatar)) + :is(.avatar, :has(> .avatar)) {
   margin-inline-start: calc(var(--avatar-overlap, 0.625rem) * -1);
 }
 

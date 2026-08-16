@@ -104,10 +104,11 @@ retired.
   months, and was wrong because it grepped one package. Six index rows have now been
   found stale this way
 
-### 4. Internationalization
+### 4. Internationalization — **ruled 2026-08-15 (`FJS-D12`); deferred to V2**
 
-**Missing entirely.** No message catalogues, no pluralization, no locale
-negotiation, no per-locale formatting.
+**Still missing entirely.** No message catalogues, no pluralization, no locale
+negotiation, no per-locale formatting. What changed is that this is now a
+deliberate deferral with a seam held open, rather than an unanswered question.
 
 - **Laravel equivalent:** the `Lang` facade and `lang/` directory
 - **Why now rather than later:** retrofitting i18n into a UI layer costs far more
@@ -115,6 +116,26 @@ negotiation, no per-locale formatting.
   found again later.
 - **Design question it forces:** does a translated string belong in the schema
   (labels derived from models) or only in the UI? The answer shapes schema→UI.
+
+> **The design question is answered: neither, quite.** `@label` stays in the
+> schema and stays a **default English string** — the key is DERIVED
+> (`Model.field.label`), which is Rails' `human_attribute_name` and costs an
+> untranslated app nothing. The UI resolves it; the schema never becomes a
+> catalogue, and no `.lite` syntax has to change when one arrives.
+>
+> **It also did not shape schema→UI, which shipped without it.** A generator
+> authors no string, so what it multiplies is call sites. The premise this item
+> was filed under was wrong about the coupling and right about the cost.
+>
+> Five more constraints bind alongside the derived key — errors carry a code and
+> params rather than a sentence, configuration strings and content stay two
+> mechanisms (Drupal's split, Payload's two features), `/inflect` never takes a
+> locale, kit strings are props with English defaults, and formatting gets one
+> owner. Reserved as ours: a seed-derived `strings.snapshot.md` gated in CI,
+> `db.$setLocale()` as a client flavour beside `$setAuth`, and per-locale
+> prerender on the `static` target. Full argument and the survey it rests on —
+> ZenStack, Rails, Django, Payload, Drupal, Paraglide — in `DECISIONS.md`
+> § Dependencies & the ecosystem.
 
 ---
 
@@ -372,6 +393,50 @@ should make once**, not a trap each app finds. It also lands on
 `IDEAS/compliance-from-the-seed.md`'s open question about retention and soft delete,
 which is the same collision seen from the legal end.
 
+### 16. Push and SMS delivery — one is a driver, the other is not
+
+Added 2026-08-15, comparing against an outside framework's feature catalogue, which
+lists *"emails, SMSs, direct, and push notifications & webhooks"* as one line. Four of
+those five ship here. The two that do not are usually named together and should not be:
+one is an afternoon and one is a design.
+
+**The architecture is already right.** `@frontierjs/notifications` is channel-agnostic:
+`via(user)` returns a channel list, `toChannel()` renders per channel, and an
+unimplemented channel throws `NotificationChannelNotImplementedError` at send time
+rather than dropping the message. The README's own example adds a `slack` channel from
+outside the package. So *adding a channel* is a solved problem and neither item below is
+blocked on a mechanism.
+
+**SMS is a driver.** A Conduit target with the provider's credentials, a `toSms()`
+returning a string, and a length rule. Conduit already owns credential refs that fail
+closed and a retryable/not-retryable error table. There is nothing to design; it has
+simply not been written.
+
+**Push is not a driver, and calling it one is the mistake to avoid.** A working web-push
+channel needs four things and three of them are the framework's: a VAPID keypair, which
+belongs beside `encryptionKey` in configuration rather than in an app's `.env` by
+convention; **a subscription, which is a row** — endpoint, keys, user, device, created,
+last-seen; a service worker registered by the app's own build, which Sierra owns and
+jetty has already solved once for the extension container; and pruning, because a push
+endpoint returns `410 Gone` when the browser retires it and a table nobody prunes is how
+every hand-rolled implementation ends up sending to thousands of dead endpoints.
+
+Making the subscription a Model is the whole argument for building it here rather than
+leaving it to an app. It inherits `@@gate` (a subscription is one of the more sensitive
+rows an app holds — it is a writable handle to someone's device), `@encrypted` on the
+keys, invariant 7's redaction in the audit trail, and `@@softDelete` semantics on
+expiry. Every hand-rolled version is a plain table with none of that.
+
+**The trap to state before anything is built**: a push payload is a read that leaves the
+building, and it leaves via a third party. The push service sees the body. That is the
+same comparison `IDEAS/bulk-data.md` calls export's `only` half — `@guarded` columns
+must not be in a rendered notification body — and it is sharper here, because the
+recipient is a vendor rather than the user. It is also the same question
+`IDEAS/live-queries.md` answers per socket, one hop further out.
+
+Effort: SMS `S`, push `M`. SMS is `stakes` — every competitor has it. Push is `edge`,
+for the subscription-as-a-Model reason, and only if the boundary above is settled first.
+
 ---
 
 ## The gap that actually decides it
@@ -413,8 +478,10 @@ out-cohere it.**
 
 So the sequencing that follows from that:
 
-1. **Build the tier-1 blockers directly** — OAuth, billing, storage, i18n. Nothing
-   ships without them and no community will fill them early.
+1. **Build the tier-1 blockers directly** — OAuth, billing, storage. Nothing
+   ships without them and no community will fill them early. **i18n left this
+   list on 2026-08-15** (`FJS-D12`): it is V2, and what alpha owes it is six
+   constraints rather than a build.
 2. **Make slices real** (`IDEAS/slices.md`) so tier 2 can be filled by other people.
 3. **Treat documentation as a product**, with the same seriousness as a package.
 4. **Repair or retire `admin:generate`.** It is either the fastest route to a

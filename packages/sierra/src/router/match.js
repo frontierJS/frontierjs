@@ -37,7 +37,7 @@ export function matchRoute(pathname, tree, options = {}) {
 // ─── Pattern segment cache ───────────────────────────────────────────────────
 // Route patterns are static for the life of the tree, so their split form and
 // the lowercase of each static segment can be computed once. Keyed by node so
-// nothing is written onto the tree itself (the manifest is serialised, and
+// nothing is written onto the tree itself (the route table is serialised, and
 // tests build trees by hand).
 const _segCache = new WeakMap()
 

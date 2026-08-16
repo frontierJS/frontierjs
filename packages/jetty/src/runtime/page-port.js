@@ -181,6 +181,9 @@ export class PagePort {
       throw new Error('PagePort.subscribe: handler must be a function')
     }
 
+    // The handler is given (data, meta) and `meta.event` is the WIRE event name
+    // — `posts created`. A subscriber to a channel cannot otherwise tell which
+    // of its events arrived, and one that guesses turns a remove into an upsert.
     const onEvent = (payload) => {
       if (payload?.channel === channel) {
         try { handler(payload.data, payload) }

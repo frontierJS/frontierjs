@@ -1,44 +1,139 @@
 # @frontierjs/toolbelt
 
-> **Status: stub.** Folder claimed, nothing implemented. This file is the intent, not a description of behaviour.
+Pure functions, shared across every FrontierJS package and app, so the same string/date/object logic is not written a fourth time.
 
-The shared kit. Small, common helpers that more than one FrontierJS package — or a random app built on top of one — would otherwise re-implement.
+**One package, one kit per subpath.** Each kit stands on its own — import `@frontierjs/toolbelt/glow` and nothing else comes with it — and they ship together because a project that wants one usually ends up wanting two.
 
-Toolbelt is allowed to know about the framework. Where [`@frontierjs/utils`](../utils/) is pure and context-free, toolbelt is where a helper lives once it needs to touch a runtime concern: an env var, a path, a clock, a filesystem, a Junction `ctx`, a `.lite` schema shape.
-
-```
-@frontierjs/utils      pure functions, no I/O, no framework knowledge
-@frontierjs/toolbelt   shared helpers that may touch runtime + framework
+```js
+import { glow } from '@frontierjs/toolbelt/glow'
 ```
 
-If you can't decide which one a helper belongs in, ask whether it could be tested without mocking anything. Yes → `utils`. No → `toolbelt`.
+| Subpath | Kit | State |
+| --- | --- | --- |
+| `/glow` | source code → highlighted HTML | shipping |
+| `/inflect` | English singular ⇄ plural | shipping |
+| `/directives` | the `$` convention — filters vs directives | shipping |
+| `/datetime` | date, time and timezone formatting | [`docs/datetime.md`](docs/datetime.md) is the intent; the prototype is parked in `mockup/datetime/` |
+
+The whole package holds to one rule:
+
+> **Every export is a pure function.** Same input, same output. No I/O, no clock, no filesystem, no network, no globals, no framework imports, no mutation of its arguments.
+
+That rule is not a style preference — it is what buys the package its standing (below). A helper that needs the current time, an env var, or a Junction `ctx` does not go in a new subpath here; it goes in the package that needs it, until something rules otherwise.
 
 ---
 
 ## Realm
 
-Cross-cutting. Not a realm noun — toolbelt introduces no Model, Service, or Resource, and nothing in the mental model derives from it.
+Cross-cutting. Not a realm noun — toolbelt introduces no Model, Service, or Resource.
 
 ---
 
 ## Dependency direction
 
-Toolbelt is a **leaf against the core packages**: `litestone`, `junction`, `sierra` and `mesa` must never import it, or the `Litestone ← Junction ← Sierra` chain (Invariant 1) picks up a shortcut around itself. Apps and satellite packages (`basecamp`, `orion`, `caravan`, `conduit`, `notifications`, `cli`) may.
+**Zero dependencies, ever** — workspace or otherwise. Toolbelt is *substrate*: it sits below the dependency graph rather than being a member of it, so importing it can never create a cycle or route a package around `Litestone ← Junction ← Sierra`. Any package may import it, including litestone and mesa.
 
-Toolbelt itself may depend on `@frontierjs/utils` and on framework packages as **peer** deps only — a helper for Junction should not drag Junction into an app that never installs it.
+Ruled `FJS-D26`, `DECISIONS.md` § Dependencies & the ecosystem. The purity rule above is what the ruling rests on: a single `Date.now()` in `src/` costs the exemption, not just the style.
 
 ---
 
-## Candidate contents
+## `inflect` — English singular ⇄ plural
 
-Nothing here is committed to. Listed so the boundary is legible:
+```js
+import { pluralize, singularize } from '@frontierjs/toolbelt/inflect'
 
-- config + env reading with declared defaults
-- path resolution against the canonical app layout (`db/ api/ web/`, `config/` per sub-project) — probed, never derived from where `vite.config.js` sits (Invariant 3)
-- id / slug / token generation
-- retry, backoff, timeout wrappers
-- structured logging shims
-- test helpers used by more than one package's suite
+pluralize('category')    // 'categories'
+pluralize('person')      // 'people'
+singularize('statuses')  // 'status'
+```
+
+**One definition, five callers.** FrontierJS names one thing three ways —
+`model Post` in the schema, `posts` for the service and the URL, `db.post` for
+the accessor — and a table name and the model name derived back from it have to
+be the same rules run twice. They were five copies that disagreed: two knew
+twenty irregulars, one knew none but had the guards that stop `status` becoming
+`statu`, and one was `endsWith('s')`.
+
+English's regular rules plus a fixed irregular table (`person`/`people`,
+`index`/`indices`, `datum`/`data`, 21 in all). **Not a dictionary, and it cannot
+become one** — the gaps are structural: `bases` is `basis` and never `base`,
+`houses` singularises to `hous`, `lens` to `len`, because `pens` is a real
+plural with the same ending. A word the rules cannot reach is said by hand:
+`@@map` in the Data realm, `createResource('lenses', { model: 'Lens' })` in the
+UI.
+
+---
+
+## `directives` — the `$` convention
+
+```js
+import { splitParams, RESERVED_PARAMS } from '@frontierjs/toolbelt/directives'
+
+splitParams({ status: 'active', $limit: '20', $orderBy: '-createdAt' })
+// { query:      { status: 'active' },
+//   directives: { limit: 20, orderBy: '-createdAt' } }
+```
+
+FrontierJS carries two different kinds of thing in one bag of parameters: the
+**filters** (`status=active` — columns, values, a WHERE) and the **directives**
+(`$limit=20` — how much, in what order, which fields). The `$` is what tells
+them apart, and it is transport syntax: nothing past the boundary that reads it
+should ever see one.
+
+**Two boundaries read it, not one** — Junction's bridge, off an HTTP query
+string or a WebSocket frame, and Sierra's router, off a URL's search string.
+Same grammar, two realms, which is why the table is here rather than in either.
+A directive one of them does not name does not fail: it falls through as a
+filter, and the Data boundary reports a column nobody declared, three layers
+from the cause.
+
+The read direction only. Junction's browser client writes `$` names on the way
+out from a typed `QueryDirectives`, through one table, on two paths that share nothing —
+its own suite asserts every name it emits is one this table strips, which is the
+property that matters and is not the same as sharing a function.
+
+Value shapes are deliberately not fixed: over HTTP everything is a string, and a
+caller that has already parsed a URL passes numbers and booleans. Both are read,
+and absent stays absent — *nothing was asked* is not *the defaults*.
+
+---
+
+## `glow` — source code to highlighted HTML
+
+```js
+import { glow } from '@frontierjs/toolbelt/glow'
+
+glow('.btn { color: red }', { language: 'css', prefix: false })
+// → <code language="css">…</code>
+```
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `language` | inferred from the first character | `css`, `html`, `js`, `bash`, `md`, `json`, `yaml`, … |
+| `prefix` | `true` | Treat a leading `+`, `-` or `>` as a line marker. **See the trap below.** |
+| `mark` | `true` | Treat `•text•` as a highlight and `••text••` as an error |
+| `numbered` | `false` | Wrap each line in a `<span>` so a CSS counter can number it |
+
+**The output carries no CSS classes.** A token is marked with the HTML element that already means it, so the theme is element selectors and one attribute:
+
+| Element | Marks |
+| --- | --- |
+| `<sup>` | comment |
+| `<i>` | punctuation |
+| `<b>` | identifier — property, function, key |
+| `<em>` | value — string, number, CSS custom property |
+| `<strong>` | keyword, tag name, hex colour |
+| `<label>` | `@rule`, decorator, `!important` |
+| `<ins>` `<del>` `<dfn>` | a whole line: added, removed, noted |
+| `<mark>` `<u>` | an author's highlight, an author's error |
+
+[`@frontierjs/css`](../css/) ships that theme in `components/code.css` and needs nothing from this package at runtime to do it.
+
+### The line-prefix trap
+
+With `prefix` on, a line beginning `+`, `-` or `>` is a marker and **the character is removed from the output**. In CSS all three are legal first characters — `--custom-prop`, `> .child`, `+ .sibling` — so highlighting a stylesheet with prefixes on silently eats one character per line.
+
+`--` is handled for you: two dashes are never a diff marker. The combinators are not, and cannot be — `+ .sibling` and a diff-added line are the same three characters. **A caller highlighting CSS wants `prefix: false`.**
 
 ---
 
@@ -48,14 +143,38 @@ Nothing here is committed to. Listed so the boundary is legible:
 bun add @frontierjs/toolbelt
 ```
 
-## Usage
+---
 
-Not yet. When the first export lands, it gets an example here and an entry in `CHANGES.md`.
+## Testing
+
+```bash
+bun run test           # all specs
+bun run test inflect   # only specs whose filename matches
+```
+
+Zero dependencies — `test/run.js` is the whole harness, and it runs under node as well as bun.
+
+The corpus in `test/fixtures/guide-samples.json` is 137 real code samples lifted from the `@frontierjs/css` guide — CSS, HTML, JS, shell. Every one is round-tripped through every language and must come back byte-identical, because the one way a highlighter can be catastrophically wrong is silently: it drops a character, the output still looks like code, and the reader copies a sample that does not work. Refresh it with `node test/fixtures/extract.mjs`.
+
+---
+
+## Candidate contents
+
+Nothing here is committed to. Listed so the boundary is legible:
+
+- string: case conversion, slugify, truncate
+- object: pick, omit, deep equal, deep clone, dot-path get/set
+- array: groupBy, chunk, uniqueBy, partition
+- type guards and small predicates
+- result/option helpers, if the framework settles on a shape
+
+Date and time helpers are not on that list: they are the `/datetime` kit, and take an explicit `now` for the same reason everything else here does.
 
 ---
 
 ## Open questions
 
-- Does `toolbelt` earn subpath exports (`@frontierjs/toolbelt/junction`) so an app pays only for what it imports, or is a single flat entry simpler while it is small?
-- Which existing duplication moves here first? `CLAUDE.md` § *Open questions* names the live candidates — the HMR algorithm copied into sierra ×2 and jetty, and jetty's copy of sierra's `resources/`.
-- Is there a rule that stops toolbelt becoming the junk drawer? Proposed: **anything with exactly one caller does not belong here.**
+- ~~Is purity enforced, or only documented?~~ **Enforced** — `scripts/ci.mjs` § hygiene fails the build on a dependency in the manifest, or a clock, a global, a network call or any non-relative import under `src/` (`FJS-258`).
+- Whether there is ever a root `.` entry. Today every kit is a subpath, so an app that imports one pulls in one.
+- Does toolbelt duplicate anything already living inside litestone or sierra? If so, the copy there moves here and the original re-exports — never two implementations. The two that were open closed this way: `FJS-191` (mesa's forked `glow`) and `FJS-192` (five inflection rule sets).
+- `glow` was written elsewhere and adopted; `docs/glow/` keeps the Svelte editor and SCSS theme it arrived with, as reference only. Neither is shipped, and neither is FrontierJS code — the repo has no Svelte, and the SCSS uses UnoCSS's `@apply`.

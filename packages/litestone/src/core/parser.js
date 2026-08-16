@@ -34,6 +34,26 @@ const TK = {
   GTE:  'GTE',  // >=
 }
 
+// Every operator a policy expression accepts, in one place so the parse error
+// can list them. `in` is the only word among them; the rest are symbols the
+// lexer already produces.
+const POLICY_OPERATORS = ['==', '!=', '<', '>', '<=', '>=', 'in']
+
+// Enough of an expression to point at in a parse error. The full printer lives
+// in core/policy.js, which the parser must not import — parsing is what
+// produces the AST that printer reads.
+function policySourceHint(node) {
+  if (!node || typeof node !== 'object') return '…'
+  switch (node.type) {
+    case 'field':   return node.name
+    case 'auth':    return node.field ? `auth().${node.field}` : 'auth()'
+    case 'now':     return 'now()'
+    case 'literal': return typeof node.value === 'string' ? `'${node.value}'` : String(node.value)
+    case 'compare': return `${policySourceHint(node.left)} ${node.op} ${policySourceHint(node.right)}`
+    default:        return '…'
+  }
+}
+
 const SCALAR_TYPES = new Set([
   'String', 'Int', 'Float', 'Bytes', 'Boolean', 'DateTime', 'Json', 'File'
 ])
@@ -278,7 +298,7 @@ class Parser {
   // ── Top level ───────────────────────────────────────────────────────────────
 
   parseSchema() {
-    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [] }
+    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], tenancy: null }
 
     while (!this.isEOF()) {
       const comments = this.docComments()
@@ -288,6 +308,13 @@ class Parser {
         schema.imports.push(this.parseImport())
       } else if (t.type === TK.IDENT && t.value === 'database') {
         schema.databases.push(this.parseDatabase())
+      } else if (t.type === TK.IDENT && t.value === 'tenancy') {
+        // One block per schema. A second is refused here rather than merged:
+        // two answers to "what is a tenant" is the shape the block exists to
+        // remove.
+        if (schema.tenancy)
+          throw new ParseError(`tenancy is declared twice — a schema has one tenancy block`, t)
+        schema.tenancy = this.parseTenancy()
       } else if (t.type === TK.IDENT && t.value === 'model') {
         schema.models.push(this.parseModel(comments))
       } else if (t.type === TK.IDENT && t.value === 'view') {
@@ -301,7 +328,7 @@ class Parser {
       } else if (t.type === TK.IDENT && t.value === 'type') {
         schema.types.push(this.parseType(comments))
       } else {
-        throw new ParseError(`Unexpected token '${t.value}' — expected database, model, view, enum, function, trait, type, or import`, t)
+        throw new ParseError(`Unexpected token '${t.value}' — expected database, tenancy, model, view, enum, function, trait, type, or import`, t)
       }
     }
 
@@ -379,6 +406,125 @@ class Parser {
       throw new ParseError(`database '${name}' must declare a 'path'`, this.peek())
 
     return { name, path, driver, replication, retention, maxSize, logModel }
+  }
+
+  // ── Tenancy block ────────────────────────────────────────────────────────────
+  //
+  // tenancy {
+  //   strategy database
+  //   dir      env("TENANT_DIR", "./tenants")
+  //   registry "./tenants-registry.db"
+  //   maxOpen  100
+  //   key      env("TENANT_KEY")
+  //   resolve  subdomain
+  // }
+  //
+  // tenancy {
+  //   strategy row
+  //   column   workspaceId
+  //   claim    workspaceId        // default: the column's own name
+  // }
+  //
+  // Two strategies, one declaration. `database` is a SQLite file per tenant and
+  // the registry that indexes them; `row` is one database with a tenant column
+  // on the rows. Which one an app runs is a fact about the app, so it lives in
+  // the seed — every reader (the registry factory, the CLI, Studio, Junction's
+  // per-request resolution) asks the parse rather than being told again.
+  //
+  // `resolve` is the only line about the API realm: how a REQUEST names its
+  // tenant. It is here because the answer has to agree with the strategy, and
+  // an app that spells it twice is an app that can spell it two ways.
+
+  parseTenancy() {
+    const start = this.peek()
+    this.eatIdent('tenancy')
+    this.eat(TK.LBRACE)
+
+    let strategy = null
+    let dir      = null
+    let registry = null
+    let maxOpen  = null
+    let key      = null
+    let column   = null
+    let claim    = null
+    let resolve  = null
+
+    while (!this.check(TK.RBRACE)) {
+      const keyTok = this.eat(TK.IDENT)
+      switch (keyTok.value) {
+        case 'strategy': {
+          const val = this.eat(TK.IDENT).value
+          if (val !== 'database' && val !== 'row')
+            throw new ParseError(`tenancy: strategy must be 'database' or 'row', got '${val}'`, this.peek())
+          strategy = val
+          break
+        }
+        case 'dir':      dir      = this.parseEnvOrString(); break
+        case 'registry': registry = this.parseEnvOrString(); break
+        case 'key':      key      = this.parseEnvOrString(); break
+        case 'maxOpen': {
+          const val = Number(this.eat(TK.NUMBER).value)
+          if (!Number.isInteger(val) || val < 1)
+            throw new ParseError(`tenancy: maxOpen must be a positive integer, got '${val}'`, this.peek())
+          maxOpen = val
+          break
+        }
+        case 'column':   column = this.eat(TK.IDENT).value; break
+        case 'claim':    claim  = this.eat(TK.IDENT).value; break
+        case 'resolve':  resolve = this.parseTenantResolve(); break
+        default:
+          throw new ParseError(
+            `tenancy: unknown property '${keyTok.value}' — expected strategy, dir, registry, key, maxOpen, column, claim or resolve`,
+            this.peek(),
+          )
+      }
+      this.maybeEat(TK.COMMA)
+    }
+
+    this.eat(TK.RBRACE)
+
+    if (!strategy)
+      throw new ParseError(`tenancy must declare a 'strategy' — 'database' (a file per tenant) or 'row' (a tenant column)`, start)
+
+    // Refused rather than ignored: a `column` under strategy database reads as
+    // row tenancy that is quietly doing nothing, which is the failure this
+    // block exists to make impossible.
+    const wrong = strategy === 'database'
+      ? [['column', column], ['claim', claim]]
+      : [['dir', dir], ['registry', registry], ['key', key], ['maxOpen', maxOpen]]
+    for (const [name, value] of wrong) {
+      if (value != null)
+        throw new ParseError(
+          `tenancy: '${name}' is not a property of strategy ${strategy}`, start,
+        )
+    }
+
+    if (strategy === 'row' && !column)
+      throw new ParseError(`tenancy: strategy row must declare the 'column' that holds the tenant`, start)
+
+    return {
+      strategy,
+      dir, registry, key, maxOpen,
+      column,
+      claim: claim ?? column,
+      resolve,
+    }
+  }
+
+  // resolve subdomain | header("X-Tenant-Id") | claim(workspaceId)
+  parseTenantResolve() {
+    const t    = this.eat(TK.IDENT)
+    const kind = t.value
+    if (kind === 'subdomain') return { kind, name: null }
+    if (kind === 'header' || kind === 'claim') {
+      this.eat(TK.LPAREN)
+      const name = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+      this.eat(TK.RPAREN)
+      return { kind, name }
+    }
+    throw new ParseError(
+      `tenancy: resolve must be subdomain, header("X-Name") or claim(fieldName), got '${kind}'`, t,
+    )
   }
 
   // Parse env("VAR", "./default") or a plain string literal.
@@ -529,11 +675,20 @@ class Parser {
 
   // ── Import ──────────────────────────────────────────────────────────────────
 
+  // `import "./auth.lite"` or `import "@frontierjs/auth/schema.lite" into auth`.
+  //
+  // `into` names the database everything that import brings in lands in, and it
+  // BEATS a `@@db` written in the imported file — a package shipping a fragment
+  // has to spell some database, and only the importing app knows what its own
+  // are called. See parseFile for how it composes with a nested import.
   parseImport() {
     this.eatIdent('import')
     const path = this.eat(TK.STRING).value
+    const into = this.check(TK.IDENT, 'into')
+      ? (this.advance(), this.eat(TK.IDENT).value)
+      : null
     this.maybeEat(TK.IDENT, ';')
-    return { path }
+    return { path, into }
   }
 
   // ── Model ───────────────────────────────────────────────────────────────────
@@ -701,6 +856,23 @@ class Parser {
       case 'scoped': return { kind: 'scoped', ...this.parseScoped() }
 
       case 'computed':   return { kind: 'computed' }
+
+      // @derived(dueAt < now() && completedAt == null)
+      //
+      // A value computed in SQL from this row's own columns, so unlike
+      // @computed it can be filtered and sorted by. The body is the declarative
+      // expression language, NOT a SQL string — which is what lets the schema
+      // say what the field DEPENDS on rather than only what it is.
+      //
+      // Not @generated: that creates a real column and must stay deterministic,
+      // and the whole point here is a value that changes on its own because the
+      // clock moved.
+      case 'derived': {
+        this.eat(TK.LPAREN)
+        const expr = this.parsePolicyExpr()
+        this.eat(TK.RPAREN)
+        return { kind: 'derived', expr }
+      }
       case 'hardDelete': return { kind: 'hardDelete' }
 
       // ── Field visibility + access control ─────────────────────────────────
@@ -727,6 +899,23 @@ class Parser {
           return { kind: 'guarded', level: 'all' }
         }
         return { kind: 'guarded', level: 'select' }
+      }
+      case 'system': {
+        // @system → anyone may READ it, only the system may write it.
+        //
+        // The orthogonal sibling of @guarded, which locks both directions:
+        //
+        //             read          write
+        //   @guarded   system only   system only
+        //   @system    anyone        system only
+        //
+        // For a column an application fills and a person must not — a tracking
+        // code a courier job books, an API key's hint, a workspace stamped from
+        // a header. Nothing in the schema could say that before, so every form
+        // generator offered a text box whose value a worker would overwrite.
+        if (this.check(TK.LPAREN))
+          throw new ParseError('@system takes no arguments — it is a lock, not a level', this.peek())
+        return { kind: 'system' }
       }
       case 'encrypted': {
         // @encrypted                       → AES-256-GCM under a random IV. Implies
@@ -984,7 +1173,7 @@ class Parser {
       // ── Array validators ──────────────────────────────────────────────────
       case 'minItems':    return { kind: 'minItems',   ...this.parseNumMessage() }
       case 'maxItems':    return { kind: 'maxItems',   ...this.parseNumMessage() }
-      case 'uniqueItems': return { kind: 'uniqueItems' }
+      case 'uniqueItems': return { kind: 'uniqueItems', ...this.parseOptMessage() }
 
       // ── Typed JSON ────────────────────────────────────────────────────────
       // @type(Address)            — strict by default: extra keys reject
@@ -1299,7 +1488,30 @@ class Parser {
   //   value    ::= auth() [.field] | now() | check(field [,op]) | null | bool | string | number | ident
   //   compOp   ::= '==' | '!=' | '<' | '>' | '<=' | '>='
 
-  parsePolicyExpr()    { return this.parsePolicyOr() }
+  // Named once so the parse error can list them, rather than a reader having to
+  // find checkPolicyCompOp to learn what is legal.
+  parsePolicyExpr()    { return this.parsePolicyTernary() }
+  // `cond ? a : b`, binding looser than `||` and RIGHT-associative, so
+  // `a ? x : b ? y : z` nests into the else — which is how a four-value urgency
+  // is written without a CASE keyword. Both branches parse as a full ternary:
+  // `a ? b ? c : d : e` is unambiguous because `?` and `:` bracket the middle.
+  //
+  // This is where the language stops being predicate-only and starts producing
+  // VALUES, so it lands in BOTH compilers — `CASE WHEN … THEN … ELSE … END` in
+  // compileSql, `?:` in evalJs. A form in one and not the other is FJS-195
+  // repeating.
+  parsePolicyTernary() {
+    const cond = this.parsePolicyOr()
+    if (!this.check(TK.QUESTION)) return cond
+    this.eat(TK.QUESTION)
+    const then = this.parsePolicyTernary()
+    if (!this.check(TK.COLON))
+      throw new ParseError(
+        `a ternary needs both branches — '${policySourceHint(cond)} ? …' is missing its ':'`, this.peek())
+    this.eat(TK.COLON)
+    const alt = this.parsePolicyTernary()
+    return { type: 'ternary', cond, then, else: alt }
+  }
   parsePolicyOr()      {
     let left = this.parsePolicyAnd()
     while (this.check(TK.OR))  { this.eat(TK.OR);  left = { type: 'or',  left, right: this.parsePolicyAnd() } }
@@ -1315,29 +1527,52 @@ class Parser {
     return this.parsePolicyPrimary()
   }
   parsePolicyPrimary() {
-    if (this.check(TK.LPAREN)) {
-      this.eat(TK.LPAREN)
-      const expr = this.parsePolicyExpr()
-      this.eat(TK.RPAREN)
-      return expr
-    }
-    const left = this.parsePolicyValue()
+    // A parenthesised group is an OPERAND like any other, so the comparison
+    // check below applies to it too. It used to return immediately, which made
+    // `(a ? 1 : 2) == 1` a parse error — harmless while the language was
+    // predicate-only and in the way the moment it produces values.
+    const left = this.parsePolicyOperand()
     const op   = this.checkPolicyCompOp()
     if (op) {
       this.advance()
-      const right = this.parsePolicyValue()
+      // BOTH sides take a group. Only the left one did, so
+      // `ownerId == (open ? auth().id : auth().adminId)` — a ternary choosing
+      // which value to compare against, which is most of what a ternary is for
+      // here — was a parse error on the right and legal on the left.
+      const right = this.parsePolicyOperand()
       return { type: 'compare', op, left, right }
     }
+    // A bare word where an operator belongs. Left alone it unwinds into
+    // `Expected RPAREN, got 'in'` from whoever closes the attribute — a line and
+    // column, and no statement about what was wrong or what is available.
+    const next = this.peek()
+    if (next.type === TK.IDENT)
+      throw new ParseError(
+        `'${next.value}' is not a policy operator. Available: ${POLICY_OPERATORS.join(', ')}. ` +
+        `Membership is 'in' with the list on the right — 'auth().id in memberIds'.`, next)
     return left
   }
+  // A comparison operand: a parenthesised expression, or a plain value.
+  parsePolicyOperand() {
+    if (!this.check(TK.LPAREN)) return this.parsePolicyValue()
+    this.eat(TK.LPAREN)
+    const expr = this.parsePolicyExpr()
+    this.eat(TK.RPAREN)
+    return expr
+  }
   checkPolicyCompOp() {
-    const t = this.peek().type
-    if (t === TK.EQ)  return '=='
-    if (t === TK.NEQ) return '!='
-    if (t === TK.LT)  return '<'
-    if (t === TK.GT)  return '>'
-    if (t === TK.LTE) return '<='
-    if (t === TK.GTE) return '>='
+    const t = this.peek()
+    if (t.type === TK.EQ)  return '=='
+    if (t.type === TK.NEQ) return '!='
+    if (t.type === TK.LT)  return '<'
+    if (t.type === TK.GT)  return '>'
+    if (t.type === TK.LTE) return '<='
+    if (t.type === TK.GTE) return '>='
+    // `in` is a word rather than a symbol, so it arrives as an IDENT. Membership
+    // reads in both directions with the list always on the RIGHT —
+    // `auth().id in memberIds` and `teamId in auth().teamIds` — which is what
+    // makes one operator enough.
+    if (t.type === TK.IDENT && t.value === 'in') return 'in'
     return null
   }
   parsePolicyValue() {
@@ -1395,6 +1630,29 @@ class Parser {
     if (t.type === TK.NUMBER) {
       this.eat(TK.NUMBER)
       return { type: 'literal', value: t.value }
+    }
+
+    // list literal — the right operand of `in`, and the only place a policy
+    // expression holds more than one value. Members are literals: a list of
+    // COLUMN names would be a different question (does any of these columns
+    // equal it), and one worth refusing rather than guessing at.
+    if (t.type === TK.LBRACKET) {
+      this.eat(TK.LBRACKET)
+      const items = []
+      while (!this.check(TK.RBRACKET)) {
+        const v = this.peek()
+        if (v.type !== TK.STRING && v.type !== TK.NUMBER && v.type !== TK.BOOL)
+          throw new ParseError(
+            `A list in a policy expression holds literals — got '${v.value ?? v.type}'. ` +
+            `Write ['draft', 'review'], not a column or an expression.`, v)
+        this.advance()
+        items.push(v.value)
+        if (!this.maybeEat(TK.COMMA)) break
+      }
+      this.eat(TK.RBRACKET)
+      if (!items.length)
+        throw new ParseError(`An empty list in a policy expression matches nothing — say so with a literal instead`, t)
+      return { type: 'list', items }
     }
 
     // field reference (any other identifier)
@@ -1571,6 +1829,54 @@ class Parser {
         }
         this.eat(TK.RPAREN)
         return { kind: name === 'allow' ? 'allow' : 'deny', operations, expr, message }
+      }
+      // @@scope(overdue, dueAt < now() && completedAt == null)
+      //
+      // A named predicate, in the same expression language @@allow uses, asked
+      // for as `where: { $scope: 'overdue' }`. It is the policy compiler made
+      // explicit and opt-in rather than implicit and always-on, and it is the
+      // one spelling of a query shape that a BROWSER can name: a client sends a
+      // `where` OBJECT over HTTP and cannot invoke `db.task.overdue()`.
+      //
+      // Predicate-only, which is what makes it cheap — no value branch, no
+      // declared type to check branches against, no property in the generated
+      // schema or in a form built from it. If the UI ever RENDERS the thing,
+      // it wants @derived instead; if it only ever appears in a WHERE, this.
+      case 'scope': {
+        this.eat(TK.LPAREN)
+        const scopeName = this.eat(TK.IDENT).value
+        this.eat(TK.COMMA)
+        const expr = this.parsePolicyExpr()
+        this.eat(TK.RPAREN)
+        return { kind: 'scope', name: scopeName, expr }
+      }
+      // ── Tenancy, per model ───────────────────────────────────────────────────
+      // @@tenant(none)                 — this model is not tenant data
+      // @@tenant(column: "accountId")  — it is, under a column of its own
+      //
+      // Only meaningful under `tenancy { strategy row }`, which applies the
+      // declared column to every model that HAS it. This is the answer to the
+      // two models that block cannot judge: the one that deliberately spans
+      // tenants (an identity table, a global audit trail) and the one whose
+      // column is spelled differently.
+      case 'tenant': {
+        if (!this.check(TK.LPAREN))
+          throw new ParseError(`@@tenant takes an argument: (none) or (column: "name")`, this.peek())
+        this.eat(TK.LPAREN)
+        if (this.peek().type === TK.IDENT && this.peek().value === 'none') {
+          this.eat(TK.IDENT)
+          this.eat(TK.RPAREN)
+          return { kind: 'tenant', mode: 'none', column: null }
+        }
+        if (this.peek().type === TK.IDENT && this.peek().value === 'column') {
+          this.eat(TK.IDENT)
+          this.eat(TK.COLON)
+        }
+        const column = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+        this.eat(TK.RPAREN)
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(column))
+          throw new ParseError(`@@tenant column must be a valid identifier, got '${column}'`, this.peek())
+        return { kind: 'tenant', mode: 'column', column }
       }
       case 'gate':   return { kind: 'gate',         value: this.parseGateArg() }
       case 'transitions': return { kind: 'transitions', ...this.parseTransitionsArg() }
@@ -2259,6 +2565,133 @@ function expandAuthorshipAttributes(schema) {
   return errors
 }
 
+// ── tenancy { strategy row } expansion ─────────────────────────────────────────
+// The tenant column becomes two @@deny rules and a stamp, per model, so from
+// here on nothing downstream knows the block existed — the gate ladder, the
+// access snapshot, `verifyRowPolicies` and the compiled WHERE all read ordinary
+// policies.
+//
+// A deny rather than an @@allow, and that is the whole correctness argument:
+// allows are OR'd within an operation, so adding one to a model that already
+// has `@@allow('read', ownerId == auth().id)` WIDENS its read to every row in
+// the tenant. Tenancy narrows. `@@deny` overrides every allow and applies to a
+// model that declares no policy at all.
+//
+// Two rules rather than one, because create and read want opposite answers
+// about an absent value:
+//
+//   read/update/delete   auth().<claim> == null || <col> != auth().<claim>
+//   create               auth().<claim> == null || (<col> != null && <col> != auth().<claim>)
+//
+// checkCreatePolicy runs BEFORE the @default stamp is applied, so a create that
+// legitimately omits the column has `<col> == null` in its data. Denying that
+// would refuse every create the stamp exists to serve. On a read there is no
+// stamp and a row holding no tenant belongs to nobody — `@@tenant(none)` is how
+// a model says it spans tenants on purpose.
+//
+// The anonymous branch is stated rather than left to SQL: `"col" != NULL`
+// answers NULL, which `NOT (…)` also answers NULL, which excludes the row — the
+// right outcome reached by three-valued logic nobody should have to hold in
+// their head. In the JS evaluator the same expression is what refuses an
+// anonymous create.
+function expandTenancy(schema) {
+  const errors   = []
+  const warnings = []
+  const t        = schema.tenancy
+  const tagged   = schema.models.filter(m => m.attributes.some(a => a.kind === 'tenant'))
+
+  if (!t) {
+    for (const m of tagged)
+      errors.push(
+        `Model '${m.name}': @@tenant with no 'tenancy' block — declare one at the top of the schema`
+      )
+    return { errors, warnings }
+  }
+
+  if (t.strategy !== 'row') {
+    for (const m of tagged)
+      errors.push(
+        `Model '${m.name}': @@tenant is a strategy row attribute — under strategy database every ` +
+        `tenant already has a database of its own, so there is nothing for a column to scope`
+      )
+    return { errors, warnings }
+  }
+
+  const claim   = t.claim
+  const drivers = Object.fromEntries(schema.databases.map(d => [d.name, d.driver ?? 'sqlite']))
+  const scoped  = []
+  const missing = []
+
+  for (const model of schema.models) {
+    const tag = model.attributes.find(a => a.kind === 'tenant')
+    if (tag?.mode === 'none') continue
+
+    // A log row is appended, never policied — jsonl and logger models have no
+    // policy engine to deny with, so scoping one would be a rule that reads as
+    // enforcement and is not.
+    const dbName = model.attributes.find(a => a.kind === 'db')?.name
+    const driver = dbName ? drivers[dbName] : 'sqlite'
+    if (driver === 'jsonl' || driver === 'logger') continue
+    if (model.attributes.some(a => a.kind === 'external')) continue
+
+    const column = tag?.column ?? t.column
+    const field  = model.fields.find(f => f.name === column)
+
+    if (!field) {
+      if (tag) errors.push(`Model '${model.name}': @@tenant(column: "${column}") names no field on this model`)
+      else missing.push(model.name)
+      continue
+    }
+
+    const col       = () => ({ type: 'field', name: column })
+    const authClaim = () => ({ type: 'auth',  field: claim })
+    const noPrincipal = { type: 'compare', op: '==', left: authClaim(), right: { type: 'literal', value: null } }
+    const mismatch    = { type: 'compare', op: '!=', left: col(),       right: authClaim() }
+    const message     = `Outside your ${column}`
+
+    model.attributes.push({
+      kind: 'deny', operations: ['read', 'update', 'delete'], generated: 'tenancy', message,
+      expr: { type: 'or', left: noPrincipal, right: mismatch },
+    })
+    model.attributes.push({
+      kind: 'deny', operations: ['create'], generated: 'tenancy', message,
+      expr: {
+        type: 'or',
+        left: noPrincipal,
+        right: {
+          type: 'and',
+          left:  { type: 'compare', op: '!=', left: col(), right: { type: 'literal', value: null } },
+          right: mismatch,
+        },
+      },
+    })
+
+    // The stamp. A column the app already defaults is left alone — an app
+    // stamping it from somewhere else has said so, and two defaults on one
+    // field is not a merge.
+    if (!field.attributes.some(a => a.kind === 'default'))
+      field.attributes.push({ kind: 'default', value: { kind: 'call', fn: 'auth', field: claim }, generated: 'tenancy' })
+
+    scoped.push(model.name)
+  }
+
+  // Reported, never inferred. A model with no tenant column under row tenancy
+  // is cross-tenant data by construction, which is sometimes exactly right
+  // (a plan table, a country list) and sometimes the column somebody forgot.
+  // One line naming all of them beats N warnings nobody reads, and
+  // `@@tenant(none)` is the way to say the first out loud.
+  if (missing.length)
+    warnings.push(
+      `tenancy: ${missing.length} model(s) declare no '${t.column}' and are NOT scoped to a tenant — ` +
+      `${missing.join(', ')}. Add the column, or mark each @@tenant(none) to say it spans tenants on purpose.`
+    )
+
+  if (!scoped.length)
+    warnings.push(`tenancy: strategy row scopes nothing — no model declares a '${t.column}' field`)
+
+  return { errors, warnings }
+}
+
 // ── @edge / @scoped normalization ──────────────────────────────────────────────
 // Resolve every @edge / @scoped attribute into a single canonical descriptor:
 //   { kind:'edge', ref, key, as, onMissing, auth }
@@ -2833,6 +3266,28 @@ function validate(schema) {
     }
   }
 
+  // ── @system validation ──────────────────────────────────────────────────────
+  //
+  // @system composes with @guarded — that pair is a column invisible to a client
+  // AND unwritable by one, which could not be spelled at all before (FJS-235).
+  // It does NOT compose with a field @allow('write', …): one says nobody ever,
+  // the other says it depends who is asking, and a field cannot mean both.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'system')) continue
+
+      if (field.attributes.some(a => a.kind === 'fieldAllow' && a.operations.includes('write')))
+        errors.push(`Model '${model.name}', field '${field.name}': @system conflicts with @allow('write', …) — @system means no caller may write it at all, @allow('write') means some may. Pick the one you mean`)
+
+      // A value with no column cannot be written by anyone, system included, so
+      // locking the write says nothing and reads as though it did.
+      for (const kind of ['computed', 'generated', 'from', 'funcCall']) {
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`Model '${model.name}', field '${field.name}': @system has nothing to lock on a @${kind === 'funcCall' ? 'generated' : kind} field — it is derived, so no caller writes it`)
+      }
+    }
+  }
+
   // ── @allow (field-level) validation ─────────────────────────────────────────
   for (const model of schema.models) {
     for (const field of model.fields) {
@@ -3019,7 +3474,10 @@ function validate(schema) {
     }
     // Warn if @@deny exists with no @@allow — probably a mistake
     const hasAllow = model.attributes.some(a => a.kind === 'allow')
-    const hasDeny  = model.attributes.some(a => a.kind === 'deny')
+    // Generated rules are excluded: tenancy desugars into denies on every
+    // scoped model, and a warning telling an app to add an @@allow it never
+    // wrote fires once per model on a schema that is doing the right thing.
+    const hasDeny  = model.attributes.some(a => a.kind === 'deny' && !a.generated)
     if (hasDeny && !hasAllow)
       warnings.push(`Model '${model.name}': has @@deny but no @@allow — all operations are open by default, @@deny alone won't restrict access unless you add @@allow rules`)
   }
@@ -3241,13 +3699,181 @@ function validate(schema) {
 //   enums.lite:      enum Plan { ... }
 
 import { readFileSync } from 'fs'
-import { resolve, dirname } from 'path'
+import { resolve, dirname, isAbsolute } from 'path'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+
+// ─── Where an import points ───────────────────────────────────────────────────
+//
+// A relative or absolute specifier is a path, resolved against the importing
+// file. Anything else is a PACKAGE, resolved the way an ESM import would be —
+// which is what lets a package ship a schema fragment other apps import by name
+// (`import "@frontierjs/auth/schema.lite"`) instead of every app keeping a copy
+// that a package upgrade cannot reach.
+//
+// Resolution is node's, so the package's own `exports` decides what is
+// importable. Nothing here guesses at a path inside a package.
+
+const RELATIVE_SPEC = /^\.\.?[\\/]/
+
+export function resolveImportSpecifier(spec, fromPath) {
+  if (RELATIVE_SPEC.test(spec) || isAbsolute(spec))
+    return { path: resolve(dirname(fromPath), spec), error: null }
+
+  try {
+    return { path: createRequire(pathToFileURL(fromPath)).resolve(spec), error: null }
+  } catch (e) {
+    // Both causes, always, because the runtime decides which one is knowable:
+    // node answers ERR_PACKAGE_PATH_NOT_EXPORTED for a subpath a package does
+    // not export, and bun collapses it into MODULE_NOT_FOUND with the same shape
+    // as an uninstalled package. Branching on the code makes the message depend
+    // on which runtime read the schema, so it would say one thing under `bun
+    // test` and another under `node scripts/…` for one mistake.
+    const detail = e?.message?.split('\n')[0] ?? String(e)
+    return {
+      path:  null,
+      error: `Cannot resolve import "${spec}" from ${fromPath} — is the package ` +
+             `installed, and does it export that subpath? (${detail})`,
+    }
+  }
+}
+
+// ─── Imports as TEXT ──────────────────────────────────────────────────────────
+//
+// parseFile merges ASTs, which is the right answer whenever the files are on
+// disk. Two callers cannot use it: `litestone release` reads the previous
+// release's schema out of a git ref, where there is no tree to walk, and
+// `createTestEnv` needs ONE canonical text — it is the template cache key, so a
+// key built from the root file alone reuses a stale database when an imported
+// file changes.
+//
+// Both need the same thing: follow the import lines and splice the sources
+// together. Reading and resolving belong to the caller, because a git ref is
+// addressed with posix paths through `git show` and a file on disk is not.
+
+// An import on a line of its own, with its optional `into <db>`. `//` is .lite's
+// only comment, so a mention inside one cannot reach the line start and match.
+const IMPORT_LINE = /^[ \t]*import\s+["']([^"']+)["'](?:\s+into\s+([A-Za-z_]\w*))?;?[ \t]*$/gm
+
+/** Does this source import anything? Cheap enough to ask before doing work. */
+export function hasImports(text) {
+  IMPORT_LINE.lastIndex = 0
+  return IMPORT_LINE.test(text)
+}
+
+/**
+ * Splice every imported source into `text`, depth-first.
+ *
+ * `opts.read` answers null for a source it cannot reach; that specifier lands in
+ * `opts.missing` and the line is dropped, so a caller can report what is absent
+ * rather than silently describing a smaller schema.
+ */
+export function inlineImports(text, parent, opts, into = null) {
+  // This file's OWN models are retargeted before its imports are expanded, so a
+  // nested `into` cannot be overwritten by the outer one — the same nearest-wins
+  // rule parseFile applies to the AST. Retargeting after the splice would rewrite
+  // the child's destination back to the parent's.
+  const own = into ? retargetDbText(text, into) : text
+
+  return own.replace(IMPORT_LINE, (_line, spec, childInto) => {
+    const child = opts.resolveChild(parent, spec)
+    if (child === null) { opts.missing.push(spec); return '' }
+    if (opts.seen.has(child)) return ''         // already inlined — and cycles end here
+    opts.seen.add(child)
+    const source = opts.read(child)
+    if (source === null) { opts.missing.push(spec); return '' }
+    // An import with no `into` of its own inherits the one it was reached by.
+    return inlineImports(source, child, opts, childInto ?? into)
+  })
+}
+
+// `into` is an AST rewrite in parseFile and there is no AST here, so it is done
+// on the text. Line-based rather than one regex: a file may mix models that name
+// a database with models that do not, and both have to end up in `db` — a
+// fragment meant to land wherever it is asked to usually names none at all.
+const BLOCK_OPEN = /^[ \t]*(?:model|view)\s+[A-Za-z_]\w*\s*\{/
+const DB_ATTR    = /^([ \t]*)@@db\(\s*[A-Za-z_]\w*\s*\)[ \t]*$/
+
+function retargetDbText(text, db) {
+  const out    = []
+  let   openAt = -1        // index in `out` of the open block's first line
+  let   hasDb  = false
+
+  // A block that named no database gets one. The splice lands above the closing
+  // brace, and attribute order inside a body does not matter to the parser.
+  const finish = () => {
+    if (openAt >= 0 && !hasDb) {
+      const indent = (out[openAt].match(/^[ \t]*/)?.[0] ?? '') + '  '
+      out.splice(openAt + 1, 0, `${indent}@@db(${db})`)
+    }
+    openAt = -1
+    hasDb  = false
+  }
+
+  for (const line of text.split('\n')) {
+    if (BLOCK_OPEN.test(line)) {
+      finish()
+      out.push(line)
+      openAt = out.length - 1
+    } else if (openAt >= 0 && DB_ATTR.test(line)) {
+      out.push(line.replace(DB_ATTR, `$1@@db(${db})`))
+      hasDb = true
+    } else if (openAt >= 0 && /^[ \t]*\}/.test(line)) {
+      out.push(line)
+      finish()
+    } else {
+      out.push(line)
+    }
+  }
+  finish()
+  return out.join('\n')
+}
+
+/** inlineImports against the working tree. Returns the text and what was missing. */
+export function inlineImportsFromDisk(filePath) {
+  const abs     = resolve(filePath)
+  const missing = []
+  const text    = inlineImports(readFileSync(abs, 'utf8'), abs, {
+    // The same resolver parseFile uses, so a bare package specifier follows to
+    // the same file in both — otherwise a schema parses and its test environment
+    // does not, or worse, quietly describes less.
+    resolveChild: (parent, spec) => resolveImportSpecifier(spec, parent).path,
+    read:         (p) => { try { return readFileSync(p, 'utf8') } catch { return null } },
+    seen:         new Set([abs]),
+    missing,
+  })
+  return { text, missing }
+}
 
 export function parseFile(filePath) {
   const absPath = resolve(filePath)
   const visited = new Set()
   const allErrors   = []
   const allWarnings = []
+
+  // `import "..." into <db>`. Two rules, and they are the same rule stated twice:
+  // the NEAREST statement about a model's database wins. An inner `into` on a
+  // nested import beats an outer one, and any `into` beats a `@@db` written in
+  // the imported file — a package shipping a fragment has to spell some database
+  // name, and only the importing app knows what its own are called.
+  const stamped = new WeakSet()   // already claimed by a nearer `into`
+  const intoFor = new Map()       // resolved path → the `into` it was merged under
+
+  const retarget = (child, db) => {
+    for (const model of child.models) {
+      if (stamped.has(model)) continue
+      stamped.add(model)
+      const attr = model.attributes.find(a => a.kind === 'db')
+      if (attr) attr.name = db
+      else model.attributes.push({ kind: 'db', name: db })
+    }
+    // A view carries its database as a plain property rather than an attribute.
+    for (const view of child.views ?? []) {
+      if (stamped.has(view)) continue
+      stamped.add(view)
+      view.db = db
+    }
+  }
 
   function loadFile(currentPath) {
     if (visited.has(currentPath)) return null  // already merged
@@ -3288,8 +3914,19 @@ export function parseFile(filePath) {
       if (e && e.message) e.message = `In ${currentPath}:\n  ${e.message}`
       throw e
     }
+    // A ParseError is a RESULT here, exactly as it is in parse() — the two have
+    // to answer the same shape or every caller has to know which one it called,
+    // and a caller that warns and keeps going (sierra's build, the CLI's error
+    // box) got a stack trace instead. Named with its file, since imports chain.
     const parser = new Parser(tokens)
-    const schema = parser.parseSchema()
+    let schema
+    try {
+      schema = parser.parseSchema()
+    } catch (e) {
+      if (!(e instanceof ParseError)) throw e
+      allErrors.push(`In ${currentPath}: ${e.message}`)
+      return null
+    }
 
     // Recursively resolve imports before merging
     const importedModels    = []
@@ -3299,10 +3936,37 @@ export function parseFile(filePath) {
     const importedViews     = []
     const importedTraits    = []
     const importedTypes     = []
+    let   importedTenancy   = null
 
     for (const imp of schema.imports) {
-      const importPath = resolve(dirname(currentPath), imp.path)
+      const { path: importPath, error } = resolveImportSpecifier(imp.path, currentPath)
+      if (error) { allErrors.push(error); continue }
+
       const child = loadFile(importPath)
+
+      // One file imported twice under two different `into`s has no single
+      // answer — the second import is deduplicated away, so honouring it would
+      // mean silently applying the first. Named rather than resolved.
+      const previous = intoFor.get(importPath)
+      if (previous !== undefined && previous !== (imp.into ?? null))
+        allErrors.push(
+          `'${imp.path}' is imported twice with different destinations ` +
+          `(${previous ?? 'no into'} and ${imp.into ?? 'no into'}) — it is merged once, so only one can hold`
+        )
+      intoFor.set(importPath, imp.into ?? null)
+
+      if (child && imp.into) retarget(child, imp.into)
+
+      if (child?.tenancy) {
+        // A shipped fragment cannot know what an app's tenants are, so a
+        // tenancy block reaching the merge from two files has no precedence
+        // rule to apply — it is named rather than resolved, the same way a
+        // double `into` is.
+        if (importedTenancy)
+          allErrors.push(`tenancy is declared in more than one imported file — one schema, one tenancy block`)
+        importedTenancy = child.tenancy
+      }
+
       if (child) {
         importedModels.push(...child.models)
         importedEnums.push(...child.enums)
@@ -3314,7 +3978,13 @@ export function parseFile(filePath) {
       }
     }
 
+    if (schema.tenancy && importedTenancy)
+      allErrors.push(
+        `tenancy is declared both in ${currentPath} and in a file it imports — one schema, one tenancy block`
+      )
+
     return {
+      tenancy:   schema.tenancy ?? importedTenancy,
       models:    [...importedModels,    ...schema.models],
       enums:     [...importedEnums,     ...schema.enums],
       functions: [...importedFunctions, ...schema.functions],
@@ -3330,6 +4000,7 @@ export function parseFile(filePath) {
 
   const schema = {
     imports:   [],  // already resolved — not needed downstream
+    tenancy:   merged.tenancy ?? null,
     databases: merged.databases,
     models:    merged.models,
     views:     merged.views,
@@ -3354,6 +4025,9 @@ export function parseFile(filePath) {
   expandHasTemplatesAttributes(schema)
   allErrors.push(...expandAuthorshipAttributes(schema))
   allErrors.push(...expandEdgeAttributes(schema))
+  const tenancy = expandTenancy(schema)
+  allErrors.push(...tenancy.errors)
+  allWarnings.push(...tenancy.warnings)
   resolveTransitions(schema)
   const { valid, errors, warnings } = validate(schema)
   allErrors.push(...errors)
@@ -3392,8 +4066,9 @@ export function parse(src) {
   expandHasTemplatesAttributes(schema)
   const authorshipErrors = expandAuthorshipAttributes(schema)
   const edgeErrors = expandEdgeAttributes(schema)
+  const tenancy = expandTenancy(schema)
   resolveTransitions(schema)
   const { valid, errors, warnings } = validate(schema)
-  const merged = [...authorshipErrors, ...edgeErrors, ...errors]
-  return { schema, valid: merged.length === 0, errors: merged, warnings }
+  const merged = [...authorshipErrors, ...edgeErrors, ...tenancy.errors, ...errors]
+  return { schema, valid: merged.length === 0, errors: merged, warnings: [...tenancy.warnings, ...warnings] }
 }

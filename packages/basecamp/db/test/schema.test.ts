@@ -305,7 +305,7 @@ describe('Secret.data protection', () => {
     // the field policy refusing a caller the GATE let through. Two independent
     // boundaries: @guarded keys on asSystem(), not on a level, and no place on
     // the ladder reaches this column.
-    const [row] = await db.$setAuth(as('admin')).secret.findMany({ limit: 1 })
+    const [row] = await db.$setAuth(as('admin', { workspaceId: ws.id })).secret.findMany({ limit: 1 })
     expect(row.name).toBe('k')          // metadata is readable
     expect('data' in row).toBe(false)   // the value is not merely null — the key is gone
     db.$close()
@@ -380,8 +380,13 @@ describe('the gate ladder', () => {
       workspaceId: ws.id, environmentId: await seedEnvironmentId(sys, ws), name: 'web', slug: 'web',
     } })
 
-    const viewer = db.$setAuth(as('viewer'))
+    // The workspace goes on the PRINCIPAL, which is what applyStanding() does
+    // per request — App and Project now declare @@allow, and a principal with
+    // no workspace matches no rows and may create none.
+    const viewer = db.$setAuth(as('viewer', { workspaceId: ws.id }))
     expect((await viewer.app.findMany({ limit: 1 })).length).toBe(1)
+    // Refused by the LEVEL, before the policy is consulted — which is the
+    // distinction this test is about: a gate refuses, a policy filters.
     await expect(viewer.project.create({ data: { workspaceId: ws.id, name: 'p', slug: 'p' } }))
       .rejects.toThrow(/requires level 4/)
     db.$close()
@@ -393,7 +398,7 @@ describe('the gate ladder', () => {
     const ws  = await seedWorkspace(sys)
     await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
 
-    const dev = db.$setAuth(as('developer'))
+    const dev = db.$setAuth(as('developer', { workspaceId: ws.id }))
     const created = await dev.project.create({ data: { workspaceId: ws.id, name: 'p', slug: 'p' } })
     expect(created.id).toBeTruthy()
     // Secret is the admin tier — and this is the one level that is NOT the same
@@ -409,7 +414,7 @@ describe('the gate ladder', () => {
     const ws  = await seedWorkspace(sys)
     await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
 
-    const admin = db.$setAuth(as('admin'))
+    const admin = db.$setAuth(as('admin', { workspaceId: ws.id }))
     expect((await admin.secret.findMany({ limit: 1 })).length).toBe(1)
     // remove() on a @@softDelete model is an UPDATE, so this is the update
     // position of the gate (5) rather than the delete one (6) — which is why
@@ -428,9 +433,18 @@ describe('the gate ladder', () => {
     const ws  = await seedWorkspace(sys)
     await sys.secret.create({ data: { workspaceId: ws.id, name: 'k', kind: 'ssh_key', data: '{}' } })
 
-    // No membership anywhere, so the workspace ladder gives nothing.
-    const sa = db.$setAuth({ id: 'u9', userId: 'u9', isSystemAdmin: true })
+    // No membership anywhere, so the workspace ladder gives nothing — the level
+    // is standing alone. The workspace still has to be ON the principal:
+    // `Secret` declares row-level tenancy and applyStanding() stamps the
+    // workspace being addressed for a system administrator like anyone else.
+    // Standing decides the LEVEL; the policy decides which rows.
+    const sa = db.$setAuth({ id: 'u9', userId: 'u9', isSystemAdmin: true, workspaceId: ws.id })
     expect((await sa.secret.findMany({ limit: 1 })).length).toBe(1)
+
+    // And standing does not cross a workspace: a system administrator reading
+    // another tenant's vault is the hub's job, through asSystem().
+    const elsewhere = db.$setAuth({ id: 'u9', userId: 'u9', isSystemAdmin: true, workspaceId: 'other' })
+    expect((await elsewhere.secret.findMany({ limit: 1 })).length).toBe(0)
     // The three models holding credential material stay SYSTEM — a level no
     // request reaches — while `User` reads at 4, because an app's own screens
     // list its people. The hub still reads through asSystem(), which is what
@@ -672,6 +686,439 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
     // asSystem() is the deliberate way across — the engines, the hub and the
     // outpost's heartbeat all take it.
     expect((await sys.server.findMany({})).length).toBe(2)
+    db.$close()
+  })
+})
+
+// The same declaration, on the hierarchy every screen walks. Project, Environment
+// and App were the second batch to move their tenancy out of the service
+// where-clauses and into the schema, and the audit that precedes a declaration
+// came out clean for all three: every scoped read already filtered on
+// `workspaceId`, and the only paths that legitimately cross a workspace — the
+// three engines and the hub — are `asSystem()`.
+//
+// One test per property rather than per model, with the three driven through the
+// same body: what would differ between them is the columns a create needs, and
+// stating that once is what makes a fourth model a one-line addition.
+
+describe('Project · Environment · App — the tenancy declared', () => {
+
+  /** Two workspaces, each with the full hierarchy. */
+  async function twoHierarchies(sys: any) {
+    const a = await seedWorkspace(sys)
+    const b = await sys.workspace.create({ data: {
+      accountId: a.accountId, ownerId: a.ownerId,
+      name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
+    } })
+    const build = async (ws: any, tag: string) => {
+      const project     = await sys.project.create({ data: { workspaceId: ws.id, name: tag, slug: tag } })
+      const environment = await sys.environment.create({ data: {
+        workspaceId: ws.id, projectId: project.id, name: 'prod', slug: 'prod', tier: 'production' } })
+      const app = await sys.app.create({ data: {
+        workspaceId: ws.id, environmentId: environment.id, name: 'web', slug: 'web' } })
+      return { project, environment, app }
+    }
+    return { a, b, mine: await build(a, 'mine'), theirs: await build(b, 'theirs') }
+  }
+
+  /** What a create needs beyond a name — the only thing that differs. */
+  const extras = (accessor: string, h: any) =>
+    accessor === 'environment' ? { projectId: h.project.id, tier: 'staging' }
+  : accessor === 'app'         ? { environmentId: h.environment.id }
+  : {}
+
+  const ACCESSORS = ['project', 'environment', 'app'] as const
+
+  test('a caller reads only the rows of the workspace on their principal', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, mine } = await twoHierarchies(sys)
+    const caller = db.$setAuth(as('developer', { workspaceId: a.id }))
+
+    for (const accessor of ACCESSORS) {
+      // No `where` at all: anything beyond the caller's own row came back
+      // because nothing filtered it.
+      const rows = await caller[accessor].findMany({})
+      expect({ accessor, ids: rows.map((r: any) => r.id) }).toEqual({ accessor, ids: [mine[accessor].id] })
+    }
+    db.$close()
+  })
+
+  test('naming another workspace does not reach its rows', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, b, theirs } = await twoHierarchies(sys)
+    const caller = db.$setAuth(as('developer', { workspaceId: a.id }))
+
+    for (const accessor of ACCESSORS) {
+      expect({ accessor, byId: await caller[accessor].findUnique({ where: { id: theirs[accessor].id } }) })
+        .toEqual({ accessor, byId: null })
+      // A filter that asks for the other tenant by name is answered, not obeyed.
+      expect({ accessor, byWs: await caller[accessor].findFirst({ where: { workspaceId: b.id } }) })
+        .toEqual({ accessor, byWs: null })
+    }
+    db.$close()
+  })
+
+  test('nothing can be created into, or moved into, another workspace', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, b, mine, theirs } = await twoHierarchies(sys)
+    const caller = db.$setAuth(as('developer', { workspaceId: a.id }))
+
+    for (const accessor of ACCESSORS) {
+      await expect(caller[accessor].create({ data: {
+        workspaceId: b.id, name: 'x', slug: `x-${accessor}`, ...extras(accessor, theirs),
+      } })).rejects.toThrow(/denied by @@allow/)
+
+      // The post-update half: the row was the caller's when the UPDATE matched
+      // it and would not be afterwards, so it rolls back.
+      await expect(caller[accessor].update({
+        where: { id: mine[accessor].id }, data: { workspaceId: b.id },
+      })).rejects.toThrow(/denied by @@allow/)
+      expect((await sys[accessor].findUnique({ where: { id: mine[accessor].id } })).workspaceId).toBe(a.id)
+    }
+    db.$close()
+  })
+
+  test('the engines still write across workspaces — they are asSystem()', async () => {
+    // The deployment engine sets App.status for whichever workspace the
+    // deployment belongs to, and the job engine reads a Job the same way. If
+    // this fails, the declaration has broken the paths a policy is meant not to
+    // touch, and the symptom in the app would be a deploy that never lands.
+    const db  = await client()
+    const sys = db.asSystem()
+    const { theirs } = await twoHierarchies(sys)
+
+    expect((await sys.app.update({ where: { id: theirs.app.id }, data: { status: 'running' } })).status)
+      .toBe('running')
+    expect((await sys.project.findMany({})).length).toBe(2)
+    db.$close()
+  })
+})
+
+// ─── Tenancy, second batch ───────────────────────────────────────────────────
+// Deployment, Job and Domain — the three models a person acts on that hang off
+// an App rather than off the workspace directly. Their service reads filter on
+// `appId` alone in several places (an app's recent deployments, a hostname's
+// siblings), which is correct only because the app was already fetched inside
+// the workspace. The declaration is what makes it correct without that
+// argument, and these tests are what say so with no service in the picture.
+
+describe('Deployment · Job · Domain — the tenancy declared', () => {
+
+  /** Two workspaces, each with an app and one row of each kind under it. */
+  async function twoFleets(sys: any) {
+    const a = await seedWorkspace(sys)
+    const b = await sys.workspace.create({ data: {
+      accountId: a.accountId, ownerId: a.ownerId,
+      name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
+    } })
+    const build = async (ws: any, tag: string) => {
+      const project = await sys.project.create({ data: { workspaceId: ws.id, name: tag, slug: tag } })
+      const environment = await sys.environment.create({ data: {
+        workspaceId: ws.id, projectId: project.id, name: 'prod', slug: 'prod', tier: 'production' } })
+      const app = await sys.app.create({ data: {
+        workspaceId: ws.id, environmentId: environment.id, name: 'web', slug: 'web' } })
+      const deployment = await sys.deployment.create({ data: {
+        workspaceId: ws.id, appId: app.id, environmentId: environment.id } })
+      const job = await sys.job.create({ data: { workspaceId: ws.id, appId: app.id, name: `${tag}-nightly` } })
+      const domain = await sys.domain.create({ data: {
+        workspaceId: ws.id, appId: app.id, hostname: `${tag}.example.com` } })
+      return { app, deployment, job, domain }
+    }
+    return { a, b, mine: await build(a, 'mine'), theirs: await build(b, 'theirs') }
+  }
+
+  /** What a create needs beyond the workspace, and who may make it. The gates
+   *  differ — a Domain decides where traffic lands, so it is an admin act. */
+  const SHAPES = [
+    { accessor: 'deployment', role: 'developer', data: (h: any) => ({ appId: h.app.id }) },
+    { accessor: 'job',        role: 'developer', data: (h: any) => ({ appId: h.app.id, name: 'nightly' }) },
+    { accessor: 'domain',     role: 'admin',     data: (h: any) => ({ appId: h.app.id, hostname: 'x.example.com' }) },
+  ] as const
+
+  test('a caller reads only the rows of the workspace on their principal', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, mine } = await twoFleets(sys)
+
+    for (const { accessor, role } of SHAPES) {
+      const caller = db.$setAuth(as(role, { workspaceId: a.id }))
+      // No `where` at all: anything past the caller's own row came back because
+      // nothing filtered it.
+      const rows = await caller[accessor].findMany({})
+      expect({ accessor, ids: rows.map((r: any) => r.id) })
+        .toEqual({ accessor, ids: [(mine as any)[accessor].id] })
+    }
+    db.$close()
+  })
+
+  test('an appId-only read cannot reach another workspace app', async () => {
+    // The shape the services actually use — `where: { appId }` with no
+    // workspace clause, safe today only because the app was fetched scoped.
+    // Handed the other tenant's appId directly, it must answer nothing.
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, theirs } = await twoFleets(sys)
+
+    for (const { accessor, role } of SHAPES) {
+      const caller = db.$setAuth(as(role, { workspaceId: a.id }))
+      expect({ accessor, rows: await caller[accessor].findMany({ where: { appId: theirs.app.id } }) })
+        .toEqual({ accessor, rows: [] })
+      expect({ accessor, one: await caller[accessor].findUnique({ where: { id: (theirs as any)[accessor].id } }) })
+        .toEqual({ accessor, one: null })
+    }
+    db.$close()
+  })
+
+  test('nothing can be created into, or moved into, another workspace', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, b, mine, theirs } = await twoFleets(sys)
+
+    for (const { accessor, role, data } of SHAPES) {
+      const caller = db.$setAuth(as(role, { workspaceId: a.id }))
+
+      await expect(caller[accessor].create({ data: { workspaceId: b.id, ...data(theirs) } }))
+        .rejects.toThrow(/denied by @@allow/)
+
+      // The post-update half: the row was the caller's when the UPDATE matched
+      // it and would not be afterwards, so it rolls back.
+      await expect(caller[accessor].update({
+        where: { id: (mine as any)[accessor].id }, data: { workspaceId: b.id },
+      })).rejects.toThrow(/denied by @@allow/)
+      expect((await sys[accessor].findUnique({ where: { id: (mine as any)[accessor].id } })).workspaceId)
+        .toBe(a.id)
+    }
+    db.$close()
+  })
+
+  test('the engines still advance another workspace release — they are asSystem()', async () => {
+    // The deployment engine writes status and steps for whichever workspace the
+    // release belongs to, and the job engine reads and stamps a Job the same
+    // way. If this fails, the declaration has caught the paths a policy is meant
+    // not to touch, and the symptom in the app is a deploy that never lands.
+    const db  = await client()
+    const sys = db.asSystem()
+    const { theirs } = await twoFleets(sys)
+
+    expect((await sys.deployment.update({
+      where: { id: theirs.deployment.id }, data: { status: 'success' } })).status).toBe('success')
+    expect((await sys.job.update({
+      where: { id: theirs.job.id }, data: { status: 'running' } })).status).toBe('running')
+    expect((await sys.deployment.findMany({})).length).toBe(2)
+    db.$close()
+  })
+})
+
+// ─── Tenancy, third batch ────────────────────────────────────────────────────
+// The six that hang off the workspace directly and are not credential material:
+// a network, a recipe, a flag, a channel, an alert rule, a dashboard. Nothing
+// reads any of them across a workspace outside the hub and the fleet engine,
+// both asSystem(), so the declaration is the same fact their services already
+// filter on. The gates differ (a Recipe is "4.5", a Network and a channel are
+// "2.5"), so each row states who acts.
+
+describe('the workspace-owned six — the tenancy declared', () => {
+
+  const SHAPES = [
+    { accessor: 'network',             role: 'admin',     data: (t: string) => ({ name: `edge-${t}`, slug: `edge-${t}`, cidr: '10.0.0.0/16' }) },
+    { accessor: 'recipe',              role: 'admin',     data: (t: string) => ({ name: `harden-${t}`, slug: `harden-${t}`, script: 'echo hi' }) },
+    { accessor: 'featureFlag',         role: 'developer', data: (t: string) => ({ key: `flag-${t}`, name: 'Flag' }) },
+    { accessor: 'notificationChannel', role: 'admin',     data: (t: string) => ({ name: `#ops-${t}`, kind: 'slack', config: { channel: '#ops' } }) },
+    { accessor: 'alertRule',           role: 'admin',     data: (t: string) => ({ name: `CPU high ${t}`, metricName: 'cpu', severity: 'critical' }) },
+    { accessor: 'dashboard',           role: 'developer', data: (t: string) => ({ name: `Overview ${t}`, slug: `overview-${t}` }) },
+  ] as const
+
+  /** Two workspaces, one row of every kind in each. */
+  async function twoWorkspaces(sys: any) {
+    const a = await seedWorkspace(sys)
+    const b = await sys.workspace.create({ data: {
+      accountId: a.accountId, ownerId: a.ownerId,
+      name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
+    } })
+    const rows: Record<string, { mine: any; theirs: any }> = {}
+    for (const { accessor, data } of SHAPES)
+      rows[accessor] = {
+        mine:   await sys[accessor].create({ data: { workspaceId: a.id, ...data('mine') } }),
+        theirs: await sys[accessor].create({ data: { workspaceId: b.id, ...data('theirs') } }),
+      }
+    return { a, b, rows }
+  }
+
+  test('a caller reads only the rows of the workspace on their principal', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, rows } = await twoWorkspaces(sys)
+
+    for (const { accessor, role } of SHAPES) {
+      const caller = db.$setAuth(as(role, { workspaceId: a.id }))
+      const got    = await caller[accessor].findMany({})
+      expect({ accessor, ids: got.map((r: any) => r.id) })
+        .toEqual({ accessor, ids: [rows[accessor].mine.id] })
+    }
+    db.$close()
+  })
+
+  test('naming another workspace does not reach its rows', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, b, rows } = await twoWorkspaces(sys)
+
+    for (const { accessor, role } of SHAPES) {
+      const caller = db.$setAuth(as(role, { workspaceId: a.id }))
+      expect({ accessor, byId: await caller[accessor].findUnique({ where: { id: rows[accessor].theirs.id } }) })
+        .toEqual({ accessor, byId: null })
+      // A filter that asks for the other tenant by name is answered, not obeyed.
+      expect({ accessor, byWs: await caller[accessor].findFirst({ where: { workspaceId: b.id } }) })
+        .toEqual({ accessor, byWs: null })
+    }
+    db.$close()
+  })
+
+  test('nothing can be created into, or moved into, another workspace', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, b, rows } = await twoWorkspaces(sys)
+
+    for (const { accessor, role, data } of SHAPES) {
+      const caller = db.$setAuth(as(role, { workspaceId: a.id }))
+
+      await expect(caller[accessor].create({ data: { workspaceId: b.id, ...data('smuggled') } }))
+        .rejects.toThrow(/denied by @@allow/)
+
+      await expect(caller[accessor].update({
+        where: { id: rows[accessor].mine.id }, data: { workspaceId: b.id },
+      })).rejects.toThrow(/denied by @@allow/)
+      expect((await sys[accessor].findUnique({ where: { id: rows[accessor].mine.id } })).workspaceId)
+        .toBe(a.id)
+    }
+    db.$close()
+  })
+
+  test('the hub and the fleet engine still cross — they are asSystem()', async () => {
+    // The hub lists every workspace's flags and toggles one; the fleet engine
+    // stamps a Recipe for whichever workspace owns the run. Both are the paths
+    // a policy is meant not to touch, and both would go quiet rather than throw.
+    const db  = await client()
+    const sys = db.asSystem()
+    const { rows } = await twoWorkspaces(sys)
+
+    expect((await sys.featureFlag.findMany({})).length).toBe(2)
+    expect((await sys.featureFlag.update({
+      where: { id: rows.featureFlag.theirs.id }, data: { isEnabled: true } })).isEnabled).toBe(true)
+    expect((await sys.recipe.update({
+      where: { id: rows.recipe.theirs.id }, data: { lastRunAt: new Date().toISOString() } })).lastRunAt)
+      .toBeTruthy()
+    db.$close()
+  })
+})
+
+// ─── Tenancy, the credential pair ────────────────────────────────────────────
+// `Secret` and `ApiKey` were held back from the batches because they are the two
+// with real system readers: the conduit resolver reading `secret:<id>`, the
+// channels service writing a channel's credential, and the API-key guard asking
+// whether a key may act at all. All three are `asSystem()` — which is what makes
+// the declaration safe, and is the thing these tests check has not moved.
+
+describe('Secret · ApiKey — the tenancy declared over credential material', () => {
+
+  async function twoVaults(sys: any) {
+    const a = await seedWorkspace(sys)
+    const b = await sys.workspace.create({ data: {
+      accountId: a.accountId, ownerId: a.ownerId,
+      name: 'Other', slug: `other-${Math.random().toString(36).slice(2, 8)}`,
+    } })
+    const build = async (ws: any, tag: string) => ({
+      secret: await sys.secret.create({ data: {
+        workspaceId: ws.id, name: `deploy-key-${tag}`, kind: 'ssh_key', data: 'PRIVATE', createdBy: 'u1' } }),
+      apiKey: await sys.apiKey.create({ data: {
+        workspaceId: ws.id, userId: a.ownerId, name: `ci-${tag}`, tokenHint: `bc_${tag}` } }),
+    })
+    return { a, b, mine: await build(a, 'mine'), theirs: await build(b, 'theirs') }
+  }
+
+  const ACCESSORS = ['secret', 'apiKey'] as const
+
+  test('an admin reads only their own workspace vault', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, mine } = await twoVaults(sys)
+    const caller = db.$setAuth(as('admin', { workspaceId: a.id }))
+
+    for (const accessor of ACCESSORS) {
+      const rows = await caller[accessor].findMany({})
+      expect({ accessor, ids: rows.map((r: any) => r.id) })
+        .toEqual({ accessor, ids: [(mine as any)[accessor].id] })
+    }
+    db.$close()
+  })
+
+  test('another workspace\'s credential is unreachable by id', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, theirs } = await twoVaults(sys)
+    const caller = db.$setAuth(as('admin', { workspaceId: a.id }))
+
+    for (const accessor of ACCESSORS)
+      expect({ accessor, row: await caller[accessor].findUnique({ where: { id: (theirs as any)[accessor].id } }) })
+        .toEqual({ accessor, row: null })
+    db.$close()
+  })
+
+  test('nothing can be created into, or moved into, another workspace', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, b, mine } = await twoVaults(sys)
+    const caller = db.$setAuth(as('admin', { workspaceId: a.id }))
+
+    await expect(caller.secret.create({ data: {
+      workspaceId: b.id, name: 'smuggled', kind: 'generic', data: 'X', createdBy: 'u1' } }))
+      .rejects.toThrow(/denied by @@allow/)
+    await expect(caller.apiKey.create({ data: {
+      workspaceId: b.id, userId: a.ownerId, name: 'smuggled', tokenHint: 'bc_x' } }))
+      .rejects.toThrow(/denied by @@allow/)
+
+    for (const accessor of ACCESSORS) {
+      await expect(caller[accessor].update({
+        where: { id: (mine as any)[accessor].id }, data: { workspaceId: b.id },
+      })).rejects.toThrow(/denied by @@allow/)
+      expect((await sys[accessor].findUnique({ where: { id: (mine as any)[accessor].id } })).workspaceId)
+        .toBe(a.id)
+    }
+    db.$close()
+  })
+
+  test('the three system readers still reach across — they are asSystem()', async () => {
+    // The conduit resolver looks a Secret up BY ID with no workspace in the
+    // query (core/credentials.ts), and the API-key guard looks a key up by its
+    // credential id (services/api-keys/scopes.ts). Both are the caller's
+    // workspace only by coincidence of who is asking; a policy applied to them
+    // would fail every send and refuse every key, silently.
+    const db  = await client()
+    const sys = db.asSystem()
+    const { theirs } = await twoVaults(sys)
+
+    expect((await sys.secret.findFirst({ where: { id: theirs.secret.id } }))?.data).toBe('PRIVATE')
+    expect((await sys.apiKey.findUnique({ where: { id: theirs.apiKey.id } }))?.name).toBe('ci-theirs')
+    expect((await sys.apiKey.update({
+      where: { id: theirs.apiKey.id }, data: { totalUses: 1 } })).totalUses).toBe(1)
+    db.$close()
+  })
+
+  test('@encrypted is still what hides the material, not the policy', async () => {
+    // The policy answers WHICH rows; `data` being absent from a scoped read is
+    // `@encrypted`, and it is absent from the caller's OWN secret too. Losing
+    // one of the two would look identical on a cross-workspace read.
+    const db  = await client()
+    const sys = db.asSystem()
+    const { a, mine } = await twoVaults(sys)
+    const caller = db.$setAuth(as('admin', { workspaceId: a.id }))
+
+    const own = await caller.secret.findUnique({ where: { id: mine.secret.id } })
+    expect(own?.id).toBe(mine.secret.id)
+    expect('data' in (own ?? {})).toBe(false)
     db.$close()
   })
 })

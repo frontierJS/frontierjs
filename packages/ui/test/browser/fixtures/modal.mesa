@@ -1,0 +1,25 @@
+<script>
+  // modal.mesa — a Modal with a footer snippet and something focusable in the
+  // body, which is what makes the focus trap testable at all.
+  import Modal  from '../../../components/overlay/Modal.mesa'
+  import Button from '../../../components/forms/Button.mesa'
+
+  export let dismissible = true
+
+  let open   = false
+  let closes = 0
+</script>
+
+<Button id="open-modal" onclick={() => open = true}>Open</Button>
+<button type="button" id="outside-modal">Outside</button>
+
+<Modal bind:open={open} title="Confirm deletion" size="sm" dismissible={dismissible} onclose={() => closes++}>
+  <p>This action cannot be undone.</p>
+  <button type="button" id="in-body">In body</button>
+  {#snippet footer()}
+    <button type="button" id="cancel" on:click={() => open = false}>Cancel</button>
+  {/snippet}
+</Modal>
+
+<output id="closes">{closes}</output>
+<output id="state">{open ? 'open' : 'shut'}</output>

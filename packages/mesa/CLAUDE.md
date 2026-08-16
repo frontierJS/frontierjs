@@ -1,8 +1,10 @@
 # Mesa — package map
 
 **UI substrate.** A `.mesa` component compiler and the signal runtime its output
-runs on. A true leaf: **zero workspace dependencies**, and it must stay that way
-(Invariant 1). Sierra, jetty, ui and email-kit all sit on top of it.
+runs on. A true leaf: **no framework-package dependency, ever** — the one thing
+it may import is `@frontierjs/utils`, which is substrate below the graph rather
+than a member of it (`FJS-D26`). Sierra, jetty, ui and email-kit all sit on top
+of it.
 
 Run tests with **`bun run test` — the runner is vitest.** `bun test` reports
 ~35 failures that are runner artifacts, not defects.
@@ -19,11 +21,11 @@ src/
   render.js            — SSR / static-site rendering entry
   compiler-md.js       — Markdown + frontmatter compiler (the .md path)
   css-inliner.js       — scoped-style extraction and inlining
-  glow.js              — small syntax highlighter used by the docs/demo
 
 mesa-vite/
   index.js             — the Vite plugin, exported as @frontierjs/mesa/vite
-  client.js            — its HMR client, @frontierjs/mesa/vite/client
+  client.js            — the HMR client, @frontierjs/mesa/vite/client
+  hmr.js               — the HMR boundary, @frontierjs/mesa/vite/hmr
   devtools.html        — the /__mesa/devtools panel it serves
 
 runtime.js             — root re-export; what everything imports
@@ -91,6 +93,12 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
   content-addressed, which is what lets a static build dedupe CSS across the two
   compilers it runs.
 - **A clean compile is not proof of valid JS** (Invariant 15). Parse the output.
+- **A slot made only of comments is not content.** Comments are dropped from the
+  output unless `preserveComments` is on, so such a block rendered nothing and
+  still made `$slots.default` true — and a component that branches on the answer
+  turned itself off because somebody wrote a comment inside it. `<Form>`
+  generating its field list when nobody passed controls is the case that found
+  it: one HTML comment and every field silently vanished.
 - **Island markers are comments, not elements.** An element gets foster-parented
   out of `<tbody>` and then matches `>` selectors it should not.
 - **The component registry is keyed by ANCHOR, so a component's anchor must be a
@@ -100,11 +108,77 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
   that still looks right. `tpl` keeps text entries separate while the emitted
   template is one string, and adjacent text parses as ONE `Text` node — so never
   let a component adopt a neighbouring text node as its anchor (`FJS-110`).
+- **The HMR boundary is exported, because it has two callers.**
+  `mesa-vite/hmr.js` (`@frontierjs/mesa/vite/hmr`) and `mesa-vite/client.js`
+  (`@frontierjs/mesa/vite/client`) are Sierra's too — it reimplements the PLUGIN
+  and never the boundary (`FJS-D16`), and `injectHMR` being private here is why
+  it had copied one. `injectHMR(js, id, root, clientId)` takes the client id,
+  since each plugin serves the client at a virtual id of its own. **Ask
+  `canInject` first**: the two patterns it tests are shapes of the compiler's
+  OUTPUT, and a `.replace()` whose pattern stops matching is silent — failing
+  closed keeps a file on the full-reload path instead of shipping half a
+  boundary. **`__setMark` goes on the NEW function**, the one handed to
+  `__mesa_hot_update`; setting it on the old module's leaves the new
+  `__hmrMark` undefined, so the first update registers `hmrMark: undefined` and
+  the second drops the entry as stale — HMR worked once per page load and then
+  said *no registered instances*. `test/vite-hmr.test.js` pins all of it against
+  real compiled output.
+- **A Vite plugin test runs in Node, not happy-dom.** This package's vitest
+  environment is happy-dom, whose global `URL` makes
+  `fileURLToPath(new URL('./devtools.html', import.meta.url))` throw *must be of
+  scheme file* — against a path that is perfectly fine in a real dev server. Put
+  `// @vitest-environment node` at the top of the file. The four plugin suites
+  are `vite-plugin` (hooks), `vite-devtools` (the route, against both copies of
+  it), `vite-compiler-resolution` (a stub compiler is the point there, nowhere
+  else) and `vite-server`, which starts a real dev server in middleware mode —
+  the only one that can see a hook that is never REACHED.
+- **`css` on the compiler is a DESTINATION, not a switch.** Truthy inlines the
+  scoped rules as `$runtime.addStyles(id, …)`; falsy extracts them onto
+  `ctx.css.result` and emits nothing, so a caller that does not place them has
+  silently dropped every style. Both Vite plugins inline. The Vite plugin's own
+  `css: false` therefore means *drop the block*, and says so (`FJS-291`).
+- **The compiler is resolved ONCE per module instance**, not per plugin. Two
+  plugins in one Vite config share whichever compiler was asked for first, so a
+  second instance's `compilerPath` is ignored in silence.
 - **A running dev server never re-transforms.** Editing `compiler.js` invalidates
   nothing in a server that is already up — restart it, or the fix "does not work".
   In-repo consumers must import mesa by **relative path**, not `@frontierjs/mesa`:
   `bun install` copies workspace deps into `node_modules/.bun/`, so an importer
   sees a stale snapshot until reinstall.
+
+## The contexts in this package
+
+**Two, and they are not the same kind of thing** (`FJS-D03`). Neither is a
+request context — nothing here executes on behalf of a caller.
+
+**Compile context** — `get_context()` / `use_context()` in `compiler.js`, an
+ambient module-level singleton (`_current_context`).
+
+| | |
+| --- | --- |
+| Created per | **compilation** |
+| Lives until | that compile finishes; `use_context` restores the previous one |
+| Carries | `setters`, `accessors`, `script`, `proxyFireFns` — the state one compile accumulates |
+| Is NOT | anything a component or an app sees. It exists only while source is becoming JavaScript |
+
+Same word as the API realm's request context, unrelated concept. Reaching for
+`ctx` in this package gets you compiler state.
+
+**`$context`** — the runtime tree context, `_contextStack` in `runtime.js`.
+
+| | |
+| --- | --- |
+| Created per | **component subtree**. `$context.key = expr` provides a reactive getter; descendants read it with `contextRead('key')` |
+| Lives until | that component's frame unwinds — and the stack is truncated on error, because a dead frame left on it makes every component mounted afterwards inherit the dead one's provides |
+| Scoped by | the component TREE, not by a call. It is React-context-shaped, not request-shaped |
+| Reaches | content a block creates LATER, but only because each block captures the stack and reinstates it (`captureContext`, `FJS-311`). The stack itself is setup-time state, so an `{#if}` that flips, an `{#each}` row that arrives or a portal would otherwise instantiate its content with the provider already popped — which broke every compound component behind a conditional. **A new block kind that builds content after setup needs the same wrap** |
+| Reads as | `undefined` outside a provider, and every fallback is silent — `@frontierjs/ui`'s controls are written so that an absent form context means *what the control does standing alone* |
+
+`$context.form` is the one the kit uses: `Form.mesa` provides
+`{ errors, submitting, disabled, fields, submitted }` and nine controls resolve
+their own label, constraints and server error from it.
+
+---
 
 ## Proving a change
 

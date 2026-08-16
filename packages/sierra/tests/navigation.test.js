@@ -311,14 +311,17 @@ describe('goto', () => {
     expect(page.pending).toBeNull()
   })
 
-  test('with query params builds URL and sets them in params signal', async () => {
+  test('with query params builds the URL and puts them on page.query', async () => {
     const tree = makeTree()
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
 
     await goto('/blog/', { page: 2, q: 'hello' })
-    expect(page.params.page).toBe(2)
-    expect(page.params.q).toBe('hello')
+    // They used to land on `page.params` beside the PATH captures, so one value
+    // had two homes and neither said which kind it was (`FJS-083`).
+    expect(page.query.page).toBe(2)
+    expect(page.query.q).toBe('hello')
+    expect(page.params.page).toBeUndefined()
   })
 
   test('clears pageSlots on navigation', async () => {
@@ -704,8 +707,8 @@ describe('setParams / updateParams', () => {
 
     await setParams({ page: 2 })
     await waitForNav()
-    expect(page.params.page).toBe(2)
-    expect(page.params.q).toBeUndefined()
+    expect(page.query.page).toBe(2)
+    expect(page.query.q).toBeUndefined()
   })
 
   test('updateParams merges into current params', async () => {
@@ -716,8 +719,8 @@ describe('setParams / updateParams', () => {
 
     await updateParams(cur => ({ ...cur, page: 2 }))
     await waitForNav()
-    expect(page.params.page).toBe(2)
-    expect(page.params.q).toBe('hello')
+    expect(page.query.page).toBe(2)
+    expect(page.query.q).toBe('hello')
   })
 })
 
@@ -797,7 +800,7 @@ describe('pageSlots lifecycle', () => {
 })
 
 // ─── Layout component map helper ─────────────────────────────────────────────
-// Simulates the layouts map that generate-manifest now produces.
+// Simulates the layouts map that generate-route-table now produces.
 
 function makeLayouts(tree) {
   const layoutPaths = new Set()

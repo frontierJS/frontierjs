@@ -210,7 +210,7 @@ describe('a model-backed service with no field rules says so', () => {
   })
 
   test('a service with no model at all stays quiet', async () => {
-    // Custom actions only, or its own create(). getTable's diagnostic covers a
+    // Custom methods only, or its own create(). getTable's diagnostic covers a
     // genuinely missing model when an unused CRUD method is called; warning
     // here would fire on every service that legitimately has no table.
     expect(await warningsFrom('ghost', mkUndeclared())).toHaveLength(0)
@@ -516,5 +516,94 @@ describe('autoFilter — unknown filter keys', () => {
     const app = await appFor(stub, 'posts', 'post')
     expect((await get(app, '/posts?$orderBy=anythingAtAll')).status).toBe(200)
     await app.stop()
+  })
+})
+
+// ─── The accessor the CHECKS are asked with ─────────────────────────────────
+//
+// The two describes above declare `model:` on every service, so the accessor
+// reaching $checkWhere/$checkOrderBy was already the singular one Litestone
+// knows — and the bug was invisible for exactly that reason. A service that
+// declares no `model:` is named for its URL, which is plural, and that is the
+// shape the autoloader produces and every service in `example` has.
+//
+// Both check functions answer `[]` for an accessor they do not know. `[]` is
+// also *no problems*, so the hooks read "I cannot judge this" as "this is
+// fine" and the validation silently did nothing. Measured on the running app:
+// `GET /api/orders?bogusColumn=7` → 200 with an empty list, plus a Litestone
+// warning on the server's stderr that no client can see.
+//
+// The sort half was hidden behind a difference in Litestone's own backstop —
+// it THROWS on a bad orderBy at execution where a bad where merely warns — so
+// one of the two answered 400 while neither hook was working.
+
+describe('a service that declares no model: — the accessor is plural', () => {
+  const products = async () => {
+    const { createClient } = await import('../../litestone/src/index.js')
+    const db: any = await createClient({
+      schema: 'model Product { id Int @id  name String  price Float @default(1) }',
+      db: ':memory:',
+    })
+    await db.product.createMany({ data: [{ id: 1, name: 'a' }, { id: 2, name: 'b' }] })
+
+    const app = createApp({
+      db,
+      config: {
+        port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' },
+        http: { ...defaultConfig.http, drainTimeout: 50 },
+      },
+    })
+    // No `model:` — the accessor falls back to ctx.service, which is 'products'.
+    app.services.register(createService({ name: 'products' }))
+    await app.start()
+    return { app, db }
+  }
+
+  const get = async (app: any, path: string) => {
+    const res = await app.http.fetch(new Request('http://localhost' + path))
+    return { status: res.status, body: await res.json() as { message?: string; data?: unknown[] } }
+  }
+
+  test('a known column still filters', async () => {
+    const { app, db } = await products()
+    const res = await get(app, '/products?name=a')
+    expect(res.status).toBe(200)
+    expect(res.body.data).toHaveLength(1)
+    db.$close(); await app.stop()
+  })
+
+  test('autoFilter still refuses an unknown key', async () => {
+    const { app, db } = await products()
+    const res = await get(app, '/products?bogusColumn=7')
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain("'bogusColumn'")
+    expect(res.body.message).toContain('id, name, price')
+    db.$close(); await app.stop()
+  })
+
+  test('autoSort still refuses an unknown sort key', async () => {
+    const { app, db } = await products()
+    const res = await get(app, '/products?$orderBy=-bogusColumn')
+    expect(res.status).toBe(400)
+    expect(res.body.message).toContain("'bogusColumn'")
+    db.$close(); await app.stop()
+  })
+
+  test('resolveAccessor answers the singular the client knows', async () => {
+    const { resolveAccessor } = await import('../src/core/litestone.ts')
+    const { createClient } = await import('../../litestone/src/index.js')
+    const db: any = await createClient({
+      schema: 'model Product { id Int @id  name String }',
+      db: ':memory:',
+    })
+    expect(resolveAccessor(db, 'products')).toBe('product')
+    expect(resolveAccessor(db, 'product')).toBe('product')
+    // A name no model answers comes back untouched — the hooks then no-op,
+    // which is the same fail-open they always had for an unjudgeable accessor.
+    expect(resolveAccessor(db, 'widgets')).toBe('widgets')
+    // A client that is not Litestone at all must not throw here.
+    expect(resolveAccessor({}, 'products')).toBe('products')
+    expect(resolveAccessor(null, 'products')).toBe('products')
+    db.$close()
   })
 })

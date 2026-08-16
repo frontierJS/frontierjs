@@ -47,7 +47,35 @@
   // the browser's validation UI is turned off and the constraint attributes
   // stay for assistive tech. `novalidate={false}` restores the native bubbles.
 
-  import Alert from '../feedback/Alert.mesa'
+  // ── The generated field list ─────────────────────────────────────────
+  //
+  //   <Form {leads} />                        every writable column, in schema order
+  //   <Form {leads} only={['name','email']} />
+  //   <Form {leads} except={['internalRef']} />
+  //
+  // A field list typed into a page is the last thing a form still restates
+  // about a model, and it drifts the way every duplicated list does: a column
+  // added to `.lite` simply does not appear, and nothing says so.
+  //
+  // The mapping from a field to a control is NOT here. It lives in Sierra's
+  // `field-rules.js` and this component asks the resource for it
+  // (`resource.formFields()`), because this package peers only on mesa and css
+  // — a form that had to import Sierra to know what a `Float` is would invert
+  // the dependency — and because a hand-written form and a generated one have
+  // to agree, which one table is the only way to guarantee.
+  //
+  // Which COMPONENT a control name renders as is `FormField.mesa`'s, over the
+  // registry in `@frontierjs/ui/controls`. Both halves are registrable, so a
+  // column type this kit has never heard of is two lines in an app rather than
+  // a fork of either package.
+  //
+  // Children win. Passing any means the caller is writing the form, and the
+  // generated list is not rendered unless `auto` says so explicitly; `auto`
+  // with children renders the generated fields FIRST and the children after,
+  // which is how you add one control the schema cannot describe.
+
+  import Alert     from '../feedback/Alert.mesa'
+  import FormField from './FormField.mesa'
   import { cx } from '../../utils.js'
 
   // The resource this form writes through. Optional only when `onsubmit` is
@@ -71,6 +99,12 @@
   export let ondone  = undefined      // (result, record) => void
   export let onerror = undefined      // (err) => void
   export let onready = undefined      // (api) => void — see § The imperative API
+
+  // Generate the field list from the schema. Default: generate when the caller
+  // passed no children. State it to force either way.
+  export let auto   = undefined       // boolean
+  export let only   = undefined       // string[] — narrows AND orders
+  export let except = undefined       // string[] — removes
 
   export let disabled    = false
   export let resetOnDone = false      // clear back to the pristine record on success
@@ -112,6 +146,50 @@
     disabled: disabled || submitting,
     fields: resource?.fields ?? {},
     submitted,
+  }
+
+  // ── The generated fields ─────────────────────────────────────────────
+  //
+  // `generated` holds every entry the resource returned, including the ones it
+  // could not give a control — an array column, a `Json` document, a name that
+  // is not a field. Those are reported rather than dropped: a field silently
+  // missing from a form is the exact failure generating the list is meant to
+  // end, and it would be invisible in the one place a person would look.
+
+  const _auto = auto ?? !$slots.default
+  const generated = _auto ? (resource?.formFields?.({ only, except }) ?? []) : []
+  const rendered  = generated.filter(f => f.control)
+
+  // A `readOnly` field is not one of them: `@system`, `@computed`, `@generated`
+  // and `@from` are the schema saying this value is not the caller's to write,
+  // and a form leaving it out is the annotation working. What is worth saying
+  // out loud is a column the kit has no control FOR — an array, a `Json`
+  // document, a name the model does not have.
+  for (const f of generated) {
+    if (f.control || f.reason === 'readOnly') continue
+    console.warn(
+      `[Form] ${resource?.context?.model ?? 'resource'}.${f.name} is not rendered — ${f.reason}. ` +
+      'Name it in `only` with a control of your own, or in `except` to say it is deliberate.',
+    )
+  }
+
+  // A picker's rows come from the related service, so they arrive after the
+  // form does. Keyed by field, replaced rather than mutated — that is what
+  // makes the <Select> repopulate. $onMount, so a prerendered form fetches
+  // nothing at build time.
+  let pickers = {}
+
+  // Controls hand back an event; the record is REPLACED rather than mutated,
+  // because a member expression is not a bindable target and mutation would
+  // not be seen. Same shape every hand-written form in this repo used.
+  //
+  // `dirty` is set here as well as by the bubbled `input`/`change` listener
+  // below: a contributed control is not obliged to be a DOM input, and one that
+  // hands back a value without emitting an event would otherwise leave a form
+  // that has been edited saying it is pristine. Setting it twice is free.
+  function writeField(name, value) {
+    record = { ...record, [name]: value }
+    dirty  = true
   }
 
   // ── Live validation ──────────────────────────────────────────────────
@@ -279,7 +357,18 @@
   // Hand the imperative API out once the component is alive. $onMount is a
   // no-op server-side, so a prerendered form simply never offers it — which is
   // correct: there is nothing to submit.
-  $onMount(() => { onready?.({ submit, reset, clearErrors }) })
+  $onMount(() => {
+    onready?.({ submit, reset, clearErrors })
+
+    // Rows are fetched for a FOREIGN KEY, not for the control named `picker`.
+    // The relation is the schema fact and the control is a choice made over it,
+    // so a contributed combobox over `customerId` gets its rows without having
+    // to claim the built-in name to do it.
+    for (const f of rendered) {
+      if (!f.rule?.references) continue
+      resource?.options?.(f.name)?.then?.(rows => { pickers = { ...pickers, [f.name]: rows } })
+    }
+  })
 
   function handleLeave(e) {
     if (validateOn !== 'blur') return
@@ -308,6 +397,21 @@
   {#if showError && formError}
     <Alert tone="danger" title={errorTitle}>{formError}</Alert>
   {/if}
+
+  <!--
+    Nothing below states a label, a `required`, a `type` or a message: every one
+    of those is a schema fact and a control inside a <Form> resolves it from
+    `$context.form`. What IS stated is the control, its value and how the value
+    comes back — the three things the schema does not say.
+  -->
+  {#each rendered as f (f.name)}
+    <FormField
+      field={f}
+      value={record[f.name]}
+      options={pickers[f.name]}
+      write={(v) => writeField(f.name, v)}
+    />
+  {/each}
 
   <slot />
 

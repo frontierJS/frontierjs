@@ -5,6 +5,7 @@
 // everything here, so existing imports are unaffected.
 
 import type { ServiceContext } from './context.ts'
+import type { TransportContext } from '../transport/types.ts'
 import type { Hook, AroundHook } from './hooks.ts'
 import { Unavailable } from './errors.ts'
 import type { RateLimitHookOptions } from '../auth/types.ts'
@@ -14,7 +15,7 @@ import { clientIp } from './context.ts'
 export type { RateLimitHookOptions }
 
 // ─── Circuit breaker ──────────────────────────────────────────────────────
-// Wraps a service method (or action) as an around hook.
+// Wraps a service method as an around hook.
 // Transitions: CLOSED → OPEN after `threshold` consecutive failures.
 //              OPEN   → HALF_OPEN after `timeout` ms.
 //              HALF_OPEN → CLOSED on success, back to OPEN on failure.
@@ -117,7 +118,21 @@ export function circuitBreaker(opts: CircuitBreakerOptions = {}): AroundHook {
 
 
 
-export function rateLimit(opts: RateLimitHookOptions): Hook {
+/**
+ * What `rateLimit` returns: a hook that runs on either side of the bridge.
+ *
+ * It is a service before-hook AND the limiter `@frontierjs/auth` puts on its own
+ * `/auth/*` routes, which are plain handlers holding a `TransportContext`. Both
+ * things it reads — the principal and the IP — go through accessors that answer
+ * for either shape, so the only part that was ever ServiceContext-only was the
+ * signature. Nothing said so because auth typed those handlers `any` (FJS-063).
+ *
+ * The parameter is WIDER than `Hook`'s, which is what keeps this assignable to
+ * `Hook` and usable in a `before:` map unchanged.
+ */
+export type BridgeHook = (ctx: ServiceContext | TransportContext) => void
+
+export function rateLimit(opts: RateLimitHookOptions): BridgeHook {
   refuseLegacyRateLimitOptions(opts as unknown as Record<string, unknown>)
 
   // Authenticated callers get their own bucket regardless of IP; anonymous ones
@@ -133,7 +148,7 @@ export function rateLimit(opts: RateLimitHookOptions): Hook {
     (ctx) => (ctx.auth?.user?.userId as string) ?? clientIp(ctx),
   )
 
-  const hook = (ctx: ServiceContext): void => { limiter.check(ctx) }
+  const hook: BridgeHook = (ctx) => { limiter.check(ctx as ServiceContext) }
   // Exposed so a caller holding the hook can stop its sweep timer. The transport
   // adapter wires this into a plugin shutdown(); a service-level hook lives as
   // long as the service, so there is nothing to hang it off automatically.

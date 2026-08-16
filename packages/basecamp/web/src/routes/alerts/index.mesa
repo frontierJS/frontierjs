@@ -82,7 +82,7 @@ title: Alerts
   async function showEvents(rule) {
     busy = rule.id
     try {
-      const raw = await alerts.service.action('events', rule.id)
+      const raw = await alerts.service.invoke('events', rule.id)
       events = { ...events, [rule.id]: Array.isArray(raw) ? raw : raw?.data ?? [] }
     } catch (e) {
       error = e.message
@@ -96,7 +96,7 @@ title: Alerts
     if (!channelId) return
     error = null; busy = rule.id
     try {
-      const updated = await alerts.service.action('attachChannel', rule.id, { channelId })
+      const updated = await alerts.service.invoke('attachChannel', rule.id, { channelId })
       delivery = { ...delivery, [rule.id]: updated.channels ?? [] }
       picked   = { ...picked, [rule.id]: '' }
     } catch (e) {
@@ -109,7 +109,7 @@ title: Alerts
   async function detach(rule, channelId) {
     error = null; busy = rule.id
     try {
-      const updated = await alerts.service.action('detachChannel', rule.id, { channelId })
+      const updated = await alerts.service.invoke('detachChannel', rule.id, { channelId })
       delivery = { ...delivery, [rule.id]: updated.channels ?? [] }
     } catch (e) {
       error = e.message
@@ -154,7 +154,7 @@ title: Alerts
   async function acknowledge(rule, event) {
     error = null; busy = rule.id
     try {
-      await alerts.service.action('acknowledge', rule.id, { eventId: event.id })
+      await alerts.service.invoke('acknowledge', rule.id, { eventId: event.id })
       await showEvents(rule)
     } catch (e) {
       error = e.message

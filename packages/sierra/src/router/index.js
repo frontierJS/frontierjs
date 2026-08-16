@@ -24,6 +24,7 @@
 
 import { watchProxy } from '@frontierjs/mesa/runtime'
 import { matchRoute, normalizePath, buildUrl, parseQueryParams } from './match.js'
+import { splitParams } from '@frontierjs/toolbelt/directives'
 import {
   registerModule, buildLayoutMap, registerFileComponent, hmrInvalidate, getComponents,
   loadLayoutChain,
@@ -99,7 +100,11 @@ function _reportError(type, context, err) {
  * frontmatter using one of these names is overwritten, and the scanner warns.
  *
  * @property {string}      path     current pathname + search
- * @property {object}      params   route params — { slug: 'x' }
+ * @property {object}      params   route params — { slug: 'x' }. PATH captures
+ *                                  only; the search string is `query`
+ * @property {object}      query    the URL's filters — { status: 'active' }
+ * @property {object}      directives  the URL's `$` params, structured —
+ *                                  { limit, offset, orderBy, select, … }
  * @property {object}      meta     the raw frontmatter object, un-spread
  * @property {object|null} route    the matched route node (was `activeRoute`)
  * @property {object|null} pending  in-flight route during navigation, else null
@@ -110,6 +115,8 @@ function _reportError(type, context, err) {
 export const page = {
   path:    '/',
   params:  {},
+  query:      {},
+  directives: {},
   meta:    {},
   route:   null,
   pending: null,
@@ -148,6 +155,8 @@ const _w = () => watchProxy(page)
 export function _resetPage() {
   _w().path    = '/'
   _w().params  = {}
+  _w().query      = {}
+  _w().directives = {}
   _w().meta    = {}
   _w().route   = null
   _w().pending = null
@@ -307,6 +316,25 @@ export function forward() {
 }
 
 /**
+ * Are these two parameter bags the same? One level deep, which is all a search
+ * string can produce past `parseQueryParams` — a nested value there is an
+ * `a[b]=` object of scalars, compared by its own scalars.
+ */
+function _sameParams(a, b) {
+  if (a === b) return true
+  if (!a || !b) return false
+  const ka = Object.keys(a), kb = Object.keys(b)
+  if (ka.length !== kb.length) return false
+  return ka.every(k => {
+    const [x, y] = [a[k], b[k]]
+    if (x === y) return true
+    if (!x || !y || typeof x !== 'object' || typeof y !== 'object') return false
+    const kx = Object.keys(x)
+    return kx.length === Object.keys(y).length && kx.every(i => x[i] === y[i])
+  })
+}
+
+/**
  * Replace all query params in the URL.
  * @param {Record<string, unknown>} obj
  */
@@ -452,14 +480,25 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       }
     : null
 
+  // ── The search string is two things ────────────────────────────────────
+  // The same split the API realm makes at its own boundary, over the same table
+  // (`@frontierjs/toolbelt/directives`): the FILTERS a page asks with, and the
+  // DIRECTIVES saying how much of the answer and in what order. So a filtered,
+  // sorted, paginated list is URL-driven with nothing to translate —
+  // `resource.load(page.query, page.directives)` — and it survives a reload, a
+  // back button and a pasted link because the URL is where it lives.
+  //
+  // `params` is PATH captures alone now. It used to carry the search params
+  // merged in, so one value had two homes and neither said which kind it was.
+  const { query, directives } = splitParams(parseQueryParams(search))
+
   // Build pending route context
   const toContext = {
-    path: normalized + search,
-    params: {
-      ...match.params,
-      ...parseQueryParams(search),
-    },
-    node: toNode,
+    path:   normalized + search,
+    params: { ...match.params },
+    query,
+    directives,
+    node:   toNode,
   }
 
   // Run before-navigation guards (skip during HMR re-navigation).
@@ -607,6 +646,12 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   _w().meta    = _meta
   _w().path    = normalized + search
   _w().params  = toContext.params
+  // Only when they changed. `page` fields are assigned every navigation, which
+  // is right for the ones a navigation always changes — but a LAYOUT outlives
+  // one, and a filter bar watching `page.query` would re-ask the server on
+  // every navigation under it if a fresh object arrived each time.
+  if (!_sameParams(page.query,      query))      _w().query      = query
+  if (!_sameParams(page.directives, directives)) _w().directives = directives
   _w().route   = toNode
   _w().data    = loadedData
   _w().pending = null

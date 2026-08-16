@@ -33,40 +33,15 @@ export const REACHABLE_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8]
 
 // ─── Policy expression → source text ──────────────────────────────────────────
 //
-// Round-trips a parsed `@@allow`/`@@deny` condition back to the syntax it was
-// written in. The snapshot has to show the predicate itself: a policy compiles
-// silently into the WHERE clause, so "which rows" is invisible everywhere else.
-
-const PREC = { or: 1, and: 2, not: 3 }
-const prec = (node) => PREC[node?.type] ?? 4
-
-export function policyExprToString(node) {
-  if (!node) return '?'
-
-  const child = (n) => (prec(n) < prec(node) ? `(${policyExprToString(n)})` : policyExprToString(n))
-
-  switch (node.type) {
-    case 'or':      return `${child(node.left)} || ${child(node.right)}`
-    case 'and':     return `${child(node.left)} && ${child(node.right)}`
-    // A compare binds tighter than `!` in the grammar, so `!a == b` parses as
-    // not(compare). The parens are added back for the reader and re-parse the same.
-    case 'not':     return node.expr?.type === 'compare'
-      ? `!(${policyExprToString(node.expr)})`
-      : `!${child(node.expr)}`
-    case 'compare': return `${child(node.left)} ${node.op} ${child(node.right)}`
-    case 'auth':    return node.field ? `auth().${node.field}` : 'auth()'
-    case 'now':     return 'now()'
-    case 'check':   return node.operation ? `check(${node.field}, '${node.operation}')` : `check(${node.field})`
-    case 'field':   return node.name
-    case 'literal': {
-      const v = node.value
-      if (v === null)              return 'null'
-      if (typeof v === 'string')   return `'${v}'`
-      return String(v)
-    }
-    default:        return `<${node.type}>`
-  }
-}
+// Owned by `core/policy.js`, which is where the AST is built and where the
+// startup check quotes an expression back at whoever wrote it. Re-exported here
+// because the access snapshot is its other reader — and the import cannot go
+// the other way: this file is never imported by production code, and policy.js
+// is.
+// Imported as well as re-exported: `export … from` does not bind the name in
+// this module's own scope, and describeModel below calls it.
+import { policyExprToString } from './core/policy.js'
+export { policyExprToString }
 
 // ─── deriveAccess ─────────────────────────────────────────────────────────────
 //
@@ -167,7 +142,12 @@ function fieldProtection(attrs) {
   const enc = attrs.find(a => a.kind === 'encrypted')
   if (enc)                                     return enc.deterministic ? '@encrypted(deterministic: true)' : '@encrypted'
   const guarded = attrs.find(a => a.kind === 'guarded')
-  if (guarded)                                 return guarded.level === 'all' ? '@guarded(all)' : '@guarded'
+  const system  = attrs.some(a => a.kind === 'system')
+  // The pair is spellable and means both halves: invisible to a client AND
+  // unwritable by one. Report it as written rather than letting one hide the
+  // other — the snapshot is where a reader learns which locks a column carries.
+  if (guarded)                                 return (guarded.level === 'all' ? '@guarded(all)' : '@guarded') + (system ? ' @system' : '')
+  if (system)                                  return '@system'
   return null
 }
 

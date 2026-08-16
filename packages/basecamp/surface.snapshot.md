@@ -5,13 +5,13 @@
 Generated from `api/src/core/app.ts` by `junction surface`. **Do not edit.**
 
 What the API answers, read off a BUILT app rather than scanned: the methods
-each service will serve, its actions, the hook chain in the order it runs, and
-every path the router actually mounted. None of it is visible in the source —
-an option key and an action look identical, `apiPrefix` moves every route, and
+each service will serve, its custom methods, the hook chain in the order it runs,
+and every path the router actually mounted. None of it is visible in the source —
+an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-22 services · 27 routes · 9 plugins · prefix (none)
+24 services · 26 routes · 9 plugins · prefix (none)
 ```
 
 ## App hooks
@@ -29,15 +29,29 @@ a method — it applies to each one.
 ## Services
 
 `methods` is policy-applied — what the service will answer, not what it
-defines. An action is a non-CRUD method `collectActions` resolved at
+defines. A custom method is a non-CRUD one `collectCustomMethods` resolved at
 construction; a name that stopped being one is a line that disappears here.
 `model` is what the service reports for the result envelope, which is its own
 name when it declares none.
 
+### `account` · model `account`
+
+- **methods** — `get`, `changePassword`
+- **custom methods** — `changePassword`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
+| before | `get` | `gateAuth` → `autoFilter` |
+| before | `create` | `gateAuth` → `autoValidate` |
+| before | `patch` | `gateAuth` → `autoValidate` |
+| before | `update` | `gateAuth` → `autoValidate` |
+| before | `remove` | `gateAuth` |
+
 ### `alerts` · model `AlertRule`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
-- **actions** — `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
+- **custom methods** — `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -57,7 +71,7 @@ name when it declares none.
 ### `api-keys` · model `ApiKey`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `revoke`, `scopes`
-- **actions** — `revoke`, `scopes`
+- **custom methods** — `revoke`, `scopes`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -103,7 +117,7 @@ name when it declares none.
 ### `channels` · model `NotificationChannel`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `rules`, `test`
-- **actions** — `rules`, `test`
+- **custom methods** — `rules`, `test`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -120,7 +134,7 @@ name when it declares none.
 ### `cleanup` · model `CleanupRun`
 
 - **methods** — `find`, `get`, `usage`, `targets`, `report`, `run`
-- **actions** — `usage`, `targets`, `report`, `run`
+- **custom methods** — `usage`, `targets`, `report`, `run`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -151,7 +165,7 @@ name when it declares none.
 ### `dashboards` · model `Dashboard`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
-- **actions** — `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
+- **custom methods** — `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -186,7 +200,7 @@ name when it declares none.
 ### `domains` · model `Domain`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `uploadCert`, `makePrimary`
-- **actions** — `uploadCert`, `makePrimary`
+- **custom methods** — `uploadCert`, `makePrimary`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -204,7 +218,7 @@ name when it declares none.
 ### `environments` · model `Environment`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `setVariable`, `deleteVariable`
-- **actions** — `setVariable`, `deleteVariable`
+- **custom methods** — `setVariable`, `deleteVariable`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -222,7 +236,7 @@ name when it declares none.
 ### `flags` · model `FeatureFlag`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `setOverride`, `clearOverride`, `resolve`
-- **actions** — `setOverride`, `clearOverride`, `resolve`
+- **custom methods** — `setOverride`, `clearOverride`, `resolve`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -240,7 +254,7 @@ name when it declares none.
 ### `hub` · model `hub`
 
 - **methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
-- **actions** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
+- **custom methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -255,7 +269,7 @@ name when it declares none.
 ### `jobs` · model `Job`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `trigger`, `cancel`
-- **actions** — `trigger`, `cancel`
+- **custom methods** — `trigger`, `cancel`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -273,7 +287,7 @@ name when it declares none.
 ### `networks` · model `Network`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `attach`, `detach`
-- **actions** — `members`, `attach`, `detach`
+- **custom methods** — `members`, `attach`, `detach`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -320,7 +334,7 @@ name when it declares none.
 ### `recipes` · model `Recipe`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `run`, `runs`
-- **actions** — `run`, `runs`
+- **custom methods** — `run`, `runs`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -337,7 +351,7 @@ name when it declares none.
 ### `secrets` · model `Secret`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `verify`
-- **actions** — `verify`
+- **custom methods** — `verify`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -354,7 +368,7 @@ name when it declares none.
 ### `servers` · model `Server`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `reboot`, `drain`, `undrain`, `sync`, `heartbeat`
-- **actions** — `events`, `feed`, `reboot`, `drain`, `undrain`, `sync`, `heartbeat`
+- **custom methods** — `events`, `feed`, `reboot`, `drain`, `undrain`, `sync`, `heartbeat`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -371,10 +385,24 @@ name when it declares none.
 | before | `update` | `gateAuth` → `autoValidate` |
 | after | `all` | `publish` |
 
+### `sessions` · model `sessions`
+
+- **methods** — `find`, `remove`, `revokeOthers`
+- **custom methods** — `revokeOthers`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
+| before | `get` | `gateAuth` → `autoFilter` |
+| before | `create` | `gateAuth` → `autoValidate` |
+| before | `patch` | `gateAuth` → `autoValidate` |
+| before | `update` | `gateAuth` → `autoValidate` |
+| before | `remove` | `gateAuth` |
+
 ### `volumes` · model `Volume`
 
 - **methods** — `find`, `get`, `remove`, `usage`, `report`, `prune`
-- **actions** — `usage`, `report`, `prune`
+- **custom methods** — `usage`, `report`, `prune`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -391,7 +419,7 @@ name when it declares none.
 ### `workspaces` · model `Workspace`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`
-- **actions** — `members`, `addMember`, `setMemberRole`, `removeMember`
+- **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -430,7 +458,6 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/auth/email/verify/request` | raw |
 | POST | `/auth/login` | raw |
 | POST | `/auth/logout` | raw |
-| GET | `/auth/me` | raw |
 | POST | `/auth/password-reset/confirm` | raw |
 | POST | `/auth/password-reset/request` | raw |
 | POST | `/auth/register` | raw |

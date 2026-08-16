@@ -105,7 +105,7 @@ export function cors(opts: CorsOptions) {
     const origin = ctx.headers['origin'] ?? ''
 
     if (isAllowed(origin)) {
-      ;(ctx as Record<string, unknown>).__cors = {
+      ;(ctx).__cors = {
         'access-control-allow-origin':      origin || '*',
         'access-control-allow-methods':     methodStr,
         'access-control-allow-headers':     headerStr,
@@ -127,7 +127,7 @@ export function cors(opts: CorsOptions) {
     // By this point the cors middleware is already patched in, so __cors
     // will be populated when this handler runs.
     app.http.router.options('/*', async (ctx) => {
-      const corsHeaders = (ctx as Record<string, unknown>).__cors as Record<string, string> ?? {}
+      const corsHeaders = ctx.__cors ?? {}
       return new Response(null, { status: 204, headers: corsHeaders })
     })
   }
@@ -139,7 +139,7 @@ function patchRouterWithMiddleware(app: App, mw: MiddlewareFn): void {
 
   for (const method of methods) {
     const original = router[method].bind(router) as Function
-    ;(router as Record<string, Function>)[method] = (
+    ;(router as unknown as Record<string, Function>)[method] = (
       path:    string,
       handler: Function,
       existing?: MiddlewareFn[]
@@ -191,7 +191,7 @@ export function helmet(opts: HelmetOptions = {}) {
   const middleware: MiddlewareFn = async (ctx, next) => {
     await next()
     // Headers injected via __securityHeaders on ctx
-    ;(ctx as Record<string, unknown>).__securityHeaders = securityHeaders
+    ;(ctx).__securityHeaders = securityHeaders
   }
 
   return function helmetPlugin(app: App): void {
@@ -267,7 +267,7 @@ export function requestLogger(opts: RequestLoggerOptions = {}) {
       await next()
     } finally {
       const ms     = Date.now() - start
-      const status = ((ctx as Record<string, unknown>).__status as number) ?? 200
+      const status = ctx.__status ?? 200
 
       if (format === 'json') {
         console[level](JSON.stringify({
@@ -338,13 +338,13 @@ export function correlationId(opts: CorrelationIdOptions = {}) {
     const id = ctx.headers[header] ?? generate()
 
     // Stamp on ctx so handlers can reach it without parsing headers again
-    ;(ctx as Record<string, unknown>).requestId = id
+    ;(ctx).requestId = id
 
     await next()
 
     // Echo back in the response — _injectCtxHeaders picks this up
-    const existing = (ctx as Record<string, unknown>).__correlationHeaders as Record<string, string> | undefined
-    ;(ctx as Record<string, unknown>).__correlationHeaders = { ...existing, [header]: id }
+    const existing = ctx.__correlationHeaders
+    ;(ctx).__correlationHeaders = { ...existing, [header]: id }
   }
 
   return function correlationIdPlugin(app: App): void {

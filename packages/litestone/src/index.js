@@ -5,8 +5,9 @@ export { createClient, ValidationError,
          TransitionNotFoundError, TransitionGateError,
          VersionRequiredError, VersionConflictError,
          LockNotAcquiredError, LockReleasedByOtherError,
-         LockExpiredError }                          from './core/client.js'
-export { sql, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
+         LockExpiredError, SoftDeletedUniqueError,
+         CapabilityNotDeclaredError }             from './core/client.js'
+export { sql, now, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
 export { Plugin, PluginRunner, AccessDeniedError } from './core/plugin.js'
 export { GatePlugin, LEVELS, parseGateString,
          FrontierGateGetLevel }                        from './plugins/gate.js'
@@ -26,6 +27,7 @@ export { create, apply, status, verify,
 export { generateJsonSchema }                     from './jsonschema.js'
 export { generateTypeScript }                     from './tools/typegen.js'
 export { createTenantRegistry }                  from './tenant.js'
+export { resolveTenancy, tenantFrom }            from './core/tenancy.js'
 export { parseDuration, parseSize,
          runSqliteRetention, compactJsonl }       from './tools/retention.js'
 export { Factory, defineFactory, Seeder, runSeeder,

@@ -81,6 +81,10 @@ const SKIP = {
   'feedback/Toaster':       'portals to document.body; no SSR output',
   'overlay/CommandPalette': 'portals to document.body; no SSR output',
   'layout/AccordionItem':   'reads Accordion\'s $context; standalone render has none',
+  // It renders whichever control the field asked for and hands that control
+  // the props its entry built — there is no element of its own for a caller's
+  // attributes to land on, and a caller does not write one. <Form> does.
+  'forms/FormField':        'a dispatcher, not an element — the control it picks owns the attributes',
 }
 
 // Components that set this attribute themselves, on the element the spread
