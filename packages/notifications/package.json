@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/notifications",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "_built": "2026-04-18",
   "description": "Channel-agnostic notification system for FrontierJS apps",
   "type": "module",

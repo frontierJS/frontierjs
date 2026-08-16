@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/jetty",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Browser extension framework for FrontierJS. MV3, Mesa runtime.",
   "type": "module",
   "main": "./src/index.js",

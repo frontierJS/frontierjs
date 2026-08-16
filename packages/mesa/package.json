@@ -1,8 +1,8 @@
 {
   "name": "@frontierjs/mesa",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
-  "description": "Mesa \u2014 reactive UI language compiler and runtime",
+  "description": "Mesa — reactive UI language compiler and runtime",
   "main": "./src/compiler.js",
   "module": "./src/compiler.js",
   "exports": {
