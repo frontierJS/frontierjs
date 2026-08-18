@@ -817,6 +817,14 @@ function scaffold() {
 // impossible until the build started packing the tree into its own context
 // (FJS-241) and is therefore the half most likely to break again.
 //
+// **The container is then asked to sign someone in.** A health answer says the
+// process is up; it does not say the app WORKS. `scaffoldAndDeploy`'s smoke
+// registers and logs in at the prefix the scaffold's own web config names, which
+// is the one thing that can see a template written against behaviour only the
+// tree has — an app that installs, builds, answers health and cannot log in
+// (FJS-252, closed by this). On the `npm` branch it is the published framework
+// answering.
+//
 // **A skip is named, never silent.** Without a daemon this reports a note and
 // passes, because requiring Docker to run `bun run ci` on a laptop is too much —
 // but FJS_CI_REQUIRE_DOCKER=1 turns the skip into a failure, and the workflow
