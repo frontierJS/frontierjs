@@ -1,5 +1,46 @@
 # Changes
 
+## 2026-08-18 — `fli outbox:install` could not be loaded at all
+
+Two unescaped backticks inside `wiringHint`'s template literal — the line
+`// Then, in a service that declares \`transactional:\`` — closed the template
+and reopened it, so the file compiled to JavaScript that does not parse:
+`SyntaxError: Unexpected identifier 'transactional'`. The command was
+unrunnable from the day it was written.
+
+Invariant 15 is why this was caught at all: `tests/compiler.test.js` parses the
+output of every one of the 201 command files rather than trusting a clean
+compile. The suite had been failing on it and nothing here runs the suites in
+the pre-push tier, so it took a CI runner to say so (`FJS-009`).
+
+
+## 2026-08-18 — three ways `fli new --auth` could not work outside this machine (`FJS-343`)
+
+**`runFli` shelled out to a bare `fli`.** That is a GLOBAL install: it exists on
+the machine of anyone who has run `bun add -g` and on no CI runner, in no
+container, and for nobody who arrived through `npm create frontier`. There it was
+`/bin/sh: 1: fli: not found`, so `fli:init` and `auth:install` never ran. It
+invokes the running cli now, through `global.fliRoot`.
+
+**`auth:install`'s failure was caught, warned about and stepped over**, so the
+scaffold printed `✓ created` over an app with no `User` model — one that
+installs, builds, boots, answers health and 500s on the first register with
+`"user" is not a table in this schema`. Fatal now. `make:scaffold User` beside it
+stays a warning: the example slice is optional and auth is not.
+
+**And with the tree's own cli finally running, the push failed every time.** The
+scaffold writes `.env` with a bare `ENCRYPTION_KEY=`, so bun puts an empty string
+on the process environment at startup and a child that already has the name set
+will not take `.env`'s value for it. Step 6 existed to fix that by assigning
+`process.env.ENCRYPTION_KEY` before the push — and **under Bun an assignment to
+`process.env` does not reach a child at all**: `child_process` hands over the
+environment the process STARTED with, where node would pass the mutation on.
+Bun is the only runtime `fli` runs on, so that fix had been a no-op since it was
+written. The values are passed as `env:` on the exec now.
+
+None of it was visible here, because a global `fli` answered every call.
+
+
 ## 2026-08-18 — `fli new --auth` no longer reports success when auth was never installed
 
 `auth:install` is what puts the `User` model and the three credential models

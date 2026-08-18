@@ -106,7 +106,7 @@ describe('refusing to run the wrong thing', () => {
   test('every allowed binary is a framework CLI, not a shell', () => {
     // The list is the whole protection. A general-purpose runner here (`bash`,
     // `node`, `npx`) would make the header arbitrary code.
-    expect([...SNAPSHOT_BINS].sort()).toEqual(['fli', 'junction', 'litestone', 'sierra'])
+    expect([...SNAPSHOT_BINS.keys()].sort()).toEqual(['fli', 'junction', 'litestone', 'sierra'])
   })
 })
 

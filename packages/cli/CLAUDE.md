@@ -37,6 +37,22 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
 
 ## What bites here
 
+- **Assigning `process.env.X` does not reach a child.** `fli` runs on Bun, and
+  Bun's `child_process` hands a child the environment the process STARTED with,
+  where node passes the mutation on. So the assignment compiles, reads as a fix
+  and does nothing — measured with
+  `bun -e "process.env.FOO='x'; execSync('printenv FOO')"`, which prints nothing.
+  Pass `env:` on the `context.exec` call instead. This is what made `fli new
+  --auth` unable to finish (`FJS-343`), and the assignment that failed had been
+  written specifically to fix that symptom.
+- **Never shell out to a bare `fli`.** That is a GLOBAL install, present on the
+  machine of anyone who has run `bun add -g` and on no CI runner, in no
+  container, and for nobody arriving through `npm create frontier`. It is also
+  how a command in this tree gets tested against a DIFFERENT build of itself.
+  `runFli` in `project/new.md` is the shape: `global.fliRoot` + `process.execPath`.
+  Snapshot generators had the same disease through `bunx <name>`, which on a
+  machine with no global went to the registry and downloaded a stranger's package
+  (`core/snapshots.js` resolves bin → package → workspace member now).
 - **A clean compile is not proof of valid JS** (Invariant 15). Compiling all 195
   command files and *parsing* the output found 14 producing broken JavaScript
   that the compiler reported as fine. Every command file now has a parse test —

@@ -71,7 +71,7 @@ import { createCaravan } from '@frontierjs/caravan'
 app.configure(createCaravan({ jobsDir: './src/jobs' }))  // the outbox needs a queue
 app.configure(outbox())
 
-// Then, in a service that declares `transactional:`
+// Then, in a service that declares \`transactional:\`
 //
 //   async create(ctx) {
 //     const order = await ctx.locals.db.order.create({ data: ctx.data })

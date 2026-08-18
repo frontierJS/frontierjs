@@ -376,17 +376,25 @@ if (authSecretExists) {
 
 // ─── 6. Push schema to database ───────────────────────────────────────────────
 //
-// Adopt what was just written into THIS process first. bootstrap.js loaded the
-// project .env at startup, so a scaffolded `ENCRYPTION_KEY=` put an EMPTY
-// string on process.env — and a child inherits that empty value, which Bun's
-// own .env loading will not override. Without this the push reports no key
-// while the file it would have read holds a good one.
+// Read what was just written and hand it to the child EXPLICITLY. Two things
+// stack here and either one alone breaks the push:
+//
+//   · bootstrap.js loads the project .env at startup, so a scaffolded
+//     `ENCRYPTION_KEY=` puts an EMPTY string on this process's environment. A
+//     child that already has the name set does not take .env's value for it, so
+//     the push reports no key while the file beside it holds a good one.
+//   · assigning `process.env.X` under BUN does not reach a child at all —
+//     child_process hands over the environment the process STARTED with. Under
+//     node it would, which is why the adoption below looked like a fix and was
+//     a no-op for the only runtime fli runs on (FJS-343).
+
+const childEnv = { ...process.env }
 
 if (!flag.dry && existsSync(envPath)) {
   const written = readFileSync(envPath, 'utf8')
   for (const name of ['ENCRYPTION_KEY', 'AUTH_SECRET']) {
     const m = written.match(new RegExp(`^[ \\t]*${name}[ \\t]*=[ \\t]*(\\S+)`, 'm'))
-    if (m) process.env[name] = m[1]
+    if (m) childEnv[name] = process.env[name] = m[1]
   }
 }
 
@@ -394,7 +402,10 @@ if (flag.dry) {
   log.dry('Would run: fli db:push')
 } else {
   log.info('Pushing schema to database...')
-  context.exec({ command: `cd ${context.paths.root} && bun run litestone db push --schema db/schema.lite` })
+  context.exec({
+    command: `cd ${context.paths.root} && bun run litestone db push --schema db/schema.lite`,
+    env:     childEnv,
+  })
   log.success('Schema pushed')
 }
 

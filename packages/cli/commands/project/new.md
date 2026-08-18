@@ -1095,7 +1095,15 @@ ${sc}
 // subcommand's output. Throws on non-zero exit.
 
 function runFli(context, args, cwd) {
-  const cmd = `fli ${args.join(' ')}`
+  // The RUNNING cli, never whatever `fli` is on PATH. A bare `fli` is a GLOBAL
+  // install: it exists on the machine of anyone who has ever run `bun add -g`
+  // and on no CI runner, in no container, and for nobody who reached this
+  // command through `npm create frontier`. There it is `/bin/sh: 1: fli: not
+  // found`, so `fli:init` and `auth:install` did not run and the scaffold came
+  // out with no User model — an app that installs, builds, boots, answers health
+  // and can register nobody (FJS-252, found on a runner).
+  const bin = resolve(global.fliRoot, 'bin', 'fli.js')
+  const cmd = [process.execPath, bin, ...args].map(a => JSON.stringify(a)).join(' ')
   context.exec({ command: cmd, cwd, stdio: 'inherit' })
 }
 </script>
