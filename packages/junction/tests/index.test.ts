@@ -3,6 +3,7 @@
 // Run: bun test
 
 import { describe, it, expect, beforeEach } from 'bun:test'
+import { asRecord } from './helpers.ts'
 
 // ─── Router tests ─────────────────────────────────────────────────────────
 
@@ -325,10 +326,18 @@ describe('extractIP', () => {
 
 import { runPipeline, resolvePipelines, mergeHookMaps } from '../src/core/hooks.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
+import { withCallEffects }      from '../src/core/context.ts'
 import type { HookMap }        from '../src/core/hooks.ts'
 
-function makeCtx(overrides: Partial<ServiceContext> = {}): ServiceContext {
-  return {
+// Built through withCallEffects rather than as a bare literal: a context that
+// cannot run `ctx.afterCommit(…)` is not the context a hook is handed, and a
+// hook test over one would pass against a pipeline nobody can use.
+// The overrides are the builder's half of the context, not the queue's: the
+// two fields withCallEffects adds are what it refuses to be handed.
+type CtxSeed = Omit<ServiceContext, 'afterCommit' | '_afterCommit'>
+
+function makeCtx(overrides: Partial<CtxSeed> = {}): ServiceContext {
+  return withCallEffects({
     service:   'test',
     method:    'find',
     type:      'before',
@@ -336,17 +345,19 @@ function makeCtx(overrides: Partial<ServiceContext> = {}): ServiceContext {
     model:     'test',
     id:        null,
     query:     {},
+    directives: {},
     data:      null,
     auth:      { user: null },
     client:    { headers: {} },
     route:     {},
     locals:    {},
+    transients: {},
     app:       {} as import('../src/core/app.ts').App,
     result:    null,
     error:     null,
     $raw:      null,
     ...overrides
-  }
+  })
 }
 
 describe('Hook pipeline', () => {
@@ -1031,7 +1042,7 @@ describe('Memory cache', () => {
 
   it('sets and gets a value', () => {
     cache.set('key', 'value')
-    expect(cache.get('key')).toBe('value')
+    expect(cache.get<string>('key')).toBe('value')
   })
 
   it('returns undefined for missing keys', () => {
@@ -1060,13 +1071,13 @@ describe('Memory cache', () => {
     cache.set('user:1', 1); cache.set('user:2', 2); cache.set('post:1', 3)
     const count = cache.clear('user:')
     expect(count).toBe(2)
-    expect(cache.get('post:1')).toBe(3)
+    expect(cache.get<number>('post:1')).toBe(3)
   })
 
   it('clears keys by regex pattern', () => {
     cache.set('user:1', 1); cache.set('user:2', 2); cache.set('post:1', 3)
     cache.clear(/^user:/)
-    expect(cache.get('post:1')).toBe(3)
+    expect(cache.get<number>('post:1')).toBe(3)
     expect(cache.get('user:1')).toBeUndefined()
   })
 
@@ -1229,6 +1240,10 @@ import type { TransportContext } from '../src/transport/types.ts'
 
 describe('Bridge', () => {
 
+  // Stated rather than completed: a TransportContext also carries the response
+  // helpers a real transport hands down (sse, paginate, …), and the bridge
+  // reads none of them. Filling them in one at a time is a list that grows
+  // with the interface and proves nothing about what is under test.
   function makeTransportCtx(overrides: Partial<TransportContext> = {}): TransportContext {
     return {
       method:   'GET',
@@ -1251,7 +1266,7 @@ describe('Bridge', () => {
       empty:    (status = 204)       => new Response(null, { status }),
       $raw:     { $req: new Request('http://x'), url: 'http://x' },
       ...overrides
-    }
+    } as TransportContext
   }
 
   it('GET without id → find', () => {
@@ -1427,7 +1442,6 @@ describe('Scheduler', () => {
 
 // ─── Event bus tests ──────────────────────────────────────────────────────
 
-import { createEventBus } from '../src/events/index.ts'
 
 describe('EventBus', () => {
 
@@ -1515,7 +1529,6 @@ describe('EventBus', () => {
 // ─── Service custom methods tests ───────────────────────────────────────────
 
 import { createService, callService, DERIVED_HOOKS } from '../src/core/service.ts'
-import { bridge }                      from '../src/transport/bridge.ts'
 
 describe('Service custom methods', () => {
 
@@ -1661,7 +1674,7 @@ describe('Channel', () => {
   })
 
   it('gc removes closed connections', () => {
-    const socket = { send: () => {}, close: () => {}, readyState: 3 }  // CLOSED
+    const socket = { send: () => 0, close: () => {}, readyState: 3 }  // CLOSED
     const conn   = { id: '1', socket, data: {} }
 
     const ch = new Channel('test')
@@ -1690,7 +1703,7 @@ describe('ChannelManager', () => {
     let handlerRan = false
     manager.on('connection', () => { handlerRan = true })
 
-    const conn = await manager.handleConnection(socket, { userId: 'u1' })
+    const conn = await manager.handleConnection(socket, { userId: 'u1', userType: 'user', authMethod: 'session' })
     expect(conn.id).toBeDefined()
     expect(acks.length).toBe(1)
     expect(JSON.parse(acks[0]).type).toBe('connection')
@@ -1700,7 +1713,7 @@ describe('ChannelManager', () => {
 
   it('handleDisconnect removes connection from all channels', async () => {
     const manager = createChannelManager()
-    const socket  = { send: () => {}, close: () => {}, readyState: 1 }
+    const socket  = { send: () => 0, close: () => {}, readyState: 1 }
 
     const conn = await manager.handleConnection(socket, null)
     manager.channel('all').join(conn)
@@ -1735,7 +1748,7 @@ describe('ChannelManager', () => {
 
   it('stats returns accurate counts', async () => {
     const manager = createChannelManager()
-    const socket  = { send: () => {}, close: () => {}, readyState: 1 }
+    const socket  = { send: () => 0, close: () => {}, readyState: 1 }
     await manager.handleConnection(socket, null)
     manager.channel('all').toString()  // creates the channel
 
@@ -1748,6 +1761,7 @@ describe('ChannelManager', () => {
 // ─── Database tests ───────────────────────────────────────────────────────
 
 import { createDatabase, createInMemoryDatabase } from '../src/storage/database/index.ts'
+import type { DatabaseClient } from '../src/storage/database/index.ts'
 
 describe('createDatabase', () => {
 
@@ -1826,15 +1840,15 @@ describe('createDatabase', () => {
       }
     })
     expect(app.db).toBeDefined()
-    expect(app.db!.db).toBeDefined()
+    // `app.db` is `unknown` — a Litestone client and a raw bun:sqlite handle
+    // are both valid there. `config.database.url` is the raw-handle path.
+    expect((app.db as DatabaseClient).db).toBeDefined()
   })
 })
 
 // ─── Testing utilities tests ──────────────────────────────────────────────
 
 import { createTestApp, createStubAuth, request, testCtx } from '../src/testing/index.ts'
-import { createService }                                     from '../src/core/service.ts'
-import { callService }                                       from '../src/core/service.ts'
 
 describe('createStubAuth', () => {
 
@@ -1897,7 +1911,8 @@ describe('testCtx', () => {
     )
     expect(ctx.service).toBe('notes')
     expect(ctx.method).toBe('create')
-    expect(ctx.data?.title).toBe('Hello')
+    // ctx.data is a record OR a bulk array; a field read states which.
+    expect((ctx.data as Record<string, unknown>).title).toBe('Hello')
     expect(ctx.auth.user?.userId).toBe('u1')
     expect(ctx.locals.workspaceId).toBe('ws-1')
   })
@@ -1967,7 +1982,6 @@ describe('request()', () => {
 // ─── OpenAPI tests ────────────────────────────────────────────────────────
 
 import { generateOpenAPI, openapi } from '../src/plugins/openapi/index.ts'
-import { createSchema, v }          from '../src/core/schema.ts'
 
 describe('generateOpenAPI', () => {
 
@@ -2035,7 +2049,7 @@ describe('generateOpenAPI', () => {
       }
     })
 
-    const createOp = spec.paths['/posts'].post
+    const createOp = spec.paths['/posts'].post!
     expect(createOp.requestBody).toBeDefined()
   })
 
@@ -2143,7 +2157,7 @@ describe('ctx.dispatch', () => {
   it('publish() uses ctx.result when dispatch not set', async () => {
     let published: unknown = null
     const manager = createChannelManager()
-    const socket  = { send: (m: string) => { const p = JSON.parse(m); if (p.type === 'event') published = p.data }, close: () => {}, readyState: 1 }
+    const socket  = { send: (m: string) => { const p = JSON.parse(m); if (p.type === 'event') published = p.data; return m.length }, close: () => {}, readyState: 1 }
     const conn    = await manager.handleConnection(socket, null)
     manager.channel('all').join(conn)
 
@@ -2170,7 +2184,7 @@ describe('ctx.dispatch', () => {
   it('publish() uses ctx.dispatch when set — strips sensitive fields', async () => {
     let published: unknown = null
     const manager = createChannelManager()
-    const socket  = { send: (m: string) => { const p = JSON.parse(m); if (p.type === 'event') published = p.data }, close: () => {}, readyState: 1 }
+    const socket  = { send: (m: string) => { const p = JSON.parse(m); if (p.type === 'event') published = p.data; return m.length }, close: () => {}, readyState: 1 }
     const conn    = await manager.handleConnection(socket, null)
     manager.channel('all').join(conn)
 
@@ -2202,7 +2216,7 @@ describe('ctx.dispatch', () => {
   it('publish() suppresses broadcast when dispatch === false', async () => {
     let eventCount = 0
     const manager = createChannelManager()
-    const socket  = { send: (m: string) => { if (JSON.parse(m).type === 'event') eventCount++ }, close: () => {}, readyState: 1 }
+    const socket  = { send: (m: string) => { if (JSON.parse(m).type === 'event') eventCount++; return m.length }, close: () => {}, readyState: 1 }
     const conn    = await manager.handleConnection(socket, null)
     manager.channel('all').join(conn)
 
@@ -2471,22 +2485,6 @@ describe('Auto-events', () => {
 
 describe('Bidirectional WS service calls', () => {
 
-  async function makeWsApp() {
-    const app = await createTestApp({
-      users: [{ id: 'u1', role: 'user' }],
-      services: [() => createService({
-        name:   'messages',
-        find:   async () => [{ id: '1', text: 'hello' }],
-        create: async (ctx) => ({ id: '2', text: (ctx.data as Record<string, unknown>)?.text, author: ctx.auth.user?.userId }),
-      })]
-    })
-    app.configure(channels(() => {}))
-    // Manually trigger plugin register since we're not calling app.start()
-    const plugin = channels(() => {})
-    await plugin.register!(app)
-    return app
-  }
-
   it('service_call dispatches to service and returns service_result', async () => {
     const { createChannelManager: mgr } = await import('../src/transport/channels.ts')
     const manager = mgr()
@@ -2521,12 +2519,15 @@ describe('Bidirectional WS service calls', () => {
   })
 
   it('ctx.transport is websocket for WS calls', async () => {
-    let transport: string | null = null
+    // Collected, not assigned to a `let`: TypeScript cannot see an assignment
+    // made inside a service method, so a `let` initialised to null stays
+    // narrowed to `null` at the assertion.
+    const transports: string[] = []
 
     const app = await createTestApp({
       services: [() => createService({
         name:   'echo',
-        create: async (ctx) => { transport = ctx.transport; return { ok: true } },
+        create: async (ctx) => { transports.push(String(ctx.transport)); return { ok: true } },
       })]
     })
 
@@ -2538,7 +2539,7 @@ describe('Bidirectional WS service calls', () => {
     svcCtx.transport = 'websocket'
     await _call(svc, svcCtx, undefined, app.events)
 
-    expect(transport).toBe('websocket')
+    expect(transports).toEqual(['websocket'])
   })
 
   it('auto-events still fire for WS service calls', async () => {
@@ -2569,14 +2570,10 @@ describe('Bidirectional WS service calls', () => {
 // Tests for everything added/fixed in the review session
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createService }                from '../src/core/service.ts'
-import { callService }                  from '../src/core/service.ts'
 import { authenticate, requireRole, circuitBreaker } from '../src/core/hooks.ts'
-import { createTestApp, request, testCtx } from '../src/testing/index.ts'
 import { correlationId }                from '../src/transport/middleware.ts'
 import { healthPlugin }                 from '../src/transport/health.ts'
-import { BadRequest, Unauthorized, Forbidden, Unavailable } from '../src/core/errors.ts'
-import { bridge }                       from '../src/transport/bridge.ts'
+import { Forbidden, Unavailable } from '../src/core/errors.ts'
 
 // ─── authenticate / requireRole use proper FrameworkError subclasses ──────
 
@@ -3065,11 +3062,11 @@ describe('SessionContext shape', () => {
     expect(session.accountId).toBe('acc-1')
     expect(session.workspaceId).toBe('ws-1')
     // Ensure no snake_case fields exist on the object
-    expect((session as Record<string, unknown>).user_id).toBeUndefined()
-    expect((session as Record<string, unknown>).user_type).toBeUndefined()
-    expect((session as Record<string, unknown>).auth_method).toBeUndefined()
-    expect((session as Record<string, unknown>).account_id).toBeUndefined()
-    expect((session as Record<string, unknown>).workspace_id).toBeUndefined()
+    expect(asRecord(session).user_id).toBeUndefined()
+    expect(asRecord(session).user_type).toBeUndefined()
+    expect(asRecord(session).auth_method).toBeUndefined()
+    expect(asRecord(session).account_id).toBeUndefined()
+    expect(asRecord(session).workspace_id).toBeUndefined()
   })
 })
 
@@ -3392,6 +3389,26 @@ describe('cors() + csrf() ordering', () => {
       .set('access-control-request-method',  'POST')
       .set('access-control-request-headers', 'content-type')
     expect(res.status).toBe(204)
+  })
+
+  it('the preflight allows the headers the browser client itself sends', async () => {
+    // A cross-origin app was unreachable on the HTTP path and nothing said so.
+    // The client sets X-Service-Method to address a custom method, X-Workspace-Id
+    // once setWorkspace() is used, and Idempotency-Key on a retryable mutation —
+    // none of which were in the default allow-list, so the preflight refused
+    // them and the request never arrived. Invisible while the socket is up,
+    // because HTTP is only the fallback.
+    const app = await makeApp()
+    const res = await request(app)
+      .options('/items')
+      .set('origin',                         'https://myapp.com')
+      .set('access-control-request-method',  'POST')
+      .set('access-control-request-headers', 'x-service-method')
+
+    const allowed = String(res.headers['access-control-allow-headers'] ?? '').toLowerCase()
+    for (const header of ['content-type', 'authorization', 'x-api-key',
+                          'x-service-method', 'x-workspace-id', 'idempotency-key'])
+      expect(allowed).toContain(header)
   })
 
   it('OPTIONS from an unlisted origin still gets a CORS response (not 403)', async () => {
@@ -4363,12 +4380,15 @@ describe('Plugin lifecycle', () => {
   })
 
   it('plugin can set a property on app via register()', async () => {
-    const app = await createTestApp() as typeof app & { myPlugin?: string }
+    // A key an app has not claimed is not on the type — Invariant 5 — so the
+    // test reads it as a bag rather than annotating `app` with itself, which
+    // is what `typeof app` in its own initialiser was.
+    const app = await createTestApp()
     app.configure({
       name: 'test',
-      register(a) { (a as typeof app & { myPlugin?: string }).myPlugin = 'wired' }
+      register(a) { asRecord(a).myPlugin = 'wired' }
     })
-    expect((app as typeof app & { myPlugin?: string }).myPlugin).toBe('wired')
+    expect(asRecord(app).myPlugin).toBe('wired')
   })
 
   it('boot() runs during _startForTest()', async () => {

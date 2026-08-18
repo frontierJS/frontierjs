@@ -1,5 +1,40 @@
 # Changes
 
+## 2026-08-17 — a `@transient` field reaches the browser (`FJS-D23`)
+
+973 tests + 3 new, 0 fail.
+
+`writeOnly` is carried through `buildFieldRules`, so a field the caller sends and
+no read answers is a rule a view can recognise. Nothing else was needed and that
+is the point: sierra registers the CREATE-mode schema, which is where litestone
+emits a transient field, so `<Form>` renders a control for it and
+`createResource` coerces and validates it like any other column — where a
+wire-only field known to a server hook alone was stripped in the browser before
+the request was ever made.
+
+## 2026-08-17 — the resource's pure halves move to the substrate (`FJS-059`)
+
+`createMakeFromSchema`, `derefFieldSchema` and the four-phase hook pipeline are
+`@frontierjs/toolbelt`'s now — `/jsonschema` and `/hooks`. They were copied into
+jetty by hand and had drifted two versions there; one implementation is what
+stops that recurring, and no new package was needed for it (`FJS-D16`).
+
+Nothing about this package's surface changes. `createMakeFromSchema` keeps its
+positional signature and its `resolve = resolveRef` default, because the kit
+takes an options object and no default resolver — jetty may have no definition
+table at all. `derefFieldSchema` is re-exported from `field-rules.js`, where
+every caller here already looks for it.
+
+**One internal change**: `mergeHooks` answers a new map rather than merging in
+place, so `_hooks` is reassigned. Toolbelt's licence is purity, and this was the
+only one of the three that mutated an argument.
+
+`createStore` stays here: it is service-backed and stamps each request, jetty's
+takes no service at all, and a store is state rather than a pure function.
+
+970 tests, `test:safety` 5, typecheck clean, and `example` `verify` 37 +
+`verify:build` 37.
+
 ## 2026-08-16 — the theme switch drives the design system (`FJS-308`)
 
 `setTheme('dark')` set `data-theme` on `<html>`. **`@frontierjs/css` reads that

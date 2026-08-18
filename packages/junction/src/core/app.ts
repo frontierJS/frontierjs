@@ -5,7 +5,7 @@
 
 import { HttpTransport }            from '../transport/http.ts'
 import { bridge } from '../transport/bridge.ts'
-import { freezeUser, runWithMeta, requestMeta, resolvePrincipal, inheritedClient, type ServiceContext, type ServiceMethod, type CallOptions, type RequestMeta } from './context.ts'
+import { freezeUser, runWithMeta, requestMeta, resolvePrincipal, inheritedClient, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type RequestMeta } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
 import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites } from './litestone.ts'
@@ -18,6 +18,7 @@ import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { toFrameworkError, NotFound }   from './errors.ts'
 import { helmet, cors }                 from '../transport/middleware.ts'
 import { defaultConfig, deepMerge, loadConfig } from '../config/index.ts'
+import type { DeepPartial }                     from '../config/index.ts'
 import { createLogger, noopLogger }             from './logger.ts'
 import type { ILogger, LoggerOptions }          from './logger.ts'
 import type { AppConfig }                          from '../config/index.ts'
@@ -174,6 +175,13 @@ export interface App {
   // Job queue is provided by @frontierjs/caravan. Same augmentable-interface
   // rule as `conduit` above — never redeclare this property in the plugin.
   jobs?:     AppJobs
+
+  // The outbox relay, when `app.configure(outbox())` installed one. Declared
+  // concretely rather than as an augmentable slot: unlike conduit and caravan
+  // this plugin ships inside junction, so there is no dependency to avoid.
+  // `ctx.enqueue` refuses when it is absent — a row nothing delivers is worse
+  // than a refusal.
+  outbox?:   import('./outbox.ts').OutboxApi
 
   // Notifications are provided by @frontierjs/notifications, which attaches
   // app.notify in its register(). Same augmentable-interface rule: the plugin
@@ -337,7 +345,10 @@ export interface App {
 // ─── createApp ────────────────────────────────────────────────────────────
 
 export interface AppOptions {
-  config?:      Partial<AppConfig>  // merged over defaults + junction.config.js
+  // Deep-partial because that is what the merge does: `http: { helmet: false }`
+  // keeps the rest of the http block. A one-level Partial demanded every key
+  // of a section back.
+  config?:      DeepPartial<AppConfig>  // merged over defaults + junction.config.js
   configPath?:  string              // path to junction.config.js dir, default './api/config'
   logger?:      ILogger             // custom logger — defaults to createLogger()
   logLevel?:    import('./logger.ts').LogLevel   // override log level
@@ -595,7 +606,7 @@ export function createApp(opts: AppOptions = {}): App {
         query:  Record<string, unknown> = {},
         opts:   CallOptions = {}
       ): ServiceContext {
-        return {
+        return withCallEffects({
           service:   name,
           method,
           type:      'before',
@@ -620,13 +631,16 @@ export function createApp(opts: AppOptions = {}): App {
           client: inheritedClient(),
           route:  {},
           locals: opts.locals ? { ...opts.locals } : {},
+          // Fresh, like locals: a transient value belongs to the call that
+          // carried it, and an internal call carries its own payload.
+          transients: {},
           app:       app,
           result:    null,
           error:     null,
           statusCode: undefined,
           dispatch:   undefined,
           $raw:       null,
-        }
+        })
       }
 
       async function call(ctx: ServiceContext): Promise<unknown> {
@@ -1099,7 +1113,7 @@ export function createApp(opts: AppOptions = {}): App {
 
       // Security headers — opt out via config.http.helmet = false.
       { name: 'security-headers', run: () => {
-        if ((config.http as Record<string, unknown>)?.helmet !== false) helmet()(app)
+        if (config.http?.helmet !== false) helmet()(app)
       }},
 
       // CORS declared in config. Must run after load-config, which is where
@@ -1131,7 +1145,18 @@ export function createApp(opts: AppOptions = {}): App {
       //   _junction.services.dir → from junction.config.js, CWD-relative
       //   default                → './services' beside the ENTRY FILE (Bun.main)
       // A missing directory is a silent no-op, so the default costs nothing.
-      { name: 'autoload-services', needsHost: true, run: async () => {
+      // NOT needsHost. Registering services reads a directory and builds
+      // objects; it binds nothing. It was grouped with the host phases and the
+      // cost was invisible until an app was mounted by @frontierjs/testing:
+      // `_startForTest` skips needsHost, so every app that autoloads had ZERO
+      // services in a test env and every call answered `Service 'x' not found`
+      // — a 404 that reads like a wrong name rather than an unloaded app.
+      //
+      // Safe to run without a host because a missing directory is a silent
+      // no-op. The one thing a test cannot reach is `_junction.services.dir`:
+      // `load-config` IS needsHost, so junction.config.js is not read, and an
+      // app that wants its services in a test states `autoload:` directly.
+      { name: 'autoload-services', run: async () => {
         const { resolve: resolvePath, dirname: dirnamePath } = await import('node:path')
 
         const explicitDir = opts.autoload === false

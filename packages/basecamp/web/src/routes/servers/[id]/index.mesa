@@ -6,6 +6,7 @@ title: Server
   import { servers } from '../../../resources/Server.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
   $: page.params
 
@@ -123,7 +124,7 @@ title: Server
     <h1>{server.name}</h1>
     <div class="cluster">
       <span class="pill {TONE[server.status] ?? ''}" id="server-status">{server.status}</span>
-      <a class="btn ghost" href="/servers/">All servers</a>
+      <Button variant="ghost" href="/servers/">All servers</Button>
     </div>
   </div>
 
@@ -135,22 +136,22 @@ title: Server
 
   <div class="cluster" id="server-actions">
     {#if canDrain}
-      <button class="btn outlined" disabled={busy === 'drain'} on:click={() => act('drain')}>
+      <Button variant="outlined" disabled={busy === 'drain'} onclick={() => act('drain')}>
         {busy === 'drain' ? 'Draining…' : 'Drain'}
-      </button>
+      </Button>
     {/if}
     {#if canUndrain}
-      <button class="btn outlined" disabled={busy === 'undrain'} on:click={() => act('undrain')}>
+      <Button variant="outlined" disabled={busy === 'undrain'} onclick={() => act('undrain')}>
         {busy === 'undrain' ? 'Cancelling…' : 'Cancel drain'}
-      </button>
+      </Button>
     {/if}
     {#if canReboot}
-      <button class="btn outlined" disabled={busy === 'reboot'} on:click={() => act('reboot')}>Reboot</button>
+      <Button variant="outlined" disabled={busy === 'reboot'} onclick={() => act('reboot')}>Reboot</Button>
     {/if}
-    <button class="btn ghost" disabled={busy === 'sync'} on:click={() => act('sync')}>
+    <Button variant="ghost" disabled={busy === 'sync'} onclick={() => act('sync')}>
       {busy === 'sync' ? 'Syncing…' : 'Sync from provider'}
-    </button>
-    <button class="btn ghost danger" disabled={busy === 'remove'} on:click={remove}>Remove</button>
+    </Button>
+    <Button variant="ghost" tone="danger" disabled={busy === 'remove'} onclick={remove}>Remove</Button>
   </div>
 
   <dl class="facts">

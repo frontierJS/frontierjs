@@ -1,0 +1,8 @@
+<script>
+  // Child.mesa — a component the fixtures compose, so a spec can ask what
+  // crosses a component boundary: a class the parent pushed down, a scoped
+  // rule that must NOT reach in, a `:global` one that must.
+  export let label = 'child'
+</script>
+
+<span class="child" {class}>{label}</span>

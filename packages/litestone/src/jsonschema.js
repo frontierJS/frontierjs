@@ -298,6 +298,18 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       continue
     }
 
+    // ── @transient — the mirror of @computed, so the mode test is mirrored ──
+    // A computed field is emitted in the READ modes and absent from the write
+    // ones; a transient field is emitted in the WRITE modes and absent from the
+    // read ones, because it is never in a result.
+    //
+    // It falls through rather than being emitted here: the label, the
+    // per-rule messages and the required list are what a caller sending this
+    // field most needs, and they are added below. `writeOnly` goes on beside
+    // `readOnly`, which is the keyword pair this is one half of.
+    const isTransient = field.attributes.some(a => a.kind === 'transient')
+    if (isTransient && mode !== 'create' && mode !== 'update') continue
+
     const isComputed  = field.attributes.find(a => a.kind === 'computed')
     const isGenerated = field.attributes.find(a => a.kind === 'generated' || a.kind === 'funcCall')
     if (isComputed || isGenerated) {
@@ -398,6 +410,14 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       fieldSchema['x-litestone-kind'] = 'system'
     }
 
+    // @transient — accepted on the wire, stored nowhere. The write-mode-only
+    // half is decided above; this is what says so to a consumer, which is how a
+    // generated form knows to offer a control for a value no read answers.
+    if (isTransient) {
+      fieldSchema.writeOnly = true
+      fieldSchema['x-litestone-kind'] = 'transient'
+    }
+
     properties[field.name] = fieldSchema
 
     // Required: non-optional, no @default, not in update mode
@@ -414,6 +434,9 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       if (isSystemWritten) {
         // nothing — the application fills it
       } else if (!field.type.optional && !hasDefault && !isId) {
+        // A required @transient field lands here like any other, and this is
+        // the only layer that can hold the rule: there is no column, so no
+        // NOT NULL catches a caller who omitted it.
         required.push(field.name)
       } else if (hasDefault && isAuthDefault && !field.type.optional) {
         // auth() default: field not required in create payload but not optional either

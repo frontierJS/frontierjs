@@ -29,6 +29,15 @@
 //   printEnvExample(spec)  // prints an .env.example to stdout
 //   generateEnvExample(spec)  // returns the string
 
+import { colorEnabled } from './logger.ts'
+
+// Env validation runs before an app — and therefore before its logger —
+// exists, so these are written straight to stderr. The colour gate is
+// logger.ts's rather than a second copy of the predicate.
+const YELLOW = colorEnabled ? '\x1b[33m' : ''
+const RED    = colorEnabled ? '\x1b[91m' : ''
+const RESET  = colorEnabled ? '\x1b[0m'  : ''
+
 // ─── Field spec ───────────────────────────────────────────────────────────
 
 export type EnvType = 'string' | 'number' | 'boolean' | 'url' | 'port' | 'json'
@@ -228,7 +237,7 @@ export function defineEnv<S extends EnvSpec>(spec: S): EnvOutput<S> {
   // ── Emit warnings ─────────────────────────────────────────────────
   if (warnings.length) {
     for (const w of warnings) {
-      process.stderr.write(`\x1b[33m[env warn]\x1b[0m ${w}\n`)
+      process.stderr.write(`${YELLOW}[env warn]${RESET} ${w}\n`)
     }
   }
 
@@ -236,7 +245,7 @@ export function defineEnv<S extends EnvSpec>(spec: S): EnvOutput<S> {
   if (errors.length) {
     const lines = [
       '',
-      '\x1b[91m[env] Environment configuration errors\x1b[0m',
+      `${RED}[env] Environment configuration errors${RESET}`,
       '',
       ...errors,
       '',

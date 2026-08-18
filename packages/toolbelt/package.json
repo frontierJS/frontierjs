@@ -10,7 +10,9 @@
   "exports": {
     "./directives": "./src/directives/directives.js",
     "./glow": "./src/glow/glow.js",
-    "./inflect": "./src/inflect/inflect.js"
+    "./hooks": "./src/hooks/hooks.js",
+    "./inflect": "./src/inflect/inflect.js",
+    "./jsonschema": "./src/jsonschema/jsonschema.js"
   },
   "files": [
     "src",

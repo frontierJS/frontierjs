@@ -20,8 +20,10 @@ title: Channels
   // browser, over an array of rules it happened to have loaded.
   import { session } from '../../session.js'
   import { channels } from '../../resources/NotificationChannel.mesa'
+  import { messageFor } from '../../errors.js'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
@@ -32,6 +34,7 @@ title: Channels
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
 
@@ -123,7 +126,7 @@ title: Channels
       const i = rows.findIndex(r => r.id === channel.id)
       if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
     } catch (e) {
-      error = e.message
+      error = messageFor(channels, e)
     } finally {
       busy = null
     }
@@ -166,6 +169,14 @@ title: Channels
 
   $: active = rows.filter(r => r.isActive).length
   const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
+  const CHANNEL_COLUMNS = [
+    { key: 'name',     label: 'Name' },
+    { key: 'kind',     label: 'Kind' },
+    { key: 'rules',    label: 'Rules' },
+    { key: 'state',    label: 'State' },
+    { key: 'lasttest', label: 'Last test' },
+    { key: 'actions',  label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 <div class="section-header">
@@ -189,9 +200,7 @@ title: Channels
   <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
        looking for "the screen reported a refusal" would otherwise match a
        fleet notice and pass, or fail, for reasons this screen never caused. -->
-  <article class="alert danger" id="screen-error">
-    <div class="alert-content">{error}</div>
-  </article>
+  <Alert tone="danger" id="screen-error">{error}</Alert>
 {/if}
 
 {#if creating}
@@ -227,45 +236,31 @@ title: Channels
     fires into a table nobody is watching.
   </EmptyState>
 {:else}
-  <div class="table-wrap">
-    <table class="table striped hover">
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Kind</th>
-          <th scope="col">Rules</th>
-          <th scope="col">State</th>
-          <th scope="col">Last test</th>
-          <th scope="col"><span class="visually-hidden">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody id="channel-rows">
-        {#each rows as c}
-          <tr>
-            <td>{c.name}</td>
-            <td><Pill>{KIND_LABEL[c.kind] ?? c.kind}</Pill></td>
-            <td class="text-sm">{c.rule_count}</td>
-            <td>
-              {#if c.isActive}
-                <Badge tone="success">active</Badge>
-              {:else}
-                <Badge tone="muted">paused</Badge>
-              {/if}
-            </td>
-            <td class="text-sm text-muted">{when(c.lastTestAt)}</td>
-            <td>
-              <div class="cluster">
-                <Button variant="ghost" disabled={busy === c.id}
-                        aria-label={`Send a test to ${c.name}`} onclick={() => test(c)}>Send test</Button>
-                <Button variant="ghost" disabled={busy === c.id}
-                        onclick={() => toggle(c)}>{c.isActive ? 'Pause' : 'Resume'}</Button>
-                <Button variant="ghost" disabled={busy === c.id}
-                        aria-label={`Delete ${c.name}`} onclick={() => remove(c)}>Delete</Button>
-              </div>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <Table id="channel-rows" columns={CHANNEL_COLUMNS} rows={rows} striped>
+    {#snippet row(c)}
+      <tr>
+        <td>{c.name}</td>
+        <td><Pill>{KIND_LABEL[c.kind] ?? c.kind}</Pill></td>
+        <td class="text-sm">{c.rule_count}</td>
+        <td>
+          {#if c.isActive}
+            <Badge tone="success">active</Badge>
+          {:else}
+            <Badge tone="muted">paused</Badge>
+          {/if}
+        </td>
+        <td class="text-sm text-muted">{when(c.lastTestAt)}</td>
+        <td>
+          <div class="cluster">
+            <Button variant="ghost" disabled={busy === c.id}
+                    aria-label={`Send a test to ${c.name}`} onclick={() => test(c)}>Send test</Button>
+            <Button variant="ghost" disabled={busy === c.id}
+                    onclick={() => toggle(c)}>{c.isActive ? 'Pause' : 'Resume'}</Button>
+            <Button variant="ghost" disabled={busy === c.id}
+                    aria-label={`Delete ${c.name}`} onclick={() => remove(c)}>Delete</Button>
+          </div>
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
 {/if}

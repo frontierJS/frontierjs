@@ -1,0 +1,66 @@
+<script>
+  // tabs.mesa — the Tabs family, both panel modes.
+  //
+  // Two independent strips, because almost everything this family does is
+  // context-scoped and a single instance cannot tell "the context reached the
+  // right subtree" from "there is only one subtree".
+  //
+  //   #t-main    — default (hidden) panels, no stated activeId, so the strip
+  //                has to default to its first tab on its own. Carries a
+  //                disabled tab in the MIDDLE, which is the position an arrow
+  //                walk has to step over rather than land on.
+  //   #t-unmount — `unmount` panels and a stated activeId, so an inactive
+  //                panel is absent from the DOM rather than hidden, and the
+  //                active one is built by a block AFTER setup.
+  import Tabs     from '../../../components/layout/Tabs.mesa'
+  import TabList  from '../../../components/layout/TabList.mesa'
+  import Tab      from '../../../components/layout/Tab.mesa'
+  import TabPanel from '../../../components/layout/TabPanel.mesa'
+
+  // `firstDisabled` is a prop so the same fixture can be remounted with the
+  // strip's FIRST tab already off — which is the one case the default pick
+  // cannot be asked about after the fact.
+  export let firstDisabled = false
+
+  let activeId = ''
+  let changes  = 0
+  let last     = ''
+  // Toggled from the page, AFTER every Tab has registered. The registry holds
+  // a getter for exactly this reason.
+  let billingDisabled = false
+
+  function onchange(id) {
+    changes++
+    last = id
+  }
+</script>
+
+<Tabs bind:activeId onchange={onchange} id="t-main">
+  <TabList label="Settings sections">
+    <Tab id="general" disabled={firstDisabled}>General</Tab>
+    <Tab id="security">Security</Tab>
+    <Tab id="archived" disabled>Archived</Tab>
+    <Tab id="billing" disabled={billingDisabled}>Billing</Tab>
+  </TabList>
+
+  <TabPanel id="general"><p>General body</p></TabPanel>
+  <TabPanel id="security"><p>Security body</p></TabPanel>
+  <TabPanel id="archived"><p>Archived body</p></TabPanel>
+  <TabPanel id="billing"><p>Billing body</p></TabPanel>
+</Tabs>
+
+<Tabs activeId="two" id="t-unmount">
+  <TabList variant="pills">
+    <Tab id="one">One</Tab>
+    <Tab id="two">Two</Tab>
+  </TabList>
+
+  <TabPanel id="one" unmount><p>One body</p></TabPanel>
+  <TabPanel id="two" unmount><p>Two body</p></TabPanel>
+</Tabs>
+
+<button type="button" id="off-billing" on:click={() => billingDisabled = true}>disable billing</button>
+
+<output id="active">{activeId}</output>
+<output id="changes">{changes}</output>
+<output id="last">{last}</output>

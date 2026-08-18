@@ -293,12 +293,12 @@ export const BULK_FAILURES = '__bulkFailures'
  * `ctx.locals[BULK_FAILURES]` — appended, not replaced, so gate/validate/custom
  * hooks can each contribute without clobbering one another.
  */
-export function partitionBulk<T>(
+export function partitionBulk<TIn, TOut = TIn>(
   ctx:   { locals: Record<string, unknown> },
-  rows:  T[],
-  parse: (row: T) => T
-): T[] {
-  const valid: T[] = []
+  rows:  TIn[],
+  parse: (row: TIn) => TOut
+): TOut[] {
+  const valid: TOut[] = []
   const failures = (ctx.locals[BULK_FAILURES] as BulkFailure[] | undefined) ?? []
 
   for (const row of rows) {

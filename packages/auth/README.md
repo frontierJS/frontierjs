@@ -19,28 +19,43 @@ bun add @frontierjs/auth
 ```typescript
 // api/src/auth.ts
 import { createLitestoneAuth, createAuthCleanupJobs } from '@frontierjs/auth'
-import { createClient, GatePlugin, LEVELS }     from '@frontierjs/litestone'
-import { defineEnv }                             from '@frontierjs/junction'
+import { createClient, GatePlugin, LEVELS }           from '@frontierjs/litestone'
+import { defineEnv }                                  from '@frontierjs/junction'
 
 export const env = defineEnv({
   ENCRYPTION_KEY: { required: true, minLength: 64 },
   APP_URL:        { required: true },
 })
 
-export const db = await createClient('./db/schema.lite', {
-  encryption: { key: env.ENCRYPTION_KEY },
+// `path` is a .lite FILE; `schema` is inline text. One options object, never
+// positional. `encryptionKey` is 64 hex characters — parsed as hex, so 64
+// characters of anything else decodes short and is refused by name.
+export const db = await createClient({
+  path:          './db/schema.lite',
+  encryptionKey: env.ENCRYPTION_KEY,
   plugins: [
     new GatePlugin({
       getLevel(user) {
-        if (!user)                     return LEVELS.STRANGER
-        if (user.userType === 'admin') return LEVELS.ADMINISTRATOR
+        if (!user)                 return LEVELS.STRANGER
+        if (user.isAdmin)          return LEVELS.ADMINISTRATOR
         return LEVELS.USER
       }
     })
-  ]
+  ],
 })
 
 export const auth = createLitestoneAuth(db, {
+  // The same key. It is the HMAC secret API keys are hashed with, and
+  // createApiKey() throws at call time without it.
+  encryptionKey: env.ENCRYPTION_KEY,
+
+  // What 'admin' means in THIS app, said once. The shipped policies read
+  // `auth().isAdmin`, which is the standing sessionGateLevel() grades
+  // ADMINISTRATOR(5) from — so an app keying on a role string must project it
+  // here or the level and the policy disagree, silently, because a policy
+  // filters rather than refuses.
+  sessionFields: (user) => ({ isAdmin: user.role === 'admin' }),
+
   onPasswordResetRequested: async (email, token) => {
     await mailer.send({
       to:      email,
@@ -62,14 +77,18 @@ export const authCleanup = createAuthCleanupJobs(db)
 
 ```typescript
 // api/src/server.ts
-import { auth, db, authCleanup }  from './auth.ts'
-import { createLitestoneAuthPlugin }    from '@frontierjs/auth'
-import { withLitestoneDb }        from '@frontierjs/junction'
+import { auth, db, authCleanup } from './auth.ts'
+import { createAuthPlugin }      from '@frontierjs/auth'
+import { createApp }             from '@frontierjs/junction'
 
-const app = createApp({ auth })
+// `db` on createApp installs withLitestoneDb for you — it is an around hook,
+// not a plugin, and it is what puts a per-request scoped client on
+// ctx.locals.db. Passing it here is the one wiring; app.configure() of it is
+// not a thing.
+const app = createApp({ auth, db })
 
-app.configure(createLitestoneAuthPlugin(auth))
-app.configure(withLitestoneDb(db))
+// Mounts /auth/* and registers the account / sessions / api-keys services.
+app.configure(createAuthPlugin(auth))
 
 app.configure({
   name: 'auth-cleanup',
@@ -79,6 +98,9 @@ app.configure({
 
 await app.start()
 ```
+
+A working version of exactly this is [`example/api/app.ts`](../../example/api/app.ts),
+driven end to end by `example`'s `bun run verify`.
 
 ## Routes
 

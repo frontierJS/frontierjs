@@ -32,9 +32,19 @@
   const rangeStart = Math.min((page - 1) * perPage + 1, total)
   const rangeEnd   = Math.min(page * perPage, total)
 
-  // Visible window — numbers plus '...' markers
+  // Visible window — page entries plus the two gap markers.
+  //
+  // Each entry carries its own `id`, and that is what the keyed {#each} keys
+  // on. Two things depend on it. A gap is `gap-start` or `gap-end` rather than
+  // the string it renders, because mid-range there are TWO of them and a
+  // keyed list given one key twice cannot tell them apart — it left orphaned
+  // ellipses on screen, one per page visited. And a page number keys on
+  // itself rather than on (number, current page), so stepping to the next page
+  // moves `aria-current` instead of rebuilding every control in the strip.
   const pages = (() => {
-    if (pageCount <= window) return Array.from({ length: pageCount }, (_, i) => i + 1)
+    const at = (n) => ({ id: n, n })
+
+    if (pageCount <= window) return Array.from({ length: pageCount }, (_, i) => at(i + 1))
 
     const half  = Math.floor(window / 2)
     let start   = Math.max(1, page - half)
@@ -43,9 +53,9 @@
     if (end === pageCount) start = Math.max(1, end - window + 1)
 
     const result = []
-    if (start > 1)       { result.push(1); if (start > 2) result.push('...') }
-    for (let i = start; i <= end; i++) result.push(i)
-    if (end < pageCount) { if (end < pageCount - 1) result.push('...'); result.push(pageCount) }
+    if (start > 1)       { result.push(at(1)); if (start > 2) result.push({ id: 'gap-start' }) }
+    for (let i = start; i <= end; i++) result.push(at(i))
+    if (end < pageCount) { if (end < pageCount - 1) result.push({ id: 'gap-end' }); result.push(at(pageCount)) }
     return result
   })()
 
@@ -82,17 +92,17 @@
     {#if compact}
       <span class="text-sm text-muted">Page {page} of {pageCount}</span>
     {:else}
-      {#each pages as p (p + '-' + page)}
-        {#if p === '...'}
+      {#each pages as p (p.id)}
+        {#if p.n === undefined}
           <span class="pagination-gap" aria-hidden="true">…</span>
         {:else}
           <button
             type="button"
             class="pagination-link"
-            aria-label="Page {p}"
-            aria-current={p === page ? 'page' : null}
-            on:click={() => goTo(p)}
-          >{p}</button>
+            aria-label="Page {p.n}"
+            aria-current={p.n === page ? 'page' : null}
+            on:click={() => goTo(p.n)}
+          >{p.n}</button>
         {/if}
       {/each}
     {/if}

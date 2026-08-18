@@ -2,7 +2,7 @@
   "name": "@frontierjs/basecamp",
   "version": "0.1.0",
   "private": true,
-  "description": "Basecamp \u2014 developer command central for the FJS World. An FJS application, not a library.",
+  "description": "Basecamp — developer command central for the FJS World. An FJS application, not a library.",
   "type": "module",
   "license": "MIT",
   "author": "Kobami",
@@ -42,6 +42,7 @@
     "@frontierjs/ui": "workspace:*"
   },
   "devDependencies": {
+    "@frontierjs/testing": "workspace:*",
     "@types/bun": "^1.3.14",
     "vite": "^8.0.3"
   },

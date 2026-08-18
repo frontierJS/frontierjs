@@ -1,0 +1,9 @@
+<script>
+  // Sibling.mesa — never edited. Its count is the evidence: an update that
+  // swapped the neighbour in place leaves this at whatever it was clicked to,
+  // and a full page reload puts it back to 0.
+  let n = 0
+</script>
+
+<button type="button" id="sibling" on:click={() => n++}>bump</button>
+<output id="sibling-count">{n}</output>

@@ -290,8 +290,15 @@ const CHECKS = {
   },
 
   // Vite injects the built <script> at the first TEXTUAL match for the body tag
-  // and does not skip comments. Mention it in one and the build succeeds,
-  // dist/index.html looks right, and the page loads no JavaScript.
+  // and does not skip comments. Mention it in one ABOVE the real tag and the
+  // build succeeds, dist/index.html looks right, and the page loads no
+  // JavaScript.
+  //
+  // FIRST is the whole rule (`FJS-329`). A mention below the real <body> is
+  // harmless — Vite has already matched — and flagging it made this rule fire on
+  // a file that documents its own markup, which is `packages/css/guide`. A check
+  // that cries wolf is the failure this engine exists to prevent, and it is
+  // worse in a rule an app runs than in one only this repo does.
   'body-tag-in-comment': ({ root }) => {
     const pages = []
     walk(root, 4, dir => {
@@ -304,15 +311,23 @@ const CHECKS = {
     const findings = []
     for (const path of pages) {
       const src = readFileSync(path, 'utf8')
-      for (const m of src.matchAll(/<!--[\s\S]*?-->/g)) {
-        if (!/<\s*body/i.test(m[0])) continue
-        findings.push({
-          file: path, line: lineOf(src, m.index),
-          message: `the body tag appears inside a comment. Vite injects the built <script> at the first ` +
-                   `textual match and does not skip comments — the build succeeds, the file looks right, ` +
-                   `and the page loads no JavaScript.`,
-        })
-      }
+
+      // `</body>` does not match: the injection point is the OPENING tag.
+      const first = src.search(/<\s*body/i)
+      if (first === -1) continue
+
+      // Inside a comment, and first, means Vite injects into the comment. A file
+      // with no real tag at all lands here too, which is the same failure.
+      const inComment = [...src.matchAll(/<!--[\s\S]*?-->/g)]
+        .some(m => first >= m.index && first < m.index + m[0].length)
+      if (!inComment) continue
+
+      findings.push({
+        file: path, line: lineOf(src, first),
+        message: `the FIRST body tag in this file is inside a comment. Vite injects the built <script> ` +
+                 `at the first textual match and does not skip comments — the build succeeds, the file ` +
+                 `looks right, and the page loads no JavaScript.`,
+      })
     }
     return { findings }
   },

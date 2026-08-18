@@ -31,6 +31,30 @@ src/
   its own schedule — `handle` is the only call autoload makes. `schedule()` is
   sugar over it. **A name is one schedule**: registering it twice replaces,
   where two entries used to fire the job twice a minute.
+- **`unschedule(name)` is only for a schedule that came from a ROW.** A
+  `*.job.ts` file's schedule is a statement about the code and lives as long as
+  the process, which is why `add` had no counterpart for so long. One registered
+  from a database row stops being true when the row does, and with no way back
+  the timer kept firing for a job nobody could see (`FJS-D36`). It unbinds the
+  CLOCK only — the handler stays, because a run already queued under that name
+  has to find something to execute.
+- **A running row is OWNED, and only an owner's silence releases it.** One
+  jobs.db is opened by as many processes as the deployment has, so recovery
+  cannot mean *set every `running` row back to `pending`* — that is a second
+  instance re-running whatever the first is midway through, with the atomic
+  claim saying nothing because the second claim is legitimate (`FJS-294`). Each
+  instance takes an id, stamps it on what it claims, and heartbeats into
+  `job_owners`; the sweep reclaims rows whose owner has gone quiet past `lease`
+  (30s, `heartbeat` 5s). A completion is guarded on the owner too, so a
+  reclaimed job's late `markDone` lands nowhere. **The lease is a timer**: a
+  handler that blocks the event loop past it stalls its own heartbeat and has
+  its work taken — same ground as `FJS-295`.
+- **A cron fire is named by its minute, and that is what makes it fire once.**
+  `cron:<job>:<epoch-minute>` is the dispatch id, so every instance fires its
+  own schedule and all but the first are the no-op a stated id already is. There
+  is no leader on purpose — a lease-held leader misses fires whenever the lease
+  is between owners. The assumption instead is that two clocks agree to within a
+  minute, which cron already makes.
 - **The database opens on first use and the workers are built by `start()`.**
   Nothing reads an option until it is needed, which is what makes every key of
   the `caravan` section of `junction.config.js` settable. The cost: a dispatch
@@ -41,6 +65,16 @@ src/
   terminal the key is free and the same work can be queued again later. A key
   built from a row id is not idempotent either — SQLite reuses ids, so
   `book-courier:4` names two different orders months apart.
+- **`dispatch({ id })` IS the idempotency key, and it is the primary key.** A
+  stated id makes the dispatch a no-op for all time: the work is already queued
+  or already done. For a caller holding a durable id and retrying a handoff it
+  cannot confirm — junction's outbox relay crosses two SQLite files, so the
+  queue insert and the delivery mark cannot be one transaction, and it dispatches
+  under the outbox row's id so the replay costs nothing (`FJS-D35`). Only state
+  an id unique to the work itself: anything reused names a job that already ran,
+  and the dispatch is silently dropped. The catch on the insert is the
+  CROSS-PROCESS path — in one process there is no await between the read and the
+  write, so nothing can interleave.
 - **A handler takes ONE argument and it is a `JobContext`** — the job's facts
   plus `app` and `auth`. Both used to be missing, and each cost every app a
   workaround. There was no route from an autoloaded `*.job.ts` to

@@ -31,7 +31,7 @@
     },
     "packages/auth": {
       "name": "@frontierjs/auth",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "devDependencies": {
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",
@@ -57,13 +57,14 @@
         "@frontierjs/ui": "workspace:*",
       },
       "devDependencies": {
+        "@frontierjs/testing": "workspace:*",
         "@types/bun": "^1.3.14",
         "vite": "^8.0.3",
       },
     },
     "packages/caravan": {
       "name": "@frontierjs/caravan",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "devDependencies": {
         "@frontierjs/junction": "workspace:*",
         "@types/bun": "^1.3.14",
@@ -77,7 +78,7 @@
     },
     "packages/cli": {
       "name": "@frontierjs/cli",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "bin": {
         "fli": "./bin/fli.js",
       },
@@ -90,7 +91,7 @@
     },
     "packages/conduit": {
       "name": "@frontierjs/conduit",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "devDependencies": {
         "@frontierjs/junction": "workspace:*",
         "@types/bun": "^1.3.14",
@@ -99,16 +100,38 @@
         "@frontierjs/junction": "^0.1.0",
       },
     },
+    "packages/config": {
+      "name": "@frontierjs/config",
+      "version": "0.1.1",
+      "peerDependencies": {
+        "@biomejs/biome": ">=2.0.0",
+        "typescript": ">=5.0.0",
+      },
+      "optionalPeers": [
+        "@biomejs/biome",
+        "typescript",
+      ],
+    },
+    "packages/create-frontier": {
+      "name": "create-frontier",
+      "version": "0.1.1",
+      "bin": {
+        "create-frontier": "./index.js",
+      },
+      "dependencies": {
+        "@frontierjs/cli": "workspace:*",
+      },
+    },
     "packages/css": {
       "name": "@frontierjs/css",
-      "version": "0.15.1",
+      "version": "0.16.1",
       "devDependencies": {
         "@frontierjs/toolbelt": "workspace:*",
       },
     },
     "packages/email-kit": {
       "name": "@frontierjs/email-kit",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "devDependencies": {
         "happy-dom": "^14.12.3",
         "vitest": "^2.0.0",
@@ -136,7 +159,7 @@
     },
     "packages/jetty": {
       "name": "@frontierjs/jetty",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "bin": {
         "jetty-build-ext": "./bin/build-ext.js",
         "jetty-dev-ext": "./bin/dev-ext.js",
@@ -145,6 +168,7 @@
         "jetty-manifest": "./bin/manifest.js",
       },
       "dependencies": {
+        "@frontierjs/toolbelt": "workspace:*",
         "chokidar": "^5.0.0",
         "vite": "^8.0.10",
         "ws": "^8.20.0",
@@ -170,7 +194,7 @@
     },
     "packages/junction": {
       "name": "@frontierjs/junction",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "bin": {
         "junction": "./tools/cli.ts",
       },
@@ -189,7 +213,7 @@
     },
     "packages/litestone": {
       "name": "@frontierjs/litestone",
-      "version": "1.1.4",
+      "version": "1.1.5",
       "bin": {
         "litestone": "./src/tools/cli.js",
       },
@@ -199,7 +223,7 @@
     },
     "packages/mesa": {
       "name": "@frontierjs/mesa",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "dependencies": {
         "@frontierjs/toolbelt": "workspace:*",
         "acorn": "^8.0.0",
@@ -228,7 +252,7 @@
     },
     "packages/notifications": {
       "name": "@frontierjs/notifications",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "devDependencies": {
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",
@@ -240,7 +264,7 @@
     },
     "packages/sierra": {
       "name": "@frontierjs/sierra",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "bin": {
         "sierra": "./src/tools/cli.js",
       },
@@ -284,7 +308,7 @@
     },
     "packages/testing": {
       "name": "@frontierjs/testing",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "devDependencies": {
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",
@@ -297,16 +321,16 @@
     },
     "packages/toolbelt": {
       "name": "@frontierjs/toolbelt",
-      "version": "0.1.0",
+      "version": "0.1.1",
     },
     "packages/ui": {
       "name": "@frontierjs/ui",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "devDependencies": {
         "acorn": "^8.0.0",
       },
       "peerDependencies": {
-        "@frontierjs/css": "^0.15.0",
+        "@frontierjs/css": "^0.16.0",
         "@frontierjs/mesa": "^0.1.0",
       },
     },
@@ -415,6 +439,8 @@
     "@frontierjs/cli": ["@frontierjs/cli@workspace:packages/cli"],
 
     "@frontierjs/conduit": ["@frontierjs/conduit@workspace:packages/conduit"],
+
+    "@frontierjs/config": ["@frontierjs/config@workspace:packages/config"],
 
     "@frontierjs/css": ["@frontierjs/css@workspace:packages/css"],
 
@@ -689,6 +715,8 @@
     "concurrently": ["concurrently@8.2.2", "", { "dependencies": { "chalk": "^4.1.2", "date-fns": "^2.30.0", "lodash": "^4.17.21", "rxjs": "^7.8.1", "shell-quote": "^1.8.1", "spawn-command": "0.0.2", "supports-color": "^8.1.1", "tree-kill": "^1.2.2", "yargs": "^17.7.2" }, "bin": { "conc": "dist/bin/concurrently.js", "concurrently": "dist/bin/concurrently.js" } }, "sha512-1dP4gpXFhei8IOtlXRE/T/4H88ElHgTiUzh71YUmtjTEHMSRS2Z/fgOxHSxxusGHogsRfxNq1vyAwxSC+EVyDg=="],
 
     "convert-source-map": ["convert-source-map@2.0.0", "", {}, "sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg=="],
+
+    "create-frontier": ["create-frontier@workspace:packages/create-frontier"],
 
     "css-select": ["css-select@7.0.0", "", { "dependencies": { "boolbase": "^2.0.0", "css-what": "^8.0.0", "domhandler": "^6.0.1", "domutils": "^4.0.2", "nth-check": "^3.0.1" } }, "sha512-snmjEVXy+1LnwXdxhYvTMj1d9tOh4HxkA1YmoayVBeeyR2C14Pum7fcxJIm4SswYspVy866eYNwlH6xC3/VH5g=="],
 

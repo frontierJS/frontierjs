@@ -857,6 +857,30 @@ class Parser {
 
       case 'computed':   return { kind: 'computed' }
 
+      // @transient → a field the caller WRITES that is never stored.
+      //
+      // The mirror of @computed, which is a field the caller READS that is
+      // never stored. Both are values with no column; they differ in which
+      // direction the value travels:
+      //
+      //              column   caller writes   caller reads
+      //   @computed   no       no              yes
+      //   @transient  no       yes             no
+      //   @system     yes      no              yes
+      //   @guarded    yes      no              no
+      //
+      // For a payload key that is about a write rather than part of one — a
+      // plaintext credential on its way into an @encrypted row somewhere else,
+      // a confirmation token, a "notify the owner" flag. Junction validates it
+      // like any other field and then lifts it off the payload onto
+      // ctx.transients, so nothing below the API boundary ever sees it; a value
+      // that reaches this client anyway is refused by name rather than dropped.
+      case 'transient': {
+        if (this.check(TK.LPAREN))
+          throw new ParseError('@transient takes no arguments — a field is stored or it is not', this.peek())
+        return { kind: 'transient' }
+      }
+
       // @derived(dueAt < now() && completedAt == null)
       //
       // A value computed in SQL from this row's own columns, so unlike
@@ -1861,12 +1885,24 @@ class Parser {
       // column is spelled differently.
       case 'tenant': {
         if (!this.check(TK.LPAREN))
-          throw new ParseError(`@@tenant takes an argument: (none) or (column: "name")`, this.peek())
+          throw new ParseError(`@@tenant takes an argument: (none), (column: "name") or (via: relation)`, this.peek())
         this.eat(TK.LPAREN)
         if (this.peek().type === TK.IDENT && this.peek().value === 'none') {
           this.eat(TK.IDENT)
           this.eat(TK.RPAREN)
           return { kind: 'tenant', mode: 'none', column: null }
+        }
+        // `via` names the relation this model is scoped THROUGH — the answer for
+        // a model that carries no tenant column of its own and has more than one
+        // parent that could supply one.
+        if (this.peek().type === TK.IDENT && this.peek().value === 'via') {
+          this.eat(TK.IDENT)
+          this.eat(TK.COLON)
+          const via = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+          this.eat(TK.RPAREN)
+          if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(via))
+            throw new ParseError(`@@tenant via must name a relation field, got '${via}'`, this.peek())
+          return { kind: 'tenant', mode: 'via', column: null, via }
         }
         if (this.peek().type === TK.IDENT && this.peek().value === 'column') {
           this.eat(TK.IDENT)
@@ -2622,6 +2658,9 @@ function expandTenancy(schema) {
   const scoped  = []
   const missing = []
 
+  // Models with no column of their own, kept for the delegation pass below.
+  const undecided = []
+
   for (const model of schema.models) {
     const tag = model.attributes.find(a => a.kind === 'tenant')
     if (tag?.mode === 'none') continue
@@ -2634,12 +2673,14 @@ function expandTenancy(schema) {
     if (driver === 'jsonl' || driver === 'logger') continue
     if (model.attributes.some(a => a.kind === 'external')) continue
 
+    if (tag?.mode === 'via') { undecided.push({ model, via: tag.via }); continue }
+
     const column = tag?.column ?? t.column
     const field  = model.fields.find(f => f.name === column)
 
     if (!field) {
       if (tag) errors.push(`Model '${model.name}': @@tenant(column: "${column}") names no field on this model`)
-      else missing.push(model.name)
+      else undecided.push({ model, via: null })
       continue
     }
 
@@ -2675,15 +2716,97 @@ function expandTenancy(schema) {
     scoped.push(model.name)
   }
 
+  // ── scoped through a parent ────────────────────────────────────────────────
+  //
+  // A model that carries no tenant column but holds a foreign key to one that
+  // does is not cross-tenant data — it is the same tenant's data, one hop away.
+  // Denormalising the column onto it is a schema change an app can make by
+  // hand; delegating to the parent's own rule is the one that needs no column
+  // at all, and `check()` is exactly that delegation (FJS-282).
+  //
+  // ONE DENY PER SCOPED PARENT, and that is why there is no choice to make.
+  // Denies are AND'd, so a model with two scoped parents must satisfy both —
+  // the narrowing answer, which is the direction tenancy always takes. Picking
+  // one parent and ignoring the other would be the widening one, and would need
+  // a rule nobody could predict. `@@tenant(via: rel)` narrows to a single
+  // relation for an app that wants exactly that.
+  //
+  // `check(rel, 'read')` states the operation rather than inheriting the
+  // containing one: the question is always *is that parent mine*, never *may I
+  // create that parent*, and the default would ask the second for a create.
+  //
+  // Transitive by fixpoint — a grandchild is scoped once its parent is — and a
+  // self-relation is skipped, since a model cannot delegate to itself (the SQL
+  // cycle guard opens it, which would be a rule that enforces nothing).
+  // `field.type.kind` is not 'relation' yet — validate() sets it, and that runs
+  // after this. A belongsTo is decidable without it: a non-array field naming a
+  // model, carrying the @relation(fields: [...]) half that holds the key.
+  const modelNames  = new Set(schema.models.map(m => m.name))
+  const belongsToOf = (model) => model.fields.flatMap(f => {
+    if (f.type.array || !modelNames.has(f.type.name)) return []
+    const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
+    if (!rel) return []
+    return [{ field: f.name, target: f.type.name }]
+  })
+
+  const scopedSet = new Set(scoped)
+  const pending   = undecided.map(u => ({ ...u, rels: belongsToOf(u.model) }))
+
+  for (const p of pending) {
+    if (!p.via) continue
+    const rel = p.rels.find(r => r.field === p.via)
+    if (!rel) errors.push(
+      `Model '${p.model.name}': @@tenant(via: ${p.via}) names no to-one relation on this model — ` +
+      `it must be a field holding a @relation(fields: [...]) to the model that carries the tenant column`)
+    else if (rel.target === p.model.name) errors.push(
+      `Model '${p.model.name}': @@tenant(via: ${p.via}) points at itself — a model cannot be scoped through its own relation`)
+  }
+
+  const delegated = []
+  for (let changed = true; changed;) {
+    changed = false
+    for (const p of pending) {
+      if (p.done) continue
+      const usable = p.rels.filter(r =>
+        r.target !== p.model.name && scopedSet.has(r.target) && (!p.via || r.field === p.via))
+      if (!usable.length) continue
+
+      for (const r of usable)
+        p.model.attributes.push({
+          kind: 'deny', operations: ['read', 'update', 'delete', 'create'], generated: 'tenancy',
+          message: `Outside your ${t.column}`,
+          expr: { type: 'not', expr: { type: 'check', field: r.field, operation: 'read' } },
+        })
+
+      p.done = true
+      scopedSet.add(p.model.name)
+      delegated.push(`${p.model.name} (via ${usable.map(r => r.field).join(' + ')})`)
+      changed = true
+    }
+  }
+
+  for (const p of pending)
+    if (p.via && !p.done) errors.push(
+      `Model '${p.model.name}': @@tenant(via: ${p.via}) delegates to '${p.rels.find(r => r.field === p.via)?.target ?? p.via}', ` +
+      `which is not scoped to a tenant itself — give that model the '${t.column}' column, or scope it through one of its own relations`)
+
+  if (delegated.length)
+    warnings.push(
+      `tenancy: ${delegated.length} model(s) carry no '${t.column}' and are scoped through a parent — ${delegated.join(', ')}.`
+    )
+
   // Reported, never inferred. A model with no tenant column under row tenancy
-  // is cross-tenant data by construction, which is sometimes exactly right
-  // (a plan table, a country list) and sometimes the column somebody forgot.
-  // One line naming all of them beats N warnings nobody reads, and
-  // `@@tenant(none)` is the way to say the first out loud.
+  // and no scoped parent is cross-tenant data by construction, which is
+  // sometimes exactly right (a plan table, a country list) and sometimes the
+  // column somebody forgot. One line naming all of them beats N warnings nobody
+  // reads, and `@@tenant(none)` is the way to say the first out loud.
+  for (const p of pending) if (!p.done) missing.push(p.model.name)
+
   if (missing.length)
     warnings.push(
-      `tenancy: ${missing.length} model(s) declare no '${t.column}' and are NOT scoped to a tenant — ` +
-      `${missing.join(', ')}. Add the column, or mark each @@tenant(none) to say it spans tenants on purpose.`
+      `tenancy: ${missing.length} model(s) declare no '${t.column}', hold no relation to a model that does, ` +
+      `and are NOT scoped to a tenant — ${missing.join(', ')}. Add the column, relate them to a scoped model, ` +
+      `or mark each @@tenant(none) to say it spans tenants on purpose.`
     )
 
   if (!scoped.length)
@@ -3285,6 +3408,109 @@ function validate(schema) {
         if (field.attributes.some(a => a.kind === kind))
           errors.push(`Model '${model.name}', field '${field.name}': @system has nothing to lock on a @${kind === 'funcCall' ? 'generated' : kind} field — it is derived, so no caller writes it`)
       }
+    }
+  }
+
+  // ── @transient validation ───────────────────────────────────────────────────
+  //
+  // A transient field has no column, so every attribute that describes storage,
+  // derivation or read-side visibility says nothing about it — and the way that
+  // goes wrong is silently: @@index([secret]) indexes a column that was never
+  // created, @allow('write', …) compiles a rule the Data boundary never reaches
+  // because the value never arrives there. Refused by name, with what the
+  // attribute would have needed.
+  //
+  // A deny-list rather than an allow-list of validators: a new validator refused
+  // here is loud and one line to fix, where a new storage attribute silently
+  // permitted on a field with no column is the shape this whole annotation
+  // exists to stop.
+  const TRANSIENT_CONFLICTS = {
+    id:          'a transient value is not stored, so nothing can be keyed by it',
+    unique:      'uniqueness is a property of a column, and there is none to index',
+    map:         'there is no column to name',
+    default:     'a default fills a column on write; a transient value is sent or it is not',
+    relation:    'a relation is a foreign key, which is a column',
+    generated:   'a generated value comes from its expression and is stored',
+    funcCall:    'a generated value comes from its expression and is stored',
+    computed:    'a field is read-only or write-only, not both — @computed is the read half',
+    derived:     'a derived value is computed in the SELECT, and this field is never selected',
+    from:        'a @from field is read through its target, and this field is never read',
+    edge:        'an edge value lives on a join table',
+    scoped:      'a scoped value lives on a side table',
+    slug:        'a slug is derived into a column on write',
+    sequence:    'a sequence numbers rows, and this value has none',
+    updatedAt:   'there is no stored value for a write to stamp',
+    updatedBy:   'there is no stored value for a write to stamp',
+    createdBy:   'there is no stored value for a write to stamp',
+    version:     'optimistic concurrency compares a stored counter',
+    check:       'a CHECK constraint is enforced by SQLite over a column — validate it with @length/@regex/@gte, which run before the write',
+    hashed:      'a digest is what gets stored instead of the value; @transient stores nothing',
+    encrypted:   'ciphertext is what gets stored instead of the value; @transient stores nothing',
+    keepVersions: 'history is kept per column',
+    log:         'the audit trail records column writes, and a transient value is deliberately absent from it',
+    guarded:     'a caller writes a transient field by definition — @guarded locks the write',
+    system:      'the application writes a @system column and a caller writes a @transient field; they are opposite ends',
+    secret:      'a transient value is never read back, so there is nothing to hide from a reader',
+    omit:        'a transient value is never in a result, so there is nothing to omit from one',
+  }
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'transient')) continue
+
+      if (field.type.kind === 'relation' || field.type.kind === 'implicitM2M') {
+        errors.push(`Model '${model.name}', field '${field.name}': @transient cannot be applied to a relation — a relation is a foreign key, which is a column`)
+        continue
+      }
+
+      for (const attr of field.attributes) {
+        const why = TRANSIENT_CONFLICTS[attr.kind]
+        if (why) errors.push(`Model '${model.name}', field '${field.name}': @transient conflicts with @${attr.kind === 'funcCall' ? 'generated' : attr.kind} — ${why}`)
+      }
+
+      // A field @allow is a rule the Data boundary evaluates, and a transient
+      // value is lifted off the payload before it gets there — so the rule
+      // would be declared and never run. Half-enforcement reads as enforcement.
+      if (field.attributes.some(a => a.kind === 'fieldAllow'))
+        errors.push(`Model '${model.name}', field '${field.name}': @transient conflicts with @allow — the value never reaches the Data boundary, so the rule would be declared and never evaluated. Refuse it in the service that consumes it`)
+
+      // Model-level attributes name columns: an index, a compound unique, a
+      // full-text set. Each one would be built over a column that does not exist.
+      for (const attr of model.attributes) {
+        if (Array.isArray(attr.fields) && attr.fields.includes(field.name))
+          errors.push(`Model '${model.name}': @@${attr.kind} names '${field.name}', which is @transient — it has no column to ${attr.kind === 'index' ? 'index' : attr.kind === 'unique' ? 'constrain' : 'read'}`)
+      }
+    }
+  }
+
+  // ── @unique over a randomly-encrypted column ────────────────────────────────
+  //
+  // A UNIQUE constraint is over the STORED bytes, and plain @encrypted uses a
+  // random IV: the same plaintext stores different ciphertext every write, so
+  // the constraint is declared, built, and can never fire. Measured — two
+  // creates of one value both succeed and the model holds two rows. Nothing
+  // said so, which makes it a uniqueness guarantee an app believes it has.
+  //
+  // @encrypted(deterministic: true) derives the IV from the plaintext, so the
+  // bytes repeat and the constraint works; @hashed is the other answer, for a
+  // value that only ever has to be matched.
+  for (const model of schema.models) {
+    const composites = model.attributes.filter(a => a.kind === 'uniqueIndex' && Array.isArray(a.fields))
+    for (const field of model.fields) {
+      const enc = field.attributes.find(a => a.kind === 'encrypted')
+      if (!enc || enc.deterministic === true) continue
+
+      const how = field.attributes.some(a => a.kind === 'secret') ? '@secret' : '@encrypted'
+      const fix = `Declare ${how}(deterministic: true) — the IV is derived from the plaintext, so equal values store equal bytes — ` +
+                  `or @hashed if the value only ever has to be matched`
+
+      if (field.attributes.some(a => a.kind === 'unique'))
+        errors.push(`Model '${model.name}', field '${field.name}': @unique cannot be enforced over ${how} — ` +
+                    `the constraint is over the stored ciphertext, and a random IV makes every write of the same value different. ${fix}`)
+
+      for (const c of composites)
+        if (c.fields.includes(field.name))
+          errors.push(`Model '${model.name}': @@unique([${c.fields.join(', ')}]) cannot be enforced — '${field.name}' is ${how}, ` +
+                      `and a random IV makes every write of the same value store different ciphertext. ${fix}`)
     }
   }
 

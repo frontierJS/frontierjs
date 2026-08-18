@@ -6,7 +6,19 @@
 // ─── IEventBus interface ─────────────────────────────────────────────────
 // This is the contract. App code imports this type only.
 
-export type EventHandler<T = unknown> = (data: T) => Promise<void> | void
+/**
+ * A subscriber. Return a promise and `emit` awaits it; return anything else
+ * and it is ignored — `emit` tests the return for `.then` and does nothing
+ * with it otherwise.
+ *
+ * Hence `unknown` rather than `Promise<void> | void`, which said the same thing
+ * about promises and additionally refused the shortest listener there is:
+ * `on('x', () => seen.push(name))` does not compile against a `void` UNION
+ * (TypeScript's return-a-value-where-void-is-expected rule applies to a bare
+ * `void` and not to a union containing it), so the natural one-liner had to
+ * grow braces or a cast.
+ */
+export type EventHandler<T = unknown> = (data: T) => unknown
 
 export interface IEventBus {
   emit<T = unknown>(event: string, data?: T):                    Promise<void>

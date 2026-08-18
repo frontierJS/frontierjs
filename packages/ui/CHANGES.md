@@ -2,6 +2,394 @@
 
 Newest first.
 
+## 2026-08-17 — a Table can report a sort instead of taking it
+
+`onsort={(key, dir) => …}`. With it set the component states the move and
+changes nothing; without it, `bind:sortKey` works exactly as before.
+
+`bind:sortKey` makes the component the OWNER of the sort, and a component
+cannot own something that lives in the address bar. A list sorted from the URL
+has to navigate, and the pair then arrives back as a prop — so the binding both
+fights the caller and shows an arrow for a state it is about to be overruled on.
+
+Found putting basecamp's `/servers/` on `page.query` + `page.directives`: the
+sort belongs in `$orderBy`, and there was no way to say so.
+
+Three assertions in `table-depth.spec.mjs`, and the one that matters is the
+negative: the clicked column does NOT take the sort for itself.
+
+## 2026-08-17 — a positioned panel is hidden until it is placed (`FJS-331`)
+
+`DropdownMenu`, `Popover` and `ConfirmationPopover` render their portaled panel
+`visibility: hidden` and show it in the frame callback that positions it.
+
+The frame that paints a newly inserted panel is the one BEFORE the callback
+that places it: input is dispatched, mesa's flush inserts the panel, style and
+paint run, and the `requestAnimationFrame` the click handler queued waits for
+the next frame. `x` and `y` still hold the last open's placement, so every open
+showed one frame at wherever the trigger used to be — measured at `top: 134px`
+where it belonged at `74px`, after nothing more than a 60px scroll between two
+opens.
+
+Cosmetically that is a jump. What it cost was a menu that would not close: when
+the stale coordinates land on the trigger, the click meant to toggle it falls
+inside the panel, where the click-away listener deliberately lets it through.
+Nothing runs, the menu stays open, and `aria-expanded` still reads `true` —
+which is `FJS-331`, and read as a flaky test because the frame is only long
+enough to be hit under load.
+
+Hiding it is enough for both halves: a `visibility: hidden` element is not
+painted and not hit-tested, and `placed` reaches the DOM on mesa's microtask
+inside the same frame, so nothing waits an extra one. Focus moves after that
+flush rather than before it — focus is refused on a hidden element — which is
+also how `DropdownMenu` was found never to have moved focus into its panel at
+all: `bind:this` is on the surface, which carries no tabindex, and the arrow
+walk reads the same whether focus is on the panel or outside the list.
+
+`dropdown.spec.mjs` asserts the open before inverting it, holds the placement
+contract at insertion through a `MutationObserver` (a poll cannot reach a
+single frame), and asserts the focus. 280 toggle rounds under a 16-way CPU load
+are clean; the loop that proves it found the old shape in 13.
+
+## 2026-08-17 — a Table column can hide its own header
+
+`{ key: 'actions', label: 'Actions', hideLabel: true }` renders the label in a
+`.visually-hidden` span instead of on screen.
+
+Found by putting basecamp on the kit: every one of its 20 tables ends in a
+column of row actions, and every one of them wrote
+`<th scope="col"><span class="visually-hidden">Actions</span></th>` by hand.
+The kit could not say it. The two things it is NOT: an empty `label`, which
+leaves a screen reader announcing nothing for a column that has a control in
+every row; and an `aria-label` on the `<th>`, because the text belongs in the
+cell, where a table's own header navigation reads it.
+
+Five assertions in `table-depth.spec.mjs`, including that it takes no visible
+width and that hiding a label does not turn the header into a sort control.
+
+## 2026-08-17 — a password field draws its own show/hide toggle
+
+`<Input type="password">` now renders a reveal button beside the box. Auto for
+that type and nothing else; `reveal={false}` turns it off.
+
+A password box with no way to read back what was typed is the commonest cause
+of a sign-in that fails looking like a wrong credential, and every app was
+drawing its own — or, more often, not drawing one at all. It is a kit control
+because the affordance is the same everywhere and the details are not obvious:
+
+- **Only the ELEMENT's type flips.** `resolvedType` is what the field IS and is
+  what `Field`/`Label` are told; `inputType` is what the `<input>` carries. A
+  revealed password does not start reporting itself as a text box to anything
+  above the control, and the `autocomplete` hint is untouched.
+- **A mousedown on the toggle would take the caret with it**, so a click
+  mid-typing costs the typist their place. The button refuses the default;
+  Tab + Enter still activates it.
+- **`aria-pressed` is written as a string.** A `false` attribute value is
+  dropped, so `aria-pressed={revealed}` left the button with no such attribute
+  in exactly the state that matters — and no way to select it.
+
+`test/browser/specs/password-reveal.spec.mjs` — 15 assertions over four shapes:
+the password field, `reveal={false}`, a text field, and a password field that
+also carries a caller `icon` (both share the row).
+
+Found on the way: `FJS-330` — an HTML comment inside an element's attribute
+list closes the element and turns every attribute after it into text, with no
+error and no warning.
+
+## 2026-08-17 — the palette's panel composes a surface (`FJS-056`)
+
+`class="surface fjs-cp-panel"`. The background, the ink, the hairline and the
+radius come from `surface.css`, and the tone recipe comes with them. What is
+left in the component is its own geometry and the two places it differs: a
+raised ground, said as `--surface-bg` — the token the package's own recipe
+reads — rather than as a `background`, and a heavier shadow than a card's.
+
+Additive. Every `.fjs-cp-*` class stays: a component's class names are
+published surface the moment a drive selects them, and `example`'s `verify:ui`
+selects two of these.
+
+**The other two thirds of that row were measured and are wrong.** `.dialog` is
+built on the native `<dialog>` — `max-width: 480px`, and a `::backdrop` that
+paints only for a real dialog element — while this panel is a div with a
+hand-written backdrop, deliberately (`FJS-322`); adopting it would swap the
+platform focus trap and Escape in for the keyboard model that row hardened,
+which is a behaviour change rather than a restyle. `.field` is a BOX, and this
+input is deliberately transparent inside a row that owns the bottom rule, so
+applying it means overriding all four of background, border, radius and padding
+back off. `.items`/`.item` do not fit the structure: the scroller holds group
+headers and rows as siblings, and the control reset worth having is scoped
+`.items :is(button, a).item` at (0,3,0) — higher than the row's own class, so it
+would override the row's `calc()` width and its transparent active border.
+
+One test fixed on the way: the theme assertion read a resolved
+`background-color`, which headless Chrome leaves stale after an ancestor class
+change once the paint is var-substituted through a `:where()` rule. It reads the
+token now, which is what carries the theme and the more precise question anyway.
+
+## 2026-08-17 — a native constraint in a form the kit does not own is now reported (`FJS-055`)
+
+Kit controls carry a real `required` on purpose: that attribute is what
+assistive tech announces. The cost is that the browser refuses to fire `submit`
+and shows its own bubble instead — a message that is not the schema's, in a
+place the layout did not plan for. It reads as a broken submit handler and says
+nothing at all.
+
+`<Form>` has been `novalidate` by default since 2026-08-06, so what remained was
+the hand-written `<form>`. `nativeValidationGuard` in `utils.js` is attached to
+the eight controls that put a constraint on a NATIVE element — the other four
+pass `required` down to `<Field>` as a prop or use `aria-required`, and neither
+blocks a submit — and reports **once per form**, naming a field that is
+currently blocking it and both ways out.
+
+It reads `el.validity`, never `checkValidity()`: the method fires an `invalid`
+event, which is a real event this kit's controls listen for.
+`data-native-validation` on the form is how you say the browser's own UI is what
+you want. Nothing is relaxed — the constraint stays on the element, which is the
+whole reason it is there.
+
+## 2026-08-17 — the drive's harness moved to mesa
+
+Chrome, the CDP protocol, real input, the spec runner and the in-page DOM
+probes are now `mesa/test/browser/{drive.mjs,probes.js}`, read by relative path
+the same way this package already reads the compiler. Mesa is the leaf, so the
+direction holds, and mesa's own two browser drives are the second caller —
+which is the point: a second CDP client is a second place to fix every trap
+learned about headless Chrome.
+
+What stays here is what makes it the KIT's drive — the server that compiles a
+`.mesa` on request, the fixture path, the mount, and coverage over the
+component tree. Behaviour is identical: 631 assertions, 65/65 components.
+
+Two things the harness gained, both from mesa's drives:
+`t.eventually(expr, expected, label, ms?)` takes a timeout, for a round trip
+that is not a microtask; and `t.allow(re)` declares a page error a spec is
+provoking on purpose, which is not the same as muting the channel — anything
+else the page reports still fails.
+
+## 2026-08-16 — the keyboard cursor names its row (`FJS-323`, `FJS-324`)
+
+`Combobox` and `MultiSelect` keep focus in a text box while the arrow keys move
+a highlight down a list, which is the pattern that requires
+`aria-activedescendant`: nothing else moves, so there is no focus event for a
+screen reader to follow and `aria-selected` answers which option is CHOSEN, not
+which one Enter would take. Both inputs now carry `aria-controls` and
+`aria-activedescendant`, and both lists give every row an id — the shape
+`CommandPalette` took in `FJS-322`. Ids are indexed rather than built from the
+value, which is the caller's and need not be a legal id.
+
+**Both took the pointer on `mouseenter`, which is `FJS-322` verbatim.** A panel
+opens under whatever the mouse was last left on and arrow-keying scrolls rows
+under a still pointer; either way the cursor lands on a row nobody chose and
+Enter takes it. `mousemove` now, guarded, because it fires per pixel.
+
+**`MultiSelect` had never shown an option it was given** (`FJS-324`). The map
+the dropdown reads was filled only by `$: options, () => …`, and a `$:` watch
+fires on CHANGE — a static array changed nothing, so the map stayed empty for
+the life of the component, every panel said "No options", and typing filtered
+an empty list. It is seeded at declaration now; the watch merges later
+arrivals. `example`'s products filter is a live caller, and its drive passed
+throughout: the screen renders, the control opens, and the list it opens is
+empty.
+
+**The drive could not click the control at all**, which is what surfaced it.
+`clickAt` scrolled only when an element's TOP was past the fold, so a
+full-width field at the end of a long form — top in view, centre past the
+bottom edge — was pressed at a point outside the viewport and the event landed
+nowhere. It tests the point it is about to press.
+
+## 2026-08-16 — `Btn` deleted (`FJS-056`)
+
+A browser had already measured the pair: same `.btn`, same tones, same
+treatments, same `type="button"`, differing only in defaults — `primary` at the
+body size against `ghost` one step down. A defaults-only alias is not a second
+component, and the kit's fixtures were the only callers.
+
+`<Btn>x</Btn>` is `<Button variant="ghost" size="sm">x</Button>`. The kit is 65
+components; the `actions` fixture and spec drop the side-by-side pair they
+existed to measure, and `ConfirmationPopover`'s usage block names `Button`.
+
+## 2026-08-16 — `CommandPalette`, second pass: the modes (`FJS-322`)
+
+52 assertions over what the first pass never turned on — `groupOrder`, both
+empty states, `emptyText`, `closeOnSelect`, `placeholder`, the layout knobs, a
+list longer than the panel, and the pointer half of a contract that had only
+ever been driven from the keyboard.
+
+**The backdrop could not be clicked away.** `handleBackdrop` asked
+`e.target === e.currentTarget`, which under Mesa's delegation is the root
+rather than the backdrop (`FJS-321`, fixed there). It is `on:click|self={close}`
+now — the modifier the language already has, and which had the same hole. This
+is the only kit overlay with a hand-written backdrop: `Modal` is a `<dialog>`
+and `Popover` is `[popover]`, so both get dismissal from the platform.
+
+**A palette opening under a stationary pointer took its cursor from whichever
+row landed under it.** ⌘K is a keyboard gesture, so the mouse is wherever it
+was left — this is the ordinary case, not an edge one — and `mouseenter` fires
+for an element that arrives under a still pointer. Enter then ran a command
+nobody chose, and nothing on screen distinguished that from the palette
+working. Arrow-keying a long list did the same in the other direction, by
+scrolling rows under the pointer. The rows take the cursor on `mousemove`,
+which needs the pointer to actually move.
+
+**Clearing the box left focus on the ✕ button**, so the next keystroke went
+nowhere: the list was right, the box was empty, and the character was dropped.
+
+**Nothing named the active row to a screen reader.** Focus never leaves the
+search box, so `aria-selected` moving down the list is invisible on its own.
+The input is a `combobox` with `aria-activedescendant`, and every row has an
+id. `Combobox` and `MultiSelect` have the same gap — `FJS-323`.
+
+## 2026-08-16 — `DatePicker`, second pass: the modes (`FJS-318`)
+
+35 assertions over the branches nothing had turned on — the preset sidebar,
+`inclusiveEnd`, the time picker, the two-pane range, the year controls, a
+Monday-start week, an allow-list of dates, and the form seam `FJS-077` gave it.
+
+**The time inputs moved the value without announcing it.** Editing the time
+wrote `startDate` and never called `onDateChange`, so the binding said 14:30
+while the callback had said 08:00 — and which of the two an app happened to
+read decided whether it saved the right time.
+
+Fixing it surfaced a second layer: announcing from `_startDate` right after
+writing it reported the value as it was BEFORE the edit, because a write to a
+reactive binding is not visible to a read in the same tick — the same trap that
+made `<Form>`'s reset baseline `{}`. The new timestamp is passed to the
+announcement instead of read back, and the payload has one builder now, shared
+by the day click, the presets and the time inputs.
+
+Writing the fixture also found a Mesa compiler defect (`FJS-319`): a local
+`const d` in a helper, where the script also had a top-level `d`, compiled to
+`const $runtime.get($$sig_d) = …` — invalid JavaScript, emitted with no error.
+
+## 2026-08-16 — `Table`, second pass: 28 assertions, no defects
+
+The depth pass `Form` had, applied to the other component with far more modes
+than one spec drove: the `actions` and `empty` snippets, `striped`/`compact`/
+`hover`, per-column `align` and `width`, `skeletonRows`, the sort pair pushed
+from OUTSIDE rather than clicked, and whether a sortable header is operable by
+keyboard at all.
+
+**Nothing was wrong**, which is worth recording as much as a defect: this
+component was hardened once already, by `FJS-147` and the sort-button fix its
+own header describes. Two cases are pinned that were argued rather than
+measured — a **toned row inside a striped table**, on both parities, because
+`tables.css` records the stripe having out-specified the tone and a failed row
+painting like every other row; and that sorting is **state, not an ordering**,
+since a table that reorders the page it is showing disagrees with the server
+about what page two contains.
+
+The claims are checked against a negative control: ignoring `skeletonRows` and
+dropping the `empty` override fails four assertions and nothing else.
+
+## 2026-08-16 — `<Form>`, driven rather than rendered (`FJS-316`)
+
+Two fixtures and 61 assertions over the component that exists so an app stops
+writing forms by hand: one that hands it nothing and checks the field list it
+BUILDS, one that drives what it DOES. Four defects, two of them in what a save
+sends.
+
+**`method="auto"` never resolved.** `_send` tested for `create` and `patch` and
+fell through to `service.upsert` for everything else — including its own
+default. The client's `upsert` is hardcoded to `data.id` while the form knows
+the model's real `idField`, so on a model keyed by anything else, editing an
+existing row created a duplicate. `auto` is answered in the form now, off the
+`_mode()` it was already computing for validation and then ignoring.
+
+**A submit revealed every field and never asked them.** Revealing only changes
+what a later keystroke may show, so a form submitted untouched sent an invalid
+record and showed nothing. `submit()` asks now, and refuses — but only over a
+control the form is SHOWING. The first attempt refused over the whole record
+and `basecamp`'s drive caught it: `make()` seeds every writable column, so a
+hand-written form that renders a hostname and fills `appId` in its own
+`onsubmit` became unsubmittable, with no message anywhere. A generated control
+is refused because its message is on screen next to it; a hand-written form
+still validates where it always did, in the resource.
+
+**`$context.form.disabled` had no consumers.** Documented, provided, read by
+nothing: a disabled form rendered editable controls and a form mid-save stayed
+typable. Twelve controls resolve it now, and the context reports `disabled` and
+`submitting` separately — a field locks on either, only the submit button
+follows `submitting`, so Cancel stays live during a slow save. The controls'
+own `disabled` prop defaults to `undefined` rather than `false`, or `stated()`
+would take the default and the form could never answer.
+
+**`reset()` restored nothing** on a form given no record: `pristine` was
+`{...record}` read straight after `record` was written, and a prop write is not
+visible to a read in the same setup pass, so the baseline was `{}`.
+
+`actions` now also accepts a snippet. Every other container in the kit takes
+its trailing content as a snippet prop, so a caller who wrote
+`{#snippet actions()}` over a form got no buttons and no complaint.
+
+Underneath all this was a mesa defect (`FJS-317`): `value={null}` removed the
+attribute and left the typed text on screen, because `el.value` stops following
+its attribute once a user edits the control.
+
+## 2026-08-16 — every component is now opened in a browser (`FJS-028` closed)
+
+**66 of 66, 441 assertions, 19 specs.** The last sixteen went in three
+fixtures: Table and Pagination, then Button/Btn/Label/Card, then the ten
+display and feedback components that had been called mostly static markup.
+
+**Pagination gave both its ellipses the same key** (`FJS-315`). The window is
+compressed on both sides mid-range, so the two `'...'` markers keyed
+identically in a keyed `{#each}` — walking to page 8 of 18 left five gap nodes
+where there should be two, three of them orphans from earlier pages, while the
+current page still read correctly. Entries now carry their own `id`, and a page
+number keys on itself rather than on (number, current page), so stepping a page
+moves `aria-current` instead of rebuilding the strip.
+
+**Mesa had been warning about that the whole time.** `{#each}` reports a
+duplicate key through `console.warn`, and the drive captured `console.error`
+only. It now fails on any `[Mesa]` warning: a framework that says what is wrong
+while nothing listens is the same as a framework that says nothing.
+
+**`clickAt` scrolls an element into view when it is outside the viewport.** A
+press is dispatched at viewport coordinates, so a control below the fold was
+clicked at a point off-screen — the event landed elsewhere or nowhere, and the
+assertion after it read as a control that does nothing. It cost a false
+"Progress does not follow its value" here. It scrolls only when the element is
+actually out of view, so a spec that has positioned the page deliberately (the
+Dropdown flip case) is left alone.
+
+**The other three specs found nothing**, which is worth as much as the ones
+that did: `Button` and `Btn` render the same `.btn` and differ only in their
+defaults — the evidence `FJS-056` has been argued without — and `Label`, `Card`,
+`Table`, `Stat`, `Breadcrumbs`, `Progress`, `Spinner` and `Skeleton` all
+answered correctly on announced state and painted colour.
+
+## 2026-08-16 — the Tabs family, opened in a browser (`FJS-313`)
+
+Four components — `Tabs`, `TabList`, `Tab`, `TabPanel` — a provider and three
+consumers. `example`'s `verify:ui` had clicked a tab and read its panel since
+the screen was written, which turns out to be the only part that worked.
+
+**The arrow walk selected the disabled tab.** Not a dead focus stop: the strip
+announced a disabled tab as selected and showed its panel, then failed to focus
+it, because a disabled button refuses focus — so the next key was dispatched
+from wherever focus had been left behind and the walk continued from a tab the
+user was no longer on.
+
+**Home and End answered neither end.** They were built out of the wrapping
+`adjacent()` over a list that started at the ACTIVE tab, so Home gave the tab
+you were already on and End the one before it. They had been added to close the
+gap `tabs.css` documents and had never been run.
+
+**The fix is at the owner.** Whether a tab can be selected is `Tab`'s own prop,
+so it registers `(id, () => disabled)` — a getter, because `disabled` may change
+long after registration and a copied boolean is a strip that keeps stepping onto
+a tab the app has since turned off. `Tabs` filters on it in `adjacent`, in a new
+`edge(delta)` that Home/End ask for a real end, and in the default pick, which
+took `_registry[0]` and could open on a disabled tab nothing can then step off.
+
+`TabList`'s `typeof getActiveId === 'function'` went with it. A `const` consumer
+of `$context.x` reads the value and tracks the provider (Rule 25a), so the
+branch was dead — worth stating, because the same defensive shape reads as
+prudence and is a second answer to what a context read is.
+
+46 assertions, three of them checked against a negative control. The drive is at
+**318 passing, 50 of 66 components**.
+
 ## 2026-08-16 — the Dropdown family, opened in a browser (`FJS-312`)
 
 Four components that had never been run. Three defects came out of the first

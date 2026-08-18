@@ -3256,18 +3256,48 @@ describe('migrations — an index the app created', () => {
   })
 
   // A rebuild drops the table and takes both with it. Litestone cannot restate
-  // what it did not create (FJS-183), so it says what it is about to destroy.
-  test('a rebuild names the app-created objects it will destroy', async () => {
-    const withCol = `model Note { id Int @id  title String  scratch String }`
-    const without = `model Note { id Int @id  title String }`
-    const raw = boot(withCol, [
-      `CREATE INDEX "note_title_idx" ON "note" ("title")`,
-      `CREATE TRIGGER "note_audit" AFTER INSERT ON "note" BEGIN SELECT 1; END`,
-    ])
-    const { sql } = migrate(raw, without)
-    expect(sql).toContain('this rebuild DROPS the table, which destroys:')
+  // what it did not create, and naming them in a comment above the SQL was the
+  // wrong answer for the one reader who matters — somebody applying a migration
+  // without reading it, who is exactly who a generated file is for. So it is
+  // BLOCKED, the same shape the un-defaultable column uses (FJS-183).
+  const RB_WITH    = `model Note { id Int @id  title String  scratch String }`
+  const RB_WITHOUT = `model Note { id Int @id  title String }`
+  const RB_EXTRAS  = [
+    `CREATE INDEX "note_title_idx" ON "note" ("title")`,
+    `CREATE TRIGGER "note_audit" AFTER INSERT ON "note" BEGIN SELECT 1; END`,
+  ]
+
+  test('the auto path refuses, and names what it would have destroyed', async () => {
+    const raw = boot(RB_WITH, RB_EXTRAS)
+    const r = migrate(raw, RB_WITHOUT)
+    expect(r.state).toBe('blocked')
+    expect(r.reason).toContain('trigger note_audit')
+    expect(r.reason).toContain('index note_title_idx')
+    // Nothing ran: the column the rebuild was for is still there.
+    expect(raw.query(`SELECT * FROM pragma_table_info('note') WHERE name = 'scratch'`).all()).toHaveLength(1)
+    raw.close()
+  })
+
+  test('and the generated file comments the rebuild out rather than shipping it', async () => {
+    const raw = boot(RB_WITH, RB_EXTRAS)
+    const parsed = parse(RB_WITHOUT)
+    const sql = generateMigrationSQL(
+      diffSchemas(buildPristine(new Database(':memory:'), parsed), introspect(raw), parsed),
+      parsed)
+    expect(sql).toContain('rebuild BLOCKED')
     expect(sql).toContain('trigger "note_audit"')
     expect(sql).toContain('index "note_title_idx"')
+    // Every line of the rebuild itself is commented, so applying the file is a
+    // no-op for this table rather than a silent loss.
+    expect(sql).not.toMatch(/^\s*DROP TABLE/m)
+    expect(sql).not.toMatch(/^\s*ALTER TABLE "note_new"/m)
+    raw.close()
+  })
+
+  test('with no app-created object, the rebuild is emitted as before', async () => {
+    const raw = boot(RB_WITH)
+    expect(migrate(raw, RB_WITHOUT).state).toBe('migrated')
+    expect(raw.query(`SELECT * FROM pragma_table_info('note') WHERE name = 'scratch'`).all()).toHaveLength(0)
     raw.close()
   })
 })
@@ -9776,6 +9806,109 @@ describe('transform hooks (before/after)', () => {
   })
 })
 
+// ─── every declared operation runs its hook, exactly once ─────────────────────
+//
+// `all` iterates SETTER_OPS ∪ GETTER_OPS, so a name in either set is a promise
+// that registering on it does something. Eleven of the seventeen reached no
+// call site at all (FJS-288) — silent in both directions, since a hook that
+// never fires raises nothing either. A new operation belongs in this grid; a
+// missing row fails rather than being skipped.
+describe('hook coverage — every declared operation (FJS-288)', () => {
+  const HOOK_SCHEMA = `
+    model Post {
+      id        Int      @id
+      title     String   @unique
+      body      String?
+      deletedAt DateTime?
+      @@softDelete
+      @@fts([title])
+    }`
+
+  async function hookDb(seen: string[]) {
+    return makeDb(HOOK_SCHEMA, 'hook-grid', {
+      hooks: {
+        before: { all: [(_c: any, h: any) => { seen.push(`before:${h.operation}`) }] },
+        after:  { all: [(_c: any, h: any) => { seen.push(`after:${h.operation}`) }] },
+      },
+    })
+  }
+
+  test.each([
+    ['create',         (db: any) => db.post.create({ data: { title: 'h' } })],
+    ['createMany',     (db: any) => db.post.createMany({ data: [{ title: 'f' }, { title: 'g' }] })],
+    ['update',         (db: any) => db.post.update({ where: { title: 'a' }, data: { body: 'x' } })],
+    ['updateMany',     (db: any) => db.post.updateMany({ where: {}, data: { body: 'y' } })],
+    ['upsert',         (db: any) => db.post.upsert({ where: { title: 'd' }, create: { title: 'd' }, update: { body: 'z' } })],
+    ['upsertMany',     (db: any) => db.post.upsertMany({ data: [{ title: 'e' }], conflictTarget: 'title', update: ['body'] })],
+    ['findMany',       (db: any) => db.post.findMany()],
+    ['findFirst',      (db: any) => db.post.findFirst()],
+    ['findUnique',     (db: any) => db.post.findUnique({ where: { title: 'a' } })],
+    ['findManyCursor', (db: any) => db.post.findManyCursor({ limit: 2 })],
+    ['count',          (db: any) => db.post.count()],
+    ['exists',         (db: any) => db.post.exists({ where: { title: 'a' } })],
+    ['search',         (db: any) => db.post.search('a')],
+    ['remove',         (db: any) => db.post.remove({ where: { title: 'b' } })],
+    ['removeMany',     (db: any) => db.post.removeMany({ where: { title: 'c' } })],
+    ['delete',         (db: any) => db.post.delete({ where: { title: 'd' } })],
+    ['deleteMany',     (db: any) => db.post.deleteMany({ where: { title: 'e' } })],
+  ])('%s fires before + after exactly once, and nothing else', async (op, call) => {
+    const seen: string[] = []
+    const db = await hookDb(seen)
+    // Rows every case can address. A nested op announcing under its own name
+    // is what this catches on upsert — one call, one hook run.
+    await db.post.createMany({ data: [{ title: 'a' }, { title: 'b' }, { title: 'c' }, { title: 'e' }] })
+    seen.length = 0
+    await call(db)
+    expect(seen).toEqual([`before:${op}`, `after:${op}`])
+    db.$close()
+  })
+
+  test('a delegating helper reaches the hook of the operation it delegates to', async () => {
+    const seen: string[] = []
+    const db = await hookDb(seen)
+    await db.post.create({ data: { title: 'a' } })
+    seen.length = 0
+    await db.post.findFirstOrThrow({ where: { title: 'a' } })
+    expect(seen).toEqual(['before:findFirst', 'after:findFirst'])
+    db.$close()
+  })
+
+  test('a before hook rewrites the arguments a bulk write runs with', async () => {
+    const db = await makeDb(HOOK_SCHEMA, 'hook-bulk-args', {
+      hooks: { before: { deleteMany: [(_c: any, h: any) => { h.args.where = { title: 'no-such-row' } }] } },
+    })
+    await db.post.createMany({ data: [{ title: 'a' }, { title: 'b' }] })
+    expect(await db.post.deleteMany({ where: {} })).toEqual({ count: 0 })
+    expect(await db.post.count()).toBe(2)
+    db.$close()
+  })
+
+  test('a before hook rewrites the search text', async () => {
+    const db = await makeDb(HOOK_SCHEMA, 'hook-search-args', {
+      hooks: { before: { search: [(_c: any, h: any) => { h.args.query = 'hello' }] } },
+    })
+    await db.post.createMany({ data: [{ title: 'hello' }, { title: 'world' }] })
+    const rows = await db.post.search('world')
+    expect(rows.map((r: any) => r.title)).toEqual(['hello'])
+    db.$close()
+  })
+
+  test('an after hook replaces the result of a bulk write', async () => {
+    // No @@fts here: an FTS trigger inflates a bulk write's `count` (FJS-320),
+    // which has nothing to do with the hook and would read as one.
+    const db = await makeDb(`
+      model Post { id Int @id
+        title String @unique
+        body  String? }
+    `, 'hook-bulk-result', {
+      hooks: { after: { updateMany: [(_c: any, h: any) => ({ result: { ...h.result, touched: true } })] } },
+    })
+    await db.post.createMany({ data: [{ title: 'a' }] })
+    expect(await db.post.updateMany({ where: {}, data: { body: 'x' } })).toEqual({ count: 1, touched: true })
+    db.$close()
+  })
+})
+
 // ─── 21. Event listeners ──────────────────────────────────────────────────────
 
 
@@ -10911,6 +11044,69 @@ describe('generateTypeScript — emits the surface a real client has', () => {
       const hits = opts.split('\n').filter(l => l.trim().startsWith(`${key}?:`) || l.trim().startsWith(`${key}:`))
       expect(hits.length).toBe(1)
     }
+  })
+})
+
+// ─── generateTypeScript — the service map ────────────────────────────────────
+//
+// The half that crosses the wire. A row type nothing on the other side can name
+// is a type nobody reaches, which is what FJS-018 was: both ends existed and no
+// line joined them. The key is the SERVICE name — the plural — because that is
+// what a browser calls `client.service(name)` with, and it comes from the one
+// inflection table (Invariant 2) rather than a rule restated here.
+
+describe('generateTypeScript — ServiceTypes', () => {
+  const SERVICE_SCHEMA = `
+    model Post   { id Int @id  title String }
+    model Person { id Int @id  name  String }
+    model Status { id Int @id  label String }
+  `
+
+  test('one entry per model, keyed by the service name', () => {
+    const dts = generateTypeScript(parse(SERVICE_SCHEMA).schema)
+    const map = dts.slice(dts.indexOf('export interface ServiceTypes'), dts.indexOf('// ── Cursor'))
+
+    expect(map).toContain('posts: Post')
+    // The irregular is the point of asking inflect rather than adding an 's':
+    // Person → people, and Sierra derives Person back from `people` with the
+    // same table.
+    expect(map).toContain('people: Person')
+    // …and a word that already ends in s does not double it.
+    expect(map).toContain('statuses: Status')
+  })
+
+  test('the junction augmentation is emitted only when asked for', () => {
+    const plain = generateTypeScript(parse(SERVICE_SCHEMA).schema)
+    // A module augmentation names a package. Emitted unconditionally it is a
+    // type error in every app that installed litestone alone.
+    expect(plain).not.toContain('@frontierjs/junction/client')
+
+    const wired = generateTypeScript(parse(SERVICE_SCHEMA).schema, { augment: 'junction' })
+    expect(wired).toContain(`declare module '@frontierjs/junction/client'`)
+    // Reached under a second name: inside the augmentation `ServiceTypes` is
+    // junction's own interface, so extending it by that name is circular.
+    expect(wired).toContain('type GeneratedServiceTypes = ServiceTypes')
+    expect(wired).toContain('interface ServiceTypes extends GeneratedServiceTypes {}')
+  })
+
+  test('the map follows the audience, because a row type is what a caller may read', () => {
+    const GUARDED = `
+      model Account {
+        id     Int    @id
+        name   String
+        secret String @guarded(all)
+      }
+    `
+    const client = generateTypeScript(parse(GUARDED).schema, { audience: 'client' })
+    const system = generateTypeScript(parse(GUARDED).schema, { audience: 'system' })
+
+    expect(client).toContain('accounts: Account')
+    expect(system).toContain('accounts: Account')
+    // Same map name, different Account — the service map carries the row type
+    // the audience already decided, and does not re-decide it.
+    const rowOf = (dts: string) => dts.slice(dts.indexOf('export interface Account {'), dts.indexOf('export interface AccountCreate'))
+    expect(rowOf(client)).not.toContain('secret')
+    expect(rowOf(system)).toContain('secret')
   })
 })
 
@@ -18963,6 +19159,44 @@ describe('typed JSON path pushdown', () => {
     db.$close()
   })
 
+  // FJS-206. Neither message named the COLUMN the caller wrote, and the
+  // operator case called an operator a field.
+  test('an unknown sub-key names the column it was written on', async () => {
+    const db = await makeUserDb(); await seed(db)
+    const err = await db.user.findMany({ where: { address: { bogus: 'x' as any } as any } })
+      .catch((e: any) => e)
+    expect(err.message).toContain('"address"')
+    expect(err.message).toContain('Address has: street, city, state, postalCode')
+    db.$close()
+  })
+
+  test('an OPERATOR where a sub-key belongs says which it is', async () => {
+    const db = await makeUserDb(); await seed(db)
+    const err = await db.user.findMany({ where: { address: { has: 'Boston' as any } as any } })
+      .catch((e: any) => e)
+    // Not "Unknown field 'has'" — `has` is an operator, and the reason it is
+    // refused is that a where on a typed column is a path.
+    expect(err.message).toContain('"has" is an operator')
+    expect(err.message).toContain('"address"')
+    expect(err.message).toContain('PATH')
+    db.$close()
+  })
+
+  test('an untyped Json column says it is untyped, not that the operator is unknown', async () => {
+    const { createClient } = await import('../src/core/client.js')
+    const db: any = await createClient({
+      schema: `model Doc { id Int @id  meta Json? }`,
+      db: ':memory:',
+    })
+    await db.doc.create({ data: { id: 1, meta: { tier: 'gold' } } })
+    const err = await db.doc.findMany({ where: { meta: { tier: 'gold' } } }).catch((e: any) => e)
+    expect(err.message).toContain('"meta" is an untyped Json column')
+    // Both ways out, because neither is guessable from the message alone.
+    expect(err.message).toContain('@type(')
+    expect(err.message).toContain('json_extract')
+    db.$close()
+  })
+
   test('count() with typed JSON filter', async () => {
     const db = await makeUserDb(); await seed(db)
     const n = await db.user.count({ where: { address: { state: 'MA' } } })
@@ -24074,24 +24308,31 @@ describe('a write value that cannot be bound', () => {
 
     // The shape a caller arriving from Prisma writes first. Before the guard,
     // bun:sqlite read it as a bag of named params and dropped EVERY binding —
-    // so `update` matched no row and reported it as "no such row".
-    const bad = { views: { increment: 1 } }
+    // so `update` matched no row and reported it as "no such row". `increment`
+    // is an operator now (FJS-D27) and lands on update; every other object
+    // where a value belongs is still refused, on every path.
+    const bad = { views: { nope: 1 } }
     await expect(db.post.update({ where: { id: 1 }, data: bad })).rejects.toThrow(/views/)
     await expect(db.post.updateMany({ where: {}, data: bad })).rejects.toThrow(/views/)
-    await expect(db.post.create({ data: { title: 'b', views: { increment: 1 } } })).rejects.toThrow(/views/)
+    await expect(db.post.create({ data: { title: 'b', views: { nope: 1 } } })).rejects.toThrow(/views/)
     await expect(db.post.upsert({ where: { id: 1 }, create: { title: 'c' }, update: bad })).rejects.toThrow(/views/)
-    await expect(db.post.createMany({ data: [{ title: 'd', views: { increment: 1 } }] })).rejects.toThrow(/views/)
+    await expect(db.post.createMany({ data: [{ title: 'd', views: { nope: 1 } }] })).rejects.toThrow(/views/)
 
     const rows = await db.post.findMany()
     expect(rows).toHaveLength(1)
     expect(rows[0].views).toBe(5)
   })
 
-  test('the message says there are no atomic operators', async () => {
+  test('and an operator lands where it belongs and nowhere else', async () => {
     const db = await makeDb(S, 'bind-msg')
     await db.post.create({ data: { title: 'a' } })
-    await expect(db.post.update({ where: { id: 1 }, data: { views: { increment: 1 } } }))
-      .rejects.toThrow(/atomic update operators/)
+    expect((await db.post.update({ where: { id: 1 }, data: { views: { increment: 1 } } })).views).toBe(1)
+    // Not on create — there is no value to change — and not on upsert, whose
+    // two paths could not agree about it.
+    await expect(db.post.create({ data: { title: 'b', views: { increment: 1 } } }))
+      .rejects.toThrow(/belongs on update, not create/)
+    await expect(db.post.upsert({ where: { id: 1 }, create: { title: 'c' }, update: { views: { increment: 1 } } }))
+      .rejects.toThrow(/belongs on update, not upsert/)
   })
 
   test('a read refuses an object operand by name rather than answering nothing', async () => {
@@ -24873,6 +25114,31 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
       expect(r.valid).toBe(false)
       expect(r.errors.join(' ')).toMatch(re)
     }
+  })
+
+  // A UNIQUE constraint is over the STORED bytes and plain @encrypted uses a
+  // random IV, so the same plaintext stores differently every write and the
+  // constraint never fires. Measured before the refusal: two creates of one
+  // value, two rows, no error — a uniqueness guarantee an app believes it has.
+  test('@unique cannot be declared over a randomly-encrypted column', () => {
+    const r = parse(`model U { id Int @id  tok String @unique @encrypted }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/@unique cannot be enforced over @encrypted/)
+    expect(r.errors.join(' ')).toMatch(/deterministic: true/)
+    expect(r.errors.join(' ')).toMatch(/@hashed/)
+  })
+
+  test('and neither can @@unique naming one', () => {
+    const r = parse(`model U { id Int @id  tok String @encrypted  org String\n  @@unique([org, tok]) }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toMatch(/@@unique\(\[org, tok\]\) cannot be enforced/)
+  })
+
+  test('deterministic encryption is the way through, and the constraint fires', async () => {
+    const db = await makeDb(`model U { id Int @id @default(autoincrement())  tok String @unique @encrypted(deterministic: true) }`, 'enc-unique', K)
+    const sys = db.asSystem()
+    await sys.u.create({ data: { tok: 'same' } })
+    await expect(sys.u.create({ data: { tok: 'same' } })).rejects.toThrow(/UNIQUE constraint failed/)
   })
 
   test('a digest is never handed to any caller, by any path', async () => {

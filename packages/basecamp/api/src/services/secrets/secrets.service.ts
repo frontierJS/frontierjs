@@ -20,7 +20,7 @@
 
 import { createService, BadRequest, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, narrowPatch, dbOf, wsOf, actorOf }
+import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -86,7 +86,7 @@ export function createSecretsService(app: BasecampApp) {
       // A rotated secret is unverified again until something proves otherwise.
       if ('data' in patch) patch.isVerified = false
 
-      if (!Object.keys(patch).length) return getScoped(ctx, 'secret', 'Secret')
+      if (changesNothing(patch)) return getScoped(ctx, 'secret', 'Secret')
       return dbOf(ctx).secret.update({ where: { id: ctx.id as string }, data: patch })
     },
 
@@ -104,7 +104,7 @@ export function createSecretsService(app: BasecampApp) {
       const secret = await getScoped(ctx, 'secret', 'Secret')
       return dbOf(ctx).secret.update({
         where: { id: secret.id },
-        data:  { isVerified: true },
+        data:  { isVerified: true, version: secret.version },
       })
     },
 

@@ -9,8 +9,9 @@
 
 import { createService, NotFound, BadRequest, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, dbOf, wsOf }
+import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf }
   from '../../core/resource.ts'
+import { syncSchedule, unscheduleJob } from '../../engine/job-schedule.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
@@ -75,12 +76,7 @@ export function createJobsService(app: BasecampApp) {
       if (job.kind === 'one_shot')
         await app.jobs.dispatch('job:run', { id: job.id, workspace_id: wsId }, { queue: 'jobs' })
 
-      if (job.kind === 'scheduled' && job.cronExpression) {
-        app.scheduler.cron(job.cronExpression as string, async () => {
-          await app.jobs.dispatch('job:run', { id: job.id, workspace_id: wsId, trigger: 'scheduled' },
-            { queue: 'jobs' })
-        })
-      }
+      syncSchedule(app, job)
 
       return job
     },
@@ -94,16 +90,31 @@ export function createJobsService(app: BasecampApp) {
 
       // kind, status, appId and the run bookkeeping belong to the engine.
       const patch = narrowPatch(data, ['kind', 'status', 'appId', 'retryCount', 'lastRunAt', 'lastRunStatus', 'nextRunAt'])
-      if (!Object.keys(patch).length) return getScoped(ctx, 'job', 'Job')
-      return dbOf(ctx).job.update({ where: { id: ctx.id as string }, data: patch })
+      if (changesNothing(patch)) return getScoped(ctx, 'job', 'Job')
+
+      const updated = await dbOf(ctx).job.update({ where: { id: ctx.id as string }, data: patch })
+      // Off the UPDATED row, not off the patch: `cronExpression` is only one of
+      // the ways a job's schedule changes, and the row is what the clock has to
+      // agree with either way.
+      syncSchedule(app, updated)
+      return updated
     },
 
     async remove(ctx: ServiceContext) {
-      await getScoped(ctx, 'job', 'Job')
+      const job = await getScoped(ctx, 'job', 'Job')
       // Cancel as well as delete — a soft-deleted job left 'pending' would still
       // be picked up by anything reading status without the deletedAt filter.
-      await dbOf(ctx).job.update({ where: { id: ctx.id as string }, data: { status: 'cancelled' } })
+      //
+      // Guarded on the current status, because `cancelled -> cancelled` is not
+      // a transition and the Data boundary now refuses it: removing an already
+      // cancelled job used to be a silent no-op write and would otherwise start
+      // failing with a 409.
+      if (job.status !== 'cancelled')
+        await dbOf(ctx).job.update({ where: { id: ctx.id as string }, data: { status: 'cancelled' } })
       const removed = await removeScoped(ctx, 'job', 'Job')
+      // A soft-deleted row is invisible to every read, so a schedule still
+      // holding its id would dispatch runs for a job nobody can see.
+      unscheduleJob(app, ctx.id as string)
       app.events.emit('job:deleted', { id: ctx.id })
       return removed
     },
@@ -128,10 +139,12 @@ export function createJobsService(app: BasecampApp) {
     // ── cancel ────────────────────────────────────────────────────────
     async cancel(ctx: ServiceContext) {
       const job = await getScoped(ctx, 'job', 'Job')
-      if (!['pending', 'running'].includes(job.status))
-        throw new BadRequest(`Cannot cancel a job with status '${job.status}'`)
 
+      // `cancel: [pending, running, failed] -> cancelled` on the model is the
+      // guard. A 409 naming the moves this job CAN make beats a 400 that only
+      // says which one it cannot.
       const updated = await dbOf(ctx).job.update({ where: { id: job.id }, data: { status: 'cancelled' } })
+      unscheduleJob(app, job.id)
       app.events.emit('job:cancelled', { id: job.id, workspace_id: wsOf(ctx) })
       return updated
     },

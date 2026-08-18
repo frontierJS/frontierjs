@@ -2,11 +2,13 @@
 
 Browser extension framework for FrontierJS. MV3-first, Mesa-rendered, Junction-connected.
 
-> **Status:** Phases 0–8 complete — 423 tests green across 10 suites
-> (`bun run test`, plain `node`; verified 2026-08-02). Foundational architecture, port protocol,
-> Junction adapter, channels, Resources, Islands, dev tooling, Firefox
-> parity, and permission audit + CLI all shipped and tested. v1 feature-complete.
-> See `docs/future-refactors.md` for planned post-launch work.
+> **Status:** Phases 0–8 complete — **432 assertions pass across 10 phase files**
+> (`bun run test`, which runs plain `node` over the phases in order).
+> Foundational architecture, port protocol, Junction adapter, channels,
+> Resources, Islands, dev tooling, Firefox parity, and permission audit + CLI
+> are all shipped and tested. See [What's not yet done](#whats-not-yet-done) for
+> what is still owed; `docs/future-refactors.md` has the planned post-launch
+> work.
 
 ## What's here
 
@@ -27,31 +29,31 @@ bin/
   dev-ext.js     — dev mode CLI w/ file watching + WS broadcast
 
 test/
-  phase{0–5}.test.js  — 331 assertions across the architectural layers
+  phase{0–8}.test.js  — 431 assertions across the architectural layers, run in
+                        order by `bun run test`. Ten files (phase2.5 is one)
   fixtures/basic-ext/ — minimal smoke fixture (harbor + dock + 1 island)
 ```
 
 ## Build & test
 
-This package supports both Node 20+ and Bun 1.3+.
+This package supports both Node 20+ and Bun 1.3+. **`bun run test` runs plain
+`node`** over the ten phase files in order — the runner is node, the launcher is
+whichever you have.
 
 ```bash
-# Node
-npm install
-npm test                       # 404 assertions, all phases
-npm run build:fixture          # Chrome build → dist/chrome/
-npm run dev:fixture            # dev mode, Chrome only, WS on 8400
-
-# Bun (faster install + test runs)
 bun install
-bun run test:bun               # 404 assertions, all phases under bun
-bun bin/build-ext.js --root=test/fixtures/basic-ext --browser=chrome
-bun bin/dev-ext.js   --root=test/fixtures/basic-ext --browser=chrome --verbose
+bun run test                   # 431 assertions, all phases, under node
+bun run test:bun               # the same phases under bun's runtime
+bun run build:fixture          # Chrome build → dist/chrome/
+bun run dev:fixture            # dev mode, Chrome only, WS on 8400
+
+# npm works identically — the scripts are the same
+npm install && npm test
 ```
 
 Other build/dev targets: `build:fixture:firefox`, `build:fixture:both`,
-`dev:fixture:both` — same conventions for both Node and Bun (prefix `bun`
-to invoke the .js files directly under bun's runtime if you prefer).
+`dev:fixture:both`, and `test:phase<n>` / `test:bun:phase<n>` to run one phase
+on its own.
 
 After `build:fixture`, load `test/fixtures/basic-ext/dist/chrome/` via
 `chrome://extensions` → Developer mode → "Load unpacked".
@@ -60,18 +62,23 @@ After `build:fixture:firefox`, load `dist/firefox/` via `about:debugging`
 
 ## Monorepo layout
 
-This package lives at `frontierjs/jetty/` in the FrontierJS monorepo. Sibling
-packages it depends on (when present):
+This package lives at `packages/jetty/` in the FrontierJS monorepo. Siblings it
+reaches for (when present):
 
-- `frontierjs/mesa/` — reactive runtime + compiler. Linked via
-  `file:../mesa`. Optional — jetty falls back to stub mount if missing.
-- `frontierjs/junction/` — WebSocket service client. Linked via
-  `file:../junction`. Optional — jetty falls back to its built-in default
-  WS adapter if missing.
+- `packages/mesa/` — reactive runtime + compiler. Optional — jetty falls back to
+  stub mount if missing, which **passes a `.mesa` file through as JavaScript**
+  and fails later at Vite with a parse error inside the component. If a build
+  reports `Unexpected JSX expression` at line 1, the compiler was not found.
+- `packages/junction/` — WebSocket service client. Optional — jetty falls back
+  to its built-in default WS adapter if missing.
 
-Both are listed in `optionalDependencies`, so `npm install` / `bun install`
-succeed even when sibling clones aren't present yet. Re-install when a
-sibling shows up to pick up the link.
+Both are `optionalDependencies` (`file:../mesa`, `file:../junction`) with the
+published ranges declared as peers, so an install succeeds whether the siblings
+are in the tree or come from the registry. Re-install when one shows up.
+
+**An app installs neither.** A surface has one `package.json`, at the app root,
+so `@frontierjs/mesa` lives at `<app>/node_modules` and jetty's compiler lookup
+walks up from `extension/` to find it — see [Using it in an app](#using-it-in-an-app).
 
 ## CLI tools
 
@@ -166,9 +173,10 @@ lookup walks up from the surface to find it.
 
 - Spec: see `frontierjs-jetty-v1-spec.md` (last reviewed/patched during decision phase)
 - Mesa vision: see `Mesa Vision & Specification v1.8` (informed Phase 3 integration)
-- Sierra v0.1.0: studied to understand resource API; see `docs/future-refactors.md`
-  for the planned `@frontierjs/resources-core` extraction (Option B) that
-  would dedupe ~110 lines of pure logic between Sierra and jetty.
+- Sierra v0.1.0: studied to understand resource API. The pure logic is no longer
+  duplicated — it is `@frontierjs/toolbelt/{jsonschema,hooks}` (`FJS-059`). The
+  `@frontierjs/resources-core` package `docs/future-refactors.md` proposed was
+  refused; that document now says why.
 
 ## FJS port scheme
 

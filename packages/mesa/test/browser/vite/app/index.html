@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mesa vite drive</title>
+<script>
+  // Boot counter. A full page reload is the thing HMR exists to avoid, and it
+  // is invisible from inside the page — `window` is rebuilt either way. Session
+  // storage is not, so this counts navigations rather than module evaluations:
+  // after an edit the count must still be 1.
+  const boots = Number(sessionStorage.getItem('boots') ?? '0') + 1
+  sessionStorage.setItem('boots', String(boots))
+  window.__boots = boots
+
+  // The HMR client reports through console.debug on success and console.warn on
+  // failure, and *which* it said is the assertion — "no registered instances"
+  // is a working page that quietly reloaded instead of swapping.
+  // Every frame the page RECEIVED, which is the one thing that separates "the
+  // server never sent it" from "the client never applied it". Both are silent
+  // failures and they need opposite fixes, so the drive should not have to
+  // guess which one it is looking at.
+  window.__frames = []
+  const NativeWebSocket = window.WebSocket
+  window.WebSocket = class extends NativeWebSocket {
+    constructor(...args) {
+      super(...args)
+      this.addEventListener('message', (e) => {
+        try { window.__frames.push(String(e.data).slice(0, 500)) } catch {}
+      })
+    }
+  }
+
+  window.__hmrLog = []
+  for (const level of ['debug', 'warn', 'error']) {
+    const original = console[level].bind(console)
+    console[level] = (...args) => {
+      window.__hmrLog.push(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' '))
+      original(...args)
+    }
+  }
+</script>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

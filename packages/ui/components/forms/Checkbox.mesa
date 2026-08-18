@@ -8,14 +8,14 @@
   //
   // For a toggle-switch aesthetic, use Switch.mesa.
 
-  import { tone as toTone, cx, uid, nameToLabel, resolveError, resolveRule, stated } from '../../utils.js'
+  import { tone as toTone, cx, uid, nameToLabel, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
 
   export let checked     = false
   export let label       = ''       // falls back to @label, then the column name
   export let description = ''  // secondary line under the label
   export let name        = undefined
   export let value       = undefined
-  export let disabled    = false
+  export let disabled    = undefined  // undefined = ask the form; false overrides it
   export let required    = undefined
   export let tone        = ''
   export let error       = ''
@@ -30,6 +30,11 @@
   // without the resolution below it was the only control in a generated form
   // that could not say its own name or show its own rejection.
   const form = $context.form
+
+  // A <Form> above this control locks it two ways — the caller disabled the
+  // form, or a save is in flight — and both mean the same thing to a field.
+  // A stated prop still wins, including `disabled={false}` on a saving form.
+  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
   const rule = resolveRule(form, name)
 
   const resolvedLabel    = stated(label || undefined, rule?.title, name ? nameToLabel(name) : '') ?? ''
@@ -57,8 +62,9 @@
       name={name}
       value={value}
       checked={checked}
-      disabled={disabled}
+      disabled={resolvedDisabled}
       required={resolvedRequired}
+      {@attach nativeValidationGuard}
       aria-describedby={description ? descId : null}
       aria-invalid={displayError ? 'true' : null}
       on:change={handleChange}

@@ -12,7 +12,7 @@
 import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized, authenticate }
   from '@frontierjs/junction'
 import { requireWorkspaceRole, applyStanding, getPagination } from '../../core/hooks.ts'
-import { dbOf, actorOf, slugify, narrowPatch } from '../../core/resource.ts'
+import { dbOf, actorOf, slugify, narrowPatch, changesNothing } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
@@ -177,7 +177,7 @@ export function createWorkspacesService(app: BasecampApp) {
       // workspace between tenants, the other hands over ownership, and neither
       // belongs on a general PATCH.
       const patch = narrowPatch(data, ['accountId', 'ownerId'])
-      if (!Object.keys(patch).length) return ws
+      if (changesNothing(patch)) return ws
       return dbOf(ctx).workspace.update({ where: { id: ctx.id as string }, data: patch })
     },
 

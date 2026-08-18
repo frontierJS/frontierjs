@@ -7,7 +7,7 @@
 ## What this site is for
 
 FrontierJS is not short of documentation — `ARCHITECT.md`, `PHILOSOPHY.md`,
-`DECISIONS.md`, twelve package READMEs. What it has never had is **one page that
+`DECISIONS.md`, a README per package. What it has never had is **one page that
 makes someone want to read any of them.**
 
 That is this site's primary job: take a person from "never heard of it" to
@@ -27,7 +27,7 @@ handing off to something deeper rather than trying to be it.
    glue you never write. And authorization lives on the Model, so it travels with
    the data instead of being re-implemented in every handler.
 4. **Proof** — real code, not prose. Three panels: schema → service → UI.
-5. **The map** — twelve packages, what each is, how mature each is.
+5. **The map** — the packages, what each is, how mature each is.
 6. **The direction** — offline-first, portable, self-hostable, FOSS.
 7. **Start** — install, run, and where to read next.
 
@@ -65,8 +65,12 @@ expected to find more.
 Uses only shipped classes: `.container` `.stack` `.cluster` `.split` `.card`
 `.btn` `.badge` `.pill` `.table` `.tiles`/`.tile` `.bar` `.navlink` `.h` `.code`
 `.text-*` and the tone vocabulary (`.primary` `.muted` `.success` …). The theme
-switcher cycles the six shipped themes (`default` `sunset` `forest` `midnight`
-`dark` `elite`) — it doubles as a live demo of the design system.
+switcher cycles six of them (`default` `sunset` `forest` `midnight` `dark`
+`elite`) — it doubles as a live demo of the design system. The package ships
+**ten**; `basecamp`, `notebook`, `press` and `field` are the four this page does
+not offer, and `press` is the interesting omission — it is the token-surface
+probe, so a page that renders correctly under it is a page making no assumption
+the token vocabulary cannot carry.
 
 **Local vs deploy path.** `index.html` links `../packages/css/index.css` so the
 file renders correctly when opened straight from the repo, and so authoring always
@@ -99,23 +103,26 @@ Deploy target is any static host: `bun run build`, publish `dist/`.
 up by the root `bun run build`. Add `"website"` to the root `workspaces` array if
 you want it built with everything else.
 
-## Status assumption — read before publishing
+## Before publishing
 
-**The page is written for launch day and describes a state that is not yet true.**
-It shows `npm install` for every package. As of 2026-08-02, only two are published:
+**The install commands now resolve.** Every publishable package is on npm, so
+the `npm install` the page shows no longer 404s — which was the one hard blocker
+on putting this in front of anyone. The root README's
+[Publishing status](../README.md#publishing-status) is the list; do not restate
+it here, and do not put a version number on this page. A number written into
+marketing copy is a second origin that nothing regenerates, and this file is
+where the last one rotted for months.
 
-| Package                 | npm             |
-| ----------------------- | --------------- |
-| `@frontierjs/litestone` | `1.1.0`         |
-| `@frontierjs/cli`       | `0.0.0-beta.0`  |
-| everything else         | **unpublished** |
+Two things still to check on the way out, both of them the kind that go stale
+without rendering wrong:
 
-Do not put this site in front of anyone until the rest are published, or the first
-thing a visitor does is hit a 404 from the install command. Either publish first,
-or switch the Start section to a `git clone` flow before shipping.
-
-The package maturity notes in the table are also a snapshot. Re-verify against
-`CLAUDE.md` before launch — per `VERIFYING.md`, status claims go stale fastest.
+- **The package maturity notes in the table are a snapshot.** Re-verify against
+  the root `CLAUDE.md` — per `VERIFYING.md`, status claims go stale fastest, and
+  a table claiming a package is further along than it is burns the trust this
+  page exists to earn.
+- **The install command should pin, not float.** Below 1.0 a caret pins the
+  minor, and `latest` on an alpha framework hands a visitor whatever landed this
+  morning.
 
 ## Later
 

@@ -17,7 +17,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, stampWorkspace, narrowPatch, dbOf, wsOf, actorOf }
+import { findScoped, getScoped, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -103,7 +103,7 @@ export function createAlertsService(app: BasecampApp) {
       await getScoped(ctx, 'alertRule', 'Alert rule')
       const data  = ctx.data as Record<string, unknown>
       const patch = narrowPatch(data)
-      if (!Object.keys(patch).length) return getScoped(ctx, 'alertRule', 'Alert rule')
+      if (changesNothing(patch)) return getScoped(ctx, 'alertRule', 'Alert rule')
       return dbOf(ctx).alertRule.update({ where: { id: ctx.id as string }, data: patch })
     },
 

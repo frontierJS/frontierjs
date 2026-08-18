@@ -1396,7 +1396,7 @@ function getEditableFields() {
   if (!model) return []
   return model.fields.filter(f =>
     f.type.kind !== 'relation' &&
-    !f.attributes?.some(a => ['computed', 'generated', 'funcCall', 'id', 'guarded', 'secret', 'encrypted'].includes(a.kind))
+    !f.attributes?.some(a => ['computed', 'transient', 'generated', 'funcCall', 'id', 'guarded', 'secret', 'encrypted'].includes(a.kind))
   )
 }
 
@@ -1410,7 +1410,7 @@ function startCellEdit(e, tr, row) {
   if (!col) return
   const field = schema?.models.find(m => m.name === currentTable)?.fields.find(f => f.name === col)
   if (!field || field.type.kind === 'relation') return
-  if (field.attributes?.some(a => ['computed','generated','funcCall','id','guarded','secret','encrypted'].includes(a.kind))) return
+  if (field.attributes?.some(a => ['computed','transient','generated','funcCall','id','guarded','secret','encrypted'].includes(a.kind))) return
 
   // Don't re-edit if already editing
   if (td.classList.contains('cell-editing')) return

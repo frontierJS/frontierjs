@@ -69,6 +69,28 @@ src/
 
 ## What bites here
 
+- **Inside a watch on `page.*`, read `page.*` — not a `$:` value derived from
+  it.** Both react to the same change and the order between them is not a
+  guarantee, so a `load()` that reads the derivation sends the PREVIOUS query.
+  Measured in basecamp's `/servers/`: the first click on a sortable header
+  wrote `$orderBy=name` into the address bar and asked the server for no sort
+  at all; the second click asked for the first one. The list trails the URL by
+  one action, and it presents as a wrong sort DIRECTION rather than as a stale
+  read.
+
+- **A hand-rolled edit draft must pin its own `@version`; the resource's
+  remembered one is live.** `createResource` records a version off the STORE,
+  deliberately — a WS push reaches the store as an upsert and never passes
+  through a call result, and without it the row a second tab patched left a
+  pre-patch number here and the next patch 409'd on something nobody read. The
+  cost is the other side of it: a screen holding a DRAFT does not move with the
+  push, but its version does, so the save carries a number nobody on that screen
+  read and wins the race optimistic locking exists to lose. Measured in
+  basecamp — the other person's write was erased with the guard in place and no
+  error anywhere. Put the version in the draft; a stated one beats the
+  remembered one, and that is what `<Form record={row}>` already does by editing
+  the row whole.
+
 - **The route table is committed, because a naming convention leaves no other
   trace.** `sierra routes --config config/sierra.config.js` writes
   `routes.snapshot.md` — every URL with the file behind it, the layout the

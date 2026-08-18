@@ -5,6 +5,9 @@ title: Add server
   import { goto } from '@frontierjs/sierra/router'
   import { servers } from '../../resources/Server.mesa'
   import { ResourceValidationError } from '@frontierjs/sierra/junction'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Select from '@frontierjs/ui/components/forms/Select.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
 
   // Importing an existing machine, not provisioning a new one — Basecamp's
   // provider adapters are stubs until their env vars are set, so a wizard that
@@ -41,7 +44,7 @@ title: Add server
 
 <div class="section-header">
   <h1>Add server</h1>
-  <a class="btn ghost" href="/servers/">Back to list</a>
+  <Button variant="ghost" href="/servers/">Back to list</Button>
 </div>
 
 <div class="container narrow">
@@ -52,39 +55,33 @@ title: Add server
       </article>
     {/if}
 
-    <div class="field-group">
-      <label for="name"><span>Name</span><span class="text-danger"> *</span></label>
-      <input class="field" id="name" bind:value={draft.name} required />
-      <span class="field-hint">
-        {problem('name') ?? 'The slug is derived from this by the service, and must be unique in the workspace.'}
-      </span>
-    </div>
+    <!-- `bind:` is not used on a component here: a component binding takes a
+         writable top-level `let` in the caller, and `draft.name` is a member
+         expression. The callback is the way a field of a record is written. -->
+    <Input label="Name" name="name" id="name" required
+           value={draft.name} oninput={(e) => draft.name = e.target.value}
+           hint="The slug is derived from this by the service, and must be unique in the workspace."
+           error={problem('name')} />
 
-    <div class="field-group">
-      <label for="role">Role</label>
-      <select class="field" id="role" bind:value={draft.role}>
-        {#each roles as role}
-          <option value={role}>{role}</option>
-        {/each}
-      </select>
-    </div>
+    <!-- `bind:` is not used on a component here: a component binding takes a
+         writable top-level `let` in the caller, and `draft.role` is a member
+         expression. The callback is the way a field of a record is written. -->
+    <Select label="Role" name="role" id="role" placeholder=""
+            options={roles} value={draft.role}
+            onchange={(e) => draft.role = e.target.value} />
 
-    <div class="field-group">
-      <label for="ipAddress">IP address</label>
-      <input class="field" id="ipAddress" bind:value={draft.ipAddress} placeholder="10.0.1.10" />
-      {#if problem('ipAddress')}<span class="field-hint text-danger">{problem('ipAddress')}</span>{/if}
-    </div>
+    <Input label="IP address" name="ipAddress" id="ipAddress" placeholder="10.0.1.10"
+           value={draft.ipAddress} oninput={(e) => draft.ipAddress = e.target.value}
+           error={problem('ipAddress')} />
 
-    <div class="field-group">
-      <label for="region">Region</label>
-      <input class="field" id="region" bind:value={draft.region} placeholder="nbg1" />
-    </div>
+    <Input label="Region" name="region" id="region" placeholder="nbg1"
+           value={draft.region} oninput={(e) => draft.region = e.target.value} />
 
     <div class="cluster">
-      <button class="btn primary" type="submit" disabled={saving}>
+      <Button variant="primary" type="submit" disabled={saving}>
         {saving ? 'Adding…' : 'Add server'}
-      </button>
-      <a class="btn ghost" href="/servers/">Cancel</a>
+      </Button>
+      <Button variant="ghost" href="/servers/">Cancel</Button>
     </div>
   </form>
 </div>

@@ -34,6 +34,7 @@ title: Activity
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
 
@@ -116,6 +117,12 @@ title: Activity
   const hrefOf  = (r) => SUBJECT_ROUTE[r.subjectType] ? `${SUBJECT_ROUTE[r.subjectType]}${r.subjectId}/` : null
   const actorOf = (r) => r.actorId ? (people[r.actorId] ?? r.actorId) : r.actorType
   const when    = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+  const ACTIVITY_COLUMNS = [
+    { key: 'when', label: 'When' },
+    { key: 'who',  label: 'Who' },
+    { key: 'did',  label: 'Did' },
+    { key: 'to',   label: 'To' },
+  ]
 </script>
 
 <div class="section-header">
@@ -149,35 +156,23 @@ title: Activity
     {/each}
   </div>
 
-  <div class="table-wrap">
-    <table class="table striped hover">
-      <thead>
-        <tr>
-          <th scope="col">When</th>
-          <th scope="col">Who</th>
-          <th scope="col">Did</th>
-          <th scope="col">To</th>
-        </tr>
-      </thead>
-      <tbody id="activity-rows">
-        {#each visible as r}
-          <tr>
-            <td class="text-sm text-muted">{when(r.createdAt)}</td>
-            <td>
-              {actorOf(r)}
-              {#if r.actorType !== 'user'}<Badge tone="muted">{r.actorType}</Badge>{/if}
-            </td>
-            <td><Pill tone={toneOf(r.action)}>{verbOf(r.action)}</Pill> {r.subjectType}</td>
-            <td>
-              {#if hrefOf(r)}
-                <a href={hrefOf(r)}><code>{String(r.subjectId).slice(0, 8)}</code></a>
-              {:else}
-                <code>{String(r.subjectId).slice(0, 8)}</code>
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <Table id="activity-rows" columns={ACTIVITY_COLUMNS} rows={visible} striped>
+    {#snippet row(r)}
+      <tr>
+        <td class="text-sm text-muted">{when(r.createdAt)}</td>
+        <td>
+          {actorOf(r)}
+          {#if r.actorType !== 'user'}<Badge tone="muted">{r.actorType}</Badge>{/if}
+        </td>
+        <td><Pill tone={toneOf(r.action)}>{verbOf(r.action)}</Pill> {r.subjectType}</td>
+        <td>
+          {#if hrefOf(r)}
+            <a href={hrefOf(r)}><code>{String(r.subjectId).slice(0, 8)}</code></a>
+          {:else}
+            <code>{String(r.subjectId).slice(0, 8)}</code>
+          {/if}
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
 {/if}

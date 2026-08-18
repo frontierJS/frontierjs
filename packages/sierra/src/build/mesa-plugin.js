@@ -14,7 +14,7 @@ import { warnUnexportedSnippets, extractLayoutProps } from './warnings.js'
 import { injectAutoImports } from './auto-import-plugin.js'
 import { rewriteMesaSlots, rewriteLayoutSlots } from './slot-rewrite.js'
 import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { fileURLToPath, pathToFileURL } from 'url'
 import { existsSync } from 'fs'
 import { createRequire } from 'module'
 // The HMR boundary and its browser client are MESA'S — this package
@@ -23,7 +23,6 @@ import { createRequire } from 'module'
 // `@frontierjs/mesa/vite/hmr` import resolves to the node_modules COPY bun
 // leaves for a workspace dep, which is a snapshot of the last install.
 const HMR_CLIENT_ID = '/@frontierjs/sierra/hmr-client'
-import { readFile } from 'fs/promises'
 
 const MESA_EXTENSIONS = /\.(mesa|md)$/
 
@@ -186,11 +185,18 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
 
     // Served at Sierra's own virtual id, with Mesa's source: the id is this
     // plugin's, the runtime behind it is not.
+    //
+    // ASKED FOR, not read. The client is two files — the registry and the DOM
+    // swap jetty performs too (`FJS-259`) — and a virtual id resolves no
+    // relative import, so the source has to arrive already joined. Mesa owns
+    // that join; reading `client.js` alone would serve an import that cannot
+    // resolve, which is a dev server where every edit full-reloads.
     async load(id) {
       if (id !== HMR_CLIENT_ID) return null
-      const client = findMesaFile('mesa-vite/client.js', root)
-      if (!client) return null
-      return readFile(client, 'utf8')
+      const assembler = findMesaFile('mesa-vite/client-source.js', root)
+      if (!assembler) return null
+      const { hmrClientSource } = await import(pathToFileURL(assembler).href)
+      return hmrClientSource()
     },
 
     async buildStart() {

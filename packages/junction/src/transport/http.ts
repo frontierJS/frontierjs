@@ -16,7 +16,7 @@ import type { StaticOptions }             from './static.ts'
 import { bridge, jsonResponse, errorResponse } from './bridge.ts'
 import { toFrameworkError }               from '../core/errors.ts'
 import { createStats }                    from './types.ts'
-import { wsSend, flushOutbox, dropOutbox, setMaxQueuedBytes } from './outbox.ts'
+import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
 import type { TransportStats }            from './types.ts'
 import type { TransportContext, RawRequest, RouteHandler, MiddlewareFn,
               WsData, WsContext, WsHandlerSet,
@@ -111,7 +111,7 @@ export interface HttpTransportOptions {
   /**
    * How many bytes junction will hold for one socket that is not draining,
    * before closing it with 1013 rather than growing without bound. Default 8MB
-   * — see outbox.ts, which is also where the reason a frame needs holding at
+   * — see send-queue.ts, which is also where the reason a frame needs holding at
    * all is written down.
    *
    * There is deliberately no knob for Bun's own buffer: `maxBackpressureLimit`
@@ -836,7 +836,7 @@ export class HttpTransport {
       ip:      ws.data.ip,
       user:    ws.data.user,
       send(data: string | object): void {
-        // Never ws.send() directly. A dropped frame is silent — outbox.ts is
+        // Never ws.send() directly. A dropped frame is silent — send-queue.ts is
         // the one place that knows what Bun's return value means.
         wsSend(ws, typeof data === 'string' ? data : JSON.stringify(data))
       },
@@ -882,7 +882,7 @@ export class HttpTransport {
 
   private async _wsClose(ws: Bun.ServerWebSocket<WsData>, code: number, reason: string): Promise<void> {
     this.stats.performance.online--
-    dropOutbox(ws)
+    dropSendQueue(ws)
     const ctx = this._buildWsContext(ws)
     try { await ws.data.handlers.close?.(ctx, code, reason) } catch {}
   }
@@ -890,7 +890,7 @@ export class HttpTransport {
   private async _wsDrain(ws: Bun.ServerWebSocket<WsData>): Promise<void> {
     // The socket has room again — anything held back goes out first, in order,
     // before any handler gets a chance to write more.
-    flushOutbox(ws)
+    flushSendQueue(ws)
     const ctx = this._buildWsContext(ws)
     try { await ws.data.handlers.drain?.(ctx) } catch {}
   }

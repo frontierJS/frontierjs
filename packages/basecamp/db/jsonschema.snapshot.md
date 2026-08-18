@@ -205,7 +205,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Workspace`
 
-- gate `read:1 create:1 update:5 delete:6` · closed (`additionalProperties: false`)
+- gate `read:1 create:1 update:5 delete:6` · version field `version` · closed (`additionalProperties: false`)
 - relation `account` — belongsTo `Account` via `accountId`
 - relation `members` — hasMany `WorkspaceMember`
 - relation `projects` — hasMany `Project`
@@ -228,8 +228,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `ownerId` | `string` | yes | — | — | — |
 | `settings` | `json` = `{}` | — | — | — | — |
 | `status` | `WorkspaceStatus` = `"active"` | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `accountId`, `name`, `slug`, `ownerId` · not accepted — `id`
+**On create**: required — `accountId`, `name`, `slug`, `ownerId` · not accepted — `id`, `version`
 
 ### `WorkspaceMember`
 
@@ -251,7 +252,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Secret`
 
-- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- gate `read:5 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -263,8 +264,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `data` | `string` = `"{}"` | — | — | — | — |
 | `isVerified` | `boolean` = `false` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name` · not accepted — `id`
+**On create**: required — `workspaceId`, `name` · not accepted — `id`, `version`
 
 ### `ApiKey`
 
@@ -367,7 +369,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Network`
 
-- gate `read:2 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `appNetworks` — hasMany `AppNetwork`
 - relation `serverNetworks` — hasMany `ServerNetwork`
 
@@ -381,8 +383,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `cidr` | `string` = `"10.0.0.0/16"` | — | — | — | — |
 | `provider` | `string` = `"netbird"` | — | — | — | — |
 | `config` | `json` = `{}` | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`
+**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`, `version`
 
 ### `ServerNetwork`
 
@@ -402,7 +405,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Project`
 
-- gate `read:2 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- gate `read:2 create:4 update:4 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `environments` — hasMany `Environment`
 
@@ -416,12 +419,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `status` | `string` = `"active"` | — | — | — | — |
 | `tags` | `json` = `[]` | — | — | — | — |
 | `metadata` | `json` = `{}` | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`
+**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`, `version`
 
 ### `Environment`
 
-- gate `read:2 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- gate `read:2 create:4 update:4 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `project` — belongsTo `Project` via `projectId` · on delete Cascade
 - relation `apps` — hasMany `App`
 - relation `deployments` — hasMany `Deployment`
@@ -438,8 +442,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `tier` | `EnvironmentTier` = `"development"` | — | — | — | — |
 | `isProtected` | `boolean` = `false` | — | — | — | — |
 | `variables` | `json` = `[]` | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `projectId`, `workspaceId`, `name`, `slug` · not accepted — `id`
+**On create**: required — `projectId`, `workspaceId`, `name`, `slug` · not accepted — `id`, `version`
 
 ### `App`
 
@@ -469,7 +474,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Domain`
 
-- gate `read:2 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `app` — belongsTo `App` via `appId` · on delete Cascade
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -487,8 +492,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `certKind` | `string`? | — | — | — | — |
 | `certIssuedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `certExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `appId`, `hostname` · not accepted — `id`
+**On create**: required — `workspaceId`, `appId`, `hostname` · not accepted — `id`, `version`
 
 ### `AppServer`
 
@@ -534,6 +540,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `environment` — belongsTo `Environment` via `environmentId` · optional
 - relation `triggeredByUser` — belongsTo `User` via `triggeredBy` · optional
 - relation `steps` — hasMany `DeploymentStep`
+- transitions on `status` — `build`: pending → building · `push`: building → pushing · `release`: pushing → deploying · `succeed`: building|pushing|deploying → success · `fail`: pending|building|pushing|deploying → failed · `cancel`: pending|building|pushing|deploying → cancelled · `rollback`: success → rolled_back @5
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -585,6 +592,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `app` — belongsTo `App` via `appId` · optional
 - relation `environment` — belongsTo `Environment` via `environmentId` · optional
 - relation `runs` — hasMany `JobRun`
+- transitions on `status` — `start`: pending|failed → running · `idle`: running → pending · `fail`: running → failed · `cancel`: pending|running|failed → cancelled
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -720,7 +728,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `FeatureFlag`
 
-- gate `read:2 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- gate `read:2 create:4 update:4 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `overrides` — hasMany `FlagOverride`
 
@@ -736,8 +744,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `isEnabled` | `boolean` = `false` | — | — | — | — |
 | `rollout` | `integer` = `0` | — | — | `minimum: 0` `maximum: 100` | — |
 | `createdBy` | `string`? | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `key` · not accepted — `id`
+**On create**: required — `workspaceId`, `key` · not accepted — `id`, `version`
 
 ### `FlagOverride`
 
@@ -758,7 +767,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `NotificationChannel`
 
-- gate `read:2 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `rules` — hasMany `AlertRuleChannel`
 
@@ -774,12 +783,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `lastTestAt` | `string`? | — | — | `format: "date-time"` | — |
 | `lastDeliveryAt` | `string`? | — | — | `format: "date-time"` | — |
 | `createdBy` | `string`? | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `kind` · not accepted — `id`
+**On create**: required — `workspaceId`, `name`, `kind` · accepted and never stored — `secret` · not accepted — `id`, `version`
 
 ### `AlertRule`
 
-- gate `read:2 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `events` — hasMany `AlertEvent`
 - relation `channels` — hasMany `AlertRuleChannel`
@@ -794,8 +804,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `metricName` | `string` | yes | — | — | — |
 | `condition` | `json` = `{}` | — | — | — | — |
 | `isActive` | `boolean` = `true` | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `metricName` · not accepted — `id`
+**On create**: required — `workspaceId`, `name`, `metricName` · not accepted — `id`, `version`
 
 ### `AlertRuleChannel`
 
@@ -835,7 +846,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Dashboard`
 
-- gate `read:2 create:4 update:4 delete:4` · closed (`additionalProperties: false`)
+- gate `read:2 create:4 update:4 delete:4` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `widgets` — hasMany `DashboardWidget`
 
@@ -849,8 +860,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `icon` | `string`? | — | — | `minLength: 0` `maxLength: 8` | — |
 | `isPinned` | `boolean` = `false` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`
+**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`, `version`
 
 ### `DashboardWidget`
 

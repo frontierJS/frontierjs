@@ -1,5 +1,47 @@
 # Changes — @frontierjs/testing
 
+## 2026-08-17 — first consumer, and it found the thing this package exists to find
+
+`packages/basecamp/api/test/services.test.ts` is the first code anywhere to
+import this package. No change here was needed to make it work, which is the
+result worth recording — but mounting a real app for the first time immediately
+surfaced `FJS-333` in Junction: `autoload-services` was a `needsHost` phase, so
+`_startForTest` skipped it and **every app that autoloads had zero services in a
+test env**. Every call answered a 404 naming the service.
+
+Nothing below the API boundary could have found that, which is the argument for
+this package stated as a defect rather than as prose.
+
+Two things the first run confirmed work as documented: the zero-calls guard on
+`verifyTransportParity` (it reports *not graded* as a row rather than returning
+an empty array that looks like agreement), and the socket guard beside it. A
+full parity sweep of basecamp — every derived call, as an owner and as an
+anonymous caller — found **no mismatches**.
+
+## 2026-08-17 — the first consumer, and what it found
+
+basecamp's API tier now runs on this package (`api/test/services.test.ts`).
+Until today nothing in the repo imported it, including the app built to find
+out what the framework is missing.
+
+No change here was needed, which is the result worth recording — but mounting a
+real app immediately surfaced **`FJS-332`**: junction's `autoload-services`
+phase was `needsHost: true`, and `_startForTest` skips those, so every app that
+autoloads started with no services and every `env.as(u).service('x')` answered
+`Service 'x' not found`. That is plausibly why this package had no consumers:
+calling a service is the first thing anyone does with it.
+
+Two guards in here earned their place on the first run. `verifyTransportParity`
+reports an **underived call list** and a **socket that never connected** as
+findings rather than returning an empty array — without both, basecamp's first
+parity run would have been green while comparing nothing. It compared every
+derived call for every model service, as an owner and as a stranger, and found
+zero mismatches.
+
+The one contract that bit: `announced()` clears at **act**, not at arrange, so a
+read taken between the two still holds what earlier tests announced. Documented
+already; worth a line because the test that got it wrong looked correct.
+
 ## 2026-08-12 — transport parity: HTTP and WS answering the same call the same way
 
 `listen: true` binds a real port and `env.verifyTransportParity()` puts the same

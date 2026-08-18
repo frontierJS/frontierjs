@@ -13,7 +13,12 @@
 
 import { resolve, dirname } from 'node:path'
 import { existsSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
+import { pathToFileURL, fileURLToPath } from 'node:url'
+
+// Stands in for Mesa's DOM swap when Mesa is not installed. Resolved as a path
+// rather than imported: this module runs in Node and the file it hands back is
+// for the BROWSER bundle.
+const SWAP_FALLBACK = resolve(dirname(fileURLToPath(import.meta.url)), '../dev/mesa-swap-fallback.js')
 
 const MESA_EXTENSIONS = /\.(mesa|md)$/
 
@@ -45,6 +50,7 @@ export function mesaPlugin(options = {}) {
   let viteRoot   = process.cwd()
   let resolvedCompilerPath = null
   let resolvedRuntimePath  = null
+  let resolvedSwapPath     = null
   let stubWarned   = false
 
   return {
@@ -61,6 +67,12 @@ export function mesaPlugin(options = {}) {
     // these returns are skipped and Vite resolves via normal node resolution (which fails
     // gracefully if Mesa truly isn't there).
     resolveId(id) {
+      // The dev client imports Mesa's DOM swap by name (`FJS-259`). It must
+      // resolve even in stub mode, where the specifier is unresolvable and the
+      // failure would be a dev build that dies on a feature it is not using.
+      if (id === '@frontierjs/mesa/vite/swap' || id === '@frontierjs/mesa/vite/swap.js') {
+        return resolvedSwapPath ?? SWAP_FALLBACK
+      }
       if (!resolvedRuntimePath) return null
       if (id === '@frontierjs/mesa/runtime.js' || id === '@frontierjs/mesa/runtime') {
         return resolvedRuntimePath
@@ -101,6 +113,15 @@ export function mesaPlugin(options = {}) {
             // Runtime is sibling of compiler: same dir, runtime.js
             const runtimeP = p.replace(/compiler\.js$/, 'runtime.js')
             if (existsSync(runtimeP)) resolvedRuntimePath = runtimeP
+            // The swap lives beside the Vite plugin, not beside the compiler —
+            // one level up when the compiler is under `src/`, the same
+            // directory when it is a pre-2026-08-04 flat copy.
+            for (const swapP of [
+              resolve(dirname(p), '..', 'mesa-vite', 'swap.js'),
+              resolve(dirname(p), 'mesa-vite', 'swap.js'),
+            ]) {
+              if (existsSync(swapP)) { resolvedSwapPath = swapP; break }
+            }
             break
           } catch (e) {
             // Try next candidate

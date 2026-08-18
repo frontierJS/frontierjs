@@ -14,13 +14,13 @@
   //   <Combobox bind:value allowNew placeholder="Select or type a tag…" {options} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
 
   export let value       = undefined    // scalar — bindable
   export let options     = []           // string[] | { value, label, disabled? }[]
   export let placeholder = 'Search…'
   export let allowNew    = false        // confirm any typed string as value
-  export let disabled    = false
+  export let disabled    = undefined  // undefined = ask the form; false overrides it
   export let required    = undefined
   export let clearable   = true
 
@@ -33,6 +33,11 @@
 
   // The enclosing <Form>, when there is one — see utils.js § Form context.
   const form     = $context.form
+
+  // A <Form> above this control locks it two ways — the caller disabled the
+  // form, or a save is in flight — and both mean the same thing to a field.
+  // A stated prop still wins, including `disabled={false}` on a saving form.
+  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
   const rule     = resolveRule(form, name)
   const hasError = !!resolveError(form, name, error, errors)
 
@@ -45,6 +50,14 @@
 
   export var id = ''
   const inputId = id || uid('cb')
+
+  // Focus stays in the text box while the arrow keys move the highlight, so
+  // `aria-selected` moving down the list says nothing on its own — the input
+  // has to NAME the row Enter would take, and a row can only be named if it
+  // has an id. Indexed rather than keyed by value: an option's value is the
+  // caller's and may be anything, including a string that is not a valid id.
+  const listId = uid('cb-list')
+  const rowId  = (i) => `${listId}-${i}`
 
   // Normalise options
   function normalise(o) {
@@ -145,13 +158,16 @@
         autocomplete="off"
         spellcheck="false"
         placeholder={placeholder}
-        disabled={disabled}
+        disabled={resolvedDisabled}
         required={resolvedRequired}
+        {@attach nativeValidationGuard}
         aria-invalid={hasError || null}
         role="combobox"
         aria-expanded={open}
         aria-haspopup="listbox"
         aria-autocomplete="list"
+        aria-controls={listId}
+        aria-activedescendant={open && filtered[activeIdx] ? rowId(activeIdx) : null}
         on:input={handleInput}
         on:focus={() => open = true}
         on:blur={handleBlur}
@@ -182,7 +198,7 @@
     {#if open}
       <!-- .popover is the surface; .items.menu is the interactive list. -->
       <div class="popover fjs-combobox-panel" {@attach dropdownAnim}>
-        <ul class="items menu" role="listbox" aria-label="Options">
+        <ul class="items menu" id={listId} role="listbox" aria-label="Options">
           {#if filtered.length === 0}
             <li class="item text-muted" aria-disabled="true">
               {allowNew && query.trim() ? `Press Enter to use "${query.trim()}"` : 'No options'}
@@ -191,13 +207,21 @@
             {#each filtered as opt, i (opt.value)}
               {@const isActive   = i === activeIdx}
               {@const isSelected = opt.value === value}
+              <!--
+                mousemove, not mouseenter: the panel opens under whatever the
+                pointer was last left on, and arrow-keying a long list scrolls
+                rows under a still pointer. Either way mouseenter moves the
+                cursor to a row nobody chose and Enter takes it. Guarded
+                because mousemove fires per pixel.
+              -->
               <li
                 class="item fjs-combobox-option"
+                id={rowId(i)}
                 role="option"
                 aria-selected={isSelected}
                 aria-disabled={opt.disabled || null}
                 data-active={isActive || null}
-                on:mouseenter={() => activeIdx = i}
+                on:mousemove={() => { if (activeIdx !== i) activeIdx = i }}
                 on:click={() => select(opt)}
               >
                 <span style:flex="1">{opt.label}</span>

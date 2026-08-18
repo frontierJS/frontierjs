@@ -1,6 +1,7 @@
 ---
 title: Hub overview
 ---
+
 <script>
   // The mock's SysOverviewView — what this process is actually doing.
   //
@@ -16,9 +17,10 @@ title: Hub overview
   // other until the bus grew `stats()` (`FJS-143`).
   import { hub } from '../../resources/Hub.mesa'
 
-  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
-  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
-  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+  import Card  from '@frontierjs/ui/components/layout/Card.mesa'
+  import Pill  from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   let info    = null
   let error   = null
@@ -63,6 +65,12 @@ title: Hub overview
   // to core/app.ts appears here without this file being edited. `fleet` was
   // the fifth and nothing had to change.
   $: queues = Object.entries(info?.queues?.queues ?? {})
+  const QUEUE_COLUMNS = [
+    { key: 'queue',   label: 'Queue' },
+    { key: 'pending', label: 'Pending' },
+    { key: 'running', label: 'Running' },
+    { key: 'failed',  label: 'Failed' },
+  ]
 </script>
 
 {#if error}
@@ -105,28 +113,16 @@ title: Hub overview
 
     <Card>
       <h2 class="h4">Queue depths</h2>
-      <div class="table-wrap">
-        <table class="table striped">
-          <thead>
+        <Table id="hub-queues" columns={QUEUE_COLUMNS} rows={queues} striped hover={false}>
+          {#snippet row([name, q])}
             <tr>
-              <th scope="col">Queue</th>
-              <th scope="col">Pending</th>
-              <th scope="col">Running</th>
-              <th scope="col">Failed</th>
+              <td><code>{name}</code></td>
+              <td>{q.pending}</td>
+              <td>{q.running}</td>
+              <td>{q.failed}</td>
             </tr>
-          </thead>
-          <tbody id="hub-queues">
-            {#each queues as [name, q]}
-              <tr>
-                <td><code>{name}</code></td>
-                <td>{q.pending}</td>
-                <td>{q.running}</td>
-                <td>{q.failed}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+          {/snippet}
+        </Table>
     </Card>
 
     <Card>

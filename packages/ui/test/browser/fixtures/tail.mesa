@@ -1,0 +1,89 @@
+<script>
+  // tail.mesa — the last ten uncovered components.
+  //
+  // Mostly static markup, which is exactly why the questions asked of them
+  // are about ANNOUNCED state and PAINTED colour rather than about class
+  // names: a class list is what a render test can already see, and it is also
+  // the thing that stays right while the stylesheet underneath it moves.
+  import Badge         from '../../../components/display/Badge.mesa'
+  import Pill          from '../../../components/display/Pill.mesa'
+  import Stat          from '../../../components/display/Stat.mesa'
+  import StatCard      from '../../../components/display/StatCard.mesa'
+  import Breadcrumbs   from '../../../components/display/Breadcrumbs.mesa'
+  import EmptyState    from '../../../components/display/EmptyState.mesa'
+  import SectionHeader from '../../../components/display/SectionHeader.mesa'
+  import Progress      from '../../../components/feedback/Progress.mesa'
+  import Spinner       from '../../../components/feedback/Spinner.mesa'
+  import Skeleton      from '../../../components/feedback/Skeleton.mesa'
+
+  let pct = 30
+
+  const trail = [
+    { label: 'Home',     href: '/' },
+    { label: 'Settings', href: '/settings/' },
+    { label: 'Billing',  href: '/settings/billing/' },
+    { label: 'Invoices', href: '/settings/billing/invoices/' },
+    { label: 'INV-204' },
+  ]
+
+  let actions = 0
+</script>
+
+<div id="badges">
+  <Badge id="badge-plain">3</Badge>
+  <Badge id="badge-danger" tone="danger">9</Badge>
+  <Pill id="pill-plain">Draft</Pill>
+  <Pill id="pill-dot" tone="success" dot>Live</Pill>
+  <Pill id="pill-plan" plan="enterprise">ignored</Pill>
+</div>
+
+<div id="stats">
+  <Stat id="stat-up" label="Revenue" value="£12,400" sub="+8% on last month" trend="up" />
+  <Stat id="stat-bare" label="Seats" value="24" />
+  <StatCard id="tile-link" label="Orders" value="1,204" href="/orders/" />
+  <StatCard id="tile-loading" label="Pending" value="—" loading />
+</div>
+
+<div id="trail-all">
+  <Breadcrumbs items={trail} />
+</div>
+<div id="trail-cut">
+  <Breadcrumbs items={trail} maxItems={3} />
+</div>
+
+<div id="empty">
+  <EmptyState title="No invoices yet" description="They arrive after the first payment.">
+    {#snippet action()}<button type="button" id="empty-cta" on:click={() => actions++}>Add one</button>{/snippet}
+  </EmptyState>
+</div>
+
+<div id="heads">
+  <SectionHeader id="head-default" title="Team" sub="Who can sign in" />
+  <SectionHeader id="head-h4" title="Danger zone" level={4} border>
+    {#snippet action()}<span id="head-action">act</span>{/snippet}
+  </SectionHeader>
+</div>
+
+<div id="progress-determinate">
+  <Progress value={pct} showLabel label="Uploading" />
+</div>
+<div id="progress-indeterminate">
+  <Progress indeterminate label="Working" />
+</div>
+<div id="progress-toned">
+  <Progress value={3} max={10} tone="success" size="lg" />
+</div>
+
+<div id="spin"><Spinner label="Saving…" /></div>
+<div id="spin-lg"><Spinner size="lg" /></div>
+
+<div id="skeletons">
+  <Skeleton id="sk-text" variant="text" width="60%" />
+  <Skeleton id="sk-avatar" variant="avatar" />
+  <Skeleton variant="card" />
+</div>
+
+<button type="button" id="advance" on:click={() => pct = 75}>advance</button>
+
+<output id="actions">{actions}</output>
+<output id="pct">{pct}</output>

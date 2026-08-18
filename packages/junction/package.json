@@ -27,13 +27,15 @@
     "./openapi": "./src/plugins/openapi/index.ts",
     "./webhooks": "./src/plugins/webhooks/index.ts",
     "./manifest": "./src/plugins/manifest/index.ts",
+    "./outbox": "./src/plugins/outbox/index.ts",
     "./devtools": "./src/plugins/devtools/index.ts",
     "./client": "./src/client/index.ts",
     "./email": "./src/plugins/email/index.ts",
     "./channels": "./src/transport/channels.ts",
     "./middleware": "./src/transport/middleware.ts",
     "./health": "./src/transport/health.ts",
-    "./auth": "./src/auth/types.ts"
+    "./auth": "./src/auth/types.ts",
+    "./outbox.lite": "./db/outbox.lite"
   },
   "bin": {
     "junction": "./tools/cli.ts"
@@ -41,6 +43,7 @@
   "files": [
     "index.ts",
     "src/",
+    "db",
     "tools/",
     "!tools/check-*.mjs",
     "README.md",
@@ -60,8 +63,8 @@
     "start": "NODE_ENV=production bun run example/app.ts",
     "test": "bun test tests/",
     "typecheck": "node ../../scripts/typecheck.mjs",
-    "test:example": "bun test example/test.ts",
-    "test:all": "bun test tests/ example/test.ts",
+    "test:example": "bun test ./example/test.ts",
+    "test:all": "bun test tests/ ./example/test.ts",
     "repl": "bun run tools/repl.ts",
     "build:app": "bun run tools/build-app.ts",
     "setup": "bun run tools/setup.ts",

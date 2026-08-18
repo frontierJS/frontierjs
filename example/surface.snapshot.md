@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-7 services · 28 routes · 8 plugins · prefix /api
+7 services · 28 routes · 9 plugins · prefix /api
 ```
 
 ## App hooks
@@ -91,6 +91,7 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `pay`, `ship`, `refund`, `cancel`, `recordTracking`
 - **custom methods** — `pay`, `ship`, `refund`, `cancel`, `recordTracking`
 - **broadcasts on** — `orders`
+- **transactional** — `pay`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -100,6 +101,7 @@ name when it declares none.
 | before | `patch` | `gateAuth` → `autoValidate` |
 | before | `update` | `gateAuth` → `autoValidate` |
 | before | `remove` | `gateAuth` |
+| around | `all` | `transactionScope` |
 
 ### `products` · model `products`
 
@@ -174,7 +176,8 @@ In configure order, which is what `requires:` is checked against.
 2. `manifest`
 3. `@frontierjs/auth`
 4. `caravan`
-5. `conduit`
-6. `mailer`
-7. `notifications`
-8. `channels`
+5. `outbox`
+6. `conduit`
+7. `mailer`
+8. `notifications`
+9. `channels`

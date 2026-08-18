@@ -1,0 +1,31 @@
+<script>
+  // guard-teardown.mesa — a jagged array behind a length check (`FJS-303`).
+  //
+  // The outer loop is a fixed grid, so the row block for index 2 exists whether
+  // or not there is a row 2 — which is why the `{#if}` is there. The inner
+  // reads are `rows[i][j]`, guarded by `rows[i]`, which is the ordinary shape:
+  // a calendar over a month grid, a table over a ragged page.
+  //
+  // Shrinking the array is the moment the guard has to hold. If the inner
+  // block's reads recompute before the guard tears it down, `rows[i]` is
+  // already undefined and `rows[i][j]` throws from inside a handler — which
+  // surfaces as a component that stopped responding, not as an error anyone
+  // attributes to the guard.
+  let rows = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+
+  const grid = { length: 3 }
+</script>
+
+<div id="grid">
+  {#each grid as _r, i (i)}
+    {#if rows[i]}
+      <div class="row" data-row={i}>
+        {#each grid as _c, j (j)}<span class="cell">{rows[i][j]}</span>{/each}
+      </div>
+    {/if}
+  {/each}
+</div>
+
+<button type="button" id="shrink" on:click={() => rows = [[1, 2, 3]]}>shrink</button>
+<button type="button" id="grow" on:click={() => rows = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]}>grow</button>
+<output id="count">{rows.length}</output>

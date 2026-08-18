@@ -12,6 +12,14 @@ The empty cell is empty on purpose: a value you can neither read nor match is a 
 you deleted. Plus `@secret`, which composes `@encrypted` with guarding, auditing and
 key rotation.
 
+**Filterable is also what `@unique` means.** A UNIQUE constraint is over the stored
+bytes, and plain `@encrypted` uses a random IV — the same plaintext stores different
+ciphertext every write, so the constraint is built and can never fire. `@unique` and
+`@@unique([...])` are refused over such a column at parse rather than left to be
+discovered by a duplicate that nothing rejected. Reach for
+`@encrypted(deterministic: true)`, or `@hashed` if the value only ever has to be
+matched.
+
 ## Setup
 
 Pass a 64-character hex string (32 bytes) as `encryptionKey` to `createClient`:

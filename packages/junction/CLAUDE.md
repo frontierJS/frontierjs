@@ -6,7 +6,8 @@ webhooks, AI, OpenAPI, manifest). Sits **above** Litestone and **below** Sierra;
 never import Sierra from here (Invariant 1).
 
 `bun run test` (bun). `bun run test:all` adds the example. `bun run typecheck`
-runs against the repo's only non-zero baseline — see `scripts/typecheck-baselines.json`.
+must be **clean** — junction is absent from `scripts/typecheck-baselines.json`
+now, and absent means 0 (`FJS-034`).
 
 ---
 
@@ -27,6 +28,7 @@ src/
     litestone.ts    the Data adapter — withLitestoneDb, withTenantDb, gateAuth,
                     sessionGateLevel, toDataPrincipal, accessorCandidates
     envelope.ts     the result envelope — one module, one owner
+    outbox.ts       the transactional outbox — ctx.enqueue + the relay pass
     errors.ts       named HTTP error classes + `retryable`
     schema.ts       request validation from the generated JSON Schema
     loader.ts       auto-discovers *.service.ts (factory must be create*Service)
@@ -50,7 +52,8 @@ src/
   ../tools/errors-snapshot.ts  `junction errors` — the committed errors.snapshot.md,
                     every row a value actually thrown through toFrameworkError()
   auth/             IAuth types (implemented by @frontierjs/auth) + providers
-  plugins/          manifest, openapi, webhooks, email, devtools, shims
+  plugins/          manifest, openapi, webhooks, email, devtools, outbox, shims
+  ../db/outbox.lite the OutboxMessage model, shipped for an app to import
   mail/  cache/  scheduler/  events/  storage/  workers/  ai/  testing/
 ```
 
@@ -90,7 +93,8 @@ src/
   on `ctx.locals.db` **throws naming the service** rather than quietly doing
   nothing. It reports through `describe()`.
   - **It does not make side effects atomic.** A transaction rolls back rows, not
-    SMTP — an email an earlier `after` hook already sent stays sent (`FJS-089`).
+    SMTP — an email an earlier `after` hook already sent stays sent. Queue the
+    effect with `ctx.afterCommit(fn)` and it runs after the commit instead.
   - **It holds SQLite's single write lock for the whole pipeline**, `after` hooks
     included, so an `after` hook doing network I/O serialises every write in the
     app behind it. Off by default for that reason, and the same reason
@@ -133,6 +137,18 @@ src/
   caught as well as a service-level hook. The check matches **marked** hooks, not
   names: an app may call its own hook `publish`, and suppressing a real one on a
   name collision would silently stop broadcasting (`FJS-045`).
+- **The app-level catch-all is `app.channels.publishDefault(fn)`, and it is a
+  DEFAULT rather than a second broadcaster.** Feathers' `app.publish(fn)` had no
+  equal here, and the shape everyone reaches for —
+  `after: { all: [publish(fn)] }` — is refused by the rule above for every
+  service that also declares `channel:`, which is most of them (`FJS-334`). The
+  default is consulted only where a service declares nothing, so it composes
+  with `channel:` instead of racing it and cannot send one record twice;
+  `channel: false` opts out of it too. **Function only, no string form** — one
+  channel name for a whole app is exactly the shape that hands a subscriber rows
+  no `@@allow` would have let them read. When one is registered, `boot()` names
+  the services that fall through to it, and declaring `channel: false` on the
+  ones you meant makes the report go quiet.
 - **A filtered bulk PATCH/REMOVE writes one row at a time, and that is what
   enforces the schema.** Litestone skips `@@transitions` on `updateMany` by
   design (a power tool, caller takes responsibility) and bumps `@version`
@@ -213,6 +229,27 @@ src/
   row valid until it expires — nothing in this repo called `POST /auth/logout`
   before this), and **`tokenStorage` is the token's one owner**, so `setToken`
   persists, clears and emits `token` for anything cached per identity.
+- **A worker's SETUP arrives by `workerData`, its WORK by `postMessage`, and the
+  first one is invisible to three of the four places you would look for it.** On
+  Bun 1.3.11 `new Worker(path, { workerData })` delivers — but only to
+  `node:worker_threads`; inside the worker `globalThis.workerData`,
+  `self.workerData` and `Bun.workerData` are all `undefined`, which is what made
+  a delivered value read as a dropped parameter (`FJS-271`). `workerData()` is
+  the read half and lives beside `spawn()`, the one place a `Worker` is
+  constructed — a pool RESPAWNS after an error, and a respawned worker built
+  without the setup data serves a different configuration than its siblings.
+- **`ServiceTypes` is how the schema's types cross the wire, and it is an
+  interface an app AUGMENTS** (`client/index.ts`). `litestone types --augment
+  junction` emits the augmentation beside the rows, and `service('posts')` /
+  `resource('posts')` infer from it; empty, `keyof ServiceTypes` is `never`, so
+  the inferring overload matches nothing and every call falls to the open one.
+  Two things to keep: the overload order (inferring first — an explicit
+  `service<Foo>('x')` fails its constraint and falls THROUGH rather than
+  erroring), and `ServiceRow`'s member mapping. An interface has no implicit
+  index signature, so handing one straight to a proxy generic over
+  `Record<string, unknown>` fails the constraint and silently widens back — the
+  whole feature compiles and types nothing. `tests/client-types.test.ts`
+  compiles a fixture with `tsc` because no runtime assertion can see any of this.
 - **A 401 keeps the server's own sentence.** `_request` used to throw
   `Unauthorized` before reading the body, so `Invalid credentials` never reached
   a caller — which is most of what a hand-written sign-in page was doing when it
@@ -241,13 +278,36 @@ src/
   `@@allow(... auth().id)` matches nothing, silently.
 - **`before: { all: [...] }` applies to every method**, machine-facing endpoints included.
   A comment claiming exemption is not one.
-- **`after` means after the METHOD, not after the call succeeded.** A later
-  `after` hook throwing makes the call report failure with the earlier hook's
-  email already sent. There is no commit-scoped phase — the announcement point
-  is the only thing that waits for `!ctx.error && !pipelineError`. Put an
-  irreversible effect last in the chain, or hand it to Caravan. `FJS-089`
-  (deferred 2026-08-13 — documented rather than fixed).
-- **Never call `ws.send()` directly — `wsSend()` in `transport/outbox.ts` is the
+- **`after` means after the METHOD, not after the call succeeded — and
+  `ctx.afterCommit(fn)` is the phase that does.** Queued from any phase, drained
+  once in `callService` on `!ctx.error && !pipelineError`, after the
+  announcement and before `idem.settle`. Under `transactional:` that is after
+  the commit for free: the transaction is an `around` hook, so `runPipeline` has
+  already returned by the time the drain runs — there is no transaction state to
+  read and nothing to keep in step. **Observer tier**: a throw is logged and
+  emitted as `junction.aftercommit.error`, never reported as the call failing,
+  because the write is committed and the broadcast is out. **It is not
+  durability** — a crash between commit and callback loses the effect and
+  nothing is recorded. `ctx.enqueue` is the verb that survives that; see below.
+  The queue lives on the CONTEXT, not on `locals.db`, which the transaction hook
+  reassigns mid-pipeline.
+- **`ctx.enqueue(job, payload)` is durability, and it is a second VERB rather
+  than a flag on `afterCommit` because a closure cannot be written to a table.**
+  It writes a row into the app's own database inside the call's own transaction,
+  so the intent commits with the write or rolls back with it; the relay
+  (`app.configure(outbox())`) hands it to `app.jobs` and marks it delivered
+  (`FJS-D35`). **The row can be in no other database**: litestone opens one
+  connection per declared `database` block and holds one transaction manager,
+  over main's — measured, a row in a second block survives the rollback that was
+  supposed to take it. It **refuses by name** outside a transaction, on a schema
+  with no `OutboxMessage`, and with no relay installed, because a row nothing
+  delivers is worse than a refusal; the transaction test asks
+  `db.$inTransaction` and not the `transactional:` declaration, since a hook can
+  run against a method the declaration does not name. **Delivery is
+  at-least-once** — the queue is a different file, so the insert there and the
+  mark here cannot be one transaction — and the relay dispatches under the
+  OUTBOX ROW's id so a replay is a no-op rather than a second email.
+- **Never call `ws.send()` directly — `wsSend()` in `transport/send-queue.ts` is the
   one owner.** Bun's return value is load-bearing: `-1` means buffered, **`0`
   means the frame was DROPPED**, and ignoring it left callers waiting on replies
   that were never coming (`FJS-145`). The outbox holds a dropped frame, flushes
@@ -325,12 +385,22 @@ src/
   said. Same for `Connection.__joinMeta` and `Channel.__presenceWrapped`.
   **An assertion to `Record<string, unknown>` is the smell**: nine of the
   twenty-five here were reaching a field the type already had.
-- **This package's consumer surface must stay at zero.** `index.ts` + `src/**`
-  is what an app compiles — the `exports` map points at `.ts` and nothing emits
-  `.d.ts`, so junction's own errors land in every app's `tsc` and editor. The
-  baseline in `scripts/typecheck-baselines.json` covers `tests/` and `example/`
-  as well, so it can be green while the half that ships is not; check the split
-  before assuming a number is fine. `FJS-268`.
+- **The whole package must stay at zero, `tests/` and `example/` included.**
+  `index.ts` + `src/**` is what an app compiles (the `exports` map points at
+  `.ts` and nothing emits `.d.ts`, so junction's own errors land in every app's
+  `tsc` and editor — `FJS-268`), and there is no baseline left to hide behind:
+  junction is absent from `scripts/typecheck-baselines.json`, which means 0.
+  **The reason `tests/` counts is not tidiness.** They are the only code here
+  that uses junction the way an app does, so an error in one is an error a user
+  gets — driving the last 138 to zero found eleven defects in the shipped types,
+  including a custom method's `ctx` being an implicit `any` and
+  `app.events.on('x', () => arr.push(n))` refusing to compile (`FJS-034`).
+- **A cast in a test is a claim about the shipped type; read it before adding
+  one.** The two that are legitimate here have one owner each in
+  `tests/helpers.ts` — `stubbable` (Bun's `typeof fetch` carries `preconnect`,
+  so no plain stub is assignable) and `asRecord` (a key the type does not
+  declare, which is Invariant 5 working). Anything else is usually the type
+  being wrong.
 - **Fake clients hide real bugs.** Cross-package behaviour goes in
   `tests/real-litestone-client.test.ts`, against a real client.
 - **`tests/email.test.ts` calls `mock.module()` on the smtp shim, and bun does
@@ -376,6 +446,7 @@ mounted**, not by what you asked for.
 | Path captures | `ctx.route` | `ctx.route` — `{}` on an internal call |
 | The URL's search | `ctx.query` — **raw, `$` keys present** | `ctx.query` (filters) + `ctx.directives` (shape) |
 | Scratch | — | `ctx.locals`, fresh every call |
+| Wire-only payload keys | — | `ctx.transients` — what `@transient` declared, lifted off `ctx.data` |
 | Responding | `ctx.json` / `text` / `html` / `file` / `sse` / `paginate` | return a value; the envelope is built for you |
 | Reaching the other | — | `ctx.$raw` — the transport ctx, or `null` |
 
@@ -397,11 +468,14 @@ and handed on.
   makes the contract statable at all.
 - **`locals` exists on one side only.** A raw route has no phases, so there is
   nothing for scratch to live *between*.
+- **`transients` exists on one side only, for the opposite reason.** It is filled
+  by a derived hook off the model's schema, and a raw route has no model and no
+  hooks. A raw route's body is whatever arrived.
 
-### The four fields, and their rules
+### The five fields, and their rules
 
 The substance of a `ServiceContext` is not its field list, it is that each of
-these behaves differently. `tests/context-contract.test.ts` asserts all four by
+these behaves differently. `tests/context-contract.test.ts` asserts all five by
 running them, because none of it is expressible as a type — and one of them was
 documented here for months while being false.
 
@@ -411,6 +485,7 @@ documented here for months while being false.
 | `client` | WHERE FROM. Read-only, propagates. `{ headers: {} }` when there is no request. **Information, never authority** — nothing here grades a caller by it |
 | `route` | Path captures. Router-only, `{}` on an internal call |
 | `locals` | Per-call scratch. **Fresh `{}` every call, and it does NOT propagate** — a sub-service physically cannot reach its caller by writing to it. It CAN be handed down deliberately (`{ locals: … }`), which is the whole difference between passing and inheriting |
+| `transients` | The `@transient` keys of this call's payload — accepted on the wire, stored nowhere. `autoValidate` validates them with the model's own rules and then MOVES them here, so the write never carries one. Fresh `{}` every call, does not propagate, and there is no seed option: this is input the caller sent, not scratch a hook keeps. A model declaring none leaves it `{}` |
 
 Propagation rides the `AsyncLocalStorage` store the transport already wraps a
 request in, so nothing is threaded and no caller is rebuilt. A call whose

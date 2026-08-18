@@ -178,7 +178,8 @@ function describeField(field, access) {
 function fieldKind(field, attrs) {
   if (field.type?.kind === 'relation')    return 'relation'
   if (field.type?.kind === 'implicitM2M') return 'm2m'
-  if (attrs.some(a => a.kind === 'computed')) return 'computed'
+  if (attrs.some(a => a.kind === 'computed'))  return 'computed'
+  if (attrs.some(a => a.kind === 'transient')) return 'transient'
   if (attrs.some(a => a.kind === 'from'))     return 'from'
   if (attrs.some(a => a.kind === 'edge'))     return 'edge'
   return 'column'

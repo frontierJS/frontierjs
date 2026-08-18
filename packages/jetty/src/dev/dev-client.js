@@ -23,6 +23,8 @@
 // killed, file edited that takes the build down), we retry every 1s with
 // jitter. No exponential backoff — dev mode, fast feedback wins.
 
+import { swapInstances } from '@frontierjs/mesa/vite/swap'
+
 const RECONNECT_BASE_MS = 1000
 
 // ── Mesa HMR registry ────────────────────────────────────────────────────────
@@ -32,10 +34,12 @@ const RECONNECT_BASE_MS = 1000
 // down their DOM between hmrMark and anchor, and re-call the NEW component
 // fn (provided by dev-client after dynamic-importing the rebuilt entry).
 //
-// Adapted from @frontierjs/mesa-vite/client.js — same DOM-swap algorithm,
-// same module shape contract (default export = wrapper that creates hmrMark
-// before calling __mesaOrigFn; named __setMark export lets us inject the
-// existing mark into a re-imported module).
+// The DOM swap itself is Mesa's — `@frontierjs/mesa/vite/swap`, imported
+// rather than copied (`FJS-259`). What stays here is jetty's own half: the
+// registry on `globalThis` rather than module exports, because an MV3 content
+// script is a classic script and there is no module graph to share; the two
+// module shapes `hot_update` accepts; and a count for the dev client to report.
+// That module carries no `import.meta` for the same reason (`FJS-030`).
 
 if (typeof globalThis !== 'undefined' && !globalThis.__jettyMesa) {
   const _registry = new Map()  // id → Set<{hmrMark,anchor,props,block,fn}>
@@ -77,42 +81,7 @@ if (typeof globalThis !== 'undefined' && !globalThis.__jettyMesa) {
         return 0
       }
 
-      // Snapshot — re-rendering adds new registrations to the same set, so
-      // we copy first and remove stale entries as we go.
-      const snapshot = [...entries]
-      let count = 0
-
-      for (const entry of snapshot) {
-        const { hmrMark, anchor, props, block } = entry
-        if (!anchor.isConnected || !anchor.parentNode || !hmrMark) {
-          entries.delete(entry)
-          continue
-        }
-
-        const parent = anchor.parentNode
-        // Remove everything between hmrMark and anchor (exclusive)
-        let node = hmrMark.nextSibling
-        while (node && node !== anchor) {
-          const next = node.nextSibling
-          parent.removeChild(node)
-          node = next
-        }
-
-        // Remove old entry; the new render will add a fresh one.
-        entries.delete(entry)
-
-        try {
-          // Pre-seed the new module's __hmrMark with the existing one so
-          // the new instance registers using the same DOM marker. Then
-          // call the inner component fn directly (the wrapper would create
-          // a NEW mark; we want to reuse).
-          if (typeof newSetMark === 'function') newSetMark(hmrMark)
-          newFn(anchor, props, block)
-          count++
-        } catch (err) {
-          console.error(`[jetty:mesa-hmr] remount failed for ${id}:`, err)
-        }
-      }
+      const count = swapInstances(entries, newFn, newSetMark, id.split('/').pop())
 
       if (count > 0) {
         console.debug(`[jetty:mesa-hmr] ♻ ${id.split('/').pop()} — ${count} instance(s)`)

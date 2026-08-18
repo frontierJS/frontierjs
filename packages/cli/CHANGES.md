@@ -1,5 +1,64 @@
 # Changes
 
+## 2026-08-17 — `body-tag-in-comment` stops crying wolf (`FJS-329`)
+
+The rule flagged any `<body` inside any comment. The hazard is narrower and
+exact: Vite injects the built `<script>` at the FIRST textual match and does not
+skip comments, so a mention matters only when it comes BEFORE the real tag —
+below it, Vite has already matched. `packages/css/guide/index.html` documents its
+own markup nine lines under a real `<body>`, and has no Vite build at all, and
+was an error.
+
+`core/checks.js` is the same engine `fli check` gives a client app, so an
+over-fire ships to every app on the next release — and a check nobody trusts is
+the failure this engine exists to prevent. It now finds the first `<body` in the
+file and reports only if that one is inside a comment. A file whose ONLY body tag
+is commented still fails, because that is the same case. The finding points at
+the mention rather than at the comment enclosing it: the mention is the token to
+delete.
+
+**The other half is where it was found.** The `structure` CI phase runs
+`runChecks` over the four apps, so nothing checks this repo's own tree, and two
+errors had been sitting under a bare `fli check` at the root. The second was
+real: `packages/mesa/mesa-bench/vite.config.js` had no `strictPort`, so a bench
+run can be served beside the one it is being compared against. Fixed rather than
+allowed.
+
+Four cases in `tests/checks.test.js` — above, below, only, and a closing tag,
+which is not the injection point and never was.
+
+## 2026-08-17 — `fli outbox:install` (`FJS-D35`)
+
+Appends `import "@frontierjs/junction/outbox.lite"` to the app's `db/schema.lite`
+and pushes the schema, then prints the two lines that wire the relay.
+
+Nothing is copied, which is the difference from `fli auth:install`: auth writes
+out `model User` because the app owns it and adds columns to it. Every model
+here is machinery an app reads when something did not arrive and writes never,
+so there is nothing to hand over and a package upgrade reaches an installed app.
+`--db` becomes `into <db>` on the import line, which is also why there is no
+`@@db(main)` string rewrite here — the nearest `into` already beats it.
+
+Refuses by name on a schema that already declares or imports the model, on a
+`--db` naming a block the schema does not declare (`main` is checked like any
+other — exempting it is what let auth inject models naming a database nobody
+had), and on a junction that does not ship `db/outbox.lite`.
+
+## 2026-08-16 — a scaffolded app generates its own types (`FJS-018`)
+
+`fli new` writes a `db:types` script, and it writes TWO commands because they are
+two audiences: `--audience system` into `db/schema.d.ts` for the API, which holds
+a system client and legitimately sees `@guarded` and `@secret` columns, and
+`--audience client --augment junction` into `web/src/db.d.ts` for the browser,
+which never does. One file for both would tell browser code a column exists that
+every response strips.
+
+`--augment junction` is the half that crosses the wire — it registers the rows
+with the browser client, so `client.service('leads')` is typed from the seed
+rather than from a hand-written shape beside it. Only on the web file: the
+augmentation names `@frontierjs/junction/client`, and an api-only app has no
+browser to type.
+
 ## 2026-08-16 — the generated pages carry their own stylesheet
 
 `fli ws:atlas` linked `@frontierjs/css` from unpkg, so the one page that

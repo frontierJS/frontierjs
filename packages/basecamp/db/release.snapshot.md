@@ -104,6 +104,7 @@ table `alert_rule` · db `main` · gate `2.5`
 | `name` | `String` | no | — | **required on write** |
 | `severity` | `AlertSeverity` | no | `'warning'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
 
@@ -336,6 +337,7 @@ table `dashboard` · db `main` · gate `2.4.4.4` · @@softDelete
 | `name` | `String` | no | — | **required on write** |
 | `slug` | `String` | no | — | **required on write** |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
 | `widgets` | `DashboardWidget[]` | — | — | relation |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
@@ -416,6 +418,13 @@ table `deployment` · db `main` · gate `2.4.4.4`
 @@allow('post-update', workspaceId == auth().workspaceId)
 @@allow('read', workspaceId == auth().workspaceId)
 @@allow('update', workspaceId == auth().workspaceId)
+transition status.build: pending → building
+transition status.cancel: building, deploying, pending, pushing → cancelled
+transition status.fail: building, deploying, pending, pushing → failed
+transition status.push: building → pushing
+transition status.release: pushing → deploying
+transition status.rollback: success → rolled_back @gate(5)
+transition status.succeed: building, deploying, pushing → success
 ```
 
 ### `DeploymentStep`
@@ -485,6 +494,7 @@ table `domain` · db `main` · gate `2.5` · @@softDelete
 | `redirectTo` | `String` | yes | — | — |
 | `sslMode` | `String` | no | `'full_strict'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
@@ -518,6 +528,7 @@ table `environment` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `tier` | `EnvironmentTier` | no | `'development'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `variables` | `Json` | no | `'[]'` | — |
+| `version` | `Int` | no | `1` | — |
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
@@ -549,6 +560,7 @@ table `feature_flag` · db `main` · gate `2.4.4.5` · @@softDelete
 | `type` | `FlagType` | no | `'boolean'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `variants` | `Json` | no | `'[]'` | — |
+| `version` | `Int` | no | `1` | — |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
 
@@ -623,6 +635,10 @@ table `job` · db `main` · gate `2.4.4.5` · @@softDelete
 @@allow('post-update', workspaceId == auth().workspaceId)
 @@allow('read', workspaceId == auth().workspaceId)
 @@allow('update', workspaceId == auth().workspaceId)
+transition status.cancel: failed, pending, running → cancelled
+transition status.fail: running → failed
+transition status.idle: running → pending
+transition status.start: failed, pending → running
 ```
 
 ### `JobRun`
@@ -666,6 +682,7 @@ table `network` · db `main` · gate `2.5` · @@softDelete
 | `slug` | `String` | no | — | **required on write** |
 | `type` | `String` | no | `'mesh'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
@@ -694,8 +711,10 @@ table `notification_channel` · db `main` · gate `2.5` · @@softDelete
 | `lastTestAt` | `DateTime` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
 | `rules` | `AlertRuleChannel[]` | — | — | relation |
+| `secret` | `String` | — | — | transient |
 | `secretId` | `String` | yes | — | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
 
@@ -726,6 +745,7 @@ table `project` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `status` | `String` | no | `'active'` | — |
 | `tags` | `Json` | no | `'[]'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
 
@@ -814,6 +834,7 @@ table `secret` · db `main` · gate `5` · @@softDelete
 | `kind` | `SecretKind` | no | `'generic'` | — |
 | `name` | `String` | no | — | **required on write** |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
 | `workspace` | `Workspace` | — | — | relation |
 | `workspaceId` | `String` | no | — | **required on write** |
 
@@ -1035,6 +1056,7 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 | `status` | `WorkspaceStatus` | no | `'active'` | — |
 | `type` | `WorkspaceType` | no | `'team'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
 
 ```
 @@index(accountId)

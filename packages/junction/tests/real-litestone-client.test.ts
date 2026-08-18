@@ -216,3 +216,158 @@ describe('$search answers the list envelope', () => {
     expect(err.message).toContain('@@fts')
   })
 })
+
+// ─── @transient — validated, then lifted off the payload ─────────────────────
+//
+// The wire-only field, declared instead of conventional (`FJS-D23`). Two halves
+// have to hold together and only a real client can show it: the value is
+// validated by the model's own rules like any other field, and it is GONE from
+// ctx.data by the time the write happens — because litestone refuses a
+// transient key by name, so a service passing ctx.data on whole would fail the
+// write rather than the field.
+
+async function mkChannelDb(): Promise<AnyClient> {
+  return await createClient({
+    db: ':memory:',
+    schema: `
+      model Channel {
+        id     Int     @id
+        name   String  @length(1, 20)
+        secret String? @transient @length(4, 64)
+      }
+    `,
+  }) as unknown as AnyClient
+}
+
+describe('@transient', () => {
+
+  test('is lifted onto ctx.transients and leaves the payload', async () => {
+    const db = await mkChannelDb()
+    const c  = ctx(db, { method: 'create', data: { id: 1, name: 'ops', secret: 'hunter2' }, transients: {} })
+
+    await autoValidate('channel', 'create')(c)
+
+    expect(c.transients.secret).toBe('hunter2')
+    expect('secret' in (c.data as Record<string, unknown>)).toBe(false)
+    expect((c.data as Record<string, unknown>).name).toBe('ops')
+  })
+
+  test('and what is left writes cleanly through the real client', async () => {
+    // The half a fake db cannot show: a transient key reaching litestone throws.
+    const db = await mkChannelDb()
+    const c  = ctx(db, { method: 'create', data: { id: 1, name: 'ops', secret: 'hunter2' }, transients: {} })
+
+    await autoValidate('channel', 'create')(c)
+    const row = await db.asSystem().channel!.create({ data: c.data as Record<string, unknown> })
+    expect((row as { name: string }).name).toBe('ops')
+
+    await expect(db.asSystem().channel!.create({ data: { id: 2, name: 'x', secret: 'hunter2' } }))
+      .rejects.toThrow(/is @transient/)
+  })
+
+  test('is validated before it is lifted — the rules in the schema are the rules', async () => {
+    const db = await mkChannelDb()
+    const c  = ctx(db, { method: 'create', data: { id: 1, name: 'ops', secret: 'no' }, transients: {} })
+
+    await expect(autoValidate('channel', 'create')(c)).rejects.toThrow(/secret/i)
+  })
+
+  test('a bulk write carrying one is refused by name, never silently dropped', async () => {
+    const db = await mkChannelDb()
+    const c  = ctx(db, {
+      method: 'create',
+      data:   [{ id: 1, name: 'a' }, { id: 2, name: 'b', secret: 'hunter2' }],
+      transients: {},
+    })
+
+    await expect(autoValidate('channel', 'create')(c)).rejects.toThrow(/'secret'/)
+    await expect(autoValidate('channel', 'create')(c)).rejects.toThrow(/@transient/)
+  })
+
+  test('a model declaring none leaves ctx.transients empty', async () => {
+    const db = await mkDb()
+    const c  = ctx(db, { method: 'create', data: { id: 1, title: 'Hi' }, transients: {} })
+
+    await autoValidate('post', 'create')(c)
+    expect(c.transients).toEqual({})
+  })
+})
+
+
+describe('@version survives autoValidate — the patch schema is the UPDATE schema', () => {
+
+  // Litestone's PROPERTY SET is mode-dependent, not just its required[]:
+  // `@version` is emitted for update and omitted for create. Junction derived
+  // one create-mode document and compiled the patch validator from it, so the
+  // version a caller sent was stripped as an unknown key — and the Data
+  // boundary then refused the write for not carrying one. The whole feature was
+  // unusable through a service, and every existing test called svc.patch()
+  // directly, where no hook runs.
+
+  async function mkDocDb(): Promise<AnyClient> {
+    return await createClient({
+      db: ':memory:',
+      schema: `
+        model Doc {
+          id    Int    @id
+          title String
+          ver   Int    @version
+        }
+      `,
+    }) as unknown as AnyClient
+  }
+
+  test('the version a caller sends reaches ctx.data', async () => {
+    const db = await mkDocDb()
+    const c  = ctx(db, { service: 'docs', method: 'patch', id: 1, data: { title: 'z', ver: 1 }, transients: {} })
+
+    await autoValidate('doc', 'patch')(c)
+    expect((c.data as Record<string, unknown>).ver).toBe(1)
+  })
+
+  test('and a patch through the service lands, then conflicts on a stale one', async () => {
+    const db  = await mkDocDb()
+    await db.asSystem().doc!.create({ data: { id: 1, title: 'a' } })
+
+    const svc = createService({ name: 'docs', model: 'Doc' }) as never as
+      { patch(c: ServiceContext): Promise<Record<string, unknown>> }
+
+    const first = ctx(db, { service: 'docs', method: 'patch', id: 1, data: { title: 'b', ver: 1 }, transients: {} })
+    await autoValidate('doc', 'patch')(first)
+    expect((await svc.patch(first)).ver).toBe(2)
+
+    // The second editor still holds version 1. Without the fix this was a 400
+    // about a missing version rather than a 409 about a moved row, which is a
+    // different sentence and a different thing to do next.
+    const stale = ctx(db, { service: 'docs', method: 'patch', id: 1, data: { title: 'c', ver: 1 }, transients: {} })
+    await autoValidate('doc', 'patch')(stale)
+    await expect(svc.patch(stale)).rejects.toThrow(/ver/)
+  })
+
+  test('and the id is still stripped — a patch must not rewrite the primary key', async () => {
+    // The trap in fixing this: the UPDATE document also carries `@id`, which
+    // the create one omits. Litestone writes what it is given — `update({ where:
+    // { id: 1 }, data: { id: 99 } })` moves the row and answers 99 — so taking
+    // the whole update document would have let any caller rewrite a primary key
+    // through a PATCH. Only the version crosses.
+    const db = await mkDocDb()
+    await db.asSystem().doc!.create({ data: { id: 1, title: 'a' } })
+
+    const c = ctx(db, { service: 'docs', method: 'patch', id: 1, data: { id: 99, title: 'b', ver: 1 }, transients: {} })
+    await autoValidate('doc', 'patch')(c)
+    expect((c.data as Record<string, unknown>).id).toBeUndefined()
+    expect((c.data as Record<string, unknown>).ver).toBe(1)
+
+    const svc = createService({ name: 'docs', model: 'Doc' }) as never as
+      { patch(c: ServiceContext): Promise<Record<string, unknown>> }
+    expect((await svc.patch(c)).id).toBe(1)
+  })
+
+  test('create still omits it — a caller does not choose the first version', async () => {
+    const db = await mkDocDb()
+    const c  = ctx(db, { service: 'docs', method: 'create', data: { id: 2, title: 'a', ver: 99 }, transients: {} })
+
+    await autoValidate('doc', 'create')(c)
+    expect((c.data as Record<string, unknown>).ver).toBeUndefined()
+  })
+})

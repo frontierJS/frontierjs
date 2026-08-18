@@ -45,7 +45,7 @@ curl -X POST http://localhost:3000/users \
 Run the test suite:
 
 ```bash
-bun test            # tests/ — 776 tests across 25 files
+bun run test        # tests/ — 54 files
 ```
 
 The example app is entirely in-memory — no database, no external services, runs immediately.
@@ -78,7 +78,7 @@ Every sub-project uses the same folders — `config/` `src/` `public/` `test/` `
 `api/` and `web/` are peers, and `db/` belongs to neither — the schema is shared, so it
 sits above both. The API points Litestone's `createClient` at that one file, and the UI
 build reads the same one; nothing is copied down into either. The full layout is in the
-[root README](../../README.md#project-structure); `fli create` scaffolds it.
+[root README](../../README.md#project-structure); `fli new` scaffolds it.
 
 ---
 
@@ -145,7 +145,7 @@ packages/junction/
 │
 ├── tools/                ← repl.ts, init.ts, setup.ts, build-app.ts, generators
 ├── example/              ← runnable apps (elegant.ts is the modern demo)
-└── tests/                ← 25 files, 776 tests
+└── tests/                ← 54 files
 ```
 
 ---
@@ -573,6 +573,12 @@ app.configure(healthPlugin({
 **`GET /health`** — `200` when healthy, `503` when any check fails. Safe as a Kubernetes `readinessProbe` / `livenessProbe` target.
 
 **`GET /metrics`** — process memory, request counts, response types, WebSocket connections, cache hit rate, service registry.
+
+A plugin contributes its own block through `app.registerMetricsSource(name, fn)`
+rather than mounting a second endpoint: Caravan adds `jobs`, the outbox adds
+`outbox`. The function must be **synchronous** — its return value is assigned
+straight into the body, so a promise would serialise as `{}`; anything that
+needs a query caches it rather than running one per scrape.
 
 ---
 
@@ -1053,11 +1059,15 @@ const SCHEMA = `
   }
 `
 
-const db = await createClient('./app.db', SCHEMA, {
+// One options object, never positional. `schema` is inline text — a .lite file
+// goes in `path`.
+const db = await createClient({
+  schema: SCHEMA,
+  db:     './app.db',
   plugins: [new GatePlugin({ async getLevel(user) {
     if (!user) return LEVELS.STRANGER
     return (user as { role: string }).role === 'admin' ? LEVELS.ADMINISTRATOR : LEVELS.USER
-  }})]
+  }})],
 })
 
 const jsonSchema = generateJsonSchema(db.$schema)
@@ -1208,6 +1218,105 @@ createService({
 
 > ⚠️ **V2 — `app.transaction()`** will provide a transaction-aware service caller that preserves the hook pipeline and defers events until commit. Until then, `db.$transaction()` is the documented escape hatch with the tradeoffs above.
 
+### `ctx.afterCommit()` — the effect that must not run early
+
+`after` means after the **method**, not after the call. Hooks run in sequence,
+so an `after` hook that sends an email runs, a later `after` hook throws, and
+the client is told the call failed with the email already gone — and under
+`transactional:` the row is rolled back while the email stays sent.
+
+```typescript
+hooks: {
+  after: {
+    create: [(ctx) => {
+      // Queued here, run only if the whole call succeeds — and, under
+      // `transactional:`, only after the transaction commits.
+      ctx.afterCommit(() => app.conduit.send('order.placed', { to, order: ctx.result }))
+    }]
+  }
+}
+```
+
+Queue from any phase; callbacks run once, in order, after the announcement.
+Three things to know:
+
+- **A throw does not fail the call.** The write is committed and the broadcast
+  is out — a 500 would tell the client a write failed that did not. It is logged
+  and emitted as `junction.aftercommit.error`, and the remaining callbacks run.
+- **Not durability.** A crash between the commit and the callback loses the
+  effect; nothing is recorded anywhere that it was owed. `ctx.enqueue()` below
+  is the verb that survives that.
+- **A failed call runs nothing**, even where the write itself committed (no
+  `transactional:`). The effect follows the call's verdict, which is the same
+  condition the real-time announcement uses.
+
+### `ctx.enqueue()` — the effect that must not be lost
+
+`afterCommit` buys ordering. It buys nothing against a **crash**: the process
+dies between the commit and the callback, and the email is simply never sent —
+with no row anywhere saying it was owed.
+
+`ctx.enqueue(job, payload)` writes an intent into your own database **inside the
+call's own transaction**, so it commits with the write or rolls back with it. A
+relay hands it to `app.jobs` afterwards and marks it delivered.
+
+```bash
+fli outbox:install     # imports the OutboxMessage model into db/schema.lite
+```
+
+```typescript
+import { outbox } from '@frontierjs/junction/outbox'
+
+app.configure(createCaravan({ jobsDir: './api/jobs' }))   // the relay needs a queue
+app.configure(outbox())
+
+createService({
+  name:          'orders',
+  transactional: ['pay'],
+
+  async pay(ctx) {
+    const order = await ctx.locals.db.order.transition(ctx.id, 'pay')
+    await ctx.enqueue('announce-payment', { orderId: order.id })
+    return order
+  },
+})
+```
+
+**Two verbs and not one verb with a flag**, because a closure cannot be written
+to a table. Anything that must outlive the process has to be addressed by name,
+so the API says so rather than letting the first crash say it.
+
+- **The row lives in your app's database and can live nowhere else.** Litestone
+  opens one connection per declared `database` block and holds a single
+  transaction manager, over `main`'s — a row written to a second database
+  survives the rollback that was supposed to take it. That is also why the job
+  queue stays its own file.
+- **It refuses rather than degrades**: outside a transaction, on a schema with
+  no `OutboxMessage`, or with no relay configured. A row nothing delivers is
+  worse than an error. The transaction test asks the client
+  (`db.$inTransaction`), not the `transactional:` declaration, because a hook
+  can run against a method that declaration does not name.
+- **Delivery is at-least-once and no version of it is not.** The queue is a
+  separate SQLite file, so the insert there and the delivery mark here cannot be
+  one transaction. The relay dispatches under the outbox row's own id and
+  Caravan treats a taken job id as work already queued, so a crash in between
+  replays into a no-op — but **write your handlers to be idempotent anyway**,
+  which is the queue's own retry contract regardless.
+- **The timer is recovery, not latency.** A committed call kicks the relay
+  immediately; `intervalMs` (default 5s) is how long a row left behind by a
+  crash waits.
+
+`GET /metrics` answers `outbox: { pending, delivered, failed, lastPassAt }` —
+`pending` is a count and therefore a query, so it is refreshed once per relay
+pass rather than once per scrape.
+
+| option | default | |
+| --- | --- | --- |
+| `intervalMs` | `5000` | how often the recovery sweep runs |
+| `batch` | `50` | rows per pass |
+| `claimTimeoutMs` | `30000` | when a claim from a dead relay is retaken |
+| `retentionMs` | 7 days | how long a delivered row is kept; `0` keeps forever |
+
 ---
 
 ## File uploads
@@ -1274,7 +1383,7 @@ put.
 
 ---
 
-
+## Testing
 
 ```typescript
 import { createTestApp, testCtx, request, callService } from '@frontierjs/junction'
@@ -1308,7 +1417,10 @@ app.configure(csrf({ origins: ['https://myapp.com'] }))  // queued
 const res = await request(app).options('/notes')
 expect(res.status).toBe(204)
 ```
-```
+
+For a test that needs a real database, real factories and a principal bound into
+every call, `@frontierjs/testing` composes this with Litestone's `createTestEnv`
+— it sits above this package, so it can mount an app where Litestone cannot.
 
 ---
 
@@ -1457,6 +1569,41 @@ app.scheduler.once('30 seconds', async () => { /* warmup */ })
 
 ---
 
+## Workers
+
+Bun threads for CPU work that would otherwise block the event loop. A worker
+receives two different things by two different routes: **setup**, once, at
+construction, and **work**, repeatedly, over `postMessage`.
+
+```typescript
+import { createThread, createPool } from '@frontierjs/junction'
+
+const thread = createThread('./workers/resize.ts', { quality: 82 })
+thread.on('message', out => console.log(out))
+thread.postMessage({ file: 'a.jpg' })
+
+// A pool queues when every worker is busy. Each one — including a worker
+// respawned after an error — is constructed with the same setup data.
+const pool = createPool('./workers/resize.ts', 4, { quality: 82 })
+const out  = await pool.exec({ file: 'b.jpg' })
+```
+
+Inside the worker:
+
+```typescript
+import { workerHandler, workerData } from '@frontierjs/junction/workers'
+
+const { quality } = workerData<{ quality: number }>() ?? { quality: 90 }
+
+workerHandler(async ({ file }) => resize(file, quality))
+```
+
+`workerData()` is `undefined` on the main thread and in a worker given none, so
+`?? fallback` reads the same in both places. A handler that throws **rejects**
+the `pool.exec()` promise and counts on `stats().errors` — a worker cannot reject
+its caller's promise from inside itself, so it posts an envelope back and the
+pool translates it.
+
 ## Browser client
 
 `@frontierjs/junction/client` is a zero-dependency browser client for connecting Sierra/Mesa frontends (or any browser app) to a Junction API. Import as ESM or bundle with Vite.
@@ -1498,6 +1645,40 @@ await client.auth.requestPasswordReset(email)
 
 A Sierra app gets a reactive `session` object and a `ready` promise over the
 top of this — see `@frontierjs/sierra/junction`.
+
+### Typed from the schema
+
+The row types Litestone generates reach the browser through **one registry**, so
+a service name types itself and no call site restates anything:
+
+```bash
+litestone types --schema db/schema.lite --audience client \
+                --augment junction --out web/src/db.d.ts
+```
+
+That file carries the rows AND the augmentation that registers them:
+
+```typescript
+declare module '@frontierjs/junction/client' {
+  interface ServiceTypes extends GeneratedServiceTypes {}
+}
+```
+
+```typescript
+const rows = await client.service('posts').findData()
+rows[0].title      // string
+rows[0].slug       // error — not a column on Post
+```
+
+`--audience client` is the audience that belongs in a browser: `@guarded` and
+`@secret` columns are stripped from the row, which is what every response does
+too. A scaffolded app has this as `bun run db:types`, generating the system
+audience for the API beside it.
+
+An app that generates nothing is unaffected — the registry is empty, so
+`keyof ServiceTypes` is `never`, and `service('posts')` answers the open
+`Record<string, unknown>` it always did. `service<Post>('posts')` still works,
+declared or not.
 
 **Service proxy** — CRUD methods prefer WebSocket when connected, fall back to HTTP automatically. File uploads always use HTTP (multipart/form-data):
 

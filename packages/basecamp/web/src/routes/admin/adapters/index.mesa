@@ -3,6 +3,7 @@ title: Adapters
 ---
 <script>
   import { portal } from '../../../resources/Portal.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
   let rows    = []
   let error   = null
@@ -65,9 +66,9 @@ title: Adapters
           <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
         </dl>
         <div class="cluster">
-          <button class="btn ghost" disabled={busy === entry.id} on:click={() => ping(entry)}>
+          <Button variant="ghost" disabled={busy === entry.id} onclick={() => ping(entry)}>
             {busy === entry.id ? 'Checking…' : 'Check now'}
-          </button>
+          </Button>
         </div>
       </article>
     {/each}

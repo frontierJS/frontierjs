@@ -1,5 +1,491 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-18 — an app-level default publisher (`FJS-334`)
+
+Junction had two ways to broadcast and both were per service: `channel:` on the
+definition, and a `publish()` hook in `after`. Feathers has a third —
+`app.publish(fn)`, one catch-all deciding where every service event goes — and
+it is how a tenant-shaped app writes *everything a caller may hear goes to their
+own account channel* once instead of once per service.
+
+The shape everyone reaches for was not merely undocumented, it was **refused**:
+`app.hooks({ after: { all: [publish(fn)] } })` trips `refuseDoubleBroadcast` for
+every service that also declares `channel:` — which is every model service in
+`example` and `basecamp` — so an app-level publish hook was a boot failure. The
+refusal is right, both really do send, but it left the catch-all with no
+spelling at all, and the resulting shape is a rule holding for twenty services
+written twenty times, where the missed one is a screen that silently never
+updates.
+
+`app.channels.publishDefault(fn)` is that spelling, and the whole of the design
+is that it is a **default, not a second broadcaster**: it is consulted only
+where a service declares nothing, so it composes with `channel:` rather than
+racing it and cannot put one record on the wire twice. The three states a
+service already had are what make that work — `channel: 'posts'` says where and
+is not asked the default, `channel: false` is the declared opt-out and refuses
+it, absent asks the app.
+
+**Function only, no string form.** A string would name one channel for every
+service in the app, which is precisely the shape that hands a subscriber rows no
+`@@allow` would have let them read — the reason broadcasting is opt-in at all
+(`DECISIONS.md` § API design, 2026-08-02). A function is handed the record and
+the `ctx`, so the app decides per record, and returning `null` skips that one.
+
+**The report is the other half, because this inverts a failure mode.** Before
+it, forgetting `channel:` meant a screen that never updates — visible, and
+yours. After it, the same omission puts records on the wire under a rule written
+for other services, which nothing on the server can see. So the channels plugin
+reports at `boot()` which services fall through to the default, and only when a
+default is registered: with none, that list is the ruled, intended state and
+would fire on nearly every service in every app, which is how a warning gets
+trained out. It extinguishes itself — `channel: false` drops a service from the
+list, so an app that has read it once and meant it never sees it again.
+
+`describe()` gained `channel` with it, a summary a JSON reader can hold: the
+name for the string form, `true` for a function, `false` for the opt-out, `null`
+for a service that declares nothing. `null` is not `false` — one asks the
+default, the other refuses it.
+
+Eleven tests in `tests/publish-default.test.ts`, against the **real** channel
+manager rather than a stub with a recording `publish`: the whole question is
+which channel a frame resolves onto, and a stub that ignores the resolver
+answers it by construction. Three mutants, all killed — dropping the fallback,
+firing the report unconditionally, and a no-op unsubscribe. Verified: junction
+1209 + 11 pass, typecheck clean, `example`'s `verify:live` 14/14.
+
+## 2026-08-17 — `@version` reaches the Data boundary (`FJS-335`)
+
+Litestone's JSON Schema property set is **mode-dependent**, not just its
+`required[]`: `@version` is emitted for `update` and omitted for `create`.
+Junction derived one document — `generateJsonSchema(c.$schema)`, no options, so
+`mode: 'create'` — and compiled both validators from it. The patch validator
+therefore had no `version` property, `parse()` dropped the caller's value as an
+unknown key, and litestone refused the write for not carrying one.
+
+Every patch of every `@version` model was a 400 saying the version was missing,
+from a request that had sent it. The feature did not work through a service at
+all.
+
+Nothing was red because junction's own `@version` tests call `svc.patch(ctx)`
+directly, where no hook runs. That also made the bulk guard — *a bulk patch
+cannot carry a version, it is per row* — unreachable in a real app, since
+`autoValidate` had already removed the key it tests for.
+
+`_deriveJsonSchema` now caches per mode, and the patch validator is compiled
+from the create property set **plus the version column** — not from the update
+document whole. That distinction is the trap in fixing it: the update document
+also carries `@id`, litestone writes what it is given, and
+`update({ where: { id: 1 }, data: { id: 99 } })` moves the row and answers 99.
+Taking the whole thing would have let any caller rewrite a primary key through
+a PATCH.
+
+Four tests in `tests/real-litestone-client.test.ts` run through `autoValidate`
+before the service, including that one; three fail against the version of this
+fix they each guard.
+
+## 2026-08-17 — `cors()` allows the headers the client itself sends (`FJS-336`)
+
+The default allow-list was `Content-Type, Authorization, X-API-Key`. The browser
+client sends `X-Service-Method` to address a custom method over HTTP,
+`X-Workspace-Id` on every call once `setWorkspace()` has been used, and
+`callService` reads `Idempotency-Key`. None was allowed, so a cross-origin
+preflight refused the request and it never arrived.
+
+This is invisible in both apps here: a service call takes the socket when one is
+connected, and CORS does not apply to a WebSocket. The HTTP path is the
+fallback, and the fallback was dead — measured from basecamp's own page, where
+`fetch` with `X-Workspace-Id` from `:8020` to `:8120` answers
+`TypeError: Failed to fetch`.
+
+All three are junction's own protocol headers, so they belong in the default
+rather than in every app's config.
+
+## 2026-08-17 — `normalizeOrderBy` is exported
+
+`autoSort` VALIDATES a request's `$orderBy` — it asks `db.$checkOrderBy` and
+answers a 400 naming the key — and then leaves the value RAW on
+`ctx.directives`. A service that wants to honour it therefore has to parse the
+three spellings (`'name'`, `'-createdAt'`, `{ name: 'asc' }`) itself, and doing
+that in a service is how the grammar acquires a second definition.
+
+`normalizeOrderBy`, `comparatorFor` and `compareValues` are now on the package's
+public surface. `core/sort.ts` is already named in the Bridge index as *the one
+reading of `orderBy`*; this is that sentence being true from outside the
+package too.
+
+## 2026-08-17 — services autoload in the test lifecycle too (`FJS-333`)
+
+`autoload-services` was `needsHost: true`. `_startForTest` skips those — they
+bind a port, read a config file, install signal handlers — and this one does
+none of that: it reads a directory and builds objects.
+
+The cost was invisible until an app was mounted by `@frontierjs/testing` for the
+first time. Every call answered `NotFound: Service 'projects' not found` — a 404
+that reads like a wrong service name rather than an app with no services in it,
+which sends you looking at the wrong thing entirely.
+
+The flag is dropped. A missing directory is already a silent no-op, so an app
+that autoloads nothing is unaffected. What a test still cannot reach is
+`_junction.services.dir`: `load-config` IS `needsHost`, so `junction.config.js`
+is not read there — an app that wants its services mounted in a test states
+`autoload:` on `createApp` directly, which is also the only form that survives
+`Bun.main` pointing at the test runner instead of the entry point.
+
+1193 tests green.
+
+## 2026-08-17 — services autoload in the test lifecycle (`FJS-332`)
+
+`autoload-services` was `needsHost: true`. The test lifecycle skips those, so an
+app mounted by `@frontierjs/testing` started with **no services at all** and
+every call answered `NotFound: Service 'x' not found` — a 404 that reads like a
+wrong name rather than an app that never loaded anything.
+
+The flag is dropped. Registering services reads a directory and builds objects;
+it binds nothing, and a missing directory is already a silent no-op, so running
+it without a host costs nothing.
+
+`load-config` is still `needsHost`, which is the one thing a test cannot reach:
+`junction.config.js` is not read, so `_junction.services.dir` is unavailable and
+an app that wants its services in a test states `autoload:` directly. The
+default resolves `./services` beside `Bun.main`, and under `bun test` that is
+the test runner — so an explicit path is the right answer there regardless.
+
+Found by making basecamp the first consumer of `@frontierjs/testing`. It is
+plausibly why that package had no consumers: the first thing anyone does with it
+is call a service.
+
+## 2026-08-17 — the pretty log line: key=value, and no ANSI into a pipe
+
+1193 tests, 0 fail. Typecheck clean. Presentation only — the JSON writer, the
+file writer and the `LogEntry` shape are untouched, so nothing a collector reads
+changed.
+
+**A boot line's `data` was `JSON.stringify`'d onto the end as one dim blob**, so
+the line carrying the most information was the least readable thing on screen:
+five keys of braces and quotes at the moment an app comes up. It renders as
+`key=value` now, key dim and value bright, a string quoted only when it holds a
+space or an `=`. This is the first half of `FJS-D37` §2 — a runtime log is a
+stream and gets a stream's format.
+
+**Undefined values are dropped, because `JSON.stringify` dropped them.** The app
+banner passes two (`prefix`, `docs`), which the blob had been hiding and the new
+renderer showed on every boot; `null` is kept, since stringify kept it and a
+stated null is an answer where an absent key is not. Found by reading the suite's
+own output after the change.
+
+**The pretty writer emitted escape codes unconditionally**, so `bun run api > log`
+recorded them as log content. It now honours `NO_COLOR`/`FORCE_COLOR`/TTY, the
+same rule `packages/cli/core/color.js` already applied. `env.ts` was the only
+other raw-ANSI writer in `src/` and imports the gate rather than restating the
+predicate — env validation runs before an app, and therefore before its logger,
+exists, so its two lines stay direct writes to stderr.
+
+## 2026-08-17 — `ctx.transients`, the fifth context field (`FJS-D23`)
+
+1186 tests + 6 new, 0 fail. Typecheck clean.
+
+`autoValidate` now validates the `@transient` keys a model declares with that
+model's own rules and then LIFTS them off `ctx.data` onto `ctx.transients`. The
+value has to leave the payload: litestone refuses a transient key by name, so a
+service passing `ctx.data` on whole would fail the write rather than the field.
+
+`transients` is a context field rather than a corner of `locals`, and the line
+between them is who writes it — `locals` is scratch a hook keeps its own state
+in, `transients` is call INPUT the framework parsed, the way `directives` is the
+input the bridge splits off a query. Fresh `{}` per call, does not propagate, no
+seed option, `{}` on a model that declares none. `tests/context-contract.test.ts`
+asserts both halves by running them.
+
+**A bulk write carrying one is refused by name.** The rows a service receives are
+the ones that PASSED validation — `partitionBulk` parks the rest — so an
+index-aligned array of per-row values would pair one row's credential with
+another row.
+
+The compiler found the third context factory: `app.ts`'s internal-call `makeCtx`,
+which a required field surfaced and a search for `locals: {}` had missed.
+
+## 2026-08-17 — a durable effect: `ctx.enqueue` and the outbox relay (`FJS-D35`)
+
+1186 tests, 0 fail. Typecheck clean.
+
+`ctx.afterCommit(fn)` runs an effect only if the call succeeded and the
+transaction committed. It buys nothing against a **crash**: the process dies
+between the commit and the callback and the effect is never done, with nothing
+anywhere recording that it was owed.
+
+`ctx.enqueue(job, payload)` writes a row inside the call's own transaction
+instead, so the intent commits with the write or rolls back with it, and a relay
+hands it to `app.jobs` afterwards.
+
+**Two verbs, not one verb with a flag.** A closure cannot be written to a table.
+Everything durable has to be addressed by name, so the API says so rather than
+letting the first crash say it.
+
+```ts
+ctx.afterCommit(() => app.conduit.send(…))   // a function  — dies with the process
+await ctx.enqueue('order.shipped', { id })   // name + payload — survives it
+```
+
+**The row is in the app's own database and can be nowhere else, which is
+measured.** Litestone opens one connection per declared `database` block and has
+exactly one transaction manager, over main's write connection: a probe writing
+to two databases inside `$transaction` and then throwing rolled main back and
+left the other row standing. `$attach` does not help either — SQLite's atomic
+multi-file commit needs rollback-journal mode on every attached file, and both
+Caravan's queue and litestone's tenants run WAL.
+
+So `db/outbox.lite` ships here, `@@gate("8")`, and is IMPORTED rather than
+pasted — the split `@frontierjs/auth` already makes, because machinery that
+changes when this package changes has to reach an installed app. `fli
+outbox:install` writes the import line; `outboxSchemaFragment(db)` is the
+in-memory alternative for an app assembling one schema string.
+
+**Refusals by name, never degradation.** Outside a transaction, on a schema with
+no `OutboxMessage`, and with no relay installed — a row nothing delivers is
+worse than a refusal. The transaction test asks `db.$inTransaction` (new in
+litestone, on every client flavour) rather than reading the `transactional:`
+declaration: a hook can run against a method the declaration does not name.
+
+**Delivery is at-least-once and no version of it is not.** The queue is a
+separate SQLite file, so the insert there and the delivery mark here cannot be
+one transaction. The relay dispatches under the OUTBOX ROW's id and caravan's
+`dispatch({ id })` treats a taken primary key as work already queued, so a crash
+in between replays into a no-op instead of a second email.
+
+`app.configure(outbox())` installs the relay — `requires: ['caravan']`, and boot
+refuses a schema with no model by name rather than waiting for the first
+`enqueue`.
+
+**`transport/outbox.ts` is now `transport/send-queue.ts`**, with `flushOutbox` →
+`flushSendQueue`, `dropOutbox` → `dropSendQueue` and `OutboxSocket` →
+`SendQueueSocket`. Two unrelated things called an outbox in one package is a
+trap, and the WebSocket one was the casual name — it is a send buffer that holds
+a frame Bun dropped, where the transactional outbox is a pattern with a
+literature. `wsSend` is unchanged: it is what anyone debugging a lost frame
+greps for. Older entries below name the new path. A committed call kicks it without awaiting; the timer is the recovery
+sweep for what a crash left behind, not the latency of an ordinary effect.
+
+`GET /metrics` answers `outbox: { pending, delivered, failed, lastPassAt }`,
+contributed through `app.registerMetricsSource` rather than mounted as a second
+endpoint. *How many effects are owed* is the first question asked when something
+did not arrive, and there was no way to ask it without opening the database. The
+counters cover both drivers because `app.outbox.deliver()` is the one place
+either goes through; `pending` is a COUNT and therefore a query, refreshed once
+per relay pass rather than once per scrape — a metrics endpoint that queries per
+request is a load amplifier pointed at your own database. A source must be
+synchronous, since `/metrics` assigns `fn()` straight into the body.
+
+*11 tests here against a real Litestone client; the delivery half is 16 more in
+caravan, where a real queue exists to hand rows to. Eight mutants, all killed —
+two only after they exposed missing tests (the claim's compare-and-set, and the
+cross-process primary-key collision).*
+
+## 2026-08-17 — the typecheck baseline is gone, and eleven type defects with it (`FJS-034`)
+
+1176 tests, 0 fail — unchanged. `scripts/typecheck-baselines.json` no longer
+names junction: 138 → 0, and absent means 0.
+
+The row said the rest was test ergonomics and reached no user. Half of it was.
+The other half was the tests being the only code in this repo that uses junction
+the way an app does — so an error in `tests/` was an error a user gets, written
+down in the one place nobody was reading it as one.
+
+**A custom method's `ctx` was an implicit `any`.** `ServiceDefinition`'s
+`[method: string]: unknown` contextually types nothing, so the documented shape
+
+```ts
+createService({ name: 'servers', async reboot(ctx) { … } })
+```
+
+is a hard error in any app with `noImplicitAny` on and a silently untyped `ctx`
+in every app without it. The index signature is now `ServiceDefinitionValue` — a
+union carrying exactly ONE function type, which contextually types the
+function-valued keys and still accepts every option value. `| unknown` collapses
+straight back to `unknown`, which is why the obvious widening does not work.
+
+**`ctx.result` is `unknown`.** It was declared as the envelope alone, which is
+narrower than every assignment the framework itself makes — including two of its
+own, both of which carried a cast to get past it. A short-circuiting `before`
+hook may set a plain value, a cache hit replays whatever was stored, and
+`toResponse` handles a bare `Response`. Read the payload with `resultData()` and
+the whole answer with `unwrapResult()`, which is what the email-hook docs already
+did by hand.
+
+**`createBaseService` returns a `BaseServiceDefinition`.** Its return type was
+built from `Service`, whose `hooks` is the registration METHOD rather than the
+map — so `createService({ ...createBaseService({ model }) })`, the spread this
+file documents, did not compile.
+
+**`app.events.on('x', () => seen.push(n))` compiles.** `EventHandler` was
+`=> Promise<void> | void`, and TypeScript's return-a-value-where-void-is-expected
+rule applies to a bare `void` and not to a union containing one — while `emit`
+already tests the return for `.then` and ignores anything else. The type now says
+that: `=> unknown`.
+
+**`config: { http: { helmet: false } }` was a type error twice over and a silent
+data loss once.** `AppOptions.config` was a one-level `Partial<AppConfig>` while
+`deepMerge` merges all the way down (`DeepPartial` now), `AppConfig['http']`
+never declared `helmet` although `app.ts` read it through a cast, and
+`createTestApp` spread its config SHALLOWLY — so naming one key of `http` dropped
+`cors`, `ddos`, `powered` and `maxBodySize`. It deep-merges now, like `createApp`.
+
+Four more of the same shape:
+
+- `bridge.toContext`'s `model` was required and read nowhere. It defaults to
+  `service`, which is what `internal()` has always passed.
+- `OriginList` refused a single origin string that `cors()`'s own `isAllowed` has
+  always had a `typeof origins === 'string'` branch for. `combineOrigins` wraps a
+  bare string into the one-element list csrf needs, which takes neither a
+  wildcard nor a bare string.
+- `OAPathItem` names its five verbs, so `paths['/posts'].post` is an operation
+  rather than `OAOperation | OAParameter[]`.
+- `partitionBulk<T>` demanded the parse callback return `T`, while both callers
+  return a coerced record. `<TIn, TOut = TIn>`.
+
+**Two things that never ran at all.** `test:example` and `test:all` passed
+`example/test.ts` as a FILTER, and bun matches a filter by `.test`/`.spec` in the
+filename — the path form runs the 26 tests that had been silently skipped. And
+`makeWsApp` in `index.test.ts` called an unimported `channels`, so it could only
+ever have thrown; nothing called it.
+
+Test-side: `tests/helpers.ts` owns the two casts this suite kept rewriting —
+`stubbable` for a fetch stub (Bun's `typeof fetch` carries `preconnect`, so no
+plain function is assignable to it) and `asRecord` for a key the type does not
+declare, which is Invariant 5 working rather than a gap. 18 duplicate imports
+removed from `index.test.ts`, and a `let` assigned inside a callback replaced by
+a collector wherever flow analysis had narrowed it to `null`.
+
+Three of the eleven were in litestone and are in its own `CHANGES.md`.
+
+
+## 2026-08-16 — `ctx.afterCommit()`, the phase an `after` hook is not (`FJS-089`)
+
+1176 tests (10 new), 0 fail. Baseline unchanged at 138.
+
+`after` means after the METHOD. Hooks run in sequence, so an `after` hook that
+sends an email runs, a later one throws, and the client is told the call failed
+with the email already gone — and once `transactional:` landed, the row was
+rolled back while the email stayed sent, which is worse. Rails states the choice
+as `after_save` vs `after_commit`; only the first existed here.
+
+`ctx.afterCommit(fn)` is the second. Queued from any phase, drained once in
+`callService` on `!ctx.error && !pipelineError` — after the announcement, before
+`idem.settle`, so a replay cannot be told the call is finished while its effects
+are still running.
+
+**Under `transactional:` it is after the commit for free, which is what makes it
+small.** The transaction is an `around` hook, so `runPipeline` has already
+returned by the time the drain runs: no transaction state is read, nothing is
+kept in step, and one drain point serves both the transactional and the ordinary
+case. The queue lives on the CONTEXT rather than on `ctx.locals.db`, which that
+hook reassigns mid-pipeline — a callback queued before the swap and one queued
+after it both run.
+
+**Observer tier** (`FJS-D06`). A throw is logged and emitted as
+`junction.aftercommit.error`, never reported as the call failing: the write is
+committed and the broadcast is out, so a 500 would tell the client a write
+failed that did not. The callbacks after it still run.
+
+`withAfterCommit()` is the one owner — the two builders in `bridge.ts`, the
+internal one in `app.ts`, and `callService` for a context built by hand. The
+argument type is the context minus the two fields it adds, so a builder's
+literal is still checked against everything else it owes.
+
+**What this is not is durability.** A crash between the commit and the callback
+loses the effect and nothing is recorded. That is the transactional outbox, and
+it is open as `FJS-D35` with the question that blocks it: the row has to be in
+the app's own database on the connection the pipeline already writes through,
+and Caravan's queue is a different SQLite file — so `dispatch()` from a hook
+buys retries, not atomicity.
+
+Ten tests against a real Litestone client, both guards mutation-checked: drop
+the drain and eight fail, drop the success guard and the two failure-path tests
+fail.
+
+## 2026-08-16 — a worker receives its setup data (`FJS-271`)
+
+1166 tests (7 new), 0 fail. Baseline unchanged at 138.
+
+`createThread(path, data)` exported a second parameter that went nowhere, and
+the file's own header said *"Worker scripts receive data"*. **The filed
+diagnosis was wrong in the useful direction**: `workerData` is not part of the
+web `WorkerOptions`, so it looked undelivered — but on Bun 1.3.11 it IS
+delivered, and only to `node:worker_threads`. Inside the worker
+`globalThis.workerData`, `self.workerData` and `Bun.workerData` are all
+`undefined`, which is exactly what the original measurement probed. So the fix
+is a read half, not the protocol decision the row was waiting on: no envelope,
+no `init` handler, no reserved message name.
+
+`workerData()` is that half, and it answers **`undefined`** where Node answers
+`null` — on the main thread and in a worker given none alike, because a caller
+cannot act on the difference between *nobody passed anything* and *somebody
+passed nothing*, and `?? fallback` should read the same in both places.
+
+**Setup and work stay apart**, which is what makes this cheap: setup is read
+once at module scope, work arrives per message on the loop the pool already
+drives. A worker written against `workerHandler` cannot confuse the two because
+they never share a channel.
+
+Three things came with it:
+
+- **`createPool(path, count, data)`** — a pool had no way to configure its
+  workers at all.
+- **One `spawn()`**, the only place a `Worker` is constructed. A pool respawns
+  after an error, and a respawned worker built without the setup data serves a
+  different configuration than its siblings from the first failure onward.
+- **A pool now REJECTS on a handler that threw.** `workerHandler` posts
+  `{ __error: true, message }` back — a worker cannot reject its caller's
+  promise from inside itself — and `exec()` resolved with that envelope: the
+  caller's `await` succeeded, the failure arrived as a property nobody reads,
+  and `stats.completed` counted it as work done. Found while writing the tests.
+
+`tests/workers.test.ts` runs real threads, because the whole question is what a
+second thread receives and a stand-in answers whatever it was written to answer
+— which is how a documented, exported parameter shipped going nowhere.
+
+## 2026-08-16 — the schema's types reach the browser (`FJS-018`)
+
+1159 tests (5 new), 0 fail. Baseline unchanged at 138; `src/` stays at zero.
+
+Litestone has generated `Post`/`PostCreate`/`PostWhere` for as long as it has
+had a typegen, and the browser client has been generic since it was written.
+Nothing joined them, so every browser call was `Record<string, unknown>` and an
+app that wanted better hand-wrote the shape — which is what the `Seeder` type in
+`example/fullstack/app.ts` was, and it is deleted.
+
+**One registry, augmented rather than passed.** `ServiceTypes` is an empty
+exported interface here; `litestone types --augment junction` emits the module
+augmentation that fills it, keyed by SERVICE name, and `service('posts')` and
+`resource('posts')` infer from it with no type argument at any call site. That is
+the same mechanism `app.claim` uses for a slot an app fills (Invariant 5), and it
+is the one that survives a call site nobody edits: a type parameter has to be
+restated everywhere, which is the thing being removed.
+
+**Nothing changes for an app that generates nothing.** With the registry empty
+`keyof ServiceTypes` is `never`, so the inferring overload matches no call and
+every one falls through to the open overload. `service<Post>('posts')` also still
+resolves — an explicit argument fails the first overload's constraint and falls
+through rather than erroring, which is asserted rather than assumed.
+
+**The mapping in `ServiceRow` is load-bearing and cost an hour.** A proxy is
+generic over `T extends Record<string, unknown>`, and a TypeScript INTERFACE —
+which is what a generated row is — does not satisfy that: only a type alias of an
+object type gets the implicit index signature. Passed straight through, the
+constraint failed and the fallback took over, so the whole feature compiled,
+inferred nothing, and looked finished. Mapping the members
+(`{ [P in keyof ServiceTypes[K]]: … }`) satisfies the constraint and still
+refuses an undeclared column.
+
+**`ResourceResult.service` was untyped** — a bare `ServiceProxy`, so
+destructuring `{ service }` off a resource dropped the row type the caller had
+just asked for. Now `ServiceProxy<T>`.
+
+`tests/client-types.test.ts` is the proof and it COMPILES: the real generator's
+output, junction's real client behind the package specifier the augmentation
+names, `tsc --noEmit` over the fixture. The negative half rides the same run —
+`@ts-expect-error` is itself an error when the line it marks type-checks, so the
+day inference silently widens back, the fixture fails.
+
 ## 2026-08-16 — `changed`: a write that cannot name its row still announces (`FJS-307`)
 
 1160 tests (10 new), 0 fail. Baseline unchanged; `src/` stays at zero.
@@ -1158,7 +1644,7 @@ stale. Measured on one socket with 200 concurrent reads of a ~1MB payload: 193
 never settled, and a call issued afterwards answered in 34ms, which is what makes
 it read as *the socket is fine*.
 
-`transport/outbox.ts` is now the one owner of *put this frame on that socket*:
+`transport/send-queue.ts` is now the one owner of *put this frame on that socket*:
 send, hold what was dropped, flush on `drain`. Once anything is held everything
 queues behind it — a frame that jumps the queue arrives before one sent earlier,
 and an event stream that reorders is worse than one that pauses. The queue is
@@ -1179,7 +1665,7 @@ masked inside the drive that found it, and with the mask removed basecamp passes
 register says so rather than claiming this one did.
 
 8 tests, both halves mutation-verified — the integration case delivers 200 of
-200 frames with the outbox and 98 of 200 without it. 905 pass.
+200 frames with the send queue and 98 of 200 without it. 905 pass.
 
 ## 2026-08-10 — the METHOD decides list vs single, not the shape
 

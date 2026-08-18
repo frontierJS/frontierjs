@@ -51,13 +51,22 @@
     "./vite/client": {
       "import": "./mesa-vite/client.js"
     },
+    "./vite/swap": {
+      "import": "./mesa-vite/swap.js"
+    },
     "./vite/hmr": {
       "import": "./mesa-vite/hmr.js"
     }
   },
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs",
     "test:watch": "vitest",
+    "test:browser": "node test/browser/runtime/run.mjs && node test/browser/vite/run.mjs",
+    "test:browser:runtime": "node test/browser/runtime/run.mjs",
+    "test:browser:vite": "node test/browser/vite/run.mjs",
+    "test:browser:repl": "node test/browser/repl/run.mjs",
+    "serve:runtime": "node test/browser/runtime/run.mjs --serve",
+    "serve:vite": "node test/browser/vite/run.mjs --serve",
     "serve": "npx serve ../..",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },

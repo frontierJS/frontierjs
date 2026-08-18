@@ -6,8 +6,19 @@ it may import is `@frontierjs/utils`, which is substrate below the graph rather
 than a member of it (`FJS-D26`). Sierra, jetty, ui and email-kit all sit on top
 of it.
 
-Run tests with **`bun run test` — the runner is vitest.** `bun test` reports
-~35 failures that are runner artifacts, not defects.
+Run tests with **`bun run test`** — vitest, then the two gating **browser
+drives**, which need Chrome on PATH or `$FJS_CHROME`. `bun test` reports ~35 failures
+that are runner artifacts, not defects.
+
+`test:browser` is the two that gate, `test:browser:runtime` and
+`test:browser:vite` one each; `serve:runtime` / `serve:vite` start one and stay
+up, for looking at a fixture in a real browser.
+
+**`test:browser:repl` is manual and NEEDS THE NETWORK.** The REPL loads
+nineteen things from the internet, so it is in neither `test` nor CI: run it by
+hand when `example/` is touched. No network is a named skip that exits 0, and
+`FJS_REQUIRE_NETWORK=1` makes that skip a failure. `FJS-326` is the offline
+work.
 
 ---
 
@@ -25,12 +36,23 @@ src/
 mesa-vite/
   index.js             — the Vite plugin, exported as @frontierjs/mesa/vite
   client.js            — the HMR client, @frontierjs/mesa/vite/client
+  swap.js              — the DOM swap it performs, @frontierjs/mesa/vite/swap.
+                         jetty imports this one: no import.meta, no imports
+  client-source.js     — client.js + swap.js joined, for a plugin serving the
+                         client at a virtual id
   hmr.js               — the HMR boundary, @frontierjs/mesa/vite/hmr
   devtools.html        — the /__mesa/devtools panel it serves
 
-runtime.js             — root re-export; what everything imports
 docs/VISION.md         — the language: rules 1–40ish, numbered. Cite by rule
 docs/SSR_SPEC.md       — server-render contract. No open items
+
+test/browser/
+  drive.mjs            — Chrome over CDP + the spec runner. SHARED: @frontierjs/ui
+                         reads it by relative path
+  probes.js            — the in-page DOM half (waitVisible, matchedRules, …)
+  runtime/             — the language in a real browser (server · page · fixtures · specs)
+  vite/                — the plugin in a real dev server (app · specs)
+  repl/                — example/index.html itself. Manual: needs the network
 ```
 
 **The Vite plugin is a subpath, not a package.** It had its own `package.json`
@@ -85,6 +107,21 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
   invisible full-screen backdrop that ate every click. An already-connected
   element still attaches synchronously; a detached one is deferred one
   microtask, the same queue `$onMount` uses.
+- **The flush settles derivations OUTSIDE-IN, and that ordering is load-bearing.**
+  One DOM-depth at a time, shallowest first, skipping anything whose owning
+  block is already queued. Draining the whole derived layer to quiescence first
+  — which is what it used to do, so that renders read derivations that had
+  stopped moving — let a memo inside `{#if a[i]}` recompute before the guard
+  tore it down, so `{@const d = a[i][j]}` read `undefined[j]` and threw from
+  inside a handler (`FJS-303`). **A new tier in `_flush` inherits this**: only a
+  DOM-building node disposes anything, so only its depth counts, and only its
+  pendingness holds a derivation back. Do not reach for "is anything pending" —
+  that costs a redundant effect run and a glitch-freedom test says so.
+- **`<slot>` takes no attribute but `name`.** A slot carries content IN and
+  never a value out; there is no `let:` to read one with. Refused at compile
+  time (VISION RULE 35b, `FJS-304`). A hole the child must PARAMETERISE is a
+  snippet prop — `export let children` + `{@render children?.(value)}` — which
+  §9.6 no longer calls legacy, because for that job it is the only form.
 - **Scoped styles do not reach into child components** — use `:global(...)`. The
   selector *subject* carries the hash (`button` → `button.mHASH`).
 - **A dynamic `class` merges, it never replaces** — everything routes through
@@ -123,6 +160,13 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
   the second drops the entry as stale — HMR worked once per page load and then
   said *no registered instances*. `test/vite-hmr.test.js` pins all of it against
   real compiled output.
+- **The client is TWO files, and a plugin must serve them joined.** A virtual
+  id resolves no relative import, so handing Vite `client.js` alone is a 200
+  that dies in the browser and puts every component back on the full-reload
+  path. `client-source.js` is the one owner of that join and fails closed. The
+  split exists because jetty performs the same swap (`FJS-259`) — which is also
+  why `swap.js` carries **no `import.meta` and no imports**: jetty bundles it
+  into MV3 content scripts, and those are classic scripts (`FJS-030`).
 - **A Vite plugin test runs in Node, not happy-dom.** This package's vitest
   environment is happy-dom, whose global `URL` makes
   `fileURLToPath(new URL('./devtools.html', import.meta.url))` throw *must be of
@@ -180,8 +224,65 @@ their own label, constraints and server error from it.
 
 ---
 
+## The browser drives
+
+**`test/browser/` is where this package is run rather than described** — three
+drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
+`probes.js`) and read by relative path because mesa is the leaf. `runtime/` and
+`vite/` gate; `repl/` is manual and needs the network. What bites:
+
+- **A spec exports `run(t)`, not a suite.** vitest excludes `test/browser/**`
+  for that reason; without the exclusion it collects eleven files and fails
+  each one with *no test suite found*.
+- **A fixture is a component**, because a slot cannot be expressed as a props
+  object. Props reach it as JSON.
+- **Input goes through the pipeline** (`t.press`, `t.type`, `t.clickAt`). A
+  dispatched `KeyboardEvent` moves no focus, types no character and dismisses
+  no `[popover]`.
+- **`t.eventually(expr, expected, label, ms?)`** for anything a state change
+  produces — mesa flushes on a microtask. `ms` is for a round trip that is not
+  one: a Vite update is **seconds**.
+- **`t.allow(re)`** declares a page error the spec is provoking. Everything
+  else still fails the run, including any `[Mesa]` console warning — the
+  framework reports a render it survived but corrupted that way.
+- **Two writes to one file within tens of milliseconds are ONE watch event.**
+  Measured at 23ms apart: the second edit fired no `change` and arrived only
+  when a later edit flushed it — which looks exactly like broken HMR. The Vite
+  drive's `edit()` holds until the file has settled, so a spec never has to
+  know; anything else touching files does.
+- **The Vite drive edits a COPY** in a temp directory. An edit is what an HMR
+  update is, and a drive that writes to the tree leaves it dirty when it
+  crashes.
+- **`each-unkeyed.spec.mjs` is the DEFAULT `{#each}` key written down** — the
+  index, and the trade it makes: an unkeyed list can never collide, and a row
+  that moves is rebound in place rather than moved, so its DOM state stays with
+  the position. `each.spec.mjs` is the keyed half, where a reordered row must
+  be the same NODE moved. Keying by the item was the default until `FJS-325`,
+  and a duplicate value corrupted the reconciler beyond recovery.
+- **No backticks in a probe's own comments.** Everything handed to
+  `t.evaluate` is a template literal, so one backtick inside a comment in it
+  ends the string and the spec fails to PARSE — which reads as the drive being
+  broken rather than the spec. It has bitten twice.
+- **A relay between two pages needs `browser.newPage(url, ready)`** — a second
+  target with its own `evaluate`/`navigate`/`close`, whose errors land in the
+  same array. `BroadcastChannel` is cross-document by definition, so one tab
+  posting and listening proves nothing.
+- **A drive over a page it does not own installs its probes with
+  `bootstrap`** — a script CDP runs before anything else in every document.
+  The REPL has nowhere to put one, and reaching for a probe that is not there
+  reads as the page being broken.
+- **Nothing the REPL defines is reachable from page scope** — it is one module
+  script, so `encodeState` and the editor view are both invisible. Drive the
+  buttons instead. `copyShareLink` writes the hash with `replaceState` BEFORE
+  it touches the clipboard, which is what makes the share round trip assertable
+  without a clipboard permission.
+- **Wait on what CHANGED, not on the status word.** `#pvlbl` already says
+  *running* before a click that loads another example, so an `eventually` on it
+  returns at once and the assertion afterwards reads the example being
+  replaced. Twice, in two specs.
+
 ## Proving a change
 
-`bun run test`, then — because SSR and hydration fail apart — both of
-`example`: `bun run verify` and `bun run verify:public`. See the root
-`CLAUDE.md` §Running things.
+`bun run test` — which now includes the two gating browser drives — then,
+because SSR and hydration fail apart, both of `example`: `bun run verify` and
+`bun run verify:public`. See the root `CLAUDE.md` §Running things.

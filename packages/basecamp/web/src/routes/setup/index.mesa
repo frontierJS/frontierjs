@@ -4,6 +4,8 @@ title: First run
 <script>
   import { goto } from '@frontierjs/sierra/router'
   import { completeSetup } from '../../session.js'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
 
   let workspace_name = ''
   let name           = ''
@@ -51,33 +53,25 @@ title: First run
     </article>
   {/if}
 
-  <div class="field-group">
-    <label for="workspace">Workspace name</label>
-    <input class="field" id="workspace" bind:value={workspace_name} required />
-    <span class="field-hint">Your organisation. Everything else is scoped inside it.</span>
-  </div>
+  <Input label="Workspace name" name="workspace" id="workspace" required
+         hint="Your organisation. Everything else is scoped inside it."
+         bind:value={workspace_name} />
 
-  <div class="field-group">
-    <label for="name">Your name</label>
-    <input class="field" id="name" autocomplete="name" bind:value={name} required />
-  </div>
+  <Input label="Your name" name="name" id="name" autocomplete="name" required
+         bind:value={name} />
 
-  <div class="field-group">
-    <label for="email">Email</label>
-    <input class="field" id="email" type="email" autocomplete="username" bind:value={email} required />
-  </div>
+  <Input label="Email" name="email" id="email" type="email" autocomplete="username"
+         required bind:value={email} />
 
-  <div class="field-group">
-    <label for="password">Password</label>
-    <input class="field" id="password" type="password" autocomplete="new-password"
-           bind:value={password} required minlength="8" />
-    <span class="field-hint">At least 8 characters — the API refuses shorter.</span>
-  </div>
+  <Input label="Password" name="password" id="password" type="password"
+         autocomplete="new-password" required minlength={8}
+         hint="At least 8 characters — the API refuses shorter."
+         bind:value={password} />
 
   <div class="cluster">
-    <button class="btn primary" type="submit" disabled={busy}>
+    <Button variant="primary" type="submit" disabled={busy}>
       {busy ? 'Creating…' : 'Create workspace'}
-    </button>
+    </Button>
   </div>
   </form>
 </div>

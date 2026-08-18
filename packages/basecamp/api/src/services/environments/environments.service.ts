@@ -11,7 +11,7 @@
 
 import { createService, NotFound, Forbidden, BadRequest, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, dbOf, wsOf, slugify }
+import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf, slugify }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -20,8 +20,13 @@ interface EnvVariable { key: string; value: string; secret: boolean }
 
 export function createEnvironmentsService(app: BasecampApp) {
 
-  /** Rewrite the variables array and return the saved row. */
-  async function saveVariables(ctx: ServiceContext, variables: EnvVariable[]) {
+  /** Rewrite the variables array and return the saved row.
+   *
+   *  Takes the row rather than reaching for `ctx.id`: Environment declares
+   *  @version, so the write states the version this call read. Two people on
+   *  the variables screen at once is the ordinary case, and without it the
+   *  second save erases the first person's key with no sign it did. */
+  async function saveVariables(ctx: ServiceContext, env: Record<string, unknown>, variables: EnvVariable[]) {
     // Return the WHOLE row, like every other method on this service.
     //
     // This used to answer `{ id, variables }`. Nothing was wrong with the write
@@ -32,7 +37,7 @@ export function createEnvironmentsService(app: BasecampApp) {
     // is a shape no caller can distinguish from a full one until it breaks.
     return dbOf(ctx).environment.update({
       where: { id: ctx.id as string },
-      data:  { variables },
+      data:  { variables, version: env.version },
     })
   }
 
@@ -86,7 +91,7 @@ export function createEnvironmentsService(app: BasecampApp) {
       // projectId and slug are immutable — moving an environment between
       // projects would silently reparent its apps and deployments.
       const patch = narrowPatch(ctx.data as Record<string, unknown>, ['projectId', 'slug', 'variables'])
-      if (!Object.keys(patch).length) return env
+      if (changesNothing(patch)) return env
       return dbOf(ctx).environment.update({ where: { id: ctx.id as string }, data: patch })
     },
 
@@ -117,7 +122,7 @@ export function createEnvironmentsService(app: BasecampApp) {
       if (idx >= 0) variables[idx] = entry
       else          variables.push(entry)
 
-      return saveVariables(ctx, variables)
+      return saveVariables(ctx, env, variables)
     },
 
     async deleteVariable(ctx: ServiceContext) {
@@ -125,7 +130,7 @@ export function createEnvironmentsService(app: BasecampApp) {
       if (!key) throw new BadRequest('key is required')
 
       const env = await getScoped(ctx, 'environment', 'Environment')
-      return saveVariables(ctx, ((env.variables ?? []) as EnvVariable[]).filter(v => v.key !== key))
+      return saveVariables(ctx, env, ((env.variables ?? []) as EnvVariable[]).filter(v => v.key !== key))
     },
 
     hooks: {

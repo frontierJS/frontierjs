@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { createService, callService }               from '../src/core/service.ts'
 import { bridge }                                   from '../src/transport/bridge.ts'
 import type { CallStartEvent, TelemetryEvent, HookTelemetryEvent } from '../src/core/service.ts'
+import { asRecord }                                 from './helpers.ts'
 
 // ─── Mock telemetry emitter ───────────────────────────────────────────────────
 
@@ -151,7 +152,8 @@ describe('telemetryId correlation', () => {
     const start = captured.find(e => e.name === 'junction.call.start')!.data as CallStartEvent
     const end   = captured.find(e => e.name === 'junction.call.end')!.data as TelemetryEvent
 
-    expect(start.telemetryId).toBe(end.telemetryId)
+    expect(start.telemetryId).toBeDefined()
+    expect(start.telemetryId).toBe(end.telemetryId!)
   })
 
   it('telemetryId is stamped on ctx during the call', async () => {
@@ -426,7 +428,7 @@ describe('bypass method telemetry (_find, _create etc.)', () => {
 
     const ctx = bridge.internal('items', 'find', null)
     // Attach telemetry via ctx.app
-    ;(ctx.app as Record<string, unknown>).telemetry = telemetry
+    ;asRecord(ctx.app).telemetry = telemetry
 
     await svc._find(ctx)
 
@@ -443,7 +445,7 @@ describe('bypass method telemetry (_find, _create etc.)', () => {
 
     const svc = createService({ name: 'items', find: async () => [] })
     const ctx = bridge.internal('items', 'find', null)
-    ;(ctx.app as Record<string, unknown>).telemetry = telemetry
+    ;asRecord(ctx.app).telemetry = telemetry
 
     await svc._find(ctx)
 

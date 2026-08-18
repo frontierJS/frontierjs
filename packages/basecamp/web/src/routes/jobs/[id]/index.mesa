@@ -2,11 +2,14 @@
 title: Job
 ---
 <script>
-  import { page } from '@frontierjs/sierra/router'
-  import { jobs } from '../../../resources/Job.mesa'
+  import { page }       from '@frontierjs/sierra/router'
+  import { session }    from '../../../session.js'
+  import { jobs }       from '../../../resources/Job.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import Button         from '@frontierjs/ui/components/forms/Button.mesa'
 
   $: page.params
+  $: session.level
 
   let job     = null
   let error   = null
@@ -55,8 +58,16 @@ title: Job
   const when     = (iso) => iso ? new Date(iso).toLocaleString() : '—'
   const secs     = (ms) => ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`
 
-  $: runs       = job?.recent_runs ?? []
-  $: cancellable = job && ['pending', 'running'].includes(job.status)
+  $: runs = job?.recent_runs ?? []
+
+  // What this job may do next, read off `@@transitions(status, …)` on the
+  // model. A UI affordance only — litestone enforces every move at the Data
+  // boundary whatever this renders.
+  $: moves       = job ? jobs.transitions(job, session.level) : []
+  $: cancellable = moves.some(m => m.name === 'cancel')
+  // `start: [pending, failed] -> running` says which jobs can be fired, so the
+  // button follows the machine instead of asking "is it not already running".
+  $: startable   = moves.some(m => m.name === 'start')
 </script>
 
 {#if loading}
@@ -70,7 +81,7 @@ title: Job
     <h1>{job.name}</h1>
     <div class="cluster">
       <span class="pill {TONE[job.status] ?? ''}" id="job-status">{job.status}</span>
-      <a class="btn ghost" href="/jobs/">All jobs</a>
+      <Button variant="ghost" href="/jobs/">All jobs</Button>
     </div>
   </div>
 
@@ -81,11 +92,11 @@ title: Job
   {/if}
 
   <div class="cluster" id="job-actions">
-    <button class="btn outlined" disabled={busy === 'trigger'} on:click={() => act('trigger')}>
+    <Button variant="outlined" disabled={busy === 'trigger' || !startable} onclick={() => act('trigger')}>
       {busy === 'trigger' ? 'Queuing…' : 'Run now'}
-    </button>
+    </Button>
     {#if cancellable}
-      <button class="btn ghost danger" disabled={busy === 'cancel'} on:click={() => act('cancel')}>Cancel</button>
+      <Button variant="ghost" tone="danger" disabled={busy === 'cancel'} onclick={() => act('cancel')}>Cancel</Button>
     {/if}
   </div>
 

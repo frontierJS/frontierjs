@@ -53,15 +53,31 @@ It is the only place that scheme is written down.
   found — so the suite's only Mesa surface proved that Mesa never ran, and the
   lookup bug lived under it. If a change here makes that file "simpler", the
   compiler path is untested again.
-- **One known failure**: the built `islands/demo.js` contains `import.meta`, and
-  an MV3 content script is a *classic* script. Not a flake — a real packaging gap.
+- **An island is built in LIB MODE, and that is not cosmetic.** Vite injects its
+  preload helper into any client build that is not a lib or a worker, and the
+  helper is written with `import.meta`. A content script is a *classic* script,
+  so V8 rejects the whole bundle at parse time and nothing at build time says
+  so. Lib mode is the only supported way off it (`FJS-030`).
+- **`codeSplitting` is a rollup OUTPUT option.** `build.codeSplitting` is read
+  by nothing — set it under `rollupOptions.output` or the island silently
+  splits into a chunk Chrome will not load.
 - **`default-adapter.js` is a placeholder**, and says so. Do not build on it as
   though it were the contract; `adapter.js` is.
 - **`uno-plugin.js` and `unocss-mirror.js` predate Invariant 13** (no UnoCSS
   anywhere). Removing them is in scope; adding to them is not.
-- **`resources/` is a copy of Sierra's**, and the HMR algorithm is copied here
-  too — both are on the duplication list in the root `CLAUDE.md`. A fix in one
-  is a fix owed in the other until they are merged.
+- **`resources/` is no longer a copy of Sierra's, and what is left is not one.**
+  The pure halves are `@frontierjs/toolbelt` — `/jsonschema` and `/hooks`
+  (`FJS-059`) — and the orchestrator around them is deliberately separate:
+  Sierra calls `client.service(name)`, this calls `harbor.request('service:call')`,
+  which is two facts rather than one with two owners. **`createStore` is also
+  jetty's own**: Sierra's is service-backed and stamps each request, this one
+  takes no service at all, because Junction lives in Harbor. Do not "resync"
+  either against Sierra.
+- **`mergeHooks` answers a NEW map**, re-exported from `resources/index.js`. It
+  merged in place before; toolbelt's licence is purity, so both callers reassign.
+- **The HMR algorithm is not duplicated either**: the DOM swap is Mesa's
+  (`@frontierjs/mesa/vite/swap`, `FJS-259`) and only the registry and the two
+  module shapes are jetty's.
 - **A channel is not an event, and the separator is not decoration.** You join
   `posts` and RECEIVE `posts created` — space, past tense, Junction's own
   `AUTO_EVENT_MAP`. `resources/` used to subscribe to four composed names

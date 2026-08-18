@@ -32,6 +32,7 @@
  */
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { join, resolve, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { compileSource } from '../../../mesa/src/compiler.js'
@@ -54,6 +55,20 @@ const SIERRA = resolve(fileURLToPath(new URL('../../../sierra', import.meta.url)
 // from the substrate package rather than restating them. It depends on
 // nothing, so the chain stops here.
 const TOOLBELT = resolve(fileURLToPath(new URL('../../../toolbelt', import.meta.url)))
+
+// Every toolbelt subpath, read off that package's OWN `exports` rather than
+// listed by hand. The hand list held two kits and `field-rules` grew a third
+// (`/jsonschema`), so the browser resolved a bare specifier that was in no map
+// and four form specs died before their first assertion — reported as "spec
+// threw", which reads as the drive being broken rather than as one missing
+// line. A kit added there is served here.
+const TOOLBELT_IMPORTS = Object.fromEntries(
+  Object.entries(JSON.parse(readFileSync(join(TOOLBELT, 'package.json'), 'utf8')).exports)
+    .map(([sub, target]) => {
+      const file = typeof target === 'string' ? target : (target.default ?? target.import)
+      return [`@frontierjs/toolbelt${sub.slice(1)}`, `/@toolbelt/${file.replace(/^\.\//, '')}`]
+    })
+)
 
 const TYPES = {
   '.js':   'text/javascript; charset=utf-8',
@@ -87,11 +102,11 @@ const IMPORT_MAP = {
     '@frontierjs/ui/stores/toastStore': '/kit/stores/toastStore.js',
     '@frontierjs/ui/stores/alertStore': '/kit/stores/alertStore.js',
     // The real control table, for a fixture standing in for a resource, and
-    // the two toolbelt kits it reads. Spelled out one by one: a bare specifier
-    // with no extension gets no guessing from the browser.
+    // behind it every toolbelt kit. Each is spelled out — a bare specifier
+    // with no extension gets no guessing from the browser — but the toolbelt
+    // half is generated, so it cannot fall behind what that package exports.
     '@frontierjs/sierra/field-rules':   '/@sierra/src/junction/field-rules.js',
-    '@frontierjs/toolbelt/directives':  '/@toolbelt/src/directives/directives.js',
-    '@frontierjs/toolbelt/inflect':     '/@toolbelt/src/inflect/inflect.js',
+    ...TOOLBELT_IMPORTS,
   },
 }
 

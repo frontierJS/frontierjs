@@ -1,0 +1,120 @@
+<script>
+  // form-lifecycle.mesa — what a <Form> DOES, rather than what it renders.
+  //
+  // Validation timing, the two error sources, which service method a submit
+  // picks, the imperative API, dirty tracking and reset. None of it has a
+  // render-time symptom and all of it is reached from a screen every time
+  // anybody uses the framework.
+  //
+  // Everything that can be real is real: `validateAgainstFields`,
+  // `coerceToSchema` and `toFieldErrors` are Sierra's own, by relative
+  // specifier. What is stubbed is the network and nothing else — a `service`
+  // that records the call and answers, so the method choice and the failure
+  // path are the component's own decisions rather than a mock's.
+  import Form from '../../../components/forms/Form.mesa'
+  import {
+    formFieldList, validateAgainstFields, coerceToSchema, toFieldErrors,
+  } from '@frontierjs/sierra/field-rules'
+
+  const FIELDS = {
+    id:        { type: 'string',  readOnly: true, title: 'Id' },
+    reference: { type: 'string',  required: true, minLength: 3, title: 'Reference' },
+    total:     { type: 'number',  required: true, minimum: 1, title: 'Total' },
+    status:    { type: 'string',  required: true, enum: ['draft', 'sent'], title: 'Status' },
+  }
+
+  let calls = []          // 'create:…' | 'patch:id:…' | 'upsert:…'
+  let failNext = false
+  window.kitFailNextSubmit = () => { failNext = true }
+
+  function record_(kind, data) {
+    calls = [...calls, kind]
+    if (failNext) {
+      failNext = false
+      // The shape a 400 arrives in through the browser client — the double
+      // `data` is real, and `toFieldErrors` is what unwraps it.
+      const err = new Error('Request failed')
+      err.data = { data: [
+        { field: 'reference', message: 'That reference is taken' },
+        { field: '_',         message: 'Could not save the order' },
+      ] }
+      return Promise.reject(err)
+    }
+    return Promise.resolve({ ok: true, kind })
+  }
+
+  const SERVICE = {
+    create: (data) => record_('create:' + (data?.reference ?? '')),
+    patch:  (id, data) => record_('patch:' + id + ':' + (data?.reference ?? '')),
+    upsert: (data) => record_('upsert:' + (data?.reference ?? '')),
+  }
+
+  const RESOURCE = {
+    context: { model: 'Order', service: 'orders', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ reference: '', total: 0, status: 'draft' }),
+    coerce:      (data) => coerceToSchema(FIELDS, data),
+    validate:    (data, mode) => validateAgainstFields(FIELDS, data, mode),
+    fieldErrors: (err) => toFieldErrors(err),
+    service: SERVICE,
+  }
+
+  // Bound so the spec can read them without reaching inside the component.
+  let record    = undefined     // bound, so the spec can see what the form holds
+  let dirty     = false
+  let submitted = false
+  let errors    = {}
+
+  let api = null                 // from onready
+  let ref = null                 // from bind:this — the same three functions
+
+  let done = 0
+  let failed = 0
+
+  // A record carrying an id: `method="auto"` has to choose patch for this one
+  // and create for the blank above it, off the id field alone.
+  const EXISTING = { id: 'o-7', reference: 'ORD-7', total: 12, status: 'sent' }
+</script>
+
+<div id="create">
+  <Form
+    resource={RESOURCE}
+    bind:record bind:dirty bind:submitted bind:errors
+    onready={(a) => api = a}
+    ondone={() => done++}
+    onerror={() => failed++}
+    bind:this={ref}
+  />
+</div>
+
+<div id="patch">
+  <Form resource={RESOURCE} record={EXISTING} />
+</div>
+
+<div id="upsert">
+  <Form resource={RESOURCE} method="upsert" />
+</div>
+
+<div id="reset-on-done">
+  <Form resource={RESOURCE} resetOnDone />
+</div>
+
+<div id="off">
+  <Form resource={RESOURCE} disabled />
+</div>
+
+<button type="button" id="api-submit" on:click={() => api?.submit()}>api submit</button>
+<button type="button" id="api-reset" on:click={() => api?.reset()}>api reset</button>
+<button type="button" id="api-clear" on:click={() => api?.clearErrors()}>api clear</button>
+<button type="button" id="ref-submit" on:click={() => ref?.submit()}>ref submit</button>
+<button type="button" id="rebaseline" on:click={() => ref?.reset({ reference: 'BASE', total: 5, status: 'sent' })}>rebaseline</button>
+
+<output id="calls">{calls.join('|')}</output>
+<output id="held">{record?.reference ?? ''}</output>
+<output id="dirty">{dirty}</output>
+<output id="submitted">{submitted}</output>
+<output id="error-keys">{Object.keys(errors).join(',')}</output>
+<output id="done">{done}</output>
+<output id="failed">{failed}</output>

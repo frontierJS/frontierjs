@@ -170,6 +170,42 @@
     return d.getTime()
   }
 
+  /**
+   * What this picker currently holds, in the shape every caller receives.
+   *
+   * One builder because there are three ways to change the value — a day, a
+   * preset, and the time inputs — and the third used to move `startDate`
+   * without announcing anything. A caller reading `bind:startDate` saw 14:30
+   * while `onDateChange` had said 08:00, so which of the two an app happened to
+   * read decided whether it saved the right time.
+   */
+  function currentEvent(start = _startDate, end = _endDate) {
+    return {
+      startDate: start,
+      startDateTime,
+      ...(isRange && {
+        endDate: end,
+        endDateTime,
+        rangeDates: getDatesInRange(start, end),
+      }),
+    }
+  }
+
+  /**
+   * A time input moved the value: write it, then say so.
+   *
+   * The new timestamps are passed in rather than read back off `_startDate`.
+   * A write to a reactive binding is not visible to a read in the same tick,
+   * so announcing from the signal reported the value as it was BEFORE the edit
+   * — which is how the binding and the callback came to disagree in the first
+   * place, one of them still holding 08:00.
+   */
+  function announceTime(start, end) {
+    if ((isRange && start && end) || (!isRange && start)) {
+      onDateChange?.(currentEvent(start, end))
+    }
+  }
+
   function getHoursAndMinutes(timestamp) {
     if (!timestamp) return '00:00'
     const d   = new Date(timestamp)
@@ -533,15 +569,7 @@
       handleSingleDate(timestamp)
     }
 
-    const event = {
-      startDate: _startDate,
-      startDateTime,
-      ...(isRange && {
-        endDate: _endDate,
-        endDateTime,
-        rangeDates: getDatesInRange(_startDate, _endDate),
-      }),
-    }
+    const event = currentEvent()
 
     onDayClick?.(event)
     if ((isRange && _startDate && _endDate) || (!isRange && _startDate)) {
@@ -692,14 +720,14 @@
           <input
             type="time"
             bind:value={startDateTime}
-            on:input={() => _startDate = startDate = updateTime(startDateTime, _startDate)}
+            on:input={() => { const ts = updateTime(startDateTime, _startDate); _startDate = startDate = ts; announceTime(ts, _endDate) }}
           />
           {#if isRange}
             <input
               type="time"
               class="fjs-dp-endtime"
               bind:value={endDateTime}
-              on:input={() => _endDate = endDate = updateTime(endDateTime, _endDate)}
+              on:input={() => { const ts = updateTime(endDateTime, _endDate); _endDate = endDate = ts; announceTime(_startDate, ts) }}
             />
           {/if}
         </div>
@@ -786,7 +814,7 @@
             <input
               type="time"
               bind:value={endDateTime}
-              on:input={() => _endDate = endDate = updateTime(endDateTime, _endDate)}
+              on:input={() => { const ts = updateTime(endDateTime, _endDate); _endDate = endDate = ts; announceTime(_startDate, ts) }}
             />
           </div>
         {/if}

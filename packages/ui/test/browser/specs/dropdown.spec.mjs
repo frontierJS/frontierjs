@@ -92,6 +92,14 @@ export async function run(t) {
 
   /* ── the keyboard walk ────────────────────────────────────────────────── */
 
+  // Asserted rather than assumed. Every arrow assertion below passes just as
+  // well with focus left on the trigger — `indexOf(activeElement)` is -1 for
+  // anything outside the list — so nothing here can see a menu that opened
+  // without taking focus, which is what it did while `bind:this` sat on the
+  // surface rather than on the list.
+  await t.eventually(`document.activeElement?.getAttribute('role')`, 'menu',
+    'opening moves focus into the panel')
+
   // Opening focuses the panel itself, so the first ArrowDown has to land on
   // the first item rather than on the second.
   await t.press('ArrowDown')
@@ -177,13 +185,55 @@ export async function run(t) {
 
   // The trigger toggles. The click-away listener sees this click first and has
   // to let it through, or the second press would close and reopen in one go.
+  //
+  // The state about to be inverted is asserted first. An open that did not
+  // happen turns the second click into an OPEN, and the two assertions after
+  // it then report a broken toggle with nothing naming the click that went
+  // missing — which is how FJS-331 read for as long as it was open.
   await t.clickAt('#dd-trigger')
-  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  t.ok(await t.evaluate(`return await waitVisible('[role=menu]');`), 'the trigger opens it again')
+  await t.eventually(`document.querySelector('#dd-trigger').getAttribute('aria-expanded')`, 'true',
+    'and says so, before the toggle is asked to invert it')
+
   await t.clickAt('#dd-trigger')
   await t.eventually(`document.querySelectorAll('[role=menu]').length`, 0,
     'and a second click on the trigger closes it')
   await t.eventually(`document.querySelector('#dd-trigger').getAttribute('aria-expanded')`, 'false',
     'with the trigger saying so again')
+
+  /* ── never painted where it used to be ────────────────────────────────── */
+
+  // The panel is placed in a frame callback, so between `open` and that frame
+  // x and y still hold the LAST open's placement. Painted there it appears
+  // wherever the trigger used to be, and after a scroll that can be ON the
+  // trigger: the click meant to close the menu then lands inside the panel,
+  // where click-away deliberately lets it through, so the menu stays open and
+  // nothing on screen says why. That is FJS-331, which read as a flaky
+  // assertion because the frame is late only under load.
+  //
+  // Read at insertion through a MutationObserver — by the time a poll can see
+  // the panel the frame has been and gone.
+  await t.evaluate(`
+    window.__ddPaint = null;
+    new MutationObserver((recs) => {
+      for (const r of recs) for (const n of r.addedNodes) {
+        if (n.nodeType === 1 && n.classList?.contains('popover') && !window.__ddPaint)
+          window.__ddPaint = { top: n.style.top, shown: getComputedStyle(n).visibility !== 'hidden' };
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+    window.scrollTo(0, 60);
+    return true;
+  `)
+  await t.clickAt('#dd-trigger')
+  await t.evaluate(`return await waitVisible('[role=menu]');`)
+  const paint = await t.evaluate(`
+    return { first: window.__ddPaint, top: document.querySelector('.popover').style.top };
+  `)
+  t.ok(!paint.first.shown || paint.first.top === paint.top,
+    `the panel is not shown until it is placed (first ${paint.first.top}, placed ${paint.top})`)
+
+  await t.press('Escape')
+  await t.eventually(`document.querySelectorAll('[role=menu]').length`, 0, 'and Escape closes it')
 
   /* ── it flips when there is no room below ─────────────────────────────── */
 

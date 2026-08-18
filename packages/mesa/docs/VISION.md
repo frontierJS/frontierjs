@@ -931,8 +931,15 @@ that the compiler interprets structurally.
 {/each}
 ```
 
-The `(key)` expression is optional but recommended for stateful lists. It must be
-the last parenthesised group after the item binding.
+The `(key)` expression is optional and must be the last parenthesised group after
+the item binding. **With no key a list is keyed by INDEX**, which never collides
+and therefore always renders the array it was given; what it gives up is node
+identity across a reorder — a moved item is rebound into the node already at
+that position, so DOM state the row owns (focus, an uncontrolled input, a
+running animation, a scroll offset) stays with the POSITION rather than
+travelling with the item. State a key whenever that matters. Keying by the item
+itself is `(item)`, and it is only safe where the values are unique: a duplicate
+key corrupts the reconciler, which is why it is not the default (`FJS-325`).
 
 **Destructuring in `as` clause** — both array and object patterns are supported:
 
@@ -1104,17 +1111,51 @@ false otherwise. Use it to conditionally render slot wrappers:
 {/if}
 ```
 
+**A slot carries content IN, never a value out.** `<slot />` takes no
+attributes but `name`. Writing one — `<slot tipId={tipId} />` — used to
+compile, render the caller's content and deliver nothing, and there is no
+`let:` directive to read such a value with either, so the spelling was a
+feature that did not exist wearing the face of one that did. It is refused by
+name at compile time now.
+
+```html
+<!-- Child.mesa — the hole passes nothing outward -->
+<div class="tip"><slot /></div>
+```
+
+**When the caller needs a value from the child, the hole is a snippet prop**,
+which is a parameterised slot and the only form that can take parameters:
+
+```html
+<!-- Tooltip.mesa -->
+<script>
+  export let children = null
+  const tipId = 'tip-' + crypto.randomUUID()
+</script>
+<div id={tipId} role="tooltip">{@render children?.(tipId)}</div>
+
+<!-- Parent -->
+<Tooltip>
+  {#snippet children(tipId)}<button aria-describedby={tipId}>?</button>{/snippet}
+</Tooltip>
+```
+
 **`<slot />` vs the `children` snippet pattern** — older Mesa code used
 `export let children = null` plus `{@render children?.()}` to receive
-unattributed content. `<slot />` is the preferred form for new code: it
-removes the prop declaration, removes the optional-chain call, and supports
-named slots and fallback content directly. The `children` pattern still works
-and remains valid for components that want to pass slot content as a snippet
-to a deeper child.
+unattributed content with no parameters. For that job `<slot />` is the
+preferred form: it removes the prop declaration, removes the optional-chain
+call, and supports named slots and fallback content directly. The `children`
+pattern is not legacy where it is doing something a slot cannot — passing a
+value to the caller, or handing slot content on to a deeper child as a snippet.
 
-> **RULE 35a** — `<slot />` is the preferred mechanism for receiving content
-> from the parent. The `export let children` + `{@render children?.()}`
-> pattern is supported but should be considered legacy for new components.
+> **RULE 35a** — `<slot />` is the preferred mechanism for receiving
+> unattributed content. The `export let children` + `{@render children?.()}`
+> pattern is the form for content the child must parameterise, and is not
+> legacy for that purpose.
+
+> **RULE 35b** — `<slot>` takes no attribute but `name`. Any other attribute
+> is a compile error: a slot passes content through and never a value back
+> out, so the value would reach nobody and there is nothing to read it with.
 
 ### 9.7 Virtual List — `{#virtual each}`
 
@@ -2106,7 +2147,7 @@ components hydrate to their initial render and serialize cleanly.
 | Store files | Plain `.js` — lowercase, no `.mesa` extension |
 | Multiple root elements | Fully supported — components may have any number of top-level elements |
 | CSS scoping | Styles in `<style>` block are component-scoped by default — the scope class is appended to the selector's SUBJECT, so a component can style its own root and cannot reach into a child (RULE 55) |
-| `{#each}` keying | `(item.id)` key recommended for stateful lists |
+| `{#each}` keying | Unkeyed is keyed by index; state `(item.id)` when a row's DOM state must travel with the item |
 | DOM events | `on:eventname={handler}` with optional `\|modifier` chain |
 | Component events | `onclick={fn}` prop preferred; `$emit('click', data)` supported |
 | Two-way binding | `bind:value={variable}` (with optional `\|mask({pattern})` modifier) |
@@ -2117,7 +2158,7 @@ components hydrate to their initial render and serialize cleanly.
 | Inline styles | `style:prop={expr}` or `style:prop="{expr}unit"` for mixed values |
 | Element lifecycle | `{@attach fn}` — enter, cleanup, and deferred exit |
 | Raw HTML | `{@html expr}` |
-| Parent content | `<slot />` (preferred) or `export let children = null` + `{@render children?.()}` (legacy) |
+| Parent content | `<slot />` for unattributed content; `export let children = null` + `{@render children?.(value)}` when the child must pass a value out |
 | Dev-mode logging | `$inspect(expr1, expr2, ...)` — stripped in production |
 
 ---
@@ -2165,7 +2206,8 @@ components hydrate to their initial render and serialize cleanly.
 | 33 | `{@html expr}` injects raw HTML — only use with trusted content |
 | 34 | `{#virtual each}` takes `height=N` (fixed item height in px) and `viewport="Npx"`; the height is measured from the first row when it is not declared, and variable height is not supported |
 | 35 | Snippet props are declared with `export let`; `<slot />` is the preferred mechanism for receiving content from the parent |
-| 35a | `<slot />` is preferred for unattributed content; the `export let children = null` pattern is supported but legacy for new code |
+| 35a | `<slot />` is preferred for unattributed content; `export let children = null` + `{@render children?.(value)}` is the form for content the child must PARAMETERISE, and is not legacy for that |
+| 35b | `<slot>` takes no attribute but `name` — any other is a compile error, because a slot carries content in and never a value out |
 | 36 | `bind:this` on a component exposes exported `let` props and exported functions — never a DOM node |
 | 37 | `$mounted(fn)` may only appear once per component — use `Promise.all` inside for multiple operations |
 | 38 | `<mesa:mounted>` always gates the entire component template — wrapping and self-closing forms are equivalent |

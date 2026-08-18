@@ -476,4 +476,38 @@ await db.user.deleteMany({ where: { accountId: 5 } })
 // → { count: 3 }
 ```
 
+### Atomic update operators
+
+A counter written as read-modify-write loses one of two concurrent increments,
+and `@version` only turns that into a thrown conflict the caller has to retry.
+These compile to one statement that needs no read and cannot race:
+
+```js
+await db.post.update({ where: { id: 1 }, data: {
+  views:  { increment: 1 },     // "views" = "views" + ?
+  rating: { multiply: 1.1 },    // decrement and divide too
+  tags:   { push: 'featured' }, // json_insert at the end; push: ['a','b'] for several
+} })
+```
+
+| Operator | Column it needs |
+| --- | --- |
+| `increment` `decrement` `multiply` `divide` | `Int` `Float` `BigInt` `Decimal` |
+| `push` | any array column — `String[]`, `Int[]`, an enum array |
+
+**The declared type decides.** `{ addr: { city: 'x' } }` on a `Json @type(Addr)`
+column is still a value, because that column can carry an object; the same shape
+on a numeric column is an operator. Anything that is neither is refused by name
+rather than guessed at, including:
+
+- an operator on a column whose type cannot carry it
+- an operator on `create`, `createMany`, `upsert` or `upsertMany` — there is no
+  value to change, and upsert's two paths could not agree about one
+- `divide: 0`, which SQLite answers as `NULL` with no error
+- two operators on one column, or an operator mixed with anything else
+- an enum array pushed a member the enum does not declare
+- **a column carrying `@lt` `@lte` `@gt` `@gte` `@maxItems` `@uniqueItems`** —
+  the new value is computed inside SQLite where no validator can see it, and a
+  validator that quietly stops applying is worse than one that says it cannot.
+  Read the row, change it and write it back; that path validates.
 Bulk ops (`createMany`, `updateMany`, `upsertMany`, `removeMany`, `deleteMany`) return `{ count }` only — no row data. This is intentional: `RETURNING *` on thousands of rows negates the performance reason for bulk ops. Use `$transaction` + single-row ops when you need the modified rows.

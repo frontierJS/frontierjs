@@ -5,7 +5,7 @@
 // Services are registered in the app and called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { requestMeta, runWithMeta, runInServiceCall } from './context.ts'
+import { requestMeta, runWithMeta, runInServiceCall, withCallEffects } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
 import {
@@ -130,7 +130,7 @@ function buildCacheHooks(
   // (e.g. password hashes) to later callers.
   const checkCache: HookFn = (ctx) => {
     const hit = resolveCache(ctx).get(getKey(ctx))
-    if (hit !== undefined) ctx.result = structuredClone(hit) as ServiceContext['result']
+    if (hit !== undefined) ctx.result = structuredClone(hit)
   }
 
   const storeResult: HookFn = (ctx) => {
@@ -188,6 +188,14 @@ export interface ServiceDescription {
   transactional: string[]
   /** The merged hook declaration — what ran, not how it was resolved. */
   hooks:      HookMap
+  /**
+   * Where this service's mutations are broadcast, as something a JSON reader
+   * can hold: the channel name for the string form, `true` for a function
+   * target, `false` for the declared opt-out, and `null` for a service that
+   * declares nothing — which falls through to the app-level
+   * `publishDefault()` if one is registered.
+   */
+  channel:    string | boolean | null
   /** Present when the service was given an explicit schema. */
   schemas?:   { create?: unknown; patch?: unknown }
 }
@@ -506,7 +514,7 @@ async function _callService(
   )
 
   if (idem?.replay) {
-    ctx.result = idem.result as ServiceContext['result']
+    ctx.result = idem.result
     return
   }
 
@@ -540,6 +548,11 @@ async function _callService(
   const methodFn = (isCustom
     ? customMethodFn(service, method as string)
     : service[method as ServiceMethod]) as (ctx: ServiceContext) => Promise<unknown>
+
+  // Every context the three builders make arrives with one. A hand-built
+  // context — a test, an app calling a service method with a literal — does
+  // not, and a hook that queues an effect must not be the thing that throws.
+  if (typeof ctx.afterCommit !== 'function') withCallEffects(ctx)
 
   let pipelineError: unknown = null
 
@@ -681,6 +694,69 @@ async function _callService(
     }
   }
 
+  // ── after commit ──────────────────────────────────────────────────
+  //
+  // The phase an `after` hook is not. `after` runs in sequence with the other
+  // after hooks, so an email sent from one goes out and a later hook throwing
+  // still fails the call — and under `transactional:` rolls the write back with
+  // the email already gone (`FJS-089`). What is queued here runs once, here,
+  // and only on the success path.
+  //
+  // AFTER the transaction, without knowing one existed: `transactional:` is an
+  // `around` hook, so `runPipeline` has already returned by the time this line
+  // is reached — the commit happened when `$transaction` resolved. Without one,
+  // the same condition means the pipeline finished, which is the guarantee
+  // being offered and the same one the announcement above uses.
+  //
+  // Before `idem.settle` for the reason the announcement is: a replay must not
+  // be told the call is finished while its effects are still running.
+  if (!ctx.error && !pipelineError && ctx._afterCommit?.length) {
+    const queued = ctx._afterCommit
+    ctx._afterCommit = []
+    for (const fn of queued) {
+      try {
+        await fn()
+      } catch (err) {
+        // Observer tier (FJS-D06): the write is committed and the announcement
+        // is out, so this cannot be reported as the call failing — a 500 here
+        // would tell the client a write failed that did not. Loud, though: a
+        // swallowed effect with no signal is the defect this phase exists to
+        // stop, wearing different clothes.
+        const e = err as Error
+        console.error(
+          `[Junction] afterCommit callback threw in '${service.name}.${method as string}': ${e?.message}. ` +
+          `The call succeeded and was announced; this effect did not run.`
+        )
+        t?.emit('junction.aftercommit.error', {
+          telemetryId: ctx.telemetryId,
+          service:     service.name,
+          method:      method as string,
+          error:       { name: e?.name, message: e?.message },
+        })
+      }
+    }
+  }
+
+  // ── outbox handoff ────────────────────────────────────────────────
+  //
+  // The rows are committed, so the relay's own timer would find them; this
+  // only buys the latency between committing an effect and queueing it.
+  // Deliberately NOT awaited — the caller is waiting on a response, the work
+  // is already durable, and the sweep is the backstop that makes that safe.
+  if (!ctx.error && !pipelineError && ctx._outbox?.length) {
+    ctx._outbox = []
+    void ctx.app?.outbox?.deliver().catch((err: unknown) => {
+      // A failed pass is not a failed call: the row is committed and owed, and
+      // the next sweep will try again. Loud, because a relay that cannot reach
+      // its queue at all is silent otherwise.
+      ctx.app?.logger?.error?.('[Junction] outbox delivery kick failed', {
+        service: service.name,
+        method:  method as string,
+        error:   (err as Error)?.message,
+      })
+    })
+  }
+
   // Settle the key AFTER the announcement, so a replay cannot arrive between
   // the write and the broadcast and be told the call is finished while the
   // open tabs have not heard about it. A failed call releases the key.
@@ -818,8 +894,28 @@ export interface BaseServiceOptions {
   schema?:   import('./litestone.ts').LitestoneJsonSchema
 
   /** Custom service methods — any extra function-valued option. */
-  [method: string]: unknown
+  [method: string]: ServiceDefinitionValue
 }
+
+/**
+ * What a key neither factory declares may hold — a custom method, or an option
+ * a plugin reads.
+ *
+ * Spelled as a union rather than `unknown` for one reason. Under `unknown`
+ * nothing contextually types a custom method's parameter, so the documented
+ * shape
+ *
+ *   createService({ name: 'servers', async reboot(ctx) { … } })
+ *
+ * gives `ctx` an implicit `any` — a hard error in any app with `noImplicitAny`
+ * on, and a silently untyped `ctx` in every app without it. A union carrying
+ * exactly ONE function type contextually types the function-valued keys and
+ * still accepts every option value, which `unknown` and `| unknown` both
+ * cannot: a union with `unknown` in it collapses back to `unknown`.
+ */
+export type ServiceDefinitionValue =
+  | ((ctx: ServiceContext) => Promise<unknown>)
+  | string | number | boolean | bigint | symbol | object | null | undefined
 
 // ─── Reserved keys — the single source of truth ───────────────────────────
 // A service is "options + methods" in one object, so every consumer needs the
@@ -1029,6 +1125,16 @@ function refuseDoubleBroadcast(
   }
 }
 
+// A PublishDeclaration is a string, `false`, or a function — and a function
+// cannot cross the wire, so describe() answers a summary rather than the value.
+// `null` is a service that declares nothing, which is not the same as `false`:
+// one asks the app-level default, the other refuses it.
+function describeChannel(decl: PublishDeclaration | undefined): string | boolean | null {
+  if (decl === undefined) return null
+  if (decl === false)     return false
+  return typeof decl === 'string' ? decl : true
+}
+
 // ─── The method policy (FJS-004 / FJS-D07) ────────────────────────────────
 //
 // A model service answers every CRUD verb through the base, WITH validation,
@@ -1146,9 +1252,24 @@ export function scanCustomMethods(obj: object): string[] {
   )
 }
 
+/**
+ * What `createBaseService` hands back — a service DEFINITION carrying the CRUD
+ * methods, on its way into `createService`, not a built `Service`.
+ *
+ * The difference is load-bearing in one place: a built service's `hooks` is the
+ * registration METHOD, a definition's is the MAP. Declaring this as
+ * `Omit<Service, …>` therefore said the returned `hooks` was a function, and
+ * the documented shape — `createService({ ...createBaseService({ model }) })` —
+ * did not compile.
+ */
+export type BaseServiceDefinition =
+  ServiceDefinition &
+  Required<Pick<ServiceDefinition,
+    'find' | 'get' | 'create' | 'update' | 'patch' | 'remove' | 'restore' | 'hooks'>>
+
 export function createBaseService(
   opts: BaseServiceOptions
-): Omit<Service, 'name' | 'hooks' | 'pipelines'> & Partial<Pick<Service, 'name' | 'hooks'>> {
+): BaseServiceDefinition {
 
   // ── Single CRUD code path ─────────────────────────────────────────────
   // createBaseService used to carry its own parallel find/get/create/...
@@ -1361,7 +1482,7 @@ export function createBaseService(
   // createService, not a built Service: it carries no `_customMethods`, no `_methods`
   // and no `pipelines`, and those are what createService adds. A one-step
   // assertion claims an overlap the compiler is right to refuse.
-  } as unknown as Omit<Service, 'name' | 'hooks' | 'pipelines'> & Partial<Pick<Service, 'name' | 'hooks'>>
+  } as unknown as BaseServiceDefinition
 }
 
 // ─── Plain-client adapter ─────────────────────────────────────────────────
@@ -1522,7 +1643,7 @@ export interface ServiceDefinition {
   // Custom methods — defined directly alongside CRUD methods
   // e.g. { name: 'servers', reboot: async (ctx) => { ... } }
   // Hook config uses the method name as key: hooks: { before: { reboot: [...] } }
-  [method: string]: unknown
+  [method: string]: ServiceDefinitionValue
 
   hooks?:     HookMap
 }
@@ -1802,6 +1923,7 @@ export function createService(def: ServiceDefinition): Service {
         cache:      !!meta.cache,
         idField:    (meta.idField as string) ?? 'id',
         transactional: [...(service._transactional ?? [])],
+        channel:    describeChannel(service.channel as PublishDeclaration | undefined),
         hooks:      service._hookMap,
         ...(schemas ? { schemas } : {}),
       }
@@ -1951,6 +2073,13 @@ export class ServiceRegistry {
  * could never have fetched. Feathers has the same split: its core publishes
  * nothing without a publisher, and its *generator* writes one for you.
  * Junction's `fli make:*` scaffolds do the same.
+ *
+ * A service declaring NOTHING falls through to the app-level default
+ * (`app.channels.publishDefault(fn)`), which is null unless an app registered
+ * one — so the opt-in above is unchanged, and an app that wants one scoping
+ * rule for twenty services writes it once (FJS-334). `channel: false` is the
+ * declared opt-out and is not asked; it means this service broadcasts nothing,
+ * default included.
  */
 async function publishToChannels(
   service: Service,
@@ -1959,17 +2088,23 @@ async function publishToChannels(
   payload: unknown
 ): Promise<void> {
   const decl = service.channel as PublishDeclaration | undefined
-  if (decl === undefined || decl === false) return
+  if (decl === false) return
 
   const manager = ctx.locals.__channels as {
     channel:  (name: string) => unknown
     publish:  (event: string, data: unknown, ctx: ServiceContext, fn: (d: unknown, c: ServiceContext) => unknown) => Promise<void>
+    defaultPublisher?: ((data: unknown, ctx: ServiceContext) => unknown) | null
   } | undefined
   if (!manager) return
 
-  const resolve = typeof decl === 'string'
-    ? () => manager.channel(decl)
-    : decl
+  // The manager has to be resolved before this question can be asked, which is
+  // why the undefined case is not an early return beside `false` any more.
+  const target = decl ?? manager.defaultPublisher ?? undefined
+  if (target === undefined || target === null) return
+
+  const resolve = typeof target === 'string'
+    ? () => manager.channel(target)
+    : target
 
   try {
     await manager.publish(event, payload, ctx, resolve as never)

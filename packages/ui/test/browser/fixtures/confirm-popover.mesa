@@ -3,7 +3,7 @@
   // counted. A confirmation that fires BOTH, or neither, looks identical on
   // screen to one that fires the right one.
   import ConfirmationPopover from '../../../components/overlay/ConfirmationPopover.mesa'
-  import Btn from '../../../components/forms/Btn.mesa'
+  import Button from '../../../components/forms/Button.mesa'
 
   let confirms = 0
   let cancels  = 0
@@ -18,7 +18,7 @@
     oncancel={() => cancels++}
   >
     {#snippet trigger()}
-      <Btn id="confirm-trigger">Remove</Btn>
+      <Button id="confirm-trigger" variant="ghost">Remove</Button>
     {/snippet}
   </ConfirmationPopover>
 </div>

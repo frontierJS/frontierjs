@@ -29,7 +29,7 @@ tables.
 | `bun run verify` | drive the app in headless Chrome and assert what happened (both servers must be up) |
 | `bun run verify:ui` | drive the kit's behavioural components — tabs, menus, a dialog, a palette — 27 assertions |
 | `bun run verify:live` | open a watcher tab that never acts, change rows from outside it, and assert what crossed the socket — 14 assertions |
-| `bun run verify:jobs` | the deferred-work realm over HTTP, no browser — 8 assertions |
+| `bun run verify:jobs` | the deferred-work realm over HTTP, no browser — 10 assertions |
 | `bun run verify:notify` | the outbound boundary: mail at a real server, and who can see what — 9 assertions |
 | `bun run build:public` | the PUBLIC site: prerender `src/public-site/` to `web/dist/public/` |
 | `bun run verify:public` | serve that build and prove its two islands come alive in a real browser — 21 assertions |
@@ -169,6 +169,17 @@ one, and watch both fill in. That the job goes through the service rather than
 `db.asSystem().order.update(…)` is the whole point: a write at the Data boundary
 announces nothing (`FJS-010`) and every open tab keeps the stale row.
 
+**Paying an order records its announcement rather than dispatching it.** `pay`
+runs inside a transaction and calls `ctx.enqueue(announcePayment, …)`, which
+writes an outbox row in the app's own database as part of the move; the relay
+(`app.configure(outbox())`) hands it to the queue afterwards. A plain dispatch is
+a second thing that happens after the move commits, so a process dying in
+between leaves an order that is paid and a customer nobody ever told — with no
+row anywhere saying the announcement was owed (`FJS-D35`). The `unique` key this
+used to carry is gone and nothing replaced it: the state machine already refuses
+paying a paid order, and what a key on the job could never cover is a job that
+was never queued.
+
 **Paying an order sends an email, and the email is checked.** The customer's
 confirmation goes out through `@frontierjs/conduit` to a declared target, and
 that target is [`api/mail-sink.ts`](api/mail-sink.ts) — a dev mail catcher on
@@ -232,7 +243,7 @@ deferred work, the outbound boundary, and the prerendered public site. Last run:
 all 37 assertions passed        (dev AND the production build, 0 console errors)
 all 27 assertions passed        bun run verify:ui
 all 14 assertions passed        bun run verify:live
-all  8 assertions passed        bun run verify:jobs
+all 10 assertions passed        bun run verify:jobs
 all  9 assertions passed        bun run verify:notify
 all 21 assertions passed        bun run verify:public   (the built static site)
 

@@ -14,7 +14,7 @@ import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createCaravan }        from '@frontierjs/caravan'
 import { conduit }              from '@frontierjs/conduit'
 import { notificationsPlugin }  from '@frontierjs/notifications'
-import { mailerPlugin }         from '@frontierjs/junction'
+import { mailerPlugin, outbox }  from '@frontierjs/junction'
 
 import { db, DEV_KEY }   from './db.ts'
 import { shopGateLevel, SYSTEM } from './gate.ts'
@@ -117,6 +117,22 @@ const queue = createCaravan({
 })
 
 app.configure(queue)
+
+// ─── The outbox ───────────────────────────────────────────────────────────
+//
+// `ctx.enqueue(job, payload)` writes its row inside the calling method's own
+// transaction, and this relay hands it to the queue afterwards. Without it a
+// crash between "the order is paid" committing and the announcement being
+// queued loses the announcement with nothing recording that it was owed —
+// which is the one thing `ctx.afterCommit(fn)` cannot buy (`FJS-D35`).
+//
+// AFTER the queue, because that is where the rows go: outbox() declares
+// requires: ['caravan'] and startup refuses the other order by name.
+//
+// The interval is the recovery sweep, not the latency of an ordinary effect —
+// a committed call kicks the relay immediately. It is how long a row a crash
+// left behind waits, and one second keeps the drive's assertions quick.
+app.configure(outbox({ intervalMs: 1_000 }))
 
 // ─── Outbound ─────────────────────────────────────────────────────────────
 //

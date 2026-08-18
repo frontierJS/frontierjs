@@ -43,6 +43,11 @@ export interface AppConfig {
       maxAge:     number
     }
     powered:      string
+    // Security headers. On unless declared false — the opt-out an app writes
+    // as `http: { helmet: false }`, which app.ts has always read and this
+    // shape did not declare, so the typed form of the documented opt-out was
+    // the one spelling that did not compile.
+    helmet?:      boolean
     // Grace period (ms) between stop() and process.exit — lets in-flight
     // requests complete. Default 5000ms.
     drainTimeout?: number
@@ -217,7 +222,23 @@ export async function loadConfig(configDir = './config'): Promise<AppConfig & { 
 // ─── Deep merge ───────────────────────────────────────────────────────────
 // Plain objects are merged. Arrays are replaced. Primitives are replaced.
 
-export function deepMerge<T extends object>(base: T, override: Partial<T>): T {
+/**
+ * `Partial`, all the way down — what `deepMerge` actually accepts.
+ *
+ * A one-level `Partial<AppConfig>` says a caller must restate every key of
+ * `http` to change one of them, which is the opposite of what this function
+ * does with it. Arrays and functions are left whole, because deepMerge
+ * replaces those rather than merging them.
+ */
+export type DeepPartial<T> = {
+  [K in keyof T]?:
+    T[K] extends readonly unknown[] ? T[K]
+  : T[K] extends (...args: never[]) => unknown ? T[K]
+  : T[K] extends object ? DeepPartial<T[K]>
+  : T[K]
+}
+
+export function deepMerge<T extends object>(base: T, override: DeepPartial<T>): T {
 
   const result = deepClone(base)
 

@@ -26,7 +26,7 @@
 // previous version unrunnable: it queried snake_case columns (`workspace_id`,
 // `created_at`) and epoch-ms timestamps, neither of which the schema emits.
 //
-// The scoped helpers — dbOf / getScoped / findScoped / narrowPatch — come from
+// The scoped helpers — dbOf / getScoped / findScoped / narrowPatch, changesNothing — come from
 // core/resource.ts and are shared with the other six workspace-scoped services.
 // This file used to carry its own copies of all of them, which meant the
 // workspace clause was written out by hand here and could have been omitted in
@@ -40,11 +40,12 @@
 // The old parseServer()/parseEvent() JSON.parse helpers are gone — parsing an
 // already-parsed object is how you get "[object Object]" in a column.
 
-import { createService, NotFound, BadRequest, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, publishToChannels, normalizeOrderBy } from '@frontierjs/junction'
+import type { SortParam } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
 import {
   dbOf, wsOf, actorOf,
-  findScoped, getScoped, assertSlugFree, stampWorkspace, narrowPatch,
+  findScoped, getScoped, assertSlugFree, stampWorkspace, narrowPatch, changesNothing,
 } from '../../core/resource.ts'
 import { envRef }                from '../../core/credentials.ts'
 import type { BasecampApp }      from '../../basecamp.types.ts'
@@ -107,9 +108,21 @@ export function createServersService(app: BasecampApp) {
       if (role)   where.role   = role
       if (search) where.name   = { contains: search }
 
+      // `$orderBy` is honoured rather than ignored: this list is sorted from the
+      // URL, so the order has to survive a reload and a pasted link like every
+      // other part of the query. autoSort has already run — it validates the
+      // key against the schema and answers a 400 naming it — but it leaves the
+      // value RAW, so the parse is junction's own `normalizeOrderBy` rather
+      // than a second reading of the same three spellings written here.
+      //
       // findScoped merges workspaceId into the where-clause. Building it here
       // instead is the one place a filter set could ship without it.
-      return findScoped(ctx, 'server', { where, ...getPagination(ctx) })
+      const sort = ctx.directives?.orderBy
+      return findScoped(ctx, 'server', {
+        where,
+        ...getPagination(ctx),
+        ...(sort ? { orderBy: normalizeOrderBy(sort as SortParam) } : {}),
+      })
     },
 
     // ── get ───────────────────────────────────────────────────────────
@@ -157,7 +170,7 @@ export function createServersService(app: BasecampApp) {
       // slug, or set status behind the drain/reboot transitions.
       const patch = narrowPatch(ctx.data as Record<string, unknown>, ['slug', 'status'])
 
-      if (!Object.keys(patch).length) return getScoped(ctx, 'server', 'Server')
+      if (changesNothing(patch)) return getScoped(ctx, 'server', 'Server')
 
       // updatedAt is a schema trigger — setting it here would fight the DB.
       return dbOf(ctx).server.update({ where: { id }, data: patch })

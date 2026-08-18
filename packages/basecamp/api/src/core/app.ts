@@ -31,7 +31,23 @@ import { createFleetEngine }         from '../engine/fleet.engine.ts'
 
 import type { BasecampApp } from '../basecamp.types.ts'
 
-export async function buildBasecampApp(): Promise<BasecampApp> {
+/**
+ * Build the app.
+ *
+ * `db` and `dbPath` exist for ONE caller and it is not production: the Testing
+ * realm. `@frontierjs/testing` mounts this app over the environment's own
+ * Litestone client so that a service test travels the whole request path —
+ * principal → SessionContext → sessionGateLevel → toDataPrincipal → the scoped
+ * client — instead of stopping at the Data boundary. Handing it a second client
+ * on the same file would work and would be wrong: `arrange` writes and
+ * `announced()` would then be looking at different connections.
+ *
+ * Both default to what production does, so the entry point calls this with no
+ * arguments and nothing about it changes.
+ */
+export async function buildBasecampApp(
+  opts: { db?: unknown; dbPath?: string } = {},
+): Promise<BasecampApp> {
 
   // ── Logger ──────────────────────────────────────────────────────────
   const logger = createLogger({
@@ -66,13 +82,18 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   // SQL only here: a JS migration is handed a Litestone client, and the client
   // is built below — against the database these migrations create.
   const migrationsDir = new URL('../../../db/migrations/main', import.meta.url).pathname
-  const dbClient      = createDatabase({ path: env.DATABASE_URL, log: env.DB_LOG })
+  // One path for this app's databases, not one per subsystem: the queue's file
+  // is derived from it, so a test that redirects the main database and leaves
+  // the queue behind would write jobs into the developer's own.
+  const dbPath        = opts.dbPath ?? env.DATABASE_URL
+  const dbClient      = createDatabase({ path: dbPath, log: env.DB_LOG })
   const migrated      = await apply(dbClient.db, migrationsDir)
   if (migrated.unmatched)
     throw new Error(`[basecamp] ${migrated.message} — db/migrations/main`)
 
   const rawDb = dbClient.db
-  const db    = await createBasecampDb()
+  // eslint-disable-next-line -- the injected client is the env's, already typed there
+  const db    = (opts.db as Awaited<ReturnType<typeof createBasecampDb>>) ?? await createBasecampDb()
 
   // ── Auth ─────────────────────────────────────────────────────────────
   // @frontierjs/auth over the Litestone client. It owns User / Credential /
@@ -111,7 +132,13 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   // every service gets a client on ctx.locals.db already scoped to the caller.
   // Omitting it leaves services running against an unscoped client — an option
   // with exactly one correct answer.
-  const app = createApp({ config, auth, db }) as BasecampApp
+  // `autoload` stated rather than defaulted. The default resolves `./services`
+  // beside the ENTRY FILE (Bun.main), which is the entry point in production
+  // and the test runner under `bun test` — so an app mounted by
+  // @frontierjs/testing found no services at all. An absolute path is the same
+  // answer from either.
+  const servicesDir = new URL('../services', import.meta.url).pathname
+  const app = createApp({ config, auth, db, autoload: servicesDir }) as BasecampApp
 
   // Attach DB and Basecamp-specific subsystems.
   // app.claim() is the guarded namespace claim — it throws on a collision
@@ -154,7 +181,7 @@ export async function buildBasecampApp(): Promise<BasecampApp> {
   // ── Caravan — durable job queue ───────────────────────────────────────
   // Plugin augments app with app.jobs and wires /metrics job stats.
   const queue = createCaravan({
-    db:          env.DATABASE_URL.replace('.db', '-jobs.db'),
+    db:          dbPath.replace('.db', '-jobs.db'),
     pollInterval: 1_000,
     queues: {
       default:     { concurrency: 2 },

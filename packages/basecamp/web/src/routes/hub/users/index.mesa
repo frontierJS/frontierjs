@@ -37,6 +37,8 @@ title: Hub users
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Input from '@frontierjs/ui/components/forms/Input.mesa'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   let rows    = []
   let error   = null
@@ -134,6 +136,15 @@ title: Hub users
   }
   $: suspended = rows.filter(u => u.status === 'suspended').length
   $: me = session.user?.userId
+  const HUB_USER_COLUMNS = [
+    { key: 'actor',      label: 'Actor' },
+    { key: 'kind',       label: 'Kind' },
+    { key: 'workspaces', label: 'Workspaces' },
+    { key: 'status',     label: 'Status' },
+    { key: 'hub',        label: 'Hub' },
+    { key: 'created',    label: 'Created' },
+    { key: 'actions',    label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 {#if error}
@@ -173,8 +184,8 @@ title: Hub users
     </p>
     <div class="cluster">
       <label class="visually-hidden" for="bot-name">Bot name</label>
-      <input class="field" id="bot-name" placeholder="CI deploy" value={botName}
-             on:input={(e) => (botName = e.target.value)} />
+      <Input id="bot-name" placeholder="CI deploy" value={botName}
+             oninput={(e) => (botName = e.target.value)} />
 
       <label class="visually-hidden" for="bot-ws">Workspace</label>
       <Select id="bot-ws" value={botWs} placeholder=""
@@ -199,69 +210,54 @@ title: Hub users
     Nothing matches that filter.
   </EmptyState>
 {:else}
-  <div class="table-wrap">
-    <table class="table striped">
-      <thead>
-        <tr>
-          <th scope="col">Actor</th>
-          <th scope="col">Kind</th>
-          <th scope="col">Workspaces</th>
-          <th scope="col">Status</th>
-          <th scope="col">Hub</th>
-          <th scope="col">Created</th>
-          <th scope="col"><span class="visually-hidden">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody id="hub-user-rows">
-        {#each rows as u}
-          <tr>
-            <td>
-              {label(u)}
-              <span class="text-sm text-muted">{u.email}</span>
-            </td>
-            <td><Badge tone={u.kind === 'human' ? 'info' : 'muted'}>{u.kind}</Badge></td>
-            <td class="text-sm text-muted">
-              {#if u.memberships.length}
-                {u.memberships.map(m => `${m.workspace} (${m.role})`).join(', ')}
+  <Table id="hub-user-rows" columns={HUB_USER_COLUMNS} rows={rows} striped hover={false}>
+    {#snippet row(u)}
+      <tr>
+        <td>
+          {label(u)}
+          <span class="text-sm text-muted">{u.email}</span>
+        </td>
+        <td><Badge tone={u.kind === 'human' ? 'info' : 'muted'}>{u.kind}</Badge></td>
+        <td class="text-sm text-muted">
+          {#if u.memberships.length}
+            {u.memberships.map(m => `${m.workspace} (${m.role})`).join(', ')}
+          {:else}
+            none
+          {/if}
+        </td>
+        <td><Pill tone={u.status === 'active' ? 'success' : u.status === 'suspended' ? 'danger' : 'warning'}>{u.status}</Pill></td>
+        <td>
+          {#if u.isSystemAdmin}<Pill tone="warning">sysadmin</Pill>{:else}<span class="text-sm text-muted">—</span>{/if}
+        </td>
+        <td class="text-sm text-muted">{when(u.createdAt)}</td>
+        <td>
+          <span class="cluster">
+            {#if u.id === me}
+              <span class="text-sm text-muted">you</span>
+            {:else}
+              {#if u.status === 'suspended'}
+                <Button variant="ghost" disabled={busy === u.id}
+                        aria-label={`Restore ${label(u)}`}
+                        onclick={() => setStatus(u, 'active')}>Restore</Button>
               {:else}
-                none
+                <Button variant="ghost" tone="danger" disabled={busy === u.id}
+                        aria-label={`Suspend ${label(u)}`}
+                        onclick={() => setStatus(u, 'suspended')}>Suspend</Button>
               {/if}
-            </td>
-            <td><Pill tone={u.status === 'active' ? 'success' : u.status === 'suspended' ? 'danger' : 'warning'}>{u.status}</Pill></td>
-            <td>
-              {#if u.isSystemAdmin}<Pill tone="warning">sysadmin</Pill>{:else}<span class="text-sm text-muted">—</span>{/if}
-            </td>
-            <td class="text-sm text-muted">{when(u.createdAt)}</td>
-            <td>
-              <span class="cluster">
-                {#if u.id === me}
-                  <span class="text-sm text-muted">you</span>
-                {:else}
-                  {#if u.status === 'suspended'}
-                    <Button variant="ghost" disabled={busy === u.id}
-                            aria-label={`Restore ${label(u)}`}
-                            onclick={() => setStatus(u, 'active')}>Restore</Button>
-                  {:else}
-                    <Button variant="ghost" tone="danger" disabled={busy === u.id}
-                            aria-label={`Suspend ${label(u)}`}
-                            onclick={() => setStatus(u, 'suspended')}>Suspend</Button>
-                  {/if}
 
-                  {#if u.kind === 'human'}
-                    <Button variant="ghost" disabled={busy === u.id}
-                            aria-label={u.isSystemAdmin ? `Revoke hub access for ${label(u)}` : `Grant hub access to ${label(u)}`}
-                            onclick={() => setAdmin(u, !u.isSystemAdmin)}>
-                      {u.isSystemAdmin ? 'Revoke hub' : 'Grant hub'}
-                    </Button>
-                  {/if}
-                {/if}
-              </span>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+              {#if u.kind === 'human'}
+                <Button variant="ghost" disabled={busy === u.id}
+                        aria-label={u.isSystemAdmin ? `Revoke hub access for ${label(u)}` : `Grant hub access to ${label(u)}`}
+                        onclick={() => setAdmin(u, !u.isSystemAdmin)}>
+                  {u.isSystemAdmin ? 'Revoke hub' : 'Grant hub'}
+                </Button>
+              {/if}
+            {/if}
+          </span>
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
 {/if}
 
 <article class="alert info">

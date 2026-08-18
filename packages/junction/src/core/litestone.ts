@@ -902,7 +902,15 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
 // import is dynamic and its absence is tolerated — the same approach
 // plugins/manifest already uses.
 
-const _jsonSchemaFor = new WeakMap<object, Promise<LitestoneJsonSchema | null>>()
+/**
+ * Which document — litestone's property set is MODE-DEPENDENT, not just its
+ * `required[]`. `create` omits `@id` and `@version`; `update` carries both.
+ * Deriving one document and compiling every mode from it silently strips
+ * whatever that mode was missing.
+ */
+type JsonSchemaMode = 'create' | 'update' | 'full'
+
+const _jsonSchemaFor = new WeakMap<object, Map<JsonSchemaMode, Promise<LitestoneJsonSchema | null>>>()
 
 let _warnedNoValidation = false
 function _warnNoValidation(reason: string): void {
@@ -916,11 +924,17 @@ function _warnNoValidation(reason: string): void {
   )
 }
 
-function _deriveJsonSchema(client: unknown): Promise<LitestoneJsonSchema | null> {
+function _deriveJsonSchema(
+  client: unknown,
+  mode:   JsonSchemaMode = 'create',
+): Promise<LitestoneJsonSchema | null> {
   const c = client as { $schema?: unknown } | null
   if (!c || typeof c !== 'object' || !c.$schema) return Promise.resolve(null)
 
-  const cached = _jsonSchemaFor.get(c as object)
+  let byMode = _jsonSchemaFor.get(c as object)
+  if (!byMode) { byMode = new Map(); _jsonSchemaFor.set(c as object, byMode) }
+
+  const cached = byMode.get(mode)
   if (cached) return cached
 
   const p = (async () => {
@@ -931,7 +945,8 @@ function _deriveJsonSchema(client: unknown): Promise<LitestoneJsonSchema | null>
       const mod = await import('@frontierjs/litestone')
       if (typeof mod.generateJsonSchema === 'function')
         return mod.generateJsonSchema(
-          c.$schema as Parameters<typeof mod.generateJsonSchema>[0]
+          c.$schema as Parameters<typeof mod.generateJsonSchema>[0],
+          { mode },
         ) as unknown as LitestoneJsonSchema
       _warnNoValidation('@frontierjs/litestone does not export generateJsonSchema')
       return null
@@ -945,7 +960,7 @@ function _deriveJsonSchema(client: unknown): Promise<LitestoneJsonSchema | null>
     }
   })()
 
-  _jsonSchemaFor.set(c as object, p)
+  byMode.set(mode, p)
   return p
 }
 
@@ -998,8 +1013,12 @@ export function resolveDefsKey(
 }
 
 const _compiledFor = new WeakMap<object, Map<string, {
-  create: import('./schema.ts').CompiledSchema
-  patch:  import('./schema.ts').CompiledSchema
+  create:    import('./schema.ts').CompiledSchema
+  patch:     import('./schema.ts').CompiledSchema
+  /** The @transient fields this model declares — lifted off the payload after
+   *  validation. Read off the generated schema at compile time, so a model with
+   *  none pays one empty array for the life of the client. */
+  transient: string[]
 } | null>>()
 
 // Accessors already warned about, per client.
@@ -1096,8 +1115,17 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
     const client = ctx.locals.db as { $schema?: unknown } | undefined
     if (!client) return
 
-    const jsonSchema = await _deriveJsonSchema(client)
-    if (!jsonSchema) return
+    // Two documents, because litestone's PROPERTY SET differs by mode and not
+    // only its `required[]`. `@version` is emitted for update and omitted for
+    // create, so a patch validator compiled off the create document strips the
+    // version the caller sent — and the Data boundary then refuses the write
+    // for not carrying one. `@version` was unusable through a service until
+    // this asked for both.
+    const [jsonSchema, updateSchemaDoc] = await Promise.all([
+      _deriveJsonSchema(client, 'create'),
+      _deriveJsonSchema(client, 'update'),
+    ])
+    if (!jsonSchema || !updateSchemaDoc) return
 
     let perModel = _compiledFor.get(client as object)
     if (!perModel) { perModel = new Map(); _compiledFor.set(client as object, perModel) }
@@ -1115,8 +1143,10 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
         try {
           // jsonSchemaToJunctionSchema returns a spec; createSchema compiles it.
           perModel.set(accessor, {
-            create: createSchema(jsonSchemaToJunctionSchema(defsKey, jsonSchema, 'create')),
-            patch:  createSchema(jsonSchemaToJunctionSchema(defsKey, jsonSchema, 'update')),
+            create:    createSchema(jsonSchemaToJunctionSchema(defsKey, jsonSchema,      'create')),
+            patch:     createSchema(jsonSchemaToJunctionSchema(
+                         defsKey, withVersionProperty(jsonSchema, updateSchemaDoc, defsKey), 'update')),
+            transient: transientFields(jsonSchema, defsKey),
           })
         } catch (err) {
           perModel.set(accessor, null)
@@ -1142,6 +1172,87 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
     ctx.data = Array.isArray(ctx.data)
       ? partitionBulk(ctx, ctx.data, row => compiled[mode].parse(row) as Record<string, unknown>)
       : compiled[mode].parse(ctx.data)
+
+    liftTransient(ctx, compiled.transient)
+  }
+}
+
+/**
+ * The create property set plus the `@version` column, and nothing else the
+ * update document adds.
+ *
+ * `@version` is the one field a caller must be able to SEND that litestone
+ * emits for update and not for create. The update document also carries `@id`,
+ * which travels as `ctx.id` and must never reach `data`: litestone writes what
+ * it is given, so `PATCH /docs/1 {"id":99}` would rewrite the primary key —
+ * measured. Taking the whole update document would have opened exactly that.
+ */
+function withVersionProperty(
+  createDoc: LitestoneJsonSchema,
+  updateDoc: LitestoneJsonSchema,
+  defsKey:   string,
+): LitestoneJsonSchema {
+  const cDef  = createDoc.$defs[defsKey] as LitestoneModelDef | undefined
+  const uDef  = updateDoc.$defs[defsKey] as (LitestoneModelDef & { 'x-version'?: string }) | undefined
+  const field = typeof uDef?.['x-version'] === 'string' ? uDef['x-version'] : null
+  const prop  = field ? uDef?.properties?.[field] : null
+  if (!cDef || !field || !prop) return createDoc
+
+  return {
+    ...createDoc,
+    $defs: {
+      ...createDoc.$defs,
+      [defsKey]: { ...cDef, properties: { ...cDef.properties, [field]: prop } },
+    },
+  }
+}
+
+/** The @transient property names on a model's generated schema. */
+function transientFields(jsonSchema: LitestoneJsonSchema, defsKey: string): string[] {
+  const props = (jsonSchema.$defs?.[defsKey] as { properties?: Record<string, { 'x-litestone-kind'?: string }> })?.properties
+  if (!props) return []
+  return Object.entries(props)
+    .filter(([, spec]) => spec?.['x-litestone-kind'] === 'transient')
+    .map(([name]) => name)
+}
+
+/**
+ * Move every @transient key from ctx.data to ctx.transients.
+ *
+ * It has to LEAVE the payload: the Data boundary refuses a transient key by
+ * name — there is no column — so a service passing ctx.data on whole would fail
+ * the write rather than the field. And it has to leave it AFTER validation, so
+ * @length and @required are enforced on the value the caller actually sent.
+ *
+ * A BULK write carrying one is refused rather than lifted. The rows the service
+ * receives are the ones that PASSED validation, so a per-row array of transient
+ * values would be index-aligned with a list that has had rejects parked out of
+ * it — a correlation bug that pairs one row's credential with another row. The
+ * refusal is by name; nothing here is silent.
+ */
+function liftTransient(ctx: ServiceContext, fields: string[]): void {
+  if (!fields.length || !ctx.data) return
+
+  if (Array.isArray(ctx.data)) {
+    const rows  = ctx.data as Record<string, unknown>[]
+    const named = fields.filter(f => rows.some(row => row && typeof row === 'object' && f in row))
+    if (named.length) throw new BadRequest(
+      `A bulk write cannot carry ${named.map(f => `'${f}'`).join(', ')}: ` +
+      `${named.length > 1 ? 'they are' : 'it is'} @transient, which is a value about ONE call — ` +
+      `send the rows one at a time, or leave the field out`
+    )
+    return
+  }
+
+  const data = ctx.data as Record<string, unknown>
+  // `??=` because a context built by hand — an app's own test helper — predates
+  // this field, and a derived hook crashing on a shape it did not build is a
+  // framework bug wearing an app's stack trace.
+  const into = (ctx.transients ??= {})
+  for (const f of fields) {
+    if (!(f in data)) continue
+    into[f] = data[f]
+    delete data[f]
   }
 }
 

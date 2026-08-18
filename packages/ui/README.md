@@ -1,6 +1,6 @@
 # @frontierjs/ui
 
-Mesa components over [`@frontierjs/css`](../css). 66 components across forms,
+Mesa components over [`@frontierjs/css`](../css). 65 components across forms,
 display, layout, overlay and feedback.
 
 ```bash
@@ -160,6 +160,19 @@ get the wall clock, which is the one thing that must never reach the column. A
 `bind:` is not used there on purpose: a component binding takes a writable
 top-level `let` in the caller, so a field of a record is written back through
 the callback.
+
+**A `type="password"` field draws its own show/hide toggle.** A password box
+with no way to read back what was typed is the commonest cause of a sign-in
+that fails looking like a wrong credential, and the details are not obvious
+enough to leave to each app: only the element's type flips, so the field is
+still a password to `Field`, to `Label` and to `autocomplete`, and a mousedown
+on the button refuses the default so a click mid-typing does not take the caret
+with it. `reveal={false}` turns it off; nothing else has one.
+
+```svelte
+<Input name="password" label="Password" type="password"
+       autocomplete="current-password" bind:value={password} />
+```
 
 **A stated prop always wins**, including a falsy one — `required={false}` beats
 a schema that says required, because the resolution asks "was anything said",

@@ -96,6 +96,42 @@ describe('cron on a registration', () => {
     q.handle('report', () => {})
     expect(q.nextRuns()).toEqual([])
   })
+
+  // ── unschedule ──────────────────────────────────────────────────────────
+  //
+  // The counterpart schedule() did not have. A schedule declared in a
+  // `*.job.ts` file lives as long as the process, so nothing needed this; one
+  // registered from a DATABASE ROW stops being true when the row is deleted,
+  // and with no way back the timer went on firing for a job nobody could see.
+
+  it('unschedule() stops the schedule firing and says whether one was there', () => {
+    const q = makeQueue()
+    q.schedule('report', '0 2 * * *', () => {})
+
+    expect(q.unschedule('report')).toBe(true)
+    expect(q.nextRuns()).toEqual([])
+    expect(q.unschedule('report')).toBe(false)
+  })
+
+  it('unschedule() leaves the HANDLER registered — a queued run still executes', async () => {
+    // Unbinding the clock is not the same as removing the work. A run already
+    // dispatched under this name has to find something to execute.
+    const q = makeQueue()
+    q.schedule('report', '0 2 * * *', () => {}, { queue: 'reports' })
+    q.unschedule('report')
+
+    const id = await q.dispatch('report', {})
+    expect(q.find(id)!.queue).toBe('reports')
+  })
+
+  it('unschedule() names one schedule, not all of them', () => {
+    const q = makeQueue()
+    q.schedule('report', '0 2 * * *', () => {})
+    q.schedule('sweep',  '0 3 * * *', () => {})
+
+    q.unschedule('report')
+    expect(q.nextRuns().map(r => r.name)).toEqual(['sweep'])
+  })
 })
 
 // ─── The name is stated once, and reconciled ─────────────────

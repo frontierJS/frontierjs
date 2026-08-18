@@ -33,17 +33,49 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 }
 
 // ─── ANSI colours ─────────────────────────────────────────────────────────
+// Colour when stdout is a terminal, honouring NO_COLOR and FORCE_COLOR. The
+// pretty writer emitted escape codes unconditionally, so `bun run api > log`
+// recorded them as though they were log content.
+
+export const colorEnabled =
+  !process.env.NO_COLOR &&
+  (Boolean(process.env.FORCE_COLOR) || Boolean(process.stdout?.isTTY))
+
+const paint = (code: string) => (colorEnabled ? code : '')
 
 const COLORS: Record<LogLevel, string> = {
-  debug:  '\x1b[36m',  // cyan
-  info:   '\x1b[32m',  // green
-  warn:   '\x1b[33m',  // yellow
-  error:  '\x1b[31m',  // red
+  debug:  paint('\x1b[36m'),  // cyan
+  info:   paint('\x1b[32m'),  // green
+  warn:   paint('\x1b[33m'),  // yellow
+  error:  paint('\x1b[31m'),  // red
   silent: '',
 }
-const RESET = '\x1b[0m'
-const DIM   = '\x1b[2m'
-const BOLD  = '\x1b[1m'
+const RESET = paint('\x1b[0m')
+const DIM   = paint('\x1b[2m')
+const BOLD  = paint('\x1b[1m')
+
+// ─── Structured data → key=value ──────────────────────────────────────────
+// `JSON.stringify(data)` put the whole object on the line as one dim blob, so
+// a boot line carrying five keys was a wall of braces and quotes nobody reads.
+// Dim key, bright value: the value is the information.
+
+function formatValue(v: unknown): string {
+  if (v === null || v === undefined)                     return String(v)
+  if (typeof v === 'number' || typeof v === 'boolean')   return String(v)
+  if (typeof v === 'string')                             return /[\s"=]/.test(v) ? JSON.stringify(v) : v
+  return JSON.stringify(v)
+}
+
+function formatData(data: Record<string, unknown>): string {
+  return Object.entries(data)
+    // `undefined` is dropped, because JSON.stringify dropped it and the app
+    // banner passes two — rendering them turns a silent omission into noise
+    // on every boot line. `null` is kept: stringify kept it, and a stated
+    // null is an answer where an absent key is not.
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => `${DIM}${k}=${RESET}${formatValue(v)}`)
+    .join(' ')
+}
 
 // ─── createLogger ─────────────────────────────────────────────────────────
 
@@ -133,7 +165,7 @@ export function consoleWriter(format: 'pretty' | 'json' = 'pretty'): LogWriter {
     let line = `${time} ${level}${ns} ${msg}`
 
     if (entry.data && Object.keys(entry.data).length) {
-      line += ' ' + DIM + JSON.stringify(entry.data) + RESET
+      line += ' ' + formatData(entry.data)
     }
 
     if (entry.error) {

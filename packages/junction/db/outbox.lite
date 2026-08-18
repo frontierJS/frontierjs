@@ -1,0 +1,55 @@
+// ─── @frontierjs/junction — the transactional outbox ─────────────────────────
+//
+// One row per effect that must survive a crash. `ctx.enqueue(job, payload)`
+// writes it INSIDE the call's own transaction, so the intent is recorded if
+// and only if the write it belongs to committed; the relay then hands it to
+// `app.jobs` and marks it delivered.
+//
+// It has to be in the app's own database and it cannot be anywhere else. A
+// second `database` block is a second CONNECTION — litestone opens one per
+// declaration and the transaction manager holds main's alone — so a row there
+// survives the rollback that was supposed to take it (measured, `FJS-D35`).
+// Caravan's queue is a different file for the same reason.
+//
+// @@gate("8"): nothing outside asSystem() has anything to say to this model,
+// and this package is the only thing that writes it. Same line auth.lite draws
+// around the credential machinery, and the same reason it is IMPORTED rather
+// than pasted into the app's schema.lite — it changes when this package does.
+//
+// This file is REAL .lite and parses standalone. `fli outbox:install` copies it
+// into an app's db/ and rewrites @@db(main) when --db names another database.
+// Keep @@db(main) spelled exactly — it is what that substitution matches on.
+
+model OutboxMessage {
+  id           String    @id @default(uuid())
+
+  /// The caravan job name to dispatch. A handler must be registered for it —
+  /// an unknown name is a row that can never be delivered.
+  job          String
+
+  /// What the handler receives. The whole payload, not a reference to one:
+  /// a row id read back later has already changed.
+  payload      Json
+
+  /// WHO asked, recorded at enqueue and re-resolved when the job runs — so a
+  /// durable effect names the same principal an immediate dispatch would.
+  /// Null is the app's own work.
+  actorId      String?
+
+  /// Taken by a relay that intends to deliver this row. Stale claims are
+  /// retaken: a process that dies mid-handoff must not hold a row forever.
+  claimedAt    DateTime?
+
+  /// Set once the job is queued. The row stays for inspection until the
+  /// retention sweep takes it.
+  deliveredAt  DateTime?
+
+  attempts     Int       @default(0)
+  lastError    String?
+  createdAt    DateTime  @default(now())
+
+  @@db(main)
+  @@gate("8")
+  @@index([deliveredAt, createdAt])
+  @@index([claimedAt])
+}

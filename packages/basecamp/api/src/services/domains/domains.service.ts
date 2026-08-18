@@ -23,7 +23,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, dbOf, wsOf, actorOf }
+import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -73,7 +73,14 @@ export function createDomainsService(app: BasecampApp) {
     const siblings = await dbOf(ctx).domain.findMany({ where: { appId, isPrimary: true } })
     for (const sib of siblings)
       if (sib.id !== keepId)
-        await dbOf(ctx).domain.update({ where: { id: sib.id }, data: { isPrimary: false } })
+        // Domain declares @version, so every scoped update states the version it
+        // read. Not a formality here: two people promoting different hostnames
+        // at once is exactly the race, and the loser is told rather than
+        // silently demoted back.
+        await dbOf(ctx).domain.update({
+          where: { id: sib.id },
+          data:  { isPrimary: false, version: sib.version },
+        })
   }
 
   return createService({
@@ -123,7 +130,7 @@ export function createDomainsService(app: BasecampApp) {
       const patch = narrowPatch(ctx.data as Record<string, unknown>,
         ['appId', 'certSecretId', 'certKind', 'certIssuedAt', 'certExpiresAt'])
 
-      if (!Object.keys(patch).length) return decorate(domain)
+      if (changesNothing(patch)) return decorate(domain)
 
       const updated = await dbOf(ctx).domain.update({ where: { id: domain.id }, data: patch })
       if (updated.isPrimary) await demoteSiblings(ctx, updated.appId, updated.id)
@@ -173,6 +180,7 @@ export function createDomainsService(app: BasecampApp) {
           certKind:      kind ?? 'uploaded',
           certIssuedAt:  issuedAt ?? new Date().toISOString(),
           certExpiresAt: expiresAt,
+          version:       domain.version,
         },
       })
       return decorate(updated)
@@ -184,7 +192,7 @@ export function createDomainsService(app: BasecampApp) {
       if (domain.isPrimary) throw new BadRequest('Already the primary hostname')
 
       const updated = await dbOf(ctx).domain.update({
-        where: { id: domain.id }, data: { isPrimary: true },
+        where: { id: domain.id }, data: { isPrimary: true, version: domain.version },
       })
       await demoteSiblings(ctx, updated.appId, updated.id)
       return decorate(updated)

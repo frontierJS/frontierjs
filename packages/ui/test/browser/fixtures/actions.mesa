@@ -1,0 +1,70 @@
+<script>
+  // actions.mesa — Button, Label and Card.
+  //
+  // The submit button lives in a real <Form> with a submit that does not
+  // resolve until the page says so, because `Button`'s one piece of hidden
+  // behaviour is that a type="submit" reports the form's state without being
+  // told — and a form that settles immediately never shows it.
+  import Button from '../../../components/forms/Button.mesa'
+  import Label  from '../../../components/forms/Label.mesa'
+  import Card   from '../../../components/layout/Card.mesa'
+  import Form   from '../../../components/forms/Form.mesa'
+
+  let runs   = 0
+  let submits = 0
+
+  let release = null
+  function onsubmit() {
+    submits++
+    return new Promise((res) => { release = () => res({ ok: true }) })
+  }
+
+  let loading = false
+</script>
+
+<div id="pair">
+  <Button id="b-default">Save</Button>
+</div>
+
+<div id="variants">
+  <Button id="b-tone" variant="outlined" tone="danger">Delete</Button>
+  <Button id="b-ghost" variant="ghost">Ghost</Button>
+  <Button id="b-square" square aria-label="Add">+</Button>
+  <Button id="b-link" href="/somewhere/">Go</Button>
+  <Button id="b-link-off" href="/somewhere/" disabled>Nowhere</Button>
+  <Button id="b-loading" loading={loading} onclick={() => runs++}>Work</Button>
+  <Button id="b-icons">
+    {#snippet leading()}<span class="lead">«</span>{/snippet}
+    Wrapped
+    {#snippet trailing()}<span class="trail">»</span>{/snippet}
+  </Button>
+</div>
+
+<Form {onsubmit}>
+  <Button id="b-submit" type="submit">Submit</Button>
+  <Button id="b-cancel" variant="ghost">Cancel</Button>
+</Form>
+
+<div id="labels">
+  <Label id="ctl-a" label="Customer" />
+  <input id="ctl-a" />
+  <Label label="Nothing to point at" />
+  <Label id="ctl-b" label="Agreed" type="checkbox" />
+  <Label id="ctl-c" label="Plan" required />
+  <Label id="ctl-d" label="Key" badge="Beta" />
+  <Label id="ctl-e" label="Rate" help="Charged per seat, per month." />
+</div>
+
+<Card id="card-plain">Plain body</Card>
+
+<Card id="card-full" tone="danger" raised padding="lg">
+  {#snippet header()}<h3 id="card-head">Payment failed</h3>{/snippet}
+  <p id="card-body">We could not take the payment.</p>
+  {#snippet footer()}<span id="card-foot">Retry?</span>{/snippet}
+</Card>
+
+<button type="button" id="toggle-loading" on:click={() => loading = !loading}>loading</button>
+<button type="button" id="release" on:click={() => release?.()}>release</button>
+
+<output id="runs">{runs}</output>
+<output id="submits">{submits}</output>

@@ -1,0 +1,24 @@
+<script>
+  // each-unkeyed.mesa — what an {#each} with no key expression does.
+  //
+  // The default key is the INDEX. It used to be the item itself, which is
+  // unique only when the values are — and two ordinary shapes are not: a list
+  // of repeated primitives, and an array-like whose every item is `undefined`,
+  // which is what a calendar grid is. Both are here, and both are reassigned,
+  // because the corruption a collision caused was only reachable once a key
+  // had to MOVE (`FJS-325`).
+  let items = ['a', 'b', 'a']
+  const grid = { length: 3 }
+</script>
+
+<ul id="unkeyed">
+  {#each items as s}<li>{s}</li>{/each}
+</ul>
+
+<div id="grid">
+  {#each grid as _cell, i}<span class="cell">{i}</span>{/each}
+</div>
+
+<button type="button" id="grow" on:click={() => items = ['a', 'b', 'a', 'c']}>grow</button>
+<button type="button" id="swap" on:click={() => items = ['b', 'a', 'a']}>swap</button>
+<button type="button" id="distinct" on:click={() => items = ['x', 'y', 'z']}>distinct</button>

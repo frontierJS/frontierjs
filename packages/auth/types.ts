@@ -1,6 +1,6 @@
 // types.ts
 // LitestoneAuthOptions  — passed to createLitestoneAuth(db, opts)
-// AuthPluginOptions — passed to createLitestoneAuthPlugin(auth, opts)
+// AuthPluginOptions — passed to createAuthPlugin(auth, opts)
 
 import type { RateLimitHookOptions, SessionContext } from '@frontierjs/junction'
 

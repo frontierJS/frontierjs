@@ -7,7 +7,10 @@
 //   - Update types  (what update({ data: ... }) accepts — all optional)
 //   - Where types   (what where: { ... } accepts)
 //   - WhereOp<T>    (gt, gte, lt, lte, in, not, contains, startsWith, endsWith)
+//   - ServiceTypes  (service name → row — what the API realm answers)
 //   - Typed LitestoneClient interface
+
+import { pluralize as pluralizeWord } from '@frontierjs/toolbelt/inflect'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -27,6 +30,13 @@ function accessor(name) {
   return name.charAt(0).toLowerCase() + name.slice(1)
 }
 
+// `model Post` → service `posts`. The accessor is the singular the Data realm
+// uses; a service is the plural the API realm mounts, and both are one reading
+// of the same inflection table.
+function serviceName(name) {
+  return pluralizeWord(accessor(name))
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 /**
@@ -36,12 +46,15 @@ function accessor(name) {
  * @param {object} [opts]
  * @param {string} [opts.audience='client']   'client' strips @guarded/@secret; 'system' includes all
  * @param {boolean} [opts.includeComments=true]  emit JSDoc comments on fields
+ * @param {string} [opts.augment]   'junction' also emits the module augmentation
+ *                                  that makes `client.service('posts')` infer
  * @returns {string}  contents of a .d.ts file
  */
 export function generateTypeScript(schema, opts = {}) {
   const {
     audience        = 'client',
     includeComments = true,
+    augment         = null,
   } = opts
 
   const lines = []
@@ -236,6 +249,55 @@ export function generateTypeScript(schema, opts = {}) {
     lines.push(``)
   }
 
+  // ── Service map ──────────────────────────────────────────────────────────────
+  // `model Post` → `db.post` → service `posts`, which is the name a browser
+  // calls `client.service('posts')` with. The plural comes from
+  // @frontierjs/toolbelt/inflect, the one owner of English singular ⇄ plural
+  // here — the same rules the table name and Sierra's schema registry run, so a
+  // service name derived here and the model name derived back from it cannot
+  // disagree (Invariant 2).
+  //
+  // The value is the ROW type alone, because that is the one type a service
+  // proxy is generic over: `find()` answers rows, `create()` takes a partial of
+  // one. The Create/Update/Where types above are the Data boundary's, and a
+  // service does not expose them.
+  //
+  // A service name is the APP's decision and this is the convention it follows.
+  // A service mounted under a name of its own is a line the app adds to the
+  // registry itself; being wrong here costs a missing inference, never a wrong one.
+  lines.push(
+    `// ── Services ─────────────────────────────────────────────────────────────────`,
+    ``,
+    `/**`,
+    ` * Service name → the row it answers. Feeds @frontierjs/junction's ServiceTypes`,
+    ` * registry, so \`client.service('posts')\` needs no type argument.`,
+    ` */`,
+    `export interface ServiceTypes {`,
+  )
+  for (const model of schema.models) {
+    lines.push(`  ${serviceName(model.name)}: ${pascal(model.name)}`)
+  }
+  lines.push(`}`, ``)
+
+  if (augment === 'junction') {
+    // Written only when asked for, because a module augmentation names a package:
+    // emitted unconditionally it is a type error in every app that installed
+    // litestone alone.
+    lines.push(
+      `// ── @frontierjs/junction/client ──────────────────────────────────────────────`,
+      ``,
+      `// The alias is what breaks the name collision — inside the augmentation`,
+      `// \`ServiceTypes\` is junction's own interface, so the map above has to be`,
+      `// reached under a second name.`,
+      `type GeneratedServiceTypes = ServiceTypes`,
+      ``,
+      `declare module '@frontierjs/junction/client' {`,
+      `  interface ServiceTypes extends GeneratedServiceTypes {}`,
+      `}`,
+      ``,
+    )
+  }
+
   // ── Cursor result ────────────────────────────────────────────────────────────
   lines.push(
     `// ── Cursor pagination result ─────────────────────────────────────────────────`,
@@ -383,6 +445,8 @@ export interface CursorResult<T> {`,
     `  readonly $attached:   string[]`,
     `  readonly $rawDbs:     Record<string, unknown>`,
     `  readonly $walStatus:  Record<string, unknown>`,
+    `  /** Is a transaction open on this connection right now? */`,
+    `  readonly $inTransaction: boolean`,
     `}`,
     ``,
   )
@@ -445,6 +509,11 @@ function fieldRowSpec(field, schema, audience, modelNames) {
   // @hashed — stripped for EVERY audience, asSystem() included. The row type says
   // what a read returns, and a read of a digest returns nothing.
   if (attributes.some(a => a.kind === 'hashed')) return null
+
+  // @transient — same reason from the other direction: the API accepts it and
+  // nothing stores it, so no read ever answers it. It stays in the create and
+  // update specs below, which is where a caller sends it.
+  if (attributes.some(a => a.kind === 'transient')) return null
 
   const tsType  = fieldToTs(field, schema, modelNames)
   const optional = type.optional || isGuardedAll  // guarded fields may be absent even in system reads
@@ -519,8 +588,12 @@ function fieldUpdateSpec(field, schema, audience, modelNames) {
 }
 
 function fieldWhereSpec(field, schema, modelNames) {
-  const { name, type } = field
+  const { name, type, attributes } = field
   if (type.kind === 'relation') return null
+
+  // @transient has no column, so the client refuses it in a `where` by name —
+  // offering it here would make a filter that cannot work compile.
+  if (attributes.some(a => a.kind === 'transient')) return null
 
   const base = fieldToTs(field, schema, modelNames, false)
   // Where accepts the scalar value OR a WhereOp object

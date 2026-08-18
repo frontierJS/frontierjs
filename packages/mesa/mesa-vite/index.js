@@ -34,6 +34,7 @@ import fs         from 'fs'
 import { pathToFileURL, fileURLToPath } from 'url'
 
 import { injectHMR, canInject } from './hmr.js'
+import { hmrClientSource } from './client-source.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -101,7 +102,12 @@ async function getCompileSource(options) {
  * Vite expects { message, id, frame? }.
  */
 function formatError(e, id) {
-  const base = { id, plugin: 'mesa' }
+  // `stack` is not optional to the consumer. Vite's overlay renders it with
+  // file linking, which runs a regex over the string — an absent one throws
+  // inside the overlay's own constructor, so the overlay never appears and a
+  // parse failure is reported to the developer as nothing whatsoever: the page
+  // keeps the previous content and the terminal stays quiet.
+  const base = { id, plugin: 'mesa', stack: e.stack ?? '' }
 
   if (e.details) {
     // Mesa parse error with source context
@@ -242,12 +248,18 @@ export default function mesaPlugin(options = {}) {
     },
 
     load(id) {
-      // Virtual HMR client — return the client.js content
+      // Virtual HMR client. Assembled rather than read: the client is two files
+      // and a virtual id resolves no relative import, so `client-source.js` is
+      // the one owner of that join — Sierra serves the same client at its own
+      // id (`FJS-D16`).
       if (id === RESOLVED_CLIENT_ID) {
-        const clientPath = new URL('./client.js', import.meta.url).pathname
         try {
-          return fs.readFileSync(clientPath, 'utf8')
-        } catch (_) {
+          return hmrClientSource()
+        } catch (err) {
+          // A no-op client keeps the build alive and puts every component on
+          // the full-reload path, which is survivable. Being quiet about it is
+          // not: the symptom is an edit that appears to do nothing.
+          this.warn(`[mesa] HMR client unavailable — components will full-reload. ${err.message}`)
           return `
 export function __mesa_register() { return () => {} }
 export function __mesa_hot_update() {}

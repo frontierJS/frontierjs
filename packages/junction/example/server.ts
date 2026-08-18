@@ -39,6 +39,7 @@ import {
   GatePlugin,
   LEVELS,
 } from '@frontierjs/litestone'
+import type { LitestoneClient, TableClient } from '@frontierjs/litestone'
 
 import type { App } from '../src/core/app.ts'
 
@@ -76,7 +77,25 @@ const gate = new GatePlugin({
   },
 })
 
-const db = await createClient({ db: './smoke.db', schema: SCHEMA, plugins: [gate] })
+// Named by hand because the schema above is a string — nothing has run
+// `litestone types` over it. A real app passes its generated `Db` here instead.
+interface Lead {
+  id:        number
+  name:      string
+  company:   string
+  email:     string
+  status:    'new' | 'active' | 'closed'
+  value:     number
+  createdAt: string
+  updatedAt: string
+}
+
+interface Db extends LitestoneClient {
+  lead: TableClient<Lead>
+  asSystem(): Db
+}
+
+const db = await createClient<Db>({ db: './smoke.db', schema: SCHEMA, plugins: [gate] })
 
 // Tables: createClient() already ran the DDL — it does that for :memory: and
 // for a file that doesn't exist yet. apply() is the FILE-migrations function

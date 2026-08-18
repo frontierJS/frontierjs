@@ -16,10 +16,12 @@ title: Dashboards
   // private and is not. A per-person pin needs the preferences store
   // UserSettingsView is waiting on.
   import { session } from '../../session.js'
+  import { messageFor } from '../../errors.js'
   import { dashboards } from '../../resources/Dashboard.mesa'
   import { goto } from '@frontierjs/sierra/router'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
@@ -85,7 +87,7 @@ title: Dashboards
       await dashboards.service.patch(dashboard.id, { isPinned: !dashboard.isPinned })
       await load()
     } catch (e) {
-      error = e.message
+      error = messageFor(dashboards, e)
     } finally {
       busy = null
     }
@@ -122,9 +124,7 @@ title: Dashboards
   <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
        looking for "the screen reported a refusal" would otherwise match a
        fleet notice. -->
-  <article class="alert danger" id="screen-error">
-    <div class="alert-content">{error}</div>
-  </article>
+  <Alert tone="danger" id="screen-error">{error}</Alert>
 {/if}
 
 {#if creating}

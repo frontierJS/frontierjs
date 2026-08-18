@@ -8,6 +8,7 @@ import { join }         from 'node:path'
 
 import { createClient, autoMigrate, GatePlugin } from '@frontierjs/litestone'
 import { authSchemaFragments }                   from '@frontierjs/auth'
+import { outboxSchemaFragment }                  from '@frontierjs/junction'
 
 import { shopGateLevel } from './gate.ts'
 
@@ -29,7 +30,13 @@ const HERE = import.meta.dir
 //     This file is the in-memory alternative, for an app assembling one string.
 
 export const appSchema = readFileSync(join(HERE, '../db/schema.lite'), 'utf8')
+
+// OutboxMessage arrives the same way and for the same reason — it is
+// @@gate("8") framework machinery that changes when @frontierjs/junction does,
+// so there is one copy of it in the repo. `fli outbox:install` writes an
+// `import` line into db/schema.lite instead; both read the same shipped bytes.
 export const fullSchema = appSchema + '\n' + authSchemaFragments('main')
+                                    + '\n' + outboxSchemaFragment('main')
 
 // ─── The client ───────────────────────────────────────────────────────────
 //

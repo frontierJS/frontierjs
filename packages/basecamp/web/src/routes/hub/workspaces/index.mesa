@@ -20,6 +20,8 @@ title: Hub workspaces
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Input from '@frontierjs/ui/components/forms/Input.mesa'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   let rows    = []
   let error   = null
@@ -67,6 +69,17 @@ title: Hub workspaces
 
   $: active    = rows.filter(w => w.status === 'active').length
   $: suspended = rows.length - active
+  const HUB_WORKSPACE_COLUMNS = [
+    { key: 'workspace', label: 'Workspace' },
+    { key: 'type',      label: 'Type' },
+    { key: 'status',    label: 'Status' },
+    { key: 'members',   label: 'Members' },
+    { key: 'servers',   label: 'Servers' },
+    { key: 'projects',  label: 'Projects' },
+    { key: 'owner',     label: 'Owner' },
+    { key: 'created',   label: 'Created' },
+    { key: 'actions',   label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 {#if error}
@@ -88,8 +101,8 @@ title: Hub workspaces
 
 <div class="cluster">
   <label class="visually-hidden" for="ws-search">Filter workspaces</label>
-  <input class="field" id="ws-search" type="search" placeholder="Filter workspaces…"
-         value={q} on:input={(e) => search(e.target.value)} />
+  <Input id="ws-search" type="search" placeholder="Filter workspaces…"
+         value={q} oninput={(e) => search(e.target.value)} />
 </div>
 
 {#if loading}
@@ -100,51 +113,34 @@ title: Hub workspaces
     screen inside one — the hub reads them, it does not mint them.
   </EmptyState>
 {:else}
-  <div class="table-wrap">
-    <table class="table striped">
-      <thead>
-        <tr>
-          <th scope="col">Workspace</th>
-          <th scope="col">Type</th>
-          <th scope="col">Status</th>
-          <th scope="col">Members</th>
-          <th scope="col">Servers</th>
-          <th scope="col">Projects</th>
-          <th scope="col">Owner</th>
-          <th scope="col">Created</th>
-          <th scope="col"><span class="visually-hidden">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody id="hub-workspace-rows">
-        {#each rows as w}
-          <tr>
-            <td>
-              {w.name}
-              <span class="text-sm text-muted"><code>{w.slug}</code></span>
-            </td>
-            <td><Badge tone="muted">{w.type}</Badge></td>
-            <td><Pill tone={w.status === 'active' ? 'success' : 'danger'}>{w.status}</Pill></td>
-            <td>{w.members}</td>
-            <td>{w.servers}</td>
-            <td>{w.projects}</td>
-            <td class="text-sm text-muted">{w.owner?.email ?? '—'}</td>
-            <td class="text-sm text-muted">{when(w.createdAt)}</td>
-            <td>
-              {#if w.status === 'active'}
-                <Button variant="ghost" tone="danger" disabled={busy === w.id}
-                        aria-label={`Suspend ${w.name}`}
-                        onclick={() => setStatus(w, 'suspended')}>Suspend</Button>
-              {:else}
-                <Button variant="ghost" disabled={busy === w.id}
-                        aria-label={`Reinstate ${w.name}`}
-                        onclick={() => setStatus(w, 'active')}>Reinstate</Button>
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <Table id="hub-workspace-rows" columns={HUB_WORKSPACE_COLUMNS} rows={rows} striped hover={false}>
+    {#snippet row(w)}
+      <tr>
+        <td>
+          {w.name}
+          <span class="text-sm text-muted"><code>{w.slug}</code></span>
+        </td>
+        <td><Badge tone="muted">{w.type}</Badge></td>
+        <td><Pill tone={w.status === 'active' ? 'success' : 'danger'}>{w.status}</Pill></td>
+        <td>{w.members}</td>
+        <td>{w.servers}</td>
+        <td>{w.projects}</td>
+        <td class="text-sm text-muted">{w.owner?.email ?? '—'}</td>
+        <td class="text-sm text-muted">{when(w.createdAt)}</td>
+        <td>
+          {#if w.status === 'active'}
+            <Button variant="ghost" tone="danger" disabled={busy === w.id}
+                    aria-label={`Suspend ${w.name}`}
+                    onclick={() => setStatus(w, 'suspended')}>Suspend</Button>
+          {:else}
+            <Button variant="ghost" disabled={busy === w.id}
+                    aria-label={`Reinstate ${w.name}`}
+                    onclick={() => setStatus(w, 'active')}>Reinstate</Button>
+          {/if}
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
 {/if}
 
 <article class="alert info">

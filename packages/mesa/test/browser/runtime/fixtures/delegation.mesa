@@ -1,0 +1,71 @@
+<script>
+  // delegation.mesa — what only a real browser can answer about delegation.
+  //
+  // Every handler here goes through the delegation root `mount()` registers
+  // (Invariant 11), and each one is a question a dispatched event cannot ask:
+  //
+  //   `on:click|self` compares `target` to `currentTarget`, and in a delegated
+  //   handler `currentTarget` was the delegation ROOT rather than the element
+  //   the handler was written on — so `|self` admitted nothing and a backdrop
+  //   could not be clicked away (`FJS-321`).
+  //
+  //   Five of these events do not bubble at all, so delegation has to capture
+  //   them; a component whose Escape handler is on a `<dialog>` could not be
+  //   reopened once (`FJS-297`).
+  let backdropHits = 0
+  let innerHits    = 0
+  let seenTarget   = ''
+
+  let dialogEl
+  let detailsEl
+  let inputEl
+
+  let closes   = 0
+  let cancels  = 0
+  let toggles  = 0
+  let invalids = 0
+
+  function onBackdrop(e) {
+    backdropHits++
+    seenTarget = e.currentTarget?.id ?? '(none)'
+  }
+
+  function drive() {
+    dialogEl.showModal()
+    dialogEl.close()
+    detailsEl.open = true
+    inputEl.reportValidity()
+  }
+</script>
+
+<div id="backdrop" on:click|self={onBackdrop}>
+  <button type="button" id="inner" on:click={() => innerHits++}>inner</button>
+</div>
+
+<dialog bind:this={dialogEl} on:close={() => closes++} on:cancel={() => cancels++}>closable</dialog>
+
+<details bind:this={detailsEl} on:toggle={() => toggles++}>
+  <summary>more</summary>
+  body
+</details>
+
+<form>
+  <input bind:this={inputEl} required on:invalid={() => invalids++} />
+</form>
+
+<button type="button" id="drive" on:click={drive}>drive</button>
+
+<output id="backdrop-hits">{backdropHits}</output>
+<output id="inner-hits">{innerHits}</output>
+<output id="seen-target">{seenTarget}</output>
+<output id="closes">{closes}</output>
+<output id="toggles">{toggles}</output>
+<output id="invalids">{invalids}</output>
+
+<style>
+  /* The backdrop needs a centre the inner button is not sitting in: a
+     coordinate click reads the element's centre, and a block child at the top
+     left is exactly what would be under it otherwise. */
+  #backdrop { position: relative; height: 160px; background: #eee }
+  #inner    { position: absolute; top: 0; left: 0 }
+</style>

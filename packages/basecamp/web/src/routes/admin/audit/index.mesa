@@ -4,6 +4,9 @@ title: Audit trail
 <script>
   import { session } from '../../../session.js'
   import { audit } from '../../../resources/AuditEvent.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
 
@@ -31,6 +34,12 @@ title: Audit trail
   $: session.workspaceId, () => load()
 
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+  const AUDIT_COLUMNS = [
+    { key: 'when',    label: 'When' },
+    { key: 'action',  label: 'Action' },
+    { key: 'subject', label: 'Subject' },
+    { key: 'actor',   label: 'Actor' },
+  ]
 </script>
 
 <p class="text-body">
@@ -45,9 +54,9 @@ title: Audit trail
 
 <form class="cluster" on:submit|preventDefault={load}>
   <label class="visually-hidden" for="audit-filter">Subject type</label>
-  <input class="field" id="audit-filter" style="--field-inline-size: 14rem"
+  <Input id="audit-filter" style="--field-inline-size: 14rem"
          placeholder="subject type, e.g. servers" bind:value={filter} />
-  <button class="btn outlined" type="submit">Filter</button>
+  <Button variant="outlined" type="submit">Filter</Button>
 </form>
 
 {#if loading}
@@ -57,26 +66,14 @@ title: Audit trail
     <div class="alert-content">Nothing recorded yet — the trail fills as work happens.</div>
   </article>
 {:else}
-  <div class="table-wrap">
-    <table class="table striped">
-      <thead>
-        <tr>
-          <th scope="col">When</th>
-          <th scope="col">Action</th>
-          <th scope="col">Subject</th>
-          <th scope="col">Actor</th>
-        </tr>
-      </thead>
-      <tbody id="audit-rows">
-        {#each rows as event}
-          <tr>
-            <td class="text-sm text-muted">{when(event.createdAt)}</td>
-            <td><code>{event.action}</code></td>
-            <td>{event.subjectType} <span class="text-sm text-muted">{event.subjectId?.slice(0, 8)}</span></td>
-            <td class="text-sm">{event.actorType} <span class="text-muted">{event.actorId?.slice(0, 8) ?? 'system'}</span></td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <Table id="audit-rows" columns={AUDIT_COLUMNS} rows={rows} striped hover={false}>
+    {#snippet row(event)}
+      <tr>
+        <td class="text-sm text-muted">{when(event.createdAt)}</td>
+        <td><code>{event.action}</code></td>
+        <td>{event.subjectType} <span class="text-sm text-muted">{event.subjectId?.slice(0, 8)}</span></td>
+        <td class="text-sm">{event.actorType} <span class="text-muted">{event.actorId?.slice(0, 8) ?? 'system'}</span></td>
+      </tr>
+    {/snippet}
+  </Table>
 {/if}

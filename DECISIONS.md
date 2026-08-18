@@ -831,6 +831,45 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+**2026-08-17 · Litestone has atomic update operators, and the COLUMN decides
+one is an operator at all (`FJS-D27`).** `increment` `decrement` `multiply`
+`divide` on a numeric column, `push` on an array one, on `update` and
+`updateMany` only. Read-modify-write loses data — two callers read a counter,
+both add one, the second write overwrites the first — and `@version` does not
+fix that, it turns it into a thrown conflict the caller has to retry. `UPDATE t
+SET views = views + ?` needs no read and cannot race.
+
+The argument against was that the payload is otherwise VALUES, which is what
+makes `writeData` simple enough to strip unknown keys safely: `{ views: {
+increment: 1 } }` and `{ addr: { city: 'x' } }` are one shape to a parser. **They
+are not one shape to a parser that knows the column**, and this one does — the
+same resolution the where-side already makes between a typed-Json path and an
+operator block. So a `Json @type(T)` column keeps taking an object, a numeric
+column reads `increment` as an operator, and everything else is refused by name.
+
+Refused, each with the reason: an operator on a column whose declared type
+cannot carry it · an operator on `create`/`createMany` (there is no value to
+change) or on `upsert`/`upsertMany` (its fast path SETs from `excluded` and its
+slow path calls `update()` — one could apply the operator and the other could
+not, which is the drift a refusal exists to prevent) · `divide: 0`, which SQLite
+answers as NULL with no error · two operators on one column, where evaluation
+order would decide the answer · an enum array pushed a member the enum does not
+declare · **and a column carrying `@lt` `@lte` `@gt` `@gte` `@maxItems`
+`@uniqueItems`**, because the new value is computed inside SQLite where
+`validate()` never sees it, and a validator that silently stops applying is
+worse than one that says it cannot. `@minItems` is not in that list: push only
+grows.
+
+`push` appends (`json_insert(coalesce(col,'[]'), '$[#]', ?)`) and takes one
+value or several. The `coalesce` is the load-bearing half — `json_insert(NULL,
+…)` answers NULL and raises nothing, so a push into a NULL column would drop the
+value and report success. On a column that is not a declared array, `json_insert`
+is a silent no-op (an object) or malformed JSON (a scalar), which is why the
+declared type is the only thing that makes it safe.
+
+*Lives in:* `extractWriteOps` in `packages/litestone/src/core/client.js`;
+`test/write-operators.test.ts`; `docs/querying.md` § Atomic update operators.
+
 **2026-08-16 · A write announcement has two shapes, and the write says which
 (`FJS-307`).** `scope: 'row'` — one row changed, `result` is it, or `null` where
 `select: false` skipped the RETURNING. `scope: 'collection'` — `count` rows
@@ -1049,6 +1088,23 @@ problem per column, and nothing in the repo needs it yet.
 
 ## Migrations (Litestone)
 
+**2026-08-17 · A rebuild that would destroy an app-created schema object is
+BLOCKED, not warned about (`FJS-183`).** `rebuildSQL` drops the table, which
+takes every trigger and index on it; litestone's own are regenerable from the
+schema and are restated afterwards, and one the app wrote exists only in the
+live database with nothing to restate it from. Naming them in a comment above
+the SQL was the earlier answer, and it was the wrong one for the reader who
+matters — somebody applying a generated migration without reading it, which is
+who a generated file is for. The rebuild is emitted commented out with the ways
+forward, the same shape an un-defaultable new column already used, because both
+are *litestone cannot decide this for you* and one mechanism for that beats two.
+`autoMigrate` reports `state: 'blocked'` with the same list and writes no hash,
+so it resurfaces every startup.
+
+Re-emitting a captured trigger verbatim was the third option and is not taken:
+its body may name a column the rebuild drops, so it would restate SQL that fails
+at CREATE or, worse, at the next write.
+
 **2026-08-01 · The executor owns the transaction.**
 `apply()`/`autoMigrate()` strip in-file `BEGIN/COMMIT` + FK pragmas and provide
 the real thing: one transaction per migration, ROLLBACK on failure,
@@ -1139,6 +1195,100 @@ handles and would otherwise answer *is this copy safe under an open WAL* twice)
 `test/cli-smoke.test.ts`.
 
 ## API design (Junction)
+
+**2026-08-17 · `FJS-D23` — a payload key that is not a column says so in the
+seed, with `@transient`, and Junction lifts it onto `ctx.transients`.**
+
+The other half of `FJS-D22`, and the same shape of answer: that one asks how a
+column says *the system writes this*, this one how a payload says *this is not a
+column*. Both are facts about a model's write surface, both were conventions
+held by a hook and a comment, and both are now a word in the schema.
+
+**The word is in the seed, not on the service.** The alternative on the table was
+a service option — `accepts: { secret: 'string' }` that `autoValidate` spares.
+It was refused on a measurement: `autoValidate` is derived from a model and runs
+on `create`/`patch`/`update` alone, so the only payload a key can be stripped
+from is the write payload of a MODEL service. A service with no model validates
+nothing and always did pass every key through; `remove` and every custom method
+are untouched. So the option would have added vocabulary for a surface that has
+no problem, and left the surface that does with two places to look.
+
+**It is the mirror of `@computed`, and that fixes its meaning.** Both are fields
+with no column; they differ in which way the value travels.
+
+|              | column | caller writes | caller reads |
+| ------------ | ------ | ------------- | ------------ |
+| `@computed`  | no     | no            | yes          |
+| `@transient` | no     | yes           | no           |
+| `@system`    | yes    | no            | yes          |
+| `@guarded`   | yes    | no            | no           |
+
+Everything downstream follows from the mirror rather than being decided again:
+`@computed` is emitted into the READ modes of the generated JSON Schema and
+`@transient` into the WRITE modes, marked with `writeOnly` — the keyword
+`readOnly` is the other half of. `@computed` is out of the create/update types
+and `@transient` is out of the row type and out of `Where`. Both are absent from
+the DDL, and `isStoredField` in `ddl.js` is now the one answer to what becomes a
+column, because `CREATE TABLE` and the rebuild's `INSERT … SELECT` were asking
+it separately and had already drifted.
+
+**The value leaves the payload, and lands somewhere the framework owns.**
+`autoValidate` validates a transient key with the model's own rules — `@length`,
+`@required`, the `@label` in the message — and then MOVES it to `ctx.transients`.
+It has to leave: the Data boundary refuses a transient key by name, so a service
+passing `ctx.data` on whole would fail the write rather than the field. And it
+has to be validated first, because validating it is most of what declaring it
+buys.
+
+`ctx.transients` is a fifth context field rather than a corner of `locals`, and
+the rule that separates them is who writes it: `locals` is scratch a hook keeps
+its own state in, `transients` is call INPUT the framework parsed — the same
+thing `directives` is to the `$`-params the bridge splits off a query. Fresh
+`{}` per call, does not propagate, no seed option; a model declaring none leaves
+it `{}`, so `ctx.transients.x` is a read rather than a crash everywhere.
+
+**A bulk write carrying one is refused by name.** The rows a service receives are
+the ones that PASSED validation — `partitionBulk` parks the rest — so an
+index-aligned array of per-row transient values would pair one row's credential
+with another row. A correlation bug that silent is worse than a refusal that
+says *send the rows one at a time*.
+
+**What the declaration buys, stated:** the browser gets it. Sierra registers the
+create-mode schema, so a declared transient field reaches `buildFieldRules`,
+`<Form>` renders a control for it, and `createResource`'s own coercion and
+validation apply the schema's rules to it — where a wire-only field known to a
+server hook alone was stripped in the browser before the request was ever made.
+A typo is now distinct from a field the model does not have. And nothing that
+reads a row can see it: not the DDL, not `@@log(audit)`, not a `where`, not an
+`orderBy`, not a policy predicate, each refused by name with the reason rather
+than by SQLite reading an unbindable identifier as a string literal.
+
+**Refused along the way**, all by the same test — does the attribute describe
+storage, derivation or a read?
+
+- **`@default`, `@unique`, `@index`, `@encrypted`, `@guarded`, `@system`,
+  `@omit`, `@check`** and sixteen others beside `@transient`: each names a
+  column that does not exist. `@@index([secret])` would have built an index over
+  nothing and reported success.
+- **A field `@allow('write', …)`.** The rule is evaluated at the Data boundary,
+  which the value never reaches, so it would be declared and never run.
+  Half-enforcement reads as enforcement.
+- **Keeping it a hook concern** — the 2026-08-08 ruling below, which stands as
+  the description of what a service does with the value and is superseded only
+  in where the value comes from. Its own cost paragraph is what closed this:
+  *nothing enforces this; the framework cannot tell one from a typo.*
+
+*Lives in:* `packages/litestone/src/core/parser.js` (`@transient` + its
+conflicts), `src/core/ddl.js` (`isStoredField`), `src/core/client.js` (the write
+refusal, the filter/sort/aggregate reasons, the policy check),
+`src/jsonschema.js`, `src/tools/typegen.js`, `src/testing.js`;
+`packages/junction/src/core/context.ts` (`ctx.transients`),
+`src/core/litestone.ts` (`liftTransient`), `src/transport/bridge.ts`,
+`src/core/app.ts`; `packages/sierra/src/junction/field-rules.js` (`writeOnly`).
+Tests in `packages/litestone/test/transient-field.test.ts`,
+`packages/junction/tests/{context-contract,real-litestone-client}.test.ts`,
+`packages/sierra/tests/form-fields.test.js`. Proven in basecamp's `channels`,
+where `captureCredential` is deleted.
 
 **2026-08-16 · `FJS-D10` — the deferred API cluster, ruled. Two adopted, two
 refused, and the fourth item turned out to be a defect wearing a naming
@@ -1617,7 +1767,11 @@ CleanupRun.
 
 **2026-08-08 · A field that is accepted on the wire but is not a column is
 captured in a BEFORE hook, never read from the method body.** Ruled while
-building `channels`; the open half is `FJS-D23`.
+building `channels`. **Superseded 2026-08-17 in one respect and only one**: the
+field is declared `@transient` and the framework lifts it, so the hook below is
+no longer written by hand. Everything else here — why the value belongs off
+`ctx.data`, and why each alternative was refused — is what the ruling above was
+argued from.
 
 Some payloads carry a value the model does not — and should not — declare. A
 notification channel is created with the plaintext credential in `secret`, which
@@ -1672,6 +1826,9 @@ held by a hook and a comment; the framework cannot tell one from a typo, and the
 symptom of getting it wrong is a message about the field being missing. `FJS-095`
 is the same seam from the other side — *nothing can say "this column is written
 by the system, not by a user"* — and the two want one answer, not two.
+
+That paragraph is what `@transient` was built from, and both halves now have
+their word: `@system` (2026-08-15) and `@transient` (2026-08-17).
 *Lives in:* `packages/basecamp/api/src/services/channels/channels.service.ts`
 (`captureCredential`), `packages/basecamp/CLAUDE.md` § What bites here,
 `CLAUDE.md` § Live hazards.
@@ -1896,8 +2053,167 @@ core publishes nothing without a publisher, and its *generator* scaffolds
 tell you to replace. `fli make:model` / `make:scaffold` emit `channel: '<name>'`
 with the scoping warning attached, so a generated app is live out of the box and
 the line is in front of the developer who has to narrow it.
+*Since (2026-08-18, `FJS-334`):* an app may register ONE fallback,
+`app.channels.publishDefault(fn)`, consulted only where a service declares
+nothing — so the opt-in above is unchanged (there is no default until an app
+writes one) while an app with one scoping rule for twenty services writes it
+once. It is a default and not a second broadcaster: `channel:` is never asked
+it, `channel: false` refuses it, and nothing can send one record twice. **No
+string form** — a single channel name for every service is exactly the shape
+this ruling refuses, so the fallback is handed the record and decides per
+record. Because that inverts the failure mode — a forgotten `channel:` used to
+mean a screen that never updates, and now means a broadcast on somebody else's
+rule — the plugin names at boot which services fall through, and `channel: false`
+takes them off the list.
+
 *Lives in:* `packages/cli/commands/make/model.md`, `make/scaffold.md`;
-rationale in `publishToChannels()`.
+rationale in `publishToChannels()`, the fallback in
+`packages/junction/src/transport/channels.ts` (`publishDefault`).
+
+**2026-08-17 · Caravan owns the clock; `app.scheduler` is in-process only.** (`FJS-D36`, closing `FJS-047`.)
+
+Junction constructs a scheduler directly (`app.ts`, `createScheduler()`) and
+Caravan registers a cron for any `handle()` carrying one — so an app has two
+ways to run something on a timer and they share nothing. `FJS-047` filed that as
+an ownership overlap; the ruling is that both stay, with the boundary stated,
+because they are not the same feature.
+
+**`app.scheduler` is a timer and nothing else** — in-process, no persistence, no
+retry, no principal, gone when the process is. `app.jobs` is durable work: a
+SQLite row, retry backoff, and the principal re-resolved through `app.runAs`.
+Deleting the scheduler was the tidier option and is refused: Caravan is an
+*optional* peer, so *run this every hour* would then require a second package
+and a database file, which is a real tax on an app that wanted a heartbeat.
+
+**The rule that follows is the whole ruling: a timer that dispatches into a
+queue is the QUEUE's schedule, not the scheduler's.** Reaching for
+`app.scheduler` to fire `app.jobs.dispatch(…)` buys a clock with none of the
+queue's durability while looking like it has it — which is exactly what
+basecamp did, and it cost two defects that only a restart or an edit could
+show (`FJS-327`, `FJS-328`). `app.scheduler` is for work with no row behind it:
+a cache sweep, a metrics tick, something whose missing a beat costs nothing.
+
+*Since:* Caravan gained the counterpart `schedule()` never had — `unschedule(name)`.
+A schedule declared in a `*.job.ts` file lives as long as the process, so nothing
+needed it; one registered from a DATABASE ROW stops being true when the row is
+deleted, and with no way back the timer went on firing for a job nobody could
+see. The handler stays registered — a run already queued still has to find
+something to execute.
+
+*Lives in:* `packages/junction/src/scheduler/index.ts`,
+`packages/caravan/src/cron.ts`; the app-side pattern is
+`packages/basecamp/api/src/engine/job-schedule.ts`.
+
+**2026-08-17 · A durable effect is a NAME and a PAYLOAD in the app's own
+database, and the queue stays a separate file.** (`FJS-D35`.)
+
+`ctx.afterCommit(fn)` bought the ORDERING half (`FJS-089`): the effect runs only
+if the call succeeded and the transaction committed. It buys nothing against a
+crash — the process dies between the commit and the callback and the effect is
+never done, with nothing anywhere recording that it was owed. The durable answer
+is the standard one, an intent written as a row inside the same transaction. The
+question `FJS-D35` held open was **which database that row is in**, and it had
+three candidate answers.
+
+**A second declared `database` block is not one of them, and that is measured
+rather than argued.** Litestone opens one connection per declaration
+(`client.js`, `new Database(absPath)`) and there is exactly one transaction
+manager, over main's write connection. A probe: `$transaction` writing to both
+and then throwing rolled main back and left the second database's row standing.
+`$attach` does not rescue it either — SQLite's atomic multi-file commit needs
+rollback-journal mode on every attached file, and both Caravan's queue and
+litestone's tenants run WAL.
+
+So the row goes in **main**, on the connection the pipeline is already writing
+through, and it is a `.lite` model rather than a litestone-created system table:
+a system table is invisible to migrations, to `ddl.snapshot.sql` and to
+`access.snapshot.md`, which makes a stuck outbox a thing nobody can query. The
+model ships as `packages/junction/db/outbox.lite` and is IMPORTED, never pasted
+— the same split `@frontierjs/auth` makes, and for the same reason: it is
+`@@gate("8")` machinery that changes when junction changes, so an upgrade has to
+reach an installed app. `fli outbox:install` writes the import line;
+`outboxSchemaFragment(db)` is the in-memory alternative for an app assembling
+one string.
+
+**The queue stays its own file, and the split is intent versus execution.** Main
+takes one small insert per durable effect; Caravan keeps every byte of its
+polling on its own database, in WAL, behind its own write lock. That is also
+what makes the handoff **at-least-once**: two files cannot be one transaction, so
+a crash between the queue insert and the delivery mark replays.
+
+**`ctx.enqueue(job, payload)` is a second verb, not a flag on `afterCommit`.** A
+closure cannot be written to a table. Everything durable has to be addressed by
+name, so the API says so rather than letting the first crash say it — one verb
+takes a function and dies with the process, the other takes a name and a payload
+and does not.
+
+*Refusals, by name rather than degradation:* outside a transaction (asked of
+`db.$inTransaction`, not of the `transactional:` declaration — a hook can run
+against a method the declaration does not name), on a schema with no
+`OutboxMessage`, and with no relay installed. A row nothing delivers is worse
+than a refusal.
+
+*Since:* Caravan's `dispatch({ id })` — a STATED job id, which is the
+idempotency `unique` deliberately is not. `unique` frees itself the moment a job
+is terminal, which is exactly when a replay is most likely; the primary key
+lasts. The relay dispatches under the outbox row's own id, so the replay above
+is a no-op instead of a second email. Litestone gained `$inTransaction` on every
+flavour of client for the refusal above.
+
+*Still open beside this:* delivery is at-least-once, so a handler must be
+idempotent — the framework hands it the outbox row id and says nothing else.
+
+*Lives in:* `packages/junction/src/core/outbox.ts`,
+`packages/junction/db/outbox.lite`, `packages/junction/src/plugins/outbox/`;
+the worked example is `example/api/services/orders.service.ts` (`pay`).
+
+**2026-08-17 · Login stays HTTP; cycling the socket IS the login event.** (`FJS-D30`.)
+
+Feathers authenticates over the socket because authentication is a *service*
+there, so it inherits the transport — and because a Feathers connection outlives
+the identity on it, which is why its `channels.js` needs an `app.on('login')` to
+move the connection out of `anonymous` and into `authenticated/account/<id>`.
+Junction's `/auth/*` is deliberately not a service (`FJS-D20`), the socket
+dispatches one frame type, and there is no auth frame.
+
+**The recorded reason to reopen it was requirement (3) — channel membership must
+be torn down and rebuilt when the identity changes — and (3) is already done, by
+discarding the connection rather than mutating it.** `setToken` cycles the
+socket: `_disconnect()` then `_openWs()`, so the upgrade carries the new token,
+`handleConnect` runs again, `channels.on('connection')` fires with the NEW
+session, and membership is rebuilt from nothing while the old connection's
+channels are dropped on close. That is Feathers' leave-anonymous /
+join-authenticated transition, spelled as a reconnect. Every other line of a
+Feathers `channels.js` has an exact equal here and both apps in this repo
+already write it.
+
+So what a WS login would still buy is **one HTTP round-trip at login**. What it
+costs is a mutable `ws.data.user`: the WS session is resolved once in `_wsOpen`
+and shared, frozen, by every frame on that socket (`FJS-007`), and basecamp's
+`applyStanding()` is built on that — it constructs a fresh principal rather than
+mutating one. Making the socket's identity reassignable to save a round-trip is
+the wrong trade, and a half-logged-in socket — new token, old channel set — is a
+silent failure, since a channel that never fires is indistinguishable from
+nothing happening.
+
+**The rule that follows: identity change is a NEW connection.** Anything that
+needs to run when the caller becomes somebody else belongs in the `connection`
+handler, which is the one place it can be written once. An app switching tenants
+mid-session is the case that is NOT an identity change and must not reconnect —
+basecamp handles it by joining a channel per membership at connect, so the switch
+needs no new socket.
+
+*Not a prerequisite for splitting the API onto its own origin:* the WS upgrade is
+itself an HTTP request, so CORS is required either way.
+
+*Still open beside this:* Junction has no app-level publisher — the half of a
+Feathers `channels.js` that has no equal here (`FJS-334`).
+
+*Lives in:* `packages/junction/src/client/index.ts` (`setToken`),
+`packages/junction/src/transport/channels.ts` (`handleConnect`, `on('connection')`),
+`packages/junction/src/transport/http.ts` (`_wsOpen`); the worked wirings are
+`example/api/app.ts` and `packages/basecamp/api/src/core/app.ts`.
+
 
 ## UI substrate (Mesa)
 
@@ -2818,6 +3134,71 @@ This closes `FJS-D14` — all four folders are named, two collapsed into
 `toolbelt`, two deferred.
 — `packages/toolbelt/` · `packages/orion/README.md` · `packages/oracle/README.md`.
 
+**2026-08-17 · `FJS-D37` — the terminal is a surface with a tone vocabulary, not a
+palette of colour names; `fli` output stays line-oriented; a TUI buys its engine.**
+Four rulings from one question, because `packages/cli/core/color.js` and the shape
+of a future TUI turn out to be the same decision asked twice.
+
+**§1 — output is styled with a tone, never a colour, and the table lives in
+`@frontierjs/toolbelt/tty`.** Invariant 13 already says this for the browser, and the
+argument it rests on — a colour name is a fact about one rendering, a tone is a fact
+about the message — does not stop at the DOM. `color.js` is chalk-compatible by
+design, which was correct for dropping zx off the read-only paths (~85ms of a ~200ms
+invocation) and which inherited chalk's vocabulary as a side effect: call sites say
+`red`, nothing can retheme, nothing adapts to a light terminal, and the one accent in
+the CLI is a hex literal inside a markdown renderer (`core/prose.js:33`).
+
+The table is `tone.*` for the message and `part.*` for what a fragment IS — a path, a
+value, a command — and it resolves through a **backend**, because the same vocabulary
+has to reach ANSI, terminal cell attributes and the eleven `theme-*` blocks
+`@frontierjs/css` already ships. Three palettes for one system is what having no
+ruling produces. It lives in toolbelt because a formatter is pure and depends on
+nothing, so `FJS-D26` holds and litestone and mesa may import it — which they must,
+since they are two of the packages printing today. `color.js` becomes a thin
+re-export, so no call site changes on the day it lands.
+
+**§2 — command output and runtime log are two formats with two owners.** Booting
+basecamp prints four prefix vocabularies in nine lines — a bracket tag, a
+timestamp-level-scope triple, a vite arrow followed by a JSON blob, and a different
+bracket tag — from four packages that each had to guess. Invariant 4 says one owner
+per translation and *an event becomes a line* has none. They are not one format:
+command output is transient, read once by a human watching a command finish, and
+wants a verb column with no timestamp; a runtime log is a stream, tailed and
+filtered, and wants a timestamp, a level, a scope and a JSON mode. Naming the two is
+most of the repair.
+
+**§3 — the shapes are borrowed, not invented.** Cargo's right-aligned verb column for
+anything that acts (Rails generators invented it and `fli make:*` has the same job),
+rustc's code + `file:line:col` + caret + `help:` for anything that judges, and `gh`'s
+rule that every reporting command takes `--json` so nobody scrapes the pretty output.
+`fli check`'s eleven rules exist because each is silent when broken; a bullet list is
+the weakest available rendering of that.
+
+**§4 — prompts do not grow into a TUI.** A clack-style gutter with a spinner
+repaints, owns the cursor and must restore on `SIGINT` — it is a third of a
+full-screen renderer, and built incrementally inside a CLI it becomes a private
+half-renderer nobody owns. Either prompts run on a TUI stack or they stay
+line-oriented; the incremental path is refused by name because it is the default
+outcome rather than a choice anyone makes.
+
+**§5 — if a TUI is built, the engine is bought.** Measured against
+`packages/mesa/src/runtime.js`: the reactive core (lines 1–760) holds **2** DOM
+references and the rest **99**, and the compiler emits a template as an HTML *string*
+parsed by `htmlToFragment()` and walked by `refer(root, path)` (`compiler.js:1211`,
+`:6880`). Mesa has no renderer abstraction — rendering is DOM-shaped by construction,
+which is also why it is fast. Every Mesa target that exists produces markup, server
+rendering and `email-kit`'s `target: 'email'` included, so nothing in the tree is
+evidence that a non-markup target is cheap. What FJS would differentiate on is one
+`.mesa` file and one signal graph reaching a third surface; it is not cell-buffer
+diffing, yoga layout, kitty-protocol input parsing or grapheme width, and writing
+those is how the interesting half never gets built.
+
+**§6 — a TUI is not scheduled before core leaves alpha**, on `FJS-D14`'s reasoning
+unchanged: it would be built ON the framework, so it spends alpha time on a consumer
+of seams that are still moving. What is owed now is `FJS-D38` alone — whether a TUI
+reuses `.mesa` — so that §1–§3 do not foreclose either answer.
+— `packages/cli/core/color.js` · `packages/toolbelt/` · `IDEAS/terminal-surface.md`.
+
 ## Dependencies & the ecosystem
 
 **2026-08-14 · `FJS-D31` — FrontierJS wraps third-party binaries, it does not
@@ -2938,6 +3319,46 @@ import away and were waiting only on this.
 `utils` or `toolbelt`, and the standing travels with whichever wins.
 *Lives in:* `packages/toolbelt/` (`@frontierjs/utils` until the same day, see
 § Repo conventions) · `CLAUDE.md` § Invariants 1.
+
+**2026-08-17 · `FJS-D16` amended — `createStore` does NOT move to the substrate,
+and the reason is the licence rather than the effort.** The 2026-08-15 ruling
+named three things to move: `createMakeFromSchema`, `createStore`, and the
+`mergeHooks`/`runPhase`/`runAroundHooks` pipeline. Two moved and are now
+`@frontierjs/toolbelt/jsonschema` and `@frontierjs/toolbelt/hooks`. The third
+cannot: **a store is state**, and `FJS-D26` grants toolbelt its standing below
+the dependency graph on *every export is a pure function* — "purity is not per
+subpath, it is the whole package, because it is the whole of the argument that
+litestone and mesa may import it". A factory returning a mutable subscription
+list is not that, and admitting one costs the standing that makes the package
+worth having.
+
+**The second finding is that the two stores were never one fact anyway.**
+Sierra's `createStore(service, opts)` is service-backed and stamps each request,
+so a slower earlier `find` landing second cannot overwrite newer rows; jetty's
+`createStore(opts)` takes no service at all — Junction lives in Harbor, not in
+the page — binds an `idField` at construction and exposes `populate(service, …)`
+instead. Different signature, different semantics, and the shared remainder is a
+~40-line subscribe/notify list. That is the same test the ruling applied to the
+orchestrator and reached the same answer: *duplication is not the defect, a fact
+with two owners is.*
+
+**`mergeHooks` changed shape on the way, for the same licence.** It merged in
+place; it now answers a NEW map and mutates neither argument. Both callers hold
+their hook map in a variable and reassign. The in-place spelling read as
+`mergeHooks(a, b)` with the result discarded, so the failure mode after this
+change — forgetting the assignment — is a map that never grew, which is louder
+than one silently rewritten. It is re-exported from `@frontierjs/jetty/resources`
+and that surface changes with it.
+
+**What the move was worth beyond the dedupe**: jetty's `make()` was Sierra
+v0.1.0's and had drifted two versions behind. Measured against one schema, the
+old copy answered `customerId: 0` for a foreign key — customer #0, a claim
+nobody made, which passes coercion and validation and is refused by SQLite as a
+500 — and `trackingCode: ''` for a `readOnly` column, a key the Data boundary
+refuses BY NAME so the form could not submit at all. Both are correct now
+because there is one implementation rather than because anyone noticed.
+*Lives in:* `packages/toolbelt/src/{hooks,jsonschema}/` ·
+`packages/sierra/src/junction/resource.js` · `packages/jetty/src/resources/`.
 
 **2026-08-15 · `FJS-D16` — all three duplications CLOSE, by three different
 mechanisms, because the obstacle is different in each. The rule underneath is

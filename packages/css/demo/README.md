@@ -19,7 +19,7 @@ see what breaks.
 
 That rule has exactly one exception, and it is quarantined to its own route
 rather than allowed to soften the other five. See **Reference** below: two of
-the 54 terms are not components at all, and the honest way to show them is to
+the 55 terms are not components at all, and the honest way to show them is to
 say so rather than to stage a screen around them. Anything that needs a
 caption to belong on a screen does not belong on a screen.
 

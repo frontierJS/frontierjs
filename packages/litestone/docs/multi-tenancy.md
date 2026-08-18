@@ -163,27 +163,52 @@ country list, an identity table read across tenants. The parse reports them once
 by name:
 
 ```
-tenancy: 2 model(s) declare no 'workspaceId' and are NOT scoped to a tenant —
-Plan, Country. Add the column, or mark each @@tenant(none) to say it spans
-tenants on purpose.
+tenancy: 2 model(s) declare no 'workspaceId', hold no relation to a model that
+does, and are NOT scoped to a tenant — Plan, Country. Add the column, relate
+them to a scoped model, or mark each @@tenant(none) to say it spans tenants on
+purpose.
 ```
 
-Three ways to answer it:
+Four ways to answer it:
 
 ```
 @@tenant(none)                  // spans tenants deliberately — silences the report
 @@tenant(column: "accountId")   // scoped, under a column of its own
+@@tenant(via: order)            // scoped through one named relation, and only that one
 workspaceId Int                 // declare the column and it is scoped like the rest
 ```
 
 A model in a `jsonl` or `logger` database is never scoped — there is no policy
 engine there, so a rule would read as enforcement and not be it.
 
-**A model reached only through its parent has no answer yet.** `check(parent)`
-delegation is conservative-allow on create (the related row does not exist when
-the create policy runs), so generating it would produce a rule that holds for
-reads and not for writes. Write it by hand where you need it, and see
-[`ISSUES.md`](../../../ISSUES.md) `FJS-282`.
+### Scoped through a parent
+
+**A model that holds a foreign key to a scoped one is scoped too, and the rule
+is generated.** It is not cross-tenant data — it is the same tenant's data, one
+hop away — and the delegation costs it no column of its own:
+
+```
+@@deny(read, update, delete, create, !check(<relation>))
+```
+
+One deny **per scoped parent**, which is why there is nothing to choose. Denies
+are AND'd, so a model with two scoped parents has to satisfy both — the
+narrowing answer, and the direction tenancy always takes. `@@tenant(via: rel)`
+narrows to a single relation for an app that wants exactly that.
+
+Transitive: a grandchild is scoped once its parent is. A self-relation is
+skipped, and so is a parent that is not itself scoped.
+
+`check(rel, 'read')` states the operation rather than inheriting the containing
+one — the question is always *is that parent mine*, never *may I create that
+parent*, which is what the default would ask on a create.
+
+The report names them:
+
+```
+tenancy: 2 model(s) carry no 'workspaceId' and are scoped through a parent —
+Deploy (via app), LogLine (via deploy).
+```
 
 ---
 

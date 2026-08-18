@@ -84,6 +84,7 @@ import {
   GatePlugin,
   LEVELS,
 } from '@frontierjs/litestone'
+import type { LitestoneClient, TableClient } from '@frontierjs/litestone'
 
 import type { App }            from '../src/core/app.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
@@ -132,7 +133,27 @@ const gate = new GatePlugin({
   },
 })
 
-const db = await createClient({
+// The schema above lives in a string, so there is no `litestone types` run
+// behind this file — the accessor is named by hand instead. `createClient` is
+// generic for exactly this: a real app passes the generated `Db` here and gets
+// the same thing without writing it.
+interface Lead {
+  id:        number
+  name:      string
+  company:   string
+  email:     string
+  status:    'new' | 'active' | 'closed'
+  value:     number
+  createdAt: string
+  updatedAt: string
+}
+
+interface Db extends LitestoneClient {
+  lead: TableClient<Lead>
+  asSystem(): Db
+}
+
+const db = await createClient<Db>({
   schema:  SCHEMA,
   db:      ':memory:',
   plugins: [gate],
@@ -170,7 +191,7 @@ function issueToken(username: string, role = 'user'): string {
 const consoleMailer: IMail = {
   async send(msg: MailMessage): Promise<SendResult> {
     log.info('[mail] would send', { to: msg.to, subject: msg.subject })
-    return { id: `mail-${Date.now()}`, accepted: Array.isArray(msg.to) ? msg.to : [msg.to] }
+    return { id: `mail-${Date.now()}`, message: 'logged' }
   },
   async batch(msgs) {
     return Promise.all(msgs.map(m => this.send(m)))

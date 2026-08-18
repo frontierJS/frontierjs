@@ -79,7 +79,7 @@ title: Appliance
         {busy ? 'Checking…' : 'Check again'}
       </Button>
       {#if entry.url}
-        <a class="btn ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</a>
+        <Button variant="ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</Button>
       {/if}
     </div>
   </Card>

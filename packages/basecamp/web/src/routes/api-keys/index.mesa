@@ -34,6 +34,7 @@ title: API keys
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
 
@@ -156,6 +157,14 @@ title: API keys
 
   const when = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
   const TONE = { active: 'success', expired: 'warning', revoked: 'muted' }
+  const KEY_COLUMNS = [
+    { key: 'name',    label: 'Name' },
+    { key: 'token',   label: 'Token' },
+    { key: 'scopes',  label: 'Scopes' },
+    { key: 'used',    label: 'Used' },
+    { key: 'expires', label: 'Expires' },
+    { key: 'actions', label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 <div class="section-header">
@@ -263,50 +272,36 @@ title: API keys
     Nothing in this workspace authenticates as a machine yet.
   </EmptyState>
 {:else}
-  <div class="table-wrap">
-    <table class="table striped hover">
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Token</th>
-          <th scope="col">Scopes</th>
-          <th scope="col">Used</th>
-          <th scope="col">Expires</th>
-          <th scope="col"><span class="visually-hidden">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody id="key-rows">
-        {#each rows as k}
-          <tr>
-            <td>
-              <div class="cluster">
-                <span>{k.name}</span>
-                <Badge tone={TONE[k.status] ?? 'muted'}>{k.status}</Badge>
-              </div>
-            </td>
-            <td><Mono>{k.tokenHint}</Mono></td>
-            <td>
-              <div class="cluster">
-                {#each (k.scopes ?? []) as s}<Pill>{s}</Pill>{/each}
-              </div>
-            </td>
-            <td class="text-sm text-muted">
-              {k.totalUses ?? 0} total · {k.lastUsedAt ? when(k.lastUsedAt) : 'never'}
-            </td>
-            <td class="text-sm text-muted">{k.expiresAt ? when(k.expiresAt) : 'never'}</td>
-            <td>
-              <div class="cluster">
-                {#if k.status === 'active'}
-                  <Button variant="ghost" disabled={busy === k.id}
-                          aria-label={`Revoke ${k.name}`} onclick={() => revoke(k)}>Revoke</Button>
-                {/if}
-                <Button variant="ghost" disabled={busy === k.id}
-                        aria-label={`Delete ${k.name}`} onclick={() => remove(k)}>Delete</Button>
-              </div>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <Table id="key-rows" columns={KEY_COLUMNS} rows={rows} striped>
+    {#snippet row(k)}
+      <tr>
+        <td>
+          <div class="cluster">
+            <span>{k.name}</span>
+            <Badge tone={TONE[k.status] ?? 'muted'}>{k.status}</Badge>
+          </div>
+        </td>
+        <td><Mono>{k.tokenHint}</Mono></td>
+        <td>
+          <div class="cluster">
+            {#each (k.scopes ?? []) as s}<Pill>{s}</Pill>{/each}
+          </div>
+        </td>
+        <td class="text-sm text-muted">
+          {k.totalUses ?? 0} total · {k.lastUsedAt ? when(k.lastUsedAt) : 'never'}
+        </td>
+        <td class="text-sm text-muted">{k.expiresAt ? when(k.expiresAt) : 'never'}</td>
+        <td>
+          <div class="cluster">
+            {#if k.status === 'active'}
+              <Button variant="ghost" disabled={busy === k.id}
+                      aria-label={`Revoke ${k.name}`} onclick={() => revoke(k)}>Revoke</Button>
+            {/if}
+            <Button variant="ghost" disabled={busy === k.id}
+                    aria-label={`Delete ${k.name}`} onclick={() => remove(k)}>Delete</Button>
+          </div>
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
 {/if}

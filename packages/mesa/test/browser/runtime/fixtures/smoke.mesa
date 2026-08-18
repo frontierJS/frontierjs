@@ -1,0 +1,15 @@
+<script>
+  // smoke.mesa — the fixture that proves the harness itself.
+  //
+  // It asserts nothing; its failure means the DRIVE is broken rather than the
+  // runtime. A child component is here so that a broken import map or a
+  // relative specifier the server cannot resolve shows up in the first spec
+  // rather than the fourth.
+  import Child from './Child.mesa'
+
+  let clicks = 0
+</script>
+
+<button type="button" id="hit" on:click={() => clicks++}>hit</button>
+<output id="clicks">{clicks}</output>
+<Child label="composed" />

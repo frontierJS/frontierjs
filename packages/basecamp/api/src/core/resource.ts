@@ -48,7 +48,7 @@ export function slugify(s: string): string {
 export async function findScoped(
   ctx:      ServiceContext,
   accessor: string,
-  opts:     { where?: Record<string, unknown>; limit: number; offset: number; orderBy?: Record<string, string> } ,
+  opts:     { where?: Record<string, unknown>; limit: number; offset: number; orderBy?: Record<string, string> | Record<string, string>[] },
 ) {
   const { rows, total } = await dbOf(ctx)[accessor].findManyAndCount({
     where:   { workspaceId: wsOf(ctx), ...(opts.where ?? {}) },
@@ -124,6 +124,19 @@ export function narrowPatch(
       ? (data[key] as string).trim()
       : data[key]
   return patch
+}
+
+/**
+ * Does a narrowed patch actually change anything?
+ *
+ * `version` rides along on every patch of a `@version` model — the client sends
+ * back the value it read, as a precondition rather than a value to write. Count
+ * it as a change and a form submitted with nothing edited becomes a real write,
+ * which bumps the version and makes every OTHER open editor of that row stale
+ * for a change nobody made.
+ */
+export function changesNothing(patch: Record<string, unknown>): boolean {
+  return Object.keys(patch).every(key => key === 'version')
 }
 
 /** Soft-delete (schema declares @@softDelete) and return the stamped row. */

@@ -80,225 +80,90 @@ function mockPagePort() {
   return port
 }
 
-// --- createMakeFromSchema ---
+// --- the pure halves are the substrate's ---
+//
+// `createMakeFromSchema` and the hook pipeline are `@frontierjs/toolbelt`'s
+// (`FJS-059`): pure, zero-dependency, and a hand copy of Sierra's until they
+// moved. Their behaviour is asserted there, in `test/specs/jsonschema.spec.js`
+// and `hooks.spec.js`, and restating it here would be two owners again by
+// another route. What is jetty's — and what the copy got WRONG — is the wiring
+// below.
 
-group('createMakeFromSchema')
+group('the substrate halves')
 {
-  const { createMakeFromSchema } = await import('../src/resources/make-from-schema.js')
+  const jetty    = await import('../src/resources/index.js')
+  const schemaKit = await import('@frontierjs/toolbelt/jsonschema')
+  const hooksKit  = await import('@frontierjs/toolbelt/hooks')
 
-  // Basic types
-  {
-    const make = createMakeFromSchema({
-      name:   { type: 'string' },
-      age:    { type: 'integer' },
-      score:  { type: 'number' },
-      active: { type: 'boolean' },
-      tags:   { type: 'array' },
-      meta:   { type: 'object' },
-    })
-    const inst = make()
-    if (inst.name === '' && inst.age === 0 && inst.score === 0 && inst.active === false) ok('basic primitives default correctly')
-    if (Array.isArray(inst.tags) && inst.tags.length === 0) ok('array defaults to []')
-    if (typeof inst.meta === 'object' && inst.meta !== null) ok('object defaults to {}')
-  }
+  if (jetty.createMakeFromSchema === schemaKit.createMakeFromSchema) ok('createMakeFromSchema re-exports toolbelt\'s, not a copy')
+  else bad('createMakeFromSchema is not toolbelt\'s')
 
-  // Skipped fields (id, createdAt, updatedAt by default)
-  {
-    const make = createMakeFromSchema({
-      id:        { type: 'integer' },
-      createdAt: { type: 'string', format: 'date-time' },
-      updatedAt: { type: 'string', format: 'date-time' },
-      name:      { type: 'string' },
-    })
-    const inst = make()
-    if (!('id' in inst) && !('createdAt' in inst) && !('updatedAt' in inst)) ok('default skip omits id/createdAt/updatedAt')
-    if (inst.name === '') ok('non-skipped field defaults still populated')
-  }
+  const same = ['mergeHooks', 'runPhase', 'runAroundHooks', 'runHooks']
+    .every((n) => jetty[n] === hooksKit[n])
+  if (same) ok('and so do all four hook runners')
+  else bad('a hook runner is not toolbelt\'s')
 
-  // Custom skip
-  {
-    const make = createMakeFromSchema(
-      { secret: { type: 'string' }, name: { type: 'string' } },
-      ['secret']
-    )
-    if (!('secret' in make())) ok('custom skip honored')
-  }
-
-  // Explicit default wins
-  {
-    const make = createMakeFromSchema({ status: { type: 'string', default: 'pending' } })
-    if (make().status === 'pending') ok('explicit default beats type default')
-  }
-
-  // anyOf nullable
-  {
-    const make = createMakeFromSchema({
-      bio: { anyOf: [{ type: 'string' }, { type: 'null' }] },
-    })
-    if (make().bio === '') ok('anyOf [string|null] resolves to non-null type')
-  }
-
-  // type as array (nullable shorthand)
-  {
-    const make = createMakeFromSchema({
-      bio: { type: ['string', 'null'] },
-    })
-    if (make().bio === '') ok('type: [string, null] picks non-null')
-  }
-
-  // date-time → undefined
-  {
-    const make = createMakeFromSchema({
-      due: { type: 'string', format: 'date-time' },
-    }, [])
-    if (make().due === undefined) ok('date-time string defaults to undefined')
-  }
-
-  // spec override
-  {
-    const make = createMakeFromSchema({ name: { type: 'string' }, age: { type: 'integer' } })
-    const inst = make({ name: 'Alice', age: 30 })
-    if (inst.name === 'Alice' && inst.age === 30) ok('make(spec) merges spec over defaults')
-  }
-
-  // Each instance gets its own arrays/objects (no shared refs)
-  {
-    const make = createMakeFromSchema({ tags: { type: 'array' }, meta: { type: 'object' } })
-    const a = make()
-    const b = make()
-    a.tags.push('x')
-    a.meta.foo = 1
-    if (b.tags.length === 0 && !('foo' in b.meta)) ok('arrays/objects cloned per instance')
-    else bad('shared refs detected', `b.tags=${JSON.stringify(b.tags)}, b.meta=${JSON.stringify(b.meta)}`)
-  }
-
-  // Unknown type → null
-  {
-    const make = createMakeFromSchema({ weird: { type: 'unknown-type' } })
-    if (make().weird === null) ok('unknown type → null')
-  }
-
-  // Empty/missing properties
-  {
-    const make = createMakeFromSchema(undefined)
-    if (typeof make === 'function' && Object.keys(make()).length === 0) ok('empty properties produces no-op make')
-  }
+  // mergeHooks answers a NEW map — toolbelt's licence is that every export is
+  // pure. The older spelling merged in place, so a caller upgrading has to
+  // assign the result.
+  const target = { before: { all: ['A'] } }
+  const merged = jetty.mergeHooks(target, { before: { all: ['B'], find: ['F'] } })
+  if (target.before.all.length === 1) ok('mergeHooks leaves its target alone')
+  else bad('mergeHooks mutated its target')
+  if (merged.before.all.length === 2 && merged.before.find.length === 1) ok('and answers the merge, existing first')
+  else bad('merge result wrong', JSON.stringify(merged))
 }
 
-// --- createStore ---
+// --- the schema jetty hands it ---
+//
+// Sierra reads a registry its build populates; jetty is handed the schema
+// document itself, so `$ref` resolution and the foreign-key list are jetty's
+// own wiring. Both were absent while this was a copy of Sierra v0.1.0: an enum
+// field defaulted to null because nothing followed its `$ref`, a `readOnly`
+// column was seeded as a key the Data boundary refuses by name, and a foreign
+// key was seeded `0` — customer #0, which passes coercion and validation and is
+// refused by SQLite as a 500.
 
-group('createStore')
+group('createResource → make(), off a whole schema document')
 {
-  const { createStore } = await import('../src/resources/store.js')
+  const { createResource } = await import('../src/resources/index.js')
 
-  {
-    const store = createStore({ initial: [{ id: 1, name: 'Alice' }] })
-    if (store.get().length === 1) ok('initial seeds data')
-
-    let lastValue = null
-    const off = store.subscribe((v) => { lastValue = v })
-    if (lastValue?.length === 1) ok('subscribe fires immediately with current value')
-
-    store.upsert({ id: 2, name: 'Bob' })
-    if (lastValue.length === 2) ok('upsert appends new record')
-
-    store.upsert({ id: 1, name: 'Alice (updated)' })
-    if (lastValue.length === 2 && lastValue[0].name === 'Alice (updated)') ok('upsert replaces existing by id')
-
-    store.remove(1)
-    if (lastValue.length === 1 && lastValue[0].id === 2) ok('remove drops by id')
-
-    store.remove(999) // no-op for missing id
-    if (lastValue.length === 1) ok('remove of missing id is no-op')
-
-    store.set([])
-    if (lastValue.length === 0) ok('set replaces wholesale')
-
-    off()
-    store.upsert({ id: 99 })
-    if (lastValue.length === 0) ok('unsubscribe stops notifications')
-  }
-
-  // populate via service.find
-  {
-    const store = createStore()
-    const service = { find: async () => [{ id: 1 }, { id: 2 }, { id: 3 }] }
-    await store.populate(service)
-    if (store.get().length === 3) ok('populate via service.find seeds store')
-  }
-
-  // populate w/ paged response (data field)
-  {
-    const store = createStore()
-    const service = { find: async () => ({ data: [{ id: 5 }], total: 1 }) }
-    await store.populate(service)
-    if (store.get().length === 1 && store.get()[0].id === 5) ok('populate handles { data, total } shape')
-  }
-
-  // custom idField
-  {
-    const store = createStore({ idField: 'uuid', initial: [{ uuid: 'a' }, { uuid: 'b' }] })
-    store.remove('a')
-    if (store.get().length === 1 && store.get()[0].uuid === 'b') ok('custom idField for remove')
-  }
-}
-
-// --- hooks ---
-
-group('hooks')
-{
-  const { mergeHooks, runPhase, runAroundHooks, runHooks } = await import('../src/resources/hooks.js')
-
-  // mergeHooks order
-  {
-    const target = { before: { all: [() => 'A'] } }
-    mergeHooks(target, { before: { all: [() => 'B'], find: [() => 'F'] } })
-    if (target.before.all.length === 2 && target.before.all[0]() === 'A' && target.before.all[1]() === 'B') ok('mergeHooks preserves existing-then-new order')
-    if (target.before.find.length === 1) ok('mergeHooks adds new method-specific lists')
-  }
-
-  // runPhase calls all then method
-  {
-    const order = []
-    const map = {
-      before: {
-        all:  [(c) => order.push(`all-${c.method}`)],
-        find: [(c) => order.push(`find-${c.method}`)],
+  const schema = {
+    $defs: {
+      Status: { type: 'string', enum: ['draft', 'sent'] },
+      orders: {
+        'x-relations': [{ name: 'customer', fields: ['customerId'] }],
+        properties: {
+          id:           { type: 'integer' },
+          reference:    { type: 'string' },
+          quantity:     { type: 'integer' },
+          customerId:   { type: 'integer' },
+          status:       { $ref: '#/$defs/Status' },
+          trackingCode: { type: 'string', readOnly: true },
+        },
       },
-    }
-    await runPhase(map, 'before', 'find', { method: 'find' })
-    if (JSON.stringify(order) === '["all-find","find-find"]') ok('runPhase fires all-hooks before method-hooks')
+    },
   }
 
-  // runHooks empty
-  {
-    let ran = 0
-    await runHooks([], {})
-    await runHooks(null, {})
-    await runHooks(undefined, {})
-    if (ran === 0) ok('runHooks no-ops on empty/null/undefined')
-  }
+  const res  = createResource('orders', schema)
+  const blank = res.make()
 
-  // runAroundHooks composes nested chain
-  {
-    const order = []
-    const list = [
-      async (ctx, next) => { order.push('A:before'); await next(); order.push('A:after') },
-      async (ctx, next) => { order.push('B:before'); await next(); order.push('B:after') },
-    ]
-    await runAroundHooks(list, {}, async () => { order.push('inner') })
-    if (JSON.stringify(order) === '["A:before","B:before","inner","B:after","A:after"]') ok('runAroundHooks composes onion-style')
-  }
+  if (blank.reference === '' && blank.quantity === 0) ok('a plain column still gets its blank')
+  else bad('plain columns wrong', JSON.stringify(blank))
 
-  // around can short-circuit by not calling next()
-  {
-    let innerRan = false
-    await runAroundHooks([
-      async () => { /* don't call next */ },
-    ], {}, async () => { innerRan = true })
-    if (!innerRan) ok('around hook can short-circuit by skipping next()')
-  }
+  if (blank.customerId === null) ok('a foreign key is null, never 0 — x-relations is the only place it is visible')
+  else bad('foreign key seeded', JSON.stringify(blank.customerId))
+
+  if (blank.status === null) ok('an enum with no default is null — the $ref resolved against the document')
+  else bad('enum default wrong', JSON.stringify(blank.status))
+
+  if (!('trackingCode' in blank)) ok('a readOnly column is not seeded at all')
+  else bad('readOnly column seeded')
+
+  if (!('id' in blank)) ok('and the server-managed columns are still skipped')
+  else bad('id seeded')
 }
+
 
 // --- createResource ---
 

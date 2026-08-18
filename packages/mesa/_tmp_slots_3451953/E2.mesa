@@ -1,0 +1,6 @@
+<script>
+  import L from './PropLayout.mesa'
+  import Page from './Page.mesa'
+</script>
+{#snippet s()}<Page />{/snippet}
+<L children={s} />

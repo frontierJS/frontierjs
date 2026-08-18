@@ -114,6 +114,95 @@ export async function run(t) {
   t.is(optional.seats, false, 'NumberInput included')
   t.is(optional.owner, false, 'RadioGroup included — it badged every field before')
 
+  /* ── the keyboard cursor names the row it is on (`FJS-323`) ───────────── */
+
+  // Focus never leaves the text box in either of these, so a highlight moving
+  // down the list is invisible to a screen reader on its own: there is no
+  // focus event to follow and `aria-selected` says which option is CHOSEN, not
+  // which one Enter would take. The input has to point at the row by id. Asked
+  // through `document.getElementById` on purpose — an `aria-activedescendant`
+  // naming an element that does not exist reads exactly like one that works.
+  const cursorOf = (inputSel) => `
+    const input = document.querySelector(${JSON.stringify(inputSel)});
+    const listId = input.getAttribute('aria-controls');
+    const list = listId && document.getElementById(listId);
+    const named = input.getAttribute('aria-activedescendant');
+    const row = named && document.getElementById(named);
+    const highlighted = list && list.querySelector('[data-active]');
+    return {
+      list:     !!list && list.getAttribute('role'),
+      named:    !!named,
+      resolves: !!row && !!list && list.contains(row),
+      isOption: row && row.getAttribute('role'),
+      agrees:   !!row && row === highlighted,
+      text:     row && row.textContent.trim(),
+    };
+  `
+
+  await t.clickAt('input[name=regions]')
+  await t.eventually(`!!document.querySelector('.fjs-combobox-panel')`, 'true',
+    'the Combobox panel opens on focus')
+
+  let cursor = await t.evaluate(cursorOf('input[name=regions]'))
+  t.is(cursor.list, 'listbox', 'Combobox points aria-controls at its own listbox')
+  t.ok(cursor.resolves, 'and aria-activedescendant names a row that exists inside it')
+  t.is(cursor.isOption, 'option', 'which is an option')
+  t.ok(cursor.agrees, 'and is the row the highlight is on')
+
+  // The named row is read after the move has landed: Mesa flushes on a
+  // microtask, so the attribute behind a keypress arrives after the round trip
+  // that caused it.
+  const firstRegion = cursor.text
+  const namedRow = (inputSel) => `
+    document.getElementById(
+      document.querySelector(${JSON.stringify(inputSel)}).getAttribute('aria-activedescendant')
+    )?.textContent.trim()`
+  await t.press('ArrowDown')
+  await t.eventually(`${namedRow('input[name=regions]')} !== ${JSON.stringify(firstRegion)}`, 'true',
+    'ArrowDown renames the row before it is read')
+  cursor = await t.evaluate(cursorOf('input[name=regions]'))
+  t.ok(cursor.resolves && cursor.agrees, 'ArrowDown moves both together')
+  t.ok(cursor.text && cursor.text !== firstRegion,
+    `and the named row is the next one (${firstRegion} → ${cursor.text})`)
+
+  await t.press('Escape')
+  t.is(await t.evaluate(`
+    return document.querySelector('input[name=regions]').getAttribute('aria-activedescendant');
+  `), null, 'a closed list names no row — the id would dangle')
+
+  // MultiSelect is the same control with a multi-value box around it, and its
+  // search input is the thing focus lives in. The combobox's panel is animated
+  // out and is absolutely positioned over the field BELOW it, so clicking the
+  // MultiSelect before it has gone lands the press on a panel on its way out.
+  await t.eventually(`document.querySelectorAll('.fjs-combobox-panel').length`, '0',
+    'and the Combobox panel is gone')
+  await t.clickAt('.fjs-multiselect-box')
+  await t.eventually(`!!document.querySelector('.fjs-multiselect-panel')`, 'true',
+    'the MultiSelect panel opens')
+
+  cursor = await t.evaluate(cursorOf('.fjs-multiselect-box input'))
+  t.is(cursor.list, 'listbox', 'MultiSelect points aria-controls at its own listbox')
+  t.ok(cursor.resolves && cursor.isOption === 'option' && cursor.agrees,
+    'and names the highlighted option by an id that resolves')
+
+  const firstChannel = cursor.text
+  await t.press('ArrowDown')
+  await t.eventually(`${namedRow('.fjs-multiselect-box input')} !== ${JSON.stringify(firstChannel)}`, 'true',
+    'ArrowDown renames the row here too')
+  cursor = await t.evaluate(cursorOf('.fjs-multiselect-box input'))
+  t.ok(cursor.text && cursor.text !== firstChannel,
+    `ArrowDown moves the named row (${firstChannel} → ${cursor.text})`)
+
+  // Taking the named row is the other half: until the options themselves were
+  // invisible nothing here could ever be chosen, so a MultiSelect that renders
+  // rows and cannot turn one into a pill would look identical.
+  await t.press('Enter')
+  await t.eventually(
+    `[...document.querySelectorAll('.fjs-multiselect-box .pill')].map(p => p.textContent.trim()).join(',')`,
+    cursor.text, 'Enter turns the named row into a pill')
+
+  await t.press('Escape')
+
   /* ── constraints that are not required ────────────────────────────────── */
 
   t.is(await t.evaluate(`return document.querySelector('textarea[name=summary]').maxLength;`), 40,

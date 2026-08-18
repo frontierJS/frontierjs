@@ -1855,6 +1855,67 @@
         "update": 4,
         "delete": 4
       },
+      "x-transitions": {
+        "status": {
+          "build": {
+            "from": [
+              "pending"
+            ],
+            "to": "building",
+            "gate": null
+          },
+          "push": {
+            "from": [
+              "building"
+            ],
+            "to": "pushing",
+            "gate": null
+          },
+          "release": {
+            "from": [
+              "pushing"
+            ],
+            "to": "deploying",
+            "gate": null
+          },
+          "succeed": {
+            "from": [
+              "building",
+              "pushing",
+              "deploying"
+            ],
+            "to": "success",
+            "gate": null
+          },
+          "fail": {
+            "from": [
+              "pending",
+              "building",
+              "pushing",
+              "deploying"
+            ],
+            "to": "failed",
+            "gate": null
+          },
+          "cancel": {
+            "from": [
+              "pending",
+              "building",
+              "pushing",
+              "deploying"
+            ],
+            "to": "cancelled",
+            "gate": null
+          },
+          "rollback": {
+            "from": [
+              "success"
+            ],
+            "to": "rolled_back",
+            "gate": 5
+          }
+        }
+      },
       "x-relations": [
         {
           "field": "app",
@@ -2085,6 +2146,41 @@
         "create": 4,
         "update": 4,
         "delete": 5
+      },
+      "x-transitions": {
+        "status": {
+          "start": {
+            "from": [
+              "pending",
+              "failed"
+            ],
+            "to": "running",
+            "gate": null
+          },
+          "idle": {
+            "from": [
+              "running"
+            ],
+            "to": "pending",
+            "gate": null
+          },
+          "fail": {
+            "from": [
+              "running"
+            ],
+            "to": "failed",
+            "gate": null
+          },
+          "cancel": {
+            "from": [
+              "pending",
+              "running",
+              "failed"
+            ],
+            "to": "cancelled",
+            "gate": null
+          }
+        }
       },
       "x-relations": [
         {
@@ -2783,6 +2879,21 @@
             "string",
             "null"
           ]
+        },
+        "secret": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Credential",
+          "writeOnly": true,
+          "x-litestone-kind": "transient"
         },
         "isActive": {
           "type": "boolean",

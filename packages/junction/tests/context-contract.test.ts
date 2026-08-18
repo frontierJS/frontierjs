@@ -1,12 +1,15 @@
 // The ServiceContext contract — FJS-D03.
 //
-// Four fields, four different rules, and they are the substance of what a
+// Five fields, five different rules, and they are the substance of what a
 // Context IS here rather than a list of names:
 //
-//   auth    the principal. Frozen. PROPAGATES.
-//   client  caller environment. Read-only. Propagates. Information, never authority.
-//   route   path captures. Router-only — {} on an internal call.
-//   locals  per-call scratch. Fresh {} every call. Does NOT propagate.
+//   auth        the principal. Frozen. PROPAGATES.
+//   client      caller environment. Read-only. Propagates. Information, never authority.
+//   route       path captures. Router-only — {} on an internal call.
+//   locals      per-call scratch. Fresh {} every call. Does NOT propagate.
+//   transients  the @transient keys of this call's payload, lifted off it by
+//               autoValidate. Fresh {} every call. Does NOT propagate. Written
+//               by the framework, where locals is written by whoever wants it.
 //
 // This file exists because those four rules were written in `context.ts` and
 // **one of them was false**: `auth` was documented as propagating and did not —
@@ -38,6 +41,7 @@ function harness() {
         client: ctx.client,
         route:  ctx.route,
         locals: ctx.locals,
+        transients: ctx.transients,
       }
       return []
     },
@@ -207,5 +211,33 @@ describe('locals — fresh per call, and it does NOT propagate', () => {
 
     await app.service('root').find({})
     expect(seen.given.locals.scratch).toBe('stated')
+  })
+})
+
+describe('transients — fresh per call, and it does NOT propagate', () => {
+  test('a service with no @transient field still has the key', async () => {
+    // Always present, so `ctx.transients.x` is a read rather than a crash on
+    // every service that declares none — which is nearly all of them.
+    const { app, seen } = harness()
+    await app.service('leaf').find({ tag: 't' })
+    expect(seen.t.transients).toEqual({})
+  })
+
+  test('a sub-call does not inherit what its caller was sent', async () => {
+    // Same rule as locals, for a different reason: a transient value is part of
+    // ONE payload. A nested call has its own, or none.
+    const { app, seen } = harness()
+
+    app.services.register(createService({
+      name: 'root', methods: ['find'],
+      async find(ctx: any) {
+        ctx.transients.secret = 'from-parent'
+        await ctx.app.service('leaf').find({ tag: 'nested' })
+        return []
+      },
+    } as never))
+
+    await app.service('root').find({})
+    expect(seen.nested.transients.secret).toBeUndefined()
   })
 })

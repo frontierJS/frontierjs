@@ -429,3 +429,39 @@ describe('registerControl — the half of a contribution that names the control'
     expect(defaultControlFor(rules().total)).toEqual({ control: 'input', step: 'any' })
   })
 })
+
+// ─── @transient — a field the caller writes and no read answers ─────────────
+//
+// It reaches the browser because sierra registers the CREATE-mode schema, which
+// is where litestone emits it. Nothing here is special-cased: the value of
+// declaring it is that a generated form offers a control for it and the
+// resource's own validation applies the schema's rules to it — where a wire-only
+// field held by a server hook alone was stripped in the browser before the
+// request was ever made.
+describe('a @transient field', () => {
+  const MODEL = {
+    properties: {
+      name:   { type: 'string' },
+      secret: { type: 'string', minLength: 4, title: 'Credential', writeOnly: true,
+                'x-litestone-kind': 'transient' },
+    },
+    required: ['name', 'secret'],
+  }
+
+  test('gets a control, and carries writeOnly for a view that needs to know', () => {
+    const rules = buildFieldRules(MODEL)
+    expect(rules.secret.writeOnly).toBe(true)
+    expect(controlFor(rules.secret).control).toBe('input')
+  })
+
+  test('is in the generated form field list, in schema order', () => {
+    const list = formFieldList(buildFieldRules(MODEL))
+    expect(list.map(f => f.name)).toEqual(['name', 'secret'])
+  })
+
+  test('and its rules are enforced in the browser, like any other field', () => {
+    const rules = buildFieldRules(MODEL)
+    expect(rules.secret.required).toBe(true)
+    expect(rules.secret.minLength).toBe(4)
+  })
+})

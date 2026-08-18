@@ -16,38 +16,14 @@
 
 import { resolveRef, modelNameFor } from './schema-registry.js'
 import { DIRECTIVE_PARAMS }          from '@frontierjs/toolbelt/directives'
+import { derefFieldSchema }          from '@frontierjs/toolbelt/jsonschema'
 
-/**
- * Follow a `$ref` (and the non-null branch of an `anyOf`) to the definition
- * that actually describes the field.
- *
- * Keywords written on the field itself win over the target's — a field's
- * `@default(pro)` is emitted alongside the `$ref`, and must not be shadowed by
- * anything on the enum definition.
- *
- * @param {object} def
- * @param {(ref: string) => object|null} resolve
- */
-export function derefFieldSchema(def, resolve) {
-  if (!def || typeof def !== 'object') return {}
-
-  if (typeof def.$ref === 'string') {
-    const { $ref, ...own } = def
-    const target = resolve?.($ref)
-    return target ? { ...target, ...own } : own
-  }
-
-  if (Array.isArray(def.anyOf)) {
-    const nonNull = def.anyOf.find(d => d && d.type !== 'null')
-    if (nonNull) {
-      const inner = derefFieldSchema(nonNull, resolve)
-      return 'default' in def ? { ...inner, default: def.default } : inner
-    }
-  }
-
-  return def
-}
-
+// `derefFieldSchema` is `@frontierjs/toolbelt/jsonschema`'s — the same walk
+// jetty's resource needs, and one of the pure halves that moved to the
+// substrate rather than being copied a second time (`FJS-059`). Re-exported
+// here because this module is where every caller in this package already looks
+// for it.
+export { derefFieldSchema }
 
 // ── Field rules ───────────────────────────────────────────────────────────────
 
@@ -67,6 +43,11 @@ const _CARRIED = [
   // read by the control table below and by nothing else — a form has to know
   // that a value is not the caller's to write, and that a string is a document.
   'readOnly', 'contentMediaType',
+  // `writeOnly` is `@transient`: a field the caller sends and no read ever
+  // answers. It gets a control like any other writable field — that is the
+  // point of declaring it — and this is what lets a form say so, and what stops
+  // a detail view rendering a value that is never there.
+  'writeOnly',
 ]
 
 /**

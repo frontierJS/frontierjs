@@ -32,6 +32,21 @@ import {
 // partly to keep that seam honest.
 import { createClient, autoMigrate, GatePlugin } from '../../../litestone/src/index.js'
 
+// The schema's own types, generated from the file below and committed beside it:
+//
+//   bun ../../../litestone/src/tools/cli.js types --schema db/schema.lite \
+//     --audience client --augment junction --out db/schema.d.ts
+//
+// Type-only, so nothing is imported at runtime — and the augmentation the same
+// file carries is what types `client.service('posts')` in the browser with no
+// word of its own there.
+//
+// One file for both ends only because nothing in this schema is `@guarded` or
+// `@secret`. Where something is, the two audiences differ and an app generates
+// twice — the system row for the API, the client row for the browser, which is
+// what `fli new` writes into a scaffolded app's `db:types`.
+import type { LitestoneClient as Db } from './db/schema.js'
+
 const HERE = import.meta.dir
 const PORT = 3400
 
@@ -39,7 +54,7 @@ const PORT = 3400
 // The .lite file is read, not restated. autoMigrate() syncs the SQLite file to
 // it and is idempotent, so a restart is free.
 
-const db = await createClient({
+const db = await createClient<Db>({
   db:     ':memory:',
   schema: readFileSync(join(HERE, 'db/schema.lite'), 'utf8'),
 
@@ -52,18 +67,11 @@ const db = await createClient({
 
 autoMigrate(db)
 
-// Litestone generates real types for a schema (`Post`, `PostCreate`, …) via its
-// typegen, but nothing wires them to a client built from a .lite file read at
-// runtime — so `db` is untyped here and this shape has to be asserted by hand.
-// That is gap #3 on the list, written out.
-type Seeder = { asSystem(): { post: {
-  count(): Promise<number>
-  createMany(a: { data: Record<string, unknown>[] }): Promise<unknown>
-} } }
-
-// asSystem() bypasses the gate — the one legitimate use is seeding.
-if (await (db as unknown as Seeder).asSystem().post.count() === 0) {
-  await (db as unknown as Seeder).asSystem().post.createMany({
+// asSystem() bypasses the gate — the one legitimate use is seeding. `db` is the
+// generated client, so `post` is the model's own accessor and the rows below are
+// checked against PostCreate rather than asserted past a hand-written shape.
+if (await db.asSystem().post.count() === 0) {
+  await db.asSystem().post.createMany({
     data: [
       { title: 'Hello Junction',  body: 'Created by the seed.', published: true },
       { title: 'The second post', body: null,                   published: false },

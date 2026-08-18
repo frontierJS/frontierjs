@@ -1527,6 +1527,13 @@ export function generateValidationCases(schema, modelName) {
   for (const field of model.fields) {
     if (field.type.kind === 'relation') continue
 
+    // A @transient field's rules are real and this is not the layer that holds
+    // them: it has no column, so every generated case would write a value the
+    // Data boundary refuses by name — the rule reading as broken because the
+    // field is doing exactly what it says. The API is where it is enforced, and
+    // `@frontierjs/testing` is the tier that can reach it.
+    if (field.attributes.some(a => a.kind === 'transient')) continue
+
     // ── Array validators ──────────────────────────────────────────────────
     // Same table as every other family, and for the same reason: the generator
     // restating the wording is a second copy, and it was the copy that noticed
@@ -2000,6 +2007,7 @@ function _shouldSkipField(field, model) {
   if (type.name === 'File')     return true   // file upload concern
 
   if (attrs.some(a => a.kind === 'computed')) return true
+  if (attrs.some(a => a.kind === 'transient')) return true  // no column — the API lifts it off the payload
   if (attrs.some(a => a.kind === 'from'))     return true  // subquery — not writable
   if (attrs.some(a => a.kind === 'generated')) return true
   if (attrs.some(a => a.kind === 'funcCall'))  return true

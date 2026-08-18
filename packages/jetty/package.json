@@ -57,6 +57,7 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "dependencies": {
+    "@frontierjs/toolbelt": "workspace:*",
     "chokidar": "^5.0.0",
     "vite": "^8.0.10",
     "ws": "^8.20.0"

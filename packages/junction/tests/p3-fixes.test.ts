@@ -21,8 +21,6 @@ import { describe, it, expect } from 'bun:test'
 import { createTestApp, request, createService, createBaseService } from '../index.ts'
 import { requestMeta as coreRequestMeta, freezeUser as coreFreezeUser } from '../src/core/context.ts'
 import { requestMeta as bridgeRequestMeta, freezeUser as bridgeFreezeUser } from '../src/transport/bridge.ts'
-import { createScheduler as shimScheduler } from '../src/plugins/scheduler/index.ts'
-import { createScheduler } from '../src/scheduler/index.ts'
 import { sendMail as shimSendMail } from '../src/plugins/email/system/smtp.ts'
 import { sendMail } from '../src/mail/smtp.ts'
 import { matchRouteSegments, matchPathDirect, parsePathSegments } from '../src/transport/router.ts'
@@ -40,10 +38,11 @@ describe('P3: relocations keep old import paths working', () => {
     expect(bridgeFreezeUser).toBe(coreFreezeUser)
   })
 
-  it('plugins/scheduler shim re-exports src/scheduler', () => {
-    expect(shimScheduler).toBe(createScheduler)
-  })
-
+  // The `plugins/scheduler` and `plugins/ai` shims that used to be asserted
+  // here are gone: neither path was in the `exports` map, so the old import
+  // they preserved could not be reached from outside the package at all.
+  // This one stays because `plugins/email/system/smtp` IS live — the `./email`
+  // subpath re-exports SmtpError through it.
   it('plugins/email/system/smtp shim re-exports src/mail/smtp', () => {
     expect(shimSendMail).toBe(sendMail)
   })

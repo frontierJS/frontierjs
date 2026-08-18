@@ -15,7 +15,7 @@
 // the job — see JobContext in types.ts.
 
 import type { Database }                            from 'bun:sqlite'
-import { openDb, buildStatements, aggregateStats }  from './db.ts'
+import { openDb, buildStatements, aggregateStats, isPrimaryKeyCollision } from './db.ts'
 import type { Statements }                          from './db.ts'
 import { QueueWorker, WorkerPool }                  from './worker.ts'
 import { autoloadJobs }                             from './autoload.ts'
@@ -56,17 +56,26 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   let jobsDir      = opts.jobsDir
   let cleanupAfter = opts.cleanupAfter ?? 7 * 24 * 60 * 60 * 1_000  // 7 days
   let adminOpts    = opts.admin
+  let heartbeatMs  = opts.heartbeat ?? 5_000
+  let leaseMs      = opts.lease     ?? 30_000
 
   const queueConf: Record<string, QueueConfig> = {
     default: { concurrency: 2 },
     ...(opts.queues ?? {}),
   }
 
+  // WHO this instance is, for the life of the process. One jobs.db is trivially
+  // opened twice, and every running row carries the id of the instance holding
+  // it so recovery can reclaim a crashed process's work without touching a live
+  // one's (FJS-294).
+  const ownerId  = crypto.randomUUID()
+
   const handlers = new Map<string, RegisteredHandler>()
   const pool     = new WorkerPool()
   const cron     = new CronScheduler()
   let   started  = false
   let   telemetry: CaravanTelemetry | null = null
+  let   ownerTimer: ReturnType<typeof setInterval> | null = null
   // The running app, or null standalone. Held so dispatch can read who is in
   // scope and the worker can open a scope to run the handler in.
   let   host: CaravanApp | null = null
@@ -91,6 +100,32 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     return runtime
   }
 
+  // ── Ownership ──────────────────────────────────────────────────────────────
+  //
+  // The answer to "is this 'running' row being executed by anybody?" — which
+  // one process never had to ask and two always do. This instance renews its
+  // lease, reclaims the rows of instances whose lease has expired, and forgets
+  // the owners themselves once nothing can be holding a row for them.
+  //
+  // The lease is renewed by a timer, so a handler that BLOCKS the event loop
+  // for longer than `lease` stalls its own heartbeat and has its work reclaimed
+  // under it. That is the same ground as FJS-295 and the same answer: work that
+  // does not yield is work this queue cannot supervise.
+
+  const sweepOwners = (): void => {
+    const { stmts } = rt()
+    const now    = Date.now()
+    const cutoff = now - leaseMs
+
+    stmts.heartbeat.run({ id: ownerId, now })
+    stmts.reclaimAbandoned.run({ cutoff })
+    // Pruned at twice the lease, after the reclaim: a dead owner's rows are
+    // released by the sweep above, and keeping the owner row one lease longer
+    // is what lets `list()` and a person reading the table still see which
+    // instance had them.
+    stmts.pruneOwners.run({ cutoff: now - leaseMs * 2 })
+  }
+
   // ── Queues ─────────────────────────────────────────────────────────────────
   //
   // A queue is a NAME until the pool is running. Workers are built in start(),
@@ -103,7 +138,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     if (!started || pool.has(queue)) return
 
     const { db, stmts } = rt()
-    const worker = new QueueWorker(queue, queueConf[queue], db, stmts, handlers, pollInterval, telemetry)
+    const worker = new QueueWorker(queue, queueConf[queue], db, stmts, handlers, pollInterval, ownerId, telemetry)
     worker._app = host
     pool.add(worker)
     worker.start()
@@ -125,7 +160,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // A definition carries the one statement of its own name; a string is the
       // caller restating it. Both end up as the same row.
       const name  = typeof job === 'string' ? job : job.name
-      const id    = crypto.randomUUID()
+      const id    = dispatchOpts.id ?? crypto.randomUUID()
       const delay = dispatchOpts.delay    ?? 0
       const prio  = dispatchOpts.priority ?? 0
       const now   = Date.now()
@@ -145,6 +180,12 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         if (existing) return existing.id
       }
 
+      // A STATED id is a claim of idempotency for all time — the id is the
+      // primary key, so the work is already queued or already done. Checked
+      // first because that is the cheap answer; the insert below is what
+      // settles a race, since two processes can both read nothing here.
+      if (dispatchOpts.id && stmts.getById.get({ id })) return id
+
       // WHO asked. Absent means "whoever is in scope", which is the ordinary
       // case and needs saying nowhere; an explicit `actor: null` means this is
       // the app's own work even though a request started it. Tested with `in`
@@ -154,7 +195,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         ? dispatchOpts.actor ?? null
         : host?.principal?.()?.userId ?? null
 
-      stmts.insert.run({
+      const row = {
         id,
         queue:        targetQueue,
         name,
@@ -174,7 +215,18 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         run_at:       now + delay,
         created_at:   now,
         actor_id:     actorId,
-      })
+      }
+
+      // The primary key is the only thing that can decide a race between two
+      // processes retrying the same stated id, so the collision is caught here
+      // rather than prevented above. Without a stated id there is nothing to
+      // collide with and the throw is a real failure.
+      try {
+        stmts.insert.run(row)
+      } catch (err) {
+        if (dispatchOpts.id && isPrimaryKeyCollision(err)) return id
+        throw err
+      }
 
       return id
     },
@@ -230,8 +282,18 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
           // `actor: null` stated rather than inferred: a cron fire is the app's
           // own work by definition, and nothing about a timer should depend on
           // whether some unrelated request happened to be in scope when it fired.
-          fn: () => caravan.dispatch(name, {}, { queue, actor: null })
-            .catch(err => console.error(`[Caravan] Cron dispatch "${name}" failed:`, err)),
+          //
+          // The id NAMES the fire — this job, this minute — rather than being a
+          // fresh uuid, which is what makes a second instance's fire a no-op
+          // instead of a second row. The scheduler is in-process and there is
+          // no leader, so every instance fires and the primary key is what
+          // settles it; a lease-held leader would instead miss fires whenever
+          // the lease was between owners. Two clocks agreeing to within a
+          // minute is the assumption, and it is the same one cron already
+          // makes about firing at the right time at all.
+          fn: (fireMinute: number) =>
+            caravan.dispatch(name, {}, { queue, actor: null, id: `cron:${name}:${fireMinute}` })
+              .catch(err => console.error(`[Caravan] Cron dispatch "${name}" failed:`, err)),
         })
       }
 
@@ -293,6 +355,16 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       })
     },
 
+    // ── unschedule ────────────────────────────────────────────────────────────
+    //
+    // Unbinds the clock and leaves the handler registered: a run already queued
+    // under this name still has something to execute, and only the schedule
+    // stopped being true.
+
+    unschedule(name: string): boolean {
+      return cron.remove(name)
+    },
+
     // ── nextRuns ──────────────────────────────────────────────────────────────
 
     nextRuns(): Array<{ name: string; cron: string; nextRun: Date | null }> {
@@ -326,12 +398,22 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         }
       }
 
-      // Recover any jobs stuck in 'running' from a previous crash
-      db.exec(`
-        UPDATE jobs
-        SET status = 'pending', started_at = NULL
-        WHERE status = 'running'
-      `)
+      // Say this instance is alive BEFORE anything sweeps, so a second instance
+      // starting at the same moment cannot read this one as dead.
+      stmts.heartbeat.run({ id: ownerId, now: Date.now() })
+
+      // Recover jobs abandoned by a crashed instance — and ONLY those. This
+      // used to set every 'running' row back to 'pending', which is correct for
+      // one process and catastrophic for two: starting a second instance while
+      // the first was executing a job released that row and the second claimed
+      // it, running the handler twice, concurrently, with the atomic claim
+      // saying nothing because the second claim was legitimate (FJS-294).
+      sweepOwners()
+
+      // Heartbeat, recovery and owner pruning are one timer: the sweep is only
+      // meaningful relative to a lease this instance is also renewing.
+      ownerTimer = setInterval(sweepOwners, heartbeatMs)
+      if (ownerTimer.unref) ownerTimer.unref()
 
       // Cleanup sweep — remove old terminal jobs (done/failed/cancelled) on
       // start and every hour
@@ -346,7 +428,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // file, an earlier dispatch.
       for (const [name, config] of Object.entries(queueConf)) {
         if (pool.has(name)) continue
-        const worker = new QueueWorker(name, config, db, stmts, handlers, pollInterval, telemetry)
+        const worker = new QueueWorker(name, config, db, stmts, handlers, pollInterval, ownerId, telemetry)
         worker._app = host
         pool.add(worker)
       }
@@ -360,8 +442,23 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
     async stop(): Promise<void> {
       cron.stop()
+      if (ownerTimer) {
+        clearInterval(ownerTimer)
+        ownerTimer = null
+      }
       await pool.stop()
       started = false
+
+      // Give this instance's rows back on the way out, so another instance
+      // recovers them now rather than a lease from now. Only when nothing is in
+      // flight: past its 30s deadline pool.stop() abandons a job whose handler
+      // may still be running, and dropping the owner then would invite exactly
+      // the double execution the owner exists to prevent — that row waits for
+      // the lease, which is the one thing that can decide it.
+      if (runtime && pool.totalInFlight === 0) {
+        try { runtime.stmts.dropOwner.run({ id: ownerId }) } catch {}
+      }
+
       runtime?.db.close()
       // The database the workers hold is now closed, so they cannot be reused;
       // a start() after this builds fresh ones against a freshly opened db.
@@ -388,6 +485,8 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         if (opts.cleanupAfter === undefined && junctionCaravan.cleanupAfter !== undefined) cleanupAfter = junctionCaravan.cleanupAfter
         if (opts.pollInterval === undefined && junctionCaravan.pollInterval !== undefined) pollInterval = junctionCaravan.pollInterval
         if (opts.admin        === undefined && junctionCaravan.admin        !== undefined) adminOpts    = junctionCaravan.admin
+        if (opts.heartbeat    === undefined && junctionCaravan.heartbeat    !== undefined) heartbeatMs  = junctionCaravan.heartbeat
+        if (opts.lease        === undefined && junctionCaravan.lease        !== undefined) leaseMs      = junctionCaravan.lease
 
         // Per queue rather than wholesale: a queue named in both places keeps
         // the opts config, a queue only the file names is added.

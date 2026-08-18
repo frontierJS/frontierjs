@@ -11,15 +11,13 @@
 // `include: { app: { include: { environment: true } } }` — declared in the
 // schema rather than spelled out as SQL.
 
-import { createService, NotFound, BadRequest, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { getScoped, stampWorkspace, dbOf, wsOf, actorOf } from '../../core/resource.ts'
+import { getScoped, stampWorkspace, changesNothing, dbOf, wsOf, actorOf } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
-const WITH_APP   = { app: { include: { environment: true } } }
-const TERMINAL   = ['success', 'failed', 'cancelled', 'rolled_back']
-const CANCELLABLE = ['pending', 'building', 'pushing', 'deploying']
+const WITH_APP = { app: { include: { environment: true } } }
 
 /** The step list a deployment starts with, by app type. */
 function buildInitialSteps(appType: string): string[] {
@@ -109,15 +107,18 @@ export function createDeploymentsService(app: BasecampApp) {
     async patch(ctx: ServiceContext) {
       const deployment = await getScoped(ctx, 'deployment', 'Deployment')
 
-      if (TERMINAL.includes(deployment.status))
-        throw new BadRequest(`Deployment is already in terminal state '${deployment.status}'`)
-
+      // No terminal-state guard here. `@@transitions(status, …)` on Deployment
+      // is the one statement of what a release may do next, and it is enforced
+      // at the Data boundary — so a status this row cannot reach is refused
+      // with a 409 that NAMES the moves it can make, which the list here never
+      // did. What is left is the field allow-list, which is a different rule:
+      // which columns a caller may write at all.
       const data  = ctx.data as Record<string, unknown>
       const ALLOWED = ['status', 'builtImage', 'startedAt', 'finishedAt', 'durationMs']
       const patch: Record<string, unknown> = {}
       for (const key of ALLOWED) if (key in data) patch[key] = data[key]
 
-      if (!Object.keys(patch).length) return deployment
+      if (changesNothing(patch)) return deployment
 
       const updated = await dbOf(ctx).deployment.update({ where: { id: deployment.id }, data: patch })
       if (patch.status)
@@ -133,9 +134,10 @@ export function createDeploymentsService(app: BasecampApp) {
     async remove(ctx: ServiceContext) {
       const deployment = await getScoped(ctx, 'deployment', 'Deployment')
 
-      if (!CANCELLABLE.includes(deployment.status))
-        throw new BadRequest(`Cannot cancel deployment in '${deployment.status}' state`)
-
+      // `cancel: [pending, building, pushing, deploying] -> cancelled` is the
+      // guard, declared on the model. Writing the status IS the enforced path;
+      // `transition()` is sugar for the move alone and this one stamps
+      // `finishedAt` with it.
       const updated = await dbOf(ctx).deployment.update({
         where: { id: deployment.id },
         data:  { status: 'cancelled', finishedAt: new Date().toISOString() },

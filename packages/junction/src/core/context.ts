@@ -14,9 +14,11 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { FrameworkError } from './errors.ts'
-import type { ServiceResult as _ServiceResult } from './envelope.ts'
 import type { SessionContext } from '../auth/types.ts'
 import type { QueryDirectives } from './directives.ts'
+// A value import, and outbox.ts imports only TYPES back — so the cycle is
+// erased at compile time and there is none at runtime.
+import { enqueueOutbox } from './outbox.ts'
 
 // ─── Context shape ────────────────────────────────────────────────────────
 // Single object throughout the pipeline (around → before → method → after
@@ -87,12 +89,43 @@ export interface ServiceContext {
   // ServiceContextLocals.
   locals: ServiceContextLocals
 
+  /**
+   * The @transient keys of this call's payload — accepted on the wire, stored
+   * nowhere.
+   *
+   * A model declares `secret String? @transient`; `autoValidate` validates the
+   * value like any other field and then moves it here, so the write never
+   * carries it and a method body has one place to look. `{}` on a service whose
+   * model declares none.
+   *
+   * FRESH {} every call and does NOT propagate, on the same terms as locals.
+   * Separate from locals because the framework writes this one: it is call
+   * INPUT that the caller sent, the way `directives` is the input the bridge
+   * parsed off `$`-params, and locals is the bag a hook keeps its own working
+   * state in.
+   *
+   * A bulk write carrying one is refused rather than lifted — the value is
+   * about one call, and the rows a service receives are the ones that passed
+   * validation, so an index-aligned array would pair one row's value with
+   * another row.
+   */
+  transients: Record<string, unknown>
+
   // ── app reference ─────────────────────────────────────────────────────
   app: import('./app.ts').App
 
   // ── lifecycle ─────────────────────────────────────────────────────────
-  // result is null in before hooks. Populated envelope in after hooks.
-  result:  _ServiceResult | null
+  /**
+   * `null` until the method has run; a `ServiceResult` envelope after it; and
+   * whatever a short-circuiting `before` hook assigned, which the framework
+   * passes through untouched (a cache hit, a `Response`, a bare string).
+   *
+   * Typed `unknown` because the envelope is only one of those three, and
+   * declaring it as the envelope alone made every honest assignment a cast —
+   * including two of the framework's own. Read the rows out with
+   * `resultData(ctx.result)` and the whole answer with `unwrapResult()`.
+   */
+  result:  unknown
   error:   FrameworkError | null
 
   // ── HTTP-specific ─────────────────────────────────────────────────────
@@ -102,6 +135,55 @@ export interface ServiceContext {
   // escape hatch — never use in services or hooks (type-only upward ref)
   $raw: import('../transport/types.ts').TransportContext | null
 
+  /**
+   * Run this AFTER the call has succeeded — and, where the service declares
+   * `transactional:`, after the transaction has committed.
+   *
+   * The phase an `after` hook is not. Hooks run in sequence, so an `after` hook
+   * that sends an email runs and a later one throwing makes the call report
+   * failure with the email already gone; under `transactional:` the write is
+   * rolled back and the email is still gone. Rails states the choice as
+   * `after_save` vs `after_commit`, and this is the second one (`FJS-089`).
+   *
+   *   ctx.afterCommit(() => app.conduit.send('order.shipped', { to, order }))
+   *
+   * **Observer tier** (`FJS-D06`): the call has already succeeded and been
+   * announced, so a callback cannot halt it and a throw cannot be reported as
+   * the call failing — turning a post-commit failure into a 500 would tell the
+   * client a write failed that did not. A throw is caught, logged loudly and
+   * emitted as `junction.aftercommit.error`.
+   *
+   * **Not durability.** A crash between the commit and the callback loses the
+   * effect; nothing is recorded anywhere. For an effect that must survive that,
+   * write a row inside the transaction and let something else deliver it.
+   *
+   * Assigned by `callService`, so it exists on every context a hook can hold.
+   */
+  afterCommit: (fn: () => void | Promise<void>) => void
+
+  /**
+   * Record a durable effect — the half `afterCommit` is not.
+   *
+   * Writes a row into the app's own database INSIDE this call's transaction,
+   * so the intent is recorded if and only if the write it belongs to
+   * committed. A relay then hands it to `app.jobs` and marks it delivered, so
+   * a crash anywhere in between costs a delay rather than the effect.
+   *
+   *   await ctx.enqueue('order.shipped', { orderId: row.id })
+   *
+   * A NAME and a PAYLOAD, where `afterCommit` takes a function — which is the
+   * whole reason these are two verbs and not one verb with a flag. A closure
+   * cannot be written to a table, so anything that must survive the process
+   * has to be addressed by name; the API says so rather than letting the first
+   * crash say it.
+   *
+   * Awaited, and it refuses by name rather than degrading: outside a
+   * transaction, without the model, or with no relay installed, a row would be
+   * either meaningless or undeliverable. `FJS-D35`.
+   */
+  enqueue: (job: import('./outbox.ts').EnqueueRef, payload: unknown,
+            opts?: import('./outbox.ts').EnqueueOptions) => Promise<string>
+
   // instrumentation — set by callService, undefined for bypass (_find etc.)
   telemetryId?: string
 
@@ -109,6 +191,37 @@ export interface ServiceContext {
   // completes. Used by litestone $tapQuery teardown and any other
   // per-request teardown. NOT scratch — framework-internal.
   _cleanups?: Array<() => void>
+
+  // what ctx.afterCommit() queued. Drained by callService, once, on success.
+  // NOT scratch — framework-internal.
+  _afterCommit?: Array<() => void | Promise<void>>
+
+  // outbox rows this call wrote. Only to tell callService whether kicking the
+  // relay is worth it — the rows are committed and the sweep would find them
+  // anyway. NOT scratch — framework-internal.
+  _outbox?: string[]
+}
+
+/**
+ * Give a context the two effect verbs, and hand it back complete.
+ *
+ * One implementation and four callers: the two builders in `bridge.ts`, the
+ * internal one in `app.ts`, and `callService`, which calls it for any context
+ * that arrived without them — a hand-built context in a test still has to be
+ * able to run a hook that queues an effect.
+ *
+ * The argument is the context MINUS what this adds, so a builder's object
+ * literal is still checked against every other field it owes.
+ */
+export function withCallEffects(
+  base: Omit<ServiceContext, 'afterCommit' | '_afterCommit' | 'enqueue' | '_outbox'>
+): ServiceContext {
+  const queued: Array<() => void | Promise<void>> = []
+  const ctx = base as ServiceContext
+  ctx._afterCommit = queued
+  ctx.afterCommit  = (fn) => { queued.push(fn) }
+  ctx.enqueue = (job, payload, opts) => enqueueOutbox(ctx, job, payload, opts)
+  return ctx
 }
 
 // Per-call scratch. Plugins augment via `declare module`. Core leaves

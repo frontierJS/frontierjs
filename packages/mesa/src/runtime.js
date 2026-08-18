@@ -97,23 +97,117 @@ function _flush() {
   while (_queue.size > 0) {
     if (++passes > _MAX_FLUSH_PASSES) return _reportCycle()
 
-    // Collected in a single scan that allocates nothing in the common case
-    // where no derivation is pending — this runs on every flush, including the
-    // 10k-row ones.
+    // Mark everything pending in this generation, so a node can ask whether an
+    // ANCESTOR of its own is waiting to run. A counter and a field rather than
+    // a Set: this runs on every flush, including the 10k-row ones, and a Set of
+    // the snapshot would be an allocation the size of the queue. Re-marked
+    // inside the derived loop as well, since running one level queues the next
+    // thing up.
+    let gen = ++_pendGen
+    for (const node of _queue) node._pendGen = gen
+
+    // The derivation layer settles OUTSIDE-IN, not to quiescence.
+    //
+    // `{#if a[i]}` guarding `{@const d = a[i][j]}` is the ordinary shape — a
+    // jagged array behind a length check — and running the whole derived layer
+    // first recomputes `d` while the guarded block is still standing, so it
+    // reads `undefined[j]` and throws from inside a handler. That surfaces as a
+    // component which quietly stops responding, and nothing points at the guard
+    // (`FJS-303`).
+    //
+    // Deferring the inner memo is not enough on its own, because at the moment
+    // the flush begins the guard is not pending either: both it and `d` are
+    // waiting on the same upstream derivation, and the guard only learns
+    // anything once that upstream has recomputed and propagated. So the layer
+    // runs one DOM-depth at a time, shallowest first, and hands control back to
+    // the DOM tier the moment a block is queued — the block then disposes what
+    // it is removing, and a disposed memo's `_run` is a no-op.
+    //
+    // Propagation is unaffected: a memo that survives is still recomputed and
+    // still notifies its consumers, one pass later.
     for (;;) {
+      gen = ++_pendGen
+      for (const node of _queue) node._pendGen = gen
+
+      // Shallowest level only. Taking the whole layer at once is what let a
+      // memo three blocks deep recompute in the same breath as the top-level
+      // derivation the guard above it was still waiting on.
       let derived = null
-      for (const node of _queue) if (node._isDerived) (derived ??= []).push(node)
+      let minDepth = Infinity
+      for (const node of _queue) {
+        if (!node._isDerived) continue
+        const depth = _domDepth(node)
+        if (depth < minDepth) { minDepth = depth; derived = [node] }
+        else if (depth === minDepth) derived.push(node)
+      }
       if (!derived) break
+
+      // …and within that level, nothing whose owning block is itself waiting.
+      // By now the block HAS been queued — it was woken by the shallower
+      // derivation that ran in the previous turn — so this is decidable, where
+      // one turn earlier it was not.
+      let ready = null
+      for (const node of derived) if (!_ownerPending(node, gen)) (ready ??= []).push(node)
+      if (!ready) break
+
       if (++passes > _MAX_FLUSH_PASSES) return _reportCycle()
-      for (const node of derived) _queue.delete(node)
-      for (const node of derived) _runNode(node)
+      for (const node of ready) _queue.delete(node)
+      for (const node of ready) _runNode(node)
     }
 
     const pending = [..._queue]
     _queue.clear()
-    for (const node of pending) if (!node._isUserEffect) _runNode(node)
-    for (const node of pending) if (node._isUserEffect)  _runNode(node)
+
+    // The same rule for the DOM-building tier, and it is needed here for a
+    // second reason: a node re-subscribes on every run, which moves it to the
+    // end of each signal's subscriber set — so the creation order this pass
+    // relies on inverts as soon as an outer block has re-run once, and the
+    // queue then holds a branch's own nodes ahead of the block that owns them.
+    let deferred = null
+    for (const node of pending) {
+      if (node._isUserEffect) continue
+      if (_ownerPending(node, gen)) { (deferred ??= []).push(node); continue }
+      _runNode(node)
+    }
+    // User effects need no such guard: they run after everything that builds
+    // the DOM, so an owner that was going to dispose them already has.
+    for (const node of pending) if (node._isUserEffect) _runNode(node)
+
+    // Whatever was held back goes round again — its owner has now run, so it
+    // is either disposed (and `_run` is a no-op) or free to proceed. Each pass
+    // runs at least the outermost pending node, so this terminates in tree
+    // depth rather than node count.
+    if (deferred) for (const node of deferred) if (!node._disposed) _queue.add(node)
   }
+}
+
+let _pendGen = 0
+
+/** Is a node that BUILDS DOM waiting to run somewhere above this one?
+ *
+ *  Only a DOM-building ancestor can dispose you. A pending derivation above a
+ *  derivation is an ordinary chain and settles in the fixpoint; blocking on it
+ *  would defeat the fixpoint for no gain. */
+function _ownerPending(node, gen) {
+  for (let o = node._owner; o; o = o._owner) {
+    if (o._pendGen === gen && !o._isDerived && !o._isUserEffect) return true
+  }
+  return false
+}
+
+/** How many DOM-building blocks this node lives inside.
+ *
+ *  The ordering key for the derived layer: a derivation at depth 0 belongs to
+ *  the component itself and cannot be disposed by anything in this flush, while
+ *  one at depth 3 is inside three blocks any of which may be about to remove
+ *  it. Derivations and user effects are not counted — neither disposes
+ *  anything. */
+function _domDepth(node) {
+  let depth = 0
+  for (let o = node._owner; o; o = o._owner) {
+    if (!o._isDerived && !o._isUserEffect) depth++
+  }
+  return depth
 }
 
 // Run one node, containing any error it throws.
@@ -937,10 +1031,24 @@ const _DOM_PROPS = new Set([
   'loop', 'autoplay', 'controls', 'open',
 ])
 
+// The DOM props whose EMPTY state is a value rather than the absence of an
+// attribute. `el.value` and `el.checked` stop tracking their attribute the
+// moment a user edits the control, so removing the attribute leaves what was
+// typed on screen — a component that legitimately re-renders with no value
+// (a form reset, a cleared field) kept showing the old text while its state
+// said otherwise, and nothing anywhere reported a disagreement.
+const _TEXT_DOM_PROPS = new Set(['value', 'innerHTML', 'textContent', 'innerText', 'defaultValue'])
+const _BOOL_DOM_PROPS = new Set([
+  'checked', 'selected', 'indeterminate', 'defaultChecked', 'muted',
+  'loop', 'autoplay', 'controls', 'open',
+])
+
 export function bindAttribute(el, name, fn) {
   createEffect(() => {
     const v = fn()
     if (v == null || v === false) {
+      if (_BOOL_DOM_PROPS.has(name)) el[name] = false
+      else if (_TEXT_DOM_PROPS.has(name)) el[name] = ''
       el.removeAttribute(name)
     } else if (_DOM_PROPS.has(name)) {
       el[name] = v
@@ -1309,14 +1417,26 @@ function _makeDelegatedHandler(root) {
       if (_delegateRoots.has(node)) return
     }
 
-    for (let i = 0; i < path.length; i++) {
-      const node = path[i]
-      if (node === root) break
-      const handler = node[prop]
-      if (handler) {
-        batch(() => handler(event))
-        if (event.cancelBubble) break
+    // `currentTarget` is the element the handler is WRITTEN on, which is what
+    // it means under addEventListener and what every handler assumes. One
+    // listener on the root gives every delegated handler the root instead, so
+    // `e.target === e.currentTarget` — which is what `on:click|self` compiles
+    // to — was false for exactly the events it is meant to admit. Overridden
+    // per node and dropped again after, so a native listener further up the
+    // same dispatch still reads its own.
+    try {
+      for (let i = 0; i < path.length; i++) {
+        const node = path[i]
+        if (node === root) break
+        const handler = node[prop]
+        if (handler) {
+          Object.defineProperty(event, 'currentTarget', { configurable: true, get: () => node })
+          batch(() => handler(event))
+          if (event.cancelBubble) break
+        }
       }
+    } finally {
+      delete event.currentTarget
     }
   }
 }
@@ -2117,7 +2237,21 @@ export const insertBlock = (anchor, $dom) => {
   anchor.parentNode.insertBefore($dom.$dom ?? $dom, anchor)
 }
 
-export const eachDefaultKey = (item) => item
+/**
+ * The key an {#each} with no key expression uses: the INDEX.
+ *
+ * Keying by the item itself is unique only when the values are, and two
+ * ordinary shapes are not — a list of repeated primitives, and an array-like
+ * (`{ length: 6 }`), whose every item is `undefined`. A collision does not
+ * degrade: the Map overwrites, two positions claim one block, and the first
+ * reorder throws out of _moveBlock with nothing bringing the list back.
+ *
+ * Index keying never collides, and the trade is node identity across a
+ * reorder — a moved item is rebound in place rather than moved, so DOM state
+ * a row owns (focus, an uncontrolled input, scroll) stays with the POSITION.
+ * An author who needs identity states a key: {#each rows as r (r.id)}.
+ */
+export const eachDefaultKey = (_item, index) => index
 
 /**
  * $$virtualEach — windowed virtual list renderer.

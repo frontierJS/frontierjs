@@ -17,6 +17,10 @@ export class QueueWorker {
   private _db:          Database
   private _stmts:       Statements
   private _handlers:    Map<string, RegisteredHandler>
+  // WHICH instance this worker claims for. Every running row carries it, so
+  // another instance's recovery can tell this worker's in-flight job from a
+  // crashed process's abandoned one.
+  private _owner:       string
   _telemetry:   CaravanTelemetry | null  // set by plugin register()
   _app:         CaravanApp | null = null // set by plugin register(), like _telemetry
   private _timer:       ReturnType<typeof setInterval> | null = null
@@ -30,6 +34,7 @@ export class QueueWorker {
     stmts:        Statements,
     handlers:     Map<string, RegisteredHandler>,
     pollInterval: number,
+    owner:        string,
     telemetry:    CaravanTelemetry | null = null,
   ) {
     this.queue        = queue
@@ -39,6 +44,7 @@ export class QueueWorker {
     this._stmts       = stmts
     this._handlers    = handlers
     this._telemetry   = telemetry
+    this._owner       = owner
   }
 
   start(): void {
@@ -91,7 +97,7 @@ export class QueueWorker {
 
     try {
       this._db.exec('BEGIN IMMEDIATE')
-      job = this._stmts.claimNext.get({ queue: this.queue, now: Date.now() })
+      job = this._stmts.claimNext.get({ queue: this.queue, now: Date.now(), owner: this._owner })
       this._db.exec('COMMIT')
     } catch (err) {
       try { this._db.exec('ROLLBACK') } catch {}
@@ -117,6 +123,7 @@ export class QueueWorker {
         run_at: record.run_at,
         error:  `No handler registered for job '${record.name}'`,
         now:    Date.now(),
+        owner:  this._owner,
       })
       this._running.delete(record.id)
       return
@@ -169,7 +176,10 @@ export class QueueWorker {
       const doneMs = Date.now()
       // 0 changes means cancel() took the row out of 'running' mid-attempt and
       // the guard held. The outcome is 'cancelled', so announce nothing.
-      const { changes } = this._stmts.markDone.run({ id: record.id, now: doneMs })
+      // 0 changes ALSO means another instance reclaimed this row while the
+      // handler ran — the owner guard is what keeps that completion off the
+      // attempt that replaced it.
+      const { changes } = this._stmts.markDone.run({ id: record.id, now: doneMs, owner: this._owner })
       if (changes > 0) this._telemetry?.emit('caravan.job.done', {
         id:         record.id,
         queue:      record.queue,
@@ -190,6 +200,7 @@ export class QueueWorker {
           run_at: record.run_at,
           error,
           now:    failedAt,
+          owner:  this._owner,
         })
         if (changes > 0) this._telemetry?.emit('caravan.job.failed', {
           id:         record.id,
@@ -215,6 +226,7 @@ export class QueueWorker {
           run_at: runAt,
           error,
           now:    failedAt,
+          owner:  this._owner,
         })
         if (changes > 0) this._telemetry?.emit('caravan.job.failed', {
           id:         record.id,

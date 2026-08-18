@@ -3396,7 +3396,10 @@
         btn.textContent = 'Opening…'
         try {
           // 1. Fetch the runtime as raw source text.
-          const runtimeSrc = await fetch('./runtime.js').then((r) => {
+          // Relative to this PAGE, which is `example/` — so `./runtime.js` is
+          // `example/runtime.js`, which has never existed. There is no
+          // re-export at the package root either: the runtime is `src/`.
+          const runtimeSrc = await fetch('../src/runtime.js').then((r) => {
             if (!r.ok) throw new Error('Could not load runtime.js: ' + r.status)
             return r.text()
           })

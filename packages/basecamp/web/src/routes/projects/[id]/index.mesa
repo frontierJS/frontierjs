@@ -4,7 +4,13 @@ title: Project
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
   import { projects } from '../../../resources/Project.mesa'
+  import { messageFor } from '../../../errors.js'
   import { environments } from '../../../resources/Environment.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Select from '@frontierjs/ui/components/forms/Select.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
 
   $: page.params
 
@@ -17,13 +23,18 @@ title: Project
   // has three editable fields, and a round trip to another route to change one
   // of them is ceremony.
   let editing = false
-  let draft   = { name: '', description: '' }
+  // `version` is in the draft on purpose. Project declares @version, and the
+  // resource otherwise fills one in from what the STORE holds — which a live
+  // push moves while this draft sits still, so the save would carry a version
+  // nobody here read and quietly win the race it exists to lose. A stated one
+  // wins over the remembered one, which is the documented way to pin it.
+  let draft   = { name: '', description: '', version: null }
 
   async function load() {
     error = null; loading = true
     try {
       project = await projects.service.get(page.params.id)
-      draft   = { name: project.name, description: project.description ?? '' }
+      draft   = fromRow(project)
       // The environments service filters by projectId; the workspace is already
       // on the header, so this is the only filter the page supplies.
       envs = (await environments.service.find({ projectId: page.params.id })).data
@@ -39,12 +50,18 @@ title: Project
   load()
   $: page.params.id, () => load()
 
+  const fromRow = row => ({ name: row.name, description: row.description ?? '', version: row.version })
+
   async function save() {
     error = null
     try {
       project = await projects.service.patch(project.id, draft)
+      // Reseed from the answer, version included: a second save off the old
+      // draft would carry the version this one just consumed and 409 on a race
+      // that did not happen.
+      draft   = fromRow(project)
       editing = false
-    } catch (e) { error = e.message }
+    } catch (e) { error = messageFor(projects, e) }
   }
 
   async function remove() {
@@ -82,46 +99,44 @@ title: Project
   // db/schema.lite, through the JSON Schema the build generated — so adding a
   // tier to the schema adds it to this picker with no edit.
   $: tiers = environments.fields?.tier?.enum ?? ['development', 'staging', 'production']
+  const ENVIRONMENT_COLUMNS = [
+    { key: 'name',      label: 'Name' },
+    { key: 'tier',      label: 'Tier' },
+    { key: 'protected', label: 'Protected' },
+    { key: 'actions',   label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
 {:else if error && !project}
-  <article class="alert danger">
-    <div class="alert-content">{error}</div>
-  </article>
-  <div class="cluster"><a class="btn ghost" href="/projects/">Back to projects</a></div>
+  <Alert tone="danger">{error}</Alert>
+  <div class="cluster"><Button variant="ghost" href="/projects/">Back to projects</Button></div>
 {:else if project}
   <div class="section-header">
     <h1>{project.name}</h1>
     <div class="cluster">
-      <a class="btn ghost" href="/projects/">All projects</a>
-      <button class="btn outlined" on:click={() => editing = !editing}>
+      <Button variant="ghost" href="/projects/">All projects</Button>
+      <Button variant="outlined" onclick={() => editing = !editing}>
         {editing ? 'Cancel' : 'Edit'}
-      </button>
-      <button class="btn ghost danger" on:click={remove}>Delete</button>
+      </Button>
+      <Button variant="ghost" tone="danger" onclick={remove}>Delete</Button>
     </div>
   </div>
 
   {#if error}
-    <article class="alert danger">
-      <div class="alert-content">{error}</div>
-    </article>
+    <Alert tone="danger">{error}</Alert>
   {/if}
 
   {#if editing}
     <div class="container narrow">
       <form class="card stack" on:submit|preventDefault={save}>
-        <div class="field-group">
-          <label for="name">Name</label>
-          <input class="field" id="name" bind:value={draft.name} required />
-        </div>
-        <div class="field-group">
-          <label for="description">Description</label>
-          <input class="field" id="description" bind:value={draft.description} />
-        </div>
+        <Input label="Name" name="name" id="name" required
+               value={draft.name} oninput={(e) => draft.name = e.target.value} />
+        <Input label="Description" name="description" id="description"
+               value={draft.description} oninput={(e) => draft.description = e.target.value} />
         <div class="cluster">
-          <button class="btn primary" type="submit">Save</button>
+          <Button variant="primary" type="submit">Save</Button>
         </div>
       </form>
     </div>
@@ -137,15 +152,11 @@ title: Project
     <h2 class="h4">Environments</h2>
     <div class="cluster">
       <label class="visually-hidden" for="tier-select">Tier</label>
-      <select class="field" id="tier-select" style="--field-inline-size: auto"
-              bind:value={newTier}>
-        {#each tiers as tier}
-          <option value={tier}>{tier}</option>
-        {/each}
-      </select>
-      <button class="btn outlined" on:click={addEnvironment} disabled={adding}>
+      <Select id="tier-select" style="--field-inline-size: auto"
+              placeholder="" options={tiers} bind:value={newTier} />
+      <Button variant="outlined" onclick={addEnvironment} disabled={adding}>
         {adding ? 'Adding…' : 'Add environment'}
-      </button>
+      </Button>
     </div>
   </div>
 
@@ -154,27 +165,15 @@ title: Project
       <div class="alert-content">No environments yet. Add one above — the slug is unique per project, so each tier exists once.</div>
     </article>
   {:else}
-    <div class="table-wrap">
-      <table class="table striped hover">
-        <thead>
-          <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Tier</th>
-            <th scope="col">Protected</th>
-            <th scope="col"><span class="visually-hidden">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody id="environment-rows">
-          {#each envs as environment}
-            <tr>
-              <td><a href={`/environments/${environment.id}/`}>{environment.name}</a></td>
-              <td><span class="pill">{environment.tier}</span></td>
-              <td>{environment.isProtected ? 'yes' : 'no'}</td>
-              <td><a class="btn ghost" href={`/environments/${environment.id}/`}>Open</a></td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+    <Table id="environment-rows" columns={ENVIRONMENT_COLUMNS} rows={envs} striped>
+      {#snippet row(environment)}
+        <tr>
+          <td><a href={`/environments/${environment.id}/`}>{environment.name}</a></td>
+          <td><span class="pill">{environment.tier}</span></td>
+          <td>{environment.isProtected ? 'yes' : 'no'}</td>
+          <td><Button variant="ghost" href={`/environments/${environment.id}/`}>Open</Button></td>
+        </tr>
+      {/snippet}
+    </Table>
   {/if}
 {/if}

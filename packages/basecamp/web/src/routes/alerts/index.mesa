@@ -10,10 +10,12 @@ title: Alerts
   // it in the browser would be a page-out fired from the client's idea of the
   // truth. So an event list that is empty is honest, and says so.
   import { session } from '../../session.js'
+  import { messageFor } from '../../errors.js'
   import { alerts }   from '../../resources/AlertRule.mesa'
   import { channels } from '../../resources/NotificationChannel.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
@@ -100,7 +102,7 @@ title: Alerts
       delivery = { ...delivery, [rule.id]: updated.channels ?? [] }
       picked   = { ...picked, [rule.id]: '' }
     } catch (e) {
-      error = e.message
+      error = messageFor(alerts, e)
     } finally {
       busy = null
     }
@@ -145,7 +147,7 @@ title: Alerts
       const i = rows.findIndex(r => r.id === rule.id)
       if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
     } catch (e) {
-      error = e.message
+      error = messageFor(alerts, e)
     } finally {
       busy = null
     }
@@ -199,9 +201,7 @@ title: Alerts
   <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
        looking for "the screen reported a refusal" would otherwise match a
        fleet notice and pass, or fail, for reasons this screen never caused. -->
-  <article class="alert danger" id="screen-error">
-    <div class="alert-content">{error}</div>
-  </article>
+  <Alert tone="danger" id="screen-error">{error}</Alert>
 {/if}
 
 {#if creating}

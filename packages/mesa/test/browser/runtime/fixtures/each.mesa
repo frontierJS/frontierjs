@@ -1,0 +1,30 @@
+<script>
+  // each.mesa — what `{#each}` does to real nodes.
+  //
+  // A keyed list is a promise about NODE IDENTITY: a reordered row must be the
+  // same element moved, not a new one with the same text. Nothing that
+  // compares HTML can see the difference, and everything downstream depends on
+  // it — focus, a running animation, an uncommitted input value.
+  //
+  // The grid is the array-like case. `{#each}` takes an array, an iterable or
+  // an array-like, and `{ length: 6 }` is what a calendar builds its cells
+  // from — the kit's DatePicker had never rendered at all because that path
+  // called `.map()` on a plain object (`FJS-147`).
+  let rows = [{ id: 'a', n: 1 }, { id: 'b', n: 2 }, { id: 'c', n: 3 }]
+  const grid = { length: 6 }
+</script>
+
+<ul id="rows">
+  {#each rows as row (row.id)}
+    <li data-id={row.id}>{row.n}</li>
+  {/each}
+</ul>
+
+<div id="grid">
+  <!-- Keyed by index explicitly, which is also what an unkeyed list does —
+       the two spellings must agree; see each-unkeyed.spec (`FJS-325`). -->
+  {#each grid as _cell, i (i)}<span class="cell">{i}</span>{/each}
+</div>
+
+<button type="button" id="reverse" on:click={() => rows = [...rows].reverse()}>reverse</button>
+<button type="button" id="drop" on:click={() => rows = rows.filter((r) => r.id !== 'b')}>drop b</button>

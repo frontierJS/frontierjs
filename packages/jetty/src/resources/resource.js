@@ -31,10 +31,10 @@
 // here and Sierra's resource.js is the risk — if you change one, audit the
 // other.
 
-import { getActivePort }                     from './active-port.js'
-import { createMakeFromSchema }              from './make-from-schema.js'
-import { createStore }                       from './store.js'
-import { runPhase, runAroundHooks, mergeHooks } from './hooks.js'
+import { getActivePort }                        from './active-port.js'
+import { createStore }                          from './store.js'
+import { runPhase, runAroundHooks, mergeHooks } from '@frontierjs/toolbelt/hooks'
+import { createMakeFromSchema }                 from '@frontierjs/toolbelt/jsonschema'
 
 /**
  * Create a resource wrapper for a remote service, routed through harbor.
@@ -94,15 +94,25 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     idField      = nameOrSpec.idField      ?? 'id'
   }
 
-  // Live hook map, mutable via the returned `hooks` callback.
-  const _hooks = { before: {}, after: {}, around: {}, error: {} }
-  mergeHooks(_hooks, initialHooks)
+  // Live hook map, replaced by the returned `hooks` callback. Reassigned rather
+  // than mutated: `mergeHooks` answers a new map (`FJS-059`).
+  let _hooks = mergeHooks({ before: {}, after: {}, around: {}, error: {} }, initialHooks)
 
   // Schema-driven make() or pass-through.
   let make
   if (schema) {
-    const properties = extractProperties(schema, serviceName, model)
-    make = createMakeFromSchema(properties)
+    const modelDef = extractModelDef(schema, serviceName, model)
+    // Two things `properties` alone cannot answer, and both were wrong while
+    // this was a hand copy of Sierra's (`FJS-059`). An enum or a `@type(T)`
+    // field arrives as a bare `{$ref}`, so without a resolver it has no `type`
+    // to read; and `x-relations` is the ONLY place a relation exists on the
+    // client — a belongsTo's local key is emitted as a plain integer, so a
+    // foreign key seeded `0` reaches the server as customer #0.
+    const fkFields = (modelDef?.['x-relations'] ?? []).flatMap((r) => r?.fields ?? [])
+    make = createMakeFromSchema(modelDef?.properties ?? modelDef, {
+      resolve:     (ref) => resolveAgainst(schema, ref),
+      foreignKeys: fkFields,
+    })
   } else {
     make = (spec) => Object.assign({}, spec)
   }
@@ -275,7 +285,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   // hooks() — append hooks after creation
   function addHooks(incoming) {
-    mergeHooks(_hooks, incoming)
+    _hooks = mergeHooks(_hooks, incoming)
   }
 
   const context = { model, service: serviceName, idField }
@@ -290,13 +300,27 @@ function looksLikeSchema(x) {
   return '$defs' in x || 'definitions' in x || 'properties' in x
 }
 
-function extractProperties(schema, serviceName, model) {
-  return schema?.$defs?.[serviceName]?.properties
-      ?? schema?.$defs?.[model]?.properties
-      ?? schema?.definitions?.[serviceName]?.properties
-      ?? schema?.definitions?.[model]?.properties
-      ?? schema?.properties
+function extractModelDef(schema, serviceName, model) {
+  return schema?.$defs?.[serviceName]
+      ?? schema?.$defs?.[model]
+      ?? schema?.definitions?.[serviceName]
+      ?? schema?.definitions?.[model]
       ?? schema
+}
+
+/**
+ * `$ref` → the definition it names, against whatever document was handed in.
+ *
+ * Sierra reads a registry its build populates; jetty has no such registry —
+ * a resource is given the schema document directly — so the lookup is the
+ * document's own table. An unresolvable ref answers null, which the kit reads
+ * as *cannot follow* and falls back to the field's own keywords.
+ */
+function resolveAgainst(schema, ref) {
+  if (typeof ref !== 'string') return null
+  const name = ref.replace(/^#\/(\$defs|definitions)\//, '')
+  const def = schema?.$defs?.[name] ?? schema?.definitions?.[name]
+  return def && typeof def === 'object' ? def : null
 }
 
 /**

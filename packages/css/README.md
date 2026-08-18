@@ -25,7 +25,7 @@ import '@frontierjs/css'
 The system is **two halves, equally weighted**.
 
 **Structure** — what the HTML actually *is*: which element, what ARIA, how the
-pieces nest. A vocabulary of 54 terms fixes one answer per concept, so "card"
+pieces nest. A vocabulary of 55 terms fixes one answer per concept, so "card"
 means the same thing on Monday and Thursday.
 
 **Style** — utility-first, but **one level above Tailwind**. Tailwind utilities
@@ -471,14 +471,14 @@ in the package where the markup has to say it twice:
 
 ---
 
-## Behavior is not included
+## Behaviour is not included
 
 Visual treatment is a class; keyboard, focus and ARIA management are a
 component. Tabs need roving tabindex and arrow keys. Dialogs need
 `showModal()`. Tooltips need Escape-to-dismiss. The CSS draws them; your app
 drives them. Each file's header documents the contract it expects.
 
-Where the platform already has the behavior, the system uses it —
+Where the platform already has the behaviour, the system uses it —
 `<dialog>` for modals and drawers, `<details>` for disclosure,
 `<progress>` for progress bars, a real checkbox for switches.
 
@@ -558,7 +558,7 @@ bun run test focus tone   # only matching spec files
 bun run test --keep       # leave the generated page on disk to eyeball
 ```
 
-202 assertions, run in real headless Chrome against real computed styles —
+464 assertions, run in real headless Chrome against real computed styles —
 because every invariant here *is* a computed-style invariant. Cascade layers,
 `color-mix()`, `@property … inherits: false`, `:focus-visible`,
 `:user-invalid`, relative luminance: none of that exists in a DOM shim, so a
@@ -589,7 +589,7 @@ a deliberate measurement: every rule in that file is a gap in this package.
 - **`demo/`** — a realistic app, and the findings from building it
 - **`PROJECT_STATE.md`** — architecture, the two halves, the class taxonomy,
   design decisions, known constraints, and what's worth doing next
-- **`guide/`** — the interactive reference: 53 pages, every component
+- **`guide/`** — the interactive reference: 54 pages, every component
   live, theme switching, and `⌘K` search over every term, heading and class
   name in it. Plain HTML + plain `.js`, no build step — open
   `guide/index.html`, or `bun run demo` and go to `/guide/`

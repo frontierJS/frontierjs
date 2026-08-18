@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 37 models · 37 gated · 0 unrestricted
-16 with row policies · 5 with protected fields · 0 gated transitions
+16 with row policies · 5 with protected fields · 11 gated transitions
 ```
 
 ## Gates
@@ -206,6 +206,25 @@ rather than refusing the row.
 | `User` | `status` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `isSystemAdmin` | `@allow('write', auth().isSystemAdmin)` |
 | `Verification` | `value` | `@guarded(all)` |
+
+## State transitions
+
+A move a caller may not make is refused even where `@@gate` allows the update.
+An ungated move needs only the model's update level.
+
+| Model | Field | Move | From → To | Level |
+| --- | --- | --- | --- | --- |
+| `Deployment` | `status` | `build` | pending → building | — |
+| `Deployment` | `status` | `push` | building → pushing | — |
+| `Deployment` | `status` | `release` | pushing → deploying | — |
+| `Deployment` | `status` | `succeed` | building, pushing, deploying → success | — |
+| `Deployment` | `status` | `fail` | pending, building, pushing, deploying → failed | — |
+| `Deployment` | `status` | `cancel` | pending, building, pushing, deploying → cancelled | — |
+| `Deployment` | `status` | `rollback` | success → rolled_back | 5 ADMINISTRATOR |
+| `Job` | `status` | `start` | pending, failed → running | — |
+| `Job` | `status` | `idle` | running → pending | — |
+| `Job` | `status` | `fail` | running → failed | — |
+| `Job` | `status` | `cancel` | pending, running, failed → cancelled | — |
 
 ## Levels
 

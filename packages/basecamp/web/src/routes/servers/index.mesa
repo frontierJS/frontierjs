@@ -2,40 +2,111 @@
 title: Servers
 ---
 <script>
-  import { session } from '../../session.js'
-  import { servers } from '../../resources/Server.mesa'
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { session }    from '../../session.js'
+  import { servers }    from '../../resources/Server.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import Button         from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input          from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pagination     from '@frontierjs/ui/components/display/Pagination.mesa'
+  import Select         from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table          from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
+  // The whole query lives in the URL, so both halves are watched: `query` is
+  // the filters and `directives` is `$orderBy` / `$limit` / `$offset`. Sierra
+  // splits the search string over the same table junction's bridge reads
+  // (repo Invariant 10), so there is nothing to translate here.
+  $: page.query
+  $: page.directives
+
+  const PER_PAGE = 20
 
   let rows    = []
+  let total   = 0
   let error   = null
   let loading = true
 
   // Filters go to the SERVICE, not to a .filter() here: the list is paginated,
   // so filtering the page in the browser would hide rows that are simply on
   // page two and call it a result.
-  // NOT declared in a `$:` watch. A plain `let` is already component state —
-  // the compiler tracks every let and const it compiled (Mesa RULE 44), and a
-  // path watch is for imported objects. Listing one here compiles and then
-  // throws `$$watch_status is not a function` on mount.
-  let status = ''
-  let role   = ''
-  let search = ''
+  //
+  // These are DERIVED from the URL rather than held beside it. A local that the
+  // URL also holds is two sources for one value, and the pair goes out of step
+  // the first time somebody uses the back button.
+  $: status  = page.query.status ?? ''
+  $: role    = page.query.role   ?? ''
+  $: search  = page.query.search ?? ''
+  $: orderBy = page.directives.orderBy ?? ''
+  $: offset  = Number(page.directives.offset ?? 0)
+
+  // Table binds a key and a direction; the URL carries the one string junction
+  // parses. `-name` is descending — the same spelling the API accepts.
+  $: sortKey = orderBy.replace(/^-/, '')
+  $: sortDir = orderBy.startsWith('-') ? 'desc' : 'asc'
+  $: current = Math.floor(offset / PER_PAGE) + 1
 
   // Both lists come from the schema's enums, through the JSON Schema the build
   // generated — adding a status in db/schema.lite adds it to this filter.
   $: statuses = servers.fields?.status?.enum ?? []
   $: roles    = servers.fields?.role?.enum   ?? []
 
+  /**
+   * Write the next query into the URL and let the load follow from it.
+   *
+   * Nothing here calls `load()`. The URL is the state, so a change navigates
+   * and the watch below reloads — which is what makes the back button, a
+   * reload and a pasted link all land on the same list.
+   *
+   * A filter change resets to page one: keeping the offset across a narrowing
+   * filter is how a list answers an empty page and looks broken.
+   */
+  function apply(next, { keepPage = false } = {}) {
+    const q = { ...page.query, ...next.query }
+    for (const k of Object.keys(q)) if (q[k] === '' || q[k] == null) delete q[k]
+
+    const d = { ...page.directives, ...next.directives }
+    if (!keepPage) delete d.offset
+    if (!d.orderBy) delete d.orderBy
+    if (!d.offset)  delete d.offset
+
+    goto('/servers/', {
+      ...q,
+      ...(d.orderBy ? { $orderBy: d.orderBy } : {}),
+      ...(d.offset  ? { $offset:  d.offset  } : {}),
+    })
+  }
+
+  function sortBy(key, dir) {
+    apply({ directives: { orderBy: dir === 'desc' ? `-${key}` : key } })
+  }
+
+  function goPage(n) {
+    apply({ directives: { offset: (n - 1) * PER_PAGE } }, { keepPage: true })
+  }
+
   async function load() {
     error = null; loading = true
     try {
-      const query = {}
-      if (status) query.status = status
-      if (role)   query.role   = role
-      if (search) query.search = search
-      rows = (await servers.service.find(query, { limit: 100 })).data
+      // Read off `page` DIRECTLY, never off the `$:` values above. Those are
+      // derivations of the same URL, and this runs from the watch that fires
+      // when the URL changes — so a derivation that has not settled yet sends
+      // the PREVIOUS sort. Measured: the first click on a header wrote
+      // `$orderBy=name` into the address bar and asked the server for no sort
+      // at all, and the second click asked for the first one. The list was one
+      // click behind the URL, in a screen whose whole claim is that the two
+      // are the same thing.
+      //
+      // `page.query` straight through — the filters this service reads are the
+      // ones the URL already names, so there is no second list of them here.
+      const d    = page.directives
+      const sort = d.orderBy
+      const answer = await servers.service.find(
+        { ...page.query },
+        { limit: PER_PAGE, offset: Number(d.offset ?? 0), ...(sort ? { orderBy: sort } : {}) },
+      )
+      rows  = answer.data
+      total = answer.total ?? answer.data.length
     } catch (e) {
       error = e.message
     } finally {
@@ -45,6 +116,9 @@ title: Servers
 
   load()
   $: session.workspaceId, () => load()
+  // One watch over the whole query: a filter, a sort and a page change all
+  // arrive here as the same event, because all three are the URL changing.
+  $: page.query, page.directives, () => load()
 
   // Live. Every mutation on this service publishes to workspace:<id>, and so
   // does the outpost heartbeat — which is the interesting one: a machine
@@ -84,11 +158,24 @@ title: Servers
     if (mins < 60) return `${mins}m ago`
     return `${Math.round(mins / 60)}h ago`
   }
+
+  // `sortable` on the columns SQLite can order by. A @computed column cannot be
+  // sorted or paginated in SQL and `$checkOrderBy` refuses it by name, so
+  // offering the header would be offering a 400.
+  const SERVER_COLUMNS = [
+    { key: 'name',            label: 'Name',           sortable: true },
+    { key: 'status',          label: 'Status',         sortable: true },
+    { key: 'role',            label: 'Role',           sortable: true },
+    { key: 'region',          label: 'Region',         sortable: true },
+    { key: 'ipAddress',       label: 'Address' },
+    { key: 'lastHeartbeatAt', label: 'Last heartbeat', sortable: true },
+    { key: 'actions',         label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 <div class="section-header">
   <h1>Servers</h1>
-  <a class="btn primary" href="/servers/create/">Add server</a>
+  <Button variant="primary" href="/servers/create/">Add server</Button>
 </div>
 
 {#if error}
@@ -97,31 +184,24 @@ title: Servers
   </article>
 {/if}
 
-<form class="cluster" on:submit|preventDefault={load}>
+<!-- Every control WRITES the URL and reads back from it. `bind:` would need a
+     local to bind to, and a local the URL also holds is two homes for one
+     value — they part company the first time somebody presses back. -->
+<form class="cluster" on:submit|preventDefault={(e) => apply({ query: { search: e.target.search.value } })}>
   <label class="visually-hidden" for="filter-status">Status</label>
-  <!-- Reload on change rather than through a reactive effect on the local:
-       an effect's dependency list is for watchable paths, and these are locals. -->
-  <select class="field" id="filter-status" style="--field-inline-size: auto"
-          bind:value={status} on:change={load}>
-    <option value="">All statuses</option>
-    {#each statuses as value}
-      <option value={value}>{value}</option>
-    {/each}
-  </select>
+  <Select id="filter-status" style="--field-inline-size: auto"
+          placeholder="All statuses" options={statuses} value={status}
+          onchange={(e) => apply({ query: { status: e.target.value } })} />
 
   <label class="visually-hidden" for="filter-role">Role</label>
-  <select class="field" id="filter-role" style="--field-inline-size: auto"
-          bind:value={role} on:change={load}>
-    <option value="">All roles</option>
-    {#each roles as value}
-      <option value={value}>{value}</option>
-    {/each}
-  </select>
+  <Select id="filter-role" style="--field-inline-size: auto"
+          placeholder="All roles" options={roles} value={role}
+          onchange={(e) => apply({ query: { role: e.target.value } })} />
 
   <label class="visually-hidden" for="filter-search">Search</label>
-  <input class="field" id="filter-search" style="--field-inline-size: 12rem"
-         placeholder="name contains…" bind:value={search} />
-  <button class="btn outlined" type="submit">Search</button>
+  <Input id="filter-search" name="search" style="--field-inline-size: 12rem"
+         placeholder="name contains…" value={search} />
+  <Button variant="outlined" type="submit">Search</Button>
 </form>
 
 {#if loading}
@@ -133,32 +213,25 @@ title: Servers
     </div>
   </article>
 {:else}
-  <div class="table-wrap">
-    <table class="table striped hover">
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Status</th>
-          <th scope="col">Role</th>
-          <th scope="col">Region</th>
-          <th scope="col">Address</th>
-          <th scope="col">Last heartbeat</th>
-          <th scope="col"><span class="visually-hidden">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody id="server-rows">
-        {#each rows as server}
-          <tr>
-            <td><a href={`/servers/${server.id}/`}>{server.name}</a></td>
-            <td><span class="pill {TONE[server.status] ?? ''}">{server.status}</span></td>
-            <td>{server.role}</td>
-            <td>{server.region}</td>
-            <td><code>{server.ipAddress ?? '—'}</code></td>
-            <td class="text-sm text-muted">{ago(server.lastHeartbeatAt)}</td>
-            <td><a class="btn ghost" href={`/servers/${server.id}/`}>Open</a></td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <!-- The sort pair is PUSHED from the URL and pushed back out by `onsort`.
+       Binding it would let the component own the sort, and the component
+       cannot put it in the address bar. -->
+  <Table id="server-rows" columns={SERVER_COLUMNS} rows={rows} striped
+         sortKey={sortKey} sortDir={sortDir} onsort={sortBy}>
+    {#snippet row(server)}
+      <tr>
+        <td><a href={`/servers/${server.id}/`}>{server.name}</a></td>
+        <td><span class="pill {TONE[server.status] ?? ''}">{server.status}</span></td>
+        <td>{server.role}</td>
+        <td>{server.region}</td>
+        <td><code>{server.ipAddress ?? '—'}</code></td>
+        <td class="text-sm text-muted">{ago(server.lastHeartbeatAt)}</td>
+        <td><Button variant="ghost" href={`/servers/${server.id}/`}>Open</Button></td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  <!-- `total` is the service's own count, not `rows.length` — the page holds
+       twenty of them and the pager is describing the whole answer. -->
+  <Pagination page={current} total={total} perPage={PER_PAGE} onchange={goPage} />
 {/if}

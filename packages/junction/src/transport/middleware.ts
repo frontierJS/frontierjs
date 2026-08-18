@@ -24,8 +24,15 @@ import {
 // cors() and csrf() both accept the same origin specification.
 // Define it once here.
 
-/** Allowed origins — string array, wildcard '*', or a custom predicate. */
-export type OriginList = string[] | '*' | ((origin: string) => boolean)
+/**
+ * Allowed origins — one origin, a list of them, or a custom predicate.
+ *
+ * `'*'` is the wildcard and is just a string here. A single origin was
+ * `string[] | '*'` and therefore did not compile, while `cors()`'s own
+ * `isAllowed` has always had the `typeof origins === 'string'` branch that
+ * handles it.
+ */
+export type OriginList = string | string[] | ((origin: string) => boolean)
 
 // ─── combineOrigins ────────────────────────────────────────────────────────
 // Returns a `{ origins }` object that can be spread into both cors() and
@@ -60,8 +67,12 @@ export function combineOrigins(origins: OriginList): {
   forCors(): Pick<CorsOptions,  'origins'>
   forCsrf(): Pick<CsrfOptions,  'origins'>
 } {
+  // csrf() takes no wildcard and no bare string: '*' would defeat it, and a
+  // single origin becomes the one-element list it means.
   const csrfOrigins: string[] | ((o: string) => boolean) =
-    origins === '*' ? () => true : origins as string[] | ((o: string) => boolean)
+    origins === '*'               ? () => true
+    : typeof origins === 'string' ? [origins]
+    : origins
 
   return {
     origins,
@@ -86,7 +97,15 @@ export function cors(opts: CorsOptions) {
   const {
     origins,
     methods    = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    headers    = ['Content-Type', 'Authorization', 'X-API-Key'],
+    // Junction's OWN protocol headers belong in the default, because the
+    // browser client sends them unasked: X-Service-Method is how a custom
+    // method is addressed over HTTP, X-Workspace-Id rides on every call once
+    // setWorkspace() is used, and Idempotency-Key is read by callService.
+    // Cross-origin, a header missing here fails the preflight and the request
+    // never arrives — and an app whose socket is up never sees it, because the
+    // HTTP path is only the fallback.
+    headers    = ['Content-Type', 'Authorization', 'X-API-Key',
+                  'X-Service-Method', 'X-Workspace-Id', 'Idempotency-Key'],
     credentials = false,
     maxAge      = 86400
   } = opts

@@ -106,6 +106,15 @@
   export let only   = undefined       // string[] — narrows AND orders
   export let except = undefined       // string[] — removes
 
+  // The buttons under the form. Two spellings because two protocols reach a
+  // component and the rest of this kit uses the other one: every other
+  // container here (Card, Table, EmptyState, SectionHeader) takes its trailing
+  // content as a snippet prop, so a caller who wrote `{#snippet actions()}`
+  // over a form got no buttons and no complaint. `slot="actions"` is what the
+  // apps in this repo already write and it keeps working; a snippet wins where
+  // both are given, because a prop is the more specific statement.
+  export let actions = null           // snippet
+
   export let disabled    = false
   export let resetOnDone = false      // clear back to the pristine record on success
   export let novalidate  = true       // see the note above
@@ -128,22 +137,36 @@
   const idField = resource?.context?.idField ?? 'id'
 
   // A blank seeded from the schema when the caller did not supply a record.
-  // `??=` rather than a default value: `record` is bindable, and a default
-  // would re-seed it every time the prop re-derived.
-  if (record === undefined) record = resource?.make?.() ?? {}
+  // Not a default value on the prop: `record` is bindable, and a default would
+  // re-seed it every time the prop re-derived.
+  //
+  // The seed is held in a local as well, and `pristine` below is taken from
+  // THAT rather than by reading `record` back. Writing a prop and reading it
+  // again in the same setup pass does not see the write, so the baseline was
+  // `{...undefined}` — an empty object — on every form the caller did not hand
+  // a record. `reset()` then set every field to `undefined` instead of to the
+  // seeded blank, which no control can render as "empty".
+  const seed = record === undefined ? (resource?.make?.() ?? {}) : record
+  if (record === undefined) record = seed
 
   // The baseline reset() returns to. Snapshotted at mount (`var`, outside the
   // reactive graph) because a form that reset to the CURRENT record would be a
   // no-op. Shallow on purpose — a row is flat, and a deep clone would copy
   // File objects and Dates into things that no longer compare equal.
-  var pristine = { ...record }
+  var pristine = { ...seed }
 
   // What descendants read. Rebuilt whenever any part changes, which is what
   // makes a <Field> three levels down re-render on its own error.
+  // `disabled` and `submitting` are reported SEPARATELY, because the two do
+  // not mean the same thing to everything under here. A field locks on either
+  // — typing into a form that is being saved edits a record already in flight.
+  // A button does not: Cancel has to stay live while a slow save runs, or the
+  // save traps the person in the form, and only the SUBMIT button follows
+  // `submitting`. Reporting one merged flag is what made that undecidable.
   $context.form = {
     errors,
     submitting,
-    disabled: disabled || submitting,
+    disabled,
     fields: resource?.fields ?? {},
     submitted,
   }
@@ -248,8 +271,16 @@
     if (!resource) {
       throw new Error('<Form> needs either a `resource` or an `onsubmit` handler')
     }
-    if (method === 'create') return resource.service.create(data)
-    if (method === 'patch')  return resource.service.patch(data?.[idField], data)
+    // `auto` is answered here rather than left to the service's own upsert.
+    // The two do not agree: `_mode()` asks about THIS model's id field, which
+    // the schema names, and the client's `upsert` is hardcoded to `id` — so on
+    // a model keyed by anything else, editing an existing row created a
+    // duplicate. Deciding it here also means a service with no `upsert` still
+    // works, which is every service that did not ask for one.
+    const how = method === 'auto' ? _mode() : method
+
+    if (how === 'create') return resource.service.create(data)
+    if (how === 'patch')  return resource.service.patch(data?.[idField], data)
     return resource.service.upsert(data)
   }
 
@@ -275,6 +306,25 @@
     // Submitting reveals every field — that is what makes it the thing that
     // speaks for the ones never visited.
     _revealed = Object.keys(resource?.fields ?? {})
+    _recompute()
+
+    // …and then refuses, but ONLY over a control this form is showing.
+    //
+    // Revealing alone changes what a later keystroke may display, so a form
+    // submitted untouched used to send an invalid record and show nothing.
+    // Asking is the missing half. What it must not do is refuse over a field
+    // that is not on screen: `make()` seeds every writable column, and a
+    // hand-written form legitimately renders three of them and completes the
+    // rest inside its own `onsubmit` — `appId` on a form that asks for a
+    // hostname. Refusing there is a form that can never be submitted, with no
+    // message anywhere, which is worse than the round trip it saves.
+    //
+    // So the rule is the one that keeps the refusal legible: a generated
+    // control is refused because its message is on screen next to it. A
+    // hand-written form still validates where it always did — in the resource,
+    // on the way to the service.
+    if (rendered.some(f => errors[f.name])) return undefined
+
     submitting = true
 
     try {
@@ -415,7 +465,11 @@
 
   <slot />
 
-  {#if $slots.actions}
+  {#if actions}
+    <div class="cluster">
+      {@render actions?.()}
+    </div>
+  {:else if $slots.actions}
     <div class="cluster">
       <slot:actions />
     </div>

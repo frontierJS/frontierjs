@@ -1,0 +1,26 @@
+<script>
+  // scoped.mesa — scoped styles against a real cascade.
+  //
+  // A scoped rule is asserted from two sides that a DOM stub cannot separate:
+  // the emitted TEXT (which happy-dom can read) and whether the rule actually
+  // MATCHES and wins (which needs a real CSSOM). The rules here are the two
+  // that shape every component in the kit — a scoped selector does not reach
+  // into a child component, and `:global(...)` is how it does.
+  import Child from './Child.mesa'
+</script>
+
+<p class="note">scoped</p>
+<Child class="pushed" label="child" />
+
+<style>
+  /* The selector SUBJECT carries the hash — `.note` becomes `.note.mHASH` —
+     which is what a matched-rules read is asserted against. */
+  .note { color: rgb(1, 2, 3) }
+
+  /* Must NOT reach the child: the span inside Child.mesa carries that
+     component's hash, not this one's. */
+  .child { color: rgb(9, 9, 9) }
+
+  /* …and this is how it does reach. */
+  :global(.child) { font-style: italic }
+</style>

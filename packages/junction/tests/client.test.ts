@@ -15,6 +15,7 @@ import {
   Store,
 } from '../src/client/index.ts'
 import type { PaginatedResult } from '../src/client/index.ts'
+import { stubbable }           from './helpers.ts'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -26,15 +27,20 @@ function makeClient(url = 'http://localhost:3000', token?: string) {
 // Returns a factory that lets each test configure the response.
 function mockFetch(body: unknown, status = 200) {
   const original = globalThis.fetch
-  globalThis.fetch = mock(async () =>
+  // Declared with fetch's own parameters, not `()`: half these tests read
+  // `m.mock.calls[0][1]` for the RequestInit, and a zero-arg stub types that
+  // call tuple as `[]` — so every assertion about a header became an error
+  // about a tuple having no element at index 1.
+  const stub = mock(async (_input?: RequestInfo | URL, _init?: RequestInit) =>
     new Response(JSON.stringify(body), {
       status,
       headers: { 'Content-Type': 'application/json' },
     })
-  ) as typeof fetch
+  )
+  stubbable.fetch = stub
   return {
     restore: () => { globalThis.fetch = original },
-    mock:    globalThis.fetch as ReturnType<typeof mock>,
+    mock:    stub,
   }
 }
 
@@ -632,13 +638,13 @@ describe('client.resource()', () => {
 
     let calls = 0
     const original = globalThis.fetch
-    globalThis.fetch = (async () => {
+    stubbable.fetch = async () => {
       calls++
       return new Response(
         JSON.stringify({ kind: 'list', object: 'items', data: [{ id: '1', status: 'active' }], total: 1 }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       )
-    }) as typeof fetch
+    }
 
     for (const id of ['3', '4', '5']) service._receive('patched', { id })
     await new Promise((r) => setTimeout(r, 5))
@@ -745,14 +751,14 @@ describe('client.resource()', () => {
   function mockSlowFetch(plan: Array<{ delay: number; rows: unknown[] }>) {
     const original = globalThis.fetch
     let call = 0
-    globalThis.fetch = (async () => {
+    stubbable.fetch = async () => {
       const { delay, rows } = plan[call++]!
       await new Promise((r) => setTimeout(r, delay))
       return new Response(
         JSON.stringify({ kind: 'list', object: 'items', data: rows, errors: [], total: rows.length }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
       )
-    }) as typeof fetch
+    }
     return { restore: () => { globalThis.fetch = original } }
   }
 

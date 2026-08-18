@@ -1,0 +1,117 @@
+<script>
+  // table-depth.mesa — the modes of Table that one spec did not drive.
+  //
+  // `datatable.mesa` asks the basic questions: rows render, headers are scoped,
+  // the sort cycle works, loading and empty appear. What it never touches is
+  // everything a real screen actually configures — the two snippets, the three
+  // modifiers, per-column alignment and width, the sort pair driven from
+  // OUTSIDE the component, and the skeleton row count.
+  //
+  // Row tones are here because `@frontierjs/css` puts real work into them:
+  // stripe, hover and tone all want a say in one row's background, and the
+  // stylesheet's own header records that a striped table used to lose its row
+  // tones on every odd row — the failed row of a striped list painting exactly
+  // like the rest.
+  import Table from '../../../components/display/Table.mesa'
+
+  const columns = [
+    { key: 'ref',    label: 'Reference', sortable: true },
+    { key: 'who',    label: 'Customer' },
+    { key: 'amount', label: 'Amount', sortable: true, align: 'right', width: '8rem' },
+  ]
+
+  const rows = [
+    { ref: 'ORD-1', who: 'Ada',   amount: '£12.00', tone: '' },
+    { ref: 'ORD-2', who: 'Grace', amount: '£8.50',  tone: 'danger' },
+    { ref: 'ORD-3', who: 'Alan',  amount: '£31.20', tone: '' },
+    { ref: 'ORD-4', who: 'Edsger', amount: '£4.00',  tone: 'danger' },
+  ]
+
+  // Driven from the page rather than from a header click: a bound sort pair is
+  // how a list restores the sort out of its URL, and a push from the parent
+  // takes a different path through the component than a click does.
+  let sortKey = ''
+  let sortDir = 'asc'
+
+  let skeletonRows = 2
+
+  // A sort the caller owns: the component reports and changes nothing, which is
+  // what a list whose sort lives in the URL needs.
+  let reported  = ''
+  let pushedKey = 'ref'
+  let pushedDir = 'asc'
+  function report(key, dir) { reported = `${key}:${dir}` }
+
+  // An actions column: announced, not shown. `#plain` is asserted column by
+  // column, so this one gets its own table rather than a fourth entry there.
+  const actionColumns = [
+    { key: 'ref', label: 'Reference' },
+    { key: 'act', label: 'Actions', hideLabel: true },
+  ]
+</script>
+
+<div id="reported">
+  <Table columns={columns} {rows} sortKey={pushedKey} sortDir={pushedDir} onsort={report}>
+    {#snippet row(r)}
+      <tr><td>{r.ref}</td><td>{r.who}</td><td>{r.amount}</td></tr>
+    {/snippet}
+  </Table>
+</div>
+<output id="reported-out">{reported}</output>
+
+<div id="hidden-header">
+  <Table columns={actionColumns} {rows}>
+    {#snippet row(r)}
+      <tr>
+        <td>{r.ref}</td>
+        <td><button type="button">Open</button></td>
+      </tr>
+    {/snippet}
+  </Table>
+</div>
+
+<div id="plain">
+  <Table {columns} {rows} bind:sortKey bind:sortDir>
+    {#snippet row(r)}
+      <tr class={r.tone}>
+        <td>{r.ref}</td>
+        <td>{r.who}</td>
+        <td>{r.amount}</td>
+      </tr>
+    {/snippet}
+  </Table>
+</div>
+
+<div id="dressed">
+  <Table {columns} {rows} striped compact hover={false}>
+    {#snippet actions()}
+      <button type="button" id="table-action">Export</button>
+    {/snippet}
+    {#snippet row(r)}
+      <!-- Toned rows inside a STRIPED table: the case tables.css records as
+           having regressed, where the stripe out-specified the tone and a
+           failed row painted like every other row. Row 2 is toned and sits on
+           an even stripe, row 3 is toned and sits on an odd one. -->
+      <tr class={r.tone}><td>{r.ref}</td><td>{r.who}</td><td>{r.amount}</td></tr>
+    {/snippet}
+  </Table>
+</div>
+
+<div id="custom-empty">
+  <Table {columns} rows={[]}>
+    {#snippet row(r)}<tr><td>{r.ref}</td></tr>{/snippet}
+    {#snippet empty()}
+      <tr id="my-empty"><td colspan="3">Nothing here — <a href="/new/">add one</a></td></tr>
+    {/snippet}
+  </Table>
+</div>
+
+<div id="skel">
+  <Table {columns} rows={[]} loading {skeletonRows}>
+    {#snippet row(r)}<tr><td>{r.ref}</td></tr>{/snippet}
+  </Table>
+</div>
+
+<button type="button" id="sort-amount" on:click={() => { sortKey = 'amount'; sortDir = 'desc' }}>sort by amount</button>
+
+<output id="sort">{sortKey}:{sortDir}</output>

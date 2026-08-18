@@ -1,0 +1,37 @@
+<script>
+  // attach.mesa — `{@attach}` against a real element.
+  //
+  // Two things happen only in a browser. The handler must run when the element
+  // MOUNTS and not when it is built: `el.animate(…, { fill: 'forwards' })` on
+  // a detached node returns an animation that never starts, so every overlay
+  // in the kit painted at keyframe zero (`FJS-114`). And `el.animate` does not
+  // exist in happy-dom at all, so the whole path is unreachable from the
+  // vitest suites — one animating attachment threw and took a render down
+  // (`FJS-146`).
+  //
+  // The element is inline-styled to the START value, so a passing assertion
+  // means the animation actually ran: an attachment that never fired leaves
+  // opacity at 0, which is the failure being tested for.
+  let attached  = 0
+  let connected = 'unknown'
+  let cleaned   = 0
+
+  let show = true
+
+  function fade(el) {
+    attached++
+    connected = String(el.isConnected)
+    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 60, fill: 'forwards' })
+    return () => { cleaned++ }
+  }
+</script>
+
+{#if show}
+  <div id="faded" style="opacity: 0" {@attach fade}>faded</div>
+{/if}
+
+<button type="button" id="hide" on:click={() => show = false}>hide</button>
+
+<output id="attached">{attached}</output>
+<output id="connected">{connected}</output>
+<output id="cleaned">{cleaned}</output>

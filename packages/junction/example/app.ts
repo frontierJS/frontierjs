@@ -92,6 +92,7 @@ import type { App }            from '../src/core/app.ts'
 import type { IAuth }          from '../src/auth/types.ts'
 import type { WsContext }      from '../src/transport/types.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
+import type { DatabaseClient } from '../src/storage/database/index.ts'
 
 // ─── Logger ───────────────────────────────────────────────────────────────
 
@@ -130,8 +131,13 @@ const app = createApp({ config, auth, autoload: false })
 
 // ─── Database (in-memory for demo — swap url in config for persistence) ───
 
-if (app.db) {
-  app.db.db.run(`
+// `app.db` is `unknown`: a Litestone client and a raw bun:sqlite handle are
+// both valid there, and only the app knows which it asked for. This one set
+// `config.database.url`, which is the DatabaseClient path.
+const rawDb = app.db as DatabaseClient | undefined
+
+if (rawDb) {
+  rawDb.db.run(`
     CREATE TABLE IF NOT EXISTS notes (
       id         TEXT    PRIMARY KEY,
       title      TEXT    NOT NULL,

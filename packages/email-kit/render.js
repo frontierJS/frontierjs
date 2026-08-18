@@ -28,11 +28,6 @@
  *                     It comes back exactly as exported — apply it yourself. The
  *                     document's <title> uses it only when it is a string.
  *   result.css      — collected CSS before inlining (for debugging)
- *
- * Auto-import:
- *   Pass `autoImport: true` to resolve component imports relative to
- *   @frontierjs/email-kit/components automatically — no import statements needed
- *   in templates that only use kit components.
  */
 
 import path               from 'path'
@@ -61,8 +56,12 @@ async function getMesaRender() {
     // — the pre-src layout — so BOTH sibling probes missed, and under Vite the
     // miss was fatal rather than a fall-through (see the notFound test below).
     // Every one of this package's 34 tests failed on it.
-    new URL('../mesa/src/render-component.js', import.meta.url).pathname,
-    new URL('../../mesa/src/render-component.js', import.meta.url).pathname,
+    // Joined from `__dirname` rather than built with `new URL(...)`: its
+    // `.pathname` is wrong on Windows, and handing the URL object to
+    // `fileURLToPath` throws under happy-dom, which installs its own global
+    // `URL` that the function refuses.
+    path.join(__dirname, '../mesa/src/render-component.js'),
+    path.join(__dirname, '../../mesa/src/render-component.js'),
     // The installed peer dep. This is the only candidate that works when the
     // package is consumed from npm, where there is no sibling `../mesa/` — its
     // absence meant an installed consumer always hit the error below, however

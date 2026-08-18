@@ -80,6 +80,35 @@
 /// @encrypted. Those are field policy keyed on asSystem(), not GatePlugin, so
 /// Secret.data stays unreadable and encrypted for an admin and a sysadmin alike.
 ///
+/// CONCURRENCY — @version is on the rows a PERSON owns, and only those.
+///
+/// Ten models declare it: Workspace, Project, Environment, Secret, Network,
+/// Domain, FeatureFlag, NotificationChannel, AlertRule, Dashboard. Every one is
+/// a row a form edits. Two people on one both PATCH and the second silently
+/// erases the first; with the column, the second gets a 409 it can retry off a
+/// fresh read.
+///
+/// The rest are left out on purpose, and the reason is that @version is per ROW
+/// and not per column. Where two writers touch DISJOINT columns the conflict is
+/// reported against a change the person never made, and a 409 nobody can act on
+/// teaches everyone to retry blindly:
+///
+///   Server · ApiKey · Volume        an outpost heartbeat / a usage counter
+///   Deployment · Job · Recipe · App an engine drives status through a run
+///   DashboardWidget                 reorder writes position, updateWidget
+///                                   writes config, and neither cares about
+///                                   the other. Sending the whole sequence is
+///                                   what makes reorder safe, not a version
+///   FlagOverride                    reached by natural key, never read as a
+///                                   row, so nothing in a browser holds one
+///   the *Run / *Event / *Step rows  append-only, never edited twice
+///
+/// Deployment is the one worth stating: its concurrency guard already exists
+/// and is narrower. @@transitions(status, …) is a compare-and-swap on the one
+/// column two writers contend for, so a stale cancel is refused BY NAME. Adding
+/// @version on top would refuse it again for a reason nobody asked about — a
+/// build step having moved the row since the screen loaded it.
+///
 /// The database path is declared below in `database main`. litestone.config.js
 /// carries the schema and migrations paths for the CLI.
 
@@ -391,6 +420,7 @@ model Workspace {
   // one hook every workspace-scoped service already runs.
   status    WorkspaceStatus @default(active)
 
+  version   Int           @version
   createdAt DateTime      @default(now())
   updatedAt DateTime      @default(now()) @updatedAt
   deletedAt DateTime?
@@ -456,6 +486,7 @@ model Secret {
   isVerified  Boolean    @default(false)
   createdBy   String?
 
+  version     Int        @version
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @default(now()) @updatedAt
   deletedAt   DateTime?
@@ -683,6 +714,7 @@ model Network {
   provider    String   @default("netbird")
   config      Json     @default("{}")
 
+  version     Int      @version
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
   deletedAt   DateTime?
@@ -726,6 +758,7 @@ model Project {
   tags        Json      @default("[]")
   metadata    Json      @default("{}")
 
+  version     Int       @version
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
   deletedAt   DateTime?
@@ -759,6 +792,7 @@ model Environment {
   isProtected Boolean         @default(false)
   variables   Json            @default("[]")
 
+  version     Int             @version
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @default(now()) @updatedAt
   deletedAt   DateTime?
@@ -857,6 +891,7 @@ model Domain {
   certIssuedAt  DateTime?
   certExpiresAt DateTime?
 
+  version       Int       @version
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @default(now()) @updatedAt
   deletedAt     DateTime?
@@ -944,6 +979,22 @@ model Deployment {
 
   @@gate("2.4.4.4")
   @@allow('all', workspaceId == auth().workspaceId)
+  // The release pipeline, declared once and enforced at the Data boundary
+  // rather than as a TERMINAL/CANCELLABLE list in the service. `succeed` comes
+  // from `building` as well as the later two because the engine short-circuits
+  // a no-op release; `pushing` and `deploying` are written by a fuller
+  // pipeline and by the seed, and the UI already tones them.
+  //
+  // `rollback` is @gate(5): the model's update gate is USER(4), and undoing a
+  // release someone else shipped is not the same authority as shipping one.
+  @@transitions(status,
+    build:    pending                                 -> building,
+    push:     building                                -> pushing,
+    release:  pushing                                 -> deploying,
+    succeed:  [building, pushing, deploying]          -> success,
+    fail:     [pending, building, pushing, deploying] -> failed,
+    cancel:   [pending, building, pushing, deploying] -> cancelled,
+    rollback: success                                 -> rolled_back @gate(5))
   @@log(audit)
   @@index([appId])
   @@index([workspaceId])
@@ -1001,6 +1052,19 @@ model Job {
 
   @@gate("2.4.4.5")
   @@allow('all', workspaceId == auth().workspaceId)
+  // A job's status is its CURRENT state, not the outcome of its last run —
+  // that is `lastRunStatus`, and JobRun.status is the run's own. So a run that
+  // succeeds returns the job to `pending`, which is what "idle, awaiting the
+  // next fire" means here; only a failure parks it.
+  //
+  // `cancel` is reachable from `failed` because `remove()` cancels whatever it
+  // soft-deletes: a job left `pending` behind a `deletedAt` is invisible to
+  // every read and still on the clock.
+  @@transitions(status,
+    start:  [pending, failed]          -> running,
+    idle:   running                    -> pending,
+    fail:   running                    -> failed,
+    cancel: [pending, running, failed] -> cancelled)
   @@softDelete
   @@log(audit)
   @@index([workspaceId])
@@ -1251,6 +1315,7 @@ model FeatureFlag {
   rollout     Int       @default(0) @gte(0) @lte(100)
 
   createdBy   String?
+  version     Int       @version
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
   deletedAt   DateTime?
@@ -1324,11 +1389,19 @@ model NotificationChannel {
   // with it.
   secretId    String?
 
+  // The plaintext credential, on the wire and nowhere else: the service lifts
+  // it into a Secret row (@encrypted) and keeps `secretId`. @transient is what
+  // says so — no column, no audit entry, never in a response — and declaring it
+  // is what makes the API's own form offer a box for it and a typo distinct
+  // from a field the model does not have (`FJS-D23`).
+  secret      String?     @transient @length(1, 4096) @label("Credential")
+
   isActive    Boolean     @default(true)
   lastTestAt      DateTime?
   lastDeliveryAt  DateTime?
   createdBy   String?
 
+  version     Int         @version
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @default(now()) @updatedAt
   deletedAt   DateTime?
@@ -1355,6 +1428,7 @@ model AlertRule {
   condition   Json      @default("{}")
   isActive    Boolean   @default(true)
 
+  version     Int       @version
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
 
@@ -1445,6 +1519,7 @@ model Dashboard {
   isPinned    Boolean   @default(false)
 
   createdBy   String?
+  version     Int       @version
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
   deletedAt   DateTime?

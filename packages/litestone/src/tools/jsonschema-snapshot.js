@@ -240,9 +240,15 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
       const cProps    = new Set(Object.keys(cDef.properties ?? {}))
       const cRequired = cDef.required ?? []
       const absent    = props.map(([f]) => f).filter(f => !cProps.has(f))
+      // The other direction: a @transient field is accepted on create and is in
+      // no read, so the table above — rendered from `full` — cannot show it at
+      // all. Naming it here is what makes a change to the wire contract a diff,
+      // which is the whole job of this file.
+      const writeOnly = [...cProps].filter(f => cDef.properties[f]?.writeOnly)
 
       const notes = []
       notes.push(`required — ${cRequired.length ? cRequired.map(f => `\`${f}\``).join(', ') : 'nothing'}`)
+      if (writeOnly.length) notes.push(`accepted and never stored — ${writeOnly.map(f => `\`${f}\``).join(', ')}`)
       if (absent.length) notes.push(`not accepted — ${absent.map(f => `\`${f}\``).join(', ')}`)
       out.push(`**On create**: ${notes.join(' · ')}`)
       out.push('')

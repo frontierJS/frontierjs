@@ -196,25 +196,36 @@ that is the name it would generate for the same `@@index`. Name your own
 differently.
 
 **A table rebuild is destructive, and Litestone does not support carrying your
-own schema objects through one.** A change needing a rebuild — dropping a
-column, changing a type, changing a foreign key, changing `@@strict` — drops the
-table, which takes every trigger and index on it. Litestone's own are
-regenerable from the schema and are restated afterwards. Yours exist only in the
-live database, so there is nothing to restate them from: they are gone.
+own schema objects through one — so it refuses the rebuild rather than doing
+it.** A change needing a rebuild — dropping a column, changing a type, changing
+a foreign key, changing `@@strict` — drops the table, which takes every trigger
+and index on it. Litestone's own are regenerable from the schema and are
+restated afterwards. Yours exist only in the live database, so there is nothing
+to restate them from.
 
-The generated migration says so, before the SQL that does it:
+Naming them in a comment above the SQL was the earlier answer, and it was the
+wrong one for the reader who matters: somebody applying a generated migration
+without reading it. The rebuild is emitted **commented out** instead, the same
+shape an un-defaultable new column gets:
 
 ```sql
--- "note": this rebuild DROPS the table, which destroys:
+-- "note": rebuild BLOCKED — it DROPS the table, which destroys:
 --     trigger "note_audit"
 --     index "note_title_idx"
--- Litestone did not create these and cannot restate them — recreate
--- them below, or in a JS migration that runs after this file.
+-- Litestone did not create these and cannot restate them. Fix one of:
+--   • recreate each one below the rebuild, then uncomment it
+--   • move it into the schema, where litestone regenerates it
+--   • if it is no longer wanted, drop it by hand and uncomment
+-- … the whole rebuild, commented …
 ```
 
-`autoMigrate` applies the same SQL without showing it to you. If a table carries
-schema objects you created, use file migrations for it, or run
-`litestone migrate dry-run` first.
+`autoMigrate` reports `blocked` with the same list and writes no hash, so it
+surfaces on every startup until the schema or the database says what should
+happen.
+
+Re-emitting a captured trigger verbatim is the option not taken: its body may
+name a column the rebuild drops, so it would restate SQL that fails at `CREATE`
+or, worse, at the next write.
 
 ### A rebuild counts its own rows before it drops the original
 

@@ -1,0 +1,12 @@
+<script>
+  // Consumer.mesa — reads the provider with `const`, which tracks it (RULE 25a).
+  //
+  // An absent provider reads `undefined` and every fallback is silent, which
+  // is why the text is rendered rather than the value: a consumer that found
+  // nothing has to be distinguishable from one that found an empty string.
+  export let tag = ''
+
+  const token = $context.token
+</script>
+
+<span class="consumer" data-tag={tag}>{token ?? 'undefined'}</span>

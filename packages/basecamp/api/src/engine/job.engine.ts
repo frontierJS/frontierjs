@@ -13,6 +13,7 @@ import type { BasecampApp } from '../basecamp.types.ts'
 // what was wrong, which is the direction nothing catches until the type comes
 // from the schema.
 import type { Job } from '../../../db/schema.d.ts'
+import { scheduleJob } from './job-schedule.ts'
 
 export function createJobEngine(app: BasecampApp) {
 
@@ -94,6 +95,17 @@ export function createJobEngine(app: BasecampApp) {
     const job = await db.job.findUnique({ where: { id: jobId } })
     if (!job) { log.warn('job not found', { id: jobId }); return }
 
+    // The ROW is the truth about whether this should run, not the thing that
+    // dispatched it. A cancel stamps the row and a delete soft-deletes it (the
+    // findUnique above answers null for that), but a run already queued when
+    // either happened is still in the queue, and a schedule dropped while a
+    // fire was in flight can arrive one tick later. Cheaper to ask here than to
+    // make every producer promise it never races.
+    if (job.status === 'cancelled') {
+      log.info('job cancelled — run skipped', { job_id: jobId, trigger })
+      return
+    }
+
     const startedAt = Date.now()
     const startedIso = new Date(startedAt).toISOString()
 
@@ -155,6 +167,45 @@ export function createJobEngine(app: BasecampApp) {
     }
   }
 
+  // ── Schedules ─────────────────────────────────────────────────────
+  //
+  // Binding a Job row to a clock lives in `job-schedule.ts`, shared with the
+  // service that knows a job changed. What is here is the half that needs the
+  // database.
+
+  /**
+   * Re-register every live scheduled job from the database.
+   *
+   * A cron registration is in-process in both caravan and junction, so it does
+   * not survive a restart on its own — and the only place a Job's schedule was
+   * ever registered was the service's `create()`. Every scheduled job in the
+   * app therefore stopped firing at the first deploy, silently, with the row
+   * still saying `scheduled` in the UI. This is the half that makes the row the
+   * source of truth rather than the request that happened to create it.
+   */
+  async function restoreSchedules(): Promise<number> {
+    const jobs = await db.job.findMany({
+      where: { kind: 'scheduled', status: { not: 'cancelled' } },
+    })
+
+    let restored = 0
+    for (const job of jobs) {
+      if (!job.cronExpression) continue
+      try {
+        scheduleJob(app, job)
+        restored++
+      } catch (err) {
+        // One unparseable expression must not cost every other job its
+        // schedule. It is already refused on the way in, so reaching this
+        // means a row that predates the check or was written around it.
+        log.error('could not restore schedule', {
+          job_id: job.id, cron: job.cronExpression, error: (err as Error).message,
+        })
+      }
+    }
+    return restored
+  }
+
   // ── Register Caravan handler ──────────────────────────────────────
   function register(): void {
     app.jobs.handle<{ id: string; trigger?: string }>('job:run', async (job) => {
@@ -165,8 +216,14 @@ export function createJobEngine(app: BasecampApp) {
       retryDelay:  [5_000, 30_000, 120_000],  // 5s, 30s, 2m
     })
 
-    log.info('job engine registered')
+    // Not awaited: register() is called synchronously while the app is being
+    // built, and the queue's own database opens on first use. A failure here
+    // must not take the app down — an unschedulable fleet is worse served by
+    // an API that will not boot.
+    restoreSchedules()
+      .then(n => log.info('job engine registered', { schedules_restored: n }))
+      .catch(err => log.error('could not restore schedules', { error: (err as Error).message }))
   }
 
-  return { register, runJob }
+  return { register, runJob, restoreSchedules }
 }

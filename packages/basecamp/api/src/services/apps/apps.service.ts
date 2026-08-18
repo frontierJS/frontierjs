@@ -16,7 +16,7 @@
 
 import { createService, NotFound, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, dbOf, wsOf }
+import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf }
   from '../../core/resource.ts'
 // The ONE definition of a certificate's condition, imported rather than
 // recomputed: an include returns raw Domain rows, so without this the app
@@ -109,7 +109,7 @@ export function createAppsService(app: BasecampApp) {
       // environments would orphan its deployment history.
       // `status` is the engine's to set, never a client's.
       const patch = narrowPatch(ctx.data as Record<string, unknown>, ['environmentId', 'slug', 'status'])
-      if (Object.keys(patch).length)
+      if (!changesNothing(patch))
         await dbOf(ctx).app.update({ where: { id: ctx.id as string }, data: patch })
 
       return dbOf(ctx).app.findFirst({ where: { id: ctx.id as string }, include: WITH_DETAIL })

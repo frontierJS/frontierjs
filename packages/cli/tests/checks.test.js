@@ -188,18 +188,48 @@ describe('the silent config hazards', () => {
     expect(findings[0].message).toMatch(/hops to the next free port/)
   })
 
-  test('the body tag inside a comment is an error, with the line', () => {
+  test('a commented body tag ABOVE the real one is an error, at the mention', () => {
     const root = tree('b-comment', {
       ...CLEAN,
       'web/index.html': '<!doctype html>\n<!--\n  a theme goes on <body>\n-->\n<body></body>\n',
     })
     const { findings } = only(root, 'body-tag-in-comment')
     expect(findings).toHaveLength(1)
-    expect(findings[0].line).toBe(2)
+    // The mention, not the comment it sits in — that is the token to delete.
+    expect(findings[0].line).toBe(3)
   })
 
   test('a body tag outside a comment is fine', () => {
     expect(only(tree('b-ok', CLEAN), 'body-tag-in-comment').findings).toEqual([])
+  })
+
+  // `FJS-329`. Vite injects at the FIRST textual match, so a mention below the
+  // real tag is already too late to do harm — and flagging it made this rule
+  // fire on a file that documents its own markup. A check that cries wolf is
+  // the failure the engine exists to prevent.
+  test('a commented body tag BELOW the real one is not a finding', () => {
+    const root = tree('b-below', {
+      ...CLEAN,
+      'web/index.html':
+        '<!doctype html>\n<body>\n<!--\n  the scripts below are inside <body>, so the shell renders into a div\n-->\n<div id="app"></div>\n</body>\n',
+    })
+    expect(only(root, 'body-tag-in-comment').findings).toEqual([])
+  })
+
+  test('a file whose ONLY body tag is commented is still an error', () => {
+    const root = tree('b-only', {
+      ...CLEAN,
+      'web/index.html': '<!doctype html>\n<!--\n  <body> goes here eventually\n-->\n<div id="app"></div>\n',
+    })
+    expect(only(root, 'body-tag-in-comment').findings).toHaveLength(1)
+  })
+
+  test('a closing tag is not the injection point, so it is not a match', () => {
+    const root = tree('b-closing', {
+      ...CLEAN,
+      'web/index.html': '<!doctype html>\n<!--\n  everything before </body>\n-->\n<body></body>\n',
+    })
+    expect(only(root, 'body-tag-in-comment').findings).toEqual([])
   })
 })
 

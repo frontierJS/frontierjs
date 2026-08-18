@@ -112,9 +112,52 @@ function scratchDir(label: string): string {
   return dir
 }
 
+/**
+ * The rows a @@log(audit) write produces, once they are on disk.
+ *
+ * POLLED, not slept. The writer buffers ~1s and a fixed wait against that is a
+ * coin toss under load — this file failed once in a full run and passed on its
+ * own immediately after, which is the worst way for a test to be wrong. Waits
+ * for the rows the assertions are about, and gives up after ten seconds so a
+ * genuine failure is still a failure. Every caller states a timeout above that.
+ */
+async function auditEntries(dir: string, model: string, ops: string[]): Promise<any[]> {
+  const file = join(dir, 'auditLogs.jsonl')
+  const read = () => {
+    try {
+      return readFileSync(file, 'utf8').trim().split('\n')
+        .filter(Boolean).map(l => JSON.parse(l)).filter((e: any) => e.model === model)
+    } catch { return [] }
+  }
+  const deadline = Date.now() + 10_000
+  let entries = read()
+  while (Date.now() < deadline && !ops.every(op => entries.some((e: any) => e.operation === op))) {
+    await new Promise(r => setTimeout(r, 100))
+    entries = read()
+  }
+  return entries
+}
+
 /** A principal with standing in a workspace, as applyStanding() builds one. */
 function as(memberRole: string, extra: Record<string, unknown> = {}) {
   return { id: 'u1', userId: 'u1', memberRole, ...extra }
+}
+
+/**
+ * A cross-workspace move, well-formed.
+ *
+ * Twelve models declare `@version` and refuse an update that carries none, and
+ * that refusal lands BEFORE the policy — so a payload of `{ workspaceId }`
+ * alone grades the version check rather than the tenancy rule these tests are
+ * about. Reading the version through `sys` is also the honest shape: a real
+ * caller has it because it read the row.
+ */
+async function moveTo(caller: any, sys: any, accessor: string, id: string, workspaceId: string) {
+  const row = await sys[accessor].findUnique({ where: { id } })
+  return caller[accessor].update({
+    where: { id },
+    data:  { workspaceId, ...(row?.version == null ? {} : { version: row.version }) },
+  })
 }
 
 afterAll(() => {
@@ -328,8 +371,6 @@ describe('Secret.data protection', () => {
 describe('audit logging', () => {
   test('records that a secret was written without recording the secret', async () => {
     const auditDir = scratchDir('audit')
-    const cwd      = process.cwd()
-    process.chdir(auditDir)                // logger path is CWD-relative
 
     const db  = await client({ databases: { audit: { path: auditDir } } })
     const sys = db.asSystem()
@@ -340,16 +381,14 @@ describe('audit logging', () => {
     })
     await sys.secret.update({ where: { id: s.id }, data: { data: '{"priv":"ROTATED-CANARY"}' } })
 
-    await new Promise(r => setTimeout(r, 1500))   // buffered ~1s, flushed on exit
+    const entries = await auditEntries(auditDir, 'secret', ['create', 'update'])
     db.$close()
-    process.chdir(cwd)
 
     const file = join(auditDir, 'auditLogs.jsonl')
     expect(existsSync(file)).toBe(true)
     const log = readFileSync(file, 'utf8')
 
     // The access is recorded …
-    const entries = log.trim().split('\n').map(l => JSON.parse(l)).filter(e => e.model === 'secret')
     expect(entries.map(e => e.operation)).toContain('create')
     expect(entries.map(e => e.operation)).toContain('update')
 
@@ -357,7 +396,9 @@ describe('audit logging', () => {
     expect(log).not.toContain('AUDIT-LEAK-CANARY')
     expect(log).not.toContain('ROTATED-CANARY')
     expect(log).toContain('[redacted]')
-  })
+    // Stated, because the poll above has to fit inside it — bun's default is
+    // 5s and the writer's own buffer is ~1s of that.
+  }, 20_000)
 })
 
 // ─── Access control — the gate ladder ────────────────────────────────────────
@@ -773,9 +814,8 @@ describe('Project · Environment · App — the tenancy declared', () => {
 
       // The post-update half: the row was the caller's when the UPDATE matched
       // it and would not be afterwards, so it rolls back.
-      await expect(caller[accessor].update({
-        where: { id: mine[accessor].id }, data: { workspaceId: b.id },
-      })).rejects.toThrow(/denied by @@allow/)
+      await expect(moveTo(caller, sys, accessor, mine[accessor].id, b.id))
+        .rejects.toThrow(/denied by @@allow/)
       expect((await sys[accessor].findUnique({ where: { id: mine[accessor].id } })).workspaceId).toBe(a.id)
     }
     db.$close()
@@ -885,9 +925,8 @@ describe('Deployment · Job · Domain — the tenancy declared', () => {
 
       // The post-update half: the row was the caller's when the UPDATE matched
       // it and would not be afterwards, so it rolls back.
-      await expect(caller[accessor].update({
-        where: { id: (mine as any)[accessor].id }, data: { workspaceId: b.id },
-      })).rejects.toThrow(/denied by @@allow/)
+      await expect(moveTo(caller, sys, accessor, (mine as any)[accessor].id, b.id))
+        .rejects.toThrow(/denied by @@allow/)
       expect((await sys[accessor].findUnique({ where: { id: (mine as any)[accessor].id } })).workspaceId)
         .toBe(a.id)
     }
@@ -988,9 +1027,8 @@ describe('the workspace-owned six — the tenancy declared', () => {
       await expect(caller[accessor].create({ data: { workspaceId: b.id, ...data('smuggled') } }))
         .rejects.toThrow(/denied by @@allow/)
 
-      await expect(caller[accessor].update({
-        where: { id: rows[accessor].mine.id }, data: { workspaceId: b.id },
-      })).rejects.toThrow(/denied by @@allow/)
+      await expect(moveTo(caller, sys, accessor, rows[accessor].mine.id, b.id))
+        .rejects.toThrow(/denied by @@allow/)
       expect((await sys[accessor].findUnique({ where: { id: rows[accessor].mine.id } })).workspaceId)
         .toBe(a.id)
     }
@@ -1081,9 +1119,8 @@ describe('Secret · ApiKey — the tenancy declared over credential material', (
       .rejects.toThrow(/denied by @@allow/)
 
     for (const accessor of ACCESSORS) {
-      await expect(caller[accessor].update({
-        where: { id: (mine as any)[accessor].id }, data: { workspaceId: b.id },
-      })).rejects.toThrow(/denied by @@allow/)
+      await expect(moveTo(caller, sys, accessor, (mine as any)[accessor].id, b.id))
+        .rejects.toThrow(/denied by @@allow/)
       expect((await sys[accessor].findUnique({ where: { id: (mine as any)[accessor].id } })).workspaceId)
         .toBe(a.id)
     }
@@ -1290,8 +1327,6 @@ describe('ApiKey — the token Basecamp issues', () => {
     // of thing the trail exists for, so it is asserted rather than assumed —
     // and the hint is not a secret, so unlike Secret.data it may appear.
     const auditDir = scratchDir('audit-apikey')
-    const cwd      = process.cwd()
-    process.chdir(auditDir)                // logger path is CWD-relative
 
     const db  = await client({ databases: { audit: { path: auditDir } } })
     const sys = db.asSystem() as any
@@ -1301,15 +1336,14 @@ describe('ApiKey — the token Basecamp issues', () => {
       data:  { revokedAt: new Date().toISOString(), credentialId: null },
     })
 
-    await new Promise(r => setTimeout(r, 1500))   // buffered ~1s, flushed on exit
-    db.$close()
-    process.chdir(cwd)
+    const entries = await auditEntries(auditDir, 'api_key', ['create', 'update'])
 
-    const log = readFileSync(join(auditDir, 'auditLogs.jsonl'), 'utf8')
-    const entries = log.trim().split('\n').map(l => JSON.parse(l)).filter(e => e.model === 'api_key')
+    db.$close()
     expect(entries.map(e => e.operation)).toContain('create')
     expect(entries.map(e => e.operation)).toContain('update')
-  })
+    // Stated, because the poll above has to fit inside it — bun's default is
+    // 5s and the writer's own buffer is ~1s of that.
+  }, 20_000)
 })
 
 // ─── Compatibility with @frontierjs/auth ─────────────────────────────────────
@@ -1747,6 +1781,144 @@ async function seedWorkspace(sys: any) {
     data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${Math.random().toString(36).slice(2, 8)}`, ownerId: user.id },
   })
 }
+
+// ─── The two state machines, executed ────────────────────────────────────────
+// `@@transitions` is the one statement of what a release and a job may do next.
+// It replaced three copies of that fact — a TERMINAL list in the deployments
+// service, a CANCELLABLE list beside it, and a third copy in the screen — so
+// what has to hold is that the boundary refuses the moves those lists used to,
+// and that it refuses them for a caller who never goes through the service.
+
+describe('Deployment and Job declare their own state machines', () => {
+  // The level comes off `memberRole`, not off `isAdmin` — basecampGateLevel
+  // grades a workspace membership and a principal without one is VISITOR(1),
+  // which cannot update anything. developer is USER(4), admin ADMINISTRATOR(5).
+  function as(db: any, ws: any, memberRole: string) {
+    return db.$setAuth({ id: `u-${memberRole}`, workspaceId: ws.id, memberRole })
+  }
+
+  async function aDeployment(sys: any, ws: any, status = 'pending') {
+    const uniq = () => Math.random().toString(36).slice(2, 8)
+    const proj = await sys.project.create({
+      data: { workspaceId: ws.id, name: 'P', slug: `p-${uniq()}` },
+    })
+    const env = await sys.environment.create({
+      data: { projectId: proj.id, workspaceId: ws.id, name: 'Prod', slug: 'prod', tier: 'production' },
+    })
+    const app = await sys.app.create({
+      data: { environmentId: env.id, workspaceId: ws.id, name: 'web', slug: `web-${uniq()}`, type: 'container' },
+    })
+    return sys.deployment.create({ data: { appId: app.id, environmentId: env.id, workspaceId: ws.id, status } })
+  }
+
+  test('a release walks its pipeline and cannot walk back', async () => {
+    const db  = await client()
+    const sys = db.asSystem() as any
+    const ws  = await seedWorkspace(sys)
+    const d   = await aDeployment(sys, ws)
+
+    // asSystem() bypasses transitions by design, so enforcement has to be asked
+    // of a SCOPED client — which is what every request holds.
+    const dev = as(db, ws, 'developer')
+
+    expect((await dev.deployment.update({ where: { id: d.id }, data: { status: 'building' } })).status)
+      .toBe('building')
+
+    // building -> pending is not declared, and the refusal NAMES what is legal
+    // from here, which the old `TERMINAL.includes(...)` guard never did.
+    await expect(dev.deployment.update({ where: { id: d.id }, data: { status: 'pending' } }))
+      .rejects.toThrow(/from 'building' to 'pending'/)
+
+    db.$close()
+  })
+
+  test('a terminal release cannot be cancelled, which is what the service used to check', async () => {
+    const db  = await client()
+    const sys = db.asSystem() as any
+    const ws  = await seedWorkspace(sys)
+    const d   = await aDeployment(sys, ws, 'success')
+
+    await expect(as(db, ws, 'admin').deployment.update({ where: { id: d.id }, data: { status: 'cancelled' } }))
+      .rejects.toThrow(/from 'success' to 'cancelled'/)
+
+    db.$close()
+  })
+
+  test('transitions(row) answers the buttons the screen renders', async () => {
+    const db  = await client()
+    const sys = db.asSystem() as any
+    const ws  = await seedWorkspace(sys)
+    const d   = await aDeployment(sys, ws, 'building')
+
+    // The same list `resource.transitions(row)` hands the browser.
+    expect((await sys.deployment.transitions(d)).map((m: any) => m.name).sort())
+      .toEqual(['cancel', 'fail', 'push', 'succeed'])
+
+    const done = await sys.deployment.transitions({ ...d, status: 'success' })
+    expect(done.map((m: any) => m.name)).toEqual(['rollback'])
+    expect(done[0].gate).toBe(5)
+
+    db.$close()
+  })
+
+  test('a rollback is gated above the level that may deploy', async () => {
+    const db  = await client()
+    const sys = db.asSystem() as any
+    const ws  = await seedWorkspace(sys)
+    const d   = await aDeployment(sys, ws, 'success')
+
+    // Deployment's update gate is USER(4) and a developer passes it — this
+    // refusal is the MOVE's own floor, which is the whole reason @gate exists
+    // on a transition rather than only on the model.
+    await expect(as(db, ws, 'developer').deployment.update({ where: { id: d.id }, data: { status: 'rolled_back' } }))
+      .rejects.toThrow()
+
+    // …and an administrator makes the same move.
+    expect((await as(db, ws, 'admin').deployment.update({ where: { id: d.id }, data: { status: 'rolled_back' } })).status)
+      .toBe('rolled_back')
+
+    db.$close()
+  })
+
+  test("a job's status is its state, so a successful run returns it to pending", async () => {
+    const db  = await client()
+    const sys = db.asSystem() as any
+    const ws  = await seedWorkspace(sys)
+    const job = await sys.job.create({ data: { workspaceId: ws.id, name: 'Nightly', kind: 'scheduled' } })
+    // Job's update gate is ADMINISTRATOR(5), not USER(4) — `@@gate("2.4.4.5")`.
+    const admin = as(db, ws, 'admin')
+
+    await admin.job.update({ where: { id: job.id }, data: { status: 'running' } })
+    expect((await admin.job.update({ where: { id: job.id }, data: { status: 'pending' } })).status).toBe('pending')
+
+    // pending -> failed is not a move: a job that never ran did not fail.
+    await expect(admin.job.update({ where: { id: job.id }, data: { status: 'failed' } }))
+      .rejects.toThrow(/from 'pending' to 'failed'/)
+
+    db.$close()
+  })
+
+  test('a failed job can be re-run and can be cancelled', async () => {
+    const db  = await client()
+    const sys = db.asSystem() as any
+    const ws  = await seedWorkspace(sys)
+    const job = await sys.job.create({ data: { workspaceId: ws.id, name: 'Flaky', status: 'failed' } })
+
+    // `cancel` reaches `failed` because remove() cancels whatever it soft-
+    // deletes — a job left pending behind a deletedAt is invisible to every
+    // read and still on the clock.
+    expect((await sys.job.transitions(job)).map((m: any) => m.name).sort()).toEqual(['cancel', 'start'])
+
+    const cancelled = await as(db, ws, 'admin').job.update({ where: { id: job.id }, data: { status: 'cancelled' } })
+    expect(cancelled.status).toBe('cancelled')
+
+    // …and cancelled is the end of the line, which is why remove() now asks
+    // before it writes rather than cancelling unconditionally.
+    expect(await sys.job.transitions(cancelled)).toEqual([])
+
+    db.$close()
+  })
+})
 
 // ─── Declared constraints, executed ──────────────────────────────────────────
 // The other half of the access snapshot's argument. `db/access.snapshot.md`

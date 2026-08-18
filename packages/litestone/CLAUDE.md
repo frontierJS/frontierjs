@@ -192,6 +192,11 @@ Type?      — optional (nullable)
                                  column is named on the call — `update({ …, system: ['col'] })`
                                  — or asSystem(). Reaches the client as `readOnly` and is
                                  never in create-mode `required`
+@transient                       accepted on the wire, stored nowhere — no column, no DDL,
+                                 no audit entry, never in a result. The API validates it
+                                 and lifts it onto ctx.transients; a value reaching this
+                                 client is refused by name. Emitted `writeOnly` into the
+                                 create/update JSON Schema and absent from the read modes
 @guarded                         system-context column — stripped from every read AND
                                  refused on every write, unless asSystem()
 @guarded(all)                    the same; an explicit select cannot unlock the read
@@ -485,6 +490,10 @@ const sysDb  = db.asSystem()              // bypasses @@gate, @@allow/@@deny, @g
 db.$backup('./backups/prod.db')
 db.$backup('./backups/prod.db', { vacuum: true })
 db.$transaction(async (tx) => { ... })
+db.$inTransaction         // is one open on this connection right now? Same answer
+                          // on every flavour — one write connection, one counter.
+                          // For a write whose meaning depends on rolling back
+                          // with everything else (junction's outbox row)
 db.$attach('./other.db', 'other')
 db.$detach('other')
 db.$rotateKey(newKey)      // re-encrypt all @secret(rotate: true) fields; returns per-model stats
@@ -860,7 +869,7 @@ litestone migrate verify
 litestone studio [--port=5001]
 litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>]
 litestone doctor
-litestone types [out.d.ts] [--only=User,Post]
+litestone types [out.d.ts] [--only=User,Post] [--audience=client|system] [--augment=junction]
 litestone seed [SeederClass]
 litestone seed run [name] [--db=main] [--force]
 litestone introspect <db> [--out schema.lite] [--no-camel]
@@ -1239,13 +1248,26 @@ from belief asserts a wish.
   invisible node hides its branch — reparenting orphans upward hands back the
   children of a refused row. Only `findMany` walks a tree; every other read
   refuses `recursive` by name.
-- **`@system` and `@guarded` are the two halves of one grid, and only one of them
-  touches reads.**
+- **`@system`, `@guarded`, `@computed` and `@transient` are one grid, and the two
+  questions are *is there a column* and *which way does the value travel*.**
 
-  |            | read        | write       |
-  | ---------- | ----------- | ----------- |
-  | `@guarded` | system only | system only |
-  | `@system`  | anyone      | system only |
+  |              | column | caller writes | caller reads |
+  | ------------ | ------ | ------------- | ------------ |
+  | `@guarded`   | yes    | system only   | system only  |
+  | `@system`    | yes    | system only   | anyone       |
+  | `@computed`  | no     | no            | yes          |
+  | `@transient` | no     | yes           | no           |
+
+  `@computed` and `@transient` are mirrors, which is what decides everything
+  downstream rather than deciding it twice: computed is emitted into the READ
+  modes of the generated schema and transient into the WRITE ones, computed is
+  out of the create/update types and transient is out of the row type and out of
+  `Where`. Neither is a column, so `isStoredField` in `ddl.js` is the one answer
+  to that — `CREATE TABLE` and the rebuild's `INSERT … SELECT` were asking it
+  separately and had drifted. A transient field is refused by name in a `where`,
+  an `orderBy`, an aggregate, a policy predicate and a `@@index`, because SQLite
+  reads an identifier it cannot bind as a string literal: the filter matches
+  every row or none, and nothing says so.
 
   Both refuse a write BY NAME rather than dropping it, because the client is told
   `readOnly` and a generated form does not offer the column — so a payload

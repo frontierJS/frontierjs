@@ -67,6 +67,47 @@ export function stated(...values) {
 }
 
 /*
+ * ── Native validation, in a form the kit does not own ────────────────
+ *
+ * A kit control puts a REAL `required` (and `minlength`, `pattern`, `min`…)
+ * on its element, deliberately: that attribute is what assistive tech
+ * announces. The cost is that the browser then refuses to fire `submit` and
+ * shows its own bubble instead — with a message that is not the schema's, in a
+ * place the layout did not plan for. It reads as "the submit handler is
+ * broken", and nothing anywhere says otherwise.
+ *
+ * `<Form>` is `novalidate` by default so this cannot happen there. A
+ * hand-written `<form>` has no such default and is the whole of what remains
+ * (`FJS-055`), so a control mounting into one says so — once per form, naming
+ * a field that is currently blocking it.
+ *
+ * `data-native-validation` on the form is the way to say the browser's own UI
+ * is what you want, and suppresses it.
+ */
+const _warnedForms = new WeakSet()
+
+export function nativeValidationGuard(el) {
+  const form = el?.form
+  // No form: nothing submits, so nothing is blocked. Already novalidate, or
+  // opted in to the browser's UI on purpose: both are answers.
+  if (!form || form.noValidate || form.hasAttribute('data-native-validation')) return
+  // `validity`, never `checkValidity()` — the method fires an `invalid` event,
+  // which is a real event this kit's controls listen for.
+  if (!el.willValidate || el.validity.valid) return
+  if (_warnedForms.has(form)) return
+  _warnedForms.add(form)
+
+  const field = el.name || el.id || el.tagName.toLowerCase()
+  console.warn(
+    `[@frontierjs/ui] "${field}" carries a native constraint inside a <form> that is not ` +
+    `novalidate, so the browser will refuse to fire submit and show its own message ` +
+    `instead of the schema's. Use <Form>, which is novalidate by default, or put ` +
+    `novalidate on the form. To keep the browser's validation UI on purpose, mark the ` +
+    `form data-native-validation.`
+  )
+}
+
+/*
  * ── Tones ────────────────────────────────────────────────────────────
  *
  * @frontierjs/css has exactly seven tones, and a tone is one free-standing

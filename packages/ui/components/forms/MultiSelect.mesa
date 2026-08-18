@@ -50,7 +50,7 @@
   export let placeholder  = 'Select…'
   export let readonly     = false
   export let required     = undefined
-  export let disabled     = false
+  export let disabled     = undefined  // undefined = ask the form; false overrides it
   export let type         = 'string'     // 'string' | 'number' — coerces values
   export let min          = undefined    // min selections (for multiple)
   export let max          = undefined    // max selections (for multiple)
@@ -67,6 +67,11 @@
 
   // The enclosing <Form>, when there is one — see utils.js § Form context.
   const form     = $context.form
+
+  // A <Form> above this control locks it two ways — the caller disabled the
+  // form, or a save is in flight — and both mean the same thing to a field.
+  // A stated prop still wins, including `disabled={false}` on a saving form.
+  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
   const rule     = resolveRule(form, name)
   const hasError = !!resolveError(form, name, error, errors)
 
@@ -85,6 +90,14 @@
 
   export var id = ''
   const inputId = id || uid('ms')
+
+  // Focus stays in the search box while the arrow keys move the highlight, so
+  // `aria-selected` moving down the list says nothing on its own — the input
+  // has to NAME the row Enter would take, and a row can only be named if it
+  // has an id. Indexed rather than keyed by value: an option's value is the
+  // caller's and may be anything, including a string that is not a valid id.
+  const listId = uid('ms-list')
+  const rowId  = (i) => `${listId}-${i}`
 
   // ── Internal state ───────────────────────────────────────────────────────────
 
@@ -114,14 +127,23 @@
 
   // ── Derived state ─────────────────────────────────────────────────────────────
 
-  // Normalised options map — value → option object
-  const optionsMap = {}
-
-  // Build options map from the options prop
-  $: options, () => {
-    const normalised = (Array.isArray(options) ? options : []).map(normalise)
-    for (const o of normalised) optionsMap[o.value] = o
+  function mapOf(list) {
+    const m = {}
+    for (const o of (Array.isArray(list) ? list : []).map(normalise)) m[o.value] = o
+    return m
   }
+
+  // Normalised options map — value → option object. Reactive state rather than
+  // a derived const, because the async search and `allowNew` add to it.
+  //
+  // SEEDED HERE, not only by the watch below: a `$:` watch fires on CHANGE, so
+  // a caller handing over a plain array changed nothing and the map stayed
+  // empty — every dropdown said "No options" for the life of the component,
+  // and typing filtered an empty list.
+  let optionsMap = mapOf(options)
+
+  // Later arrivals merge in; a value already known keeps its newest shape.
+  $: options, () => { optionsMap = { ...optionsMap, ...mapOf(options) } }
 
   // Selected values as a Set for O(1) lookup
   const selectedValues = new Set(
@@ -167,7 +189,7 @@
   // ── Selection actions ──────────────────────────────────────────────────────
 
   function add(opt) {
-    if (readonly || disabled || !canAdd()) return
+    if (readonly || resolvedDisabled || !canAdd()) return
     selectedValues.add(opt.value)
     optionsMap[opt.value] = opt
     commitValue()
@@ -176,13 +198,13 @@
   }
 
   function remove(val) {
-    if (readonly || disabled || !canRemove()) return
+    if (readonly || resolvedDisabled || !canRemove()) return
     selectedValues.delete(coerce(val))
     commitValue()
   }
 
   function clearAll() {
-    if (readonly || disabled) return
+    if (readonly || resolvedDisabled) return
     selectedValues.clear()
     inputValue = ''
     commitValue()
@@ -197,7 +219,7 @@
   // ── Dropdown visibility ──────────────────────────────────────────────────────
 
   function openDropdown() {
-    if (readonly || disabled || (!canAdd() && !multiple)) return
+    if (readonly || resolvedDisabled || (!canAdd() && !multiple)) return
     open = true
     inputEl?.focus()
   }
@@ -309,15 +331,15 @@
       class="field fjs-multiselect-box"
       data-open={open || null}
       aria-invalid={hasError || null}
-      style:opacity={disabled ? 0.6 : null}
-      style:cursor={disabled ? 'not-allowed' : 'text'}
+      style:opacity={resolvedDisabled ? 0.6 : null}
+      style:cursor={resolvedDisabled ? 'not-allowed' : 'text'}
       on:click={openDropdown}
     >
       <!-- Selected tokens -->
       {#each [...selectedValues] as val (val)}
         {@const opt = optionsMap[val]}
         {#if opt}
-          <span class="pill {!readonly && !disabled ? 'removable' : ''}">
+          <span class="pill {!readonly && !resolvedDisabled ? 'removable' : ''}">
             {opt.textContent}
             {#if !readonly && !disabled}
               <button
@@ -351,6 +373,8 @@
           aria-expanded={open}
           aria-haspopup="listbox"
           aria-autocomplete="list"
+          aria-controls={listId}
+          aria-activedescendant={open && filtered[activeIndex] ? rowId(activeIndex) : null}
           on:keydown={handleKeydown}
           on:blur={handleBlur}
           on:focus={() => open = true}
@@ -388,7 +412,7 @@
     <!-- Dropdown -->
     {#if open}
       <div class="popover fjs-multiselect-panel" {@attach dropdownAnim}>
-        <ul class="items menu" role="listbox" aria-multiselectable={multiple}>
+        <ul class="items menu" id={listId} role="listbox" aria-label="Options" aria-multiselectable={multiple}>
           {#if filtered.length === 0}
             <li class="item text-muted" aria-disabled="true">
               {allowNew && inputValue.trim()
@@ -399,13 +423,21 @@
             {#each filtered as opt, i (opt.value)}
               {@const isSelected = selectedValues.has(opt.value)}
               {@const isActive   = i === activeIndex}
+              <!--
+                mousemove, not mouseenter: the panel opens under whatever the
+                pointer was last left on, and arrow-keying a long list scrolls
+                rows under a still pointer. Either way mouseenter moves the
+                cursor to a row nobody chose and Enter takes it. Guarded
+                because mousemove fires per pixel.
+              -->
               <li
                 class="item fjs-multiselect-option"
+                id={rowId(i)}
                 role="option"
                 aria-selected={isSelected}
                 aria-disabled={opt.disabled || null}
                 data-active={isActive || null}
-                on:mouseenter={() => activeIndex = i}
+                on:mousemove={() => { if (activeIndex !== i) activeIndex = i }}
                 on:click|preventDefault={() => isSelected ? remove(opt.value) : add(opt)}
               >
                 <span style:flex="1">{opt.textContent}</span>

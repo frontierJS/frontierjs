@@ -1,0 +1,8 @@
+<script>
+  // Provider.mesa — a `$context` provider whose content arrives through a slot.
+  export let token = 'provided'
+
+  $context.token = token
+</script>
+
+<div class="provider"><slot /></div>

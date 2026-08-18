@@ -35,7 +35,7 @@
 import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP }       from '../core/service.ts'
 import { unwrapResult }         from '../core/envelope.ts'
-import { wsSend }               from './outbox.ts'
+import { wsSend }               from './send-queue.ts'
 import type { ServiceContext } from './bridge.ts'
 import type { IAuth }          from '../auth/types.ts'
 import type { App, Plugin }    from '../core/app.ts'
@@ -60,7 +60,7 @@ export interface Connection {
 // Connection.socket is the raw WS — obtained from ctx.$ws in the handler.
 // `send` returns a number and that number is load-bearing: 0 means the frame
 // was DROPPED under backpressure. Typing it `void` is how five call sites came
-// to ignore it — every send here goes through wsSend (outbox.ts) instead.
+// to ignore it — every send here goes through wsSend (send-queue.ts) instead.
 type BunWS = {
   send:       (data: string) => number
   close:      (code?: number, reason?: string) => void
@@ -179,6 +179,10 @@ export function createChannelManager() {
 
   const channels    = new Map<string, Channel>()
   const connections = new Map<string, Connection>()
+
+  // The app-level fallback publisher — see publishDefault() below. Null until
+  // an app registers one, which is what keeps broadcasting opt-in.
+  let _default: PublishFn | null = null
 
   // ── Send primitives ─────────────────────────────────────────────────
   function broadcastToChannel(channelId: string, excludeConnId: string | null, event: string, data: unknown): void {
@@ -325,6 +329,45 @@ export function createChannelManager() {
       } catch {
         return null
       }
+    },
+
+    // ── The app-level fallback publisher ────────────────────────────────
+    //
+    // Feathers' `app.publish(fn)` is one catch-all deciding where EVERY
+    // service event goes, which is how a tenant-shaped app writes *everything
+    // a caller may hear goes to their own account channel* once instead of
+    // once per service. Junction had no equal: `channel:` is per service, and
+    // the natural workaround — an app-level `after: { all: [publish(fn)] }` —
+    // is refused at startup by refuseDoubleBroadcast for every service that
+    // also declares `channel:`, which is most of them (FJS-334).
+    //
+    // **A default, not a second broadcaster.** It is consulted only where a
+    // service declares nothing, so it composes with `channel:` instead of
+    // racing it and cannot put a record on the wire twice. The three states a
+    // service already had are what make that work:
+    //
+    //   channel: 'posts'   this service says where — the default is not asked
+    //   channel: false     declared opt-out — not even the default
+    //   (absent)           ask the app
+    //
+    // **Function only, no string form.** A string would name one channel for
+    // every service in the app, which is the shape that hands a subscriber
+    // rows no @@allow would have let them read — the reason broadcasting is
+    // opt-in at all (DECISIONS.md § API design, 2026-08-02). A function is
+    // handed the record and the ctx, so the app decides per record.
+    //
+    // Returns an unsubscribe, like on() — a test that registers one must be
+    // able to take it back.
+    publishDefault<T = unknown>(fn: PublishFn<T>): () => void {
+      _default = fn as PublishFn
+      return () => { if (_default === (fn as PublishFn)) _default = null }
+    },
+
+    // Read by publishToChannels (core/service.ts) for a service that declares
+    // no channel:. A getter rather than a field so the manager stays the one
+    // owner of when it is null.
+    get defaultPublisher(): PublishFn | null {
+      return _default
     },
 
     // Core send — called by the publish() hook
@@ -763,6 +806,43 @@ export function channels(setup?: ChannelSetupFn): Plugin {
       if (setup) {
         setup(app as App & { channels: ReturnType<typeof createChannelManager> })
       }
+    },
+
+    // ── The fall-through report ──────────────────────────────────────────
+    //
+    // Runs only when an app registered a default publisher, and lists the
+    // services that will therefore broadcast without ever having said so.
+    // That is the failure `publishDefault` introduces and the only one it
+    // introduces: before it, forgetting `channel:` meant a screen that never
+    // updates — visible, and yours; after it, the same omission puts records
+    // on the wire on a rule written for other services, which nothing on the
+    // server can see.
+    //
+    // It is deliberately NOT a report of every service that declares nothing.
+    // With no default that is the ruled, intended state (DECISIONS.md § API
+    // design, 2026-08-02) and would fire on nearly every service in every app,
+    // which is how a warning gets trained out.
+    //
+    // The report extinguishes itself: `channel: false` is the declared opt-out
+    // and drops a service from the list, so an app that has read it once and
+    // meant it never sees it again. A service registered after boot is not in
+    // the count — plugins that register services from their own boot()/ready()
+    // are the case, and there is no later phase this can be asked from that a
+    // test-mounted app also runs (`ready-hooks` is needsHost).
+    boot(app: App): void {
+      if (!_manager?.defaultPublisher) return
+
+      const undeclared = app.services.values()
+        .filter(svc => (svc as { channel?: unknown }).channel === undefined)
+        .map(svc => svc.name)
+
+      if (undeclared.length === 0) return
+
+      console.warn(
+        `[Junction] ${undeclared.length} service(s) declare no channel: and will ` +
+        `broadcast on the app-level publishDefault(): ${undeclared.join(', ')}. ` +
+        `Declare channel: to name a target, or channel: false to opt out.`
+      )
     },
 
     shutdown(): void {

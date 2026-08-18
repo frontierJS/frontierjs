@@ -145,6 +145,8 @@ import {
   registerControl, unregisterControl, registeredControls,
 } from './field-rules.js'
 import { singularize } from '@frontierjs/toolbelt/inflect'
+import { runPhase, runAroundHooks, mergeHooks } from '@frontierjs/toolbelt/hooks'
+import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jsonschema'
 
 // Re-exported so `sierra/junction` stays the one import for resource work.
 export {
@@ -155,153 +157,35 @@ export {
   registerControl, unregisterControl, registeredControls,
 }
 
-// ── Hook runners ──────────────────────────────────────────────────────────────
-
-async function runHooks(list, ctx) {
-  if (!list?.length) return
-  for (const hook of list) await hook(ctx)
-}
-
-// around hooks receive (ctx, next) — compose into a nested chain
-async function runAroundHooks(list, ctx, inner) {
-  if (!list?.length) return inner()
-  let i = 0
-  async function next() {
-    const hook = list[i++]
-    if (!hook) return inner()
-    return hook(ctx, next)
-  }
-  return next()
-}
-
-async function runPhase(hookMap, phase, method, ctx) {
-  const p = hookMap?.[phase]
-  if (!p) return
-  await runHooks(p.all, ctx)
-  await runHooks(p[method], ctx)
-}
-
-// ── createMakeFromSchema ──────────────────────────────────────────────────────
+// ── Hook runners and createMakeFromSchema ─────────────────────────────────────
+//
+// Both are `@frontierjs/toolbelt`'s. They were pure, zero-dependency and copied
+// into jetty by hand, which is the definition the substrate package wrote for
+// itself (`FJS-D26`) and the reason `FJS-059` did not need a fifth published
+// package. What did NOT move is `createStore` below and the orchestrator around
+// it: a store is state, and a transport is not one fact with two owners.
 
 /**
- * Build a make() factory from Litestone JSON schema properties.
+ * Build a `make()` factory from Litestone JSON schema properties.
  *
- * Pass the properties object from the model definition:
  *   const { properties } = jsonSchema.definitions['leads']
  *   const make = createMakeFromSchema(properties)
+ *
+ * Positional, and `resolve` defaults to this package's registry — the kit takes
+ * an options object and no default resolver, because jetty may have no
+ * definition table at all.
  *
  * @param {object} properties   — JSON schema properties for the model
  * @param {string[]} [skip]     — server-managed fields to exclude from make()
  * @param {(ref: string) => object|null} [resolve]
  *        `$ref` resolver, defaulting to the registry the build populates.
  * @param {string[]} [foreignKeys]
- *        Columns that are a relation's local key — `x-relations[].fields`. They
- *        default to null rather than 0; see the note at the check below. The
- *        property itself carries no marker (a belongsTo is emitted as a plain
- *        integer), so this cannot be derived from `properties` alone.
+ *        Columns that are a relation's local key — `x-relations[].fields`. A
+ *        belongsTo is emitted as a plain integer, so this cannot be derived
+ *        from `properties` alone.
  */
-export function createMakeFromSchema(
-  properties,
-  skip = ['id', 'createdAt', 'updatedAt'],
-  resolve = resolveRef,
-  foreignKeys = [],
-) {
-  const fkFields = new Set(foreignKeys)
-  const typeDefaults = {
-    string:  '',
-    integer: 0,
-    number:  0,
-    boolean: false,
-    array:   [],
-    object:  {},
-  }
-
-  const fieldDefaults = {}
-
-  for (const [key, raw] of Object.entries(properties ?? {})) {
-    if (skip.includes(key)) continue
-
-    // Not a field definition. Reached when a caller hands us something that is
-    // not a properties map at all — an enum def used to arrive here and throw
-    // on the `in` check below.
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
-
-    // Enum and @type(T) fields arrive as {$ref}. Without following it there is
-    // no `type` to read, and every such field silently defaulted to null.
-    const def = derefFieldSchema(raw, resolve)
-
-    // A value the caller may not write is not the caller's to seed either.
-    // `@system`, `@computed`, `@generated`, `@from` all arrive `readOnly`, and
-    // a blank seeded for one is a key in the payload — which the Data boundary
-    // refuses by name for a @system column, so a form that never showed the
-    // field could not submit at all. `@version` is the deliberate exception and
-    // is not seeded here: `createResource` remembers the version it read and
-    // puts it on the patch itself.
-    if (def.readOnly) continue
-
-    // Explicit default wins
-    if ('default' in def) {
-      fieldDefaults[key] = def.default
-      continue
-    }
-
-    // An enum with no @default has no blank value that is a member of it.
-    // '' would be as invalid as null, and picking the first member would invent
-    // a choice the user never made — so leave it unset for the form to fill.
-    if (Array.isArray(def.enum)) {
-      fieldDefaults[key] = null
-      continue
-    }
-
-    // A foreign key is the same case, and worse. `0` is not "no customer" — it
-    // is customer #0, a claim the user never made. Unlike a bad enum value it
-    // passes every rule the schema can state: it is a perfectly good integer,
-    // so coerce() keeps it and validate() approves it, and the first thing to
-    // object is SQLite:
-    //
-    //   POST /api/orders {"customerId": 0}  →  500 FOREIGN KEY constraint failed
-    //
-    // Reported from the form: not picking a customer produced that instead of
-    // "customer is required". Defaulting to null makes the required check fire
-    // where it should, in the browser, with the field's own name on it.
-    //
-    // Note the deliberate asymmetry with `string: ''` below: a required string
-    // left as '' also fails, but it fails *informatively* — @length(3,20) says
-    // "must be at least 3 characters" — and an empty text box is what the user
-    // actually sees. There is no such honest empty for a numeric key.
-    if (fkFields.has(key)) {
-      fieldDefaults[key] = null
-      continue
-    }
-
-    // Resolve type — handle nullable anyOf and array forms
-    let type = def.type
-    if (!type && def.anyOf) {
-      const nonNull = def.anyOf.find(t => t.type !== 'null')
-      type = nonNull?.type
-    }
-    if (Array.isArray(type)) {
-      type = type.find(t => t !== 'null')
-    }
-
-    // date-time strings → undefined (don't guess a value)
-    if (type === 'string' && def.format === 'date-time') {
-      fieldDefaults[key] = undefined
-      continue
-    }
-
-    fieldDefaults[key] = type in typeDefaults ? typeDefaults[type] : null
-  }
-
-  return function make(spec) {
-    const instance = {}
-    for (const key in fieldDefaults) {
-      // Clone arrays and objects so instances don't share references
-      const val = fieldDefaults[key]
-      instance[key] = Array.isArray(val) ? [] : (val !== null && typeof val === 'object') ? {} : val
-    }
-    return Object.assign(instance, spec ?? {})
-  }
+export function createMakeFromSchema(properties, skip, resolve = resolveRef, foreignKeys) {
+  return makeFromSchema(properties, { skip, resolve, foreignKeys })
 }
 
 // ── createStore ───────────────────────────────────────────────────────────────
@@ -374,21 +258,6 @@ export function createStore(service, opts = {}) {
   }
 
   return store
-}
-
-// ── mergeHooks ────────────────────────────────────────────────────────────────
-
-function mergeHooks(target, incoming) {
-  for (const phase of ['before', 'after', 'around', 'error']) {
-    if (!incoming[phase]) continue
-    if (!target[phase]) target[phase] = {}
-    for (const method of Object.keys(incoming[phase])) {
-      target[phase][method] = [
-        ...(target[phase][method] ?? []),
-        ...(incoming[phase][method] ?? []),
-      ]
-    }
-  }
 }
 
 // ── createResource ────────────────────────────────────────────────────────────
@@ -577,8 +446,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   }
 
   // Live hook map — mutated by resource.hooks() calls
-  const _hooks = { before: {}, after: {}, around: {}, error: {} }
-  mergeHooks(_hooks, initialHooks)
+  // Reassigned rather than mutated: `mergeHooks` answers a new map (`FJS-059`).
+  let _hooks = mergeHooks({ before: {}, after: {}, around: {}, error: {} }, initialHooks)
 
   // Schema-driven make() or pass-through.
   //
@@ -928,7 +797,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   // hooks() — add hooks after creation, merged in order
   function addHooks(incoming) {
-    mergeHooks(_hooks, incoming)
+    _hooks = mergeHooks(_hooks, incoming)
   }
 
   // ── The generated form ──────────────────────────────────────────────────────

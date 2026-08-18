@@ -239,6 +239,20 @@ function makePackageJson(spec) {
   scripts['db:migrate'] = 'bunx litestone migrate apply --schema db/schema.lite'
   scripts['db:backup']  = 'bunx litestone backup db/backups --schema db/schema.lite'
 
+  // The schema's own TypeScript. Two files because they are two AUDIENCES and
+  // the difference is what a caller may read: the API holds a system client and
+  // sees `@guarded`/`@secret` columns, the browser never does, and one file for
+  // both would tell browser code a column exists that every response strips.
+  //
+  // `--augment junction` is the half that crosses the wire — it writes the
+  // module augmentation that types `client.service('leads')` as the row this
+  // schema declares, which is otherwise the one place the seed stops
+  // propagating (FJS-018). Only on the web file: the augmentation names
+  // @frontierjs/junction/client, which is the browser's module.
+  const dbTypes = ['bunx litestone types --schema db/schema.lite --audience system --out db/schema.d.ts']
+  if (useWeb) dbTypes.push('bunx litestone types --schema db/schema.lite --audience client --augment junction --out web/src/db.d.ts')
+  scripts['db:types'] = dbTypes.join(' && ')
+
   // lint · typecheck · check — see core/app-config.js for what each is for and
   // why `fli check` leads the third one.
   Object.assign(scripts, appCheckScripts())

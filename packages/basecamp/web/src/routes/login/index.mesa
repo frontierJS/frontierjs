@@ -2,7 +2,10 @@
 title: Sign in
 ---
 <script>
-  import { goto } from '@frontierjs/sierra/router'
+  import { goto }   from '@frontierjs/sierra/router'
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import { signIn } from '../../session.js'
 
   // A plain `let` is already component state — it must NOT go in a `$:` path
@@ -10,24 +13,22 @@ title: Sign in
   // there compiles, then throws `$runtime.get(...) is not a function` on mount.
   let email    = ''
   let password = ''
-  let error    = null
-  let busy     = false
 
-  async function submit(e) {
-    e.preventDefault()
-    error = null
-    busy  = true
-    try {
-      await signIn(email, password)
-      goto('/')
-    } catch (err) {
-      // 401 from /auth/login is a wrong password, not a broken app. The client
-      // carries the status on `code`; anything else keeps the server's own
-      // message — including "API not reachable".
-      error = (err.code ?? err.status) === 401 ? 'Wrong email or password.' : err.message
-    } finally {
-      busy = false
-    }
+  // <Form> owns the in-flight flag, the form-level message and the submit
+  // guard, so none of the three is declared here. There is no resource behind
+  // this one — signing in is not a write to a model — which is the shape Form
+  // supports through `onsubmit` + `mapErrors`.
+  async function submit() {
+    await signIn(email, password)
+    goto('/')
+  }
+
+  // 401 from /auth/login is a wrong password, not a broken app. The client
+  // carries the status on `code`; anything else keeps the server's own
+  // message — including "API not reachable".
+  function mapErrors(err) {
+    const status = err.code ?? err.status
+    return { fields: {}, message: status === 401 ? 'Wrong email or password.' : err.message }
   }
 </script>
 
@@ -40,29 +41,16 @@ title: Sign in
      1280px screen is a wall, not a form. The width is a vocabulary term,
      not a number chosen here. -->
 <div class="container narrow">
-  <form class="card stack" on:submit={submit}>
-  {#if error}
-    <article class="alert danger">
-      <div class="alert-content">{error}</div>
-    </article>
-  {/if}
+  <Form class="card stack" onsubmit={submit} {mapErrors} errorTitle="Sign in failed">
+    <Input name="email" label="Email" type="email" autocomplete="username"
+           required bind:value={email} />
 
-  <div class="field-group">
-    <label for="email">Email</label>
-    <input class="field" id="email" type="email" autocomplete="username"
-           bind:value={email} required />
-  </div>
+    <!-- type="password" is all the reveal toggle needs; the kit draws it. -->
+    <Input name="password" label="Password" type="password" autocomplete="current-password"
+           required bind:value={password} />
 
-  <div class="field-group">
-    <label for="password">Password</label>
-    <input class="field" id="password" type="password" autocomplete="current-password"
-           bind:value={password} required />
-  </div>
-
-  <div class="cluster">
-    <button class="btn primary" type="submit" disabled={busy}>
-      {busy ? 'Signing in…' : 'Sign in'}
-    </button>
-  </div>
-  </form>
+    <div class="cluster">
+      <Button type="submit" variant="primary">Sign in</Button>
+    </div>
+  </Form>
 </div>

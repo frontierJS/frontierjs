@@ -1762,7 +1762,7 @@ async function cmdStudio(cfg) {
     const numeric = q !== '' && !Number.isNaN(num)
     for (const f of model.fields) {
       if (f.type.kind === 'relation' || f.type.array) continue
-      if (f.attributes?.some(a => ['computed', 'guarded', 'secret', 'encrypted', 'omit'].includes(a.kind))) continue
+      if (f.attributes?.some(a => ['computed', 'transient', 'guarded', 'secret', 'encrypted', 'omit'].includes(a.kind))) continue
       const t = f.type.name
       if (t === 'String')                      or.push({ [f.name]: { contains: q } })
       else if ((t === 'Int' || t === 'Float') && numeric) or.push({ [f.name]: num })
@@ -1918,7 +1918,7 @@ async function cmdStudio(cfg) {
           let total = null
           try { total = await tableDb[accessor].count({ where, withDeleted }) } catch {}
           const columns  = model.fields
-            .filter(f => f.type.kind !== 'relation' && !f.attributes.find(a => a.kind === 'computed'))
+            .filter(f => f.type.kind !== 'relation' && !f.attributes.find(a => a.kind === 'computed' || a.kind === 'transient'))
             .map(f => f.name) ?? []
           // findMany, not findManyCursor: `cursor` is opaque paging state that
           // means nothing pasted elsewhere. The filter and the sort are the
@@ -1986,7 +1986,7 @@ async function cmdStudio(cfg) {
           const where    = buildSearchWhere(model, search)
           const ob       = buildOrderBySpec(model, null)
           const cols     = model.fields
-            .filter(f => f.type.kind !== 'relation' && !f.attributes.find(a => a.kind === 'computed'))
+            .filter(f => f.type.kind !== 'relation' && !f.attributes.find(a => a.kind === 'computed' || a.kind === 'transient'))
             .map(f => f.name)
           const enc = new TextEncoder()
           const csvCell = (v) => {
@@ -3130,15 +3130,19 @@ async function cmdTypes(outArg, cfg) {
   const onlyFlag    = getFlag('only')
   const onlyModels  = onlyFlag ? new Set(onlyFlag.split(',').map(s => s.trim())) : null
 
+  const augment     = getFlag('augment') ?? null
+
   if (!['client','system'].includes(audience))
     fatal(`--audience must be "client" or "system"`)
+  if (augment && augment !== 'junction')
+    fatal(`--augment takes only "junction"`)
 
   // Filter schema to only requested models if --only is specified
   const schema = onlyModels
     ? { ...parseResult.schema, models: parseResult.schema.models.filter(m => onlyModels.has(m.name)) }
     : parseResult.schema
 
-  const dts    = generateTypeScript(schema, { audience })
+  const dts    = generateTypeScript(schema, { audience, augment })
   const models = schema.models.length
   const enums  = parseResult.schema.enums.length
 
@@ -3159,6 +3163,7 @@ async function cmdTypes(outArg, cfg) {
   console.log(`  ${dim('--out=<path>')}              ${dim('default: schema path + .d.ts')}`)
   console.log(`  ${dim('--stdout')}                  ${dim('print to stdout instead of writing a file')}`)
   console.log(`  ${dim('--audience=client|system')}  ${dim('client strips @guarded/@secret  (default: client)')}`)
+  console.log(`  ${dim('--augment=junction')}        ${dim('also type client.service(name) in the browser')}`)
   console.log()
 }
 

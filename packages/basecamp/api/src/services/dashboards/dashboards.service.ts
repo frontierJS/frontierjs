@@ -27,7 +27,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, narrowPatch, assertSlugFree, slugify, dbOf, wsOf, actorOf }
+import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, assertSlugFree, slugify, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
 import { WIDGET_KINDS, WIDGET_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
 import { PORTAL_SERVICE_IDS } from '../portal/portal.service.ts'
@@ -242,7 +242,7 @@ export function createDashboardsService(app: BasecampApp) {
           `A dashboard called '${patch.name}' already exists in this workspace`)
       }
 
-      if (!Object.keys(patch).length) return withWidgets(ctx, dashboard)
+      if (changesNothing(patch)) return withWidgets(ctx, dashboard)
       return withWidgets(ctx, await dbOf(ctx).dashboard.update({ where: { id: dashboard.id }, data: patch }))
     },
 

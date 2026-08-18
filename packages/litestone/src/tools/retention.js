@@ -84,13 +84,17 @@ export function runSqliteRetention(rawWriteDb, models, retention) {
     if (!hasCreatedAt) continue
 
     try {
-      const result = rawWriteDb.prepare(
+      rawWriteDb.prepare(
         `DELETE FROM "${model.name}" WHERE "createdAt" < ?`
       ).run(cutoff)
+      // sqlite3_changes(), not bun's `.changes` — the latter counts what the
+      // FTS and cascade triggers wrote too, so the line said 17 rows removed
+      // for one (FJS-320).
+      const removed = rawWriteDb.query('SELECT changes() AS n').get()?.n ?? 0
 
-      if (result.changes > 0) {
+      if (removed > 0) {
         console.log(
-          `[litestone] retention: removed ${result.changes} row${result.changes === 1 ? '' : 's'}` +
+          `[litestone] retention: removed ${removed} row${removed === 1 ? '' : 's'}` +
           ` from "${model.name}" (older than ${retention})`
         )
       }

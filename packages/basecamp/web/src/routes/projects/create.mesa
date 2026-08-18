@@ -5,6 +5,8 @@ title: New project
   import { goto } from '@frontierjs/sierra/router'
   import { projects } from '../../resources/Project.mesa'
   import { ResourceValidationError } from '@frontierjs/sierra/junction'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
 
   // make() builds the record from the SCHEMA's defaults — status 'active',
   // tags [], metadata {} — so this file does not restate them. What it adds is
@@ -59,7 +61,7 @@ title: New project
 
 <div class="section-header">
   <h1>New project</h1>
-  <a class="btn ghost" href="/projects/">Back to list</a>
+  <Button variant="ghost" href="/projects/">Back to list</Button>
 </div>
 
 <div class="container narrow">
@@ -70,30 +72,22 @@ title: New project
       </article>
     {/if}
 
-    <div class="field-group">
-      <label for="name"><span>Name</span><span class="text-danger"> *</span></label>
-      <input class="field" id="name" value={draft.name} on:input={onName} required />
-      {#if problem('name')}<span class="field-hint text-danger">{problem('name')}</span>{/if}
-    </div>
+    <Input label="Name" name="name" id="name" required
+           value={draft.name} oninput={onName} error={problem('name')} />
 
-    <div class="field-group">
-      <label for="slug"><span>Slug</span><span class="text-danger"> *</span></label>
-      <input class="field" id="slug" value={draft.slug} on:input={onSlug} required />
-      <span class="field-hint">
-        {problem('slug') ?? 'Unique within the workspace — the API answers 409 if it is taken.'}
-      </span>
-    </div>
+    <Input label="Slug" name="slug" id="slug" required
+           value={draft.slug} oninput={onSlug}
+           hint="Unique within the workspace — the API answers 409 if it is taken."
+           error={problem('slug')} />
 
-    <div class="field-group">
-      <label for="description">Description</label>
-      <input class="field" id="description" bind:value={draft.description} />
-    </div>
+    <Input label="Description" name="description" id="description"
+           value={draft.description} oninput={(e) => draft.description = e.target.value} />
 
     <div class="cluster">
-      <button class="btn primary" type="submit" disabled={saving}>
+      <Button variant="primary" type="submit" disabled={saving}>
         {saving ? 'Creating…' : 'Create project'}
-      </button>
-      <a class="btn ghost" href="/projects/">Cancel</a>
+      </Button>
+      <Button variant="ghost" href="/projects/">Cancel</Button>
     </div>
   </form>
 </div>

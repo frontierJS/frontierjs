@@ -27,7 +27,7 @@
   export let max      = 100
   export let step     = 1
   export let range    = false        // dual handle mode
-  export let disabled = false
+  export let disabled = undefined  // undefined = ask the form; false overrides it
   export let format   = undefined    // (value: number) => string — pip label formatter
   export let showPips = true         // show value labels under handles
   export let tone     = ''           // one of the 7 css tones; '' is primary
@@ -50,6 +50,11 @@
   // rather than undefined, so there is no way to tell a stated 0 from the
   // default and a schema `minimum` cannot be resolved against them.
   const form = $context.form
+
+  // A <Form> above this control locks it two ways — the caller disabled the
+  // form, or a save is in flight — and both mean the same thing to a field.
+  // A stated prop still wins, including `disabled={false}` on a saving form.
+  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
   const rule = resolveRule(form, name)
 
   const resolvedLabel = stated(label || undefined, rule?.title, name ? nameToLabel(name) : undefined)
@@ -111,7 +116,7 @@
 
   function startDrag(which) {
     return (e) => {
-      if (disabled) return
+      if (resolvedDisabled) return
       e.preventDefault()
       dragging = which
       const moveEvt = e.type === 'touchstart' ? 'touchmove' : 'mousemove'
@@ -143,7 +148,7 @@
 
   // Click on track — jump nearest handle
   function handleTrackClick(e) {
-    if (disabled || e.target.classList.contains('fjs-slider-handle')) return
+    if (resolvedDisabled || e.target.classList.contains('fjs-slider-handle')) return
     const v = posToValue(e.clientX)
     if (!range) {
       value = v
@@ -160,7 +165,7 @@
 
   function handleKeydown(which) {
     return (e) => {
-      if (disabled) return
+      if (resolvedDisabled) return
       const delta = (e.shiftKey ? step * 10 : step) * (e.key === 'ArrowLeft' ? -1 : 1)
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
       e.preventDefault()
@@ -185,12 +190,12 @@
 </script>
 
 {#snippet track()}
-  <div class={cx('fjs-slider', t)} style:opacity={disabled ? 0.5 : null} {...$attributes}>
+  <div class={cx('fjs-slider', t)} style:opacity={resolvedDisabled ? 0.5 : null} {...$attributes}>
     <!-- Track + handles -->
     <div
       bind:this={sliderEl}
       class="fjs-slider-track"
-      style:cursor={disabled ? 'not-allowed' : 'pointer'}
+      style:cursor={resolvedDisabled ? 'not-allowed' : 'pointer'}
       on:click={handleTrackClick}
     >
       <!-- Fill bar -->
@@ -209,15 +214,15 @@
         <div
           class="fjs-slider-handle"
           style:left="{singlePct}%"
-          style:cursor={disabled ? 'not-allowed' : 'grab'}
+          style:cursor={resolvedDisabled ? 'not-allowed' : 'grab'}
           role="slider"
-          tabindex={disabled ? -1 : 0}
+          tabindex={resolvedDisabled ? -1 : 0}
           aria-valuemin={min}
           aria-valuemax={max}
           aria-valuenow={value}
           aria-valuetext={fmt(value)}
           aria-label={resolvedLabel || 'Value'}
-          aria-disabled={disabled || null}
+          aria-disabled={resolvedDisabled || null}
           on:mousedown={startDrag('single')}
           on:touchstart={startDrag('single')}
           on:keydown={handleKeydown('single')}
@@ -232,15 +237,15 @@
         <div
           class="fjs-slider-handle"
           style:left="{startPct}%"
-          style:cursor={disabled ? 'not-allowed' : 'grab'}
+          style:cursor={resolvedDisabled ? 'not-allowed' : 'grab'}
           role="slider"
-          tabindex={disabled ? -1 : 0}
+          tabindex={resolvedDisabled ? -1 : 0}
           aria-valuemin={min}
           aria-valuemax={end}
           aria-valuenow={start}
           aria-valuetext={fmt(start)}
           aria-label="Minimum"
-          aria-disabled={disabled || null}
+          aria-disabled={resolvedDisabled || null}
           on:mousedown={startDrag('start')}
           on:touchstart={startDrag('start')}
           on:keydown={handleKeydown('start')}
@@ -250,15 +255,15 @@
         <div
           class="fjs-slider-handle"
           style:left="{endPct}%"
-          style:cursor={disabled ? 'not-allowed' : 'grab'}
+          style:cursor={resolvedDisabled ? 'not-allowed' : 'grab'}
           role="slider"
-          tabindex={disabled ? -1 : 0}
+          tabindex={resolvedDisabled ? -1 : 0}
           aria-valuemin={start}
           aria-valuemax={max}
           aria-valuenow={end}
           aria-valuetext={fmt(end)}
           aria-label="Maximum"
-          aria-disabled={disabled || null}
+          aria-disabled={resolvedDisabled || null}
           on:mousedown={startDrag('end')}
           on:touchstart={startDrag('end')}
           on:keydown={handleKeydown('end')}

@@ -12,7 +12,7 @@ import { toFrameworkError, FrameworkError } from '../core/errors.ts'
 // re-exports it so existing `from '.../transport/bridge.ts'` imports keep
 // working unchanged.
 import {
-  RESERVED_PARAMS, runWithMeta, requestMeta, freezeUser,
+  RESERVED_PARAMS, runWithMeta, requestMeta, freezeUser, withCallEffects,
   type ServiceContext, type ServiceContextLocals, type ServiceResult,
   type ServiceMethod, type AnyMethod, type HookType,
   type CallOptions, type RequestMeta, type QueryDirectives,
@@ -67,7 +67,10 @@ export const bridge = {
   toContext(
     raw:       TransportContext,
     service:   string,
-    model:     string,
+    // The service's own name unless the caller knows better, which is what
+    // `service.model ?? service.name` answers everywhere else. Declared
+    // required, it said a caller must supply what nothing downstream reads.
+    model:     string = service,
     transport: 'http' | 'websocket' | 'internal' = 'http',
     appRef?:   import('../core/app.ts').App
   ): ServiceContext {
@@ -147,7 +150,7 @@ export const bridge = {
       finalMethod = (data as Record<string, unknown>)?.id != null ? 'patch' : 'create'
     }
 
-    return {
+    return withCallEffects({
       service:   service,
       method:    finalMethod,
       type:      'before',
@@ -167,13 +170,14 @@ export const bridge = {
       },
       route:  { ...raw.route },   // path-pattern captures — same word both sides
       locals: {},
+      transients: {},             // filled by autoValidate, from what the model declares
       app:       appRef ?? ({} as import('../core/app.ts').App),
       result:    null,
       error:     null,
       statusCode: undefined,
       dispatch:   undefined,
       $raw:      raw
-    }
+    })
   },
 
   // ── ServiceContext → HTTP Response ────────────────────────────────────
@@ -239,7 +243,7 @@ export const bridge = {
       query: Record<string, unknown>
       directives: QueryDirectives
     }
-    return {
+    return withCallEffects({
       service,
       method,
       type:      'before',
@@ -260,13 +264,14 @@ export const bridge = {
       },
       route:  {},
       locals: locals ? { ...locals } : {},   // fresh; explicit seed only
+      transients: {},
       app:       appRef ?? ({} as import('../core/app.ts').App),
       result:    null,
       error:     null,
       statusCode: undefined,
       dispatch:   undefined,
       $raw:      null
-    }
+    })
   }
 
 }

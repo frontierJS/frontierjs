@@ -38,6 +38,8 @@ schema.lite
 
 ## The Stack
 
+**The four that are the three realms**, plus the one command that drives them:
+
 | Package                                         | Realm   | What it does                                                                                        |
 | ----------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------- |
 | [`@frontierjs/litestone`](./packages/litestone) | Data    | Schema-first SQLite ORM with a gate system, plugin pipeline, and tenant registry                    |
@@ -45,6 +47,24 @@ schema.lite
 | [`@frontierjs/sierra`](./packages/sierra)       | UI      | Vite meta-framework with file-system routing, resource factory, and fine-grained reactive runtime   |
 | [`@frontierjs/mesa`](./packages/mesa)           | UI      | Reactive component language and compiler — the runtime Sierra is built on                           |
 | [`@frontierjs/cli`](./packages/cli)             | Tooling | `fli` — the single interface to all of the above                                                    |
+
+**The batteries.** Each is severable — one owner, one seam, removable without
+surgery on the core:
+
+| Package | Concern | |
+| --- | --- | --- |
+| [`@frontierjs/auth`](./packages/auth) | slice | Identity, sessions and API keys over Litestone's `asSystem()`. Ships its own schema fragments |
+| [`@frontierjs/caravan`](./packages/caravan) | jobs | SQLite job queue + cron → `app.jobs`. A job runs as whoever asked for it |
+| [`@frontierjs/conduit`](./packages/conduit) | outbound | The one boundary anything leaving the process crosses — declared targets, `app.conduit.send()` |
+| [`@frontierjs/notifications`](./packages/notifications) | slice | A Notification class → an in-app record, a WebSocket event and an email |
+| [`@frontierjs/ui`](./packages/ui) | UI | 65 Mesa components over the design system. A `<Form>` that reads the schema |
+| [`@frontierjs/css`](./packages/css) | UI | The styling language — a tone and a treatment, never a colour. Plain CSS, no build step |
+| [`@frontierjs/email-kit`](./packages/email-kit) | UI | Table-based email components compiled by Mesa. An MJML replacement |
+| [`@frontierjs/jetty`](./packages/jetty) | UI | A browser extension as a surface of the app — MV3, Mesa-rendered |
+| [`@frontierjs/testing`](./packages/testing) | Testing | `createTestEnv`'s API tier — a real Junction app over the environment's own client |
+| [`@frontierjs/toolbelt`](./packages/toolbelt) | substrate | Pure functions, zero dependencies, importable from anywhere. One kit per subpath |
+| [`@frontierjs/config`](./packages/config) | tooling | The tooling opinion an app extends in one line — tsconfig, biome, editorconfig |
+| [`create-frontier`](./packages/create-frontier) | tooling | `npm create frontier@latest` — the front door |
 
 ---
 
@@ -68,18 +88,18 @@ The packages are the application layer. The FJS World is the operational environ
 ## Getting Started
 
 ```bash
-npm install -g @frontierjs/cli
-
-fli new my-app
+npm create frontier@latest my-app
 cd my-app
 bun run dev
 ```
 
-API runs on `:8100`, web on `:8000` — the FJS port scheme, `packages/cli/core/ports.js`.
+`npm create` is the front door; `npm install -g @frontierjs/cli && fli new my-app`
+is the same scaffold from the CLI directly. API runs on `:8100`, web on `:8000` —
+the FJS port scheme, `packages/cli/core/ports.js`.
 
-> **Alpha.** The published `@frontierjs/cli` is `0.0.0-beta.0` and lags this repo.
-> Only Litestone and the CLI are on npm at all — see [Publishing status](#publishing-status).
-> To work against current code, clone this repo and `bun install`.
+> **Alpha.** Every publishable package is on npm and the registry matches this
+> tree — see [Publishing status](#publishing-status) — but the surface still
+> moves between releases, so pin a version rather than taking `latest` or `*`.
 
 **[Quickstart](./docs/QUICKSTART.md) is the whole path** — a new app, a model of
 your own, and the deploy pipeline that puts it on a server. Every command in it
@@ -116,7 +136,7 @@ model Lead {              // PascalCase, singular — always. Accessor: db.lead
 // api/server.ts — Data → API connection
 
 const db         = await createClient({          // one options object, never positional
-  schema:  './db/schema.lite',
+  path:    './db/schema.lite',   // `path` is a file; `schema` is inline text
   plugins: [gatePlugin],
 })
 const jsonSchema = generateJsonSchema(db.$schema)
@@ -197,6 +217,10 @@ Every example below is verified end-to-end, not sketched. A broken one is a bug.
 
 ## Package Documentation
 
+**Every package has its own `README.md`** — what it is and how to use it — beside
+a `CLAUDE.md` (the inside view: what it owns, its traps, which drive proves a
+change), a `PROJECT_STATE.md` and a `CHANGES.md`.
+
 | Package                                            | README                                                               |
 | ---------------------------------------------------- | ---------------------------------------------------------------------- |
 | Litestone — Data realm ORM                         | [packages/litestone](./packages/litestone/README.md)                 |
@@ -204,19 +228,34 @@ Every example below is verified end-to-end, not sketched. A broken one is a bug.
 | Sierra — UI meta-framework                         | [packages/sierra](./packages/sierra/README.md)                       |
 | Mesa — Reactive component language                 | [packages/mesa](./packages/mesa/README.md)                           |
 | CLI — `fli`                                        | [packages/cli](./packages/cli/README.md)                             |
+| create-frontier — the front door                   | [packages/create-frontier](./packages/create-frontier/README.md)     |
 | Auth — identity, sessions, gate enforcement        | [packages/auth](./packages/auth/README.md)                           |
 | Caravan — SQLite job queue + cron                  | [packages/caravan](./packages/caravan/README.md)                     |
 | Conduit — outbound boundary (`app.conduit.send()`) | [packages/conduit](./packages/conduit/README.md)                     |
 | Notifications — in-app + email fan-out             | [packages/notifications](./packages/notifications/README.md)         |
+| UI — 65 Mesa components                            | [packages/ui](./packages/ui/README.md)                               |
 | CSS — semantics-first design system                | [packages/css](./packages/css/README.md)                             |
+| Email-kit — table-based email components           | [packages/email-kit](./packages/email-kit/README.md)                 |
 | Jetty — browser-extension app container            | [packages/jetty](./packages/jetty/README.md)                         |
+| Testing — `createTestEnv`'s API tier               | [packages/testing](./packages/testing/README.md)                     |
+| Toolbelt — pure-function kits, zero deps           | [packages/toolbelt](./packages/toolbelt/README.md)                   |
+| Config — the tooling opinion                       | [packages/config](./packages/config/README.md)                       |
 | VS Code — Litestone + Mesa language support        | [packages/frontierjs-vscode](./packages/frontierjs-vscode/README.md) |
+
+**Two applications and two claimed folders**, all built *on* the framework rather
+than part of it:
+
+| | |
+| --- | --- |
+| [Basecamp](./packages/basecamp/README.md) | Fleet operations — the largest dogfooding surface, all three realms real |
+| [`example/`](./example/README.md) | The kitchen sink — one shop-ops app, six drives, every package exercised |
+| [Oracle](./packages/oracle/README.md) · [Orion](./packages/orion/README.md) | Claimed, not built. V2, deferred until core leaves alpha (`FJS-D14`) |
 
 ---
 
 ## Project Structure
 
-**This is the layout. It is not a suggestion** — `fli create` scaffolds it, every package
+**This is the layout. It is not a suggestion** — `fli new` scaffolds it, every package
 README assumes it, and Sierra's schema auto-detection (`../db/schema.lite`) only finds the
 schema because the UI sits one level down in `web/`.
 
@@ -337,22 +376,44 @@ Sierra locates `sierra.config.js` by looking beside `vite.config.js` first, so t
 
 ## Publishing status
 
-**FrontierJS is alpha.** Only two packages are on npm today; everything else is
-workspace-only and is consumed through `workspace:*`, not the registry.
+**Every publishable package is on npm.** The badges below are the answer — a
+version written here as text is a second origin that goes stale the next release,
+which is what this table used to be. `fli ws:npm` compares this tree against the
+registry and names any package that has drifted; the `registry` CI phase fails a
+package `fli new` writes into an app that the registry has never heard of.
 
-| Package                     | On npm                                                                                                             | Notes                                                             |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `@frontierjs/litestone`     | [![npm](https://img.shields.io/npm/v/@frontierjs/litestone)](https://www.npmjs.com/package/@frontierjs/litestone) | `latest` is 1.1.0. Pin `^1.1.0` — never `latest` or `*`           |
-| `@frontierjs/cli`           | [![npm](https://img.shields.io/npm/v/@frontierjs/cli)](https://www.npmjs.com/package/@frontierjs/cli)             | Published as `0.0.0-beta.0`; the in-repo version is ahead of it    |
-| `@frontierjs/junction`      | not yet published                                                                                                  | workspace only                                                    |
-| `@frontierjs/sierra`        | not yet published                                                                                                  | workspace only                                                    |
-| `@frontierjs/mesa`          | not yet published                                                                                                  | workspace only                                                    |
-| `@frontierjs/auth`          | not yet published                                                                                                  | relative `../junction/*` imports block publishing                 |
-| `@frontierjs/caravan`       | not yet published                                                                                                  | workspace only                                                    |
-| `@frontierjs/conduit`       | not yet published                                                                                                  | workspace only                                                    |
-| `@frontierjs/notifications` | not yet published                                                                                                  | workspace only                                                    |
-| `@frontierjs/css`           | not yet published                                                                                                  | workspace only                                                    |
-| `@frontierjs/jetty`         | not yet published                                                                                                  | workspace only                                                    |
+| Package | Realm | On npm |
+| --- | --- | --- |
+| `@frontierjs/litestone`     | Data | [![npm](https://img.shields.io/npm/v/@frontierjs/litestone)](https://www.npmjs.com/package/@frontierjs/litestone) |
+| `@frontierjs/junction`      | API | [![npm](https://img.shields.io/npm/v/@frontierjs/junction)](https://www.npmjs.com/package/@frontierjs/junction) |
+| `@frontierjs/sierra`        | UI | [![npm](https://img.shields.io/npm/v/@frontierjs/sierra)](https://www.npmjs.com/package/@frontierjs/sierra) |
+| `@frontierjs/mesa`          | UI | [![npm](https://img.shields.io/npm/v/@frontierjs/mesa)](https://www.npmjs.com/package/@frontierjs/mesa) |
+| `@frontierjs/ui`            | UI | [![npm](https://img.shields.io/npm/v/@frontierjs/ui)](https://www.npmjs.com/package/@frontierjs/ui) |
+| `@frontierjs/css`           | UI | [![npm](https://img.shields.io/npm/v/@frontierjs/css)](https://www.npmjs.com/package/@frontierjs/css) |
+| `@frontierjs/email-kit`     | UI | [![npm](https://img.shields.io/npm/v/@frontierjs/email-kit)](https://www.npmjs.com/package/@frontierjs/email-kit) |
+| `@frontierjs/jetty`         | UI | [![npm](https://img.shields.io/npm/v/@frontierjs/jetty)](https://www.npmjs.com/package/@frontierjs/jetty) |
+| `@frontierjs/auth`          | slice | [![npm](https://img.shields.io/npm/v/@frontierjs/auth)](https://www.npmjs.com/package/@frontierjs/auth) |
+| `@frontierjs/notifications` | slice | [![npm](https://img.shields.io/npm/v/@frontierjs/notifications)](https://www.npmjs.com/package/@frontierjs/notifications) |
+| `@frontierjs/caravan`       | jobs | [![npm](https://img.shields.io/npm/v/@frontierjs/caravan)](https://www.npmjs.com/package/@frontierjs/caravan) |
+| `@frontierjs/conduit`       | outbound | [![npm](https://img.shields.io/npm/v/@frontierjs/conduit)](https://www.npmjs.com/package/@frontierjs/conduit) |
+| `@frontierjs/testing`       | Testing | [![npm](https://img.shields.io/npm/v/@frontierjs/testing)](https://www.npmjs.com/package/@frontierjs/testing) |
+| `@frontierjs/cli`           | tooling | [![npm](https://img.shields.io/npm/v/@frontierjs/cli)](https://www.npmjs.com/package/@frontierjs/cli) |
+| `create-frontier`           | tooling | [![npm](https://img.shields.io/npm/v/create-frontier)](https://www.npmjs.com/package/create-frontier) |
+| `@frontierjs/config`        | tooling | [![npm](https://img.shields.io/npm/v/@frontierjs/config)](https://www.npmjs.com/package/@frontierjs/config) |
+| `@frontierjs/toolbelt`      | substrate | [![npm](https://img.shields.io/npm/v/@frontierjs/toolbelt)](https://www.npmjs.com/package/@frontierjs/toolbelt) |
+
+Two packages are `private` and never publish: `@frontierjs/basecamp` (an
+application, not a library) and `vscode-frontierjs` (a marketplace extension,
+which needs a publisher account rather than an npm one).
+
+**Pin a version — never `latest` or `*`.** Below 1.0 a caret pins the *minor*
+(`^0.1.0` is `>=0.1.0 <0.2.0`), which is the behaviour a pre-alpha peer wants and
+the trap in the other direction: a caret left behind by a minor bump excludes
+every published copy, and nothing inside this workspace catches it, because a
+`workspace:*` devDependency answers first and the range is never consulted.
+
+To work against code newer than the registry, clone this repo and `bun install` —
+in-repo apps resolve every package to `packages/`, not to `node_modules`.
 
 ---
 

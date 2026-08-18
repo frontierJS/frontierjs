@@ -44,6 +44,7 @@ import {
   FileStorage,
   fileUrl,
 } from '@frontierjs/litestone'
+import type { FileStorageOptions, LitestoneClient, TableClient } from '@frontierjs/litestone'
 
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
@@ -72,9 +73,10 @@ const SCHEMA = `
 
 const hasS3Credentials = Boolean(process.env.S3_KEY && process.env.S3_SECRET)
 
-const storageConfig = hasS3Credentials
+const storageConfig: FileStorageOptions = hasS3Credentials
   ? {
-      provider:        process.env.S3_PROVIDER ?? 'r2',
+      // An env var is a string; the option is a closed set of provider names.
+      provider:        (process.env.S3_PROVIDER ?? 'r2') as FileStorageOptions['provider'],
       bucket:          process.env.S3_BUCKET   ?? 'my-app',
       endpoint:        process.env.S3_ENDPOINT,
       accessKeyId:     process.env.S3_KEY,
@@ -96,7 +98,23 @@ const storageConfig = hasS3Credentials
 
 // ─── DB ───────────────────────────────────────────────────────────────────────
 
-const db = await createClient({
+// The schema is a string above, so the accessor is named by hand. A real app
+// passes the `Db` that `litestone types` generates.
+interface User {
+  id:        number
+  name:      string
+  avatar:    unknown
+  resume:    unknown
+  createdAt: string
+  updatedAt: string
+}
+
+interface Db extends LitestoneClient {
+  user: TableClient<User>
+  asSystem(): Db
+}
+
+const db = await createClient<Db>({
   db:      './users.db',
   schema:  SCHEMA,
   plugins: [FileStorage(storageConfig)],
@@ -232,7 +250,7 @@ app.patch('/api/users/{id}/avatar', async ctx => {
 
   if (!user) return ctx.json({ message: 'not found' }, 404)
 
-  return ctx.json({ ...user as object, avatar: fileUrl((user as Record<string, unknown>).avatar as string) })
+  return ctx.json({ ...user, avatar: fileUrl(user.avatar as string) })
 })
 
 // ─── Pattern C: presigned direct-to-bucket upload — NOT SUPPORTED YET ────────

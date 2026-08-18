@@ -28,7 +28,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, narrowPatch, dbOf, wsOf, actorOf }
+import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
 import { secretRef }           from '../../core/credentials.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -191,10 +191,9 @@ export function createChannelsService(app: BasecampApp) {
       if (await dbOf(ctx).notificationChannel.exists({ where: { workspaceId: wsOf(ctx), name: data.name } }))
         throw new Conflict(`A channel named '${data.name}' already exists in this workspace`)
 
-      // Captured by the before-hook, not read off ctx.data — see
-      // captureCredential. By the time a method body runs, autoValidate has
-      // already deleted every key the model does not declare.
-      const credential = ctx.locals.credential as string | undefined
+      // `secret` is @transient — validated by the model's own rules and lifted
+      // off the payload by autoValidate, so `data` is columns only.
+      const credential = ctx.transients.secret as string | undefined
 
       if (spec.secretField && kind !== 'webhook' && !credential)
         throw new BadRequest(`${spec.label} needs a credential — send it as \`secret\``)
@@ -212,7 +211,7 @@ export function createChannelsService(app: BasecampApp) {
       const data    = ctx.data as Record<string, unknown>
 
       // Rotating the credential is allowed and is most of why patch exists.
-      const credential = ctx.locals.credential as string | undefined
+      const credential = ctx.transients.secret as string | undefined
 
       // `kind` is immutable: a channel that changes what it IS keeps every
       // rule pointing at it while the credential, the payload shape and the
@@ -239,7 +238,7 @@ export function createChannelsService(app: BasecampApp) {
         }
       }
 
-      if (!Object.keys(patch).length) return withRuleCount(ctx, channel)
+      if (changesNothing(patch)) return withRuleCount(ctx, channel)
       return withRuleCount(ctx, await dbOf(ctx).notificationChannel.update({
         where: { id: channel.id }, data: patch,
       }))
@@ -354,7 +353,7 @@ export function createChannelsService(app: BasecampApp) {
 
       return dbOf(ctx).notificationChannel.update({
         where: { id: channel.id },
-        data:  { lastTestAt: new Date().toISOString() },
+        data:  { lastTestAt: new Date().toISOString(), version: channel.version },
       })
     },
 
@@ -364,8 +363,8 @@ export function createChannelsService(app: BasecampApp) {
         // Every write is admin/owner, the same bar as the secrets service: a
         // channel holds a credential that posts as the workspace, and being
         // able to add one is being able to redirect where alerts land.
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), captureCredential, stampChannel],
-        patch:  [requireWorkspaceRole(app, 'admin', 'owner'), captureCredential],
+        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampChannel],
+        patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
         // Testing sends real traffic to a third party under the workspace's
         // name, so it is not a read.
@@ -387,27 +386,6 @@ export function createChannelsService(app: BasecampApp) {
     if (!secret?.data) return null
     try { return JSON.parse(secret.data as string)?.[field] ?? null } catch { return null }
   }
-}
-
-/**
- * Take the credential off the wire, before the schema deletes it.
- *
- * `secret` is the credential in plaintext on its way to a `Secret` row. It is
- * deliberately not a column — and Junction's derived `autoValidate(model,
- * method)` strips every key the model does not declare. **User hooks run
- * before the derived ones**, so this is the only place the key still exists: by
- * the time a method body reads `ctx.data`, it is gone.
- *
- * Silent by construction. The first version pulled it off inside `create()`
- * and the service answered "Slack needs a credential — send it as `secret`"
- * about a request that carried exactly that. The same shape is what makes
- * `ip_address` come back null on the servers service.
- */
-function captureCredential(ctx: ServiceContext): void {
-  const data = ctx.data as Record<string, unknown>
-  if (!data) return
-  if (typeof data.secret === 'string' && data.secret) ctx.locals.credential = data.secret
-  delete data.secret
 }
 
 /** NotificationChannel has no `slug` column, so the shared stampWorkspace —

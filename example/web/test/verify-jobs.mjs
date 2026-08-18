@@ -93,6 +93,19 @@ try {
   const body = await created.json()
   orderId = body.id ?? body.data?.id
 
+  // Counted as a DELTA from here, for the reason the courier bookings are:
+  // jobs.db outlives db/shop.db across runs and SQLite reuses row ids, so an
+  // announcement naming order 5 is this run's and also whichever order held id
+  // 5 last time. An absolute count reports the previous run's work as this
+  // run's. Identified by PAYLOAD — ctx.enqueue writes no `unique` key.
+  const announcementsFor = async () =>
+    (await (await fetch(`${API}/api/jobs?limit=500`)).json())
+      .filter(j => {
+        if (j.name !== 'announce-payment') return false
+        try { return JSON.parse(j.data)?.orderId === orderId } catch { return false }
+      })
+  const announcementsBefore = (await announcementsFor()).length
+
   await fetch(`${API}/api/orders/${orderId}`, {
     method: 'POST', headers: { ...auth, 'x-service-method': 'pay' }, body: '{}',
   })
@@ -156,6 +169,44 @@ try {
   t('ship.twice', {
     status: second.status,
     newBookings: (await bookingsFor()) - bookingsBefore,
+  })
+
+  // ── 6. the outbox: an effect that survives the gap ─────────────────────
+  //
+  // `pay` records its announcement with ctx.enqueue rather than dispatching it,
+  // so the intent is written INSIDE the move's own transaction and the relay
+  // hands it to the queue afterwards (`FJS-D35`). Two things are observable
+  // from out here, and both are the point:
+  //
+  //   · the job is queued under the outbox row's uuid, not under a `unique`
+  //     key — which is what makes a replayed handoff a no-op rather than a
+  //     second email
+  //   · a REFUSED move records nothing, because the row rolls back with the
+  //     write it belongs to. That is the half a second database could not buy
+  //     and the half afterCommit cannot buy either
+  const announced = await until(async () => {
+    const rows = await announcementsFor()
+    return rows.length > announcementsBefore ? rows : null
+  })
+  t('outbox.announcementQueued', {
+    count: announced ? announced.length - announcementsBefore : 0,
+    // A uuid, because the outbox row's id IS the job id. A `unique` key would
+    // still be here if this had gone out as a plain dispatch.
+    // The newest row is this run's — /api/jobs answers newest first.
+    idIsRowId: !!announced && /^[0-9a-f-]{36}$/.test(announced[0].id),
+    uniqueKey: announced ? announced[0].unique_key : 'no job',
+  })
+
+  // The order is SHIPPED by now, so paying it is refused by the machine. The
+  // claim is not the 409 — it is that nothing was recorded on the way to it.
+  const beforeRefused = (await announcementsFor()).length
+  const refused = await fetch(`${API}/api/orders/${orderId}`, {
+    method: 'POST', headers: { ...auth, 'x-service-method': 'pay' }, body: '{}',
+  })
+  await sleep(1_500)   // longer than the relay's interval — it must find nothing
+  t('outbox.refusedMoveRecordsNothing', {
+    status:         refused.status,
+    newAnnouncements: (await announcementsFor()).length - beforeRefused,
   })
 
   // ── 6. the cron's BEHAVIOUR, not just its schedule ─────────────────────
@@ -253,6 +304,12 @@ const expected = {
   // until caravan's dedupe was fixed to match a key in any state, not only a
   // pending one.
   'ship.twice': { status: 200, newBookings: 0 },
+
+  // One announcement for one payment, queued under the outbox row's own id.
+  'outbox.announcementQueued': { count: 1, idIsRowId: true, uniqueKey: null },
+  // A move the state machine refuses leaves no intent behind — the outbox row
+  // is written inside the transaction, so it rolls back with everything else.
+  'outbox.refusedMoveRecordsNothing': { status: 409, newAnnouncements: 0 },
   'sweep.ranOnDemand': { accepted: 200, finished: 'done' },
 }
 

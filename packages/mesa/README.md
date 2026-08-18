@@ -16,24 +16,33 @@ For the language specification, see
 | Package                 | Where it lives                        | Purpose                                                                                                         |
 | ----------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `@frontierjs/mesa`      | this package                          | Core compiler, runtime, REPL, render pipeline                                                                   |
-| `@frontierjs/mesa-vite` | [`mesa-vite/`](./mesa-vite/)          | Vite plugin — transform, HMR, error overlay, scoped CSS, DevTools                                               |
-| `@frontierjs/ui`        | [`packages/ui`](../ui/)               | Component kit over `@frontierjs/css` — 63 `.mesa` components. **Moved out of here 2026-08-03**; it was `ui-v2/` |
+| `@frontierjs/mesa/vite` | [`mesa-vite/`](./mesa-vite/)          | Vite plugin — transform, HMR, error overlay, scoped CSS, DevTools. A **subpath of this package**, not a package |
+| `@frontierjs/ui`        | [`packages/ui`](../ui/)               | Component kit over `@frontierjs/css` — 65 `.mesa` components                                                    |
 | `@frontierjs/sierra`    | [`packages/sierra`](../sierra/)       | Meta-framework built on Mesa — **in this monorepo**, not a separate repo                                        |
 | `@frontierjs/email-kit` | [`packages/email-kit`](../email-kit/) | Email component kit — table-based, CSS-inlined, Outlook-safe.                                                   |
 
-> `mesa-vite/` and `mesa-bench/` are nested *inside* `packages/mesa`, so the workspace
-> glob (`packages/*`) does not see them — they are not installed as workspace members,
-> get no tests and no typecheck.
+> `mesa-bench/` is nested *inside* `packages/mesa`, so the workspace glob
+> (`packages/*`) does not see it — not installed as a member, no tests, no
+> typecheck. That is deliberate and named in `scripts/ci-allowances.json`.
+> **`mesa-vite/` used to be in that bracket and is not any more**: it had a
+> `package.json` of its own until 2026-08-10, which made it invisible the same
+> way — uninstalled, so nothing imported it and nothing could test it. It is a
+> subpath now (`@frontierjs/mesa/vite`), reached by relative path, and four
+> suites cover it.
 
 ---
 
 ## Quick start
 
 ```bash
-npm install         # install acorn, astring, unified, remark, rehype, vitest
-npm run serve       # then open /packages/mesa/example/ — the live REPL
-npm test            # run full test suite (compiler + runtime + render + css)
+bun install         # acorn, astring, unified, remark, rehype, vitest
+bun run serve       # then open /packages/mesa/example/ — the live REPL
+bun run test        # 1194 tests across 25 files — compiler, runtime, render, css
 ```
+
+**`bun run test`, never `bun test`.** The runner is **vitest**; bun's own runner
+picks up whatever it finds here and reports ~35 failures that are runner
+artefacts rather than defects.
 
 `serve` roots at the **monorepo root**, not this package, so the REPL can reach
 two siblings: `@ui/…` imports resolve to `packages/ui` (the UI Library example
@@ -56,7 +65,7 @@ or `.md` files alongside your other source. See [Vite plugin](#vite-plugin).
 | `src/render.js` | `renderToHTML(component, props, opts)` / `renderAll` / `wrapPage` — happy-dom static rendering. See `docs/STATIC_RENDERING.md` |
 | `src/render-component.js` | Source-in pipeline: `renderComponent` / `renderFile` for HTML, email, fragment, JS |
 | `src/css-inliner.js` | CSS-to-`style=""` inliner with custom-property resolution |
-| `example/index.html` | Browser REPL — `npm run serve`, then open `/packages/mesa/example/`. Mounts previews via `mount()`; see `test/repl.test.js` |
+| `example/index.html` | Browser REPL — `bun run serve`, then open `/packages/mesa/example/`. Mounts previews via `mount()`; see `test/repl.test.js` |
 | `example/examples.js` | All REPL examples — 66 across 22 groups |
 | `example/README.md` | What the REPL is, how to run it, how to add an example |
 | `test/` | Every suite, plus `spec-check.mjs`. See the table below |
@@ -471,32 +480,25 @@ DevTools server hooks — no separate import needed.
 ## Tests
 
 ```bash
-npm test
+bun run test        # vitest — 1194 tests across 25 files
 ```
 
-Every suite lives in `test/`. Counts measured 2026-08-04.
+Every suite lives in `test/`. What each covers, rather than how many assertions
+it holds — a per-suite count is a number nothing regenerates, and the table this
+replaced was 239 tests and ten files out of date without ever rendering wrong:
 
-| Suite | Tests | Covers |
-|---|---|---|
-| `test/compiler.test.js` | 415 | The compiler — analysis, emission, `$:` semantics, blocks, CSS scoping |
-| `test/runtime.test.js` | 287 | Signals, effects, DOM bindings, blocks, delegation, SSR guards |
-| `test/render-ssr.test.js` | 55 | Static renderer + server↔client agreement, islands |
-| `test/css-inliner.test.js` | 36 | CSS inliner |
-| `test/render-component.test.js` | 33 | `renderComponent` / `renderFile` pipeline |
-| `test/external-reactivity.test.js` | 26 | The `externalSignals` diagnostic |
-| `test/inert-block.test.js` | 23 | `$: { }` blocks that do nothing |
-| `test/emission.test.js` | 20 | The compiler must emit **parseable** JS |
-| `test/watch-handler-defer.test.js` | 13 | Deferred `$: dep, handler` effects |
-| `test/repl.test.js` | 9 | REPL module graph, example compile + coverage, interactivity |
-| `test/watch-proxy-staleness.test.js` | 8 | `watchProxy` / `watchPath` staleness |
-| `test/async-decl-scope.test.js` | 7 | Async declaration scoping |
-| `test/whitespace-collapse.test.js` | 7 | Text-node whitespace collapse |
-| `test/block-teardown-compiled.test.js` | 6 | Block teardown through compiled output |
-| `test/effect-phase.test.js` | 5 | Effect phase ordering |
-| **Total** | **955** | |
+| Suite | Covers |
+|---|---|
+| `compiler` · `emission` | Analysis, emission, `$:` semantics, blocks, CSS scoping — and that the emitted JS **parses** (Invariant 15: a clean compile is not proof of valid JS) |
+| `runtime` · `effect-phase` · `block-teardown-compiled` | Signals, effects, DOM bindings, blocks, delegation, teardown, SSR guards |
+| `render-ssr` · `render-component` · `css-inliner` | Static rendering, server↔client agreement, islands, the `renderComponent` pipeline, CSS inlining |
+| `component-anchor` · `component-api` · `dynamic-element` | The anchor→registry keying, what `bind:this` hands a parent, `<mesa:element>` |
+| `external-reactivity` · `inert-block` · `watch-handler-defer` · `watch-proxy-staleness` · `async-decl-scope` · `whitespace-collapse` | The diagnostics and the semantics that are silent when wrong |
+| `vite-plugin` · `vite-server` · `vite-devtools` · `vite-errors` · `vite-hmr` · `vite-compiler-resolution` | The Vite plugin — hooks, a real dev server in middleware mode, the DevTools route, the HMR boundary against real compiled output |
+| `repl` | REPL module graph, example compile + coverage, interactivity |
 
 `test/spec-check.mjs` is separate — a plain `node test/spec-check.mjs` script that
-checks every claim VISION §4 makes against the compiler. It is not part of `npm test`.
+checks every claim VISION §4 makes against the compiler. It is not part of `bun run test`.
 
 ---
 

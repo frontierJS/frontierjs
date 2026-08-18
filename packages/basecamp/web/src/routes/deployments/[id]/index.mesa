@@ -2,19 +2,20 @@
 title: Deployment
 ---
 <script>
-  import { page } from '@frontierjs/sierra/router'
-  import { status } from '@frontierjs/sierra/junction'
-  import { deployments } from '../../../resources/Deployment.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { page }         from '@frontierjs/sierra/router'
+  import { status }       from '@frontierjs/sierra/junction'
+  import { session }      from '../../../session.js'
+  import { deployments }  from '../../../resources/Deployment.mesa'
+  import { $onDestroy }   from '@frontierjs/mesa/runtime'
+  import Button           from '@frontierjs/ui/components/forms/Button.mesa'
 
   $: page.params
   $: status.connected
+  $: session.level
 
   let deployment = null
   let error      = null
   let loading    = true
-
-  const TERMINAL = ['success', 'failed', 'cancelled', 'rolled_back']
 
   async function load() {
     error = null
@@ -58,9 +59,22 @@ title: Deployment
   const when = (iso) => iso ? new Date(iso).toLocaleTimeString() : '—'
   const secs = (ms) => ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`
 
-  $: steps    = deployment?.steps ?? []
-  $: running  = deployment && !TERMINAL.includes(deployment.status)
-  $: done     = steps.filter(s => s.status === 'success').length
+  $: steps = deployment?.steps ?? []
+  $: done  = steps.filter(s => s.status === 'success').length
+
+  // What this release may do next, read off `@@transitions(status, …)` on the
+  // model rather than off a copy of the terminal-state list. The old copy was
+  // the third one in the tree — schema, service, screen — and the screen's is
+  // the one nothing would have caught going stale.
+  //
+  // A UI affordance only: litestone enforces every move at the Data boundary
+  // regardless of which buttons this renders. `session.level` is passed so a
+  // gated move the caller cannot make comes back `allowed: false` and renders
+  // disabled rather than vanishing.
+  $: moves    = deployment ? deployments.transitions(deployment, session.level) : []
+  $: cancelIt = moves.find(m => m.name === 'cancel')
+  // In-flight IS cancellable, on this machine — the same fact, not a second one.
+  $: running  = !!cancelIt
 </script>
 
 {#if loading}
@@ -74,10 +88,10 @@ title: Deployment
     <h1>{deployment.app?.name ?? 'Deployment'}</h1>
     <div class="cluster">
       <span class="pill {TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
-      {#if running}
-        <button class="btn ghost danger" on:click={cancel}>Cancel</button>
+      {#if cancelIt}
+        <Button variant="ghost" tone="danger" disabled={!cancelIt.allowed} onclick={cancel}>Cancel</Button>
       {/if}
-      <a class="btn ghost" href="/deployments/">All deployments</a>
+      <Button variant="ghost" href="/deployments/">All deployments</Button>
     </div>
   </div>
 

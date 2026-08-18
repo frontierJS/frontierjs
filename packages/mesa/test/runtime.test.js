@@ -996,6 +996,41 @@ describe('bindAttribute', () => {
     flushSync()
     expect(el.hasAttribute('data-x')).toBe(false)
   })
+
+  // `value` and `checked` stop following their attribute the moment a user
+  // edits the control, so removing the attribute is not clearing the field:
+  // the typed text stays on screen while the component's state says the value
+  // is gone, and nothing reports the disagreement. A form reset is the case
+  // that found it — every generated field kept what had been typed into it.
+  it('clears a dirty input when the value goes null', () => {
+    const [val, setVal] = createSignal('seed')
+    const el = document.createElement('input')
+    bindAttribute(el, 'value', () => val())
+    el.value = 'typed by the user'
+    setVal(null)
+    flushSync()
+    expect(el.value).toBe('')
+  })
+
+  it('unchecks a dirty checkbox when the value goes null', () => {
+    const [on, setOn] = createSignal(true)
+    const el = document.createElement('input')
+    el.type = 'checkbox'
+    bindAttribute(el, 'checked', () => on())
+    el.checked = true
+    setOn(null)
+    flushSync()
+    expect(el.checked).toBe(false)
+  })
+
+  it('still removes a plain attribute rather than emptying it', () => {
+    const [val, setVal] = createSignal('x')
+    const el = div()
+    bindAttribute(el, 'title', () => val())
+    setVal(null)
+    flushSync()
+    expect(el.hasAttribute('title')).toBe(false)
+  })
 })
 
 describe('bindClass', () => {
@@ -3995,8 +4030,9 @@ describe('misc exports', () => {
     expect(noop(42)).toBe(42)
   })
 
-  it('eachDefaultKey returns the item', () => {
-    expect(eachDefaultKey('foo', 0)).toBe('foo')
+  it('eachDefaultKey keys by index, so a repeated value cannot collide', () => {
+    expect(eachDefaultKey('foo', 0)).toBe(0)
+    expect(eachDefaultKey('foo', 2)).toBe(2)
   })
 
   it('addClass adds a class', () => {
@@ -5193,6 +5229,69 @@ describe('event delegation — per-mount-container roots', () => {
 
     cOuter()
     document.body.removeChild(outer)
+  })
+
+  it('a delegated handler reads currentTarget as its OWN element', () => {
+    // `e.target === e.currentTarget` is the standard "was this element itself
+    // clicked" test, and it is what `on:click|self` compiles to. Delegation
+    // puts one listener on the root, so currentTarget was the root and the
+    // comparison was false for every event that DID hit the element it was
+    // written on — a backdrop that cannot be clicked away, silently.
+    const { _registerDelegateRoot, $$delegate } = imports
+    $$delegate(['mouseup'])
+
+    const root = document.createElement('div')
+    const backdrop = document.createElement('div')
+    const inner = document.createElement('button')
+    document.body.appendChild(root)
+    root.appendChild(backdrop)
+    backdrop.appendChild(inner)
+    const cleanup = _registerDelegateRoot(root)
+
+    const seen = []
+    backdrop.__mouseup = (e) => { seen.push(e.currentTarget === backdrop && e.target !== backdrop) }
+
+    inner.dispatchEvent(new Event('mouseup', { bubbles: true }))
+    expect(seen).toEqual([true])          // bubbled from a child: not self
+
+    seen.length = 0
+    backdrop.__mouseup = (e) => { seen.push(e.target === e.currentTarget) }
+    backdrop.dispatchEvent(new Event('mouseup', { bubbles: true }))
+    expect(seen).toEqual([true])          // the element itself: self
+
+    cleanup()
+    document.body.removeChild(root)
+  })
+
+  it('each handler in one dispatch sees its own element, and the event is left alone after', () => {
+    const { _registerDelegateRoot, $$delegate } = imports
+    $$delegate(['mousedown'])
+
+    const root = document.createElement('div')
+    const mid = document.createElement('div')
+    const leaf = document.createElement('button')
+    document.body.appendChild(root)
+    root.appendChild(mid)
+    mid.appendChild(leaf)
+    const cleanup = _registerDelegateRoot(root)
+
+    const seen = []
+    leaf.__mousedown = (e) => { seen.push(e.currentTarget === leaf) }
+    mid.__mousedown  = (e) => { seen.push(e.currentTarget === mid) }
+
+    // A native listener on the root is part of the same dispatch, and must not
+    // inherit whatever the last delegated handler was told.
+    let nativeSaw = null
+    const native = (e) => { nativeSaw = e.currentTarget }
+    root.addEventListener('mousedown', native)
+
+    leaf.dispatchEvent(new Event('mousedown', { bubbles: true }))
+    expect(seen).toEqual([true, true])
+    expect(nativeSaw).toBe(root)
+
+    root.removeEventListener('mousedown', native)
+    cleanup()
+    document.body.removeChild(root)
   })
 
   it('late-registered $$delegate types are added to existing roots', () => {

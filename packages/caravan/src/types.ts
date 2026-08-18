@@ -28,6 +28,14 @@ export interface JobRecord {
   created_at:   number
   /** Who asked for the work. NULL when nobody did — cron, boot, standalone. */
   actor_id:     string | null
+  /**
+   * Which Caravan instance is executing the row. Set by the claim and cleared
+   * when the row leaves 'running', so it is non-null exactly while somebody is
+   * working on it. Recovery reclaims a running row whose owner has stopped
+   * heartbeating; without it, a second instance's start() released a row the
+   * first was midway through.
+   */
+  owner_id:     string | null
 }
 
 // ─── Parsed job ──────────────────────────────────────────────────────────────
@@ -190,6 +198,24 @@ export interface DispatchOptions {
    * when the job runs. See `App.runAs`.
    */
   actor?:    string | null
+
+  /**
+   * The row id to queue this job under. Default: a fresh uuid.
+   *
+   * Stating one makes the dispatch IDEMPOTENT for all time: the id is the
+   * jobs table's primary key, so a second dispatch under the same id queues
+   * nothing and returns that id. This is what `unique` is not — `unique` is a
+   * lock on work in flight and frees itself the moment the job is terminal.
+   *
+   * For a caller that already holds a durable id for the work and is retrying
+   * a handoff it cannot confirm: junction's outbox relay dispatches under the
+   * outbox row's id, so a crash between the queue insert and the delivery mark
+   * replays into a no-op instead of doing the work twice.
+   *
+   * Only state one that is unique to the work itself. Anything reused names
+   * a job that already ran, and the dispatch is silently dropped.
+   */
+  id?:       string
 }
 
 // ─── Queue config ─────────────────────────────────────────────────────────────
@@ -228,6 +254,26 @@ export interface CaravanOptions {
    * Default: false
    */
   admin?: boolean | { path?: string; secret?: string }
+
+  /**
+   * How often this instance says it is alive, in ms. Default: 5_000.
+   *
+   * The same timer reclaims work abandoned by instances that have stopped
+   * saying so, so it is also how quickly a crashed process's jobs come back.
+   */
+  heartbeat?:    number
+
+  /**
+   * How long an instance may go quiet before its running jobs are treated as
+   * abandoned and re-queued, in ms. Default: 30_000.
+   *
+   * Longer than `heartbeat` by enough to survive a slow tick — a lease shorter
+   * than a few heartbeats reclaims work from a live instance, which is the
+   * double execution this whole mechanism exists to stop. Longer also means a
+   * genuinely crashed process's jobs wait longer to be retried; 6 missed
+   * heartbeats is the default trade.
+   */
+  lease?:        number
 }
 
 // ─── Cron schedule ────────────────────────────────────────────────────────────
@@ -381,6 +427,21 @@ export interface CaravanInstance {
    * @param opts.timeZone IANA timezone string — job fires at the right local time
    */
   schedule(name: string, cron: string, handler: JobHandler, opts?: { queue?: string; timeZone?: string }): void
+
+  /**
+   * Stop a schedule firing. Answers whether one was registered under that name.
+   *
+   * The counterpart `schedule()` did not have, and it is only needed for the
+   * schedules that do not come from a `*.job.ts` file: a job file's schedule
+   * lives as long as the process, but one registered from a DATABASE ROW stops
+   * being true when the row is deleted or stops being a scheduled job. Without
+   * this the timer kept firing for the rest of the process, dispatching work
+   * for a job nobody could see.
+   *
+   * The HANDLER stays registered — an in-flight or already-queued run must
+   * still find something to execute. This unbinds the clock, nothing else.
+   */
+  unschedule(name: string): boolean
 
   /** Returns the next scheduled fire time for each registered cron. */
   nextRuns(): Array<{ name: string; cron: string; nextRun: Date | null }>

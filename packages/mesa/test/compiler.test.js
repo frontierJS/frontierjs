@@ -739,6 +739,56 @@ describe('compile() output shape', () => {
     })
   })
 
+  // A local declaration that shares its name with a reactive top-level `let`
+  // used to be rewritten as a read of that signal — inside its own
+  // declaration, giving `const $runtime.get($$sig_d) = new Date(ts)`. The
+  // compiler reported no error, so it shipped a module the browser refuses to
+  // parse: Invariant 15 exactly, and the reason these tests parse the output
+  // rather than reading it. Parameters were already handled, which is why the
+  // hole only opened when the shadow was DECLARED.
+  describe('a local declaration shadows a reactive top-level let', () => {
+    const emitted = async (script, body = '<p>{d}</p>') => {
+      const ctx = await compile(`<script>${script}</script>${body}`, { debug: false, css: false })
+      return ctx.result
+    }
+    const parses = (code) => {
+      acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module' })
+      return true
+    }
+
+    it('emits valid JS for a local const', async () => {
+      const code = await emitted(`let d = 1; function f(ts) { const d = new Date(ts); return d.getTime() }`)
+      expect(parses(code)).toBe(true)
+      expect(code).not.toMatch(/const \$runtime\.get/)
+    })
+
+    it('emits valid JS for a local let', async () => {
+      const code = await emitted(`let d = 1; function f(ts) { let d = ts; return d }`)
+      expect(parses(code)).toBe(true)
+      expect(code).not.toMatch(/let \$runtime\.get/)
+    })
+
+    it('emits valid JS for a `for (const x of …)` head', async () => {
+      const code = await emitted(`let row = 1; function f(rows) { for (const row of rows) { if (row) return row } }`)
+      expect(parses(code)).toBe(true)
+    })
+
+    it('still rewrites the outer signal where nothing shadows it', async () => {
+      // The half a blunt fix loses: skipping the rewrite for the whole
+      // function because a nested block happens to declare the name would
+      // leave a real reactive read reading a stale local binding.
+      const code = await emitted(`let d = 1; function f() { const before = d; { const d = 2; return d + before } }`)
+      expect(parses(code)).toBe(true)
+      expect(code).toMatch(/const before = \$runtime\.get\(\$\$sig_d\)/)
+    })
+
+    it('a parameter shadow keeps working', async () => {
+      const code = await emitted(`let d = 1; function f(d) { return d + 1 }`)
+      expect(parses(code)).toBe(true)
+      expect(code).toMatch(/function f\(d\) \{ return d \+ 1 \}/)
+    })
+  })
+
   // VISION RULE 23. Implemented since the compiler was written and pinned by
   // nothing until now, which is the shape a rule regresses in: it is enforced
   // by one `.filter()` over a component's attributes, and dropping that filter
@@ -4693,5 +4743,48 @@ render: static
     const r = await compileSource(`---\ntitle: Post\n---\n\n# {title}\n\n**bold**`, { filename: '/pages/post.md' })
     expect(r.frontmatter).toEqual({ title: 'Post' })
     expect(r.result).toContain('strong')
+  })
+})
+
+describe('a comment inside a tag (FJS-330)', () => {
+  // `<button id="a" <!-- note --> data-n={n}>` used to emit the comment
+  // verbatim into the template, where the `>` that ends `-->` read as the end
+  // of the tag: the element closed early and every attribute after it became a
+  // text node. No error, no warning, and the emitted JS still parsed, so
+  // nothing anywhere said the attributes had not applied.
+  const tpl = (r) => r.result.match(/template\(`(.*?)`/s)?.[1] ?? ''
+
+  it('drops the comment and keeps the attributes after it', async () => {
+    const r = await compileSource(`<button id="a" <!-- why --> aria-label="hi">x</button>`, { filename: 'a.mesa' })
+    expect(tpl(r)).toBe('<button id="a" aria-label="hi">x</button>')
+  })
+
+  it('keeps a reactive attribute that follows one', async () => {
+    const r = await compileSource(
+      `<script>\n  let n = 1\n</script>\n<button <!-- why --> data-n={n}>x</button>`,
+      { filename: 'b.mesa' })
+    expect(r.result).toMatch(/set_attribute\(\w+, 'data-n'/)
+    expect(tpl(r)).not.toContain('<!--')
+  })
+
+  it('handles one before the first attribute, several, and one at the end', async () => {
+    expect(tpl(await compileSource(`<button <!--a--> id="1">x</button>`, { filename: 'c.mesa' })))
+      .toBe('<button id="1">x</button>')
+    expect(tpl(await compileSource(`<button <!--a--> id="1" <!--b--> title="t">x</button>`, { filename: 'd.mesa' })))
+      .toBe('<button id="1" title="t">x</button>')
+    expect(tpl(await compileSource(`<button id="1" <!--a-->>x</button>`, { filename: 'e.mesa' })))
+      .toBe('<button id="1">x</button>')
+  })
+
+  it('leaves `<!--` inside an attribute VALUE alone', async () => {
+    // The value is read as a string before the loop can see it, and it must
+    // stay that way — this is content, not markup.
+    const r = await compileSource(`<button title="<!-- not a comment -->" id="a">x</button>`, { filename: 'f.mesa' })
+    expect(tpl(r)).toContain('title="<!-- not a comment -->"')
+  })
+
+  it('refuses an unterminated one by name rather than eating the rest of the file', async () => {
+    await expect(compileSource(`<button id="a" <!-- never closed >x</button>`, { filename: 'g.mesa' }))
+      .rejects.toThrow(/Unterminated comment inside a tag/)
   })
 })

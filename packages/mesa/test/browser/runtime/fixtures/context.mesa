@@ -1,0 +1,23 @@
+<script>
+  // context.mesa — content a block creates LATER still finds the provider.
+  //
+  // The stack is setup-time state, so an `{#if}` that flips or an `{#each}`
+  // row that arrives would otherwise instantiate its content with the provider
+  // already popped — which is every compound component behind a conditional
+  // (`FJS-311`). The immediate consumer is the control: if that one fails too,
+  // the provider is broken rather than the reinstatement.
+  import Provider from './Provider.mesa'
+  import Consumer from './Consumer.mesa'
+
+  let open = false
+  let rows = []
+</script>
+
+<Provider token="provided">
+  <Consumer tag="immediate" />
+  {#if open}<Consumer tag="conditional" />{/if}
+  {#each rows as row (row)}<Consumer tag={row} />{/each}
+</Provider>
+
+<button type="button" id="open" on:click={() => open = true}>open</button>
+<button type="button" id="add" on:click={() => rows = [...rows, 'late']}>add</button>

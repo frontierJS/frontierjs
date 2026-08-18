@@ -189,6 +189,11 @@ const TEXT_OP_REFUSALS = {
   boolean: (k, op) => `"${k}" is a Boolean, stored as 0/1, so "${op}" can never match — compare it to true or false`,
 }
 
+// Every operator `buildWhere` answers, in one set. Read by the typed-JSON walk,
+// which cannot tell a sub-key from an operator without it and reported an
+// operator as a missing field (FJS-206).
+const WHERE_OPS = new Set([...JSON_LEAF_OPS, ...ARRAY_OPS, ...TEXT_OPS, 'equals'])
+
 // Decides whether the object value on a typed-JSON field is a path traversal
 // (recurse into sub-keys) or a leaf operator block (apply directly to the
 // whole JSON value — currently a no-op since we always traverse). The signal
@@ -211,16 +216,33 @@ function isTypedJsonPath(val) {
 // `params`      — parameter array (mutated)
 // `typedJsonMap` — passed through for nested-type recursion (rarely needed
 //                  but kept for symmetry with the top-level signature)
-function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJsonMap) {
+function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJsonMap, colName) {
   const clauses = []
   if (!typeDecl) return clauses
 
   // Build a quick lookup: key name → field decl
   const fieldByName = new Map((typeDecl.fields ?? []).map(f => [f.name, f]))
 
+  // A where on a typed column is a PATH, so every key is read as a sub-key —
+  // including one that is an operator everywhere else. `{ addr: { has: 'NYC' } }`
+  // reported `Unknown field 'has'`, which names the type, calls an operator a
+  // field, and never names the column the caller wrote (FJS-206).
+  // Where the caller is, named the way they wrote it: the column, plus the path
+  // walked into it so far.
+  const at = colName ? `"${[colName, ...path].join('.')}"` : null
+
   for (const [key, val] of Object.entries(where)) {
     if (!fieldByName.has(key)) {
-      throw new Error(`Unknown field '${key}' on type ${typeDecl.name} in WHERE clause`)
+      const known = (typeDecl.fields ?? []).map(f => f.name)
+      const has   = known.length ? `. ${typeDecl.name} has: ${known.join(', ')}` : ''
+      throw new Error(
+        WHERE_OPS.has(key)
+          ? `"${key}" is an operator and ${typeDecl.name} has no field by that name` +
+            `${at ? `, so it was read as a sub-key of ${at}` : ''} — ` +
+            `the column is Json @type(${typeDecl.name}), and a where on a typed column is a PATH. ` +
+            `Name a field of ${typeDecl.name} first, then the operator under it${has}`
+          : `Unknown field '${key}' on type ${typeDecl.name} in WHERE clause` +
+            `${at ? ` (at ${at})` : ''}${has}`)
     }
     const field = fieldByName.get(key)
     const subPath = [...path, key]
@@ -234,7 +256,7 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
         // for recursive resolution) — see makeTable wiring.
         const nestedType = typedJsonMap?.$nestedTypes?.get(nestedTypeAttr.name)
         if (nestedType) {
-          clauses.push(...buildTypedJsonClauses(colExpr, val, nestedType, subPath, params, typedJsonMap))
+          clauses.push(...buildTypedJsonClauses(colExpr, val, nestedType, subPath, params, typedJsonMap, colName))
           continue
         }
         // Fallthrough: treat as leaf if we can't resolve (shouldn't happen
@@ -457,7 +479,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
     const typedJsonInfo = typedJsonMap?.[key]
     if (typedJsonInfo && val !== null && typeof val === 'object' && !Array.isArray(val) && isTypedJsonPath(val)) {
       const colExpr = `${aliasPrefix}"${key}"`
-      const subClauses = buildTypedJsonClauses(colExpr, val, typedJsonInfo, [], params, typedJsonMap)
+      const subClauses = buildTypedJsonClauses(colExpr, val, typedJsonInfo, [], params, typedJsonMap, key)
       if (subClauses.length) clauses.push(subClauses.join(' AND '))
       continue
     }
@@ -602,8 +624,20 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
           push(operand)
           clauses.push(`${col} != ?`)
           break
-        default:
-          throw new Error(`Unknown where operator "${op}" on field "${key}"`)
+        default: {
+          // An untyped `Json` column has no declared shape to traverse, so a
+          // structural filter lands here and reads as a misspelt operator —
+          // which sends the reader looking for the wrong thing (FJS-206). The
+          // column is the diagnosis, and both ways forward are stated.
+          const untypedJson = fieldKinds?.get(key) === 'json' && !typedJsonMap?.[key]
+          throw new Error(
+            `Unknown where operator "${op}" on field "${key}"` +
+            (untypedJson
+              ? ` — "${key}" is an untyped Json column, so there is no declared shape to traverse and "${op}" ` +
+                `was read as an operator. Declare @type(...) on the column to filter by path, or filter it as ` +
+                `it stands with $raw: where: { $raw: sql\`json_extract("${key}", '$.${op}') = ...\` }`
+              : ''))
+        }
       }
     }
   }

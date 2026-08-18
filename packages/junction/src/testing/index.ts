@@ -21,12 +21,12 @@
 //   // HTTP-style assertion (no real server)
 //   const res = await request(app).post('/users').send({ name: 'Alice' })
 //   expect(res.status).toBe(201)
-//   expect(res.body.name).toBe('Alice')
+//   expect((res.body as { name: string }).name).toBe('Alice')
 
 import { createApp, type App, type AppOptions } from '../core/app.ts'
 import { createInMemoryDatabase }               from '../storage/database/index.ts'
 import { bridge, runWithMeta, type ServiceContext }           from '../transport/bridge.ts'
-import { defaultConfig }                         from '../config/index.ts'
+import { defaultConfig, deepMerge }               from '../config/index.ts'
 import type { IAuth, SessionContext }            from '../auth/types.ts'
 import type { Service }                          from '../core/service.ts'
 import type { HookMap }                          from '../core/hooks.ts'
@@ -148,8 +148,10 @@ export interface TestAppOptions {
   // Auto-discover services from a directory
   autoload?:   string
 
-  // Extra config overrides
-  config?:     Partial<AppOptions['config']>
+  // Extra config overrides. Deep — `http: { helmet: false }` keeps the rest of
+  // the http block, the same as createApp. It used to be a shallow spread, so
+  // naming one key of a section silently dropped every other key in it.
+  config?:     AppOptions['config']
 }
 
 export interface TestApp extends App {
@@ -164,15 +166,17 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
   const auth = (opts.auth as ReturnType<typeof createStubAuth>) ??
     createStubAuth({ users: opts.users })
 
-  const config = {
-    ...defaultConfig,
-    name:     'test',
-    debug:    false,
-    // Force :memory: so createApp opens the right database.
-    // createTestApp does NOT create a second database — it uses app.db directly.
-    database: { url: ':memory:', log: false },
-    ...(opts.config ?? {}),
-  }
+  const config = deepMerge(
+    {
+      ...defaultConfig,
+      name:     'test',
+      debug:    false,
+      // Force :memory: so createApp opens the right database.
+      // createTestApp does NOT create a second database — it uses app.db directly.
+      database: { url: ':memory:', log: false },
+    },
+    opts.config ?? {}
+  )
 
   const app = createApp({ config, auth, system: opts.system, autoload: opts.autoload }) as TestApp
 
@@ -223,12 +227,14 @@ export async function createTestApp(opts: TestAppOptions = {}): Promise<TestApp>
 //     .send({ title: 'Hello', body: 'World' })
 //
 //   expect(res.status).toBe(200)
-//   expect(res.body.title).toBe('Hello')
+//   expect((res.body as { title: string }).title).toBe('Hello')
 
 export interface TestResponse {
   status:  number
   headers: Record<string, string>
-  body:    unknown          // parsed JSON or null
+  // Parsed JSON, or null. `unknown` because it came off the wire and nothing
+  // here knows its shape — an assertion on a field states the shape it expects.
+  body:    unknown
   text:    string           // raw body text
 }
 

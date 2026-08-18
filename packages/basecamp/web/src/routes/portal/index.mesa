@@ -139,7 +139,7 @@ title: Portal
           {#if entry.url}
             <!-- Somebody else's application, so a real navigation out of the SPA
                  and the pair rel/target that makes that safe. -->
-            <a class="btn ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</a>
+            <Button variant="ghost" href={entry.url} target="_blank" rel="noreferrer noopener">Open ↗</Button>
           {:else}
             <Badge tone="muted">no URL configured</Badge>
           {/if}

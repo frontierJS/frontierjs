@@ -7,7 +7,7 @@ Replaces MJML for transactional email built with the Frontier ecosystem.
 ## Install
 
 ```bash
-npm install @frontierjs/email-kit @frontierjs/mesa
+bun add @frontierjs/email-kit @frontierjs/mesa
 ```
 
 ## Usage
@@ -157,7 +157,20 @@ Templates are standard Mesa components. `renderEmailFile` / `renderEmail` calls
 
 ## Email client compatibility
 
-- **Outlook** — VML bulletproof buttons, MSO conditional comments, table layout
-- **Gmail** — inlined styles (no `<style>` block in body)
-- **Apple Mail** — full CSS support, responsive via `@media`
-- **Mobile** — two-column layouts stack via `@media (max-width: 600px)`
+**Nothing here has been opened in a real mail client.** Every claim below is a
+claim about the HTML this package emits, verified by reading the output — not a
+claim about what Outlook or Gmail does with it. The techniques are the standard
+ones and the markup is shaped for them; whether they land is untested, and
+saying otherwise would be the one thing an email kit must not get wrong.
+
+What the output actually carries:
+
+- **Outlook** — VML bulletproof buttons, MSO conditional comments, table layout.
+  The conditional-comment handling is fragile and `docs/` is the only record of
+  why the markup is shaped the way it is — read it before touching it
+- **Gmail** — styles inlined onto `style=""`, no `<style>` block in the body
+- **Apple Mail** — `@media` blocks preserved in `<head>` for responsive rules
+- **Mobile** — two-column layouts declare `@media (max-width: 600px)` to stack
+
+Proving it needs a real send to a matrix of clients, which this package has no
+harness for. Until it does, treat the list as intent.

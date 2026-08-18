@@ -20,7 +20,7 @@
 
 import { createService, BadRequest, Forbidden, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, narrowPatch, dbOf, wsOf, actorOf } from '../../core/resource.ts'
+import { findScoped, getScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf } from '../../core/resource.ts'
 import { scopeVocabulary } from './scopes.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext, IAuth } from '@frontierjs/junction'
@@ -261,7 +261,7 @@ export function createApiKeysService(app: BasecampApp) {
         'revokedAt', 'lastUsedAt', 'totalUses', 'usageDate', 'usesOnDate', 'createdBy',
       ])
 
-      if (!Object.keys(patch).length) return present(existing)
+      if (changesNothing(patch)) return present(existing)
       return present(await dbOf(ctx).apiKey.update({ where: { id: existing.id }, data: patch }))
     },
 

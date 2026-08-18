@@ -2,7 +2,13 @@
 // Worker system — Bun native threads and pools.
 // createThread   → Bun.Worker (shared memory, fast)
 // createPool     → pool of N workers, queue-based dispatch
-// Worker scripts receive data and post results back.
+//
+// A worker receives two different things and they arrive by two different
+// routes: SETUP data, once, at construction — read with `workerData()` — and
+// WORK, repeatedly, over postMessage — handled with `workerHandler()`. Keeping
+// them apart is why neither needs an envelope to tell them apart.
+
+import { workerData as threadData } from 'node:worker_threads'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -28,6 +34,39 @@ export interface PoolStats {
   errors:  number
 }
 
+// ─── Spawning ─────────────────────────────────────────────────────────────
+
+/**
+ * The one place a Worker is constructed, so setup data cannot reach one kind of
+ * worker and not another — a pool RESPAWNS after an error, and a respawned
+ * worker that lost its configuration is a pool that answers differently after
+ * the first failure.
+ *
+ * `workerData` is not part of the web `WorkerOptions`, which is what the cast
+ * is for. It IS delivered on Bun 1.3.11 — measured — but only to
+ * `node:worker_threads`: inside the worker `globalThis.workerData`,
+ * `self.workerData` and `Bun.workerData` are all undefined, which is what made
+ * this look like a dropped parameter (`FJS-271`). `workerData()` below is the
+ * read half, and the two live together so a future runtime change is one edit.
+ */
+function spawn(path: string, data?: unknown): Worker {
+  return new Worker(path, {
+    type:       'module',
+    workerData: data,
+  } as WorkerOptions & { workerData?: unknown })
+}
+
+/**
+ * The setup data this worker was constructed with, inside the worker.
+ *
+ * `undefined` on the main thread and in a worker given none — Node answers
+ * `null` for both, and a caller cannot act on the difference between *nobody
+ * passed anything* and *somebody passed nothing*.
+ */
+export function workerData<T = unknown>(): T | undefined {
+  return (threadData ?? undefined) as T | undefined
+}
+
 // ─── Single thread ────────────────────────────────────────────────────────
 
 export function createThread(
@@ -35,22 +74,7 @@ export function createThread(
   data?:      unknown
 ): WorkerHandle {
 
-  const path = resolveWorkerPath(nameOrPath)
-
-  // `workerData` is not part of the web WorkerOptions, and measured on Bun
-  // 1.3.11 it is NOT DELIVERED either: inside the worker, `globalThis.workerData`,
-  // `self.workerData` and `Bun.workerData` are all undefined. So `data` goes
-  // nowhere and this file's own header — "Worker scripts receive data" — is
-  // wrong. `FJS-271` holds the fix, which is a protocol decision rather than a
-  // type one: an initial `postMessage` would arrive as a task on the pool's
-  // message loop.
-  //
-  // Passed anyway rather than deleted, so the day Bun delivers it this starts
-  // working; the cast is what the web type does not admit.
-  const worker = new Worker(path, {
-    type:       'module',
-    workerData: data,
-  } as WorkerOptions & { workerData?: unknown })
+  const worker = spawn(resolveWorkerPath(nameOrPath), data)
 
   return {
     postMessage: (msg) => worker.postMessage(msg),
@@ -68,7 +92,8 @@ export function createThread(
 
 export function createPool(
   nameOrPath: string,
-  count:      number = 2
+  count:      number = 2,
+  data?:      unknown
 ): WorkerPoolHandle {
 
   const path    = resolveWorkerPath(nameOrPath)
@@ -80,7 +105,7 @@ export function createPool(
 
   // Spawn workers
   for (let i = 0; i < count; i++) {
-    const w = new Worker(path, { type: 'module' })
+    const w = spawn(path, data)
     const pw: PoolWorker = { worker: w, busy: false, id: i }
     workers.push(pw)
 
@@ -90,9 +115,19 @@ export function createPool(
       pw.currentTask = undefined
       stats.busy--
       stats.idle++
-      stats.completed++
 
-      if (task) task.resolve(e.data)
+      // `workerHandler` reports a throw as a message, because a worker cannot
+      // reject the caller's promise from inside itself. Resolving with that
+      // envelope hands the caller an object shaped like a result and counts a
+      // failure as `completed` — the one thing a pool must not do, since the
+      // caller's `await` succeeds and the error is a property nobody reads.
+      if (isWorkerError(e.data)) {
+        stats.errors++
+        if (task) task.reject(new Error(e.data.message))
+      } else {
+        stats.completed++
+        if (task) task.resolve(e.data)
+      }
 
       // Drain queue
       drain()
@@ -108,8 +143,9 @@ export function createPool(
 
       if (task) task.reject(new Error(e.message))
 
-      // Respawn this worker
-      const newWorker    = new Worker(path, { type: 'module' })
+      // Respawn this worker — with the same setup data, or the pool serves
+      // one configuration before its first error and another after it.
+      const newWorker    = spawn(path, data)
       pw.worker          = newWorker
       newWorker.onmessage = w.onmessage
       newWorker.onerror   = w.onerror
@@ -167,10 +203,17 @@ export function createPool(
 // Use this inside a worker file to declare a handler cleanly.
 //
 // worker.ts:
-//   import { workerHandler } from 'framework/workers'
+//   import { workerHandler, workerData } from '@frontierjs/junction/workers'
+//
+//   const { factor } = workerData<{ factor: number }>() ?? { factor: 2 }
+//
 //   workerHandler(async (data) => {
-//     return { result: data.x * 2 }
+//     return { result: data.x * factor }
 //   })
+//
+// Setup is read once, at module scope; work arrives per message. A throw is
+// posted back as an envelope and the pool turns it into a rejection — a worker
+// cannot reject its caller's promise from inside itself.
 
 export function workerHandler<TIn = unknown, TOut = unknown>(
   fn: (data: TIn) => Promise<TOut> | TOut
@@ -186,6 +229,11 @@ export function workerHandler<TIn = unknown, TOut = unknown>(
       self.postMessage({ __error: true, message: (err as Error).message })
     }
   }
+}
+
+/** The envelope `workerHandler` posts when the handler threw. */
+function isWorkerError(v: unknown): v is { __error: true; message: string } {
+  return typeof v === 'object' && v !== null && (v as { __error?: unknown }).__error === true
 }
 
 // ─── Internal types ───────────────────────────────────────────────────────

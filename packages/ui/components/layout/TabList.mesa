@@ -21,11 +21,15 @@
   const VARIANTS = { pills: 'pills', stretch: 'stretch', boxed: 'stretch', underline: '' }
   const v = VARIANTS[variant] ?? ''
 
-  const adjacent = $context.adjacent    // fn(id, delta) → adjacent tab id
+  const adjacent = $context.adjacent    // fn(id, delta) → adjacent selectable tab id
+  const edge     = $context.edge        // fn(delta)     → first (-1) / last (1) selectable tab
 
-  // Capture context accessors at top level — can't use $context inside functions (Rule 25)
-  const getActiveId = $context.activeId    // reactive getter (const tracks provider)
-  const setActive   = $context.setActive
+  // Capture context accessors at top level — can't use $context inside functions (Rule 25).
+  // A const consumer reads the VALUE and tracks the provider (Rule 25a), so
+  // this is the current id inside a handler that runs much later — not a
+  // getter to call, and not a snapshot taken at setup.
+  const activeId  = $context.activeId
+  const setActive = $context.setActive
 
   function handleKeyDown(e) {
     const isNext = e.key === 'ArrowRight'
@@ -34,26 +38,13 @@
     const isEnd  = e.key === 'End'
     if (!isNext && !isPrev && !isHome && !isEnd) return
 
-    const active = typeof getActiveId === 'function' ? getActiveId() : getActiveId
-
-    // Home/End are part of the tablist contract tabs.css spells out, and were
-    // missing — only Left/Right were handled.
-    let next
-    if (isHome || isEnd) {
-      // adjacent() wraps, so stepping one back from the active tab's own
-      // position is not enough; ask for the neighbour of a known end instead.
-      const all = []
-      let cur = active
-      for (let i = 0; i < 999; i++) {
-        all.push(cur)
-        const n = adjacent(cur, 1)
-        if (!n || n === active) break
-        cur = n
-      }
-      next = isHome ? all[0] : all[all.length - 1]
-    } else {
-      next = adjacent(active, isNext ? 1 : -1)
-    }
+    // Home/End are part of the tablist contract tabs.css spells out. They ask
+    // the provider for an END, because a walk built out of adjacent() cannot
+    // answer one: it wraps, so "step back from here" is the tab before this
+    // one wherever the strip starts.
+    const next = (isHome || isEnd)
+      ? edge?.(isHome ? -1 : 1)
+      : adjacent(activeId, isNext ? 1 : -1)
     if (!next) return
 
     e.preventDefault()

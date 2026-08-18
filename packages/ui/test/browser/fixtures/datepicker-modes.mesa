@@ -1,0 +1,97 @@
+<script>
+  // datepicker-modes.mesa — the modes of DatePicker no drive has opened.
+  //
+  // The existing fixture holds one picker open and asks about the grid. This
+  // one is a switchboard: every prop that turns on a BRANCH of the component
+  // is a fixture prop, so one spec can mount the same picker as a preset
+  // sidebar, a two-pane range, a Monday-start calendar or a form field.
+  //
+  // `today` is rebuilt from YYYY-MM-DD as a LOCAL date for the same reason the
+  // other fixture does it: everything inside is a local midnight, and
+  // `new Date('2026-01-15')` is UTC midnight — the previous day west of
+  // Greenwich.
+  import DatePicker from '../../../components/forms/DatePicker.mesa'
+
+  export let todayISO         = '2026-01-15'
+  export let isRange          = false
+  export let showPresets      = false
+  export let showPresetsOnly  = false
+  export let showTimePicker   = false
+  export let isMultipane      = false
+  export let showYearControls = true
+  export let startOfWeek      = 0
+  export let enabledDates     = []
+  export let enablePastDates  = true
+  export let inclusiveEnd     = true
+  export let align            = 'left'
+  export let name             = ''
+  export let label            = ''
+  export let required         = undefined
+  export let error            = ''
+
+  const [y, m, d] = todayISO.split('-').map(Number)
+  const today = new Date(y, m - 1, d)
+
+  // Two presets that land on known days of the pinned month, so the assertions
+  // are facts about January 2026 rather than about the day the suite runs.
+  const presetRanges = [
+    { value: 'first-week', text: 'First week',  start: new Date(2026, 0, 1).getTime(),  end: new Date(2026, 0, 7).getTime() },
+    { value: 'mid-month',  text: 'Mid month',   start: new Date(2026, 0, 10).getTime(), end: new Date(2026, 0, 20).getTime() },
+  ]
+
+  let startDate = undefined
+  let endDate   = undefined
+  let navs      = ''
+  let payload   = ''
+
+  // The emitted value, printed with its TIME as well as its date: the time
+  // picker's whole job is the part a YYYY-MM-DD assertion cannot see.
+  function stamp(ts) {
+    if (!ts) return ''
+    const d = new Date(ts)
+    const p = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  }
+
+  function record(e) {
+    payload = e.endDate ? `${stamp(e.startDate)}..${stamp(e.endDate)}` : stamp(e.startDate)
+  }
+
+  function navigated(e) {
+    navs = `${e.direction}:${e.type}`
+  }
+</script>
+
+<DatePicker
+  today={today}
+  alwaysShow
+  isOpen
+  isRange={isRange}
+  showPresets={showPresets}
+  showPresetsOnly={showPresetsOnly}
+  presetRanges={presetRanges}
+  showTimePicker={showTimePicker}
+  isMultipane={isMultipane}
+  showYearControls={showYearControls}
+  startOfWeek={startOfWeek}
+  enabledDates={enabledDates}
+  enablePastDates={enablePastDates}
+  inclusiveEnd={inclusiveEnd}
+  align={align}
+  name={name}
+  label={label}
+  required={required}
+  error={error}
+  bind:startDate={startDate}
+  bind:endDate={endDate}
+  onDateChange={record}
+  onNavigationChange={navigated}
+>
+  <button type="button" class="btn" id="dp-trigger">Pick a date</button>
+</DatePicker>
+
+<!-- The bound value, printed beside the announced one: a component can move
+     one without the other, and which of the two an app reads is a coin flip. -->
+<output id="bound">{startDate ? stamp(startDate) : ''}{endDate ? '..' + stamp(endDate) : ''}</output>
+<output id="payload">{payload}</output>
+<output id="navs">{navs}</output>

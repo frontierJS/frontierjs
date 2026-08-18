@@ -124,6 +124,15 @@ interface OAPathItem {
   // and the `in: 'header'` parameter the custom-method dispatch depends on
   // could not be expressed at all.
   parameters?: OAParameter[]
+  // The five verbs this generator emits, named. They are a closed set in
+  // OpenAPI, and reaching one through the index signature alone answered
+  // `OAOperation | OAParameter[]` — so every read of `paths['/x'].post` had to
+  // narrow past a parameter list that cannot be there.
+  get?:    OAOperation
+  post?:   OAOperation
+  put?:    OAOperation
+  patch?:  OAOperation
+  delete?: OAOperation
   [method: string]: OAOperation | OAParameter[] | undefined
 }
 

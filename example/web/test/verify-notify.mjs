@@ -92,18 +92,12 @@ try {
   // has run, so these scans pass `?limit=500`. Without it the scan stops before
   // the row it is about and reads as "there is no such job".
   //
-  // SQLite reuses row ids, and `announce-payment` is keyed to the order's id —
-  // so a job left PENDING by an earlier run (the fail-next case below schedules
-  // a retry 30s out, deliberately) still holds the key for whatever order
-  // inherits that id next, and this run's announcement would be de-duplicated
-  // against somebody else's work and silently never sent. Production does not
-  // delete orders; a drive that creates and deletes one every run does. Clear
-  // it rather than race it.
-  const live = (await (await fetch(`${API}/api/jobs?limit=500`)).json())
-    .filter(j => j.unique_key === `announce-payment:${orderId}` &&
-                 (j.status === 'pending' || j.status === 'running'))
-  for (const job of live)
-    await fetch(`${API}/api/jobs/${job.id}/cancel`, { method: 'POST' })
+  // No stale-key dance here any more. `pay` records its announcement through
+  // ctx.enqueue, so the job is queued under the OUTBOX ROW's uuid rather than
+  // under a `unique` key built from the order id — and SQLite reusing that id
+  // can no longer make this run's announcement de-duplicate against a pending
+  // job left by an earlier one. What used to stand here cancelled those jobs
+  // before every run.
 
   // ── 1. paying answers without waiting for anybody ──────────────────────
   const before = Date.now()
@@ -230,27 +224,23 @@ try {
   })).json()
   const secondId = second.id ?? second.data?.id
 
-  // Same id-reuse clear as above, for this order. Without it a stale pending job
-  // swallows THIS dispatch, the staged 500 is never consumed, and it detonates
-  // in the next run instead — which is how a fault-injection test poisons the
-  // suite rather than the run that armed it.
-  for (const job of (await (await fetch(`${API}/api/jobs?limit=500`)).json())
-        .filter(j => j.unique_key === `announce-payment:${secondId}` &&
-                     (j.status === 'pending' || j.status === 'running')))
-    await fetch(`${API}/api/jobs/${job.id}/cancel`, { method: 'POST' })
-
   await fetch(`${API}/api/orders/${secondId}`, {
     method: 'POST', headers: { ...admin, 'x-service-method': 'pay' }, body: '{}',
   })
 
   // The LIVE one: pending with an error is "failed an attempt, retry scheduled",
-  // which is the claim. Matching on `j.error` alone also matches this key's
-  // cancelled corpses from earlier runs — ids are reused, and a cancelled job
-  // keeps the error that got it cancelled.
+  // which is the claim. Identified by its PAYLOAD rather than by a key — there
+  // is no `unique` key any more, and the payload is what says which order this
+  // job is about. Matching on `j.error` alone would also match cancelled
+  // corpses from earlier runs, which keep the error that got them cancelled.
+  const isForThisOrder = (j) => {
+    if (j.name !== 'announce-payment') return false
+    try { return JSON.parse(j.data)?.orderId === secondId } catch { return false }
+  }
+
   const failed = await until(async () => {
     const jobs = await (await fetch(`${API}/api/jobs?limit=500`)).json()
-    return jobs.find(j => j.unique_key === `announce-payment:${secondId}` &&
-                          j.error && j.status === 'pending') ?? null
+    return jobs.find(j => isForThisOrder(j) && j.error && j.status === 'pending') ?? null
   })
   t('mail.providerOutageIsRetried', failed ? {
     // Not 'failed': attempts are below maxAttempts, so it is queued to run again.

@@ -28,8 +28,27 @@ const SCHEMA = `
     -- NULL when nobody was — a cron fire, a boot-time enqueue, standalone use.
     -- An id rather than a session: the standing is re-resolved when the job
     -- runs, so a caller demoted in between is graded at what they hold then.
-    actor_id      TEXT
+    actor_id      TEXT,
+    -- WHICH Caravan instance is executing this row. Written by the claim,
+    -- cleared when the row leaves 'running'. Recovery cannot tell a crashed
+    -- process's job from a live one's without it, and one jobs.db is trivially
+    -- opened twice — two replicas, a web process beside a worker one.
+    owner_id      TEXT
   );
+
+  -- One row per Caravan instance that has started, with the last time it said
+  -- so. This is what makes 'running' decidable across processes: a row whose
+  -- owner is heartbeating belongs to somebody still executing it, and a row
+  -- whose owner has gone quiet past the lease is work nothing is doing.
+  CREATE TABLE IF NOT EXISTS job_owners (
+    id         TEXT    PRIMARY KEY,
+    started_at INTEGER NOT NULL,
+    seen_at    INTEGER NOT NULL
+  );
+
+  -- Recovery sweeps running rows by owner, every lease period.
+  CREATE INDEX IF NOT EXISTS jobs_owner
+    ON jobs(owner_id) WHERE status = 'running';
 
   -- Primary polling index: queue + status + priority + run_at
   CREATE INDEX IF NOT EXISTS jobs_poll
@@ -64,6 +83,20 @@ const SCHEMA = `
     ON jobs(unique_key) WHERE unique_key IS NOT NULL;
 `
 
+/**
+ * Did this throw come from inserting a row whose primary key is taken?
+ *
+ * `dispatch({ id })` states an id to make a retried handoff a no-op, and two
+ * processes retrying at once both read nothing before inserting — so the key
+ * is what decides, and this is how that answer is told apart from a real
+ * failure. Matched on the message because bun:sqlite surfaces the constraint
+ * name there and nowhere else.
+ */
+export function isPrimaryKeyCollision(err: unknown): boolean {
+  const message = (err as { message?: string } | null)?.message ?? ''
+  return /UNIQUE constraint failed: jobs\.id/i.test(message)
+}
+
 export function openDb(path: string): Database {
   const db = new Database(path, { create: true })
 
@@ -72,27 +105,37 @@ export function openDb(path: string): Database {
   db.exec('PRAGMA foreign_keys = ON')
   db.exec('PRAGMA busy_timeout = 5000')
   migrateUniqueKey(db)
+  // Before SCHEMA, not after: SCHEMA declares an index over `owner_id`, and on
+  // a jobs table created before that column existed the index is a hard error
+  // naming a column the same statement never adds.
+  addColumn(db, 'actor_id')
+  addColumn(db, 'owner_id')
   db.exec(SCHEMA)
-  addActorColumn(db)
 
   return db
 }
 
 /**
- * Add `actor_id` to a jobs table created before jobs had a principal.
+ * Add a nullable TEXT column to a jobs table created before it existed.
  *
  * `CREATE TABLE IF NOT EXISTS` leaves an existing table exactly as it was, so
  * without this every dispatch against an old jobs.db fails on an unknown
- * column. Unlike the unique_key rebuild this is a plain ADD COLUMN — the column
- * is nullable with no default, which SQLite appends in place.
+ * column. Unlike the unique_key rebuild this is a plain ADD COLUMN — nullable
+ * with no default, which SQLite appends in place.
  *
- * Jobs already queued get NULL and therefore run as the app itself, which is
- * the only honest answer: nothing recorded who asked for them.
+ * What NULL means differs per column and both readings are the honest one.
+ * `actor_id`: nothing recorded who asked, so the job runs as the app itself.
+ * `owner_id`: nothing recorded which process is executing it, so a running row
+ * carrying NULL is reclaimed by the first instance that sweeps — the same
+ * answer this package gave before owners existed.
  */
-function addActorColumn(db: Database): void {
+function addColumn(db: Database, name: string): void {
   const cols = db.query<{ name: string }, []>(`PRAGMA table_info(jobs)`).all()
-  if (cols.some(c => c.name === 'actor_id')) return
-  db.exec(`ALTER TABLE jobs ADD COLUMN actor_id TEXT`)
+  // No table at all — this is a fresh database and SCHEMA creates it with the
+  // column already in it.
+  if (cols.length === 0) return
+  if (cols.some(c => c.name === name)) return
+  db.exec(`ALTER TABLE jobs ADD COLUMN ${name} TEXT`)
 }
 
 /**
@@ -207,10 +250,11 @@ export function buildStatements(db: Database) {
   // ── Claim next job (atomic — uses RETURNING to avoid race conditions) ────────
   // SQLite's BEGIN IMMEDIATE ensures only one worker claims a job at a time.
 
-  const claimNext = wrap<JobRecord, { queue: string; now: number }>(db.prepare(`
+  const claimNext = wrap<JobRecord, { queue: string; now: number; owner: string }>(db.prepare(`
     UPDATE jobs SET
       status     = 'running',
       started_at = $now,
+      owner_id   = $owner,
       attempts   = attempts + 1
     WHERE id = (
       SELECT id FROM jobs
@@ -227,13 +271,20 @@ export function buildStatements(db: Database) {
   // Guarded on 'running': cancel() can land while the attempt is in flight, and
   // an unguarded UPDATE writes 'done' over the cancellation the caller asked for.
   // `changes` is 0 when that happens — the worker reads it before announcing.
+  //
+  // Guarded on the OWNER for the same reason across processes: a stalled
+  // instance whose lease expired has had its row reclaimed and re-run
+  // elsewhere, and its late completion must not land on the attempt that
+  // replaced it. `owner_id` is cleared here so a reclaim sweep never has to
+  // decide anything about a row that is no longer running.
 
-  const markDone = wrap<void, { id: string; now: number }>(db.prepare(`
+  const markDone = wrap<void, { id: string; now: number; owner: string }>(db.prepare(`
     UPDATE jobs SET
       status      = 'done',
       finished_at = $now,
+      owner_id    = NULL,
       error       = NULL
-    WHERE id = $id AND status = 'running'
+    WHERE id = $id AND status = 'running' AND owner_id = $owner
   `))
 
   // ── Mark failed (will retry or transition to terminal 'failed' depending on caller) ─
@@ -241,14 +292,15 @@ export function buildStatements(db: Database) {
   // then threw is written back to 'pending' and runs again.
 
   const markFailed = wrap<void, {
-    id: string; status: string; run_at: number; error: string; now: number
+    id: string; status: string; run_at: number; error: string; now: number; owner: string
   }>(db.prepare(`
     UPDATE jobs SET
       status      = $status,
       finished_at = $now,
       error       = $error,
-      run_at      = $run_at
-    WHERE id = $id AND status = 'running'
+      run_at      = $run_at,
+      owner_id    = NULL
+    WHERE id = $id AND status = 'running' AND owner_id = $owner
   `))
 
   // ── Cancel ──────────────────────────────────────────────────────────────────
@@ -328,6 +380,49 @@ export function buildStatements(db: Database) {
     LIMIT $limit OFFSET $offset
   `))
 
+  // ── Ownership: heartbeat, recovery, pruning ─────────────────────────────────
+  //
+  // The three statements that make a second instance on one jobs.db safe. A
+  // running row is owned; an owner says it is alive on a timer; recovery
+  // reclaims only the rows of an owner that has stopped saying so.
+  //
+  // Two instances is not an exotic deployment — two replicas behind a load
+  // balancer, a web process beside a worker one, a drive started while the dev
+  // server runs. Before this, `start()` set EVERY running row back to pending,
+  // so the second instance re-ran whatever the first was executing, and the
+  // claim that IS atomic could not tell: the second run was a legitimate claim
+  // of a row that recovery had just released.
+
+  const heartbeat = wrap<void, { id: string; now: number }>(db.prepare(`
+    INSERT INTO job_owners (id, started_at, seen_at)
+    VALUES ($id, $now, $now)
+    ON CONFLICT(id) DO UPDATE SET seen_at = $now
+  `))
+
+  // Graceful shutdown. Dropping the row makes this instance's rows reclaimable
+  // at once instead of after the lease — the caller only does it once nothing
+  // is in flight, so there is no attempt to hand over.
+  const dropOwner = wrap<void, { id: string }>(db.prepare(`
+    DELETE FROM job_owners WHERE id = $id
+  `))
+
+  // A running row is abandoned when its owner is unknown, or last said it was
+  // alive before the cutoff. NULL is the pre-owners database and reads the same
+  // way: nothing is known to be executing it.
+  const reclaimAbandoned = wrap<void, { cutoff: number }>(db.prepare(`
+    UPDATE jobs SET
+      status     = 'pending',
+      started_at = NULL,
+      owner_id   = NULL
+    WHERE status = 'running'
+      AND (owner_id IS NULL
+           OR owner_id NOT IN (SELECT id FROM job_owners WHERE seen_at >= $cutoff))
+  `))
+
+  const pruneOwners = wrap<void, { cutoff: number }>(db.prepare(`
+    DELETE FROM job_owners WHERE seen_at < $cutoff
+  `))
+
   // ── Cleanup old terminal jobs ───────────────────────────────────────────────
 
   const cleanup = wrap<void, { before: number }>(db.prepare(`
@@ -348,6 +443,10 @@ export function buildStatements(db: Database) {
     findByUniqueKey,
     listJobs,
     cleanup,
+    heartbeat,
+    dropOwner,
+    reclaimAbandoned,
+    pruneOwners,
   }
 }
 

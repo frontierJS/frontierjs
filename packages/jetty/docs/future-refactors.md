@@ -1,8 +1,30 @@
 # Future Refactors
 
-## Option B — Extract `@frontierjs/resources-core` (deferred from Phase 3)
+## Option B — Extract `@frontierjs/resources-core` (REFUSED, and superseded)
 
-**Status:** deferred. Tracked from Phase 3 design discussion.
+**Status: refused 2026-08-15 and answered 2026-08-17** — `DECISIONS.md`
+§ `FJS-D16` and its amendment, closing `FJS-059`. Kept because the analysis
+below is what the ruling was argued against, not because it is the plan.
+
+**What happened instead.** No fifth published package: a release cadence, a peer
+range, an install entry and a `files:` field is too much for ~190 lines that are
+pure and zero-dependency, which is the definition `@frontierjs/toolbelt` already
+wrote for itself (`FJS-D26`). `createMakeFromSchema` and `derefFieldSchema` are
+`@frontierjs/toolbelt/jsonschema`; the four-phase pipeline is
+`@frontierjs/toolbelt/hooks`. Both sides import them.
+
+**Two pieces this document lists did NOT move, deliberately.** `createStore` is
+state, and toolbelt's licence is that every export is a pure function — and the
+two stores were never one fact anyway: Sierra's is service-backed and stamps
+each request, jetty's takes no service at all because Junction lives in Harbor.
+And the `defineResource({ transport })` seam below is refused rather than
+deferred: Sierra calls `client.service(name)` where jetty calls
+`harbor.request('service:call')`, and a transport is not one fact with two
+owners, it is two facts. Duplication is not the defect.
+
+---
+
+### The original analysis, kept for the argument
 
 ### Context
 

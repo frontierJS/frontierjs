@@ -1,95 +1,132 @@
 # fli
 
-A modular CLI automation platform where commands are defined as plain `.md` files. The same command files power three interfaces: a CLI, a Web GUI, and (planned) a TUI.
+**The developer interface to FrontierJS** — domain 01 of the FJS World, and the
+one command you type. It scaffolds an application, checks it against the rules
+the framework publishes, runs the realms, brokers the ports, and ships the
+result to a server.
 
+```bash
+fli new my-app          # the whole application — db/ api/ web/, deploy, CI
+fli check               # the arch tests: eleven rules over the file tree
+fli dev                 # both servers, after a port preflight
+fli deploy              # to a machine you own
 ```
-fli hello:greet World --shout --times 3
-```
+
+It is also a **markdown-native command runtime**: every command above is a `.md`
+file — prose, frontmatter, and a fenced code block that runs. That is the *how*
+rather than the *what*, and it is [below](#a-command-is-a-markdown-file). Your
+application's own commands are written the same way and sit beside the
+framework's.
 
 ---
 
-## Dev setup
+## Install
 
 ```bash
+npm install -g @frontierjs/cli     # global
+fli new my-app
+```
+
+`npm create frontier@latest my-app` is the same scaffold through the front door
+— `create-frontier` resolves this package and runs `fli new`, so there is one
+implementation of what an application looks like.
+
+Working on `fli` itself, from a clone of the monorepo:
+
+```bash
+cd packages/cli
 bun install
-bun link        # makes `fli` available globally as a shell command
-fli gui         # start the Web GUI at http://localhost:4444
-```
-
-After `bun link`, use `fli` directly from any directory:
-
-```bash
-fli list
-fli hello:greet World
-fli gui --open
+bun link                # `fli` on PATH, pointed at this tree
 ```
 
 ---
 
-## How it works
+## What it does for an application
 
-Each command is a Markdown file with YAML frontmatter and two code sections:
+170 commands over 27 namespaces. The ones that carry the framework:
+
+| | |
+| --- | --- |
+| `fli new` · `fli make:*` | Scaffold — an app, a model, a service, a resource, a route, a widget, an extension, a deploy config |
+| `fli check` | **The arch tests.** Eleven rules over the file tree — see below |
+| `fli dev` · `fli api:dev` · `fli web:dev` | Run the realms. `dev` refuses a port already answering, and warns about an empty database |
+| `fli db:*` | The Data realm — `push`, `pull`, `migrate`, `seed`, `studio`, `tinker`, `reset`, `schema`, `tables` |
+| `fli test:*` | `access`, `ddl`, `snapshots`, `mutate`, `types` — the Testing realm's committed-artefact half |
+| `fli release:check` | Can the release still serving and the release starting share one database? |
+| `fli auth:*` | Install the schema fragments, create a user, revoke sessions, rotate the key |
+| `fli deploy` · `deploy:*` | Setup a server, build, swap, health-check, roll back. `deploy:local` is the same pipeline against Docker on this machine |
+| `fli ws:*` | The workspace — version, publish, tag, push, map, atlas, exports, graph |
+| `fli ports:claim` | Take a session's ports out of the scheme rather than guessing |
+| `fli project:map` · `project:view` | What this application IS, read off its committed surface |
+
+`fli list` prints all of them, `fli <command> --help` prints one, and
+`fli list --json` is the machine-readable form.
+
+**The edges are aspirational and this is the honest warning.** Several
+documented commands do not do what their prose says, and the count above is
+files rather than commands that have been run. Verify a command by running it
+before citing it.
+
+---
+
+## `fli check` — the rules a linter cannot reach
+
+A Biome or an ESLint owns generic JavaScript. **`fli check` owns everything
+derived from the seed**, and the boundary is not tooling immaturity: neither
+linter reads `.mesa` or `.lite`, and the questions worth asking here are
+cross-file. *Does this resource name resolve to a model?* cannot be answered
+from the file it appears in.
+
+Eleven rules, and a rule earns its place by being **silent when broken**:
+
+| Rule | Invariant | What it catches |
+| --- | --- | --- |
+| `model-name-case` · `model-name-plural` | 2 | A model that is not PascalCase singular. Three resolvers agree only because it is |
+| `resource-dir-mesa` · `resource-script` | 18 | A `src/resources/` file that is not `.mesa`, or has markup outside `<script module>` |
+| `resource-file-name` · `resource-one-per-file` | 19 | A Resource not named for its noun, or two in one file |
+| `vite-strict-port` | — | A Vite config without `strictPort` — vite otherwise hops to the next free port in silence and the second app's drive tests the first app's app |
+| `body-tag-in-comment` | — | The body tag mentioned inside an HTML comment. Vite injects the built `<script>` at the first textual match and does not skip comments, so the build succeeds and the page loads no JavaScript |
+| `app-layout` | 3 | A surface hiding inside another one, or a schema that is not at the root |
+| `widget-entry-name` | 19 | A widget whose name cannot be a custom element |
+| `package-root-md` | 17 | A fifth markdown file at a package root — a warning naming it, because the rule cannot tell a stray design note from the next thing everyone needs |
+
+**`core/checks.js` is the engine and this repo is its other caller.** The
+`structure` phase of `bun run ci` imports it directly and runs it over
+FrontierJS itself, so a rule loosened for this repo is loosened for every
+application on the next release — which is the point. Two implementations of one
+rule is how a framework ends up breaking rules it publishes.
+
+`fli check --list` prints the table with the invariant each rule comes from.
+
+---
+
+## A command is a markdown file
+
+Prose, YAML frontmatter, and code. The same file is the documentation, the CLI
+command, and the form the Web GUI renders — so there is nothing to keep in sync.
 
 ```
-cli/src/routes/hello/greet.md
+commands/hello/greet.md
 │
-├── YAML frontmatter   → title, description, args, flags
-├── <script> block     → helper functions (shared across CLI + Web GUI)
-└── ```js block        → main command body (runs on execute)
+├── YAML frontmatter   → title, description, args, flags, examples
+├── <script> block     → helpers, shared by the CLI and the GUI
+└── ```js block        → the body — runs on execute
 ```
 
-When you run `fli hello:greet`, the runtime:
+Running one:
 
-1. Scans `fliRoot/commands/` (core) and `projectRoot/cli/src/routes/` (project)
-2. Compiles the `.md` file into an ESM module — no temp files, no build step
-3. Validates args and flags against frontmatter definitions
-4. Calls `run(context)` with everything the command needs
+1. Scan `<fliRoot>/commands/` (the framework's) and `<projectRoot>/cli/src/routes/` (yours)
+2. Compile the `.md` to an ESM module — no temp build, no bundler
+3. Validate args and flags against the frontmatter
+4. Call the body with a `context`
 
-Commands are **live** — drop a `.md` file and it's immediately available. No rebuilding.
+Commands are **live**: drop a `.md` file in and it runs. Nothing is rebuilt.
 
----
+### Writing one
 
-## Project structure
+The file path decides nothing — `title` is the command name.
 
-```
-fli/
-├── bin/
-│   ├── fli.js           # CLI entrypoint
-│   └── server.js        # Web GUI server entrypoint
-├── commands/            # Core FLI commands (always available)
-│   ├── fli/             # fli:init, fli:edit, fli:gui, fli:update, fli:env
-│   ├── make/            # make:command, make:deploy …
-│   ├── completion/      # completion:install, completion:generate, completion:query, completion:refresh
-│   ├── crypto/          # crypto:keygen
-│   ├── db/              # db:push, db:pull, db:reset, db:import …
-│   ├── deploy/          # deploy, deploy:setup, deploy:status, deploy:logs, deploy:run, deploy:local, deploy:rollback
-│   ├── web/             # web:dev, web:build, web:route, web:component …
-│   ├── api/             # api:dev, api:deploy, api:model, api:service
-│   ├── utils/           # utils:ssh, utils:killnode, utils:password …
-│   └── …
-├── core/
-│   ├── bootstrap.js     # CLI router — parses argv, looks up command, runs it
-│   ├── compiler.js      # .md → ESM compiler
-│   ├── config.js        # .fli.json project config loader
-│   ├── registry.js      # Scans both command dirs, builds command map
-│   ├── runtime.js       # Command() — validates args/flags, builds context
-│   ├── server.js        # HTTP server — 3 endpoints + SSE output streaming
-│   └── utils.js         # Logger, file finder
-├── cli/
-│   └── src/routes/      # Your project commands live here
-├── web/
-│   └── index.html       # Web GUI — single file, no build step
-├── .fli.json            # Optional project config (see below)
-└── package.json
-```
-
----
-
-## Writing a command
-
-Create a `.md` file anywhere under `cli/src/routes/`. The file path determines nothing — the `title` in frontmatter is the command name.
-
-```markdown
+````markdown
 ---
 title: hello:greet
 description: Greet someone from the command line
@@ -133,155 +170,146 @@ for (let i = 0; i < (flag.times ?? 1); i++) {
 
 log.success(`Greeted ${arg.name} ${flag.times} time(s)`)
 ```
-```
+````
 
-### Frontmatter fields
+`fli make:command` scaffolds this interactively; `fli edit <command>` opens an
+existing one.
+
+**An alias is claimed first-come and a contested one is a bug.** Two commands
+claiming one alias warns, and the winner is whichever loads last — the walk is
+sorted so that is at least reproducible, but nothing about `utils` sorting after
+`ports` says which should own `dev`. Resolve it by renaming one side.
+
+### Frontmatter
 
 | Field | Required | Description |
 |---|---|---|
-| `title` | ✅ | Command name in `namespace:command` format |
-| `description` | | Short description shown in `fli list` and Web GUI |
-| `alias` | | Short name — `fli greet` instead of `fli hello:greet` |
-| `examples` | | Array of example invocations |
-| `args` | | Ordered positional argument definitions |
+| `title` | ✅ | Command name, `namespace:command` |
+| `description` | | Shown in `fli list` and the GUI |
+| `alias` | | Short name — `fli new` for `project:new` |
+| `examples` | | Example invocations |
+| `args` | | Ordered positional definitions |
 | `flags` | | Named flag definitions |
 
-### Arg definition fields
+**Arg fields** — `name` (read as `arg.name`), `description`, `required`,
+`defaultValue`, `variadic` (joins the remaining positionals into one string;
+must be last).
 
-| Field | Description |
-|---|---|
-| `name` | Used to access the value as `arg.name` |
-| `description` | Shown in Web GUI |
-| `required` | Throws if missing |
-| `defaultValue` | Used when not provided |
-| `variadic` | Joins all remaining positional args into one string. Must be last. |
-
-### Flag definition fields
-
-| Field | Description |
-|---|---|
-| `type` | `string` · `boolean` · `number` |
-| `char` | Single-letter shorthand: `-s` instead of `--shout` |
-| `description` | Shown in Web GUI |
-| `defaultValue` | Applied when flag is not passed |
-| `options` | Enum — restricts value to a fixed set |
-| `required` | If `true`, the command aborts with a clear error when the flag is not provided. A flag with both `required` and `defaultValue` is always satisfied — the default fills it in. |
+**Flag fields** — `type` (`string` · `boolean` · `number`), `char` (single-letter
+shorthand), `description`, `defaultValue`, `options` (an enum), `required`. A
+flag with both `required` and `defaultValue` is always satisfied — the default
+fills it in.
 
 ---
 
-## Multi-step commands (`_steps/`)
+## Multi-step commands — `_steps/`
 
-Break large commands into numbered step files that run in sequence and share state:
+A large command breaks into numbered step files that run in order and share
+state. Step files are never registered as commands of their own.
 
 ```
-cli/src/routes/deploy/
-  index.md          ← orchestrator: defines flags, populates context.config
+commands/deploy/
+  index.md          ← orchestrator: defines the flags, populates context.config
   _steps/
-    01-validate.md  ← runs first
-    02-build.md     ← optional: true  (failure warns and continues)
-    03-push.md      ← skip: "flag.dry"  (skipped when --dry)
-    04-lint.md      ← parallel: true  (runs concurrently with 05 and 06)
+    01-validate.md
+    02-build.md     ← optional: true   — failure warns and continues
+    03-push.md      ← skip: "flag.dry" — skipped when --dry
+    04-lint.md      ← parallel: true   — runs with 05 and 06
     05-typecheck.md ← parallel: true
     06-test.md      ← parallel: true
-    07-finish.md    ← serial checkpoint — waits for 04/05/06 to complete
+    07-finish.md    ← serial checkpoint — waits for 04/05/06
 ```
-
-Step files are never registered as commands. The orchestrator's `js` block runs first, then steps run in order sharing `context.config`.
 
 ```bash
-fli deploy:all                # run all steps
-fli deploy:all --dry          # step 3 skipped via skip predicate
-fli deploy:all --step 2       # re-run only step 2, shows [2/3]
+fli deploy              # every step
+fli deploy --dry        # 03 skipped by its own predicate
+fli deploy --step 2     # re-run one step, shown as [2/3]
 ```
-
-Steps sort lexicographically by filename. fli warns at runtime if two step files share the same numeric prefix (e.g. two files starting with `04`) — ordering would be ambiguous.
-
-### Step frontmatter fields
 
 | Field | Description |
 |---|---|
-| `optional: true` | Failure emits a warning and continues to the next step |
-| `skip: "expr"` | JS expression — truthy means skip this step |
-| `parallel: true` | Run concurrently with adjacent parallel steps. A non-parallel step is a serial checkpoint — all preceding parallel steps must finish before it starts. Parallel steps share `context.config`; write to distinct keys to avoid race conditions. |
+| `optional: true` | A failure warns and the run continues |
+| `skip: "expr"` | A JS expression; truthy means skip |
+| `parallel: true` | Runs with adjacent parallel steps. A non-parallel step is a serial checkpoint — everything before it must finish first. Parallel steps share `context.config`, so write to distinct keys |
+
+Steps sort lexicographically by filename, and **two files sharing a numeric
+prefix warn at runtime** rather than picking an order nobody wrote.
 
 ---
 
-## The context object
+## The context
 
-Your `<script>` block and ` ```js ` block run inside a function that receives `context`:
-
-```js
-// Available as top-level locals in the ```js block:
-arg          // named positional args       → arg.name, arg.path
-flag         // named flags                 → flag.shout, flag.dry
-log          // styled logger               → log.info() log.success() log.error() log.warn() log.dry()
-context      // full context object
-context.config  // shared mutable state for _steps/ commands
-
-// From context:
-context.paths   // resolved project paths   → context.paths.root, .api, .web, .cli, .webResources …
-context.env     // process.env
-context.exec    // synchronous shell command    → context.exec({ command: 'git push' })
-context.stream  // async streaming shell command → await context.stream({ command: 'docker logs -f c' })
-context.execute // run multiple commands sequentially → context.execute([{ command }, { command }])
-
-// ZX globals (available everywhere):
-echo()          // write to stdout
-question()      // interactive prompt
-$``             // shell execution
-```
-
-### log levels
+The `<script>` and ` ```js ` blocks run inside a function handed a `context`.
+It is **one per invocation, and it is not a request context** — nothing here
+acts on behalf of a remote caller, so there is no principal, no `auth`, no
+`query`. The fields are capabilities rather than inputs.
 
 ```js
-log.info('Starting...')       // blue
-log.success('Done')           // green
-log.warn('Watch out')         // yellow
-log.error('Failed')           // red
-log.dry('Would run: ...')     // cyan — use for --dry output
-log.debug('value: ' + x)      // gray
+// Top-level locals in the ```js block:
+arg             // positional args        → arg.name, arg.path
+flag            // flags                  → flag.dry, flag.force
+log             // the styled logger      → log.info/success/warn/error/dry/debug
+context         // everything below
+context.config  // shared mutable state across _steps/
+
+// On the context:
+context.paths    // the resolved project → .root .api .web .db .cli .widgets …
+context.env      // process.env
+context.git      // repo access — pkgState(name, dir), wsRepo(packages)
+context.exec     // a synchronous shell command
+context.stream   // an async streaming one
+context.execute  // several, in sequence
+context.wsRoot() // the workspace root, found from cwd
+
+// zx globals, everywhere:
+echo()  question()  $``
 ```
 
-### context.exec and context.stream
+**`context.git` asks with a pathspec, and that is not a nicety.** Every member of
+this workspace shares one `.git`, so a bare `git status --porcelain` run from
+`packages/mesa` describes the whole monorepo — which had all sixteen `ws:*` rows
+reporting one another's state.
 
-Every command gets `--dry` (`-d`) for free. Both `context.exec` and `context.stream` respect it automatically.
+### `exec` and `stream`
 
-**`context.exec`** — synchronous. Use for short-lived commands where you don't need live output (git operations, quick docker commands, file manipulation):
+**Every command gets `--dry` for free and both respect it.**
+
+`context.exec` is synchronous — for short work whose output can arrive at the
+end (git, a quick docker call, file manipulation):
 
 ```js
 context.exec({ command: `git push origin ${flag.branch}` })
-// With --dry: logs "[dry] git push origin main" without running it
-// Without --dry: runs the command, output appears when it completes
+// --dry logs "[dry] git push origin main" and runs nothing
 ```
 
-**`context.stream`** — async. Use for long-running commands where live output matters (docker build, log tailing, bun dev, SSH sessions). In the Web GUI, output streams line-by-line as SSE events instead of appearing all at once:
+`context.stream` is async — for long work where live output is the point (a
+docker build, tailing logs, a dev server, an SSH session). In the GUI it streams
+line by line as SSE rather than landing all at once:
 
 ```js
 await context.stream({ command: `ssh ${host} "docker logs --follow ${container}"` })
-// Ctrl+C cancels. Output appears in real time in both CLI and Web GUI.
 ```
 
 ---
 
-## Project root resolution
+## Which project am I in
 
-`context.paths.*` all hang off one project root, resolved by walking up from cwd:
+`context.paths.*` all hang off one root, walked up from the working directory:
 
-1. `--project <dir>` / `FLI_PROJECT` — explicit, wins over everything
-2. `.fli.json` — explicit marker, deepest match wins
-3. `db/schema.lite` — an FJS app root, deepest match wins
-4. `.git/` — repo root
-5. `package.json` — fallback for projects not in git
+1. `--project <dir>` / `FLI_PROJECT` — explicit, beats everything
+2. `.fli.json` — an explicit marker. Deepest match wins
+3. `db/schema.lite` — an FJS application root. Deepest match wins
+4. `.git/` — the repo root, skipped when running inside fli's own checkout
+5. `package.json` — the fallback for a project not in git
 
-Rule 3 is what makes a monorepo work: `example/` and `packages/basecamp/` are
-each their own app, so running `fli project:map` inside either resolves to that
-app rather than to the repo's `.git` root.
+**Rule 3 is what makes a monorepo work.** `example/` and `packages/basecamp/`
+are each their own application, so `fli project:map` inside either resolves to
+that application rather than to the repo's `.git`. It is also why
+`create-frontier` pins `--project`: walking up is right for every other command
+and wrong for a scaffold, which would otherwise write into the enclosing
+repository's root.
 
----
-
-## Project config — `.fli.json`
-
-Drop a `.fli.json` in your project root to override defaults:
+### `.fli.json`
 
 ```json
 {
@@ -291,61 +319,70 @@ Drop a `.fli.json` in your project root to override defaults:
 }
 ```
 
-| Field | Default | Description |
+| Field | Default | |
 |---|---|---|
-| `routesDir` | `cli/src/routes` | Where fli scans for your project commands |
-| `defaultNamespace` | `hello` | Default namespace for `fli init` |
-| `editor` | `$EDITOR` | Editor opened by `fli edit` |
+| `routesDir` | `cli/src/routes` | Where your own commands live |
+| `defaultNamespace` | `hello` | For `fli init` and `make:command` |
+| `editor` | `$EDITOR` | Opened by `fli edit` |
+
+Directory names are environment variables, one per surface — `WEB_DIR`,
+`API_DIR`, `DB_DIR`, `CLI_DIR`, `WIDGETS_DIR`, `EXTENSION_DIR`, `SITE_DIR`,
+`MOBILE_DIR`, `TESTS_DIR`, `WIKI_DIR`.
 
 ---
 
-## Core commands
+## Built-in flags
 
-```bash
-fli list                        # show all commands (core + project)
-fli list --json                 # machine-readable output
-fli <command> --help            # show usage, args, flags, examples
+| Flag | Short | |
+|---|---|---|
+| `--dry` | `-d` | Show what would run, run nothing |
+| `--test` | `-t` | `NODE_ENV=test` |
+| `--step` | | Re-run one `_steps/` step by number |
+| `--project <dir>` | | Run against that root instead of resolving one |
 
-fli init                        # scaffold cli/src/routes/ in current project
-fli make:command                # scaffold a new command file interactively
-fli edit <command>              # open a command file in $EDITOR
-fli gui                         # start the Web GUI at http://localhost:4444
-fli gui --port 8080 --open      # custom port, open browser automatically
-fli update                      # update fli itself (git pull + bun install)
-fli config                      # open the global fli env file
-
-fli keygen                      # generate a cryptographic key/secret
-fli keygen --name JWT_SECRET --env   # write directly to .env
-```
+`--project` is consumed before the command runs — it sets `context.paths.*` and
+is stripped from the command's own flags, so it drives an application from
+outside it: `fli project:view --project packages/basecamp`.
 
 ---
 
-## Web GUI
+## Ports
+
+**`core/ports.js` is the scheme, and it is the whole of it** —
+`port = env*1000 + category*100 + project*10 + service`. env: 7 test · 8 dev ·
+9 prod. category: 0 fe · 1 be · 2 widgets-dev · 3 widgets-served · 4 extension ·
+5 tooling.
+
+A scaffolded app is project 0 — web on `8000`, API on `8100`. Global fli tooling
+is reserved: **8500 the GUI, 8501 `project:view`, 8502 db studio**, and the
+broker refuses to hand those out to anything else. `fli ports:claim` takes a
+session's ports out of the scheme and exports them, rather than every app
+hard-coding a guess.
+
+---
+
+## The Web GUI
 
 ```bash
-fli gui                # start on http://localhost:4444
-fli gui --port 8080    # custom port
-fli gui --open         # start + open browser automatically
+fli gui                # http://localhost:8500
+fli gui --port 8080    # or FLI_PORT
+fli gui --open         # and open a browser
 ```
 
-The Web GUI auto-generates a form for every command from its frontmatter metadata. Output streams live as the command runs, color-coded by log level.
+The GUI builds a form for every command out of its frontmatter — the same file,
+no second definition — and streams output live, coloured by log level.
 
-### API endpoints
-
-| Method | Path | Description |
+| Method | Path | |
 |---|---|---|
-| `GET` | `/` | Web GUI (HTML) |
+| `GET` | `/` | The GUI |
 | `GET` | `/api/commands` | All command metadata |
-| `GET` | `/api/commands/:name` | Single command metadata + source blocks |
-| `POST` | `/api/run/:name` | Run a command, returns SSE stream |
-
-#### POST /api/run/:name
+| `GET` | `/api/commands/:name` | One command, with its source blocks |
+| `POST` | `/api/run/:name` | Run it; answers an SSE stream |
 
 ```json
 { "args": ["value1"], "flags": { "shout": true, "times": 3 } }
 ```
 
-SSE event shapes:
 ```
 data: {"type":"output","text":"HELLO, WORLD!\n"}
 data: {"type":"log","level":"success","text":"Greeted World 3 time(s)"}
@@ -355,99 +392,81 @@ data: {"type":"error","text":"arg [name] is required!"}
 
 ---
 
-## Built-in flags
-
-Every command gets these automatically:
-
-| Flag | Short | Description |
-|---|---|---|
-| `--dry` | `-d` | Show what would run without executing |
-| `--test` | `-t` | Sets `NODE_ENV=test` |
-| `--step` | | Re-run a single `_steps/` step by number |
-| `--project <dir>` | | Run against that project root instead of resolving one from cwd |
-
-`--project` (or `FLI_PROJECT=<dir>`) is consumed before the command runs — it
-sets `context.paths.*` and is stripped from the command's own flags. Use it to
-drive an app from outside it: `fli project:view --project packages/basecamp`.
-
----
-
 ## Tab completion
-
-fli supports tab completion for bash, zsh, and fish. One-time setup:
 
 ```bash
 fli completion:install
-source ~/.zshrc   # or ~/.bashrc, or restart your shell
+source ~/.zshrc            # or ~/.bashrc, or restart the shell
 ```
 
-Once installed:
-
 ```bash
-fli <TAB>                  # all commands and aliases
+fli <TAB>                  # every command and alias
 fli dep<TAB>               # deploy, deploy:logs, deploy:run …
 fli deploy:logs <TAB>      # --production, --stage, --follow, --tail …
-fli db:<TAB>               # db:push, db:pull, db:reset, db:import …
 ```
 
-The completion script calls `fli completion:query` on every Tab press. A disk cache at `~/.fli/completion-cache.json` makes this fast — it rebuilds automatically whenever any command file changes.
-
-```bash
-fli completion:generate             # print the shell script (auto-detects shell)
-fli completion:generate --shell fish
-fli completion:refresh              # force-rebuild the cache
-```
+The script calls `fli completion:query` on every Tab press, against a disk cache
+at `~/.fli/completion-cache.json` that rebuilds when any command file changes.
+`completion:generate` prints the script; `completion:refresh` forces a rebuild.
 
 ---
 
-## Environment config
+## Traps
 
-```bash
-WEB_DIR=frontend      # default: web
-API_DIR=backend       # default: api
-CLI_DIR=cli           # default: cli
-DB_DIR=database       # default: db
-FLI_PORT=8080         # default: 4444
-```
+- **Nothing on the read-only path may import zx.** It is ~85ms of what was a
+  ~200ms invocation, and `list`, `help`, `?` and completion wanted one thing from
+  it — colour, which is `core/color.js` now. That is also why `bootstrap.js`
+  imports `runtime.js` at the call site rather than at the top: a static import
+  pulls zx back in for every `fli list`. A command body is unaffected, since its
+  compiled shim imports `zx/globals` itself.
+- **A clean compile is not proof of valid JS** (Invariant 15). Compiling every
+  command file and *parsing* the output found 14 producing broken JavaScript the
+  compiler reported as fine. Every command file has a parse test; a new one needs
+  one too.
+- **The parse sweep compiles a command with no namespace module**, so a command
+  using a `_module.md` helper parses whether or not the module defines it. That
+  is not theoretical: `completion/_module.md` used four imports it did not have,
+  so all five completion commands threw and **Tab completion had never worked**
+  while every suite stayed green. A command whose only proof is the sweep has not
+  been run.
+- **A fenced block in a `_module.md` renders as an empty heading.** Module prose
+  has every fence stripped, because in a command file a fence IS the body. Write
+  a namespace overview as a plain list.
 
----
+### Inside a `<script>` block
 
-## Compiler constraints
+Two things the compiler cannot see through, and both only matter when your
+command *generates* `.md` files — `make:command` does:
 
-A few things to avoid inside `<script>` blocks:
-
-**No literal triple backticks** — use a variable:
 ```js
-const fence = '`'.repeat(3)
+const fence       = '`'.repeat(3)     // no literal triple backticks
+const scriptClose = '</' + 'script>'  // no literal closing script tag
 ```
-
-**No literal `</script>`** — split the string:
-```js
-const scriptClose = '</' + 'script>'
-```
-
-These only apply when your command *generates* `.md` files (like `make:command` does). Normal commands are unaffected.
 
 ---
 
 ## Dependencies
 
-| Package | Purpose |
+| Package | |
 |---|---|
-| `zx` | Shell execution (`$`), `question()`, `echo()`, `minimist` |
-| `dotenv` | `.env` loading |
+| `zx` | Shell execution (`$`), `question()`, `echo()` |
+| `minimist` | argv parsing |
+| `linkedom` · `turndown` | `fetch:*` — HTML into markdown |
 
 ---
 
 ## Running tests
 
 ```bash
-npm test
+bun run test
 ```
 
-Runs two batches (the steps tests must run in a separate process due to Bun's shared module cache):
+Two batches, and the split is load-bearing: the `_steps/` tests must run in a
+separate process, because bun's shared module cache carries state between them.
 
-```bash
-bun test tests/compiler.test.js tests/runtime.test.js tests/registry.test.js tests/server.test.js
-bun test tests/zz-steps.test.js
-```
+There is **no browser drive for `fli`**. A change to a scaffold is proved by
+scaffolding into a temp directory and running what comes out —
+`node scripts/scaffold-build.mjs` from the repo root does exactly that, and the
+`scaffold` CI phase runs it against packed tarballs. A change to
+`core/checks.js` also needs `node scripts/ci.mjs --fast`, because this repo is
+its other caller.

@@ -35,6 +35,8 @@
   //     />
   //   {/if}
 
+  import { uid } from '../../utils.js'
+
   export let items        = []      // Item[]
   export let placeholder  = 'Search commands…'
   export let groupOrder   = []      // explicit group sort order
@@ -51,6 +53,12 @@
   let idx   = 0
   let inputEl
   let listEl
+
+  // Focus never leaves the search box, so `aria-selected` moving down the list
+  // says nothing on its own — the input has to NAME the row Enter would run,
+  // and a row can only be named if it has an id.
+  const listId = uid('cp')
+  const rowId  = (item) => `${listId}-${item.id}`
 
   // Focus search input immediately on mount
   $onMount(() => inputEl?.focus())
@@ -109,10 +117,6 @@
     onclose?.()
   }
 
-  function handleBackdrop(e) {
-    if (e.target === e.currentTarget) close()
-  }
-
   function handleKeydown(e) {
     switch (e.key) {
       case 'ArrowDown':
@@ -167,16 +171,19 @@
     One keydown handler, on the backdrop, and it is deliberately not also on
     the input: keydown bubbles, so binding both ran it TWICE per press —
     every arrow key skipped a row and Enter ran the chosen command twice.
+
+    `|self` is what dismisses it: a click on the panel bubbles to here, so
+    without it every command run would also be a dismissal.
   -->
   <div
     class="fjs-cp-backdrop"
     {@attach backdropAnim}
-    on:click={handleBackdrop}
+    on:click|self={close}
     on:keydown={handleKeydown}
   >
     <!-- Panel -->
     <div
-      class="fjs-cp-panel"
+      class="surface fjs-cp-panel"
       style:max-height={maxHeight}
       style:max-width="{maxWidth}px"
       {@attach panelAnim}
@@ -198,13 +205,24 @@
           autocomplete="off"
           spellcheck="false"
           aria-label="Search commands"
+          role="combobox"
+          aria-expanded="true"
+          aria-haspopup="listbox"
+          aria-autocomplete="list"
+          aria-controls={listId}
+          aria-activedescendant={flat[idx] ? rowId(flat[idx]) : null}
         />
         {#if query}
+          <!--
+            Focus has to go back where it came from. The button is inside the
+            panel, so clicking it leaves focus on the button — the list is
+            right, the box is empty, and the next thing typed goes nowhere.
+          -->
           <button
             type="button"
             class="fjs-cp-clear"
             aria-label="Clear search"
-            on:click={() => query = ''}
+            on:click={() => { query = ''; inputEl?.focus() }}
           >✕</button>
         {/if}
         <kbd>Esc</kbd>
@@ -213,6 +231,7 @@
       <!-- ── Results list ── -->
       <div
         bind:this={listEl}
+        id={listId}
         class="fjs-cp-list"
         role="listbox"
         aria-label="Commands"
@@ -245,13 +264,22 @@
               {@const gi       = flatIdx[item.id]}
               {@const isActive = gi === idx}
 
+              <!--
+                The pointer takes the cursor on mousemove, not on mouseenter.
+                A palette opens under a stationary pointer — ⌘K is a keyboard
+                gesture and the mouse is wherever it was left — so `mouseenter`
+                fired for whichever row happened to land under it, and Enter
+                ran a command nobody chose. Scrolling the list with the arrow
+                keys does the same thing, in the other direction.
+              -->
               <button
                 type="button"
+                id={rowId(item)}
                 class="fjs-cp-row {isActive ? 'fjs-cp-row--active' : ''}"
                 data-active={isActive}
                 role="option"
                 aria-selected={isActive}
-                on:mouseenter={() => idx = gi}
+                on:mousemove={() => { if (idx !== gi) idx = gi }}
                 on:click={() => run(item)}
               >
                 <!-- Icon -->
@@ -348,16 +376,27 @@
 
   /* ── Panel ───────────────────────────────────────────────────────────── */
 
+  /*
+   * The panel IS a surface — `.surface` in the markup — so the background,
+   * the ink, the hairline and the radius come from surface.css and the tone
+   * recipe comes with them. What is left here is the palette's own geometry
+   * and the two places it differs: a raised ground, said as the token the
+   * package's own recipe reads rather than as a `background`, and a heavier
+   * shadow than a card's.
+   *
+   * `.dialog` is NOT the class for this, though the register said so
+   * (`FJS-056`): it is built on the native <dialog> — `max-width: 480px`, and
+   * a `::backdrop` that only paints for a real dialog element. This panel is a
+   * div with a backdrop of its own, deliberately (`FJS-322`).
+   */
   .fjs-cp-panel {
+    --surface-bg:   var(--surface-raised);
+
     display:        flex;
     flex-direction: column;
     width:          100%;
     margin:         0 var(--space-2xl);
     overflow:       hidden;
-    background:     var(--surface-raised);
-    color:          var(--ink);
-    border:         var(--border-width) solid var(--rule);
-    border-radius:  var(--card-radius);
     box-shadow:     var(--shadow-lg);
     font-family:    var(--cp-font);
     font-size:      var(--text-sm);

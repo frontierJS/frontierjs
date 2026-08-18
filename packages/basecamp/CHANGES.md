@@ -1,5 +1,397 @@
 # Changes — @frontierjs/basecamp
 
+## 2026-08-18 — the db suite stopped moving the process out from under itself
+
+`db/test/schema.test.ts`'s two audit tests chdir'd into a scratch directory
+because the logger's path was believed to be CWD-relative. It is not: the
+`databases: { audit: { path } }` override beats the declaration and Litestone
+resolves it to an absolute path before anything opens, so the chdir bought
+nothing and cost everyone — CWD is per PROCESS, so for that window every other
+test file in the run resolved its relative paths somewhere else, and the failure
+landed as `ENOENT: auditLogs.jsonl` naming the test that moved rather than the
+one that was moved.
+
+The 1500ms sleep went with it. The writer buffers ~1s and a fixed wait against a
+buffer is a coin toss under load. `auditEntries(dir, model, ops)` polls for the
+rows the assertions are about, gives up at ten seconds so a real failure is
+still a failure, and both tests state a 20s timeout — bun's default 5s does not
+fit the poll. FJS-281.
+
+## 2026-08-17 — optimistic locking on the rows a person edits
+
+Ten models declare `@version`: Workspace, Project, Environment, Secret, Network,
+Domain, FeatureFlag, NotificationChannel, AlertRule, Dashboard. Two people on
+one config row both PATCH and the second silently erased the first; now the
+second is refused with a 409 it can act on.
+
+**The exclusions are the substance.** `@version` is per ROW, not per column, so
+a row a machine also writes on its own schedule goes stale under an open editor
+without anyone editing it — and the conflict is then reported against a change
+the person never made. Server, ApiKey and Volume have a heartbeat or a usage
+counter; App, Job, Recipe and Deployment have an engine driving status through a
+run; DashboardWidget's reorder and its config edit touch disjoint columns and
+reorder is deliberately last-write-wins; FlagOverride is reached by natural key
+and never read as a row. Deployment is the one worth stating: its guard already
+exists and is narrower — `@@transitions(status, …)` is a compare-and-swap on the
+one column two writers contend for, so a stale cancel is refused by name, and a
+version on top would refuse it again for a build step having moved the row.
+
+Three things had to change beside the declaration:
+
+**A service-side write of a row it just read carries the version it read.**
+`demoteSiblings`, `makePrimary`, `uploadCert`, `verify`, the channel test stamp
+and `saveVariables` all write a row the same call fetched. That is a real
+compare-and-swap rather than a formality — two people promoting different
+hostnames at once is exactly the race — so `saveVariables` now takes the row
+instead of reaching for `ctx.id`.
+
+**`changesNothing(patch)` replaces `!Object.keys(patch).length`.** The version
+rides on every patch of a versioned model, so counting it as a change turns a
+form submitted with nothing edited into a real write — which bumps the version
+and makes every other open editor stale for a change nobody made.
+
+**A hand-rolled draft pins its own version.** `createResource` fills one in from
+what the STORE holds, and the store is live: the WS push from the other person's
+save moved the remembered version while the draft sat still, so the save carried
+a number nobody on this screen had read and won the race it exists to lose. The
+project screen puts `version` in the draft, which is the documented way to pin
+it — a stated version beats the remembered one. `<Form record={row}>` is already
+right, because it edits the row whole.
+
+The five screens whose write can now conflict show the sentence through
+`resource.fieldErrors()` (`web/src/errors.js`), and their error banner is the
+kit's `<Alert>` rather than a hand-written `<article class="alert danger">` —
+`role="alert"` is what makes a refusal reach a screen reader at all. The other
+~20 screens still hand-write theirs.
+
+Eight assertions in a real browser, and four at the API tier through
+`@frontierjs/testing`. Two junction defects came out of it: `@version` could not
+survive `autoValidate` (`FJS-335`) and the HTTP transport was unreachable
+cross-origin (`FJS-336`). A third is open — the `?workspace_id=` fallback this
+app documents is refused by `autoFilter` before anything reads it (`FJS-337`).
+
+## 2026-08-17 — `/servers/` is a list that lives in its URL
+
+Filters, sort and page are all `page.query` + `page.directives` now. Nothing on
+the screen holds a copy.
+
+Sierra splits a URL's search string over the same table junction's bridge reads
+(Invariant 10), so there is nothing to translate: `?role=general&$orderBy=-name&
+$offset=20` is the filter, the sort and the page, and `find(page.query, {…})`
+sends it back. What that buys is not tidiness — it is that a reload, the back
+button and a pasted link all land on the same list, and none of them worked
+before.
+
+**Three framework gaps this screen needed and none of them was in the app.**
+
+- **`Table` had no way to REPORT a sort.** `bind:sortKey` makes the component
+  the owner, and a component cannot own something in the address bar.
+  `onsort={(key, dir) => …}` is new in `@frontierjs/ui`.
+- **`normalizeOrderBy` was not exported from Junction.** `autoSort` validates
+  `$orderBy` and leaves it raw, so the service has to parse it — and writing
+  that parse in a service is a second definition of the grammar.
+- **`servers.find` ignored `$orderBy` entirely.** It hardcoded
+  `createdAt desc`. Sorting worked in the UI only because nothing had ever
+  asked the server to sort.
+
+**The bug this screen found in itself is worth the entry on its own.** `load()`
+first read the `$:` values derived from `page.*` — and it runs from the watch on
+`page.*`. A derivation that has not settled yet hands back the PREVIOUS value,
+so the first click on a header wrote `$orderBy=name` into the address bar and
+asked the server for no sort at all; the second click asked for the first one.
+The list was one click behind the URL, on a screen whose entire claim is that
+the two are the same thing — and it looked like an off-by-one in the sort
+direction, which is a much more interesting-looking bug than it was. **Inside a
+watch, read the source, not a derivation of it.**
+
+Twelve assertions in a real browser against the seeded fleet: a filter that
+matches nothing proves the filter reached the server, the sort is asserted
+against what the SERVER returned rather than against row order, a pasted
+`$orderBy` link reproduces the list, the header arrow follows the URL rather
+than a click, back moves the list, and `$offset` past the end answers an empty
+page rather than page one again.
+
+Unrelated flake fixed on the way: the ApiKey audit-trail test slept a fixed
+1500ms against a writer that buffers ~1s. It polls now, inside a stated 20s
+timeout — it had failed once in a full run and passed alone immediately after,
+which is the worst way for a test to be wrong.
+
+## 2026-08-17 — the API tier is tested, through `@frontierjs/testing`
+
+`api/test/services.test.ts` — 8 tests over the REAL app, and this repo's first
+consumer of the Testing realm's API half. 109 → 117 tests.
+
+**Why it is not more schema tests.** `db/test/schema.test.ts` grades this app at
+the Data boundary and stops. Between a principal and that boundary sit five
+steps, four of them basecamp's own, and none was executing:
+
+    session → SessionContext → withWorkspaceStanding → memberRole
+            → basecampGateLevel → toDataPrincipal → the scoped client
+
+A principal can arrive correct at every one of them and land wrong. `env.as(user)
+.service(name)` is the path a request takes, minus the socket.
+
+**Two seams the app grew to be mountable**, both defaulting to what production
+does so the entry point is unchanged:
+
+- `buildBasecampApp({ db, dbPath })`. The Testing realm mounts the app over the
+  ENVIRONMENT's client — handing it a second client on the same file would work
+  and would be wrong, because `arrange` writes and `announced()` would then be
+  looking at different connections. `dbPath` covers **both** databases: the
+  queue's file is derived from it, and a redirect that left the queue behind
+  would write jobs into the developer's own.
+- `autoload:` stated on `createApp`. The default resolves `./services` beside
+  `Bun.main`, which is the entry point in production and the TEST RUNNER under
+  `bun test`.
+
+**What the first mount found is filed as `FJS-333`** — `autoload-services` was a
+`needsHost` phase in Junction, so `_startForTest` skipped it and every app that
+autoloads had zero services in a test env. Every call answered a 404 naming the
+service, which reads like a wrong name rather than an unloaded app.
+
+**Two of the tests assert the app is better than the test first assumed.** A
+non-member is refused by `scopeToWorkspace` with *You are not a member of this
+workspace*, not shown an empty list — so the row policy is the second line, not
+the first, and the empty-screen hazard does not reach a screen here. The policy
+is still asserted, by a caller the hook admits, against a SECOND workspace whose
+project must never appear: without that row, "a member sees their own workspace"
+is true of a database with only one and the test cannot fail.
+
+**Transport parity ran for the first time.** Every call derivable from the app's
+model services, put down HTTP and WebSocket and compared, as an owner and as an
+anonymous caller: **no mismatches**. That result is trustworthy because the
+runner reports *not graded* as a row when it derives no calls or the socket
+never connects — an empty array is what agreement looks like too.
+
+## 2026-08-17 — the API tier is tested through `@frontierjs/testing`
+
+21 services and two test files, none of which called a service. `api/test/services.test.ts`
+mounts the **real** app — `buildBasecampApp({ db, dbPath })` over the test
+environment's own Litestone client — so the autoloader, the global hooks and
+every service factory are the ones production runs.
+
+**The half a Data-realm test cannot reach.** `db/test/schema.test.ts` grades
+this app at the Data boundary and stops. Between a principal and that boundary
+there are five steps, four of them basecamp's own, and nothing was executing
+them: session → SessionContext → `withWorkspaceStanding` → `memberRole` →
+`basecampGateLevel` → `toDataPrincipal` → the scoped client. A principal can
+arrive correct at every one and land wrong.
+
+Eight tests: standing derived per request from the membership row (a developer
+creates, a viewer is refused, a viewer still reads), a non-member refused **by
+name** rather than shown an empty list, a member seeing only their own
+workspace's rows with a second workspace present to make that falsifiable, a
+stranger refused at the transport, what an act announced versus what arranging
+below the boundary does not, the HTTP pipeline, and transport parity.
+
+**Transport parity had never run anywhere.** Every derived call for every model
+service, as an owner and as a stranger, down HTTP and down a real WebSocket:
+**zero mismatches**. Worth stating because a parity check that graded nothing
+would also be green — the runner reports an underived call list and a socket
+that never connected as findings, and neither fired.
+
+**Two seams this needed, both small and both real.** `buildBasecampApp` takes
+an optional `{ db, dbPath }`: a test needs the app to use the environment's
+client, because handing it a second client on the same file would leave
+`arrange` and `announced()` looking at different connections. `dbPath` covers
+the queue too — it is derived from the same path, and a test that redirected
+the main database and left the queue behind would write jobs into the
+developer's own. Both default to what production does.
+
+`autoload` is now stated with an absolute path rather than defaulted, because
+the default resolves `./services` beside `Bun.main` and under `bun test` that is
+the test runner. The other half of that was a junction defect — `FJS-332`.
+
+117 pass, 0 fail.
+
+## 2026-08-17 — the release and job state machines are declared, not scattered
+
+`@@transitions(status, …)` on `Deployment` and on `Job`. Eight status enums in
+this schema and none of them declared a machine; the rules lived as literal
+lists in three places instead, and the copies had already drifted apart.
+
+| Was | Where |
+| --- | --- |
+| `TERMINAL = ['success','failed','cancelled','rolled_back']` | deployments service |
+| `CANCELLABLE = ['pending','building','pushing','deploying']` | deployments service |
+| `TERMINAL = […]` again | `deployments/[id]/index.mesa` |
+| `['pending','running'].includes(job.status)` | jobs service |
+| `['pending','running'].includes(job.status)` again | `jobs/[id]/index.mesa` |
+
+All five are gone. The declaration is the only statement, litestone enforces it
+at the Data boundary, and the screens read `resource.transitions(row)`.
+
+**The copies disagreed, and the drift went both ways.** A `failed` job could
+not be cancelled from the screen or the service — but `remove()` cancelled
+whatever it soft-deleted, from any state, because a job left `pending` behind a
+`deletedAt` is invisible to every read and still on the clock. A `success`
+release offered no rollback anywhere. Declaring the machine forced both to be
+answered once: `cancel` reaches `failed`, and `rollback: success -> rolled_back
+@gate(5)` — Deployment's update gate is USER(4), and undoing a release someone
+else shipped is not the same authority as shipping one.
+
+**A refusal now names what IS possible.** `TERMINAL.includes(…)` could only say
+which move was wrong; the boundary answers *Cannot transition Deployment.status
+from 'success' to 'cancelled' — valid transitions from 'success': 'rolled_back'*
+with a 409 rather than a 400, which is what the state of the row actually is.
+
+**`remove()` on a job now asks before it writes.** It used to set `cancelled`
+unconditionally; `cancelled -> cancelled` is not a transition, so an already
+cancelled job would have started failing with a 409 on delete.
+
+The engines are untouched: they run on Caravan's thread through `asSystem()`,
+which bypasses transitions by design, and advancing a deployment is their job.
+The machine guards the request path — which is the path the deleted lists were
+guarding too.
+
+Six tests in `db/test/schema.test.ts` against a real client, **mutation-checked
+in two directions**: drop `@gate(5)` from `rollback` and two fail, widen
+`cancel` to reach `success` and two fail. Both screens driven in a real browser
+against the seeded fleet — the deployment is `success` and the job is `failed`,
+which are exactly the two states the old lists got wrong.
+
+`db/access.snapshot.md` grew a **State transitions** section: 11 moves, with the
+gated one named. Regenerating the snapshots also picked up a stale
+`surface.snapshot.md` — the `captureCredential` hook deleted in the `FJS-D23`
+work above was still listed in it, and CI would have failed on that.
+
+## 2026-08-17 — every control and every table is `@frontierjs/ui`
+
+Zero raw form controls and zero raw `<table>` left in `web/src`. What went:
+
+| Was | Count | Now |
+| --- | ----- | --- |
+| `<table class="table …">` + `.table-wrap` | 22 | `display/Table` |
+| `<button class="btn …">` | 25 | `forms/Button` |
+| `<a class="btn …">` | 19 | `forms/Button href=` |
+| `<input class="field">` | 15 | `forms/Input` |
+| `<select class="field">` | 6 | `forms/Select` |
+| `<label class="field-check">` + checkbox | 1 | `forms/Checkbox` |
+
+**This is the point of the app.** A screen that hand-writes what the kit owns
+reports nothing back about the kit, and the whole reason basecamp exists is to
+be the thing that finds out what is missing. Two gaps surfaced the moment the
+screens stopped writing their own markup, and both are fixed in the kit rather
+than worked around here: a password field with no reveal toggle, and a `Table`
+that could not express a visually-hidden actions header (`hideLabel`).
+
+**Three things the migration had to get right rather than translate.**
+
+- **`bind:` does not cross a component boundary onto a member expression.** A
+  component binding takes a writable top-level `let`, so every
+  `bind:value={draft.name}` became `value={…}` plus an `oninput` callback. On a
+  raw `<input>` it was an element binding and legal; the failure is a compile
+  error, not a silent one, which is why this is a note and not an entry in
+  `ISSUES.md`.
+- **The `id` moved from `<tbody>` to the component.** `<Table>` spreads its
+  caller's attributes onto its outer wrapper, so `#job-rows` is now a `<div>`
+  around the table rather than the `<tbody>`. Every selector the app's own
+  drive uses is a descendant one — `#project-rows td`, `#app-rows button`,
+  `[...#environment-rows tr].find(tr => …)` — so all of them still resolve.
+- **A hand-written `<form>` with kit controls needs `novalidate`.** Kit controls
+  carry a real `required`, which is what assistive tech announces and also what
+  makes the browser refuse to fire submit. `<Form>` is novalidate by default;
+  the forms that stayed hand-written are the ones to watch (`FJS-055`).
+
+All 74 `.mesa` files compile and emit parseable JS. Every screen was walked in
+a real browser signed in as a seeded user, in **both** workspaces — the second
+one is where the fleet lives, and until the switch every table-bearing screen
+was rendering its empty branch, so the row snippets had never run. Checked per
+screen: headings, the controls the app's drive selects by id, the header row
+(including the hidden `Actions` one), row counts against the database, and
+basecamp's own three a11y rules — a `<th>` without `scope`, a control without a
+name, a control with no text. No findings, no page errors.
+
+**`bun run verify` has not been run against this.** It needs an EMPTY database
+— it asserts the first-run wizard owns the app — and the tree's database has
+real data in it. The walk above is the substitute and it is a weaker one: it
+does not exercise the gate ladder, the live-update path, or any flow that
+writes. Run `bun run verify --reset` on a tree that can afford it.
+
+## 2026-08-17 — the sign-in screen is on the kit
+
+`/login` was hand-written HTML: raw `<input class="field">`, a raw `<button>`,
+a hand-rolled `.alert`, and its own `busy`/`error` state. It is `<Form>` +
+`<Input>` + `<Button>` now, which is what it should have been — the point of
+this app is to be the thing that finds out what the framework is missing, and a
+screen that bypasses the kit reports nothing.
+
+What it cost to say: nothing. `<Form>` with no resource is the supported shape
+(`onsubmit` + `mapErrors`) — signing in is not a write to a model — and it owns
+the in-flight flag, the submit guard and the form-level message, so three
+locals and the `.alert` markup are gone. `<Button type="submit">` reads the
+form's `submitting` from context.
+
+What it bought: the password field has a show/hide toggle, because
+`@frontierjs/ui` draws one for `type="password"` as of the same day.
+
+That was the first screen; the rest followed in the same pass — see the entry
+above.
+
+## 2026-08-17 — the channel credential is declared, not conventional (`FJS-D23`)
+
+103 tests, 0 fail. `bun run verify` 271/271.
+
+`NotificationChannel.secret` is `@transient`: the plaintext credential on its way
+into an `@encrypted` `Secret` row, declared in the schema instead of held by a
+hook and a comment. `captureCredential` is deleted — 26 lines and two hook
+entries — and `create`/`patch` read `ctx.transients.secret`.
+
+What it buys here: the form's credential box is a field the schema knows about,
+`@length(1, 4096)` applies to it on both sides of the wire, and a misspelt key is
+distinguishable from a column the model does not have. What is unchanged is the
+part that matters — `notification_channel` still has no `secret` column, and the
+drive still asserts the credential appears neither on the page nor in what the
+API answers.
+
+## 2026-08-17 — scheduled jobs were on a clock nothing maintained (`FJS-327`, `FJS-328`)
+
+99 tests (11 new), 0 fail. Baseline unchanged at 20.
+
+Both defects are the same mistake: a scheduled `Job` is a database ROW, and its
+schedule was treated as a side effect of the request that created it.
+
+**A restart emptied the clock.** The only place a schedule was ever registered
+was the jobs service's `create()`, against junction's in-process
+`app.scheduler`. Nothing re-read the rows at boot, so the first deploy stopped
+every scheduled job in the app — with the row still saying `scheduled` in the
+UI, `nextRunAt` still holding a date, and nothing logged. The shape of the
+failure is *the job just never ran*.
+
+**An edit kept the old schedule.** `patch()` validated a new `cronExpression`,
+wrote it, and never touched the scheduler. Same hole in the other directions:
+`kind` and `status` are patchable too, so a job that stopped being scheduled or
+was cancelled stayed on the clock — and `remove()` soft-deletes, which makes the
+row invisible to every read while its timer keeps dispatching runs for it.
+
+**Caravan owns the clock now** (`FJS-D36`). `app.scheduler` is a timer with no
+persistence, no retry and no principal; this app was using it to fire
+`app.jobs.dispatch(…)`, which is a clock with none of the queue's durability
+while looking like it has it.
+
+- `engine/job-schedule.ts` is the one place a Job row is bound to a clock.
+  `syncSchedule(app, job)` is the whole rule — on the clock when the row is
+  `scheduled`, carries an expression and is not cancelled; off it otherwise —
+  and `patch()` reads it off the UPDATED row, because the expression is only one
+  of the ways a schedule changes.
+- `restoreSchedules()` in the job engine re-registers every live scheduled job
+  at `register()`, where the `job:run` handler already goes. One unparseable
+  expression is logged and skipped rather than costing every other job its
+  schedule; the call is not awaited, because a fleet that cannot schedule is
+  worse served by an API that will not boot.
+- `runJob` skips a `cancelled` row. The row is the truth about whether a run
+  should happen, and a run queued before the cancel is still in the queue.
+
+Eleven tests, against a real Caravan queue and (for the restore half) a real
+Litestone client — the claim is what a scheduler holds after a sequence of
+calls, and a stand-in answers whatever it was written to answer, which is how
+the original went unnoticed. Both halves mutation-checked.
+
+Also regenerated `db/schema.d.ts`: it predated the `ServiceTypes` block
+litestone's typegen emits since `FJS-018`, and `db/test/types.test.ts` was
+failing on the gap.
+
+
 ## 2026-08-16 — conduit's `hooks:` is `observers:` (`FJS-287`)
 
 `core/app.ts` names the option conduit renamed. The three callbacks are

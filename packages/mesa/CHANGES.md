@@ -1,5 +1,263 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-17 — `waitSettled` answers whether anything is still MOVING
+
+The probe asked `getAnimations({ subtree: true })` for an empty list. An
+animation with `fill: 'forwards'` never leaves it — it is still in effect,
+holding its last frame — so on any page that has one the probe polled to its
+own timeout and answered `false`, four seconds later, every time. Both of
+`@frontierjs/ui`'s dropdown calls were doing exactly that, which is eight
+seconds of a run spent proving nothing, and a gate a spec was told to put
+before a coordinate click that was not a gate at all.
+
+It filters to `playState === 'running'` now, which is the question the name
+asks.
+
+## 2026-08-17 — a comment inside a tag no longer eats the attributes after it (`FJS-330`)
+
+`<button id="a" <!-- note --> data-n={n} aria-label="hi">` emitted the comment
+verbatim into the template. The `>` that ends `-->` read as the end of the tag,
+so the element closed there and everything after it became a text node —
+`` ` data-n=1 aria-label="hi" >x` `` — with no error, no warning, and JS that
+still parsed. The attributes simply did not apply.
+
+`parseAttributes` consumes it now. **Dropped rather than refused**: HTML has no
+comment inside a tag either, so there is no markup to preserve and a strip
+cannot get anything wrong, while a comment explaining the attribute below it is
+a reasonable thing to want to write. An **unterminated** one is refused by name,
+because eating to the end of the file is the same silent failure wearing a
+different hat.
+
+Six cases, and the one that constrains the fix is that `<!--` inside an
+attribute VALUE is untouched: it is read as a string before the loop can see
+it, and there it is content rather than markup.
+
+## 2026-08-17 — an unkeyed `{#each}` is keyed by INDEX (`FJS-325` closed)
+
+`eachDefaultKey` was `(item) => item`, so a list with no key expression was
+keyed by its own values. That is unique only when the values are, and two
+ordinary shapes are not: a list of repeated primitives, and an array-like,
+whose every item is `undefined` — the shape a calendar grid is built from. A
+collision did not degrade. Measured in a real browser over `['a','b','a']`, the
+first render was right, reordering to `['b','a','a']` rendered `ab` and threw
+`NotFoundError: insertBefore …` out of `_moveBlock`, and every assignment after
+that threw again and rendered less. The runtime's *duplicate keys corrupt the
+reconciler* warning was the whole of the protection.
+
+It is now `(_item, index) => index`, which cannot collide and therefore always
+renders the array it was handed. **The trade is node identity across a
+reorder** — a moved item is rebound into the node already at that position, so
+DOM state a row owns (focus, an uncontrolled input, a running animation) stays
+with the POSITION. An author who needs identity states a key, and `(item)` is
+still how you ask for the old behaviour where the values really are unique.
+`$$virtualEach` already keyed by index with no key function, so the two forms
+now agree.
+
+`each-unkeyed.spec.mjs` was pinned as still-broken and now asserts the fix,
+including the trade: the rows after a reorder are the nodes that were already
+there, stamped before the click.
+
+## 2026-08-17 — the HMR DOM swap is a module, and the client is served assembled
+
+`mesa-vite/swap.js` (`@frontierjs/mesa/vite/swap`) is the swap a hot update
+performs — clear between the two markers, seed `__setMark`, re-call, count. It
+was ~30 lines inside `client.js` and ~30 identical lines inside jetty's own dev
+client (`FJS-259`). **It carries no `import.meta` and imports nothing**, which
+is a constraint rather than a style: jetty bundles it into MV3 content scripts,
+which are classic scripts, and one `import.meta` token anywhere in such a bundle
+is a parse error before a line of it runs.
+
+**That split a serving problem out with it.** Both Vite plugins that serve this
+client — this package's and Sierra's, each at a virtual id of its own
+(`FJS-D16`) — hand Vite a STRING, and a virtual id resolves no relative import.
+`mesa-vite/client-source.js` is the one owner of the join, fails closed if
+either shape it edits stops matching, and is what Sierra asks for by path the
+way it asks for the compiler. Serving `client.js` alone would be a 200 that dies
+in the browser and puts every component back on the full-reload path — asserted
+against now on both sides, as *the swap is inlined and no relative import is
+left behind*.
+
+
+## 2026-08-17 — the devtools relay, asked across two tabs (`FJS-024` closed)
+
+`BroadcastChannel` is same-origin and cross-document by definition, so a single
+page posts and never hears itself — the relay between an app and the devtools
+panel was the one part of the plugin a one-tab drive could not reach.
+
+`openChrome` gained `newPage(url, ready)`: a second target with its own
+`evaluate`, `navigate` and `close`, whose errors collect into the SAME array, so
+a throw in the other tab still fails the spec that opened it. The devtools spec
+now opens the panel beside the app and asserts that `App`, `Counter` and
+`Sibling` arrive in its sidebar with their files and signal counts — which also
+proves the dev instrumentation the plugin turns on with `dev: isDev`.
+
+That was the last named gap in `FJS-024`.
+
+## 2026-08-17 — the derivation layer settles outside-in (`FJS-303`)
+
+The flush drained derivations to quiescence before anything that builds DOM
+ran. That is what makes renders read derivations which have stopped moving, and
+it is also how a memo three blocks deep recomputed in the same breath as the
+top-level derivation the guard above it was still waiting on:
+
+    {#if calendar[week]}
+      {@const day = calendar[week][day]}   ← recomputed first, read undefined[day]
+
+The throw comes out of a click handler, so it surfaces as a component that
+quietly stops responding and nothing points at the guard.
+`@frontierjs/ui`'s `DatePicker` hit it on every month change with fewer weeks
+(`FJS-300`) and was fixed by iterating the real rows, which was an avoidance.
+
+**It now settles one DOM-depth at a time, shallowest first**, and within a
+level it skips anything whose owning block is already queued — decidable there,
+because the block was woken by the shallower derivation that just ran, where
+one turn earlier it was not pending at all. Nothing else changes: a surviving
+memo still recomputes and still notifies, one pass later, and a memo left dirty
+recomputes on the next READ, so a branch that lives gets a fresh value and one
+that dies is disposed before anyone asks.
+
+`createEffect`'s own comment had stated this invariant for renders since it was
+written — *an ifBlock's condition has to run before the renders inside its
+branch*. The derived tier was added ahead of both passes and did not honour it.
+
+**Reproducing it needed three things at once, which is the diagnosis.** The
+guarded value must be DERIVED, the outer loop FIXED, and the read a MEMO rather
+than a text interpolation. A plain array behind a guard never failed, and four
+fixtures passed before the fifth one threw.
+
+A first attempt handed control to the DOM tier whenever any block was pending.
+That cost an extra observation in a glitch-freedom test — the tell that the
+condition had to be about OWNERSHIP rather than about anything being pending.
+
+## 2026-08-17 — `<slot>` refuses an attribute, and the docs stop recommending the impossible form (`FJS-304`)
+
+`<slot tipId={tipId} />` compiled with no error and no warning, and the
+attribute vanished from the emission entirely. There is no `let:` directive to
+read one with either, so the spelling was a feature that did not exist wearing
+the face of one that did. It is refused by name now — the same call as an
+unknown `mesa:*` element (`FJS-023`): a typo and a missing feature must not be
+the same event. The message names the attribute and points at the form that can
+actually pass a value.
+
+**The documentation was half the defect.** VISION §9.6 called
+`export let children` + `{@render children?.()}` *legacy for new code* while it
+is the only mechanism that takes parameters — so the recommended path was the
+one that could not do the job. §9.6 now says plainly that a slot carries
+content in and never a value out, shows the snippet form for the other
+direction, and RULE 35a is rewritten with RULE 35b beside it.
+
+Eight cases in `test/slot-attributes.test.js`, five of them the legitimate
+spellings — a refusal that also refuses those is worse than the silence it
+replaces.
+
+## 2026-08-17 — three browser drives, and three defects only a browser could see
+
+`test/browser/` runs this package in a real Chrome, which nothing here had ever
+done: every other suite is happy-dom (`FJS-025`), and the Vite plugin was
+tested everywhere but a browser (`FJS-024`).
+
+**The harness is shared and lives here** because mesa is the leaf.
+`test/browser/drive.mjs` is Chrome over CDP, real input, the spec runner and
+the report; `test/browser/probes.js` is the in-page DOM half. `@frontierjs/ui`
+now reads both by relative path instead of carrying its own copy — one CDP
+client, so a trap learned in one drive is fixed for both. The extraction is
+behaviour-identical: 631 assertions, 65/65 components, unchanged.
+
+**`runtime/` — the language against a real DOM.** 39 assertions over six
+fixtures: the delegation root and the five events that do not bubble,
+`{@attach}` on a connected element with an animation that actually holds its
+end value, scoped rules that win in a real cascade and stop at a child
+component, `{#each}` node identity across a reorder, `$context` reaching
+content an `{#if}` or an `{#each}` builds later.
+
+**`vite/` — the plugin in a real dev server.** 31 assertions. HMR was proven up
+to the frame Vite sends and no further; this watches a component swap in place,
+twice, with the neighbour's state intact and no navigation, plus a style-only
+edit, the devtools panel booting, and both compile-error routes. The fixture
+app is copied to a temp directory and edited there, because an edit is what an
+HMR update IS and a drive that mutates tracked files leaves the tree dirty when
+it crashes.
+
+**`repl/` — the REPL itself, and it needs the network.** `example/index.html`
+loads nineteen things from the internet — Tailwind, lz-string, and an importmap
+of seventeen esm.sh entries including the compiler's own acorn and astring — so
+this drive is gated on reachability, kept out of `bun run test` and out of CI,
+and run by hand when the REPL is touched. No network is a named skip;
+`FJS_REQUIRE_NETWORK=1` makes that skip a failure. The offline work is
+`FJS-326`. 19 assertions: it boots, CodeMirror mounts, 73 examples resolve, the
+default compiles and **answers a real click** — which is the only thing that
+separates *rendered* from *mounted*, and one of the two ways this page has
+broken before — plus the drawer, its filter, and the share hash round-tripped
+through a real navigation rather than encoded and read back.
+
+**Fixed: *Open standalone* had never worked.** It fetches the runtime as source
+text to inline it, from `./runtime.js` — relative to the page, so
+`example/runtime.js`, which does not exist. Neither does a re-export at the
+package root, though this package's own `CLAUDE.md` layout claimed one; that
+line is gone too. It is `../src/runtime.js`.
+
+**Fixed: a parse failure raised no overlay and no message at all.**
+`formatError` did not set `stack`, and Vite's error overlay renders the stack
+with file linking — a regex over `undefined` — so the overlay threw inside its
+own constructor. The developer saw nothing: no overlay, no console line, the
+page still showing the previous content. Only a browser could see it, which is
+the point.
+
+**Also found, not fixed: `FJS-325`.** An `{#each}` with no key is keyed by the
+ITEM, so a repeated value throws out of `_moveBlock` on the first reorder and
+the list never recovers. Keying by index is the fix and it is a semantics
+decision, so it is pinned as still-broken in `each-unkeyed.spec.mjs` rather
+than patched here.
+
+**Two harness traps, both measured.** Two writes to one file within a few tens
+of milliseconds produce ONE watch event — 23ms apart, the second edit fired no
+`change` and arrived only when a later edit flushed it — so every write in the
+Vite drive waits for the file to settle. And a file-watch → compile → socket →
+re-render round trip is seconds, not milliseconds, so `eventually` takes a
+timeout.
+
+## 2026-08-16 — a delegated handler now reads `currentTarget` as its own element (`FJS-321`)
+
+Under `addEventListener`, `currentTarget` is the element the listener is on,
+and `e.target === e.currentTarget` is how anyone asks *was this element itself
+clicked* — it is what `on:click|self` compiles to.
+
+Delegation puts one listener on the root and passes the raw event down, so
+every delegated handler read the ROOT. The comparison was false for exactly the
+events `|self` exists to admit, and true for none of them: a modifier that
+never fired, and any hand-written comparison beside it.
+
+`_makeDelegatedHandler` defines `currentTarget` on the event per node before
+calling that node's handler, and drops the override in a `finally` — a native
+listener further up the same dispatch still reads its own. Two tests, one of
+them for that last part.
+
+Found under `@frontierjs/ui`'s command palette, whose backdrop could not be
+clicked away (`FJS-322`).
+
+## 2026-08-16 — a local declaration could shadow a reactive `let` into invalid JS (`FJS-319`)
+
+`function f(ts) { const d = new Date(ts) }`, in a component whose script also
+declared a top-level `let d`, compiled to:
+
+    const $runtime.get($$sig_d) = new Date(ts)
+
+The local declaration was rewritten as a read of the outer signal, inside its
+own declaration. Nothing reported it — Invariant 15, and this time the compiler
+rather than the emitter.
+
+A function **parameter** of the same name was already handled: the walker in
+`rewriteExpr` extended its scope with `collectParams` and with nothing else. So
+the hole only opened when a shadow was DECLARED rather than received, which is
+why no component in the repo had hit it.
+
+The walker now collects what a scope declares as well as what it receives:
+`var` across the whole function body, `let`/`const`/`function` per block, and a
+`for` head's own binding. Per block rather than per function deliberately —
+skipping the rewrite for a whole function because a nested block happens to
+declare the name would leave a real reactive read pointing at a stale local.
+Five tests, one of them that exact case.
+
 ## 2026-08-16 — `$context` reaches content a block creates later (`FJS-311`)
 
 `_contextStack` is synchronous setup-time state: a component pushes its map,

@@ -204,8 +204,14 @@ export interface CronSchedule {
    * exactly `void`; the union makes any handler that returns something — e.g.
    * `() => caravan.dispatch(...)`, which resolves a job id — a type error.
    * `async` functions still assign fine here, and _tick() awaits the result.
+   *
+   * The argument is the epoch MINUTE the fire belongs to, and it is handed over
+   * rather than read inside the fire because it is what makes the fire nameable
+   * across processes: this scheduler is in-process with no coordination, so two
+   * instances on one jobs.db both fire, and the only thing that can make the
+   * second one a no-op is a dispatch id both compute the same way.
    */
-  fn:        () => void
+  fn:        (fireMinute: number) => void
 }
 
 export class CronScheduler {
@@ -229,6 +235,23 @@ export class CronScheduler {
     const existing = this._schedules.findIndex(s => s.name === schedule.name)
     if (existing >= 0) this._schedules[existing] = schedule
     else               this._schedules.push(schedule)
+  }
+
+  /**
+   * Drop a schedule by name. Answers whether one was there.
+   *
+   * The counterpart `add` did not have. A schedule that comes from a DATABASE
+   * ROW rather than from a `*.job.ts` file has a lifetime — the row is deleted,
+   * or stops being a scheduled one — and with no way back the timer went on
+   * firing for the rest of the process, dispatching work for a job nobody can
+   * see. That is decidable here and nowhere else: the fire is the only thing
+   * holding the name.
+   */
+  remove(name: string): boolean {
+    const at = this._schedules.findIndex(s => s.name === name)
+    if (at < 0) return false
+    this._schedules.splice(at, 1)
+    return true
   }
 
   start(): void {
@@ -277,9 +300,9 @@ export class CronScheduler {
 
       if (isValid) {
         try {
-          // fn is declared `() => void` (see CronSchedule) but may really
+          // fn is declared `(minute) => void` (see CronSchedule) but may really
           // return a promise — recover it to attach rejection handling.
-          const result = schedule.fn() as unknown
+          const result = schedule.fn(minute) as unknown
           if (result instanceof Promise) {
             result.catch(err =>
               console.error(`[Caravan] Cron "${schedule.name}" failed:`, err)

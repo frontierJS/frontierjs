@@ -93,24 +93,22 @@ export async function buildExtension({ root, browser = 'chrome', verbose = false
     }))
   }
 
-  // --- 3. Build Islands (Vite multi-entry, no HTML) ---
+  // --- 3. Build Islands (one Vite lib build each, no HTML) ---
   if (found.islands.length > 0) {
     log('building islands:', found.islands.map((i) => i.id).join(', '))
     const { build } = await import('vite')
-    // One Vite build per island. inlineDynamicImports requires a single
-    // input — content scripts can't load chunks not in
-    // web_accessible_resources, so each island bundles its full graph
-    // (including dynamically-imported Mesa runtime) into one self-contained
-    // file. Cost: per-island duplication of shared deps. Benefit: every
-    // island is a single-file content script with no extra round trips.
+    // One build per island. inlineDynamicImports takes a single input —
+    // content scripts can't load chunks not in web_accessible_resources, so
+    // each island bundles its full graph (including the dynamically-imported
+    // Mesa runtime) into one self-contained file. Cost: per-island
+    // duplication of shared deps. Benefit: every island is a single-file
+    // content script with no extra round trips.
     for (const island of found.islands) {
-      const islandEntries = {
-        [`islands/${island.id}`]: autoGenPaths.islands[island.id].path,
-      }
       await build(islandsViteConfig({
-        extRoot: root,
-        islandEntries,
-        outDir: distDir,
+        extRoot:     root,
+        islandId:    island.id,
+        islandEntry: autoGenPaths.islands[island.id].path,
+        outDir:      distDir,
         dev,
       }))
     }

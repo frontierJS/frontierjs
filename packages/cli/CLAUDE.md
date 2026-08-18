@@ -256,6 +256,15 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   release, and tightening one can fail the repo's own CI — which is the point.
   Zero dependencies, plain ESM, node or bun; a package import would break the
   `ci.mjs` caller, which runs on plain node before anything is installed.
+- **A rule that OVER-fires costs more than one that is missing, and neither
+  caller can see it.** `ci.mjs` runs `runChecks` over the four APPS, so this
+  repo's own tree is checked by nobody — two errors sat under a bare `fli check`
+  at the root until someone ran one (`FJS-329`). One of them was a false
+  positive: `body-tag-in-comment` flagged any `<body` in any comment, where the
+  hazard is only a mention BEFORE the real tag, because Vite injects at the
+  first textual match. A check nobody trusts is the failure this engine exists
+  to prevent. **Run `fli check` at the repo root after touching a rule** — it is
+  the only caller that sees this package's own neighbours.
 - **`core/db-preflight.js` is why `fli dev` mentions an empty database.** An app
   with no rows boots clean and shows a blank screen, so nothing says anything.
   It resolves the path from the schema's `database` declaration — NOT from

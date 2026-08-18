@@ -28,6 +28,7 @@ title: Disk cleanup
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
 
@@ -149,6 +150,13 @@ title: Disk cleanup
     if (status === 'timeout') return 'warning'
     return 'muted'
   }
+  const SWEEP_COLUMNS = [
+    { key: 'server',  label: 'Server' },
+    { key: 'status',  label: 'Status' },
+    { key: 'freed',   label: 'Freed' },
+    { key: 'targets', label: 'Targets' },
+    { key: 'when',    label: 'When' },
+  ]
 </script>
 
 <div class="section-header">
@@ -256,35 +264,22 @@ title: Disk cleanup
 
 {#if history.length}
   <h2 class="h4">Recent sweeps</h2>
-  <div class="table-wrap">
-    <table class="table striped" id="cleanup-history">
-      <thead>
-        <tr>
-          <th scope="col">Server</th>
-          <th scope="col">Status</th>
-          <th scope="col">Freed</th>
-          <th scope="col">Targets</th>
-          <th scope="col">When</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each history as run}
-          <tr>
-            <td>{run.serverName ?? run.serverId}</td>
-            <td><Pill tone={statusTone(run.status)}>{run.status}</Pill></td>
-            <!-- What the outpost said it freed, never what was estimated before
-                 it ran. The two differ, and only one of them happened. -->
-            <td class="text-sm">{size(run.freedBytes)}</td>
-            <td class="text-sm text-muted">{(run.targets ?? []).join(', ')}</td>
-            <td class="text-sm text-muted">{when(run.finishedAt ?? run.createdAt)}</td>
-          </tr>
-          {#if run.error}
-            <tr><td colspan="5" class="text-sm">{run.error}</td></tr>
-          {/if}
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <Table id="cleanup-history" columns={SWEEP_COLUMNS} rows={history} striped hover={false}>
+    {#snippet row(run)}
+      <tr>
+        <td>{run.serverName ?? run.serverId}</td>
+        <td><Pill tone={statusTone(run.status)}>{run.status}</Pill></td>
+        <!-- What the outpost said it freed, never what was estimated before
+             it ran. The two differ, and only one of them happened. -->
+        <td class="text-sm">{size(run.freedBytes)}</td>
+        <td class="text-sm text-muted">{(run.targets ?? []).join(', ')}</td>
+        <td class="text-sm text-muted">{when(run.finishedAt ?? run.createdAt)}</td>
+      </tr>
+      {#if run.error}
+        <tr><td colspan="5" class="text-sm">{run.error}</td></tr>
+      {/if}
+    {/snippet}
+  </Table>
 {/if}
 
 <p class="text-sm text-muted">

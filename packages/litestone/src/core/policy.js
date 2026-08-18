@@ -204,6 +204,8 @@ export function compileDerived(model, fieldName, node) {
           bad(`'${n.name}' is @computed — a JS function over a row, which SQLite cannot see`)
         if (f.attributes?.some(a => a.kind === 'derived'))
           bad(`'${n.name}' is @derived — one derived field cannot read another yet`)
+        if (f.attributes?.some(a => a.kind === 'transient'))
+          bad(`'${n.name}' is @transient — the API accepts it and nothing stores it, so there is no column here`)
         return `"${n.name}"`
       }
       case 'literal':
@@ -453,7 +455,7 @@ export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relat
 
   // Check denies first — explicit deny wins
   for (const { expr, message } of denies) {
-    if (evalJs(expr, ctx, data, modelName, policyMap, relationMap)) {
+    if (evalJs(expr, ctx, data, modelName, policyMap, relationMap, 'create')) {
       plog(ctx, 'create', modelName, '[31mDENIED[0m (@@deny fired)')
       throw new AccessDeniedError(message ?? `Create denied by @@deny policy on "${modelName}"`, { model: modelName, operation: 'create' })
     }
@@ -461,7 +463,7 @@ export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relat
 
   // If any @@allow exists, at least one must pass
   if (allows.length) {
-    const permitted = allows.some(({ expr }) => evalJs(expr, ctx, data, modelName, policyMap, relationMap))
+    const permitted = allows.some(({ expr }) => evalJs(expr, ctx, data, modelName, policyMap, relationMap, 'create'))
     if (!permitted) {
       plog(ctx, 'create', modelName, '[31mDENIED[0m (no @@allow passed)')
       const msg = allows.find(({ message }) => message)?.message
@@ -485,14 +487,14 @@ export function checkPostUpdatePolicy(modelName, row, ctx, policyMap, schema, re
   const { allows, denies } = rules
 
   for (const { expr, message } of denies) {
-    if (evalJs(expr, ctx, row, modelName, policyMap, relationMap)) {
+    if (evalJs(expr, ctx, row, modelName, policyMap, relationMap, 'post-update')) {
       plog(ctx, 'post-update', modelName, '[31mDENIED[0m (@@deny fired) — rolling back')
       throw new AccessDeniedError(message ?? `Update denied by @@deny post-update policy on "${modelName}"`, { model: modelName, operation: 'post-update' })
     }
   }
 
   if (allows.length) {
-    const permitted = allows.some(({ expr }) => evalJs(expr, ctx, row, modelName, policyMap, relationMap))
+    const permitted = allows.some(({ expr }) => evalJs(expr, ctx, row, modelName, policyMap, relationMap, 'post-update'))
     if (!permitted) {
       plog(ctx, 'post-update', modelName, '[31mDENIED[0m (no @@allow passed) — rolling back')
       const msg = allows.find(({ message }) => message)?.message
@@ -741,7 +743,14 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
 
       if (!subSql) return '1'   // target has no policy — allow
 
-      return `EXISTS (SELECT 1 FROM "${targetTable}" WHERE "${targetTable}"."${rel.referencedKey}" = "${modelName}"."${rel.foreignKey}" AND (${subSql}))`
+      // The correlation names the OUTER TABLE, and a table name is not a model
+      // name: `model LogLine` is table `log_line`, so `"LogLine"."deployId"` is
+      // `no such column`. Single-word models hid it — `Deploy` matches `deploy`
+      // because SQLite compares identifiers case-insensitively (FJS-333).
+      const selfDef   = schema.models.find(m => m.name === modelName)
+      const selfTable = selfDef ? modelToTableName(selfDef, false) : modelName
+
+      return `EXISTS (SELECT 1 FROM "${targetTable}" WHERE "${targetTable}"."${rel.referencedKey}" = "${selfTable}"."${rel.foreignKey}" AND (${subSql}))`
     }
 
     default:
@@ -749,12 +758,69 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
   }
 }
 
+// ─── check() outside a WHERE ─────────────────────────────────────────────────
+//
+// `check(parent)` delegates to another model's policy. In a WHERE it compiles to
+// a correlated EXISTS, which is exact. In the JS evaluator — create, and
+// post-update — there is no WHERE to correlate against, so it used to answer
+// `true` conservatively: the rule held for read, update and delete and permitted
+// a cross-tenant CREATE in silence. Half-enforcement in the one feature whose
+// whole job is enforcement, and the reason tenancy could not generate a rule for
+// a model scoped only through its parent (FJS-282).
+//
+// So the row is looked up. The foreign key is in the data being written, the
+// target's own filter is what `buildFilterSql` already builds for the WHERE, and
+// bun:sqlite is synchronous — the same SQL, run uncorrelated:
+//
+//   SELECT 1 FROM "<target>" WHERE "<referencedKey>" = ? AND (<target policy>) LIMIT 1
+//
+// Reads go through `ctx.readDb`, which routes to the write connection while a
+// transaction is open — a create inside one has to see rows that transaction
+// wrote, or a parent and child created together would deny the child.
+//
+// An ABSENT foreign key allows. On create it is the same answer the tenant
+// column gets: the stamp has not run, and a row naming no parent is not a row
+// naming somebody else's. SQLite refuses it afterwards if the column is
+// required, which is the check that belongs to the column rather than to a
+// policy.
+function evalCheck(node, ctx, data, modelName, policyMap, relationMap, op) {
+  const rel = relationMap?.[modelName]?.[node.field]
+  // Same refusal compileSql makes, so the two halves cannot disagree about what
+  // check() accepts.
+  if (!rel || rel.kind !== 'belongsTo')
+    throw new Error(`check(${node.field}): only to-one (belongsTo) relations are supported in policy expressions`)
+
+  const fk = data?.[rel.foreignKey]
+  if (fk == null) return true
+
+  const schema = ctx.schema
+  const db     = ctx.readDb
+  // No schema and no connection is a caller evaluating a policy outside a
+  // client — the old conservative answer is the only one available there.
+  if (!schema || !db?.query) return true
+
+  const targetDef = schema.models.find(m => m.name === rel.targetModel)
+  if (!targetDef) return true
+  const targetTable = modelToTableName(targetDef, false)
+
+  const checkOp = node.operation ?? op ?? 'read'
+  const params  = []
+  const subSql  = buildFilterSql(rel.targetModel, checkOp, params, ctx, policyMap, schema, relationMap, new Set([modelName]))
+  if (!subSql) return true   // target has no policy — allow, as compileSql does
+
+  const sql = `SELECT 1 FROM "${targetTable}" WHERE "${targetTable}"."${rel.referencedKey}" = ? AND (${subSql}) LIMIT 1`
+  const hit = db.query(sql).get(fk, ...params)
+  if (ctx.policyDebug === 'verbose')
+    plog(ctx, checkOp, modelName, `\x1b[2mcheck(${node.field}) → ${hit ? 'allowed' : 'denied'}\x1b[0m`, `(${sql})`)
+  return !!hit
+}
+
 // ─── JS evaluator (create + post-update) ──────────────────────────────────────
 // Evaluates a policy expression against a data/row object in JavaScript.
 // Used when there's no WHERE clause available (create) or for post-update checks.
 
-export function evalJs(node, ctx, data, modelName, policyMap, relationMap) {
-  const ev = n => evalJs(n, ctx, data, modelName, policyMap, relationMap)
+export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = null) {
+  const ev = n => evalJs(n, ctx, data, modelName, policyMap, relationMap, op)
 
   switch (node.type) {
     case 'or':      return ev(node.left) || ev(node.right)
@@ -771,9 +837,7 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap) {
     case 'now':     return ctx._now
 
     case 'check':
-      // For create: related row doesn't exist yet — conservatively allow
-      // For post-update: related row not loaded — conservatively allow
-      return true
+      return evalCheck(node, ctx, data, modelName, policyMap, relationMap, op)
 
     // The other half of the same sentence. `create` has no WHERE to put a CASE
     // in, so a ternary landing only in compileSql would be decided one way by

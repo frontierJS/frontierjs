@@ -1,0 +1,5 @@
+<script>
+  import L from './PropLayout.mesa'
+  import Page from './Page.mesa'
+</script>
+<L><Page /></L>

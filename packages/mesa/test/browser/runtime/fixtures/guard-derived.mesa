@@ -1,0 +1,46 @@
+<script>
+  // guard-derived.mesa — the DatePicker shape that found `FJS-303`.
+  //
+  // The three parts that matter, and they only fail together:
+  //
+  //   the guarded value is DERIVED, so it recomputes in the flush rather than
+  //   being assigned;
+  //   the outer loop is a FIXED grid, so the row block for a week the new
+  //   month does not have still exists at the moment of the change;
+  //   the read that throws is a nested block's CONDITION, not a text
+  //   interpolation — `{#if calendar[i][j] !== 0}` inside `{#if calendar[i]}`.
+  //
+  // Moving from a 3-row month to a 1-row one is the moment the guard has to
+  // hold. Its failure is a throw from inside a click handler, which surfaces
+  // as a component that stops responding.
+  let month = 0
+
+  const MONTHS = [
+    [[1, 2, 0], [4, 0, 6], [7, 8, 9]],
+    [[1, 2, 3]],
+  ]
+
+  const calendar = MONTHS[month]
+
+  const weeks = { length: 3 }
+  const days  = { length: 3 }
+</script>
+
+<div id="grid">
+  {#each weeks as _w, i (i)}
+    {#if calendar[i]}
+      <div class="row" data-row={i}>
+        {#each days as _d, j (j)}
+          {#if calendar[i][j] !== 0}
+            {@const day = calendar[i][j]}
+            <span class="cell" class:odd={day % 2 === 1} class:big={day > 5}>{day}</span>
+          {/if}
+        {/each}
+      </div>
+    {/if}
+  {/each}
+</div>
+
+<button type="button" id="next" on:click={() => month = 1}>next</button>
+<button type="button" id="prev" on:click={() => month = 0}>prev</button>
+<output id="month">{month}</output>

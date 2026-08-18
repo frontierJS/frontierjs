@@ -37,7 +37,7 @@ import { createService, NotFound, BadRequest, publishToChannels } from '@frontie
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
 import {
   dbOf, wsOf, actorOf, slugify,
-  findScoped, getScoped, assertSlugFree, removeScoped, narrowPatch,
+  findScoped, getScoped, assertSlugFree, removeScoped, narrowPatch, changesNothing,
 } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -129,7 +129,7 @@ export function createRecipesService(app: BasecampApp) {
           `A recipe called '${patch.name}' already exists in this workspace`)
       }
 
-      if (!Object.keys(patch).length) return { ...recipe, runs: await runsFor(ctx, recipe.id as string) }
+      if (changesNothing(patch)) return { ...recipe, runs: await runsFor(ctx, recipe.id as string) }
 
       const updated = await dbOf(ctx).recipe.update({ where: { id: recipe.id }, data: patch })
       return { ...updated, runs: await runsFor(ctx, recipe.id as string) }

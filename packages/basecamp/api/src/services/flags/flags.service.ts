@@ -23,7 +23,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, narrowPatch, dbOf, wsOf, actorOf }
+import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -165,7 +165,7 @@ export function createFlagsService(app: BasecampApp) {
       // half of a @@unique. Renaming it silently turns every SDK call into a
       // miss, which resolves to the default and looks like the flag being off.
       const patch = narrowPatch(data, ['key', 'createdBy'])
-      if (!Object.keys(patch).length) return flagWithOverrides(ctx, flag)
+      if (changesNothing(patch)) return flagWithOverrides(ctx, flag)
 
       return flagWithOverrides(ctx, await dbOf(ctx).featureFlag.update({
         where: { id: flag.id }, data: patch,

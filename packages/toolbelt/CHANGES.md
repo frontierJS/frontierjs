@@ -1,5 +1,34 @@
 # @frontierjs/toolbelt — changes
 
+## 2026-08-17 — two kits arrive from the resource layer (`FJS-059`)
+
+`/jsonschema` and `/hooks`. Both were pure, zero-dependency and copied by hand
+between Sierra's resource and jetty's, which is the definition this package
+already wrote for itself (`FJS-D26`) and the reason `FJS-D16` refused a fifth
+published package for them.
+
+**`/jsonschema`** is the consumer half of what Litestone emits:
+`derefFieldSchema` follows a `$ref` and the non-null branch of an `anyOf` (the
+field's own keywords winning over the target's), and `createMakeFromSchema`
+answers what a blank record looks like. Three of its rules exist because the
+older copy got them wrong: a `readOnly` column is not seeded at all, an enum
+with no `@default` is null rather than its first member, and a foreign key is
+null rather than `0`.
+
+**`/hooks`** is the four-phase pipeline — `runHooks`, `runAroundHooks`,
+`runPhase`, `mergeHooks`. **`mergeHooks` answers a NEW map** where both copies
+merged in place: this package's licence is that every export is pure, and a
+caller that now forgets the assignment gets a map that never grew rather than
+one silently rewritten.
+
+`createStore` was named by the ruling and did NOT come — a store is state, and
+purity here is the whole of the argument that litestone and mesa may import
+this package. `DECISIONS.md` § `FJS-D16` amended carries it.
+
+**The harness learned to await.** A spec body may be async now — `/hooks` is a
+pipeline of awaited calls, and a returned promise nobody awaits is a rejection
+that reports as a PASS. 64 passing.
+
 ## 2026-08-16 — one row per directive, and the templates that had none (`FJS-306`)
 
 `$withTemplates` and `$onlyTemplates` join the table. `@@hasTemplates` is

@@ -25,7 +25,7 @@
 // The volume below is what it takes to reach the path for real.
 
 import { describe, test, expect, afterAll } from 'bun:test'
-import { wsSend, flushOutbox, dropOutbox, queuedFrames, setMaxQueuedBytes } from '../src/transport/outbox.ts'
+import { wsSend, flushSendQueue, dropSendQueue, queuedFrames, setMaxQueuedBytes } from '../src/transport/send-queue.ts'
 import { createApp, channels, defaultConfig } from '../index.ts'
 import { createJunctionClient } from '../src/client/index.ts'
 import { createService } from '../src/core/service.ts'
@@ -49,13 +49,13 @@ function fakeSocket(script: number[] | (() => number)) {
   }
 }
 
-describe('outbox — a dropped frame is held, not lost', () => {
+describe('the send queue — a dropped frame is held, not lost', () => {
 
   test('a frame Bun accepted is not queued', () => {
     const ws = fakeSocket(() => 42)
     expect(wsSend(ws, 'a')).toBe('sent')
     expect(queuedFrames(ws)).toBe(0)
-    dropOutbox(ws)
+    dropSendQueue(ws)
   })
 
   test('-1 is backpressure with the frame SAFE — Bun delivers it, we do nothing', () => {
@@ -64,7 +64,7 @@ describe('outbox — a dropped frame is held, not lost', () => {
     const ws = fakeSocket(() => -1)
     expect(wsSend(ws, 'a')).toBe('sent')
     expect(queuedFrames(ws)).toBe(0)
-    dropOutbox(ws)
+    dropSendQueue(ws)
   })
 
   test('0 is the drop — the frame is held until drain', () => {
@@ -73,7 +73,7 @@ describe('outbox — a dropped frame is held, not lost', () => {
     expect(queuedFrames(ws)).toBe(1)
     expect(ws.sent).toEqual([])
 
-    flushOutbox(ws)
+    flushSendQueue(ws)
     expect(ws.sent).toEqual(['held'])
     expect(queuedFrames(ws)).toBe(0)
   })
@@ -87,7 +87,7 @@ describe('outbox — a dropped frame is held, not lost', () => {
     wsSend(ws, 'three')
     expect(ws.sent).toEqual([])
 
-    flushOutbox(ws)
+    flushSendQueue(ws)
     expect(ws.sent).toEqual(['one', 'two', 'three'])
   })
 
@@ -96,11 +96,11 @@ describe('outbox — a dropped frame is held, not lost', () => {
     wsSend(ws, 'one')
     wsSend(ws, 'two')
 
-    flushOutbox(ws)
+    flushSendQueue(ws)
     expect(ws.sent).toEqual([])
     expect(queuedFrames(ws)).toBe(2)
 
-    flushOutbox(ws)                  // socket has room now
+    flushSendQueue(ws)                  // socket has room now
     expect(ws.sent).toEqual(['one', 'two'])
   })
 
@@ -171,7 +171,7 @@ describe('a burst big enough to drop frames still delivers every one', () => {
     const deadline = Date.now() + 20_000
     while (received < COUNT && Date.now() < deadline) await new Promise(r => setTimeout(r, 50))
 
-    // Before the outbox this was ~100 of 200, silently.
+    // Before the send queue this was ~100 of 200, silently.
     expect(received).toBe(COUNT)
   }, 30_000)
 })

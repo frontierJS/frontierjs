@@ -95,6 +95,13 @@ describe('the HMR boundary in dev', () => {
     // Only Mesa's copy says this. A file served from anywhere else fails here.
     expect(mod.code).toContain('[Mesa HMR]')
     expect(mod.code).toContain('falling back to reload')
+
+    // The client is two files — the registry and the DOM swap jetty shares
+    // (`FJS-259`) — joined by Mesa's `client-source.js`. A virtual id resolves
+    // no relative import, so serving `client.js` alone is a 200 that dies in
+    // the browser and puts every component back on the full-reload path.
+    expect(mod.code).toContain('function swapInstances')
+    expect(mod.code).not.toContain("from './swap.js'")
   })
 })
 

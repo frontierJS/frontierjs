@@ -11,6 +11,7 @@ import { createService, callService }        from '../src/core/service.ts'
 import { createTestApp, request }            from '../src/testing/index.ts'
 import { bridge }                            from '../src/transport/bridge.ts'
 import { createJunctionClient }              from '../src/client/index.ts'
+import { stubbable }                         from './helpers.ts'
 
 // This file stubs `global.fetch` in a dozen client tests and never used to put
 // it back. Bun runs every test file in ONE process, so the last stub installed
@@ -254,23 +255,27 @@ describe('get(query) → findFirst', () => {
 
   it('GET /users/123 routes to get with id', async () => {
     const app = await createTestApp()
-    let gotId: string | null = null
+    // Collected rather than assigned to a `let`: TypeScript cannot see an
+    // assignment made inside a callback, so a `let` initialised to null stays
+    // narrowed to `null` at the assertion. An array also says how many times
+    // the method ran, which is the other half of what this asserts.
+    const gotIds: string[] = []
 
     app.services.register(createService({
       name: 'users',
       find: async () => [],
-      async get(ctx) { gotId = String(ctx.id); return { id: ctx.id } },
+      async get(ctx) { gotIds.push(String(ctx.id)); return { id: ctx.id } },
     }))
 
     const res = await request(app).get('/users/123')
     expect(res.status).toBe(200)
-    expect(gotId).toBe('123')
+    expect(gotIds).toEqual(['123'])
   })
 
   it('client get(query) sends $first=true in URL', async () => {
     const requests: string[] = []
 
-    global.fetch = async (input: RequestInfo) => {
+    stubbable.fetch = async (input: RequestInfo) => {
       requests.push(String(input))
       return new Response(JSON.stringify({ id: 'u1', name: 'Alice' }), {
         headers: { 'Content-Type': 'application/json' },
@@ -324,13 +329,13 @@ describe('restore as a CRUD method', () => {
 
   it('PUT /posts/:id + X-Service-Method: restore routes to restore()', async () => {
     const app = await createTestApp()
-    let restoredId: string | null = null
+    const restoredIds: string[] = []
 
     app.services.register(createService({
       name: 'posts',
       find: async () => [],
       async get(ctx)     { return { id: ctx.id } },
-      async restore(ctx) { restoredId = String(ctx.id); return { id: ctx.id, deletedAt: null } },
+      async restore(ctx) { restoredIds.push(String(ctx.id)); return { id: ctx.id, deletedAt: null } },
     }))
 
     const res = await request(app)
@@ -339,7 +344,7 @@ describe('restore as a CRUD method', () => {
       .send({})
 
     expect(res.status).toBe(200)
-    expect(restoredId).toBe('99')
+    expect(restoredIds).toEqual(['99'])
   })
 
   it('restore emits posts:restored event', async () => {
@@ -389,7 +394,7 @@ describe('restore as a CRUD method', () => {
   it('client restore(id) sends PUT with x-service-method header', async () => {
     const requests: { method: string; url: string; headers: Record<string, string> }[] = []
 
-    global.fetch = async (input: RequestInfo, init?: RequestInit) => {
+    stubbable.fetch = async (input: RequestInfo, init?: RequestInit) => {
       requests.push({
         method:  (init?.method ?? 'GET').toUpperCase(),
         url:     String(input),
@@ -442,13 +447,13 @@ describe('ctx.app.service() — internal calls from hooks', () => {
 
   it('app.service() with ctx.params threads user identity', async () => {
     const app = await createTestApp({ users: [{ id: 'u1', role: 'user' }] })
-    let seenUserId: string | null = null
+    const seenUserIds: (string | null)[] = []
 
     app.services.register(createService({
       name: 'logs',
       find: async () => [],
       async create(ctx) {
-        seenUserId = ctx.auth.user?.userId ?? null
+        seenUserIds.push(ctx.auth.user?.userId ?? null)
         return { logged: true }
       },
     }))
@@ -471,7 +476,7 @@ describe('ctx.app.service() — internal calls from hooks', () => {
       .auth(app.tokenFor('u1'))
       .send({ name: 'test' })
 
-    expect(seenUserId).toBe('u1')
+    expect(seenUserIds).toEqual(['u1'])
   })
 
   it('app.service() naming no principal INHERITS the caller (FJS-D03)', async () => {
@@ -562,7 +567,7 @@ describe('Client — updated method behaviour', () => {
     // Was: find() unwrapped to T[] and threw total/limit/offset away, so no
     // browser caller could paginate. It now returns the same shape HTTP and
     // app.service() return — a list keeps its envelope.
-    global.fetch = async () => new Response(
+    stubbable.fetch = async () => new Response(
       JSON.stringify({ kind: 'list', object: 'users', errors: [], data: [{ id: 1 }, { id: 2 }], total: 57, limit: 20, offset: 0 }),
       { headers: { 'Content-Type': 'application/json' } }
     )
@@ -576,7 +581,7 @@ describe('Client — updated method behaviour', () => {
   })
 
   it('findData() is the rows-only shortcut', async () => {
-    global.fetch = async () => new Response(
+    stubbable.fetch = async () => new Response(
       JSON.stringify({ kind: 'list', object: 'users', errors: [], data: [{ id: 1 }, { id: 2 }], total: 2 }),
       { headers: { 'Content-Type': 'application/json' } }
     )
@@ -590,7 +595,7 @@ describe('Client — updated method behaviour', () => {
   it('a legacy paginated response is not silently emptied', async () => {
     // { total, limit, skip, data } with no `kind` — an older server, or a
     // service returning a paginated shape directly. Normalised, not dropped.
-    global.fetch = async () => new Response(
+    stubbable.fetch = async () => new Response(
       JSON.stringify({ total: 9, limit: 5, skip: 5, data: [{ id: 1 }] }),
       { headers: { 'Content-Type': 'application/json' } }
     )
@@ -604,7 +609,7 @@ describe('Client — updated method behaviour', () => {
 
   it('find() with query passes $-prefixed params in URL', async () => {
     const urls: string[] = []
-    global.fetch = async (input: RequestInfo) => {
+    stubbable.fetch = async (input: RequestInfo) => {
       urls.push(String(input))
       return new Response(
         JSON.stringify({ object: 'list', data: [], total: 0, limit: 10, offset: 5 }),
@@ -622,7 +627,7 @@ describe('Client — updated method behaviour', () => {
 
   it('patch(query, data) sends PATCH to collection — not /id', async () => {
     const requests: { method: string; url: string }[] = []
-    global.fetch = async (input: RequestInfo, init?: RequestInit) => {
+    stubbable.fetch = async (input: RequestInfo, init?: RequestInit) => {
       requests.push({ method: init?.method ?? 'GET', url: String(input) })
       return new Response(JSON.stringify([{ id: 1 }]), {
         headers: { 'Content-Type': 'application/json' },
@@ -640,7 +645,7 @@ describe('Client — updated method behaviour', () => {
 
   it('remove(query) sends DELETE to collection URL', async () => {
     const requests: { method: string; url: string }[] = []
-    global.fetch = async (input: RequestInfo, init?: RequestInit) => {
+    stubbable.fetch = async (input: RequestInfo, init?: RequestInit) => {
       requests.push({ method: init?.method ?? 'GET', url: String(input) })
       return new Response(JSON.stringify(['1', '2']), {
         headers: { 'Content-Type': 'application/json' },
@@ -657,7 +662,7 @@ describe('Client — updated method behaviour', () => {
 
   it('upsert(data with id) calls patch on /id', async () => {
     const requests: { method: string; url: string }[] = []
-    global.fetch = async (input: RequestInfo, init?: RequestInit) => {
+    stubbable.fetch = async (input: RequestInfo, init?: RequestInit) => {
       requests.push({ method: init?.method ?? 'GET', url: String(input) })
       return new Response(JSON.stringify({ id: 1, name: 'Updated' }), {
         headers: { 'Content-Type': 'application/json' },
@@ -673,7 +678,7 @@ describe('Client — updated method behaviour', () => {
 
   it('upsert(data without id) calls create', async () => {
     const requests: { method: string; url: string }[] = []
-    global.fetch = async (input: RequestInfo, init?: RequestInit) => {
+    stubbable.fetch = async (input: RequestInfo, init?: RequestInit) => {
       requests.push({ method: init?.method ?? 'GET', url: String(input) })
       return new Response(JSON.stringify({ id: 2, name: 'New' }), {
         headers: { 'Content-Type': 'application/json' },

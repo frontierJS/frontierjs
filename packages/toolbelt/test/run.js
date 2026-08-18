@@ -20,13 +20,25 @@ const filters = process.argv.slice(2).filter((a) => !a.startsWith('--'))
 const results = []
 let current = ''
 
+// A spec body may be async — the /hooks kit is a pipeline of awaited calls, and
+// a returned promise nobody awaits is a rejection that reports as a PASS.
+const pending = []
+
 globalThis.test = function (name, fn) {
+  const file = current
+  const failed = (e) => results.push({ file, name, ok: false, error: (e && e.message) || String(e) })
+  let out
   try {
-    fn()
-    results.push({ file: current, name, ok: true })
+    out = fn()
   } catch (e) {
-    results.push({ file: current, name, ok: false, error: (e && e.message) || String(e) })
+    failed(e)
+    return
   }
+  if (out && typeof out.then === 'function') {
+    pending.push(out.then(() => results.push({ file, name, ok: true }), failed))
+    return
+  }
+  results.push({ file, name, ok: true })
 }
 
 globalThis.assert = {
@@ -62,6 +74,8 @@ for (const f of specs) {
   current = basename(f, '.spec.js')
   await import(join(here, 'specs', f))
 }
+
+await Promise.all(pending)
 
 const green = (s) => `\x1b[32m${s}\x1b[0m`
 const red = (s) => `\x1b[31m${s}\x1b[0m`

@@ -122,8 +122,8 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `captureCredential` → `stampChannel` → `gateAuth` → `autoValidate` |
-| before | `patch` | `anonymous` → `captureCredential` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `stampChannel` → `gateAuth` → `autoValidate` |
+| before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `test` | `anonymous` |
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |

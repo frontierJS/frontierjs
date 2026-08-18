@@ -15,11 +15,13 @@ db/schema.lite  ──►  Junction (API)  ──►  Sierra (UI)
 Sierra sits at the end of the dependency chain — `Litestone ← Junction ← Sierra` — and
 never the reverse. Mesa is the component substrate underneath it.
 
-**Status:** v0.1.0, pre-1.0. 702 tests across 34 files pass (`bun run test`), typecheck
-clean. The SPA target is solid and verified end-to-end; `static` prerendering works, and
-as of 2026-08-03 its pages can be **interactive** — see [Islands](#islands--making-a-static-page-interactive),
-verified by clicking a prerendered button in headless Chrome; `widget` is a config shape
-with no build loop behind it.
+**Status:** pre-1.0. 970 tests across 48 files pass (`bun run test`), typecheck clean.
+All three targets are built and driven in a real browser. The SPA target is solid and
+verified end-to-end; `static` prerendering works and its pages are **interactive** —
+see [Islands](#islands--making-a-static-page-interactive), verified by clicking a
+prerendered button in headless Chrome; `widget` builds one self-contained IIFE per
+`.mesa` file — see [Build targets](#build-targets) — and `bun run test:widgets` loads
+two of them **cross-origin** onto a host page with hostile CSS.
 
 There is a runnable app in [`example/`](example/) — a real Junction API over real SQLite,
 with a form generated entirely from `db/schema.lite`. The whole app is driven in headless
@@ -844,12 +846,24 @@ SPA.
 in `src/Embeds/` becomes one self-contained IIFE: the component, the Mesa runtime and
 the CSS in a single file a host page loads with one `<script src>` and nothing else.
 
+**`widgets/` is a SURFACE, a peer of `api/` and `web/`** — not a folder inside the SPA
+(Invariant 3). It earns its own directory because its config, its tests and its release
+are all a different set of answers: one Vite root of its own, host pages it does not own
+to test against, and static files served from an origin a stranger's page links to.
+`fli make:widget <Name>` writes it the first time and tops it up after.
+
 ```
-web/src/Embeds/
-  Counter.mesa                → dist/embeds/Counter.js
-  LeadForm/
-    index.mesa                → dist/embeds/LeadForm.js
-    Field.mesa                  …a part of LeadForm, not a second widget
+widgets/                      ← beside api/ and web/, never inside either
+  config/
+    vite.config.js            ← the Vite root is widgets/, port 8200
+    sierra.config.js          ← target: 'widget'
+  src/Embeds/
+    Counter.mesa              → dist/embeds/Counter.js
+    LeadForm/
+      index.mesa              → dist/embeds/LeadForm.js
+      Field.mesa                …a part of LeadForm, not a second widget
+  test/                       ← a host page per widget, hostile CSS on purpose
+  deploy/                     ← serve.js + Dockerfile — the widget origin
 ```
 
 ```html
@@ -894,9 +908,14 @@ the property the target exists for — a widget is one file, and a page embeddin
 needs to know nothing about the others.
 
 ```sh
-sierra widgets --config config/sierra.config.js   # from the app's web root
-vite --config config/sierra.config.js             # dev, over the app's own index.html
+sierra widgets --config config/sierra.config.js          # from widgets/, the Vite root
+sierra widgets --serve --config config/sierra.config.js  # the release — serves dist/embeds
+vite --config config/vite.config.js                      # dev, over the surface's own page
 ```
+
+`--serve` is the surface's release rather than a preview: `bun run test:widgets` builds
+the fixture, starts that server and loads the bundles **cross-origin** through it, so the
+CORS and cache answers under test are the ones that ship.
 
 An element that arrives after the script has run is mounted too (a tag manager, a CMS,
 a host-page route change), and a script included twice produces one widget, not two.
@@ -1114,7 +1133,7 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 ## Testing
 
 ```bash
-bun run test        # vitest — 672 tests, 32 files
+bun run test        # vitest — 970 tests, 48 files
 bun run typecheck   # scripts/typecheck.mjs — baseline 0
 ```
 
@@ -1130,8 +1149,6 @@ runner reports failures that are runner artifacts rather than bugs.
   needs `_configPath`.
 - Mesa, Junction and Litestone are imported but not declared as dependencies. Resolution
   is hand-rolled against each package's `exports` map.
-- `target: 'widget'` is advertised but not implemented.
-- Prefetch does not attach the auth token.
 - Every named layout slot emits a duplicate-declaration warning from the Mesa compiler.
   Cosmetic — the build and the slot both work.
 - `src/resources/` in `@frontierjs/jetty` is a hand-copy of Sierra's and has already

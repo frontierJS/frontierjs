@@ -56,13 +56,17 @@
   // Absent form → undefined → unchanged behaviour standing alone.
   const form      = $context.form
   const isLoading = loading || (type === 'submit' && !!form?.submitting)
+  // A form the caller has disabled disables every button under it, including
+  // the way out — that is the caller saying the whole form is off, which is a
+  // different statement from "a save is running".
+  const isOff     = disabled || !!form?.disabled
 
   function handleClick(e) {
     if (!isLoading) onclick?.(e)
   }
 </script>
 
-{#if href && !disabled}
+{#if href && !isOff}
   <!-- No role="button" on an <a>: it navigates, and telling a screen reader
        otherwise breaks the user's expectation of where it will go. -->
   <a
@@ -85,7 +89,7 @@
   -->
   <button
     type={type}
-    disabled={disabled || isLoading}
+    disabled={isOff || isLoading}
     aria-busy={isLoading || null}
     class={cx('btn', t, treatment, isSquare && 'square', isLoading && 'loading')}
     style:font-size={fontSize || null}

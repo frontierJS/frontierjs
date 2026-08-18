@@ -31,6 +31,45 @@ import { comparatorFor } from '../core/sort.ts'
 export type { ListResult, ServiceResult }
 export { ResultShapeError }
 
+// ─── The service type registry ────────────────────────────────────────────
+//
+// Empty here, filled by the app. This is what carries the schema's types past
+// the server: `litestone types --audience client --augment junction` writes the
+// row types AND
+//
+//   declare module '@frontierjs/junction/client' {
+//     interface ServiceTypes extends GeneratedServiceTypes {}
+//   }
+//
+// after which `client.service('posts')` answers a `ServiceProxy<Post>` with no
+// type argument, and a column the model does not declare is a compile error in
+// the browser. Declaration merging on an exported interface is how a slot an app
+// fills is typed here (Invariant 5) — the alternative, a type parameter on the
+// client, has to be restated at every call site, which is the hand-written type
+// this replaces.
+//
+// An app that generates nothing keeps exactly what it had: with nothing
+// augmented `keyof ServiceTypes` is `never`, so the inferring overload matches
+// no call and every one falls to the open second overload.
+export interface ServiceTypes {}
+
+/** The service names the app has declared a row type for. `never` until one is. */
+export type KnownService = Extract<keyof ServiceTypes, string>
+
+/**
+ * The row a declared service answers.
+ *
+ * The mapping is not decoration. A proxy is generic over
+ * `T extends Record<string, unknown>`, and an INTERFACE — which is what
+ * `litestone types` emits and what an app hand-writes — does not satisfy that:
+ * only a type alias of an object type gets TypeScript's implicit index
+ * signature. Passing the interface straight through therefore failed the
+ * constraint and fell back to the open shape, so every call compiled and
+ * nothing was typed. Mapping the members produces an anonymous object type
+ * that satisfies it, while an undeclared column is still an error.
+ */
+export type ServiceRow<K extends KnownService> = { [P in keyof ServiceTypes[K]]: ServiceTypes[K][P] }
+
 // ─── Types ────────────────────────────────────────────────────────────────
 
 export interface JunctionClientOptions {
@@ -708,6 +747,12 @@ export class JunctionClient extends EventEmitter {
 
   // ── Service proxy ────────────────────────────────────────────────────
 
+  // A name in the registry types itself; anything else behaves as it always
+  // has. The order matters — the inferring overload has to be offered first,
+  // and an explicit `service<Foo>('x')` fails its constraint and falls through
+  // to the second rather than erroring.
+  service<K extends KnownService>(name: K): ServiceProxy<ServiceRow<K>>
+  service<T extends Record<string, unknown> = Record<string, unknown>>(name: string): ServiceProxy<T>
   service<T extends Record<string, unknown> = Record<string, unknown>>(
     name: string
   ): ServiceProxy<T> {
@@ -733,6 +778,16 @@ export class JunctionClient extends EventEmitter {
   //   store.subscribe(leads => render(leads))
   //   await service.create({ name: 'Acme' }) // store updates via WS
 
+  resource<K extends KnownService>(
+    name: K,
+    idField?: string,
+    opts?: ResourceOptions<ServiceRow<K>>
+  ): ResourceResult<ServiceRow<K>>
+  resource<T extends Record<string, unknown> = Record<string, unknown>>(
+    name: string,
+    idField?: string,
+    opts?: ResourceOptions<T>
+  ): ResourceResult<T>
   resource<T extends Record<string, unknown> = Record<string, unknown>>(
     name: string,
     idField: string = 'id',
@@ -1614,8 +1669,8 @@ export interface ResourceOptions<T extends Record<string, unknown> = Record<stri
 }
 
 export interface ResourceResult<T extends Record<string, unknown> = Record<string, unknown>> {
-  /** ServiceProxy for CRUD calls */
-  service: ServiceProxy
+  /** ServiceProxy for CRUD calls — the same row the store holds */
+  service: ServiceProxy<T>
   /** Reactive store — auto-synced via real-time WS events */
   store: Store<T>
   /** Fetch current list from the server and populate the store */

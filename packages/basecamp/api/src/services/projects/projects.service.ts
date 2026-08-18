@@ -11,7 +11,7 @@
 
 import { createService, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, dbOf, wsOf }
+import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -44,7 +44,7 @@ export function createProjectsService(app: BasecampApp) {
       // slug is immutable: it is half of the @@unique([workspaceId, slug]) key
       // and appears in URLs the UI has already handed out.
       const patch = narrowPatch(ctx.data as Record<string, unknown>, ['slug'])
-      if (!Object.keys(patch).length) return getScoped(ctx, 'project', 'Project')
+      if (changesNothing(patch)) return getScoped(ctx, 'project', 'Project')
       return dbOf(ctx).project.update({ where: { id: ctx.id as string }, data: patch })
     },
 

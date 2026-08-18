@@ -31,6 +31,7 @@ title: Recipes
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
 
@@ -155,6 +156,12 @@ title: Recipes
     if (hours < 24) return `${hours}h ago`
     return `${Math.floor(hours / 24)}d ago`
   }
+  const RUN_COLUMNS = [
+    { key: 'server', label: 'Server' },
+    { key: 'status', label: 'Status' },
+    { key: 'exit',   label: 'Exit' },
+    { key: 'when',   label: 'When' },
+  ]
 </script>
 
 <div class="section-header">
@@ -256,38 +263,29 @@ title: Recipes
     {#if !(selected.runs ?? []).length}
       <p class="text-sm text-muted">This recipe has never been run.</p>
     {:else}
-      <div class="table-wrap">
-        <table class="table striped" id="recipe-runs">
-          <thead>
+      <!-- Two <tr>s per run: the snippet supplies its own rows, so an output
+           row that only some runs have costs a conditional rather than a
+           second table. -->
+      <Table id="recipe-runs" columns={RUN_COLUMNS} rows={selected.runs} striped hover={false}>
+        {#snippet row(r)}
+          <tr>
+            <td>{r.serverName ?? r.serverId}</td>
+            <td><Pill tone={statusTone(r.status)}>{r.status}</Pill></td>
+            <td class="text-sm">{r.exitCode ?? '—'}</td>
+            <td class="text-sm text-muted">{when(r.finishedAt ?? r.createdAt)}</td>
+          </tr>
+          {#if r.stdout || r.stderr || r.error}
             <tr>
-              <th scope="col">Server</th>
-              <th scope="col">Status</th>
-              <th scope="col">Exit</th>
-              <th scope="col">When</th>
+              <td colspan="4">
+                <!-- The run's own output, not the recipe's script: the two
+                     differ the moment somebody edits a recipe, and the run
+                     is the one that happened. -->
+                <pre class="code"><code>{r.error ?? ''}{r.stdout ?? ''}{r.stderr ?? ''}</code></pre>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {#each selected.runs as r}
-              <tr>
-                <td>{r.serverName ?? r.serverId}</td>
-                <td><Pill tone={statusTone(r.status)}>{r.status}</Pill></td>
-                <td class="text-sm">{r.exitCode ?? '—'}</td>
-                <td class="text-sm text-muted">{when(r.finishedAt ?? r.createdAt)}</td>
-              </tr>
-              {#if r.stdout || r.stderr || r.error}
-                <tr>
-                  <td colspan="4">
-                    <!-- The run's own output, not the recipe's script: the two
-                         differ the moment somebody edits a recipe, and the run
-                         is the one that happened. -->
-                    <pre class="code"><code>{r.error ?? ''}{r.stdout ?? ''}{r.stderr ?? ''}</code></pre>
-                  </td>
-                </tr>
-              {/if}
-            {/each}
-          </tbody>
-        </table>
-      </div>
+          {/if}
+        {/snippet}
+      </Table>
     {/if}
   </Card>
 {/if}

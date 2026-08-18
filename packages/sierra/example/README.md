@@ -171,7 +171,7 @@ headless Chrome, which is how the three rendering bugs below were caught.
 
 - **This is the real layout, at full size.** `db/` + `api/` + `web/` at the root,
   with every Sierra file under `web/` — the same tree
-  [`fli create`](../../../README.md#project-structure) scaffolds. It was flat
+  [`fli new`](../../../README.md#project-structure) scaffolds. It was flat
   until 2026-08-03, which read as if a Sierra app were the app.
 - **Configuration lives in `config/`** — `vite.config.js` beside
   `sierra.config.js`, run as `vite -c web/config/vite.config.js` from the example

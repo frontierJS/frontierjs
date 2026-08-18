@@ -7,6 +7,11 @@ title: Environment
   import { apps } from '../../../resources/App.mesa'
   import { deployments } from '../../../resources/Deployment.mesa'
   import { goto } from '@frontierjs/sierra/router'
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Select   from '@frontierjs/ui/components/forms/Select.mesa'
+  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
+  import Checkbox from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Table    from '@frontierjs/ui/components/display/Table.mesa'
 
   $: page.params
 
@@ -121,6 +126,19 @@ title: Environment
   }
 
   $: variables = environment?.variables ?? []
+  const APP_COLUMNS = [
+    { key: 'name',    label: 'Name' },
+    { key: 'type',    label: 'Type' },
+    { key: 'status',  label: 'Status' },
+    { key: 'domain',  label: 'Domain' },
+    { key: 'actions', label: 'Actions', hideLabel: true },
+  ]
+
+  const VARIABLE_COLUMNS = [
+    { key: 'key',     label: 'Key' },
+    { key: 'value',   label: 'Value' },
+    { key: 'actions', label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 {#if loading}
@@ -134,7 +152,7 @@ title: Environment
     <h1>{environment.name}</h1>
     <div class="cluster">
       <span class="pill">{environment.tier}</span>
-      <a class="btn ghost" href={`/projects/${environment.projectId}/`}>Back to project</a>
+      <Button variant="ghost" href={`/projects/${environment.projectId}/`}>Back to project</Button>
     </div>
   </div>
 
@@ -158,121 +176,83 @@ title: Environment
       <div class="alert-content">No apps in this environment yet — add one below.</div>
     </article>
   {:else}
-    <div class="table-wrap">
-      <table class="table striped hover">
-        <thead>
-          <tr>
-            <th scope="col">Name</th>
-            <th scope="col">Type</th>
-            <th scope="col">Status</th>
-            <th scope="col">Domain</th>
-            <th scope="col"><span class="visually-hidden">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody id="app-rows">
-          {#each appRows as app}
-            <tr>
-              <!-- An App has its own screen now: placement, hostnames and
-                   certificates, config, release history. -->
-              <td><a href={`/apps/${app.id}/`}>{app.name}</a></td>
-              <td><code>{app.type}</code></td>
-              <!-- The tone is derived from the value, not chosen per row: a
-                   status is a fact, and 'error' is the only one that is bad
-                   news. No colour is named here (invariant 13). -->
-              <td>
-                <span class="pill" class:success={app.status === 'running'}
-                                   class:danger={app.status === 'error'}>{app.status}</span>
-              </td>
-              <!-- The primary hostname, from the app's `domains`. `App.domain`
-                   was one nullable string and is gone — an apex and a www is
-                   the ordinary case, and one column could not hold both. -->
-              <td><code>{app.domains?.find(d => d.isPrimary)?.hostname ?? '—'}</code></td>
-              <td>
-                <button class="btn outlined" disabled={deploying === app.id}
-                        on:click={() => deploy(app)}>
-                  {deploying === app.id ? 'Starting…' : 'Deploy'}
-                </button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+    <Table id="app-rows" columns={APP_COLUMNS} rows={appRows} striped>
+      {#snippet row(app)}
+        <tr>
+          <!-- An App has its own screen now: placement, hostnames and
+               certificates, config, release history. -->
+          <td><a href={`/apps/${app.id}/`}>{app.name}</a></td>
+          <td><code>{app.type}</code></td>
+          <!-- The tone is derived from the value, not chosen per row: a
+               status is a fact, and 'error' is the only one that is bad
+               news. No colour is named here (invariant 13). -->
+          <td>
+            <span class="pill" class:success={app.status === 'running'}
+                               class:danger={app.status === 'error'}>{app.status}</span>
+          </td>
+          <!-- The primary hostname, from the app's `domains`. `App.domain`
+               was one nullable string and is gone — an apex and a www is
+               the ordinary case, and one column could not hold both. -->
+          <td><code>{app.domains?.find(d => d.isPrimary)?.hostname ?? '—'}</code></td>
+          <td>
+            <Button variant="outlined" disabled={deploying === app.id} onclick={() => deploy(app)}>
+              {deploying === app.id ? 'Starting…' : 'Deploy'}
+            </Button>
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
   {/if}
 
   <form class="card stack" on:submit|preventDefault={addApp}>
     <div class="field-row">
-      <div class="field-group">
-        <label for="app-name">App name</label>
-        <input class="field" id="app-name" bind:value={newApp.name} placeholder="web" required />
-      </div>
-      <div class="field-group">
-        <label for="app-type">Type</label>
-        <select class="field" id="app-type" bind:value={newApp.type}>
-          {#each appTypes as type}
-            <option value={type}>{type}</option>
-          {/each}
-        </select>
-      </div>
+      <!-- `bind:` is not used on a component here: a component binding takes a
+           writable top-level `let` in the caller, and `newApp.name` is a member
+           expression. The callback is the way a field of a record is written. -->
+      <Input label="App name" name="app-name" id="app-name" placeholder="web" required
+             value={newApp.name} oninput={(e) => newApp.name = e.target.value} />
+      <Select label="Type" name="app-type" id="app-type" placeholder=""
+              options={appTypes} value={newApp.type}
+              onchange={(e) => newApp.type = e.target.value} />
     </div>
     <div class="cluster">
-      <button class="btn primary" type="submit" disabled={adding}>
+      <Button variant="primary" type="submit" disabled={adding}>
         {adding ? 'Adding…' : 'Add app'}
-      </button>
+      </Button>
     </div>
   </form>
 
   <h2 class="h4">Variables</h2>
 
   {#if variables.length}
-    <div class="table-wrap">
-      <table class="table striped">
-        <thead>
-          <tr>
-            <th scope="col">Key</th>
-            <th scope="col">Value</th>
-            <th scope="col"><span class="visually-hidden">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody id="variable-rows">
-          {#each variables as variable}
-            <tr>
-              <td><code>{variable.key}</code></td>
-              <!-- `secret: true` is a display decision made by the service's own
-                   data, not a security boundary: the value is in this response.
-                   Anything that must not reach the browser belongs in Secret,
-                   whose data column is @encrypted and system-only. -->
-              <td>{variable.secret ? '••••••••' : variable.value}</td>
-              <td>
-                <button class="btn ghost danger" disabled={busyKey === variable.key}
-                        on:click={() => deleteVariable(variable.key)}>Remove</button>
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
+    <Table id="variable-rows" columns={VARIABLE_COLUMNS} rows={variables} striped hover={false}>
+      {#snippet row(variable)}
+        <tr>
+          <td><code>{variable.key}</code></td>
+          <!-- `secret: true` is a display decision made by the service's own
+               data, not a security boundary: the value is in this response.
+               Anything that must not reach the browser belongs in Secret,
+               whose data column is @encrypted and system-only. -->
+          <td>{variable.secret ? '••••••••' : variable.value}</td>
+          <td>
+            <Button variant="ghost" tone="danger" disabled={busyKey === variable.key} onclick={() => deleteVariable(variable.key)}>Remove</Button>
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
   {:else}
     <p class="text-sm text-muted">No variables set.</p>
   {/if}
 
   <form class="card stack" on:submit|preventDefault={() => setVariable(newKey, newValue, newSecret)}>
     <div class="field-row">
-      <div class="field-group">
-        <label for="var-key">Key</label>
-        <input class="field" id="var-key" bind:value={newKey} placeholder="DATABASE_URL" required />
-      </div>
-      <div class="field-group">
-        <label for="var-value">Value</label>
-        <input class="field" id="var-value" bind:value={newValue} required />
-      </div>
+      <Input label="Key" name="var-key" id="var-key" placeholder="DATABASE_URL"
+             required bind:value={newKey} />
+      <Input label="Value" name="var-value" id="var-value" required bind:value={newValue} />
     </div>
-    <label class="field-check">
-      <input type="checkbox" bind:checked={newSecret} />
-      <span>Mask this value in the UI</span>
-    </label>
+    <Checkbox label="Mask this value in the UI" bind:checked={newSecret} />
     <div class="cluster">
-      <button class="btn primary" type="submit" disabled={busyKey !== null}>Set variable</button>
+      <Button variant="primary" type="submit" disabled={busyKey !== null}>Set variable</Button>
     </div>
   </form>
 {/if}

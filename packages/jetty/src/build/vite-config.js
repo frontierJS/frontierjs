@@ -41,13 +41,14 @@ export function harborViteConfig({ extRoot, harborEntry, outDir, dev = null, isl
       emptyOutDir: false,
       target: 'es2022',
       sourcemap: true,
-      codeSplitting: false,
       lib: {
         entry: harborEntry,
         formats: ['es'],
         fileName: () => 'harbor.js',
       },
-      rollupOptions: { external: [] },
+      // Single file, whatever the graph grows: `codeSplitting` belongs on the
+      // rollup output, and `build.codeSplitting` is read by nothing.
+      rollupOptions: { external: [], output: { codeSplitting: false } },
       minify: false,
     },
     plugins: harborPlugins({ dev, islandMatches, extRoot }),
@@ -59,7 +60,7 @@ export function harborViteConfig({ extRoot, harborEntry, outDir, dev = null, isl
   }
 }
 
-export function islandsViteConfig({ extRoot, islandEntries, outDir, dev = null }) {
+export function islandsViteConfig({ extRoot, islandId, islandEntry, outDir, dev = null }) {
   return {
     root: extRoot,
     configFile: false,
@@ -68,36 +69,57 @@ export function islandsViteConfig({ extRoot, islandEntries, outDir, dev = null }
       emptyOutDir: false,
       target: 'es2022',
       sourcemap: true,
+      // Lib mode, and it is load-bearing rather than a description. Vite
+      // injects its preload helper into every client build that is not a lib
+      // or a worker, and that helper is written with `import.meta.resolve` and
+      // `import.meta.url`. An MV3 content script is a CLASSIC script, so V8
+      // rejects the whole bundle at parse time — `Cannot use 'import.meta'
+      // outside a module` — before a line of it runs, and nothing at build
+      // time says so. The helper arrives only because the island graph holds a
+      // dynamic import (`@frontierjs/mesa/runtime`, an optional peer), and it
+      // has nothing to do here regardless: the graph below is inlined, so
+      // there is no chunk to preload. Lib mode is also the true statement
+      // about this output — one self-contained file, not a page module fetched
+      // off a base URL — and it is the only supported way to opt out.
+      //
+      // One island per build, which the single `entry` makes structural:
+      // rollup refuses to inline a graph with more than one input rather than
+      // quietly splitting it.
+      lib: {
+        entry:    islandEntry,
+        formats:  ['es'],
+        fileName: () => `islands/${islandId}.js`,
+      },
+      // Inline EVERYTHING into the island entry — including modules pulled in
+      // via dynamic import(). Two reasons:
+      //   1. Content scripts run in the page's network context. Loading
+      //      additional chunks would require declaring them in
+      //      web_accessible_resources, which exposes the chunk hashes to
+      //      every page (security smell — extension internals shouldn't be
+      //      addressable from arbitrary pages).
+      //   2. Even if exposed via WAR, the relative-URL resolution from the
+      //      dynamic import() in jetty's mount.js produces paths like
+      //      `chrome-extension://<id>/islands/chunks/runtime-<h>.js`, which
+      //      Chrome blocks unless the chunk is in WAR. Inlining removes the
+      //      round trip entirely.
+      //
+      // Tradeoff: islands can't share chunks with each other or with pages —
+      // Mesa runtime gets duplicated across surfaces. For the ~80KB Mesa
+      // runtime that's a real cost, but correctness wins. Pages (which have
+      // HTML <script> + the extension's own origin) continue to share chunks
+      // normally.
       rollupOptions: {
-        input: islandEntries,
         external: [],
         output: {
           format: 'es',
-          // Inline EVERYTHING into the island entry — including modules
-          // pulled in via dynamic import(). Two reasons:
-          //   1. Content scripts run in the page's network context. Loading
-          //      additional chunks would require declaring them in
-          //      web_accessible_resources, which exposes the chunk hashes
-          //      to every page (security smell — extension internals
-          //      shouldn't be addressable from arbitrary pages).
-          //   2. Even if exposed via WAR, the relative-URL resolution from
-          //      the dynamic import() in jetty's mount.js produces paths
-          //      like `chrome-extension://<id>/islands/chunks/runtime-<h>.js`
-          //      which Chrome blocks unless the chunk is in WAR. Inlining
-          //      removes the round trip entirely.
-          //
-          // Tradeoff: islands can't share chunks with each other or with
-          // pages — Mesa runtime gets duplicated across surfaces. For the
-          // ~80KB Mesa runtime that's a real cost, but correctness wins.
-          // Pages (which have HTML <script> + the extension's own origin)
-          // continue to share chunks normally.
-          inlineDynamicImports: true,
-          // Use chunk.name verbatim — input keys are 'islands/<id>' so output
-          // emits 'islands/<id>.js' with no .js prefix duplication.
-          entryFileNames: (chunk) => `${chunk.name}.js`,
-          // chunkFileNames is irrelevant when inlineDynamicImports is on,
-          // but we keep the path for cases where a non-inlined plugin emits
-          // an asset chunk (rare).
+          // `codeSplitting` is a rollup OUTPUT option. Vite reads no
+          // `build.codeSplitting`, so the same key one level up is silently
+          // ignored and the island splits — 24 kB plus a chunk Chrome will
+          // not load, which is exactly the failure this whole config exists
+          // to prevent.
+          codeSplitting: false,
+          // Both irrelevant while the graph is inlined, but kept so a plugin
+          // emitting a chunk or an asset lands somewhere sensible.
           chunkFileNames: 'islands/chunks/[name]-[hash].js',
           assetFileNames: 'islands/assets/[name]-[hash][extname]',
         },

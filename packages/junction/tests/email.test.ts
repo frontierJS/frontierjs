@@ -332,7 +332,7 @@ function makeServiceContext(resultOverrides: Record<string, unknown> = {}) {
 describe('sendSystemEmail hook', () => {
 
   it('calls app.email.system.send with the built message', async () => {
-    const sendMock = mock(async () => ({ id: 'x', status: 'sent' as const }))
+    const sendMock = mock(async (_msg?: EmailMessage) => ({ id: 'x', status: 'sent' as const }))
     const fakeApp  = { email: { system: { send: sendMock } } } as never
 
     const hook = sendSystemEmail(fakeApp, ctx => ({
@@ -365,7 +365,7 @@ describe('sendSystemEmail hook', () => {
   })
 
   it('returns void (not the context)', async () => {
-    const sendMock = mock(async () => ({ id: 'x', status: 'sent' as const }))
+    const sendMock = mock(async (_msg?: EmailMessage) => ({ id: 'x', status: 'sent' as const }))
     const fakeApp  = { email: { system: { send: sendMock } } } as never
 
     const hook   = sendSystemEmail(fakeApp, () => makeMessage())
@@ -374,7 +374,7 @@ describe('sendSystemEmail hook', () => {
   })
 
   it('builder receives the full service context', async () => {
-    const sendMock = mock(async () => ({ id: 'x', status: 'sent' as const }))
+    const sendMock = mock(async (_msg?: EmailMessage) => ({ id: 'x', status: 'sent' as const }))
     const fakeApp  = { email: { system: { send: sendMock } } } as never
 
     let captured: unknown
@@ -393,7 +393,7 @@ describe('sendSystemEmail hook', () => {
 describe('sendCampaignEmail hook', () => {
 
   it('calls app.email.campaign.send with the built message', async () => {
-    const sendMock = mock(async () => ({ id: 'x', status: 'queued' as const }))
+    const sendMock = mock(async (_msg?: EmailMessage) => ({ id: 'x', status: 'queued' as const }))
     const fakeApp  = { email: { campaign: { send: sendMock } } } as never
 
     const hook = sendCampaignEmail(fakeApp, ctx => ({

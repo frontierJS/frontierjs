@@ -17,12 +17,12 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError, resolveRule, stated } from '../../utils.js'
+  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
 
   export let value       = null
   export let options     = []          // flat or grouped (see above)
   export let placeholder = 'Select…'   // set to '' to suppress
-  export let disabled    = false
+  export let disabled    = undefined  // undefined = ask the form; false overrides it
   export let required    = undefined
   export let multiple    = false
 
@@ -40,6 +40,11 @@
   const autoLabel = nameToLabel(name)
 
   const form = $context.form
+
+  // A <Form> above this control locks it two ways — the caller disabled the
+  // form, or a save is in flight — and both mean the same thing to a field.
+  // A stated prop still wins, including `disabled={false}` on a saving form.
+  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
   const rule = resolveRule(form, name)
 
   // An enum column already carries its members — `fields.status.enum` exists
@@ -83,8 +88,9 @@
     class="field"
     id={selectId}
     name={name || undefined}
-    disabled={disabled}
+    disabled={resolvedDisabled}
     required={resolvedRequired}
+    {@attach nativeValidationGuard}
     multiple={multiple}
     aria-invalid={hasError || null}
     on:input={oninput}

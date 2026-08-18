@@ -1,5 +1,101 @@
 # Changes — @frontierjs/caravan
 
+## 2026-08-18 — two instances on one `jobs.db` (`FJS-294`)
+
+149 tests (8 new), 0 fail. Typecheck clean. `example`: `verify:jobs` 10/10.
+
+A jobs database is trivially opened twice — two replicas behind a load balancer,
+a web process beside a worker one, a drive started while the dev server runs —
+and this package neither stated single ownership nor coordinated. Both halves
+were wrong, in different ways.
+
+**`start()` released the rows another instance was executing.** Crash recovery
+set every `running` row back to `pending`, which is right for one process and
+catastrophic for two: bringing up a second instance re-ran whatever the first
+was midway through, concurrently, and the atomic claim said nothing because the
+second claim was legitimate — the row was pending. Rows are now OWNED. Each
+instance takes an id, writes it on the rows it claims, and heartbeats into a
+`job_owners` table; recovery reclaims only rows whose owner has gone quiet past
+`lease`. `markDone`/`markFailed` are guarded on the owner as well as on
+`running`, so a reclaimed job's late completion cannot land on the attempt that
+replaced it.
+
+**Every instance fired every cron.** The scheduler is in-process and the fire
+was a fresh uuid, so one schedule declared in two processes produced two rows a
+tick. The fire is now named — `cron:<job>:<epoch-minute>` — which makes the
+second instance's dispatch the no-op a stated id already is (`FJS-D35`). No
+leader, deliberately: a lease-held leader misses fires whenever the lease is
+between owners, where a dedup key cannot.
+
+`heartbeat` (5s) and `lease` (30s) are options, settable from
+`junction.config.js` like every other key.
+
+The lease is renewed by a timer, so a handler that BLOCKS the event loop past
+`lease` stalls its own heartbeat and has its work reclaimed under it — the same
+ground as `FJS-295`, and the same answer: work that does not yield is work this
+queue cannot supervise.
+
+*8 tests in `tests/ownership.test.ts`, against a real file database because in
+`:memory:` two instances are two databases and the defect is invisible. Mutation
+checked: restore the blanket recovery and the cron uuid, and 4 of them fail.*
+
+## 2026-08-17 — `dispatch({ id })`, the idempotency `unique` is not (`FJS-D35`)
+
+141 tests (23 new), 0 fail. Typecheck clean.
+
+Stating an id makes a dispatch idempotent **for all time**: the id is the jobs
+table's primary key, so a second dispatch under it queues nothing and answers
+that id.
+
+`unique` cannot be this and was never meant to be. It is a lock on work in
+flight and frees itself the moment a job is terminal — which is exactly when a
+retry is most likely, so a replay under a `unique` key does the work twice. The
+primary key is the one thing in the table that lasts.
+
+```ts
+await jobs.dispatch('send-email', data, { id: outboxRowId })   // safe to repeat
+```
+
+Written for junction's outbox relay, which hands rows across two SQLite files
+and therefore cannot make the handoff atomic: it dispatches under the outbox
+row's own id, so a crash between the queue insert and the delivery mark replays
+into a no-op instead of a second email.
+
+The pre-check is a `getById`, and the primary key is what settles a race — two
+processes both read nothing before inserting, so the collision is caught rather
+than prevented. `isPrimaryKeyCollision(err)` is how that is told apart from a
+real failure; swallowing a `NOT NULL` breach would report a job queued that is
+not there. The in-process path never reaches that catch (dispatch reads and
+inserts with no await between them), so it is covered directly against a real
+SQLite error rather than described.
+
+*23 tests: 7 for the stated id, 16 for the relay end to end — a real Litestone
+client, a real Junction app and a real queue, which only exists here.*
+
+## 2026-08-17 — `unschedule(name)`, the counterpart `schedule()` never had (`FJS-D36`)
+
+118 tests (3 new), 0 fail. Typecheck clean.
+
+`CronScheduler` had `add` and no way back. Nothing needed one while every
+schedule came from a `*.job.ts` file: that registration is a statement about the
+code and lives as long as the process.
+
+A schedule registered from a **database row** does not. The row is deleted, or
+stops being a scheduled job, and with no way to drop the registration the timer
+went on firing for the rest of the process — dispatching work for a job nobody
+could see. Found by basecamp, which is what basecamp is for (`FJS-327`,
+`FJS-328`).
+
+```ts
+app.jobs.schedule('job:cron:abc', '0 2 * * *', handler)
+app.jobs.unschedule('job:cron:abc')   // → true; false if nothing was registered
+```
+
+**The handler stays registered.** Only the clock is unbound: a run already
+queued under that name still has to find something to execute, and removing the
+work along with the schedule would fail it instead.
+
+
 ## 2026-08-16 — two numbers that were not there
 
 115 tests (was 112). Both found by probing the package rather than reading it,

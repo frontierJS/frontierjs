@@ -16,31 +16,47 @@
 
 // Component paths — for use as import references in Mesa templates.
 // The actual .mesa files are in ./components/*.mesa
+//
+// Not `new URL(...).pathname`: on Windows the pathname of a file URL keeps a
+// leading slash before the drive letter (`/C:/…`), which is not a path any fs
+// call accepts.
+//
+// And not `fileURLToPath(new URL(rel, import.meta.url))` either, which is the
+// obvious replacement and throws *The URL must be of scheme file* under this
+// package's vitest environment: happy-dom installs its own global `URL`, and
+// `fileURLToPath` rejects an instance of it. It takes a STRING, so the one
+// spelling that is correct on every platform and in both environments is to
+// resolve the directory once from `import.meta.url` and join.
+import path              from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const here = (rel) => path.join(__dirname, rel)
 
 export const components = {
-  Email:     new URL('./components/Email.mesa',     import.meta.url).pathname,
-  Section:   new URL('./components/Section.mesa',   import.meta.url).pathname,
-  Row:       new URL('./components/Row.mesa',        import.meta.url).pathname,
-  TwoCol:    new URL('./components/TwoCol.mesa',     import.meta.url).pathname,
-  Column:    new URL('./components/Column.mesa',     import.meta.url).pathname,
-  Spacer:    new URL('./components/Spacer.mesa',     import.meta.url).pathname,
-  Heading:   new URL('./components/Heading.mesa',    import.meta.url).pathname,
-  Text:      new URL('./components/Text.mesa',       import.meta.url).pathname,
-  Button:    new URL('./components/Button.mesa',     import.meta.url).pathname,
-  Image:     new URL('./components/Image.mesa',      import.meta.url).pathname,
-  Link:      new URL('./components/Link.mesa',       import.meta.url).pathname,
-  Divider:   new URL('./components/Divider.mesa',    import.meta.url).pathname,
-  Card:      new URL('./components/Card.mesa',       import.meta.url).pathname,
-  KeyValue:  new URL('./components/KeyValue.mesa',   import.meta.url).pathname,
-  DataTable: new URL('./components/DataTable.mesa',  import.meta.url).pathname,
-  Stars:     new URL('./components/Stars.mesa',      import.meta.url).pathname,
-  Avatar:    new URL('./components/Avatar.mesa',     import.meta.url).pathname,
-  Review:    new URL('./components/Review.mesa',     import.meta.url).pathname,
-  Contact:   new URL('./components/Contact.mesa',    import.meta.url).pathname,
-  Address:   new URL('./components/Address.mesa',    import.meta.url).pathname,
-  Header:    new URL('./components/Header.mesa',     import.meta.url).pathname,
-  Footer:    new URL('./components/Footer.mesa',     import.meta.url).pathname,
+  Email:     here('components/Email.mesa'),
+  Section:   here('components/Section.mesa'),
+  Row:       here('components/Row.mesa'),
+  TwoCol:    here('components/TwoCol.mesa'),
+  Column:    here('components/Column.mesa'),
+  Spacer:    here('components/Spacer.mesa'),
+  Heading:   here('components/Heading.mesa'),
+  Text:      here('components/Text.mesa'),
+  Button:    here('components/Button.mesa'),
+  Image:     here('components/Image.mesa'),
+  Link:      here('components/Link.mesa'),
+  Divider:   here('components/Divider.mesa'),
+  Card:      here('components/Card.mesa'),
+  KeyValue:  here('components/KeyValue.mesa'),
+  DataTable: here('components/DataTable.mesa'),
+  Stars:     here('components/Stars.mesa'),
+  Avatar:    here('components/Avatar.mesa'),
+  Review:    here('components/Review.mesa'),
+  Contact:   here('components/Contact.mesa'),
+  Address:   here('components/Address.mesa'),
+  Header:    here('components/Header.mesa'),
+  Footer:    here('components/Footer.mesa'),
 }
 
-export const COMPONENTS_DIR = new URL('./components', import.meta.url).pathname
-export const TEMPLATES_DIR  = new URL('./templates',  import.meta.url).pathname
+export const COMPONENTS_DIR = here('./components')
+export const TEMPLATES_DIR  = here('./templates')

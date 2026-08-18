@@ -1,0 +1,65 @@
+<script>
+  // palette-modes.mesa — the palette as a switchboard.
+  //
+  // `palette.mesa` wires it the way an app root does, through the store, and
+  // asks whether ⌘K opens it. This one mounts it already open and turns each
+  // prop that selects a BRANCH into a fixture prop, so one spec can be a
+  // reordered palette, an empty one, a palette that stays open after a
+  // command, or a list long enough that it has to scroll.
+  //
+  // A function cannot travel as a JSON prop, so `emptyText` is chosen by a
+  // boolean and built here.
+  import CommandPalette from '../../../components/overlay/CommandPalette.mesa'
+
+  export let set           = 'default'   // which item list — default · none · long
+  export let groupOrder    = []
+  export let closeOnSelect = true
+  export let useEmptyText  = false
+  export let placeholder   = 'Search commands…'
+  export let maxWidth      = 580
+  export let maxHeight     = '62vh'
+
+  let open   = true
+  let ran    = ''
+  let runs   = 0
+  let closes = 0
+
+  const hit = (id) => () => { ran = id; runs++ }
+
+  // The groups are declared out of any order worth preserving, so `groupOrder`
+  // has something to reorder and its absence has something to keep.
+  const MIXED = [
+    { id: 'theme',  group: 'Settings', label: 'Switch theme',    icon: '◐',  kbd: '⌘ T',                       action: hit('theme')  },
+    { id: 'new',    group: 'Orders',   label: 'New order',       icon: '＋', sub: 'Start a draft',             action: hit('new')    },
+    { id: 'refund', group: 'Orders',   label: 'Refund an order', icon: '↩',  badge: 'Beta',                    action: hit('refund') },
+    { id: 'staff',  group: 'People',   label: 'Staff',                       sub: 'Everyone who works here',   action: hit('staff')  },
+    { id: 'custs',  group: 'People',   label: 'Customers',                   sub: 'Everyone who has ordered',  action: hit('custs')  },
+  ]
+
+  // One group, longer than any panel: the bottom of this list can only be
+  // reached by the cursor taking the scroll container with it.
+  const LONG = Array.from({ length: 30 }, (_, i) => ({
+    id: `cmd-${i}`, group: 'Everything', label: `Command ${i}`, action: hit(`cmd-${i}`),
+  }))
+
+  const items     = ({ default: MIXED, none: [], long: LONG })[set] ?? MIXED
+  const emptyText = useEmptyText ? (q) => `nothing here for “${q}”` : undefined
+</script>
+
+{#if open}
+  <CommandPalette
+    items={items}
+    groupOrder={groupOrder}
+    closeOnSelect={closeOnSelect}
+    emptyText={emptyText}
+    placeholder={placeholder}
+    maxWidth={maxWidth}
+    maxHeight={maxHeight}
+    data-fixture="modes"
+    onclose={() => { open = false; closes++ }}
+  />
+{/if}
+
+<output id="ran">{ran}</output>
+<output id="runs">{runs}</output>
+<output id="closes">{closes}</output>

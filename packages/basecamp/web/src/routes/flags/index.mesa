@@ -18,10 +18,12 @@ title: Flags
   // `source` saying which it was. A screen that recomputed it would be a second
   // owner of the only thing the service is for.
   import { session } from '../../session.js'
+  import { messageFor } from '../../errors.js'
   import { flags }   from '../../resources/FeatureFlag.mesa'
   import { environments } from '../../resources/Environment.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
@@ -33,6 +35,7 @@ title: Flags
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
 
@@ -114,7 +117,7 @@ title: Flags
       if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...updated }, ...rows.slice(i + 1)]
       if (detail[flag.id]) detail = { ...detail, [flag.id]: updated }
     } catch (e) {
-      error = e.message
+      error = messageFor(flags, e)
     } finally {
       busy = null
     }
@@ -164,6 +167,12 @@ title: Flags
   // emits — never a list retyped here.
   $: types = flags.fields?.type?.enum ?? ['boolean', 'variant']
   const envLabel = (o) => o.environment?.name ?? o.environmentId
+  const ROW_COLUMNS = [
+    { key: 'environment', label: 'Environment' },
+    { key: 'state',       label: 'State' },
+    { key: 'rollout',     label: 'Rollout' },
+    { key: 'actions',     label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 <div class="section-header">
@@ -183,9 +192,7 @@ title: Flags
   <!-- id'd because the shell's notice bar is also `.alert.danger`: a check
        looking for "the screen reported a refusal" would otherwise match a
        fleet notice and pass, or fail, for reasons this screen never caused. -->
-  <article class="alert danger" id="screen-error">
-    <div class="alert-content">{error}</div>
-  </article>
+  <Alert tone="danger" id="screen-error">{error}</Alert>
 {/if}
 
 {#if creating}
@@ -233,38 +240,26 @@ title: Flags
 
         {#if detail[flag.id]}
           {#if detail[flag.id].overrides?.length}
-            <div class="table-wrap">
-              <table class="table striped">
-                <thead>
-                  <tr>
-                    <th scope="col">Environment</th>
-                    <th scope="col">State</th>
-                    <th scope="col">Rollout</th>
-                    <th scope="col"><span class="visually-hidden">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each detail[flag.id].overrides as o}
-                    <tr>
-                      <td>{envLabel(o)}</td>
-                      <td>
-                        {#if o.isEnabled}
-                          <Badge tone="success">on</Badge>
-                        {:else}
-                          <Badge tone="muted">off</Badge>
-                        {/if}
-                      </td>
-                      <td class="text-sm">{o.rollout}%</td>
-                      <td>
-                        <Button variant="ghost" disabled={busy === flag.id}
-                                aria-label={`Clear the ${envLabel(o)} override on ${flag.key}`}
-                                onclick={() => clear(flag, o.environmentId)}>Clear</Button>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
+            <Table columns={ROW_COLUMNS} rows={detail[flag.id].overrides} striped hover={false}>
+              {#snippet row(o)}
+                <tr>
+                  <td>{envLabel(o)}</td>
+                  <td>
+                    {#if o.isEnabled}
+                      <Badge tone="success">on</Badge>
+                    {:else}
+                      <Badge tone="muted">off</Badge>
+                    {/if}
+                  </td>
+                  <td class="text-sm">{o.rollout}%</td>
+                  <td>
+                    <Button variant="ghost" disabled={busy === flag.id}
+                            aria-label={`Clear the ${envLabel(o)} override on ${flag.key}`}
+                            onclick={() => clear(flag, o.environmentId)}>Clear</Button>
+                  </td>
+                </tr>
+              {/snippet}
+            </Table>
           {:else}
             <p class="text-sm text-muted">Every environment follows the default.</p>
           {/if}

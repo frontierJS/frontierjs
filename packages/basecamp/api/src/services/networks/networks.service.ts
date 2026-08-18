@@ -15,7 +15,7 @@
 
 import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, assertSlugFree, dbOf, wsOf }
+import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, changesNothing, assertSlugFree, dbOf, wsOf }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -82,7 +82,7 @@ export function createNetworksService(app: BasecampApp) {
       // points at this id. Renaming the display name is free; renaming the
       // handle is a migration.
       const patch = narrowPatch(data, ['slug', 'provider'])
-      if (!Object.keys(patch).length) return getScoped(ctx, 'network', 'Network')
+      if (changesNothing(patch)) return getScoped(ctx, 'network', 'Network')
       return dbOf(ctx).network.update({ where: { id: ctx.id as string }, data: patch })
     },
 

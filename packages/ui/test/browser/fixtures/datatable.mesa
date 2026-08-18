@@ -1,0 +1,72 @@
+<script>
+  // datatable.mesa — Table and Pagination, the two display components that
+  // hold state rather than draw it.
+  //
+  // The page window is deliberately long enough (18 pages, a window of 5) to
+  // put an ellipsis on BOTH sides at once, which is the only arrangement that
+  // produces two markers in one keyed list.
+  //
+  // The table is driven through its bindings rather than by rebuilding it:
+  // `loading`, `rows` and the sort pair all change under a live component, so
+  // a derived value that is computed once at setup shows up as a control that
+  // stops responding.
+  import Table      from '../../../components/display/Table.mesa'
+  import Pagination from '../../../components/display/Pagination.mesa'
+
+  let page    = 1
+  let changes = 0
+  let lastPage = 0
+
+  function onpage(p) {
+    changes++
+    lastPage = p
+  }
+
+  let compactPage = 3
+
+  const columns = [
+    { key: 'name',  label: 'Name',  sortable: true },
+    { key: 'email', label: 'Email' },
+    { key: 'total', label: 'Total', sortable: true, align: 'right' },
+  ]
+
+  const everyone = [
+    { name: 'Ada',   email: 'ada@example.test',   total: '£12.00' },
+    { name: 'Grace', email: 'grace@example.test', total: '£8.50'  },
+    { name: 'Alan',  email: 'alan@example.test',  total: '£31.20' },
+  ]
+
+  let rows     = everyone
+  let loading  = false
+  let sortKey  = ''
+  let sortDir  = 'asc'
+</script>
+
+<div id="pg">
+  <Pagination bind:page total={450} perPage={25} onchange={onpage} />
+</div>
+
+<div id="pg-compact">
+  <Pagination compact bind:page={compactPage} total={200} perPage={20} showInfo={false} />
+</div>
+
+<div id="tbl">
+  <Table {columns} {rows} {loading} bind:sortKey bind:sortDir>
+    {#snippet row(r, i)}
+      <tr data-row={i}>
+        <td>{r.name}</td>
+        <td>{r.email}</td>
+        <td>{r.total}</td>
+      </tr>
+    {/snippet}
+  </Table>
+</div>
+
+<button type="button" id="toggle-loading" on:click={() => loading = !loading}>loading</button>
+<button type="button" id="empty-rows" on:click={() => rows = []}>empty</button>
+<button type="button" id="refill-rows" on:click={() => rows = everyone}>refill</button>
+
+<output id="page">{page}</output>
+<output id="changes">{changes}</output>
+<output id="last-page">{lastPage}</output>
+<output id="sort">{sortKey}:{sortDir}</output>

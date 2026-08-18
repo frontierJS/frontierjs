@@ -242,7 +242,18 @@ export interface CreateClientOptions {
   computed?:      Record<string, Record<string, ComputedField>> | string
   /** Permanent WHERE clauses applied to every query on a model */
   filters?:       Record<string, Record<string, unknown> | ((ctx: LitestoneCtx) => Record<string, unknown>)>
-  /** Before/after hooks for reads and writes */
+  /**
+   * Before/after hooks for reads and writes.
+   *
+   * `setters` — create, createMany, update, updateMany, upsert, upsertMany,
+   *             remove, removeMany, delete, deleteMany
+   * `getters` — findMany, findFirst, findUnique, findManyCursor, count, search,
+   *             exists
+   * `all`     — both sets
+   *
+   * A hook fires once per call the caller made, named for the method they
+   * named: an `upsert` that inserts fires `upsert`, not `create`.
+   */
   hooks?: {
     before?: {
       setters?: Array<(hook: HookContext, ctx: LitestoneCtx) => void>
@@ -343,7 +354,22 @@ export interface CursorResult<T> {
   hasMore:    boolean
 }
 
-export interface TableClient<TRow, TCreate, TUpdate, TWhere, TOrderBy> {
+/**
+ * One model's accessor. `litestone types` emits a TableClient of its own with
+ * every parameter filled from the schema; this is the hand-written one, for a
+ * client typed by hand — a test, or an example with an inline schema string.
+ *
+ * The last four default off the row, so naming an accessor costs one type
+ * argument. Filling them in by hand for a five-line example is how an example
+ * ends up untyped instead.
+ */
+export interface TableClient<
+  TRow,
+  TCreate  = Partial<TRow> & Record<string, unknown>,
+  TUpdate  = Partial<TRow> & Record<string, unknown>,
+  TWhere   = { [K in keyof TRow]?: WhereOp<TRow[K]> } & WhereBase,
+  TOrderBy = { [K in keyof TRow]?: 'asc' | 'desc' }
+> {
   findMany(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; recursive?: boolean | { direction?: 'descendants' | 'ancestors'; nested?: boolean; maxDepth?: number; via?: string }; distinct?: boolean; window?: WindowSpec }): Promise<(TRow & Record<string, unknown>)[]>
   findFirst(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
   findUnique(args: { where: TWhere; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
@@ -381,8 +407,41 @@ export interface LitestoneConfig {
   migrationsDir: string | null
 }
 
+/**
+ * A client of either shape.
+ *
+ * `LitestoneClient` below is the hand-written one: every table arrives through
+ * its `[model: string]: unknown` index signature. `litestone types` emits a
+ * `LitestoneClient` of its own, with a typed accessor per model and therefore no
+ * index signature — which makes it UNASSIGNABLE to this file's, so an app
+ * holding generated types could not call `autoMigrate(db)` at all (FJS-018).
+ *
+ * The tools below take this instead. It names what every flavour of client
+ * carries and no table, because a tool that reaches for a specific model would
+ * be a tool that only works on one schema.
+ */
+export interface AnyLitestoneClient {
+  // `unknown`, and not `LitestoneSchema` as the hand-written client below
+  // types it: a generated client declares a `$schema` of its own, and naming a
+  // shape here would make the generated flavour unassignable — which is the
+  // whole failure this interface was added to end (FJS-018).
+  readonly $schema: unknown
+  asSystem(): AnyLitestoneClient
+  $close(): void
+}
+
 export interface LitestoneClient {
-  $schema:     unknown
+  // The parsed schema, typed — `generateJsonSchema(db.$schema)` is the
+  // documented line, and `unknown` here made it the documented cast.
+  $schema:     LitestoneSchema
+  /**
+   * Is a transaction open on this connection right now?
+   *
+   * For a write whose meaning depends on rolling back with everything else —
+   * an outbox row recording an effect to deliver. Same answer on every
+   * flavour: one write connection, one depth counter.
+   */
+  $inTransaction: boolean
   $databases:  Record<string, { driver: string; access: string; path: string | null }>
   $rawDbs:     Record<string, unknown>
   $db:         unknown
@@ -399,12 +458,13 @@ export interface LitestoneClient {
   $checkWhere(accessor: string, where: unknown): { key: string; suggestion: string | null; allowed: string[] }[]
   /**
    * Is this a valid orderBy key? Same contract as $checkWhere. `reason`
-   * separates a field that does not exist from a @computed field, which SQLite
-   * can neither sort nor paginate by. Pass `{ aggregates: true }` for
+   * separates a field that does not exist from one that exists and cannot be
+   * sorted by — @computed (a JS function over a row), @transient (a payload key
+   * with no column) or an opaque encoding. Pass `{ aggregates: true }` for
    * groupBy/aggregate, where `_count` is the point rather than a typo.
    */
   $checkOrderBy(accessor: string, orderBy: unknown, opts?: { aggregates?: boolean }): {
-    key: string; reason: 'computed' | 'unknown'; suggestion: string | null
+    key: string; reason: 'computed' | 'transient' | 'opaque' | 'unknown'; suggestion: string | null
     sortable: string[]; message: string
   }[]
   /**
@@ -488,7 +548,21 @@ export interface LitestoneClient {
   [model: string]: unknown
 }
 
-export declare function createClient(options: CreateClientOptions): Promise<LitestoneClient>
+/**
+ * The type parameter is how a schema's generated types reach the client an app
+ * actually holds. `LitestoneClient` here is the hand-written shape — every table
+ * is `unknown` through its index signature — while `litestone types` emits a
+ * `LitestoneClient` of its own with a typed accessor per model:
+ *
+ *   import type { LitestoneClient as Db } from './db/schema.js'
+ *   const db = await createClient<Db>({ … })
+ *
+ * The alternative is an assertion at every call site, which is the hand-written
+ * table shape this replaces (FJS-018). Nothing checks that the argument matches
+ * the schema the client is built from — it cannot, the schema is read at runtime
+ * — so the generated file and the `schema:` passed here have to name one .lite.
+ */
+export declare function createClient<TClient = LitestoneClient>(options: CreateClientOptions): Promise<TClient>
 
 // ─── Parse ────────────────────────────────────────────────────────────────────
 
@@ -603,10 +677,10 @@ export interface VerifyResult {
 }
 
 export declare function create(db: unknown, parseResult: ParseResult, label?: string, dir?: string, opts?: { pluralize?: boolean }): CreateMigrationResult
-export declare function apply(db: unknown, dir?: string, client?: LitestoneClient): Promise<ApplyResult>
+export declare function apply(db: unknown, dir?: string, client?: AnyLitestoneClient): Promise<ApplyResult>
 export declare function status(db: unknown, dir?: string): MigrationRow[]
 export declare function verify(db: unknown, parseResult: ParseResult, dir?: string, opts?: { pluralize?: boolean }): VerifyResult
-export declare function autoMigrate(db: LitestoneClient, parseResult?: ParseResult, opts?: { pluralize?: boolean }): Record<string, { state: string; applied?: number; sql?: string }>
+export declare function autoMigrate(db: AnyLitestoneClient, parseResult?: ParseResult, opts?: { pluralize?: boolean }): Record<string, { state: string; applied?: number; sql?: string }>
 export declare function listMigrationFiles(dir: string): string[]
 export declare function unmatchedMigrationFiles(dir: string): string[]
 export declare function describeSkipped(skipped: string[]): string
@@ -715,6 +789,11 @@ export interface FileStorageOptions {
   publicBase?:      string
   keyPattern?:      string   // default: ':model/:id/:field/:date-:filename'
   region?:          string
+  // provider: 'local' — read by storage/providers/local.js and undeclared
+  // here, so the local branch of every dev config was a type error.
+  localPath?:       string   // default: './storage'
+  localUrl?:        string   // default: http://localhost:<localPort>/storage
+  localPort?:       number   // default: 3001
 }
 
 export declare function FileStorage(options?: FileStorageOptions): Plugin
@@ -848,12 +927,12 @@ export type FactoryRow       = Record<string, unknown>
 export type FactoryOverrides = FactoryRow | ((seq: number, rng: FactoryRng | null) => FactoryRow)
 
 export declare class Factory {
-  constructor(db: LitestoneClient)
+  constructor(db: AnyLitestoneClient)
 
   /** Subclass fields. */
   model: string
   traits?: Record<string, FactoryOverrides>
-  afterCreate?: (row: FactoryRow, db: LitestoneClient) => void | Promise<void>
+  afterCreate?: (row: FactoryRow, db: AnyLitestoneClient) => void | Promise<void>
   definition(seq: number, rng: FactoryRng | null): FactoryRow
 
   /** Chain methods — all return a CLONE, never `this`. */
@@ -861,7 +940,7 @@ export declare class Factory {
   seed(n: number): this
 
   /** Run against a different client — the whole wired graph follows. */
-  usingDb(db: LitestoneClient): this
+  usingDb(db: AnyLitestoneClient): this
   /** Seed past the Data boundary — required for any schema declaring `@@gate`. */
   asSystem(): this
   /** Seed as a specific principal; gates and policies see it. */
@@ -916,7 +995,7 @@ export interface FactorySpec {
   model:        string
   definition:   (seq: number, rng: FactoryRng | null) => FactoryRow
   traits?:      Record<string, FactoryOverrides>
-  afterCreate?: (row: FactoryRow, db: LitestoneClient) => void | Promise<void>
+  afterCreate?: (row: FactoryRow, db: AnyLitestoneClient) => void | Promise<void>
   [key: string]: unknown
 }
 
@@ -924,18 +1003,18 @@ export interface FactorySpec {
  * The Factory without the class ceremony. Returns a CLASS, so it drops straight
  * into `makeTestClient({ factories: { user: UserFactory } })`.
  */
-export declare function defineFactory(spec: FactorySpec): new (db: LitestoneClient) => Factory
+export declare function defineFactory(spec: FactorySpec): new (db: AnyLitestoneClient) => Factory
 
 export declare class Seeder {
-  run(db: LitestoneClient): Promise<void>
+  run(db: AnyLitestoneClient): Promise<void>
   /** Seeders that must run before this one. Each class runs at most once per call(). */
   static dependsOn?: Array<new () => Seeder>
   /** Run other seeders, dependencies first. */
-  call(db: LitestoneClient, seederClasses: Array<new () => Seeder>): Promise<void>
-  static once(db: LitestoneClient, key: string, fn: () => Promise<void>): Promise<void>
+  call(db: AnyLitestoneClient, seederClasses: Array<new () => Seeder>): Promise<void>
+  static once(db: AnyLitestoneClient, key: string, fn: () => Promise<void>): Promise<void>
 }
 
-export declare function runSeeder(db: LitestoneClient, SeederClass: new () => Seeder): Promise<void>
+export declare function runSeeder(db: AnyLitestoneClient, SeederClass: new () => Seeder): Promise<void>
 
 export interface LoadFixtureOptions {
   /** Column to match on — makes the fixture re-runnable (upsert instead of create). */
@@ -977,6 +1056,16 @@ export declare function generateJsonSchema(schema: LitestoneSchema, options?: Js
 
 export interface TypegenOptions {
   audience?: 'client' | 'system'
+  /** Emit JSDoc comments on fields. */
+  includeComments?: boolean
+  /**
+   * Also emit the module augmentation that carries the row types past the
+   * server: with it, `client.service('posts')` in the browser answers the row
+   * this schema declares. Named rather than implied — an augmentation names a
+   * package, and an app that installed litestone alone must not be given a
+   * declaration for one it does not have.
+   */
+  augment?: 'junction'
 }
 
 export declare function generateTypeScript(schema: LitestoneSchema, options?: TypegenOptions): string

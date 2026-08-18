@@ -2,7 +2,7 @@
 
 **Schema-first SQLite ORM for Bun.**
 
-A single `.lite` file declares the **shape** of your data, **access** rules, **lifecycle** behavior, and the **generation** of everything downstream — TypeScript types, migrations, JSON Schema, runtime enforcement. Edit the schema; everything stays consistent. SQLite and Bun keep the runtime embedded, fast, and dependency-free.
+A single `.lite` file declares the **shape** of your data, **access** rules, **lifecycle** behaviour, and the **generation** of everything downstream — TypeScript types, migrations, JSON Schema, runtime enforcement. Edit the schema; everything stays consistent. SQLite and Bun keep the runtime embedded, fast, and dependency-free.
 
 ```
 // schema.lite
@@ -288,62 +288,99 @@ model User {
 ```
 @id                              primary key (auto-increment for Int)
 @unique                          UNIQUE constraint
-@default(value)                  now(), uuid(), ulid(), nanoid(), true, "string", 42, enumValue
+@default(value)                  now(), uuid(), ulid(), cuid(), nanoid(), true, "string", 42, enumValue
 @default(auth().id)              stamped at write time from ctx.auth
 @default(fieldName)              copy sibling field value on create
 @relation(fields, references, onDelete?)
 @generated("sql expr")           VIRTUAL or STORED generated column
 @computed                        derived field — implement in computed.js, not stored in DB
+@derived(expr)                   computed in SQL from this row's own columns, so unlike
+                                 @computed it can be FILTERED and SORTED by. See below
 @updatedAt                       auto-set to now() on every UPDATE
 @updatedBy                       stamp ctx.auth.id on every UPDATE
 @updatedBy(auth().field)         stamp custom auth field on every UPDATE
+@createdBy                       stamp ctx.auth.id on CREATE. A stamp, not a default —
+                                 the principal beats a caller-supplied value, and it is
+                                 skipped entirely when ctx.auth is null
+@createdBy(auth().field)         stamp custom auth field on CREATE
+@version                         optimistic concurrency. See below
 @sequence(scope: field)          per-scope auto-increment (e.g. per-account doc numbers)
 @map("column_name")              custom DB column name
 @omit                            excluded from findMany/findFirst
 @omit(all)                       excluded everywhere
-@guarded                         excluded unless asSystem()
-@guarded(all)                    excluded everywhere unless asSystem()
-@encrypted                       AES-256-GCM at rest (implies @guarded(all))
+@system                          the application writes it, its caller does not. Readable by
+                                 anyone, refused by name on every write. See below
+@guarded                         excluded unless asSystem() — and refused on write, too
+@guarded(all)                    the same; an explicit select cannot unlock the read
+@encrypted                       AES-256-GCM at rest — hidden from a non-system read, and
+                                 still WRITABLE by a non-system caller
 @encrypted(deterministic: true)  encrypted equality search, and the value still reads back
-@hashed                          one-way digest — matchable, never readable
-@secret                          @encrypted + @guarded(all) + @log(auditDb)
+@hashed                          HMAC-SHA256, one-way — matchable, never readable
+@secret                          @encrypted + @guarded(all) + @log(audit) + $rotateKey
+@secret(rotate: false)           the same but excluded from key rotation — and therefore
+                                 unreadable after one. $rotateKey refuses while one exists
 @allow('read'|'write'|'all', expr)   field-level conditional visibility
 @log(dbName)                     field-level audit log to a logger database
 @keepVersions                    on File? / File[]: skip old S3 object cleanup on update
 @accept("mime/type")             on File / File[]: validate content type before upload
 @markdown                        semantic annotation — field contains Markdown (no validation)
+@label("Customer")               human-readable name → JSON Schema `title`, and the label a
+                                 generated form renders
 @hardDelete                      force hard delete even on @@softDelete models
 @from(Model, count: true)        derived count from a relation (not stored in DB) — Int
 @from(Model, sum: field)         derived sum/max/min from a relation — sum/max/min take a field
 @from(Model, last: true)         first/last related ROW — field is typed Model?
 @from(Model, exists: true)       Boolean
 @from(Model, count: true, where: "sql", orderBy: field)  filtered / ordered derived field
+@from(Model, count: true, withDeleted: true, withTemplates: true)  opt back into the target's
+                                 soft-deleted / template rows. By DEFAULT a @from reads its
+                                 target the way the target is read — both out
 
 // Validators — run on every create + update
 @email  @url  @date  @datetime  @phone  @regex(pattern)
 @length(min, max)  @gt(n)  @gte(n)  @lt(n)  @lte(n)
 @startsWith(s)  @endsWith(s)  @contains(s)
+@minItems(n)  @maxItems(n)  @uniqueItems     // arrays — and the value must BE an array,
+                                             // with Int[]/String[] elements of that type
 
 // Transforms — applied before validation + write
 @trim  @lower  @upper  @slug
 ```
+
+**Every validator takes an optional trailing message** — `@length(3, 20, "A reference is 3 to 20 characters")`, `@gte(0, "Totals cannot be negative")`, `@email("...")`. One authored string reaches all three realms: `generateJsonSchema` emits it as `x-messages`, keyed both by rule name *and* by the JSON Schema keyword the rule compiles to, so the API and the browser look up the keyword they just failed and say the sentence the schema declared.
+
+`@required("msg")` is the wording for the required rule and **does not make a field required** — the absence of `?` does. On an optional field it is a parse error, because the message could never fire.
 
 ### Model attributes
 
 ```
 @@softDelete                     enable soft delete (requires deletedAt DateTime?)
 @@softDelete(cascade)            + cascade remove/restore to FK children
+@@hasTemplates                   definition-vs-instance: adds isTemplate Boolean @default(false).
+                                 Every read AND write excludes templates unless given
+                                 withTemplates / onlyTemplates
+@@hasTemplates(field: "isPreset")  the same, under a name you choose
 @@fts([field1, field2])          FTS5 full-text search virtual table
 @@index([col1, col2])            composite index
 @@unique([col1, col2])           composite unique constraint
 @@gate(read: L, create: L, update: L, delete: L)   level-based access control — `write` = shorthand
 @@gate("R.C.U.D")                compact digit form of the same gate
-@@allow('read'|'create'|'update'|'delete'|'all', expr)  row-level policy
+@@allow('read'|'create'|'update'|'delete'|'write'|'all', expr)  row-level policy
 @@allow('read'|..., expr, "custom error message")
 @@deny('read'|..., expr)         row-level deny (always wins over allow)
 @@deny('read'|..., expr, "custom error message")
-@@log(dbName)                    model-level audit log to a logger database
+@@scope(name, expr)              a named predicate in the @@allow expression language, asked
+                                 for as `where: { $scope: 'name' }`. See below
+@@transitions(field, ...)        a state machine on an enum field, enforced at the Data
+                                 boundary. `name:` optional, `@gate(N)` per move. See below
+@@log(dbName)                    model-level audit log: every write fires a log entry
 @@auth                           marks model as the auth subject
+@@createdBy                      sugar: adds createdById @createdBy + a createdBy relation
+                                 to the @@auth model. @@createdBy(owner) renames the pair
+@@updatedBy                      the same pair for updates
+@@tenant(none)                   under `tenancy { strategy row }`: this model spans tenants
+@@tenant(column: "accountId")    …or is scoped by a column of its own
+@@strict                         SQLite STRICT mode (on by default)
 @@noStrict                       opt out of STRICT mode
 @@map("table_name")              custom DB table name
 @@db(dbName)                     assign model to a named database block
@@ -391,6 +428,66 @@ await db.auditLogs.findMany({ where: { model: 'User' } })  // → audit/ (auto-c
 - `sqlite` (default) — standard SQLite file with full ORM support
 - `jsonl` — append-only log files, one `.jsonl` per model, `findMany` supported
 - `logger` — auto-schema audit log, receives `@log` / `@@log` entries; queries via `db.auditLogs`
+
+---
+
+## Multi-tenancy
+
+**Declared in the seed, one block, two strategies.** At most one per schema, and
+it may not arrive through an import — only the app knows what its own tenants are.
+
+```prisma
+tenancy {                          tenancy {
+  strategy database                  strategy row
+  dir      "./tenants"               column   workspaceId
+  registry "./tenants-registry.db"   claim    workspaceId   // default: the column
+  maxOpen  100                     }
+  key      env("TENANT_KEY")
+  resolve  subdomain               // subdomain | header("X-Tenant-Id") | claim(field)
+}
+```
+
+**`strategy database`** is one SQLite file per tenant plus a registry that indexes
+them:
+
+```js
+const tenants = await createTenantRegistry({ path: './db/schema.lite' })
+const db      = await tenants.get('acme')
+await tenants.query(db => db.user.count())
+await tenants.migrate()
+```
+
+**`strategy row`** is one database and a tenant column, and it **desugars into
+`@@deny`, never `@@allow`**. That is the whole subtlety: allows are OR'd within an
+operation, so an allow added to a model that already declares one *widens* every
+read to the entire tenant — the opposite of the feature. It is two rules per
+scoped model, because `checkCreatePolicy` runs **before** the
+`@default(auth().<claim>)` stamp: on create the column is legitimately absent, and
+on read a row holding no tenant belongs to nobody.
+
+```prisma
+model Project { id Int @id  workspaceId Int  name String }
+model Plan    { id Int @id  code String  @@tenant(none) }        // spans tenants
+model Invoice { id Int @id  accountId Int  @@tenant(column: "accountId") }
+```
+
+A model declaring neither is **reported by name at parse**, once. `jsonl` and
+`logger` models are never scoped — there is no policy engine there — and those
+databases stay schema-global under `strategy database` too.
+
+**Every reader asks one resolution** — `resolveTenancy(schema)`, reachable as
+`db.$tenancy` and `registry.tenancy` — and precedence is **option → declaration →
+default**. That is what stops `litestone tenant create` and the running app
+disagreeing about where a tenant lives. `asSystem()` is the only way across a
+tenant boundary, which is what a cross-tenant tier is built on.
+
+`registry.tenantFor({ host, headers, principal })` applies the declared `resolve`.
+Junction's `createApp({ tenants })` calls exactly that rather than carrying a
+second reading of it. Full reference: [`docs/multi-tenancy.md`](./docs/multi-tenancy.md).
+
+```bash
+litestone tenant list | create <id> | delete <id> | migrate
+```
 
 ---
 
@@ -491,7 +588,8 @@ const db = await createClient({ parsed: result })
 // Full options
 const db = await createClient({ path: './schema.lite',
   db:         './app.db',
-  encryptionKey: process.env.ENC_KEY,     // 64-char hex = 32 bytes
+  databases:  ':memory:',                 // or { main: { path } } — see the note below
+  encryptionKey: process.env.ENC_KEY,     // 64 HEX characters = 32 bytes
   computed: './db/computed.js',
   plugins:    [new GatePlugin({ getLevel }), FileStorage({ provider: 'r2', ... })],
   onQuery:    (e) => logger.debug(e),          // production query logging
@@ -500,10 +598,24 @@ const db = await createClient({ path: './schema.lite',
     after:  { getters: [fn], all: [fn] },
   },
   onEvent: { create: fn, update: fn, remove: fn, change: fn },
-  filters: { posts: { status: 'published' } },  // global query filters per model
+  filters: { post: { status: 'published' } },   // keyed by ACCESSOR (db.post), not model name
+  scopes:  { Customer: CustomerScopes },        // named query fragments — see Scopes
+  announce: 'collection',                       // the floor for a bulk write's event
+  readOnly: true,                               // every SQLite database, read-only
+  now:      () => frozenDate,                   // the clock every time-dependent rule reads
   onLog: (entry, ctx) => ({ meta: { requestId: ctx.auth?.requestId } }),
 })
 ```
+
+**`db:` names MAIN's path and nothing else.** It overrides a declared
+`database main`, so `db: ':memory:'` is the in-memory test client — but a
+*second* declared database keeps its declared path regardless.
+`databases: ':memory:'` is the shorthand that moves every one of them, jsonl and
+logger included. Most specific wins:
+`databases: ':memory:'` > `databases: { main: { path } }` > `db` > the declaration.
+
+**`encryptionKey` is parsed as hex**, so 64 *characters* is not necessarily 32
+bytes — non-hex padding decodes short and is rejected with `must be 32 bytes (got 1)`.
 
 ### Auth scoping
 
@@ -511,6 +623,30 @@ const db = await createClient({ path: './schema.lite',
 const userDb = db.$setAuth(req.user)   // scoped per request — policies + field rules apply
 const sysDb  = db.asSystem()           // bypasses @@gate + @@allow/@@deny, unlocks @guarded fields
 ```
+
+**`$setAuth` RETURNS a scoped client; it does not mutate.** `db.$setAuth(u)`
+followed by `db.thing.create(…)` grades as anonymous, with no warning. It is
+`const userDb = db.$setAuth(u)`.
+
+**A client throws on an unknown property** — never `undefined`, so a typo'd
+accessor is loud. The cost is that feature detection is itself a throwing
+expression: `typeof db.$maybe === 'function'` explodes, and `'$maybe' in db` is
+the question to ask.
+
+### Raw SQL needs `asSystem()`
+
+Once a schema declares any access rule (`@@gate`, `@@allow`, `@guarded`,
+`@@scope`), `db.sql` and `db.$setAuth(u).sql` **throw**:
+
+```js
+db.asSystem().sql`SELECT …`                    // the deliberate bypass — and it can write
+db.post.findMany({ where: { $raw: sql`…` } })  // keeps every policy — reach for this
+```
+
+Raw statements enforce no gate, no row policy, no field guard and no soft-delete
+filter, because all of those live above SQLite. It is coarse per schema on
+purpose: deciding per statement means parsing it, and a wrong validator grants a
+*false* guarantee. A JS migration is exempt — the runner hands it the system client.
 
 ---
 
@@ -579,6 +715,237 @@ Reserved: `SYSTEM=8` (asSystem() only)  `LOCKED=9` (impassable — not even asSy
 @@gate("9")          nobody can do anything (model is locked)
 @@gate("9.9.9.9")    same as above
 ```
+
+**A schema declaring any `@@gate` auto-installs `GatePlugin`.** You cannot run
+without gates — a declared-but-unenforced gate is fail-open. Installing your own
+replaces the default; installing none does not disable it.
+
+**A `@@gate` refuses and a `@@allow` filters**, which is why a wrong policy is an
+empty screen rather than an error. A gate throws naming the model and the level;
+a policy compiles silently into the WHERE. Any read that legitimately crosses a
+policy's scope has to be `asSystem()`, or it returns nothing with a 200.
+
+---
+
+## `@system` and `@guarded` — two halves of one grid
+
+Only one of the two touches reads:
+
+| | read | write |
+| --- | --- | --- |
+| `@guarded` | system only | system only |
+| `@system` | **anyone** | system only |
+
+`@guarded` is a system-context lock in both directions — a non-system write
+naming a guarded column is refused with an `AccessDeniedError` naming the field.
+`@system` is the orthogonal sibling: the column an application writes and its
+caller does not. A tracking code, a computed hint, a status the server owns.
+
+```prisma
+model Order {
+  id           Int     @id
+  reference    String  @unique
+  trackingCode String? @system     // readable by anyone, written by the app
+  @@gate("2.4.4.5")
+}
+```
+
+The application fills it by **naming the column on the write**, which keeps the
+gate, the row policies and the audit actor — where `asSystem()` drops all three
+to set one value:
+
+```js
+await db.order.update({ where: { id }, data: { trackingCode }, system: ['trackingCode'] })
+```
+
+Three things follow. **Both refuse a write by name rather than dropping it**,
+because the client is told the column is `readOnly` and a generated form does not
+offer it — so a payload naming one is code that meant to write it. A field
+`@allow('write', …)` still drops silently, and must: there the same payload is
+legitimate for another caller. **`@guarded` is not a level** — it takes only
+`(all)`, and `@guarded(5)` does not parse; per-role column access is field-level
+`@allow`. And a **required** `@guarded` column makes its model uncreatable below
+level 8.
+
+`@encrypted` alone is not a guard — it hides a value from a reader and stays
+writable, which is what a caller submitting a secret needs. The two cannot sit on
+one field, and that is the choice: `@allow('write', …)` for a column some callers
+may set, `@guarded` for one only `asSystem()` touches.
+
+---
+
+## `@@transitions` — a state machine at the Data boundary
+
+An enum field whose legal moves are declared, enforced on every write, and
+readable by the client:
+
+```prisma
+enum OrderStatus { pending  paid  shipped  refunded  cancelled }
+
+model Order {
+  id     Int         @id
+  status OrderStatus @default(pending)
+
+  @@transitions(status,
+    pay:    pending         -> paid,
+    ship:   paid            -> shipped,
+    refund: paid            -> refunded @gate(ADMINISTRATOR),
+    cancel: [pending, paid] -> cancelled)
+}
+```
+
+```js
+await db.order.transition(1, 'pay')          // → the updated row
+db.order.transitions(row)                     // → what this row may do NOW
+```
+
+A name is optional — an unnamed clause names itself after its target state, so
+`pending -> paid` is the `paid` transition. `@gate(N)` takes a level or a level
+name and is **per move**, which is the thing a gate on the model cannot say: any
+USER may ship, only an ADMINISTRATOR may refund. An illegal move throws
+`TransitionViolationError`; one the caller is not graded for throws
+`TransitionGateError`.
+
+It reaches the browser as **`x-transitions` on the model, keyed by field** —
+never on the enum's `$def`, because only a model can carry a per-transition gate.
+Sierra mirrors it as `resource.transitions(row)`, so a UI renders the buttons the
+row actually has.
+
+**`updateMany` skips transitions by design** — it is a power tool and the caller
+takes responsibility. Junction's bulk path therefore writes one row at a time
+rather than calling it, or `PATCH /orders/1` would be refused by the state machine
+and `PATCH /orders?status=draft` would not, for the identical move.
+
+---
+
+## `@version` — optimistic concurrency
+
+```prisma
+model Order {
+  id      Int    @id
+  title   String
+  version Int    @version
+}
+```
+
+An `update()` must carry back the version it read, in `data`:
+
+```js
+const order = await db.order.findUnique({ where: { id: 1 } })
+await db.order.update({ where: { id: 1 }, data: { title: 'New', version: order.version } })
+```
+
+A row that moved underneath throws `VersionConflictError` (**409, `retryable`** —
+re-read and re-apply); an absent version throws `VersionRequiredError` (400). A
+new row is version 1 whatever the payload says, and every write bumps it.
+
+One per model, `Int`, non-optional, never the `@id` — each refused at parse,
+because a nullable version is a row that cannot be compared and that is a hole in
+the guarantee. `updateMany` / `upsert` / `upsertMany` bump without requiring, and
+`asSystem()` skips the check.
+
+It reaches the client as `x-version`, `readOnly` in the update schema and absent
+from the create schema, so Sierra's `createResource` remembers the version of
+every record it read and puts it on the next patch with nobody wiring anything.
+
+---
+
+## `@@scope` — a named predicate a caller can ask for
+
+The policy compiler, made explicit and opt-in:
+
+```prisma
+model Task {
+  id          Int       @id
+  ownerId     Int
+  status      String    @default("open")
+  dueAt       DateTime?
+  completedAt DateTime?
+
+  @@scope(overdue, dueAt < now() && completedAt == null)
+  @@scope(mine,    ownerId == auth().id)
+  @@scope(active,  status == 'open' || status == 'review')
+}
+```
+
+```js
+db.task.findMany({ where: { $scope: 'overdue' } })
+db.task.findMany({ where: { $scope: ['overdue', 'mine'] } })     // several AND
+db.task.findMany({ where: { $scope: 'mine', status: 'open' } })  // composes with keys
+db.task.findMany({ where: { OR: [{ $scope: 'overdue' }, { id: 5 }] } })
+```
+
+**Predicate-only** — no value, no property in the generated schema. If a UI wants
+to *render* the answer it wants `@derived` instead. Several names AND; a
+disjunction goes inside one scope.
+
+The point is that **a where is the one query shape a browser can name**: a client
+sends a `where` object over HTTP and cannot invoke `db.task.overdue()`. The name
+is looked up in the declared table and never interpolated, and `db.$scopes(accessor)`
+publishes the list — which is what `$checkWhere` validates against.
+
+---
+
+## `@derived` — a value SQLite computes, so you can filter and sort by it
+
+```prisma
+model Task {
+  id          Int       @id
+  priority    Int
+  dueAt       DateTime?
+  completedAt DateTime?
+
+  overdue Boolean @derived(dueAt < now() && completedAt == null)
+  urgency Int     @derived(priority > 8 ? 3 : priority > 5 ? 2 : 1)
+}
+```
+
+The `@@allow` expression language, compiled once at startup into the SELECT — so
+unlike `@computed` (a JS function over a fetched row) it is a real column
+expression and `where: { overdue: true }` and `orderBy: { urgency: 'desc' }` both
+work.
+
+**Static only.** `now()` is allowed and emits SQLite's own clock, which SQLite
+fixes for the duration of a statement. `auth()` and `check()` are **refused** — a
+derived field is one value for the row, and per-caller is what `@@scope` is for.
+The declared type is checked against the branches at startup.
+
+It reaches the client as `readOnly` with `x-litestone-kind: 'derived'`, plus
+`x-litestone-volatile: 'clock'` when it reads the clock — a flag, never the
+expression.
+
+---
+
+## `@@hasTemplates` — definition versus instance
+
+A category most apps grow by hand: rows that are a *definition* sitting in the
+same table as rows that are an *instance* of it.
+
+```prisma
+model Workout {
+  id   Int    @id
+  name String
+  @@hasTemplates                       // adds isTemplate Boolean @default(false)
+}
+```
+
+Every read **and every write** excludes templates unless asked:
+
+```js
+db.workout.findMany()                                 // instances only
+db.workout.findMany({ withTemplates: true })          // both
+db.workout.findMany({ onlyTemplates: true })          // the definitions
+db.workout.update({ where: { id }, data: { isTemplate: false }, withTemplates: true })
+```
+
+It is the same two flags `@@softDelete` gives, on the same methods — and
+**neither is an access rule, so `asSystem()` does not lift either**; the flags are
+the only way past. They part company in one place: a hard `delete` bypasses the
+soft-delete filter by design (it is the purge hatch) while the template filter
+still applies, because destroying rows no ordinary read returns is data loss the
+caller cannot anticipate.
+
+`@@hasTemplates(field: "isPreset")` names the column yourself.
 
 ---
 
@@ -663,6 +1030,30 @@ db.user.optimizeFts()          // merge FTS5 segments — requires @@fts
 
 Bulk ops intentionally skip `RETURNING` — fetching potentially thousands of rows back negates the performance reason for using a bulk op. If you need the modified rows, use a single-row op in a `$transaction` loop, or `findMany` after the bulk op.
 
+### Two refusals worth knowing by name
+
+**A soft-deleted row keeps its `@unique` values.** Freeing the slot would make
+`@unique` false for every read that includes deleted rows — `findUnique(withDeleted)`
+legitimately matching two — and would make `restore()` fail whenever a stranger
+took the value first. So a write naming a value a deleted row holds is refused by
+name (`SoftDeletedUniqueError`, **409**, naming the field, the value and the
+holding row) rather than by SQLite. Releasing a slot is a decision the app makes:
+`update({ …, withDeleted: true })` moves the value, `delete({ …, withDeleted: true })`
+stops keeping the row.
+
+**A per-call flag the model cannot satisfy is refused, and so is a method.**
+`onlyDeleted` on a model with no `@@softDelete` used to answer the *live* rows —
+the opposite of the question, with nothing saying the flag had not applied — and
+`search()` below `@@fts` threw a bare `Error` that reached a caller as a 500. Both
+are `CapabilityNotDeclaredError` now: **400**, naming the model and the attribute
+that would make the request legal. It covers `onlyDeleted` / `onlyTemplates` on
+every read and write, plus `search()`, `optimizeFts()`, `restore()` and
+`transition()`.
+
+`withDeleted` / `withTemplates` deliberately do **not** refuse: they ask to
+widen, and a model that hides nothing already answers everything — which is what
+generic tooling (a row browser, a *show deleted* toggle) is asking for.
+
 ### Where clause
 
 ```js
@@ -672,7 +1063,19 @@ Bulk ops intentionally skip `RETURNING` — fetching potentially thousands of ro
 { name: { contains: 'smith' } }
 { deletedAt: { not: null } }
 { AND: [...], OR: [...], NOT: {...} }
+{ $scope: 'overdue' }                    // a @@scope the model declares
+{ $raw: sql`json_extract(meta, '$.tier') = ${3}` }
 ```
+
+**A bare array is not `equals`, on either kind of column.** It means *the column's
+value is in this list* — `IN` for a scalar, `IN` inside `json_each` for an array
+column, which is `hasSome`. **Prisma reads it as an exact match**, so a schema
+ported from there filters wider than it did. The exact, ordered comparison is
+`{ equals: [...] }`.
+
+**A `where` typo below the HTTP boundary warns to stderr and returns no rows.**
+Over the wire an unknown key is a 400 naming it; a service building its own filter
+gets silence. `db.$checkWhere(accessor, where)` is how to ask first.
 
 ### Sorting
 
@@ -684,6 +1087,11 @@ orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]   // multi-field
 // NULLS FIRST / LAST — object form
 orderBy: { deletedAt: { dir: 'asc', nulls: 'last' } }
 orderBy: { priority: { dir: 'desc', nulls: 'first' } }
+
+// The escape hatch `where` has. The fragment is the whole ORDER BY tail,
+// direction included; a plain string is refused, because that is how an
+// injected one would arrive. Not available with a cursor, or on groupBy.
+orderBy: { $raw: sql`CASE WHEN "snoozedUntil" > ${now()} THEN 1 ELSE 0 END ASC, "dueAt" ASC` }
 
 // Relation field orderBy — sort by a field on a belongsTo relation (LEFT JOIN)
 db.post.findMany({ orderBy: { author: { name: 'asc' } } })
@@ -811,6 +1219,112 @@ await db.user.findMany()
 stop()
 // log contains all queries that fired
 ```
+
+---
+
+## The audit trail — `@@log` records a write, `$audit` records an event
+
+`@@log(audit)` covers **writes**, which means the events an application most
+wants are exactly the ones it cannot see. A sign-in is not a write to `User`, and
+a *failed* one is not a write at all — so nothing the logger can observe names the
+actor or the attempt.
+
+`db.$audit()` is the one way to put a row there by hand:
+
+```js
+await db.$audit({
+  operation: 'login.failed',
+  model:     'User',
+  records:   [user.id],
+  actorId:   user.id,          // defaults to this client's principal; a system context has none
+  meta:      { reason: 'bad-password' },
+})
+```
+
+**It awaits and throws**, where `@@log` is fire-and-forget — there the record is a
+side effect of a write that already succeeded and must not fail it; here it *is*
+the point. An unknown key is refused by name, a stated `actorId` beats `onLog`'s,
+and `meta` is **not redacted** — it is yours, so do not put a secret in it. On
+every flavour of client.
+
+**Protected fields are redacted in the trail.** Any `@encrypted` / `@guarded` /
+`@secret` value logs as `[redacted]` in both the field entry and the
+`before`/`after` snapshots — the record says *that* the field was written, never
+what it held. That is what makes `@secret`'s expansion safe: it implies
+`@log(<first logger db>)`, so declaring a logger database alone starts logging
+every secret field, and without redaction that writes plaintext beside a correctly
+encrypted row. `null` is preserved rather than redacted.
+
+**The logger defers one event-loop tick.** `fireLog()` schedules with
+`setImmediate` and the jsonl driver appends synchronously, so a read in the same
+tick sees 0 rows and the `.jsonl` may not exist yet. Yield once; do not wait —
+there is no timed buffer and no flush on exit.
+
+---
+
+## Write events — `$tapEvents`
+
+Every write announces, and the event says whether it can name its row:
+
+```js
+const stop = db.$tapEvents(e => {
+  e.scope === 'row'          // one row — `result` is it, or null where select: false
+  e.scope === 'collection'   // `count` rows matching `where`, from a statement that never built them
+})
+```
+
+**The scope is stated, never read off `result`** — those are two facts, and
+`result: null` means both *this write skipped the RETURNING* and *this was a bulk
+statement*. Treating it as "no rows" is what silently dropped every
+`select: false` write a layer up. A write matching **no** rows announces nothing:
+a count of zero sending every open tab back to the server is worse than silence.
+
+**`announce` is the dial on a bulk write, and it is per call:**
+
+```js
+db.user.updateMany({ where, data })                      // 'collection' — one event, O(1)
+db.user.updateMany({ where, data, announce: 'rows' })    // one event per row, off RETURNING
+db.user.updateMany({ where, data, announce: 'none' })
+createClient({ …, announce: 'rows' })                    // the floor; a call beats it
+```
+
+Not decidable by size — the count is unknowable before the write without a second
+query — so it is declared and never guessed, and it is the *call* rather than the
+model, since one model carries both a three-row cancel and a two-million-row purge.
+An unknown value is refused by name before the statement runs.
+
+Junction taps this and routes it into the same real-time fan-out a service write
+uses, so a write that came through no service still reaches every open tab.
+
+---
+
+## Is this a valid filter? — `$checkWhere` / `$checkOrderBy`
+
+A layer above needs to grade a caller-supplied `where` or `orderBy` *before*
+running it, and re-deriving the rules would be a second answer to one question:
+
+```js
+db.$checkWhere('post', { titel: 'x' })
+// → [{ key: 'titel', suggestion: 'title', allowed: false }]
+
+db.$checkOrderBy('post', { fullName: 'asc' })
+// → [{ key: 'fullName', reason: 'computed', sortable: false, message: '…' }]
+```
+
+`reason` separates *no such field* from **`computed`** (a JS function over a
+fetched row — SQLite can neither sort nor paginate by one) from **`opaque`**: an
+array, a `Json` document, a `File` or an encrypted column, whose stored TEXT is a
+serialisation rather than the value, so ordering by it is always plausible and
+never what was asked. A `@from` and a `@derived` field both sort fine.
+
+An unknown accessor answers `[]` — *I cannot judge this* is not *this is wrong*.
+Both live on **every** flavour of client: filterability is a fact about the
+schema, and auth has no bearing on it.
+
+The two differ in strictness on purpose. **A bad sort key throws**, where a bad
+filter key warns to stderr and returns no rows — a wrong filter returns fewer
+rows, which is visible, and a wrong sort returns the right rows in the wrong
+order, which is not.
 
 ---
 
@@ -1336,19 +1850,88 @@ Set `autoResolve: true` (the default on `FileStorage`) to have `resolve()` calle
 
 ## Testing utilities
 
+**Litestone is the Testing realm's Data half.** `@frontierjs/litestone/testing`
+is the environment a Data-realm test runs in; `@frontierjs/testing` sits above
+Junction and adds the API half, because Litestone may not import Junction.
+
 ```js
 import {
-  makeTestClient,
-  Factory,
-  Seeder,
-  factoryFrom,
-  generateFactory,
-  generateGateMatrix,
-  generateValidationCases,
-  truncate,
-  reset,
+  createTestEnv, makeTestClient, session,
+  Factory, defineFactory, Seeder, loadFixture,
+  factoryFrom, generateFactory, generateGateMatrix, generateValidationCases,
+  deriveAccess, gateLadder, schemaMutants, mutationScore,
+  snapshot, restore, truncate, reset, readOnly,
 } from '@frontierjs/litestone/testing'
 ```
+
+### createTestEnv — the environment
+
+A migrated database, a client, factories and a principal. Tables arrive as a
+**file copy** from a template migrated once per schema per process — 476ms → 13ms
+per database on a 37-model schema.
+
+```js
+const env = await createTestEnv({
+  schema:     'db/schema.lite',
+  migrations: 'db/migrations',   // replay the committed files instead of generating DDL,
+  plugins:    [myGatePlugin],    //   so the tests run against the database a deploy produces
+})
+
+env.actingAs(user)      // the app's own getLevel — anything about behaviour
+await env.atLevel(4)    // a SYNTHETIC standing — the gate grid only
+env.seal(); env.reset(); env.close()
+```
+
+**Arrange / act / assert as three clients rather than three comments.** `setup`
+is the arrange every scenario shares — run once, restored by each `phases()` call:
+
+```js
+const fx = await env.setup(({ factories }) => factories.account.createOne())
+const t  = env.phases({ as: developer })
+
+const lead = await t.arrange(({ factories }) => factories.lead.createOne())
+await t.act(as => as.lead.remove({ where: { id: lead.id } }))
+await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
+```
+
+### The four executed checks
+
+Not assertions you write — the declared surface, **run**:
+
+```js
+await env.verifyGateLadder()      // every gated model × every level × all four ops
+await env.verifyReadLadder()      // the read column alone — no fixtures needed
+await env.verifyConstraints()     // every declared rule, against a real write
+await env.verifyFieldProtection() // @guarded/@encrypted/@secret, actually read back
+await env.verifyRowPolicies()     // @@allow/@@deny — rows on BOTH sides
+```
+
+Three of them exist because the obvious test passes against a broken
+implementation. **A UNIQUE collision is indistinguishable from a validator
+working** — both are a throw on a write that should have been refused — so
+`verifyConstraints` checks for `ValidationError` *by name* and reports anything
+else as an error rather than a pass. **Rows on one side of a predicate prove
+nothing**: a policy that admits everything and a policy that is not applied at
+all are the same observation, so `verifyRowPolicies` needs both sides, and it
+grades the compiled SQL against Litestone's own JS evaluator — a real oracle
+rather than a restatement.
+
+### Mutation — is the suite worth anything?
+
+Mutate the schema, run the **original's** checks against the mutant. A mutant
+nothing notices is a hole in the suite, and it names itself:
+
+```js
+const { score, survived } = await mutationScore({
+  schema, build: (text) => createTestEnv({ schema: text }),
+})
+```
+
+`litestone mutate` is the CLI. **Only a verdict disagreement kills a mutant** —
+counting harness errors was worth 36 points on a 14-mutant schema, reading 93%
+while four mutations went completely unnoticed. Mutation is code-only and
+quote-aware: an attribute named inside a doc comment is prose, and editing it
+produces a mutant identical in behaviour that survives everything.
 
 ### makeTestClient
 
@@ -1554,9 +2137,27 @@ db.$schema           // augmented parsed schema (includes auto-generated models)
 db.$databases        // { main: { driver, access, path }, ... }
 db.$softDelete       // { modelName: boolean }
 db.$enums            // { EnumName: ['val1', 'val2', ...] }
+db.$scopes('post')   // the @@scope names this model declares
+db.$tenancy          // the resolved tenancy { } block, or null
+db.$plugins          // installed plugin names, in run order
 db.$cacheSize        // { read: 24, write: 8 }
 db.$close()
+
+// Writes and the trail
+await db.$rotateKey(newKey)             // re-encrypt every @secret(rotate: true)
+await db.$audit({ operation, model, records, actorId, meta })
+const stop = db.$tapEvents(e => …)      // every write, announced
+db.$checkWhere('post', where)           // is this a valid filter?
+db.$checkOrderBy('post', orderBy)       // …and a valid sort?
+await db.$lock('nightly-sweep', fn)     // an application-level lock
 ```
+
+**`db.$plugins` is worth knowing about**: a schema declaring any `@@gate`
+auto-installs `GatePlugin`, so what you passed is not necessarily what is running.
+
+**A capability that depends only on the schema lives on every flavour of client**
+— root, `$setAuth`, `asSystem`, `$scopedBy`. Both `$check*` and `$audit` are in
+that set.
 
 ---
 
@@ -1580,40 +2181,124 @@ Acting-as picker: select any user from your `@@auth` model to browse with polici
 
 ---
 
+## Shipping a schema change
+
+**A schema change is a deploy question before it is a migration**, and
+`litestone release` is the one that asks it: *can the release still serving and
+the release starting share one database?*
+
+```bash
+litestone release --from=<ref|path>     # expand, contract, or unknown
+litestone release --strict              # exit 1 on anything but expand
+```
+
+**Expand** — N-1 keeps working, so the deploy can be taken back. **Contract** —
+it cannot, and that deploy is the **pivot**, after which only forward. Unknown
+counts as contract. `db/release.snapshot.md` is the surface it diffs, and
+`--strict` fails a branch on anything but expand *including no baseline at all*.
+
+**Access is in the comparison, which is the half no generic deployer can reach**:
+raising a `@@gate` takes reads away from a release still serving them, and adding
+an `@@allow` empties a screen with a 200. A required column with no default is the
+one contract handed back as a **plan** — expand, backfill, contract — rather than
+a refusal.
+
+`litestone access` is the same walk graded on a second axis:
+
+```bash
+litestone access                  # write db/access.snapshot.md — the whole declared
+                                  #   surface: gates, policy predicates, protected
+                                  #   fields, transition gates. --check in CI
+litestone access --from=<ref>     # what did this branch do to WHO MAY DO WHAT?
+                                  #   graded widens / narrows / undecidable
+```
+
+**It is not `release --from` with a different word.** The two grade one comparison
+on axes that disagree by construction: removing a `@@gate` is an *expand* for the
+deploy and the widest thing a schema change can do to access. What no comparison
+can answer is a predicate whose text moved, and that is reported rather than
+guessed.
+
+`litestone ddl` is the sibling for the opposite problem — `db/ddl.snapshot.sql`
+is the emitted DDL, so the names every hand-written statement binds to are a diff
+rather than a surprise.
+
+---
+
 ## CLI reference
 
 ```
-litestone init                       scaffold schema.lite + config
-litestone migrate create [label]     generate migration SQL file
+litestone init                       scaffold schema.lite + litestone.config.js
+litestone codemod [path]             migrate .lite files to renamed types
+                                       --dry-run  --no-backup
+
+litestone migrate create [label]     diff schema → write a migration file
+litestone migrate dry-run [label]    preview the SQL, write nothing
 litestone migrate apply              apply pending migrations
-litestone migrate status             show applied / pending / modified
-litestone migrate verify             check live db matches schema
-litestone migrate dry-run [label]    preview SQL, no file
-litestone studio                     browser UI (default port 5001)
-litestone types [out.d.ts]           generate TypeScript declarations
-  --only=User,Post                 emit types for specific models only
-litestone seed                       run seeder
-litestone seed run [name]            run a named calendar/data seed
-  --db=main --force
-litestone doctor                     validate schema + db health
-litestone backup [dest]              hot backup
-litestone backup --vacuum            compact + backup
+                                       --backup[=dir]  copy every database first —
+                                                       there is no down
+litestone migrate status             applied / pending / modified
+litestone migrate verify             does the live db match the schema
+litestone db push                    apply the schema directly, no files (dev)
+
+litestone types [out.d.ts]           TypeScript declarations from the schema
+  --only=User,Post                     specific models only
+  --audience=client|system             field visibility (default: client)
+  --augment=junction                   also types client.service(name) in the browser
+litestone jsonschema                 JSON Schema from the schema
+litestone jsonschema --snapshot      the committed snapshot (--check in CI)
+
+litestone studio                     the browser UI
+litestone repl                       a console that boots at a standing
+  --as <who> | --level <0-9> | --gate <path[#export]>
+litestone doctor                     check setup, audit health
+litestone diagram                    ER diagram (opens in studio)
+
+litestone seed [SeederClass]         seed the database
+litestone seed run [name]            run an infrastructure seed (--force to re-run)
+litestone introspect <db>            reverse-engineer db → schema.lite
+litestone edge eject <Model>.<field> promote an @edge/@scoped field to a real model [--apply]
 litestone optimize [table]           merge FTS5 index segments
-litestone introspect                 reverse-engineer db → schema.lite
-litestone replicate [config.js]      WAL replication via Litestream
-litestone transform [config.js]      anonymize/shard pipeline (dev only)
-litestone jsonschema                 generate JSON Schema from schema
-litestone access                     write the access snapshot (--check in CI)
-litestone ddl                        write the DDL snapshot (--check in CI)
-litestone jsonschema --snapshot      write the JSON Schema snapshot (--check in CI)
+litestone transform [config.js]      anonymise / shard pipeline (dev only)
+
+litestone backup [dest]              back up every database (SQLite + JSONL/logger)
+                                       --vacuum  compact first
+litestone replicate [config.js]      stream every SQLite WAL to S3/R2 via litestream
+litestone rsync <dest>               sync every SQLite db via sqlite3_rsync
+
+litestone tenant list|create <id>|delete <id>|migrate
+
+litestone access                     the access snapshot (--check in CI)
+litestone access --from=<ref>        the permission diff (--strict to gate a branch)
+litestone ddl                        the DDL snapshot (--check in CI)
+litestone release --from=<ref>       classify the deploy: expand / contract / unknown
+litestone mutate                     mutate the schema, report what the checks miss
 
 Global flags:
+  --schema=<path>       .lite file          (auto-detected if omitted)
   --config=<path>       litestone.config.js
-  --schema=<path>       .lite file
   --db=<path>           database file
   --migrations=<dir>    migrations directory
-  --port=<n>            studio port (default 5001)
+  --env-file=<path>     load env vars       (default: ./.env.local then ./.env)
+  --no-env              skip .env loading
+  --debug               print stack traces
+  --version
 ```
+
+**`litestone repl` boots at a standing, and the default resolver is usually the
+wrong one.** `--as <who>` grades with the built-in `FrontierGateGetLevel` unless
+`--gate <path[#export]>` points at the application's own — and the two disagree
+by exactly the amount an app's role mapping adds. Measured on this repo's
+`example`, the gap is one level on a real row, which straddles the `4` in
+`@@gate("0.4.4.5")`: the same create is refused in the console and permitted in
+the app. A console that is *approximately* somebody's session is worse than none,
+because you act on what it shows you — so the banner names which resolver
+answered.
+
+Related, and the reason `--level` is documented as the synthetic option: a level
+standing carries **no `auth()`**, so every `auth().id ==` row policy matches
+nothing and its model answers an empty list rather than refusing. By the result
+alone that is indistinguishable from a gate refusal.
 
 ---
 
@@ -1691,16 +2376,51 @@ Like the binary, this is Bun-only — it imports `bun:sqlite`, so it is a single
 ```prisma
 // schema.lite
 import "./functions.lite"
-import "./enums.lite"
 import "./models/users.lite"
+
+import "@frontierjs/auth/schema.lite"              // a package, resolved through node
+import "@frontierjs/auth/schema.lite" into auth    // …landing its models in `auth`
 ```
 
-Paths resolve relative to the importing file. Circular imports are safe (deduplicated). Use `parseFile()` when your schema uses imports:
+**An import specifier is a path OR a package.** Relative and absolute resolve
+against the importing file; anything else goes through node, so the package's own
+`exports` map decides what is importable and nothing guesses at a path inside one.
+That is what lets a package **ship** a schema fragment instead of every app
+keeping a copy a package upgrade cannot reach.
+
+The failure message always names both causes — not installed, or not exported —
+because node distinguishes them and bun collapses both into `MODULE_NOT_FOUND`,
+and branching on the code would make the error depend on which runtime read the
+schema.
+
+**`into <db>` is how the importing app says where.** A shipped fragment has to
+spell some database name and only the app knows what its own are called. One rule,
+stated twice: the **nearest** statement wins — an inner `into` on a nested import
+beats an outer one, and any `into` beats a `@@db` written in the imported file.
+Importing one file twice under two different `into`s is an error rather than a
+precedence puzzle: it is merged once, so only one could hold.
+
+Circular imports are safe (deduplicated).
+
+**Anything that loads a schema from a PATH must use `parseFile`, never `parse`:**
 
 ```js
-const result = parseFile('./schema.lite')
-const db = await createClient({ parsed: result })
+const db = await createClient({ path: './schema.lite' })   // parseFile, internally
+const db = await createClient({ parsed: parseFile('./schema.lite') })
 ```
+
+`parse` is for **text with no file behind it** — an editor buffer, a git blob —
+and there the caller owes the imports. Three readers once had this wrong and each
+failed differently, all silently: a CLI that read the root file for every command
+reported *already in sync* while three tables were never created; a build handed
+the browser a `$defs` table with the imported models missing, so a generated form
+rendered nothing; and a test environment **graded a partial schema and passed** —
+a green gate ladder over models it never saw, which is the worst of the three
+because it is the thing that exists to catch the other two.
+
+Both answer the same shape — `parseFile` returns `{ valid: false, errors }` rather
+than throwing, so a caller that warns and keeps going does not get a stack trace
+the moment a schema has a typo. An error inside an imported file names that file.
 
 
 ---

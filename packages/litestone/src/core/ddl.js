@@ -261,21 +261,31 @@ function enumCheck(field, schema) {
   return `  CHECK ("${field.name}" IN (${values}))`
 }
 
+// ─── What becomes a column ────────────────────────────────────────────────────
+//
+// The one answer, because two of them drift: CREATE TABLE and the rebuild's
+// INSERT … SELECT have to name the same set, and SQLite resolves an unknown
+// double-quoted identifier as a STRING LITERAL rather than erroring — so a
+// disagreement copies the column's own name into every row instead of failing.
+//
+// @generated fields ARE columns — they become GENERATED ALWAYS AS. The rest of
+// the exclusions are values that live somewhere else: a relation's key is on
+// the other side, an implicit m2m is a join table, @edge/@scoped is a side
+// table, @computed/@from/@derived are read-side only, and @transient is a
+// payload key that is never stored at all.
+export function isStoredField(f) {
+  if (f.type.kind === 'relation' || f.type.kind === 'implicitM2M') return false
+  return !f.attributes.find(a =>
+    a.kind === 'computed'  || a.kind === 'from' || a.kind === 'derived' ||
+    a.kind === 'transient' || a.kind === 'edge')
+}
+
 // ─── CREATE TABLE ─────────────────────────────────────────────────────────────
 
 function createTable(model, schema, tableName, pluralize = false) {  // schema needed for funcCall expansion; tableName pre-derived
   const strict = isStrict(model)
 
-  // Exclude relation navigation fields (virtual, no column) and @computed/@from fields (app-layer only).
-  // @generated fields ARE included — they become GENERATED ALWAYS AS columns in SQLite.
-  const columnFields = model.fields.filter(f =>
-    f.type.kind !== 'relation' &&
-    f.type.kind !== 'implicitM2M' &&             // implicit m2m is stored in a join table, not a host column
-    !f.attributes.find(a => a.kind === 'computed') &&
-    !f.attributes.find(a => a.kind === 'from') &&
-    !f.attributes.find(a => a.kind === 'derived') &&   // computed in the SELECT, never stored
-    !f.attributes.find(a => a.kind === 'edge')   // @edge/@scoped live on a join/side table
-  )
+  const columnFields = model.fields.filter(isStoredField)
 
   const pkCount      = model.fields.filter(f => f.attributes.some(a => a.kind === 'id')).length
   const colDefs      = columnFields.map(f => columnDef(f, schema, pkCount > 1))

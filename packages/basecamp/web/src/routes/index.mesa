@@ -18,6 +18,7 @@ title: Home
   import { $onDestroy } from '@frontierjs/mesa/runtime'
   import ActionQueue from '../components/ActionQueue.mesa'
   import { computeNotices } from '../notices.js'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   const { get: rows, unsubscribe } = useStore(projects.store)
   $onDestroy(unsubscribe)
@@ -67,6 +68,11 @@ title: Home
   // Explicit-dependency effect (Mesa §4.2): the handler runs untracked, so the
   // reads inside load() add no subscriptions of their own.
   $: session.workspaceId, () => load()
+  const PROJECT_COLUMNS = [
+    { key: 'name',   label: 'Name' },
+    { key: 'slug',   label: 'Slug' },
+    { key: 'status', label: 'Status' },
+  ]
 </script>
 
 <div class="section-header">
@@ -120,26 +126,15 @@ title: Home
 </div>
 
 {#if !loading && rows().length}
-  <div class="table-wrap">
-    <table class="table striped hover">
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Slug</th>
-          <th scope="col">Status</th>
-        </tr>
-      </thead>
-      <tbody id="project-rows">
-        {#each rows() as project}
-          <tr>
-            <td>{project.name}</td>
-            <td><code>{project.slug}</code></td>
-            <td><span class="pill">{project.status}</span></td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <Table id="project-rows" columns={PROJECT_COLUMNS} rows={rows()} striped>
+    {#snippet row(project)}
+      <tr>
+        <td>{project.name}</td>
+        <td><code>{project.slug}</code></td>
+        <td><span class="pill">{project.status}</span></td>
+      </tr>
+    {/snippet}
+  </Table>
 {:else if !loading}
   <article class="alert info">
     <div class="alert-content">

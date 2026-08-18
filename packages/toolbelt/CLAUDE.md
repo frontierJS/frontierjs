@@ -7,8 +7,9 @@ framework import, no mutation of its arguments. The rule is the package's
 licence, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/glow`, `/inflect` and `/directives` today; a caller
-importing one gets nothing else. There is no root `.` entry.
+**One kit per subpath.** `/glow`, `/inflect`, `/directives`, `/hooks` and
+`/jsonschema` today; a caller importing one gets nothing else. There is no root
+`.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
 under node too.
@@ -24,6 +25,11 @@ src/inflect/         English singular ⇄ plural. One definition, five callers
 src/directives/      the `$` convention — which params are directives, and how
                      a bag of them splits into filters + directives. Two
                      boundaries read it: junction's bridge and sierra's router
+src/hooks/           the four-phase resource pipeline — before · after · around
+                     · error. Two callers: sierra's createResource and jetty's
+src/jsonschema/      the CONSUMER half of what litestone emits — follow a
+                     `$ref`, and what a blank record of this model looks like.
+                     Same two callers
 docs/glow/           the Svelte editor and SCSS theme glow arrived with.
                      Reference only — not shipped, not FrontierJS code
 docs/datetime.md     the /datetime kit's intent — no code yet
@@ -43,6 +49,17 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
 
 ## What bites here
 
+- **`mergeHooks` answers a NEW map.** It merged in place in both copies it came
+  from; a pure function may not mutate its arguments, and that rule is this
+  package's licence rather than its style (`FJS-D26`). A caller upgrading has to
+  assign the result. The failure mode after the change is a map that never grew,
+  which is louder than one silently rewritten.
+- **`createStore` is NOT here and must not arrive.** `FJS-D16` named it to move
+  and the ruling is amended: a store is state. Admitting one costs the standing
+  that lets litestone and mesa import this package at all.
+- **A spec body may be async, and the harness had to learn it.** `test(name,
+  fn)` awaits a returned promise now; before that a rejection inside an async
+  spec was an unhandled rejection reported as a PASS.
 - **A highlighter fails silently or not at all.** It drops a character, the
   output still looks like code, and the reader copies a sample that does not
   work. The round-trip test over the whole corpus is the only one that matters;

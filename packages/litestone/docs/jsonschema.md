@@ -65,6 +65,7 @@ all three.
 | `required[]` | non-optional fields with no `@default` | *absent — a patch is partial* | same as create |
 | `@version` | omitted | `readOnly` | `readOnly` |
 | `@computed` / `@generated` / `@from` | omitted | omitted | `readOnly` |
+| `@transient` | `writeOnly` — and in `required[]` when non-optional | `writeOnly` | omitted — no read answers it |
 | `createdAt` / `updatedAt` | only with `includeTimestamps` | same | same |
 | `deletedAt` | only with `includeDeletedAt` | same | same |
 
@@ -129,7 +130,8 @@ strict off-the-shelf draft-07 validator will not follow `#/$defs/…`.
 | `default` | field | literal `@default`; `now()`/`uuid()` and friends are runtime-only and emit nothing |
 | `enum` | enum def, field | `inlineEnums: true` puts the values on the field |
 | `anyOf` | field | how a nullable `$ref` or a nullable constrained field is expressed |
-| `readOnly` | field | `@version`, `@computed`, `@generated`, `@from` |
+| `readOnly` | field | `@version`, `@computed`, `@generated`, `@from`, `@system` |
+| `writeOnly` | field | `@transient` — the mirror, and the reason the pair is used rather than an `x-` key |
 | `items` | field | array types (`String[]` → `{type:'string'}`, `Int[]` → integer) |
 | `format` | field | `@email`→`email`, `@url`→`uri`, `@phone`→`phone`, `@date`→`date`, `DateTime`/`@datetime`→`date-time` |
 | `contentMediaType` | field | `@markdown` → `text/markdown` |
@@ -156,7 +158,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-transitions` | model | `{ field: { name: {from: [], to, gate: N\|null} } }` | sierra `field-rules.js`, `example`'s orders screen |
 | `x-version` | model | the `@version` column's name, so a client knows what to round-trip | sierra `field-rules.js` |
 | `x-litestone-file` | `FileRef` def | `true` — marks the def as a file ref, not a user `type` | junction (maps it to `any`), `fli` |
-| `x-litestone-kind` | field | `'version'` \| `'computed'` \| `'generated'` \| `'from'` | tests only |
+| `x-litestone-kind` | field | `'version'` \| `'computed'` \| `'generated'` \| `'from'` \| `'system'` \| `'transient'` | junction (`liftTransient`), tests |
 | `x-litestone-from` | field | `{target, op}` from `@from(Model, count: true)` | nothing yet |
 | `x-litestone-accept` | field | the `@accept("image/png,image/jpeg")` **string**, verbatim — not an array | tests only |
 | `x-litestone-policies` | model | `true` when the model has any `@@allow`/`@@deny` | nothing yet |

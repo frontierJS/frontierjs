@@ -30,6 +30,7 @@ title: App
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   $: page.params
 
@@ -146,6 +147,12 @@ title: App
 
   // Only the tabs with something behind them. See the note at the foot.
   const TABS = ['overview', 'domains', 'config', 'releases']
+  const APP_RELEASES_COLUMNS = [
+    { key: 'queued',  label: 'Queued' },
+    { key: 'status',  label: 'Status' },
+    { key: 'commit',  label: 'Commit' },
+    { key: 'trigger', label: 'Trigger' },
+  ]
 </script>
 
 {#if error}
@@ -343,28 +350,16 @@ title: App
     {#if !app.recent_deployments?.length}
       <EmptyState title="Never released">This app has no deployment history.</EmptyState>
     {:else}
-      <div class="table-wrap">
-        <table class="table striped hover">
-          <thead>
-            <tr>
-              <th scope="col">Queued</th>
-              <th scope="col">Status</th>
-              <th scope="col">Commit</th>
-              <th scope="col">Trigger</th>
-            </tr>
-          </thead>
-          <tbody id="app-releases">
-            {#each app.recent_deployments as d}
-              <tr>
-                <td class="text-sm text-muted">{when(d.queuedAt)}</td>
-                <td><a href={`/deployments/${d.id}/`}><Pill tone={DEPLOY_TONE[d.status] ?? 'info'}>{d.status}</Pill></a></td>
-                <td><code>{d.commitSha?.slice(0, 7) ?? '—'}</code></td>
-                <td class="text-sm text-muted">{d.trigger}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <Table id="app-releases" columns={APP_RELEASES_COLUMNS} rows={app.recent_deployments} striped>
+        {#snippet row(d)}
+          <tr>
+            <td class="text-sm text-muted">{when(d.queuedAt)}</td>
+            <td><a href={`/deployments/${d.id}/`}><Pill tone={DEPLOY_TONE[d.status] ?? 'info'}>{d.status}</Pill></a></td>
+            <td><code>{d.commitSha?.slice(0, 7) ?? '—'}</code></td>
+            <td class="text-sm text-muted">{d.trigger}</td>
+          </tr>
+        {/snippet}
+      </Table>
     {/if}
   {/if}
 {:else}

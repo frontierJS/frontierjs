@@ -1,4 +1,28 @@
-# Changes
+# Changes — @frontierjs/email-kit
+
+## 2026-08-17 — paths resolve on Windows, and the phantom option is gone (`FJS-052`)
+
+`index.js` built 24 component paths and `COMPONENTS_DIR` from
+`new URL(...).pathname`, which on Windows keeps a leading slash before the drive
+letter (`/C:/…`) — not a path any fs call accepts. Two of `render.js`'s compiler
+probes did the same.
+
+**The obvious replacement is also wrong here, and that is the finding.**
+`fileURLToPath(new URL(rel, import.meta.url))` throws *The URL must be of scheme
+file* under this package's vitest environment: happy-dom installs its own global
+`URL`, and `fileURLToPath` refuses an instance of it. Twelve of 34 tests went red
+on it — the same trap mesa's map records for its Vite suites, met from the other
+side.
+
+The spelling that is correct on every platform AND in both environments is to
+resolve the directory once from `import.meta.url` — a STRING, which the function
+does accept — and `path.join` from there. `render.js:42` already did exactly
+that.
+
+Also: the documented `autoImport: true` option that nothing implemented is gone
+from the docs. A documented option that does nothing is a feature which does not
+exist wearing the face of one that does.
+
 
 Newest first.
 

@@ -172,7 +172,7 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
   // Fields that get stored in the JSONL file (no relation/computed)
   const storedFields = model.fields.filter(f =>
     f.type.kind !== 'relation' &&
-    !f.attributes.some(a => a.kind === 'computed')
+    !f.attributes.some(a => a.kind === 'computed' || a.kind === 'transient')
   )
 
   // @id field name — optional for JSONL models (audit logs, event streams don't need one)

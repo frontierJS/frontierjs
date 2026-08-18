@@ -263,6 +263,6 @@ describe('retryable survives the boundary and the wire', () => {
 
     const res = await request(app).post('/races').send({})
     expect(res.status).toBe(409)
-    expect(res.body.retryable).toBe(true)
+    expect((res.body as { retryable: boolean }).retryable).toBe(true)
   })
 })

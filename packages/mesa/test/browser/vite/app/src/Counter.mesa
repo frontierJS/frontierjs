@@ -1,0 +1,15 @@
+<script>
+  // Counter.mesa — the component the drive EDITS.
+  //
+  // `#counter-version` is the marker a spec rewrites: it is a text node, so
+  // what the assertion reads is the module having been recompiled, served and
+  // swapped in place, rather than anything the plugin merely told the browser.
+  let count = 0
+</script>
+
+<button type="button" id="counter" on:click={() => count++}>count {count}</button>
+<p id="counter-version">v1</p>
+
+<style>
+  #counter-version { color: rgb(1, 2, 3) }
+</style>

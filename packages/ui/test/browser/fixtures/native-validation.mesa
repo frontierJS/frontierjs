@@ -1,0 +1,28 @@
+<script>
+  // native-validation.mesa — a kit control inside a form the kit does not own.
+  //
+  // Three forms, because the guard has to fire for exactly one of them:
+  // a hand-written <form> with no novalidate (the case that bites), the same
+  // form having opted into the browser's UI on purpose, and <Form>, which is
+  // novalidate by default and where this cannot happen at all.
+  import Input from '../../../components/forms/Input.mesa'
+
+  let bare   = ''
+  let opted  = ''
+  let submits = 0
+</script>
+
+<form id="bare-form" on:submit|preventDefault={() => submits++}>
+  <Input name="bareField" label="Bare" required bind:value={bare} />
+  <button type="submit" id="bare-submit">save</button>
+</form>
+
+<form id="opted-form" data-native-validation on:submit|preventDefault={() => submits++}>
+  <Input name="optedField" label="Opted" required bind:value={opted} />
+</form>
+
+<form id="quiet-form" novalidate on:submit|preventDefault={() => submits++}>
+  <Input name="quietField" label="Quiet" required />
+</form>
+
+<output id="submits">{submits}</output>

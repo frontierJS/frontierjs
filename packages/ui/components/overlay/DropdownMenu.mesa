@@ -29,6 +29,7 @@
   let open      = false
   let x         = 0
   let y         = 0
+  let placed    = false          // has THIS open been positioned yet
   let triggerEl
   let panelEl
 
@@ -50,10 +51,25 @@
 
   function openMenu() {
     if (open) { closeMenu(); return }
-    open = true
+    // `x`/`y` still hold the last open's placement, and the panel has to exist
+    // before it can be measured — so it is rendered hidden and shown by the
+    // frame that places it. Painted at the stale coordinates it lands wherever
+    // the trigger used to be, which after any scroll can be ON the trigger:
+    // the click meant to close the menu then falls inside the panel, where
+    // click-away deliberately lets it through, and the menu stays open.
+    placed = false
+    open   = true
     requestAnimationFrame(() => {
       position()
-      panelEl?.focus()
+      placed = true
+      // After the flush, not before it: focus is refused on a `visibility:
+      // hidden` element, and `placed` only reaches the DOM on mesa's microtask.
+      //
+      // The [role=menu] and not `panelEl`: the surface it is bound to carries
+      // no tabindex, so focusing it moved nothing and the keyboard walk below
+      // only worked because an absent focus and a focused panel both make
+      // `indexOf(activeElement)` -1.
+      queueMicrotask(() => panelEl?.querySelector('[role="menu"]')?.focus())
     })
     document.addEventListener('click', onClickAway, { capture: true })
   }
@@ -177,6 +193,7 @@
       style:padding="0.25rem"
       style:left="{x}px"
       style:top="{y}px"
+      style:visibility="{placed ? 'visible' : 'hidden'}"
       {@attach panelAnim}
     >
       <!--

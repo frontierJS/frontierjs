@@ -1,0 +1,106 @@
+<script>
+  // form-generate.mesa — <Form> with no children generating its own fields.
+  //
+  // The half of the component `form-tail.mesa` does not touch: that fixture
+  // hands <Form> ten controls and asks whether each resolves the schema. This
+  // one hands it nothing and asks whether the FIELD SET it builds is right —
+  // schema order, the control each type implies, what `only`/`except`/`auto`
+  // do to it, and the two kinds of field that produce no control at all.
+  //
+  // The rules go through the REAL control table (`formFieldList` by relative
+  // specifier, the same module Sierra's own resources use). A fixture deciding
+  // for itself what an `integer` gets would agree with itself forever.
+  import Form from '../../../components/forms/Form.mesa'
+  import { formFieldList } from '@frontierjs/sierra/field-rules'
+
+  // One field per branch of the table that a form can reach:
+  //   title      string        → input
+  //   notes      markdown      → textarea
+  //   status     enum          → select
+  //   qty        integer       → input[type=number] step 1
+  //   customerId references    → picker, and the only field that fetches rows
+  //   dueOn      date          → input[type=date]
+  //   archived   boolean       → checkbox
+  //   createdAt  readOnly      → no control, and silence: the schema says this
+  //                              is not the caller's to write
+  //   tags       array         → no control, and a WARNING by name: a column
+  //                              missing from a form with nothing said is the
+  //                              failure generating the list exists to end
+  const FIELDS = {
+    title:      { type: 'string',  required: true, maxLength: 60, title: 'Order title' },
+    notes:      { type: 'string',  contentMediaType: 'text/markdown', title: 'Internal notes' },
+    status:     { type: 'string',  required: true, enum: ['draft', 'sent', 'paid'], title: 'State' },
+    qty:        { type: 'integer', required: true, minimum: 1, title: 'Quantity' },
+    customerId: { type: 'string',  required: true, title: 'Customer',
+                  references: { model: 'Customer', field: 'id', relation: 'customer' } },
+    dueOn:      { type: 'string',  format: 'date', title: 'Due on' },
+    archived:   { type: 'boolean', title: 'Archived' },
+    createdAt:  { type: 'string',  format: 'date-time', readOnly: true, title: 'Created' },
+    tags:       { type: 'array',   title: 'Tags' },
+  }
+
+  // The rows a picker gets. Deliberately resolved on a later turn than mount:
+  // `options()` is called from $onMount and the <Select> has to repopulate
+  // when it settles, which is invisible if the promise is already resolved.
+  const CUSTOMERS = [
+    { value: 'c1', label: 'Ada Lovelace' },
+    { value: 'c2', label: 'Grace Hopper' },
+  ]
+
+  let optionsCalls = []
+
+  function resourceFor() {
+    return {
+      context: { model: 'Order', service: 'orders', idField: 'id' },
+      fields:  FIELDS,
+      formFields: (opts) => formFieldList(FIELDS, opts),
+      options: (name) => {
+        optionsCalls = [...optionsCalls, name]
+        return new Promise((res) => setTimeout(() => res(CUSTOMERS), 30))
+      },
+      make: () => ({ title: '', notes: '', status: 'draft', qty: 1, customerId: '', dueOn: '', archived: false }),
+      validate: () => [],
+      fieldErrors: () => ({ fields: {}, message: '' }),
+      service: {},
+    }
+  }
+
+  const RESOURCE = resourceFor()
+
+  let saved = 0
+  const onsubmit = () => { saved++ }
+</script>
+
+<div id="all">
+  <Form resource={RESOURCE} {onsubmit} />
+</div>
+
+<div id="narrowed">
+  <!-- `only` states the order as well as the set — naming three fields is
+       also naming the order you want them in. -->
+  <Form resource={RESOURCE} {onsubmit} only={['status', 'title']} />
+</div>
+
+<div id="removed">
+  <Form resource={RESOURCE} {onsubmit} except={['notes', 'customerId', 'tags']} />
+</div>
+
+<div id="slotted">
+  <!-- The other protocol: `slot="actions"`, which is what the apps in this
+       repo write. Both have to reach the same cluster. -->
+  <Form resource={RESOURCE} {onsubmit} only={['title']}>
+    <button type="submit" slot="actions" id="slotted-save">Save</button>
+  </Form>
+</div>
+
+<div id="forced">
+  <!-- Children normally turn generation off. `auto` forces it back on, and
+       the generated fields come first. -->
+  <Form resource={RESOURCE} {onsubmit} auto only={['title']}>
+    <input id="hand-written" name="hand" />
+    {#snippet actions()}<button type="submit" id="forced-save">Save</button>{/snippet}
+  </Form>
+</div>
+
+<output id="options-calls">{optionsCalls.join(',')}</output>
+<output id="saved">{saved}</output>

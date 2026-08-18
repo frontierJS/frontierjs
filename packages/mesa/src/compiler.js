@@ -359,6 +359,62 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
     return names
   }
 
+  // Names a pattern binds — the same shapes collectParams walks, reused for
+  // declarations.
+  const addBound = (p, names) => {
+    if (!p) return
+    if (p.type === 'Identifier') names.add(p.name)
+    else if (p.type === 'AssignmentPattern') addBound(p.left, names)
+    else if (p.type === 'RestElement') addBound(p.argument, names)
+    else if (p.type === 'ArrayPattern') p.elements.forEach((e) => addBound(e, names))
+    else if (p.type === 'ObjectPattern')
+      p.properties.forEach((prop) => addBound(prop.value || prop.key, names))
+  }
+
+  // What a scope DECLARES, as against what it receives as parameters.
+  //
+  // Without this a local declaration that happens to share a name with a
+  // reactive top-level `let` was rewritten as a read of that signal — in its
+  // own declaration, giving `const $runtime.get($$sig_d) = new Date(ts)`. That
+  // is not valid JavaScript, and the compiler reported no error, so it landed
+  // as a module the browser refused to parse (Invariant 15). Parameters were
+  // already handled, which is why a shadow only broke when it was declared.
+  //
+  // `var` is function-scoped and hoists, so it is collected across the whole
+  // function body; `let`/`const` are collected per block, which is what keeps
+  // a read BEFORE a later block's shadow correctly rewritten.
+  const collectVars = (node, names = new Set()) => {
+    if (!node || typeof node !== 'object') return names
+    if (
+      node.type === 'ArrowFunctionExpression' ||
+      node.type === 'FunctionExpression' ||
+      node.type === 'FunctionDeclaration'
+    ) return names                                  // its own scope, its own vars
+    if (node.type === 'VariableDeclaration' && node.kind === 'var')
+      node.declarations.forEach((d) => addBound(d.id, names))
+    for (const k of Object.keys(node)) {
+      if (k === 'start' || k === 'end' || k === 'type' || k === 'raw') continue
+      const v = node[k]
+      if (Array.isArray(v)) v.forEach((item) => item?.type && collectVars(item, names))
+      else if (v?.type) collectVars(v, names)
+    }
+    return names
+  }
+
+  // let/const/function declared DIRECTLY in this block, plus a `for` head's own
+  // binding — `for (const row of rows)` shadows for the length of the loop.
+  const collectBlockDeclared = (node) => {
+    const names = new Set()
+    const fromDecl = (d) => {
+      if (d?.type === 'VariableDeclaration') d.declarations.forEach((x) => addBound(x.id, names))
+      else if (d?.type === 'FunctionDeclaration' && d.id) names.add(d.id.name)
+    }
+    if (Array.isArray(node.body)) node.body.forEach(fromDecl)
+    fromDecl(node.init)                              // for (let i = 0; …)
+    fromDecl(node.left)                              // for (const x of …)
+    return names
+  }
+
   const walk = (n, parentKey, localScope) => {
     if (!n || typeof n !== 'object') return
 
@@ -369,7 +425,7 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
       n.type === 'FunctionDeclaration'
     ) {
       const params = collectParams(n)
-      const inner = new Set([...localScope, ...params])
+      const inner = new Set([...localScope, ...params, ...collectVars(n.body)])
       for (const k of Object.keys(n)) {
         if (k === 'start' || k === 'end' || k === 'type' || k === 'raw') continue
         const v = n[k]
@@ -380,6 +436,28 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
         else if (v?.type) walk(v, k, inner)
       }
       return // already handled all children
+    }
+
+    // A block is a scope too — its own let/const/function shadow the outer
+    // binding for the whole block, and a `for` head's binding shadows for the
+    // loop.
+    if (
+      n.type === 'BlockStatement' ||
+      n.type === 'ForStatement' ||
+      n.type === 'ForOfStatement' ||
+      n.type === 'ForInStatement'
+    ) {
+      const declared = collectBlockDeclared(n)
+      if (declared.size) {
+        const inner = new Set([...localScope, ...declared])
+        for (const k of Object.keys(n)) {
+          if (k === 'start' || k === 'end' || k === 'type' || k === 'raw') continue
+          const v = n[k]
+          if (Array.isArray(v)) v.forEach((item) => item?.type && walk(item, k, inner))
+          else if (v?.type) walk(v, k, inner)
+        }
+        return
+      }
     }
 
     // Rewrite assignments to reactive lets: x = val → $$set_x(val)
@@ -1651,6 +1729,19 @@ export const parseAttributes = (source, option = {}) => {
     r.skip()
     if (option.closedByTag && (r.probe('/>') || r.probe('>'))) break
     if (r.end()) break
+    // A comment between two attributes. There is no markup here to preserve —
+    // HTML has no comment inside a tag either — so it is dropped rather than
+    // refused, and the only thing that matters is that it is CONSUMED: the
+    // `>` that ends `-->` reads as the end of the tag, which closed the
+    // element early and turned every attribute after it into a text node,
+    // silently and with the emitted JS still parsing.
+    if (r.probe('<!--')) {
+      const rest = r.source.indexOf('-->', r.index)
+      assert(rest !== -1,
+        'Unterminated comment inside a tag, at: ' + r.source.substring(r.index, r.index + 40))
+      r.index = rest + 3
+      continue
+    }
     const start = r.index
     if (r.probe('{@attach')) {
       // {@attach expr} — element/component attachment
@@ -3624,6 +3715,25 @@ export function buildBlock(data, option = {}) {
           const slotName = n.elArg || nameAttr?.value?.replace(/^['"]|['"]$/g, '') || 'default'
           // Remove the name attribute so it doesn't appear in DOM output
           if (nameAttr) n.attributes = n.attributes.filter(a => a.name !== 'name')
+
+          // A slot is a HOLE, and a hole carries nothing outward. `name` is the
+          // only thing it takes; every other attribute compiled, rendered the
+          // caller's content and delivered nothing — and there is no `let:` to
+          // read one with either, so the spelling was a feature that did not
+          // exist wearing the face of one that did (`FJS-304`). Refusing by
+          // name is the same call as an unknown `mesa:*` element: a typo and a
+          // missing feature must not be the same event.
+          const passed = n.attributes?.filter(a => a.name !== 'slot') ?? []
+          if (passed.length) {
+            const tag = n.elArg ? `<slot:${n.elArg}>` : '<slot>'
+            ctx.analysis.errors.push(
+              `${tag} takes no attributes, and "${passed[0].name}" would reach nobody — ` +
+              `a slot passes the caller's content through, never a value back out. ` +
+              `To hand something to the caller, declare a snippet prop: ` +
+              `\`export let ${slotName === 'default' ? 'children' : slotName} = null\` ` +
+              `and render it with \`{@render ${slotName === 'default' ? 'children' : slotName}?.(value)}\`.`
+            )
+          }
           const slot = ctx.attachSlot(slotName, n)
           binds.push(
             xNode('attach-slot', { label: requireLabel(), slot }, (w, nd) => {

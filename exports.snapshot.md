@@ -141,7 +141,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/junction`
 
-`packages/junction` · ships `LICENSE` `README.md` `index.ts` `package.json` `src/` `tools/`
+`packages/junction` · ships `LICENSE` `README.md` `db/` `index.ts` `package.json` `src/` `tools/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -167,6 +167,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./openapi` | `src/plugins/openapi/index.ts` | yes |
 | exports | `./webhooks` | `src/plugins/webhooks/index.ts` | yes |
 | exports | `./manifest` | `src/plugins/manifest/index.ts` | yes |
+| exports | `./outbox` | `src/plugins/outbox/index.ts` | yes |
 | exports | `./devtools` | `src/plugins/devtools/index.ts` | yes |
 | exports | `./client` | `src/client/index.ts` | yes |
 | exports | `./email` | `src/plugins/email/index.ts` | yes |
@@ -174,6 +175,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./middleware` | `src/transport/middleware.ts` | yes |
 | exports | `./health` | `src/transport/health.ts` | yes |
 | exports | `./auth` | `src/auth/types.ts` | yes |
+| exports | `./outbox.lite` | `db/outbox.lite` | yes |
 | bin | `junction` | `tools/cli.ts` | yes |
 | main | `main` | `index.ts` | yes |
 
@@ -222,6 +224,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./render-component (import)` | `src/render-component.js` | yes |
 | exports | `./vite (import)` | `mesa-vite/index.js` | yes |
 | exports | `./vite/client (import)` | `mesa-vite/client.js` | yes |
+| exports | `./vite/swap (import)` | `mesa-vite/swap.js` | yes |
 | exports | `./vite/hmr (import)` | `mesa-vite/hmr.js` | yes |
 | main | `main` | `src/compiler.js` | yes |
 
@@ -281,7 +284,9 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | --- | --- | --- | --- |
 | exports | `./directives` | `src/directives/directives.js` | yes |
 | exports | `./glow` | `src/glow/glow.js` | yes |
+| exports | `./hooks` | `src/hooks/hooks.js` | yes |
 | exports | `./inflect` | `src/inflect/inflect.js` | yes |
+| exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
 
 ## `@frontierjs/ui`
 
@@ -295,10 +300,10 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 66 files |
-| exports | `./components/*` | `components/*.mesa` | 66 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 65 files |
+| exports | `./components/*` | `components/*.mesa` | 65 files |
 
-- peers — `@frontierjs/css`: `^0.15.0` · `@frontierjs/mesa`: `^0.1.0`
+- peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 
 ## `create-frontier`
 

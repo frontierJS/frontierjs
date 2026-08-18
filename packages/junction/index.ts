@@ -9,7 +9,7 @@ export type { App, AppConduit, AppJobs, AppNotify, Plugin, PluginFn, AppOptions,
 
 // ─── Config ───────────────────────────────────────────────────────────────
 export { loadConfig, deepMerge, parseTtl, defaultConfig } from './src/config/index.ts'
-export type { AppConfig, JunctionConfig, JunctionMiddlewareConfig,
+export type { AppConfig, DeepPartial, JunctionConfig, JunctionMiddlewareConfig,
               JunctionPluginsConfig, JunctionServicesConfig,
               JunctionCaravanConfig, JunctionConduitConfig }  from './src/config/index.ts'
 
@@ -29,7 +29,15 @@ export { createService, createBaseService, ServiceRegistry, callService, setServ
          SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames,
          READ_ONLY_METHODS, resolveMethodPolicy, serviceMethodNames,
          isMethodAllowed, allowedMethodNames } from './src/core/service.ts'
-export type { Service, ServiceDefinition, BaseServiceOptions, CacheDeclaration, MethodPolicy, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
+export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOptions, BaseServiceDefinition, CacheDeclaration, MethodPolicy, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
+
+// ─── Sorting ──────────────────────────────────────────────────────────────
+// The one reading of `orderBy` (Bridge index). `autoSort` VALIDATES a request's
+// `$orderBy` and leaves it raw on `ctx.directives`, so a service that wants to
+// honour it has to parse the same three spellings — and doing that by hand in
+// a service is how the grammar ends up with a second definition.
+export { normalizeOrderBy, comparatorFor, compareValues } from './src/core/sort.ts'
+export type { SortParam, OrderBy } from './src/core/sort.ts'
 
 // ─── Hooks ────────────────────────────────────────────────────────────────
 export {
@@ -83,7 +91,7 @@ export type { ICache, CacheStats, MemoryCacheOptions }            from './src/ca
 // ─── Scheduler ────────────────────────────────────────────────────────────
 
 // ─── Workers ──────────────────────────────────────────────────────────────
-export { createThread, createPool, workerHandler }                from './src/workers/index.ts'
+export { createThread, createPool, workerHandler, workerData }    from './src/workers/index.ts'
 export type { WorkerHandle, WorkerPoolHandle, PoolStats }         from './src/workers/index.ts'
 
 // ─── File Storage ─────────────────────────────────────────────────────────
@@ -163,6 +171,12 @@ export type { WebhookOptions, WebhookManager, WebhookRegistration,
 // ─── OpenAPI ──────────────────────────────────────────────────────────────
 export { openapi, generateOpenAPI }                                from './src/plugins/openapi/index.ts'
 export type { OpenAPIOptions, ServiceSchemas, ScalarOptions }      from './src/plugins/openapi/index.ts'
+
+export { outbox }                                                  from './src/plugins/outbox/index.ts'
+export type { OutboxPluginOptions }                                from './src/plugins/outbox/index.ts'
+export { outboxSchemaFragment }                                    from './src/core/outbox.ts'
+export type { OutboxApi, OutboxRow, EnqueueOptions, EnqueueRef,
+              DeliverOptions, DeliverResult }                      from './src/core/outbox.ts'
 
 export { manifestPlugin }                                          from './src/plugins/manifest/index.ts'
 export type { ManifestPluginOptions, AppManifest, ServiceManifest,

@@ -147,15 +147,25 @@ export async function run(t) {
   `), true, 'the backdrop dims by --scrim, the same token a <dialog> uses')
 
   const themed = await t.evaluate(`
+    // Read the TOKEN, not the resolved colour. The panel's background is
+    // painted by the design system's own :where(.surface, ...) rule as
+    // var(--surface-bg), and headless Chrome leaves a var-substituted paint
+    // stale after an ancestor class change: the custom property updates and
+    // the resolved background-color does not, which reads as a panel that does
+    // not theme. The property is what carries the theme anyway, so this is the
+    // more precise question as well as the answerable one.
+    // (No backticks in here - this whole probe is a template literal.)
     const panel = document.querySelector('.fjs-cp-panel');
-    const before = getComputedStyle(panel).backgroundColor;
+    const read = () => getComputedStyle(panel).getPropertyValue('--surface-bg').trim();
+    const before = read();
     document.body.className = 'theme-dark';
     await new Promise(r => setTimeout(r, 50));
-    const after = getComputedStyle(panel).backgroundColor;
+    const after = read();
     document.body.className = 'theme-default';
     return { before, after };
   `)
-  t.ok(themed.before !== themed.after, 'a theme switch repaints the panel')
+  t.ok(themed.before && themed.after && themed.before !== themed.after,
+    `a theme switch moves the panel's surface token (${themed.before} → ${themed.after})`)
 
   const dense = await t.evaluate(`
     const row = document.querySelector('.fjs-cp-row');

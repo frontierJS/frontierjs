@@ -34,7 +34,7 @@
   export let errors   = undefined
   export let name     = ''
   export let required = undefined
-  export let disabled = false
+  export let disabled = undefined  // undefined = ask the form; false overrides it
   export let layout   = 'stacked'  // 'stacked' | 'inline'
   export let onchange = undefined
 
@@ -43,6 +43,11 @@
   // given, so inside a <Form> — where the label is a schema fact nobody
   // restates — it rendered bare: no label, no server error, no `required`.
   const form = $context.form
+
+  // A <Form> above this control locks it two ways — the caller disabled the
+  // form, or a save is in flight — and both mean the same thing to a field.
+  // A stated prop still wins, including `disabled={false}` on a saving form.
+  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
   const rule = resolveRule(form, name)
 
   const resolvedLabel    = stated(label || undefined, rule?.title, name ? nameToLabel(name) : undefined)
@@ -82,7 +87,7 @@
   >
     {#each items as item (item.value)}
       {@const isSelected = value === item.value}
-      {@const isDisabled = disabled || item.disabled}
+      {@const isDisabled = resolvedDisabled || item.disabled}
       {@const descId = `${groupName}-${item.value}-desc`}
 
       <label class="card field-check fjs-radio-card">

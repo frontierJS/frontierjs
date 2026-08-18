@@ -85,6 +85,22 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   when the workspace changes mid-request, which the workspaces service does
   (it addresses `ctx.id`, not the header). The role hooks stay — a gate refuses
   with a level, a person needs the sentence.
+- **Ten models declare `@version`, and a service-side write of a row must carry
+  the version it read.** The rule for which ten is in `db/schema.lite`'s header:
+  a row a PERSON edits, never one a machine also writes on its own schedule —
+  `@version` is per row and not per column, so a heartbeat or an engine moving
+  `status` would refuse an edit for a change nobody made. Three consequences
+  here. A method that fetches a row and then writes it (`makePrimary`,
+  `uploadCert`, `verify`, `demoteSiblings`, `saveVariables`) states
+  `version: row.version` — a real compare-and-swap, not a formality. An empty
+  patch is `changesNothing(patch)` and not `!Object.keys(patch).length`, because
+  the version rides on every one and would otherwise turn an untouched form into
+  a write that bumps it. And a screen holding a DRAFT pins the version in the
+  draft: `createResource` fills one in from what the store holds, the store is
+  live, and a push moves the remembered version while the draft sits still —
+  which erases the other person's write with the guard in place and nothing
+  said. `<Form record={row}>` is already right; the hand-rolled editors are not
+  unless they carry it.
 - **`User` reads and updates at USER(4), and the level is not what makes that
   safe.** A gate is per MODEL, so 4 on update is *any signed-in caller rewrites
   any person's row*. `@@allow('update', id == auth().id)` narrows it to their
@@ -148,13 +164,16 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   and could only be seen in a browser. **`find` means a list**; a service
   answering one thing uses a named action (`FJS-144`). Same family as the
   `{ data, total, …extra }` trap below, from the other end.
-- **`autoValidate` deletes every key the model does not declare, and user hooks
-  run BEFORE it.** So a wire-only field — one that is not a column, like the
-  plaintext `secret` a channel is created with — has to be taken off `ctx.data`
-  in a BEFORE hook, because by the time a method body runs it is gone. Silent:
-  the channels service reported *Slack needs a credential — send it as `secret`*
-  about a request that carried exactly that. Same shape as `ip_address` on the
-  servers service, where the write succeeds and the column comes back null.
+- **`autoValidate` deletes every key the model does not declare — unless the
+  schema declares it `@transient`.** The plaintext `secret` a channel is created
+  with is not a column and now says so (`FJS-D23`): it is validated with the
+  model's own rules and lifted onto **`ctx.transients`**, so `create` and `patch`
+  read `ctx.transients.secret` and the write carries columns only. An UNDECLARED
+  wire-only key is still deleted in silence, which is the whole reason to declare
+  one — the channels service used to report *Slack needs a credential — send it
+  as `secret`* about a request that carried exactly that. Same shape as
+  `ip_address` on the servers service, where the write succeeds and the column
+  comes back null.
 - **`ctx.params` does not exist in Junction at all** — on either context, since
   `FJS-D03`. This app's services read `ctx.params.user.user_id` and
   `ctx.params.headers` throughout, every one `undefined`, so role checks silently
@@ -220,6 +239,18 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
 - **The audit trail must cover custom methods.** It recorded `create`/`patch`/
   `remove` only, so drain, deploy, cancel and trigger were in no trail at all. It
   now runs on `all` minus reads, with `servers.heartbeat` excluded by name.
+- **A scheduled Job's clock is Caravan's, and `engine/job-schedule.ts` is the one
+  place a row is bound to it.** `app.scheduler` is junction's in-process timer —
+  no persistence, no retry, no principal — and this app used it to fire
+  `app.jobs.dispatch(…)`, which is a clock with none of the queue's durability
+  while looking like it has one (`FJS-D36`). Two defects came out of it and both
+  needed a restart or an edit to see: registration happened only in `create()`,
+  so **the first deploy stopped every scheduled job in the app** while the rows
+  still said `scheduled` (`FJS-327`), and `patch()` validated a new expression
+  without touching the clock, so **an edit was accepted and the old schedule
+  kept firing** (`FJS-328`). `syncSchedule(app, row)` is the whole rule and it
+  reads the UPDATED row, because `kind` and `status` change a schedule as surely
+  as the expression does; `restoreSchedules()` rebuilds the clock at boot.
 - **Zero raw SQL, on purpose** — everything goes through accessors, which is what
   keeps policies enforceable. `db.asSystem().sql` is the only bypass and it
   enforces nothing.

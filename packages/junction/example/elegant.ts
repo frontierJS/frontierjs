@@ -36,15 +36,32 @@
 //     -H 'x-service-method: getStats'                            # custom method
 
 import { createApp, createService, publish, channels, healthPlugin } from '../index.ts'
-import type { App, IAuth } from '../index.ts'
+import type { App, IAuth, ServiceContext } from '../index.ts'
 import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
+import type { LitestoneClient, TableClient } from '@frontierjs/litestone'
 
 // ─── Schema — the seed. Field rules become 400s, the gate becomes 401s. ───
 // Scalars are Int/String/Float/Bytes. The pre-1.0 names (Integer/Text/Real/
 // Blob) are rejected outright, not aliased — junction resolves the workspace
 // litestone, so this file must use the current dialect to start at all.
 
-const db = await createClient({
+// The schema below is a string, so `litestone types` has nothing to read — the
+// row is named here instead. A real app imports the generated `Db`.
+interface Lead {
+  id:        number
+  name:      string
+  email:     string
+  status:    'new' | 'active' | 'closed'
+  value:     number
+  createdAt: string
+}
+
+interface Db extends LitestoneClient {
+  lead: TableClient<Lead>
+  asSystem(): Db
+}
+
+const db = await createClient<Db>({
   db: ':memory:',
   schema: `
     enum LeadStatus { new active closed }
@@ -98,7 +115,9 @@ const app = createApp({
 
 app.configure(healthPlugin())
 app.configure(channels((a: App) => {
-  a.channels!.on('connection', (_session, conn) => a.channel!('leads').join(conn))
+  // Braces, not an expression body: a connection handler returns nothing, and
+  // `join()` answers the channel.
+  a.channels!.on('connection', (_session, conn) => { a.channel!('leads').join(conn) })
 }))
 
 // ─── The service. ─────────────────────────────────────────────────────────
@@ -114,8 +133,13 @@ app.services.register(createService({
   hooks: { after: { create: [live], patch: [live], remove: [live] } },
 
   // POST /api/leads + X-Service-Method: getStats
-  async getStats(ctx) {
-    const scoped = ctx.locals.db as typeof db
+  async getStats(ctx: ServiceContext) {
+    // Through `unknown` on purpose: junction types `ctx.locals.db` with its own
+    // minimal client interface so the adapter compiles with no litestone
+    // installed, and that shape is declared independently of litestone's. The
+    // client is always there on a model service — withLitestoneDb seeds locals
+    // before any hook runs.
+    const scoped = ctx.locals.db as unknown as Db
     const leads  = await scoped.lead.findMany()
     const total  = leads.reduce((sum, l) => sum + Number(l.value ?? 0), 0)
     return { count: leads.length, totalValue: total, avgValue: leads.length ? Math.round(total / leads.length) : 0 }

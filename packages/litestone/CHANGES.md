@@ -1,5 +1,289 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-17 — atomic update operators, and a rebuild that refuses (`FJS-D27`, `FJS-183`)
+
+2367 tests, 0 fail. Typecheck clean.
+
+**`{ views: { increment: 1 } }` is a write now** — `increment`, `decrement`,
+`multiply`, `divide` on a numeric column and `push` on an array one, on `update`
+and `updateMany`. Read-modify-write loses one of two concurrent increments and
+`@version` only turns that into a conflict the caller has to retry; `UPDATE t SET
+views = views + ?` needs no read and cannot race.
+
+The objection was that the payload is otherwise VALUES, so `{ views: {
+increment: 1 } }` and `{ addr: { city: 'x' } }` are one shape to a parser. **The
+column decides**, as it already does on the where-side between a typed-Json path
+and an operator block: a `Json @type(T)` column keeps taking an object, and
+everything an operator cannot legally apply to is refused by name — wrong column
+type, an operator on a create or an upsert, `divide: 0` (SQLite answers NULL and
+raises nothing), two operators on one column, an enum array pushed a non-member,
+and a column carrying a bound the operator would escape, since the new value is
+computed inside SQLite where `validate()` never sees it.
+
+`push` appends through `json_insert(coalesce(col, '[]'), '$[#]', ?)`. The
+coalesce is the load-bearing half: `json_insert(NULL, …)` answers NULL silently,
+so a push into a NULL column would drop the value and report success.
+
+**A rebuild that would destroy an app-created trigger or index is BLOCKED.** It
+used to name them in a comment above the SQL that destroyed them, which is the
+wrong answer for somebody applying a generated migration without reading it —
+who is who a generated file is for. The rebuild is commented out with three ways
+forward, the same shape an un-defaultable new column already used, and
+`autoMigrate` reports `state: 'blocked'` and writes no hash, so it resurfaces
+every startup. Re-emitting a captured trigger stays rejected: its body may name a
+column the rebuild drops.
+
+## 2026-08-17 — a model is scoped through its parent (`FJS-282`, `FJS-333`)
+
+2349 tests, 0 fail. Typecheck clean.
+
+**`check()` is a real lookup outside a WHERE.** It answered `true`
+conservatively in the JS evaluator, so `@@deny('all', !check(parent))` held for
+read, update and delete and permitted a cross-tenant CREATE in silence — the
+reason `tenancy { strategy row }` could not generate the rule and left 22 of
+basecamp's models to hand-written ones. The foreign key is in the data being
+written and `buildFilterSql` already builds the target's own filter, so the same
+SQL runs uncorrelated: `SELECT 1 FROM "<target>" WHERE "<referencedKey>" = ? AND
+(<target policy>) LIMIT 1`. Reads go through `ctx.readDb`, which serves the write
+connection while a transaction is open — without that a parent and child created
+together deny the child. An **absent** foreign key allows, the same answer the
+tenant column already gives on create. `evalJs` takes the containing operation
+now, so a bare `check()` asks the right question of the target.
+
+**Tenancy generates it.** One `@@deny(read, update, delete, create, !check(rel))`
+per SCOPED PARENT — and that is why there is nothing to choose. Denies are AND'd,
+so a model with two scoped parents must satisfy both: the narrowing answer, and
+the direction tenancy always takes. Picking one parent and ignoring the other
+would widen, under a rule nobody could predict. Transitive by fixpoint, so a
+grandchild is scoped once its parent is; self-relations are skipped;
+`check(rel, 'read')` is stated rather than inherited, because the question is
+*is that parent mine* and never *may I create that parent*.
+
+`@@tenant(via: rel)` narrows to one named relation, and is refused if it names
+something that is not a to-one relation or a parent that is not itself scoped.
+The *N models are NOT scoped* report now names only the models with neither a
+column nor a scoped parent, and a second line names what was delegated.
+
+**`check()` had never worked on a model whose table is snake_cased** (`FJS-333`).
+The `EXISTS` named the MODEL where it had to name the outer table, so
+`model LineItem` produced `"LineItem"."orgId"` against table `line_item` and
+SQLite answered `no such column`. Every single-word model hid it — identifiers
+match case-insensitively, so `"Order"` finds `order`.
+
+## 2026-08-17 — three refusals that name the thing (`FJS-206`, `FJS-207`, `FJS-332`)
+
+2332 tests, 0 fail. Typecheck clean.
+
+**A failing batch says which row.** `UNIQUE constraint failed: post.slug` out of a
+500-row import named the column and never the row, so finding it meant bisecting
+the batch by hand — and the loop already had the index. The message now opens
+`data[i] of n`, names the values that collided, and says **nothing in the batch
+was written**, which is true and is the difference between re-running the import
+and hunting for partial rows. `batchIndex`/`batchSize` are on the error for a
+caller that would rather not parse prose. The error is annotated rather than
+wrapped: its class carries the status past the API boundary, and a wrapper would
+flatten `SoftDeletedUniqueError`'s 409 into an unclassified 500. The values are
+redacted the way the audit trail redacts them, because a `@unique` column may be
+`@encrypted`. Three sites had the same silence — the insert loop, the
+row-building map above it, and `upsertMany`, whose loop carried no `try` at all.
+
+**A `Json` filter says whether the column has a shape.** `{ meta: { tier: … } }`
+on an untyped column threw `Unknown where operator "tier"`, which sends the
+reader after a misspelling; it now says the column is untyped Json and gives both
+routes, `@type(...)` or `$raw` with `json_extract`. The mirror on a typed column
+threw `Unknown field 'has' on type Address` — naming the type, calling an
+operator a field, and never naming the column. `WHERE_OPS` is the one set of what
+an operator is, so the typed walk can tell a sub-key from one.
+
+**`@unique` over a randomly-encrypted column is refused.** Found probing the
+first of these with a `@unique @encrypted` fixture that would not conflict: the
+constraint is over the stored bytes and a random IV makes every write of one
+value different, so it is declared, built, and can never fire. Measured — two
+creates, two rows, no error. `@unique` and `@@unique([...])` naming such a column
+are refused at parse now, beside the `@hashed` conflict rules;
+`@encrypted(deterministic: true)` and `@hashed` are the two ways through.
+
+## 2026-08-17 — a bulk write counts its own rows, not its triggers' (`FJS-320`)
+
+2320 tests, 0 fail. Typecheck clean.
+
+`{ count }` on a bulk write meant *rows this statement addressed* and did not
+say so. bun:sqlite's `.changes` is a total-changes DELTA, not
+`sqlite3_changes()`, so it also counts what a trigger or a foreign-key action
+wrote inside the same statement. Filed against `@@fts`, where one updated row
+answered 17; the wider case is `updatedAt`, which is a SQL trigger here, so
+every model carrying the column doubled its count, and a `deleteMany` naming
+one parent answered 4 for its three cascaded children. A model with no trigger
+and no cascade was the only one ever right.
+
+`rowsChanged(db)` is the one answer now — `SELECT changes()` read off the same
+connection with no write in between, which counts only the rows the statement
+itself named. It replaces `.changes` wherever the number means rows:
+`updateMany`, both halves of `removeMany`, `deleteMany`, the two single-row
+`select: false` paths whose telemetry carried the same inflation, and
+`retention.js`'s log line. The `RETURNING` paths already counted rows and are
+untouched; `createMany` and `upsertMany` count iterations.
+
+The number leaves the Data realm — junction hands it to the browser and a live
+store's `changed` event carries it — so a caller comparing it against what they
+asked for saw a write that touched rows nobody named.
+
+`test/bulk-count.test.ts` holds it: nine cases over five models — fts,
+`updatedAt`, no trigger at all, soft delete, cascade, a write that matched
+nothing, inside a transaction, and `announce: 'rows'` agreeing with the default.
+
+## 2026-08-17 — `@transient`: the payload key that is not a column (`FJS-D23`)
+
+2311 tests + 16 new, 0 fail.
+
+The mirror of `@computed` — a field with no column, written by the caller and
+never read back, where `@computed` is one that is read and never written. The
+mirror is the design, not a slogan: it is emitted into the WRITE modes of the
+generated JSON Schema (`writeOnly`, `x-litestone-kind: 'transient'`) and absent
+from the read ones, out of the row type and out of `Where` in generated types,
+and out of the DDL. Twenty-three attributes that describe storage, derivation or
+a read are refused beside it by name, as is a field `@allow` (the rule would be
+evaluated at a boundary the value never reaches) and a `@@index`/`@@unique`
+naming it.
+
+At the Data boundary it is refused by name in a write, a `where`, an `orderBy`,
+an aggregate and a policy predicate, each with the reason. All five matter for
+one reason: SQLite reads a double-quoted identifier it cannot bind as a string
+LITERAL, so a filter over a column that does not exist matches every row or none
+and reports nothing.
+
+**`isStoredField` in `ddl.js` is now the one answer to what becomes a column.**
+`CREATE TABLE` and the rebuild's `INSERT … SELECT` were each carrying their own
+list and had already drifted: the rebuild's copied `@computed`, `@from` and
+`@derived` fields, which is the string-literal hazard above inside a migration.
+
+`generateValidationCases` skips a transient field — its rules are real and this
+is not the layer that holds them, so every generated case would write a value
+the boundary refuses and read as a broken rule. The API is where they run, and
+`@frontierjs/testing` is the tier that can reach it.
+
+Ruling in `DECISIONS.md` § API design.
+
+## 2026-08-17 — `$inTransaction`, on every flavour of client (`FJS-D35`)
+
+2295 tests, 0 fail. Typecheck clean.
+
+```js
+db.$inTransaction              // → false
+await db.$transaction(async () => db.$inTransaction)   // → true
+```
+
+For a caller whose correctness depends on being inside one — junction's outbox
+row, which is only worth writing if it rolls back with the write it belongs to.
+That caller cannot ask the service declaration instead: `transactional:` is a
+statement about a method, and a hook can run against a method it does not name.
+
+A fact about the CONNECTION, so it is the same answer on every flavour — a
+scoped client, the system bypass and `$scopedBy` share one write connection and
+one depth counter. `litestone types` emits it too, so a generated client
+declares it; `AnyLitestoneClient` deliberately does not (adding it there makes
+every already-generated client unassignable, which is `FJS-018`).
+
+## 2026-08-17 — three declarations that did not match the runtime (`FJS-034`)
+
+2295 tests, 0 fail. Typecheck clean. `src/index.d.ts` only — no behaviour moved.
+
+Found from junction's side, driving its typecheck baseline to zero: its examples
+hold a real client, and each of these was an example that could not compile
+against a thing that works.
+
+- **`LitestoneClient.$schema` is a `LitestoneSchema`.** It was `unknown`, and
+  `generateJsonSchema(db.$schema)` is the documented line — so the documented
+  line was a documented cast. `AnyLitestoneClient` keeps `unknown` on purpose: a
+  generated client declares a `$schema` of its own, and naming a shape there
+  makes the generated flavour unassignable again, which is the failure that
+  interface exists to end (`FJS-018`).
+- **`TableClient`'s last four parameters default off the row.** Naming an
+  accessor by hand — a test, or an example whose schema is a string with no
+  `litestone types` run behind it — cost five type arguments, so examples wrote
+  none and stayed untyped. It costs one now.
+- **`FileStorageOptions` declares `localPath` / `localUrl` / `localPort`.**
+  `storage/providers/local.js` reads all three and nothing declared them, so the
+  local branch of every dev storage config was a type error.
+
+
+## 2026-08-16 — the generated types name the services too (`FJS-018`)
+
+2295 tests (3 new), 0 fail. Typecheck clean.
+
+`generateTypeScript` now emits **`ServiceTypes`** — service name → row type, one
+entry per model. The key is the plural, from `@frontierjs/toolbelt/inflect`, the
+same table the accessor and Sierra's registry read, so `Person` is `people` and
+a name derived here matches the model derived back from it (Invariant 2).
+
+`--augment junction` adds the module augmentation that registers the map with
+`@frontierjs/junction/client`, which is what makes `client.service('posts')`
+answer this schema's row in a browser. Behind a flag because an augmentation
+names a package: emitted unconditionally it is a type error in every app that
+installed litestone alone.
+
+Two things fell out of using it. **`createClient` is generic** —
+`createClient<Db>({ … })`, where `Db` is the generated client — because the
+alternative is an assertion at every call site, which is exactly the
+hand-written table shape the generator exists to replace. And the tools take
+**`AnyLitestoneClient`** now: the hand-written `LitestoneClient` in `index.d.ts`
+reaches its tables through an index signature, a generated one has a typed
+accessor per model and therefore none, and the second is not assignable to the
+first — so an app holding generated types could not call `autoMigrate(db)` at
+all. `apply`, `autoMigrate`, `runSeeder`, `Seeder`, `Factory` and
+`defineFactory` name the wider type.
+
+## 2026-08-16 — the hook runner gets one call site (`FJS-288`)
+
+2292 tests, 0 fail.
+
+`hooks.before.all` declared sixteen operations and reached four of them. The
+two sets are the contract — `expand('all')` iterates `SETTER_OPS ∪ GETTER_OPS` —
+and eleven of those names had no call site, so registering on `deleteMany` or on
+`setters` was silent in both directions: the hook never ran, and nothing said it
+would not. An audit or a stamp registered on `all` missed every bulk write,
+which is exactly the write a per-row `update` hook was covering for. `exists`
+was in neither set, so `all` missed it too.
+
+The cause was five hand-written hook pairs living inside the methods. There is
+one now: `installHooks(table, ctx, modelName)` wraps a built table once, reading
+the same two sets, and `makeTable` returns through it.
+
+**A hook fires exactly once per call the caller made, named for the method they
+named** — which is what the wrapper's two `this` bindings decide:
+
+- a hooked operation runs against the RAW table, so its own internal calls
+  (`upsert` → `create`/`update`, `findMany({recursive})` → `findMany`) do not
+  announce a second time
+- everything else runs against the wrapper, so a delegating helper
+  (`transition` → `update`, `findFirstOrThrow` → `findFirst`) still reaches the
+  hook of the operation it delegates to
+
+Three consequences worth knowing before you upgrade a hook:
+
+- **hooks are the outermost layer now.** A before hook sees the arguments as the
+  caller wrote them, ahead of the plugin door and ahead of any stamping this
+  file does — `@sequence` values and nested-write extraction used to happen
+  first on `create`.
+- **an `upsert` that inserts fires `upsert`**, where the nested `create` used to
+  fire `create`. One call, one hook run.
+- **an after hook on `update` can replace the result**, which it silently could
+  not: the result was assigned to the context and the return value read past it.
+
+`search` is the one method that is not `(argsObject)`, so its context carries
+`{ query, ...opts }` — a before hook rewriting `args.query` rewrites the search
+text.
+
+Seventeen operations × before/after, each asserted to fire once with nothing
+else, in `test/litestone.test.ts` § hook coverage. A new operation belongs in
+that grid; a missing row fails rather than being skipped.
+
+Unblocks `FJS-D10`'s `setters`/`getters` → `read`/`write` rename, which was held
+because an accurate name on a broken mechanism hides the hole. Filed while
+measuring this: `FJS-320`, a bulk write on an `@@fts` model reporting the FTS
+triggers' work in its `count`.
+
+
 
 ## 2026-08-16 — `announce`: the dial on what a bulk write says (`FJS-D34`)
 

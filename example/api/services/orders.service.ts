@@ -53,7 +53,7 @@ const move = (name: string) => async (ctx: ServiceContext) => {
 }
 
 /**
- * `pay` is the move plus telling two audiences about it.
+ * `pay` is the move plus telling two audiences about it — durably.
  *
  * Neither the email to the customer nor the row for the staff belongs inside
  * the transition: one is an HTTP call to somebody else's API and the other is
@@ -61,16 +61,25 @@ const move = (name: string) => async (ctx: ServiceContext) => {
  * (api/jobs/announce-payment.job.ts), so a mail outage cannot make paying an
  * order fail, and a retry re-sends the email rather than re-running the move.
  *
- * `unique` keys the announcement to the order, so a double-click announces
- * once — for the window in which the job is still queued. Paying an already
- * paid order is refused by the machine (409), so unlike `ship` there is no
- * second dispatch to guard against afterwards.
+ * ─── Why enqueue and not dispatch ──────────────────────────────────────────
+ *
+ * A dispatch here is a second thing that happens after the move commits, and
+ * nothing joins the two: the process dying in between leaves an order that is
+ * paid and a customer who is never told, with no row anywhere saying the
+ * announcement was owed. `ctx.enqueue` writes that row INSIDE this method's
+ * transaction — see `transactional:` below — so it commits with the move or
+ * rolls back with it, and the relay hands it to the queue afterwards.
+ *
+ * The `unique` key this used to carry is gone, and nothing replaced it: it
+ * covered a double-click while the job was still queued, and the state machine
+ * already refuses paying a paid order (409), so the second call never reaches
+ * this line to write a second row. What `unique` could never cover is the case
+ * above, because a key on a job that was never queued guards nothing.
  */
 const pay = async (ctx: ServiceContext) => {
   const order = await move('pay')(ctx) as { id: number }
 
-  await ctx.app?.jobs?.dispatch(announcePayment, { orderId: order.id },
-    { unique: `announce-payment:${order.id}` })
+  await ctx.enqueue(announcePayment, { orderId: order.id })
 
   return order
 }
@@ -145,6 +154,11 @@ const recordTracking = async (ctx: ServiceContext) => {
 export function createOrdersService() {
   return createBaseService({
     channel: 'orders',
+
+    // `pay` alone. It is the one move that records a durable effect, and
+    // ctx.enqueue refuses outside a transaction — an outbox row is only worth
+    // writing if it rolls back with the write it belongs to.
+    transactional: ['pay'],
 
     // The names match @@transitions in the schema. They are written twice —
     // once there, once here — which is the seam worth watching: a method

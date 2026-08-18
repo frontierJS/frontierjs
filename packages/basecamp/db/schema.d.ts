@@ -361,6 +361,8 @@ export interface Workspace {
   ownerId: string
   settings: unknown
   status: WorkspaceStatus
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -386,6 +388,7 @@ export interface WorkspaceUpdate {
   ownerId?: string
   settings?: unknown
   status?: WorkspaceStatus
+  version: number
 }
 
 export interface WorkspaceWhere extends WhereBase {
@@ -397,6 +400,7 @@ export interface WorkspaceWhere extends WhereBase {
   ownerId?: string | WhereOp<string> | null
   settings?: unknown | WhereOp<unknown> | null
   status?: WorkspaceStatus | WhereOp<WorkspaceStatus> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -473,6 +477,8 @@ export interface Secret {
   data: string
   isVerified: boolean
   createdBy?: string | null
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -496,6 +502,7 @@ export interface SecretUpdate {
   data?: string
   isVerified?: boolean
   createdBy?: string | null
+  version: number
 }
 
 export interface SecretWhere extends WhereBase {
@@ -506,6 +513,7 @@ export interface SecretWhere extends WhereBase {
   data?: string | WhereOp<string> | null
   isVerified?: boolean | WhereOp<boolean> | null
   createdBy?: string | WhereOp<string> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -841,6 +849,8 @@ export interface Network {
   cidr: string
   provider: string
   config: unknown
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -866,6 +876,7 @@ export interface NetworkUpdate {
   cidr?: string
   provider?: string
   config?: unknown
+  version: number
 }
 
 export interface NetworkWhere extends WhereBase {
@@ -877,6 +888,7 @@ export interface NetworkWhere extends WhereBase {
   cidr?: string | WhereOp<string> | null
   provider?: string | WhereOp<string> | null
   config?: unknown | WhereOp<unknown> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -941,6 +953,8 @@ export interface Project {
   status: string
   tags: unknown
   metadata: unknown
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -966,6 +980,7 @@ export interface ProjectUpdate {
   status?: string
   tags?: unknown
   metadata?: unknown
+  version: number
 }
 
 export interface ProjectWhere extends WhereBase {
@@ -977,6 +992,7 @@ export interface ProjectWhere extends WhereBase {
   status?: string | WhereOp<string> | null
   tags?: unknown | WhereOp<unknown> | null
   metadata?: unknown | WhereOp<unknown> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -1000,6 +1016,8 @@ export interface Environment {
   tier: EnvironmentTier
   isProtected: boolean
   variables: unknown
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -1025,6 +1043,7 @@ export interface EnvironmentUpdate {
   tier?: EnvironmentTier
   isProtected?: boolean
   variables?: unknown
+  version: number
 }
 
 export interface EnvironmentWhere extends WhereBase {
@@ -1036,6 +1055,7 @@ export interface EnvironmentWhere extends WhereBase {
   tier?: EnvironmentTier | WhereOp<EnvironmentTier> | null
   isProtected?: boolean | WhereOp<boolean> | null
   variables?: unknown | WhereOp<unknown> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -1135,6 +1155,8 @@ export interface Domain {
   certKind?: string | null
   certIssuedAt?: string | null
   certExpiresAt?: string | null
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -1170,6 +1192,7 @@ export interface DomainUpdate {
   certKind?: string | null
   certIssuedAt?: string | null
   certExpiresAt?: string | null
+  version: number
 }
 
 export interface DomainWhere extends WhereBase {
@@ -1186,6 +1209,7 @@ export interface DomainWhere extends WhereBase {
   certKind?: string | WhereOp<string> | null
   certIssuedAt?: string | WhereOp<string> | null
   certExpiresAt?: string | WhereOp<string> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -1915,6 +1939,8 @@ export interface FeatureFlag {
   isEnabled: boolean
   rollout: number
   createdBy?: string | null
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -1944,6 +1970,7 @@ export interface FeatureFlagUpdate {
   isEnabled?: boolean
   rollout?: number
   createdBy?: string | null
+  version: number
 }
 
 export interface FeatureFlagWhere extends WhereBase {
@@ -1957,6 +1984,7 @@ export interface FeatureFlagWhere extends WhereBase {
   isEnabled?: boolean | WhereOp<boolean> | null
   rollout?: number | WhereOp<number> | null
   createdBy?: string | WhereOp<string> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -2031,6 +2059,8 @@ export interface NotificationChannel {
   lastTestAt?: string | null
   lastDeliveryAt?: string | null
   createdBy?: string | null
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -2043,6 +2073,7 @@ export interface NotificationChannelCreate {
   kind: ChannelKind
   config?: unknown
   secretId?: string | null
+  secret?: string | null
   isActive?: boolean
   lastTestAt?: string | null
   lastDeliveryAt?: string | null
@@ -2056,10 +2087,12 @@ export interface NotificationChannelUpdate {
   kind?: ChannelKind
   config?: unknown
   secretId?: string | null
+  secret?: string | null
   isActive?: boolean
   lastTestAt?: string | null
   lastDeliveryAt?: string | null
   createdBy?: string | null
+  version: number
 }
 
 export interface NotificationChannelWhere extends WhereBase {
@@ -2073,6 +2106,7 @@ export interface NotificationChannelWhere extends WhereBase {
   lastTestAt?: string | WhereOp<string> | null
   lastDeliveryAt?: string | WhereOp<string> | null
   createdBy?: string | WhereOp<string> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -2096,6 +2130,8 @@ export interface AlertRule {
   metricName: string
   condition: unknown
   isActive: boolean
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
 }
@@ -2120,6 +2156,7 @@ export interface AlertRuleUpdate {
   metricName?: string
   condition?: unknown
   isActive?: boolean
+  version: number
 }
 
 export interface AlertRuleWhere extends WhereBase {
@@ -2131,6 +2168,7 @@ export interface AlertRuleWhere extends WhereBase {
   metricName?: string | WhereOp<string> | null
   condition?: unknown | WhereOp<unknown> | null
   isActive?: boolean | WhereOp<boolean> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   AND?: AlertRuleWhere[]
@@ -2257,6 +2295,8 @@ export interface Dashboard {
   icon?: string | null
   isPinned: boolean
   createdBy?: string | null
+  /** @version */
+  version: number
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
@@ -2282,6 +2322,7 @@ export interface DashboardUpdate {
   icon?: string | null
   isPinned?: boolean
   createdBy?: string | null
+  version: number
 }
 
 export interface DashboardWhere extends WhereBase {
@@ -2293,6 +2334,7 @@ export interface DashboardWhere extends WhereBase {
   icon?: string | WhereOp<string> | null
   isPinned?: boolean | WhereOp<boolean> | null
   createdBy?: string | WhereOp<string> | null
+  version?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   updatedAt?: string | WhereOp<string> | null
   deletedAt?: string | WhereOp<string> | null
@@ -2416,6 +2458,52 @@ export interface AuditEventWhere extends WhereBase {
 export type AuditEventOrderBy =
   | { [K in keyof Omit<AuditEvent, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<AuditEvent, never>]?: OrderDir }>
+
+// ── Services ─────────────────────────────────────────────────────────────────
+
+/**
+ * Service name → the row it answers. Feeds @frontierjs/junction's ServiceTypes
+ * registry, so `client.service('posts')` needs no type argument.
+ */
+export interface ServiceTypes {
+  users: User
+  credentials: Credential
+  sessions: Session
+  verifications: Verification
+  accounts: Account
+  workspaces: Workspace
+  workspaceMembers: WorkspaceMember
+  secrets: Secret
+  apiKeys: ApiKey
+  servers: Server
+  serverEvents: ServerEvent
+  volumes: Volume
+  networks: Network
+  serverNetworks: ServerNetwork
+  projects: Project
+  environments: Environment
+  apps: App
+  domains: Domain
+  appServers: AppServer
+  appNetworks: AppNetwork
+  deployments: Deployment
+  deploymentSteps: DeploymentStep
+  jobs: Job
+  jobRuns: JobRun
+  recipes: Recipe
+  recipeRuns: RecipeRun
+  diskUsages: DiskUsage
+  cleanupRuns: CleanupRun
+  featureFlags: FeatureFlag
+  flagOverrides: FlagOverride
+  notificationChannels: NotificationChannel
+  alertRules: AlertRule
+  alertRuleChannels: AlertRuleChannel
+  alertEvents: AlertEvent
+  dashboards: Dashboard
+  dashboardWidgets: DashboardWidget
+  auditEvents: AuditEvent
+}
 
 // ── Cursor pagination result ─────────────────────────────────────────────────
 
@@ -2577,6 +2665,8 @@ export interface LitestoneClient {
   readonly $attached:   string[]
   readonly $rawDbs:     Record<string, unknown>
   readonly $walStatus:  Record<string, unknown>
+  /** Is a transaction open on this connection right now? */
+  readonly $inTransaction: boolean
 }
 
 // ── createClient ─────────────────────────────────────────────────────────────

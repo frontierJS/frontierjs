@@ -91,6 +91,8 @@ await app.jobs.dispatch(sendEmail, { to: 'alice@example.com' })  // typed payloa
 | `jobsDir` | — | Directory to autoload `*.job.ts` files from |
 | `cleanupAfter` | 7 days | How long terminal jobs are kept. `0` disables the sweep |
 | `admin` | `false` | Mount the admin routes. `{ path, secret }` to configure them |
+| `heartbeat` | `5000` | How often this instance says it is alive (ms) — also how often abandoned work is reclaimed |
+| `lease` | `30000` | How long an instance may go quiet before its running jobs are treated as abandoned (ms) |
 
 Every one of these can come from the `caravan` section of `junction.config.js`
 instead, with an option stated here winning. The database opens on first use and
@@ -283,9 +285,31 @@ retryDelay: [60_000, 300_000, 1_800_000]
 
 Jobs that exhaust `maxAttempts` are marked `failed` and kept in the database for inspection. Use `queue.retry(id)` to re-queue them. Jobs cancelled via `queue.cancel(id)` are marked `cancelled` and can also be re-queued with `queue.retry(id)`.
 
-## Crash recovery
+## Crash recovery, and more than one instance
 
-On `start()`, Caravan resets any jobs stuck in `running` state back to `pending`. This handles the case where the process crashed mid-execution.
+A jobs database can be opened by more than one process — two replicas behind a
+load balancer, a web process beside a worker one — so *is this `running` row
+being executed by anybody?* is a real question rather than an assumption.
+
+Every instance takes an id when it is created, writes it onto each row it
+claims, and says it is alive on the `heartbeat` timer. That timer also does the
+recovery: a `running` row whose owner has not been heard from within `lease` is
+work nothing is doing, so it goes back to `pending` and someone claims it. A row
+owned by an instance that is still heartbeating is left alone, and a completion
+only lands if the instance writing it still owns the row. A clean `stop()` hands
+this instance's ownership back immediately rather than making everyone wait out
+the lease.
+
+Cron needs no leader for the same reason. Every instance fires its own schedule
+and dispatches under an id naming the job and the minute — `cron:sweep:29123456`
+— so the second fire in that minute is a no-op rather than a second row. Leader
+election would instead miss fires whenever the lease was between owners.
+
+Two limits, both about the clock. Instances must agree on the time to within a
+minute, which is what cron already assumes to fire at the right time at all. And
+the heartbeat is a timer: a handler that **blocks** the event loop for longer
+than `lease` stalls its own heartbeat and has its work reclaimed under it — work
+that does not yield is work this queue cannot supervise.
 
 ## Tests
 

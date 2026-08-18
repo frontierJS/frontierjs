@@ -28,7 +28,7 @@
   export let hint         = ''
   export let error        = ''
   export let errors       = undefined
-  export let disabled     = false
+  export let disabled     = undefined  // undefined = ask the form; false overrides it
   export let required     = undefined
   export let files        = []        // File[] — bindable, current selection
   export let progressMap  = {}        // { [filename]: 0-100 } — optional upload progress
@@ -59,7 +59,7 @@
   }
 
   function addFiles(newFiles) {
-    if (disabled) return
+    if (resolvedDisabled) return
     const list = Array.from(newFiles)
     const err  = validate(list)
     if (err) { localError = err; return }
@@ -88,6 +88,11 @@
   }
 
   const form         = $context.form
+
+  // A <Form> above this control locks it two ways — the caller disabled the
+  // form, or a save is in flight — and both mean the same thing to a field.
+  // A stated prop still wins, including `disabled={false}` on a saving form.
+  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
   const rule         = resolveRule(form, name)
   const displayError = localError || resolveError(form, name, error, errors)
 
@@ -114,7 +119,7 @@
       class="fjs-dropzone"
       data-dragging={dragging || null}
       data-invalid={displayError ? 'true' : null}
-      disabled={disabled}
+      disabled={resolvedDisabled}
       aria-required={resolvedRequired ? 'true' : null}
       aria-label="Choose a file to upload"
       on:dragover|preventDefault={() => dragging = true}
@@ -148,7 +153,7 @@
       type="file"
       accept={accept}
       multiple={multiple}
-      disabled={disabled}
+      disabled={resolvedDisabled}
       class="visually-hidden"
       on:change={handleInputChange}
     />

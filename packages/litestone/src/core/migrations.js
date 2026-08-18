@@ -580,6 +580,26 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
         continue
       }
 
+      // The other half of the same rule (FJS-183). A rebuild drops the table,
+      // taking any trigger or index the APP created — litestone did not write
+      // them and cannot restate them, so applying the rebuild here would delete
+      // behaviour with nothing recording that it had. The generated file blocks
+      // for this too; the hash is not written, so it surfaces on every startup
+      // until the schema or the database says what should happen.
+      const blockedObjects = diffResult.tableDiffs.flatMap(d => d.needsRebuild
+        ? [...(d.foreignTriggers ?? []).map(n => `trigger ${n}`),
+           ...(d.indexes?.foreign ?? []).map(i => `index ${i.name}`)]
+        : [])
+      if (blockedObjects.length) {
+        results[dbName] = {
+          state:  'blocked',
+          reason: `a rebuild would destroy ${blockedObjects.join(', ')} — litestone did not create ` +
+                  `these and cannot restate them. Move each into the schema, drop it by hand, or ` +
+                  `write the migration as a file and recreate it there`,
+        }
+        continue
+      }
+
       const sql   = generateMigrationSQL(diffResult, parseResult, { pluralize })
       const stmts = executableStatements(splitStatements(sql))
 

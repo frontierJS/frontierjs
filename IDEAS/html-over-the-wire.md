@@ -34,7 +34,7 @@ at the bottom of this file so nobody has to re-derive them.
 **The transport is finished and needs no change at all.** `app.channel(name).send(event, data)`
 already encodes an `{type:'event', event, data}` frame
 (`junction/src/transport/channels.ts:136`, `:215`, `:439`), every send goes through
-the one owner that survives backpressure (`transport/outbox.ts`), and the browser
+the one owner that survives backpressure (`transport/send-queue.ts`), and the browser
 client already re-emits any such frame to a listener
 (`junction/src/client/index.ts:751`). A server pushing markup today is one line and
 no framework edit:

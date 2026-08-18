@@ -5,6 +5,8 @@ title: Deployments
   import { session } from '../../session.js'
   import { deployments } from '../../resources/Deployment.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Table  from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
 
@@ -50,6 +52,14 @@ title: Deployments
   }
 
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
+  const DEPLOYMENT_COLUMNS = [
+    { key: 'app',         label: 'App' },
+    { key: 'environment', label: 'Environment' },
+    { key: 'status',      label: 'Status' },
+    { key: 'commit',      label: 'Commit' },
+    { key: 'queued',      label: 'Queued' },
+    { key: 'actions',     label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 <div class="section-header">
@@ -72,30 +82,16 @@ title: Deployments
     </div>
   </article>
 {:else}
-  <div class="table-wrap">
-    <table class="table striped hover">
-      <thead>
-        <tr>
-          <th scope="col">App</th>
-          <th scope="col">Environment</th>
-          <th scope="col">Status</th>
-          <th scope="col">Commit</th>
-          <th scope="col">Queued</th>
-          <th scope="col"><span class="visually-hidden">Actions</span></th>
-        </tr>
-      </thead>
-      <tbody id="deployment-rows">
-        {#each rows as deployment}
-          <tr>
-            <td>{deployment.app?.name ?? '—'}</td>
-            <td>{deployment.app?.environment?.name ?? '—'}</td>
-            <td><span class="pill {TONE[deployment.status] ?? ''}">{deployment.status}</span></td>
-            <td><code>{deployment.commitSha?.slice(0, 7) ?? '—'}</code></td>
-            <td class="text-sm text-muted">{when(deployment.queuedAt)}</td>
-            <td><a class="btn ghost" href={`/deployments/${deployment.id}/`}>Open</a></td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-  </div>
+  <Table id="deployment-rows" columns={DEPLOYMENT_COLUMNS} rows={rows} striped>
+    {#snippet row(deployment)}
+      <tr>
+        <td>{deployment.app?.name ?? '—'}</td>
+        <td>{deployment.app?.environment?.name ?? '—'}</td>
+        <td><span class="pill {TONE[deployment.status] ?? ''}">{deployment.status}</span></td>
+        <td><code>{deployment.commitSha?.slice(0, 7) ?? '—'}</code></td>
+        <td class="text-sm text-muted">{when(deployment.queuedAt)}</td>
+        <td><Button variant="ghost" href={`/deployments/${deployment.id}/`}>Open</Button></td>
+      </tr>
+    {/snippet}
+  </Table>
 {/if}

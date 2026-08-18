@@ -13,7 +13,7 @@
 //   Full rebuild:  drop col, change type, change NOT NULL, change DEFAULT,
 //                  change PK, change FK, change CHECK, add @@strict
 
-import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL } from './ddl.js'
+import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
 import { createHash } from 'crypto'
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
@@ -538,11 +538,7 @@ function rowCountGuard(tableName, tmp) {
 function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
   // Must match createTable's physical columns exactly — implicit m2m and @edge
   // fields have no host column, so they can't appear in the INSERT ... SELECT.
-  const targetFields   = model.fields.filter(f =>
-    f.type.kind !== 'relation' &&
-    f.type.kind !== 'implicitM2M' &&
-    !f.attributes.find(a => a.kind === 'edge')
-  )
+  const targetFields   = model.fields.filter(isStoredField)
   const targetColNames = targetFields.map(f => f.name)
   const tableName      = modelToTableName(model, pluralize)
   const tmp            = `${tableName}__new`
@@ -662,16 +658,34 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
           continue
         }
 
-        // Said before the SQL, because after it the objects are already gone.
+        // A rebuild drops the table, which takes every object on it. Litestone's
+        // own are regenerated from the schema; one the app created exists only
+        // in the live database and there is nothing to restate it from.
+        //
+        // Named BEFORE the SQL used to be the answer, and the answer was wrong
+        // for the one reader who matters — somebody applying a migration without
+        // reading it, who is exactly who a generated file is for. So the rebuild
+        // is emitted COMMENTED OUT, the same shape the un-defaultable column
+        // above uses, because both are *litestone cannot decide this for you*
+        // and one mechanism for that is better than two (FJS-183).
+        //
+        // Re-emitting a captured trigger verbatim was the third option and is
+        // not taken: its body may name a column this rebuild drops, so it would
+        // restate SQL that fails at CREATE or, worse, at the next write.
         const lost = [
           ...(d.foreignTriggers ?? []).map(n => `trigger "${n}"`),
           ...(d.indexes.foreign ?? []).map(i => `index "${i.name}"`),
         ]
         if (lost.length) {
-          lines.push(`-- "${d.name}": this rebuild DROPS the table, which destroys:`)
+          lines.push(`-- "${d.name}": rebuild BLOCKED — it DROPS the table, which destroys:`)
           for (const l of lost) lines.push(`--     ${l}`)
-          lines.push(`-- Litestone did not create these and cannot restate them — recreate`)
-          lines.push(`-- them below, or in a JS migration that runs after this file.`)
+          lines.push(`-- Litestone did not create these and cannot restate them. Fix one of:`)
+          lines.push(`--   • recreate each one below the rebuild, then uncomment it`)
+          lines.push(`--   • move it into the schema, where litestone regenerates it`)
+          lines.push(`--   • if it is no longer wanted, drop it by hand and uncomment`)
+          lines.push(rebuildSQL(model, parseResult, pluralize, d).split('\n').map(l => `-- ${l}`).join('\n'))
+          lines.push(``)
+          continue
         }
         // Out of the way before the rename, which reparses every view.
         if (d.dropViews?.length) {

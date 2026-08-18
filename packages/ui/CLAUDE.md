@@ -1,6 +1,6 @@
 # ui — package map
 
-**`@frontierjs/ui`** — a Mesa component kit over `@frontierjs/css`. 66
+**`@frontierjs/ui`** — a Mesa component kit over `@frontierjs/css`. 65
 components, no build step, no utility classes (Invariant 13: style with a tone
 and a treatment, never a color).
 
@@ -17,7 +17,7 @@ starts its server and stays up, for looking at a component in a real browser.
 components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
               Checkbox · RadioGroup · Switch · Slider · NumberInput · Combobox ·
-              MultiSelect · DatePicker · DateTimeInput · FileUpload · Button · Btn
+              MultiSelect · DatePicker · DateTimeInput · FileUpload · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline · …
   layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item)
@@ -29,9 +29,13 @@ controls.js   control name → component; where an app contributes one
 utils.js      shared helpers
 tokens.css    the kit's own tokens, on top of @frontierjs/css
 test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs
-test/browser/ the kit drive — run.mjs (Chrome over CDP) · server.mjs (compiles
-              .mesa on demand) · page.js (mounts a fixture, in-page probes) ·
-              fixtures/*.mesa · specs/*.spec.mjs
+test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
+              coverage) · server.mjs (compiles .mesa on demand) · page.js
+              (mounts a fixture) · fixtures/*.mesa · specs/*.spec.mjs.
+              Chrome, CDP, real input, the spec runner and the DOM probes are
+              mesa's — `mesa/test/browser/{drive,probes}.js`, read by relative
+              path, because mesa is the leaf and a second CDP client is a
+              second place to fix every trap
 ```
 
 ---
@@ -57,6 +61,21 @@ test/browser/ the kit drive — run.mjs (Chrome over CDP) · server.mjs (compile
   search box — it is `aria-required`, never a native one: a group is not
   labelable, and a search box whose resting state is empty would refuse every
   submit.
+- **A `Table` column that holds row actions declares `hideLabel: true`.** Not an
+  empty `label` — a `<th>` with no text announces nothing for a column that has
+  a control in every row, and the app's own a11y pass only checks `scope`, so
+  the gap is silent. Not `aria-label` on the `<th>` either: the text belongs in
+  the cell, which is where a table's header navigation reads it from.
+- **`type="password"` draws a reveal toggle and only the ELEMENT's type flips.**
+  `resolvedType` is what the field IS — what `Field` and `Label` are told, and
+  what decides whether a toggle belongs here at all — and `inputType` is what
+  the `<input>` carries. Conflating them would make a revealed password report
+  itself as a text box to everything above the control. Two more that are not
+  obvious: the button refuses `mousedown`'s default, because blurring the input
+  takes the caret with it and costs a typist their place mid-password; and
+  `aria-pressed` is written as the STRING `'true'`/`'false'`, because a `false`
+  attribute value is dropped and left the button unselectable in exactly the
+  state that matters. `reveal={false}` opts out.
 - **A `DateTime` column is `DateTimeInput`, and the conversion is the point.**
   Litestone stores an instant; `datetime-local` reads and writes a wall clock
   with no zone, so the naive wiring truncates the offset going in and hands
@@ -88,7 +107,27 @@ test/browser/ the kit drive — run.mjs (Chrome over CDP) · server.mjs (compile
   emits input** or the form's dirty tracking and blur-reveal cannot see the
   field. A name nobody bound renders nothing and says which half is missing.
 - **The live-validation rule lives in `Form.mesa`, once**: on input an error may
-  only be *removed*, never added. Do not re-implement it per control.
+  only be *removed*, never added. Do not re-implement it per control. A submit
+  reveals every field and then asks them — and **refuses only over a control the
+  form is SHOWING** (`FJS-316`). `make()` seeds every writable column, so a
+  hand-written form legitimately renders three of them and completes the rest in
+  its own `onsubmit`; refusing over the whole record makes such a form
+  unsubmittable with no message anywhere, which is what `basecamp`'s drive
+  caught.
+- **`$context.form` reports `disabled` and `submitting` separately, because
+  they do not mean the same thing to everything under a form.** A field locks on
+  either — typing into a form being saved edits a record already in flight —
+  and only a `type="submit"` button follows `submitting`, so Cancel stays live
+  during a slow save. A control resolves it as
+  `stated(disabled, form?.disabled || form?.submitting)`, which is why every
+  control's own `disabled` prop defaults to **`undefined`** and not `false`:
+  `stated()` takes the first non-null, so a `false` default would win and the
+  form could never answer.
+- **`method="auto"` is decided in the form, not by the service's `upsert`.**
+  The client's `upsert` is a convenience hardcoded to `data.id`, while the form
+  knows the model's real `idField` from the schema — the two disagree on any
+  model keyed by anything else, and the disagreement created a duplicate row
+  instead of editing one (`FJS-316`).
 - **`{...$attributes}` goes on the element the caller means, and that is not
   always the root.** Display, layout, feedback and overlay put it where
   `{class}` already goes; a form control puts it on the CONTROL, because a
@@ -103,6 +142,21 @@ test/browser/ the kit drive — run.mjs (Chrome over CDP) · server.mjs (compile
   (`submit()`, `reset()`, `clearErrors()`). It was dropped from the compiled
   output until mesa closed `FJS-087`, so those four had documented a method they
   did not have. `Form` also still hands the same three out through `onready`.
+- **A panel positioned in a frame callback must not be visible before that
+  frame.** The frame that PAINTS a newly inserted panel is the one before the
+  callback that places it — input is dispatched, mesa's flush inserts the
+  panel, style and paint run, and the `requestAnimationFrame` the handler
+  queued waits for the next frame — and `x`/`y` still hold the LAST open's
+  placement. So every open shows one frame wherever the trigger used to be,
+  and when that lands ON the trigger the click meant to close the panel falls
+  inside it, where click-away deliberately lets it through: the panel stays
+  open and nothing on screen says why (`FJS-331`). `DropdownMenu`, `Popover`
+  and `ConfirmationPopover` render `visibility: hidden` and are shown by the
+  frame that places them — not painted, not hit-tested, and no extra frame,
+  because `placed` reaches the DOM on the microtask inside that same frame.
+  **Focus goes after that flush, not before it**: focus is refused on a hidden
+  element. Assert it at INSERTION with a `MutationObserver`; a poll cannot see
+  a single frame.
 - **A local `<style>` may not name a class `@frontierjs/css` owns.** That is the
   only way a kit component silently changes the package for an app that never
   imports the kit. Two did and both are gone: `DropdownItem` styled `.item`
@@ -142,6 +196,13 @@ test/browser/ the kit drive — run.mjs (Chrome over CDP) · server.mjs (compile
   packages (`FJS-297`–`FJS-302`).
   - **A fixture is a component**, because a slot cannot be expressed as a props
     object. Props reach it as JSON, so a `Date` travels as a string.
+  - **The import map is what resolves a bare specifier, and there is no
+    guessing.** A subpath with no extension has to be spelled out. The
+    **toolbelt half is generated from that package's own `exports`**, because
+    the hand list held two kits while `field-rules` grew a third: the browser
+    failed to resolve `@frontierjs/toolbelt/jsonschema` and four form specs
+    died before their first assertion, reported as *spec threw*, which reads as
+    the drive being broken rather than as one missing line.
   - **Input goes through the pipeline** (`t.press`, `t.type`, `t.clickAt`). A
     dispatched `KeyboardEvent` is not trusted: it moves no focus, types no
     character and dismisses no `[popover]`.
@@ -152,6 +213,24 @@ test/browser/ the kit drive — run.mjs (Chrome over CDP) · server.mjs (compile
     carries `text: '\r'`.** Chrome synthesises a button's click from the
     character, so an Enter sent without one travels through every listener and
     activates nothing — indistinguishable from a component that ignores Enter.
+  - **A `[Mesa]` console warning fails the run.** The framework reports a
+    render it survived but corrupted — a duplicate `{#each}` key above all —
+    through `console.warn`, and the drive listened for `console.error` only. So
+    Mesa said exactly what was wrong with `Pagination`, in the browser, every
+    render, for as long as the component has existed (`FJS-315`).
+  - **`clickAt` scrolls an element into view when it is outside the viewport.**
+    A press is dispatched at viewport coordinates, so a control below the fold
+    used to be clicked at a point off-screen: the event landed elsewhere or
+    nowhere, and the assertion after it read as a component that ignores
+    clicks. What it tests is the POINT it is about to press, not the element:
+    a full-width field at the end of a long form has its top in view and its
+    centre past the bottom edge, which asking about the element misses. It
+    scrolls only when that point is out of view — a spec that has positioned
+    the page on purpose (where a popover flips) must not have that undone.
+  - **No backticks in a probe's own comments.** Everything passed to
+    `t.evaluate` is a template literal, so a backtick inside a comment in it
+    ends the string and the spec fails to parse — which reads as the drive
+    being broken rather than the spec. It has bitten twice.
   - **`--verbose` prints the passing assertions.** A spec that THROWS half way
     reports one failure and no clue how far it got; the rows are the only
     record.
@@ -184,6 +263,41 @@ test/browser/ the kit drive — run.mjs (Chrome over CDP) · server.mjs (compile
   `{#if open}`; the read used to answer `undefined`, so choosing an item never
   closed the menu. If a part of a compound component silently does nothing,
   check whether it is behind a conditional before blaming the part.
+- **A `const` consumer of `$context.x` is the VALUE, and it is live** — it
+  tracks the provider (Rule 25a), so it reads current inside a handler that
+  runs much later, and it is neither a getter to call nor a snapshot taken at
+  setup. `TabList` guarded with `typeof getActiveId === 'function'`; that
+  branch was dead. The shape reads as prudence and is really a second answer to
+  what a context read is.
+- **What a part registers with its parent, it registers as a getter.** `Tab`
+  hands `Tabs` `(id, () => disabled)`, because `disabled` is its own prop and
+  can change long after the registration ran — a copied boolean is a strip that
+  keeps stepping onto a tab the app has since turned off, and it passes every
+  assertion written against the initial state (`FJS-313`). Order in that
+  registry is mount order, and the default pick is taken from it, so a
+  `TabList` that defers a child changes which tab opens.
+- **A list with a keyboard cursor takes the pointer on `mousemove`, never on
+  `mouseenter`.** `mouseenter` fires when an ELEMENT arrives under a still
+  pointer, which is the ordinary case twice over: a ⌘K palette opens under
+  whatever the mouse was last left on, and arrow-keying a long list scrolls
+  rows under it. Either way the cursor jumps to a row nobody chose and Enter
+  runs it, with nothing on screen to distinguish that from the component
+  working (`FJS-322`). `mousemove` needs the pointer to actually move; guard
+  the assignment (`if (idx !== gi)`) since it fires per pixel.
+- **A control whose focus lives in a text box has to name the active row.**
+  `aria-selected` moving down a listbox says nothing to a screen reader while
+  focus never moves — the input needs `role="combobox"` and
+  `aria-activedescendant`, and the rows need ids. All three do it now
+  (`FJS-322`, `FJS-323`). Assert it through `document.getElementById`: an
+  `aria-activedescendant` naming an element that does not exist reads exactly
+  like one that works.
+- **A `$:` watch fires on CHANGE, so it cannot be where state is first built.**
+  `MultiSelect`'s option map was filled only by `$: options, () => …`, and a
+  caller handing over a static array changed nothing — the map stayed empty for
+  the life of the component and every dropdown said "No options" (`FJS-324`).
+  Seed at the declaration and let the watch merge what arrives later. The
+  symptom is silent in the ordinary case: the control renders, opens, and is
+  empty.
 - **A long action holds a toast HANDLE, it does not fire two of them.**
   `toasts.loading(msg)` answers `{ id, update(type, message, duration?),
   dismiss() }` and settles the same toast in place — `toasts.update(id, patch)`

@@ -26,9 +26,10 @@
   export let trigger   = null            // snippet
   export let content   = null            // snippet
 
-  let open = false
-  let x    = 0
-  let y    = 0
+  let open   = false
+  let x      = 0
+  let y      = 0
+  let placed = false                     // has THIS open been positioned yet
   let triggerEl
   let panelEl
 
@@ -48,9 +49,16 @@
 
   function openPopover() {
     if (open) { closePopover(); return }
-    open = true
+    // x and y still hold the LAST open's placement and the panel has to exist
+    // before it can be measured, so it renders hidden and the frame that
+    // places it shows it. Painted at the stale coordinates it appears where
+    // the trigger used to be — after a scroll that can be ON the trigger, and
+    // the click meant to close it then lands inside the panel, where
+    // click-away lets it through (FJS-331).
+    placed = false
+    open   = true
     // Position after mesa renders the panel into the portal
-    requestAnimationFrame(position)
+    requestAnimationFrame(() => { position(); placed = true })
     document.addEventListener('click', onClickAway, { capture: true })
   }
 
@@ -116,6 +124,7 @@
       style:position="fixed"
       style:left="{x}px"
       style:top="{y}px"
+      style:visibility="{placed ? 'visible' : 'hidden'}"
       {@attach panelAnim}
     >
       {@render content?.()}

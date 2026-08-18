@@ -330,6 +330,11 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
     }
 
     log(`  ✓ container built from ${source}, started and answered health on :${PORT}`)
+
+    const smoke = smokeAuth(app, PORT)
+    if (smoke) return fail(smoke.message, smoke.output + dockerLogs(container))
+    log(`  ✓ register + login answered at the prefix the app's own web config names`)
+
     return { findings, skipped: null }
 
   } finally {
@@ -347,6 +352,95 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
 function dockerLogs(container) {
   const r = exec('docker', ['logs', '--tail', '40', container], { verbose: false })
   return r.output ? `\n--- ${container} logs ---\n${r.output}` : ''
+}
+
+// ─── smoke: can a scaffolded app sign someone in? ──────────
+//
+// Everything above this grades whether the framework INSTALLS and whether the
+// container answers health. Neither can see the class FJS-252 was filed for: a
+// scaffold template written against behaviour only the working tree has, which
+// installs cleanly and fails at runtime.
+//
+// It was measured. The scaffold points its browser client at `apiPrefix` and the
+// auth plugin mounts through `app.post`, which is the one owner of that prefix
+// — so against a published auth that answered at a bare `/auth/*`, the first
+// thing anyone does was a 404 reading `Service 'auth' not found`. That app
+// installed, built and answered health, and nobody could log in.
+//
+// The prefix is read from the app's OWN web config rather than written here: the
+// claim under test is that the client and the server agree about it, and a
+// literal on this side would only ever agree with itself.
+//
+// `/manifest` is not asked. manifestPlugin is devOnly and the container runs
+// NODE_ENV=production, so the duplicate derived hooks of FJS-231 stay a
+// working-tree question that no deployed app can answer.
+//
+// Returns a finding, or null.
+
+function smokeAuth(app, port) {
+  const prefix = clientApiPrefix(app)
+  const base   = `http://127.0.0.1:${port}${prefix}`
+  const email  = `smoke-${process.pid}@ci.invalid`
+  const pass   = 'Sm0ke!Test-Passw0rd'
+
+  const reg = httpJson('POST', `${base}/auth/register`, { email, password: pass, name: 'CI Smoke' })
+  if (reg.status !== 201) return {
+    message: `POST ${prefix}/auth/register answered ${reg.status ?? 'nothing'}, expected 201` + prefixHint(reg.status, prefix),
+    output:  reg.body,
+  }
+
+  const login = httpJson('POST', `${base}/auth/login`, { email, password: pass })
+  if (login.status !== 200) return {
+    message: `POST ${prefix}/auth/login answered ${login.status ?? 'nothing'}, expected 200` + prefixHint(login.status, prefix),
+    output:  login.body,
+  }
+
+  // The scaffold sets `cookieAuth: false`, so the token is in the body. A 200
+  // carrying none is a session the app has no way to use.
+  let token
+  try { token = JSON.parse(login.body)?.token } catch { /* the finding below carries the body */ }
+  if (!token) return {
+    message: `POST ${prefix}/auth/login answered 200 with no token in the body`,
+    output:  login.body,
+  }
+
+  return null
+}
+
+// A 404 from an app that installed and built is almost never a sick app, and
+// reading it as one costs an afternoon.
+function prefixHint(status, prefix) {
+  if (status !== 404) return ''
+  return `\n      The app and the framework disagree about where auth is mounted. The scaffold's` +
+         `\n      web config points the browser client at '${prefix}' and app.post() is the one owner` +
+         `\n      of apiPrefix, so an @frontierjs/auth that mounts at a bare /auth/* leaves every` +
+         `\n      scaffolded app unable to log in (FJS-252). This is the only check that sees it.`
+}
+
+// The prefix the app's own browser client is configured with. A web-less
+// scaffold has no config and no prefix, which is what its API serves at.
+function clientApiPrefix(app) {
+  const config = join(app, 'web', 'config', 'sierra.config.js')
+  if (!existsSync(config)) return ''
+  const found = readFileSync(config, 'utf8').match(/apiPrefix:\s*['"`]([^'"`]*)['"`]/)
+  return found ? found[1] : ''
+}
+
+// curl rather than fetch: this file is synchronous end to end so ci.mjs can run
+// it as an ordinary phase, and there is no synchronous fetch.
+function httpJson(method, url, body) {
+  const r = exec('curl', [
+    '-s', '-X', method,
+    '-H', 'Content-Type: application/json',
+    '-d', JSON.stringify(body),
+    '-w', '\n%{http_code}',
+    '--max-time', '20',
+    url,
+  ])
+  const text = r.output ?? ''
+  const cut  = text.lastIndexOf('\n')
+  const code = cut === -1 ? NaN : Number(text.slice(cut + 1).trim())
+  return { status: Number.isFinite(code) && code ? code : null, body: cut === -1 ? text : text.slice(0, cut) }
 }
 
 function exec(cmd, argv, { verbose = false, ...opts } = {}) {
