@@ -67,3 +67,6 @@ temp/
 # byte-compared nor committed — its sibling `repo-atlas.snapshot.html` is the
 # one CI checks.
 repo-atlas.live.html
+
+# mesa
+_tmp_slots_*/

@@ -1,6 +1,0 @@
-<script>
-  import L from './SlotLayout.mesa'
-  import Page from './Page.mesa'
-</script>
-{#snippet s()}<Page />{/snippet}
-<L children={s}>{@render s()}</L>
