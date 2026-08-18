@@ -1108,12 +1108,42 @@ function note(message) {
   notes.push(message)
 }
 
+// ─── GitHub annotations ─────────────────────────────────────
+//
+// What a failing run says to someone who cannot read its logs — which is
+// everyone but a repository admin, because the Actions logs endpoint answers
+// `Must have admin rights to Repository` even for a public repo. Check-run
+// annotations are public, and until this existed the whole of what a ci.mjs
+// failure told a reader was `Process completed with exit code 1` (FJS-009).
+//
+// vitest already annotates its own failures — that is how the mesa fixture bug
+// was read off a runner with no credentials — and every phase that is not a
+// suite had nothing at all.
+//
+// Runner only: the escaping is noise in a terminal.
+
+function annotate(level, message) {
+  if (!process.env.GITHUB_ACTIONS) return
+  const title = String(message).split('\n')[0].slice(0, 120)
+  console.log(`::${level} title=${escapeProp(title)}::${escapeData(message)}`)
+}
+
+// The workflow-command grammar: a raw newline ends the command and a bare `%`
+// reads as the start of one of these escapes, so both have to go first.
+function escapeData(value) {
+  return String(value).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
+}
+
+function escapeProp(value) {
+  return escapeData(value).replace(/:/g, '%3A').replace(/,/g, '%2C')
+}
+
 function report() {
   const seconds = ((Date.now() - started) / 1000).toFixed(1)
 
   if (notes.length) {
     console.log(`\n─── notes ${'─'.repeat(45)}`)
-    for (const n of notes) console.log(`  · ${n}`)
+    for (const n of notes) { console.log(`  · ${n}`); annotate('notice', n) }
   }
 
   if (!problems.length) {
@@ -1125,6 +1155,7 @@ function report() {
   for (const p of problems) {
     console.log(`\n✗ ${p.message}`)
     if (p.output) console.log(renderOutput(p.output))
+    annotate('error', p.output ? `${p.message}\n\n${String(p.output).slice(0, 4000)}` : p.message)
   }
   console.log(`\n✗ CI failed in ${seconds}s\n`)
   process.exit(1)

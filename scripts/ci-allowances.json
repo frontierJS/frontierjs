@@ -26,9 +26,7 @@
     "packages/toolbelt/mockup/datetime": "The prototype the `/datetime` kit is being rebuilt from, parked under the same `mockup/` convention orion uses; it moved here with the rest of `packages/datetime-kit`, which is now a subpath of toolbelt rather than a package. Deliberately not a member: `extend()` throws on every call, `add(d, '1 day')` throws, and `src/cron.js` is a stale fork of the fixed one in caravan — installing it would put that on an import path. Reference for the rebuild described in IDEAS/datetime-kit.md, deleted when it lands."
   },
   "//knownTestFailures": "Packages whose own suite exits non-zero today. Listed so that a NEW failure is loud rather than lost in an already-red run. An entry whose suite now passes fails CI until it is removed — that is the ratchet, and `--update` removes it for you.",
-  "knownTestFailures": {
-    "packages/jetty": "FJS-030 — phase8 asserts the built islands/demo.js parses as a classic script and it does not: `Cannot use 'import.meta' outside a module`. MV3 content scripts are classic scripts. The other nine phases pass."
-  },
+  "knownTestFailures": {},
   "//knownDeployFailures": "Package sources whose deploy branch fails today, by name and reason. The `deploy` phase runs `fli new` → `make:deploy` → `deploy:local` once per source; `npm` grades the PUBLISHED framework and `local` the working tree, and they drift independently. Listed so a NEW failure is loud. An entry whose branch now passes fails CI until it is removed — `bun run ci -- --update` removes it.",
   "knownDeployFailures": {},
   "//knownUnpublished": "Packages the scaffold installs that npm cannot serve yet, by name and reason. The `registry` phase fails on any name not listed here, because a scaffolded app that cannot install is the framework's worst first impression. An entry whose package IS published fails CI until it is removed — that is the ratchet, and it is the day the allowance stops being true.",
