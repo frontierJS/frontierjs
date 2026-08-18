@@ -1454,7 +1454,16 @@ if (useAuth) {
     log.info('→ auth:install')
     runFli(context, ['auth:install'], finalTarget)
   } catch (e) {
-    log.warn(`auth:install failed: ${e.message} — you may need to run it manually after install`)
+    // Warning and continuing handed back an app that installs, builds, boots and
+    // answers health, and then 500s on the first register with `"user" is not a
+    // table in this schema` — auth:install is what puts the User model and the
+    // three credential models into db/schema.lite, so a failure here means
+    // --auth did not happen at all. It scrolled past inside a scaffold that
+    // reported success, and the only place it was ever seen was a CI runner
+    // (FJS-252). A scaffold that cannot sign anyone in is not a scaffold.
+    log.error(`auth:install failed: ${e.message}`)
+    log.error('  --auth did not happen — db/schema.lite has no User model and the app can register nobody.')
+    throw e
   }
 }
 

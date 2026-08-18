@@ -1,5 +1,26 @@
 # Changes
 
+## 2026-08-18 — `fli new --auth` no longer reports success when auth was never installed
+
+`auth:install` is what puts the `User` model and the three credential models
+into `db/schema.lite`. Its failure was caught, logged as a warning and stepped
+over, so `fli new --auth` went on to print `✓ <name> created` over an app where
+`--auth` had not happened.
+
+That app installs, builds, boots and answers health. It fails on the first thing
+anyone does: `POST /api/auth/register` → 500, `"user" is not a table in this
+schema`, thrown from `createUser` at the Data boundary. Three services instead
+of four, and nothing anywhere saying why.
+
+It had never been seen here, because `auth:install` has never failed on this
+machine. It failed on a CI runner, on both package sources at once, and the
+`deploy` phase's new register-and-login smoke is what caught it (`FJS-252`,
+`FJS-009`) — the health answer that ran before it was green.
+
+The failure is fatal now and says what it cost. `make:scaffold User` beside it
+stays a warning: the example slice is genuinely optional, and auth is not.
+
+
 ## 2026-08-17 — `body-tag-in-comment` stops crying wolf (`FJS-329`)
 
 The rule flagged any `<body` inside any comment. The hazard is narrower and

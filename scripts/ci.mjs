@@ -1153,9 +1153,10 @@ function report() {
 
   console.log(`\n─── ${problems.length} failure(s) ${'─'.repeat(35)}`)
   for (const p of problems) {
+    const output = outputText(p.output)
     console.log(`\n✗ ${p.message}`)
-    if (p.output) console.log(renderOutput(p.output))
-    annotate('error', p.output ? `${p.message}\n\n${String(p.output).slice(0, 4000)}` : p.message)
+    if (output) console.log(output)
+    annotate('error', output ? `${p.message}\n\n${output.slice(0, 4000)}` : p.message)
   }
   console.log(`\n✗ CI failed in ${seconds}s\n`)
   process.exit(1)
@@ -1208,6 +1209,16 @@ function isSourcePath(path) {
 
 // Both streams get their own tail, labelled, because either one alone can be
 // the whole story and neither is reliably the one that carries it.
+// A phase reports its output in one of two shapes and both reach here: a spawned
+// suite carries `{stdout, stderr}`, and a phase that ran something itself — the
+// deploy pipeline, the scaffold — carries the text it captured. Destructuring a
+// string yields three undefineds, so the second shape printed NOTHING under its
+// finding and annotated as `[object Object]`.
+function outputText(output) {
+  if (!output) return ''
+  return typeof output === 'string' ? output : renderOutput(output)
+}
+
 function renderOutput({ stdout, stderr, ci }) {
   const parts = []
   // A phase that reports its own `ci` note carries neither stream, and the
