@@ -12,25 +12,27 @@ import { renderComponent, renderFile } from '../src/render-component.js'
 import { initRenderer } from '../src/render.js'
 
 // ── Test fixtures directory ───────────────────────────────────────────────────
-const FIXTURES = path.join('/tmp', 'mesa-render-test-' + Date.now())
+// Every `cwd:` below is this directory and fixture() writes into it, so it has to
+// exist before the first test runs. It was not created: beforeAll made a
+// per-run directory nothing ever used, and the seven tests that call fixture()
+// only passed on a machine where /tmp/mesa happened to survive from something
+// else. A fresh runner has no such directory and all seven die on ENOENT — the
+// first thing CI found that no local run could (FJS-009).
+const FIXTURES = '/tmp/mesa'
 
 beforeAll(async () => {
   await mkdir(FIXTURES, { recursive: true })
-  // copy package.json so @frontierjs/mesa resolves from the fixture dir
-  // by symlinking node_modules — simplest: write fixtures into /tmp/mesa directly
 })
 
 afterAll(async () => {
-  // Cleanup fixture files
   const files = ['Badge.mesa', 'Card.mesa', 'Email.mesa', 'Static.mesa', 'WithStore.mesa']
   for (const f of files) {
-    try { await unlink(path.join('/tmp/mesa', f)) } catch {}
+    try { await unlink(path.join(FIXTURES, f)) } catch {}
   }
 })
 
-// Write a fixture file into /tmp/mesa so @frontierjs/mesa resolves
 async function fixture(name, content) {
-  const p = path.join('/tmp/mesa', name)
+  const p = path.join(FIXTURES, name)
   await writeFile(p, content)
   return p
 }

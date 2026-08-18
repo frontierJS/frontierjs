@@ -1,5 +1,22 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-18 — `render-component` created a fixture directory nothing used, and wrote into one nothing created
+
+Seven tests wrote `.mesa` fixtures into `/tmp/mesa` and every `cwd:` in the file
+pointed there, but `beforeAll` created `/tmp/mesa-render-test-<timestamp>` — a
+per-run directory no test ever referenced. On a machine where `/tmp/mesa`
+survived from something else the suite passed; on one where it did not, all
+seven died with `ENOENT: no such file or directory`.
+
+Nothing here could see it. Every local run was on a machine that had already
+made the directory, so this was the first defect a CI runner found that no local
+run can (`FJS-009`). Read off the check-run ANNOTATIONS rather than the logs,
+which need admin rights on the repository even when it is public.
+
+`FIXTURES` is `/tmp/mesa` now and `beforeAll` creates it. 34/34 with the
+directory deleted first.
+
+
 ## 2026-08-17 — `waitSettled` answers whether anything is still MOVING
 
 The probe asked `getAnimations({ subtree: true })` for an empty list. An
