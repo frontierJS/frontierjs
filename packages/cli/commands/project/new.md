@@ -1102,8 +1102,7 @@ function runFli(context, args, cwd) {
   // found`, so `fli:init` and `auth:install` did not run and the scaffold came
   // out with no User model — an app that installs, builds, boots, answers health
   // and can register nobody (FJS-252, found on a runner).
-  const bin = resolve(global.fliRoot, 'bin', 'fli.js')
-  const cmd = [process.execPath, bin, ...args].map(a => JSON.stringify(a)).join(' ')
+  const cmd = [context.fli, ...args.map(a => JSON.stringify(a))].join(' ')
   context.exec({ command: cmd, cwd, stdio: 'inherit' })
 }
 </script>

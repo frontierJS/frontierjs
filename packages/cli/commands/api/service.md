@@ -19,6 +19,6 @@ flags:
 
 ```js
 context.exec({
-  command: `fli make:service ${arg.model}${flag.open ? ' --open' : ''}${flag.dry ? ' --dry' : ''}`
+  command: `${context.fli} make:service ${arg.model}${flag.open ? ' --open' : ''}${flag.dry ? ' --dry' : ''}`
 })
 ```

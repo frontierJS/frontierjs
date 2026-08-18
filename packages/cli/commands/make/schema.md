@@ -28,6 +28,6 @@ flags:
 const { callCommand } = await import(resolve(global.fliRoot, 'core/bootstrap.js')).catch(() => ({}))
 log.info(`Delegating to make:model ${arg.model}...`)
 context.exec({
-  command: `fli make:model ${arg.model}${flag.service ? ' --service' : ''}${flag.open ? ' --open' : ''}${flag.dry ? ' --dry' : ''}`
+  command: `${context.fli} make:model ${arg.model}${flag.service ? ' --service' : ''}${flag.open ? ' --open' : ''}${flag.dry ? ' --dry' : ''}`
 })
 ```

@@ -82,7 +82,7 @@ if (shell === 'fish') {
   }
 
   mkdirSync(fishDir, { recursive: true })
-  context.exec({ command: `fli completion:generate --shell fish > "${fishFile}"` })
+  context.exec({ command: `${context.fli} completion:generate --shell fish > "${fishFile}"` })
   log.success(`Fish completions written → ${fishFile}`)
   log.info(`Completions are active in new fish sessions automatically.`)
   return

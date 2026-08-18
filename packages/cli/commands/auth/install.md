@@ -357,7 +357,7 @@ if (encKeyExists) {
 } else if (flag.dry) {
   log.dry('Would generate ENCRYPTION_KEY (64 hex chars) → .env')
 } else {
-  context.exec({ command: `cd ${context.paths.root} && fli keygen aes --name ENCRYPTION_KEY --env --format hex` })
+  context.exec({ command: `cd ${context.paths.root} && ${context.fli} keygen aes --name ENCRYPTION_KEY --env --format hex` })
   log.success('Generated ENCRYPTION_KEY → .env')
 }
 
@@ -370,7 +370,7 @@ if (authSecretExists) {
 } else if (flag.dry) {
   log.dry('Would generate AUTH_SECRET (64 hex chars) → .env')
 } else {
-  context.exec({ command: `cd ${context.paths.root} && fli keygen --name AUTH_SECRET --env --format hex --length 32` })
+  context.exec({ command: `cd ${context.paths.root} && ${context.fli} keygen --name AUTH_SECRET --env --format hex --length 32` })
   log.success('Generated AUTH_SECRET → .env')
 }
 
@@ -398,8 +398,19 @@ if (!flag.dry && existsSync(envPath)) {
   }
 }
 
+// The push needs the litestone BINARY, which only exists once the app's
+// dependencies are installed. `fli new --no-install` and `npm create frontier`
+// both reach here with an empty node_modules, and there the push is not a
+// failure — it is a step that cannot have happened yet. Said rather than
+// swallowed: the schema is written either way, and the row it would have
+// created is one `bun install` away.
+const litestoneBin = resolve(context.paths.root, 'node_modules', '.bin', 'litestone')
+
 if (flag.dry) {
   log.dry('Would run: fli db:push')
+} else if (!existsSync(litestoneBin)) {
+  log.warn('Skipped the schema push — node_modules is empty, so there is no litestone to run')
+  log.info('  Run `bun install`, then `fli db:push`. The schema itself is already written.')
 } else {
   log.info('Pushing schema to database...')
   context.exec({

@@ -1,5 +1,29 @@
 # Changes
 
+## 2026-08-18 — `context.fli` is the one way a command invokes fli
+
+Six command files shelled out to a bare `fli`. That is a GLOBAL install, and
+fixing `project/new.md`'s `runFli` alone moved the wall rather than removing it:
+the next runner failed inside `auth:install` on
+`fli keygen aes --name ENCRYPTION_KEY --env`, which is the step the key comes
+from — so the push that follows had no key and the app still came out with no
+`User` model.
+
+`context.fli` is the running cli, quoted and ready to prefix a shell command,
+built once in `core/runtime.js` from `global.fliRoot` and `process.execPath`.
+All six sites use it: `auth/install.md` ×2, `api/model.md`, `api/service.md`,
+`make/schema.md`, `completion/install.md`.
+
+Beside it, `auth:install` no longer treats an empty `node_modules` as a failure.
+The schema push needs the litestone BINARY, which exists only after
+`bun install` — `fli new --no-install` and `npm create frontier` both arrive
+before that. It says so and carries on; the schema itself is already written.
+
+Proven the only way that means anything: `fli new --auth` with a clean
+environment and no `fli` anywhere on PATH now exits 0 with `model User` in the
+schema and `users.service.ts` generated.
+
+
 ## 2026-08-18 — `fli outbox:install` could not be loaded at all
 
 Two unescaped backticks inside `wiringHint`'s template literal — the line

@@ -218,6 +218,19 @@ export async function Command({ file, arg, flag, emit }) {
 
   config.run   = run.bind(config)
   config.paths = buildPaths()
+
+  // ─── context.fli — how a command invokes fli ───────────────────────────────
+  //
+  // The RUNNING cli, quoted and ready to prefix a shell command. Never a bare
+  // `fli`: that is a GLOBAL install, present for anyone who has run `bun add -g`
+  // and on no CI runner, in no container, and for nobody who arrived through
+  // `npm create frontier` — there it is `/bin/sh: 1: fli: not found`, and a
+  // command that composes others silently does half its job. It is also how a
+  // command in this tree gets tested against a DIFFERENT build of itself, which
+  // is the shape that hid FJS-343 for as long as it stood.
+  //
+  //   context.exec({ command: `cd ${root} && ${context.fli} keygen aes --env` })
+  config.fli = `${JSON.stringify(process.execPath)} ${JSON.stringify(join(global.fliRoot, 'bin', 'fli.js'))}`
   config.env   = process.env
   config.env.browser ??= env.BROWSER || 'firefox'
 
