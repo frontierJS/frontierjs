@@ -19,6 +19,7 @@
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }        from 'node:path'
 import { createTestEnv, session } from '@frontierjs/testing'
+import { signRequest } from '@frontierjs/toolbelt/signature'
 import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/core/app.ts'
@@ -29,6 +30,9 @@ const ENC_KEY    = '0'.repeat(64)
 
 let env: any
 let ws: any, owner: any, developer: any, viewer: any, outsider: any
+// A machine of its own, so the signature tests do not move a server another
+// test is asserting the status of.
+let machine: any
 
 beforeAll(async () => {
   env = await createTestEnv({
@@ -63,6 +67,12 @@ beforeAll(async () => {
   owner = at(o); developer = at(d); viewer = at(v)
   // A real account with no membership anywhere in this workspace — VISITOR(1).
   outsider = at(x)
+
+  // The machine the outpost-signature tests check in as. Its own row, so those
+  // tests never move a server another test is asserting the status of.
+  machine = await sys.server.create({
+    data: { workspaceId: ws.id, name: 'outpost-01', slug: `outpost-${uniq()}`, status: 'pending' },
+  })
 
   // A SECOND workspace with a project in it. Without one, "a member sees their
   // own workspace" is true of a database that has only one, which is a test
@@ -351,5 +361,129 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
     // for one declared name, not an amnesty.
     await expect(env.as(owner).service('projects').find({ workspace_id: ws.id, bogusColumn: 7 }))
       .rejects.toThrow(/bogusColumn/)
+  })
+})
+
+// ─── The application trail ───────────────────────────────────────────────────
+// `AuditEvent.diff` is `Json?` and nothing wrote it, so the trail could say a
+// server was drained and not what state it was in (FJS-154). The row-level
+// `@@log(audit)` JSONL carries before/after on the host; the application trail,
+// which is the one the UI reads, did not.
+describe('the audit trail records what changed', () => {
+  test('a custom method writes a before/after diff', async () => {
+    const sys = env.system as any
+
+    const server = await sys.server.create({
+      data: { workspaceId: ws.id, name: 'audit-01', slug: `audit-${Math.random().toString(36).slice(2, 8)}`, status: 'online' },
+    })
+
+    // `call(name, id, data, opts)` is the server-side spelling of a custom
+    // method — `invoke` is the browser client's.
+    await env.as(owner).service('servers').call('drain', server.id)
+    // The write is awaited inside the hook, but the hook is an `after` — yield
+    // once so the row is queryable.
+    await new Promise(r => setImmediate(r))
+
+    const rows = await sys.auditEvent.findMany({
+      where:   { action: 'servers.drain', subjectId: server.id },
+      orderBy: { createdAt: 'desc' },
+    })
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows[0].diff).toBeTruthy()
+    expect(rows[0].diff.status).toEqual({ before: 'online', after: 'draining' })
+  })
+
+  test('a protected column reports that it changed and never what to', async () => {
+    // `Secret.value` is `@encrypted`: the trail must say the value moved and
+    // must not be a second, plaintext copy of it. The list of protected columns
+    // is litestone's own reading of the schema (`$protectedFields`), so a new
+    // `@secret` is covered without an edit here.
+    const before = await env.as(owner).service('secrets').create({
+      name: `TRAIL_${Math.random().toString(36).slice(2, 8)}`, kind: 'generic', data: 'first-value',
+    })
+    const created = ((before as any).data ?? before) as Record<string, unknown>
+
+    // `Secret.version` is `@version`, so an update states the revision it read.
+    await env.as(owner).service('secrets').patch(created.id as string,
+      { data: 'second-value', version: created.version })
+    const id = created.id as string
+    await new Promise(r => setImmediate(r))
+
+    const rows = await (env.system as any).auditEvent.findMany({
+      where:   { action: 'secrets.patch', subjectId: id },
+      orderBy: { createdAt: 'desc' },
+    })
+    expect(rows.length).toBeGreaterThan(0)
+    // `data` is the COLUMN — `value` is what the service takes and what it
+    // encrypts into `Secret.data`. The trail records columns.
+    const changed = rows[0].diff as Record<string, { before: unknown; after: unknown }>
+    expect(changed.data).toEqual({ before: '[redacted]', after: '[redacted]' })
+    expect(JSON.stringify(changed)).not.toContain('second-value')
+    expect(JSON.stringify(changed)).not.toContain('first-value')
+  })
+})
+
+// ─── The endpoints a MACHINE calls ───────────────────────────────────────────
+// `servers.heartbeat`, `volumes.report` and `cleanup.report` are exempted from
+// sessionScope because an outpost holds no session. Until 2026-08-19 that
+// exemption was the whole of the authentication and a comment claimed the
+// transport verified an HMAC — nothing did (`FJS-349`). Measured against a
+// running API at the time: an unsigned POST moved a server to `online` and
+// registered its Conduit target at an address the caller chose, which points
+// every later /exec, /deploy and /system/prune for that machine at a host the
+// caller owns, signed with this app's own secret.
+describe('an outpost endpoint takes a signature or nothing', () => {
+  const SECRET = process.env.OUTPOST_SECRET ?? 'outpost-dev-secret'
+
+  /** The same headers conduit sends, from the same module it signs with. */
+  async function signed(path: string, body: unknown) {
+    return signRequest({
+      secret: SECRET, method: 'POST', path, body: JSON.stringify(body),
+      // Stated, because the kit is pure and takes neither.
+      timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+    })
+  }
+
+  test('unsigned is refused, and it is a 401 rather than a service error', async () => {
+    const res = await env.http.post(`/servers/${machine.id}`)
+      .set('x-service-method', 'heartbeat')
+      .send({ outpost_version: '9.9.9', outpost_url: 'http://attacker.invalid' })
+    expect(res.status).toBe(401)
+
+    const after = await (env.system as any).server.findUnique({ where: { id: machine.id } })
+    expect(after.status).toBe('pending')
+    expect(after.outpostVersion).toBeNull()
+  })
+
+  test('signed is accepted', async () => {
+    const body = { outpost_version: '0.4.1', health: { cpu: 4, memory: 20 } }
+    const req  = env.http.post(`/servers/${machine.id}`).set('x-service-method', 'heartbeat')
+    for (const [k, v] of Object.entries(await signed(`/servers/${machine.id}`, body))) req.set(k, v)
+
+    const res = await req.send(body)
+    expect(res.status).toBe(200)
+
+    const after = await (env.system as any).server.findUnique({ where: { id: machine.id } })
+    expect(after.status).toBe('online')
+    expect(after.outpostVersion).toBe('0.4.1')
+  })
+
+  test('a signature does not move to another endpoint', async () => {
+    // The one that matters: /health-check is harmless and /exec runs a shell
+    // command, so a signature bound to the path is what stops the first
+    // becoming the second.
+    const body = { server_id: machine.id, volumes: [] }
+    const req  = env.http.post('/volumes').set('x-service-method', 'report')
+    for (const [k, v] of Object.entries(await signed(`/servers/${machine.id}`, body))) req.set(k, v)
+
+    expect((await req.send(body)).status).toBe(401)
+  })
+
+  test('the body cannot be swapped under a good signature', async () => {
+    const honest = { outpost_version: '0.4.1', outpost_url: 'http://outpost.internal:7810' }
+    const req    = env.http.post(`/servers/${machine.id}`).set('x-service-method', 'heartbeat')
+    for (const [k, v] of Object.entries(await signed(`/servers/${machine.id}`, honest))) req.set(k, v)
+
+    expect((await req.send({ ...honest, outpost_url: 'http://attacker.invalid' })).status).toBe(401)
   })
 })

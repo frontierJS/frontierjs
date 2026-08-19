@@ -1,9 +1,9 @@
-# Handoff — 2026-08-16
+# Handoff — 2026-08-19
 
-> **Basecamp declares `@@gate` on all 37 models and `@@allow` on one** — `Server`,
-> as of 2026-08-10. The gate ladder is per WORKSPACE, not per user, which is why
-> `example/api/gate.ts` could not be copied; the policy is graded off the same
-> principal. Every screen whose blocker was an API is built —
+> **Basecamp declares `@@gate` on all 38 models**, and 16 of them keep their
+> tenancy in the schema too. The gate ladder is per WORKSPACE, not per user,
+> which is why `example/api/gate.ts` could not be copied; the policy is graded
+> off the same principal. Every screen whose blocker was an API is built —
 > `packages/basecamp/docs/SCREENS.md` is the map, 41 mock screens, **31 built**.
 
 Session state for picking up cold. Read `CLAUDE.md` first (the map), then this.
@@ -12,6 +12,152 @@ Everything below was verified by running it, not by reading. Where I could not
 verify something, it says so.
 
 **Sessions are recorded here, newest first.**
+
+---
+
+## A second human can get in (2026-08-19)
+
+`FJS-032`, the next one on the S2 ranking after the deploy plane, and the only
+one of the five left whose blocker was work rather than a decision.
+
+**Basecamp's one door for a human was the setup wizard.**
+`workspaces.addMember` takes a `userId`, so it could only reach somebody who
+already had an account, and `/auth/register` — the one route that makes one —
+leaves them with no account row and no workspace, after which every scoped
+request 400s and they cannot create a workspace either.
+
+`model Invitation` is an offer of membership to an **email address**, which is
+the thing that carries a workspace and a role across the gap where there is no
+user to hang them on. Three columns on `WorkspaceMember` — `invitedBy`,
+`invitedAt`, `acceptedAt` — had been declared since the schema was written and
+nothing had ever written one; accepting writes all three and deletes the
+invitation, so the row IS the pending state and there is no second place a
+membership's origin is recorded.
+
+**`invitations.preview` and `.accept` are the app's only unauthenticated service
+methods.** They have to be: the population they serve is not a member yet and
+may not exist yet. The `@guarded(all)` token is the credential — no scoped read
+can answer it, so the link is shown once, the shape an issued API key already
+had — and everything a token cannot decide (unknown, expired, workspace gone,
+workspace suspended) is decided in one function, because none of the hooks that
+normally decide it are running. An address that already has an account must be
+signed in as that account; taking a password on this method would be a second
+login door with none of the first one's rate limiting, and an oracle when it
+refuses.
+
+**Mail is now real and its absence is honest.** `api/src/core/mailer.ts` is
+`IMail` over `app.conduit.send()` — a declared target with a credential ref
+rather than a key in a closure — and `app.mail` is ABSENT where nothing is
+configured. That is the design, not a gap: a fleet console that cannot mail is
+ordinary, and a screen that looks like it sent something is not. The invitation
+issues a working link either way and says which happened. Two env pairs decide
+it (`MAIL_URL`/`MAIL_API_KEY`, else `RESEND_API_KEY`), and `APP_URL` is where a
+link points, named rather than derived from a request's Host.
+
+**Three defects, all found by running it.** The drive is 301/301 with 21 new
+checks, and it grew a mail sink on 8121 so the mail half is graded by a provider
+over a real socket rather than by the app's own claim.
+
+- `POST /workspaces` 400d for any caller that did not send its own slug
+  (`FJS-352`). `create()` derived it in the METHOD and `autoValidate` runs
+  first — the same ordering `stampOwnership` in that file already exists for,
+  with `accountId` and `ownerId` in it and `slug` left behind. Only the browser
+  called it, and its form sends a slug.
+- The invite screen asked *does this address have an account* before *who is
+  holding this browser*, so an owner following a link to check it was one click
+  from creating somebody else's account with no mention of the session they
+  were in.
+- `web/config/api-paths.js` was missing `/invitations`, and its own comment said
+  why that is harmless — wrongly. The Junction client uses `location.origin`, so
+  it goes through the dev proxy like everything else; what actually hides a gap
+  is the WEBSOCKET, which carries every service call for a SIGNED-IN browser
+  under one rule that cannot go stale. The HTTP path is exercised only where
+  there is no socket, which is exactly what accepting an invitation is.
+
+**And one framework defect it turned up, now closed too**: `FJS-351`. Litestone's
+`generateValidationCases` built every case from ONE attribute with no idea what
+else sat on the field, and both halves of that were wrong once a column carried
+two rules. A boundary claimed a value the field REFUSED — measured at 8 of 12
+false on a six-field schema, 4 of 6 fields reported broken when nothing was —
+and an invalid case was refused by somebody ELSE's rule while counting as proof
+of its own, so `@length` could be deleted from `validate.js` with the check
+still green and a mutant that widened it survived.
+
+Closed against one judge: `validateField`, now exported from `core/validate.js`,
+because a table of formats in the generator would be a second definition of
+every rule. The repair is format-blind — grow or trim the factory's own valid
+sample and ask the validators — so an email grows in front of its own domain and
+`@startsWith("ORD-")` keeps its prefix with nothing here knowing either word;
+shrinking works on alphanumeric RUNS and leaves punctuation alone, which turns
+`email1@example.com` into `e@e.c` at five characters. What cannot be isolated is
+`uncheckable`: named out loud, never dropped.
+
+`Invitation.email` carries `@email @length(6, 200)` again — **6 and not 5**
+because `a@b.c` is the shortest string `@email` accepts, so a bound sitting on
+the format's own floor can never be violated by anything still an email, and the
+runner now says so rather than passing.
+
+Green: litestone 2373 · junction 1232 · testing 23 · basecamp 132 · `verify`
+301/301 · `verify:build` 8/8 · `ci:fast` pass · typecheck 15 against a baseline
+ratcheted 16 → 15.
+
+---
+
+## The deploy plane got hands, and the door it knocks on got a lock (2026-08-19)
+
+Started as *rank basecamp's S2 issues*. The ranking put `FJS-257` first because
+its cone is the widest, and everything below followed from actually opening it.
+
+**A deploy reported six green steps and issued no command.** `runStep` returned
+early when no placement resolved and the caller marked each step `success`.
+`api/src/engine/executor.ts` is now the one owner of *who carries out a release*
+— a registered outpost, the named stub (`BASECAMP_STUB_OUTPOST=1`, refused in
+production, and it writes *no /deploy was issued* into every step it touches),
+or a refusal — asked at `deployments.create` so the 400 lands where the button
+is, and again in the engine because a placement can be removed in between.
+
+**The gap under it was wider than the row said**: `AppServer` was read by three
+engines and written by nothing — no service, no seed, no screen — so refusing a
+placement-less deploy would have bricked Deploy for everyone. `apps.place` /
+`apps.unplace` write that gate-8 row through `asSystem()` after checking the
+caller against the workspace; the App screen edits it and the seed uses it.
+
+**Then the wire contract turned out to have no lock on it.** Reading what the
+Outpost would have to speak, I found `servers.heartbeat`, `volumes.report` and
+`cleanup.report` exempted from `sessionScope` behind a comment saying the
+transport verified an HMAC. Nothing did, anywhere. Measured against a running
+API: an unsigned POST answered **200**, moved a server to `online`, and
+registered the Conduit target at `http://attacker.invalid:9999` — which points
+every later `/exec`, `/deploy` and `/system/prune` for that machine at a host
+the caller owns, signed with basecamp's own secret. Filed and closed as
+`FJS-349`; the scheme now has one owner in `@frontierjs/toolbelt/signature`,
+conduit signs with it, basecamp verifies with it, and junction grew
+`ctx.$raw.rawBody` because a signature is over bytes.
+
+**`packages/outpost` exists.** The route table is read off the call sites that
+have been sending to nothing, not invented — and the first test found the first
+defect: the bodies are snake_case on the wire, and a route passing one straight
+through addressed a container called `fjs-undefined`. basecamp's drive runs the
+REAL server over an injected docker runner, so both sides of the protocol are
+graded rather than restated.
+
+Also closed on the way: `FJS-031` (every service broadcast every read to the
+whole workspace — 17 services now declare `channel:` instead of running a
+publish hook), `FJS-154` (the audit trail said *what happened* and never *what
+changed*; both sides of the diff are read through the system client, because a
+scoped read strips protected columns and made an `@encrypted` rotation look like
+a removal), and `FJS-350` (junction's test request fired on the microtask queue,
+so an `await` before `.send()` silently sent nothing).
+
+**Three checks in basecamp's drive had gone stale against its own shell** —
+*Sign out* moved into a `{#if open}` dropdown, the login inputs had no stated
+`id`, the nav left the topbar. Each read as a broken app. `bun run verify` was
+red on main before any of this.
+
+Green at the end: litestone 2369 · junction 1232 · conduit 193 · toolbelt 83 ·
+basecamp 132 · outpost 19 · cli 668 · `verify` 279/279 · `verify:build` 8/8 ·
+`ci:fast` pass. What is still not proven is a real Docker daemon — `FJS-257`
+says so and names the parse most likely to be wrong.
 
 ---
 

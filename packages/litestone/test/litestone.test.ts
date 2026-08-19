@@ -6660,6 +6660,37 @@ describe('onLog callback', () => {
     db.$close()
   })
 
+  // $protectedFields — the same contract as $checkWhere: a fact about the
+  // schema, so every flavour of client answers it identically, and an unknown
+  // accessor answers {} rather than throwing.
+  test('$protectedFields names the columns a trail must not write down', async () => {
+    const db: any = await createClient({
+      schema: `
+        model Vault {
+          id      Int    @id @default(autoincrement())
+          name    String
+          token   String @encrypted
+          apiKey  String @guarded(all)
+          pw      String @hashed
+        }
+      `,
+      db: ':memory:',
+      encryptionKey: 'a'.repeat(64),
+    })
+
+    expect(db.$protectedFields('vault')).toEqual({ token: 'encrypted', apiKey: 'guarded', pw: 'hashed' })
+    // Not a judgement about the caller: a system client is told the same thing.
+    for (const client of [db, db.asSystem(), db.$setAuth({ id: 1 }), db.$scopedBy({})])
+      expect(client.$protectedFields('vault')).toEqual({ token: 'encrypted', apiKey: 'guarded', pw: 'hashed' })
+    // "I cannot judge this" is not "nothing here is protected" — but an empty
+    // object is the honest answer for a model that declares none, and the
+    // caller cannot tell the two apart, which is why an unknown accessor is a
+    // programming error the boundary catches elsewhere.
+    expect(db.$protectedFields('nosuchthing')).toEqual({})
+    expect(Reflect.ownKeys(db)).toContain('$protectedFields')
+    db.$close()
+  })
+
   test('onLog return value merges actorId into entry', async () => {
     const written: any[] = []
     const db = await makeLogDb((entry) => {
@@ -11019,7 +11050,7 @@ describe('generateTypeScript — emits the surface a real client has', () => {
     const members = [
       'asSystem', '$setAuth', '$scopedBy', '$transaction', 'sql', '$tapQuery',
       '$backup', '$attach', '$detach', '$rotateKey', '$close',
-      '$checkWhere', '$checkOrderBy',
+      '$checkWhere', '$checkOrderBy', '$protectedFields',
       '$schema', '$databases', '$softDelete', '$enums', '$cacheSize', '$attached',
       '$rawDbs', '$walStatus',
     ]
@@ -14167,6 +14198,119 @@ describe('createTestEnv', () => {
     expect(bad.length).toBeGreaterThan(0)
     expect(bad.every((m: any) => m.field === 'handle' && m.expect === 'accepted')).toBe(true)
     expect(bad[0].message).toMatch(/allows this value and the write was refused/)
+    env.close()
+  })
+
+  // ── FJS-351 — a case has to isolate the rule it names ────────────────────
+  //
+  // Every case is built from ONE attribute, and both halves of that were wrong
+  // once a field carried two rules: a boundary claimed a value the field
+  // refused, and an invalid case was refused by somebody else's rule while
+  // counting as proof of its own.
+  // The lower bounds are one above each format's own floor, measured rather than
+  // guessed: the shortest string litestone's `@email` accepts is `a@b.c` at
+  // five and its `@url` is `http://a.b` at ten. A bound AT the floor is
+  // exercisable in one direction only and says so — the `model B` case below.
+  const TWO_RULE_SCHEMA = `
+    model A {
+      id    Int    @id
+      email String @email  @length(6, 200)
+      site  String @url    @length(11, 60)
+      ref   String @startsWith("ORD-") @length(8, 20)
+      plain String @length(3, 20)
+    }
+  `
+
+  test('a boundary is built so every OTHER rule on the field accepts it too', async () => {
+    // `'x'.repeat(200)` is not an email, so this used to report a correct
+    // schema as broken — *@length allows this value and the write was refused*
+    // — and the fix a reader reaches for is deleting a rule from the schema.
+    const env = await createTestEnv({ schema: TWO_RULE_SCHEMA })
+    expect(await env.verifyConstraints()).toEqual([])
+    env.close()
+  })
+
+  test('…and the value comes from the field\'s own shape, not from a table of formats', () => {
+    const parsed = parse(TWO_RULE_SCHEMA)
+    const cases  = generateValidationCases(parsed.schema!, 'A')
+
+    const boundaryFor = (field: string) =>
+      cases.boundary.filter((c: any) => c.field === field).map((c: any) => c.value as string)
+
+    // The judge is `validateField` — the function that decides this on a real
+    // write — so an email grows in front of its own domain and a prefixed
+    // reference keeps its prefix, with the generator knowing neither rule.
+    for (const v of boundaryFor('email')) expect(v).toContain('@')
+    for (const v of boundaryFor('site'))  expect(v.startsWith('http')).toBe(true)
+    for (const v of boundaryFor('ref'))   expect(v.startsWith('ORD-')).toBe(true)
+    // A field with one rule is untouched: the repair only runs where something
+    // on the field actually refuses the generated value.
+    expect(boundaryFor('plain').sort()).toEqual(['x'.repeat(20), 'x'.repeat(3)].sort())
+
+    // Lengths are exactly the declared bounds — the repair changes content, not
+    // the count, or it would stop being a boundary.
+    expect(boundaryFor('email').map(v => v.length).sort((a, b) => a - b)).toEqual([6, 200])
+    expect(boundaryFor('ref').map(v => v.length).sort((a, b) => a - b)).toEqual([8, 20])
+  })
+
+  test('an invalid case fails ONLY the rule it names', () => {
+    const parsed = parse(TWO_RULE_SCHEMA)
+    const cases  = generateValidationCases(parsed.schema!, 'A')
+
+    // `@url`'s `'not-a-url'` is nine characters, so on a `@length(10, 60)`
+    // column it was refused by the wrong rule. Here the length is incidental
+    // and free to move; on a `@length` case it is the violation and cannot.
+    const urlCase = cases.invalid.find((c: any) => c.field === 'site' && c.rule === '@url') as any
+    expect(urlCase.value.length).toBeGreaterThanOrEqual(11)
+
+    // Both sides of `@length(6, 200)`, and both are still emails — so the only
+    // rule with anything to say about either is the one the case names.
+    const lengthCases = cases.invalid
+      .filter((c: any) => c.field === 'email' && String(c.rule).startsWith('@length'))
+      .map((c: any) => c.value as string)
+    expect(lengthCases.map(v => v.length).sort((a, b) => a - b)).toEqual([5, 201])
+    for (const v of lengthCases) expect(v).toContain('@')
+  })
+
+  test('a rule that cannot be isolated is REPORTED, never quietly dropped', async () => {
+    // The shortest string litestone's `@email` accepts is `a@b.c`, so a lower
+    // bound of 3 on that column can never be exercised — the rule is dead in
+    // the schema. Saying so is the point: a boundary that stops being asked
+    // about is this runner's own failure mode, one layer up.
+    const parsed = parse(`
+      model B { id Int @id  email String @email @length(3, 200) }
+    `)
+    const cases = generateValidationCases(parsed.schema!, 'B') as any
+    expect(cases.uncheckable.length).toBeGreaterThan(0)
+    expect(cases.uncheckable[0].message).toMatch(/was NOT checked/)
+    expect(cases.uncheckable[0].blockedBy.join(' ')).toMatch(/valid email/)
+
+    const env = await createTestEnv({ schema: `
+      model B { id Int @id  email String @email @length(3, 200) }
+    ` })
+    const found = await env.verifyConstraints('B')
+    expect(found.some((m: any) => m.got === 'uncheckable')).toBe(true)
+    env.close()
+  })
+
+  test('a refusal by the WRONG rule is not proof of the right one', async () => {
+    // The half that was invisible: `attempt` graded accepted-vs-rejected and
+    // ignored the message every case already carried, so a case refused by a
+    // sibling rule passed while proving nothing — and a mutant that widened the
+    // named rule survived, which is the one thing `litestone mutate` exists to
+    // catch. Simulated with a plugin, because a case that fails for the wrong
+    // reason can no longer be generated.
+    const refuseAll = new (class extends Plugin {
+      async onBeforeCreate(_m: string, args: any) {
+        if (typeof args?.data?.plain === 'string') throw Object.assign(
+          new Error('plain: something else entirely'), { name: 'ValidationError' })
+      }
+    })()
+    const env = await createTestEnv({ schema: TWO_RULE_SCHEMA, plugins: [refuseAll] })
+    const bad = await env.verifyConstraints('A')
+    expect(bad.some((m: any) => m.got === 'rejected-by-another-rule')).toBe(true)
+    expect(bad.find((m: any) => m.got === 'rejected-by-another-rule').message)
+      .toMatch(/proves nothing about the rule it names/)
     env.close()
   })
 

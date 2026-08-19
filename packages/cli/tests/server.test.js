@@ -206,8 +206,40 @@ describe('GET /', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toContain('text/html')
     const html = await res.text()
-    expect(html).toContain('<title>FLI</title>')
+    expect(html).toContain('<title>fli')
     expect(html).toContain('id="app"')
+  })
+
+  // The GUI is written in @frontierjs/css (Invariant 13) and asks this server
+  // for it, so a page that renders unstyled is a 404 here and nothing else.
+  test('serves the styling language the GUI links', async () => {
+    const html = await fetch(`${base}/`).then(r => r.text())
+    expect(html).toContain('href="/fli.css"')
+
+    const res = await fetch(`${base}/fli.css`, { redirect: 'manual' })
+    // A tree with no readable @frontierjs/css redirects to the published
+    // bundle instead; either answer is the stylesheet arriving.
+    if (res.status === 302) {
+      expect(res.headers.get('location')).toContain('@frontierjs/css')
+      return
+    }
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/css')
+    const css = await res.text()
+    // The layer order declaration is the one line that must lead the bundle.
+    expect(css.startsWith('@layer ')).toBe(true)
+    expect(css).toContain('.topbar')
+  })
+
+  test('serves the highlighter as a module', async () => {
+    const res = await fetch(`${base}/glow.js`)
+    // Absent, the GUI shows a command's source unhighlighted rather than not
+    // at all — so a 404 here is a legal answer and must stay a 404, not a 500.
+    expect([200, 404]).toContain(res.status)
+    if (res.status === 200) {
+      expect(res.headers.get('content-type')).toContain('javascript')
+      expect(await res.text()).toContain('export function glow')
+    }
   })
 
 })

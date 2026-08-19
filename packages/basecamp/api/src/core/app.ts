@@ -9,6 +9,7 @@ import {
   channels,
   healthPlugin,
   authenticate,
+  mailerPlugin,
 } from '@frontierjs/junction'
 
 import { conduit }           from '@frontierjs/conduit'
@@ -21,7 +22,8 @@ import { apply }                                 from '@frontierjs/litestone'
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './db.ts'
 import { createSecretResolver }          from './credentials.ts'
-import { basecampAuditLog, withWorkspaceStanding } from './hooks.ts'
+import { createConduitMailer, mailProvider, MAIL_TARGET } from './mailer.ts'
+import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, withWorkspaceStanding } from './hooks.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './session-auth.ts'
 import { apiKeyGuard, apiKeyUsage }       from '../services/api-keys/scopes.ts'
 import { slugify }                        from './resource.ts'
@@ -30,6 +32,20 @@ import { createJobEngine }           from '../engine/job.engine.ts'
 import { createFleetEngine }         from '../engine/fleet.engine.ts'
 
 import type { BasecampApp } from '../basecamp.types.ts'
+
+// Recorded nowhere, and stated once because two hooks take it: both halves of
+// the audit trail must skip the same calls or a pre-image is read for an event
+// that is never written. All three are an outpost on a timer — fifty machines
+// reporting their disks every minute buries every action a person took.
+const AUDIT_EXCEPT = ['servers.heartbeat', 'volumes.report', 'cleanup.report']
+
+// The same three, under the name that says why they are a set: each is called
+// by an Outpost rather than by a person, each is exempted from sessionScope for
+// that reason, and each therefore needs a signature instead. Two lists, one
+// membership — they are separate constants because they answer different
+// questions (what the trail skips, what the signature guards) and a method
+// could legitimately be in one and not the other.
+const OUTPOST_ENDPOINTS = ['servers.heartbeat', 'volumes.report', 'cleanup.report']
 
 /**
  * Build the app.
@@ -155,7 +171,22 @@ export async function buildBasecampApp(
   // the management service. It is a Junction service, so it lands at
   // GET|DELETE /conduit-targets — verified, not the /api/conduit/targets this
   // comment used to claim, which never existed.
+  // The mail provider is the one target declared at boot rather than registered
+  // by a machine checking in — an outpost target arrives with a heartbeat, a
+  // provider is configuration. Declared as a list of none where this app has no
+  // provider, so `app.mail` is absent rather than present and failing.
+  const mail = mailProvider()
+
   app.configure(conduit({
+    targets: mail ? [{
+      id:            MAIL_TARGET,
+      kind:          'provider',
+      protocol:      'http',
+      address:       mail.address,
+      auth:          { type: 'bearer', ref: mail.ref },
+      registered_at: Date.now(),
+      last_seen_at:  null,
+    }] : [],
     store:       createSQLiteStore(rawDb),
     timeout_ms:  10_000,
     retry_limit: 3,
@@ -195,6 +226,13 @@ export async function buildBasecampApp(
     },
   })
   app.configure(queue)
+
+  // ── Mail ──────────────────────────────────────────────────────────────
+  // AFTER conduit: the mailer sends through app.conduit, and junction checks
+  // plugin order at startup rather than at the first send. Absent where no
+  // provider is configured — `app.mail` being undefined is what every caller
+  // reads to say so out loud instead of reporting a delivery that never left.
+  if (mail) app.configure(mailerPlugin(createConduitMailer(app, { from: env.MAIL_FROM })))
 
   // ── Standard middleware ────────────────────────────────────────────────
   app.configure(cors({
@@ -285,7 +323,19 @@ export async function buildBasecampApp(
       // including an API key, which is a Credential and survives having every
       // Session row deleted. It costs no query, because `status` is on the
       // session already (sessionFields above).
-      all: [apiKeyGuard(app), refuseSuspended()],
+      all: [
+        apiKeyGuard(app), refuseSuspended(),
+        // The three endpoints a machine calls. They are exempted from
+        // sessionScope because an outpost holds no session — this is the
+        // credential that replaces one, and it is registered app-level so a new
+        // outpost-facing method cannot be added to a service and quietly
+        // inherit the exemption without it (`FJS-349`).
+        requireOutpostSignature(app, { only: OUTPOST_ENDPOINTS }),
+        // The other half of the trail. A diff needs the row as it stands, and
+        // an `after` hook cannot have it — so the pre-image is read here, under
+        // the same exception list the `after` half takes.
+        basecampAuditPreImage(app, { except: AUDIT_EXCEPT }),
+      ],
     },
     after: {
       // `all`, not the three CRUD verbs: a custom method is a mutation too, and
@@ -298,7 +348,7 @@ export async function buildBasecampApp(
         // audit trail nobody can read is an audit trail nobody reads.
         // Deliberately NOT `ctx.dispatch = false` — that would also silence the
         // channel, and both screens are fed by exactly that publish.
-        basecampAuditLog(app, { except: ['servers.heartbeat', 'volumes.report', 'cleanup.report'] }),
+        basecampAuditLog(app, { except: AUDIT_EXCEPT }),
         // Only fires when apiKeyGuard stamped a key id, so a session request
         // pays nothing for it.
         apiKeyUsage(app),

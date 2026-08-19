@@ -11,9 +11,10 @@
 // `include: { app: { include: { environment: true } } }` — declared in the
 // schema rather than spelled out as SQL.
 
-import { createService, NotFound, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { getScoped, stampWorkspace, changesNothing, dbOf, wsOf, actorOf } from '../../core/resource.ts'
+import { resolveExecutor, isExecutor } from '../../engine/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
@@ -42,6 +43,11 @@ export function createDeploymentsService(app: BasecampApp) {
   return createService({
     name:  'deployments',
     model: 'Deployment',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
@@ -73,6 +79,14 @@ export function createDeploymentsService(app: BasecampApp) {
 
       const target = await dbOf(ctx).app.findFirst({ where: { id: appId, workspaceId: wsOf(ctx) } })
       if (!target) throw new NotFound(`App '${appId}' not found in this workspace`)
+
+      // Refused here, where the person who pressed the button is still looking.
+      // The engine asks the same question again when the job runs — this is not
+      // the enforcement, it is the message: a release created and failed a
+      // second later tells an operator their app is broken, where a 400 naming
+      // the missing placement tells them what to do (FJS-257).
+      const executor = await resolveExecutor(app, appId)
+      if (!isExecutor(executor)) throw new BadRequest(executor.reason)
 
       // What the app looked like at release time. `source`/`config` are Json
       // columns, so these are already objects — the old code JSON.parse'd them.
@@ -153,9 +167,6 @@ export function createDeploymentsService(app: BasecampApp) {
         create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), stampWorkspace],
         patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

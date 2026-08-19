@@ -37,5 +37,8 @@
     "type": "git",
     "url": "git+https://github.com/frontierJS/frontierjs.git",
     "directory": "packages/conduit"
+  },
+  "dependencies": {
+    "@frontierjs/toolbelt": "workspace:*"
   }
 }

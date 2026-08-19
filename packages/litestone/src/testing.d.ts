@@ -217,7 +217,12 @@ export interface ConstraintMismatch {
   expect: 'rejected' | 'accepted'
   /** `'error'` means the write failed before validation could refuse it — the
    *  case proves nothing either way, and is reported rather than swallowed. */
-  got:    'rejected' | 'accepted' | 'error'
+  /**
+   * `rejected-by-another-rule` — refused, but by a DIFFERENT rule on the field,
+   * so the case proves nothing about the one it names.
+   * `uncheckable` — no value could isolate the rule, so it was not asked.
+   */
+  got:    'rejected' | 'accepted' | 'error' | 'rejected-by-another-rule' | 'uncheckable'
   thrown: string | null
   /** Already a sentence: model, field, rule, what happened. */
   message: string
@@ -450,13 +455,32 @@ export interface ValidationCase {
   message: string
 }
 
+/**
+ * A case that could not be built so that the rule it names is the only one
+ * deciding the outcome — an `@email @length(3, 200)` column has no
+ * three-character value, so `@length`'s lower boundary cannot be asked there.
+ *
+ * Reported rather than dropped: a rule that quietly stops being checked is the
+ * failure this runner exists to prevent, one layer up (`FJS-351`).
+ */
+export interface UncheckableCase {
+  field:     string
+  rule:      string
+  value:     unknown
+  /** The other rules' complaints about the value that could not be repaired. */
+  blockedBy: string[]
+  message:   string
+}
+
 export interface ValidationCases {
   /** One complete valid record, from `generateFactory`. */
   valid:    FactoryRow
-  /** One failing case per declared constraint. */
+  /** One failing case per declared constraint, each isolating its own rule. */
   invalid:  ValidationCase[]
-  /** Boundary values that should pass. */
+  /** Boundary values that should pass, each accepted by every rule on the field. */
   boundary: ValidationCase[]
+  /** Cases no value could isolate. Never empty in silence — see the interface. */
+  uncheckable: UncheckableCase[]
 }
 
 /** Build valid + invalid + boundary validation cases for a model's fields. */

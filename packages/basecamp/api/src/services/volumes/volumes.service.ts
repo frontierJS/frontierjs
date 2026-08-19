@@ -36,7 +36,7 @@
 // reads better as MB or GB, and a rounded number stored is a number nothing can
 // un-round — `0.01 GB` in the mock is 10.7 MB.
 
-import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { dbOf, wsOf, actorOf }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
@@ -129,6 +129,11 @@ export function createVolumesService(app: BasecampApp) {
   return createService({
     name:  'volumes',
     model: 'Volume',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // The whole surface, declared. Omitting a method does not remove it: with
@@ -414,9 +419,6 @@ export function createVolumesService(app: BasecampApp) {
         // server, and higher than the developer bar the read side sits at.
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
         prune:  [requireWorkspaceRole(app, 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

@@ -16,7 +16,7 @@ import { cloneInto }                from './testdb.js'
 import { parseGateString, GatePlugin }  from './plugins/gate.js'
 import { AccessDeniedError }        from './core/plugin.js'
 import { levelLabel, REACHABLE_LEVELS, deriveAccess, gateLadder, expectedVerdict } from './access.js'
-import { DEFAULT_MESSAGES }         from './core/validate.js'
+import { DEFAULT_MESSAGES, validateField } from './core/validate.js'
 import { buildPolicyMap, evalJs }   from './core/policy.js'
 import { fakeFor, fakeEmail }       from './fake.js'
 import { Factory }                  from './seeder.js'
@@ -847,7 +847,20 @@ export async function createTestEnv(opts = {}) {
           let cases
           try { cases = generateValidationCases(schema, model.name) }
           catch { continue }
-          if (!cases.invalid.length && !cases.boundary.length) continue
+          if (!cases.invalid.length && !cases.boundary.length && !cases.uncheckable?.length) continue
+
+          // A boundary the generator could not build is REPORTED, never
+          // dropped. It is not a defect in the schema and it does not claim to
+          // be one — `expect: 'accepted'` with `got: 'uncheckable'` — but a
+          // rule that silently stops being asked about is the failure this
+          // whole runner exists to prevent, one layer up (`FJS-351`).
+          for (const u of cases.uncheckable ?? []) {
+            mismatches.push({
+              model: model.name, field: u.field, rule: u.rule, value: u.value,
+              expect: 'accepted', got: 'uncheckable', thrown: null,
+              message: u.message,
+            })
+          }
 
           // ── Two collision guards, both measured on basecamp's 37 models ────
           //
@@ -895,6 +908,30 @@ export async function createTestEnv(opts = {}) {
             const refused = thrown?.name === 'ValidationError'
               || (c.rule === '@unique' && /UNIQUE constraint failed/i.test(thrown?.message ?? ''))
             const got = thrown === null ? 'accepted' : (refused ? 'rejected' : 'error')
+
+            // Refused — but by WHICH rule? Every case carries the message its
+            // own rule raises, and until `FJS-351` nothing compared it, so a
+            // case refused by a DIFFERENT rule on the same field counted as
+            // proof of the one it names. `@length(3, 200)`'s `''` on an
+            // `@email` column is rejected by `@email`, so deleting `@length`
+            // from the implementation left this green — and a mutant that
+            // widens it survived, which is the one thing `litestone mutate`
+            // exists to catch.
+            //
+            // A value violating two rules legitimately raises both, and the
+            // whole error text is searched, so that case still passes.
+            if (got === expected && expected === 'rejected' && c.message
+                && !(thrown?.message ?? '').includes(c.message)) {
+              mismatches.push({
+                model: model.name, field: c.field, rule: c.rule, value: c.value,
+                expect: 'rejected', got: 'rejected-by-another-rule', thrown: thrown?.message ?? null,
+                message: `${model.name}.${c.field} — ${c.rule} was not what refused this: expected `
+                       + `${JSON.stringify(c.message)}, got ${JSON.stringify(thrown?.message ?? null)}. `
+                       + `The case proves nothing about the rule it names`,
+              })
+              return
+            }
+
             if (got === expected) return
 
             mismatches.push({
@@ -1566,6 +1603,12 @@ export function generateValidationCases(schema, modelName) {
     const isOpt = field.type.optional
 
     for (const attr of field.attributes) {
+      // Which attribute a case came from, recorded at the loop boundary rather
+      // than at each of the fifteen pushes below. The post-pass needs it to ask
+      // the one question that makes a case worth running: does this value
+      // isolate the rule it names, or is some OTHER rule on the field deciding
+      // the outcome (`FJS-351`)?
+      const mark = { i: invalid.length, b: boundary.length }
       switch (attr.kind) {
         case 'email':
           invalid.push({ field: name, value: 'not-an-email', rule: '@email',
@@ -1679,13 +1722,198 @@ export function generateValidationCases(schema, modelName) {
             expect: 'fail', message: msg(attr, DEFAULT_MESSAGES.contains(attr.text)) })
           break
       }
+      for (let i = mark.i; i < invalid.length;  i++) { invalid[i].attr  = attr; invalid[i].fieldRef  = field }
+      for (let i = mark.b; i < boundary.length; i++) { boundary[i].attr = attr; boundary[i].fieldRef = field }
     }
   }
 
-  return { valid, invalid, boundary }
+  // ── Does each case ISOLATE the rule it names? ─────────────────────────────
+  //
+  // Every case above is built from ONE attribute with no idea what else sits on
+  // the field, and both halves of that are wrong once a field carries two rules
+  // (`FJS-351`):
+  //
+  //   a boundary claims a value the field ACCEPTS — `@length(3, 200)` on an
+  //   `@email` column produced `'xxx'`, which is not an email, so the write was
+  //   refused and the runner reported *@length allows this value and the write
+  //   was refused*: a correct schema graded as broken, and the fix a reader
+  //   reaches for is deleting a rule.
+  //
+  //   an invalid case claims the NAMED rule refuses it — `''` on that same
+  //   column is refused by `@email`, so the case passed while proving nothing,
+  //   and a mutant that widened `@length` survived.
+  //
+  // The judge is `validateField`, the function that decides this on a real
+  // write, rather than a table of formats here — which would be a second
+  // definition of every rule, drifting the moment one is tuned.
+  //
+  // Repair first: a value of the same length that the rest of the field accepts
+  // usually exists, and is found by growing or trimming the factory's own valid
+  // sample. Where none is found the case is DROPPED and SAID — `uncheckable` —
+  // because a rule that quietly stops being asked about is this runner's own
+  // failure mode, one layer up.
+  const uncheckable = []
+
+  const others = (c) => c.fieldRef.attributes.filter(a => a !== c.attr)
+  const passes = (c, v, attrs) => validateField(c.field, v, attrs).length === 0
+
+  const keep = (list, isolated, label) => {
+    const out = []
+    for (const c of list) {
+      if (!c.fieldRef) { out.push(c); continue }
+      if (isolated(c, c.value)) { out.push(c); continue }
+
+      const fixed = _isolate(c, valid[c.field], v => isolated(c, v))
+      if (fixed !== null) { out.push({ ...c, value: fixed }); continue }
+
+      const why = validateField(c.field, c.value, others(c)).map(e => e.message)
+      uncheckable.push({
+        field: c.field, rule: c.rule, value: c.value, blockedBy: why,
+        message: `${model.name}.${c.field} — ${c.rule}'s ${label} was NOT checked: no value isolates `
+               + `it from the field's other rules`
+               + (why.length ? ` (${why.join('; ')})` : ''),
+      })
+    }
+    list.length = 0
+    list.push(...out)
+  }
+
+  // A boundary must satisfy EVERY rule on the field — that is what accepted
+  // means. An invalid case must satisfy every rule EXCEPT the one it names, and
+  // still fail that one, or the refusal it observes belongs to somebody else.
+  keep(boundary, (c, v) => passes(c, v, c.fieldRef.attributes), 'boundary')
+  keep(invalid,  (c, v) => passes(c, v, others(c)) && !passes(c, v, [c.attr]), 'invalid case')
+
+  return { valid, invalid, boundary, uncheckable }
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
+
+/**
+ * A value that isolates the rule a case names, or null if none was found.
+ *
+ * Which dimension is free depends on the rule. A `@length` case IS its length —
+ * the violation and the boundary are both the count — so only the content may
+ * move. Every other rule's case has a length that is incidental, and when the
+ * field also declares `@length` that incidental length is what stops the case
+ * running: `@url`'s `'not-a-url'` is nine characters, so on a `@length(10, 60)`
+ * column it is refused by the wrong rule. Padding it to ten leaves it just as
+ * far from being a URL.
+ *
+ * `ok` decides in both cases, so a candidate that accidentally satisfies the
+ * rule it is supposed to break is never returned.
+ */
+function _isolate(c, sample, ok) {
+  const target = c.value
+  if (typeof target !== 'string') return null
+
+  if (c.attr?.kind === 'length') {
+    // A boundary IS its length — that is the whole claim, so only the content
+    // may move. An invalid case only has to sit OUTSIDE the bound, and which
+    // side is the one thing that must not change: `@length(6, 200)` on an email
+    // column is broken by `a@b.c` at five, and by nothing at zero.
+    const { min, max } = c.attr
+    if (c.expect === 'pass') return _ofLength(target.length, sample, ok)
+
+    const lengths = target.length < (min ?? 0)
+      ? Array.from({ length: min }, (_, i) => min - 1 - i)          // min-1 … 0
+      : [target.length, (max ?? target.length) + 2]
+    for (const n of lengths) {
+      const v = _ofLength(n, sample, ok)
+      if (v !== null) return v
+    }
+    return null
+  }
+
+  const bound   = c.fieldRef.attributes.find(a => a.kind === 'length')
+  const lengths = [...new Set([bound?.min, bound?.max, typeof sample === 'string' ? sample.length : null]
+    .filter(n => typeof n === 'number' && n > 0))]
+
+  for (const n of lengths) {
+    const v = target.length >= n ? target.slice(0, n) : target + 'a'.repeat(n - target.length)
+    if (ok(v)) return v
+  }
+  return null
+}
+
+/**
+ * A string of exactly `n` characters that `ok` accepts, or null.
+ *
+ * Format-blind on purpose. It grows or trims the factory's own valid sample —
+ * already the right shape for the column — and lets the caller's predicate,
+ * which is `validateField` over the real attributes, judge each candidate. So
+ * an `@email @length(_, 200)` boundary comes out as a long local part in front
+ * of the sample's own domain without this function knowing what an `@` is, and
+ * a rule litestone gains tomorrow is handled the day it lands.
+ *
+ * Insertion is tried at every index because where a format's padding may go is
+ * the one thing that differs between them: an email grows before the `@`, a URL
+ * after the last `/`, a prefixed reference after its prefix. Trimming is tried
+ * from both ends for the same reason — a prefix rule needs the head kept, a
+ * suffix rule the tail.
+ */
+function _ofLength(n, sample, ok) {
+  if (typeof sample !== 'string' || n < 0) return null
+  if (sample.length === n) return ok(sample) ? sample : null
+
+  const candidates = []
+  if (n < sample.length) {
+    // Trimming from an end is the cheap try — a prefix rule needs the head
+    // kept, a suffix rule the tail — and it is not enough on its own: the
+    // shortest email litestone accepts is `a@b.c`, and neither end of
+    // `email1@example.com` is an email at five characters. So the real strategy
+    // is to shrink the sample's WORDS and leave its punctuation where it is,
+    // which is what carries a format through a size change without knowing what
+    // the format is.
+    candidates.push(sample.slice(0, n), sample.slice(sample.length - n), ..._shrunk(sample, n))
+  } else {
+    const pad = 'a'.repeat(n - sample.length)
+    for (let i = 0; i <= sample.length; i++)
+      candidates.push(sample.slice(0, i) + pad + sample.slice(i))
+  }
+
+  for (const v of candidates) if (ok(v)) return v
+  return null
+}
+
+/**
+ * `sample` cut down to exactly `n` characters by shortening its alphanumeric
+ * runs and leaving everything between them alone.
+ *
+ * Two orders are offered because either can be the one a format survives:
+ * longest-run-first keeps the shape balanced, left-to-right keeps the tail
+ * intact for a rule that reads the end. Every run keeps at least one character,
+ * so `email1@example.com` at five is `e@e.c` — an email, arrived at without
+ * this function containing the word.
+ */
+function _shrunk(sample, n) {
+  const runs = [...sample.matchAll(/[A-Za-z0-9]+/g)]
+  if (!runs.length) return []
+
+  const build = (order) => {
+    const lens = runs.map(r => r[0].length)
+    let need   = sample.length - n
+    for (const i of order) {
+      if (need <= 0) break
+      const cut = Math.min(need, lens[i] - 1)
+      lens[i] -= cut
+      need    -= cut
+    }
+    if (need > 0) return null                     // cannot get there without emptying a run
+
+    let out = '', at = 0
+    runs.forEach((r, i) => {
+      out += sample.slice(at, r.index) + r[0].slice(0, lens[i])
+      at   = r.index + r[0].length
+    })
+    return out + sample.slice(at)
+  }
+
+  const byLength = runs.map((r, i) => i).sort((a, b) => runs[b][0].length - runs[a][0].length)
+  const inOrder  = runs.map((_, i) => i)
+  return [build(byLength), build(inOrder)].filter(v => v !== null)
+}
+
 
 // n elements an array column will actually accept. `Int[]` and `String[]` are
 // type-checked element by element on write, so a String[] filled with numbers

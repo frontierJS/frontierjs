@@ -1,0 +1,37 @@
+<script module>
+  // src/resources/Invitation.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18),
+  // named for the model and exporting the accessor (invariant 19). No markup:
+  // everything is module scope, which is what <script module> means.
+  //
+  // Two columns are stamped here and NEITHER value is authority — both are
+  // overwritten by the service's own before/create, and a client that lied
+  // about either gains nothing. They are here because browser-side validation
+  // runs first: `workspaceId` and `expiresAt` are both required on the create
+  // schema, so without this the invite form is refused before a request is made
+  // with *workspace is required, expiresAt is required* — two fields the form
+  // does not show and must not show. Measured, not assumed: that is exactly
+  // what the first version did, and the browser drive caught it.
+  //
+  //   workspaceId — server-stamped from X-Workspace-Id, because a client that
+  //                 names its own workspace is a client choosing its own tenant.
+  //   expiresAt   — how long a link lives is the service's answer, not a value
+  //                 a browser may name. Sent as now, replaced with now + 7 days.
+  //
+  // The hook runs on `service.create` as well as on `save()` — sierra's `_call`
+  // runs before-hooks, then coercion, then validation — which is why the invite
+  // form can call the service directly and still be seeded. It calls the service
+  // directly because the reply carries the token and the accept link, which are
+  // not columns and are on no later read.
+  import { createResource } from '@frontierjs/sierra/junction'
+  import { stampWorkspace } from '../session.js'
+
+  export const invitations = createResource('invitations', {
+    hooks: { before: { create: [stampWorkspace, stampExpiry] } },
+  })
+
+  function stampExpiry(ctx) {
+    if (ctx.data && !ctx.data.expiresAt) ctx.data.expiresAt = new Date().toISOString()
+  }
+</script>

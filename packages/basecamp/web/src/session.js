@@ -190,6 +190,44 @@ export async function completeSetup({ workspace_name, name, email, password }) {
   return result
 }
 
+// ─── Invitations ──────────────────────────────────────────────────────────────
+//
+// Both of these run with no session — that is the whole point of an invitation
+// (`FJS-032`). They go through the Junction client rather than this file's
+// `api()` helper because they ARE service calls, and the client is what knows
+// the prefix and the transport.
+
+/** What is this link? Answered to whoever holds the token and nobody else. */
+export async function previewInvitation(token) {
+  return getClient().service('invitations').invoke('preview', null, { token })
+}
+
+/**
+ * Take it, and land the person inside the workspace.
+ *
+ * Two shapes come back and the difference is whether an account had to be made:
+ * a new account arrives with a session token, an existing one was already
+ * signed in and keeps the session it had. Everything after that is the same —
+ * the memberships are re-read and the workspace they just joined is adopted,
+ * because the alternative is landing on the overview scoped to some other
+ * workspace, or to none, with every request answering 400.
+ */
+export async function acceptInvitation({ token, name, password }) {
+  const result = await getClient().service('invitations').invoke('accept', null, { token, name, password })
+
+  if (result?.token) {
+    getClient().setToken(result.token)
+    await refresh()
+  }
+
+  await loadWorkspace()
+  // After the list, not before: loadWorkspace() adopts the remembered or the
+  // default workspace, so adopting first would be overwritten by the very call
+  // meant to confirm the new membership.
+  if (result?.workspace_id) adoptWorkspace(result.workspace_id)
+  return result
+}
+
 export async function signIn(email, password) {
   const result = await authSignIn(email, password)
   await loadWorkspace()

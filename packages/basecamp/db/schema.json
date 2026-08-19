@@ -353,6 +353,7 @@
         "slug",
         "ownerId"
       ],
+      "x-version": "version",
       "x-gate": {
         "read": 1,
         "create": 1,
@@ -376,6 +377,15 @@
         {
           "field": "members",
           "model": "WorkspaceMember",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "invitations",
+          "model": "Invitation",
           "type": "hasMany",
           "fields": [],
           "references": [],
@@ -548,6 +558,61 @@
         }
       ]
     },
+    "Invitation": {
+      "type": "object",
+      "title": "Invitation",
+      "properties": {
+        "workspaceId": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "role": {
+          "$ref": "#/$defs/WorkspaceRole",
+          "default": "developer"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "invitedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "workspaceId",
+        "email",
+        "expiresAt"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 5,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
     "Secret": {
       "type": "object",
       "title": "Secret",
@@ -585,6 +650,7 @@
         "name"
       ],
       "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
         "read": 5,
         "create": 5,
@@ -1092,6 +1158,7 @@
         "slug"
       ],
       "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -1221,6 +1288,7 @@
         "slug"
       ],
       "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -1292,6 +1360,7 @@
         "slug"
       ],
       "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -1549,6 +1618,7 @@
         "hostname"
       ],
       "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -2758,6 +2828,7 @@
         "key"
       ],
       "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -2935,6 +3006,7 @@
         "kind"
       ],
       "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -3006,6 +3078,7 @@
         "metricName"
       ],
       "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -3238,6 +3311,7 @@
         "slug"
       ],
       "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
         "read": 2,
         "create": 4,

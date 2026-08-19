@@ -40,7 +40,7 @@
 // The old parseServer()/parseEvent() JSON.parse helpers are gone — parsing an
 // already-parsed object is how you get "[object Object]" in a column.
 
-import { createService, NotFound, BadRequest, publishToChannels, normalizeOrderBy } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, normalizeOrderBy } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import {
@@ -96,6 +96,11 @@ export function createServersService(app: BasecampApp) {
   return createService({
     name:  'servers',
     model: 'Server',   // ← schema-derived validation; see note at the bottom
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // ── find ──────────────────────────────────────────────────────────
@@ -420,9 +425,6 @@ export function createServersService(app: BasecampApp) {
         undrain:   [requireWorkspaceRole(app, 'admin', 'owner')],
         sync:      [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         // heartbeat: HMAC auth at Conduit transport level — no session hook
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

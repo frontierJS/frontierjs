@@ -33,9 +33,9 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative }                                  from 'node:path'
-
 import { findSnapshots }        from './snapshots.js'
 import { RULES }                from './checks.js'
+import { styleBundle }          from './assets.js'    
 import { PROJECTS, GLOBAL, ENV, CAT } from './ports.js'
 
 // A generator names its realm — litestone is Data, junction is API, sierra is
@@ -439,102 +439,8 @@ function checkRules() {
 // is styled by whatever the registry answers rather than by the tree the page
 // describes (`FJS-256`).
 //
-// ── Why not `dist/`, which is exactly this file ───────────────────────────────
-//
-// `dist/` is gitignored and built on demand. Inlining it when present and
-// linking when absent would make the OUTPUT depend on whether somebody had run
-// `bun run build`, and these pages are committed snapshots the `snapshots` CI
-// phase regenerates and diffs — so two machines would disagree about a file
-// neither of them changed. Measured while writing this: the tree's `dist/` held
-// a two-day-old `frontier.css` and no `frontier.min.css` at all, which is the
-// same defect wearing a stale copy.
-//
-// So it is built here, from committed source, every time. `src/index.css` is 48
-// `@import … layer(name)` lines and the `@layer a, b, c;` declaration, which is
-// the whole of it: each import becomes an `@layer name { … }` block. That is
-// what `bun build` does for the package's own bundle, so the shape is the one
-// the published file already has.
-//
-// The declaration is carried over VERBATIM and first. It is the line that
-// declares layer ORDER, and without it order falls back to first appearance —
-// which agrees with the declaration today only because index.css happens to
-// import in order. `packages/css/build.js` refuses to write a bundle without it
-// for the same reason, and measured there: move the utilities import up and
-// `.btn.text-lg` goes 16px → 14px in the bundle while the source stays 16px.
-
-function styleBundle(root) {
-  const dirs = [
-    join(root, 'packages', 'css', 'src'),
-    join(root, 'node_modules', '@frontierjs', 'css', 'src'),
-  ]
-
-  for (const dir of dirs) {
-    const index = read(join(dir, 'index.css'))
-    if (index) return bundleCss(index, dir)
-  }
-
-  return null
-}
-
-function bundleCss(index, dir) {
-  const order = index.match(/^@layer\s+[^;]+;/m)
-  // No order declaration is not a bundle worth writing — see above.
-  if (!order) return null
-
-  const imports = [...index.matchAll(/@import\s+'([^']+)'(?:\s+layer\(([^)]+)\))?\s*;/g)]
-  if (!imports.length) return null
-
-  const out = [order[0]]
-
-  for (const [, rel, layer] of imports) {
-    const src = read(join(dir, rel))
-    // Every import must resolve. A partial bundle is the worst outcome
-    // available — the page renders, looks nearly right, and is missing
-    // whichever layer went absent. Stated as "all of them" rather than as a
-    // floor: a count is a guess that a small tree fails and a truncated big
-    // one passes.
-    if (src === null || src === undefined) return null
-    const body = stripCssComments(src).trim()
-    out.push(layer ? `@layer ${layer.trim()} {\n${body}\n}` : body)
-  }
-
-  return out.join('\n')
-}
-
-// Comments are 60% of this package's source — 242KB of `src/` becomes 90KB
-// without them — and none of it is being read here. Quote-aware because a
-// comment opener inside a string is legal CSS (`content: "/*"`), even though
-// this package has none: a stripper that is right by luck is one nobody can
-// safely edit.
-
-function stripCssComments(src) {
-  let out = ''
-  let quote = null
-
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i]
-
-    if (quote) {
-      out += c
-      if (c === '\\') { out += src[++i] ?? ''; continue }
-      if (c === quote) quote = null
-      continue
-    }
-
-    if (c === '"' || c === "'") { quote = c; out += c; continue }
-
-    if (c === '/' && src[i + 1] === '*') {
-      const end = src.indexOf('*/', i + 2)
-      if (end === -1) break            // unterminated: the rest is comment
-      i = end + 1
-      continue
-    }
-
-    out += c
-  }
-
-  return out
-}
+// The build itself is `core/assets.js`, because the Web GUI is written in
+// the same language and must be styled by the same bytes.
 
 // ─── what proves a change ─────────────────────────────────────────────────────
 //

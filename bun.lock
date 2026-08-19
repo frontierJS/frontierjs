@@ -54,9 +54,11 @@
         "@frontierjs/litestone": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
         "@frontierjs/sierra": "workspace:*",
+        "@frontierjs/toolbelt": "workspace:*",
         "@frontierjs/ui": "workspace:*",
       },
       "devDependencies": {
+        "@frontierjs/outpost": "workspace:*",
         "@frontierjs/testing": "workspace:*",
         "@types/bun": "^1.3.14",
         "vite": "^8.0.3",
@@ -86,6 +88,8 @@
         "fli": "./bin/fli.js",
       },
       "dependencies": {
+        "@frontierjs/css": "workspace:*",
+        "@frontierjs/toolbelt": "workspace:*",
         "linkedom": "^0.18.12",
         "minimist": "^1.2.8",
         "turndown": "^7.2.4",
@@ -95,6 +99,9 @@
     "packages/conduit": {
       "name": "@frontierjs/conduit",
       "version": "0.1.2",
+      "dependencies": {
+        "@frontierjs/toolbelt": "workspace:*",
+      },
       "devDependencies": {
         "@frontierjs/junction": "workspace:*",
         "@types/bun": "^1.3.14",
@@ -263,6 +270,16 @@
       },
       "peerDependencies": {
         "@frontierjs/junction": "^0.1.0",
+      },
+    },
+    "packages/outpost": {
+      "name": "@frontierjs/outpost",
+      "version": "0.1.0",
+      "bin": {
+        "outpost": "./src/index.js",
+      },
+      "dependencies": {
+        "@frontierjs/toolbelt": "workspace:*",
       },
     },
     "packages/sierra": {
@@ -460,6 +477,8 @@
     "@frontierjs/mesa": ["@frontierjs/mesa@workspace:packages/mesa"],
 
     "@frontierjs/notifications": ["@frontierjs/notifications@workspace:packages/notifications"],
+
+    "@frontierjs/outpost": ["@frontierjs/outpost@workspace:packages/outpost"],
 
     "@frontierjs/sierra": ["@frontierjs/sierra@workspace:packages/sierra"],
 

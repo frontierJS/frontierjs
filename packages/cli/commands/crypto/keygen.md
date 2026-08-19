@@ -38,6 +38,11 @@ flags:
     type: boolean
     description: Copy generated key to clipboard
     defaultValue: false
+  print:
+    char: p
+    type: boolean
+    description: Print the key even when --env or --copy already delivered it
+    defaultValue: false
 ---
 
 <script>
@@ -163,10 +168,17 @@ const formatLabel = flag.format
 log.info(`Generated ${typeLabel} (${formatLabel}, ${bytes} bytes)`)
 
 // ─── Output to stdout ─────────────────────────────────────────────────────────
-if (flag.name) {
-  echo(`${flag.name}=${key}`)
-} else {
-  echo(key)
+//
+// Only when nothing else is carrying the key. `fli keygen | pbcopy` is the whole
+// point of the bare form, but `--env` and `--copy` have already delivered it, and
+// printing it again puts real key material in terminal scrollback and in the log
+// of every CI job and scaffold that composes this command.
+if (flag.print || (!flag.env && !flag.copy)) {
+  if (flag.name) {
+    echo(`${flag.name}=${key}`)
+  } else {
+    echo(key)
+  }
 }
 
 // ─── Write to .env ────────────────────────────────────────────────────────────

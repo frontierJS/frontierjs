@@ -68,6 +68,19 @@ globalThis.assert = {
       )
     }
   },
+  // /signature is the first kit that answers a REASON rather than a boolean —
+  // a clock 40 seconds out and a wrong secret are the same refusal to a caller
+  // and completely different problems to whoever is fixing it. A spec asserting
+  // only `ok === false` would pass against a verifier that refused everything
+  // for one reason, which is the failure this kit is most likely to have.
+  match(value, pattern, msg) {
+    if (!pattern.test(String(value))) {
+      throw new Error(
+        (msg ? msg + '\n      ' : '') + 'expected a value matching ' + pattern +
+        '\n      got      ' + JSON.stringify(value)
+      )
+    }
+  },
   // A kit that answers an object needs this, and JSON is enough of a comparison
   // for one: every value these kits produce is JSON-shaped, and key ORDER is
   // meaningful in some of them — a directive table read in a different order is

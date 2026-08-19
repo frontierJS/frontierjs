@@ -118,11 +118,20 @@ title: Activity
   const actorOf = (r) => r.actorId ? (people[r.actorId] ?? r.actorId) : r.actorType
   const when    = (iso) => iso ? new Date(iso).toLocaleString() : '—'
   const ACTIVITY_COLUMNS = [
-    { key: 'when', label: 'When' },
-    { key: 'who',  label: 'Who' },
-    { key: 'did',  label: 'Did' },
-    { key: 'to',   label: 'To' },
+    { key: 'when',    label: 'When' },
+    { key: 'who',     label: 'Who' },
+    { key: 'did',     label: 'Did' },
+    { key: 'to',      label: 'To' },
+    { key: 'changed', label: 'What changed' },
   ]
+
+  // `AuditEvent.diff` is `{ field: { before, after } }`, written by the audit
+  // hook off the row as it stood and the row as it ended. Until FJS-154 nothing
+  // wrote it, so the trail could say a server was drained and not what state it
+  // was in. A protected column reads `[redacted]` on both sides — that it
+  // changed is the fact, its value is not the trail's business.
+  const changesOf = (r) => Object.entries(r.diff ?? {})
+  const shown     = (v) => v === null || v === undefined ? '∅' : typeof v === 'object' ? JSON.stringify(v) : String(v)
 </script>
 
 <div class="section-header">
@@ -170,6 +179,24 @@ title: Activity
             <a href={hrefOf(r)}><code>{String(r.subjectId).slice(0, 8)}</code></a>
           {:else}
             <code>{String(r.subjectId).slice(0, 8)}</code>
+          {/if}
+        </td>
+        <td class="text-sm">
+          {#if changesOf(r).length}
+            <!-- Field names in the cell, values behind a disclosure: a row that
+                 printed both for a create would be the whole record, and the
+                 column would be unreadable for every other row on the page. -->
+            <details>
+              <summary>{changesOf(r).map(([f]) => f).join(', ')}</summary>
+              <dl class="facts">
+                {#each changesOf(r) as [field, change]}
+                  <dt>{field}</dt>
+                  <dd><code>{shown(change.before)}</code> → <code>{shown(change.after)}</code></dd>
+                {/each}
+              </dl>
+            </details>
+          {:else}
+            <span class="text-muted">—</span>
           {/if}
         </td>
       </tr>

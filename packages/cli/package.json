@@ -6,13 +6,15 @@
     "fli": "./bin/fli.js"
   },
   "dependencies": {
+    "@frontierjs/css": "workspace:*",
+    "@frontierjs/toolbelt": "workspace:*",
     "linkedom": "^0.18.12",
     "minimist": "^1.2.8",
     "turndown": "^7.2.4",
     "zx": "^8.8.5"
   },
   "scripts": {
-    "test": "bun test tests/compiler.test.js tests/checks.test.js tests/snapshots.test.js tests/registers.test.js tests/register-check.test.js tests/repo-map.test.js tests/repo-atlas.test.js tests/repo-live.test.js tests/runtime.test.js tests/registry.test.js tests/server.test.js tests/deploy-helpers.test.js tests/project-root.test.js tests/db-preflight.test.js tests/vendor.test.js tests/project-helpers.test.js tests/app-config.test.js tests/typecheck.test.js && bun test tests/zz-steps.test.js tests/deploy-dispatch.test.js",
+    "test": "bun test tests/compiler.test.js tests/checks.test.js tests/snapshots.test.js tests/registers.test.js tests/register-check.test.js tests/repo-map.test.js tests/repo-atlas.test.js tests/repo-live.test.js tests/runtime.test.js tests/registry.test.js tests/server.test.js tests/deploy-helpers.test.js tests/project-root.test.js tests/db-preflight.test.js tests/vendor.test.js tests/project-helpers.test.js tests/app-config.test.js tests/typecheck.test.js tests/stack.test.js && bun test tests/zz-steps.test.js tests/deploy-dispatch.test.js",
     "test:watch": "bun test --watch",
     "test:steps": "bun test tests/zz-steps.test.js",
     "test:deploy": "bun test tests/deploy-helpers.test.js tests/deploy-dispatch.test.js",

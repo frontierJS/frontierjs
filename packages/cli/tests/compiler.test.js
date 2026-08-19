@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { extractFrontmatter, transformMarkdown, compileCli, extractSegments,
-         stripFrontmatter, splitFrontmatter } from '../core/compiler.js'
+         stripFrontmatter, splitFrontmatter, compileCliWithMap } from '../core/compiler.js'
+import { registerShim, rewriteStackString, _clearShims } from '../core/stack.js'
 import { readdirSync, statSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -158,6 +159,111 @@ describe('stripFrontmatter', () => {
   test('reads a Buffer, the way the loader hands it over', () => {
     const buf = new TextEncoder().encode('---\ntitle: x\n---\n\nprose\n')
     expect(stripFrontmatter(buf)).toBe('prose\n')
+  })
+})
+
+// ─── the line map ─────────────────────────────────────────────────────────────
+
+describe('a frame in a command names the .md line its author wrote', () => {
+  /*
+   * The `sourceURL` pragma relabelled the PATH in a frame and left the LINE
+   * alone, so Node reported `boom.md:15` for a throw on line 9 of an 11-line
+   * file — authoritative-looking and non-existent — while Bun ignored the
+   * pragma and named a temp shim that is deleted on exit. Bun ignores a source
+   * map too, inline or linked. So fli maps the frames itself (`FJS-066`).
+   */
+  const md = (...lines) => lines.join('\n')
+  const lineOf   = (src, needle) => src.split('\n').findIndex(l => l.includes(needle)) + 1
+  const genLine  = (code, needle) => code.split('\n').findIndex(l => l.includes(needle)) + 1
+
+  const maps = (src, needle) => {
+    const { code, sourceLineOffset } = compileCliWithMap(src, '', 'x.md')
+    return { got: genLine(code, needle) - sourceLineOffset, want: lineOf(src, needle) }
+  }
+
+  test('the offset holds for a plain command', () => {
+    const src = md('---', 'title: a:b', '---', '', '```js', 'const MARK = 1', '```')
+    const { got, want } = maps(src, 'const MARK')
+    expect(got).toBe(want)
+  })
+
+  test('and does not move with the size of the frontmatter', () => {
+    const src = md('---', 'title: a:b', 'description: d', 'alias: x', 'args:', '  -',
+                   '    name: u', '---', '', '```js', 'const MARK = 1', '```')
+    const { got, want } = maps(src, 'const MARK')
+    expect(got).toBe(want)
+  })
+
+  test('or with prose, headings and a bash block above the throw', () => {
+    const src = md('---', 'title: a:b', '---', '', '# Heading', '', '- a list item', '',
+                   '```bash', 'echo hi', '```', '', 'Prose between.', '',
+                   '```js', 'const MARK = 1', '```')
+    const { got, want } = maps(src, 'const MARK')
+    expect(got).toBe(want)
+  })
+
+  test('and it is ONE offset either side of a <script> block', () => {
+    // The case that used to need two. The block's contents move to the top of
+    // the generated file, so stripScriptBlocks leaves its height behind in
+    // blank lines rather than cutting the lines and shifting everything below.
+    const src = md('---', 'title: a:b', '---', '', '```js', 'const BEFORE = 1', '```', '',
+                   '<script>', 'const h1 = () => 1', 'const h2 = () => 2', '</script>', '',
+                   '```js', 'const AFTER = 2', '```')
+    const before = maps(src, 'const BEFORE')
+    const after  = maps(src, 'const AFTER')
+    expect(before.got).toBe(before.want)
+    expect(after.got).toBe(after.want)
+  })
+
+  test('stripScriptBlocks keeps the file the same height', () => {
+    const src = md('---', 'title: a:b', '---', '', '<script>', 'const h = 1', '</script>', '', 'prose')
+    const { code } = compileCliWithMap(src, '', 'x.md')
+    // Nothing to assert about `code` here beyond it having been built; the
+    // height is asserted through the offset above. This guards the emitted
+    // module still parsing with the blank lines in it.
+    expect(code).toContain('const h = 1')
+  })
+
+  test('no sourceURL pragma is emitted at all any more', () => {
+    // It is what produced the confident wrong location on Node.
+    const src = md('---', 'title: a:b', '---', '', '```js', 'const x = 1', '```')
+    expect(compileCli(src, '', '/tmp/x.md')).not.toContain('sourceURL')
+  })
+})
+
+describe('rewriteStackString', () => {
+  test('rewrites a registered shim frame, as a path and as a file:// URL', () => {
+    _clearShims()
+    registerShim('/tmp/s/c_abc.mjs', '/app/cmd.md', 7)
+
+    expect(rewriteStackString('    at boom (/tmp/s/c_abc.mjs:15:32)'))
+      .toBe('    at boom (/app/cmd.md:8:32)')
+    expect(rewriteStackString('    at boom (file:///tmp/s/c_abc.mjs:15:32)'))
+      .toBe('    at boom (file:///app/cmd.md:8:32)')
+    _clearShims()
+  })
+
+  test('leaves every other frame exactly as it was', () => {
+    _clearShims()
+    registerShim('/tmp/s/c_abc.mjs', '/app/cmd.md', 7)
+    const other = '    at run (/home/j/fli/core/runtime.js:721:23)'
+    expect(rewriteStackString(other)).toBe(other)
+    _clearShims()
+  })
+
+  test('never maps below line 1', () => {
+    // A frame in the generated PREAMBLE is above the body, so subtracting the
+    // offset would give 0 or a negative line. Clamped rather than emitted.
+    _clearShims()
+    registerShim('/tmp/s/c_abc.mjs', '/app/cmd.md', 7)
+    expect(rewriteStackString('    at (/tmp/s/c_abc.mjs:2:1)')).toBe('    at (/app/cmd.md:1:1)')
+    _clearShims()
+  })
+
+  test('is a no-op with nothing registered', () => {
+    _clearShims()
+    const s = '    at boom (/tmp/s/c_abc.mjs:15:32)'
+    expect(rewriteStackString(s)).toBe(s)
   })
 })
 

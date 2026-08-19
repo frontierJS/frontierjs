@@ -1,5 +1,148 @@
 # Changes — Basecamp
 
+## 2026-08-19 — a second human can get in (`FJS-032`)
+
+132 tests, 0 fail. `verify` 301/301, `verify:build` 8/8. Typecheck 15 against a
+baseline of 15, ratcheted from 16.
+
+**The setup wizard was the only door into this app for a human.**
+`workspaces.addMember` takes a `userId`, so it could only reach somebody who
+already had an account, and the one route that makes one — `/auth/register` —
+leaves them with no account row and no workspace, after which every scoped
+request 400s and they cannot create a workspace either.
+
+`model Invitation` carries the workspace and the role across the gap where there
+is no user to hang them on. **The row IS the pending state**: no `acceptedAt`,
+no `revokedAt` — accepting writes a `WorkspaceMember` carrying `invitedBy` and
+`invitedAt` forward and deletes the invitation, revoking deletes it, and
+`@@log(audit)` is what survives either way. Those three columns had been declared
+since the schema was written and nothing had ever written one.
+
+The token is `@guarded(all)`, so no scoped read can answer it and the link is
+shown once — the shape an issued API key already had.
+
+**`preview` and `accept` run with no session at all**, exempt from
+`sessionScope`, because the population they serve is not a member yet and may not
+exist yet. Everything a token cannot decide — unknown, expired, workspace gone,
+workspace suspended — is decided in one function, because none of the hooks that
+normally decide it are running. An address that already has an account must be
+signed in as that account: a password on this method would be a second login
+door with none of the first one's rate limiting, and an oracle when it refuses.
+So `/login/` grew a same-origin `?next=`.
+
+**Mail goes through conduit.** `core/mailer.ts` is `IMail` over
+`app.conduit.send()`, the provider a declared target with a credential ref rather
+than a key in a closure. `app.mail` is ABSENT where nothing is configured, which
+is a supported state — the invitation still issues a working link and the screen
+says plainly that nothing was sent, beside the link to copy.
+
+Two defects fell out on the way, both found by running it:
+
+- **`POST /workspaces` 400d for any caller that did not send its own slug**
+  (`FJS-352`). `create()` derived the slug in the METHOD, and `autoValidate` runs
+  before the method — the same ordering `stampOwnership` in that file already
+  exists for, with `accountId` and `ownerId` in it and `slug` left behind. Only
+  the browser called it, and its form sends a slug.
+- **The invite screen asked *does this address have an account* before *who is
+  holding this browser***, so an owner following a link to check it was offered
+  a *create my account* form for somebody else's invitation, with no mention of
+  the session they were in. Found by the drive.
+
+And one correction: `web/config/api-paths.js` said a missing path was harmless
+because the Junction client uses the API's own origin. It does not — it uses
+`location.origin`, so it goes through the dev proxy like everything else. What
+actually hides a gap is the WEBSOCKET: a signed-in browser makes every service
+call as a frame on `/ws`, which one never-stale rule proxies. The HTTP path is
+exercised only where there is no socket, which is exactly what accepting an
+invitation is — and `/invitations` was missing, so the signed-out screen rendered
+`HTTP 404`.
+
+## 2026-08-19 — the machine endpoints take a credential, and there is a machine (`FJS-349`, `FJS-257`)
+
+23 API tests, 0 fail. `verify` 279/279.
+
+**`servers.heartbeat`, `volumes.report` and `cleanup.report` took no credential
+at all.** They are exempted from `sessionScope` because an outpost holds no
+session, and a comment said the transport verified an HMAC — nothing did.
+Measured against a running API: a POST carrying nothing but `X-Service-Method:
+heartbeat` answered 200, moved a server to `online`, and registered the Conduit
+target `outpost:<serverId>` at an address the caller chose — which points every
+later `/exec`, `/deploy` and `/system/prune` for that machine at a host the
+caller owns, signed with this app's own secret.
+
+`requireOutpostSignature` is the credential, registered app-level so a new
+machine-facing method cannot inherit the exemption without it. It verifies with
+`@frontierjs/toolbelt/signature`, the module conduit signs with, over
+`ctx.$raw.rawBody` — the bytes, not a re-serialisation. Fail-closed in every
+direction, and the reason is logged rather than returned.
+
+**The Outpost exists.** `@frontierjs/outpost` answers the protocol this app has
+been speaking to nothing, and the drive now runs the real server over a fake
+Docker rather than a hand-written sink — so a change to either side of the
+protocol shows up in `bun run verify` instead of in production.
+
+## 2026-08-19 — a deploy either reaches a machine or is refused (`FJS-257`, `FJS-031`, `FJS-154`)
+
+128 tests, 0 fail. `verify` 278/278. Typecheck 16 errors against a baseline of 20.
+
+**A release with no Outpost reported six green steps and issued no command.**
+`runStep` returned early when no placement resolved — *"log only, don't fail
+(supports local/stub mode)"* — and the caller marked each step `success`, so a
+deploy finished green in 23ms and set the App to `running`. Eight checks in
+`web/test/verify.mjs` asserted that `success`.
+
+Who carries out a release is now one question, asked in one place:
+`engine/executor.ts` answers **outpost** (a machine that has registered a Conduit
+target), **stub** (asked for by `BASECAMP_STUB_OUTPOST=1`, refused under
+`NODE_ENV=production`, and it says so in every step's output), or **none** — a
+refusal. `deployments.create` asks it so the 400 lands where the person pressed
+the button; the engine asks it again when the job runs, because a placement can
+be removed between the two.
+
+**Nothing could create a placement.** `AppServer` was read by three engines and
+written by nothing — no service, no seed, no screen — which is what the stub was
+really hiding. `apps.place` / `apps.unplace` are the way in: the caller is
+checked against the workspace and the `@@gate("2.8")` row is written through
+`asSystem()`. The App screen's Placement card edits it, and the seed places its
+demo apps, because a seeded app that cannot deploy is a demo of a broken app.
+
+**A tag is not an identity.** Every executor reply may carry a `digest`, and the
+one that does is recorded on `Deployment.builtImage`, sent on to `/deploy` and
+`/health-check`, and shown on the release screen. Only `sha256:<64 hex>` is
+accepted — a `builtImage` nobody can resolve is worse than an empty one, because
+it reads as an answer. `IDEAS/deploy-plane.md` §a.
+
+The drive now proves the whole exchange rather than a database write: its outpost
+sink speaks `/pull`, `/deploy`, `/stop` and `/health-check` over HTTP, a second
+machine (`deploy-01`) registers it, and the release goes out through Conduit and
+comes back with a digest. What is still not built is the Outpost itself.
+
+**Every service published after every method, reads included** (`FJS-031`). A
+`find` broadcast every row it had just read to every browser in the workspace.
+All seventeen now declare `channel: workspaceChannel(app)` on the service instead
+of running a `publish()` hook in `after: { all }`: junction decides what to
+announce in `callService`, once, and that place excludes `find`/`get` by name,
+which no per-service hook list can do for itself. Declaring both is refused at
+construction, so the swap cannot half-land.
+
+**The trail recorded that something happened, never what changed** (`FJS-154`).
+`AuditEvent.diff` was declared and nothing wrote it, so the trail could say a
+server was drained and not what state it was in. It is two hooks now — a
+pre-image in `before: { all }`, the diff in `after: { all }` — and both sides of
+the comparison are read the same way, through the system client, because a
+service is free to answer a projection and a scoped read strips protected
+columns: taking the after from `ctx.result` reported an `@encrypted` column as
+REMOVED rather than changed. Which columns those are comes from
+`db.$protectedFields()`, litestone's own reading of the schema (new in this
+release), never a list written down here. `/activity/` shows the changed fields
+with before → after behind a disclosure.
+
+**Three checks in `verify.mjs` had gone stale against the shell and were fixed
+on the way**: *Sign out* moved into a `DropdownMenu` whose panel is `{#if open}`,
+the login form's inputs had no stated `id` (the kit falls back to a generated
+uid), and the nav moved out of the topbar into the sidebar. Each read as a
+broken app rather than a stale selector.
+
 ## 2026-08-18 — `?workspace_id=` works, and the Hub's queue card renders
 
 Two fixes from the framework side, both measured here first.

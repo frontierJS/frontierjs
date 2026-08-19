@@ -18,6 +18,14 @@
     if (session.needsSetup) return path === '/setup/' ? undefined : '/setup/'
     if (path === '/setup/')  return '/'
 
+    // The one URL a stranger may open. An invitation is addressed to somebody
+    // who is not a member yet and may not have an account at all, so a guard
+    // that asks for a session here would bounce the entire population the link
+    // exists for. The token IS the credential and the service grades it —
+    // `invitations.preview` and `.accept` are exempt from sessionScope for the
+    // same reason, which is where the actual refusals live.
+    if (path.startsWith('/invite/')) return undefined
+
     if (!session.user) return path === '/login/' ? undefined : '/login/'
     if (path === '/login/') return '/'
 

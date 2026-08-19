@@ -31,6 +31,9 @@
  * Exits non-zero and prints what differed if any assertion fails.
  */
 
+import { signRequest } from '@frontierjs/toolbelt/signature'
+import { createOutpostServer } from '@frontierjs/outpost/server'
+import { createDocker } from '@frontierjs/outpost/docker'
 import { spawn } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
@@ -49,6 +52,13 @@ const WEB_PORT = 8020
 // that answers as an outpost — the same reason the channels checks send a real
 // webhook at a URL that does not resolve, one step further along.
 const OUTPOST_PORT = 3011
+// The mail provider, standing in for a real one. Basecamp's own slot on the
+// port formula — env 8, category 1 (backend), project 2, service 1 — beside the
+// API on 8120, the same shape `example` uses for its sink on 8111.
+const MAIL_PORT = 8121
+// What `api/src/core/env.ts` defaults OUTPOST_SECRET to. A real fleet sets it;
+// this drive is the machine as well as the operator, so it holds both sides.
+const OUTPOST_SECRET = process.env.OUTPOST_SECRET ?? 'outpost-dev-secret'
 const BASE     = `http://localhost:${WEB_PORT}`
 // Per run, never a fixed path. A Chrome orphaned by a hard kill keeps the
 // directory open, so a shared one is deleted out from under a live browser and
@@ -145,8 +155,51 @@ if (process.argv.includes('--reset')) {
 }
 
 // ─── Servers ──────────────────────────────────────────────────────────────
-children.push(spawn('bun', ['api/src/index.ts'], { cwd: PKG, stdio: 'ignore' }))
+// The API is given a mail provider by env, which is the whole of what
+// core/mailer.ts reads. Without MAIL_URL the app has no `app.mail` at all —
+// a supported state, and the one every other run of this drive used to be in.
+children.push(spawn('bun', ['api/src/index.ts'], { cwd: PKG, stdio: 'ignore', env: {
+  ...process.env,
+  MAIL_URL:     `http://localhost:${MAIL_PORT}`,
+  MAIL_API_KEY: 'dev-mail-key',
+  MAIL_FROM:    'basecamp@example.test',
+  APP_URL:      BASE,
+} }))
 children.push(spawn('bun', ['run', 'web'],       { cwd: PKG, stdio: 'ignore' }))
+
+// ─── The mail sink ──────────────────────────────────────────────────────────
+// The mail provider, over a real socket. It speaks Resend's `POST /emails`,
+// which is the shape core/mailer.ts builds, and it checks the bearer token —
+// so the credential really is resolved through conduit's `env:` ref rather
+// than assumed.
+//
+// A SEPARATE LISTENER rather than an in-process fake, for the same reason the
+// outpost above is the real one: an in-process stub would prove that a payload
+// was built and nothing else. No provider is reached, no credential resolved,
+// no failure kind reachable.
+const mailbox = []
+{
+  const http = await import('node:http')
+  const sink = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', c => { body += c })
+    req.on('end', () => {
+      res.setHeader('content-type', 'application/json')
+      if (req.method === 'POST' && req.url === '/emails') {
+        if (req.headers.authorization !== 'Bearer dev-mail-key') {
+          res.statusCode = 401
+          return res.end(JSON.stringify({ message: 'bad api key' }))
+        }
+        mailbox.push(JSON.parse(body || '{}'))
+        return res.end(JSON.stringify({ id: `mail_${mailbox.length}` }))
+      }
+      res.statusCode = 404
+      res.end(JSON.stringify({ message: 'not a mail route' }))
+    })
+  })
+  sink.listen(MAIL_PORT)
+  children.push({ kill: () => sink.close() })
+}
 
 // ─── The outpost sink ───────────────────────────────────────────────────────
 // Stands in for the Basecamp outpost on gateway-01. It records what it was asked
@@ -156,13 +209,39 @@ children.push(spawn('bun', ['run', 'web'],       { cwd: PKG, stdio: 'ignore' }))
 //
 // It is not asked to be a good outpost — no HMAC verification, no real disk. What
 // it proves is that the request was MADE, and with which name.
-const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [] }
+const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [], deploy: [] }
+
+// The bytes this sink claims to be running. A real outpost answers the digest
+// docker resolved; the point of asserting on it is that Basecamp records what
+// the MACHINE said ran, rather than the tag it asked for — two servers at one
+// commit hold two images with the same tag (IDEAS/deploy-plane.md).
+const SINK_DIGEST = 'sha256:' + 'a1'.repeat(32)
+
+// The real Outpost, over a machine that does not exist: every docker command it
+// would run goes through this runner instead, which resolves one image digest
+// and reports every container as up. What is NOT faked is the Outpost — its
+// route table, its snake_case wire contract and its signature check are the
+// shipped ones, so a change to either side of the protocol shows up here.
+const realOutpost = createOutpostServer(
+  { serverId: 'drive', secret: OUTPOST_SECRET, version: '0.4.1',
+    publicUrl: `http://localhost:${OUTPOST_PORT}`, workDir: '/tmp/outpost-drive' },
+  {
+    docker: createDocker({
+      run: async (argv) => {
+        if (argv.slice(0, 3).join(' ') === 'docker image inspect') return { exitCode: 0, stdout: SINK_DIGEST, stderr: '' }
+        if (argv.slice(0, 2).join(' ') === 'docker inspect')       return { exitCode: 0, stdout: 'true', stderr: '' }
+        return { exitCode: 0, stdout: '', stderr: '' }
+      },
+    }),
+    log: { warn: (m) => console.log(`    outpost: ${m}`), error: (m) => console.log(`    outpost: ${m}`) },
+  }
+)
 {
   const http  = await import('node:http')
   const outpost = http.createServer((req, res) => {
     let body = ''
     req.on('data', c => { body += c })
-    req.on('end', () => {
+    req.on('end', async () => {
       res.setHeader('content-type', 'application/json')
       if (req.method === 'DELETE' && req.url.startsWith('/volumes/')) {
         outpostSaw.deleted.push(decodeURIComponent(req.url.slice('/volumes/'.length)))
@@ -196,6 +275,23 @@ const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [] }
             build_cache: { size_bytes: 0, reclaimable_bytes: 0 },
           },
         }))
+      }
+      // The release protocol, answered by the REAL Outpost rather than by a
+      // hand-written stand-in. `@frontierjs/outpost` is the process a fleet
+      // server runs, and the only thing faked here is the machine underneath
+      // it: `createDocker({ run })` takes the runner, so this exercises the
+      // actual route table, the actual digest handling, and the actual
+      // signature check — against the signature Conduit really sends.
+      //
+      // A stand-in agrees with itself. Same argument the repo makes about fake
+      // clients hiding real bugs, one layer out.
+      if (req.method === 'POST' && ['/pull', '/deploy', '/stop', '/health-check'].includes(req.url)) {
+        outpostSaw.deploy.push({ path: req.url, body: JSON.parse(body || '{}') })
+        const answer = await realOutpost.handle(new Request(`http://localhost:${OUTPOST_PORT}${req.url}`, {
+          method: 'POST', headers: req.headers, body,
+        }))
+        res.statusCode = answer.status
+        return res.end(await answer.text())
       }
       if (req.method === 'POST' && req.url === '/volumes/prune') {
         const names = (JSON.parse(body || '{}').names ?? [])
@@ -403,6 +499,11 @@ await goto('/setup/')
 check('setup is unreachable once done', await path(), '/')
 
 // 4. Sign out.
+// Two clicks, because the control is two controls: the shell keeps Sign out in
+// the account DropdownMenu, whose panel is `{#if open}` — so a search of every
+// button on the page finds nothing until the trigger has been pressed.
+await evaluate(`document.getElementById('account-menu').click()`)
+await sleep(400)
 await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign out')).click()`)
 await sleep(2000)
 check('sign out returns to /login/', await path(), '/login/')
@@ -439,14 +540,30 @@ check('reload keeps the user', await evaluate('document.body.textContent'), t =>
 // and is not is a claim nobody is checking.
 const token = await evaluate(`localStorage.getItem('basecamp_token')`)
 
-async function apiCall(path, { method = 'GET', body, workspace, header } = {}) {
-  const headers = { accept: 'application/json', authorization: `Bearer ${token}` }
+async function apiCall(path, { method = 'GET', body, workspace, header, outpost } = {}) {
+  const headers = outpost ? { accept: 'application/json' }
+                          : { accept: 'application/json', authorization: `Bearer ${token}` }
   if (body) headers['content-type'] = 'application/json'
   if (workspace) headers['x-workspace-id'] = workspace
   // Custom methods dispatch on X-Service-Method, never a sub-path.
   if (header) Object.assign(headers, header)
+
+  // The three endpoints a MACHINE calls carry no session — an outpost has none
+  // — and until FJS-349 they carried nothing else either, so an unsigned POST
+  // could bring a server online and point every later fleet command at an
+  // address it chose. Signed with the fleet secret, over the exact bytes sent:
+  // the hash is of the body, so signing a re-serialisation would not match.
+  const payload = body ? JSON.stringify(body) : undefined
+  if (outpost) {
+    Object.assign(headers, await signRequest({
+      secret: OUTPOST_SECRET, method, path, body: payload ?? '',
+      // The kit is pure — the clock and the nonce belong to whoever is calling.
+      timestamp: Math.floor(Date.now() / 1000), nonce: crypto.randomUUID(),
+    }))
+  }
+
   const res = await fetch(`http://localhost:${API_PORT}${path}`, {
-    method, headers, body: body ? JSON.stringify(body) : undefined,
+    method, headers, body: payload,
   })
   const text = await res.text()
   const data = text ? JSON.parse(text) : null
@@ -700,6 +817,179 @@ check('deleting the only primary hostname is allowed — it is the last one',
 
 await goto(appOwnerEnvPath)
 
+// A release with nowhere to run is refused where the button is, not five steps
+// in. Until FJS-257 this deploy reported six green steps in 23ms, set the App
+// to `running`, and issued no command — there was no machine, and nothing said
+// so. The app has no placement yet: the fleet does not exist until §11.
+await evaluate(`
+  (() => {
+    const btn = [...document.querySelectorAll('#app-rows button')].find(b => b.textContent.trim() === 'Deploy')
+    if (!btn) throw new Error('no Deploy button — is there an app in this environment?')
+    btn.click()
+  })()
+`)
+// Polled, not slept. The screen sets `error` and a live push then reloads the
+// environment, which clears it — so a fixed sleep is a bet on landing inside
+// that window, and it lost once in ten runs with the message already gone.
+check('a release with no placement is refused, by name',
+  await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`,
+    t => t.includes('not placed on any server'), 8000),
+  t => t.includes('not placed on any server'))
+check('…and no release was opened',
+  await path(), p => p === appOwnerEnvPath)
+
+// ── 11. Servers ───────────────────────────────────────────────────────
+// The richest service: custom methods that transition status, Json columns,
+// an event trail, and a heartbeat that arrives from a machine rather than a
+// person.
+await goto('/servers/')
+check('the servers list renders', await heading(), 'Servers')
+check('status filter is built from the schema enum',
+  await evaluate(`[...document.querySelectorAll('#filter-status option')].map(o => o.value).join(',')`),
+  t => t.includes('online') && t.includes('draining') && t.includes('unreachable'))
+
+await click('Add server')
+await sleep(1500)
+// camelCase, because the wire contract is the schema's field names. `ip_address`
+// would not error — autoValidate strips it and the column comes back null.
+await fill({ name: 'gateway-01', ipAddress: '10.0.9.10', region: 'nbg1' })
+await submit()
+await sleep(2500)
+
+check('creating opens the server', await heading(), 'gateway-01')
+const serverPath = await path()
+check('a new server starts pending',
+  await evaluate(`document.getElementById('server-status')?.textContent.trim()`), 'pending')
+check('ipAddress persisted',
+  await evaluate(`document.body.textContent`), t => t.includes('10.0.9.10'))
+
+// A pending server cannot be drained, and the page does not offer it.
+check('pending offers no drain',
+  await evaluate(`document.getElementById('server-actions')?.textContent ?? ''`),
+  t => !t.includes('Drain'))
+
+// The outpost's own endpoint — no session, authenticated at the transport, and
+// the only path in the app a machine uses. Bringing the server online this way
+// is also what makes the drain path reachable.
+const serverId = serverPath.split('/').filter(Boolean)[1]
+// The heartbeat payload is the OUTPOST's contract and it is snake_case
+// (`outpost_version`), unlike every other call in this file — the schema's
+// camelCase applies to model fields, and these are not model fields. Sending
+// `outpostVersion` is not an error: it is ignored, and the page reports the
+// outpost as 'not installed' while everything else looks fine.
+await apiCall(`/servers/${serverId}`, {
+  method: 'POST', workspace: firstWs.id, outpost: true,
+  body: { outpost_version: '0.4.1', health: { cpu: 12, memory: 41 } },
+  header: { 'x-service-method': 'heartbeat' },
+})
+// No reload: the heartbeat published to the workspace channel and the open page
+// picked it up.
+check('a heartbeat brings the server online with no reload',
+  await waitFor(`document.getElementById('server-status')?.textContent.trim()`, v => v === 'online'),
+  'online')
+check('…and its health arrives with it',
+  await evaluate(`document.body.textContent`), t => t.includes('cpu') && t.includes('12'))
+check('…and the outpost version it reported',
+  await evaluate(`document.body.textContent`), t => t.includes('0.4.1'))
+
+// Now the transitions, through the buttons.
+await click('Drain')
+check('draining transitions the status',
+  await waitFor(`document.getElementById('server-status')?.textContent.trim()`, v => v === 'draining'),
+  'draining')
+check('and the trail records it',
+  await evaluate(`document.getElementById('server-events')?.textContent ?? ''`),
+  t => t.includes('drain'))
+
+// The Toaster is mounted once in the shell; anything can call toasts.success().
+// Asserted here rather than in a chrome section of its own because a toast is
+// transient — the only honest place to look for one is straight after the act.
+check('the transition is confirmed in a toast',
+  await waitFor(`document.querySelector('.toast-stack')?.textContent ?? ''`, t => t.includes('draining')),
+  t => t.includes('draining'))
+
+check('a draining server offers cancel, not drain',
+  await evaluate(`document.getElementById('server-actions')?.textContent ?? ''`),
+  t => t.includes('Cancel drain') && !t.includes('>Drain'))
+
+await click('Cancel drain')
+check('cancelling returns it to online',
+  await waitFor(`document.getElementById('server-status')?.textContent.trim()`, v => v === 'online'),
+  'online')
+
+// The service refuses to remove an online server. The button is NOT disabled —
+// the refusal is the server's to make, and showing it is more honest than
+// guessing at it.
+await click('Remove')
+await sleep(2000)
+check('removing an online server is refused, in words',
+  await evaluate(`document.querySelector('.alert.danger')?.textContent.trim() ?? ''`),
+  t => t.includes('drain it first'))
+check('…and it is still here', await path(), serverPath)
+
+// ── 11b. A release, now that there is a machine to run it on ──────────
+// This is the one screen the WebSocket exists for. Everything asserted below
+// happens WITHOUT a reload: the page is loaded once, a release is started, and
+// the engine's pushes are what change it.
+//
+// It runs HERE rather than beside the app screen because a release now needs a
+// placement, and a placement needs a server that has reported an outpost. The
+// deploy below therefore goes out over Conduit to the sink at the top of this
+// file — a real request, over HTTP, off this process — where it used to assert
+// a pipeline that sent nothing (FJS-257).
+//
+// The channel had never had a subscriber before this phase, and it did not
+// work: the connection joined `workspace:${session.workspace_id}` (a field that
+// does not exist — it is workspaceId, and auth never sets it), and the engine
+// called `channel.publish()` (a manager method, not a channel one) behind a
+// guard that swallowed the miss. Both are fixed; these checks are what stop
+// them regressing into silence again.
+
+// A second machine, and it is a second machine on purpose: gateway-01 must go
+// on carrying no outpost URL, because §13c-ter asserts what happens to a volume
+// record when there is no outpost to ask. Created over HTTP — §11 already
+// proved the create screen, and repeating it here would only cost time.
+// secondWs, not firstWs: the browser switched to Skunkworks in §8 and that
+// choice persists, so the app on screen and this machine have to be in the same
+// workspace or the placement select will not offer it.
+const releaseServer = await apiCall('/servers', {
+  method: 'POST', workspace: secondWs.id,
+  body: { name: 'deploy-01', slug: 'deploy-01', role: 'general', ipAddress: '10.0.0.9' },
+})
+await apiCall(`/servers/${releaseServer.id}`, {
+  method: 'POST', workspace: secondWs.id, outpost: true,
+  // The URL is what registers the Conduit target `outpost:<id>`; without it the
+  // machine is online and unreachable, and the release below is refused.
+  body: { outpost_version: '0.4.1', outpost_url: `http://localhost:${OUTPOST_PORT}`,
+          health: { cpu: 8, memory: 30 } },
+  header: { 'x-service-method': 'heartbeat' },
+})
+
+// Place the app on it, through the screen an operator would use. The row it
+// writes is `@@gate("2.8")` — the service checks the caller against the
+// workspace and writes it through asSystem(), which is why there is no
+// placements service to POST to.
+await goto(appDetailPath)
+await evaluate(`
+  (() => {
+    const sel = document.getElementById('place-on')
+    const opt = [...sel.options].find(o => o.textContent.includes('deploy-01'))
+    if (!opt) throw new Error('deploy-01 is not offered — did the heartbeat land?')
+    sel.value = opt.value
+    sel.dispatchEvent(new Event('input',  { bubbles: true }))
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })()
+`)
+await sleep(400)
+await click('Place')
+await sleep(1500)
+check('an app can be placed on a machine',
+  await evaluate(`document.getElementById('app-placement')?.textContent ?? ''`),
+  t => t.includes('deploy-01') && t.includes('replica 0'))
+
+// Back to the environment, which is where a release is started from.
+await goto(appOwnerEnvPath)
+
 // Record every push the browser receives, through the app's OWN module — the
 // same resource instance the screens use, so this observes the real socket
 // rather than a second connection made for the test.
@@ -761,96 +1051,28 @@ check('a finished release offers no cancel',
   await evaluate(`[...document.querySelectorAll('button')].some(b => b.textContent.trim() === 'Cancel')`),
   false)
 
-// ── 11. Servers ───────────────────────────────────────────────────────
-// The richest service: custom methods that transition status, Json columns,
-// an event trail, and a heartbeat that arrives from a machine rather than a
-// person.
-await goto('/servers/')
-check('the servers list renders', await heading(), 'Servers')
-check('status filter is built from the schema enum',
-  await evaluate(`[...document.querySelectorAll('#filter-status option')].map(o => o.value).join(',')`),
-  t => t.includes('online') && t.includes('draining') && t.includes('unreachable'))
 
-await click('Add server')
-await sleep(1500)
-// camelCase, because the wire contract is the schema's field names. `ip_address`
-// would not error — autoValidate strips it and the column comes back null.
-await fill({ name: 'gateway-01', ipAddress: '10.0.9.10', region: 'nbg1' })
-await submit()
-await sleep(2500)
+// What the machine was actually asked to do. A release that reports six green
+// steps having sent nothing is the exact failure this section exists for, and
+// the deployment row cannot see the difference — only the sink can.
+// A container app's steps are Validate · Build · Push · Stop · Start · Health,
+// so what leaves the process is /exec three times, then /stop, /deploy and
+// /health-check. There is no /pull: nothing here pulls an image it just built.
+check('the outpost was asked to stop, start and health-check',
+  outpostSaw.deploy.map(d => d.path).join(','),
+  t => t.includes('/stop') && t.includes('/deploy') && t.includes('/health-check'))
+check('…and the release records the digest the MACHINE reported, not the tag it asked for',
+  await evaluate(`document.getElementById('deploy-digest')?.textContent.trim() ?? ''`),
+  SINK_DIGEST)
+// The digest travels forward: /deploy answers which bytes it started, and the
+// health check is then asked about those bytes rather than about the app in
+// general. A release whose steps each address a different image is the failure
+// this carries the value to prevent.
+check('…and the health check was addressed by it',
+  outpostSaw.deploy.filter(d => d.path === '/health-check').map(d => d.body.digest).join(','),
+  SINK_DIGEST)
 
-check('creating opens the server', await heading(), 'gateway-01')
-const serverPath = await path()
-check('a new server starts pending',
-  await evaluate(`document.getElementById('server-status')?.textContent.trim()`), 'pending')
-check('ipAddress persisted',
-  await evaluate(`document.body.textContent`), t => t.includes('10.0.9.10'))
-
-// A pending server cannot be drained, and the page does not offer it.
-check('pending offers no drain',
-  await evaluate(`document.getElementById('server-actions')?.textContent ?? ''`),
-  t => !t.includes('Drain'))
-
-// The outpost's own endpoint — no session, authenticated at the transport, and
-// the only path in the app a machine uses. Bringing the server online this way
-// is also what makes the drain path reachable.
-const serverId = serverPath.split('/').filter(Boolean)[1]
-// The heartbeat payload is the OUTPOST's contract and it is snake_case
-// (`outpost_version`), unlike every other call in this file — the schema's
-// camelCase applies to model fields, and these are not model fields. Sending
-// `outpostVersion` is not an error: it is ignored, and the page reports the
-// outpost as 'not installed' while everything else looks fine.
-await apiCall(`/servers/${serverId}`, {
-  method: 'POST', workspace: firstWs.id,
-  body: { outpost_version: '0.4.1', health: { cpu: 12, memory: 41 } },
-  header: { 'x-service-method': 'heartbeat' },
-})
-// No reload: the heartbeat published to the workspace channel and the open page
-// picked it up.
-check('a heartbeat brings the server online with no reload',
-  await waitFor(`document.getElementById('server-status')?.textContent.trim()`, v => v === 'online'),
-  'online')
-check('…and its health arrives with it',
-  await evaluate(`document.body.textContent`), t => t.includes('cpu') && t.includes('12'))
-check('…and the outpost version it reported',
-  await evaluate(`document.body.textContent`), t => t.includes('0.4.1'))
-
-// Now the transitions, through the buttons.
-await click('Drain')
-check('draining transitions the status',
-  await waitFor(`document.getElementById('server-status')?.textContent.trim()`, v => v === 'draining'),
-  'draining')
-check('and the trail records it',
-  await evaluate(`document.getElementById('server-events')?.textContent ?? ''`),
-  t => t.includes('drain'))
-
-// The Toaster is mounted once in the shell; anything can call toasts.success().
-// Asserted here rather than in a chrome section of its own because a toast is
-// transient — the only honest place to look for one is straight after the act.
-check('the transition is confirmed in a toast',
-  await waitFor(`document.querySelector('.toast-stack')?.textContent ?? ''`, t => t.includes('draining')),
-  t => t.includes('draining'))
-
-check('a draining server offers cancel, not drain',
-  await evaluate(`document.getElementById('server-actions')?.textContent ?? ''`),
-  t => t.includes('Cancel drain') && !t.includes('>Drain'))
-
-await click('Cancel drain')
-check('cancelling returns it to online',
-  await waitFor(`document.getElementById('server-status')?.textContent.trim()`, v => v === 'online'),
-  'online')
-
-// The service refuses to remove an online server. The button is NOT disabled —
-// the refusal is the server's to make, and showing it is more honest than
-// guessing at it.
-await click('Remove')
-await sleep(2000)
-check('removing an online server is refused, in words',
-  await evaluate(`document.querySelector('.alert.danger')?.textContent.trim() ?? ''`),
-  t => t.includes('drain it first'))
-check('…and it is still here', await path(), serverPath)
-
-// ── 11b. Shell chrome — the attention system and ⌘K ───────────────────
+// ── 11c. Shell chrome — the attention system and ⌘K ───────────────────
 // The mock's NoticeBar / ActionQueue / CommandPalette, over real rows. The
 // notice engine is src/notices.js, a leaf module both the shell and the home
 // screen call, so "needs attention" has one definition.
@@ -860,7 +1082,7 @@ check('…and it is still here', await path(), serverPath)
 // push, and the notice is DERIVED from the store — so this asserts the whole
 // chain, not a re-fetch.
 await apiCall(`/servers/${serverId}`, {
-  method: 'POST', workspace: firstWs.id,
+  method: 'POST', workspace: firstWs.id, outpost: true,
   body: { outpost_version: '0.4.1', health: { cpu: 95, memory: 41 } },
   header: { 'x-service-method': 'heartbeat' },
 })
@@ -1364,15 +1586,15 @@ check('a revoked key is still listed — revocation is a state, not a deletion',
 // The server is gateway-01 in Skunkworks — the browser switched workspaces back
 // in the switcher checks and that choice persists, so this is the workspace the
 // screen is showing.
-const REPORT = (volumes) => fetch(`http://localhost:${API_PORT}/volumes`, {
-  method:  'POST',
-  // No authorization header, deliberately. An outpost holds no session; if
-  // `report` were not exempted from sessionScope this 401s, which is exactly
-  // how every server check-in failed once.
-  headers: { 'content-type': 'application/json', accept: 'application/json',
-             'x-service-method': 'report' },
-  body:    JSON.stringify({ server_id: serverId, volumes }),
-}).then(r => r.json())
+// No authorization header, deliberately: an outpost holds no session, and
+// `report` is exempted from sessionScope for that reason. What it carries
+// instead is a signature over the exact bytes (FJS-349) — the exemption used to
+// be the whole of the authentication, and an unsigned POST could write the
+// fleet's disk picture.
+const REPORT = (volumes) => apiCall('/volumes', {
+  method: 'POST', outpost: true, header: { 'x-service-method': 'report' },
+  body:   { server_id: serverId, volumes },
+})
 
 const created = await fetch(`http://localhost:${API_PORT}/volumes`, {
   method:  'POST',
@@ -1430,7 +1652,7 @@ check('…and the volume is still listed',
 // gateway-01 is already online, so this exercises the half that used to sit
 // inside the status transition and therefore never ran for a live machine.
 await apiCall(`/servers/${serverId}`, {
-  method: 'POST', workspace: secondWs.id,
+  method: 'POST', workspace: secondWs.id, outpost: true,
   body: { outpost_version: '0.4.1', health: { cpu: 12, memory: 41 },
           outpost_url: `http://localhost:${OUTPOST_PORT}` },
   header: { 'x-service-method': 'heartbeat' },
@@ -1629,6 +1851,22 @@ check('…and an actor id is resolved to a person',
   await evaluate(`document.getElementById('activity-rows')?.textContent ?? ''`),
   t => t.includes('sam@example.com') || t.includes('Sam'))
 
+// What changed, not only that something did. `AuditEvent.diff` was declared and
+// nothing wrote it, so the trail could say a server was drained and not what
+// state it was in (FJS-154). The drain in §11 is the row this reads.
+await evaluate(`
+  (() => {
+    const row = [...document.querySelectorAll('#activity-rows tr')]
+      .find(tr => tr.textContent.includes('drain') && tr.querySelector('details'))
+    if (!row) throw new Error('no drain row carries a diff')
+    row.querySelector('details').open = true
+  })()
+`)
+await sleep(300)
+check('…and the trail says WHAT changed, not only that something did',
+  await evaluate(`[...document.querySelectorAll('#activity-rows details')].map(d => d.textContent).join('|')`),
+  t => t.includes('status') && t.includes('online') && t.includes('draining'))
+
 // Two sources, one feed. `AuditEvent` is what people did; `ServerEvent` is what
 // the machines did — and until `servers.feed` landed the second was readable
 // per-server only, so a fleet view meant one request per server merged in the
@@ -1767,19 +2005,32 @@ check('a machine that has never reported says so, rather than showing zeroes',
   await evaluate(`document.getElementById('cleanup-list')?.textContent ?? ''`),
   t => t.includes('never reported'))
 
-// The outpost's endpoint — no session, like the volume report and the heartbeat.
-const disk = await fetch(`http://localhost:${API_PORT}/cleanup`, {
+// The outpost's endpoint — no session, like the volume report and the
+// heartbeat, and signed for the same reason all three are (FJS-349).
+const DISK = {
+  server_id: serverId,
+  images:      { total: 58, unused: 9, dangling: 22, size_bytes: 18 * 1024 ** 3, reclaimable_bytes: 9 * 1024 ** 3 },
+  containers:  { running: 1, stopped: 2, reclaimable_bytes: 40 * 1024 ** 2 },
+  build_cache: { size_bytes: 8 * 1024 ** 3, reclaimable_bytes: 8 * 1024 ** 3 },
+}
+await apiCall('/cleanup', {
+  method: 'POST', outpost: true, header: { 'x-service-method': 'report' }, body: DISK,
+})
+check('an outpost with no session can report a disk', true, true)
+
+// …and the same call without a signature cannot. This is the whole of FJS-349:
+// the three machine endpoints are exempted from sessionScope because a machine
+// holds no session, and until 2026-08-19 that exemption WAS the authentication
+// — an unsigned POST wrote the fleet's disk picture, and the same door on
+// `servers.heartbeat` pointed every outbound command at an address the caller
+// named.
+const unsigned = await fetch(`http://localhost:${API_PORT}/cleanup`, {
   method:  'POST',
   headers: { 'content-type': 'application/json', accept: 'application/json',
              'x-service-method': 'report' },
-  body: JSON.stringify({
-    server_id: serverId,
-    images:      { total: 58, unused: 9, dangling: 22, size_bytes: 18 * 1024 ** 3, reclaimable_bytes: 9 * 1024 ** 3 },
-    containers:  { running: 1, stopped: 2, reclaimable_bytes: 40 * 1024 ** 2 },
-    build_cache: { size_bytes: 8 * 1024 ** 3, reclaimable_bytes: 8 * 1024 ** 3 },
-  }),
+  body:    JSON.stringify(DISK),
 })
-check('an outpost with no session can report a disk', disk.status, 200)
+check('…and an unsigned one is refused', unsigned.status, 401)
 
 await goto('/cleanup/')
 check('the figures on screen are the ones Docker measured',
@@ -1844,8 +2095,12 @@ check('a sweep that never happened cannot be recorded from the wire', inventedRu
 
 await goto('/hub/')
 check('the hub opens', await heading(), 'Platform hub')
+// `.navlist`, not `.topbar`: nineteen navlinks in a 56px row wrapped and spilled
+// out of the bar, so the shell moved the nav into the sidebar where `.navlink`
+// is documented to live. A selector naming the old home passes nothing and
+// reads as the link being absent.
 check('the shell offers it to a system administrator',
-  await evaluate(`[...document.querySelectorAll('.topbar .navlink')].map(a => a.textContent.trim()).join('|')`),
+  await evaluate(`[...document.querySelectorAll('.navlist .navlink')].map(a => a.textContent.trim()).join('|')`),
   t => t.includes('Hub'))
 
 // Read at request time from the things that own them — SQLite for its own
@@ -2110,6 +2365,164 @@ await evaluate(`[...document.querySelectorAll('#hub-flag-groups button')][0].cli
 check('toggling one from the hub changes the flag\'s own default',
   await waitFor(`document.getElementById('hub-flag-groups')?.textContent ?? ''`, t => t !== flagBefore),
   t => t !== flagBefore)
+
+// ── 13b. Invitations ──────────────────────────────────────────────────
+//
+// The only door into this app for a human who is not the first one. Until
+// `FJS-032` closed there was none: `workspaces.addMember` takes a `userId`, so
+// it could only reach somebody who already had an account, and the one route
+// that makes one — `/auth/register` — leaves them with no account row and no
+// workspace, so every scoped request 400s afterwards.
+//
+// Driven end to end because the halves fail apart: the link can be right and
+// the mail never sent, the mail can go and the link be dead, and the accept can
+// write a membership the person cannot use. So this section asks the machine
+// each time — the mail sink for what actually left the process, the browser for
+// what the person sees, and the API for what the row says.
+const wsBefore = await evaluate(`localStorage.getItem('basecamp_workspace')`)
+const mailBefore = mailbox.length
+
+await goto('/admin/')
+check('an owner is offered a way to invite somebody',
+  await evaluate(`!!document.getElementById('invite-send')`), true)
+
+await fill({ 'invite-email': 'grace@example.test' })
+await evaluate(`
+  (() => {
+    const sel = document.getElementById('invite-role')
+    sel.value = 'developer'
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })()
+`)
+await sleep(400)
+await evaluate(`document.getElementById('invite-send').click()`)
+
+check('the invitation is issued and the link shown once',
+  await waitFor(`document.getElementById('minted-link')?.textContent.trim() ?? ''`, t => t.includes('/invite/')),
+  t => t.includes('/invite/'))
+const inviteLink = await evaluate(`document.getElementById('minted-link')?.textContent.trim()`)
+
+// The half no database check can see. `mailed: true` is the app's own claim;
+// this is the provider saying it received something, with the right key. Waited
+// on HERE rather than in the page — the mailbox is this process's, and waitFor
+// polls the browser.
+async function mailsUntil(n, ms = 10_000) {
+  for (let waited = 0; waited < ms && mailbox.length < n; waited += 200) await sleep(200)
+  return mailbox.length
+}
+check('…and a mail really left the process', await mailsUntil(mailBefore + 1), n => n > mailBefore)
+check('…addressed to the person invited', mailbox.at(-1)?.to?.[0], 'grace@example.test')
+check('…carrying the same link the screen shows',
+  String(mailbox.at(-1)?.html ?? ''), t => t.includes(inviteLink))
+check('…from the address the app was configured with', mailbox.at(-1)?.from, 'basecamp@example.test')
+
+check('the pending invitation is listed',
+  await evaluate(`document.getElementById('invite-rows')?.textContent ?? ''`),
+  t => t.includes('grace@example.test'))
+
+// Resending is not "send the same link again" — it mints a new token, which is
+// how an invitation forwarded to the wrong person is taken back.
+await evaluate(`[...document.querySelectorAll('#invite-rows button')].find(b => b.textContent.includes('Resend')).click()`)
+const resentLink = await waitFor(
+  `document.getElementById('minted-link')?.textContent.trim() ?? ''`,
+  t => t.includes('/invite/') && t !== inviteLink)
+check('resending mints a different link', resentLink, t => t !== inviteLink)
+check('…and sends a second mail', await mailsUntil(mailBefore + 2), n => n > mailBefore + 1)
+
+const invitePath = new URL(resentLink).pathname
+const deadPath   = new URL(inviteLink).pathname
+
+// Opened by the wrong person. The guard lets the URL through — a stranger has
+// to be able to reach it — and the SERVICE is what refuses, which is what this
+// screen renders rather than a blank page.
+// Polled, not read once. The screen asks the service what the link is after it
+// mounts, so a fixed wait after navigation is a bet on a round trip — and this
+// page is reached with no session at all below, where the whole SPA boot
+// happens first.
+const invitePage = () => waitFor(
+  `document.getElementById('invite-summary') || document.getElementById('invite-error') ? document.body.textContent : ''`,
+  t => t !== '')
+
+await goto(deadPath)
+await invitePage()
+check('a link that has been superseded says so, rather than showing nothing',
+  await evaluate(`document.getElementById('invite-error')?.textContent.trim() ?? ''`),
+  t => t.includes('not valid'))
+
+await goto(invitePath)
+check('a live link opened by the wrong account names both addresses',
+  await invitePage(),
+  t => t.includes('grace@example.test') && t.includes(ACCOUNT.email))
+check('…and offers to switch, not to accept',
+  await evaluate(`!!document.getElementById('invite-switch') && !document.getElementById('invite-accept')`), true)
+
+// Signed out entirely. This is the population the link exists for: no session,
+// no account, no membership.
+await evaluate(`document.getElementById('account-menu').click()`)
+await sleep(400)
+await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign out')).click()`)
+await sleep(2000)
+
+await goto(invitePath)
+check('a signed-out stranger reaches the invitation at all', await path(), invitePath)
+check('…and is asked for a name and a password, because there is no account yet',
+  await waitFor(`!!document.getElementById('invite-name') && !!document.getElementById('invite-password')`, v => v === true), true)
+check('…being told which workspace and which role',
+  await evaluate(`document.getElementById('invite-summary')?.textContent ?? ''`),
+  t => t.includes('developer'))
+
+await fill({ 'invite-name': 'Grace', 'invite-password': 'hopperhopper' })
+await evaluate(`document.getElementById('invite-accept').click()`)
+
+check('accepting lands them inside the app', await waitFor(`location.pathname`, p => p === '/'), '/')
+check('…signed in as themselves', await evaluate(`document.body.textContent`), t => t.includes('grace@example.test'))
+check('…scoped to the workspace they were invited to',
+  await evaluate(`localStorage.getItem('basecamp_workspace')`), wsBefore)
+
+await goto('/admin/')
+check('the members list now has them', await waitFor(
+  `document.getElementById('member-rows')?.textContent ?? ''`, t => t.includes('grace@example.test')),
+  t => t.includes('grace@example.test'))
+// A developer may not read invitations (`@@gate("5")`), so the screen does not
+// offer a form whose every use would be refused — the affordance is derived
+// from the read that was already made, not from a second copy of the rule.
+check('…and a developer is offered no way to invite anybody',
+  await evaluate(`!!document.getElementById('invite-send')`), false)
+
+// The link is consumed, not merely marked used: the row is gone, so a forwarded
+// mail is worth nothing to whoever it reaches next.
+await goto(invitePath)
+await invitePage()
+check('the accepted link is dead',
+  await evaluate(`document.getElementById('invite-error')?.textContent.trim() ?? ''`),
+  t => t.includes('not valid'))
+
+// Back to the owner, and back to the workspace this section started in — the
+// a11y sweep below drives every screen, including /hub/, as this same user.
+//
+// Signed out FIRST. Grace is still signed in here, and the guard sends a signed-
+// in caller straight off /login/ — so navigating there without this lands on /
+// and the fill below fails naming a field that is on another screen.
+await goto('/')
+await evaluate(`document.getElementById('account-menu').click()`)
+await sleep(400)
+await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.includes('Sign out')).click()`)
+await waitFor(`location.pathname`, p => p === '/login/')
+await fill({ email: ACCOUNT.email, password: ACCOUNT.password })
+await submit()
+await waitFor(`location.pathname`, p => p === '/')
+await evaluate(`
+  (() => {
+    const sel = document.getElementById('workspace-switch')
+    if (sel && sel.value !== ${JSON.stringify(wsBefore)}) {
+      sel.value = ${JSON.stringify(wsBefore)}
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+  })()
+`)
+await sleep(1500)
+check('the owner is back, in the workspace this section started in',
+  await evaluate(`localStorage.getItem('basecamp_workspace')`), wsBefore)
 
 // ── 14. Accessibility, on every screen ────────────────────────────────
 // The app detail screen is a dynamic route, so it is audited by its captured

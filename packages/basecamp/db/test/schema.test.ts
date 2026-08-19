@@ -254,7 +254,7 @@ describe('generated migration', () => {
     expect(onDisk).toContain(generateDDL(r.schema))
   })
 
-  test('applies to a fresh database — 33 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 38 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -271,8 +271,10 @@ describe('generated migration', () => {
     // and `DashboardWidget` — a widget names a kind from a declared vocabulary,
     // so a saved view is an arrangement rather than a stored query. 37 since
     // `Recipe`, `RecipeRun`, `DiskUsage` and `CleanupRun` — the two ways this
-    // app acts on a machine, one arbitrary and one declared.
-    expect(tables.length).toBe(37)
+    // app acts on a machine, one arbitrary and one declared. 38 since
+    // `Invitation` — the only door into this app for a human who is not the
+    // first one, because `addMember` needs a userId and nothing made users.
+    expect(tables.length).toBe(38)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {

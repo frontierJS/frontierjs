@@ -15,7 +15,7 @@
 // The split in the schema is the split in the hooks: a rule is authored by a
 // person (admin), an event is FIRED by the system and ACKNOWLEDGED by a person.
 
-import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
@@ -62,6 +62,11 @@ export function createAlertsService(app: BasecampApp) {
   return createService({
     name:  'alerts',
     model: 'AlertRule',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
@@ -212,9 +217,6 @@ export function createAlertsService(app: BasecampApp) {
         // Acknowledging is not authoring — anyone carrying a pager can do it.
         acknowledge: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         resolve:     [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

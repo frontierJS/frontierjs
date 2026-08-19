@@ -476,6 +476,20 @@ export class BasecampSeeder extends Seeder {
               .create(2, { workspaceId: ws.id, environmentId: environment.id })
 
             for (const app of apps) {
+              // Where it runs. A seeded app with no placement is an app whose
+              // Deploy button answers 400 — the deployment engine resolves an
+              // executor from `AppServer` and refuses without one, so a fleet
+              // demo that skipped this would look complete and deploy nothing.
+              // Round-robin across the online machines, so the placement column
+              // is not the same server on every row.
+              const online = servers.filter(s => s.status === 'online')
+              const host   = online[apps.indexOf(app) % online.length] ?? servers[0]
+              if (host) {
+                await sys.appServer.create({
+                  data: { appId: app.id, serverId: host.id, replicaIndex: 0, status: 'running' },
+                })
+              }
+
               // Deployment history, most recent first. Only production gets a
               // long tail; a development environment with 40 deploys in it
               // reads as noise rather than as history.

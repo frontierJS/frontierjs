@@ -15,12 +15,18 @@
 //
 // It is a hand-kept copy of the service registry and it HAS gone stale —
 // `audit`, `channels`, `flags` and `api-keys` were each missing for a phase or
-// more. Nothing failed loudly, because the Junction client is configured with
-// the API's own origin and never uses the proxy; what breaks is anything
-// fetching a relative URL from the page, which is every check in
-// web/test/verify.mjs, and it breaks as a 404 from the proxy rather than as a
-// refusal from the API. A SECOND copy in the deploy would have been the same
-// bug one layer down, which is why this file exists rather than a second array.
+// more, and `invitations` after them. Nothing fails loudly, and the reason this
+// comment used to give was wrong: the Junction client is configured with
+// `location.origin` (web/config/sierra.config.js), so it goes through this
+// proxy like everything else. What actually hides a missing path is the
+// WEBSOCKET — a signed-in browser makes every service call as a frame on `/ws`,
+// which is proxied by one rule that can never go stale, so the HTTP path is
+// exercised only where there is no socket. Signing in is what opens it, so the
+// gap is invisible until a SIGNED-OUT page calls a service, which is exactly
+// what accepting an invitation is. It surfaces as a 404 from the proxy rather
+// than as a refusal from the API. A SECOND copy in the deploy would have been
+// the same bug one layer down, which is why this file exists rather than a
+// second array.
 //
 // The durable fix is still to give the API an apiPrefix ('/api') and match it
 // in sierra.config.js — one rule, no ambiguity, no list. The prefix was removed
@@ -39,6 +45,11 @@ export const API_PATHS = [
   '/alerts', '/networks', '/secrets', '/domains',
   '/audit', '/channels', '/flags', '/api-keys',
   '/volumes', '/dashboards', '/recipes', '/cleanup',
+  // The one service a SIGNED-OUT page calls, which is why its absence was
+  // visible at all: with a session the browser client is on the WebSocket and
+  // never touches this list, so a missing path is silent until something asks
+  // over HTTP. Accepting an invitation is exactly that — no session, no socket.
+  '/invitations',
   '/hub',
 ]
 

@@ -13,7 +13,8 @@
     "./history": "./src/history/history.js",
     "./hooks": "./src/hooks/hooks.js",
     "./inflect": "./src/inflect/inflect.js",
-    "./jsonschema": "./src/jsonschema/jsonschema.js"
+    "./jsonschema": "./src/jsonschema/jsonschema.js",
+    "./signature": "./src/signature/signature.js"
   },
   "files": [
     "src",

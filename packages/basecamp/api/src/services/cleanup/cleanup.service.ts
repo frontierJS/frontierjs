@@ -27,7 +27,7 @@
 // No `workspaceId` on either model — a disk is meaningless without its server,
 // so the scope is the join, the same one `volumes` and `servers.feed` make.
 
-import { createService, NotFound, BadRequest, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { dbOf, wsOf, actorOf }  from '../../core/resource.ts'
 import {
@@ -112,6 +112,11 @@ export function createCleanupService(app: BasecampApp) {
   return createService({
     name:  'cleanup',
     model: 'CleanupRun',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // The whole surface, declared. A cleanup run is written by `run` and
@@ -341,9 +346,6 @@ export function createCleanupService(app: BasecampApp) {
         // than at the admin one `recipes.create` needs. Unused volumes are the
         // sharp edge and they are off by default.
         run:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

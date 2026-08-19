@@ -1,5 +1,32 @@
 # @frontierjs/toolbelt — changes
 
+## 2026-08-19 — `/signature`, the seventh kit (`FJS-349`)
+
+82 tests, 0 fail.
+
+What a signed machine-to-machine request looks like: `canonicalRequest`,
+`signRequest`, `verifyRequest`, `sha256Hex`. Method, path, timestamp, nonce and
+a hash of the body, joined with newlines — byte-identical to what conduit's
+transport built by hand, which now reads this instead.
+
+**Three signers existed and no verifier.** Conduit signed what it sent to an
+Outpost, junction's webhook plugin signed a delivery with a different string,
+and basecamp's Outpost endpoints took no credential at all behind a comment
+saying the transport had verified one. A verifier is not a second
+implementation of a signer, and one function is how you are sure of that.
+
+`verifyRequest` answers `{ok, reason}` rather than a boolean — a clock 40
+seconds out and a wrong secret are the same 401 to a caller and completely
+different problems to whoever is fixing it — and the replay check runs LAST, so
+a caller who never held a valid signature cannot fill somebody's nonce store.
+The comparison is constant-time. Storing nonces is I/O, so it stays the
+caller's: `seenNonce` is a function, and omitting it is a decision rather than a
+silent default.
+
+The test harness gained `assert.match` for the same reason: a spec asserting
+only `ok === false` passes against a verifier that refuses everything.
+
+
 ## 2026-08-18 — `/history`, the occurrence key (`FJS-342`)
 
 71 tests, 7 of them new, 0 fail.

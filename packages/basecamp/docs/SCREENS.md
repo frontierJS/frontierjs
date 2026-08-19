@@ -65,7 +65,7 @@ screens reading hardcoded arrays — which is exactly what the mock already is.
 | `JobsView` | 111 | `routes/jobs/index.mesa` |
 | `AuditLogView` | 61 | `routes/admin/audit/index.mesa` |
 | `AdaptersView` | 65 | `routes/admin/adapters/index.mesa` |
-| `MembersView` (partial) | 230 | inside `routes/admin/index.mesa` |
+| `MembersView` | 230 | inside `routes/admin/index.mesa` — members, plus invite / pending / resend / revoke since `FJS-032` |
 | `CreateAppModal` | 137 | inside `routes/environments/[id]/index.mesa` |
 
 Three built routes have **no mock counterpart** and were designed here:
@@ -99,7 +99,7 @@ API. The three left are the cross-workspace and derived reads.
 | `InfraGraphView` | 522 | Server, App, Network, Environment | No graph projection endpoint; it is a derived read across five accessors |
 | `SSHKeysView` + `AddKeyModal` | 320 + 104 | `Secret` (`SecretKind.ssh_key`) | **Built** — `/secrets/`, widened past SSH keys to what the model is. `Secret.data` is `@encrypted`, so a read has **no `data` key at all** — proved in the browser and against the database file |
 | `WorkspacesView` (sys) | 62 | `Workspace`, `Account` | **Built** — `/hub/workspaces/`. A cross-workspace read through a NEW service that takes no workspace at all: the alternative was `?scope=hub` on nineteen session-scoped services. Suspension is real and bites in `scopeToWorkspace`. See § Phase 10 |
-| `UsersView` (sys) | 68 | `User`, `WorkspaceMember`, `Credential` | **Built** — `/hub/users/`, written against `asSystem()` from the start because `User` was `@@gate("8")` then; it reads at USER(4) since `FJS-170` and the screen still goes through `asSystem()`, which is what keeps the hub a hub. Suspend/restore, grant/revoke the hub tier, and bot accounts — all three are `asSystem()` writes, because `isSystemAdmin`, `status` and `kind` are `@allow('write', auth().isSystemAdmin)` at the Data boundary. The mock's Invite button is deliberately absent (`FJS-032`); Impersonate is `FJS-142`. See § Phase 10 |
+| `UsersView` (sys) | 68 | `User`, `WorkspaceMember`, `Credential` | **Built** — `/hub/users/`, written against `asSystem()` from the start because `User` was `@@gate("8")` then; it reads at USER(4) since `FJS-170` and the screen still goes through `asSystem()`, which is what keeps the hub a hub. Suspend/restore, grant/revoke the hub tier, and bot accounts — all three are `asSystem()` writes, because `isSystemAdmin`, `status` and `kind` are `@allow('write', auth().isSystemAdmin)` at the Data boundary. The mock's Invite button is deliberately absent here — inviting a HUMAN belongs to a workspace and lives on the Members screen (`FJS-032`, closed); Impersonate is `FJS-142`. See § Phase 10 |
 
 ### C. Needs new models (15)
 
@@ -902,7 +902,10 @@ change stamps nothing.
 The Users screen creates `UserKind.bot` accounts and ships without the mock's
 Invite button. The asymmetry is the point: a bot has no password credential, so
 creating one hands nobody anything, while creating a human here would be an
-admin minting an account with a password only they know (`FJS-032`).
+admin minting an account with a password only they know. Inviting a human is
+therefore a different screen and a different mechanism — an offer sent to an
+address, accepted with a password the person chooses (`FJS-032`, closed; the
+Members screen under § MembersView).
 
 It closes what `api-keys.service.ts` had recorded in its own comment since
 Phase 6 — a key was always minted for the caller because nothing else existed to

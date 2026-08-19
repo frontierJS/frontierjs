@@ -1,7 +1,8 @@
 import { chalk } from 'zx'
 import { execSync, spawn } from 'child_process'
 import { pathToFileURL } from 'url'
-import { compileCli, extractFrontmatter } from './compiler.js'
+import { compileCliWithMap, extractFrontmatter } from './compiler.js'
+import { registerShim } from './stack.js'
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, mkdirSync, rmSync } from 'fs'
 import { resolve, dirname, basename, join } from 'path'
 import { fileURLToPath } from 'url'
@@ -128,8 +129,11 @@ export async function Command({ file, arg, flag, emit }) {
     } catch { /* can't stat — fall through to compile */ }
 
     if (!run) {
-      const source = compileCli(template, mod?.script || '', file)
+      const { code: source, sourceLineOffset } = compileCliWithMap(template, mod?.script || '', file)
       const tmpFile = _tmpFile()
+      // The only place holding the shim path and the .md path at once, which is
+      // what lets a frame from this command name the line its author wrote.
+      registerShim(tmpFile, file, sourceLineOffset)
       try {
         writeFileSync(tmpFile, source)
         ;({ run, metadata } = await import(pathToFileURL(tmpFile)))
@@ -586,8 +590,10 @@ export async function Command({ file, arg, flag, emit }) {
             // beside it — which pushed shared logic into whichever step needed
             // it first and left the next one to copy. A step is the deepest part
             // of a namespace, not a stranger to it.
-            const stepSource = compileCli(stepTemplate, mod?.script || '', stepFile)
+            const { code: stepSource, sourceLineOffset: stepOffset } =
+              compileCliWithMap(stepTemplate, mod?.script || '', stepFile)
             const tmpStep = _tmpFile()
+            registerShim(tmpStep, stepFile, stepOffset)
             try {
               writeFileSync(tmpStep, stepSource)
               ;({ run: stepRun } = await import(pathToFileURL(tmpStep)))

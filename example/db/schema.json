@@ -132,7 +132,9 @@
             "null"
           ],
           "description": "Written by a JOB, not by a request. `ship` books a courier, that call is slow and can fail, so it happens after the response: the action queues `book-courier` (@frontierjs/caravan) and the job patches this column when the courier answers. Nullable because between the move and the booking there is a real window where a shipped order has no tracking yet.  It is the field that proves deferred work reaches the browser — the job writes through the orders SERVICE, so the write announces on the channel and a tab nobody touched fills this cell in seconds later.",
-          "title": "Tracking"
+          "title": "Tracking",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,

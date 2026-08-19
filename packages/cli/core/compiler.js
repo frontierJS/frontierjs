@@ -8,7 +8,6 @@
 // writes a .mesa Resource does. It follows that a command has exactly one script
 // block; a second one would be swallowed into the first.
 
-import { pathToFileURL } from 'url'
 
 const utf8Decoder = new TextDecoder('utf-8')
 const bufToString = (buf) => (typeof buf === 'string' ? buf : utf8Decoder.decode(buf))
@@ -40,8 +39,26 @@ export async function load(url, context, defaultLoad) {
 
 // ─── CLI Compiler ─────────────────────────────────────────────────────────────
 
-export function compileCli(template, moduleScript = '', sourcePath = '') {
-  const frontmatter = extractFrontmatter(template)
+/**
+ * A command's `.md` → an ESM module, plus the one number that maps a stack
+ * frame in it back to the `.md`.
+ *
+ * `sourceLineOffset` is `genLine - mdLine`, and it is a single integer because
+ * both transforms below preserve lines: `transformMarkdown` turns prose into
+ * `//` comments rather than dropping it, and `stripScriptBlocks` leaves the
+ * block's own height behind in blank lines. So a frame at generated line 15 is
+ * `.md` line `15 - offset`, wherever in the file it is.
+ *
+ * There is NO `sourceURL` pragma any more. It relabelled the path in a frame
+ * and nothing else — the line stayed the generated file's — so Node reported
+ * `boom.md:15` for a throw on line 9 of an 11-line file: a location that reads
+ * as authoritative and does not exist. Bun ignored the pragma, and ignores an
+ * inline source map and a linked `.map` alike, so nothing in either runtime was
+ * going to answer this. `core/stack.js` rewrites the frames instead, off this
+ * offset, and gets both runtimes right (`FJS-066`).
+ */
+export function compileCliWithMap(template, moduleScript = '', sourcePath = '') {
+  const { meta: frontmatter, bodyLine } = splitFrontmatter(template)
   const ownScript   = extractScriptBlock(template)
   // Module script is prepended so namespace helpers are available everywhere
   const scriptBlock = moduleScript
@@ -53,23 +70,11 @@ export function compileCli(template, moduleScript = '', sourcePath = '') {
   const scriptStripped = stripScriptBlocks(template)
   const mainBody       = transformMarkdown(scriptStripped)
 
-  // sourceURL pragma. It relabels the PATH in a stack trace and nothing else:
-  // the line numbers stay the generated file's, so a frame reads
-  // `boom.md:15` for a throw on line 9 of an 11-line file. Node applies the
-  // relabel, Bun ignores the pragma entirely and names the temp shim — which is
-  // a real path with real lines, and deleted by the time anyone opens it. Both
-  // measured; neither answers "where in my command did this throw".
-  //
-  // A source map does not help: Bun ignores an inline one and a linked .map
-  // alike. What would is fli rewriting the frames itself — it wrote the shim,
-  // so it holds both halves of the mapping — and `Error.prepareStackTrace`
-  // works on both runtimes. `FJS-066`.
-  const sourceURL = sourcePath
-    ? `\n//# sourceURL=${pathToFileURL(sourcePath).href}\n`
-    : ''
-
-  return `
-import 'zx/globals'
+  // Split at the body rather than interpolating in one literal, so the line the
+  // body lands on is COUNTED rather than kept in step by hand. The body is not
+  // indented into `run()` either: two leading spaces on its first line only
+  // would put every column in a frame from that line two out.
+  const head = `import 'zx/globals'
 ${scriptBlock}
 
 export const metadata = ${JSON.stringify(frontmatter)}
@@ -80,9 +85,24 @@ export async function run(context) {
   // This works because 'zx/globals' sets globalThis.echo, and we re-assign it
   // locally here. For CLI runs context.echo is undefined and ZX's echo is used.
   const echo = context.echo ?? globalThis.echo
-  ${mainBody}
+`
+
+  const tail = `
   return context
-}${sourceURL}`.trimStart()
+}`
+
+  return {
+    code: head + mainBody + tail,
+    sourcePath,
+    // head's newline count is the generated line the body's first line sits on,
+    // minus one; bodyLine is the .md line it came from.
+    sourceLineOffset: countLines(head) + 1 - bodyLine,
+  }
+}
+
+/** The module alone. Every caller that does not need the map. */
+export function compileCli(template, moduleScript = '', sourcePath = '') {
+  return compileCliWithMap(template, moduleScript, sourcePath).code
 }
 
 // ─── Frontmatter parser ───────────────────────────────────────────────────────
@@ -97,12 +117,28 @@ export async function run(context) {
 // the markdown walkers were written against a body that starts at content.
 const FRONTMATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n(?:[ \t]*\r?\n)*|$)/
 
-/** `{ meta, body }` from one match, so nothing can disagree about the split. */
+/**
+ * `{ meta, body, bodyLine }` from one match, so nothing can disagree about the
+ * split. `bodyLine` is the 1-based line of the ORIGINAL that `body` starts at,
+ * which is half of what maps a stack frame back to the `.md` — see
+ * `compileCliWithMap`.
+ */
 export function splitFrontmatter(template) {
   const text  = bufToString(template)
   const match = text.match(FRONTMATTER)
-  if (!match) return { meta: {}, body: text }
-  return { meta: parseYaml(match[1]), body: text.slice(match[0].length) }
+  if (!match) return { meta: {}, body: text, bodyLine: 1 }
+  return {
+    meta:     parseYaml(match[1]),
+    body:     text.slice(match[0].length),
+    bodyLine: countLines(match[0]) + 1,
+  }
+}
+
+/** Newlines in `s`. The line a following character sits on, minus one. */
+const countLines = (s) => {
+  let n = 0
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) === 10) n++
+  return n
 }
 
 /** The body with its frontmatter removed. The one owner — do not re-derive it. */
@@ -258,10 +294,16 @@ function extractScriptBlock(template) {
 // so any later open tag is a command EMITTING a script tag: a scaffold writing a
 // .mesa Resource inside a ```js body. Looping here stripped that emitted tag and
 // everything after it, so the command's own code vanished from run().
+// The block is REPLACED by its own height in blank lines rather than spliced
+// out. Its contents move to the top of the generated file, so cutting the lines
+// would shift everything below it and the one offset that maps a frame back to
+// the `.md` would stop being one — a command with a script block in the middle
+// needed two. Blank lines between statements cost nothing.
 function stripScriptBlocks(template) {
   const block = matchScriptBlock(template)
   if (!block) return template
-  return template.slice(0, block.start) + template.slice(block.end)
+  const cut = template.slice(block.start, block.end)
+  return template.slice(0, block.start) + '\n'.repeat(countLines(cut)) + template.slice(block.end)
 }
 
 // ─── transformMarkdown ────────────────────────────────────────────────────────

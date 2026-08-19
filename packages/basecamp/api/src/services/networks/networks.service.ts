@@ -13,7 +13,7 @@
 // `members` returns the join rows with their servers included rather than
 // making the browser fan out one request per server.
 
-import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, changesNothing, assertSlugFree, dbOf, wsOf }
   from '../../core/resource.ts'
@@ -47,6 +47,11 @@ export function createNetworksService(app: BasecampApp) {
   return createService({
     name:  'networks',
     model: 'Network',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
@@ -159,9 +164,6 @@ export function createNetworksService(app: BasecampApp) {
         // held at the same bar as authoring the network.
         attach: [requireWorkspaceRole(app, 'admin', 'owner')],
         detach: [requireWorkspaceRole(app, 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

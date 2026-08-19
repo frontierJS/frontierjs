@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 37 models · 2 databases
+-- 38 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -178,6 +178,29 @@ AFTER UPDATE ON "workspace_member"
 WHEN NEW."updatedAt" IS OLD."updatedAt"
 BEGIN
   UPDATE "workspace_member" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+
+CREATE TABLE IF NOT EXISTS "invitation" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "workspaceId" TEXT NOT NULL,
+  "email" TEXT NOT NULL,
+  "role" TEXT NOT NULL DEFAULT 'developer',
+  "token" TEXT NOT NULL UNIQUE,
+  "expiresAt" TEXT NOT NULL,
+  "invitedBy" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("role" IN ('viewer', 'billing', 'developer', 'admin', 'owner')),
+  UNIQUE ("workspaceId", "email"),
+  FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_invitation_workspaceId" ON "invitation" ("workspaceId");
+-- Auto-update updatedAt on every row change
+CREATE TRIGGER IF NOT EXISTS "invitation_updatedAt"
+AFTER UPDATE ON "invitation"
+WHEN NEW."updatedAt" IS OLD."updatedAt"
+BEGIN
+  UPDATE "invitation" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
 END;
 
 CREATE TABLE IF NOT EXISTS "secret" (

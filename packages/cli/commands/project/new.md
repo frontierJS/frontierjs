@@ -1027,10 +1027,32 @@ title: Home
   // The $: line is the subscription — without it this renders once at the
   // initial false and never changes.
   $: status.connected
+
+  // status.connected is the SOCKET, and the client opens one only once it holds
+  // a token — so a signed-out visitor is correctly false and it says nothing
+  // about whether the API is up. This page used to print that as
+  // "connecting…" forever on a scaffold nobody had signed into yet, which is a
+  // working app reporting itself broken on its own front page.
+  // Same origin — web/config/vite.config.js proxies /api to the API in dev, and
+  // a deployed build serves both from one host. '/api' is this app's apiPrefix,
+  // set in web/config/sierra.config.js and api/config/default.ts together.
+  const health = () => fetch('/api/health').then(r => {
+    if (!r.ok) throw new Error('API answered ' + r.status)
+    return r.json()
+  })
 ${sc}
 
 <h1>Welcome to ${appName}</h1>
-<p>Junction: {status.connected ? 'connected ✓' : 'connecting…'}</p>
+
+{#await health()}
+  <p>API: checking…</p>
+{:then}
+  <p>API: reachable ✓</p>
+{:catch error}
+  <p>API: unreachable — is <code>bun run dev:api</code> running? ({error.message})</p>
+{/await}
+
+<p>Socket: {status.connected ? 'open ✓' : 'opens when you sign in'}</p>
 <p>Edit <code>web/src/routes/index.mesa</code> to start.</p>
 `
 }
@@ -1338,7 +1360,9 @@ mkdirSync(finalTarget, { recursive: true })
 
 const dirs = ['db']
 if (useApi) dirs.push('api', 'api/config', 'api/src', 'api/src/core', 'api/src/services')
-if (useFli)        dirs.push('cli/src/routes')
+// cli/src/routes is fli:init's to write, and fli:init refuses a directory that
+// already exists. Creating it here left the FLI surface an empty folder and a
+// warning nobody reads.
 if (useDeploy && useApi) dirs.push('deploy')
 if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
@@ -1554,7 +1578,17 @@ log.success(`✓ ${appName} created`)
 echo('')
 echo(`  cd ${useHere ? '.' : (useWorkspace ? finalTarget : name)}`)
 if (!useInstall) echo('  bun install')
-echo('  cp .env.example .env      # then fill in ENCRYPTION_KEY (openssl rand -hex 32)')
+// `.env` is always written, and with --auth it comes back from auth:install with
+// both keys generated — so the old unconditional `cp .env.example .env` told
+// everyone to overwrite a filled file with a blank one, which breaks the app the
+// scaffold just finished building. The question is whether the key has a VALUE,
+// which is also the honest answer for --no-auth, where nothing fills it.
+const envFile = resolve(finalTarget, '.env')
+const keySet  = existsSync(envFile) &&
+  /^[ \t]*ENCRYPTION_KEY[ \t]*=[ \t]*\S/m.test(readFileSync(envFile, 'utf8'))
+if (!keySet) {
+  echo('  fli keygen aes --name ENCRYPTION_KEY --env    # .env needs a key before the API starts')
+}
 echo('  bun run dev')
 echo('')
 if (fjsSource === 'local') {

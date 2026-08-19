@@ -59,8 +59,16 @@ if (typeof window !== 'undefined') {
         // Only inject in dev mode
         if (!ctx.server) return html
 
-        // Skip if explicitly disabled
-        if (devtools.enabled === false) return html
+        // Opt in, not opt out. The toolbar's only source of data is junction's
+        // `devtools()` plugin on the API, which is itself opt-in — so injecting
+        // by default gave every app that had not configured one a toolbar
+        // retrying a socket nothing was listening on, ten times, each failure a
+        // red line the browser writes itself and no page can suppress. A fresh
+        // scaffold read as a broken app.
+        //
+        // Declaring the block is the opt-in; `enabled: false` still turns it off
+        // for an app that has one and wants it quiet.
+        if (!config.devtools || devtools.enabled === false) return html
 
         return html.replace(
           '</body>',

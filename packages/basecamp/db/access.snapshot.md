@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-37 models · 37 gated · 0 unrestricted
-16 with row policies · 5 with protected fields · 11 gated transitions
+38 models · 38 gated · 0 unrestricted
+17 with row policies · 6 with protected fields · 11 gated transitions
 ```
 
 ## Gates
@@ -41,6 +41,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Environment` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `FeatureFlag` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `FlagOverride` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `Invitation` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Job` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `JobRun` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Network` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
@@ -129,6 +130,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **post-update** — `workspaceId == auth().workspaceId`
 - allow **delete** — `workspaceId == auth().workspaceId`
 
+### `Invitation`
+
+- allow **read** — `workspaceId == auth().workspaceId`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- allow **post-update** — `workspaceId == auth().workspaceId`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
 ### `Job`
 
 - allow **read** — `workspaceId == auth().workspaceId`
@@ -200,6 +209,7 @@ rather than refusing the row.
 | `Credential` | `value` | `@guarded(all)` |
 | `Credential` | `accessToken` | `@guarded(all)` |
 | `Credential` | `refreshToken` | `@guarded(all)` |
+| `Invitation` | `token` | `@guarded(all)` |
 | `Secret` | `data` | `@encrypted` |
 | `Session` | `token` | `@guarded(all)` |
 | `User` | `kind` | `@allow('write', auth().isSystemAdmin)` |

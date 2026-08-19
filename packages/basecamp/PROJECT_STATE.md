@@ -659,6 +659,45 @@ an app in this repo resolves the framework out of `packages/`:
 
 What it is NOT yet: a thing that can deploy an app. See the next section.
 
+## A second human can get in (2026-08-19)
+
+The setup wizard was the only door for a human. `workspaces.addMember` takes a
+`userId`, and the one route that makes one — `/auth/register` — leaves them with
+no account row and no workspace, so every scoped request 400s afterwards.
+
+`model Invitation` is an offer of membership to an **email address**, which is
+what carries the workspace and the role across the gap where there is no user to
+hang them on. The row IS the pending state: accepting writes the
+`WorkspaceMember` with `invitedBy` and `invitedAt` carried forward and deletes
+the invitation, revoking deletes it, and `@@log(audit)` is what survives either
+way. Those three columns had been declared since the schema was written and
+nothing had ever written one.
+
+`preview` and `accept` are this app's **only unauthenticated service methods**,
+exempt from `sessionScope` because the population they serve is not a member yet
+and may not exist yet. The `@guarded(all)` token is the credential — no scoped
+read can answer it, so the link is shown once, the shape an issued API key
+already had — and everything a token cannot decide (unknown, expired, workspace
+gone, workspace suspended) is decided in one function, because none of the hooks
+that normally decide it are running.
+
+An address that already has an account has to be signed in as that account.
+Taking a password here instead would be a second login door with none of the
+first one's rate limiting, and an oracle when it refuses; `/login/` grew a
+same-origin `?next=` so the link brings them back.
+
+**Mail is `IMail` over `app.conduit`** (`api/src/core/mailer.ts`): the provider
+is a declared target with a credential ref rather than a key in a closure, and
+`app.mail` is absent where nothing is configured. That last part is the design —
+a fleet console that cannot mail is ordinary; a screen that looks like it sent
+something is not. The invitation issues a working link either way and says which
+happened.
+
+Driven in a real browser against a real mail sink on 8121, 21 checks: the link
+shown once, the mail that actually left the process carrying it, a resend that
+kills the old link, the wrong account told so, a stranger with no account
+accepting and landing inside the app, and the accepted link dead afterwards.
+
 ## The old UI mock, for reference
 
 `docs/mock/BasecampUI.jsx` is one **12,557-line** file: `import { useState } from

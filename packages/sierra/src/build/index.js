@@ -146,11 +146,18 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       },
     },
     optimizeDeps: {
-      // Exclude Sierra from esbuild's dep pre-scan.
-      // Sierra contains .mesa files that esbuild can't parse — they need
-      // the Mesa Vite plugin, which only runs after the scan phase.
-      // Excluding sierra means Vite won't try to crawl its internals.
-      exclude: ['sierra'],
+      // Keep Sierra out of esbuild's dep pre-scan: it contains .mesa files
+      // esbuild cannot parse, and the Mesa plugin only runs after the scan.
+      //
+      // The name must be the PACKAGE name. An app that resolves sierra from
+      // node_modules gets it pre-bundled otherwise: the scan dies on the first
+      // .mesa, the entry is dropped from _metadata.json, and Vite still rewrites
+      // every import to the deps path it never wrote — a 200 serving the SPA
+      // fallback's HTML with an empty content type, which the browser refuses as
+      // a module. The app is a blank screen. Nothing in this repo can see it,
+      // because an app here resolves sierra to packages/ and Vite does not
+      // pre-bundle a linked dependency at all.
+      exclude: ['@frontierjs/sierra'],
     },
     plugins: [
       ...sierraPlugins,

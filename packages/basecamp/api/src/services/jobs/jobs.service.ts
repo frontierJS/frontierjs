@@ -7,7 +7,7 @@
 //
 // `service_id` is now `appId`: the model it points at is App, not Service.
 
-import { createService, NotFound, BadRequest, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf }
   from '../../core/resource.ts'
@@ -30,6 +30,11 @@ export function createJobsService(app: BasecampApp) {
   return createService({
     name:  'jobs',
     model: 'Job',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
@@ -158,9 +163,6 @@ export function createJobsService(app: BasecampApp) {
         remove:  [requireWorkspaceRole(app, 'admin', 'owner')],
         trigger: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         cancel:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

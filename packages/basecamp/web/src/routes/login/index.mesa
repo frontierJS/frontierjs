@@ -2,7 +2,7 @@
 title: Sign in
 ---
 <script>
-  import { goto }   from '@frontierjs/sierra/router'
+  import { goto, page } from '@frontierjs/sierra/router'
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
@@ -18,9 +18,19 @@ title: Sign in
   // guard, so none of the three is declared here. There is no resource behind
   // this one — signing in is not a write to a model — which is the shape Form
   // supports through `onsubmit` + `mapErrors`.
+  // Where to land. `?next=` exists for one caller and it is not a convenience:
+  // an invitation to an address that already has an account cannot be accepted
+  // signed out, so the invite screen sends the person here and needs them back
+  // on the same link afterwards. Confined to a same-origin PATH — an open
+  // redirect on a login screen is how a phishing link borrows a real domain.
+  function landing() {
+    const next = page.query?.next
+    return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/'
+  }
+
   async function submit() {
     await signIn(email, password)
-    goto('/')
+    goto(landing())
   }
 
   // 401 from /auth/login is a wrong password, not a broken app. The client
@@ -42,11 +52,14 @@ title: Sign in
      not a number chosen here. -->
 <div class="container narrow">
   <Form class="card stack" onsubmit={submit} {mapErrors} errorTitle="Sign in failed">
-    <Input name="email" label="Email" type="email" autocomplete="username"
+    <!-- `id` is stated, not derived: the kit falls back to a generated uid, and
+         a control whose id changes per render is one a label, an
+         aria-describedby and any test can only reach by accident. -->
+    <Input id="email" name="email" label="Email" type="email" autocomplete="username"
            required bind:value={email} />
 
     <!-- type="password" is all the reveal toggle needs; the kit draws it. -->
-    <Input name="password" label="Password" type="password" autocomplete="current-password"
+    <Input id="password" name="password" label="Password" type="password" autocomplete="current-password"
            required bind:value={password} />
 
     <div class="cluster">

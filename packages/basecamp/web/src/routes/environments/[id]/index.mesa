@@ -157,7 +157,7 @@ title: Environment
   </div>
 
   {#if error}
-    <article class="alert danger">
+    <article class="alert danger" id="screen-error">
       <div class="alert-content">{error}</div>
     </article>
   {/if}

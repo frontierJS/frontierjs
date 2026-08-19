@@ -117,6 +117,16 @@ title: Deployment
     <dt>Trigger</dt>     <dd>{deployment.trigger}</dd>
     <dt>Commit</dt>      <dd><code>{deployment.commitSha ?? '—'}</code> {deployment.commitMessage ?? ''}</dd>
     <dt>Image</dt>       <dd><code>{deployment.toImage ?? '—'}</code></dd>
+    <!-- The tag above is a name; this is the identity. An executor that cannot
+         say which bytes ran leaves it empty rather than repeating the tag. -->
+    <dt>Digest</dt>
+    <dd id="deploy-digest">
+      {#if deployment.builtImage}
+        <code>{deployment.builtImage}</code>
+      {:else}
+        <span class="text-sm text-muted">not reported</span>
+      {/if}
+    </dd>
     <dt>Duration</dt>    <dd>{secs(deployment.durationMs)}</dd>
   </dl>
 

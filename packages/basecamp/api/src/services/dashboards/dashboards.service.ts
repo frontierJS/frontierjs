@@ -25,7 +25,7 @@
 // @@softDelete, so the ordinary case is a row that still exists and is excluded
 // from every read — `get` resolves that to the same answer.
 
-import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, assertSlugFree, slugify, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
@@ -185,6 +185,11 @@ export function createDashboardsService(app: BasecampApp) {
   return createService({
     name:  'dashboards',
     model: 'Dashboard',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // The whole surface, declared. `model:` brings Junction's Litestone base,
@@ -385,9 +390,6 @@ export function createDashboardsService(app: BasecampApp) {
         updateWidget: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         removeWidget: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         reorder:      [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

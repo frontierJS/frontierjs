@@ -16,7 +16,7 @@ release moves sixteen at once, and a file that changes every release is a file
 nobody reads on the release that matters.
 
 ```
-17 publishable package(s) · 0 problem(s)
+18 publishable package(s) · 0 problem(s)
 ```
 
 ## Unpublished entry points
@@ -239,6 +239,17 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 - peers — `@frontierjs/junction`: `^0.1.0`
 
+## `@frontierjs/outpost`
+
+`packages/outpost` · ships `LICENSE` `README.md` `package.json` `src/`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `.` | `src/index.js` | yes |
+| exports | `./server` | `src/server.js` | yes |
+| exports | `./docker` | `src/docker.js` | yes |
+| bin | `outpost` | `src/index.js` | yes |
+
 ## `@frontierjs/sierra`
 
 `packages/sierra` · ships `LICENSE` `README.md` `package.json` `src/`
@@ -288,6 +299,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./hooks` | `src/hooks/hooks.js` | yes |
 | exports | `./inflect` | `src/inflect/inflect.js` | yes |
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
+| exports | `./signature` | `src/signature/signature.js` | yes |
 
 ## `@frontierjs/ui`
 

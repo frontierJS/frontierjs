@@ -326,7 +326,16 @@ export function request(app: App): Pick<TestRequest, 'get' | 'post' | 'patch' | 
       }
     }
 
-    const promise = Promise.resolve().then(execute)
+    // LAZY, and this is load-bearing. It used to be
+    // `Promise.resolve().then(execute)`, which schedules the request on the
+    // microtask queue the moment the builder is made — so any `await` between
+    // `.post(path)` and `.send(body)` let it fire first, and the call went out
+    // with no body and none of the headers set after that point. Nothing said
+    // so: the request succeeded, the service saw `null`, and the test asserted
+    // against whatever that produced. Found signing a request in a test, where
+    // computing the signature is itself an await (`FJS-350`).
+    let promise: Promise<TestResponse> | null = null
+    const run = () => (promise ??= execute())
 
     const req: TestRequest = {
       get:     (p) => builder('GET',     p),
@@ -342,8 +351,8 @@ export function request(app: App): Pick<TestRequest, 'get' | 'post' | 'patch' | 
       workspace(id: string) { _headers['x-workspace-id'] = id; return req },
       query(params: Record<string, string>) { _query = { ..._query, ...params }; return req },
 
-      then:  (...args) => promise.then(...args),
-      catch: (...args) => promise.catch(...args),
+      then:  (...args) => run().then(...args),
+      catch: (...args) => run().catch(...args),
     }
 
     return req

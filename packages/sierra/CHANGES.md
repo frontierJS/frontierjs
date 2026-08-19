@@ -1,5 +1,33 @@
 # Changes
 
+## 2026-08-19 — an installed sierra was a blank screen, and the toolbar shouted at a port nobody held (`FJS-356`, `FJS-353`)
+
+980 tests, 0 fail.
+
+`optimizeDeps.exclude` said `'sierra'`. The package is `@frontierjs/sierra`, so
+the exclusion matched nothing and Vite pre-bundled the package the comment above
+it explains cannot be pre-bundled: esbuild's scan meets a `.mesa`, dies, and the
+entries are dropped from `_metadata.json`. Vite still rewrites `virtual:sierra`'s
+imports to the `.vite/deps/` paths — which now 200 with the SPA fallback's HTML
+and an empty content type. The browser refuses that as a module, so the router
+never initialises and the page is blank behind one MIME-type line.
+
+**Every app that installed sierra from npm.** Nothing in this repo could see it:
+an app here resolves sierra to `packages/`, and Vite does not pre-bundle a linked
+dependency at all — the same blind spot `FJS-251` and `FJS-252` were written
+about, and the reason the `scaffold` and `deploy` CI phases exist. It was found
+by scaffolding through `create-frontier` and opening the result in a browser,
+which is the one thing neither phase does.
+
+The devtools toolbar is opt-in now. Its only source of data is junction's
+`devtools()` plugin, which is itself opt-in, so injecting by default gave every
+app that had not configured one a toolbar retrying `ws://localhost:4000` ten
+times — each failure a red console line the browser writes itself and no page can
+suppress, on the front page of an app that was working. Declaring the `devtools`
+block in `sierra.config.js` is the opt-in; `enabled: false` still silences an app
+that has one.
+
+
 ## 2026-08-18 — the version a patch carries is the one this screen read (`FJS-341`)
 
 980 tests, 7 of them new, 0 fail. `test:safety` 5/5. Typecheck clean.

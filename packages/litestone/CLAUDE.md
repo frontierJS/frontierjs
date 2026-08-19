@@ -505,6 +505,15 @@ await db.$audit({ operation: 'login.failed', model: 'User', records: [id],
                            // names no actor. THROWS — unlike @@log, the record
                            // is what the caller asked for. actorId defaults to
                            // this client's principal; a system context has none.
+db.$protectedFields('secret')
+                           // { data: 'encrypted' } — which columns must never be
+                           // written down in plain text, and which protection
+                           // each carries ('guarded' | 'encrypted' | 'hashed').
+                           // For an APPLICATION keeping a trail of its own:
+                           // @@log(audit) redacts these in its own JSONL, and an
+                           // app writing its own audit table had nothing to ask.
+                           // Same contract as $checkWhere — unknown accessor is
+                           // {}, every flavour of client answers the same
 db.$schema                 // parsed schema object
 db.$plugins                // installed plugin names, in run order — every client
                            // flavour. A gated schema auto-installs GatePlugin, so

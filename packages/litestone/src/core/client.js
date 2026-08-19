@@ -9187,6 +9187,40 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       .map(p => ({ ...p, message: p.message.replace('%MODEL%', model.name) }))
   }
 
+  // ─── $protectedFields ───────────────────────────────────────────────────
+  //
+  // $protectedFields(accessor) → { field: 'guarded' | 'encrypted' | 'hashed' }
+  //
+  // Which columns of a model must never be written down in plain text. The
+  // third sibling of $checkWhere/$checkOrderBy and the same contract: an
+  // unknown accessor answers {}, and every flavour of client answers
+  // identically, because what a schema DECLARES protected is not a question
+  // about who is asking.
+  //
+  // It exists because an application keeps a trail of its own. Litestone
+  // redacts these fields in `@@log(audit)` — the repo states that as an
+  // invariant — but an app writing "who did what" into its own table has
+  // nothing to ask, and the alternative is a hand-copied list of column names
+  // that goes stale the first time somebody adds a `@secret`. One reading of
+  // the schema, in the package that owns the schema.
+  //
+  // The value says WHICH protection, because they are not interchangeable:
+  // `guarded` is a system-context lock in both directions, `encrypted` hides a
+  // value from a non-system reader and stays writable, and `hashed` has no
+  // plaintext to reveal at all. A caller that only wants the names takes the
+  // keys.
+  function $protectedFields(accessor) {
+    const model = modelForAccessor(accessor)
+    if (!model?.fields) return {}
+    const out = {}
+    for (const [field, policy] of Object.entries(fieldPolicyMap?.[model.name] ?? {})) {
+      if (policy.guarded)        out[field] = 'guarded'
+      else if (policy.hashed)    out[field] = 'hashed'
+      else if (policy.encrypted) out[field] = 'encrypted'
+    }
+    return out
+  }
+
   // ─── $audit ─────────────────────────────────────────────────────────────
   //
   // $audit({ operation, model, records, actorId, meta }) → the written row
@@ -9709,6 +9743,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$inTransaction') return txState.depth > 0
         if (prop === '$schema') return schema
         if (prop === '$checkWhere') return $checkWhere
+        if (prop === '$protectedFields') return $protectedFields
         if (prop === '$scopes') return $scopes
         if (prop === '$checkOrderBy') return $checkOrderBy
         // A system context names no principal, so an actor has to be STATED —
@@ -9728,7 +9763,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         return dedupeKeys(
           Reflect.ownKeys(target),
           Object.keys(sysTables),
-          ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$scopes', '$audit', '$enums', '$plugins', '$tenancy'],
+          ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$scopes', '$audit', '$enums', '$plugins', '$tenancy'],
         )
       },
       has(target, prop) { return prop === 'asSystem' || prop in target || prop in sysTables },
@@ -9816,6 +9851,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$schema')         return schema
         if (prop === '$auth')           return user
         if (prop === '$checkWhere')     return $checkWhere
+      if (prop === '$protectedFields') return $protectedFields
+        if (prop === '$protectedFields') return $protectedFields
         if (prop === '$scopes')         return $scopes
         if (prop === '$checkOrderBy')   return $checkOrderBy
         if (prop === '$audit')          return (entry, opts) => auditWith(user, entry, opts)
@@ -9830,7 +9867,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         return dedupeKeys(
           Reflect.ownKeys(target),
           Object.keys(authTables),
-          ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy'],
+          ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy'],
         )
       },
       has(target, prop) { return prop in target || prop in authTables },
@@ -9877,6 +9914,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$scope')  return overrides.scopedBy ?? {}
         if (prop === '$auth')   return overrides.auth ?? null
         if (prop === '$checkWhere') return $checkWhere
+        if (prop === '$protectedFields') return $protectedFields
         if (prop === '$scopes') return $scopes
         if (prop === '$checkOrderBy') return $checkOrderBy
         if (prop === '$audit')  return (entry, opts) => auditWith(overrides.auth ?? null, entry, opts)
@@ -9954,6 +9992,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop === '$schema')         return schema
       if (prop === '$relations')      return relationMap
       if (prop === '$checkWhere')     return $checkWhere
+      if (prop === '$protectedFields') return $protectedFields
         if (prop === '$scopes')         return $scopes
       if (prop === '$checkOrderBy')   return $checkOrderBy
       if (prop === '$audit')          return (entry, opts) => auditWith(ctx.auth ?? null, entry, opts)
@@ -9987,7 +10026,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         Reflect.ownKeys(target),
         Object.keys(scopedTables),
         viewNames,
-        ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db'],
+        ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db'],
       )
     },
     has(target, prop) {

@@ -89,6 +89,12 @@ try {
 
   // Print a clean error message. Full stack only when --debug is passed,
   // since most users don't need to see node's internals.
+  // Frames from a command body name a temp shim that is deleted on exit; this
+  // puts the command's own .md and the author's own line back. One call, here,
+  // because this is where a failure is printed (`FJS-066`).
+  const { rewriteStack } = await import('../core/stack.js')
+  rewriteStack(err)
+
   const debug = process.argv.includes('--debug') || process.env.FLI_DEBUG
   if (debug) {
     console.error(err)

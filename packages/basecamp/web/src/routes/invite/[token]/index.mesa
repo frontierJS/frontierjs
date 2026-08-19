@@ -1,0 +1,134 @@
+---
+title: Invitation
+---
+<script>
+  // The one screen in this app a stranger may open.
+  //
+  // Everything here is decided by what `invitations.preview` answers, never by
+  // what the browser knows: the person may have no session, may have one for
+  // the wrong account, and may not have an account at all. The token in the URL
+  // is the credential — the service grades it, and the four ways it can refuse
+  // (unknown, expired, workspace gone, workspace suspended) arrive as messages
+  // that are already sentences, so they are shown rather than translated.
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { session, previewInvitation, acceptInvitation, signOut } from '../../../session.js'
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
+
+  $: (page.params, session.user)
+
+  let invitation = null
+  let error      = null
+  let loading    = true
+  let name       = ''
+  let password   = ''
+
+  const token = () => page.params.token
+
+  async function look() {
+    error = null; loading = true
+    try {
+      invitation = await previewInvitation(token())
+    } catch (e) {
+      // 404 unknown · 410 expired · 403 suspended. The service says which and
+      // in what words; a screen that rewrote them would have four sentences to
+      // keep in step with the one place that decides them.
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  look()
+
+  // Signed in as the invited address? That is the only state in which an
+  // existing account may accept, and the service enforces it — this decides
+  // which of three things to OFFER, not who may do it.
+  $: mine = Boolean(session.user) && session.user.email === invitation?.email
+
+  async function accept(record) {
+    error = null
+    await acceptInvitation({ token: token(), name: record?.name ?? name, password: record?.password ?? password })
+    goto('/')
+  }
+
+  // A sign-in that comes back here. Same-origin path only — `landing()` on the
+  // login screen refuses anything else.
+  $: signInHref = `/login/?next=${encodeURIComponent(`/invite/${token()}/`)}`
+
+  async function switchAccount() {
+    await signOut()
+    goto(signInHref)
+  }
+</script>
+
+<div class="section-header">
+  <h1>Invitation</h1>
+  <span class="text-sm text-muted">Basecamp</span>
+</div>
+
+<div class="container narrow">
+  {#if loading}
+    <p class="text-sm text-muted">Checking the link…</p>
+  {:else if error}
+    <article class="alert danger" id="invite-error">
+      <div class="alert-content">{error}</div>
+    </article>
+    <div class="cluster">
+      <Button id="invite-to-login" variant="ghost" onclick={() => goto('/login/')}>Go to sign in</Button>
+    </div>
+  {:else}
+    <article class="card stack">
+      <p id="invite-summary">
+        You have been invited to join <strong>{invitation.workspace.name}</strong>
+        as <Badge>{invitation.role}</Badge>
+      </p>
+      <p class="text-sm text-muted" id="invite-email">This invitation is for {invitation.email}.</p>
+
+      <!-- Who is holding the browser is asked FIRST, and whether the address
+           has an account second. The other order looks equivalent and is not:
+           it offered a *create my account* form for grace's invitation to
+           whoever happened to be signed in, so an owner following the link to
+           check it was one click from making somebody else's account without
+           the screen ever mentioning the session they were in. Found by the
+           drive. -->
+      {#if mine}
+        <div class="cluster">
+          <Button id="invite-accept" variant="primary" onclick={() => accept()}>Accept</Button>
+        </div>
+      {:else if session.user}
+        <article class="alert warning">
+          <div class="alert-content">
+            You are signed in as {session.user.email}, and this invitation is for {invitation.email}.
+          </div>
+        </article>
+        <div class="cluster">
+          <Button id="invite-switch" variant="primary" onclick={switchAccount}>Sign in as {invitation.email}</Button>
+        </div>
+      {:else if invitation.hasAccount}
+        <p class="text-sm text-muted">
+          That address already has an account. Sign in and this link will bring you back.
+        </p>
+        <div class="cluster">
+          <Button id="invite-signin" variant="primary" onclick={() => goto(signInHref)}>Sign in to accept</Button>
+        </div>
+      {:else}
+        <!-- Nobody signed in and no account for the address: the password typed
+             here creates one. No `resource` — this is not a write to a model,
+             it is the accept method, which is the shape <Form> supports through
+             onsubmit. -->
+        <Form onsubmit={accept} errorTitle="Could not accept">
+          <Input id="invite-name" name="name" label="Your name" required
+                 autocomplete="name" bind:value={name} />
+          <Input id="invite-password" name="password" label="Choose a password" type="password"
+                 required minlength={8} autocomplete="new-password" bind:value={password} />
+          <div class="cluster">
+            <Button id="invite-accept" type="submit" variant="primary">Accept and create my account</Button>
+          </div>
+        </Form>
+      {/if}
+    </article>
+  {/if}
+</div>

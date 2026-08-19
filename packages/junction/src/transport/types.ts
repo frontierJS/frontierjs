@@ -98,6 +98,14 @@ export interface TransportContext {
   query:    Record<string, string>
   headers:  Record<string, string>
   body:     unknown
+  /**
+   * The body as it arrived on the wire, when it was a single string — JSON,
+   * urlencoded, XML or text. Absent for multipart and for no body at all.
+   *
+   * For verifying a signature over the body, and nothing else: read `body`.
+   * A hook reaches it as `ctx.$raw.rawBody`.
+   */
+  rawBody?: string
   files:    UploadedFile[]
   ip:       string
   protocol: 'http' | 'https'

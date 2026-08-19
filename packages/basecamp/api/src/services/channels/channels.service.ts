@@ -26,7 +26,7 @@
 // evidence. Email is the one kind that cannot be tested: it needs a mailer this
 // app has not configured, and it says so rather than pretending.
 
-import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
@@ -148,6 +148,11 @@ export function createChannelsService(app: BasecampApp) {
   return createService({
     name:  'channels',
     model: 'NotificationChannel',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
@@ -370,9 +375,6 @@ export function createChannelsService(app: BasecampApp) {
         // Testing sends real traffic to a third party under the workspace's
         // name, so it is not a read.
         test:   [requireWorkspaceRole(app, 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

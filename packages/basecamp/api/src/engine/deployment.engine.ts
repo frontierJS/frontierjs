@@ -7,16 +7,29 @@
 //   → For each step, calls the outpost via Conduit, updates step status
 //   → On completion, marks success/failed, pushes WS update
 //
-// Outpost protocol (Conduit → outpost:<server-id>):
-//   POST /pull         { image }                    → pull image
-//   POST /deploy       { deployment_id, image, cfg } → start container
-//   POST /stop         { container_id }              → stop old container
-//   POST /health-check { url }                       → HTTP ping
-//   POST /exec         { command }                   → run shell command
+// Outpost protocol (Conduit → outpost:<server-id>). Every reply may carry a
+// `digest`, and that is the whole of what makes a release addressable:
+//   POST /pull         { image }                          → { digest }
+//   POST /deploy       { deployment_id, image, digest, … } → { digest }
+//   POST /stop         { app_id }                          → stop old container
+//   POST /health-check { app_id, digest }                  → { healthy }
+//   POST /exec         { step, deployment_id }             → run the step
+//
+// WHO speaks it is `engine/executor.ts` — a registered outpost, or the named
+// stub, or a refusal. This file no longer has a path where nothing is sent and
+// the step is marked `success` anyway (FJS-257).
+//
+// A tag is not an identity: two servers at the same commit hold two images with
+// the same name and different bytes, and nothing compares them. So the digest an
+// executor reports is recorded on `Deployment.builtImage`, the deploy is
+// addressed by it where one is known, and a release that cannot say which bytes
+// ran says `null` rather than a plausible-looking tag (IDEAS/deploy-plane.md §a).
 //
 // Reliability: jobs are persisted in Caravan's SQLite store before execution.
 // A Basecamp restart resets in-flight jobs to pending — no stuck deploys.
 
+import { resolveExecutor, isExecutor } from './executor.ts'
+import type { Executor }    from './executor.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -81,14 +94,13 @@ export function createDeploymentEngine(app: BasecampApp) {
     })
   }
 
-  // ── Server resolution ─────────────────────────────────────────────
-  async function resolveServer(appId: string): Promise<string | null> {
-    const placements = await db.appServer.findMany({
-      where:   { appId },
-      include: { server: true },
-      orderBy: { replicaIndex: 'asc' },
-    })
-    return placements.find((p: any) => p.server?.status === 'online')?.serverId ?? null
+  // ── Digest ────────────────────────────────────────────────────────
+  // What an executor reports is only accepted in the one shape that identifies
+  // bytes. Anything else — a tag, an empty string, a truncated id — is dropped
+  // rather than stored, because a `builtImage` nobody can resolve is worse than
+  // an empty one: it reads as an answer.
+  function asDigest(value: unknown): string | null {
+    return typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value) ? value : null
   }
 
   // ── Core runner ───────────────────────────────────────────────────
@@ -119,26 +131,49 @@ export function createDeploymentEngine(app: BasecampApp) {
       return
     }
 
-    const serverId    = await resolveServer(deploy.appId)
-    const outpostTarget = serverId ? `outpost:${serverId}` : null
+    // Asked again here, and not only in `deployments.create`: a placement can be
+    // removed, and a machine can start draining, between the click and the job.
+    const executor = await resolveExecutor(app, deploy.appId)
+    if (!isExecutor(executor)) {
+      // The release stops here, with the reason on the row. Every step stays
+      // `pending` until failDeploy marks them failed — none of them is touched,
+      // which is the difference from the behaviour this replaced.
+      await failDeploy(deploymentId, deploy.workspaceId, startedAt, executor.reason)
+      log.error('deployment refused — no executor', { id: deploymentId, reason: executor.reason })
+      return
+    }
+
     // configSnapshot is a Json column — already an object, never JSON.parse'd.
-    const config      = deploy.configSnapshot ?? {}
+    const config = deploy.configSnapshot ?? {}
 
     log.info('deployment starting', {
-      id:        deploymentId,
-      service:   service.name,
-      steps:     steps.length,
-      outpost:     outpostTarget ?? 'none',
+      id:       deploymentId,
+      service:  service.name,
+      steps:    steps.length,
+      executor: executor.kind,
+      server:   executor.serverId,
     })
 
     try {
+      // The digest travels down the steps: whatever /pull reported is what
+      // /deploy is asked to start, and what /health-check is asked about.
+      let digest: string | null = asDigest(deploy.builtImage)
+
       for (const step of steps) {
         await startStep(step.id)
         await pushUpdate(deploymentId, deploy.workspaceId)
 
-        await runStep(step, { deploy, service, config, outpostTarget })
+        const result = await runStep(step, { deploy, service, config, executor, digest })
 
-        await setStepStatus(step.id, 'success')
+        // A later step's digest wins: /deploy names the bytes that were started,
+        // where /pull names the bytes that were fetched, and a release records
+        // what RAN.
+        if (result.digest && result.digest !== digest) {
+          digest = result.digest
+          await db.deployment.update({ where: { id: deploymentId }, data: { builtImage: digest } })
+        }
+
+        await setStepStatus(step.id, 'success', result.output)
         await pushUpdate(deploymentId, deploy.workspaceId)
       }
 
@@ -165,79 +200,69 @@ export function createDeploymentEngine(app: BasecampApp) {
     }
   }
 
+  // One step. Answers what to write on the row — the output a person reads,
+  // and the digest the next step is addressed by — and throws to fail the
+  // release, which is the only way a step ends as anything but `success`.
   async function runStep(
-    step:  StepRow,
-    ctx:   { deploy: DeploymentRow; service: ServiceRow; config: Record<string, unknown>; outpostTarget: string | null }
-  ): Promise<void> {
-    const { deploy, service, outpostTarget } = ctx
-    const name = step.name.toLowerCase()
-
-    if (!outpostTarget) {
-      // No outpost — log only, don't fail (supports local/stub mode)
-      log.debug(`step skipped — no outpost`, { step: step.name })
-      return
+    step: StepRow,
+    ctx:  {
+      deploy:   DeploymentRow
+      service:  ServiceRow
+      config:   Record<string, unknown>
+      executor: Executor
+      digest:   string | null
     }
+  ): Promise<{ output?: string; digest: string | null }> {
+    const { deploy, service, executor, digest } = ctx
+    const name  = step.name.toLowerCase()
+    // The image as the app names it. The digest is what identifies bytes, but a
+    // registry still needs a name to pull by, so both travel.
+    const image = deploy.toImage ?? service.name
+
+    // Said on every step of a stubbed release rather than once on the row: a
+    // step list where each line reads 'no /deploy was issued' cannot be mistaken
+    // for a release that shipped, and the row's status alone always could.
+    const note = (reply: { data?: Record<string, unknown> }) =>
+      reply.data?.stubbed ? String(reply.data.note ?? 'stub executor — nothing was issued') : undefined
 
     if (name.includes('pull')) {
-      const result = await app.conduit.send({
-        target: outpostTarget,
-        method: 'POST',
-        path:   '/pull',
-        body:   { image: deploy.toImage ?? service.name },
-      })
-      if (result.error) throw new Error(`Pull failed: ${result.error.message}`)
+      const reply = await executor.call('/pull', { image, digest })
+      if (reply.error) throw new Error(`Pull failed: ${reply.error.message}`)
+      return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
 
     } else if (name.includes('stop')) {
-      await app.conduit.send({
-        target: outpostTarget,
-        method: 'POST',
-        path:   '/stop',
-        body:   { app_id: deploy.appId },
-      })
-      // Non-fatal — previous container may not exist on first deploy
+      const reply = await executor.call('/stop', { app_id: deploy.appId })
+      // Non-fatal — a previous container may not exist on a first deploy.
+      return { output: note(reply), digest }
 
     } else if (name.includes('start') || name.includes('deploy')) {
-      const result = await app.conduit.send({
-        target: outpostTarget,
-        method: 'POST',
-        path:   '/deploy',
-        body:   {
-          deployment_id: deploy.id,
-          image:         deploy.toImage ?? service.name,
-          config:        service.config ?? {},   // Json columns — already objects
-          source:        service.source ?? {},
-        },
+      const reply = await executor.call('/deploy', {
+        deployment_id: deploy.id,
+        image,
+        digest,
+        config:        service.config ?? {},   // Json columns — already objects
+        source:        service.source ?? {},
       })
-      if (result.error) throw new Error(`Deploy failed: ${result.error.message}`)
+      if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
+      return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
 
     } else if (name.includes('health')) {
-      // Poll health check up to 10 times with 3s between attempts
-      let healthy = false
+      // Poll up to 10 times with 3s between attempts.
+      let last: { data?: Record<string, unknown> } = {}
       for (let i = 0; i < 10; i++) {
-        const result = await app.conduit.send({
-          target:     outpostTarget,
-          method:     'POST',
-          path:       '/health-check',
-          body:       { app_id: deploy.appId },
-          timeout_ms: 5_000,
-        })
-        if (!result.error && (result.data as Record<string, unknown>)?.healthy) {
-          healthy = true
-          break
-        }
+        const reply = await executor.call('/health-check',
+          { app_id: deploy.appId, digest }, { timeoutMs: 5_000 })
+        last = reply
+        if (!reply.error && reply.data?.healthy) return { output: note(reply), digest }
         await new Promise(r => setTimeout(r, 3_000))
       }
-      if (!healthy) throw new Error('Health check failed after 10 attempts')
+      throw new Error(`Health check failed after 10 attempts${last.data?.stubbed ? ' (stub executor)' : ''}`)
 
     } else {
-      // Build, migration, CDN steps etc. — forward to outpost as generic exec
-      const result = await app.conduit.send({
-        target: outpostTarget,
-        method: 'POST',
-        path:   '/exec',
-        body:   { step: step.name, deployment_id: deploy.id },
-      })
-      if (result.error) throw new Error(`Step '${step.name}' failed: ${result.error.message}`)
+      // Build, migration, CDN steps etc. — forwarded as a generic step.
+      const reply = await executor.call('/exec', { step: step.name, deployment_id: deploy.id })
+      if (reply.error) throw new Error(`Step '${step.name}' failed: ${reply.error.message}`)
+      return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
     }
   }
 

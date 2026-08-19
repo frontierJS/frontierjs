@@ -2,8 +2,10 @@
 // Basecamp-specific hooks — used across Basecamp services.
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
-import { BadRequest, Forbidden, NotFound, authenticate, toDataPrincipal } from '@frontierjs/junction'
+import { verifyRequest } from '@frontierjs/toolbelt/signature'
+import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, toDataPrincipal } from '@frontierjs/junction'
 import type { Hook, AroundHook, ServiceContext }  from '@frontierjs/junction'
+import { env }                             from './env.ts'
 import type { BasecampApp }                from '../basecamp.types.ts'
 
 // ─── The session ─────────────────────────────────────────────────────────
@@ -280,50 +282,253 @@ export function sessionScope(app: BasecampApp, opts: { except?: string[] } = {})
 }
 
 // ─── workspaceChannel ────────────────────────────────────────────────────
-// Returns the channel publish target for the current workspace.
-// Used with publishToChannels() in after hooks for real-time push.
+// Returns the channel publish target for the current workspace — the value a
+// service DECLARES, never a hook it runs:
 //
-//   after: { all: [publishToChannels(workspaceChannel(app))] }
+//   createService({ name: 'apps', model: 'App', channel: workspaceChannel(app) })
+//
+// It was `after: { all: [publishToChannels(workspaceChannel(app))] }` on all
+// seventeen services, and `all` means all: a `find` broadcast every row it had
+// just read to every browser in the workspace (FJS-031). Junction decides what
+// to announce in one place — `callService` — and that place excludes reads by
+// name, which no per-service hook list can do for itself. Declaring both is
+// refused at construction rather than broadcasting twice.
 
 export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction').PublishFn {
   return (_data, ctx) => {
     const wsId    = ctx.locals.workspaceId as string | undefined
     if (!wsId) return null
+    // Typed as what a PublishFn may answer, rather than `unknown`: the manager
+    // is reached through a cast because `app.channels` is the plugin's, and a
+    // cast that lands on `unknown` makes the return type unassignable to the
+    // very signature this function declares.
+    type Channel  = ReturnType<import('@frontierjs/junction').PublishFn> & object
     const manager = (app as unknown as Record<string, unknown>).channels as
-      { channel: (name: string) => unknown } | undefined
+      { channel: (name: string) => Channel } | undefined
     if (!manager?.channel) return null
-    return manager.channel(`workspace:${wsId}`) as unknown
+    return manager.channel(`workspace:${wsId}`)
   }
 }
 
-// ─── basecampAuditLog ─────────────────────────────────────────────────────────
-// Writes a record to audit_event after any mutation.
-// Registered as a global `after: { all: [...] }` hook in app.ts.
-// Failures are swallowed — audit log must never break the request.
+// ─── requireOutpostSignature ─────────────────────────────────────────────────
+// The three endpoints an OUTPOST calls, and the only ones exempted from
+// `sessionScope`: `servers.heartbeat`, `volumes.report`, `cleanup.report`. A
+// machine holds no session, so those exemptions are right — what was missing is
+// the credential that replaces one.
+//
+// Until 2026-08-19 there was none. The comment beside the exemption said the
+// request was *HMAC-authenticated at the transport*, and no such verification
+// existed anywhere in the repo: conduit signs what it SENDS and nothing checked
+// what arrived. Measured — a POST carrying nothing but `X-Service-Method:
+// heartbeat` answered 200, moved a server to `online`, and registered the
+// Conduit target `outpost:<serverId>` at an address the caller chose, which
+// points every later `/exec`, `/deploy` and `/system/prune` for that machine at
+// a host the caller owns, signed with this app's own secret (`FJS-349`).
+//
+// The scheme is `@frontierjs/toolbelt/signature` — the same module conduit signs
+// with, so this cannot be a second reading of it. What it needs from the
+// request is the body as BYTES, which junction now carries as
+// `ctx.$raw.rawBody`: re-serialising `ctx.data` to hash it would mean both sides
+// agreeing on key order and spacing forever.
+//
+// One secret for the fleet (`OUTPOST_SECRET`), which is what conduit already
+// signs outbound with. The limit is worth stating: a machine that is compromised
+// can forge any other machine's check-in. Per-server secrets need a mint and a
+// hand-over at install time — ring 1 in `IDEAS/deploy-plane.md`, which is not
+// built.
+
+/** Nonces already seen inside the freshness window. Replay protection is only
+ *  as good as the memory behind it: this is per PROCESS, so two replicas do not
+ *  share it, and a restart forgets. Both are honest for what this defends —
+ *  a captured signature is dead in five minutes either way — and a shared store
+ *  is the change to make when Basecamp runs more than one process. */
+const seenNonces = new Map<string, number>()
+
+function rememberNonce(nonce: string, windowMs: number): boolean {
+  const now = Date.now()
+  // Swept on write rather than on a timer: no clock to own, and the map only
+  // grows while requests are arriving.
+  for (const [seen, at] of seenNonces) if (now - at > windowMs) seenNonces.delete(seen)
+  if (seenNonces.has(nonce)) return true
+  seenNonces.set(nonce, now)
+  return false
+}
+
+export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?: string[] } = {}): Hook {
+  const guarded = new Set(only)
+  const TOLERANCE_S = 300
+
+  return async (ctx: ServiceContext): Promise<void> => {
+    if (!guarded.has(`${ctx.service}.${ctx.method}`)) return
+
+    // `env`, not `process.env`: this app's env module is where a default is
+    // applied and a too-short value is refused at boot, and reading the raw
+    // variable answers undefined for every developer running the default —
+    // which this hook would report, correctly and uselessly, as *no secret is
+    // configured on this side*.
+    const secret = env.OUTPOST_SECRET
+    const raw    = (ctx as { $raw?: { rawBody?: string; headers?: Record<string, string>; method?: string; path?: string } }).$raw
+
+    // Fail closed, and say which half is missing. An in-process call has no
+    // `$raw` at all — the engines call these methods through the app — so this
+    // refuses those too rather than letting the absence of a transport read as
+    // permission. An app that needs to write a heartbeat for itself uses the
+    // system client, not this door.
+    if (!raw) throw new BadRequest(`${ctx.service}.${ctx.method} is the outpost's endpoint and is only reachable over HTTP`)
+
+    const result = await verifyRequest({
+      secret,
+      method:    raw.method ?? 'POST',
+      path:      raw.path ?? '',
+      body:      raw.rawBody ?? '',
+      headers:   raw.headers ?? {},
+      toleranceSeconds: TOLERANCE_S,
+      // The clock is this side's, stated: the kit is pure and takes no ambient
+      // state, which is what lets litestone and mesa import it.
+      now:       Math.floor(Date.now() / 1000),
+      seenNonce: (n: string) => rememberNonce(n, TOLERANCE_S * 1_000),
+    })
+
+    if (!result.ok) {
+      // The reason is logged and never returned: a caller learns that the
+      // signature was refused, not whether the clock or the secret was wrong.
+      app.logger.warn('outpost signature refused', {
+        service: ctx.service, method: ctx.method, reason: result.reason,
+      })
+      throw new Unauthorized('This endpoint requires a signed outpost request')
+    }
+  }
+}
+
+// ─── The application audit trail ──────────────────────────────────────────────
+// Two hooks, because a diff needs a before and an `after` hook has only the
+// after. `basecampAuditPreImage` goes in the app's `before: { all }` and
+// `basecampAuditLog` in its `after: { all }`; both take the same exceptions and
+// both ask `recordable()` so they cannot disagree about what counts.
+//
+// Failures are swallowed — an audit write must never break the request.
 //
 // `except` is `service.method` names that mutate but must not be recorded. The
-// one entry today is `servers.heartbeat`: an outpost checks in on a timer, so a
-// fleet of fifty would write six figures of rows a day and bury every action a
-// person took. It is deliberately NOT `ctx.dispatch = false` — that would also
-// silence the channel, and the live status pill on the server screen is fed by
-// exactly that publish.
+// entries today are outposts on a timer: fifty machines reporting every minute
+// would bury every action a person took. It is deliberately NOT
+// `ctx.dispatch = false` — that would also silence the channel, and the live
+// status pill on the server screen is fed by exactly that publish.
+
+/** What counts as a recordable mutation. Decided once, asked by both hooks. */
+function recordable(ctx: ServiceContext, skip: Set<string>): boolean {
+  if (skip.has(`${ctx.service}.${ctx.method}`)) return false
+  // What counts as a mutation is decided the same way Junction decides what to
+  // announce on a channel: everything except `find`/`get`, and a read-shaped
+  // custom method opts out with `ctx.dispatch = false`.
+  //
+  // It used to be a literal `['create','patch','remove']`, which meant the
+  // trail recorded a server being CREATED and not a server being DRAINED —
+  // and drain, cancel, deploy, trigger and heartbeat are most of what an
+  // operator actually does here. An audit trail that misses the verbs is
+  // worse than none, because it reads as complete.
+  if (ctx.method === 'find' || ctx.method === 'get') return false
+  if (ctx.dispatch === false) return false
+  return true
+}
+
+/** The litestone accessor for a service's model. Model names are PascalCase
+ *  singular by repo invariant, and the accessor is the same word with a lower
+ *  first letter — `model App` is `db.app`.
+ *
+ *  Read off `app.services`, the REGISTRY, and not off `app.service(name)`:
+ *  that answers a ServiceCaller — the thing you make calls with — which
+ *  carries no `model` at all, so asking it produced `undefined` and every
+ *  audit row was written with no diff and nothing saying why. */
+function accessorFor(app: BasecampApp, service: string): string | null {
+  const registry = (app as unknown as { services?: { get?: (n: string) => { model?: string } | undefined } }).services
+  const model    = registry?.get?.(service)?.model
+  if (!model) return null
+  return model[0].toLowerCase() + model.slice(1)
+}
+
+// A value written into `AuditEvent.diff`. Long text is cut, because a trail row
+// is read on a screen and a 40KB script pasted into a recipe would push every
+// other field off it — the point of a diff entry is that something changed and
+// what it changed to, not a second copy of the column.
+const DIFF_VALUE_LIMIT = 500
+
+function diffValue(v: unknown): unknown {
+  if (typeof v !== 'string') return v
+  return v.length <= DIFF_VALUE_LIMIT ? v : `${v.slice(0, DIFF_VALUE_LIMIT)}… +${v.length - DIFF_VALUE_LIMIT} chars`
+}
+
+/**
+ * What changed, field by field: `{ field: { before, after } }`.
+ *
+ * `protectedFields` comes from `db.$protectedFields(accessor)` — litestone's
+ * own reading of the schema, never a list written down here, which is the whole
+ * reason that capability exists. A protected column still appears (that it
+ * changed is the fact an operator needs) and its values never do.
+ */
+function diffRows(
+  before:    Record<string, unknown> | null,
+  after:     Record<string, unknown> | null,
+  protectedFields: Record<string, string>
+): Record<string, unknown> | null {
+  const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])
+  const diff: Record<string, unknown> = {}
+
+  for (const key of keys) {
+    // `updatedAt` moves on every single write and says nothing about what the
+    // write did. The audit row carries its own timestamp.
+    if (key === 'updatedAt') continue
+
+    const from = before?.[key]
+    const to   = after?.[key]
+    // JSON compare, not ===: `config` and `labels` are Json columns and come
+    // back as fresh objects, so identity would report every one of them as
+    // changed on every write.
+    if (JSON.stringify(from) === JSON.stringify(to)) continue
+
+    diff[key] = protectedFields[key]
+      ? { before: from === undefined ? undefined : '[redacted]', after: to === undefined ? undefined : '[redacted]' }
+      : { before: diffValue(from), after: diffValue(to) }
+  }
+
+  return Object.keys(diff).length ? diff : null
+}
+
+/**
+ * The BEFORE half. Reads the row as it stands and parks it on `ctx.locals`,
+ * which is per-call and does not propagate — a nested service call gets its own
+ * pre-image rather than inheriting the outer one's.
+ *
+ * asSystem(): the trail must be able to describe a change the caller could not
+ * read for themselves, and a scoped read would silently answer nothing for a
+ * row a policy hides — which reads as "nothing changed", the one wrong answer.
+ */
+export function basecampAuditPreImage(app: BasecampApp, { except = [] }: { except?: string[] } = {}): Hook {
+  const skip = new Set(except)
+
+  return async (ctx: ServiceContext): Promise<void> => {
+    if (!recordable(ctx, skip)) return
+    // No id is `create` and the bulk paths: there is nothing there yet to read.
+    if (ctx.id === undefined || ctx.id === null) return
+
+    try {
+      const accessor = accessorFor(app, ctx.service as string)
+      if (!accessor) return
+      const db  = app.data.asSystem() as any
+      const row = await db[accessor]?.findUnique?.({ where: { id: ctx.id } })
+      if (row) (ctx.locals as Record<string, unknown>).auditBefore = row
+    } catch {
+      // A model with no such accessor, or a read that failed — the trail then
+      // records the action with no diff, which is what it did before this
+      // existed. Never the request's problem.
+    }
+  }
+}
 
 export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: string[] } = {}): Hook {
   const skip = new Set(except)
 
   return async (ctx: ServiceContext): Promise<void> => {
-    if (skip.has(`${ctx.service}.${ctx.method}`)) return
-    // What counts as a mutation is decided the same way Junction decides what
-    // to announce on a channel: everything except `find`/`get`, and a
-    // read-shaped custom method opts out with `ctx.dispatch = false`.
-    //
-    // It used to be a literal `['create','patch','remove']`, which meant the
-    // trail recorded a server being CREATED and not a server being DRAINED —
-    // and drain, cancel, deploy, trigger and heartbeat are most of what an
-    // operator actually does here. An audit trail that misses the verbs is
-    // worse than none, because it reads as complete.
-    if (ctx.method === 'find' || ctx.method === 'get') return
-    if (ctx.dispatch === false) return
+    if (!recordable(ctx, skip)) return
 
     // Two result shapes reach here. CRUD answers the envelope, so the row is
     // under `.data`; a custom method answers the row itself. Reading only the
@@ -332,11 +537,41 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
     const raw     = ctx.result as Record<string, unknown> | null
     const result  = (raw?.data as Record<string, unknown> | undefined) ?? raw
     const session = userOf(ctx)
+    const before  = (ctx.locals as Record<string, unknown>).auditBefore as Record<string, unknown> | null ?? null
 
     try {
+      const sys = app.data.asSystem() as any
+
+      // What changed. `AuditEvent.diff` was `Json?` and nothing wrote it, so
+      // the trail could say a server was drained and not what state it was in
+      // (FJS-154). A remove has a before and no after; a create the reverse.
+      let diff: Record<string, unknown> | null = null
+      try {
+        const accessor = accessorFor(app, ctx.service as string)
+        if (accessor) {
+          // Both sides are read the same way, through the system client, and
+          // the after side is RE-READ rather than taken from `ctx.result`. Two
+          // reasons, and the second is the one that bites: a service is free to
+          // answer a projection, and a scoped read strips every protected
+          // column — so a patch that changed an `@encrypted` value produced a
+          // before with the field and an after without it, which is the diff
+          // for a column that was REMOVED. Redaction is then applied on
+          // purpose, to both sides, rather than falling out of what the caller
+          // happened to be allowed to see.
+          const id    = (result?.id as string | undefined) ?? (before?.id as string | undefined) ?? (ctx.id as string | undefined)
+          const after = ctx.method === 'remove' || id === undefined
+            ? null
+            : await sys[accessor]?.findUnique?.({ where: { id } }) ?? result ?? null
+          diff = diffRows(before, after, sys.$protectedFields(accessor))
+        }
+      } catch {
+        // A diff that cannot be computed is a diff that is not written. The
+        // action is still recorded, which is the half that was already true.
+      }
+
       // asSystem(): the trail must record actions the actor could not write
       // for themselves. AuditEvent create is a system-only concern.
-      await app.data.asSystem().auditEvent.create({
+      await sys.auditEvent.create({
         data: {
           workspaceId: (ctx.locals.workspaceId as string | undefined) ?? null,
           actorId:     session?.userId ?? null,
@@ -346,7 +581,8 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
           actorType:   session ? (session.authMethod === 'api_key' ? 'api_key' : 'user') : 'system',
           action:      `${ctx.service}.${ctx.method}`,
           subjectType: ctx.service,
-          subjectId:   (result?.id as string | undefined) ?? 'unknown',
+          subjectId:   (result?.id as string | undefined) ?? (before?.id as string | undefined) ?? 'unknown',
+          ...(diff ? { diff } : {}),
         },
       })
     } catch {

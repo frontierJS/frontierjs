@@ -4,6 +4,10 @@
 //
 // Mounted at /apps. `model: 'App'` derives validation from db/schema.lite.
 //
+// Custom methods, addressed the way DECISIONS.md settled — `POST /apps/:id`
+// with `X-Service-Method`, never a path segment:
+//   place · unplace — which machines the app runs on
+//
 // The table is `app`, not `service`. The old header here said "table name in
 // DB: service (legacy — kept for migration continuity)"; that name was the
 // exact overload VISION.md §Vocabulary forbids and it is gone — Service is the
@@ -14,7 +18,7 @@
 // spelled out — and it returns a nested object instead of flattened
 // `environment_name` / `environment_tier` columns.
 
-import { createService, NotFound, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf }
   from '../../core/resource.ts'
@@ -42,9 +46,44 @@ export function createAppsService(app: BasecampApp) {
     if (!env) throw new NotFound(`Environment '${environmentId}' not found in this workspace`)
   }
 
+  // The detail read, shared by `get` and by every custom method that changes
+  // the app's topology. A method that answered a bare row instead would hand
+  // the screen a record with no `placement` key, and a client assigning that
+  // over what it is rendering loses the section it just edited.
+  async function detail(ctx: ServiceContext, id: string) {
+    const row = await dbOf(ctx).app.findFirst({
+      where:   { id, workspaceId: wsOf(ctx) },
+      include: WITH_DETAIL,
+    })
+    if (!row) throw new NotFound(`App '${id}' not found`)
+
+    // What the detail screen needs and a list does not: where the replicas
+    // landed, what has been released, and what runs on a schedule. Three
+    // reads here rather than three round trips from the browser — the screen
+    // is one question ("what is this app doing"), so it is one request.
+    const [placement, deployments, jobs] = await Promise.all([
+      dbOf(ctx).appServer.findMany({ where: { appId: row.id }, include: { server: true } }),
+      dbOf(ctx).deployment.findMany({ where: { appId: row.id }, orderBy: { queuedAt: 'desc' }, limit: 10 }),
+      dbOf(ctx).job.findMany({ where: { appId: row.id }, orderBy: { createdAt: 'desc' }, limit: 10 }),
+    ])
+
+    return {
+      ...row,
+      domains: (row.domains ?? []).map((d: Record<string, unknown>) => ({ ...d, ...certStatusOf(d as never) })),
+      placement,
+      recent_deployments: deployments,
+      jobs,
+    }
+  }
+
   return createService({
     name:  'apps',
     model: 'App',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
@@ -66,29 +105,7 @@ export function createAppsService(app: BasecampApp) {
     },
 
     async get(ctx: ServiceContext) {
-      const row = await dbOf(ctx).app.findFirst({
-        where:   { id: ctx.id as string, workspaceId: wsOf(ctx) },
-        include: WITH_DETAIL,
-      })
-      if (!row) throw new NotFound(`App '${ctx.id}' not found`)
-
-      // What the detail screen needs and a list does not: where the replicas
-      // landed, what has been released, and what runs on a schedule. Three
-      // reads here rather than three round trips from the browser — the screen
-      // is one question ("what is this app doing"), so it is one request.
-      const [placement, deployments, jobs] = await Promise.all([
-        dbOf(ctx).appServer.findMany({ where: { appId: row.id }, include: { server: true } }),
-        dbOf(ctx).deployment.findMany({ where: { appId: row.id }, orderBy: { queuedAt: 'desc' }, limit: 10 }),
-        dbOf(ctx).job.findMany({ where: { appId: row.id }, orderBy: { createdAt: 'desc' }, limit: 10 }),
-      ])
-
-      return {
-        ...row,
-        domains: (row.domains ?? []).map((d: Record<string, unknown>) => ({ ...d, ...certStatusOf(d as never) })),
-        placement,
-        recent_deployments: deployments,
-        jobs,
-      }
+      return detail(ctx, ctx.id as string)
     },
 
     async create(ctx: ServiceContext) {
@@ -126,15 +143,84 @@ export function createAppsService(app: BasecampApp) {
       return removed
     },
 
+
+    // ── place / unplace — POST /apps/:id  X-Service-Method: place ─────
+    //
+    // Which machines an app runs on. Three engines read `AppServer` and until
+    // now nothing wrote one, so every app was placed nowhere and a deploy had
+    // no machine to talk to — which is the state the deploy stub was hiding
+    // (FJS-257).
+    //
+    // `AppServer` is `@@gate("2.8")`: readable by a member, writable only by a
+    // system context. That is right — a placement is the app's topology, not a
+    // row a caller edits — so the authority check is done here, against the
+    // WORKSPACE, and the write goes through asSystem(). The second of the two
+    // asSystem() calls in this file's realm; the other is the outpost heartbeat.
+
+    async place(ctx: ServiceContext) {
+      const data     = ctx.data as Record<string, unknown>
+      const serverId = data.serverId as string | undefined
+      if (!serverId) throw new BadRequest('place needs a serverId')
+
+      const target = await getScoped(ctx, 'app', 'App')
+
+      // Same workspace, and it must be a machine that can hold work. A
+      // destroyed server still has a row, and placing on one produces a
+      // deployment that can never resolve an executor.
+      const server = await dbOf(ctx).server.findFirst({ where: { id: serverId, workspaceId: wsOf(ctx) } })
+      if (!server) throw new NotFound(`Server '${serverId}' not found in this workspace`)
+      if (['destroyed', 'stopped'].includes(server.status))
+        throw new BadRequest(`Cannot place an app on a ${server.status} server`)
+
+      // The replica this placement is. Stated wins; otherwise the next free
+      // index on this server, so placing twice adds a replica rather than
+      // failing on the @@unique.
+      const existing = await dbOf(ctx).appServer.findMany({ where: { appId: target.id, serverId } })
+      const replicaIndex = (data.replicaIndex as number | undefined)
+        ?? existing.reduce((n: number, p: any) => Math.max(n, p.replicaIndex + 1), 0)
+
+      if (existing.some((p: any) => p.replicaIndex === replicaIndex))
+        throw new BadRequest(`Replica ${replicaIndex} of this app is already on '${server.name}'`)
+
+      await app.data.asSystem().appServer.create({
+        data: { appId: target.id, serverId, replicaIndex, status: 'unknown' },
+      })
+
+      return detail(ctx, target.id)
+    },
+
+    async unplace(ctx: ServiceContext) {
+      const data     = ctx.data as Record<string, unknown>
+      const serverId = data.serverId as string | undefined
+      if (!serverId) throw new BadRequest('unplace needs a serverId')
+
+      const target = await getScoped(ctx, 'app', 'App')
+
+      // Scoped read first, system write second: the caller proves they may see
+      // this app before anything is removed on their behalf.
+      const rows = await dbOf(ctx).appServer.findMany({
+        where: {
+          appId: target.id, serverId,
+          ...(data.replicaIndex !== undefined ? { replicaIndex: data.replicaIndex as number } : {}),
+        },
+      })
+      if (!rows.length) throw new NotFound('This app is not placed on that server')
+
+      const sys = app.data.asSystem()
+      for (const row of rows) await sys.appServer.delete({ where: { id: row.id } })
+
+      return detail(ctx, target.id)
+    },
+
     hooks: {
       before: {
         all:    [sessionScope(app)],
         create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), stampWorkspace],
         patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
+        // Topology, not content: the same authority that may patch the app.
+        place:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        unplace: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
       },
     },
   })

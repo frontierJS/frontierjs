@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-37 model(s) · 21 enum(s) · 2 database(s)
+38 model(s) · 21 enum(s) · 2 database(s)
 audit → logger · main → sqlite
 ```
 
@@ -596,6 +596,33 @@ table `flag_override` · db `main` · gate `2.4.4.4`
 @@index(environmentId)
 ```
 
+### `Invitation`
+
+table `invitation` · db `main` · gate `5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `email` | `String` | no | — | **required on write** |
+| `expiresAt` | `DateTime` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `invitedBy` | `String` | yes | — | — |
+| `role` | `WorkspaceRole` | no | `'developer'` | — |
+| `token` | `String` | no | — | unique · @guarded(all) · **required on write** |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `workspace` | `Workspace` | — | — | relation |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(email, workspaceId)
+@@index(workspaceId)
+@@allow('create', workspaceId == auth().workspaceId)
+@@allow('delete', workspaceId == auth().workspaceId)
+@@allow('post-update', workspaceId == auth().workspaceId)
+@@allow('read', workspaceId == auth().workspaceId)
+@@allow('update', workspaceId == auth().workspaceId)
+```
+
 ### `Job`
 
 table `job` · db `main` · gate `2.4.4.5` · @@softDelete
@@ -1044,6 +1071,7 @@ table `workspace` · db `main` · gate `1.1.5.6` · @@softDelete(cascade)
 | `deletedAt` | `DateTime` | yes | — | — |
 | `flags` | `FeatureFlag[]` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `invitations` | `Invitation[]` | — | — | relation |
 | `jobs` | `Job[]` | — | — | relation |
 | `members` | `WorkspaceMember[]` | — | — | relation |
 | `name` | `String` | no | — | **required on write** |

@@ -18,6 +18,7 @@ title: App
   import { page, goto } from '@frontierjs/sierra/router'
   import { apps } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
+  import { servers } from '../../../resources/Server.mesa'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -28,6 +29,7 @@ title: App
   import Form       from '@frontierjs/ui/components/forms/Form.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
@@ -43,6 +45,8 @@ title: App
   let certFor = null                 // domain id whose upload form is open
   let draft     = domains.make()
   let certDraft = { certPem: '', keyPem: '', expiresAt: '' }
+  let fleet     = []                 // the workspace's machines, for the placement select
+  let placeOn   = ''
 
   function write(name, value) { draft = { ...draft, [name]: value } }
   function writeCert(name, value) { certDraft = { ...certDraft, [name]: value } }
@@ -51,6 +55,10 @@ title: App
     error = null
     try {
       app = await apps.service.get(page.params.id)
+      // The machines this app could be placed on. Read here rather than in the
+      // markup because a select with no options and a select still loading look
+      // identical, and the difference decides whether 'Place' is a dead button.
+      fleet = (await servers.service.find({}, { limit: 200 })).data
     } catch (e) {
       error = e.message
     } finally {
@@ -112,6 +120,34 @@ title: App
     } catch (e) {
       // 'That is the primary hostname — make another one primary first' lands
       // here. The button is not disabled: the refusal is the service's to make.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // Placement — POST /apps/:id with X-Service-Method. The row it writes is
+  // `@@gate("2.8")`, so the service does it through asSystem() after checking
+  // the caller against the workspace; nothing here needs to know that.
+  async function place() {
+    if (!placeOn) return
+    error = null; busy = 'placement'
+    try {
+      app = await apps.service.invoke('place', app.id, { serverId: placeOn })
+      placeOn = ''
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function unplace(p) {
+    error = null; busy = p.id
+    try {
+      app = await apps.service.invoke('unplace', app.id,
+        { serverId: p.serverId, replicaIndex: p.replicaIndex })
+    } catch (e) {
       error = e.message
     } finally {
       busy = null
@@ -192,20 +228,31 @@ title: App
     <div class="tiles" style="--tile-min: 15rem" id="app-overview">
       <Card>
         <h2 class="h4">Placement</h2>
-        <p class="text-sm text-muted">Where the replicas actually landed — written by the deployment engine, never by a person.</p>
+        <p class="text-sm text-muted">Which machines run this app. A release with no placement is refused — there is nothing to send it to.</p>
         {#if app.placement?.length}
-          <ul class="stack">
+          <ul class="stack" id="app-placement">
             {#each app.placement as p}
               <li class="cluster">
                 <a href={`/servers/${p.serverId}/`}>{p.server?.name ?? p.serverId}</a>
                 <Badge tone="muted">replica {p.replicaIndex}</Badge>
                 <Pill>{p.status}</Pill>
+                <Button variant="ghost" tone="danger" disabled={busy === p.id}
+                        onclick={() => unplace(p)}>Unplace</Button>
               </li>
             {/each}
           </ul>
         {:else}
-          <p class="text-sm text-muted">Not placed on any server yet.</p>
+          <p class="text-sm text-muted" id="app-placement-empty">Not placed on any server yet.</p>
         {/if}
+        <div class="cluster" id="app-place">
+          <label class="visually-hidden" for="place-on">Place on</label>
+          <Select id="place-on" value={placeOn} placeholder="Place on…"
+                  options={fleet.map(s => ({ value: s.id, label: `${s.name} · ${s.status}` }))}
+                  oninput={(e) => placeOn = e.target.value}
+                  onchange={(e) => placeOn = e.target.value} />
+          <Button variant="primary" disabled={!placeOn || busy === 'placement'}
+                  onclick={place}>Place</Button>
+        </div>
       </Card>
 
       <Card>

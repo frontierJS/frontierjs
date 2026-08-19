@@ -1,5 +1,75 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-19 — a generated case has to isolate the rule it names (`FJS-351`)
+
+2373 tests, 0 fail. Typecheck clean.
+
+`generateValidationCases` built every case from ONE attribute with no idea what
+else sat on the field, and both halves of that were wrong the moment a column
+carried two rules.
+
+**A boundary claimed a value the field refused.** `@length(3, 200)` produced
+`'xxx'` and `'x'.repeat(200)`, and on an `@email` column neither is an email —
+so the write was refused and the runner reported *@length allows this value and
+the write was refused*: a correct schema graded as broken. Measured on a
+six-field schema, **8 of 12 boundary cases were false, and 4 of 6 fields were
+reported broken when nothing was.** The fix a reader reaches for is deleting a
+rule from the schema, which is exactly what happened to basecamp's
+`Invitation.email` before this landed.
+
+**An invalid case was refused by somebody else's rule and counted as proof of
+its own.** `''` on that column is rejected by `@email`, so `@length` could be
+deleted from `validate.js` and the check stayed green — and a mutant that
+widened it survived, which is the one thing `litestone mutate` exists to catch.
+`attempt()` carried the message every case already declared and never compared
+it; it does now, and a refusal by the wrong rule is reported as
+`rejected-by-another-rule` rather than passing.
+
+**The judge is `validateField`**, newly exported from `core/validate.js` — the
+function that decides this on a real write. A table of formats in the generator
+would be a second definition of every rule, drifting the moment one is tuned.
+
+**The repair is format-blind.** It grows or trims the factory's own valid
+sample and asks the validators whether each candidate passes, so an
+`@email @length(_, 200)` boundary comes out as a long local part in front of the
+sample's own domain, a `@url` keeps its scheme, and `@startsWith("ORD-")` keeps
+its prefix — without this code containing the words *email*, *URL* or *prefix*.
+Shrinking works on the sample's alphanumeric RUNS and leaves its punctuation
+alone, which is how `email1@example.com` becomes `e@e.c` at five characters.
+Which dimension is free depends on the rule: a boundary IS its length, an
+invalid `@length` case only has to sit outside the bound, and every other rule's
+length is incidental — `@url`'s `'not-a-url'` is nine characters and was refused
+by a sibling `@length(10, 60)` until it could be padded.
+
+**What cannot be isolated is reported, never dropped.** `uncheckable` names the
+rule, the blocking rules' own messages, and says the case was NOT checked —
+because a rule that quietly stops being asked about is this runner's failure
+mode one layer up. A lower bound at a format's own floor is the honest example:
+the shortest string `@email` accepts is `a@b.c`, so `@length(5, …)` there can
+never be violated by anything still an email, and `@length(6, …)` can.
+
+## 2026-08-19 — `$protectedFields`, so an app's own trail can redact (`FJS-154`)
+
+2368 tests, 0 fail. Typecheck clean.
+
+**`db.$protectedFields('secret')` → `{ data: 'encrypted' }`.** The third sibling
+of `$checkWhere` / `$checkOrderBy` and the same contract in every respect: an
+unknown accessor answers `{}`, and every flavour of client — root, `$setAuth`,
+`asSystem`, `$scopedBy` — answers identically, because what a schema DECLARES
+protected is not a question about who is asking.
+
+It exists because an application keeps a trail of its own. `@@log(audit)`
+redacts `@encrypted` / `@guarded` / `@secret` in its own JSONL and that is
+stated as a repo invariant — but basecamp writes "who did what" into an
+`AuditEvent` table the UI reads, and the only thing it could do about protected
+columns was hold a hand-written list of names that goes stale the first time
+somebody adds a `@secret`. One reading of the schema, in the package that owns
+the schema.
+
+The value says WHICH protection rather than `true`, because the three are not
+interchangeable: `guarded` locks both directions, `encrypted` hides a value from
+a non-system reader and stays writable, and `hashed` has no plaintext at all.
+
 ## 2026-08-18 — `VersionConflictError` says which two revisions disagreed (`FJS-341`)
 
 2367 tests, 0 fail. Typecheck clean.

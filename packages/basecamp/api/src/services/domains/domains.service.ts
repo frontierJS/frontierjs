@@ -21,7 +21,7 @@
 // that silently goes stale overnight — a certificate does not expire when
 // somebody remembers to run an update.
 
-import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
@@ -86,6 +86,11 @@ export function createDomainsService(app: BasecampApp) {
   return createService({
     name:  'domains',
     model: 'Domain',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
@@ -212,9 +217,6 @@ export function createDomainsService(app: BasecampApp) {
         remove:      [requireWorkspaceRole(app, 'admin', 'owner')],
         uploadCert:  [requireWorkspaceRole(app, 'admin', 'owner')],
         makePrimary: [requireWorkspaceRole(app, 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

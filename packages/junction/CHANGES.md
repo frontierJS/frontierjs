@@ -1,5 +1,29 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-19 — the body a signature is computed over, and a test request that waited (`FJS-349`, `FJS-350`)
+
+1232 tests, 0 fail. Typecheck clean.
+
+**`ctx.$raw.rawBody`.** A signature binds a hash of the body, so a hook handed
+only the parsed object has to re-serialise to check one — which means the sender
+and the receiver must agree on key order, spacing and number formatting forever.
+`parseBody` already decoded the text for JSON, urlencoded, XML and plain text;
+it keeps it now (`parsed.raw`) and the transport carries it. Absent for
+multipart and for no body, because there is no single string to hash.
+
+This is what made basecamp able to verify the requests an Outpost sends it
+(`FJS-349`) — the endpoints took no credential at all, behind a comment saying
+the transport had handled it.
+
+**`request(app)` no longer fires before it is awaited.** The builder ended with
+`Promise.resolve().then(execute)`, which schedules the call the moment the
+builder is made: any `await` between `.post(path)` and `.send(body)` let the
+request go out first, with no body and without any header set after that point.
+Nothing said so — it succeeded, the service saw `null`, and the test asserted
+against that. Found writing the signature tests, where computing a signature is
+itself an await. Lazy now, memoised on first `then()`.
+
+
 ## 2026-08-18 — a service can reserve a query key, and the reservation is lifted
 
 A search key had exactly two readings and a service needed a third. `$`-names

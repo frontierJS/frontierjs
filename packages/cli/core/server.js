@@ -27,6 +27,7 @@ import { Command } from './runtime.js'
 import { extractSegments, stripFrontmatter } from './compiler.js'
 
 import { GLOBAL } from './ports.js'
+import { ownStyleBundle, glowSource, CDN_STYLESHEET } from './assets.js'
 const PORT = parseInt(process.env.FLI_PORT) || GLOBAL.gui
 
 // ─── Registry cache ───────────────────────────────────────────────────────────
@@ -62,6 +63,15 @@ function route(req, res) {
     res.writeHead(204)
     res.end()
     return
+  }
+
+  // GET /fli.css, /glow.js — the styling language the GUI is written in, and
+  // the highlighter whose output that stylesheet themes
+  if (req.method === 'GET' && path === '/fli.css') {
+    return handleStylesheet(res)
+  }
+  if (req.method === 'GET' && path === '/glow.js') {
+    return handleGlow(res)
   }
 
   // GET / and any non-API path — serve the Web GUI (client handles routing)
@@ -208,6 +218,56 @@ function handleStatic(res) {
     res.writeHead(404)
     res.end('Web GUI not found — make sure web/index.html exists')
   }
+}
+
+// ─── GET /fli.css ────────────────────────────────────────────────────────────
+//
+// The GUI is written in `@frontierjs/css` (Invariant 13) and gets it from here
+// rather than from a CDN, so it renders with no network and is styled by the
+// copy this `fli` was installed with rather than by whatever the registry
+// answers today.
+//
+// Built once per process: the source cannot change under a running server
+// without the install changing, and the build walks 48 files.
+//
+// The redirect is the last resort, for an install whose `@frontierjs/css` is
+// missing entirely. It is a redirect rather than an inline link so the page
+// carries ONE href either way — a GUI that styles itself from two places is
+// one where a theme works on one machine and not the next.
+
+let _stylesheet
+
+function handleStylesheet(res) {
+  if (_stylesheet === undefined) _stylesheet = ownStyleBundle()
+
+  if (!_stylesheet) {
+    res.writeHead(302, { Location: CDN_STYLESHEET })
+    res.end()
+    return
+  }
+
+  res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' })
+  res.end(_stylesheet)
+}
+
+// ─── GET /glow.js ────────────────────────────────────────────────────────────
+//
+// A 404 here is not fatal and must not be: the GUI shows a command's source
+// unhighlighted rather than not at all.
+
+let _glow
+
+function handleGlow(res) {
+  if (_glow === undefined) _glow = glowSource()
+
+  if (!_glow) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' })
+    res.end('// @frontierjs/toolbelt not resolvable — code blocks render unhighlighted')
+    return
+  }
+
+  res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' })
+  res.end(_glow)
 }
 
 // ─── GET /api/commands ────────────────────────────────────────────────────────

@@ -248,7 +248,17 @@ function validateTypedJson(value, typeName, typeMap, strict, path, errors) {
 
 // ─── Field validation ─────────────────────────────────────────────────────────
 
-function validateField(fieldName, value, attributes) {
+/**
+ * Every field-level validator on one value, as the errors they raise.
+ *
+ * Exported for ONE caller and the reason is the repo's rule about second
+ * copies: `generateValidationCases` has to know whether a value it invented
+ * satisfies the OTHER rules on the same field, and the only honest answer to
+ * *is this a valid email* is the function that decides it on a write. A table
+ * of formats in the generator would be a second definition of every rule here,
+ * drifting the moment one of them is tuned.
+ */
+export function validateField(fieldName, value, attributes) {
   const errors = []
 
   for (const attr of attributes) {

@@ -426,6 +426,7 @@ model Workspace {
   deletedAt DateTime?
 
   members     WorkspaceMember[]
+  invitations Invitation[]
   projects    Project[]
   servers     Server[]
   secrets     Secret[]
@@ -460,6 +461,62 @@ model WorkspaceMember {
   @@log(audit)
   @@unique([workspaceId, userId])
   @@index([workspaceId, userId])
+}
+
+// An offer of membership to an EMAIL ADDRESS — the half `addMember` cannot do.
+//
+// addMember takes a `userId`, so it can only reach someone who already has an
+// account, and the only route that creates one is `/auth/register`, which
+// leaves them with no account and no workspace. That is why this app's one door
+// for a human was the setup wizard (`FJS-032`).
+//
+// **The row is the pending state and nothing else.** There is no `acceptedAt`
+// and no `revokedAt`: accepting writes a WorkspaceMember carrying `invitedBy` /
+// `invitedAt` forward and deletes this row, and revoking deletes it too. A
+// lifecycle column here would mean two places record a membership's origin and
+// one of them is never read. `@@log(audit)` is what survives either way.
+//
+// The token is the credential — whoever holds it may join. So it is
+// `@guarded(all)`: written and read through `asSystem()` only, absent from
+// every scoped read the way `Session.token` is, which means the invitations
+// list a screen renders cannot leak the one thing that matters. It is stored
+// verbatim rather than hashed because it must be looked up BY, and a 32-byte
+// random value has nothing a digest would protect it from.
+model Invitation {
+  id           String        @id @default(uuid())
+  workspaceId  String
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // `@lower` for the same reason `User.email` has it: `Ada@Example.test` and
+  // `ada@example.test` are one address, and without it they are two rows under
+  // `@@unique([workspaceId, email])` and two different answers to *does this
+  // person already have an account*. The service lower-cases too, because it
+  // compares before it writes.
+  //
+  // The upper bound is a real one — an address is not a place to paste a
+  // document — and the lower is `@email`'s own floor plus one: the shortest
+  // string litestone accepts is `a@b.c` at five, so a minimum of 5 could never
+  // be violated by anything that was still an email, and 6 can. That is not
+  // pedantry, it is what makes the rule testable: `verifyConstraints` builds a
+  // case per bound and reports one it cannot isolate from `@email` by name
+  // (`FJS-351`).
+  email        String        @trim @email @lower @length(6, 200)
+  role         WorkspaceRole @default(developer)
+
+  token        String        @unique @guarded(all)
+  expiresAt    DateTime
+
+  invitedBy    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @default(now()) @updatedAt
+
+  // Read at 5 as well as written: the row names a person who is not a member
+  // yet, and who has been asked to join is an administrator's business.
+  @@gate("5")
+  @@allow('all', workspaceId == auth().workspaceId)
+  @@log(audit)
+  @@unique([workspaceId, email])
+  @@index([workspaceId])
 }
 
 // ============================================================

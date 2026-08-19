@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-24 services · 26 routes · 9 plugins · prefix (none)
+25 services · 26 routes · 9 plugins · prefix (none)
 ```
 
 ## App hooks
@@ -21,7 +21,7 @@ a method — it applies to each one.
 
 | Phase | Method | Chain |
 | --- | --- | --- |
-| before | `all` | `anonymous` → `anonymous` |
+| before | `all` | `anonymous` → `anonymous` → `anonymous` → `anonymous` |
 | around | `all` | `anonymous` → `anonymous` → `anonymous` → `anonymous` |
 | after | `all` | `anonymous` → `anonymous` |
 | error | `all` | `anonymous` |
@@ -52,6 +52,7 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
 - **custom methods** — `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -66,12 +67,12 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `api-keys` · model `ApiKey`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `revoke`, `scopes`
 - **custom methods** — `revoke`, `scopes`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -83,11 +84,12 @@ name when it declares none.
 | before | `revoke` | `anonymous` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `apps` · model `App`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `place`, `unplace`
+- **custom methods** — `place`, `unplace`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -95,10 +97,11 @@ name when it declares none.
 | before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
+| before | `place` | `anonymous` |
+| before | `unplace` | `anonymous` |
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `audit` · model `AuditEvent`
 
@@ -118,6 +121,7 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `rules`, `test`
 - **custom methods** — `rules`, `test`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -129,12 +133,12 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `cleanup` · model `CleanupRun`
 
 - **methods** — `find`, `get`, `usage`, `targets`, `report`, `run`
 - **custom methods** — `usage`, `targets`, `report`, `run`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -146,7 +150,6 @@ name when it declares none.
 | before | `patch` | `gateAuth` → `autoValidate` |
 | before | `update` | `gateAuth` → `autoValidate` |
 | before | `remove` | `gateAuth` |
-| after | `all` | `publish` |
 
 ### `conduit-targets` · model `conduit-targets`
 
@@ -166,6 +169,7 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
 - **custom methods** — `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -180,11 +184,11 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `deployments` · model `Deployment`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -195,12 +199,12 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `domains` · model `Domain`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `uploadCert`, `makePrimary`
 - **custom methods** — `uploadCert`, `makePrimary`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -213,12 +217,12 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `environments` · model `Environment`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `setVariable`, `deleteVariable`
 - **custom methods** — `setVariable`, `deleteVariable`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -231,12 +235,12 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `flags` · model `FeatureFlag`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `setOverride`, `clearOverride`, `resolve`
 - **custom methods** — `setOverride`, `clearOverride`, `resolve`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -249,7 +253,6 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `hub` · model `hub`
 
@@ -266,10 +269,28 @@ name when it declares none.
 | before | `update` | `gateAuth` → `autoValidate` |
 | before | `remove` | `gateAuth` |
 
+### `invitations` · model `Invitation`
+
+- **methods** — `find`, `create`, `remove`, `resend`, `preview`, `accept`
+- **custom methods** — `resend`, `preview`, `accept`
+- **broadcasts on** — `(computed)`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| before | `all` | `anonymous` |
+| before | `create` | `anonymous` → `stampInvitation` → `gateAuth` → `autoValidate` |
+| before | `resend` | `anonymous` |
+| before | `remove` | `anonymous` → `gateAuth` |
+| before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
+| before | `get` | `gateAuth` → `autoFilter` |
+| before | `patch` | `gateAuth` → `autoValidate` |
+| before | `update` | `gateAuth` → `autoValidate` |
+
 ### `jobs` · model `Job`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `trigger`, `cancel`
 - **custom methods** — `trigger`, `cancel`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -282,12 +303,12 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `networks` · model `Network`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `attach`, `detach`
 - **custom methods** — `members`, `attach`, `detach`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -300,7 +321,6 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `portal` · model `portal`
 
@@ -319,6 +339,7 @@ name when it declares none.
 ### `projects` · model `Project`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -329,12 +350,12 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `recipes` · model `Recipe`
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `run`, `runs`
 - **custom methods** — `run`, `runs`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -346,12 +367,12 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `secrets` · model `Secret`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `verify`
 - **custom methods** — `verify`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -363,12 +384,12 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `servers` · model `Server`
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `reboot`, `drain`, `undrain`, `sync`, `heartbeat`
 - **custom methods** — `events`, `feed`, `reboot`, `drain`, `undrain`, `sync`, `heartbeat`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -383,7 +404,6 @@ name when it declares none.
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
 | before | `get` | `gateAuth` → `autoFilter` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `sessions` · model `sessions`
 
@@ -403,6 +423,7 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `remove`, `usage`, `report`, `prune`
 - **custom methods** — `usage`, `report`, `prune`
+- **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -414,7 +435,6 @@ name when it declares none.
 | before | `create` | `gateAuth` → `autoValidate` |
 | before | `patch` | `gateAuth` → `autoValidate` |
 | before | `update` | `gateAuth` → `autoValidate` |
-| after | `all` | `publish` |
 
 ### `workspaces` · model `Workspace`
 

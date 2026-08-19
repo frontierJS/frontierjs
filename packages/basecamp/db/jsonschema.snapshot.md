@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-58 definitions · 37 models · 21 enums · 0 other
+59 definitions · 38 models · 21 enums · 0 other
 ```
 
 ## Definitions
@@ -32,6 +32,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Account` | model |
 | `Workspace` | model |
 | `WorkspaceMember` | model |
+| `Invitation` | model |
 | `Secret` | model |
 | `ApiKey` | model |
 | `Server` | model |
@@ -208,6 +209,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:1 create:1 update:5 delete:6` · version field `version` · closed (`additionalProperties: false`)
 - relation `account` — belongsTo `Account` via `accountId`
 - relation `members` — hasMany `WorkspaceMember`
+- relation `invitations` — hasMany `Invitation`
 - relation `projects` — hasMany `Project`
 - relation `servers` — hasMany `Server`
 - relation `secrets` — hasMany `Secret`
@@ -249,6 +251,22 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `acceptedAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `workspaceId`, `userId` · not accepted — `id`
+
+### `Invitation`
+
+- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | yes | — | — | — |
+| `email` | `string` | yes | — | `format: "email"` `minLength: 6` `maxLength: 200` | — |
+| `role` | `WorkspaceRole` = `"developer"` | — | — | — | — |
+| `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
+| `invitedBy` | `string`? | — | — | — | — |
+
+**On create**: required — `workspaceId`, `email`, `expiresAt` · not accepted — `id`
 
 ### `Secret`
 

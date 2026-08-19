@@ -620,6 +620,7 @@ export class HttpTransport {
       query,
       headers,
       body:     parsed.data,
+      rawBody:  parsed.raw,
       files:    parsed.files,
       ip,
       protocol: url.protocol.startsWith('https') ? 'https' : 'http',

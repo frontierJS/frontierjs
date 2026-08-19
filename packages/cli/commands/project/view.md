@@ -7,6 +7,7 @@ examples:
   - fli project:view --port 4445
   - fli project:view --no-open
   - fli project:view --project example
+  - fli project:view --legacy
 flags:
   port:
     char: p
@@ -17,6 +18,10 @@ flags:
     type: boolean
     description: Open the browser once the server is up (--no-open to skip)
     defaultValue: true
+  legacy:
+    type: boolean
+    description: Serve the previous React viewer instead, for comparison
+    defaultValue: false
 ---
 
 <script>
@@ -39,13 +44,19 @@ if (!existsSync(resolve(context.paths.db, 'schema.lite'))) {
 const port = flag.port
 const url  = `http://localhost:${port}`
 
-// ── Locate pre-compiled viewer HTML ───────────────────────────────────────────
-// web/viewer/index.html is compiled from FJSChain.jsx — no Babel or JSX at runtime.
+// ── Locate the viewer ─────────────────────────────────────────────────────────
+//
+// `index.html` is plain HTML in `@frontierjs/css`, served whole. `legacy.html`
+// is the React page it replaced — kept so the two can be read side by side, and
+// the only thing here that still needs the network, since it loads React from a
+// CDN. It is also the only caller left for the injected env panel below: the
+// new page has that panel in it.
 
-const viewerPath = resolve(global.fliRoot, 'web/viewer/index.html')
+const viewerFile = flag.legacy ? 'web/viewer/legacy.html' : 'web/viewer/index.html'
+const viewerPath = resolve(global.fliRoot, viewerFile)
 if (!existsSync(viewerPath)) {
   log.error(`Viewer not found at ${viewerPath}`)
-  log.info('Ensure web/viewer/index.html exists in fliRoot')
+  log.info(`Ensure ${viewerFile} exists in fliRoot`)
   return
 }
 
@@ -264,12 +275,34 @@ const PANEL_JS = `
 `
 
 const ENV_TAG = '<scr' + 'ipt src="/__envhealth.js"></scr' + 'ipt>'
-const injectedHtml = html.includes('</body>')
-  ? html.replace('</body>', ENV_TAG + '</body>')
+const injectedHtml = !flag.legacy ? html
+  : html.includes('</body>') ? html.replace('</body>', ENV_TAG + '</body>')
   : html + ENV_TAG
+
+// The styling language and the highlighter, from the copy this fli holds —
+// `core/assets.js` is the one owner, shared with the Web GUI and the generated
+// map pages. Built once: the source cannot change under a running server.
+const { ownStyleBundle, glowSource, CDN_STYLESHEET } = await import(resolve(global.fliRoot, 'core/assets.js'))
+const stylesheet = ownStyleBundle()
+const highlighter = glowSource()
 
 const server = createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
+
+  if (req.url === '/fli.css') {
+    if (!stylesheet) { res.writeHead(302, { Location: CDN_STYLESHEET }); res.end(); return }
+    res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8' })
+    res.end(stylesheet)
+    return
+  }
+
+  // A 404 is a legal answer: a code block renders unhighlighted rather than
+  // the page failing to load.
+  if (req.url === '/glow.js') {
+    res.writeHead(highlighter ? 200 : 404, { 'Content-Type': 'text/javascript; charset=utf-8' })
+    res.end(highlighter ?? '// @frontierjs/toolbelt not resolvable')
+    return
+  }
 
   if (req.url === '/data') {
     map = buildMap()
@@ -320,8 +353,9 @@ const server = createServer((req, res) => {
 })
 
 server.listen(port, () => {
-  log.success(`FJSChain viewer: ${url}`)
+  log.success(`FJSChain viewer: ${url}${flag.legacy ? ' (legacy React viewer)' : ''}`)
   log.info('Refresh browser tab to update from current files')
+  if (!flag.legacy) log.info('`--legacy` serves the previous viewer, for comparison')
 })
 
 // ── Open browser ───────────────────────────────────────────────────────────────

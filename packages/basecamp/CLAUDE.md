@@ -46,9 +46,9 @@ it (`strictPort` + `scripts/preflight.mjs`).
 ## Layout
 
 ```
-db/       schema.lite (37 models, 21 enums) · generate.js · migrations/ · seed.js ·
+db/       schema.lite (38 models, 21 enums) · generate.js · migrations/ · seed.js ·
           litestone.config.js · test/ · README.md (the depth doc)
-api/src/  index.ts · services/ (21) · engine/ (3, on accessors) · core/ · infra/
+api/src/  index.ts · services/ (22) · engine/ (3, on accessors) · core/ · infra/
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
           core/session-auth.ts projects this app's OWN User columns onto the
@@ -56,6 +56,11 @@ api/src/  index.ts · services/ (21) · engine/ (3, on accessors) · core/ · in
           engine/fleet.engine.ts is both ways this app acts on a MACHINE —
           `recipe:run` and `cleanup:run`, one shape, opposite safeguards
           services/hub/ is the ONLY service that takes no workspace
+          services/invitations/ holds the only two UNAUTHENTICATED methods —
+          `preview` and `accept`; the token is the credential and the service
+          decides everything a token cannot (`FJS-032`)
+          core/mailer.ts is the one answer to whether this app can mail at all;
+          no provider is a supported state and every caller says so
 web/src/  App.mesa · main.js · session.js · notices.js (one leaf definition the
           shell and the home screen share) · routes/ · components/ ·
           resources/ (PascalCase singular, one Resource per file — Invariant 19)
@@ -70,7 +75,7 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
 
 ## What bites here
 
-- **A level is per WORKSPACE, and it rides on the principal.** All 37 models
+- **A level is per WORKSPACE, and it rides on the principal.** All 38 models
   declare `@@gate`; `api/src/core/gate.ts` is the ladder (viewer/billing 2,
   developer 4, admin 5, owner 6, `isSystemAdmin` 7, authenticated-but-not-a-member
   1). The level comes from the `WorkspaceMember` row for the workspace the
@@ -120,13 +125,13 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   replaces**: `job.engine.ts` carried `JobRow` in snake_case with `service_id` on
   it — three renames stale, describing no row that has ever existed, while the
   code around it read the right camelCase names.
-- **15 models keep their tenancy in the schema** —
+- **16 models keep their tenancy in the schema** —
   `@@allow('all', workspaceId == auth().workspaceId)`, graded off the same
   principal. Every model carrying a `workspaceId` except two: `WorkspaceMember`
   (what standing is READ from, before there is a workspace on the principal to
   compare against) and `AuditEvent` (nullable workspace — a hub action belongs to
   none, and a null comparison would hide the rows the trail exists for). The
-  other 22 carry no `workspaceId` of their own — a `DeploymentStep`, a `JobRun`,
+  other 20 carry no `workspaceId` of their own — a `DeploymentStep`, a `JobRun`,
   a `Volume` — so the next move there is `check(parent)`, not a restated column.
   `Deployment`/`Job`/`Domain`
   brought a shape the hierarchy did not have — a read filtered on `appId` alone
@@ -251,6 +256,36 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   kept firing** (`FJS-328`). `syncSchedule(app, row)` is the whole rule and it
   reads the UPDATED row, because `kind` and `status` change a schedule as surely
   as the expression does; `restoreSchedules()` rebuilds the clock at boot.
+- **A deploy resolves an EXECUTOR before it does anything, and there are three
+  answers.** `api/src/engine/executor.ts` is the one owner: a registered outpost,
+  the named stub (`BASECAMP_STUB_OUTPOST=1`, refused under `NODE_ENV=production`,
+  and it writes *no /deploy was issued* into every step it touches), or a refusal.
+  It is asked twice — `deployments.create` refuses where the person can see it,
+  the engine asks again when the job runs, because a placement can be removed
+  between the two. Never add a fourth branch that returns early and lets the
+  caller mark the step `success`: that was the whole of `FJS-257`, a release
+  finishing green in 23ms having issued no command.
+- **A placement is written by `apps.place`, through `asSystem()`.** `AppServer`
+  is `@@gate("2.8")` — a member may read it, only the system may write it — so
+  the authority check is against the WORKSPACE in the service and the write is a
+  system one. Until 2026-08-19 nothing wrote the row at all and three engines
+  read it, which is why a deploy had no machine to talk to.
+- **A tag is not an identity.** An executor reply may carry a `digest`; it is
+  recorded on `Deployment.builtImage` and every later step is addressed by it.
+  Only `sha256:<64 hex>` is accepted — a `builtImage` nobody can resolve reads as
+  an answer, which is worse than an empty one.
+- **The audit trail is two hooks and both sides are read the same way.**
+  `basecampAuditPreImage` (before) parks the row on `ctx.locals`; the after half
+  re-reads through `asSystem()` rather than diffing `ctx.result`, because a
+  service may answer a projection and a scoped read strips protected columns —
+  taking the after from the result reported an `@encrypted` column as REMOVED on
+  every rotation. Protected column names come from `db.$protectedFields()`, never
+  a list here.
+- **A service DECLARES its channel; it does not run a publish hook.**
+  `channel: workspaceChannel(app)` on the definition. Junction announces in one
+  place and excludes `find`/`get` there; an `after: { all: [publish(…)] }` hook
+  cannot, and broadcast every read to the whole workspace (`FJS-031`). Declaring
+  both is refused at construction.
 - **Zero raw SQL, on purpose** — everything goes through accessors, which is what
   keeps policies enforceable. `db.asSystem().sql` is the only bypass and it
   enforces nothing.

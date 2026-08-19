@@ -3,6 +3,7 @@
 // All transports extend this. Enforces the contract.
 // ============================================================
 
+import { signRequest } from '@frontierjs/toolbelt/signature'
 import { CredentialError } from '../types.ts'
 import type {
   ConduitRequest,
@@ -108,44 +109,26 @@ export abstract class BaseTransport {
 
       case 'hmac': {
         const { method, path, body } = this.authContext(ctx)
-        const prefix    = auth.header_prefix ?? 'X-Hub'
-        const timestamp = Math.floor(Date.now() / 1000).toString()
-        const nonce     = crypto.randomUUID()
 
-        // Bind the signature to the whole request, not just the body:
-        //
-        //   • method + path — a captured signature cannot be replayed
-        //     against a different endpoint on the same target
-        //   • timestamp + nonce — the receiver can reject stale and
-        //     repeated signatures, so a capture does not replay forever
-        //   • body hash — a bodyless request signs the hash of the empty
-        //     string, so POST /reboot and DELETE /servers/42 are signed
-        //     like anything else
-        //
-        // Compare GitHub and Stripe webhook signing, which bind a timestamp
-        // for the same reason. The receiving outpost must recompute this
-        // exact string and reject signatures outside its freshness window.
-        const canonical = [
-          method,
-          path,
-          timestamp,
-          nonce,
-          await sha256Hex(body),
-        ].join('\n')
-
-        const enc = new TextEncoder()
-        const key = await crypto.subtle.importKey(
-          'raw', enc.encode(await this.secret(auth.ref)),
-          { name: 'HMAC', hash: 'SHA-256' },
-          false, ['sign']
-        )
-        const sig = await crypto.subtle.sign('HMAC', key, enc.encode(canonical))
-
-        return {
-          [`${prefix}-Signature`]: `sha256=${toHex(new Uint8Array(sig))}`,
-          [`${prefix}-Timestamp`]: timestamp,
-          [`${prefix}-Nonce`]:     nonce,
-        }
+        // The canonical string, the headers and their names all come from
+        // `@frontierjs/toolbelt/signature`, which is also what the receiving
+        // side runs. They used to live here alone, and a signer with no
+        // verifier reads as a scheme being enforced: basecamp's three Outpost
+        // endpoints took no credential at all while every outbound call to an
+        // Outpost was signed (`FJS-349`).
+        // The clock and the nonce are stated here rather than defaulted in the
+        // kit: it is the substrate package, importable by litestone and mesa
+        // because it computes nothing it is not given, and CI fails a
+        // `Date.now()` inside it.
+        return signRequest({
+          secret:    await this.secret(auth.ref),
+          method:    method ?? 'GET',
+          path:      path ?? '/',
+          body:      body ?? '',
+          prefix:    auth.header_prefix ?? 'X-Hub',
+          timestamp: Math.floor(Date.now() / 1000),
+          nonce:     crypto.randomUUID(),
+        })
       }
 
       case 'none':
@@ -167,11 +150,3 @@ export abstract class BaseTransport {
 
 // ─── Internal ────────────────────────────────────────────────
 
-function toHex(bytes: Uint8Array): string {
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
-  return toHex(new Uint8Array(digest))
-}

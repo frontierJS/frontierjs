@@ -466,6 +466,60 @@ export type WorkspaceMemberOrderBy =
   | { [K in keyof Omit<WorkspaceMember, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<WorkspaceMember, never>]?: OrderDir }>
 
+// ─── Invitation ──────────────────────────────────────────────────
+
+export interface Invitation {
+  id: string
+  workspaceId: string
+  email: string
+  role: WorkspaceRole
+  /** @guarded */
+  token: string
+  expiresAt: string
+  invitedBy?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface InvitationCreate {
+  id?: string
+  workspaceId: string
+  email: string
+  role?: WorkspaceRole
+  token: string
+  expiresAt: string
+  invitedBy?: string | null
+}
+
+export interface InvitationUpdate {
+  id?: string
+  workspaceId?: string
+  email?: string
+  role?: WorkspaceRole
+  token?: string
+  expiresAt?: string
+  invitedBy?: string | null
+}
+
+export interface InvitationWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  email?: string | WhereOp<string> | null
+  role?: WorkspaceRole | WhereOp<WorkspaceRole> | null
+  token?: string | WhereOp<string> | null
+  expiresAt?: string | WhereOp<string> | null
+  invitedBy?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  AND?: InvitationWhere[]
+  OR?:  InvitationWhere[]
+  NOT?: InvitationWhere
+}
+
+export type InvitationOrderBy =
+  | { [K in keyof Omit<Invitation, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Invitation, never>]?: OrderDir }>
+
 // ─── Secret ──────────────────────────────────────────────────────
 
 export interface Secret {
@@ -2473,6 +2527,7 @@ export interface ServiceTypes {
   accounts: Account
   workspaces: Workspace
   workspaceMembers: WorkspaceMember
+  invitations: Invitation
   secrets: Secret
   apiKeys: ApiKey
   servers: Server
@@ -2596,6 +2651,7 @@ export interface LitestoneClient {
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere>
   readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere>
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere>
+  readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere>
   readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere>
   readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere>
   readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere>
@@ -2636,6 +2692,9 @@ export interface LitestoneClient {
   // flavour of client answers, because it is a fact about the schema.
   $checkWhere(accessor: string, where: Record<string, unknown>): { key: string; suggestion?: string; allowed?: string[] }[]
   $checkOrderBy(accessor: string, orderBy: unknown): { key: string; reason: string; suggestion?: string; sortable?: string[]; message?: string }[]
+  // Which columns must never be written down in plain text — asked for the
+  // same reason, by an application keeping a trail of its own.
+  $protectedFields(accessor: string): Record<string, 'guarded' | 'encrypted' | 'hashed'>
 
   // Transactions
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>

@@ -1,5 +1,21 @@
 # Changes — @frontierjs/conduit
 
+## 2026-08-19 — the HMAC scheme has one owner (`FJS-349`)
+
+193 tests, 0 fail.
+
+`buildAuthHeaders`'s `hmac` branch built the canonical string, hashed the body
+and named the three headers itself. It now calls `signRequest` from
+`@frontierjs/toolbelt/signature`; the string on the wire is byte-identical, and
+a spec in toolbelt pins that.
+
+The reason is the other end. **Signing with no verifier reads as a scheme being
+enforced**: basecamp's three Outpost endpoints took no credential at all while
+every outbound call to an Outpost was signed. A receiver has to recompute this
+exact string, and two implementations of one string is how it ends up not
+being the same string.
+
+
 ## 2026-08-16 — `hooks:` is `observers:` (`FJS-287`, `FJS-D06` §1)
 
 193/193 tests pass, junction integration included; `example`: `verify:notify`

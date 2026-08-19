@@ -1,5 +1,194 @@
 # Changes
 
+## 2026-08-19 — what `fli new` leaves behind, read as a stranger would (`FJS-353`, `FJS-354`, `FJS-355`)
+
+699 tests, 0 fail.
+
+Four things a scaffold did that a first-time reader would take as the framework
+being broken, all found by running `create-frontier` and following its own
+instructions.
+
+**`fli keygen --env` printed the key it had just written.** So `fli new --auth`
+put a real `ENCRYPTION_KEY` and a real `AUTH_SECRET` in terminal scrollback, and
+in the log of every CI job that composes the command. The bare form is meant to
+be piped, so the echo survives where nothing else carries the key; `--env` and
+`--copy` have already delivered it, and `--print` is the way back. `auth:install`
+also stopped printing a second success line over keygen's own, and now declares
+each name it generated in `.env.example` — a key written only to `.env` is a key
+the next clone has no name for.
+
+**The summary told everyone to `cp .env.example .env`** — over the `.env`
+`auth:install` had just filled with both generated keys. An instruction that
+breaks the app it finished building. It is printed only when there is no `.env`.
+
+**`cli/src/routes` was created by the directory step and then refused by
+`fli:init`**, which exists to fill it. The warning scrolled past, `✓ created`
+printed anyway, and the FLI surface shipped as an empty folder.
+
+**The home page read `status.connected`**, which is the socket, and the client
+opens one only once it holds a token — so a visitor who had not signed in read
+`connecting…` for ever. It asks `/api/health` now, and says separately that the
+socket opens at sign-in.
+
+
+## 2026-08-19 — `project:view` is a page rather than a React bundle, and it stopped inventing data
+
+FJSChain was React 18 from a CDN — two `<script crossorigin>` tags, 486 inline
+`style:{}` objects, a 30-key colour palette, hand-compiled from an `FJSChain.jsx`
+that is **in no checkout**. So the committed artefact could not be regenerated,
+and the page could not render at all without the network, which nothing else
+here needs.
+
+It is plain HTML and JavaScript in `@frontierjs/css` now, ~1100 lines against
+1571, and the terms carry it: Shell, Topbar, Screen, Pane, Card, Tile, Item,
+Facts, Table, Badge, Pill, Code, Tabs, Alert, Empty, Disclosure. The diagram is
+the only thing left in a `<style>` block, because a chain drawn as a grid is a
+picture and not a component. A realm is a **tone** — `primary`, `info`,
+`secondary`, the three that claim no status, so `success` and `danger` still
+mean what they say beside them.
+
+**The diagram is a flow and it has to look like one.** The first pass drew the
+twenty nodes as three rows of cards and left the direction to two captions,
+which is not a chain — it is a list that happens to be in order. The arrows are
+back and they are CSS rather than glyphs, so they stretch with the gap and take
+the ink colour: a rule with a head on it between nodes, pointing right along the
+outgoing lane, left along the incoming one, down the two spines. Consecutive
+nodes of one realm sit in a tinted **band**, which is what makes four API nodes
+read as one stretch of the chain; the bands line up with the realm cards
+beneath them, which the page this replaced did not manage. And the four elbows
+are carried over unchanged, because they are the shape of the thing: a request
+enters at the UI end of the bottom lane, turns at the data end, and its result
+comes back along the top.
+
+A package tag is a **control** now — outlined in the realm's tone above the node
+it joins, and clicking it opens that package's detail. In the first pass they
+were badges inside the node, which meant a `<button>` inside a `<button>`, a
+name wider than its node painting over the neighbour, and a detail panel nothing
+could reach.
+
+**The bigger half is what it no longer says.** Six of its twelve panels were
+hardcoded fiction about a shop called acme-crm — `port: 3000`, `acme_crm_token`,
+`./db/acme-crm.db`, a `contacts` service — rendered beside real data with
+nothing marking which was which. Two of them (`routes`, `fli`) read from
+constants that were `[]`, so they had rendered nothing at all since the day they
+were compiled. Every panel now declares its `source`: **project** is read off
+the tree, **reference** describes FrontierJS and says so in an Alert at the top
+of its own tab. The fictional settings are deleted outright.
+
+What the surface snapshot can answer, it now answers. `routes` and `plugins` are
+real (they were static and empty); a hook-point detail shows the chains that
+actually run at that point **and names the file it read them from**; `channels`
+lists the services that declare one, where every service used to be given three
+invented events. The issue list checks things the data supports — a missing
+`gateAuth`, an ungated model, a required secret that is not set, a service no
+resource binds to — replacing a check for an `authenticate` hook this framework
+does not have, which flagged every service in every project.
+
+The injected env-health panel is gone with it: `PANEL_JS` existed because the
+page was a compiled bundle nobody could edit, so a second hand-styled UI was
+stapled on at serve time. Env is a panel like the others now, one-click secret
+fix included. The injection survives for `--legacy` only.
+
+**`--legacy` serves the React page from `web/viewer/legacy.html`**, so the two
+can be read side by side. It is the only thing in this package that still needs
+the network.
+
+Four things found by building it, three of them in how `@frontierjs/css`
+composes.
+
+**A View outranks a Stack.** `.view` states `display: block` in the components
+layer and `.stack` states `display: flex` in the earlier layout layer, so
+`class="view stack gap-lg"` lays out as a block with the gap doing nothing — and
+every heading in a panel sat hard against the table above it. The same collision
+`.pane` documents, and it had also flattened the Web GUI's documentation drawer.
+The Stack goes on a child.
+
+**`.tabs > .view` is a direct-child selector**, so wrapping the panels in a box
+of their own took away the air between the strip and the first panel. The strip
+and the views are siblings.
+
+**A tone does not reach anything inside the element carrying it.** `--bg-mix` is
+element-scoped, so all three realms drew in one colour until the tone went on
+the heading control too, and every elbow drew in the Data realm's colour until
+its rail derived the tone into an ordinary custom property first — which is the
+move `form-core.css` already makes to get a tone onto a checkbox. Twice in one
+page is what makes it worth writing down.
+
+And **Chrome leaves a flex scroll container's bottom padding out of
+`scrollHeight`**, which made the last band of the Screen unreachable at any
+scroll position: the final row of the schema list could not be scrolled to. A
+trailing `::after` is in the flow and is counted.
+
+
+## 2026-08-19 — the Web GUI is written in the styling language everything else here is
+
+`fli gui` was 840 lines of hand-written CSS with its own token names, its own
+three themes and eight literal hexes in a hand-rolled highlighter, next to
+`ws:map` and `ws:atlas`, which are written in `@frontierjs/css` (Invariant 13).
+Two styling worlds one command apart, and a third spelling of *theme*: the GUI
+wrote `data-theme` on `<html>`, the package defines `.theme-*`, and Sierra
+settled the question in `FJS-308`.
+
+It is a term now, all the way down: **Shell, Topbar, Sidebar, Screen, Bar,
+Card, Field, Item, Badge, Pill, Kbd, Empty, Disclosure, Dialog, Drawer, Code**.
+What is left in a `<style>` block is what the vocabulary has no word for — the
+console a command streams into, the split it shares with the form, and the
+density a command tree needs that a Sidebar does not assume. **No colour is
+written in the page at all**: an output level is a tone (`text-danger`,
+`text-success`), which is what makes the light themes work — the old
+console's `#d8d8d8` was invisible on anything but its own ground.
+
+Three things fell out rather than being ported. Every fold is a `<details
+class="disclosure">` and every panel a real `<dialog>`, so open/closed, Escape,
+the backdrop and the focus trap are the browser's — that is four handlers and
+two `.open` classes gone. The theme is a class on `<html>`, applied by a script
+above the stylesheet so there is no flash, and the picker offers all ten of the
+package's themes instead of three of its own. And the highlighter is
+`@frontierjs/toolbelt/glow`, whose output is marked with the ELEMENT that means
+each token and which `@frontierjs/css` already themes — so the GUI dropped its
+tokenizer and its palette together.
+
+**`core/assets.js` is the one owner of what a browser gets from a sibling
+package**, and it answers two questions that are not the same one:
+`styleBundle(root)` is the styling language as the tree at `root` holds it —
+for a page ABOUT that tree, where a stylesheet from anywhere else describes
+nothing (`FJS-256`) — and `ownStyleBundle()` is the copy this `fli` was
+installed with, which is what the GUI wants, because the GUI is not about a
+tree. `repo-map.js` reads the first; the server serves the second at
+`/fli.css`, with the published bundle as a redirect for an install that cannot
+read the package at all. Both are now dependencies of the CLI.
+
+
+## 2026-08-19 — a stack from a command names the `.md` and the line its author wrote
+
+A command is markdown, compiled to a module, written to a temp shim and
+imported, so every frame from a command body named a file nobody wrote and which
+is deleted on exit. The `//# sourceURL` pragma that covered this made it worse:
+it relabels the PATH and leaves the LINE alone, so Node reported `boom.md:15`
+for a throw on line 9 of an **11-line file** — authoritative-looking and
+impossible — and Bun ignored the pragma outright. Bun ignores an inline source
+map and a linked `.map` as well. Four measurements, no runtime answer.
+
+So fli maps the frames itself, and the map turned out to be **one integer**.
+`transformMarkdown` never dropped prose — it turns it into `//` comments, line
+for line — so the body was already aligned; the only thing that broke alignment
+was `stripScriptBlocks` cutting its block out, which shifted everything below it
+and made a command with a `<script>` in the middle need two offsets. It leaves
+the block's own height behind in blank lines now, and one offset covers the file.
+
+`compileCliWithMap` returns `genLine - mdLine` beside the code. `core/stack.js`
+is the one owner of the rewrite: a string pass over `err.stack` and its `cause`
+chain, not an `Error.prepareStackTrace` hook — that hook is global and V8-shaped,
+and taking it means re-implementing the default formatting for every frame that
+is not ours, on two runtimes that format differently, to fix the handful that
+are. The pragma is deleted; the body is no longer indented into `run()` either,
+so columns are the author's too.
+
+**The test runs the command through `bin/fli.js` under node and under bun.**
+Every unit-level expectation the pragma set was satisfied for its whole life — a
+pragma was emitted, it named the right file — so only executing it could tell
+(`FJS-066`).
+
 ## 2026-08-19 — the deploy image says why `--production` can fail on a package it never runs
 
 `bun install --production` skips INSTALLING devDependencies and still RESOLVES

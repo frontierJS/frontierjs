@@ -3,19 +3,43 @@ title: Members
 ---
 <script>
   import { session } from '../../session.js'
-  import { workspaces } from '../../resources/Workspace.mesa'
-  import Button from '@frontierjs/ui/components/forms/Button.mesa'
-  import Select from '@frontierjs/ui/components/forms/Select.mesa'
-  import Table  from '@frontierjs/ui/components/display/Table.mesa'
+  import { workspaces }  from '../../resources/Workspace.mesa'
+  import { invitations } from '../../resources/Invitation.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Mono       from '@frontierjs/ui/components/display/Mono.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
 
   $: (session.workspaceId, session.user)
 
   let members = []
+  let pending = []
   let error   = null
   let loading = true
   let busy    = null
 
-  // The roles come from the schema's WorkspaceRole enum, so this picker cannot
+  // Whether to OFFER the invite form. Not a permission — the service refuses a
+  // developer either way — but a form that always answers 403 is worse than no
+  // form. Derived from whether the invitations read was allowed rather than
+  // from a role on the session: inviting and listing invitations are the same
+  // standing (`@@gate("5")` and admin-or-owner), so the answer is already in
+  // hand and there is no second copy of the rule to fall out of step.
+  let canInvite = false
+
+  // What an invite just minted. Held until dismissed, because the link is shown
+  // ONCE — `Invitation.token` is `@guarded(all)`, so no later read can answer
+  // it, exactly like an issued API key.
+  let minted  = null
+
+  let inviteEmail = ''
+  let inviteRole  = 'developer'
+  let inviting    = false
+
+  // The roles come from the schema's WorkspaceRole enum, so neither picker can
   // offer a role the CHECK constraint would refuse.
   $: roles = workspaces.fields?.role?.enum ?? ['viewer', 'developer', 'admin', 'owner']
 
@@ -25,8 +49,13 @@ title: Members
     error = null; loading = true
     try {
       // `members` is a custom method on the workspaces service — the workspace
-      // is ctx.id, which is why this one service needs no X-Workspace-Id.
+      // is ctx.id, which is why that one service needs no X-Workspace-Id.
       members = rowsOf(await workspaces.service.invoke('members', session.workspaceId))
+      // Invitations are gated at read 5, so a developer looking at this screen
+      // gets a refusal here and a members list all the same. Swallowed rather
+      // than raised for that reason: an empty pending list is the truthful
+      // answer for somebody who may not see them.
+      pending = await invitations.load().then(rowsOf).then(rows => (canInvite = true, rows)).catch(() => (canInvite = false, []))
     } catch (e) {
       error = e.message
     } finally {
@@ -36,6 +65,45 @@ title: Members
 
   load()
   $: session.workspaceId, () => load()
+
+  async function invite() {
+    error = null; inviting = true
+    try {
+      // `service.create`, not `invitations.save()`: the reply carries the token
+      // and the link, which are not columns and are on no later read.
+      minted      = await invitations.service.create({ email: inviteEmail, role: inviteRole })
+      inviteEmail = ''
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      inviting = false
+    }
+  }
+
+  async function resend(row) {
+    error = null; busy = row.id
+    try {
+      minted = await invitations.service.invoke('resend', row.id)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function revoke(row) {
+    error = null; busy = row.id
+    try {
+      await invitations.service.remove(row.id)
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
 
   async function setRole(member, role) {
     error = null; busy = member.id
@@ -63,7 +131,9 @@ title: Members
     }
   }
 
-  const when = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
+  const when    = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
+  const expired = (row) => Date.parse(row.expiresAt) < Date.now()
+
   const MEMBER_COLUMNS = [
     { key: 'member',  label: 'Member' },
     { key: 'email',   label: 'Email' },
@@ -71,44 +141,117 @@ title: Members
     { key: 'joined',  label: 'Joined' },
     { key: 'actions', label: 'Actions', hideLabel: true },
   ]
+
+  const INVITE_COLUMNS = [
+    { key: 'email',   label: 'Email' },
+    { key: 'role',    label: 'Role' },
+    { key: 'expires', label: 'Expires' },
+    { key: 'actions', label: 'Actions', hideLabel: true },
+  ]
 </script>
 
 {#if error}
-  <article class="alert danger">
+  <article class="alert danger" id="members-error">
     <div class="alert-content">{error}</div>
   </article>
 {/if}
 
-<article class="alert info">
-  <div class="alert-content">
-    Adding someone needs an existing user id — the only route that creates a user is <code>/auth/register</code>, and it leaves them with no account or workspace. Invitations are not built yet.
-  </div>
-</article>
-
-{#if loading}
-  <p class="text-sm text-muted">Loading…</p>
-{:else}
-  <Table id="member-rows" columns={MEMBER_COLUMNS} rows={members} striped hover={false}>
-    {#snippet row(member)}
-      <tr>
-        <td>{member.user?.displayName ?? member.user?.name ?? '—'}</td>
-        <td>{member.user?.email ?? '—'}</td>
-        <td>
-          <label class="visually-hidden" for={`role-${member.id}`}>Role</label>
-          <Select id={`role-${member.id}`} style="--field-inline-size: auto"
-                  placeholder="" options={roles} value={member.role}
-                  disabled={busy === member.id}
-                  onchange={(e) => setRole(member, e.target.value)} />
-        </td>
-        <td class="text-sm text-muted">{when(member.acceptedAt ?? member.createdAt)}</td>
-        <td>
-          {#if member.userId !== session.user?.userId}
-            <Button variant="ghost" tone="danger" disabled={busy === member.id} onclick={() => remove(member)}>Remove</Button>
-          {:else}
-            <span class="text-sm text-muted">you</span>
-          {/if}
-        </td>
-      </tr>
-    {/snippet}
-  </Table>
+{#if minted}
+  <Card>
+    <article class="alert warning" id="minted-invite">
+      <div class="alert-content">
+        <strong>{minted.mailed ? 'Invitation sent.' : 'Nothing was sent.'}</strong>
+        {minted.mailed
+          ? `A link is on its way to ${minted.email}.`
+          : `${minted.mailError} — the link below works either way.`}
+        It is shown once: nothing here can read it back, so resend the
+        invitation if you lose it.
+      </div>
+    </article>
+    <div class="cluster">
+      <!-- The id is on a wrapper, not on <Mono>. A kit display component
+           forwards `class` and drops `id` (FJS-137), so a harness cannot
+           address one — the failure is a selector that finds nothing. -->
+      <span id="minted-link"><Mono>{minted.acceptUrl}</Mono></span>
+      <CopyButton text={minted.acceptUrl} label="Copy link" />
+    </div>
+    <Button id="minted-done" onclick={() => minted = null}>Done</Button>
+  </Card>
 {/if}
+
+{#if canInvite}
+<Card>
+  <h2 class="text-base">Invite someone</h2>
+  <p class="text-sm text-muted">
+    They do not need an account. The link creates one, into this workspace, at
+    the role you choose here.
+  </p>
+  <div class="cluster">
+    <Input id="invite-email" name="email" label="Email" type="email"
+           placeholder="ada@example.com" bind:value={inviteEmail} />
+    <label class="visually-hidden" for="invite-role">Role</label>
+    <Select id="invite-role" style="--field-inline-size: auto" placeholder=""
+            options={roles} value={inviteRole}
+            onchange={(e) => inviteRole = e.target.value} />
+    <Button id="invite-send" variant="primary" disabled={inviting || !inviteEmail}
+            onclick={invite}>Send invitation</Button>
+  </div>
+</Card>
+{/if}
+
+{#if pending.length}
+  <section class="stack">
+    <h2 class="text-base">Pending invitations</h2>
+    <Table id="invite-rows" columns={INVITE_COLUMNS} rows={pending} striped hover={false}>
+      {#snippet row(row)}
+        <tr>
+          <td>{row.email}</td>
+          <td><Badge>{row.role}</Badge></td>
+          <td class="text-sm text-muted">
+            <!-- An expired row is listed rather than filtered: "was Ada ever
+                 invited" is a question about the row, and a list that drops
+                 what has lapsed answers no to a question it was not asked. -->
+            {expired(row) ? 'expired' : when(row.expiresAt)}
+          </td>
+          <td>
+            <div class="cluster">
+              <Button variant="ghost" disabled={busy === row.id} onclick={() => resend(row)}>Resend</Button>
+              <Button variant="ghost" tone="danger" disabled={busy === row.id} onclick={() => revoke(row)}>Revoke</Button>
+            </div>
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
+  </section>
+{/if}
+
+<section class="stack">
+  <h2 class="text-base">Members</h2>
+  {#if loading}
+    <p class="text-sm text-muted">Loading…</p>
+  {:else}
+    <Table id="member-rows" columns={MEMBER_COLUMNS} rows={members} striped hover={false}>
+      {#snippet row(member)}
+        <tr>
+          <td>{member.user?.displayName ?? member.user?.name ?? '—'}</td>
+          <td>{member.user?.email ?? '—'}</td>
+          <td>
+            <label class="visually-hidden" for={`role-${member.id}`}>Role</label>
+            <Select id={`role-${member.id}`} style="--field-inline-size: auto"
+                    placeholder="" options={roles} value={member.role}
+                    disabled={busy === member.id}
+                    onchange={(e) => setRole(member, e.target.value)} />
+          </td>
+          <td class="text-sm text-muted">{when(member.acceptedAt ?? member.createdAt)}</td>
+          <td>
+            {#if member.userId !== session.user?.userId}
+              <Button variant="ghost" tone="danger" disabled={busy === member.id} onclick={() => remove(member)}>Remove</Button>
+            {:else}
+              <span class="text-sm text-muted">you</span>
+            {/if}
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
+  {/if}
+</section>

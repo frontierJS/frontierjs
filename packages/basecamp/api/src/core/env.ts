@@ -42,8 +42,25 @@ export const env = defineEnv({
   OUTPOST_SECRET: { required: true, minLength: 16,
                   default: 'outpost-dev-secret' },
 
-  // ── Mail (Resend) ─────────────────────────────────────────
+  // ── Mail ──────────────────────────────────────────────────
+  // Unset MAIL_URL and unset RESEND_API_KEY means this app cannot send mail,
+  // which is a supported state: an invitation still issues a link, and every
+  // screen that would have mailed says so. See core/mailer.ts.
+  //
+  // MAIL_URL wins where both are set — a dev catcher or a self-hosted relay is
+  // a deliberate override of the hosted provider, not a fallback for it.
+  MAIL_URL:       {},
+  MAIL_API_KEY:   { default: 'dev-mail-key' },
   RESEND_API_KEY: {},
+  MAIL_FROM:      { default: 'basecamp@localhost' },
+
+  // Where a link this app puts in an email points. It is the WEB origin, not
+  // the API's: an invitation is accepted on a screen. Defaulted to the dev SPA
+  // (core/ports.js: project 2, frontend) so `bun run dev` mails a link that
+  // works; a deployment that leaves it at the default mails localhost to
+  // somebody else's inbox, which is why it is named here rather than derived
+  // from a request's Host header — that is a value the caller chooses.
+  APP_URL:        { default: 'http://localhost:8020' },
 
   // ── Infra adapters ────────────────────────────────────────
   // Each one activates the real adapter when set; stubs otherwise.

@@ -33,7 +33,7 @@
 // request, and a request that dies mid-fleet leaves half of it done with
 // nothing recording which half.
 
-import { createService, NotFound, BadRequest, publishToChannels } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import {
   dbOf, wsOf, actorOf, slugify,
@@ -74,6 +74,11 @@ export function createRecipesService(app: BasecampApp) {
   return createService({
     name:  'recipes',
     model: 'Recipe',
+    // Announced by the service DEFINITION, not by an after hook: `callService`
+    // is junction's one announcement point and it excludes `find`/`get` by name,
+    // where an `after: { all: [...] }` hook broadcast every read to every browser
+    // in the workspace (FJS-031). Declaring both is refused at construction.
+    channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // The whole surface, declared. `model:` brings Junction's Litestone base,
@@ -227,9 +232,6 @@ export function createRecipesService(app: BasecampApp) {
         // Running is the ordinary act, and the separation is the point: a
         // developer runs a script an admin vetted, and the run says who.
         run:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-      },
-      after: {
-        all: [publishToChannels(workspaceChannel(app))],
       },
     },
   })

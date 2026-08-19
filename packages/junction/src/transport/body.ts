@@ -42,6 +42,21 @@ export interface ParsedBody {
   data:  unknown
   files: UploadedFile[]
   size:  number
+  /**
+   * The body exactly as it arrived, for the text-shaped types where that is a
+   * string this function has already decoded — JSON, urlencoded, XML, text.
+   *
+   * It exists because a signature is computed over BYTES. An HMAC scheme binds
+   * the body hash (see `@frontierjs/toolbelt/signature`), and a receiver handed
+   * only the parsed object has to re-serialise to check one — which means
+   * sender and receiver must agree on key order, spacing and number formatting
+   * forever. That agreement is what basecamp did not have: its three Outpost
+   * endpoints took no credential at all behind a comment saying the transport
+   * verified one (`FJS-349`).
+   *
+   * Absent for multipart (there is no single string) and for an empty body.
+   */
+  raw?:  string
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────
@@ -97,7 +112,7 @@ export async function parseBody(
     try {
       const text = DECODER.decode(buffer)
       const data = JSON.parse(text)
-      return { type: 'json', data, files: [], size }
+      return { type: 'json', data, files: [], size, raw: text }
     } catch {
       return { type: 'json', data: null, files: [], size }
     }
@@ -107,7 +122,7 @@ export async function parseBody(
   if (baseType === CT_URLENCODED) {
     const text   = DECODER.decode(buffer)
     const data   = parseUrlEncoded(text)
-    return { type: 'urlencoded', data, files: [], size }
+    return { type: 'urlencoded', data, files: [], size, raw: text }
   }
 
   // ── Multipart ────────────────────────────────────────────────────────
@@ -124,13 +139,13 @@ export async function parseBody(
   // ── XML ──────────────────────────────────────────────────────────────
   if (baseType === CT_XML_APP || baseType === CT_XML_TEXT) {
     const text = DECODER.decode(buffer)
-    return { type: 'xml', data: text, files: [], size }
+    return { type: 'xml', data: text, files: [], size, raw: text }
   }
 
   // ── Plain text ────────────────────────────────────────────────────────
   if (baseType.startsWith('text/')) {
     const text = DECODER.decode(buffer)
-    return { type: 'text', data: text, files: [], size }
+    return { type: 'text', data: text, files: [], size, raw: text }
   }
 
   // ── Binary fallback ───────────────────────────────────────────────────

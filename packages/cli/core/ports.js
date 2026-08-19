@@ -71,10 +71,15 @@ export const PROJECTS = {
   'junction-example': 5,
   'litestone-example': 6,
   oracle:             7,   // packages/oracle/mockup — frontend only
+  // The process a fleet server runs (`FJS-D29`). It is a BACKEND with no
+  // frontend — 8180 dev, 7180 test — and it is in this table rather than left
+  // to the dynamic allocator because basecamp's drive starts one and needs the
+  // same number tomorrow.
+  outpost:            8,
 }
 
 /** Lowest project id claimSession() may hand out. Below this is assigned above. */
-export const DYNAMIC_PROJECT_FLOOR = 8
+export const DYNAMIC_PROJECT_FLOOR = 9
 
 // ─── Formula ─────────────────────────────────────────────────────────────────
 

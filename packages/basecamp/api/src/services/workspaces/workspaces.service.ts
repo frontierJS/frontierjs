@@ -70,6 +70,12 @@ export function createWorkspacesService(app: BasecampApp) {
     // Assigned, not defaulted: whatever a client sent for these is discarded.
     data.accountId = user.accountId
     data.ownerId   = user.userId
+    // Derived, not assigned — a caller may name their own slug. It has to
+    // happen HERE for the same reason the two above do: `slug` is required and
+    // autoValidate runs after this hook and before the method, so deriving it
+    // in create() 400s with `slug is required` on every caller that did not
+    // send one. The browser sends one, which is why nothing caught it.
+    data.slug ??= slugify(String(data.name ?? ''))
     ctx.data = data
   }
 
