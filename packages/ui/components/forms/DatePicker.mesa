@@ -115,7 +115,10 @@
   // one control in this folder that a <Form> could not label, could not mark
   // required, and could not show a server rejection on.
   export let name     = ''
-  export let label    = ''
+  // `undefined` is "not stated" and `''` is "no label, deliberately". They have
+  // to be different values: a default of '' makes the two indistinguishable, so
+  // the documented suppression below cannot be expressed at all.
+  export let label    = undefined
   export let hint     = ''
   export let error    = ''
   export let errors   = undefined
@@ -877,7 +880,7 @@
 {#if label || name}
   <Field
     name={name}
-    label={label || undefined}
+    label={label}
     required={resolvedRequired}
     hint={hint}
     error={error}

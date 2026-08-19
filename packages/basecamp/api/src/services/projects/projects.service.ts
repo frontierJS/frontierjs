@@ -10,7 +10,7 @@
 // in both, but only the schema knew `slug` had to be unique per workspace.
 
 import { createService, publishToChannels } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -20,6 +20,7 @@ export function createProjectsService(app: BasecampApp) {
   return createService({
     name:  'projects',
     model: 'Project',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
       const { limit, offset } = getPagination(ctx)

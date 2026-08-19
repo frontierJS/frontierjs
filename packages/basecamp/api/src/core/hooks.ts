@@ -51,9 +51,22 @@ function userOf(ctx: ServiceContext): Session | undefined {
  */
 export function resolveWorkspaceId(ctx: ServiceContext): string | undefined {
   return (ctx.client?.headers?.['x-workspace-id'] as string | undefined) ||
-         (ctx.query?.workspace_id as string | undefined)                 ||
+         (ctx.reserved?.workspace_id as string | undefined)              ||
          (userOf(ctx)?.workspaceId as string | undefined)
 }
+
+/**
+ * The query key the fallback above reads, declared where a service can claim it.
+ *
+ * `?workspace_id=` is not a filter — no model has that column — so junction
+ * graded it against the model and answered a 400 naming it, before this hook
+ * ever ran. Every workspace-scoped service reserves it, which moves it to
+ * `ctx.reserved` and leaves `ctx.query` as columns alone.
+ *
+ * One constant rather than twenty literals: the spelling is read here and
+ * declared there, and those must not drift.
+ */
+export const WORKSPACE_QUERY = ['workspace_id'] as const
 
 export function requireWorkspace(): Hook {
   return (ctx: ServiceContext): void => {

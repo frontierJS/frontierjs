@@ -25,9 +25,14 @@ function collector() {
   // JobRegistrar rather than Pick<CaravanInstance, 'handle'>: handle() is
   // overloaded (a name, or a whole definition), and an overloaded member forces
   // a stub to implement both signatures to be assignable at all.
+  //
+  // The DEFINITION arrives whole now. autoload used to re-list a definition's
+  // keys into the name-and-options form, which is what silently dropped a
+  // `timeout` written in a job file — so what this collector records is the
+  // definition itself, and a key added to one cannot go missing on the way.
   const stub: JobRegistrar = {
-    handle(name: string, _handler: JobHandler, opts: HandlerOptions = {}) {
-      registered.push({ name, opts })
+    handle(job) {
+      registered.push({ name: job.name, opts: job as HandlerOptions })
     },
   }
   return { stub, registered }

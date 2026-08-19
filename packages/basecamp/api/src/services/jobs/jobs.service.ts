@@ -8,7 +8,7 @@
 // `service_id` is now `appId`: the model it points at is App, not Service.
 
 import { createService, NotFound, BadRequest, publishToChannels } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf }
   from '../../core/resource.ts'
 import { syncSchedule, unscheduleJob } from '../../engine/job-schedule.ts'
@@ -30,6 +30,7 @@ export function createJobsService(app: BasecampApp) {
   return createService({
     name:  'jobs',
     model: 'Job',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
       const { limit, offset } = getPagination(ctx)

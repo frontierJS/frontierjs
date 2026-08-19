@@ -1,5 +1,37 @@
 # Changes
 
+## 2026-08-18 — `label=""` suppresses the label, as thirteen controls already claimed (`FJS-340`)
+
+Every form control resolves an unstated label from the schema and then from the
+column name, and every one of them carried the same comment:
+
+    `|| undefined` because '' is a real answer here: it suppresses the label.
+
+The code did the opposite of its own sentence. `export let label = ''` made *not
+stated* and *deliberately blank* the same value, and `label={label || undefined}`
+collapsed the blank one back to *not stated* — so `Field` fell through to
+`nameToLabel(name)` and drew the label the caller had just turned off.
+
+`Field` was right the whole time: `<Field label="">` renders no label row. Only
+the pass-through was broken, which is why it survived — nothing in the kit's own
+suite gives a control a `name` and asks for no label.
+
+The consequence: **a control given a `name` always had a visible label.** That
+is what the `<Form>` shorthand wants and it is wrong everywhere else — a filter
+bar, a search box, a toolbar, anywhere the name is there because a submit
+handler reads it. Found in basecamp, where a three-control filter bar rendered
+one labelled control 38px tall beside two unlabelled ones, and the labelled one
+had *two* labels: the invented one and the `visually-hidden` one its caller had
+already supplied.
+
+The default is `undefined` now and `''` is passed through, on all thirteen:
+Checkbox, Combobox, DatePicker, DateTimeInput, FileUpload, Input, MultiSelect,
+NumberInput, RadioGroup, Select, Slider, Switch, Textarea.
+
+Not fixed, and filed as `FJS-341`: with every label off, a `.btn` is still 34px
+beside a 38px control, because the two use different padding tokens and a button
+size is a font-size.
+
 Newest first.
 
 ## 2026-08-17 — a Table can report a sort instead of taking it

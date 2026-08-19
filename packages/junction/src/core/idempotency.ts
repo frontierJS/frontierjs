@@ -20,6 +20,7 @@
 // entries and two executions, which is the safe reading of an ambiguous
 // request.
 
+import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { Conflict } from './errors.ts'
 import type { ICache } from '../cache/index.ts'
 import type { ServiceContext } from './context.ts'
@@ -52,10 +53,18 @@ interface Entry {
 /**
  * The cache key. The principal is part of it — see the header note — and so is
  * the method, so one key cannot answer for `create` and then for `remove`.
+ *
+ * Built through `occurrenceKey` because two of the four parts are outside this
+ * package's control — the header a caller writes, and a principal id that is
+ * whatever the auth provider issues. Joining them raw on `:` is not injective
+ * once either can contain one, so a principal of `user-1:a` with key `b` and a
+ * principal of `user-1` with key `a:b` are one cache entry — and a shared entry
+ * is one caller being replayed another's answer. The format is unchanged for
+ * any principal and key without a `:` in them.
  */
 function cacheKey(ctx: ServiceContext, key: string): string {
   const principal = ctx.auth.user?.userId ?? 'anonymous'
-  return `idem:${ctx.service}:${ctx.method}:${principal}:${key}`
+  return occurrenceKey('idem', ctx.service, ctx.method as string, principal, key)
 }
 
 function cacheOf(ctx: ServiceContext): ICache | null {

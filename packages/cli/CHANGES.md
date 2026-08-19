@@ -1,5 +1,47 @@
 # Changes
 
+## 2026-08-18 — `package-root-md` reports the floor, and one function owns the frontmatter fence
+
+Two things, both the same shape: a rule that could only see one side of what it
+was written to check.
+
+**`package-root-md` checked the ceiling and not the floor.** It built the set of
+four allowed names and reported what was NOT in it, which catches a fifth file at
+a package root and can never catch a missing fourth. Seven packages were short a
+standard file with the check green over all of them. The asymmetry is defensible
+for the fifth — the rule cannot tell a stray design note from the next thing
+everyone needs at the root, which is why it warns and names it — but a missing
+one needs no judgement, because the four are named in the invariant.
+
+The finding points at the ABSENT FILE rather than at the package directory. An
+allowance is keyed by path, so pointing both halves at the directory would mean
+excusing `packages/css` its `AGENTS.md` also excused it every file it lacks.
+It reports the eight it was written to find: `PROJECT_STATE.md` in `conduit`,
+`jetty`, `sierra`, `testing`, `toolbelt` and `frontierjs-vscode`, and
+`CHANGES.md` in `css` and `frontierjs-vscode` (`FJS-309`).
+
+**Five call sites carried the frontmatter fence by hand**, as
+`/^---[\s\S]*?---\s*/`, which ends the block at the first `---` anywhere —
+mid-line included. A `description: use --- as a divider` left the rest of the
+frontmatter, and its own closing fence, sitting in the body. The meta parser's
+regex was the stricter of the two and read the same file correctly, so the two
+halves disagreed about where the file began.
+
+`splitFrontmatter` returns `{ meta, body }` from one match and `stripFrontmatter`
+is the body half; `compileCli`, `extractSegments`, `extractScriptBlock`, the
+command registry, the prose renderer and the GUI's step reader all ask it. The
+fence is `---` alone on its line, opening and closing.
+
+**`utils:qrcode` is deleted.** It imported `qrcode` dynamically and reported the
+absence by name, but nothing installed it and nothing could: the advice it gave
+was `bun add qrcode` in the user's project, which is not where the command
+resolves from. The choice was a dependency on the CLI for one novelty command or
+a command that never worked, and neither was worth it. `utils` keeps eleven.
+
+`mod.prose` was in the same pile and is not a defect — `loadModuleFile` builds it
+and `fli <namespace> --verbose` renders it. Struck from the row rather than
+fixed (`FJS-066`).
+
 ## 2026-08-18 — `context.fli` is the one way a command invokes fli
 
 Six command files shelled out to a bare `fli`. That is a GLOBAL install, and

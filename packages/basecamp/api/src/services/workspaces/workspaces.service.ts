@@ -11,7 +11,7 @@
 
 import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized, authenticate }
   from '@frontierjs/junction'
-import { requireWorkspaceRole, applyStanding, getPagination } from '../../core/hooks.ts'
+import { requireWorkspaceRole, applyStanding, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { dbOf, actorOf, slugify, narrowPatch, changesNothing } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -104,6 +104,7 @@ export function createWorkspacesService(app: BasecampApp) {
   return createService({
     name:  'workspaces',
     model: 'Workspace',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // Only workspaces the caller belongs to. The old version did this with a
     // JOIN; `memberships: { some: { userId } }` is the relation the schema

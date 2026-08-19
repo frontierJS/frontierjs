@@ -187,19 +187,28 @@ title: Servers
 <!-- Every control WRITES the URL and reads back from it. `bind:` would need a
      local to bind to, and a local the URL also holds is two homes for one
      value — they part company the first time somebody presses back. -->
+<!-- `label=""` on every control, and the visible name carried by the
+     placeholder. A filter bar names its controls once — the visually-hidden
+     <label> is the accessible name — and a kit control given a `name` builds a
+     visible label out of it unless told not to. Only the Input needs a `name`
+     (the submit handler reads `e.target.search.value`), so without this the row
+     had one labelled control and two unlabelled ones, at two different heights.
+     States `label=""` on all three rather than only the Input: the rule is
+     "this bar has no visible labels", and stating it once per control is what
+     keeps the next one from arriving taller than its neighbours. -->
 <form class="cluster" on:submit|preventDefault={(e) => apply({ query: { search: e.target.search.value } })}>
   <label class="visually-hidden" for="filter-status">Status</label>
-  <Select id="filter-status" style="--field-inline-size: auto"
+  <Select id="filter-status" label="" style="--field-inline-size: auto"
           placeholder="All statuses" options={statuses} value={status}
           onchange={(e) => apply({ query: { status: e.target.value } })} />
 
   <label class="visually-hidden" for="filter-role">Role</label>
-  <Select id="filter-role" style="--field-inline-size: auto"
+  <Select id="filter-role" label="" style="--field-inline-size: auto"
           placeholder="All roles" options={roles} value={role}
           onchange={(e) => apply({ query: { role: e.target.value } })} />
 
   <label class="visually-hidden" for="filter-search">Search</label>
-  <Input id="filter-search" name="search" style="--field-inline-size: 12rem"
+  <Input id="filter-search" name="search" label="" style="--field-inline-size: 12rem"
          placeholder="name contains…" value={search} />
   <Button variant="outlined" type="submit">Search</Button>
 </form>

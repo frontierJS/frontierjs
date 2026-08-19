@@ -1,5 +1,19 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-18 — `VersionConflictError` says which two revisions disagreed (`FJS-341`)
+
+2367 tests, 0 fail. Typecheck clean.
+
+The class already carried `expected` and `actual`; nothing downstream could read
+them. Junction's error boundary copies `errors` and `retryable` and nothing
+else, so the losing editor was told a retryable 409 had happened and never what
+moved — which is the difference between *reload and try again* and a screen that
+can offer *keep mine* against *take theirs*.
+
+`data = { model, field, expected, actual }`, which is the field junction's
+boundary now carries. One line, and the reason it is `data` rather than a new
+name is that `FrameworkError.data` already means exactly this.
+
 ## 2026-08-17 — atomic update operators, and a rebuild that refuses (`FJS-D27`, `FJS-183`)
 
 2367 tests, 0 fail. Typecheck clean.

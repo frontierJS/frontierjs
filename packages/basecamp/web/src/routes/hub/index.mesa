@@ -114,12 +114,12 @@ title: Hub overview
     <Card>
       <h2 class="h4">Queue depths</h2>
         <Table id="hub-queues" columns={QUEUE_COLUMNS} rows={queues} striped hover={false}>
-          {#snippet row([name, q])}
+          {#snippet row([queue, depth])}
             <tr>
-              <td><code>{name}</code></td>
-              <td>{q.pending}</td>
-              <td>{q.running}</td>
-              <td>{q.failed}</td>
+              <td><code>{queue}</code></td>
+              <td>{depth.pending}</td>
+              <td>{depth.running}</td>
+              <td>{depth.failed}</td>
             </tr>
           {/snippet}
         </Table>

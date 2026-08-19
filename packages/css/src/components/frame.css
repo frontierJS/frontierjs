@@ -122,7 +122,18 @@
   align-items:     center;
   justify-content: space-between;
   gap:             var(--space-2xl);
-  block-size:      var(--topbar-height);
+  /*
+   * A MINIMUM, not a height. A .cluster is `flex-wrap: wrap` and the two are
+   * paired in this package's own frame docs, so a bar holding more than fits
+   * laid a second row inside a fixed box and centred both — drawing half its
+   * contents above the bar and half below, over the page, with no horizontal
+   * overflow at any width for the usual smell test to catch.
+   *
+   * The shell's row is already `auto`, so the bar grows instead and nothing
+   * else in the package reads this token.
+   */
+  min-block-size:  var(--topbar-height);
+  padding-block:   var(--space-xs);
   padding-inline:  var(--space-2xl);
   background:      var(--topbar-bg, var(--surface));
   border-block-end: var(--border-width) solid var(--rule);

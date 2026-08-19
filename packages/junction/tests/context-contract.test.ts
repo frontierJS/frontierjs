@@ -10,6 +10,9 @@
 //   transients  the @transient keys of this call's payload, lifted off it by
 //               autoValidate. Fresh {} every call. Does NOT propagate. Written
 //               by the framework, where locals is written by whoever wants it.
+//   reserved    the query keys the SERVICE declared as its own, lifted off
+//               ctx.query by callService. Same freshness and the same
+//               non-propagation; the query-side mirror of transients.
 //
 // This file exists because those four rules were written in `context.ts` and
 // **one of them was false**: `auth` was documented as propagating and did not —
@@ -42,6 +45,8 @@ function harness() {
         route:  ctx.route,
         locals: ctx.locals,
         transients: ctx.transients,
+        reserved:   ctx.reserved,
+        query:      { ...ctx.query },
       }
       return []
     },
@@ -239,5 +244,78 @@ describe('transients — fresh per call, and it does NOT propagate', () => {
 
     await app.service('root').find({})
     expect(seen.nested.transients.secret).toBeUndefined()
+  })
+})
+
+describe('reserved — the query keys a service owns rather than filters on', () => {
+  test('a service reserving nothing still has the key', async () => {
+    // Always present, so `ctx.reserved.x` is a read rather than a crash on the
+    // services that declare none, which is nearly all of them.
+    const { app, seen } = harness()
+    await app.service('leaf').find({ tag: 't' })
+    expect(seen.t.reserved).toEqual({})
+  })
+
+  test('a reserved key is moved off the query before any hook runs', async () => {
+    // The lift is in callService rather than in a hook, so `ctx.query` is
+    // columns alone for the app's own leading hook as much as for the derived
+    // autoFilter behind it.
+    const app = createApp()
+    const at: Record<string, any> = {}
+
+    app.services.register(createService({
+      name: 'owned',
+      methods: ['find'],
+      reservedQuery: ['workspace_id'],
+      hooks: { before: { find: [(ctx: any) => { at.hook = { query: { ...ctx.query }, reserved: { ...ctx.reserved } } }] } },
+      find(ctx: any) {
+        at.method = { query: { ...ctx.query }, reserved: { ...ctx.reserved } }
+        return []
+      },
+    } as never))
+
+    await app.service('owned').find({ workspace_id: 'ws_7', status: 'live' })
+
+    expect(at.hook.reserved).toEqual({ workspace_id: 'ws_7' })
+    expect(at.hook.query).toEqual({ status: 'live' })
+    expect(at.method.reserved).toEqual({ workspace_id: 'ws_7' })
+    expect(at.method.query).toEqual({ status: 'live' })
+  })
+
+  test('a key the caller did not send is simply absent', async () => {
+    const app = createApp()
+    let seen: any = null
+    app.services.register(createService({
+      name: 'owned2', methods: ['find'], reservedQuery: ['workspace_id'],
+      find(ctx: any) { seen = { ...ctx.reserved }; return [] },
+    } as never))
+
+    await app.service('owned2').find({ status: 'live' })
+    expect(seen).toEqual({})
+  })
+
+  test('a sub-call does not inherit what its caller reserved', async () => {
+    const { app, seen } = harness()
+
+    app.services.register(createService({
+      name: 'root-r', methods: ['find'],
+      async find(ctx: any) {
+        ctx.reserved.workspace_id = 'from-parent'
+        await ctx.app.service('leaf').find({ tag: 'nested-r' })
+        return []
+      },
+    } as never))
+
+    await app.service('root-r').find({})
+    expect(seen['nested-r'].reserved.workspace_id).toBeUndefined()
+  })
+
+  test('a $-name cannot be reserved', async () => {
+    // Decidable with no client: $ is transport syntax and the directive table
+    // owns every name under it (Invariant 10), so reserving one would put two
+    // owners on a single spelling.
+    expect(() => createService({
+      name: 'bad', reservedQuery: ['$limit'],
+    } as never)).toThrow(/directive/)
   })
 })

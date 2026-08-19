@@ -16,8 +16,14 @@ title: Settings
 
   import Accordion     from '@frontierjs/ui/components/layout/AccordionItem.mesa'
   import AccordionRoot from '@frontierjs/ui/components/layout/Accordion.mesa'
-  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
+  import Checkbox      from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import CopyButton    from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Divider       from '@frontierjs/ui/components/display/Divider.mesa'
+  import Fieldset      from '@frontierjs/ui/components/forms/Fieldset.mesa'
+  import FileUpload    from '@frontierjs/ui/components/forms/FileUpload.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
   import NumberInput   from '@frontierjs/ui/components/forms/NumberInput.mesa'
   import Progress      from '@frontierjs/ui/components/feedback/Progress.mesa'
   import RadioGroup    from '@frontierjs/ui/components/forms/RadioGroup.mesa'
@@ -41,6 +47,7 @@ title: Settings
   let perPage       = prefs.perPage
   let defaultStatus = prefs.defaultStatus
   let noteTemplate  = prefs.noteTemplate
+  let quickView     = prefs.quickView
 
   // The status choices are the schema's, again — a preference that offered a
   // status the enum does not have would be a preference the API rejects.
@@ -57,19 +64,52 @@ title: Settings
   const allowed = REACHABLE.filter(op => orders.can(op, session.level)).length
 
   function save() {
-    savePrefs({ dense, perPage, defaultStatus, noteTemplate })
+    savePrefs({ dense, perPage, defaultStatus, noteTemplate, quickView })
     setTheme(theme)
     toasts.success('Preferences saved')
+  }
+
+  // ── Backup ───────────────────────────────────────────────────────────────
+  //
+  // The whole of this app's browser state is one JSON object, which is what
+  // makes copying it out and reading it back in a real feature rather than a
+  // demonstration: there is no server side to it at all.
+  const asJson = () => JSON.stringify(
+    { dense, perPage, defaultStatus, noteTemplate, quickView }, null, 2)
+
+  // FileUpload does not upload — it hands back File objects and the parent
+  // decides what they are. Here that is a read, not a POST.
+  async function restore(files) {
+    const file = files?.[0]
+    if (!file) return
+    try {
+      const read = JSON.parse(await file.text())
+      // Only keys this screen owns. A backup written by a later version can
+      // carry a key that no longer exists, and merging it in would put a fact
+      // in localStorage that nothing reads and nothing can clear.
+      if (typeof read.dense === 'boolean')       dense         = read.dense
+      if (Number.isFinite(read.perPage))         perPage       = read.perPage
+      if (typeof read.defaultStatus === 'string') defaultStatus = read.defaultStatus
+      if (typeof read.noteTemplate === 'string')  noteTemplate  = read.noteTemplate
+      if (typeof read.quickView === 'boolean')   quickView     = read.quickView
+      toasts.info('Read from ' + file.name + ' — press Save to keep it')
+    } catch (e) {
+      toasts.error('That file is not a preferences backup: ' + e.message)
+    }
   }
 </script>
 
 <SectionHeader title="Settings" level={1} sub="stored in this browser, read by the rest of the app" />
 
-<Alert tone="info">
-  Nothing here is a model. A preference is a fact about this browser, so it
-  lives in <code>localStorage</code> — putting it in <code>db/schema.lite</code>
-  would make it a fact about the shop.
-</Alert>
+<!-- Editorial, not feedback: nothing just happened. Callout is the kit's
+     component for a thing that is true on every visit — same `.alert` anatomy,
+     `outlined` rather than filled, so it reads lighter without a second set of
+     colours. -->
+<Callout tone="info" title="Why none of this is in the schema">
+  A preference is a fact about this browser, so it lives in
+  <Mono>localStorage</Mono> — putting it in <Mono>db/schema.lite</Mono> would
+  make it a fact about the shop.
+</Callout>
 
 <div class="card stack" style="max-width: 40rem">
   <Progress
@@ -84,7 +124,11 @@ title: Settings
 
 <AccordionRoot multiple defaultOpen={['appearance']}>
   <Accordion id="appearance" label="Appearance">
-    <div class="stack">
+    <!-- A Fieldset and not a div: a screen reader announces the legend with
+         every control inside it, which a heading beside a stack does not do.
+         Both of these change how the app LOOKS, which is what makes them one
+         group rather than two boxes that happen to be adjacent. -->
+    <Fieldset legend="Appearance" description="Applied the moment you save.">
       <!-- One class on the root element, applied by Sierra; the six are the css package's. -->
       <RadioGroup
         id="p-theme"
@@ -100,11 +144,11 @@ title: Settings
         description="Applies the .compact modifier to every table in the app."
         bind:checked={dense}
       />
-    </div>
+    </Fieldset>
   </Accordion>
 
   <Accordion id="lists" label="Lists">
-    <div class="stack">
+    <Fieldset legend="Lists" description="How the orders and products tables behave.">
       <NumberInput
         id="p-per-page"
         label="Rows per page"
@@ -122,7 +166,19 @@ title: Settings
         bind:value={defaultStatus}
         hint="the values are OrderStatus, straight from the schema"
       />
-    </div>
+
+      <!-- A Switch is a setting that takes effect on its own; a Checkbox is
+           one value among several in a group. This one is inside a Fieldset
+           with two other list settings, so it is the checkbox. It is read by
+           /orders/, which is the bar every preference on this screen has to
+           clear. -->
+      <Checkbox
+        id="p-quick-view"
+        label="Quick view on click"
+        description="Open an order in a side drawer from the list instead of navigating to its page."
+        bind:checked={quickView}
+      />
+    </Fieldset>
   </Accordion>
 
   <Accordion id="notes" label="Order notes">
@@ -139,5 +195,30 @@ title: Settings
 
 <div class="cluster">
   <Button id="p-save" onclick={save}>Save preferences</Button>
-  <span class="text-sm text-muted">theme <code>{theme}</code> · {perPage} rows · note {noteTemplate ? 'set' : 'empty'}</span>
+  <span class="text-sm text-muted">theme <Mono>{theme}</Mono> · {perPage} rows · note {noteTemplate ? 'set' : 'empty'}</span>
+</div>
+
+<Divider label="backup" spacing="lg" />
+
+<div class="card stack" style="max-width: 40rem">
+  <h2 class="h4">Copy them out, read them back</h2>
+
+  <div class="cluster">
+    <CopyButton text={asJson()} label="Copy as JSON" variant="outlined" />
+    <span class="text-sm text-muted">the whole of this browser's state, as one object</span>
+  </div>
+
+  <!--
+    FileUpload hands back File objects and uploads nothing — which is the right
+    shape here, because there is no server side to a preference. The read lands
+    in local state like every other control on this screen, so Save is still
+    what commits it and Cancel is still possible.
+  -->
+  <FileUpload
+    label="Restore from a backup"
+    accept="application/json,.json"
+    maxSizeMB={1}
+    hint="read into the form above; nothing is stored until you press Save"
+    onchange={restore}
+  />
 </div>

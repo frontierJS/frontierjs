@@ -19,7 +19,7 @@
 // thing an API key exists not to do.
 
 import { createService, BadRequest, Forbidden, publishToChannels } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf } from '../../core/resource.ts'
 import { scopeVocabulary } from './scopes.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -212,6 +212,7 @@ export function createApiKeysService(app: BasecampApp) {
   return createService({
     name:  'api-keys',
     model: 'ApiKey',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
       const { limit, offset } = getPagination(ctx)

@@ -89,15 +89,19 @@ describe('the relay hands rows to the queue', () => {
     expect(after.attempts).toBe(1)
   })
 
-  it('queues the job under the OUTBOX ROW\'s id', async () => {
-    // Not decoration: it is what makes the replay below a no-op.
+  it('queues the job under the OUTBOX ROW\'s id, namespaced', async () => {
+    // Not decoration: it is what makes the replay below a no-op. The `outbox:`
+    // prefix is spelled out here rather than rebuilt with `occurrenceKey` — a
+    // test that recomputes the key with the code under test cannot notice the
+    // format moving, and this id is a primary key in a table shared with every
+    // id a caller states on a dispatch of their own.
     const { app, db, queue } = await bootApp()
     queue.handle('order.shipped', async () => {})
 
     const row = await owe(db)
     await app.outbox!.deliver()
 
-    expect(queue.find(row.id)!.name).toBe('order.shipped')
+    expect(queue.find(`outbox:${row.id}`)!.name).toBe('order.shipped')
   })
 
   it('a replayed handoff queues nothing and runs nothing twice', async () => {
@@ -133,7 +137,7 @@ describe('the relay hands rows to the queue', () => {
     const row = await owe(db, { actorId: 'u-7' })
     await app.outbox!.deliver()
 
-    expect(queue.find(row.id)!.actor_id).toBe('u-7')
+    expect(queue.find(`outbox:${row.id}`)!.actor_id).toBe('u-7')
   })
 
   it('a row nobody asked for carries no actor', async () => {
@@ -143,7 +147,7 @@ describe('the relay hands rows to the queue', () => {
     const row = await owe(db, { job: 'sweep', actorId: null })
     await app.outbox!.deliver()
 
-    expect(queue.find(row.id)!.actor_id).toBeNull()
+    expect(queue.find(`outbox:${row.id}`)!.actor_id).toBeNull()
   })
 
   it('takes the oldest owed row first', async () => {
@@ -159,10 +163,10 @@ describe('the relay hands rows to the queue', () => {
     const second = await owe(db, { payload: { orderId: 2 } })
 
     expect(await app.outbox!.deliver({ batch: 1 })).toEqual({ delivered: 1, failed: 0 })
-    expect(queue.list({ limit: 50 }).map(j => j.id)).toEqual([first.id])
+    expect(queue.list({ limit: 50 }).map(j => j.id)).toEqual([`outbox:${first.id}`])
 
     expect(await app.outbox!.deliver({ batch: 1 })).toEqual({ delivered: 1, failed: 0 })
-    expect(queue.find(second.id)).not.toBeNull()
+    expect(queue.find(`outbox:${second.id}`)).not.toBeNull()
   })
 })
 

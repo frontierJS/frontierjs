@@ -15,7 +15,7 @@
 // `environment_name` / `environment_tier` columns.
 
 import { createService, NotFound, publishToChannels } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf }
   from '../../core/resource.ts'
 // The ONE definition of a certificate's condition, imported rather than
@@ -45,6 +45,7 @@ export function createAppsService(app: BasecampApp) {
   return createService({
     name:  'apps',
     model: 'App',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
       const { limit, offset } = getPagination(ctx)

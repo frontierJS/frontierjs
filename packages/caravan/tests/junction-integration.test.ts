@@ -258,6 +258,7 @@ describe('junction config caravan section', () => {
     // stats() pre-populates every queue the instance knows about, so a named
     // queue with no work in it is the config having been read.
     expect(jobsOf(app).stats().queues.reports).toEqual({
+      oldestRunningMs: null,
       pending: 0, running: 0, done: 0, failed: 0, cancelled: 0,
     })
   })

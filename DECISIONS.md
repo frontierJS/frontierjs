@@ -1086,6 +1086,63 @@ rather than getting it as a side effect of a DDL choice.
 No per-field opt-out. It would reintroduce the two-rows-claim-one-identity
 problem per column, and nothing in the repo needs it yet.
 
+**2026-08-18 · There is no `@@history` block, and the seed will not grow one.**
+(`FJS-D39`, from the argument that produced `FJS-341` and `FJS-342`.)
+
+The proposal was a fourth axiom — *one history* beside one origin, one name, one
+owner — realised as a model-level declaration:
+
+```
+@@history(revision: version, actor: updatedBy, at: updatedAt)
+```
+
+The observation behind it stands and is worth keeping: the three axioms all
+describe a fact **at a moment**, while most of the hard machinery here is the
+same fact **at two times** — optimistic concurrency, a live store going stale,
+an idempotency replay, at-least-once outbox delivery, a cron fire arriving
+twice, a release pivot, a snapshot graded against a base ref. Eleven mechanisms
+were counted, each argued well in isolation, none derived from anything.
+
+**The declaration is refused; the consolidation was right.** `@@history` fails
+the framework's own review (§V of `PHILOSOPHY.md`) on the two questions that
+matter most:
+
+- *Can it be derived instead of restated?* It already is. `@version`,
+  `@updatedBy` and `@updatedAt` are declarations in the seed; `buildVersionMap`
+  derives the revision field from them and `x-version` carries it to the
+  browser. A model-level block naming those fields is a **second place to state
+  one fact**, and the two can disagree — `@@history(revision: foo)` over a `foo`
+  carrying no `@version` is a legal sentence with no meaning.
+- *Does it enlarge the concept budget?* By one noun that buys no capability.
+  Auto-adding a missing version column is scaffolding, not a fact; pairing actor
+  and timestamp is sugar over two annotations that already pair themselves. The
+  one genuine capability nearby — a revision keyed on a timestamp rather than an
+  integer — is `@version` on a `DateTime`, a question about which types the
+  existing annotation accepts, not a new noun.
+
+**What the gap actually was, and both halves are closed.** Not a missing
+declaration: a missing OWNER, twice.
+
+- The revision was recorded from the wrong source. `createResource` remembered
+  it off the store, so a WS push moved the number while moving nothing the
+  person was looking at, and a draft saved afterwards carried a revision nobody
+  had read (`FJS-341`).
+- The occurrence key had no definition. Four mechanisms built one at their call
+  sites and two interpolated caller-supplied text into it, so a job named
+  `report:daily` and a job named `report` shared a fire id
+  (`@frontierjs/toolbelt/history`, `FJS-342`).
+
+Both were fixed without a word of new schema language. **That is the test a
+proposed axiom has to pass here**: it earns a seed declaration by naming
+something the seed cannot already say, and this one could not. The `/history`
+kit deliberately ships the occurrence half ALONE — a revision-comparison export
+would have no caller, and an export nothing asks for is the concept budget spent
+on a guess.
+
+Standing consequence for any future *fourth axiom* proposal: state which
+declaration it adds, then check whether the annotations already in the seed
+derive it. If they do, the work is an owner, not a word.
+
 ## Migrations (Litestone)
 
 **2026-08-17 · A rebuild that would destroy an app-created schema object is

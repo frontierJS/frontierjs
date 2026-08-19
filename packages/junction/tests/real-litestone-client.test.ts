@@ -15,7 +15,8 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createService, createBaseService } from '../src/core/service.ts'
-import { gateAuth, autoValidate } from '../src/core/litestone.ts'
+import { gateAuth, autoValidate, liftReservedQuery, resetReservedQueryChecks } from '../src/core/litestone.ts'
+import { toFrameworkError } from '../src/core/errors.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
 type AnyClient = Record<string, never> & {
@@ -363,11 +364,92 @@ describe('@version survives autoValidate — the patch schema is the UPDATE sche
     expect((await svc.patch(c)).id).toBe(1)
   })
 
+  // What the browser is left holding. `retryable` says a retry is a strategy and
+  // the status says a conflict happened; neither can say WHICH revisions
+  // disagreed, and a screen offering *reload* against *overwrite* needs both
+  // numbers. They travel on `data`, which the error boundary carries — asserted
+  // here against a real thrown VersionConflictError rather than a constructed
+  // one, because the question is whether the payload survives the boundary.
+  test('the losing editor is told which two revisions disagreed', async () => {
+    const db  = await mkDocDb()
+    await db.asSystem().doc!.create({ data: { id: 1, title: 'a' } })
+
+    const svc = createService({ name: 'docs', model: 'Doc' }) as never as
+      { patch(c: ServiceContext): Promise<Record<string, unknown>> }
+
+    const first = ctx(db, { service: 'docs', method: 'patch', id: 1, data: { title: 'b', ver: 1 }, transients: {} })
+    await autoValidate('doc', 'patch')(first)
+    await svc.patch(first)
+
+    const stale = ctx(db, { service: 'docs', method: 'patch', id: 1, data: { title: 'c', ver: 1 }, transients: {} })
+    await autoValidate('doc', 'patch')(stale)
+
+    const thrown = await svc.patch(stale).then(() => null, (e: unknown) => e)
+    const fe     = toFrameworkError(thrown)
+
+    expect(fe.code).toBe(409)
+    expect(fe.retryable).toBe(true)
+    expect(fe.data).toEqual({ model: 'Doc', field: 'ver', expected: 1, actual: 2 })
+    // And on the wire, not merely on the instance.
+    expect(fe.toJSON()).toMatchObject({ code: 409, data: { expected: 1, actual: 2 } })
+  })
+
   test('create still omits it — a caller does not choose the first version', async () => {
     const db = await mkDocDb()
     const c  = ctx(db, { service: 'docs', method: 'create', data: { id: 2, title: 'a', ver: 99 }, transients: {} })
 
     await autoValidate('doc', 'create')(c)
     expect((c.data as Record<string, unknown>).ver).toBeUndefined()
+  })
+})
+
+describe('reservedQuery — a reserved key that is also a column', () => {
+  test('is refused by name on first use', async () => {
+    // Asked of the real client, because this is exactly the shape a fake hides:
+    // `$checkWhere` is what knows the model's columns, and a plain-object db
+    // has no opinion at all — the check would no-op and the collision ship.
+    //
+    // Refused rather than resolved: a reservation that shadows a column stops
+    // that column filtering with nothing saying so, which is the silent 200
+    // autoFilter exists to turn into a 400.
+    resetReservedQueryChecks()
+    const db = await mkDb()
+    const c  = ctx(db, { service: 'posts', query: { title: 'x' } })
+
+    expect(() => liftReservedQuery(c, 'posts', ['title']))
+      .toThrow(/reserves 'title'.*is a column on post/s)
+  })
+
+  test('a name the model does not have is reserved and lifted', async () => {
+    resetReservedQueryChecks()
+    const db = await mkDb()
+    const c  = ctx(db, { service: 'posts', query: { workspace_id: 'ws_7', title: 'x' } })
+
+    liftReservedQuery(c, 'posts', ['workspace_id'])
+
+    expect(c.reserved).toEqual({ workspace_id: 'ws_7' })
+    expect(c.query).toEqual({ title: 'x' })
+  })
+
+  test('the column check runs once per service, not once per call', async () => {
+    // It costs a $checkWhere round trip, and a reservation cannot change
+    // between calls — it is fixed at construction.
+    resetReservedQueryChecks()
+    const db = await mkDb()
+    let asked = 0
+    const spy = new Proxy(db as object, {
+      get(target, prop, recv) {
+        if (prop === '$checkWhere') {
+          asked++
+          return Reflect.get(target, prop, recv)
+        }
+        return Reflect.get(target, prop, recv)
+      },
+    })
+
+    for (let i = 0; i < 3; i++)
+      liftReservedQuery(ctx(spy, { service: 'posts', query: { workspace_id: 'w' } }), 'posts', ['workspace_id'])
+
+    expect(asked).toBe(1)
   })
 })

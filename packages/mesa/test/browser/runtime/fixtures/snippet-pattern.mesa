@@ -1,0 +1,37 @@
+<script>
+  // snippet-pattern.mesa — a snippet parameter that is a destructuring pattern.
+  //
+  // The argument arrives as a GETTER, so the pattern cannot be written into the
+  // compiled parameter list: `(__anchor, [name, q])` destructures a function and
+  // throws `function is not iterable` from a file that names no snippet
+  // (`FJS-339`). Destructuring once at the top of the body would compile and run
+  // and then freeze — a snippet's DOM is built once — which is the whole reason
+  // the arguments are getters, so the reassignment buttons are the real
+  // assertion here rather than the first render.
+  let pair   = ['ada', 1]
+  let record = { id: 'x1', label: 'first' }
+  let rows   = [['queued', 3], ['running', 1]]
+</script>
+
+{#snippet row([name, q])}
+  <li class="pair">{name} = {q}</li>
+{/snippet}
+
+{#snippet card({ id, label: caption })}
+  <li class="card" data-id={id}>{id} · {caption}</li>
+{/snippet}
+
+<ul id="out">
+  {@render row(pair)}
+  {@render card(record)}
+</ul>
+
+<!-- The shape this was found in: a snippet rendered once per {#each} item, so
+     the argument is the item's own accessor rather than a component signal. -->
+<ul id="rows">
+  {#each rows as r}{@render row(r)}{/each}
+</ul>
+
+<button type="button" id="swap-pair"   on:click={() => pair = ['grace', 2]}>swap pair</button>
+<button type="button" id="swap-record" on:click={() => record = { id: 'x2', label: 'second' }}>swap record</button>
+<button type="button" id="swap-rows"   on:click={() => rows = [['queued', 9], ['running', 4]]}>swap rows</button>

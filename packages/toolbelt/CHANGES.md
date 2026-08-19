@@ -1,5 +1,30 @@
 # @frontierjs/toolbelt — changes
 
+## 2026-08-18 — `/history`, the occurrence key (`FJS-342`)
+
+71 tests, 7 of them new, 0 fail.
+
+Four mechanisms answered *has this exact unit of work already happened?* and each
+built its own key at its call site: junction's idempotency claim, junction's
+outbox relay, caravan's cron fire, and the id a caller states on a dispatch.
+There was no place to ask what an occurrence key IS, which is how two of them
+came to interpolate caller-supplied text into a `:`-joined string without
+escaping it.
+
+`occurrenceKey(kind, ...parts)` is the one definition, and the property it
+exists for is INJECTIVITY. `%` is escaped before `:` — escaping only the
+separator is not injective, so a part reading `%3A` and a part holding a real
+colon would encode to the same bytes. A `null` or `undefined` part is refused
+rather than stringified, because `cron:daily:undefined` is one key every fire of
+that job shares, made permanent by the primary key it becomes.
+
+The `kind` is separate from the parts so two mechanisms writing into one table
+cannot collide by arithmetic: an outbox row with id 7 and a caller who states
+`7` are not the same unit of work, and only a namespace can say so.
+
+`assert.throws` joined the harness with it — every other kit here is total, so
+nothing had needed one.
+
 ## 2026-08-17 — two kits arrive from the resource layer (`FJS-059`)
 
 `/jsonschema` and `/hooks`. Both were pure, zero-dependency and copied by hand

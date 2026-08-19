@@ -79,10 +79,31 @@ export async function run(context) {
 
 // ─── Frontmatter parser ───────────────────────────────────────────────────────
 
+// A fence is `---` ALONE on its line, at the top of the file and again to
+// close. The looser `/^---[\s\S]*?---\s*/` that five call sites carried by hand
+// ended the block at the first `---` anywhere, mid-line included, so a
+// `description: use --- as a divider` left the rest of the frontmatter and its
+// own closing fence sitting in the body — and the meta parser, whose regex was
+// the stricter of the two, disagreed with the body about where the file began.
+// Blank lines after the closing fence go with it — the old strip ate them and
+// the markdown walkers were written against a body that starts at content.
+const FRONTMATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n(?:[ \t]*\r?\n)*|$)/
+
+/** `{ meta, body }` from one match, so nothing can disagree about the split. */
+export function splitFrontmatter(template) {
+  const text  = bufToString(template)
+  const match = text.match(FRONTMATTER)
+  if (!match) return { meta: {}, body: text }
+  return { meta: parseYaml(match[1]), body: text.slice(match[0].length) }
+}
+
+/** The body with its frontmatter removed. The one owner — do not re-derive it. */
+export function stripFrontmatter(template) {
+  return splitFrontmatter(template).body
+}
+
 export function extractFrontmatter(template) {
-  const match = template.match(/^---\r?\n([\s\S]*?)\r?\n---/)
-  if (!match) return {}
-  return parseYaml(match[1])
+  return splitFrontmatter(template).meta
 }
 
 function parseYaml(yaml) {
@@ -216,7 +237,7 @@ function matchScriptBlock(body, from = 0) {
 }
 
 function extractScriptBlock(template) {
-  const body  = template.replace(/^---[\s\S]*?---\s*/, '')
+  const body  = stripFrontmatter(template)
   const block = matchScriptBlock(body)
   return block ? block.inner.trim() : ''
 }
@@ -248,7 +269,7 @@ export function transformMarkdown(buf) {
   let codeBlockEnd = ''
   let prevLineIsEmpty = true
 
-  const body = bufToString(buf).replace(/^---[\s\S]*?---\s*/, '')
+  const body = stripFrontmatter(buf)
 
   for (const line of body.split(/\r?\n/)) {
     switch (state) {
@@ -311,7 +332,7 @@ export function transformMarkdown(buf) {
 // blank lines; prose preserves internal whitespace.
 
 export function extractSegments(template) {
-  const raw = bufToString(template).replace(/^---[\s\S]*?---\s*/, '')
+  const raw = stripFrontmatter(template)
 
   // Pull script block out first so the segment walker doesn't see it.
   const scriptMatch = raw.match(/<script[^>]*>([\s\S]*?)<\/script>/)

@@ -155,7 +155,7 @@ step by step.
 
 **Declared in the schema, per Invariant 6** — all 37 models carry a `@@gate`, and
 the ladder is per WORKSPACE rather than per app. `api/src/core/gate.ts` maps
-`WorkspaceMember.role` onto the trust hierarchy:
+`WorkspaceMember.role` onto the gate ladder:
 
 | Standing | Level | |
 |---|---|---|

@@ -345,6 +345,26 @@ export function buildStatements(db: Database) {
     GROUP  BY queue, status
   `)
 
+  // How long the oldest in-flight job on each queue has been in flight.
+  //
+  // The counting query above cannot see a stall: a queue with one stuck job
+  // reports `running: 1` for as long as the process lives, which is what a
+  // queue doing steady work also reports (`FJS-295`). A count that never moves
+  // says nothing; a count that never moves beside an age climbing past an hour
+  // is unmistakable, and no threshold has to be guessed to say it.
+  //
+  // Asked of the DATABASE rather than an in-process set, so a job another
+  // instance is holding is in the answer too — which is the shape a stall
+  // actually has in a deployment with two replicas.
+  const oldestRunning = db.prepare<
+    { queue: string; started_at: number }, []
+  >(`
+    SELECT queue, MIN(started_at) AS started_at
+    FROM   jobs
+    WHERE  status = 'running' AND started_at IS NOT NULL
+    GROUP  BY queue
+  `)
+
   // ── Get by ID ───────────────────────────────────────────────────────────────
 
   const getById = wrap<JobRecord, { id: string }>(db.prepare(`
@@ -439,6 +459,7 @@ export function buildStatements(db: Database) {
     cancel,
     retryTerminal,
     statsByQueue,
+    oldestRunning,
     getById,
     findByUniqueKey,
     listJobs,
@@ -455,11 +476,13 @@ export type Statements = ReturnType<typeof buildStatements>
 // ─── Stats aggregation ────────────────────────────────────────────────────────
 
 export function aggregateStats(
-  rows:   { queue: string; status: string; count: number }[],
-  queues: string[]
+  rows:    { queue: string; status: string; count: number }[],
+  queues:  string[],
+  oldest:  { queue: string; started_at: number }[] = [],
+  now:     number = Date.now()
 ): CaravanStats {
   const zero = (): QueueStats => ({
-    pending: 0, running: 0, done: 0, failed: 0, cancelled: 0,
+    pending: 0, running: 0, done: 0, failed: 0, cancelled: 0, oldestRunningMs: null,
   })
 
   const result: CaravanStats = {
@@ -483,6 +506,18 @@ export function aggregateStats(
       result.queues[row.queue][status] += row.count
       result.total[status]             += row.count
     }
+  }
+
+  // `null` where nothing is running, never 0: a queue with nothing in flight has
+  // no age, and 0 would read as *started this instant* on the one line somebody
+  // checks to see whether work is moving.
+  for (const row of oldest) {
+    if (!result.queues[row.queue]) result.queues[row.queue] = zero()
+    const age = Math.max(0, now - row.started_at)
+    result.queues[row.queue].oldestRunningMs = age
+    result.total.oldestRunningMs = result.total.oldestRunningMs == null
+      ? age
+      : Math.max(result.total.oldestRunningMs, age)
   }
 
   return result

@@ -634,6 +634,7 @@ export function createApp(opts: AppOptions = {}): App {
           // Fresh, like locals: a transient value belongs to the call that
           // carried it, and an internal call carries its own payload.
           transients: {},
+          reserved:   {},
           app:       app,
           result:    null,
           error:     null,

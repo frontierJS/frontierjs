@@ -347,10 +347,12 @@ describe('the repo scope', () => {
     // is the assertion here: as an error this stopped CI for a generated
     // snapshot file, which is how the ruling got asked for.
     const root = tree('repo', {
-      'packages/thing/package.json': '{}',
-      'packages/thing/README.md':    '#\n',
-      'packages/thing/CLAUDE.md':    '#\n',
-      'packages/thing/NOTES.md':     '#\n',
+      'packages/thing/package.json':     '{}',
+      'packages/thing/README.md':        '#\n',
+      'packages/thing/CLAUDE.md':        '#\n',
+      'packages/thing/PROJECT_STATE.md': '#\n',
+      'packages/thing/CHANGES.md':       '#\n',
+      'packages/thing/NOTES.md':         '#\n',
     })
     const { findings } = runChecks({ root, scope: 'repo' })
     expect(findings).toHaveLength(1)
@@ -358,13 +360,52 @@ describe('the repo scope', () => {
     expect(findings[0].message).toMatch(/NOTES\.md/)
   })
 
+  test('a MISSING one of the four is a finding that names it', () => {
+    // The other half of the same rule, and the half that was never reported:
+    // building `allowed` and reporting what is not in it catches a fifth file
+    // and can never catch an absent fourth. Seven packages were short a
+    // standard file with this check green over all of them (FJS-309).
+    const root = tree('repo-short', {
+      'packages/thing/package.json': '{}',
+      'packages/thing/README.md':    '#\n',
+      'packages/thing/CLAUDE.md':    '#\n',
+    })
+    const { findings } = runChecks({ root, scope: 'repo' })
+    expect(findings.map(f => f.message).join(' ')).toMatch(/PROJECT_STATE\.md is missing/)
+    expect(findings.map(f => f.message).join(' ')).toMatch(/CHANGES\.md is missing/)
+    expect(findings).toHaveLength(2)
+  })
+
+  test('a missing file is allowed by its own PATH, not by its package', () => {
+    // The finding points at the absent file rather than at the directory,
+    // because an allowance is keyed by path: excusing a package its fifth file
+    // would otherwise excuse it every missing one too.
+    const root = tree('repo-allow', {
+      'packages/thing/package.json':     '{}',
+      'packages/thing/README.md':        '#\n',
+      'packages/thing/CLAUDE.md':        '#\n',
+      'packages/thing/PROJECT_STATE.md': '#\n',
+      'packages/thing/NOTES.md':         '#\n',
+    })
+    const { findings, allowed } = runChecks({
+      root, scope: 'repo',
+      allow: { 'package-root-md:packages/thing': 'NOTES.md belongs at the root' },
+    })
+    expect(allowed).toHaveLength(1)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/CHANGES\.md is missing/)
+  })
+
   test('a generated *.snapshot.md at a package root says nothing at all', () => {
     // Gated output, not documentation. It cannot move — CI reruns each
     // snapshot's generator from the file's own directory — so warning about it
     // every run would be a permanent note nobody can act on.
     const root = tree('repo-snap', {
-      'packages/thing/package.json':    '{}',
-      'packages/thing/README.md':       '#\n',
+      'packages/thing/package.json':       '{}',
+      'packages/thing/README.md':          '#\n',
+      'packages/thing/CLAUDE.md':          '#\n',
+      'packages/thing/PROJECT_STATE.md':   '#\n',
+      'packages/thing/CHANGES.md':         '#\n',
       'packages/thing/routes.snapshot.md': '#\n',
     })
     expect(runChecks({ root, scope: 'repo' }).findings).toEqual([])

@@ -52,6 +52,22 @@ globalThis.assert = {
       )
     }
   },
+  // The first kit here that REFUSES rather than answering. Every other export is
+  // total, so this had no reason to exist until /history: an occurrence key that
+  // silently accepted a missing part would become a jobs-table primary key every
+  // fire of a job shares, so the refusals are the behaviour under test and a
+  // spec has to be able to name one.
+  throws(fn, pattern, msg) {
+    let threw = null
+    try { fn() } catch (e) { threw = e }
+    if (!threw) throw new Error((msg ? msg + '\n      ' : '') + 'expected a throw, got none')
+    if (pattern && !pattern.test(String(threw.message))) {
+      throw new Error(
+        (msg ? msg + '\n      ' : '') + 'expected a message matching ' + pattern +
+        '\n      got      ' + JSON.stringify(threw.message)
+      )
+    }
+  },
   // A kit that answers an object needs this, and JSON is enough of a comparison
   // for one: every value these kits produce is JSON-shaped, and key ORDER is
   // meaningful in some of them — a directive table read in a different order is

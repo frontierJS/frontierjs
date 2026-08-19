@@ -14,6 +14,7 @@
 // A handler then reaches the app as `ctx.app` and runs as whoever dispatched
 // the job — see JobContext in types.ts.
 
+import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import type { Database }                            from 'bun:sqlite'
 import { openDb, buildStatements, aggregateStats, isPrimaryKeyCollision } from './db.ts'
 import type { Statements }                          from './db.ts'
@@ -53,6 +54,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // `pollInterval`, `queues` and `admin` unsettable from a config file at all.
   let dbPath       = opts.db           ?? './db/jobs.db'
   let pollInterval = opts.pollInterval ?? 1_000
+  let drainTimeout = opts.drainTimeout ?? 30_000
   let jobsDir      = opts.jobsDir
   let cleanupAfter = opts.cleanupAfter ?? 7 * 24 * 60 * 60 * 1_000  // 7 days
   let adminOpts    = opts.admin
@@ -138,7 +140,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     if (!started || pool.has(queue)) return
 
     const { db, stmts } = rt()
-    const worker = new QueueWorker(queue, queueConf[queue], db, stmts, handlers, pollInterval, ownerId, telemetry)
+    const worker = new QueueWorker(queue, queueConf[queue], db, stmts, handlers, pollInterval, ownerId, telemetry, drainTimeout)
     worker._app = host
     pool.add(worker)
     worker.start()
@@ -248,6 +250,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
             queue:       def.queue,
             maxAttempts: def.maxAttempts,
             retryDelay:  def.retryDelay,
+            timeout:     def.timeout,
             cron:        def.cron,
             timeZone:    def.timeZone,
           }
@@ -266,6 +269,12 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         queue,
         maxAttempts,
         retryDelay,
+        // The queue's default applies to a handler that declares none, and is
+        // resolved HERE rather than in the worker so `registrations()` reports
+        // the bound that will actually be enforced. A snapshot showing `—` for
+        // a job the queue does bound would be a true statement about the
+        // handler and a false one about the app.
+        timeout:  o.timeout ?? queueConf[queue]?.timeout,
         cron:     o.cron,
         timeZone: o.timeZone,
       })
@@ -291,8 +300,14 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
           // the lease was between owners. Two clocks agreeing to within a
           // minute is the assumption, and it is the same one cron already
           // makes about firing at the right time at all.
+          //
+          // Built through `occurrenceKey` because a job name is caller-supplied
+          // and this id becomes the jobs table's primary key: interpolated raw,
+          // a job called `report:daily` fired at minute 5 and a job called
+          // `report` fired at `daily:5` are one key, and one of the two fires
+          // silently never runs. Byte-identical for a name without a `:`.
           fn: (fireMinute: number) =>
-            caravan.dispatch(name, {}, { queue, actor: null, id: `cron:${name}:${fireMinute}` })
+            caravan.dispatch(name, {}, { queue, actor: null, id: occurrenceKey('cron', name, fireMinute) })
               .catch(err => console.error(`[Caravan] Cron dispatch "${name}" failed:`, err)),
         })
       }
@@ -365,6 +380,35 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       return cron.remove(name)
     },
 
+    // ── registrations ─────────────────────────────────────────────────────────
+    //
+    // Every registered handler's DECLARATION, name-sorted — what runs, on which
+    // queue, on what schedule, with what retry budget. The handler function is
+    // deliberately absent: this answers *what did this app say it would run*,
+    // and a closure is not part of that answer.
+    //
+    // `nextRuns()` below is the other question and covers only the scheduled
+    // ones, off a live clock. This one is a fact about the app, so it holds
+    // still: two boots of the same code answer identically, which is what lets
+    // it be committed and diffed. A schedule that stopped being registered is
+    // otherwise invisible — every scheduled job in an app once stopped firing
+    // at the first restart with every row still reading `scheduled`
+    // (`FJS-327`), and nothing anywhere could have been asked.
+
+    registrations(): ReturnType<CaravanInstance['registrations']> {
+      return [...handlers.values()]
+        .map(h => ({
+          name:        h.name,
+          queue:       h.queue,
+          cron:        h.cron     ?? null,
+          timeZone:    h.timeZone ?? null,
+          maxAttempts: h.maxAttempts,
+          retryDelay:  [...h.retryDelay],
+          timeout:     h.timeout ?? null,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    },
+
     // ── nextRuns ──────────────────────────────────────────────────────────────
 
     nextRuns(): Array<{ name: string; cron: string; nextRun: Date | null }> {
@@ -374,10 +418,14 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     // ── stats ────────────────────────────────────────────────────────────────
 
     stats(): CaravanStats {
-      const rows = rt().stmts.statsByQueue.all() as {
+      const { stmts } = rt()
+      const rows = stmts.statsByQueue.all() as {
         queue: string; status: string; count: number
       }[]
-      return aggregateStats(rows, Object.keys(queueConf))
+      const oldest = stmts.oldestRunning.all() as {
+        queue: string; started_at: number
+      }[]
+      return aggregateStats(rows, Object.keys(queueConf), oldest)
     },
 
     // ── start ────────────────────────────────────────────────────────────────
@@ -428,7 +476,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // file, an earlier dispatch.
       for (const [name, config] of Object.entries(queueConf)) {
         if (pool.has(name)) continue
-        const worker = new QueueWorker(name, config, db, stmts, handlers, pollInterval, ownerId, telemetry)
+        const worker = new QueueWorker(name, config, db, stmts, handlers, pollInterval, ownerId, telemetry, drainTimeout)
         worker._app = host
         pool.add(worker)
       }
@@ -484,6 +532,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         if (opts.jobsDir      === undefined && junctionCaravan.jobsDir      !== undefined) jobsDir      = junctionCaravan.jobsDir
         if (opts.cleanupAfter === undefined && junctionCaravan.cleanupAfter !== undefined) cleanupAfter = junctionCaravan.cleanupAfter
         if (opts.pollInterval === undefined && junctionCaravan.pollInterval !== undefined) pollInterval = junctionCaravan.pollInterval
+        if (opts.drainTimeout === undefined && junctionCaravan.drainTimeout !== undefined) drainTimeout = junctionCaravan.drainTimeout
         if (opts.admin        === undefined && junctionCaravan.admin        !== undefined) adminOpts    = junctionCaravan.admin
         if (opts.heartbeat    === undefined && junctionCaravan.heartbeat    !== undefined) heartbeatMs  = junctionCaravan.heartbeat
         if (opts.lease        === undefined && junctionCaravan.lease        !== undefined) leaseMs      = junctionCaravan.lease
@@ -683,6 +732,7 @@ export function defineJob<T = unknown>(
     queue:       opts.queue       ?? 'default',
     maxAttempts: opts.maxAttempts ?? 3,
     retryDelay:  opts.retryDelay  ?? [],
+    timeout:     opts.timeout,
     cron:        opts.cron,
     timeZone:    opts.timeZone,
   }

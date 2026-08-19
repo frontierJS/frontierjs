@@ -21,12 +21,13 @@ const TOOLS: Record<string, string> = {
   build:   'build-app.ts',
   surface: 'surface.ts',
   errors:  'errors-snapshot.ts',
+  jobs:    'jobs-snapshot.ts',
 }
 
 const target = TOOLS[cmd ?? '']
 
 if (!target) {
-  console.log('Usage: junction <init|setup|repl|build|surface|errors> [args]')
+  console.log('Usage: junction <init|setup|repl|build|surface|errors|jobs> [args]')
   console.log()
   console.log('  init [dir]        scaffold a new Junction project')
   console.log('  setup [audit]     setup wizard, or non-interactive audit')
@@ -34,6 +35,7 @@ if (!target) {
   console.log('  build <entry>     bundle an app  (--mode=js|binary|docker)')
   console.log('  surface --app <m> write the API surface snapshot  (--check in CI)')
   console.log('  errors            write the error boundary snapshot  (--check in CI)')
+  console.log('  jobs --app <m>    write the jobs snapshot — what runs with no caller (--check in CI)')
   process.exit(cmd ? 1 : 0)
 }
 

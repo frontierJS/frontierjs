@@ -70,4 +70,15 @@ export default defineJob<BookCourier>('book-courier', async (ctx) => {
   // 1m, 5m, 30m, then 30m again — the last value is reused for every further
   // attempt. A courier outage is measured in minutes, not milliseconds.
   retryDelay:  [60_000, 300_000, 1_800_000],
+  // The failure a third-party call actually produces is not an error, it is a
+  // socket that neither answers nor closes. Without a bound that attempt holds
+  // its slot for the life of the process and every order behind it waits, with
+  // nothing raised (`FJS-295`). 30s is well past the 250ms this takes and well
+  // inside anything a courier would call a response.
+  //
+  // It does not cancel the call — nothing in JavaScript can — so the attempt is
+  // failed and retried while the abandoned one may still be in flight. That is
+  // safe HERE because the write it ends in is `recordTracking`, which sets a
+  // column to a value derived from the reference: the same answer twice.
+  timeout:     30_000,
 })

@@ -100,6 +100,11 @@ export class VersionConflictError extends Error {
     this.field     = field
     this.expected  = expected
     this.actual    = actual
+    // The two revisions on `data`, which is the field junction's error boundary
+    // carries to the client. Without them a browser is told only that something
+    // moved, and cannot offer *reload* against *overwrite* — the numbers are
+    // the half neither the status nor `retryable` can express.
+    this.data      = { model, field, expected, actual }
     // 409 + retryable, exactly like TransitionConflictError: re-read and re-apply
     // is a real strategy here, which is what tells a caller to do it.
     this.status    = 409

@@ -42,7 +42,7 @@
 
 import { createService, NotFound, BadRequest, publishToChannels, normalizeOrderBy } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import {
   dbOf, wsOf, actorOf,
   findScoped, getScoped, assertSlugFree, stampWorkspace, narrowPatch, changesNothing,
@@ -96,6 +96,7 @@ export function createServersService(app: BasecampApp) {
   return createService({
     name:  'servers',
     model: 'Server',   // ← schema-derived validation; see note at the bottom
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // ── find ──────────────────────────────────────────────────────────
     async find(ctx: ServiceContext) {

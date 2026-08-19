@@ -1,5 +1,46 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-18 — a snippet parameter may be a destructuring pattern, and the read is where it happens
+
+`{#snippet row([name, q])}` compiled and could not work. A snippet argument is
+passed lazily — `{@render row(p)}` emits `$$snippet_row(el, () => (p()))` — and
+the compiler rewrites reads of a plain identifier parameter into a call. A
+pattern cannot be rewritten that way, so the parameter list kept the pattern and
+destructured the accessor FUNCTION: `TypeError: function is not iterable`, thrown
+from the compiled file with no mention of the snippet, the whole enclosing block
+rendering nothing. The output was valid JS, so [Invariant 15](../../CLAUDE.md)
+did not catch it either.
+
+`{#each}` answers the same question by unwrapping the item and destructuring
+that, and **it does not transfer**. A block re-runs per item; a snippet's DOM is
+built once. Unwrapping at the top of the body would compile, run, and freeze
+every bound name at its first value — the frozen-argument bug the getters exist
+to prevent (`VISION` §9.5), which is what made a kit Table draw its first rows
+and then ignore the store.
+
+So the destructuring moves into the read. One getter arrives as `$$arg0`, and
+each name the pattern binds compiles to its own path through it — `$$arg0()[0]`,
+`$$arg0().id`, `$$arg0().label` for `{ id, label }` — so each keeps a
+subscription of its own inside whichever binding effect reads it. A default
+value, a rest element and a nested pattern are refused by name at compile time,
+because none of the three can be read lazily.
+
+**The fix landed on the same trap one layer down.** `_isReactive` decides
+whether a binding becomes an effect or a one-time assignment, and its bare-call
+pattern excludes `$`-prefixed identifiers — so every new read was classed
+STATIC and written once. The first render was correct and every reassignment
+was ignored: the frozen-argument bug, arriving through its own fix. The function
+already carried a comment recording the identical miss for `{@const}`, where an
+attribute kept its first value while the class beside it tracked state.
+
+What caught it is the assertion shape, not the coverage: a spec that reads the
+DOM after the first paint passes under both fixes. `test/browser/runtime`'s new
+`snippet-pattern` spec clicks and asserts what the reassignment reached — array
+pattern, object pattern with renaming, a hole, an attribute, and a snippet
+rendered once per `{#each}` item, which is the shape it was found in.
+`packages/basecamp`'s Hub carries `{#snippet row([queue, depth])}` again;
+its *Queue depths* card had been rendering nothing at all (`FJS-339`).
+
 ## 2026-08-18 — `render-component` created a fixture directory nothing used, and wrote into one nothing created
 
 Seven tests wrote `.mesa` fixtures into `/tmp/mesa` and every `cwd:` in the file

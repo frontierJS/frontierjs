@@ -16,7 +16,7 @@
 // person (admin), an event is FIRED by the system and ACKNOWLEDGED by a person.
 
 import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -62,6 +62,7 @@ export function createAlertsService(app: BasecampApp) {
   return createService({
     name:  'alerts',
     model: 'AlertRule',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
       const { limit, offset } = getPagination(ctx)

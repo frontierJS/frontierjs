@@ -785,6 +785,30 @@ export function isStaleWrite(err) {
 export const STALE_WRITE_MESSAGE =
   'This record changed while you were editing it. Reload to see the current version, then try again.'
 
+/**
+ * The two revisions behind a stale write — the one the caller submitted, and the
+ * one the row is at now. `null` for anything that is not a race, and for a race
+ * whose error did not carry them.
+ *
+ * `STALE_WRITE_MESSAGE` is what a form shows; this is what a screen offering
+ * *reload* or *overwrite* needs, and it is the half a status cannot express.
+ * Litestone's `VersionConflictError` builds the payload, junction's error
+ * boundary carries it, and it lands two `data`s deep for the same reason a
+ * server 400's field list does — each hop wraps once.
+ *
+ * @param {unknown} err
+ * @returns {{ model: string|null, field: string|null, expected: unknown, actual: unknown }|null}
+ */
+export function toConflict(err) {
+  if (!isStaleWrite(err)) return null
+  const payload = err?.data?.data ?? err?.data ?? null
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
+  const { model, field, expected, actual } = payload
+  // Both halves or neither: one number alone cannot say what moved.
+  if (expected === undefined || actual === undefined) return null
+  return { model: model ?? null, field: field ?? null, expected, actual }
+}
+
 // ── Thrown value → per-field messages ─────────────────────────────────────────
 
 /**

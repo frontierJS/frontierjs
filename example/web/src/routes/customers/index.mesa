@@ -9,8 +9,12 @@ title: Customers
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Avatar        from '@frontierjs/ui/components/display/Avatar.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Popover       from '@frontierjs/ui/components/overlay/Popover.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Spinner       from '@frontierjs/ui/components/feedback/Spinner.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
   const { get: rows, unsubscribe } = useStore(customers.store)
@@ -18,8 +22,19 @@ title: Customers
 
   $: (session.level, session.user, prefs.dense)
 
-  let error = null
-  const reload = () => customers.load().catch(e => { error = e.message })
+  let error   = null
+  let loading = false
+
+  // Reload is a button a person presses, so it has to say it is working. The
+  // Table's own `loading` covers the first fetch and nothing else — by the
+  // second one there are rows on screen and blanking them to draw a skeleton
+  // would be a worse answer than a spinner in the button.
+  const reload = () => {
+    loading = true
+    return customers.load()
+      .catch(e => { error = e.message })
+      .finally(() => { loading = false })
+  }
   reload()
 
   // Whether `notes` came back is a fact about the RESPONSE, not a rule copied
@@ -36,7 +51,10 @@ title: Customers
 
 <SectionHeader title="Customers" level={1}>
   {#snippet action()}
-    <Button variant="outlined" onclick={reload}>Reload</Button>
+    <Button variant="outlined" onclick={reload} disabled={loading}>
+      {#if loading}<Spinner size="sm" label="Reloading" />{/if}
+      Reload
+    </Button>
   {/snippet}
 </SectionHeader>
 
@@ -47,8 +65,34 @@ title: Customers
 <Table {columns} rows={rows()} striped hover compact={prefs.dense}>
   {#snippet row(c)}
     <tr>
-      <td>{c.name}</td>
-      <td>{c.email}</td>
+      <!--
+        The name cell is a contact card behind a Popover, and the Popover is
+        portaled to <body> — which is the whole reason it is a kit component
+        and not a positioned div: a panel opened from inside a scrolling table
+        is clipped by the table, and a `title` attribute cannot hold markup.
+
+        The avatar is derived, not stored: there is no image column in
+        db/schema.lite and Avatar falls back to initials off the name it is
+        already sitting beside — which is also why it is not `standalone`.
+      -->
+      <td>
+        <Popover label={'Contact card for ' + c.name}>
+          {#snippet trigger()}
+            <Button variant="link">
+              {#snippet leading()}<Avatar name={c.name} size="sm" />{/snippet}
+              {c.name}
+            </Button>
+          {/snippet}
+          {#snippet content()}
+            <dl class="facts" style="max-width: 22rem">
+              <dt>Email</dt><dd><Mono size="xs">{c.email}</Mono></dd>
+              <dt>Customer since</dt><dd>{c.createdAt}</dd>
+              {#if c.notes}<dt>Note</dt><dd>{c.notes}</dd>{/if}
+            </dl>
+          {/snippet}
+        </Popover>
+      </td>
+      <td><Mono size="xs">{c.email}</Mono></td>
       {#if hasNotes}<td class="text-muted">{c.notes}</td>{/if}
     </tr>
   {/snippet}

@@ -30,7 +30,7 @@
 // their colleagues have been doing.
 
 import { createService } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { dbOf, wsOf } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -39,6 +39,7 @@ export function createAuditService(app: BasecampApp) {
   return createService({
     name:    'audit',
     model:   'AuditEvent',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
     methods: 'readOnly',
 
     async find(ctx: ServiceContext) {

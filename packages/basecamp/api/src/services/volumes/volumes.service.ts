@@ -37,7 +37,7 @@
 // un-round — `0.01 GB` in the mock is 10.7 MB.
 
 import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { dbOf, wsOf, actorOf }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
 import type { ServiceContext }  from '@frontierjs/junction'
@@ -129,6 +129,7 @@ export function createVolumesService(app: BasecampApp) {
   return createService({
     name:  'volumes',
     model: 'Volume',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // The whole surface, declared. Omitting a method does not remove it: with
     // `model:` set, Junction's Litestone base answers every CRUD verb for

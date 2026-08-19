@@ -23,7 +23,10 @@
   export let accept       = '*/*'     // MIME types e.g. 'image/*' or '.pdf,.doc'
   export let multiple     = false
   export let maxSizeMB    = 0         // 0 = no limit
-  export let label        = ''
+  // `undefined` is "not stated" and `''` is "no label, deliberately". They have
+  // to be different values: a default of '' makes the two indistinguishable, so
+  // the documented suppression below cannot be expressed at all.
+  export let label        = undefined
   export let name         = ''
   export let hint         = ''
   export let error        = ''
@@ -232,7 +235,7 @@
   <Field
     id={inputId}
     name={name}
-    label={label || undefined}
+    label={label}
     required={resolvedRequired}
     hint={hint}
     {class}

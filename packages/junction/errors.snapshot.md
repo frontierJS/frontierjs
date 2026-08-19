@@ -10,6 +10,11 @@ result, which is what makes a change here invisible: an error class that gains
 a `status` stops being a 500 and nothing fails, and one that never had a status
 is a 500 while its message says otherwise.
 
+**Payload** is what reached `data` — the keys, since that is the part a client
+can depend on. A class that sets `data` is declaring one for the browser, which
+is how the two revisions behind a version conflict get there; the status can
+carry neither of them.
+
 `retryable` is on the wire because a status cannot carry it. A 409 that is
 retryable means *the row moved, re-read and re-apply*; a 409 that is not means
 *this is not a legal move*. A client that cannot tell them apart has to phrase
@@ -46,22 +51,22 @@ the thrown `name` → `GeneralError`. Registered mappers are an app's own and
 are not part of this file; **most-recently-registered wins**, so an app can
 override any row below.
 
-| Thrown | Class | Status | Retryable |
-| --- | --- | --- | --- |
-| a `FrameworkError` (passes through unchanged) | `NotFound` | 404 | — |
-| a plain `Error` | `GeneralError` | 500 | — |
-| an `Error` whose `name` is a class name | `Forbidden` | 403 | — |
-| an `Error` whose `name` is mapped by name | `BadRequest` | 400 | — |
-| an `Error` whose `name` is unknown | `GeneralError` | 500 | — |
-| a numeric `status` | `NotFound` | 404 | — |
-| a numeric `statusCode` | `TooManyRequests` | 429 | — |
-| a numeric `code` | `Forbidden` | 403 | — |
-| a status with no class of its own | `GeneralError` | 423 | — |
-| a status outside 400–599 | `GeneralError` | 500 | — |
-| a string `code` (an error code, not a status) | `GeneralError` | 500 | — |
-| a thrown string | `GeneralError` | 500 | — |
-| a thrown object | `GeneralError` | 500 | — |
-| a thrown `null` | `GeneralError` | 500 | — |
+| Thrown | Class | Status | Retryable | Payload |
+| --- | --- | --- | --- | --- |
+| a `FrameworkError` (passes through unchanged) | `NotFound` | 404 | — | — |
+| a plain `Error` | `GeneralError` | 500 | — | — |
+| an `Error` whose `name` is a class name | `Forbidden` | 403 | — | — |
+| an `Error` whose `name` is mapped by name | `BadRequest` | 400 | — | — |
+| an `Error` whose `name` is unknown | `GeneralError` | 500 | — | — |
+| a numeric `status` | `NotFound` | 404 | — | — |
+| a numeric `statusCode` | `TooManyRequests` | 429 | — | — |
+| a numeric `code` | `Forbidden` | 403 | — | — |
+| a status with no class of its own | `GeneralError` | 423 | — | — |
+| a status outside 400–599 | `GeneralError` | 500 | — | — |
+| a string `code` (an error code, not a status) | `GeneralError` | 500 | — | — |
+| a thrown string | `GeneralError` | 500 | — | — |
+| a thrown object | `GeneralError` | 500 | — | — |
+| a thrown `null` | `GeneralError` | 500 | — | — |
 
 ## Status → class
 
@@ -97,18 +102,18 @@ give it a `status`** — `registerErrorMapper()` is for errors you cannot modify
 A row landing on 500 with a message about a conflict is a client told to retry
 something that will never work, or not to retry something that would.
 
-| Litestone class | Declares | Becomes | Status | Retryable |
-| --- | --- | --- | --- | --- |
-| `AccessDeniedError` | code `ACCESS_DENIED` | `Forbidden` | 403 | — |
-| `CapabilityNotDeclaredError` | status 400 · retryable false | `BadRequest` | 400 | false |
-| `LockExpiredError` | status 409 · retryable false | `Conflict` | 409 | false |
-| `LockNotAcquiredError` | status 409 · retryable true | `Conflict` | 409 | true |
-| `LockReleasedByOtherError` | status 409 · retryable false | `Conflict` | 409 | false |
-| `SoftDeletedUniqueError` | status 409 · retryable false | `Conflict` | 409 | false |
-| `TransitionConflictError` | status 409 · retryable true | `Conflict` | 409 | true |
-| `TransitionGateError` | status 403 · retryable false | `Forbidden` | 403 | false |
-| `TransitionNotFoundError` | status 400 · retryable false | `BadRequest` | 400 | false |
-| `TransitionViolationError` | status 409 · retryable false | `Conflict` | 409 | false |
-| `ValidationError` | nothing | `BadRequest` | 400 | — |
-| `VersionConflictError` | status 409 · retryable true | `Conflict` | 409 | true |
-| `VersionRequiredError` | status 400 · retryable false | `BadRequest` | 400 | false |
+| Litestone class | Declares | Becomes | Status | Retryable | Payload |
+| --- | --- | --- | --- | --- | --- |
+| `AccessDeniedError` | code `ACCESS_DENIED` | `Forbidden` | 403 | — | — |
+| `CapabilityNotDeclaredError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
+| `LockExpiredError` | status 409 · retryable false | `Conflict` | 409 | false | — |
+| `LockNotAcquiredError` | status 409 · retryable true | `Conflict` | 409 | true | — |
+| `LockReleasedByOtherError` | status 409 · retryable false | `Conflict` | 409 | false | — |
+| `SoftDeletedUniqueError` | status 409 · retryable false | `Conflict` | 409 | false | — |
+| `TransitionConflictError` | status 409 · retryable true | `Conflict` | 409 | true | — |
+| `TransitionGateError` | status 403 · retryable false | `Forbidden` | 403 | false | — |
+| `TransitionNotFoundError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
+| `TransitionViolationError` | status 409 · retryable false | `Conflict` | 409 | false | — |
+| `ValidationError` | nothing | `BadRequest` | 400 | — | list(1) |
+| `VersionConflictError` | status 409 · retryable true | `Conflict` | 409 | true | `model`, `field`, `expected`, `actual` |
+| `VersionRequiredError` | status 400 · retryable false | `BadRequest` | 400 | false | — |

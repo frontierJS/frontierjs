@@ -266,3 +266,45 @@ describe('retryable survives the boundary and the wire', () => {
     expect((res.body as { retryable: boolean }).retryable).toBe(true)
   })
 })
+
+// ─── a declared payload ───────────────────────────────────────────────────────
+//
+// An error class that sets `data` is declaring something for the client, which
+// is the same meaning FrameworkError's own `data` already has. Litestone's
+// `VersionConflictError` is the first to depend on it: the two revisions behind
+// a race are the half neither the status nor `retryable` can carry, and without
+// them a browser can say only that something moved.
+
+describe('a declared `data` payload', () => {
+  it('is carried onto the FrameworkError and onto the wire', () => {
+    const err = Object.assign(new Error('Version conflict on Order'), {
+      status: 409, retryable: true,
+      data: { model: 'Order', field: 'version', expected: 3, actual: 4 },
+    })
+    expect(toFrameworkError(err).data).toEqual({ model: 'Order', field: 'version', expected: 3, actual: 4 })
+    expect(toFrameworkError(err).toJSON()).toMatchObject({
+      code: 409, retryable: true,
+      data: { expected: 3, actual: 4 },
+    })
+  })
+
+  it('does not overwrite a payload the FrameworkError already has', () => {
+    const err = Object.assign(new Error('bad'), { status: 400, errors: [{ field: 'a', message: 'x' }], data: { other: 1 } })
+    expect(toFrameworkError(err).data).toEqual([{ field: 'a', message: 'x' }])
+  })
+
+  // A class instance on `data` is a handle to something — a client, a socket, a
+  // row — not a payload anyone agreed to publish. Serializing it is how an
+  // internal object reaches a browser because someone named a field `data`.
+  it('refuses anything that is not a plain object or an array', () => {
+    class Handle { constructor(public secret = 'db-connection') {} }
+    const withHandle = Object.assign(new Error('x'), { status: 500, data: new Handle() })
+    expect(toFrameworkError(withHandle).data).toBeNull()
+
+    const withString = Object.assign(new Error('x'), { status: 500, data: 'raw' })
+    expect(toFrameworkError(withString).data).toBeNull()
+
+    const withList = Object.assign(new Error('x'), { status: 422, data: [1, 2] })
+    expect(toFrameworkError(withList).data).toEqual([1, 2])
+  })
+})

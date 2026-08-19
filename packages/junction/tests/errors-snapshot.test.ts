@@ -45,7 +45,11 @@ describe('junction errors — the snapshot', () => {
     // every one of these as a 500 with no retryable — which is what the first
     // draft did for the two classes whose constructors take arguments.
     expect(body).toContain('| `TransitionViolationError` | status 409 · retryable false | `Conflict` | 409 | false |')
-    expect(body).toContain('| `VersionConflictError` | status 409 · retryable true | `Conflict` | 409 | true |')
+    // The payload column is asserted whole for this one, because it is the only
+    // class whose useful answer is neither the status nor `retryable`: a screen
+    // offering *reload* against *overwrite* needs the two revisions, and if
+    // adopt() stops carrying them nothing else here would notice.
+    expect(body).toContain('| `VersionConflictError` | status 409 · retryable true | `Conflict` | 409 | true | `model`, `field`, `expected`, `actual` |')
 
     // The lock family, which is where this file found FJS-255: all three
     // declared `retryable` and no `status`, so each reached a caller as a 500

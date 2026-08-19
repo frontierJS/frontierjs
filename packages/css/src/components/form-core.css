@@ -27,7 +27,8 @@
    */
   display:     block;
   inline-size: var(--field-inline-size, 100%);
-  padding:     var(--space-sm) var(--space-lg);
+  /* Vertical padding is shared with .btn — see --control-padding-block. */
+  padding:     var(--control-padding-block) var(--space-lg);
   font-size:   var(--text-md);
   line-height: 1.25rem;
 

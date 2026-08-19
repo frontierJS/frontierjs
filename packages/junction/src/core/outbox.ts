@@ -20,6 +20,7 @@
 // separate file for the same reason, which is what makes the handoff between
 // them at-least-once — see `deliverOutbox`.
 
+import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { readFileSync } from 'node:fs'
 
 import type { ServiceContext } from './context.ts'
@@ -178,7 +179,11 @@ interface JobDispatcher {
  * SQLite file, so the insert there and the delivery mark here cannot be one
  * transaction; a crash between them replays. The replay is a no-op rather than
  * duplicate work because the dispatch states the outbox row's id and caravan
- * treats a taken primary key as work already queued — which leaves exactly one
+ * treats a taken primary key as work already queued. The id is NAMESPACED
+ * (`occurrenceKey('outbox', id)`): the jobs table is shared with every id a
+ * caller states on a dispatch of their own, and a bare row id meant outbox row
+ * 7 and a caller's `7` were one primary key, so whichever arrived second was
+ * silently treated as already done. That leaves exactly one
  * hole, a handler that runs, crashes the process before caravan marks the job
  * done, and is retried by the queue. That is the queue's own retry contract,
  * so a handler must be idempotent either way.
@@ -219,7 +224,7 @@ export async function deliverOutbox(
     if (claimed.count !== 1) continue
 
     try {
-      await jobs.dispatch(row.job, row.payload, { id: row.id, actor: row.actorId })
+      await jobs.dispatch(row.job, row.payload, { id: occurrenceKey('outbox', row.id), actor: row.actorId })
       await table.update({ where: { id: row.id }, data: { deliveredAt: new Date() } })
       delivered++
     } catch (err) {

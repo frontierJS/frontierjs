@@ -284,6 +284,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | --- | --- | --- | --- |
 | exports | `./directives` | `src/directives/directives.js` | yes |
 | exports | `./glow` | `src/glow/glow.js` | yes |
+| exports | `./history` | `src/history/history.js` | yes |
 | exports | `./hooks` | `src/hooks/hooks.js` | yes |
 | exports | `./inflect` | `src/inflect/inflect.js` | yes |
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |

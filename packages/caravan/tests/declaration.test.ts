@@ -140,7 +140,7 @@ describe('a job file is named by its file', () => {
 
   it('refuses a defineJob name that does not match the file, naming both', async () => {
     const registered: string[] = []
-    const stub: JobRegistrar = { handle: (name: string) => { registered.push(name) } }
+    const stub: JobRegistrar = { handle: (job) => { registered.push(job.name) } }
 
     await expect(autoloadJobs(BAD_FIXTURES, stub)).rejects.toThrow(/send-repot.*send-report/s)
     expect(registered).toEqual([])
@@ -149,9 +149,7 @@ describe('a job file is named by its file', () => {
   it('carries the cron and timezone from the file through to the registration', async () => {
     const registered: Array<{ name: string; opts: HandlerOptions }> = []
     const stub: JobRegistrar = {
-      handle(name: string, _fn: JobHandler, opts: HandlerOptions = {}) {
-        registered.push({ name, opts })
-      },
+      handle(job) { registered.push({ name: job.name, opts: job as HandlerOptions }) },
     }
 
     await autoloadJobs(CRON_FIXTURES, stub)
@@ -236,5 +234,48 @@ describe('stop() and start() again', () => {
     for (const suffix of ['', '-wal', '-shm']) rmSync(`${path}${suffix}`, { force: true })
 
     expect(done).toEqual(['ran'])
+  })
+})
+
+// ─── registrations ────────────────────────────────────────────────────────────
+//
+// `nextRuns()` answers the SCHEDULED jobs off a live clock. This answers what
+// the app declared — every handler, scheduled or not — and it is a separate
+// question because it has to hold still: a committed artefact that moved
+// between two boots of the same code would be worthless (`junction jobs`).
+
+describe('registrations — the declaration, not the clock', () => {
+  it('answers every handler, not only the scheduled ones', () => {
+    const q = makeQueue()
+    q.handle('send-email', () => {})
+    q.handle('sweep', () => {}, { cron: '0 3 * * *', queue: 'maintenance', maxAttempts: 7 })
+
+    expect(q.registrations()).toEqual([
+      { name: 'send-email', queue: 'default',     cron: null,        timeZone: null, maxAttempts: 3, retryDelay: [], timeout: null },
+      { name: 'sweep',      queue: 'maintenance', cron: '0 3 * * *', timeZone: null, maxAttempts: 7, retryDelay: [], timeout: null },
+    ])
+
+    // nextRuns() sees one of the two — which is the distinction, not a gap.
+    expect(q.nextRuns().map(r => r.name)).toEqual(['sweep'])
+  })
+
+  it('is name-sorted, so registration order cannot move a committed file', () => {
+    const a = makeQueue()
+    a.handle('zulu', () => {})
+    a.handle('alpha', () => {})
+    expect(a.registrations().map(r => r.name)).toEqual(['alpha', 'zulu'])
+  })
+
+  it('carries no handler function — a closure is not part of what an app declared', () => {
+    const q = makeQueue()
+    q.handle('send-email', () => {})
+    expect('handler' in q.registrations()[0]!).toBe(false)
+  })
+
+  it('copies retryDelay, so a reader cannot mutate the registry', () => {
+    const q = makeQueue()
+    q.handle('x', () => {}, { retryDelay: [1000, 2000] })
+    q.registrations()[0]!.retryDelay.push(9999)
+    expect(q.registrations()[0]!.retryDelay).toEqual([1000, 2000])
   })
 })

@@ -1,5 +1,92 @@
 # Changes — @frontierjs/caravan
 
+## 2026-08-18 — a bound on one attempt, and a stall you can see (`FJS-295`)
+
+165 tests, 11 of them new, 0 fail. Typecheck clean.
+
+A handler that never returned held its slot for the life of the process. On a
+`concurrency: 1` queue everything behind it stayed `pending` with no error, no
+telemetry, and a `running` count that never moved — and `stop()` then waited its
+full 30s deadline and abandoned the job mid-flight. Every other failure mode
+here was named and retried; this is the one a third-party call actually
+produces, a socket that neither answers nor closes.
+
+**Three changes, and they are separate on purpose.**
+
+**`timeout` on a handler, a job file or a queue.** Absent means no bound,
+honestly — the same contract every declaration here has, and a default would
+kill every legitimately long job in every app that upgraded. A queue-level
+default covers the handlers on it, resolved at registration so
+`registrations()` reports the bound that will actually be enforced. A timeout is
+an **ordinary failure**: it counts as an attempt and retries on the same ladder
+as a throw, rather than becoming a fifth status.
+
+**What it cannot do is stop the handler**, and both consequences are handled
+rather than left to chance. Nothing in JavaScript cancels a promise, so the
+abandoned invocation keeps running and may still be writing while the retry
+runs — delivery was already at-least-once (`FJS-D35`), and this widens the
+window rather than opening it. Its later rejection would have been unhandled,
+which takes the process down; it is caught. Its later *success* is the most
+useful thing a person debugging this can be told — *the work you gave up on
+finished after 45 minutes* — so it is announced on `console.warn` and emitted as
+`caravan.job.orphan`, not swallowed. A handler that never yields is unreachable
+from here either way: the timer needs the event loop.
+
+**`oldestRunningMs` on every queue's stats**, because most stalls will be on
+jobs nobody thought to bound. `running: 1` for the life of the process is
+exactly what a queue doing steady work reports; a count that never moves beside
+an age climbing past an hour is not, and no threshold has to be guessed to say
+it. Asked of the database, so a job another instance is holding is in the answer
+— which is the shape a stall has with two replicas. `null` where nothing is
+running, never 0.
+
+**`drainTimeout`**, since a hardcoded 30s is the whole shutdown budget of a
+deployment whose SIGTERM grace is shorter.
+
+**Two whitelist bugs fell out of it, both the same shape.** `defineJob` built
+its definition from a fixed list of keys, and `autoload` then re-listed a
+definition's keys into `handle(name, fn, opts)` — so a `timeout` written in a
+job file was accepted, dropped twice, and reported as having no bound. autoload
+passes the **definition whole** now (`JobRegistrar.handle(job)`), which removes
+the third whitelist rather than adding a key to it. Found by `junction jobs`
+printing `**none**` for a job that had just declared 30s — the artefact catching
+the defect the day after it was written.
+
+`example`'s `book-courier` is bounded at 30s, which is the case the feature is
+for: somebody else's HTTP call, retried, ending in a write that is idempotent by
+construction.
+
+## 2026-08-18 — `registrations()`, so the registry has a reader (`FJS-343`)
+
+154 tests, 4 of them new, 0 fail. Typecheck clean.
+
+The handler map was private and `nextRuns()` answers only the scheduled jobs,
+off a live clock. So there was no way to ask what this app declared it would
+run — which is the question `junction jobs` commits, and the question nothing
+could have been asked when every scheduled job in an app stopped firing at the
+first restart with every row still reading `scheduled` (`FJS-327`).
+
+`registrations()` answers every registered handler's declaration, name-sorted:
+name, queue, cron, timeZone, maxAttempts, retryDelay. Sorted because
+registration order would otherwise move a committed file; `retryDelay` copied
+because a reader must not be able to mutate the registry. The handler function
+is absent — a closure is not part of what an app declared.
+
+## 2026-08-18 — the cron fire id is built by one owner (`FJS-342`)
+
+150 tests, 1 of them new, 0 fail. Typecheck clean.
+
+`cron:${name}:${minute}` interpolated a caller-supplied job name into a string
+that becomes the jobs table's primary key, so a job called `report:daily` fired
+at minute 5 and a job called `report` fired at `daily:5` were one key — and the
+second of the two silently never ran. Through
+`@frontierjs/toolbelt/history`'s `occurrenceKey` the name is escaped, and the
+output is byte-identical for any name without a `:` in it, so a queue with rows
+in it is unaffected.
+
+`@frontierjs/toolbelt` is a dependency now. It is the substrate package and
+depends on nothing (`FJS-D26`), so this does not touch the direction of anything.
+
 ## 2026-08-18 — two instances on one `jobs.db` (`FJS-294`)
 
 149 tests (8 new), 0 fail. Typecheck clean. `example`: `verify:jobs` 10/10.

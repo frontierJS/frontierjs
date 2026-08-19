@@ -222,11 +222,17 @@ try {
 
   // The Moves column is derived from the row's status, so a re-graded row is
   // the store having really replaced the record rather than patched a cell.
+  // Read the MOVES column by its header rather than every button in the row
+  // minus a list of names: the Actions column grows (Delete, quick view) and an
+  // exclusion list quietly stops being complete, which reads as a regrade that
+  // did not happen.
   t('watcher.movesRegraded', await evaluate(`
-    const cell = [...document.querySelectorAll('tbody tr')]
+    const col = [...document.querySelectorAll('thead th')]
+      .findIndex(th => th.textContent.trim() === 'Moves') + 1;
+    const row = [...document.querySelectorAll('tbody tr')]
       .find(tr => tr.querySelector('td')?.textContent.trim() === '${REF}');
-    return { moves: [...cell.querySelectorAll('button')].map(b => b.textContent.trim())
-      .filter(x => x !== 'Delete') };
+    return { moves: [...row.querySelectorAll('td:nth-child(' + col + ') button')]
+      .map(b => b.textContent.trim()) };
   `))
 
   // 3 ─ a JOB's write, which nobody requested at all

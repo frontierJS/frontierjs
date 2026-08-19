@@ -171,6 +171,7 @@ export const bridge = {
       route:  { ...raw.route },   // path-pattern captures — same word both sides
       locals: {},
       transients: {},             // filled by autoValidate, from what the model declares
+      reserved:   {},             // filled by callService, from what the service reserved
       app:       appRef ?? ({} as import('../core/app.ts').App),
       result:    null,
       error:     null,
@@ -265,6 +266,7 @@ export const bridge = {
       route:  {},
       locals: locals ? { ...locals } : {},   // fresh; explicit seed only
       transients: {},
+      reserved:   {},
       app:       appRef ?? ({} as import('../core/app.ts').App),
       result:    null,
       error:     null,

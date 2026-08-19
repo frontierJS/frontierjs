@@ -26,7 +26,7 @@
 // from every read — `get` resolves that to the same answer.
 
 import { createService, NotFound, BadRequest, Conflict, publishToChannels } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, assertSlugFree, slugify, dbOf, wsOf, actorOf }
   from '../../core/resource.ts'
 import { WIDGET_KINDS, WIDGET_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
@@ -185,6 +185,7 @@ export function createDashboardsService(app: BasecampApp) {
   return createService({
     name:  'dashboards',
     model: 'Dashboard',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // The whole surface, declared. `model:` brings Junction's Litestone base,
     // which answers every CRUD verb this service leaves out — including PUT,

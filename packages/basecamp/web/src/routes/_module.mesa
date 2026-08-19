@@ -12,6 +12,11 @@ siteName: Basecamp
   import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
   import Select         from '@frontierjs/ui/components/forms/Select.mesa'
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
+  import Drawer         from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownLabel     from '@frontierjs/ui/components/overlay/DropdownLabel.mesa'
+  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
 
@@ -132,13 +137,71 @@ siteName: Basecamp
   function pick(e) {
     switchWorkspace(e.target.value)
   }
+
+  // ── Navigation ───────────────────────────────────────────────────────────
+  // Nineteen destinations, grouped the way the mock's Sidebar groups them
+  // (docs/mock/BasecampUI.jsx § Sidebar): what you open daily, what you open
+  // weekly, what you configure, and the tier above the workspace. The headings
+  // are the design system's `.navlist-label`; the mock separated Daily and
+  // Weekly with a bare rule, and a heading says the same thing out loud.
+  //
+  // A table rather than nineteen hand-written anchors: the list is rendered
+  // TWICE — the sidebar at full width, a drawer below 767px — and two copies of
+  // it is how one of them silently loses a screen.
+  const NAV = [
+    { label: 'Daily', links: [
+      { href: '/',            label: 'Overview', exact: true },
+      { href: '/dashboards/', label: 'Dashboards'  },
+      { href: '/projects/',   label: 'Projects'    },
+      { href: '/deployments/',label: 'Deployments' },
+      { href: '/servers/',    label: 'Servers'     },
+      { href: '/jobs/',       label: 'Jobs'        },
+      { href: '/alerts/',     label: 'Alerts'      },
+      { href: '/flags/',      label: 'Flags'       },
+    ] },
+    { label: 'Weekly', links: [
+      { href: '/activity/',   label: 'Activity'    },
+      { href: '/networks/',   label: 'Networking'  },
+      { href: '/portal/',     label: 'Portal'      },
+    ] },
+    { label: 'Manage', links: [
+      { href: '/volumes/',    label: 'Volumes'     },
+      { href: '/cleanup/',    label: 'Cleanup'     },
+      { href: '/recipes/',    label: 'Recipes'     },
+      { href: '/channels/',   label: 'Channels'    },
+      { href: '/secrets/',    label: 'Secrets'     },
+      { href: '/api-keys/',   label: 'API keys'    },
+      { href: '/admin/',      label: 'Admin'       },
+    ] },
+  ]
+
+  // The hub tier is not a workspace role, so it is not in the switcher and it
+  // is not offered to people who do not hold it. `isSystemAdmin` rides on the
+  // session; the service answers 404 to anyone else regardless, which is where
+  // the refusal actually is.
+  $: session.user
+  const navGroups = () => session.user?.isSystemAdmin
+    ? [...NAV, { label: 'System', links: [{ href: '/hub/', label: 'Hub' }] }]
+    : NAV
+
+  // Below 767px the design system hides `.shell > .sidebar` and says its
+  // contents belong in a <dialog class="drawer"> — a behaviour, so the app owns
+  // it (css components/frame.css § Sidebar toggle).
+  let navOpen = false
+  // Navigating with the drawer open leaves it covering the screen it just went
+  // to. The router's own route signal is the event; there is no per-link
+  // handler to hang this on.
+  $: page.route, () => { navOpen = false }
 </script>
 
 <!--
   Every class here comes from @frontierjs/css and every control from
-  @frontierjs/ui: the frame (shell / topbar / screen) is vocabulary, the badges,
-  pills, buttons and the switcher are components. No <style> block, no colour,
-  no utility classes (repo invariant 13).
+  @frontierjs/ui: the frame (shell / topbar / sidebar / screen) and the nav
+  (navlist / navlink / navlist-label) are vocabulary; the badges, pills,
+  buttons, switcher, drawer and account menu are components. No <style> block,
+  no colour, no utility classes (repo invariant 13) — which is also why the
+  topbar still crowds below ~600px: there is no way to say "drop this below md"
+  without one, and the package refused to ship the vocabulary (FJS-338).
 -->
 <!-- The skip link is the first focusable thing on the page and is invisible
      until focused. Without it, a keyboard user tabs through the nav, the
@@ -147,72 +210,47 @@ siteName: Basecamp
      anatomy (css components/frame.css) and it was simply missing. -->
 <a class="skip-link" href="#screen">Skip to content</a>
 
+<!-- One definition of the destination list, rendered in the sidebar and again
+     in the small-screen drawer.
+
+     Current-page state is aria-current="page", not a class — the stylesheet
+     keys off the attribute so the look and the announcement cannot drift
+     apart, and Mesa drops an attribute whose value is null rather than
+     rendering aria-current="false".
+
+     The leading `page.route` in the expression is load-bearing: isActive()
+     reads it internally, but Mesa decides what an expression depends on from
+     the expression's own TEXT, so without the read written here the attribute
+     is set once at mount and the highlight never moves. -->
+{#snippet navlists()}
+  {#each navGroups() as group}
+    <div class="navlist-label">{group.label}</div>
+    <ul class="navlist">
+      {#each group.links as link}
+        <li>
+          <a class="navlink" href={link.href}
+             aria-current={(page.route, isActive(link.href, link.exact ? { exact: true } : undefined)) ? 'page' : null}
+          >{link.label}</a>
+        </li>
+      {/each}
+    </ul>
+  {/each}
+{/snippet}
+
 <div class="shell">
   <header class="topbar">
     <span class="cluster">
+      <!-- `.sidebar-toggle` decides WHEN this control exists — the package
+           hides it above 767px, where the real sidebar is back. Opening the
+           drawer is the app's job and is the `navOpen` flag below. -->
+      {#if session.user}
+        <button class="btn ghost square sidebar-toggle" aria-label="Open navigation"
+                aria-expanded={navOpen ? 'true' : 'false'} on:click={() => navOpen = true}>☰</button>
+      {/if}
       <strong>{page.siteName}</strong>
       <Badge tone="muted">alpha</Badge>
     </span>
 
-    {#if session.user}
-      <!-- Only routes that exist are linked. Current-page state is
-           aria-current="page", not a class — the stylesheet keys off the
-           attribute so the look and the announcement cannot drift apart, and
-           Mesa drops an attribute whose value is null rather than rendering
-           aria-current="false".
-
-           The leading `page.route` in each expression is load-bearing:
-           isActive() reads it internally, but Mesa decides what an expression
-           depends on from the expression's own text, so without the read
-           written here the attribute is set once at mount and the highlight
-           never moves. -->
-      <nav class="cluster" aria-label="Main">
-        <a class="navlink" href="/"
-           aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Overview</a>
-        <a class="navlink" href="/dashboards/"
-           aria-current={(page.route, isActive('/dashboards/')) ? 'page' : null}>Dashboards</a>
-        <a class="navlink" href="/projects/"
-           aria-current={(page.route, isActive('/projects/')) ? 'page' : null}>Projects</a>
-        <a class="navlink" href="/servers/"
-           aria-current={(page.route, isActive('/servers/')) ? 'page' : null}>Servers</a>
-        <a class="navlink" href="/deployments/"
-           aria-current={(page.route, isActive('/deployments/')) ? 'page' : null}>Deployments</a>
-        <a class="navlink" href="/jobs/"
-           aria-current={(page.route, isActive('/jobs/')) ? 'page' : null}>Jobs</a>
-        <a class="navlink" href="/networks/"
-           aria-current={(page.route, isActive('/networks/')) ? 'page' : null}>Networking</a>
-        <a class="navlink" href="/volumes/"
-           aria-current={(page.route, isActive('/volumes/')) ? 'page' : null}>Volumes</a>
-        <a class="navlink" href="/cleanup/"
-           aria-current={(page.route, isActive('/cleanup/')) ? 'page' : null}>Cleanup</a>
-        <a class="navlink" href="/recipes/"
-           aria-current={(page.route, isActive('/recipes/')) ? 'page' : null}>Recipes</a>
-        <a class="navlink" href="/alerts/"
-           aria-current={(page.route, isActive('/alerts/')) ? 'page' : null}>Alerts</a>
-        <a class="navlink" href="/channels/"
-           aria-current={(page.route, isActive('/channels/')) ? 'page' : null}>Channels</a>
-        <a class="navlink" href="/flags/"
-           aria-current={(page.route, isActive('/flags/')) ? 'page' : null}>Flags</a>
-        <a class="navlink" href="/secrets/"
-           aria-current={(page.route, isActive('/secrets/')) ? 'page' : null}>Secrets</a>
-        <a class="navlink" href="/api-keys/"
-           aria-current={(page.route, isActive('/api-keys/')) ? 'page' : null}>API keys</a>
-        <a class="navlink" href="/activity/"
-           aria-current={(page.route, isActive('/activity/')) ? 'page' : null}>Activity</a>
-        <a class="navlink" href="/portal/"
-           aria-current={(page.route, isActive('/portal/')) ? 'page' : null}>Portal</a>
-        <a class="navlink" href="/admin/"
-           aria-current={(page.route, isActive('/admin/')) ? 'page' : null}>Admin</a>
-        <!-- The hub tier is not a workspace role, so it is not in the switcher
-             and it is not offered to people who do not hold it. `isSystemAdmin`
-             rides on the session; the service answers 404 to anyone else
-             regardless, which is where the refusal actually is. -->
-        {#if session.user.isSystemAdmin}
-          <a class="navlink" href="/hub/"
-             aria-current={(page.route, isActive('/hub/')) ? 'page' : null}>Hub</a>
-        {/if}
-      </nav>
-    {/if}
 
     <span class="cluster">
       {#if session.user && session.workspaces.length}
@@ -248,13 +286,36 @@ siteName: Basecamp
           Search <kbd class="kbd">⌘K</kbd>
         </Button>
 
-        <span class="text-sm text-muted">{session.user.email}</span>
-        <!-- A kit component takes its handler as a PROP (`onclick`), not as
-             `on:click` — that directive belongs to elements. -->
-        <Button variant="ghost" onclick={out}>Sign out</Button>
+        <!-- Who you are and signing out are one control, not two.
+             `.cluster` wraps, so a right-hand cluster that does not fit lays a
+             second row. The package no longer draws that row outside the bar —
+             --topbar-height is a floor and the bar grows (`FJS-338`) — but a
+             bar that grows on a phone is still a bar with too much in it, and
+             fewer items is the app's half of the same answer. -->
+        <DropdownMenu placement="bottom-end">
+          {#snippet trigger()}
+            <!-- A kit component takes its handler as a PROP (`onclick`), not
+                 as `on:click` — that directive belongs to elements. -->
+            <Button variant="ghost" id="account-menu">Account</Button>
+          {/snippet}
+          <DropdownLabel>{session.user.email}</DropdownLabel>
+          <DropdownSeparator />
+          <DropdownItem onclick={out}>Sign out</DropdownItem>
+        </DropdownMenu>
       {/if}
     </span>
   </header>
+
+  <!-- The nav lives here rather than in the topbar. Nineteen `.navlink`s in a
+       56px row wrapped to two lines and spilled out of it at every width down
+       from 1920px — and `.navlink` is documented as the SIDEBAR's link
+       (css patterns/nav.css), which is the same answer the mock's shell gives.
+       Hidden below 767px by the package; the drawer below covers that. -->
+  {#if session.user}
+    <nav class="sidebar" aria-label="Main">
+      {@render navlists()}
+    </nav>
+  {/if}
 
   <main class="screen" id="screen" tabindex="-1">
     <div class="container stack">
@@ -284,6 +345,19 @@ siteName: Basecamp
     placeholder="Search commands, servers, workspaces…"
     onclose={() => commandPalette.hide()}
   />
+{/if}
+
+<!-- The sidebar below 767px, where the package hides the real one. Its
+     contents are the same snippet — a second copy of the list is how one of
+     them silently loses a screen. Only ever ONE of the two is in the
+     accessibility tree: the sidebar is `display: none` at this width, and a
+     closed <dialog> is not exposed at the other. -->
+{#if session.user}
+  <Drawer side="left" open={navOpen} title="Navigation" onclose={() => navOpen = false}>
+    <nav aria-label="Main">
+      {@render navlists()}
+    </nav>
+  </Drawer>
 {/if}
 
 <!-- One Toaster for the app; anything can call toasts.success(). -->

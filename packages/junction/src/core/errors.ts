@@ -139,11 +139,32 @@ function httpStatusOf(err: Error): number | null {
   return null
 }
 
+/**
+ * Is this something safe to hand a client as an error payload? A plain object
+ * or an array — never a class instance, whose shape nothing here has agreed to.
+ */
+function isPayload(v: unknown): boolean {
+  if (Array.isArray(v)) return true
+  if (v == null || typeof v !== 'object') return false
+  const proto = Object.getPrototypeOf(v)
+  return proto === Object.prototype || proto === null
+}
+
 /** Carry the original error's context onto the FrameworkError replacing it. */
 function adopt(fe: FrameworkError, original: unknown): FrameworkError {
   if (original instanceof Error) {
     if (fe.data == null && 'errors' in original) {
       fe.data = (original as Error & { errors?: unknown }).errors ?? null
+    }
+    // An error class that sets `data` is declaring a payload for the client —
+    // the same meaning FrameworkError's own `data` already has, which is why it
+    // is not a second field name. Litestone's `VersionConflictError` is the
+    // first: the two revisions behind a race, which the status cannot carry and
+    // a browser needs to offer *reload* against *overwrite*. Plain objects and
+    // arrays only, so an Error carrying an unrelated `data` handle does not
+    // serialize itself onto the wire.
+    if (fe.data == null && isPayload((original as Error & { data?: unknown }).data)) {
+      fe.data = (original as Error & { data?: unknown }).data
     }
     if (typeof (original as Error & { retryable?: unknown }).retryable === 'boolean') {
       fe.retryable = (original as Error & { retryable?: boolean }).retryable

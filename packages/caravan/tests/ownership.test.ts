@@ -78,6 +78,24 @@ describe('two instances, one cron', () => {
     await b.stop()
   })
 
+  // A job name is caller-supplied and this id is a primary key, so the name has
+  // to be escaped into it: interpolated raw, `report:daily` fired at minute 5
+  // and `report` fired at `daily:5` are one key and one of the two fires never
+  // runs. Not reachable through the cron path alone — a minute is always an
+  // integer — but the ids share one table with every dispatch a caller states.
+  it('escapes a job name into the fire id', async () => {
+    const path = tmpPath()
+    const a = makeQueue(path)
+    a.handle('report:daily', async () => {}, { cron: '* * * * *' })
+    await a.start()
+    await Bun.sleep(100)
+
+    const row = a.list({ limit: 10 }).find(j => j.name === 'report:daily')
+    expect(row?.id).toMatch(/^cron:report%3Adaily:\d+$/)
+
+    await a.stop()
+  })
+
   it('names the fire by job and minute, so the id itself is the dedup', async () => {
     const path = tmpPath()
     const a = makeQueue(path)

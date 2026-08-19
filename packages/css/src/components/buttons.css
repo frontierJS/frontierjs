@@ -8,7 +8,8 @@
 
 .btn {
   /* Box — was the `btn` Uno shortcut. Chip layout comes from chip.css. */
-  padding:       var(--space-xs) var(--space-xl);
+  /* Vertical padding is shared with .field — see --control-padding-block. */
+  padding:       var(--control-padding-block) var(--space-xl);
   border-radius: var(--btn-radius);
   font-size:     var(--text-md);
   line-height:   1.25rem;

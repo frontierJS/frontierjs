@@ -111,6 +111,24 @@ export interface ServiceContext {
    */
   transients: Record<string, unknown>
 
+  /**
+   * The query keys this service RESERVED — sent by the caller, never a filter.
+   *
+   * A service declares `reservedQuery: ['workspace_id']`; `callService` moves
+   * those keys here before any hook runs, so `ctx.query` is columns alone by
+   * the time `autoFilter` grades it and by the time a hook builds a where. `{}`
+   * on a service that declares none.
+   *
+   * The query-side mirror of `transients`, and it exists for the same reason:
+   * `$`-names are directives (Invariant 10) and everything else is a column, so
+   * a service had no way to say *this key is mine* — basecamp's documented
+   * `?workspace_id=` fallback was refused with a 400 naming it before the hook
+   * that reads it ever ran.
+   *
+   * FRESH {} every call and does NOT propagate, on the same terms as locals.
+   */
+  reserved: Record<string, unknown>
+
   // ── app reference ─────────────────────────────────────────────────────
   app: import('./app.ts').App
 

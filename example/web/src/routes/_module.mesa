@@ -6,14 +6,21 @@ siteName: Kitchen sink
   import { status } from '@frontierjs/sierra/junction'
   import { session, signIn, signOut } from '../session.js'
 
+  import AccountStatus  from '@frontierjs/ui/components/display/AccountStatus.mesa'
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import AlertProvider  from '@frontierjs/ui/components/feedback/AlertProvider.mesa'
   import Badge          from '@frontierjs/ui/components/display/Badge.mesa'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
+  import Dot            from '@frontierjs/ui/components/display/Dot.mesa'
+  import Kbd            from '@frontierjs/ui/components/display/Kbd.mesa'
   import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
-  import DropdownItem   from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
-  import DropdownMenu   from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownLabel     from '@frontierjs/ui/components/overlay/DropdownLabel.mesa'
+  import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+  import { alert }          from '@frontierjs/ui/stores/alertStore.js'
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore.js'
   import { toasts }         from '@frontierjs/ui/stores/toastStore.js'
 
@@ -36,6 +43,29 @@ siteName: Kitchen sink
   $: { if (session.user) notifications.load().catch(() => {}) }
 
   $: unread = notes().filter(isUnread).length
+
+  // The bell groups rather than sorts: an unread row and a read one are two
+  // different things to a reader, so the menu says so with a label over each
+  // and a rule between them, instead of relying on a tone the eye has to
+  // decode. Both lists come off the same store.
+  $: fresh  = notes().filter(isUnread)
+  $: seen   = notes().filter(n => !isUnread(n))
+
+  // The socket dropping is app-wide system feedback with nowhere to land — no
+  // screen owns it, and a toast for it would queue behind whatever the page is
+  // saying. `alert` is the one floating channel, mounted once below.
+  //
+  // Edge-triggered, and the initial value is `false`: the socket is not
+  // connected at mount either, and firing on that state rather than on the
+  // TRANSITION into it means every cold load announces a drop that never
+  // happened.
+  let wasConnected = false
+  $: {
+    if (wasConnected && !status.connected) {
+      alert.warning('The live connection dropped. Changes made elsewhere will not appear until it is back.')
+    }
+    wasConnected = status.connected
+  }
 
   async function openNote(note) {
     // Marking read is a patch of one field — `readAt` is the only thing the
@@ -135,7 +165,7 @@ siteName: Kitchen sink
       </Pill>
 
       <Button variant="ghost" id="palette-open" onclick={() => commandPalette.show()}>
-        Search <kbd class="kbd">⌘K</kbd>
+        Search <Kbd>⌘K</Kbd>
       </Button>
 
       {#if session.user}
@@ -146,18 +176,46 @@ siteName: Kitchen sink
             </Button>
           {/snippet}
 
-          {#each notes() as note}
-            <DropdownItem
-              tone={isUnread(note) ? 'info' : ''}
-              kbd={isUnread(note) ? 'new' : ''}
-              onclick={() => openNote(note)}
-            >{note.data?.title ?? note.type} — {note.data?.body ?? ''}</DropdownItem>
-          {/each}
+          {#if fresh.length}
+            <DropdownLabel>Unread</DropdownLabel>
+            {#each fresh as note}
+              <DropdownItem tone="info" onclick={() => openNote(note)}>
+                <!-- A pulsing dot is the unread marker rather than a word: the
+                     row already carries the notification's own words, and the
+                     dot names itself for a screen reader. -->
+                <Dot tone="info" pulse label="unread" />
+                {note.data?.title ?? note.type} — {note.data?.body ?? ''}
+              </DropdownItem>
+            {/each}
+          {/if}
+
+          {#if fresh.length && seen.length}<DropdownSeparator />{/if}
+
+          {#if seen.length}
+            <DropdownLabel>Earlier</DropdownLabel>
+            {#each seen as note}
+              <DropdownItem onclick={() => openNote(note)}>
+                {note.data?.title ?? note.type} — {note.data?.body ?? ''}
+              </DropdownItem>
+            {/each}
+          {/if}
+
           {#if !notes().length}
             <DropdownItem disabled>Nothing yet</DropdownItem>
           {/if}
         </DropdownMenu>
 
+        <!--
+          The badge is the identity; the status is the STANDING, and they are
+          two facts. `verifiedAt: null` is what puts a registered account at
+          level 1 — api/gate.ts says so — so an account that has not verified
+          reads `pending` here rather than looking identical to one that has and
+          differing only in a number.
+        -->
+        <AccountStatus
+          status={session.level >= 4 ? 'active' : 'pending'}
+          sub={'level ' + session.level}
+        />
         <Badge tone="info">{session.user.email} · level {session.level}</Badge>
         <!-- A kit component takes its handler as a PROP (`onclick`), not as
              `on:click` — that directive belongs to elements. -->
@@ -192,3 +250,10 @@ siteName: Kitchen sink
 
 <!-- One Toaster for the app; anything can call toasts.success(). -->
 <Toaster position="bottom-right" />
+
+<!--
+  One AlertProvider, and it is not a second Toaster. A toast reports what THIS
+  screen just did; a floating alert reports what happened TO the app — the
+  socket dropping is nobody's click, so it has no screen to land on.
+-->
+<AlertProvider />

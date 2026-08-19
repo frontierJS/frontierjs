@@ -16,7 +16,7 @@ import { resolve, dirname, basename, join } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
 import { findFilesPlugin } from './utils.js'
-import { extractFrontmatter } from './compiler.js'
+import { extractFrontmatter, splitFrontmatter } from './compiler.js'
 import { getConfig } from './config.js'
 
 
@@ -79,8 +79,7 @@ export function getModule(namespace) {
 export function loadModuleFile(filePath) {
   try {
     const raw  = readFileSync(filePath, 'utf8')
-    const meta = extractFrontmatter(raw)
-    const body = raw.replace(/^---[\s\S]*?---\s*/, '')
+    const { meta, body } = splitFrontmatter(raw)
     // Extract prose (strip script + js blocks)
     const prose = body
       .replace(/<script[\s\S]*?<\/script>/g, '')

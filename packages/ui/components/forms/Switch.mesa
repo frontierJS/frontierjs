@@ -22,7 +22,10 @@
   import { tone as toTone, cx, uid, nameToLabel, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
 
   export let checked     = false
-  export let label       = ''       // falls back to @label, then the column name
+  // `undefined` is "not stated" and `''` is "no label, deliberately". They have
+  // to be different values: a default of '' makes the two indistinguishable, so
+  // the documented suppression below cannot be expressed at all.
+  export let label       = undefined       // falls back to @label, then the column name
   export let description = ''
   export let name        = undefined
   export let value       = undefined
@@ -51,7 +54,7 @@
   const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
   const rule = resolveRule(form, name)
 
-  const resolvedLabel    = stated(label || undefined, rule?.title, name ? nameToLabel(name) : '') ?? ''
+  const resolvedLabel    = stated(label, rule?.title, name ? nameToLabel(name) : '') ?? ''
   const resolvedRequired = stated(required, rule?.required)
   const displayError     = resolveError(form, name, error, errors)
 

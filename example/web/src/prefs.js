@@ -17,6 +17,9 @@ const DEFAULTS = {
   perPage:       10,
   defaultStatus: '',
   noteTemplate:  '',
+  // Read by /orders/: on, the reference opens the quick-view drawer; off, it
+  // navigates to the order's own page.
+  quickView:     false,
 }
 
 /** Live preferences. Mutated in place so `$:` path watches see the change. */

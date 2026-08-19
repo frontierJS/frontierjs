@@ -1,5 +1,142 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-18 — a service can reserve a query key, and the reservation is lifted
+
+A search key had exactly two readings and a service needed a third. `$`-names
+are directives and `@frontierjs/toolbelt/directives` owns every name under them
+(Invariant 10); everything else is graded against the model's columns by
+`autoFilter`. So basecamp's documented `?workspace_id=` fallback was answered
+
+    400 Unknown filter key 'workspace_id' — did you mean 'workspaceId'?
+
+before the hook that reads it ever ran — and the app could not fix it from its
+own side, because both readings belong to the framework.
+
+`reservedQuery: ['workspace_id']` on the service is the third answer. It is the
+**query-side mirror of `@transient`**: declared where it is owned, then lifted —
+the keys move to `ctx.reserved` and `ctx.query` is columns alone.
+
+**The lift is in `callService`, before the pipeline**, not in a hook. A hook
+would be too late for half the readers: an app's own leading hook needs the
+clean query as much as the derived `autoFilter` behind it, and a custom method
+runs neither. One place, both transports, every method.
+
+**Two refusals, each put where it is decidable.** A `$`-name is refused at
+construction — that one needs no client, since the directive table owns those
+spellings and a reservation would put two owners on one name. A name that is
+also a COLUMN is refused on first use instead, because the client is not known
+when a service module is imported, so there is nothing to ask at construction;
+the check runs once per service and then never again. It refuses rather than
+resolving: a reservation shadowing a column stops that column filtering with
+nothing saying so, which is the silent 200 `autoFilter` exists to turn into a
+400.
+
+Asked of a REAL Litestone client. `$checkWhere` is what knows the columns, and a
+plain-object db has no opinion at all — against a fake the collision check
+no-ops and ships.
+
+`ctx.reserved` is fresh per call and does not propagate, on the same terms as
+`locals` and `transients`; `tests/context-contract.test.ts` runs all six fields
+rather than describing them. `describe()` reports the reservation for the same
+reason it reports `allowBulk` — a caller cannot tell a reserved key from a
+column by looking at the URL (`FJS-337`).
+
+## 2026-08-18 — `junction jobs`: what this app runs when nobody asked (`FJS-343`, `FJS-344`)
+
+1219 tests, 6 of them new, 0 fail. Typecheck clean.
+
+Every other snapshot here records a surface someone reaches. This one records
+the opposite, and it exists because that is the part of an app whose failure is
+silent by construction: a route that stops working is a 404 somebody sees, and a
+schedule that stops being registered is *nothing happening*, which looks exactly
+like nothing needing to happen (`FJS-327`, `FJS-328`).
+
+Read off a BUILT app, like `junction surface`, for the same reason — a job file
+registers itself by being autoloaded and a plugin registers timers of its own,
+so what is registered is not what is written down.
+
+**Two registries, kept apart on the page** (`FJS-D36`). `app.jobs` is durable —
+a row, a retry budget, a principal re-resolved when it runs. `app.scheduler` is
+a bare in-process timer with none of that, running in every replica rather than
+once across them. A reader deciding whether a deploy is safe needs to know which
+list a name is on. **No queue installed** renders differently from **a queue
+with no handlers**: one app does no background work, the other will dispatch
+into a queue with nothing to run it.
+
+`app.scheduler` could not be described at all before this. `every()` parsed its
+interval to milliseconds and `cron()` compiled its expression to a matcher, so
+the only record of when a timer fires was a closure and `list()` answered
+`job_1`, `job_2`. The expression is retained now and `describe()` reads it.
+
+Live state is deliberately absent — no next run, no queue depth, nothing paused.
+Those move between two boots of identical code, and a committed artefact that
+cannot hold still is worth nothing.
+
+**`tools/app-module.ts`** is new and not a refactor for its own sake: loading an
+app, refusing an ambiguous module, running the non-host startup phases and the
+`--check` byte compare are now needed by two tools, and two copies of *how do
+you load an app* is how one tool snapshots an app the other never sees.
+
+**A defect fell out of the extraction** (`FJS-344`): `quietly()` reassigned
+`process.stdout.write`, which does not reach `console.log` in Bun — console
+holds its own binding — so Caravan's autoload line landed as the **first line of
+the file** when a snapshot was written by redirecting stdout, above the heading.
+It affected `junction surface --stdout` and had done since it was written.
+
+The `snapshots` CI phase picked the new kind up with **no CI edit**: 17 → 19
+snapshots, discovered and rerun from the command in each file's own header.
+
+The durable table carries a **Timeout** column and names the handlers that have
+none, because an unbounded handler is the one that can stall a whole queue
+(`FJS-295`). It earned itself the next day: it printed `**none**` for a job that
+had just declared 30s, which is how two silent whitelists in Caravan were found.
+
+## 2026-08-18 — both occurrence keys come from one owner (`FJS-342`)
+
+1213 tests, 0 fail. Typecheck clean.
+
+Two latent collisions, both fixed by `@frontierjs/toolbelt/history`:
+
+**The idempotency cache key** joined four parts on `:` and two of them are
+outside this package's control — the header a caller writes, and a principal id
+that is whatever the auth provider issues. A principal of `user-1:a` with key
+`b` and a principal of `user-1` with key `a:b` produced one cache entry, and a
+shared entry is one caller being replayed another's answer. Unchanged for any
+principal and key without a `:` in them.
+
+**The outbox relay** dispatched under the bare row id, into a jobs table shared
+with every id a caller states on a dispatch of their own — so outbox row 7 and a
+caller's `7` were one primary key and whichever arrived second was silently
+treated as already done. It is `outbox:<id>` now, which IS a format change: rows
+written under the old key would redispatch under the new one, and that is
+once-only running twice. It costs nothing while no queue has rows in it.
+
+## 2026-08-18 — the error boundary carries a declared payload (`FJS-341`)
+
+1213 tests, 4 of them new, 0 fail. Typecheck clean.
+
+`adopt()` copied `errors` and `retryable` off an originating error and dropped
+everything else, so `VersionConflictError` reached a browser as a bare retryable
+409: something moved, and no way to say what. The two revisions are the half
+neither the status nor `retryable` can express, and they are exactly what a
+screen offering *reload* against *overwrite* needs.
+
+An error class that sets `data` is now declaring a payload for the client — the
+same meaning `FrameworkError.data` already has, which is why it is not a second
+field name. **Plain objects and arrays only**: an Error carrying a class
+instance on `data` is holding a handle to something (a client, a socket, a row),
+not a payload anyone agreed to publish, and serializing it is how an internal
+object reaches a browser because a field happened to be named `data`.
+
+`junction errors` grew a **Payload** column, for the same reason it records
+`retryable`: nothing above `toFrameworkError` reads anything but the result, so
+a payload that stops crossing is invisible. The version conflict's row is
+asserted whole.
+
+The end-to-end case is in `real-litestone-client.test.ts` — a real client, a
+real service, a real thrown conflict — because the question is whether the
+payload survives the boundary, not whether a constructed error has the fields.
+
 ## 2026-08-18 — an app-level default publisher (`FJS-334`)
 
 Junction had two ways to broadcast and both were per service: `channel:` on the

@@ -5,12 +5,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { chalk } from './color.js'
+import { stripFrontmatter } from './compiler.js'
 import { readFileSync } from 'fs'
 
 // Extract prose from a raw .md file — strip frontmatter, script, js block
 export function extractProse(raw) {
-  return raw
-    .replace(/^---[\s\S]*?---\s*/, '')          // strip frontmatter
+  return stripFrontmatter(raw)
     .replace(/<script[\s\S]*?<\/script>/g, '')   // strip script block
     .replace(/```js[\s\S]*?```/g, '')            // strip js block
     .replace(/```[\s\S]*?```/g, (m) => m)        // keep other code blocks

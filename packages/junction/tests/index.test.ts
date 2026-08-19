@@ -352,6 +352,7 @@ function makeCtx(overrides: Partial<CtxSeed> = {}): ServiceContext {
     route:     {},
     locals:    {},
     transients: {},
+    reserved:  {},
     app:       {} as import('../src/core/app.ts').App,
     result:    null,
     error:     null,

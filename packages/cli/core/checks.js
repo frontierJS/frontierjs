@@ -456,6 +456,13 @@ const CHECKS = {
   // So it names what it found and leaves the decision to a person; an allowance
   // under "structure" in scripts/ci-allowances.json is where that decision gets
   // written down once it is made.
+  //
+  // The rule reports the CEILING and the FLOOR, and only the ceiling needs that
+  // judgement. A file that is missing needs none: the four are named in the
+  // invariant, so an absent one is decidable from the listing. Reporting only
+  // what was NOT in `allowed` could catch a fifth file and could never catch a
+  // missing fourth, which left seven packages short a standard file with the
+  // check green over all of them.
   'package-root-md': ({ root }) => {
     const pkgs = []
     for (const name of safeRead(join(root, 'packages'))) {
@@ -464,7 +471,8 @@ const CHECKS = {
     }
     if (!pkgs.length) return { skipped: 'no packages/' }
 
-    const allowed = new Set(['README.md', 'CLAUDE.md', 'PROJECT_STATE.md', 'CHANGES.md'])
+    const STANDARD = ['README.md', 'CLAUDE.md', 'PROJECT_STATE.md', 'CHANGES.md']
+    const allowed  = new Set(STANDARD)
 
     // A `*.snapshot.md` is generated and gated, not documentation — nobody is
     // asked to hold it in their head, and it cannot move: CI reruns each
@@ -475,13 +483,28 @@ const CHECKS = {
 
     const findings = []
     for (const dir of pkgs) {
-      const extra = safeRead(dir).filter(n => n.endsWith('.md') && !allowed.has(n) && !generated(n))
+      const entries = safeRead(dir)
+
+      const extra = entries.filter(n => n.endsWith('.md') && !allowed.has(n) && !generated(n))
       if (extra.length) findings.push({
         file: dir,
         message: `${extra.length} markdown file(s) beyond the four at the package root — ${extra.join(', ')}. ` +
                  `README/CLAUDE/PROJECT_STATE/CHANGES is the standard, because the root is the index and ` +
                  `an index nobody can hold in their head is a directory listing. Does this one belong at ` +
                  `the root, or in docs/? Record the answer as an allowance either way.`,
+      })
+
+      // One finding per absent file, and the finding points AT that file rather
+      // than at the directory: an allowance is keyed by path, so a package
+      // excused for a fifth file at its root would otherwise be excused for
+      // every missing one too.
+      for (const name of STANDARD.filter(n => !entries.includes(n))) findings.push({
+        file: join(dir, name),
+        message: `${name} is missing from the package root. The four are what somebody picking this ` +
+                 `package up cold reads in order — what it is (README), how to work in it (CLAUDE), ` +
+                 `where it stands (PROJECT_STATE), what changed (CHANGES) — so an absent one is a ` +
+                 `question with no answer rather than a shorter index. A package deliberately without ` +
+                 `it is an allowance under "structure", same as a fifth file.`,
       })
     }
     return { findings }

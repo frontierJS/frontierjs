@@ -54,7 +54,7 @@ Use the left column. Never the right.
 | **Channel**                 | room, topic, subscription                   |
 | **Event**                   | message, notification                       |
 | **Gate**                    | permission, policy, ACL                     |
-| **Trust Hierarchy**         | roles, permissions, access levels           |
+| **Gate ladder**             | roles, permissions, access levels           |
 | **Plugin**                  | middleware, extension, addon                |
 | **Context**                 | request context, state, payload             |
 |   ↳ *plural by realm*       | each package documents its own by LIFETIME (`FJS-D03`); see its `CLAUDE.md` |
@@ -88,10 +88,10 @@ Clarifications settled by the code:
   (Ruled 2026-08-06.)
 
 - **Gate** is the ordinal per-operation level check (`@@gate`, resolved against
-  the Trust Hierarchy, enforced by default when declared). Row/field predicates
+  the gate ladder, enforced by default when declared). Row/field predicates
   (`@@allow`/`@@deny`, compiled into SQL) are a second, orthogonal mechanism —
   Litestone's docs call them **policies**. Don't use one word for both.
-- **Trust Hierarchy** is the 0–9 scale (`STRANGER`…`LOCKED`) implemented as
+- **The gate ladder** is the 0–9 scale (`STRANGER`…`LOCKED`) implemented as
   `LEVELS` in `packages/litestone/src/plugins/gate.js`. Named levels are the
   canonical way to write gates (`@@gate(read: READER, write: USER, …)`).
 - Model naming: **PascalCase, singular — always**; `@@external` models exempt.
@@ -162,7 +162,7 @@ Standing rules the framework is designed against.
    Plugins compose. (Known strain: whole domain facilities also attach via the
    plugin protocol — see §2 under-review.)
 6. **Access is declared, not programmed — and declaration enforces.** Gates in
-   the schema, resolved against the 0–9 Trust Hierarchy, enforced from the
+   the schema, resolved against the 0–9 gate ladder, enforced from the
    first request with no further wiring; a shipped default resolver, overridable.
    The converse binds too: a model with no gate is open, honestly. `asSystem()`
    is the audited bypass.

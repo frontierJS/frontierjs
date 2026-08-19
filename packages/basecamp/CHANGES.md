@@ -1,4 +1,85 @@
-# Changes — @frontierjs/basecamp
+# Changes — Basecamp
+
+## 2026-08-18 — `?workspace_id=` works, and the Hub's queue card renders
+
+Two fixes from the framework side, both measured here first.
+
+**The workspace fallback had never worked on a model service.**
+`resolveWorkspaceId` reads `X-Workspace-Id` first and `?workspace_id=` second,
+and the second was refused by junction's `autoFilter` — no model has a
+`workspace_id` column — before this app's hook could read it. Junction grew
+`reservedQuery` for it (`FJS-337`). All 20 workspace-scoped services declare it
+off one constant, `WORKSPACE_QUERY`, which sits beside `resolveWorkspaceId` in
+`api/src/core/hooks.ts` so the spelling that is READ and the spelling that is
+DECLARED cannot drift; the resolver reads `ctx.reserved` now.
+
+**The Hub's *Queue depths* card had been rendering nothing at all.** It carried
+`{#snippet row(entry)}` and indexed `entry[0]`/`entry[1]` by hand, because the
+natural `{#snippet row([queue, depth])}` threw `function is not iterable` from
+the compiled file, naming no snippet. That is fixed in mesa (`FJS-339`) and the
+card carries the natural spelling again.
+
+## 2026-08-18 — the server filter bar states its own labels
+
+Three controls in one `.cluster`, and one of them was 38px with a visible
+"Search (Optional)" label while the other two were unlabelled. Not a styling
+choice: only the `<Input>` needs a `name` — the submit handler reads
+`e.target.search.value` — and a kit control given a `name` built a visible label
+out of it, on top of the `visually-hidden` one this file had already supplied.
+Two labels for one control, and a row at two heights.
+
+`label=""` is the documented way to turn that off and it did not work on any of
+the thirteen controls that document it (`FJS-340`, fixed in `@frontierjs/ui`).
+All three controls state it now, rather than only the one that needed it: the
+rule is *this bar has no visible labels*, and stating it per control is what
+keeps the next one from arriving taller than its neighbours.
+
+Measured: no invented labels, every control still named (`Status`, `Role`,
+`Search` from the visually-hidden labels), and the search still submits. The
+remaining 4px is the submit button — `.btn` and a form control use different
+padding tokens and nothing in the design system can reconcile them (`FJS-341`).
+
+## 2026-08-18 — the nav is a sidebar
+
+Nineteen `.navlink`s lived in the topbar's `.cluster`. `.cluster` wraps and
+`.topbar` is a fixed 56px, so the links laid a second row and drew it outside
+the bar — measured at every width from 1920px down, with every one of the
+nineteen sitting above or below the bar rather than in it.
+
+`.navlink` is documented as **the sidebar's link** (`css patterns/nav.css`), the
+shell grid has had a `sidebar` area this app never used, and the mock's own
+shell is "sidebar, top bar, command palette, notice bar" — three answers to the
+same question, none of them a topbar row.
+
+So the destinations moved into `<nav class="sidebar">`, grouped the way the
+mock's Sidebar groups them: **Daily · Weekly · Manage · System**, with the
+design system's `.navlist-label` as the heading. One table drives it, rendered
+twice — the sidebar, and a `<Drawer>` below 767px where the package hides the
+real one and says its contents belong in a `<dialog class="drawer">`. Two copies
+of a nineteen-item list is how one of them silently loses a screen.
+
+`.sidebar-toggle` is the package's class for the control that opens it; opening
+is the app's job, which is the `navOpen` flag. Navigating closes it — otherwise
+the drawer covers the screen it just reached.
+
+**The topbar's own contents were spilling too**, once the nav was gone and the
+width was tight. The email and Sign out are one `<DropdownMenu>` now, which is
+what a bar of fixed height can hold. Below ~600px it still wraps: the design
+system ships no responsive-visibility vocabulary and explicitly refused one, so
+there is no way to say *drop this below md* — `FJS-338`.
+
+Verified in a real browser at eight viewports: no spill and no horizontal
+scroll from 1920px to 767px, exactly one `Main` landmark exposed at any width
+(the sidebar is `display:none` below md, a closed `<dialog>` is not exposed
+above it), the drawer opens from the toggle, closes on Escape with
+`aria-expanded` following, and closes on navigation.
+
+**Walking all nineteen links found a screen that had been rendering nothing.**
+The Hub's *Queue depths* card used `{#snippet row([name, q])}`, and a snippet
+parameter that is a destructuring pattern gets the row ACCESSOR bound to it raw
+— `TypeError: function is not iterable`, thrown from the compiled file, naming
+no snippet, taking the whole card with it. Rewritten to take the entry; the
+compiler defect is `FJS-339`.
 
 ## 2026-08-18 — the db suite stopped moving the process out from under itself
 

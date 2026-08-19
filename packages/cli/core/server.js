@@ -24,7 +24,7 @@ import { homedir } from 'os'
 const __dir = dirname(fileURLToPath(import.meta.url))
 import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { Command } from './runtime.js'
-import { extractSegments } from './compiler.js'
+import { extractSegments, stripFrontmatter } from './compiler.js'
 
 import { GLOBAL } from './ports.js'
 const PORT = parseInt(process.env.FLI_PORT) || GLOBAL.gui
@@ -253,7 +253,7 @@ async function handleMeta(req, res, name) {
               .sort()
               .map(f => {
                 const stepRaw  = readFileSync(resolve(folderPath, f), 'utf8')
-                const stepBody = stepRaw.replace(/^---[\s\S]*?---\s*/, '')
+                const stepBody = stripFrontmatter(stepRaw)
                 const skipMatch = stepRaw.match(/^skip:\s*(.+)$/m)
                 const optMatch  = stepRaw.match(/^optional:\s*(true|false)/m)
                 const descMatch = stepRaw.match(/^description:\s*(.+)$/m)

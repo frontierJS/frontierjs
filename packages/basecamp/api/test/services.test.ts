@@ -58,8 +58,7 @@ beforeAll(async () => {
     await sys.workspaceMember.create({ data: { workspaceId: ws.id, userId: u.id, role, acceptedAt: new Date().toISOString() } })
 
   // The workspace id rides on the SESSION here. resolveWorkspaceId() reads the
-  // header first, then ?workspace_id, then the principal — and only the third
-  // is available to a caller that is not going through HTTP.
+  // header first, then ?workspace_id, then the principal.
   const at = (u: any) => session({ userId: u.id, workspaceId: ws.id })
   owner = at(o); developer = at(d); viewer = at(v)
   // A real account with no membership anywhere in this workspace — VISITOR(1).
@@ -294,4 +293,63 @@ describe('the two transports answer the same app', () => {
     // A mismatch names both answers, so the message IS the report.
     expect(found.map((m: any) => m.message ?? JSON.stringify(m))).toEqual([])
   }, 180_000)
+})
+
+describe('?workspace_id= — the documented fallback, which had never worked', () => {
+  // `autoFilter` grades ctx.query against the model's columns and no model has
+  // a `workspace_id`, so the fallback was refused with *Unknown filter key
+  // 'workspace_id' — did you mean 'workspaceId'?* before resolveWorkspaceId
+  // ever ran, and the app could not fix it from its own side: $-names are
+  // directives and everything else is a column, so there was no third answer
+  // (`FJS-337`). Every workspace-scoped service now reserves the key, which
+  // moves it to ctx.reserved and leaves ctx.query as columns alone.
+
+  test('a principal carrying no workspace resolves one from the query', async () => {
+    const sys  = env.system as any
+    const uniq = Math.random().toString(36).slice(2, 8)
+    const acct = await sys.account.findFirst({ where: {} })
+    const u    = await sys.user.create({ data: { email: `q-${uniq}@x.co`, accountId: acct.id } })
+    await sys.workspaceMember.create({
+      data: { workspaceId: ws.id, userId: u.id, role: 'developer', acceptedAt: new Date().toISOString() },
+    })
+
+    // No workspaceId on the session — the third fallback cannot answer, so the
+    // query is the only thing that can.
+    const bare = session({ userId: u.id })
+
+    const rows = await env.as(bare).service('projects').find({ workspace_id: ws.id })
+    expect(Array.isArray(rows.data ?? rows)).toBe(true)
+  })
+
+  test('and the same call without it is refused rather than answered wrongly', async () => {
+    const sys  = env.system as any
+    const uniq = Math.random().toString(36).slice(2, 8)
+    const acct = await sys.account.findFirst({ where: {} })
+    const u    = await sys.user.create({ data: { email: `q2-${uniq}@x.co`, accountId: acct.id } })
+    const bare = session({ userId: u.id })
+
+    await expect(env.as(bare).service('projects').find())
+      .rejects.toThrow(/workspace_id required/)
+  })
+
+  test('a filter the service honours still filters beside it', async () => {
+    // The reservation takes ONE declared name out of the filter set and must
+    // not take the rest with it. `status` rather than `name` because this
+    // service builds its own where from `status` alone — a query key it does
+    // not read reaches no SQL, which is basecamp's shape and not this hole.
+    const all    = await env.as(owner).service('projects').find({ workspace_id: ws.id })
+    const active = await env.as(owner).service('projects').find({ workspace_id: ws.id, status: 'archived' })
+
+    const rows = (r: any) => r.data ?? r
+    expect(rows(all).length).toBeGreaterThan(0)
+    expect(rows(active).every((r: any) => r.status === 'archived')).toBe(true)
+    expect(rows(active).length).toBeLessThan(rows(all).length)
+  })
+
+  test('an unknown key beside it is still a 400 naming it', async () => {
+    // autoFilter must keep working on what is left — the reservation is a hole
+    // for one declared name, not an amnesty.
+    await expect(env.as(owner).service('projects').find({ workspace_id: ws.id, bogusColumn: 7 }))
+      .rejects.toThrow(/bogusColumn/)
+  })
 })

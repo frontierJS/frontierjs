@@ -404,8 +404,9 @@ ESM parser. Reverting the matcher fails 5 of them.
 
 **`FJS-036`** scaffolds unverified end to end · **`FJS-038`** the
 hand-copied auth schema in `commands/auth/install.md` ·
-**`FJS-065`** `admin:generate` emits `.svelte` · **`FJS-066`** the low pile —
-`sourceURL` on Bun, the frontmatter regex, `mod.prose`, `utils:qrcode`.
+**`FJS-065`** `admin:generate` emits `.svelte` · **`FJS-066`** what is left of
+the low pile — `sourceURL` on Bun, and nothing else: the frontmatter regex has
+one owner now, `mod.prose` was never stale, and `utils:qrcode` is deleted.
 
 `fli dev` port-broker orchestration and the TUI are unbuilt features, not
 issues — they are under *On the horizon* below.

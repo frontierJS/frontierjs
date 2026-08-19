@@ -18,8 +18,13 @@ title: Order
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Breadcrumbs    from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
-  import DropdownItem   from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
-  import DropdownMenu   from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import CopyButton     from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Divider        from '@frontierjs/ui/components/display/Divider.mesa'
+  import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownLabel     from '@frontierjs/ui/components/overlay/DropdownLabel.mesa'
+  import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+  import Mono           from '@frontierjs/ui/components/display/Mono.mesa'
   import Modal          from '@frontierjs/ui/components/overlay/Modal.mesa'
   import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
   import SectionHeader  from '@frontierjs/ui/components/display/SectionHeader.mesa'
@@ -85,6 +90,12 @@ title: Order
     }
   }
 
+  // The two halves the Actions menu groups by. Derived from the same
+  // `isTerminal` the confirmation uses, so a move cannot be drawn as reversible
+  // in one place and asked about in the other.
+  $: forward  = order ? orders.transitions(order, session.level).filter(m => !isTerminal(m)) : []
+  $: terminal = order ? orders.transitions(order, session.level).filter(isTerminal) : []
+
   // The menu offers a move whether or not this session may take it, and says
   // why not — the same permissive contract as everywhere else. The server
   // regrades on arrival regardless.
@@ -114,14 +125,36 @@ title: Order
           <Button variant="outlined" id="order-actions">Actions</Button>
         {/snippet}
 
-        {#each orders.transitions(order, session.level) as move}
-          <DropdownItem
-            tone={isTerminal(move) ? 'danger' : ''}
-            disabled={!move.allowed || busy !== null}
-            kbd={move.allowed ? '' : 'level ' + move.gate}
-            onclick={() => ask(move)}
-          >{move.name}</DropdownItem>
-        {/each}
+        <!--
+          Two groups, and the split is the same one `isTerminal` already makes:
+          a move that goes further along the lifecycle, and a move nothing comes
+          back from. The label and the rule say that before the click does —
+          a tone alone leaves it to be inferred from a colour.
+        -->
+        {#if forward.length}
+          <DropdownLabel>Move it on</DropdownLabel>
+          {#each forward as move}
+            <DropdownItem
+              disabled={!move.allowed || busy !== null}
+              kbd={move.allowed ? '' : 'level ' + move.gate}
+              onclick={() => ask(move)}
+            >{move.name}</DropdownItem>
+          {/each}
+        {/if}
+
+        {#if forward.length && terminal.length}<DropdownSeparator />{/if}
+
+        {#if terminal.length}
+          <DropdownLabel>No way back</DropdownLabel>
+          {#each terminal as move}
+            <DropdownItem
+              tone="danger"
+              disabled={!move.allowed || busy !== null}
+              kbd={move.allowed ? '' : 'level ' + move.gate}
+              onclick={() => ask(move)}
+            >{move.name}</DropdownItem>
+          {/each}
+        {/if}
       </DropdownMenu>
     {/snippet}
   </SectionHeader>
@@ -148,11 +181,23 @@ title: Order
 
     <TabPanel id="summary">
       <dl class="facts">
-        <dt>Reference</dt><dd><code>{order.reference}</code></dd>
+        <dt>Reference</dt>
+        <dd class="cluster">
+          <Mono>{order.reference}</Mono>
+          <!-- A reference is what a customer quotes on the phone. -->
+          <CopyButton text={order.reference} />
+        </dd>
         <dt>Status</dt><dd><Pill>{order.status}</Pill></dd>
         <dt>Note</dt><dd>{order.note === null ? '—' : order.note}</dd>
         <dt>Placed</dt><dd>{order.createdAt}</dd>
       </dl>
+
+      <Divider spacing="lg" />
+
+      <p class="text-sm text-muted">
+        Every value above came from one <Mono>GET /api/orders/{order.id}</Mono>.
+        Nothing on this page asks the schema a second time.
+      </p>
     </TabPanel>
 
     <TabPanel id="moves">
@@ -186,6 +231,9 @@ title: Order
     </TabPanel>
 
     <TabPanel id="raw">
+      <div class="cluster">
+        <CopyButton text={JSON.stringify(order, null, 2)} label="Copy the record" variant="outlined" />
+      </div>
       <pre class="code-block" id="raw-record">{JSON.stringify(order, null, 2)}</pre>
     </TabPanel>
   </Tabs>
@@ -212,8 +260,8 @@ title: Order
 
   {#if confirm}
     <p>
-      This moves <code>{order.reference}</code> from <code>{confirm.from}</code>
-      to <code>{confirm.to}</code>, and <code>@@transitions</code> declares no
+      This moves <Mono>{order.reference}</Mono> from <Mono>{confirm.from}</Mono>
+      to <Mono>{confirm.to}</Mono>, and <Mono>@@transitions</Mono> declares no
       way back.
     </p>
   {/if}

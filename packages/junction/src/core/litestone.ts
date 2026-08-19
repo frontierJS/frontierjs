@@ -1484,6 +1484,76 @@ export function autoFilter(accessorOpt: string | undefined) {
   }
 }
 
+// ─── Reserved query keys ────────────────────────────────────────────────────
+//
+// The third answer a service had no way to give. `$`-names are directives
+// (Invariant 10) and everything else is graded against the model's columns, so
+// a documented `?workspace_id=` fallback was refused by `autoFilter` with a 400
+// naming it — before the app hook that reads it ever ran, and with no way for
+// the app to fix it from its own side.
+//
+// A service declares `reservedQuery: ['workspace_id']` and the keys move to
+// `ctx.reserved` in `callService`, BEFORE the pipeline: every hook then sees a
+// query that is columns alone, whether it is one of ours or the app's, and a
+// custom method is covered on the same terms as `find`. That is the query-side
+// mirror of `liftTransient`, which does the same job for a payload key that is
+// declared @transient and has no column.
+//
+// The difference is where the check can happen. A transient is declared IN THE
+// SEED, so litestone knows it; a reservation is declared on the service, and
+// the client is not known when a service module is imported. So a name that is
+// also a column is caught on first use, once per service, and refused rather
+// than resolved: a reservation that shadows a column silently stops that column
+// filtering, which is the failure autoFilter exists to make loud.
+
+const _reservedChecked = new Set<string>()
+
+/** Test seam — a service rebuilt in one process must be re-checked. */
+export function resetReservedQueryChecks(): void {
+  _reservedChecked.clear()
+}
+
+export function liftReservedQuery(
+  ctx: ServiceContext, service: string, keys: readonly string[] | undefined,
+): void {
+  if (!keys?.length) return
+
+  const query = ctx.query as Record<string, unknown> | undefined
+  const into  = (ctx.reserved ??= {})
+
+  for (const k of keys) {
+    if (!query || !(k in query)) continue
+    into[k] = query[k]
+    delete query[k]
+  }
+
+  if (_reservedChecked.has(service)) return
+  _reservedChecked.add(service)
+
+  // Reading an unknown property off a Litestone client THROWS, so the probe is
+  // itself a throwing expression — see autoFilter.
+  const client = ctx.locals.db as { $checkWhere?: (a: string, w: unknown) => WhereKeyProblem[] } | undefined
+  let check: ((a: string, w: unknown) => WhereKeyProblem[]) | undefined
+  try { check = client?.$checkWhere } catch { return }
+  if (typeof check !== 'function') return
+
+  const accessor = resolveAccessor(client, service)
+  const probe    = Object.fromEntries(keys.map(k => [k, null]))
+  let problems: WhereKeyProblem[] = []
+  try { problems = check.call(client, accessor, probe) ?? [] } catch { return }
+
+  // A key the model DID recognise is the collision: it came back with no
+  // problem, so it is a real column and the reservation has taken it away.
+  const bad = keys.filter(k => !problems.some(pr => pr.key === k))
+  if (!bad.length) return
+
+  throw new Error(
+    `Service '${service}' reserves ${bad.map(k => `'${k}'`).join(', ')}, which ` +
+    `${bad.length > 1 ? 'are columns' : 'is a column'} on ${accessor}. A reserved key is not a ` +
+    `filter, so the reservation would stop that column filtering with nothing saying so. ` +
+    `Rename the query key, or drop it from reservedQuery and let it filter.`)
+}
+
 // ─── Sort keys derived from the model ───────────────────────────────────────
 //
 // autoFilter's sibling, and the failure it closes is the quieter of the two.

@@ -28,7 +28,7 @@
 // so the scope is the join, the same one `volumes` and `servers.feed` make.
 
 import { createService, NotFound, BadRequest, publishToChannels } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { dbOf, wsOf, actorOf }  from '../../core/resource.ts'
 import {
   RECLAIM_TARGETS, RECLAIM_TARGET_NAMES, RECLAIM_TARGET_BY_NAME, estimateTarget,
@@ -112,6 +112,7 @@ export function createCleanupService(app: BasecampApp) {
   return createService({
     name:  'cleanup',
     model: 'CleanupRun',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // The whole surface, declared. A cleanup run is written by `run` and
     // updated by the engine; `create` and `patch` from the wire would let a

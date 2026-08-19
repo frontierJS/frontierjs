@@ -78,13 +78,13 @@ export async function autoloadJobs(
       )
     }
 
-    caravan.handle(def.name, def.handler, {
-      queue:       def.queue,
-      maxAttempts: def.maxAttempts,
-      retryDelay:  def.retryDelay,
-      cron:        def.cron,
-      timeZone:    def.timeZone,
-    })
+    // The DEFINITION, not its keys re-listed. `handle()` already reads every
+    // field off a definition, and restating them here made this the third
+    // whitelist a job file's declaration had to pass — so a `timeout` written in
+    // a job file was accepted by `defineJob`, dropped here, and reported as
+    // having no bound. A key added to `JobDefinition` now reaches the registry
+    // without anyone remembering this line exists.
+    caravan.handle(def)
 
     loaded.push(def.name)
   }

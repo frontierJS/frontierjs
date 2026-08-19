@@ -78,18 +78,24 @@ src/
   one action, and it presents as a wrong sort DIRECTION rather than as a stale
   read.
 
-- **A hand-rolled edit draft must pin its own `@version`; the resource's
-  remembered one is live.** `createResource` records a version off the STORE,
-  deliberately — a WS push reaches the store as an upsert and never passes
-  through a call result, and without it the row a second tab patched left a
-  pre-patch number here and the next patch 409'd on something nobody read. The
-  cost is the other side of it: a screen holding a DRAFT does not move with the
-  push, but its version does, so the save carries a number nobody on that screen
-  read and wins the race optimistic locking exists to lose. Measured in
-  basecamp — the other person's write was erased with the guard in place and no
-  error anywhere. Put the version in the draft; a stated one beats the
-  remembered one, and that is what `<Form record={row}>` already does by editing
-  the row whole.
+- **The `@version` a patch carries is the one this screen READ, and a push does
+  not move it.** Recorded off every call result and off a `load()` that was not
+  superseded — never off the store. Recording off the store was the right answer
+  to the wrong question: a WS push reaches it as an upsert and never passes
+  through a call result, but it moves the number while moving nothing the person
+  is looking at, so a save from a screen holding a DRAFT carried a revision
+  nobody there had read and won the race optimistic locking exists to lose.
+  Measured in basecamp — the other person's write erased, the guard in place, no
+  error anywhere (`FJS-341`). `load()` carries its own stamp because a store
+  notification has no provenance: a `set()` from a winning load and an `upsert()`
+  from a push arrive as the same event, and junction's stamp (`FJS-082`) governs
+  the store, not this. The cost is a 409 where a silent success used to be, and
+  it is the correct answer; a caller who really has read the newer revision
+  states it, which `<Form record={row}>` already does by editing the row whole.
+  **`resource.conflict(err)` is what makes that 409 something a screen can act
+  on** — `{ model, field, expected, actual }`, the numbers `fieldErrors()`
+  deliberately replaces with a sentence, for a *reload* against *overwrite*
+  prompt.
 
 - **The route table is committed, because a naming convention leaves no other
   trace.** `sierra routes --config config/sierra.config.js` writes

@@ -39,7 +39,7 @@ const rel = (p: string) => relative(process.cwd(), p) || basename(p)
 
 // ─── running a value through the boundary ─────────────────────────────────────
 
-interface Outcome { cls: string; status: number; retryable: string }
+interface Outcome { cls: string; status: number; retryable: string; payload: string }
 
 function outcomeOf(value: unknown): Outcome {
   const out = toFrameworkError(value)
@@ -47,7 +47,24 @@ function outcomeOf(value: unknown): Outcome {
     cls:       out.constructor.name,
     status:    out.code,
     retryable: typeof out.retryable === 'boolean' ? String(out.retryable) : '—',
+    // What survived onto `data` — the keys, not the values, since a probe's
+    // values are arbitrary and the question is whether the payload crossed at
+    // all. `VersionConflictError` is the first class to depend on this: the two
+    // revisions are the half neither the status nor `retryable` can carry, and
+    // if adopt() stops copying them a browser can no longer tell a person what
+    // moved, with nothing here failing.
+    payload:   payloadOf(out.data),
   }
+}
+
+function payloadOf(data: unknown): string {
+  if (data == null) return '—'
+  if (Array.isArray(data)) return `list(${data.length})`
+  if (typeof data === 'object') {
+    const keys = Object.keys(data as object)
+    return keys.length ? `\`${keys.join('`, `')}\`` : '{}'
+  }
+  return typeof data
 }
 
 const named = (name: string, message = 'probe') =>
@@ -154,6 +171,11 @@ export async function renderErrorsSnapshot(): Promise<string> {
   out.push('a `status` stops being a 500 and nothing fails, and one that never had a status')
   out.push('is a 500 while its message says otherwise.')
   out.push('')
+  out.push('**Payload** is what reached `data` — the keys, since that is the part a client')
+  out.push('can depend on. A class that sets `data` is declaring one for the browser, which')
+  out.push('is how the two revisions behind a version conflict get there; the status can')
+  out.push('carry neither of them.')
+  out.push('')
   out.push('`retryable` is on the wire because a status cannot carry it. A 409 that is')
   out.push('retryable means *the row moved, re-read and re-apply*; a 409 that is not means')
   out.push('*this is not a legal move*. A client that cannot tell them apart has to phrase')
@@ -192,11 +214,11 @@ export async function renderErrorsSnapshot(): Promise<string> {
   out.push('are not part of this file; **most-recently-registered wins**, so an app can')
   out.push('override any row below.')
   out.push('')
-  out.push('| Thrown | Class | Status | Retryable |')
-  out.push('| --- | --- | --- | --- |')
+  out.push('| Thrown | Class | Status | Retryable | Payload |')
+  out.push('| --- | --- | --- | --- | --- |')
   for (const probe of PROBES) {
     const o = outcomeOf(probe.make())
-    out.push(`| ${probe.label} | \`${o.cls}\` | ${o.status} | ${o.retryable} |`)
+    out.push(`| ${probe.label} | \`${o.cls}\` | ${o.status} | ${o.retryable} | ${o.payload} |`)
   }
   out.push('')
 
@@ -228,11 +250,11 @@ export async function renderErrorsSnapshot(): Promise<string> {
     out.push('Litestone is not resolvable from here, so this section is empty rather than')
     out.push('assumed. That is itself worth seeing in a diff.')
   } else {
-    out.push('| Litestone class | Declares | Becomes | Status | Retryable |')
-    out.push('| --- | --- | --- | --- | --- |')
+    out.push('| Litestone class | Declares | Becomes | Status | Retryable | Payload |')
+    out.push('| --- | --- | --- | --- | --- | --- |')
     for (const r of rows) {
       const o = r.outcome!
-      out.push(`| \`${r.name}\` | ${r.declared} | \`${o.cls}\` | ${o.status} | ${o.retryable} |`)
+      out.push(`| \`${r.name}\` | ${r.declared} | \`${o.cls}\` | ${o.status} | ${o.retryable} | ${o.payload} |`)
     }
   }
   out.push('')

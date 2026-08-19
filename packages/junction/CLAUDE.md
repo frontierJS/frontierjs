@@ -447,6 +447,7 @@ mounted**, not by what you asked for.
 | The URL's search | `ctx.query` — **raw, `$` keys present** | `ctx.query` (filters) + `ctx.directives` (shape) |
 | Scratch | — | `ctx.locals`, fresh every call |
 | Wire-only payload keys | — | `ctx.transients` — what `@transient` declared, lifted off `ctx.data` |
+| Wire-only query keys | — | `ctx.reserved` — what `reservedQuery` declared, lifted off `ctx.query` |
 | Responding | `ctx.json` / `text` / `html` / `file` / `sse` / `paginate` | return a value; the envelope is built for you |
 | Reaching the other | — | `ctx.$raw` — the transport ctx, or `null` |
 
@@ -471,11 +472,18 @@ and handed on.
 - **`transients` exists on one side only, for the opposite reason.** It is filled
   by a derived hook off the model's schema, and a raw route has no model and no
   hooks. A raw route's body is whatever arrived.
+- **`reserved` is the query-side mirror of it**, and it exists because there were
+  only two readings of a search key and a service needed a third: `$`-names are
+  directives and everything else is graded against the model's columns, so a
+  documented `?workspace_id=` fallback was refused with a 400 naming it, before
+  the hook that reads it could run — and the app could not fix it from its own
+  side either (`FJS-337`). A raw route has no service and therefore no
+  declaration to read.
 
-### The five fields, and their rules
+### The six fields, and their rules
 
 The substance of a `ServiceContext` is not its field list, it is that each of
-these behaves differently. `tests/context-contract.test.ts` asserts all five by
+these behaves differently. `tests/context-contract.test.ts` asserts all six by
 running them, because none of it is expressible as a type — and one of them was
 documented here for months while being false.
 
@@ -486,6 +494,7 @@ documented here for months while being false.
 | `route` | Path captures. Router-only, `{}` on an internal call |
 | `locals` | Per-call scratch. **Fresh `{}` every call, and it does NOT propagate** — a sub-service physically cannot reach its caller by writing to it. It CAN be handed down deliberately (`{ locals: … }`), which is the whole difference between passing and inheriting |
 | `transients` | The `@transient` keys of this call's payload — accepted on the wire, stored nowhere. `autoValidate` validates them with the model's own rules and then MOVES them here, so the write never carries one. Fresh `{}` every call, does not propagate, and there is no seed option: this is input the caller sent, not scratch a hook keeps. A model declaring none leaves it `{}` |
+| `reserved` | The query keys the SERVICE declared as its own — `reservedQuery: ['workspace_id']`. Same freshness, same non-propagation, same reason as `transients`. Lifted in **`callService`, before the pipeline** rather than in a hook, so `ctx.query` is columns alone for the app's own leading hook as much as for the derived `autoFilter` behind it, and a custom method — which runs neither — is covered on the same terms as `find`. A `$`-name is refused at construction (the directive table owns those); a name that is also a column is refused on first use, because the client is not known when a service module is imported |
 
 Propagation rides the `AsyncLocalStorage` store the transport already wraps a
 request in, so nothing is threaded and no caller is rebuilt. A call whose

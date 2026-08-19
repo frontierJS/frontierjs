@@ -459,9 +459,15 @@ try {
   `))
 
   // 10 ─ delete it again as admin, then sign out and confirm the affordance drops
+  //
+  // Two clicks, because Delete asks first. The trigger opens a
+  // ConfirmationPopover portaled to <body> — so the confirm button is NOT in
+  // the row, and a `row.querySelector` for it finds nothing.
   t('afterDelete.gone', await evaluate(`
     const row = byText('tbody tr', 'ORD-CDP-1');
     row.querySelector('button.danger').click();
+    await waitFor(() => document.querySelector('.popover button.danger'));
+    document.querySelector('.popover button.danger').click();
     await waitFor(() => !byText('tbody tr', 'ORD-CDP-1'));
     return true;
   `))

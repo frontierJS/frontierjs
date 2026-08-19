@@ -26,7 +26,7 @@ import { wrapResult, isServiceResult, resultData } from './envelope.ts'
 import { createSchema } from './schema.ts'
 import { isPublishHook } from '../transport/channels.ts'
 import {
-  createLitestoneBase, autoValidate, gateAuth, autoFilter, autoSort,
+  createLitestoneBase, autoValidate, gateAuth, autoFilter, autoSort, liftReservedQuery,
   markDerived, isDerivedHook,
   jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload,
 } from './litestone.ts'
@@ -181,6 +181,12 @@ export interface ServiceDescription {
   allowBulk:  boolean
   /** Row cap on one filtered bulk patch/remove. */
   bulkMax:    number
+  /**
+   * Query keys this service owns rather than filters on. Reported for the same
+   * reason `allowBulk` is: a caller cannot tell a reserved key from a column by
+   * looking at the URL, and `/manifest` is where that kind of question is asked.
+   */
+  reservedQuery: string[]
   softDelete: string | null
   cache:      boolean
   idField:    string
@@ -234,6 +240,13 @@ export interface Service {
    * `allowBulk` is: `/metrics` and `describe()` report it.
    */
   bulkMax?: number
+
+  /**
+   * Query keys this service owns rather than filters on — see the declaration.
+   * Carried onto the built service because `callService` reads it off the
+   * service, which is the only thing it holds when the context is already made.
+   */
+  reservedQuery?: readonly string[]
 
   /**
    * The DECLARATION, as written — `['find','get']` or `'readOnly'`.
@@ -532,6 +545,11 @@ async function _callService(
       id:          ctx.id,
     } satisfies CallStartEvent)
   }
+
+  // Before the pipeline, not inside it: a reserved key must be off ctx.query by
+  // the time ANY hook reads it — the app's own leading hook as much as the
+  // derived autoFilter behind it — and a custom method runs neither.
+  liftReservedQuery(ctx, service.name, service.reservedQuery)
 
   // One owner, memoised on the app hooks it was HANDED — so a call always runs
   // the hooks its caller passed, which the old compiled-cache rung could not
@@ -935,6 +953,7 @@ export const SERVICE_OPTION_KEYS: ReadonlySet<string> = new Set([
   'channel',
   'methods',
   'transactional',
+  'reservedQuery',
 ])
 
 /** Keys present on a *built* Service — CRUD, bypass twins, and internals. */
@@ -1564,6 +1583,34 @@ export interface ServiceDefinition {
   bulkMax?:   number
 
   /**
+   * Query keys this service owns, which are NOT filters.
+   *
+   *   createService({ model: 'servers', reservedQuery: ['workspace_id'] })
+   *   GET /servers?workspace_id=ws_7&status=live
+   *     → ctx.reserved = { workspace_id: 'ws_7' }
+   *     → ctx.query    = { status: 'live' }
+   *
+   * `$`-names are directives (Invariant 10) and everything else is graded
+   * against the model's columns, so a service had no third answer: a documented
+   * `?workspace_id=` fallback was refused by `autoFilter` with a 400 naming it,
+   * before the hook that reads it ever ran, and the app could not fix it from
+   * its own side either.
+   *
+   * The keys are moved off `ctx.query` in `callService`, before the pipeline —
+   * so every hook, derived or the app's own, sees a query that is columns
+   * alone, and every method sees the reservation in one place.
+   *
+   * A `$`-name is refused here, at construction, because that one is decidable
+   * without a client: `$` is transport syntax and the directive table owns it.
+   * A name that is also a COLUMN is refused on first use instead — the client
+   * is not known when a service module is imported, so there is nothing to ask
+   * at construction. It is refused rather than resolved because the two
+   * readings cannot both be right, and picking one silently is how a filter
+   * stops filtering.
+   */
+  reservedQuery?: readonly string[]
+
+  /**
    * Narrow what this service answers. Absent = everything.
    *
    *   methods: ['find', 'get']                     an allow-list
@@ -1748,6 +1795,22 @@ export function createService(def: ServiceDefinition): Service {
   })
   const baseHooks = (base as unknown as { hooks?: HookMap }).hooks
 
+  // Reserved query keys, normalised once. A `$`-name is the one collision
+  // decidable with no client: `$` is transport syntax and the directive table
+  // owns every name under it (Invariant 10), so reserving one would put two
+  // owners on a single spelling. The COLUMN collision is checked on first use
+  // instead — there is no client here to ask.
+  const reservedQuery: readonly string[] = Object.freeze([...new Set(
+    ((def.reservedQuery ?? (base as { reservedQuery?: readonly string[] }).reservedQuery ?? []) as readonly string[])
+      .map(k => {
+        if (typeof k !== 'string' || !k.trim())
+          throw new Error(`createService(${def.name ?? '?'}): reservedQuery takes non-empty strings`)
+        if (k.startsWith('$')) throw new Error(
+          `createService(${def.name ?? '?'}): cannot reserve '${k}' — a $-name is a directive, ` +
+          `and @frontierjs/toolbelt/directives is its one owner. Reserve a name without the $.`)
+        return k
+      }))])
+
   // `def.name` is optional in the type because the autoloader assigns it after
   // construction ('leads.service.ts' → 'leads'). Everything below that needs a
   // string reads this. A hand-registered service without a name is the one case
@@ -1875,6 +1938,7 @@ export function createService(def: ServiceDefinition): Service {
     // onto the built service, so anything reading it back saw undefined.
     allowBulk: def.allowBulk ?? (base as { allowBulk?: boolean }).allowBulk ?? false,
     bulkMax:   def.bulkMax   ?? (base as { bulkMax?: number }).bulkMax   ?? 1000,
+    ...(reservedQuery.length ? { reservedQuery } : {}),
 
     find:    def.find    ?? base.find,
     get:     def.get     ?? base.get,
@@ -1919,6 +1983,7 @@ export function createService(def: ServiceDefinition): Service {
         methods:    allowedMethodNames(service),
         allowBulk:  !!service.allowBulk,
         bulkMax:    service.bulkMax ?? 1000,
+        reservedQuery: [...(service.reservedQuery ?? [])],
         softDelete: (meta.softDelete as string | null) ?? null,
         cache:      !!meta.cache,
         idField:    (meta.idField as string) ?? 'id',

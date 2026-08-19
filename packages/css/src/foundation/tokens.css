@@ -78,6 +78,28 @@
   --rule:           #e7e3d8;
   --rule-strong:    #d4cfc0;
 
+  /*
+   * ── Control height ────────────────────────────────────────
+   *
+   * The vertical padding a .btn and a .field BOTH read, which is what makes
+   * an input and the button beside it the same height. They had two
+   * different rungs — a button at --space-xs and a control at --space-sm,
+   * everything else about them identical — so a filter bar came out with its
+   * controls at 38px and its submit at 34px, and `.cluster`/`.bar`/`.toolbar`
+   * all centre, which put the button 2px low on the row it belongs to.
+   *
+   * An app could not fix it: a button's size is expressed as a FONT SIZE, so
+   * the only knob that made a button taller made its text bigger too.
+   *
+   * It resolves to the taller of the two. 38px is no prize against the 44px
+   * touch-target guidance, but it is the better of the pair, and the element
+   * people tap and type into should not be the one that shrinks.
+   *
+   * The horizontal padding stays per-component — a button is wider than its
+   * text on purpose and an input is not.
+   */
+  --control-padding-block: var(--space-sm);
+
   /* ── Component radii ──────────────────────────────────────── */
   --btn-radius:   6px;
   --card-radius:  8px;

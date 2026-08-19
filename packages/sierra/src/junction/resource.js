@@ -139,7 +139,7 @@ import {
 } from './schema-registry.js'
 import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
-  buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE,
+  buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
   toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, matchesQuery,
   registerControl, unregisterControl, registeredControls,
@@ -151,7 +151,7 @@ import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jso
 // Re-exported so `sierra/junction` stays the one import for resource work.
 export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
-  buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE,
+  buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
   toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, matchesQuery,
   registerControl, unregisterControl, registeredControls,
@@ -489,21 +489,24 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   })
   const { store, stale } = junctionResource
 
-  // ── @version — the value the server compares against ────────────────────────
+  // ── @version — the revision this screen actually read ───────────────────────
   // Litestone refuses a patch on a `@version` model unless it carries the
   // version that was read, so the client has to hand back the one it was given.
   // Kept per record rather than read off `store` because a form usually loads a
   // single record with get(), which does not populate the list store at all.
   //
-  // Every response is a fresh read, so recording on the way out keeps this
-  // current through create, get, patch and any custom method.
+  // Recorded from READS this resource performed: every call result, and a load
+  // that was not superseded. Never from the store, and that is the whole of the
+  // rule. A WS push reaches the store as an upsert and moves the number while
+  // moving nothing the person is looking at, so a patch from a screen holding a
+  // draft carried a revision nobody there had read and won the race the column
+  // exists to lose — the other writer's change erased, with the guard in place
+  // and no error anywhere.
   //
-  // List data is recorded off the STORE instead, below — a load whose result the
-  // store refused as stale must not leave its versions behind either, and only
-  // the store knows which load won. It also covers a WS push, which reaches the
-  // store as an upsert and never passes through a call result at all: before
-  // this, the row a second tab patched kept its pre-patch version here and the
-  // next patch from this tab 409'd on a number nothing had read.
+  // The cost is a 409 where a silent success used to be, and that 409 is the
+  // correct answer: this screen is submitting values from an older revision. A
+  // caller who has genuinely read the newer one sends it — an explicit version
+  // always wins, and <Form record={row}> already edits the row whole.
   const _versions = new Map()
 
   function _rememberVersions(result) {
@@ -517,11 +520,6 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       if (id != null && Number.isInteger(row[versionOf])) _versions.set(id, row[versionOf])
     }
   }
-
-  // Whatever is in the store is what the user is looking at, and its versions
-  // are the ones a patch from this screen has to carry. Subscribing is free when
-  // the model declares no @version, so it is not wired at all in that case.
-  if (versionOf) store.subscribe(_rememberVersions)
 
   /**
    * Would the given level clear this model's gate for that operation?
@@ -768,23 +766,36 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const context = { model, service: serviceName, idField }
 
   // load() — HTTP find + populates store.
-  // The versions come off the store subscription above rather than from these
-  // rows: junction drops a load the store has already moved past, and rows it
-  // refused must not be remembered as current either (`FJS-082`).
+  //
+  // Its rows count as a read by this screen, so their versions are recorded —
+  // but only when the load was not superseded, which is the same stamp junction
+  // applies to the store itself (`FJS-082`): a slower first request still
+  // returns its rows to the caller that awaited them and must not leave their
+  // versions behind as current. The stamp is repeated here rather than read off
+  // junction because a store notification carries no provenance — a set() from
+  // a winning load and an upsert() from a WS push arrive as the same event, and
+  // only one of the two is something this screen read.
   //
   // The query becomes the store's filter for as long as those rows are in it: a
   // pushed record outside it is not added, and one a patch has just moved out of
   // it is removed (`FJS-011`). A record the schema cannot judge — a `select`
   // that dropped the filtered column, a filter over a relation — reloads rather
   // than being guessed at.
+  let _loadIssued = 0
   async function load(query, directives) {
-    return junctionResource.load(query ?? {}, directives)
+    const stamp = ++_loadIssued
+    const rows  = await junctionResource.load(query ?? {}, directives)
+    if (stamp === _loadIssued) _rememberVersions(rows)
+    return rows
   }
 
   /**
-   * The version this resource last saw for a record — the value a patch will
+   * The version this resource last READ for a record — the value a patch will
    * carry. `null` when the model declares no `@version`, or when nothing has
    * been read yet.
+   *
+   * A WS push does not move it. Nothing on this screen has read the pushed
+   * revision, and answering with it is what erased a concurrent write.
    *
    * Exported for the case a component wants to show it, or wants to pass an
    * explicit one after resolving a conflict by hand.
@@ -794,6 +805,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const id = idOrRow != null && typeof idOrRow === 'object' ? idOrRow[idField] : idOrRow
     return _versions.get(id) ?? null
   }
+
+  /**
+   * The two revisions behind a stale write — what this screen submitted, and
+   * what the row is at now — or `null` for any other failure. What a *reload /
+   * overwrite* prompt needs, where `fieldErrors()` gives the sentence.
+   */
+  function conflict(err) { return toConflict(err) }
 
   // hooks() — add hooks after creation, merged in order
   function addHooks(incoming) {
@@ -890,7 +908,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   return {
     service, store, stale, make, load,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
-    version, versionField: versionOf,
+    version, versionField: versionOf, conflict,
     formFields, options,
     fieldErrors, context, hooks: addHooks,
   }
@@ -922,6 +940,7 @@ function _emptyResource(name) {
     coerce:    (data) => data,
     version:      () => null,
     versionField: null,
+    conflict:     (err) => toConflict(err),
     fieldErrors: (err) => toFieldErrors(err),
     context: { model: name, service: name, idField: 'id' },
     hooks:   () => {},

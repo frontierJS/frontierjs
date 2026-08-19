@@ -1,5 +1,40 @@
 # Changes
 
+## 2026-08-18 — the version a patch carries is the one this screen read (`FJS-341`)
+
+980 tests, 7 of them new, 0 fail. `test:safety` 5/5. Typecheck clean.
+
+`createResource` recorded a `@version` off the STORE. That was the right answer
+to the wrong question: a WS push reaches the store as an upsert and never passes
+through a call result, so without it the row a second tab patched left a
+pre-patch number behind and the next patch 409'd on something nobody read.
+
+The other half of it is the defect. A push moves the number and moves nothing
+the person is looking at, so a save from a screen holding a DRAFT carried a
+revision nobody there had read and **won the race the column exists to lose** —
+measured in basecamp, the other person's write erased with the guard declared,
+the server enforcing it, and no error anywhere.
+
+The version is now recorded from READS this resource performed: every call
+result, and a `load()` that was not superseded. `load()` carries its own stamp
+for that, because a store notification has no provenance — a `set()` from a
+winning load and an `upsert()` from a push arrive as the same event, and
+junction's stamp (`FJS-082`) governs the store rather than this.
+
+The cost is a 409 where a silent success used to be, and that 409 is the correct
+answer: the screen is submitting values from an older revision. A caller who has
+genuinely read the newer one states it, which `<Form record={row}>` already does
+by editing the row whole.
+
+**`resource.conflict(err)` / `toConflict(err)`** answer the two revisions —
+`{ model, field, expected, actual }` — where `fieldErrors()` answers the
+sentence. A screen offering *reload* against *overwrite* needs the numbers, and
+neither the status nor `retryable` can carry them.
+
+Four mutants killed across the three packages: restore the subscription (3 red),
+drop the load stamp (1), drop junction's adoption (3), drop litestone's payload
+(2).
+
 ## 2026-08-17 — a `@transient` field reaches the browser (`FJS-D23`)
 
 973 tests + 3 new, 0 fail.

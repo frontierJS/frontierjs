@@ -8,7 +8,7 @@
 //                    by X-Service-Method: ping, not a /ping sub-path
 
 import { createService, NotFound } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
@@ -92,6 +92,7 @@ function buildEntry(svc: typeof SERVICES[0], adapter: unknown, status: ServiceSt
 export function createPortalService(app: BasecampApp) {
   return createService({
     name: 'portal',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(_ctx: ServiceContext) {
       const entries = SERVICES.map(svc => {

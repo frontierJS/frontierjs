@@ -10,7 +10,7 @@
 // older and better evidence of what a tier is.
 
 import { createService, NotFound, Forbidden, BadRequest, publishToChannels } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { findScoped, getScoped, removeScoped, assertSlugFree, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf, slugify }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -55,6 +55,7 @@ export function createEnvironmentsService(app: BasecampApp) {
   return createService({
     name:  'environments',
     model: 'Environment',
+    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
       const { limit, offset } = getPagination(ctx)

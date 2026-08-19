@@ -1043,6 +1043,15 @@ built once, so an argument read as a plain value would be frozen at that moment,
 row would keep showing the record it was first handed. A snippet held in a variable and called
 from ordinary JavaScript therefore takes `(anchor, ...getters)`, not values.
 
+**A parameter may be a destructuring pattern**, and the destructuring happens in the
+READ rather than in the parameter list — `{#snippet row([name, q])}` compiles each
+name to its own path through the one getter, so each keeps its own subscription.
+It has to: the parameter list receives the getter itself, and unwrapping it once at
+the top of the body would freeze every name at its first value, which is the bug
+the getters exist to prevent. A default value, a rest element and a nested pattern
+cannot be read lazily and are refused by name at compile time — take the value
+whole and destructure inside the body if it does not need to update.
+
 **Optional rendering** — use optional chaining on `{@render}` for snippets that may not
 be provided:
 

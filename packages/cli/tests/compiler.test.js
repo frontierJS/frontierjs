@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test'
-import { extractFrontmatter, transformMarkdown, compileCli, extractSegments } from '../core/compiler.js'
+import { extractFrontmatter, transformMarkdown, compileCli, extractSegments,
+         stripFrontmatter, splitFrontmatter } from '../core/compiler.js'
 import { readdirSync, statSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -114,6 +115,51 @@ flags:
 })
 
 // ─── transformMarkdown ────────────────────────────────────────────────────────
+
+// ─── the frontmatter fence ────────────────────────────────────────────────────
+
+describe('stripFrontmatter', () => {
+
+  test('a `---` inside a VALUE does not end the block', () => {
+    // Five call sites carried `/^---[\s\S]*?---\s*/` by hand, which ends at the
+    // first `---` anywhere — mid-line included. A description mentioning one
+    // left the rest of the frontmatter, and its own closing fence, in the body,
+    // while the meta parser's stricter regex read the file correctly. The two
+    // halves disagreed about where the file began (FJS-066).
+    const raw = '---\ntitle: x\ndescription: use --- as a divider\n---\n\n# Body\n'
+    expect(stripFrontmatter(raw)).toBe('# Body\n')
+    expect(extractFrontmatter(raw).description).toBe('use --- as a divider')
+  })
+
+  test('meta and body come from one split', () => {
+    const { meta, body } = splitFrontmatter('---\ntitle: a:b\n---\n\nprose\n')
+    expect(meta.title).toBe('a:b')
+    expect(body).toBe('prose\n')
+  })
+
+  test('a setext heading is not a fence', () => {
+    // `---` under a line of text is an h1 in markdown. It is not at position 0,
+    // so it was already safe; the assertion is here so the stricter regex
+    // cannot regress into matching it.
+    const raw = 'Title\n---\n\nprose\n'
+    expect(stripFrontmatter(raw)).toBe(raw)
+  })
+
+  test('a file with no frontmatter is returned whole', () => {
+    expect(stripFrontmatter('# Just markdown\n')).toBe('# Just markdown\n')
+  })
+
+  test('blank lines after the closing fence go with it', () => {
+    // The old strip ate them and the markdown walkers were written against a
+    // body that starts at content.
+    expect(stripFrontmatter('---\ntitle: x\n---\n\n\n\ncontent\n')).toBe('content\n')
+  })
+
+  test('reads a Buffer, the way the loader hands it over', () => {
+    const buf = new TextEncoder().encode('---\ntitle: x\n---\n\nprose\n')
+    expect(stripFrontmatter(buf)).toBe('prose\n')
+  })
+})
 
 describe('transformMarkdown', () => {
 

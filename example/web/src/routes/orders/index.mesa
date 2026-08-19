@@ -10,9 +10,15 @@ title: Orders
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import ConfirmationPopover from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import CopyButton    from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import DatePicker    from '@frontierjs/ui/components/forms/DatePicker.mesa'
+  import Drawer        from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
   import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import Tag           from '@frontierjs/ui/components/display/Tag.mesa'
 
   // The columns a Table draws are a UI decision, so they are written here —
   // but every VALUE below still comes from the schema. Nothing in this list
@@ -32,7 +38,7 @@ title: Orders
   const { get: rows, unsubscribe } = useStore(orders.store)
   $onDestroy(unsubscribe)
 
-  $: (session.level, prefs.dense)
+  $: (session.level, prefs.dense, prefs.quickView)
 
   let error = null
 
@@ -55,6 +61,44 @@ title: Orders
   // signed-out visitor sees `pay` enabled (it declares no @gate, and unknown
   // answers are permissive) and learns otherwise from a 403.
   $: canMove = orders.can('update', session.level)
+
+  // ── Placed-between ───────────────────────────────────────────────────────
+  //
+  // A DatePicker is the control an app CHOOSES — Sierra's control table answers
+  // `input type="date"` for a Date column, which round-trips a zoneless date
+  // with no JS at all, and that is the right default. A range with presets is
+  // not something a type can imply, so it is wired by hand here.
+  //
+  // Client-side, like the product filters: the point is the control, not a
+  // query builder. `createdAt` is an ISO-8601 instant (Litestone stores
+  // DateTime as TEXT), so it is compared as a timestamp and not as a string.
+  let placedFrom = undefined
+  let placedTo   = undefined
+
+  // A preset carrying `start`/`end` applies itself; the picker has no callback
+  // for "a preset was chosen" and does not need one.
+  const DAY   = 86_400_000
+  const TODAY = new Date().setHours(0, 0, 0, 0)
+  const PRESETS = [
+    { value: 'today', text: 'Today',        start: TODAY,            end: TODAY },
+    { value: '7d',    text: 'Last 7 days',  start: TODAY - 6 * DAY,  end: TODAY },
+    { value: '30d',   text: 'Last 30 days', start: TODAY - 29 * DAY, end: TODAY },
+  ]
+
+  function clearPlaced() {
+    placedFrom = undefined
+    placedTo   = undefined
+  }
+
+  // `inclusiveEnd` is the picker's default, so the end date means the whole of
+  // that day — comparing against midnight would drop every order placed after
+  // it on the last day of the range.
+  const visible = rows().filter(o => {
+    if (placedFrom === undefined && placedTo === undefined) return true
+    const at = Date.parse(o.createdAt)
+    return (placedFrom === undefined || at >= placedFrom)
+        && (placedTo   === undefined || at <= placedTo + DAY - 1)
+  })
 
   // Which tone a status gets is a mapping the design system owns; the STATES
   // come from the enum in the schema, not from a list written here.
@@ -85,6 +129,12 @@ title: Orders
   // regardless — signed in as a user, refund is a 403 whatever this renders.
 
   let busy = null
+
+  // The row you are looking at without leaving the list. A Drawer is a native
+  // <dialog>, so focus trapping, Escape and the backdrop come from the platform
+  // — the same reason the confirmation below is a popover and not a div: it
+  // needs none of that, and a dialog would trap focus for a two-button answer.
+  let peek = null
 
   async function run(name, id) {
     error = null
@@ -124,22 +174,58 @@ title: Orders
 {/if}
 
 <!--
+  Placed-between. A Tag is the removable half of a Pill: the chip says a filter
+  is on AND is the way to turn it off, which a Pill deliberately cannot do.
+-->
+<div class="card cluster" style="align-items: flex-end; gap: 1rem; flex-wrap: wrap">
+  <DatePicker
+    isRange
+    showPresets
+    presetRanges={PRESETS}
+    label="Placed between"
+    bind:startDate={placedFrom}
+    bind:endDate={placedTo}
+  />
+
+  {#if placedFrom !== undefined || placedTo !== undefined}
+    <Tag tone="info" label="Clear the placed-between filter" onremove={clearPlaced}>
+      {placedFrom !== undefined ? new Date(placedFrom).toLocaleDateString() : 'any'}
+      →
+      {placedTo !== undefined ? new Date(placedTo).toLocaleDateString() : 'any'}
+    </Tag>
+    <span class="text-sm text-muted">{visible.length} of {rows().length}</span>
+  {/if}
+</div>
+
+<!--
   The kit's Table owns the structure, the wrap, the striping and the empty
   state; the row snippet stays here because what a cell CONTAINS is this app's
   business. `rows()` is named inside the prop expression so the store's next
   value re-renders the body.
 -->
-<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+<Table {columns} rows={visible} striped hover compact={prefs.dense}>
   {#snippet row(order)}
     <tr>
-      <td><a href={'/orders/' + order.id + '/'}><code>{order.reference}</code></a></td>
+      <!-- Which of these two the reference is depends on a preference read
+           from /settings/ — a setting that changes nothing is decoration. -->
+      <td>
+        {#if prefs.quickView}
+          <Button variant="link" onclick={() => peek = order}><Mono>{order.reference}</Mono></Button>
+        {:else}
+          <a href={'/orders/' + order.id + '/'}><Mono>{order.reference}</Mono></a>
+        {/if}
+      </td>
       <td><Pill tone={tone(order.status)}>{order.status}</Pill></td>
       <td>{order.total}</td>
       <td class="text-muted">#{order.customerId}</td>
       <td class="text-muted">{order.note === null ? '—' : order.note}</td>
       <td>
         {#if order.trackingCode}
-          <code>{order.trackingCode}</code>
+          <span class="cluster">
+            <Mono size="xs">{order.trackingCode}</Mono>
+            <!-- A tracking code exists to be pasted somewhere else. -->
+            <CopyButton text={order.trackingCode} label="" />
+          </span>
         {:else if order.status === 'shipped'}
           <span class="text-sm text-muted">booking…</span>
         {:else}
@@ -169,9 +255,27 @@ title: Orders
         </div>
       </td>
       <td>
-        <Button variant="ghost" tone="danger" onclick={() => remove(order.id)} disabled={!canDelete}>
-          Delete
-        </Button>
+        <div class="cluster">
+          <Button variant="ghost" onclick={() => peek = order}>View</Button>
+
+          <!--
+            Delete asks first, and asks where the button is. Not a Modal: a
+            two-button question does not need focus trapped or the top layer,
+            and the popover keeps the row you are deleting on screen behind it.
+            The trigger is still the same `.btn.danger`, still disabled by the
+            same gate answer — the server refuses either way.
+          -->
+          <ConfirmationPopover
+            title="Delete this order?"
+            message={'@@gate wants level ' + deleteLevel + ' and there is no undo.'}
+            confirmLabel="Delete"
+            onconfirm={() => remove(order.id)}
+          >
+            {#snippet trigger()}
+              <Button variant="ghost" tone="danger" disabled={!canDelete}>Delete</Button>
+            {/snippet}
+          </ConfirmationPopover>
+        </div>
       </td>
     </tr>
   {/snippet}
@@ -204,3 +308,34 @@ title: Orders
   came down the same channel every other change uses. Leave a second tab open on
   this page and watch it fill in there too.
 </Alert>
+
+<!--
+  Quick view. `peek` is the whole state — closing the drawer is setting it to
+  null, the same shape the confirmation Modal on the detail page uses. The
+  content is deliberately thin: this is the row you already have, not a second
+  fetch, and the link is what takes you to the page that loads more.
+-->
+<Drawer
+  open={peek !== null}
+  title={peek ? peek.reference : ''}
+  side="right"
+  onclose={() => peek = null}
+>
+  {#snippet footer()}
+    <div class="cluster">
+      <Button href={peek ? '/orders/' + peek.id + '/' : '/orders/'}>Open the order</Button>
+      <Button variant="ghost" onclick={() => peek = null}>Close</Button>
+    </div>
+  {/snippet}
+
+  {#if peek}
+    <dl class="facts">
+      <dt>Reference</dt><dd><Mono>{peek.reference}</Mono> <CopyButton text={peek.reference} /></dd>
+      <dt>Status</dt><dd><Pill tone={tone(peek.status)}>{peek.status}</Pill></dd>
+      <dt>Total</dt><dd>{peek.total}</dd>
+      <dt>Customer</dt><dd>#{peek.customerId}</dd>
+      <dt>Note</dt><dd>{peek.note === null ? '—' : peek.note}</dd>
+      <dt>Placed</dt><dd>{peek.createdAt}</dd>
+    </dl>
+  {/if}
+</Drawer>

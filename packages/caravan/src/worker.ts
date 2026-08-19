@@ -26,7 +26,7 @@ export class QueueWorker {
   private _timer:       ReturnType<typeof setInterval> | null = null
   private _running:     Set<string> = new Set()   // in-flight job IDs
   private _stopping:    boolean = false
-
+  private _drainTimeout: number
   constructor(
     queue:        string,
     config:       QueueConfig,
@@ -36,6 +36,7 @@ export class QueueWorker {
     pollInterval: number,
     owner:        string,
     telemetry:    CaravanTelemetry | null = null,
+    drainTimeout: number = 30_000,
   ) {
     this.queue        = queue
     this._concurrency = config.concurrency ?? 2
@@ -45,6 +46,7 @@ export class QueueWorker {
     this._handlers    = handlers
     this._telemetry   = telemetry
     this._owner       = owner
+    this._drainTimeout = drainTimeout
   }
 
   start(): void {
@@ -66,8 +68,13 @@ export class QueueWorker {
       clearInterval(this._timer)
       this._timer = null
     }
-    // Wait for in-flight jobs to finish
-    const deadline = Date.now() + 30_000
+    // Wait for in-flight jobs to finish.
+    //
+    // A hardcoded 30s is the whole shutdown budget of a deployment whose SIGTERM
+    // grace is shorter: one unbounded stuck handler and every stop takes 30s and
+    // is then killed mid-drain anyway (`FJS-295`). The bound is the app's to
+    // state, and the default is unchanged.
+    const deadline = Date.now() + this._drainTimeout
     while (this._running.size > 0 && Date.now() < deadline) {
       await Bun.sleep(100)
     }
@@ -171,8 +178,10 @@ export class QueueWorker {
     }
 
     try {
-      if (runAs) await runAs.call(this._app, record.actor_id ?? null, run)
-      else       await run(null)
+      const invoke = runAs
+        ? () => runAs.call(this._app, record.actor_id ?? null, run) as Promise<void>
+        : () => run(null)
+      await this._bounded(invoke(), handler.timeout, record)
       const doneMs = Date.now()
       // 0 changes means cancel() took the row out of 'running' mid-attempt and
       // the guard held. The outcome is 'cancelled', so announce nothing.
@@ -242,6 +251,87 @@ export class QueueWorker {
     } finally {
       this._running.delete(record.id)
     }
+  }
+
+  // ── The bound on one attempt ────────────────────────────────────────────────
+  //
+  // Without a declared timeout this is the promise, unchanged — absent means no
+  // bound, honestly, the same contract every declaration here has.
+  //
+  // With one, the wait is bounded and the attempt fails on the ordinary path:
+  // the caller's catch counts it, applies the retry ladder and emits
+  // `caravan.job.failed` exactly as a throw would. That uniformity is the point
+  // — a timeout is a failure, not a fifth status.
+  //
+  // WHAT IT CANNOT DO IS STOP THE HANDLER. Nothing in JavaScript cancels a
+  // promise, so the abandoned invocation keeps running and may still be writing
+  // while the retry runs. Two consequences, both handled here rather than left
+  // to chance:
+  //
+  //   - Its later rejection has no reader once the race is lost, and an
+  //     unhandled rejection takes the process down. It is caught below.
+  //   - Its later settlement is the single most useful thing a person
+  //     debugging this can be told — *the work you gave up on finished after
+  //     45 minutes* — so it is announced rather than swallowed silently.
+  //
+  // A handler that never yields is unreachable from here: the timer needs the
+  // event loop. Same ground as the heartbeat in `FJS-294`.
+  private _bounded(
+    work:    Promise<void>,
+    timeout: number | undefined,
+    record:  { id: string; queue: string; name: string }
+  ): Promise<void> {
+    if (!timeout || timeout <= 0) return work
+
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let abandoned = false
+    const startedAt = Date.now()
+
+    // Attached BEFORE the race, so there is never a tick on which this promise
+    // can reject with nobody listening.
+    work.then(
+      () => { if (abandoned) this._orphanSettled(record, startedAt, null) },
+      (err: unknown) => { if (abandoned) this._orphanSettled(record, startedAt, err) },
+    )
+
+    const bound = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        abandoned = true
+        this._telemetry?.emit('caravan.job.timeout', {
+          id: record.id, queue: record.queue, name: record.name, timeout,
+        })
+        reject(new Error(
+          `Job '${record.name}' exceeded its ${timeout}ms timeout. The attempt is ` +
+          `failed and may retry; the handler was NOT cancelled and may still be running.`
+        ))
+      }, timeout)
+      if (timer.unref) timer.unref()
+    })
+
+    return Promise.race([work, bound]).finally(() => { if (timer) clearTimeout(timer) })
+  }
+
+  private _orphanSettled(
+    record:    { id: string; queue: string; name: string },
+    startedAt: number,
+    err:       unknown
+  ): void {
+    const durationMs = Date.now() - startedAt
+    this._telemetry?.emit('caravan.job.orphan', {
+      id:    record.id,
+      queue: record.queue,
+      name:  record.name,
+      durationMs,
+      error: err == null ? null : err instanceof Error ? err.message : String(err),
+    })
+    // Said out loud as well as emitted: an app with no telemetry wired is
+    // exactly the app that will otherwise never learn a timed-out handler ran
+    // to completion after its retry had already done the work again.
+    console.warn(
+      `[Caravan] '${record.name}' (${record.id}) ${err == null ? 'finished' : 'threw'} ` +
+      `${durationMs}ms after starting — past its timeout, so the attempt had already ` +
+      `been failed. Its effects happened anyway.`
+    )
   }
 }
 

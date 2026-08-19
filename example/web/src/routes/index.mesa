@@ -3,14 +3,70 @@ title: Home
 ---
 <script>
   import { session } from '../session.js'
+  import { orders }    from '../resources/Order.mesa'
+  import { customers } from '../resources/Customer.mesa'
+  import { useStore } from '@frontierjs/sierra/junction'
+  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import AvatarGroup   from '@frontierjs/ui/components/display/AvatarGroup.mesa'
+  import Bar           from '@frontierjs/ui/components/display/Bar.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
   import Card          from '@frontierjs/ui/components/layout/Card.mesa'
+  import Divider       from '@frontierjs/ui/components/display/Divider.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Sparkline     from '@frontierjs/ui/components/display/Sparkline.mesa'
+  import Stat          from '@frontierjs/ui/components/display/Stat.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
   $: (session.user, session.level)
+
+  // ── The shop, summarised ─────────────────────────────────────────────────
+  //
+  // Both models read at level 0, so this section fills in for a stranger — and
+  // it is fed by the same live stores every other screen uses, which is why
+  // paying an order on /orders/ moves these numbers in an untouched tab.
+  const { get: orderRows,    unsubscribe: unsubOrders }    = useStore(orders.store)
+  const { get: customerRows, unsubscribe: unsubCustomers } = useStore(customers.store)
+  $onDestroy(unsubOrders)
+  $onDestroy(unsubCustomers)
+
+  orders.load().catch(() => {})
+  customers.load().catch(() => {})
+
+  const revenue = orderRows()
+    .filter(o => o.status === 'paid' || o.status === 'shipped')
+    .reduce((sum, o) => sum + o.total, 0)
+
+  // Seven buckets ending today. A Sparkline has no axis, so the series has to
+  // be evenly spaced by construction — one bucket per day, present or not,
+  // rather than one point per order.
+  const DAYS = 7
+  const perDay = (() => {
+    const day    = 86_400_000
+    const today  = new Date().setHours(0, 0, 0, 0)
+    const counts = Array(DAYS).fill(0)
+    for (const o of orderRows()) {
+      const placed = new Date(o.createdAt).setHours(0, 0, 0, 0)
+      const back   = Math.round((today - placed) / day)
+      if (back >= 0 && back < DAYS) counts[DAYS - 1 - back] += 1
+    }
+    return counts
+  })()
+
+  // The statuses are the enum's, in the schema's own order — a hard-coded list
+  // here would silently stop covering a status the day one is added.
+  const byStatus = orders.fields.status.enum.map(s => ({
+    status: s,
+    count:  orderRows().filter(o => o.status === s).length,
+  }))
+
+  // AvatarGroup takes { name }, and Avatar derives the initials — there is no
+  // avatar column in the schema and inventing one would be a fact about the
+  // shop that db/schema.lite does not state.
+  const faces = customerRows().map(c => ({ name: c.name }))
 
   const ladderColumns = [
     { key: 'session', label: 'Session' },
@@ -33,10 +89,63 @@ title: Home
 
 <!-- Prose stays one sentence per line on purpose: Mesa collapses a wrapped
      static text node, and a paragraph split across source lines used to weld
-     its words together. Fixed, but the habit still reads better in diffs. -->
-<p class="text-body">
-  One <code>db/schema.lite</code> seeds all three realms. The API derives its tables, its 401s, its 403s and its 400s from it; the browser derives make() defaults, field rules, enum options, relation targets and gate levels from the same file. Neither side restates the other.
-</p>
+     its words together. Fixed, but the habit still reads better in diffs.
+
+     A Callout and not an Alert: an Alert is system feedback, something that
+     just happened. This is editorial — it is true on every visit — and the
+     kit draws the two differently for that reason. -->
+<Callout>
+  One <Mono>db/schema.lite</Mono> seeds all three realms. The API derives its tables, its 401s, its 403s and its 400s from it; the browser derives make() defaults, field rules, enum options, relation targets and gate levels from the same file. Neither side restates the other.
+</Callout>
+
+<SectionHeader title="The shop, right now" level={2} sub="reads at level 0 — no sign-in, and live" />
+
+<div class="tiles" style="--tile-min: 14rem">
+  <Card class="stack">
+    <!-- Stat rather than StatCard: the Card is already the tile, and stacking
+         a second bordered surface inside it draws a box in a box. -->
+    <Stat
+      label="Orders"
+      value={String(orderRows().length)}
+      sub={'last ' + DAYS + ' days'}
+      trend={perDay[DAYS - 1] > perDay[DAYS - 2] ? 'up' : perDay[DAYS - 1] < perDay[DAYS - 2] ? 'down' : 'flat'}
+    />
+    <Sparkline data={perDay} fill smooth label={'Orders per day over the last ' + DAYS + ' days'} />
+  </Card>
+
+  <Card class="stack">
+    <Stat label="Banked" value={'£' + revenue.toFixed(2)} sub="paid and shipped" tone="success" />
+  </Card>
+
+  <Card class="stack">
+    <Stat label="Customers" value={String(customerRows().length)} />
+    <!-- A face per customer, initials derived by Avatar. `standalone` is NOT
+         set: the names are in the table on /customers/, and announcing the
+         initials here would spell them out with nothing to attach them to. -->
+    <AvatarGroup users={faces} max={4} size="sm" />
+  </Card>
+</div>
+
+<!--
+  Bar, not Progress: this is "how much of the whole is in this state", not "how
+  far through a task". The two are different components in the kit because they
+  are different questions, and `tone="auto"` — which grades a filling resource
+  from success to danger — would be nonsense here, so each bar states its own.
+-->
+<Card class="stack">
+  <h2 class="h4">Where the orders are</h2>
+  {#each byStatus as s}
+    <Bar
+      label={s.status}
+      value={s.count}
+      max={Math.max(1, orderRows().length)}
+      unit={' of ' + orderRows().length}
+      tone={s.status === 'cancelled' ? 'danger' : s.status === 'refunded' ? 'muted' : s.status === 'shipped' ? 'success' : s.status === 'paid' ? 'info' : 'warning'}
+    />
+  {/each}
+</Card>
+
+<Divider spacing="lg" />
 
 <div class="tiles" style="--tile-min: 18rem">
   <Card class="stack">
@@ -63,6 +172,8 @@ title: Home
     <div class="cluster"><Button variant="outlined" href="/customers/">Watch a column appear</Button></div>
   </Card>
 </div>
+
+<Divider label="what the server decides" spacing="lg" />
 
 <SectionHeader title="The gate ladder" level={2} />
 

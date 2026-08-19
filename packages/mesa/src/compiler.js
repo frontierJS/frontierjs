@@ -4151,6 +4151,67 @@ function splitArgs(src) {
 }
 
 /**
+ * snippetParam — one declared parameter → the name the compiled function takes,
+ * and what each name it binds reads through.
+ *
+ *   person       → { param: 'person',  reads: { person: 'person()' } }
+ *   [name, q]    → { param: '$$arg0',  reads: { name: '$$arg0()[0]', q: '$$arg0()[1]' } }
+ *   { id, label } → { param: '$$arg0', reads: { id: '$$arg0().id', label: '$$arg0().label' } }
+ *
+ * A pattern cannot be written into the parameter list, because the value that
+ * arrives there is the GETTER — `{@render row(p)}` emits `row(el, () => p())`,
+ * so `(__anchor, [name, q])` destructures a function and throws `function is
+ * not iterable` from the compiled file, naming nothing (FJS-339).
+ *
+ * Destructuring at the top of the body instead would read the argument once,
+ * and a snippet's DOM is built once: that is the frozen-argument bug the
+ * getters exist to prevent (VISION §9.5), and it is why `{#each}`'s answer —
+ * unwrap the item, then destructure — does not transfer. A block re-runs per
+ * item; a snippet does not. So the destructuring moves into the READ, and each
+ * bound name keeps its own subscription.
+ */
+function snippetParam(raw, index, snippetName) {
+  const src = raw.trim()
+  if (/^[A-Za-z_$][\w$]*$/.test(src)) return { param: src, reads: { [src]: `${src}()` } }
+
+  const param = `$$arg${index}`
+  const bad   = (why) => assert(false,
+    `{#snippet ${snippetName}}: cannot destructure the parameter \`${src}\` — ${why}. ` +
+    `A snippet argument arrives as a getter, so each name in a pattern is compiled into a ` +
+    `read of its own; only a flat [a, b] or { a, b: c } can be. Take the value whole and ` +
+    `destructure inside the body if you do not need it to update.`)
+
+  const isArray = src.startsWith('[') && src.endsWith(']')
+  const isObj   = src.startsWith('{') && src.endsWith('}')
+  if (!isArray && !isObj) bad('it is neither an identifier nor a flat pattern')
+
+  const reads = {}
+  const parts = src.slice(1, -1).split(',')
+  parts.forEach((partRaw, i) => {
+    // A hole in an array pattern — `[, b]` — binds nothing and skips a slot.
+    const part = partRaw.trim()
+    if (!part) return
+    if (part.includes('=')) bad('a default value cannot be read lazily')
+    if (part.startsWith('...')) bad('a rest element cannot be read lazily')
+    if (/[[\]{}]/.test(part)) bad('a nested pattern is not supported')
+
+    if (isArray) {
+      assert(/^[A-Za-z_$][\w$]*$/.test(part), `{#snippet ${snippetName}}: \`${part}\` is not a binding name`)
+      reads[part] = `${param}()[${i}]`
+      return
+    }
+    const [key, alias] = part.split(':').map(s => s.trim())
+    assert(/^[A-Za-z_$][\w$]*$/.test(key), `{#snippet ${snippetName}}: \`${key}\` is not a property name`)
+    const bound = alias ?? key
+    assert(/^[A-Za-z_$][\w$]*$/.test(bound), `{#snippet ${snippetName}}: \`${bound}\` is not a binding name`)
+    reads[bound] = `${param}().${key}`
+  })
+
+  assert(Object.keys(reads).length, `{#snippet ${snippetName}}: the pattern \`${src}\` binds nothing`)
+  return { param, reads }
+}
+
+/**
  * makeSnippet — compile {#snippet name(args)}...{/snippet} to a local function.
  *
  * The snippet compiles to:
@@ -4184,17 +4245,20 @@ export function makeSnippet(data) {
   // the same block may each take one called `row`.
   const varName = data.varName ?? `$$snippet_${name}`
 
-  // Parse arg names (comma-separated identifiers)
-  const argNames = rawArgs ? splitArgs(rawArgs) : []
+  // Each parameter is an identifier or a destructuring pattern. A pattern binds
+  // several names to ONE getter, so what changes is the expression each of them
+  // reads through, never the getter itself — see snippetParam.
+  const params   = rawArgs ? splitArgs(rawArgs).map((a, i) => snippetParam(a, i, name)) : []
+  const argNames = params.map(p => p.param)
 
   // Inside the body, an argument reads through its getter. Saved and restored
   // around the build, so a same-named outer variable is shadowed for the
   // snippet's body and nowhere else.
   const savedAccessors = {}
   if (ctx.accessors) {
-    for (const a of argNames) {
-      savedAccessors[a] = ctx.accessors[a]
-      ctx.accessors[a] = `${a}()`
+    for (const p of params) for (const [bound, read] of Object.entries(p.reads)) {
+      savedAccessors[bound] = ctx.accessors[bound]
+      ctx.accessors[bound] = read
     }
   }
 
@@ -4203,9 +4267,9 @@ export function makeSnippet(data) {
   const block = ctx.buildBlock({ body }, { inline: false })
 
   if (ctx.accessors) {
-    for (const a of argNames) {
-      if (savedAccessors[a] === undefined) delete ctx.accessors[a]
-      else ctx.accessors[a] = savedAccessors[a]
+    for (const bound of Object.keys(savedAccessors)) {
+      if (savedAccessors[bound] === undefined) delete ctx.accessors[bound]
+      else ctx.accessors[bound] = savedAccessors[bound]
     }
   }
 
@@ -6764,6 +6828,12 @@ function _isReactive(expr) {
   // attribute kept the value it had at first render, so a completed step went
   // on announcing itself as the current one.
   if (/\$\$_const_[A-Za-z0-9_$]*\(\)/.test(expr)) return true
+  // A snippet parameter that is a destructuring pattern binds each of its names
+  // to a read through the one getter — `$$arg0()[0]` — and the bare-call pattern
+  // below cannot see that either, for the same reason. Classed static, the row
+  // rendered its first value and ignored every later one: the frozen-argument
+  // bug the getters exist to prevent, arriving through the fix for FJS-339.
+  if (/\$\$arg\d+\(\)/.test(expr)) return true
   // Bare no-arg call: identifier immediately followed by () — signal getter pattern.
   // Excludes method chains like Math.floor() (preceded by '.') and $runtime.x().
   if (/(?<![.$])\b[a-z_][a-zA-Z0-9_]*\(\)/.test(expr)) return true

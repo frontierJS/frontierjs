@@ -65,6 +65,18 @@ declaration, not separate truths that happen to agree. The moment one of
 them is hand-maintained instead of generated, it has stopped being a
 projection and become a second origin in disguise.
 
+### A projection must be legible
+*— from Axiom 1*
+
+A fact the framework derives and nobody can read is a fact that has already
+started drifting. Correctness that cannot be seen is indistinguishable from luck
+— it holds until something quietly stops holding it, and the first report is a
+user. So a derived fact earns a reader: a committed artefact, a diff, a report
+someone reviews. Where that reader is absent, the corollary follows and it is
+the sharper half — **a check that can only fail open is not a check.** A rule
+that catches an extra and can never catch a missing one is not strict, it is
+decorative.
+
 ### Predictability
 *— from Axioms 2 and 3*
 
@@ -143,6 +155,8 @@ predict? In review, that breaks down into:
 - Does it have exactly one owner?
 - Is the boundary explicit — named, typed, tested?
 - Is the failure mode proportional to the cost of being wrong?
+- Can this be wrong without anything saying so — and if it can, what artefact
+  makes it visible?
 
 If it belongs, every answer above will show it.
 

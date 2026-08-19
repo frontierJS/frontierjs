@@ -102,6 +102,27 @@ export interface HandlerOptions {
    */
   retryDelay?:  number[]
   /**
+   * Give up waiting after this many ms and treat the attempt as failed.
+   *
+   * Absent means **no bound**, honestly — the same contract every declaration
+   * here has. A handler that never settles then holds its slot for the life of
+   * the process, and on a `concurrency: 1` queue everything behind it waits
+   * (`FJS-295`). That is what this option is for, and the case it is for is a
+   * socket that neither answers nor closes.
+   *
+   * A timeout is an ordinary failure: it counts as an attempt and retries on
+   * the same ladder as a throw. **What it cannot do is stop the handler.**
+   * Nothing in JavaScript can cancel a promise, so the abandoned invocation may
+   * still be running — and still writing — while the retry runs. Delivery here
+   * was already at-least-once (`FJS-D35`); this widens the window rather than
+   * opening it, and a handler must be idempotent either way.
+   *
+   * It also cannot interrupt a handler that never yields: the timer needs the
+   * event loop, so a synchronous spin is unreachable from here. Same ground as
+   * the heartbeat note in `FJS-294`.
+   */
+  timeout?:     number
+  /**
    * Standard 5-field cron expression — WHEN this job runs on its own.
    *
    * A registration carrying one is a recurring job: the scheduler dispatches it
@@ -124,6 +145,7 @@ export interface RegisteredHandler {
   queue:       string
   maxAttempts: number
   retryDelay:  number[]
+  timeout?:    number
   cron?:       string
   timeZone?:   string
 }
@@ -143,6 +165,7 @@ export interface JobDefinition<T = unknown> {
   queue:        string
   maxAttempts:  number
   retryDelay:   number[]
+  timeout?:     number
   cron?:        string
   timeZone?:    string
 }
@@ -156,9 +179,16 @@ export type JobRef = string | { __caravanJob: true; name: string }
  * Narrower than `Pick<CaravanInstance, 'handle'>` on purpose: `handle` is
  * overloaded, and an overloaded member forces every stub in a test to
  * implement both signatures to be assignable.
+ *
+ * The DEFINITION form, because that is the one autoload uses. It used to take
+ * the name-and-options form and re-list a definition's keys into it, which made
+ * it a second whitelist every job-file declaration had to pass — a `timeout`
+ * written in a job file was accepted by `defineJob` and silently dropped here.
+ * Passing the definition whole is what stops a new key needing to be remembered
+ * in three places.
  */
 export interface JobRegistrar {
-  handle(name: string, handler: JobHandler, opts?: HandlerOptions): void
+  handle(job: JobDefinition<never>): void
 }
 
 // ─── Dispatch options ─────────────────────────────────────────────────────────
@@ -223,6 +253,15 @@ export interface DispatchOptions {
 export interface QueueConfig {
   /** Max concurrent jobs in this queue. Default: 2 */
   concurrency?: number
+  /**
+   * Default `timeout` (ms) for handlers on this queue that declare none.
+   *
+   * A queue is where concurrency is decided, so it is also where *how long one
+   * slot may be held* belongs — a queue of one is the configuration a single
+   * stuck job stalls completely. A handler's own `timeout` wins; absent both,
+   * there is no bound.
+   */
+  timeout?:     number
 }
 
 // ─── Plugin options ───────────────────────────────────────────────────────────
@@ -237,6 +276,17 @@ export interface CaravanOptions {
   queues?:       Record<string, QueueConfig>
   /** How often the worker polls for new jobs, in ms. Default: 1_000 */
   pollInterval?: number
+  /**
+   * How long `stop()` waits for in-flight jobs before returning, in ms.
+   * Default: 30_000.
+   *
+   * The app's to state because it is the app's SIGTERM grace that has to
+   * contain it: one unbounded stuck handler otherwise makes every shutdown take
+   * the full 30s and get killed mid-drain regardless (`FJS-295`). Past the
+   * deadline the handler may still be running, which is why this instance keeps
+   * its owner row rather than dropping it.
+   */
+  drainTimeout?: number
   /**
    * Directory to autoload *.job.ts files from.
    * Mirrors Junction's autoloadServices pattern.
@@ -295,6 +345,19 @@ export interface QueueStats {
   done:      number
   failed:    number
   cancelled: number
+  /**
+   * Age of the oldest in-flight job on this queue, in ms — `null` when nothing
+   * is running.
+   *
+   * The counts alone cannot show a stall: a queue holding one stuck job reports
+   * `running: 1` for the life of the process, which is exactly what a queue
+   * doing steady work reports (`FJS-295`). This is the number that separates
+   * them, and it needs no threshold to be guessed to do it.
+   *
+   * `null` rather than 0 where nothing is running — 0 would read as *started
+   * this instant*.
+   */
+  oldestRunningMs: number | null
 }
 
 export interface CaravanStats {
@@ -442,6 +505,30 @@ export interface CaravanInstance {
    * still find something to execute. This unbinds the clock, nothing else.
    */
   unschedule(name: string): boolean
+
+  /**
+   * Every registered handler's DECLARATION, name-sorted — what runs, on which
+   * queue, on what schedule, with what retry budget.
+   *
+   * The other question from `nextRuns()`, which reads a live clock and sees only
+   * the scheduled ones. This one is a fact about the app, so it holds still: two
+   * boots of the same code answer identically, which is what lets `junction
+   * jobs` commit it and diff it. A schedule that stopped being registered is
+   * otherwise invisible — every scheduled job in one app stopped firing at the
+   * first restart with every row still reading `scheduled` (`FJS-327`), and
+   * nothing anywhere could have been asked.
+   *
+   * No handler function: a closure is not part of what an app declared.
+   */
+  registrations(): Array<{
+    name:        string
+    queue:       string
+    cron:        string | null
+    timeZone:    string | null
+    maxAttempts: number
+    retryDelay:  number[]
+    timeout:     number | null
+  }>
 
   /** Returns the next scheduled fire time for each registered cron. */
   nextRuns(): Array<{ name: string; cron: string; nextRun: Date | null }>

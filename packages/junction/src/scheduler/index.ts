@@ -189,6 +189,7 @@ export function createScheduler() {
       const job: ScheduledJob = {
         id,
         type:    'interval',
+        expr:    interval,
         fn,
         running: true,
         paused:  false,
@@ -226,6 +227,7 @@ export function createScheduler() {
       const job: ScheduledJob = {
         id,
         type:    'cron',
+        expr,
         fn,
         running: true,
         paused:  false,
@@ -262,6 +264,7 @@ export function createScheduler() {
       const job: ScheduledJob = {
         id,
         type:    'once',
+        expr:    String(delay),
         fn,
         running: true,
         paused:  false,
@@ -295,6 +298,28 @@ export function createScheduler() {
       return Array.from(jobs.keys())
     },
 
+    // ── describe ──────────────────────────────────────────────────────────────
+    //
+    // What this app runs on a clock IN PROCESS, as declared. `list()` answers
+    // `job_1`, `job_2` — ids the app never chose and that say nothing about what
+    // fires or when, so nothing could be asked what a deploy is about to start
+    // doing on a timer.
+    //
+    // These are the timers with no persistence, no retry and no principal
+    // (`FJS-D36`), which is exactly why they want a reader: a durable job leaves
+    // a row behind and one of these leaves nothing at all. `paused` and
+    // `running` are live state and are absent — this answers what was declared,
+    // so two boots of the same code agree and the answer can be committed.
+    //
+    // A `once` job is included and marked: it is still something a deploy
+    // starts, and a timer that fires one time is the easiest kind to forget.
+
+    describe(): Array<{ id: string; type: 'interval' | 'cron' | 'once'; expr: string }> {
+      return Array.from(jobs.values())
+        .map(j => ({ id: j.id, type: j.type, expr: j.expr }))
+        .sort((a, b) => a.expr.localeCompare(b.expr) || a.id.localeCompare(b.id))
+    },
+
     destroy(): void {
       destroyed = true
       for (const id of jobs.keys()) removeJob(id)
@@ -308,6 +333,11 @@ export function createScheduler() {
 interface ScheduledJob {
   id:        string
   type:      'interval' | 'cron' | 'once'
+  // The expression AS WRITTEN. `every()` parses it to milliseconds and `cron()`
+  // compiles it to a matcher, so without this the only record of when a timer
+  // fires is a closure — nothing could report what this app runs on a clock,
+  // which is the half of `FJS-327` that is not Caravan's.
+  expr:      string
   fn:        JobFn
   running:   boolean
   paused:    boolean

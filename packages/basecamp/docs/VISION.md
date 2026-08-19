@@ -112,7 +112,7 @@ Basecamp needs nouns. Every one is a threat to the mental model, so the bar is: 
 | **Environment**     | A named target within a project — development, staging, production   | Proposed                      |
 | **Manifest**        | The declared shape of a deployment                                   | **Reused** — Deployment realm |
 | **Release**         | A manifest realized at a point in time                               | **Reused** — Deployment realm |
-| **Trust Hierarchy** | Who may do what in Basecamp itself                                   | **Reused** — 0–9 scale        |
+| **Gate ladder** | Who may do what in Basecamp itself                                   | **Reused** — 0–9 scale        |
 | **Outpost**         | The process a Server runs so Basecamp can reach it — heartbeat, health, exec | **Settled** — `FJS-D29` |
 
 **Outpost is the only new noun here that is settled**, and the rule it came from
@@ -176,7 +176,7 @@ If Basecamp lets a developer configure something that has no home in the project
 Every button maps to a documented `fli` command. If a capability cannot be expressed as one, that is a finding about `fli`, not a license for Basecamp to grow a private path.
 
 **3. Actions are gated, not roled.**
-Basecamp is an FJS application. Access to its models is declared in its schema and enforced at the Data boundary via gates and the trust hierarchy. There is no parallel permission system. Deploying to production is a gate, not a checkbox.
+Basecamp is an FJS application. Access to its models is declared in its schema and enforced at the Data boundary via gates and the gate ladder. There is no parallel permission system. Deploying to production is a gate, not a checkbox.
 
 **4. Gates fail closed.**
 In Basecamp this is not a preference. An operational tool whose access checks fail open is worse than no tool.
@@ -200,7 +200,7 @@ Recorded honestly rather than resolved prematurely.
 - **The appliance noun.** Blocking, because it appears in the UI the moment installs ship.
 - **Self-hosted or managed.** Basecamp is a tool developers run themselves — but a fleet tool that is itself part of the fleet has a bootstrapping problem. Who deploys Basecamp?
 - **Outpost or SSH-only.** Does Basecamp push over SSH, or does each server run an **Outpost** that reports back? Push is simpler and keeps servers dumb; an Outpost makes health and logs far better. This choice constrains everything in the Know group. **The name is settled and the architecture is not** (`FJS-D29`): *Outpost* is reserved for the resident process if there is one, and the word *agent* is retired here because FJS will have AI agents. `IDEAS/deploy-plane.md` argues for keeping both — Outpost as the design, SSH as the degrade path — and notes that the schema (`outpostVersion`, `lastHeartbeatAt`, `installing`) and both engines have already chosen.
-- **Multi-user and teams.** The trust hierarchy handles *what level*, but a fleet tool needs *which projects*. Record-level authorization is deferred to Litestone V2 — Basecamp is likely its first real consumer, and may be what forces the timeline.
+- **Multi-user and teams.** The gate ladder handles *what level*, but a fleet tool needs *which projects*. Record-level authorization is deferred to Litestone V2 — Basecamp is likely its first real consumer, and may be what forces the timeline.
 - **Where observability data lives.** Basecamp surfacing signals is settled. Basecamp *storing* time-series data is not, and pulls it toward becoming an APM.
 
 ---
