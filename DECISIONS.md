@@ -6,13 +6,24 @@ reversed, amend it here (strike and date it), don't delete it.
 
 Format: **decision — why — where it lives.**
 
+A ruling is a `###` heading under its section, carrying its date and its id:
+
+```
+### <a id="fjs-d40"></a>2026-08-08 · `FJS-D40` — the claim, stated flatly
+```
+
+The id is what a code comment, an issue row or another ruling cites, and the
+anchor is what a link resolves to. `fli register:check` grades this file against
+those rules — an id issued twice, a citation pointing at nothing, a ruling
+nobody named — and CI runs the same engine.
+
 ---
 
 ## Naming & vocabulary
 
-**2026-08-16 · `FJS-D06` — the coherence-review vocabulary, ruled. Three hook
-tiers not five, `Provider` is a third party, and `Slice` waits for a second
-author.** The eight findings of `IDEAS/coherence-review.md` sat open for six
+### <a id="fjs-d06"></a>2026-08-16 · `FJS-D06` — the coherence-review vocabulary, ruled. Three hook tiers not five, `Provider` is a third party, and `Slice` waits for a second author.
+
+The eight findings of `IDEAS/coherence-review.md` sat open for six
 weeks because they were filed as one row. They are not one question, and the
 prior art disagrees with the proposal on two of them.
 
@@ -127,8 +138,7 @@ typed `createSchema` inference never depended on this at all.
 `ARCHITECT.md` §2 · `IDEAS/coherence-review.md` is the argument, still not a
 register.
 
-**2026-08-15 · `FJS-D03` — Context is a per-realm concept. It is plural, it is
-documented, and it is not unified.**
+### <a id="fjs-d03"></a>2026-08-15 · `FJS-D03` — Context is a per-realm concept. It is plural, it is documented, and it is not unified.
 
 **Definition.** A Context is *per-invocation state and metadata available to the
 code executing on behalf of a caller.* The filed question proposed Junction's
@@ -195,8 +205,7 @@ behaviour. That is the enforcement that was actually available, and it is what
 would have caught a documented contract drifting from its code.
 
 
-**2026-08-15 · `FJS-D19` — Litestone's `Plugin` gets a `name`. The concept is
-NOT renamed.**
+### <a id="fjs-d19"></a>2026-08-15 · `FJS-D19` — Litestone's `Plugin` gets a `name`. The concept is NOT renamed.
 
 Two questions were filed as one and they have opposite answers.
 
@@ -243,8 +252,9 @@ a Provider is a third party the app speaks to, and a Plugin is still what
 attaches a capability — so the two nouns here stay exactly as this ruling put
 them.
 
-**2026-08-15 · `FJS-D02` — a custom service method is a METHOD. There is no
-fourth noun.** The realms name three things — Model, Service, Resource — and
+### <a id="fjs-d02"></a>2026-08-15 · `FJS-D02` — a custom service method is a METHOD. There is no fourth noun.
+
+The realms name three things — Model, Service, Resource — and
 `action` was a fourth, for a concept every surface a developer touches already
 called a method. The declaration is `methods: ['find', 'get', 'reboot']`, one
 list with CRUD in it. The wire is `X-Service-Method` over HTTP and a
@@ -267,8 +277,9 @@ Not `call` — that is already the explicit WS-only escape hatch, and
 wire did not change, and neither did the announcement: a custom method still
 announces under its own name (`orders pay`, `FJS-D21`).
 
-**2026-08-13 · `FJS-D29` — the process a fleet server runs is an OUTPOST, and
-infrastructure gets place nouns while AI gets personified ones.** Basecamp's
+### <a id="fjs-d29"></a>2026-08-13 · `FJS-D29` — the process a fleet server runs is an OUTPOST, and infrastructure gets place nouns while AI gets personified ones.
+
+Basecamp's
 resident process was called an *agent*. So is the thing `IDEAS/agent-surface.md`
 proposes to expose over MCP. **The collision was already in the tree**, not a
 risk to guard against: one word, two meanings, both written down, in a repo whose
@@ -318,8 +329,9 @@ ruled nowhere. **This decision reserves the name, not the design.**
 
 ---
 
-**2026-08-08 · A resource file is named for its noun — PascalCase, singular —
-one Resource per file.** `App.mesa`, not `apps.mesa`. Repo Invariant 19.
+### <a id="fjs-d40"></a>2026-08-08 · `FJS-D40` — A resource file is named for its noun — PascalCase, singular — one Resource per file.
+
+`App.mesa`, not `apps.mesa`. Repo Invariant 19.
 
 The three realms are already **Model → Service → Resource**, and two of them
 had settled naming: `model App` is PascalCase singular (2026-08-01) and the
@@ -348,7 +360,7 @@ no single noun to be named for.
 *Lives in:* `CLAUDE.md` Invariant 19, `packages/basecamp/web/src/resources/`,
 `example/web/src/resources/`.
 
-**2026-08-09 · A pagination control is `.pagination-link`, not `.page`.**
+### <a id="fjs-d41"></a>2026-08-09 · `FJS-D41` — A pagination control is `.pagination-link`, not `.page`.
 The gap beside it is `.pagination-gap`. `@frontierjs/css` v0.14.6, breaking.
 
 `Page` is already a tier in the vocabulary — *what changes when you navigate*:
@@ -374,8 +386,9 @@ The only consumer was `@frontierjs/ui`'s `Pagination.mesa`.
 *Lives in:* `packages/css/src/patterns/nav.css`, `vocabulary.js` (`ANATOMY`),
 `packages/ui/components/display/Pagination.mesa`.
 
-**2026-08-06 · The email component kit is `@frontierjs/email-kit`.**
-Closes `FJS-D15`; fixes `FJS-051`. Not `@frontierjs/mesa-email`. Every other
+### <a id="fjs-d15"></a>2026-08-06 · `FJS-D15` — The email component kit is `@frontierjs/email-kit`.
+
+Fixes `FJS-051`. Not `@frontierjs/mesa-email`. Every other
 package's npm name matches its directory, and `email-kit` is the directory —
 so the directory was right and the name was the odd one out. It also says what
 the package IS rather than what it is built on: `@frontierjs/ui` is a Mesa
@@ -389,21 +402,21 @@ user-facing peer-dependency error), `PROJECT_STATE.md`, mesa's own docs, and
 name: it is a dated audit and rewriting its findings would falsify the record.
 *Lives in:* `packages/email-kit/`.
 
-**2026-08-01 · Model names are PascalCase and singular, always.**
+### <a id="fjs-d42"></a>2026-08-01 · `FJS-D42` — Model names are PascalCase and singular, always.
 `model Lead` → accessor `db.lead`; `model PageView` → `db.pageView`. The accessor
 rule derives the API from the model name, so mixed conventions produced three
 spellings of one model across packages. Exception: `@@external` models mirror a
 foreign physical table and keep its name verbatim.
 *Lives in:* all examples/docs in `packages/litestone`; enforce in scaffolds and reviews.
 
-**2026-08-01 · Named gate syntax is canonical; digits are the compact form.**
+### <a id="fjs-d43"></a>2026-08-01 · `FJS-D43` — Named gate syntax is canonical; digits are the compact form.
 `@@gate(read: READER, write: USER, delete: OWNER)` in all docs and new schemas;
 `@@gate("2.4.4.6")` remains valid shorthand. `write:` expands to
 create+update+delete unless one is given explicitly; missing keys cascade
 read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
-**2026-08-06 · `Signal` and `Event` are two words for two things, both legal.**
+### <a id="fjs-d44"></a>2026-08-06 · `FJS-D44` — `Signal` and `Event` are two words for two things, both legal.
 **Signal** is Mesa's reactive cell — the thing `createSignal`/`watchProxy` make and
 `$:` tracks. **Event** is Junction's announcement — the thing `publish()` fans out
 and a channel carries. `ARCHITECT.md` §2 previously listed *signal* as a banned
@@ -416,7 +429,7 @@ Signal never crosses a Boundary, an Event only exists to.
 *Lives in:* `ARCHITECT.md` §2; `packages/mesa/runtime.js`;
 `packages/junction/src/transport/channels.ts`.
 
-**2026-08-06 · `Policy` keeps exactly one meaning, and it is not "business rule".**
+### <a id="fjs-d45"></a>2026-08-06 · `FJS-D45` — `Policy` keeps exactly one meaning, and it is not "business rule".
 A **policy** is a row/field predicate (`@@allow`/`@@deny`) compiled into SQL WHERE.
 A **Gate** is the ordinal per-operation level check. Both were already ruled. A
 third proposed sense — "declarative business rule, as opposed to imperative
@@ -425,7 +438,7 @@ senses cost an audit to separate. Where that distinction is wanted, the words ar
 already there: a **Declaration** is what the schema states, a **Hook** is what runs.
 *Lives in:* `ARCHITECT.md` §2 clarifications.
 
-**2026-08-06 · `Projection` is adopted for a read model only.**
+### <a id="fjs-d46"></a>2026-08-06 · `FJS-D46` — `Projection` is adopted for a read model only.
 A **Projection** is a *stored or served* shape derived from the seed for reading —
 a materialised view, a serialised subset, a report. What the compiler derives at
 build time stays **derived**; what a component computes stays **derived**. Adopted
@@ -436,8 +449,7 @@ for derived — if it has no independent existence, it is not a Projection.
 
 ## Access control
 
-**2026-08-16 · `FJS-D05` — tenancy is DECLARED in the seed, one block, two
-strategies; row tenancy compiles to `@@deny` and never to `@@allow`.**
+### <a id="fjs-d05"></a>2026-08-16 · `FJS-D05` — tenancy is DECLARED in the seed, one block, two strategies; row tenancy compiles to `@@deny` and never to `@@allow`.
 
 The row as filed asked for a config shape. What it turned out to need was an
 owner: db-per-tenant worked, and its configuration existed in three places that
@@ -516,8 +528,7 @@ one feature where that is worse than none. `FJS-282`.
 `tenantClaimGuard`); tests in `packages/litestone/test/tenancy.test.ts`;
 reference in `packages/litestone/docs/multi-tenancy.md`.
 
-**2026-08-15 · `FJS-D22` — a column says *the system writes this* with `@system`,
-and the application fills it by naming the column on the write.**
+### <a id="fjs-d22"></a>2026-08-15 · `FJS-D22` — a column says *the system writes this* with `@system`, and the application fills it by naming the column on the write.
 
 Four things were decided together, because ruling the annotation without ruling
 the fill path ships a column nothing can legitimately populate.
@@ -557,9 +568,7 @@ Not ruled here, deliberately: `FJS-D23`, the same seam from the other side — a
 payload key that is not a column. It wants the same vocabulary and a second word
 (`@transient`), not this one stretched.
 
-**2026-08-14 · The identity ladder: `@@gate("8")` is for credential material,
-not for `User`. A model is bounded by three declarations, and a level is only
-the first.**
+### <a id="fjs-d47"></a>2026-08-14 · `FJS-D47` — The identity ladder: `@@gate("8")` is for credential material, not for `User`. A model is bounded by three declarations, and a level is only the first.
 
 `8` reads as *the safest number*, and it is not a stronger `5` — it means
 *nothing outside `asSystem()` has anything to say to this model*. That is true
@@ -605,8 +614,7 @@ The cost, stated: a policy FILTERS where a gate REFUSES, so the write a policy
 turns away returns normally. Nothing in a return value can tell you it was
 refused — a test reads the row back through `asSystem()`.
 
-**2026-08-10 · Basecamp's gate ladder: a level is a fact about a caller IN A
-WORKSPACE, so it is resolved per request and carried on the principal.**
+### <a id="fjs-d48"></a>2026-08-10 · `FJS-D48` — Basecamp's gate ladder: a level is a fact about a caller IN A WORKSPACE, so it is resolved per request and carried on the principal.
 
 The gap `FJS-007` recorded for ten phases was never the resolver. It was that
 the shape Junction ships — `sessionGateLevel()`, standing that travels with the
@@ -659,8 +667,7 @@ Tenancy stays the `workspaceId` filter in every service read plus
 `scopeToWorkspace` refusing a non-member. Expressing it as `@@allow` is the next
 step and is not claimed by this ruling.
 
-**2026-08-10 · A tier above every tenant is a SEPARATE service, and the bit
-that grants it is a column named for the standing it grants.**
+### <a id="fjs-d49"></a>2026-08-10 · `FJS-D49` — A tier above every tenant is a SEPARATE service, and the bit that grants it is a column named for the standing it grants.
 
 Basecamp's four sysadmin screens read across every workspace. Nineteen of its
 twenty services take `X-Workspace-Id` and refuse without it, so there were two
@@ -696,8 +703,7 @@ workspaces service already uses for a workspace you are not a member of.
 *Lives in:* `packages/basecamp/api/src/services/hub/hub.service.ts`,
 `api/src/core/hooks.ts` (`requireSystemAdmin`); 4 data tests, 25 browser checks.
 
-**2026-08-10 · A status column that nothing reads is not a state, and
-suspension needs a door on each side.**
+### <a id="fjs-d50"></a>2026-08-10 · `FJS-D50` — A status column that nothing reads is not a state, and suspension needs a door on each side.
 
 `User.status` had been a free `String` since the schema was written, and
 @frontierjs/auth — which owns the model — never looks at it. So "suspended" was
@@ -728,8 +734,7 @@ sounding action unrecoverable.
 *Lives in:* `packages/basecamp/api/src/core/session-auth.ts`,
 `api/src/core/hooks.ts`; pinned by db tests and by `verify.mjs` § 13f.
 
-**2026-08-10 · A machine account is created from an admin screen. A human is
-not.**
+### <a id="fjs-d51"></a>2026-08-10 · `FJS-D51` — A machine account is created from an admin screen. A human is not.
 
 The hub's Users screen creates `UserKind.bot` accounts and deliberately ships
 without the mock's Invite button. The asymmetry is the whole point: creating a
@@ -759,8 +764,9 @@ only one that does not outrank you.
 (`createBot`), `api/src/services/api-keys/api-keys.service.ts`
 (`assertBotOwner`).
 
-**2026-08-06 · Raw SQL is available through `asSystem()` only, on any schema
-that declares access rules.** Fixes `FJS-005`.
+### <a id="fjs-d52"></a>2026-08-06 · `FJS-D52` — Raw SQL is available through `asSystem()` only, on any schema that declares access rules.
+
+Fixes `FJS-005`.
 
 `db.sql` goes straight to the read connection — no `@@gate`, no `@@allow`, no
 `@guarded`, no `@scoped`, no `@@softDelete`, because all of those are enforced
@@ -819,7 +825,7 @@ Revisit with `herald`.
 `test/litestone.test.ts` § "raw SQL and the access rules it cannot enforce",
 5 of which fail if the refusal is removed.
 
-**2026-08-01 · Gates enforce by default when declared; undeclared imposes nothing.**
+### <a id="fjs-d53"></a>2026-08-01 · `FJS-D53` — Gates enforce by default when declared; undeclared imposes nothing.
 Any model with `@@gate` is enforced from the first request via the shipped
 `FrontierGateGetLevel` resolver (null user → STRANGER) even with no GatePlugin
 installed. A user-supplied `GatePlugin({ getLevel })` replaces the resolver
@@ -831,8 +837,9 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
-**2026-08-17 · Litestone has atomic update operators, and the COLUMN decides
-one is an operator at all (`FJS-D27`).** `increment` `decrement` `multiply`
+### <a id="fjs-d54"></a>2026-08-17 · `FJS-D54` — Litestone has atomic update operators, and the COLUMN decides one is an operator at all (`FJS-D27`).
+
+`increment` `decrement` `multiply`
 `divide` on a numeric column, `push` on an array one, on `update` and
 `updateMany` only. Read-modify-write loses data — two callers read a counter,
 both add one, the second write overwrites the first — and `@version` does not
@@ -870,8 +877,9 @@ declared type is the only thing that makes it safe.
 *Lives in:* `extractWriteOps` in `packages/litestone/src/core/client.js`;
 `test/write-operators.test.ts`; `docs/querying.md` § Atomic update operators.
 
-**2026-08-16 · A write announcement has two shapes, and the write says which
-(`FJS-307`).** `scope: 'row'` — one row changed, `result` is it, or `null` where
+### <a id="fjs-d55"></a>2026-08-16 · `FJS-D55` — A write announcement has two shapes, and the write says which (`FJS-307`).
+
+`scope: 'row'` — one row changed, `result` is it, or `null` where
 `select: false` skipped the RETURNING. `scope: 'collection'` — `count` rows
 matching `where` changed, from a statement that never built them. The
 discriminator is STATED, never read off `result`, because `result: null` is not
@@ -879,7 +887,7 @@ one fact: a `select: false` write is row-scoped and has no row, and treating tha
 as *no rows* is exactly what dropped it a layer up. Every write method announces;
 seven did not, and a write matching no rows announces nothing.
 
-**2026-08-16 · `announce` is per CALL, with a client-level floor (`FJS-D34`).**
+### <a id="fjs-d56"></a>2026-08-16 · `FJS-D56` — `announce` is per CALL, with a client-level floor (`FJS-D34`).
 `collection` (default) · `rows` · `none`; precedence option → `createClient({
 announce })` → `collection`. **Not per model**, and not adaptive on size. Per
 model was the tempting one — it is where `@@log` and `@@softDelete` live, and
@@ -897,29 +905,29 @@ value is refused BY NAME before the statement runs: `announce: 'row'` is somebod
 who wanted per-row announcements, and quietly handing them the coarse one is the
 class of bug `FJS-307` closed.
 
-**2026-08-01 · Unknown `where` fields: WARN on reads, ERROR on writes.**
+### <a id="fjs-d57"></a>2026-08-01 · `FJS-D57` — Unknown `where` fields: WARN on reads, ERROR on writes.
 Reads log once per model+field (did-you-mean hint) and still execute; writes
 (update/delete/restore/upsert families) reject — a typo'd filter on a write is a
 mis-scoped destructive operation. `AND/OR/NOT` are descended into; relation
 sub-filters are not (their keys belong to the related model).
 
-**2026-08-01 · Unknown `data` keys are silently stripped.**
+### <a id="fjs-d58"></a>2026-08-01 · `FJS-D58` — Unknown `data` keys are silently stripped.
 Mass-assignment protection: pass a request body straight in without
 whitelisting. This deliberately REPLACED an earlier reject-with-did-you-mean
 behavior — do not restore the rejection. Safety net: a typo on a *required*
 field still fails loudly via the required-field pre-flight.
 
-**2026-08-01 · `take`/`skip` are rejected with a pointer to `limit`/`offset`.**
+### <a id="fjs-d59"></a>2026-08-01 · `FJS-D59` — `take`/`skip` are rejected with a pointer to `limit`/`offset`.
 Prisma muscle-memory must fail loudly and helpfully, never be silently ignored.
 
-**2026-08-01 · Missing required fields on create are a ValidationError.**
+### <a id="fjs-d60"></a>2026-08-01 · `FJS-D60` — Missing required fields on create are a ValidationError.
 `name is required`, same shape as every other field rule — never a raw SQLite
 `NOT NULL constraint failed`. Exempt: optional fields, arrays (implicit `[]`
 DDL default), `@default`/`@updatedAt`/`@sequence`/generated/computed/`@from`,
 `Int @id` (autoincrement). Applies to create/createMany/upsert-insert only —
 updates stay partial.
 
-**2026-08-01 · `@@strict` model flag: PARKED.**
+### <a id="fjs-d61"></a>2026-08-01 · `FJS-D61` — `@@strict` model flag: PARKED.
 (Would escalate read-warnings to errors per-model.) Revisit after the warnings
 have been observed in practice; the warn infrastructure makes it nearly free.
 *All four above live in:* `packages/litestone/src/core/client.js`
@@ -927,7 +935,7 @@ have been observed in practice; the warn infrastructure makes it nearly free.
 `test/elegance-fixes.test.ts` and the rewritten block in `test/litestone.test.ts`
 ("write payload — unknown fields are silently stripped").
 
-**2026-08-13 · Clock-relative derived fields: `@derived(expr)`, evaluated at query time.**
+### <a id="fjs-d62"></a>2026-08-13 · `FJS-D62` — Clock-relative derived fields: `@derived(expr)`, evaluated at query time.
 Supersedes the ruling written earlier the same day, which said no such tier
 should exist. That ruling's reason does not hold: SQLite refuses a
 non-deterministic function in a `GENERATED ALWAYS` column, because the column is
@@ -985,8 +993,9 @@ fragments, chaining, all read methods, documented merge rules — keeps the case
 that are about the *shape* of a query rather than a fact about a row: bundled
 `orderBy`, `limit`, `include`, and composition.
 
-**2026-08-13 · Amended the same day: three tiers, not two. `@@scope` is
-reinstated.** The paragraph above collapsed two different things into the
+### <a id="fjs-d63"></a>2026-08-13 · `FJS-D63` — Amended the same day: three tiers, not two. `@@scope` is reinstated.
+
+The paragraph above collapsed two different things into the
 function registry, and the cell it emptied is one nothing else fills.
 
 | | Declared in | Materialises a property? | A browser can name it? |
@@ -1022,7 +1031,7 @@ it only ever appears in a `WHERE`, it is `@@scope`.** A `@@scope` may reference 
 interpolated into a pattern — state that at the site, because it is exactly the
 shape the invariant warns about.
 
-**2026-08-14 · A commit scope is a declared wrapper, not a new hook phase.**
+### <a id="fjs-d64"></a>2026-08-14 · `FJS-D64` — A commit scope is a declared wrapper, not a new hook phase.
 `FJS-089` asked for a phase that means *the call succeeded*. Junction gets
 `transactional: true` on a service definition instead — a derived `around` hook
 that wraps the whole pipeline in one `$transaction`.
@@ -1057,7 +1066,9 @@ concurrent caller as a nested one, so a second request's writes rode the first
 request's rollback. This feature opens a transaction on every mutating request
 and would have made that the normal path.
 
-**2026-08-15 · A soft-deleted row KEEPS its `@unique` values.** The slot is not
+### <a id="fjs-d65"></a>2026-08-15 · `FJS-D65` — A soft-deleted row KEEPS its `@unique` values.
+
+The slot is not
 released, and `create` naming a value a deleted row holds is refused — by name,
 with the row's id and both ways to release it (`FJS-204`).
 
@@ -1086,8 +1097,9 @@ rather than getting it as a side effect of a DDL choice.
 No per-field opt-out. It would reintroduce the two-rows-claim-one-identity
 problem per column, and nothing in the repo needs it yet.
 
-**2026-08-18 · There is no `@@history` block, and the seed will not grow one.**
-(`FJS-D39`, from the argument that produced `FJS-341` and `FJS-342`.)
+### <a id="fjs-d39"></a>2026-08-18 · `FJS-D39` — There is no `@@history` block, and the seed will not grow one.
+
+(From the argument that produced `FJS-341` and `FJS-342`.)
 
 The proposal was a fourth axiom — *one history* beside one origin, one name, one
 owner — realised as a model-level declaration:
@@ -1145,8 +1157,9 @@ derive it. If they do, the work is an owner, not a word.
 
 ## Migrations (Litestone)
 
-**2026-08-17 · A rebuild that would destroy an app-created schema object is
-BLOCKED, not warned about (`FJS-183`).** `rebuildSQL` drops the table, which
+### <a id="fjs-d66"></a>2026-08-17 · `FJS-D66` — A rebuild that would destroy an app-created schema object is BLOCKED, not warned about (`FJS-183`).
+
+`rebuildSQL` drops the table, which
 takes every trigger and index on it; litestone's own are regenerable from the
 schema and are restated afterwards, and one the app wrote exists only in the
 live database with nothing to restate it from. Naming them in a comment above
@@ -1162,14 +1175,14 @@ Re-emitting a captured trigger verbatim was the third option and is not taken:
 its body may name a column the rebuild drops, so it would restate SQL that fails
 at CREATE or, worse, at the next write.
 
-**2026-08-01 · The executor owns the transaction.**
+### <a id="fjs-d67"></a>2026-08-01 · `FJS-D67` — The executor owns the transaction.
 `apply()`/`autoMigrate()` strip in-file `BEGIN/COMMIT` + FK pragmas and provide
 the real thing: one transaction per migration, ROLLBACK on failure,
 `recordMigration` committed atomically inside it, FK pragma restored in a
 finally. Generated files keep the in-file pair for hand-running in a sqlite
 shell only.
 
-**2026-08-01 · Rebuilds copy only the old∩new column intersection.**
+### <a id="fjs-d68"></a>2026-08-01 · `FJS-D68` — Rebuilds copy only the old∩new column intersection.
 Added columns are never named in the copy-SELECT (SQLite's double-quoted-string
 fallback turns unknown identifiers into literals — this silently corrupted or
 destroyed data). A rebuild that adds a NOT NULL column with no default is
@@ -1178,8 +1191,10 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 *Both live in:* `packages/litestone/src/core/migrate.js` + `migrations.js`;
 tests in `test/migrations-fixes.test.ts`.
 
-**2026-08-16 · `FJS-D09` — there is no `down`. The way back is a copy taken
-before the run, and `--backup` is where it comes from.**
+### <a id="fjs-d09"></a>2026-08-16 · `FJS-D09` — migrations, second tier: there is no `down`, a rebuild asserts its own row count, and a migration is named after the last file in its directory.
+
+**§1 — there is no `down`. The way back is a copy taken before the run, and
+`--backup` is where it comes from.**
 
 A generated `down` cannot undo the migration it reverses. A rebuild is a `DROP
 TABLE`, so the inverse of *drop a column* is *invent the values it held*, and
@@ -1207,8 +1222,7 @@ whose contents nothing here can read. It warns and proceeds — refusing would
 make the flag mandatory for the ordinary case, a dev database nobody wants
 copied.
 
-**2026-08-16 · `FJS-D09` — a rebuild asserts its own row count before it drops
-the original.**
+**§2 — a rebuild asserts its own row count before it drops the original.**
 
 `INSERT INTO t__new SELECT … FROM t` followed by `DROP TABLE t` has a gap in it:
 a copy that read fewer rows than the original holds is an error to nobody. Not
@@ -1226,8 +1240,8 @@ original table where it was. It is emitted even when nothing is copied, which is
 the case it changes most — a rebuild sharing no column name with the old table
 used to empty it under a comment reading *nothing to copy*.
 
-**2026-08-16 · `FJS-D09` — a migration is named after the last file in its
-directory, not after the clock.**
+**§3 — a migration is named after the last file in its directory, not after
+the clock.**
 
 Filename order IS apply order, and the stamp is second-granular. Two migrations
 created inside one second break that in one of two ways, both silent: with the
@@ -1253,8 +1267,7 @@ handles and would otherwise answer *is this copy safe under an open WAL* twice)
 
 ## API design (Junction)
 
-**2026-08-17 · `FJS-D23` — a payload key that is not a column says so in the
-seed, with `@transient`, and Junction lifts it onto `ctx.transients`.**
+### <a id="fjs-d23"></a>2026-08-17 · `FJS-D23` — a payload key that is not a column says so in the seed, with `@transient`, and Junction lifts it onto `ctx.transients`.
 
 The other half of `FJS-D22`, and the same shape of answer: that one asks how a
 column says *the system writes this*, this one how a payload says *this is not a
@@ -1347,9 +1360,9 @@ Tests in `packages/litestone/test/transient-field.test.ts`,
 `packages/sierra/tests/form-fields.test.js`. Proven in basecamp's `channels`,
 where `captureCredential` is deleted.
 
-**2026-08-16 · `FJS-D10` — the deferred API cluster, ruled. Two adopted, two
-refused, and the fourth item turned out to be a defect wearing a naming
-question.** Four proposals deferred 2026-08-01 pending `FJS-D06`. Graded one at
+### <a id="fjs-d10"></a>2026-08-16 · `FJS-D10` — the deferred API cluster, ruled. Two adopted, two refused, and the fourth item turned out to be a defect wearing a naming question.
+
+Four proposals deferred 2026-08-01 pending `FJS-D06`. Graded one at
 a time, because they were only ever related by having been deferred together.
 
 **1 · `IAuth` partial acceptance — ADOPTED. `{ verifySession }` is a complete
@@ -1423,8 +1436,7 @@ with it.
 `packages/junction/src/core/schema.ts` (`createSchema<T>`) ·
 `packages/litestone/src/core/client.js` (`buildHookRunner`, `FJS-288`).
 
-**2026-08-16 · deferred work runs as the ENQUEUING PRINCIPAL, re-resolved — not
-as a system identity, and not as nobody.**
+### <a id="fjs-d69"></a>2026-08-16 · `FJS-D69` — deferred work runs as the ENQUEUING PRINCIPAL, re-resolved — not as a system identity, and not as nobody.
 
 A job had no principal, and no principal is STRANGER(0), refused by the model's
 own `@@gate`. The documented workaround was to pass `{ auth: { user: SYSTEM } }`
@@ -1472,9 +1484,7 @@ staff member who pressed Ship, where every background write used to say
 `system`. `caravan/tests/job-context.test.ts` runs all of it, including a user
 demoted between the dispatch and the run.
 
-**2026-08-16 · `FJS-D20` — the developer-facing auth API. A route is what
-ESTABLISHES a session; everything after it is a service. The browser half
-belongs to the client that holds the token.**
+### <a id="fjs-d20"></a>2026-08-16 · `FJS-D20` — the developer-facing auth API. A route is what ESTABLISHES a session; everything after it is a service. The browser half belongs to the client that holds the token.
 
 The question was left open as *what should the surface be*, on the grounds that
 `/auth/*` bypasses the Service abstraction. That half was never the problem —
@@ -1523,8 +1533,7 @@ Left open deliberately: OAuth (`Credential` already carries the columns), and a
 bus for many observers of an auth event — `FJS-042` ruled single handlers, and
 that ruling stands.
 
-**2026-08-15 · `FJS-D13` — a stream sits OUTSIDE the result envelope. `kind`
-stays `single | list`.**
+### <a id="fjs-d13"></a>2026-08-15 · `FJS-D13` — a stream sits OUTSIDE the result envelope. `kind` stays `single | list`.
 
 The envelope answers *what did this call return*: one record or a page of them,
 with `total`/`limit`/`offset` and the bulk protocol's `errors`. A stream returns
@@ -1568,8 +1577,9 @@ per-subscriber filtering of a frame, which is `FJS-011`'s residue and 4.6's
 argument; a pushed frame and a streamed frame have the same problem and should
 get one owner rather than two.
 
-**2026-08-13 · A service is a definition and a compiled runtime, and `methods:`
-declares.** (`FJS-D01`, closing `FJS-016`.)
+### <a id="fjs-d01"></a>2026-08-13 · `FJS-D01` — A service is a definition and a compiled runtime, and `methods:` declares.
+
+(Closing `FJS-016`.)
 
 A Junction service was *options + methods + internals in one object*, ending in
 `[method: string]: unknown` so actions hung off the same namespace as
@@ -1629,8 +1639,9 @@ accounting for most of it. Not the justification, though — the register claime
 the baseline was mostly this defect and it was not: 137 of the 211 were in tests
 and examples. The justification is four bugs of one class, fixed four times.
 
-**2026-08-10 · A method may answer what it likes; an ANNOUNCEMENT is about a
-row, so it carries one.** (`FJS-D08`, closing `FJS-020`.)
+### <a id="fjs-d08"></a>2026-08-10 · `FJS-D08` — A method may answer what it likes; an ANNOUNCEMENT is about a row, so it carries one.
+
+(Closing `FJS-020`.)
 
 A custom method's return value is also its broadcast payload, and those two jobs
 want different things. A caller asked for `setVariable` and can be answered with
@@ -1690,8 +1701,9 @@ The response half is NOT fixed by this and cannot be: a method that answers a
 projection still answers a projection, and a caller assigning it over a record
 still loses fields. That is what the warning is for.
 
-**2026-08-10 · An app's own User columns reach the session through one hook, at
-the point the row is already in hand.** `createLitestoneAuth(db, {
+### <a id="fjs-d70"></a>2026-08-10 · `FJS-D70` — An app's own User columns reach the session through one hook, at the point the row is already in hand.
+
+`createLitestoneAuth(db, {
 sessionFields })`.
 
 @frontierjs/auth OWNS `model User`; every app that uses it EXTENDS that model,
@@ -1717,7 +1729,7 @@ which is a breaking change nobody would see.
 consumed at `packages/basecamp/api/src/core/session-auth.ts`. 83 auth tests
 green, `example/` 37/37 unchanged (the option is additive).
 
-**2026-08-10 · A saved view names a declared kind. It never stores a query.**
+### <a id="fjs-d71"></a>2026-08-10 · `FJS-D71` — A saved view names a declared kind. It never stores a query.
 Ruled while building basecamp's `Dashboard` + `DashboardWidget`; the question
 had been open since the screen inventory was written.
 
@@ -1761,8 +1773,9 @@ The same reasoning applies to anything else that saves *what to look at*:
 a report, a filter preset, a scheduled digest. Name the shape; do not store the
 query.
 
-**2026-08-10 · Where a declared vocabulary cannot bound the act, the RECORD
-bounds it — and the two live on separate screens with separate roles.** Ruled
+### <a id="fjs-d72"></a>2026-08-10 · `FJS-D72` — Where a declared vocabulary cannot bound the act, the RECORD bounds it — and the two live on separate screens with separate roles.
+
+Ruled
 while building basecamp's `/recipes/` and `/cleanup/`, the day after the saved-view
 ruling above, because the obvious move was to apply that ruling again and it
 does not apply.
@@ -1822,8 +1835,9 @@ a live option and a migration; the decision above stands until someone takes it.
 `db/schema.lite` § FLEET ACTIONS; tests in `db/test/schema.test.ts` § Recipe and
 CleanupRun.
 
-**2026-08-08 · A field that is accepted on the wire but is not a column is
-captured in a BEFORE hook, never read from the method body.** Ruled while
+### <a id="fjs-d73"></a>2026-08-08 · `FJS-D73` — A field that is accepted on the wire but is not a column is captured in a BEFORE hook, never read from the method body.
+
+Ruled while
 building `channels`. **Superseded 2026-08-17 in one respect and only one**: the
 field is declared `@transient` and the framework lifts it, so the hook below is
 no longer written by hand. Everything else here — why the value belongs off
@@ -1891,8 +1905,9 @@ their word: `@system` (2026-08-15) and `@transient` (2026-08-17).
 `CLAUDE.md` § Live hazards.
 
 
-**2026-08-06 · A custom action announces like any other write, under its own
-name.** Closes `FJS-D21`; fixes `FJS-033`. `callService`'s one announcement
+### <a id="fjs-d21"></a>2026-08-06 · `FJS-D21` — A custom action announces like any other write, under its own name.
+
+Fixes `FJS-033`. `callService`'s one announcement
 point derives `orders pay` for an action exactly as it derives `orders patched`
 for a patch — no past tense is invented, matching what the `publish()` hook form
 had always put on the wire and what the browser client's `*` handler had always
@@ -1919,8 +1934,9 @@ Rulings inside the ruling:
   made the *acting* tab correct and every other tab stale. Nothing in the repo
   watched a client that had not acted until `example/web/test/verify-live.mjs`.
 
-**2026-08-06 · A service narrows its method set with one key: `methods`.**
-Closes `FJS-D07`; fixes `FJS-004`. Two forms on the same key —
+### <a id="fjs-d07"></a>2026-08-06 · `FJS-D07` — A service narrows its method set with one key: `methods`.
+
+Fixes `FJS-004`. Two forms on the same key —
 `methods: ['find', 'get']` is the general allow-list, `methods: 'readOnly'` is
 shorthand for exactly that list. Absent means every method, so nothing that
 exists changes.
@@ -1959,14 +1975,14 @@ Rulings inside the ruling:
 First consumer: `packages/basecamp`'s `/audit`, which drops four hand-written
 `MethodNotAllowed` stubs for one line.
 
-**2026-08-01 · Custom service actions stay on `X-Service-Method` header dispatch.**
+### <a id="fjs-d74"></a>2026-08-01 · `FJS-D74` — Custom service actions stay on `X-Service-Method` header dispatch.
 Proposal to move to sub-path dispatch (`POST /api/notes/:id/summary`) was
 considered and declined. Case is preserved for action names (`getStats` works);
 CRUD names remain blocked from header override; `restore`/`upsert` match
 case-insensitively.
 *Lives in:* `packages/junction/src/transport/bridge.ts`.
 
-**2026-08-01 · `createService({ model })` carries the derived hook layer.**
+### <a id="fjs-d75"></a>2026-08-01 · `FJS-D75` — `createService({ model })` carries the derived hook layer.
 The model path must always include schema-derived gates/validation
 (`base.hooks` = user hooks + derived); hook-less custom actions run the `'*'`
 (all-hooks) pipeline, never an empty one. Litestone error names map across the
@@ -1974,7 +1990,7 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 *Lives in:* `packages/junction/src/core/service.ts`, `core/hooks.ts`,
 `core/errors.ts`.
 
-**2026-08-02 · The result envelope has one owner, and `kind` is the discriminant.**
+### <a id="fjs-d76"></a>2026-08-02 · `FJS-D76` — The result envelope has one owner, and `kind` is the discriminant.
 `{ kind, object, data, errors, total?, limit?, offset? }`. `kind` is `'single' |
 'list'` and is THE field to branch on; `object` is the SERVICE name for both
 kinds (`'posts'`, never `'list'` and never `'Post'`), so it is a stable identity
@@ -1992,7 +2008,7 @@ single too, `false` = unwrap the list to a bare array (Feathers' `paginate:false
 `unwrapResult`, `resultData`, `isServiceResult`, `isListResult`, `single`, `list`.
 Import them; do not reach into `.data`.
 
-**2026-08-02 · `$` is transport syntax, not an internal data model.**
+### <a id="fjs-d77"></a>2026-08-02 · `FJS-D77` — `$` is transport syntax, not an internal data model.
 `ctx.query` is FILTERS ONLY (which records); `ctx.directives` is DIRECTIVES
 (how to shape the result) — `limit`, `offset`, `orderBy`, `select`, `populate`,
 `search`, `withDeleted`, `onlyDeleted`, structured and unprefixed. The bridge is
@@ -2007,7 +2023,7 @@ clause on a nonexistent column and returned zero rows. Internal callers pass
 `src/core/context.ts` (`QueryDirectives`, `RESERVED_PARAMS`),
 `src/core/litestone.ts` (`parseQuery`).
 
-**2026-08-02 · `errors[]` is load-bearing: bulk writes return partial success.**
+### <a id="fjs-d78"></a>2026-08-02 · `FJS-D78` — `errors[]` is load-bearing: bulk writes return partial success.
 Kept, not dropped — and now written to. A bulk create saves what it can and
 returns the failures as `{ data, error }` pairs: the input that failed, paired
 with why, so a caller can tell WHICH of fifty rows was rejected rather than
@@ -2020,8 +2036,9 @@ mutually exclusive; wrap the call in a transaction if you want the former.
 *Lives in:* `packages/junction/src/core/envelope.ts` (`BulkFailure`,
 `toBulkFailure`, `partitionBulk`, `BULK_FAILURES`), `src/core/litestone.ts`.
 
-**2026-08-14 · Partial success extends to a filtered PATCH and REMOVE, and the
-reason is enforcement rather than symmetry** (`FJS-D11`, closing `FJS-044`).
+### <a id="fjs-d11"></a>2026-08-14 · `FJS-D11` — Partial success extends to a filtered PATCH and REMOVE, and the reason is enforcement rather than symmetry
+
+(Closing `FJS-044`).
 A bulk patch/remove selects its rows and writes them one at a time, answering
 the same `{ data, errors }` list envelope bulk create does. Symmetry was the
 weaker half of the argument. The stronger half: Litestone does not enforce
@@ -2061,7 +2078,7 @@ a `restoreMany` that does not exist (`FJS-245`).
 *Lives in:* `packages/junction/src/core/litestone.ts` (`bulkByRow`), tests in
 `packages/junction/tests/bulk-partial-success.test.ts`.
 
-**2026-08-02 · One event origin, and broadcasting is declared on the service.**
+### <a id="fjs-d79"></a>2026-08-02 · `FJS-D79` — One event origin, and broadcasting is declared on the service.
 A mutation is announced ONCE, in `callService`, and fans out to two consumers:
 the in-process bus (`posts:created`) and the channel manager (`posts created`).
 They were independent origins, which cost three separate things: two places
@@ -2100,7 +2117,7 @@ carrying an array lands as one malformed upsert.
 *Lives in:* `packages/junction/src/core/service.ts` — `callService`,
 `publishToChannels`, `PublishDeclaration`.
 
-**2026-08-02 · Broadcasting is opt-in in the framework, opt-out in the scaffold.**
+### <a id="fjs-d80"></a>2026-08-02 · `FJS-D80` — Broadcasting is opt-in in the framework, opt-out in the scaffold.
 `createService({ name, model })` broadcasts nothing. `@@allow` row policies are
 enforced when a row is READ, and a broadcast does not re-evaluate them per
 subscriber — so a default of "announce everything" hands every connection in a
@@ -2127,7 +2144,9 @@ takes them off the list.
 rationale in `publishToChannels()`, the fallback in
 `packages/junction/src/transport/channels.ts` (`publishDefault`).
 
-**2026-08-17 · Caravan owns the clock; `app.scheduler` is in-process only.** (`FJS-D36`, closing `FJS-047`.)
+### <a id="fjs-d36"></a>2026-08-17 · `FJS-D36` — Caravan owns the clock; `app.scheduler` is in-process only.
+
+(Closing `FJS-047`.)
 
 Junction constructs a scheduler directly (`app.ts`, `createScheduler()`) and
 Caravan registers a cron for any `handle()` carrying one — so an app has two
@@ -2161,8 +2180,7 @@ something to execute.
 `packages/caravan/src/cron.ts`; the app-side pattern is
 `packages/basecamp/api/src/engine/job-schedule.ts`.
 
-**2026-08-17 · A durable effect is a NAME and a PAYLOAD in the app's own
-database, and the queue stays a separate file.** (`FJS-D35`.)
+### <a id="fjs-d35"></a>2026-08-17 · `FJS-D35` — A durable effect is a NAME and a PAYLOAD in the app's own database, and the queue stays a separate file.
 
 `ctx.afterCommit(fn)` bought the ORDERING half (`FJS-089`): the effect runs only
 if the call succeeded and the transaction committed. It buys nothing against a
@@ -2224,7 +2242,7 @@ idempotent — the framework hands it the outbox row id and says nothing else.
 `packages/junction/db/outbox.lite`, `packages/junction/src/plugins/outbox/`;
 the worked example is `example/api/services/orders.service.ts` (`pay`).
 
-**2026-08-17 · Login stays HTTP; cycling the socket IS the login event.** (`FJS-D30`.)
+### <a id="fjs-d30"></a>2026-08-17 · `FJS-D30` — Login stays HTTP; cycling the socket IS the login event.
 
 Feathers authenticates over the socket because authentication is a *service*
 there, so it inherits the transport — and because a Feathers connection outlives
@@ -2274,8 +2292,7 @@ Feathers `channels.js` that has no equal here (`FJS-334`).
 
 ## UI substrate (Mesa)
 
-**2026-08-16 · A UI plugin contributes a CONTROL, and a control is two
-registrations in two packages.** (`FJS-D17`)
+### <a id="fjs-d17"></a>2026-08-16 · `FJS-D17` — A UI plugin contributes a CONTROL, and a control is two registrations in two packages.
 `registerControl(name, resolve)` in Sierra's `field-rules.js` answers *which
 control does this column get* — a name, a whole descriptor, or null to decline.
 `registerFormControl(name, Component)` in `@frontierjs/ui/controls` answers *what
@@ -2318,8 +2335,7 @@ generated table, detail view or filter bar to call it. `IDEAS/overview.md` 1.1.
 `packages/sierra/tests/form-fields.test.js` and `packages/ui/test/form.mjs`
 (a contributed control rendered in a real `<Form>`, negative-controlled).
 
-**2026-08-15 · Braces mean *run code*; parentheses mean *watch*. A block whose
-body only reads values is refused by name.** (`FJS-D18`)
+### <a id="fjs-d18"></a>2026-08-15 · `FJS-D18` — Braces mean *run code*; parentheses mean *watch*. A block whose body only reads values is refused by name.
 `$: (a, b)` is a multi-path watch. `$: { (a, b) }` is a compile error — as are
 `$: { }`, `$: { count }` and `$: { cart.total }`. The two forms parse to the
 *same AST* (a `SequenceExpression` of identifiers), so the parentheses are the
@@ -2346,8 +2362,7 @@ true, so length is checked explicitly or an empty block reads as a watch group.
 walk), spec at `packages/mesa/docs/VISION.md` §4.4 / §4.8 (RULE 14b, 50, 52) and
 the §4.9 table, pinned in `packages/mesa/test/inert-block.test.js`.
 
-**2026-08-05 · A component's composition API is snippet props, and a snippet's
-arguments are getters.**
+### <a id="fjs-d81"></a>2026-08-05 · `FJS-D81` — A component's composition API is snippet props, and a snippet's arguments are getters.
 `{#snippet row(r)}` written inside a component tag is passed as the same-name
 prop (VISION §9.5, implemented 2026-08-04), and `{@render row(order)}` hands
 `() => order` rather than the value.
@@ -2363,8 +2378,7 @@ fine-grained model — the read happens inside each binding's own effect.
 Consequence: a snippet held in a variable and invoked from ordinary JavaScript
 takes `(anchor, ...getters)`.
 
-**2026-08-05 · `$attributes` is the REST of the props, and a portal is a
-delegation root.**
+### <a id="fjs-d82"></a>2026-08-05 · `FJS-D82` — `$attributes` is the REST of the props, and a portal is a delegation root.
 `$attributes` excludes everything the component declared, plus `class` (which
 arrives as `$class` and is *merged* by `bindClassPassthrough`, never replaced).
 `<mesa:portal>` registers its target as a delegation root for as long as it is
@@ -2381,7 +2395,7 @@ inert — correct markup, correct ARIA, no error, and a click that did nothing.
 Reference counting is what stops the first of two open portals from taking
 `document.body`'s listener away from the second.
 
-**2026-08-05 · A compiler error fails the build.**
+### <a id="fjs-d83"></a>2026-08-05 · `FJS-D83` — A compiler error fails the build.
 `analysis.errors` is not advisory: Sierra's `mesa-plugin` throws rather than
 serving the module.
 
@@ -2392,8 +2406,7 @@ looked at `errors`. A diagnosis nobody sees is the same as no diagnosis, and
 this repo's recurring failure mode is exactly that: the compiler knew.
 
 
-**2026-08-04 · `x = x` forces a notify — the same idiom for local state and for
-watched imports.**
+### <a id="fjs-d84"></a>2026-08-04 · `FJS-D84` — `x = x` forces a notify — the same idiom for local state and for watched imports.
 Self-assignment on a reactive binding compiles to a write that skips the
 equality guard, so `user.score += 10; user = user` re-renders. It reads as a
 no-op and deliberately is not one: it is how you say *"I mutated this in place,
@@ -2421,7 +2434,7 @@ imported-proxy case it mirrors), `packages/mesa/src/runtime.js`
 skipped.
 
 
-**2026-08-03 · Scoped CSS binds to the selector's SUBJECT, not to an ancestor.**
+### <a id="fjs-d85"></a>2026-08-03 · `FJS-D85` — Scoped CSS binds to the selector's SUBJECT, not to an ancestor.
 A component's `<style>` rules are emitted by appending the component hash to the
 **rightmost compound selector** (`button` → `button.mHASH`), and every element in
 a styled component carries that hash. Two things follow, and both reverse the
@@ -2443,7 +2456,7 @@ This is a **breaking change** for any component that styled a child's internals.
 element writer), VISION **RULE 55**, `packages/mesa/CHANGES.md`;
 computed-style proof in `packages/sierra/tests/fixtures/island-site/verify.mjs`.
 
-**2026-08-03 · CSS scope ids are content-addressed, never generated.**
+### <a id="fjs-d86"></a>2026-08-03 · `FJS-D86` — CSS scope ids are content-addressed, never generated.
 The component hash is `cssHash(styleContent)` — a pure function of the `<style>`
 content, so the same component yields the same id in any process, any build, and
 any compiler. It replaced `genId()` (clock + counter), whose one caller this was.
@@ -2464,7 +2477,7 @@ harmless, because their rules are the same rules.
 *Lives in:* `packages/mesa/src/compiler.js` (`cssHash`, `processCSS`);
 `genId()` remains exported and non-deterministic with no caller.
 
-**2026-08-03 · A page assembles its own styles; the renderer offers both shapes.**
+### <a id="fjs-d87"></a>2026-08-03 · `FJS-D87` — A page assembles its own styles; the renderer offers both shapes.
 `renderComponent` returns `.styles` — `[{ id, css }]` per component in tree order
 — alongside the concatenated `.css`, and `styleTag: false` suppresses the blob it
 otherwise prepends to `.html`. A caller emitting `<style id="mHASH">` per
@@ -2474,7 +2487,7 @@ taking an island's CSS on a static page from three copies to one.
 *Lives in:* `packages/mesa/src/render-component.js`,
 `packages/sierra/src/build/prerender.js` (`wrapDocument`).
 
-**2026-08-03 · The NEAREST delegation root owns an event; ancestors stay out.**
+### <a id="fjs-d88"></a>2026-08-03 · `FJS-D88` — The NEAREST delegation root owns an event; ancestors stay out.
 `_makeDelegatedHandler` now scans the composed path first and returns if any
 registered root sits between the target and its own root. Before, each root
 walked the path independently, so a handler ran **once per ancestor root above
@@ -2488,8 +2501,7 @@ island in the same parent.
 *Lives in:* `packages/mesa/src/runtime.js` (`_makeDelegatedHandler`), pinned in
 `runtime.test.js` ("a handler fires ONCE when delegation roots nest").
 
-**2026-08-03 · An ancestor island's mount is authoritative; `client:static`
-under a live parent cannot be honoured.**
+### <a id="fjs-d89"></a>2026-08-03 · `FJS-D89` — An ancestor island's mount is authoritative; `client:static` under a live parent cannot be honoured.
 Mesa's `island()` short-circuits on the client, so a mounted island renders its
 nested `client:*` children **directly** — live, in its own delegation root,
 before their directives fire. Sierra's loader therefore defers to the ancestor
@@ -2503,8 +2515,9 @@ mounts, so it does not subsume anything inside it.
 `packages/sierra/tests/islands.test.js` and end-to-end in
 `tests/fixtures/island-site/` (`Outer.mesa` / `Inner.mesa`).
 
-**2026-08-03 · A prerendered page's CSS keeps its scoping; only the inlining
-targets flatten it.** `renderComponent`'s `email` and `fragment` targets push
+### <a id="fjs-d90"></a>2026-08-03 · `FJS-D90` — A prerendered page's CSS keeps its scoping; only the inlining targets flatten it.
+
+`renderComponent`'s `email` and `fragment` targets push
 declarations into `style=""` attributes, so their selectors are consumed and
 flattening them is harmless. The `html` target ships a `<style>` block, where the
 hash is the only thing keeping one component's rules off another's markup.
@@ -2514,8 +2527,7 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
-**2026-08-08 · There is no Menu term. A dropdown menu is Popover + Items.menu
-+ a keyboard contract, and the third one is not CSS.**
+### <a id="fjs-d91"></a>2026-08-08 · `FJS-D91` — There is no Menu term. A dropdown menu is Popover + Items.menu + a keyboard contract, and the third one is not CSS.
 
 Asked while building the wizard: does the vocabulary need Menu or Dropdown?
 
@@ -2559,8 +2571,9 @@ three parts, and the Popovers page has a Dropdown menu section with a live one.
 
 ---
 
-**2026-08-08 · The guide gets a decision wizard, and its tree names terms
-only.** `guide/decisions.js`, first page of the guide, new `Learn` nav group.
+### <a id="fjs-d92"></a>2026-08-08 · `FJS-D92` — The guide gets a decision wizard, and its tree names terms only.
+
+`guide/decisions.js`, first page of the guide, new `Learn` nav group.
 
 The guide was 48 reference pages and no entry point. Every one of them answers
 "how does Badge work" for somebody who has already decided they want a Badge —
@@ -2603,8 +2616,7 @@ not match without the class — not whether the class exists, which it does.
 
 ---
 
-**2026-08-08 · Syntax highlighting is `glow()` in `@frontierjs/utils`, and its
-theme is element selectors in `@frontierjs/css`. Neither side knows a class.**
+### <a id="fjs-d93"></a>2026-08-08 · `FJS-D93` — Syntax highlighting is `glow()` in `@frontierjs/utils`, and its theme is element selectors in `@frontierjs/css`. Neither side knows a class.
 
 The guide had 137 code samples and no highlighting. The obvious shape — a
 highlighter that emits `<span class="token keyword">` and a stylesheet that
@@ -2672,7 +2684,7 @@ theme defect rather than absorbed here (`FJS-125`).
 
 ---
 
-**2026-08-16 · A theme ships no selector, so anything a look needs is a token — and a token has to reach a descendant to count.**
+### <a id="fjs-d94"></a>2026-08-16 · `FJS-D94` — A theme ships no selector, so anything a look needs is a token — and a token has to reach a descendant to count.
 
 The contract was already this, and `themes/press.css` exists to probe it: if a
 design needs a rule of its own, the token that would have carried it is missing.
@@ -2724,7 +2736,7 @@ the element carrying the token.
 
 ---
 
-**2026-08-08 · The tint ramp is three named tokens, and `tones.css` is the only place the percentages live.**
+### <a id="fjs-d95"></a>2026-08-08 · `FJS-D95` — The tint ramp is three named tokens, and `tones.css` is the only place the percentages live.
 `--tint-surface` (10% into `--surface`), `--tint-rule` (30% into `--rule`),
 `--tint-ink` (55% into `--ink`). The names say which token each one tints, so
 there is nothing to look up.
@@ -2761,7 +2773,7 @@ including one that overrides `--tint-surface` and asserts a Card follows.
 *Lives in:* `packages/css/src/foundation/tones.css`; read by `surface.css`;
 `guide/guide.js` → *Tones & contrast* → "The tint ramp".
 
-**2026-08-08 · `Bar` and `Toolbar` are two terms. The difference is a promise, not a pixel.**
+### <a id="fjs-d96"></a>2026-08-08 · `FJS-D96` — `Bar` and `Toolbar` are two terms. The difference is a promise, not a pixel.
 They render identically. `Bar` is a horizontal strip and nothing else — no
 role, no keyboard contract, contents are whatever you put there. `Toolbar` is a
 strip whose contents are *controls*, presented to assistive tech as one widget
@@ -2791,7 +2803,7 @@ against the previous computed values, not assumed.
 *Lives in:* `packages/css/src/patterns/bars.css`; `vocabulary.js`;
 `guide/guide.js` → *Bar* → "Bar or Toolbar?".
 
-**2026-08-08 · The vocabulary covers everything the stylesheet ships, and a test says so.**
+### <a id="fjs-d97"></a>2026-08-08 · `FJS-D97` — The vocabulary covers everything the stylesheet ships, and a test says so.
 Six tiers / 35 terms → **eight tiers / 53 terms**. Nothing was designed: the CSS
 already shipped every addition and the vocabulary simply did not name it.
 
@@ -2826,7 +2838,7 @@ fix is a decision rather than an edit that makes red go away.
 *Lives in:* `packages/css/vocabulary.js`; `test/specs/vocabulary.spec.js`;
 `guide/index.html` loads it.
 
-**2026-08-08 · `Pill` is the count and `Badge` is the status. Kept, against the industry.**
+### <a id="fjs-d98"></a>2026-08-08 · `FJS-D98` — `Pill` is the count and `Badge` is the status. Kept, against the industry.
 The distinction is right and every large system draws it. Nobody agrees on
 which word goes where, and **`badge` is the word they disagree about** — it
 names the *count* in more systems than it names the *status*:
@@ -2861,7 +2873,7 @@ the signal the name lost.
 *Lives in:* `packages/css/src/components/pills.css`, `badges.css`;
 `guide/guide.js` → *Badges & Pills* → "What these words mean elsewhere".
 
-**2026-08-08 · UnoCSS is supported alongside `@frontierjs/css`, not banned.**
+### <a id="fjs-d99"></a>2026-08-08 · `FJS-D99` — UnoCSS is supported alongside `@frontierjs/css`, not banned.
 Amends Invariant 13, which previously read "No UnoCSS, no utility classes,
 anywhere." The semantic half of the invariant stands unchanged and is the part
 that matters: style with a **tone** and a **treatment**, never a colour. What
@@ -2886,7 +2898,7 @@ gets *one* scale under both sets of class names, instead of blocklisting.
 *Lives in:* root `CLAUDE.md` Invariant 13; `packages/css/README.md`
 §Using it with UnoCSS; `packages/css/src/foundation/tokens.css`.
 
-**2026-08-08 · The type scale is tokens. No literal `font-size` in a component.**
+### <a id="fjs-d100"></a>2026-08-08 · `FJS-D100` — The type scale is tokens. No literal `font-size` in a component.
 `--text-2xs … --text-4xl` (11 → 36px) plus six unitless `--leading-*`, declared
 once in `tokens.css`. The `.text-*` utilities and `h1`–`h6` read the **same**
 rungs, which is why `.text-xl` and `<h4>` are one number rather than two that
@@ -2906,7 +2918,7 @@ Values are **literal** in `:root`, never `--text-sm: var(--text-md)` — the
 *Lives in:* `packages/css/src/foundation/tokens.css`; every file under
 `src/components/` and `src/patterns/`.
 
-**2026-08-02 · An alias token declared in `:root` is always wrong.**
+### <a id="fjs-d101"></a>2026-08-02 · `FJS-D101` — An alias token declared in `:root` is always wrong.
 If token A should follow token B, write the fallback at the *use site* —
 `var(--ring, var(--color-primary))` — and do not declare A at all. The
 `:root` form (`--ring: var(--color-primary)`) looks equivalent and silently
@@ -2917,7 +2929,7 @@ inherits straight past every `.theme-*` override. This has now bitten twice:
 case where the `:root` form does what it looks like it does.
 *Lives in:* `packages/css/tokens.css`; tested in `test/specs/focus.spec.js`.
 
-**2026-08-02 · One focus ring, in the last cascade layer.**
+### <a id="fjs-d102"></a>2026-08-02 · `FJS-D102` — One focus ring, in the last cascade layer.
 `focus.css` writes the whole recipe once, at `:where()` specificity, in the
 `a11y` layer. Variation goes through `--ring-color` / `--ring-width` /
 `--ring-offset`, never a second recipe. It is in the last layer so a component
@@ -2927,7 +2939,7 @@ specificity in the same layer, so outlined and link buttons had **no focus
 indicator at all**. A consumer's unlayered CSS still overrides deliberately.
 *Lives in:* `packages/css/focus.css`; `test/specs/focus.spec.js`.
 
-**2026-08-02 · A Treatment class works on every element that reads it, or it is a bug.**
+### <a id="fjs-d103"></a>2026-08-02 · `FJS-D103` — A Treatment class works on every element that reads it, or it is a bug.
 This was already the rule for the seven tones; it applies equally to
 `.raised` / `.outlined` / `.ghost`. Only `.outlined` was implemented on `.btn`,
 so a toolbar of `.btn.ghost` rendered as solid primary blue. The test for a new
@@ -2935,14 +2947,14 @@ Treatment consumer is not "does it look right" but "does every value of that
 Treatment do something".
 *Lives in:* `packages/css/buttons.css`; `test/specs/components.spec.js`.
 
-**2026-08-02 · Competing background inputs compose through a variable, not specificity.**
+### <a id="fjs-d104"></a>2026-08-02 · `FJS-D104` — Competing background inputs compose through a variable, not specificity.
 Stripe, hover and tone all want a say in a table row and only one can own
 `background`. They set `--row-base` and the tone mixes into it, so a tone
 survives a stripe instead of being out-specified by it. Any future "several
 things tint the same surface" follows the same shape.
 *Lives in:* `packages/css/tables.css`; `test/specs/tables.spec.js`.
 
-**2026-08-02 · `.icon` means "this element IS an icon". The icon-only button is `.btn.square`.**
+### <a id="fjs-d105"></a>2026-08-02 · `FJS-D105` — `.icon` means "this element IS an icon". The icon-only button is `.btn.square`.
 **Breaking rename**, v0.10. One class cannot mean both, or `<button class="btn
 icon">` sizes the button itself to 1.15em. Icon sizing is one rule in
 `icon.css` — it was previously hand-copied into three files with three
@@ -2953,7 +2965,7 @@ padding+border clamps, so a stale `.btn.icon` floors at 30x30 and looks
 roughly right while having lost its `aspect-ratio` and padding.
 *Lives in:* `packages/css/icon.css`, `buttons.css`; `test/specs/core-gaps.spec.js`.
 
-**2026-08-02 · Interactive state is styled from ARIA, never from a class.**
+### <a id="fjs-d106"></a>2026-08-02 · `FJS-D106` — Interactive state is styled from ARIA, never from a class.
 `[aria-selected]`, `[aria-current]`, `:user-invalid`, `[hidden]`, `[open]`.
 A class lets the visual state and the announced state drift the moment someone
 updates one and forgets the other; keying off the attribute makes that
@@ -2972,8 +2984,9 @@ work, not a decision.)*
 
 ## Repo conventions
 
-**2026-08-15 · A surface is a sub-project — `widgets/` and `extension/`, peers of `api/`
-and `web/` — and an app may have it and nothing else.** Widgets were built out of
+### <a id="fjs-d107"></a>2026-08-15 · `FJS-D107` — A surface is a sub-project — `widgets/` and `extension/`, peers of `api/` and `web/` — and an app may have it and nothing else.
+
+Widgets were built out of
 `web/src/Embeds/`, inside the SPA's Vite root, which made them share three things
 they do not share in practice. **The config is a different target**: `widget`
 emits N self-contained IIFEs, `spa` emits one app, and one Vite root is one of
@@ -3022,7 +3035,7 @@ extended by the other cannot be two shapes.
 
 — `packages/cli/core/widget-surface.js`, `core/checks.js`, `packages/sierra/src/build/widget-build.js`, `README.md` §Project Structure, `CLAUDE.md` Invariant 3.
 
-**2026-08-14 · Invariant 17 is a standard, not a wall — `package-root-md` warns.**
+### <a id="fjs-d108"></a>2026-08-14 · `FJS-D108` — Invariant 17 is a standard, not a wall — `package-root-md` warns.
 The four files at a package root (`README.md`, `CLAUDE.md`, `PROJECT_STATE.md`,
 `CHANGES.md`) stay the standard, and the reason stands: the root is the index, and
 an index nobody can hold in their head is a directory listing. What changed is the
@@ -3046,8 +3059,9 @@ the file puts the judgement where judgement lives.
 
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
-**2026-08-15 · `FJS-D32` — FrontierJS adopts a linter and refuses a formatter,
-and the refusal is measured rather than preferred.** `IDEAS/tooling-decisions.md`
+### <a id="fjs-d32"></a>2026-08-15 · `FJS-D32` — FrontierJS adopts a linter and refuses a formatter, and the refusal is measured rather than preferred.
+
+`IDEAS/tooling-decisions.md`
 framed this as a taste call the maintainer owns — keep aligned columns and take a
 linter only, or drop alignment and take one tool that does both jobs. It is not a
 taste call, because the alignment rule is not only in `CLAUDE.md`: **the code
@@ -3082,8 +3096,9 @@ them unused imports. That is a countable cleanup with a direction, not an
 argument — `FJS-266`.
 — `packages/config/`, `IDEAS/tooling-decisions.md` 1 · `ISSUES.md` `FJS-266`.
 
-**2026-08-15 · `FJS-D33` — what a scaffolded app is given is a dependency it
-extends, never a file copied into it.** The generated `package.json` and config
+### <a id="fjs-d33"></a>2026-08-15 · `FJS-D33` — what a scaffolded app is given is a dependency it extends, never a file copied into it.
+
+The generated `package.json` and config
 files are the framework's real opinion about tooling, and far more people will
 read them than will ever read this repo. A copy is frozen at the moment it was
 written; `@frontierjs/config` can be corrected for every app that already exists.
@@ -3114,8 +3129,9 @@ this repo's own `scripts/typecheck.mjs`. `FJS-268` holds the underlying question
 of whether the framework should ship declarations.
 — `packages/cli/core/app-config.js`, `packages/config/`, `IDEAS/overview.md` 5.13.
 
-**2026-08-15 · `drift-report.md` is retired; its synthesis is
-`IDEAS/coherence-review.md` and the rest is deleted.** The twelve-package audit
+### <a id="fjs-d109"></a>2026-08-15 · `FJS-D109` — `drift-report.md` is retired; its synthesis is `IDEAS/coherence-review.md` and the rest is deleted.
+
+The twelve-package audit
 of 2026-07-31 wrote four things into one root-level file, and by now they had
 four different half-lives. The resolution log (fixed 2026-08-01) is in the
 packages' own `CHANGES.md`. The twelve per-package sections are snapshots of a
@@ -3140,8 +3156,9 @@ in July, read in November, with nothing in the text to say which. Git holds it.
 — `IDEAS/coherence-review.md` · `ARCHITECT.md` §6 keeps the audit METHOD, which
 is reusable and outlives any run of it.
 
-**2026-08-15 · `FJS-D14` — the four claimed folders are named: two collapse into
-one package, two are V2.** `orion` is the automations engine and platform.
+### <a id="fjs-d14"></a>2026-08-15 · `FJS-D14` — the four claimed folders are named: two collapse into one package, two are V2.
+
+`orion` is the automations engine and platform.
 `toolbelt` is the core pure-function library, shared across repos and meant to
 stand on its own outside FrontierJS — which is the reason it is not folded into a
 framework package. `datetime-kit` is the date / time / timezone solution.
@@ -3191,8 +3208,7 @@ This closes `FJS-D14` — all four folders are named, two collapsed into
 `toolbelt`, two deferred.
 — `packages/toolbelt/` · `packages/orion/README.md` · `packages/oracle/README.md`.
 
-**2026-08-17 · `FJS-D37` — the terminal is a surface with a tone vocabulary, not a
-palette of colour names; `fli` output stays line-oriented; a TUI buys its engine.**
+### <a id="fjs-d37"></a>2026-08-17 · `FJS-D37` — the terminal is a surface with a tone vocabulary, not a palette of colour names; `fli` output stays line-oriented; a TUI buys its engine.
 Four rulings from one question, because `packages/cli/core/color.js` and the shape
 of a future TUI turn out to be the same decision asked twice.
 
@@ -3258,8 +3274,9 @@ reuses `.mesa` — so that §1–§3 do not foreclose either answer.
 
 ## Dependencies & the ecosystem
 
-**2026-08-14 · `FJS-D31` — FrontierJS wraps third-party binaries, it does not
-fork or republish them. It controls the VERSION, never the artifact.** Asked of
+### <a id="fjs-d31"></a>2026-08-14 · `FJS-D31` — FrontierJS wraps third-party binaries, it does not fork or republish them. It controls the VERSION, never the artifact.
+
+Asked of
 Litestream specifically, and the answer generalises.
 
 Litestream ships as GitHub release tarballs, `.deb`, Homebrew and a Docker image;
@@ -3298,8 +3315,9 @@ measurably costs adoption — and even then a per-platform downloader wrapper (t
 esbuild/biome shape) beats a fork, because it still ships upstream's bytes.
 *Lives in:* `litestone/src/tools/replicate.js`, `cli/commands/deploy/_steps-setup/`.
 
-**2026-08-15 · SQLite is the only database FrontierJS supports, and serverless
-follows from that rather than being refused separately.** Both were recorded
+### <a id="fjs-d110"></a>2026-08-15 · `FJS-D110` — SQLite is the only database FrontierJS supports, and serverless follows from that rather than being refused separately.
+
+Both were recorded
 because they were *silences*: an outside framework's feature catalogue listing
 *"DynamoDB, SQLite, MySQL, Postgres"* and *"Serverless — on-demand, auto-scaling,
 zero maintenance"* mapped to nothing here, and a grep for `postgres` or `mysql`
@@ -3350,8 +3368,9 @@ when that row is built, not pre-empted here.
 *Lives in:* `litestone/src/core/ddl.js` and `client.js` (the emitters) ·
 `IDEAS/speed-and-footprint.md` (the numbers).
 
-**2026-08-15 · `FJS-D26` — `@frontierjs/toolbelt` is substrate, not a member of
-the dependency graph. Any package may import it, mesa and litestone included.** The question was what *leaf* meant, and it was undecidable while two
+### <a id="fjs-d26"></a>2026-08-15 · `FJS-D26` — `@frontierjs/toolbelt` is substrate, not a member of the dependency graph. Any package may import it, mesa and litestone included.
+
+The question was what *leaf* meant, and it was undecidable while two
 documents wrote down two answers: Invariant 1 said mesa carried zero workspace
 dependencies and the pure-function package's README claimed the same standing to
 grant itself an exemption from it. Invariant 1 now states the dependency
@@ -3377,8 +3396,9 @@ import away and were waiting only on this.
 *Lives in:* `packages/toolbelt/` (`@frontierjs/utils` until the same day, see
 § Repo conventions) · `CLAUDE.md` § Invariants 1.
 
-**2026-08-17 · `FJS-D16` amended — `createStore` does NOT move to the substrate,
-and the reason is the licence rather than the effort.** The 2026-08-15 ruling
+### <a id="fjs-d111"></a>2026-08-17 · `FJS-D111` — `FJS-D16` amended — `createStore` does NOT move to the substrate, and the reason is the licence rather than the effort.
+
+The 2026-08-15 ruling
 named three things to move: `createMakeFromSchema`, `createStore`, and the
 `mergeHooks`/`runPhase`/`runAroundHooks` pipeline. Two moved and are now
 `@frontierjs/toolbelt/jsonschema` and `@frontierjs/toolbelt/hooks`. The third
@@ -3417,10 +3437,7 @@ because there is one implementation rather than because anyone noticed.
 *Lives in:* `packages/toolbelt/src/{hooks,jsonschema}/` ·
 `packages/sierra/src/junction/resource.js` · `packages/jetty/src/resources/`.
 
-**2026-08-15 · `FJS-D16` — all three duplications CLOSE, by three different
-mechanisms, because the obstacle is different in each. The rule underneath is
-one: the owner is whoever already computes the fact, and a copy exists because a
-door was shut — so open the door rather than keeping the copy in sync.**
+### <a id="fjs-d16"></a>2026-08-15 · `FJS-D16` — all three duplications CLOSE, by three different mechanisms, because the obstacle is different in each. The rule underneath is one: the owner is whoever already computes the fact, and a copy exists because a door was shut — so open the door rather than keeping the copy in sync.
 
 A "keep in sync" comment is not a mechanism. All three carried one, and two had
 already drifted: `auth/install.md` once emitted `@@gate("9")` — LOCKED, above
@@ -3501,8 +3518,9 @@ Closes `FJS-D16`; fixes `FJS-038` and the duplication half of `FJS-059`.
 `packages/cli/commands/auth/install.md` · `packages/litestone/src/core/parser.js`
 (`parseFile`).
 
-**2026-08-15 · `FJS-D12` — FrontierJS ships English, and the seam is reserved by
-six constraints rather than by a catalogue.** The premise the row was filed under
+### <a id="fjs-d12"></a>2026-08-15 · `FJS-D12` — FrontierJS ships English, and the seam is reserved by six constraints rather than by a catalogue.
+
+The premise the row was filed under
 expired before the ruling did: it said i18n had to be decided *before* schema→UI
 shipped, and schema→UI shipped without it, because the generator authors no
 string — a label is `@label` where the schema declares one and the title-cased

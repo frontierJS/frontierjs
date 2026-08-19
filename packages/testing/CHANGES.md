@@ -5,7 +5,7 @@
 `packages/basecamp/api/test/services.test.ts` is the first code anywhere to
 import this package. No change here was needed to make it work, which is the
 result worth recording — but mounting a real app for the first time immediately
-surfaced `FJS-333` in Junction: `autoload-services` was a `needsHost` phase, so
+surfaced `FJS-348` in Junction: `autoload-services` was a `needsHost` phase, so
 `_startForTest` skipped it and **every app that autoloads had zero services in a
 test env**. Every call answered a 404 naming the service.
 

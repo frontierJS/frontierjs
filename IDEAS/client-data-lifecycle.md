@@ -1,3 +1,9 @@
+---
+id: client-data-lifecycle
+status: idea
+dated: 2026-08-06
+---
+
 # Idea — The client-side data lifecycle has no owner
 
 **Status: IDEA + THREE LIVE DEFECTS.** Dated 2026-08-06. Claims about current

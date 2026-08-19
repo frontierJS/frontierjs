@@ -1,3 +1,9 @@
+---
+id: forms-from-the-seed
+status: shipped
+dated: 2026-08-15
+---
+
 # Idea — Generate the form, not just its parts
 
 **Status: SHIPPED 2026-08-15.** Both halves are now built. The state machine and

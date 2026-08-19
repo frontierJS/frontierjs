@@ -1,3 +1,9 @@
+---
+id: package-map
+status: assessment
+dated: 2026-08-04
+---
+
 # Idea — The package map: what exists, and what should
 
 **Status: ASSESSMENT + PROPOSAL.** Dated 2026-08-04. The "exists today" column was

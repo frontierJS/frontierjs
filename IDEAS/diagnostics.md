@@ -1,3 +1,9 @@
+---
+id: diagnostics
+status: idea
+dated: 2026-08-04
+---
+
 # Idea — `fli doctor`: the landmine catalogue as a runnable check
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-04. No diagnostic command

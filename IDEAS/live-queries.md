@@ -1,3 +1,10 @@
+---
+id: live-queries
+status: partial
+dated: 2026-08-04
+revised: 2026-08-15
+---
+
 # Idea — Live queries: a subscription scoped to a query, not to a service
 
 **Status: IDEA, and all three of its defects are now closed.** Dated 2026-08-04;

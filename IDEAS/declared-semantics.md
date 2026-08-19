@@ -1,3 +1,9 @@
+---
+id: declared-semantics
+status: partial
+dated: 2026-08-06
+---
+
 # Idea — The categories of data the seed should know about
 
 **Status: IDEA — except item 1, which SHIPPED 2026-08-06.** `@version` is built,

@@ -1,3 +1,9 @@
+---
+id: bulk-data
+status: idea
+dated: 2026-08-12
+---
+
 # Idea — Bulk data: the import screen every application builds by hand
 
 **Status: IDEA. Nothing here is built for the user-facing case.** Dated 2026-08-12,

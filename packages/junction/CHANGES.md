@@ -41,7 +41,7 @@ rather than describing them. `describe()` reports the reservation for the same
 reason it reports `allowBulk` — a caller cannot tell a reserved key from a
 column by looking at the URL (`FJS-337`).
 
-## 2026-08-18 — `junction jobs`: what this app runs when nobody asked (`FJS-343`, `FJS-344`)
+## 2026-08-18 — `junction jobs`: what this app runs when nobody asked (`FJS-346`, `FJS-344`)
 
 1219 tests, 6 of them new, 0 fail. Typecheck clean.
 
@@ -250,7 +250,7 @@ public surface. `core/sort.ts` is already named in the Bridge index as *the one
 reading of `orderBy`*; this is that sentence being true from outside the
 package too.
 
-## 2026-08-17 — services autoload in the test lifecycle too (`FJS-333`)
+## 2026-08-17 — services autoload in the test lifecycle too (`FJS-348`)
 
 `autoload-services` was `needsHost: true`. `_startForTest` skips those — they
 bind a port, read a config file, install signal handlers — and this one does

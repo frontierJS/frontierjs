@@ -1,3 +1,9 @@
+---
+id: offline-first-and-release
+status: idea
+dated: 2026-08-02
+---
+
 # Idea — Offline-first, portable, self-hostable: what it demands of Release
 
 **Status: IDEA / VISION CONSTRAINTS. Nothing here is built.** Dated 2026-08-02.

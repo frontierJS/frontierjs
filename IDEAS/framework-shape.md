@@ -1,3 +1,9 @@
+---
+id: framework-shape
+status: assessment
+dated: 2026-08-02
+---
+
 # Idea — Framework shape: what FJS is missing to be a complete framework
 
 **Status: ASSESSMENT + IDEA. Nothing here is a plan or a commitment.** Dated

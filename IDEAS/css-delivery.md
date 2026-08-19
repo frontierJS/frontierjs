@@ -1,3 +1,9 @@
+---
+id: css-delivery
+status: idea
+dated: 2026-08-16
+---
+
 # Idea — how a component's CSS reaches the page
 
 **Status: NOT STARTED. Dated 2026-08-16.** Written after `FJS-291`, which deleted

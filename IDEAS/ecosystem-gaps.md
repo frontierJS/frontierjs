@@ -1,3 +1,9 @@
+---
+id: ecosystem-gaps
+status: assessment
+dated: 2026-08-02
+---
+
 # Idea — Ecosystem gaps: what is missing to compete with Laravel and the likes
 
 **Status: ASSESSMENT + FUTURE WORK.** Dated 2026-08-02. Claims were probed against

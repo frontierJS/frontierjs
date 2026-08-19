@@ -1,3 +1,9 @@
+---
+id: row-level-tenancy
+status: idea
+dated: 2026-08-12
+---
+
 # Idea — Row-level tenancy: the primitive basecamp has paid for 37 times
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-12, from a sweep asking what

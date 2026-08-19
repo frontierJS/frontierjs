@@ -25,7 +25,7 @@ The kit's 65 components, both apps and the guide were re-run after it.
 Three more cases in `test/specs/frame.spec.js`, and they measure heights and
 edges rather than declarations — neither rule was wrong on its own, which is why
 nothing caught this. Reverted, the spec reports `tops disagree by 2.0px`
-(`FJS-341`).
+(`FJS-347`).
 
 ## 2026-08-18 — `--topbar-height` is a floor, because a `.cluster` in a `.topbar` wrapped out of it
 

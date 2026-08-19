@@ -1,3 +1,9 @@
+---
+id: operational-edge
+status: assessment
+dated: 2026-08-03
+---
+
 # Idea — The operational edge: what Encore has that FJS does not
 
 **Status: ASSESSMENT + FUTURE WORK.** Dated 2026-08-03. Probed against the tree

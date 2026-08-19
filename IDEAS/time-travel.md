@@ -1,3 +1,9 @@
+---
+id: time-travel
+status: idea
+dated: 2026-08-05
+---
+
 # Idea — Named checkpoints and time travel, from the audit trail
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-05. The audit trail this is

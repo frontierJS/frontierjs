@@ -1,3 +1,9 @@
+---
+id: command-surface
+status: idea
+dated: 2026-08-10
+---
+
 # Idea — the command surface: what `fli` should learn from oclif
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-10. Written after sizing

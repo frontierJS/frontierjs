@@ -1,3 +1,9 @@
+---
+id: app-manifest
+status: idea
+dated: 2026-08-04
+---
+
 # Idea — the app manifest: declared intent, observed fact, and a filename that can be wrong
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-04. There is no

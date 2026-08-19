@@ -1,3 +1,9 @@
+---
+id: release-transitions
+status: partial
+dated: 2026-08-12
+---
+
 # Idea — Reversible deployment transitions: the Release realm, sequenced
 
 **Status: IDEA / ARCHITECTURE — except Phase 0, which shipped 2026-08-15**

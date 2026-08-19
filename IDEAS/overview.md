@@ -1,3 +1,9 @@
+---
+id: overview
+status: index
+dated: 2026-08-06
+---
+
 # Ideas — the overview
 
 **Status: INDEX. Derived, not authoritative.** Dated 2026-08-06. Every row here is a

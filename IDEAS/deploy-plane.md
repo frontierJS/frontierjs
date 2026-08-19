@@ -1,3 +1,9 @@
+---
+id: deploy-plane
+status: idea
+dated: 2026-08-13
+---
+
 # Idea — The deploy plane: build once, promote a digest, and how the plane itself arrives
 
 **Status: IDEA / ARCHITECTURE. Nothing here is built.** Dated 2026-08-13. Produced by

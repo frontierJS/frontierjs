@@ -1,3 +1,9 @@
+---
+id: server-only-boundary
+status: idea
+dated: 2026-08-06
+---
+
 # Idea — Put the server/client boundary in the filename
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-06. Verified the same

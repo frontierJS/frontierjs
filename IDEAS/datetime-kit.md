@@ -1,3 +1,9 @@
+---
+id: datetime-kit
+status: idea
+dated: 2026-08-12
+---
+
 # Idea — `datetime-kit`: scope
 
 **Status: IDEA. The code that exists today is not this.** Dated 2026-08-12; scope

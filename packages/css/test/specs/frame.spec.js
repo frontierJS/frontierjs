@@ -99,7 +99,7 @@ test('controls: a .btn and a .field on one row are the same height', function ()
    * at --space-xs, a control at --space-sm — so nothing about either rule read
    * as wrong on its own. In basecamp's filter bar that was three controls at
    * 38px and a submit at 34px, and .cluster centres, so the button sat 2px
-   * below the row it belonged to (`FJS-341`).
+   * below the row it belonged to (`FJS-347`).
    */
   var row = el(
     '<div class="cluster">' +

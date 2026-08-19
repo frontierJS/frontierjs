@@ -1,3 +1,9 @@
+---
+id: static-safety
+status: partial
+dated: 2026-08-06
+---
+
 # Idea — Prove a static page is safe to publish
 
 **Status: THE CHECK IS BUILT (2026-08-06). The classifier is not.** `FJS-081` is

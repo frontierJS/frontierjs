@@ -1,3 +1,9 @@
+---
+id: testing-realm
+status: partial
+dated: 2026-08-11
+---
+
 # Idea — the Testing realm, as an ordered plan
 
 **Status: Phases 1a, 1b, 2, 3's constraint runner, 4, and Phase 5's transport

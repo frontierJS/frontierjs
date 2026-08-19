@@ -1,3 +1,9 @@
+---
+id: cascading-fields
+status: idea
+dated: 2026-08-04
+---
+
 # Idea — Cascading fields: propagating a value to related rows
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-04. No `@@cascade` attribute

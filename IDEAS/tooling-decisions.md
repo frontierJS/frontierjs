@@ -1,3 +1,9 @@
+---
+id: tooling-decisions
+status: assessment
+dated: 2026-08-12
+---
+
 # Idea — The tooling decisions this project has not made
 
 **Status: REGISTER + ONE RECOMMENDATION.** Dated 2026-08-12. Every fact below was

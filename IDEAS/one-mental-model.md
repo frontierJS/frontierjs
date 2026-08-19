@@ -1,3 +1,9 @@
+---
+id: one-mental-model
+status: assessment
+dated: 2026-08-02
+---
+
 # Idea — One mental model: where concepts repeat, and where they only pretend to
 
 **Status: REVIEW + IDEA. Nothing here is a plan.** Dated 2026-08-02. Findings were

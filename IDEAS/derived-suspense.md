@@ -1,3 +1,9 @@
+---
+id: derived-suspense
+status: partial
+dated: 2026-08-05
+---
+
 # Idea — Suspense boundaries derived from the dependency graph
 
 **Status: SHIPPED MECHANISM + IDEA.** Dated 2026-08-05. `<mesa:boundary>` exists and

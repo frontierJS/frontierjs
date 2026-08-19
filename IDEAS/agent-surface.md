@@ -1,3 +1,9 @@
+---
+id: agent-surface
+status: idea
+dated: 2026-08-04
+---
+
 # Idea — The agent surface: an MCP server derived from the seed
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-04. No code in this repo

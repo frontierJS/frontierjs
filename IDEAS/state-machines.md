@@ -1,3 +1,9 @@
+---
+id: state-machines
+status: partial
+dated: 2026-08-04
+---
+
 # Idea — State machines belong in the schema
 
 **Status: SHIPPED, with a remainder.** Dated 2026-08-04; **header corrected

@@ -1,3 +1,9 @@
+---
+id: speed-and-footprint
+status: assessment
+dated: 2026-08-13
+---
+
 # Idea — Speed and footprint: where the time actually goes
 
 **Status: MEASURED. Dated 2026-08-13.** The numbers below are measurements, not

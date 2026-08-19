@@ -1,3 +1,9 @@
+---
+id: slices
+status: idea
+dated: 2026-08-02
+---
+
 # Idea — Slices: installable full-stack modules
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-02. No code in this repo

@@ -1,3 +1,9 @@
+---
+id: studio-access-and-drift
+status: shipped
+dated: 2026-08-14
+---
+
 # Idea — Studio shows the access surface, and says when it has drifted
 
 **Status: BUILT 2026-08-14.** Shipped the same day it was written, so this file is

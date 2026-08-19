@@ -1,3 +1,9 @@
+---
+id: time-and-recurrence
+status: idea
+dated: 2026-08-12
+---
+
 # Idea — Time: the hardest thing in the job, and the seed says nothing about it
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-12, from a sweep asking a

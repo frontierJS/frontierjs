@@ -1,3 +1,9 @@
+---
+id: shared-pure-functions
+status: assessment
+dated: 2026-08-11
+---
+
 # Idea — What actually belongs in `@frontierjs/toolbelt`
 
 **Status: ASSESSMENT + RANKED WORK.** Dated 2026-08-11. Every claim below was

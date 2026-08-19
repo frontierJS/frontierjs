@@ -1,3 +1,9 @@
+---
+id: html-over-the-wire
+status: idea
+dated: 2026-08-12
+---
+
 # Idea — HTML over the wire: pre-rendered markup as a push payload
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-12. Every measurement below

@@ -1,3 +1,9 @@
+---
+id: coherence-review
+status: argued
+dated: 2026-07-31
+---
+
 # Idea — The coherence review: eight findings across twelve packages
 
 **Status: ARGUED, NOT ADOPTED.** Dated 2026-07-31/08-01 and unchanged since —

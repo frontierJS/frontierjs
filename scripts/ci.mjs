@@ -53,6 +53,7 @@ import { fileURLToPath }                   from 'node:url'
 // two copies where only one of them is ever re-derived.
 import { runChecks, findApps, formatFindings } from '../packages/cli/core/checks.js'
 import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
+import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
 import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-config.js'
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
@@ -100,6 +101,7 @@ function main() {
   if (!testsOnly) {
     hygiene()
     structure()
+    registers()
     snapshots()
     access()
     coverage()
@@ -319,7 +321,51 @@ function structure() {
   if (clean(from)) ok(`${apps.length} app(s), ${checked} rule run(s), no architecture errors`)
 }
 
-// ─── phase 3 · snapshots ────────────────────────────────────
+// ─── phase 3 · registers ────────────────────────────────────
+// The three registers, graded against the rules they state about themselves.
+// `ISSUES.md` says an id is never reused and that one resolves in exactly one
+// place; `DECISIONS.md` says a ruling is cited by id. Every one of those was
+// held up by attention alone, and the first run found three ids each naming two
+// different defects — under a section heading that states the rule.
+//
+// The engine is `packages/cli/core/register-check.js`, the same module
+// `fli register:check` gives a client app, for the same reason `checks.js` is
+// shared: two implementations of one rule is how the halves drift.
+//
+// Errors fail. Warnings are counted per rule rather than listed, because 72
+// unnamed rulings printed one per line is a wall that teaches everyone to skip
+// the phase — and being thin is a legitimate place to be on the way somewhere.
+
+function registers() {
+  const from   = phase('registers')
+  const result = runRegisterCheck({ root: ROOT })
+
+  // A warning counts here too, now that every one of them is zero: `72 unnamed
+  // rulings` was a backlog and a NEW one is a regression. The clock rule is the
+  // exception and is reported instead — CI must not go red overnight on a
+  // branch that changed nothing.
+  const clockRules = new Set(REGISTER_RULES.filter(r => r.clock).map(r => r.id))
+  const graded     = result.findings.filter(f => !clockRules.has(f.rule))
+
+  if (graded.length) fail(
+    `${graded.length} register finding(s)\n` +
+    graded.map(f =>
+      `    ${f.rule}  ${f.id ?? '—'}  ${f.message}\n` +
+      `      ${f.file}${f.line ? `:${f.line}` : ''}${f.detail ? `  · ${f.detail}` : ''}`
+    ).join('\n') + '\n' +
+    `      \`fli register:check\` runs these same rules against a client app; \`--rules\` prints the table.`
+  )
+
+  for (const rule of REGISTER_RULES.filter(r => r.clock)) {
+    const n = result.byRule[rule.id] ?? 0
+    if (n) note(`registers ${rule.id} × ${n} — ${rule.what}. \`fli register:check\` lists them.`)
+  }
+
+  const { open, decisions, namedRulings, ideas } = result.counts
+  if (clean(from)) ok(`${open} open · ${decisions} rulings (${namedRulings} named) · ${ideas} ideas, every register agrees with itself`)
+}
+
+// ─── phase 4 · snapshots ────────────────────────────────────
 // A snapshot is a generated artefact committed beside its source, so a change
 // nothing else in the repo can see arrives as a diff: the access rules enforced
 // below the API, the DDL every hand-written statement binds to, the JSON Schema
@@ -410,7 +456,7 @@ function checkSnapshotsRemoved(present) {
   }
 }
 
-// ─── phase 4 · access ───────────────────────────────────────
+// ─── phase 5 · access ───────────────────────────────────────
 // What did this branch do to who may do what.
 //
 // Every other phase here answers is-this-broken. This one answers a question a
@@ -482,7 +528,7 @@ function access() {
   if (clean(from)) ok(`${compared} app(s) compared against ${ref.slice(0, 8)}`)
 }
 
-// ─── phase 5 · coverage ─────────────────────────────────────
+// ─── phase 6 · coverage ─────────────────────────────────────
 // Skipped is not passed. The aggregate `--filter '*'` walks straight past a
 // package with no `test` script and prints nothing at all about it.
 
@@ -542,7 +588,7 @@ function coverage() {
   if (clean(from)) ok(`${workspaceDirs().length} workspace member(s), ${Object.keys(exempt).length} exempt by name`)
 }
 
-// ─── phase 6 · typecheck ────────────────────────────────────
+// ─── phase 7 · typecheck ────────────────────────────────────
 // Two halves: the direction of the ratchet (a git question) and the count
 // itself (each package's own script already answers that, and exits 1 above
 // its ceiling).
@@ -890,7 +936,7 @@ function deploy() {
   if (clean(from)) ok('a scaffolded app containerises and answers health, from npm and from the tree', Date.now() - t0)
 }
 
-// ─── phase 7 · tests ────────────────────────────────────────
+// ─── phase 8 · tests ────────────────────────────────────────
 // Sequential on purpose: several suites bind ports and start real servers, and
 // interleaved output from four different runners is unreadable when one fails.
 

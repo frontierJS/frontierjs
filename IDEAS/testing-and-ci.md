@@ -1,3 +1,9 @@
+---
+id: testing-and-ci
+status: partial
+dated: 2026-08-03
+---
+
 # Idea — A testing environment and automated CI
 
 **Gap B is superseded by `IDEAS/testing-realm.md`** (2026-08-11), which turns it into

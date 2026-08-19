@@ -28,7 +28,7 @@ The default is `undefined` now and `''` is passed through, on all thirteen:
 Checkbox, Combobox, DatePicker, DateTimeInput, FileUpload, Input, MultiSelect,
 NumberInput, RadioGroup, Select, Slider, Switch, Textarea.
 
-Not fixed, and filed as `FJS-341`: with every label off, a `.btn` is still 34px
+Not fixed, and filed as `FJS-347`: with every label off, a `.btn` is still 34px
 beside a 38px control, because the two use different padding tokens and a button
 size is a font-size.
 

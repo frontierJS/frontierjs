@@ -1,3 +1,9 @@
+---
+id: page-composition
+status: assessment
+dated: 2026-08-09
+---
+
 # Idea — Page composition: the tier `@frontierjs/css` never built
 
 **Status: ASSESSMENT + PROPOSAL. UNBUILT.** Dated 2026-08-09. The *exists today*

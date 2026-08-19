@@ -53,9 +53,17 @@ export function compileCli(template, moduleScript = '', sourcePath = '') {
   const scriptStripped = stripScriptBlocks(template)
   const mainBody       = transformMarkdown(scriptStripped)
 
-  // sourceURL pragma — Node and Bun both honor this. Stack traces for runtime
-  // errors will reference the .md file path instead of the temp .__fli_*.mjs
-  // shim, which is the user's source of truth and survives after temp cleanup.
+  // sourceURL pragma. It relabels the PATH in a stack trace and nothing else:
+  // the line numbers stay the generated file's, so a frame reads
+  // `boom.md:15` for a throw on line 9 of an 11-line file. Node applies the
+  // relabel, Bun ignores the pragma entirely and names the temp shim — which is
+  // a real path with real lines, and deleted by the time anyone opens it. Both
+  // measured; neither answers "where in my command did this throw".
+  //
+  // A source map does not help: Bun ignores an inline one and a linked .map
+  // alike. What would is fli rewriting the frames itself — it wrote the shim,
+  // so it holds both halves of the mapping — and `Error.prepareStackTrace`
+  // works on both runtimes. `FJS-066`.
   const sourceURL = sourcePath
     ? `\n//# sourceURL=${pathToFileURL(sourcePath).href}\n`
     : ''

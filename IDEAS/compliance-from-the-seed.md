@@ -1,3 +1,9 @@
+---
+id: compliance-from-the-seed
+status: idea
+dated: 2026-08-04
+---
+
 # Idea — Compliance derived from the seed
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-04. No `@pii` or `@retain`

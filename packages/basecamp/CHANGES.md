@@ -37,7 +37,7 @@ keeps the next one from arriving taller than its neighbours.
 Measured: no invented labels, every control still named (`Status`, `Role`,
 `Search` from the visually-hidden labels), and the search still submits. The
 remaining 4px is the submit button — `.btn` and a form control use different
-padding tokens and nothing in the design system can reconcile them (`FJS-341`).
+padding tokens and nothing in the design system can reconcile them (`FJS-347`).
 
 ## 2026-08-18 — the nav is a sidebar
 
@@ -225,7 +225,7 @@ does so the entry point is unchanged:
   `Bun.main`, which is the entry point in production and the TEST RUNNER under
   `bun test`.
 
-**What the first mount found is filed as `FJS-333`** — `autoload-services` was a
+**What the first mount found is filed as `FJS-348`** — `autoload-services` was a
 `needsHost` phase in Junction, so `_startForTest` skipped it and every app that
 autoloads had zero services in a test env. Every call answered a 404 naming the
 service, which reads like a wrong name rather than an unloaded app.

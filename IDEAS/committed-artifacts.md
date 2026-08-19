@@ -1,3 +1,9 @@
+---
+id: committed-artifacts
+status: partial
+dated: 2026-08-14
+---
+
 # Idea — Committed artifacts: the derived file as a gate
 
 **Status: the family is BUILT; two members are unbuilt and one shape is rejected.**

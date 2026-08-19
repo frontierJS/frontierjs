@@ -1,3 +1,9 @@
+---
+id: terminal-surface
+status: idea
+dated: 2026-08-17
+---
+
 # Idea — the terminal surface: how `fli` presents, and whether FJS builds TUIs
 
 **Status: IDEA. Nothing here is built.** Dated 2026-08-17. Written after sizing

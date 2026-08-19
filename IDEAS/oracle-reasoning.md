@@ -1,3 +1,9 @@
+---
+id: oracle-reasoning
+status: idea
+dated: 2026-08-18
+---
+
 # Oracle — how it should reason
 
 **Design record. Nothing here is built.** Oracle is V2-deferred (`FJS-D14`); this is the half the

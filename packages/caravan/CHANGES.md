@@ -56,7 +56,7 @@ the defect the day after it was written.
 for: somebody else's HTTP call, retried, ending in a write that is idempotent by
 construction.
 
-## 2026-08-18 — `registrations()`, so the registry has a reader (`FJS-343`)
+## 2026-08-18 — `registrations()`, so the registry has a reader (`FJS-346`)
 
 154 tests, 4 of them new, 0 fail. Typecheck clean.
 

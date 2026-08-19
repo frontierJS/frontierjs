@@ -1,3 +1,9 @@
+---
+id: scoped-sql
+status: partial
+dated: 2026-08-06
+---
+
 # Idea — Scoped SQL: raw queries against a derived view, not the base tables
 
 **Status: THE HOLE IS CLOSED. THE DESIGN IS STILL UNBUILT.** Updated 2026-08-06.
