@@ -73,6 +73,12 @@ COPY deploy/generated/ ./deploy/generated/
 # which name their own content and are the stronger pin. The tarballs are removed
 # in the same layer they were installed from, so the runtime image never carries
 # them.
+#
+# \`--production\` skips INSTALLING devDependencies and still RESOLVES them, so a
+# dev-only package this image would never run can fail the build outright — an
+# unpublished one 404s here with the app otherwise perfect. Pruning them from the
+# vendored manifest was tried and rejected: a manifest that no longer matches the
+# lockfile beside it fails \`--frozen-lockfile\` on the line above.
 RUN cp deploy/generated/app-manifest.json package.json \\
  && (cp deploy/generated/bun.lock* ./ 2>/dev/null || true) \\
  && if [ -f bun.lock ] || [ -f bun.lockb ]; \\

@@ -1,5 +1,21 @@
 # Changes
 
+## 2026-08-19 — the deploy image says why `--production` can fail on a package it never runs
+
+`bun install --production` skips INSTALLING devDependencies and still RESOLVES
+them, so a dev-only package the image would never execute can fail the build
+outright — an unpublished one 404s there with the app otherwise perfect. That
+cost the `deploy` phase's `npm` branch every run until `@frontierjs/config`
+reached npm, and the reason lived only in the issue register.
+
+It is a comment on the `RUN` line in `commands/make/deploy.md` now, beside the
+`--frozen-lockfile` note it interacts with: pruning the devDependencies from the
+vendored manifest was tried and rejected, because a manifest that no longer
+matches the lockfile beside it fails `--frozen-lockfile` on the line above
+(`FJS-267`).
+
+`utils:qrcode` is deleted in the entry below.
+
 ## 2026-08-18 — `package-root-md` reports the floor, and one function owns the frontmatter fence
 
 Two things, both the same shape: a rule that could only see one side of what it
