@@ -165,11 +165,11 @@ describe.each(Object.entries(PLUGINS))('%s devtools route', (_name, make) => {
 describe.each(Object.entries(PLUGINS))('%s dev client', (_name, make) => {
 
   test('injects itself into every HTML page', () => {
-    expect(make().transformIndexHtml()).toEqual([{
+    expect(make().transformIndexHtml()).toContainEqual({
       tag:      'script',
       attrs:    { type: 'module', src: DEV_CLIENT },
       injectTo: 'head',
-    }])
+    })
   })
 
   test('resolves and serves valid JavaScript at that id', () => {

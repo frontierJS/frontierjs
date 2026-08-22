@@ -4382,6 +4382,58 @@ describe('$inspect builtin', () => {
   })
 })
 
+// ── Source locations (config.loc) ────────────────────────────────────────────
+
+describe('source locations — the inspector\'s half of click-to-source', () => {
+  const withLoc = (src, config = {}) =>
+    compile(src, {
+      debug: false, css: false, dev: true,
+      filename: '/app/web/src/pages/Home.mesa', locRoot: '/app/web',
+      ...config,
+    }).then(c => c.result)
+
+  it('stamps the file, line and column on a template element', async () => {
+    const out = await withLoc('<div>\n  <p>hi</p>\n</div>')
+    expect(out).toContain('<div data-fjs-loc="src/pages/Home.mesa:1:1"')
+    expect(out).toContain('<p data-fjs-loc="src/pages/Home.mesa:2:3"')
+  })
+
+  // The attribute goes into the TEMPLATE, which is cloned — so an element with
+  // no binding carries one too. A runtime map could only reach the elements the
+  // component already holds a reference to, and those are the minority.
+  it('reaches an element the component holds no reference to', async () => {
+    const out = await withLoc('<section><span>plain</span></section>')
+    expect(out).toContain('<span data-fjs-loc=')
+  })
+
+  // Frontmatter is replaced by its own newlines before the parser runs, so a
+  // Sierra page's lines are the lines in the file rather than the lines after
+  // the block.
+  it('counts lines from the top of the file, past frontmatter', async () => {
+    const out = await withLoc('---\ntitle: X\n---\n<p>hi</p>')
+    expect(out).toContain('data-fjs-loc="src/pages/Home.mesa:4:1"')
+  })
+
+  it('says nothing in a production build', async () => {
+    const out = await compile('<div><p>hi</p></div>', {
+      debug: false, css: false, filename: '/app/web/src/pages/Home.mesa',
+    }).then(c => c.result)
+    expect(out).not.toContain('data-fjs-loc')
+  })
+
+  it('is off when the caller says so, even in dev', async () => {
+    const out = await withLoc('<p>hi</p>', { loc: false })
+    expect(out).not.toContain('data-fjs-loc')
+  })
+
+  // The client puts the root back on before it asks the dev server to open
+  // anything; with no root to strip, the absolute path travels as it is.
+  it('keeps the whole path when no root is given', async () => {
+    const out = await withLoc('<p>hi</p>', { locRoot: undefined })
+    expect(out).toContain('data-fjs-loc="/app/web/src/pages/Home.mesa:1:1"')
+  })
+})
+
 // ── Dev instrumentation (config.dev: true) ───────────────────────────────────
 
 describe('dev instrumentation — compiler output', () => {

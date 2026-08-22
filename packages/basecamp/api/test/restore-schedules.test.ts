@@ -20,8 +20,7 @@ import { createCaravan } from '@frontierjs/caravan'
 import type { CaravanInstance } from '@frontierjs/caravan'
 
 import { basecampGateLevel } from '../src/core/gate.ts'
-import { createJobEngine }   from '../src/engine/job.engine.ts'
-import { scheduleName }      from '../src/engine/job-schedule.ts'
+import { scheduleName, restoreSchedules } from '../src/services/jobs/job-schedule.ts'
 import type { BasecampApp }  from '../src/basecamp.types.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
@@ -42,7 +41,7 @@ const noopLog = () => {
   return l
 }
 
-/** A real client, a real queue, and the engine over both. */
+/** A real client, a real queue, and the app over both. */
 async function makeApp() {
   const env = await createTestEnv({
     schema:        SCHEMA,
@@ -60,7 +59,7 @@ async function makeApp() {
   // knows them. Every line below would otherwise open with the same cast.
   const db: any = env.db.asSystem()
   const app = { data: env.db, jobs, logger: noopLog() } as unknown as BasecampApp
-  return { app, jobs, db, engine: createJobEngine(app) }
+  return { app, jobs, db }
 }
 
 /** A workspace to hang jobs off — Job.workspaceId is required. */
@@ -82,7 +81,7 @@ describe('restoreSchedules — the clock is rebuilt from the rows', () => {
   it('re-registers every live scheduled job', async () => {
     // The filed defect, stated as a test: these rows exist and nothing had put
     // them back on the clock since the process that created them.
-    const { jobs, db, engine } = await makeApp()
+    const { app, jobs, db } = await makeApp()
     const workspaceId = await workspace(db)
 
     await db.job.create({ data: { workspaceId, name: 'nightly', kind: 'scheduled',
@@ -91,14 +90,14 @@ describe('restoreSchedules — the clock is rebuilt from the rows', () => {
                                   cronExpression: '0 * * * *', command: 'true' } })
 
     expect(names(jobs)).toEqual([])
-    const restored = await engine.restoreSchedules()
+    const restored = await restoreSchedules(app)
 
     expect(restored).toBe(2)
     expect(names(jobs)).toHaveLength(2)
   })
 
   it('leaves one-shot and cancelled jobs off the clock', async () => {
-    const { jobs, db, engine } = await makeApp()
+    const { app, jobs, db } = await makeApp()
     const workspaceId = await workspace(db)
 
     await db.job.create({ data: { workspaceId, name: 'once', kind: 'one_shot', command: 'true' } })
@@ -107,7 +106,7 @@ describe('restoreSchedules — the clock is rebuilt from the rows', () => {
     const live = await db.job.create({ data: { workspaceId, name: 'live', kind: 'scheduled',
                                                cronExpression: '0 3 * * *', command: 'true' } })
 
-    await engine.restoreSchedules()
+    await restoreSchedules(app)
     expect(names(jobs)).toEqual([scheduleName(live.id)])
   })
 
@@ -115,14 +114,14 @@ describe('restoreSchedules — the clock is rebuilt from the rows', () => {
     // `remove()` cancels and soft-deletes, so the row is invisible to every
     // read — including this one. A schedule holding its id would dispatch runs
     // for a job nobody can see.
-    const { jobs, db, engine } = await makeApp()
+    const { app, jobs, db } = await makeApp()
     const workspaceId = await workspace(db)
 
     const job = await db.job.create({ data: { workspaceId, name: 'gone', kind: 'scheduled',
                                               cronExpression: '0 2 * * *', command: 'true' } })
     await db.job.remove({ where: { id: job.id } })
 
-    await engine.restoreSchedules()
+    await restoreSchedules(app)
     expect(names(jobs)).toEqual([])
   })
 
@@ -130,7 +129,7 @@ describe('restoreSchedules — the clock is rebuilt from the rows', () => {
     // The expression is refused on the way in, so a row holding a bad one
     // predates the check or was written around it — and losing every OTHER
     // job's schedule to it is the failure mode worth spending a try/catch on.
-    const { jobs, db, engine } = await makeApp()
+    const { app, jobs, db } = await makeApp()
     const workspaceId = await workspace(db)
 
     await db.job.create({ data: { workspaceId, name: 'bad', kind: 'scheduled',
@@ -138,7 +137,7 @@ describe('restoreSchedules — the clock is rebuilt from the rows', () => {
     const good = await db.job.create({ data: { workspaceId, name: 'good', kind: 'scheduled',
                                                cronExpression: '0 4 * * *', command: 'true' } })
 
-    const restored = await engine.restoreSchedules()
+    const restored = await restoreSchedules(app)
     expect(restored).toBe(1)
     expect(names(jobs)).toEqual([scheduleName(good.id)])
   })

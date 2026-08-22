@@ -8,6 +8,7 @@ import type { ServiceContext } from './context.ts'
 import { resultData } from './envelope.ts'
 import { Unauthorized, Forbidden } from './errors.ts'
 import type { Hook, AroundHook } from './hooks.ts'
+import { clampPage } from './directives.ts'
 
 // ─── Common built-in hooks ────────────────────────────────────────────────
 
@@ -26,14 +27,38 @@ export function requireRole(...roles: string[]): Hook {
   }
 }
 
-/** Attach pagination from query params */
+/**
+ * Declare this service's page size, and hold callers to it.
+ *
+ * It NARROWS `ctx.directives` rather than publishing a second copy of the same
+ * fact. `$` is transport syntax and the bridge is its one owner (Invariant 10):
+ * it moves every `$` key onto `ctx.directives`, so `ctx.query.$limit` is never
+ * there past it — which this hook read for its whole life, falling back to its
+ * defaults on every request and silently ignoring the caller's page size. A
+ * parallel `ctx.locals.paginate` is exactly how the two came to disagree.
+ *
+ * Narrowing the directives is also what makes the ceiling reach anything: a
+ * custom `find` that hands `ctx.directives` to Litestone now gets it without
+ * threading a second value. `ctx.locals.paginate` is still written, for the
+ * callers that read it.
+ *
+ * A MODEL service does not need this — `paginate: { default, max }` is a
+ * service option and `parseQuery` has always applied it correctly. This is for
+ * a service that builds its own query.
+ */
 export function paginate(defaultLimit = 20, maxLimit = 100): Hook {
   return (ctx: ServiceContext): void => {
-    const query = ctx.query as Record<string, string>
-    ctx.locals.paginate = {
-      limit:  Math.min(parseInt(query.$limit ?? String(defaultLimit), 10), maxLimit),
-      offset: parseInt(query.$offset ?? '0', 10),
+    // `ctx.query` as the fallback: an internal caller may pass `{ limit: 50 }`
+    // plainly, having never gone through a bridge.
+    const q    = ctx.query as Record<string, unknown> | undefined
+    const page = clampPage(ctx.directives, defaultLimit, maxLimit,
+      { limit: q?.limit, offset: q?.offset })
+
+    if (ctx.directives) {
+      ctx.directives.limit  = page.limit
+      ctx.directives.offset = page.offset
     }
+    ctx.locals.paginate = page
   }
 }
 

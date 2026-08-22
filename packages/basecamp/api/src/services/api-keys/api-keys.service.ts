@@ -18,9 +18,9 @@
 // that was skipped: building it would mean storing the token, which is the one
 // thing an API key exists not to do.
 
-import { createService, BadRequest, Forbidden } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { findScoped, getScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf } from '../../core/resource.ts'
+import { createService, BadRequest, Forbidden, $ } from '@frontierjs/junction'
+import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor } from '../../core/resource.ts'
 import { scopeVocabulary } from './scopes.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext, IAuth } from '@frontierjs/junction'
@@ -111,14 +111,14 @@ export function createApiKeysService(app: BasecampApp) {
    *   it is a bot            — a bot has no password credential, so a key is
    *                            the only way it acts and nobody is being
    *                            impersonated
-   *   it is in THIS workspace — the key is stamped with wsOf(ctx) either way,
+   *   it is in THIS workspace — the key is stamped with ws() either way,
    *                            and a key for a bot from another tenant would
    *                            be a cross-tenant credential
    *   it is not above you    — an admin cannot mint a key for a bot that
    *                            outranks them and then act through it
    */
-  async function assertBotOwner(ctx: ServiceContext, userId: string): Promise<string> {
-    if (userId === actorOf(ctx)) return userId
+  async function assertBotOwner(userId: string): Promise<string> {
+    if (userId === actor()) return userId
 
     // asSystem(): `kind` is a column on auth's User, which no caller-scoped
     // client here reads — the same reason the hub service is written this way.
@@ -128,19 +128,19 @@ export function createApiKeysService(app: BasecampApp) {
       throw new BadRequest('userId may only name a bot account — create one on the hub Users screen')
 
     const members = sys.workspaceMember
-    const botMember = await members.findFirst({ where: { workspaceId: wsOf(ctx), userId } })
+    const botMember = await members.findFirst({ where: { workspaceId: ws(), userId } })
     if (!botMember) throw new BadRequest('That bot is not a member of this workspace')
 
     const level = { viewer: 1, billing: 1, developer: 2, admin: 3, owner: 4 } as Record<string, number>
-    const mine  = level[ctx.locals.memberRole as string ?? ''] ?? 0
+    const mine  = level[roleOf($) ?? ''] ?? 0
     if ((level[botMember.role] ?? 0) > mine)
       throw new Forbidden(`That bot is a ${botMember.role} — you cannot issue a key with more standing than your own`)
 
     return userId
   }
 
-  async function stampKey(ctx: ServiceContext): Promise<void> {
-    const data = ctx.data as Record<string, unknown>
+  async function stampKey(): Promise<void> {
+    const data = $.data as Record<string, unknown>
     if (!data) return
 
     const preset = typeof data.expiresIn === 'string' ? data.expiresIn : 'never'
@@ -152,12 +152,11 @@ export function createApiKeysService(app: BasecampApp) {
       ? null
       : new Date(Date.now() + days * 86_400_000).toISOString()
 
-    data.workspaceId = wsOf(ctx)
-    data.createdBy   = actorOf(ctx)
+    data.createdBy   = actor()
     // A key is never more than its owner. The default owner is the caller;
     // naming somebody else is allowed for exactly one kind of somebody else,
     // and assertBotOwner is where that rule lives.
-    data.userId      = data.userId ? await assertBotOwner(ctx, data.userId as string) : actorOf(ctx)
+    data.userId      = data.userId ? await assertBotOwner(data.userId as string) : actor()
 
     const scopes = (data.scopes ?? []) as string[]
     if (!Array.isArray(scopes) || scopes.length === 0)
@@ -173,18 +172,18 @@ export function createApiKeysService(app: BasecampApp) {
     // Checked before the mint, not after: the unique is [workspaceId, name],
     // and a name collision found by SQLite would already have cost a real
     // credential that nothing then points at.
-    if (await dbOf(ctx).apiKey.exists({ where: { workspaceId: wsOf(ctx), name: data.name } }))
+    if (await db().apiKey.exists({ where: { workspaceId: ws(), name: data.name } }))
       throw new BadRequest(`An API key named '${data.name}' already exists in this workspace`)
 
     // auth mints and hashes. Nothing in this app stores the plaintext; it
-    // travels on ctx.locals to the response and stops there.
+    // travels on $.locals to the response and stops there.
     const { key, id } = await authOrRefuse().createApiKey(data.userId as string, {
       name:      data.name,
       scopes,
       expiresAt: data.expiresAt ? new Date(data.expiresAt as string) : undefined,
     })
 
-    ctx.locals.mintedToken = key
+    $.locals.mintedToken = key
     data.credentialId      = id
     data.tokenHint         = maskToken(key)
   }
@@ -194,14 +193,14 @@ export function createApiKeysService(app: BasecampApp) {
    * would 400 on it (FJS-109) before find() ever ran. Same shape as the
    * wire-only fields on create, one hop earlier.
    */
-  function captureStatus(ctx: ServiceContext): void {
-    const q = ctx.query as Record<string, unknown>
+  function captureStatus(): void {
+    const q = $.query as Record<string, unknown>
     const status = q.status
     delete q.status
     if (status === undefined || status === 'all') return
     if (typeof status !== 'string' || !STATUSES.includes(status))
       throw new BadRequest(`status must be one of all, ${STATUSES.join(', ')}`)
-    ctx.locals.statusFilter = status
+    $.locals.statusFilter = status
   }
 
   /** The shape the UI reads. `status` is derived here so one answer exists. */
@@ -220,9 +219,9 @@ export function createApiKeysService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
-      const status = ctx.locals.statusFilter as string | undefined
-      const page = await findScoped(ctx, 'apiKey', {
+      const { limit, offset } = getPagination()
+      const status = $.locals.statusFilter as string | undefined
+      const page = await findScoped('apiKey', {
         where:   status ? whereStatus(status) : {},
         orderBy: { createdAt: 'desc' },
         limit, offset,
@@ -230,22 +229,22 @@ export function createApiKeysService(app: BasecampApp) {
       return { ...page, data: (page.data as Record<string, unknown>[]).map(present) }
     },
 
-    async get(ctx: ServiceContext) {
-      return present(await getScoped(ctx, 'apiKey', 'API key'))
+    async get() {
+      return present(await getScoped('apiKey', 'API key'))
     },
 
     // ── create ────────────────────────────────────────────────────────
     // The only moment the plaintext token exists outside the caller's hands.
     // Everything that decides what the key IS happened in stampKey; this is
     // the insert, plus the one thing an insert can still get wrong.
-    async create(ctx: ServiceContext) {
-      const data = ctx.data as Record<string, unknown>
+    async create() {
+      const data = $.data as Record<string, unknown>
 
       try {
-        const row = await dbOf(ctx).apiKey.create({ data })
+        const row = await db().apiKey.create({ data })
         // `token` is not a column and is on no later read. The screen has one
         // chance to show it, and says so.
-        return { ...present(row), token: ctx.locals.mintedToken }
+        return { ...present(row), token: $.locals.mintedToken }
       } catch (err) {
         // A credential exists now. If the row does not, nothing in this app
         // points at it, nothing can revoke it, and it verifies forever.
@@ -256,34 +255,34 @@ export function createApiKeysService(app: BasecampApp) {
     },
 
     async patch(ctx: ServiceContext) {
-      const existing = await getScoped(ctx, 'apiKey', 'API key')
+      const existing = await getScoped('apiKey', 'API key')
 
       // Renaming is the only safe change. Scopes and expiry are baked into the
       // credential auth issued, so editing them here would produce a row that
       // describes a key differently from the thing doing the authenticating —
       // rotate instead: revoke, and mint a new one.
-      const patch = narrowPatch(ctx.data as Record<string, unknown>, [
+      const patch = narrowPatch($.data as Record<string, unknown>, [
         'userId', 'credentialId', 'tokenHint', 'scopes', 'expiresAt',
         'revokedAt', 'lastUsedAt', 'totalUses', 'usageDate', 'usesOnDate', 'createdBy',
       ])
 
       if (changesNothing(patch)) return present(existing)
-      return present(await dbOf(ctx).apiKey.update({ where: { id: existing.id }, data: patch }))
+      return present(await db().apiKey.update({ where: { id: existing.id }, data: patch }))
     },
 
     // ── remove ────────────────────────────────────────────────────────
     // A hard delete — ApiKey declares no @@softDelete, because revocation is
     // already this model's visible "off" and a second hidden one would make
     // four states out of two.
-    async remove(ctx: ServiceContext) {
-      const row = await getScoped(ctx, 'apiKey', 'API key')
+    async remove() {
+      const row = await getScoped('apiKey', 'API key')
 
       // Deleting a key that still works has to stop it working. Otherwise the
       // token outlives every record of itself: nothing left to revoke, and the
       // credential still verifying.
       if (row.credentialId) await authOrRefuse().revokeApiKey(row.credentialId)
 
-      await dbOf(ctx).apiKey.delete({ where: { id: row.id } })
+      await db().apiKey.delete({ where: { id: row.id } })
       return present(row)
     },
 
@@ -291,13 +290,13 @@ export function createApiKeysService(app: BasecampApp) {
     // Deletes the credential — the token stops working on the next request —
     // and keeps the row, so the operator can still see what was revoked and
     // when. credentialId is nulled because after this there is not one.
-    async revoke(ctx: ServiceContext) {
-      const row = await getScoped(ctx, 'apiKey', 'API key')
+    async revoke() {
+      const row = await getScoped('apiKey', 'API key')
       if (row.revokedAt) throw new BadRequest(`'${row.name}' is already revoked`)
 
       if (row.credentialId) await authOrRefuse().revokeApiKey(row.credentialId)
 
-      return present(await dbOf(ctx).apiKey.update({
+      return present(await db().apiKey.update({
         where: { id: row.id },
         data:  { revokedAt: new Date().toISOString(), credentialId: null },
       }))
@@ -308,8 +307,8 @@ export function createApiKeysService(app: BasecampApp) {
     // about one key. The screen builds its checkboxes from this rather than
     // shipping a copy, which is what keeps a service added later from being
     // invisible to the thing that grants access to it.
-    async scopes(ctx: ServiceContext) {
-      ctx.dispatch = false          // a read — do not announce it on a channel
+    async scopes() {
+      $.dispatch = false          // a read — do not announce it on a channel
       return { scopes: scopeVocabulary(app), expiry: EXPIRY_PRESETS }
     },
 
@@ -335,8 +334,8 @@ export function createApiKeysService(app: BasecampApp) {
  * hold), but that leaves the rule as an absence, and an absence is not
  * something a reader can find. Stated here it is one line with a reason.
  */
-function noKeyManagementByKey(ctx: ServiceContext): void {
-  const user = ctx.auth?.user as { authMethod?: string } | undefined
+function noKeyManagementByKey(): void {
+  const user = $.auth?.user as { authMethod?: string } | undefined
   if (user?.authMethod === 'apiKey')
     throw new Forbidden('An API key cannot manage API keys — sign in to issue or revoke one')
 }

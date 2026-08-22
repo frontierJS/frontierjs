@@ -381,3 +381,22 @@ export function sweepStaleTmp(tmpRoot) {
     }
   } catch {}
 }
+
+// ─── fli's own version ────────────────────────────────────────────────────────
+// Read off the installed package.json rather than written into a banner: a
+// literal drifts the moment a version is published, and a stranger who ran
+// `npm i -g @frontierjs/cli` reads that banner to decide whether their bug is
+// already fixed.
+// Keyed by root rather than a bare memo: the argument exists so a caller
+// holding its own path can ask, and a single cached answer would hand it this
+// package's version for someone else's directory.
+const _versions = new Map()
+export function fliVersion(root = global.fliRoot) {
+  if (_versions.has(root)) return _versions.get(root)
+  let v = null
+  try {
+    v = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version || null
+  } catch {}
+  _versions.set(root, v)
+  return v
+}

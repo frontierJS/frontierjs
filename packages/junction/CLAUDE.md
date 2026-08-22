@@ -312,6 +312,14 @@ src/
   means the frame was DROPPED**, and ignoring it left callers waiting on replies
   that were never coming (`FJS-145`). The outbox holds a dropped frame, flushes
   it on `drain`, and closes the socket with 1013 past `http.wsMaxQueued`.
+- **Socket liveness is SERVER-driven and an app calls nothing.** The channels
+  plugin pings an idle connection every 15s and evicts one that has sent nothing
+  for 40s (`heartbeatInterval`/`heartbeatTimeout`); any frame answers it, and the
+  client replies to the ping from its message handler. Do not reach for
+  `client.startHeartbeat()` — a client-side TIMER is what does not work, because
+  browsers throttle timers to ~1/min in a hidden tab, which is slower than any
+  eviction window. Before this the eviction had a server half and no client half
+  at all and every app flapped on a ~35s cycle (`FJS-366`).
 - **The METHOD decides list vs single** — `wrapResult(raw, service, method)`.
   `find` must answer a list or it throws `ResultShapeError`; an array is a list;
   `{ data, errors }` is a list on any method (the bulk protocol); everything else

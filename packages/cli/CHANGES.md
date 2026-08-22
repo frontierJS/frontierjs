@@ -1,5 +1,190 @@
 # Changes
 
+## 2026-08-21 — fli reports the version it actually is (0.1.3)
+
+The list banner carried a literal `v0.1.0` (`core/bootstrap.js`), so every build
+published since 0.1.0 told a stranger it was 0.1.0 — and `fli --version` fell
+through to the usage screen, because minimist leaves `_` empty and the
+no-command short-circuit ran first. Those are the two places somebody who
+installed the package off npm looks before filing a bug, and both lied.
+
+- **`fliVersion(root)`** in `core/utils.js` reads the installed `package.json`,
+  memoised **per root** rather than once — the argument exists so a caller
+  holding its own path can ask, and a single cached answer would hand it this
+  package's version for someone else's directory.
+- **Four readers**: `fli --version`, `-v`, the bare `fli` usage header, and the
+  `fli list` banner. `/api/meta` already read `pkg.version`; its two `'0.1.0'`
+  fallbacks are `null` now, because a fabricated version is worse than an absent
+  one.
+- `tests/version.test.js` spawns the real binary for every surface and asserts
+  against `package.json`, so the next bump cannot re-open this.
+
+**The usage screen is paste-safe too.** Its two annotated examples marked what a
+command produces with a `->`, on lines that look exactly like something to
+select and paste — and a paste hands `fli` three junk argv entries. The marker
+is `#` now, which the shell reads as a comment, and `tests/help.test.js` asserts
+no arrow reaches the usage screen, the listing or a namespace page. Found the
+way these are always found: a reader pasted an arrow-annotated install line and
+npm went looking for a package named after the arrow.
+
+## 2026-08-19 — the admin uses the app's own Resources (`FJS-364`)
+
+`fli admin:generate` wrote one `web/src/resources/admin.mesa` holding every
+model. That is N Resources in a file named for no model, which `fli check`
+refuses twice (`resource-file-name`, `resource-one-per-file`) — but the rule was
+the smaller half. It also declared `createResource('users')` beside an app that
+already had `resources/User.mesa`: **two stores over one service**, each with its
+own socket subscription, so a write through the admin left the app's list stale
+and the app's write left the admin's, with nothing anywhere saying why.
+
+Both close together:
+
+- **The index moved into the layout.** `admin/_module.mesa`'s `<script module>`
+  exports `models`; the dashboard imports it from there. A layout is already the
+  surface's own module, and module exports are importable by any other module
+  (Mesa VISION §11, rule 30) — which is all the pages ever needed from
+  `admin.mesa`.
+- **The admin imports the app's Resource per model**, and writes one only where
+  none exists, from `fli make:resource`'s own template. **Never overwritten,
+  `--force` included** — force is about the generated pages, which are
+  disposable, and a Resource is not one of those.
+- **Both halves of an existing Resource are read, not guessed.** The export name,
+  because `Person.mesa` exports `people` and no plural rule applied to `Person`
+  finds it; and the service string, without which the irregular generated
+  `/admin/persons/` over a service named `people` — the data worked while the
+  URL, the route folder and the `make:service` hint were wrong together. That
+  second one was found by running the command, not by reading it.
+- A Resource file exporting no `createResource` is **named and its model
+  skipped**, rather than generating a page whose import resolves to `undefined`
+  and dies at first render with no mention of the file.
+
+Verified on a three-model fixture with a hand-written `User.mesa`, an irregular
+`Person.mesa` and a missing `Widget`: the hand-written file is byte-identical
+after `--force`, only `Widget.mesa` is written, and `fli check` reports nothing
+where it previously reported two errors.
+
+## 2026-08-19 — a generated CRUD page is built on the kit, and there is one of it
+
+`fli make:scaffold` and `fli admin:generate` each wrote a list, a create form
+and an edit page, and until now each carried its own copy of the same ~180
+lines: an `Object.entries(resource.fields)` loop deciding control-per-type, a
+`pickers` block resolving a related service through a hand-rolled English
+pluraliser, an `errors` array, a `saving` flag, and a `<style>` block of hex
+colours. They had already drifted — one filtered `id` by name, the other asked
+the resource for its idField, and only one rendered a picker at all.
+
+`core/crud-templates.js` is now the one owner of what a generated page looks
+like, and the pages are built on `@frontierjs/ui`: **`<Form {resource} />` with
+no children IS the form.** Every writable column in schema order, each with the
+control its type implies, picker rows fetched from the related service, the
+coerce/blank-strip/validate pass before the request, and a rejection mapped back
+under the field that caused it — all of it in the kit or in the resource,
+stated once. A generated create page is ~25 lines and names no field, no type
+and no enum member; the list still names its columns, because which of twenty
+belong in a table is a judgement and that file is where to make it.
+
+Two knobs cover what admin needs and scaffold does not: columns derived off the
+schema at runtime (an admin covers every model and cannot name them) and a
+per-row delete, plus the gate affordances. `related()` is gone from the
+generated admin resources file — the picker asks the resource, which resolves
+the related service through Sierra's registry, so a scaffolded app no longer
+ships a second pluraliser.
+
+**`@frontierjs/ui` is now part of what an app is given** (`core/app-config.js`,
+and `fli new`'s web half). A generated page imports the kit; an app without it
+gets pages that cannot resolve their own imports, which is what the first run
+of `scripts/scaffold-build.mjs` said in as many words.
+
+**`fli new` no longer keeps two lists of the same packages.** `neededPkgs` — the
+list `--source local` runs `bun link` over — is read off the manifest
+`makePackageJson` produced rather than restated beside it. Adding the kit to one
+and not the other broke every local-source scaffold at install, and the error
+surfaced three commands later, in `deploy:vendor`, naming every package at once.
+
+Proven by `node scripts/scaffold-build.mjs --deploy`: scaffolded, installed from
+tarballs, built, `bun run check` green, a model scaffolded in and built again,
+and both container sources built, started and answered health. The register step
+still fails on `FJS-345`, which is about a scaffold having no migrations and
+predates this.
+
+## 2026-08-19 — a resource file carries its model's default form (`FJS-D112`)
+
+Invariant 18 said a resource file has no markup. It does now, and the markup is
+the model's default form — the data half stays in `<script module>`, which is
+the half `resource-script` still enforces. The check's markup finding is gone
+and the test that asserted it is replaced by one asserting the opposite: a
+module script, an instance `<script>` and a `<Form>` beside them is a clean
+resource.
+
+The five command templates that stated the old rule in a header comment were
+updated with it — `make:resource`, `web:resource`, `make:model`,
+`make:scaffold`, `admin:generate`. What they do NOT yet do is emit the form,
+which is permitted rather than generated; that and the named-query question are
+named in the ruling and not started.
+
+## 2026-08-19 — a resource file is named for its model, in all five scaffolds (`FJS-363`)
+
+Invariant 19 names a resource file for its MODEL and its export for its SERVICE.
+`make:resource` and `web:resource` built the path as `service + '.mesa'` and
+`make:model --resource` as `${plural}.mesa`, so `fli make:resource Order` wrote
+`orders.mesa` — which the next `fli check` called an error, with this package on
+both sides of the disagreement.
+
+The consumer half was wrong with it. `make:route --resource` and
+`web:route --resource` generated a page importing `resources/${service}.mesa`, a
+file the fixed commands never write, and the *does this resource exist yet*
+probe beside it looked for `${service}.js` — the wrong name **and** the wrong
+extension, so that warning fired on every run including the correct one.
+
+Only `make:scaffold` had it right, which is why CI was green: the `scaffold`
+phase runs `fli scaffold` and reaches none of the other five. Each fixed site
+now carries the split as a comment, because the generated import line legitimately
+spells the two differently either side of `from` — `import { orders } from
+'../../resources/Order.mesa'`. `fli validate`'s worked example was stale the
+same way and is corrected.
+
+Not fixed, filed as [FJS-364](../../ISSUES.md#fjs-364): `admin:generate` writes
+one `resources/admin.mesa` holding every model, which fails `resource-file-name`
+and `resource-one-per-file`. That is a shape question, not a spelling — three
+ways out and none obviously right.
+
+## 2026-08-19 — the scaffold had two auth files and ran the wrong one (`FJS-357`, `FJS-358`)
+
+`fli new` writes `api/src/core/auth.ts` and imports it from `api/src/app.ts`.
+It then composes `auth:install`, which wrote `api/src/auth.ts` — a second
+`createLitestoneAuth` over a second `createClient` on the same SQLite file,
+imported by nothing — and printed next-steps naming `api/src/server.ts`, which
+exists in no app this scaffold writes, telling the reader to call
+`createApp({ auth })` again. `auth:install` recognises the wired layout now and
+scaffolds nothing into it.
+
+**The dead file was the more complete one, and that is where the defect lived.**
+`core/db.ts` grades the gate on `isAdmin`, and its own comment says the
+projection is made where the session is built. `core/auth.ts` declared no
+`sessionFields`, and the `User` model ships a role STRING that auth stores and
+never interprets — so `isAdmin` reached no session and nothing could grade above
+USER(4). Measured on a fresh scaffold with `role='admin'`:
+
+- `DELETE /users/:id` → `403 requires level 5, user has level 4`, at a level no
+  caller could reach
+- `PATCH` of another person's row → **404**, because
+  `@@allow('update', … || auth().isAdmin)` matched nothing and a row policy
+  hides rather than refuses
+- `PATCH {role:'admin'}` → **200 with the field silently stripped**
+
+Three of `schema.lite`'s own rules, dead, for one missing line. It is there now,
+and the same probe passes for an admin and still refuses a plain user on all
+three. `authCleanup` is started from `app.ts` rather than constructed in a file
+nothing imports, and `AUTH_SECRET` is declared in `core/env.ts` rather than
+generated into `.env` and named nowhere.
+
+Declaring it **required** is what found `FJS-360`: every containerised deploy
+then refused to boot, correctly, over a value that no code in
+`@frontierjs/auth` or junction reads — auth signs with `encryptionKey`, and the
+only other mention anywhere is `defineEnv`'s soft-warning table, which knows the
+name so it can grade length and placeholders. It is declared optional.
+
+
 ## 2026-08-19 — what `fli new` leaves behind, read as a stranger would (`FJS-353`, `FJS-354`, `FJS-355`)
 
 699 tests, 0 fail.

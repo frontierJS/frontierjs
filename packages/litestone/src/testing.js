@@ -695,6 +695,19 @@ export async function createTestEnv(opts = {}) {
           const readRules = model.attributes.filter(a =>
             (a.kind === 'allow') && a.operations?.includes('read'))
           const matching = {}
+
+          // Row tenancy generates a DENY, and only allows are read above — so a
+          // scoped model was seeded with an arbitrary tenant, the reader below
+          // could not see it, and every protected field on it reported as
+          // unchecked. Silent for `@@allow` apps and total for declared ones:
+          // basecamp's whole schema stopped being covered the moment it adopted
+          // the block. The claim is decidable from the declaration, so it is
+          // stamped rather than guessed at.
+          const tcol = schema.tenancy?.strategy === 'row' ? schema.tenancy.column : null
+          if (tcol && model.fields.some(f => f.name === tcol)
+                   && !model.attributes.some(a => a.kind === 'tenant' && a.mode === 'none'))
+            matching[tcol] = who[schema.tenancy.claim]
+
           for (const [field, candidates] of Object.entries(_interestingValues(readRules, who, model))) {
             // Only a TARGETED value — one taken off the predicate — puts the row
             // on the matching side. The others exist to put a row on the other
@@ -1754,16 +1767,25 @@ export function generateValidationCases(schema, modelName) {
   // failure mode, one layer up.
   const uncheckable = []
 
+  // The field's OTHER rules, and only ever those.
+  //
+  // Whether a value satisfies or breaks the rule the case NAMES is established
+  // by construction — a boundary is built at the bound, an invalid case outside
+  // it — and asking `validateField` about it instead would make the runner its
+  // own oracle: disable `@length` in `validate.js` and every `@length` case
+  // reports *not checked* rather than *the write was ACCEPTED*, which is the
+  // one finding this whole runner exists to produce. Measured, after getting it
+  // wrong that way first.
   const others = (c) => c.fieldRef.attributes.filter(a => a !== c.attr)
-  const passes = (c, v, attrs) => validateField(c.field, v, attrs).length === 0
+  const clear  = (c, v) => validateField(c.field, v, others(c)).length === 0
 
-  const keep = (list, isolated, label) => {
+  const keep = (list, label) => {
     const out = []
     for (const c of list) {
       if (!c.fieldRef) { out.push(c); continue }
-      if (isolated(c, c.value)) { out.push(c); continue }
+      if (clear(c, c.value)) { out.push(c); continue }
 
-      const fixed = _isolate(c, valid[c.field], v => isolated(c, v))
+      const fixed = _isolate(c, valid[c.field], v => clear(c, v))
       if (fixed !== null) { out.push({ ...c, value: fixed }); continue }
 
       const why = validateField(c.field, c.value, others(c)).map(e => e.message)
@@ -1778,11 +1800,11 @@ export function generateValidationCases(schema, modelName) {
     list.push(...out)
   }
 
-  // A boundary must satisfy EVERY rule on the field — that is what accepted
-  // means. An invalid case must satisfy every rule EXCEPT the one it names, and
-  // still fail that one, or the refusal it observes belongs to somebody else.
-  keep(boundary, (c, v) => passes(c, v, c.fieldRef.attributes), 'boundary')
-  keep(invalid,  (c, v) => passes(c, v, others(c)) && !passes(c, v, [c.attr]), 'invalid case')
+  // One rule for both halves, which is what the reasoning above collapses to:
+  // nothing on the field except the rule under test may have an opinion about
+  // the value.
+  keep(boundary, 'boundary')
+  keep(invalid,  'invalid case')
 
   return { valid, invalid, boundary, uncheckable }
 }

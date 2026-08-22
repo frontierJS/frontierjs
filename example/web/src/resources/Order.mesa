@@ -1,10 +1,12 @@
 <script module>
   // web/src/resources/Order.mesa — the Resource layer.
   //
-  // A Resource is a UI-realm noun, so it is a .mesa file with no markup:
-  // everything here is module scope, which is what `<script module>` means —
-  // it runs once at import, shared by every instance, and its named exports are
-  // importable by any other module (Mesa VISION §11, rule 30).
+  // A Resource is a UI-realm noun, so it is a .mesa file. The data half is
+  // module scope, which is what `<script module>` means — it runs once at
+  // import, shared by every instance, and its named exports are importable by
+  // any other module (Mesa VISION §11, rule 30). Markup below it would be this
+  // model's DEFAULT form; there is none here because `orders` is edited through
+  // the order screen's own state machine rather than a plain form.
   //
   // **The file is named for the MODEL, not the service** — `Order.mesa`, not
   // `orders.mesa` (repo Invariant 19). The export stays `orders`, because that

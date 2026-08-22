@@ -263,6 +263,12 @@ src/
   boots a real dev server and asks the two questions that wiring answers: did a
   `.mesa` come back with a boundary, and does `/@frontierjs/sierra/hmr-client`
   serve Mesa's client (checked on a line only Mesa's copy has).
+- **So is the inspector.** `data-fjs-loc` is stamped by Mesa's compiler and read
+  by `mesa-vite/inspect-client.js`; this package serves that source at
+  `/@frontierjs/sierra/inspect-client` and injects the script into the shell,
+  dev only. `mesaPlugin({ inspect: false })` turns off both ends at once — the
+  client is the attribute's only reader. What proves it is Mesa's Vite drive:
+  the source served here is the source run there.
 - **A missing auto-import does not fail a build.** Mesa compiles a reference to
   an undefined name without complaint, so the symptom is a component that
   renders as nothing. Only what reached the bundle separates *injected* from

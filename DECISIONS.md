@@ -449,6 +449,113 @@ for derived — if it has no independent existence, it is not a Projection.
 
 ## Access control
 
+### <a id="fjs-d113"></a>2026-08-21 · `FJS-D113` — a tenant claim and a per-request standing are the SAME thing: claims on the principal, resolved by one seam, before the Data boundary scopes the client.
+
+`FJS-D05` shipped row tenancy and left one question: **where does the claim come
+from?** It reads the claim off the principal, and its own refusal names the
+assumption — *put the column on the session*. That is one tenant per sign-in,
+which is a real shape and is not the shape of most B2B software, where a person
+belongs to several accounts, switches between them, and holds **a different
+authority in each**. So the framework's own dogfooding app cannot use the
+framework's own tenancy feature: basecamp declares
+`@@allow('all', workspaceId == auth().workspaceId)` on fifteen models by hand and
+writes ~260 lines around it.
+
+**The reframe is the ruling.** `applyStanding` looks like two features —
+resolve a tenant, resolve a role. It is one: `workspaceId` and `memberRole` are
+both **claims put on the principal for this request**, read from one membership
+query, one by the tenancy predicate and one by the gate. There is no tenancy
+feature missing and no gate feature missing. What is missing is a seam that lets
+a claim be resolved **per request** rather than fixed at sign-in.
+
+That is why this costs **no new schema syntax**. `tenantClaimGuard` already
+reads the claim's name off `$tenancy`; row tenancy already compiles the predicate
+and the `@default(auth().<claim>)` stamp. Let the claim arrive by a second route
+and the shipped feature starts working for the membership shape unchanged.
+
+**Resolution is API-realm, and the framework had already said so twice.**
+`strategy database` asks `registry.tenantFor({host, headers, principal})`;
+`strategy row` reads a claim auth put on the session. Neither puts the source in
+the seed, and `ARCHITECT.md` §3.1 says why — the seed holds what is true about
+data over its whole life, and *this request's tenant is in the
+`X-Workspace-Id` header* is transport convention, the same class as `$` params
+(Invariant 10). **A `tenancy { … from header(…) }` keyword is refused** on that
+ground.
+
+**The seam is one option on `createApp`.**
+
+```ts
+createApp({
+  db,
+  principal: async (ctx, user) => ({ workspaceId, memberRole }),
+})
+```
+
+Junction merges what it returns onto a **fresh** principal, assigns
+`ctx.auth.user`, and re-scopes `ctx.locals.db` through
+`$setAuth(toDataPrincipal(…))`. Not two options (`tenant:` + `standing:`) —
+they are one concept and would force two membership reads; not a plugin —
+plugin order is the exact thing that has to be right, and a plugin cannot
+guarantee it composes inside `withLitestoneDb`. **Hook tier** (`FJS-D06`): it may
+mutate what follows and may not refuse. Refusal stays with the guards, which
+already exist.
+
+**Three constraints the seam owns, so no app rediscovers them.** They are in
+basecamp's comments one at a time, each learned by being wrong: it must compose
+INSIDE `withLitestoneDb`, which scopes the client from `ctx.auth.user` before any
+hook knows which tenant is addressed; the standing must go on the **principal**,
+because `getTable()` re-derives its own scoped copy and a standing living only on
+`ctx.locals.db` is dropped the moment a service touches a model; and it must
+produce a **fresh object**, because a WebSocket session is resolved once at
+upgrade and handed to every frame, and the internal-call path freezes it
+(`FJS-D30` rests on that).
+
+**The claim IS the proof, and that is the line the whole ruling turns on.**
+Basecamp today puts `workspaceId` on the principal even with no membership row,
+and survives it because it does not use declared tenancy — the gate grades
+VISITOR and a hook writes a sentence. Under declared tenancy the same code
+scopes a stranger INTO the tenant and every read answers 200. **A resolver may
+emit the tenant claim only once membership is established.**
+
+**So the membership read ships as a battery rather than as documentation.**
+Declaring the membership model in the seed was considered and refused:
+`@@tenant(via: rel)` already means *scoped through this parent* (`FJS-282`), so a
+second `via` is one word with two meanings inside one feature; it is real
+language work — parser, three snapshots, docs; and it hard-codes that membership
+is one model with one subject column and one standing column, which is false for
+membership through a team, for a role that is a join, and for more than one role.
+None of the value needed the seed:
+
+```ts
+principal: membershipClaim({
+  tenantFrom: (ctx) => ctx.headers['x-workspace-id'],
+  model: 'workspaceMember', subject: 'userId',
+  tenant: 'workspaceId',    standing: 'role',
+})
+```
+
+The helper cannot emit a claim it did not verify, which is the whole safety of
+the declared version, at no language cost — and an app whose membership does not
+fit writes the plain function and composes it. Principle 9 as stated: the paved
+road is the road, and the escape is not a worse one. As a battery it passes
+`FJS-D14`'s severability test — one owner, one seam, and the core only knows it
+received a resolver.
+
+**It does not run for background work, by name.** There is no request, so a
+header-shaped resolver has nothing to read. `app.runAs(userId, fn)` rebuilds a
+principal through `IAuth.sessionFor` and carries no tenant claim; a job needing
+one states it. A job that then reads scoped rows hits `tenantClaimGuard`'s
+existing refusal, which is the loud failure — the alternative, a resolver running
+against a null `ctx`, makes every resolver handle a missing request and lets a
+wrong default silently scope a job to one tenant.
+
+**What it unblocks:** ~260 lines of basecamp deleted and a class of tenancy leak
+with them; `FJS-095`, whose `{ validate: false }` survives only because
+`workspaceId` is stamped by the CLIENT; and the shape of basecamp's `core/`,
+which is what was being decided when this was found. Build filed as `FJS-374`.
+
+---
+
 ### <a id="fjs-d05"></a>2026-08-16 · `FJS-D05` — tenancy is DECLARED in the seed, one block, two strategies; row tenancy compiles to `@@deny` and never to `@@allow`.
 
 The row as filed asked for a config shape. What it turned out to need was an
@@ -3058,6 +3165,42 @@ still be unable to say which of the five earned its place. A warning that names
 the file puts the judgement where judgement lives.
 
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
+
+### <a id="fjs-d112"></a>2026-08-19 · `FJS-D112` — A resource file carries its model's default form. Invariant 18's "no markup" half is reversed.
+
+Invariant 18 said a resource file has no markup and everything goes in
+`<script module>`. The data half of that is right and stays: `createResource`
+runs once at import, and its named exports are what every other module imports.
+The markup half was wrong, and it was wrong in the direction that costs files.
+
+**The evidence is an app, not an argument.** `KOBAMI/my.maid.tech` is a 56k-line
+Svelte app built against the pre-alpha FJS client — 36 models, one resource file
+each, and every one of them is the model's data layer *and* its default edit
+form in one file. What that buys is visible in the routes: `webhooks/create` is
+eight lines rendering `<Webhook />`, `webhooks/[webhookId]` is twenty, and the
+form itself exists once. Under the old rule those two pages each carry a form,
+which is the same form written twice per model and drifting from the first
+change onward.
+
+So the rule is now: **`<script module>` is required, markup is optional and it
+is the form.** A plain `<script>` beside it is that form's instance scope. A
+file with no module scope is still refused, and the reason has not changed — a
+`createResource` that ran per instance would give every page its own store, and
+the import another module writes would resolve to nothing.
+
+What this does not do is make a Resource a component *instead of* data. The
+export is still the resource; the markup is a default a page may ignore. A page
+wanting a different form passes children, which `<Form>` already lets win, and a
+model with no form at all — a notification, an audit row — keeps a file with no
+markup and no instance script. Both example apps have one of each.
+
+Two things follow that are NOT ruled here and are open work: whether
+`fli make:resource` should *emit* that default form rather than only permit it,
+and whether the resource should own its named queries the way that app's
+resources own `query`, `optionsQuery` and `save`. The second is the stronger
+idea of the two and has no home in `createResource` yet.
+
+— `CLAUDE.md` Invariant 18, `packages/cli/core/checks.js` (`resource-script`).
 
 ### <a id="fjs-d32"></a>2026-08-15 · `FJS-D32` — FrontierJS adopts a linter and refuses a formatter, and the refusal is measured rather than preferred.
 

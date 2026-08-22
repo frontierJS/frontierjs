@@ -122,11 +122,13 @@ describe('a model scoped through its parent (FJS-282)', () => {
     expect(w).toContain('NOT scoped to a tenant — Plan')
   })
 
-  test('the generated rule is a deny over all four operations', () => {
+  test('the generated rule is a deny over all five operations', () => {
     const m = parse(SCHEMA).schema.models.find((m: any) => m.name === 'Deploy')
     const denies = m.attributes.filter((a: any) => a.kind === 'deny' && a.generated === 'tenancy')
     expect(denies).toHaveLength(1)
-    expect(denies[0].operations).toEqual(['read', 'update', 'delete', 'create'])
+    // Five, not four: `post-update` grades the row the write produced, which is
+    // what stops a child being re-pointed at a parent in another tenant.
+    expect(denies[0].operations).toEqual(['read', 'update', 'delete', 'create', 'post-update'])
     // 'read' is STATED: the question is always "is that parent mine", never
     // "may I create that parent", which is what the default would ask.
     expect(denies[0].expr).toEqual({ type: 'not', expr: { type: 'check', field: 'app', operation: 'read' } })
@@ -245,5 +247,61 @@ describe('check() outside a WHERE is a real lookup (FJS-282)', () => {
     await d.asSystem().lineItem.createMany({ data: [{ id: 1, orgId: 1 }, { id: 2, orgId: 2 }] })
     expect((await d.$setAuth({ id: 100 }).lineItem.findMany()).map((r: any) => r.id)).toEqual([1])
     d.$close()
+  })
+})
+
+// ─── An OPTIONAL parent ──────────────────────────────────────────────────────
+//
+// The delegated rule is `!check(rel)`, and `check()` had two implementations
+// that disagreed about a null foreign key. `evalCheck` — the JS half, which
+// runs on create — returns true, because a row naming no parent is not a row
+// naming somebody else's. `compileSql` emitted a bare EXISTS, which is false
+// for a null column, so the same row was invisible to every scoped READ.
+//
+// Basecamp's dashboard widgets are the shape: one required parent (the board)
+// and two optional ones (a server, an app). A counter widget names neither, so
+// it could be created and then never seen again. Four checks in its drive said
+// so and nothing in the suites did — `verifyRowPolicies` reports a `check()`
+// policy as not-graded by name, so the net that grades every other rule cannot
+// see this one.
+
+describe('a delegated child whose parent is optional', () => {
+  const SCHEMA = `
+    tenancy { strategy row  column workspaceId  claim workspaceId }
+    model Board  { id Int @id @default(autoincrement())  workspaceId Int  widgets Widget[] }
+    model Srv    { id Int @id @default(autoincrement())  workspaceId Int  widgets Widget[] }
+    model Widget {
+      id      Int    @id @default(autoincrement())
+      boardId Int    board Board @relation(fields: [boardId], references: [id])
+      srvId   Int?   srv   Srv?  @relation(fields: [srvId], references: [id])
+      label   String
+    }
+  `
+
+  test('is visible when the optional parent is absent', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+    const sys = db.asSystem()
+    await sys.board.create({ data: { workspaceId: 1 } })
+    await sys.srv.create({ data: { workspaceId: 1 } })
+
+    const caller = db.$setAuth({ id: 'u1', workspaceId: 1 })
+    await caller.widget.create({ data: { boardId: 1, label: 'no server' } })
+    await caller.widget.create({ data: { boardId: 1, srvId: 1, label: 'with server' } })
+
+    const rows = await caller.widget.findMany({})
+    expect(rows.map((r: any) => r.label).sort()).toEqual(['no server', 'with server'])
+  })
+
+  test('and the guard opens no hole in either direction', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+    const sys = db.asSystem()
+    await sys.board.create({ data: { workspaceId: 1 } })   // mine
+    await sys.board.create({ data: { workspaceId: 2 } })   // theirs
+    await sys.srv.create({ data: { workspaceId: 2 } })     // theirs
+    await sys.widget.create({ data: { boardId: 2, label: 'on their board' } })
+    await sys.widget.create({ data: { boardId: 1, srvId: 1, label: 'on their server' } })
+
+    const caller = db.$setAuth({ id: 'u1', workspaceId: 1 })
+    expect(await caller.widget.findMany({})).toEqual([])
   })
 })

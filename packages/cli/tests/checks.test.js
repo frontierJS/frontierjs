@@ -116,15 +116,29 @@ describe('resources', () => {
     expect(findings[0].message).toMatch(/\.mesa file/)
   })
 
-  test('a plain <script> is an error, and so is markup', () => {
+  test('a resource with only a plain <script> is an error', () => {
     const root = tree('r-script', {
       ...CLEAN,
       'web/src/resources/Account.mesa': '<script>\n  export const accounts = 1\n</script>\n<div>hi</div>\n',
     })
     const { findings } = only(root, 'resource-script')
-    expect(findings).toHaveLength(2)
-    expect(findings.map(f => f.message).join(' ')).toMatch(/script module/)
-    expect(findings.map(f => f.message).join(' ')).toMatch(/no markup/)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/script module/)
+  })
+
+  // Invariant 18 as amended (`FJS-D112`): the markup IS the model's default
+  // form, so a resource that carries one must not be a finding. This is the
+  // case the rule used to fail, and it is the shape every scaffolded page is
+  // about to be written against.
+  test('markup and an instance <script> beside the module script are fine', () => {
+    const root = tree('r-form', {
+      ...CLEAN,
+      'web/src/resources/Account.mesa':
+        "<script module>\n  import { createResource } from '@frontierjs/sierra/junction'\n" +
+        "  export const accounts = createResource('accounts')\n</script>\n" +
+        '<script>\n  let record = {}\n</script>\n<Form resource={accounts} {record} />\n',
+    })
+    expect(only(root, 'resource-script').findings).toEqual([])
   })
 
   test('a filename that is neither a model nor its own service noun is an error', () => {

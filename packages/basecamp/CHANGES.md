@@ -1,5 +1,123 @@
 # Changes — Basecamp
 
+## 2026-08-22 — tenancy is declared, not written out
+
+132 tests, 0 fail. `bun run verify` 301/301. Typecheck at baseline.
+
+Sixteen models carried a hand-written
+`@@allow('all', workspaceId == auth().workspaceId)` and the app carried the
+machinery to make `auth().workspaceId` mean something: `applyStanding` read the
+membership row, built a fresh principal and re-scoped the client, and
+`withWorkspaceStanding` arranged for it to happen before junction's own scoping
+hook did. All of it is gone. `tenancy { strategy row  column workspaceId  claim
+workspaceId }` is the declaration, `createApp({ principal: membershipClaim(…) })`
+is the resolution, and eight models say `@@tenant(none)` by name — the five auth
+models, `Workspace` itself, `WorkspaceMember` (the standing is READ from it, so
+it cannot be scoped by the claim it produces) and `AuditEvent` (nullable
+workspace).
+
+**The other twenty-two models gained a scope they did not have.** They carry no
+`workspaceId` column, so nothing could be written by hand — they are reachable
+through a parent and were relying on it. `@@tenant(via:)` says so, and the
+access snapshot went from **17 models with row policies to 31**.
+
+What is left in `core/resource.ts` is what is actually this app's: the 404, the
+paging envelope, the slug. `findScoped` and `getScoped` no longer restate the
+workspace clause and `stampWorkspace` is `deriveSlug`, because the declaration
+desugars a `@default(auth().workspaceId)` that fills the column at the Data
+boundary — which covers the paths no hook runs on, and seven services had
+written that same line into a stamper of their own.
+
+The migration found four defects in Litestone and one in Junction, three of them
+in the tenancy feature itself and none of them findable from inside those
+packages: `FJS-378`, `FJS-381`, `FJS-382`, `FJS-383`, and `FJS-380` still open.
+
+## 2026-08-22 — the services read `$` instead of being handed a context
+
+132 tests, 0 fail. Typecheck at baseline (15). The browser drive is NOT part of this —
+`bun run verify` needs an empty database and the local one has rows, so what is proven here
+is the suite and the compiler, not a screen.
+
+`core/resource.ts` opened with three accessors and a note saying they existed so one fact
+was stated once: a `ServiceContext` has no `ctx.params`, and the caller-scoped Litestone
+client is at `ctx.locals.db`. Twenty-two services then said `dbOf(ctx)` **160 times**,
+`wsOf(ctx)` 66 and `actorOf(ctx)` 25, and every helper that wanted one took a `ctx` parameter
+to carry it — `steps(ctx, deploymentId)` threading a context for a client.
+
+**`$` (junction) is the call in progress, so nothing is handed one any more.** Three
+app-owned readers over it, named once:
+
+- `db()` — `$.db`, typed `any` **exactly as `dbOf` was**. Junction's `LitestoneClient` is a
+  deliberate minimal stand-in for the surface its own adapter uses, so it knows neither
+  `exists()` nor what a row of `App` looks like. The cast belongs to the app that owns the
+  schema, and it belongs in one place.
+- `ws()` — `$.locals.workspaceId`. A workspace is **this app's** idea, not the framework's,
+  so it stays on `locals` and never becomes `$.ws`.
+- `actor()` — `$.me?.userId ?? 'system'`.
+
+`findScoped`, `getScoped`, `assertSlugFree` and `removeScoped` lost their `ctx` parameter
+outright; `getScoped`'s default id is `$.id`. `stampWorkspace` keeps its parameter, because
+it is a **hook** and junction hands it one — that is explicit data, not ambient state.
+
+**Fifteen methods then had a `ctx` they never read**, and they are gone too. The other 132
+keep theirs and should: they read `ctx.data`, `ctx.query` or `ctx.id`, which is the call's
+explicit payload rather than its ambient state. `ctx: ServiceContext` 217 → 198. This is the
+shape the migration was expected to have and it is worth saying plainly: `$` removes the
+*threading*, not the parameter.
+
+Three self-shadowing locals fell out of the rename and the compiler caught all three —
+`const db = db()`, `const actor = actor()` twice. The alias had nothing left to hold once
+the value was ambient.
+
+## 2026-08-20 — `engine/` was three species in one folder
+
+132 tests, 0 fail. Typecheck at baseline. `verify --reset` 301/301. The jobs
+snapshot is unchanged, which is the proof this moved nothing: same four names,
+same queues, same retry budgets.
+
+**There was never an Engine.** Every one of the three was `app.jobs.handle(name,
+fn, opts)` wrapped in a factory whose only job was to hold `app` — and caravan
+puts the running app on every job context, so the factory existed to supply what
+it was already given. The framework's noun for this is **Job**, the convention is
+a `*.job.ts` file that names itself, and basecamp had routed around it: five
+handlers hand-registered from `core/app.ts`, and six dispatch sites spelling
+`'deployment:run'` and `'job:run'` as strings. `api/src/jobs/` now holds one file
+per job, autoloaded by `jobsDir`, and the **default export is the dispatch
+handle** — `dispatch(deploymentRun, …)` states no name and types its payload, so
+a typo is a compile error where it used to be a job that silently never ran.
+
+**Two of the five were not jobs at all.** `executor.ts` answers *who carries this
+release* — provider selection, and imported by `deployments.service.ts` too — so
+it is `providers/executor.ts` beside the new `providers/outpost.ts`.
+`job-schedule.ts` binds a Job row to caravan's clock and is shared with the
+service that knows a job changed, so it is `services/jobs/job-schedule.ts`;
+`restoreSchedules(app)` moved there whole and `core/app.ts` calls it, because a
+job file can declare its own handler but not a schedule that came from a ROW.
+
+**`fleet.engine.ts` was already re-forming as a grab-bag** — its own header said
+"one file for both, because they are one shape", which is grouping by mechanism
+rather than by subject, and that is how `core/` starts. Split into
+`recipe-run.job.ts` and `cleanup-run.job.ts`, with the shape they genuinely share
+in `jobs/outpost-run.ts` (a bound on returned output, a line in the machine's
+history).
+
+**One fact was written five times.** `workspace:${id}` appeared in four files and
+the cast that reaches the channel manager in four — `app.channels` is the
+plugin's, so every caller re-derived the same shape by hand. `src/channels.ts`
+owns both now, and `core/hooks.ts` reads it rather than spelling it. A channel
+name nobody owns is one a single caller can get wrong while every other caller
+keeps working, and the symptom is a screen that never updates.
+
+`applyDiskReport` moved to `services/cleanup/disk-report.ts` on the way, because
+the cleanup job imports it and the cleanup service imports the job's definition:
+one module both can reach is what keeps that from being a cycle.
+
+Found two defects in caravan while doing it, both fixed there
+(`packages/caravan/CHANGES.md`): a namespaced job name could not be a file at
+all, and two files in different directories could claim one name with the loser
+silently ceasing to exist.
+
+
 ## 2026-08-19 — a second human can get in (`FJS-032`)
 
 132 tests, 0 fail. `verify` 301/301, `verify:build` 8/8. Typecheck 15 against a

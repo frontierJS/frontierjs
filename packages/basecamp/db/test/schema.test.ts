@@ -171,7 +171,13 @@ describe('schema.lite', () => {
   test('parses with no errors and no warnings', () => {
     const r = parseFile(SCHEMA)
     expect(r.errors ?? []).toEqual([])
-    expect(r.warnings ?? []).toEqual([])
+    // One standing warning, and it is the tenancy block reporting what it did:
+    // fourteen models carry no `workspaceId` and are scoped through a parent
+    // (`FJS-282`). Asserted by shape rather than allowed by silence, so a
+    // SECOND warning — a model that is scoped by nothing — still fails here.
+    const warnings = (r.warnings ?? []) as string[]
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toMatch(/scoped through a parent/)
   })
 
   test('every model name is PascalCase singular — Invariant 2', () => {
@@ -554,7 +560,7 @@ describe('the gate ladder', () => {
   test('a suspended principal is STRANGER at the Data boundary, membership or not', async () => {
     // The app refuses a suspended caller at two doors already (login, and an
     // app-level before hook). This is the third, and it is the only one an
-    // engine calling a service in-process passes through.
+    // job calling a service in-process passes through.
     const db  = await client()
     const sys = db.asSystem()
     const ws  = await seedWorkspace(sys)
@@ -691,11 +697,11 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
 
     const caller = db.$setAuth(as('admin', { workspaceId: a.id }))
     await expect(caller.server.create({ data: { workspaceId: b.id, name: 'x', slug: 'x' } }))
-      .rejects.toThrow(/denied by @@allow/)
+      .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
     // The post-update half: the row was the caller's when the UPDATE matched it
     // and would not be afterwards, so it rolls back.
     await expect(caller.server.update({ where: { id: mine.id }, data: { workspaceId: b.id } }))
-      .rejects.toThrow(/denied by @@allow/)
+      .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
     expect((await sys.server.findUnique({ where: { id: mine.id } })).workspaceId).toBe(a.id)
     db.$close()
   })
@@ -726,7 +732,7 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
     await twoTenants(sys)
 
     expect(await db.$setAuth(as('owner')).server.findMany({})).toEqual([])
-    // asSystem() is the deliberate way across — the engines, the hub and the
+    // asSystem() is the deliberate way across — the jobs, the hub and the
     // outpost's heartbeat all take it.
     expect((await sys.server.findMany({})).length).toBe(2)
     db.$close()
@@ -738,7 +744,7 @@ describe('Server — @@allow, the tenancy the gate cannot express', () => {
 // where-clauses and into the schema, and the audit that precedes a declaration
 // came out clean for all three: every scoped read already filtered on
 // `workspaceId`, and the only paths that legitimately cross a workspace — the
-// three engines and the hub — are `asSystem()`.
+// the jobs and the hub — are `asSystem()`.
 //
 // One test per property rather than per model, with the three driven through the
 // same body: what would differ between them is the columns a create needs, and
@@ -812,20 +818,20 @@ describe('Project · Environment · App — the tenancy declared', () => {
     for (const accessor of ACCESSORS) {
       await expect(caller[accessor].create({ data: {
         workspaceId: b.id, name: 'x', slug: `x-${accessor}`, ...extras(accessor, theirs),
-      } })).rejects.toThrow(/denied by @@allow/)
+      } })).rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
 
       // The post-update half: the row was the caller's when the UPDATE matched
       // it and would not be afterwards, so it rolls back.
       await expect(moveTo(caller, sys, accessor, mine[accessor].id, b.id))
-        .rejects.toThrow(/denied by @@allow/)
+        .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
       expect((await sys[accessor].findUnique({ where: { id: mine[accessor].id } })).workspaceId).toBe(a.id)
     }
     db.$close()
   })
 
-  test('the engines still write across workspaces — they are asSystem()', async () => {
-    // The deployment engine sets App.status for whichever workspace the
-    // deployment belongs to, and the job engine reads a Job the same way. If
+  test('the jobs still write across workspaces — they are asSystem()', async () => {
+    // The deploy job sets App.status for whichever workspace the
+    // deployment belongs to, and the job runner reads a Job the same way. If
     // this fails, the declaration has broken the paths a policy is meant not to
     // touch, and the symptom in the app would be a deploy that never lands.
     const db  = await client()
@@ -923,21 +929,21 @@ describe('Deployment · Job · Domain — the tenancy declared', () => {
       const caller = db.$setAuth(as(role, { workspaceId: a.id }))
 
       await expect(caller[accessor].create({ data: { workspaceId: b.id, ...data(theirs) } }))
-        .rejects.toThrow(/denied by @@allow/)
+        .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
 
       // The post-update half: the row was the caller's when the UPDATE matched
       // it and would not be afterwards, so it rolls back.
       await expect(moveTo(caller, sys, accessor, (mine as any)[accessor].id, b.id))
-        .rejects.toThrow(/denied by @@allow/)
+        .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
       expect((await sys[accessor].findUnique({ where: { id: (mine as any)[accessor].id } })).workspaceId)
         .toBe(a.id)
     }
     db.$close()
   })
 
-  test('the engines still advance another workspace release — they are asSystem()', async () => {
-    // The deployment engine writes status and steps for whichever workspace the
-    // release belongs to, and the job engine reads and stamps a Job the same
+  test('the jobs still advance another workspace release — they are asSystem()', async () => {
+    // The deploy job writes status and steps for whichever workspace the
+    // release belongs to, and the job runner reads and stamps a Job the same
     // way. If this fails, the declaration has caught the paths a policy is meant
     // not to touch, and the symptom in the app is a deploy that never lands.
     const db  = await client()
@@ -956,7 +962,7 @@ describe('Deployment · Job · Domain — the tenancy declared', () => {
 // ─── Tenancy, third batch ────────────────────────────────────────────────────
 // The six that hang off the workspace directly and are not credential material:
 // a network, a recipe, a flag, a channel, an alert rule, a dashboard. Nothing
-// reads any of them across a workspace outside the hub and the fleet engine,
+// reads any of them across a workspace outside the hub and the fleet jobs,
 // both asSystem(), so the declaration is the same fact their services already
 // filter on. The gates differ (a Recipe is "4.5", a Network and a channel are
 // "2.5"), so each row states who acts.
@@ -1027,18 +1033,18 @@ describe('the workspace-owned six — the tenancy declared', () => {
       const caller = db.$setAuth(as(role, { workspaceId: a.id }))
 
       await expect(caller[accessor].create({ data: { workspaceId: b.id, ...data('smuggled') } }))
-        .rejects.toThrow(/denied by @@allow/)
+        .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
 
       await expect(moveTo(caller, sys, accessor, rows[accessor].mine.id, b.id))
-        .rejects.toThrow(/denied by @@allow/)
+        .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
       expect((await sys[accessor].findUnique({ where: { id: rows[accessor].mine.id } })).workspaceId)
         .toBe(a.id)
     }
     db.$close()
   })
 
-  test('the hub and the fleet engine still cross — they are asSystem()', async () => {
-    // The hub lists every workspace's flags and toggles one; the fleet engine
+  test('the hub and the fleet jobs still cross — they are asSystem()', async () => {
+    // The hub lists every workspace's flags and toggles one; the fleet job
     // stamps a Recipe for whichever workspace owns the run. Both are the paths
     // a policy is meant not to touch, and both would go quiet rather than throw.
     const db  = await client()
@@ -1115,14 +1121,14 @@ describe('Secret · ApiKey — the tenancy declared over credential material', (
 
     await expect(caller.secret.create({ data: {
       workspaceId: b.id, name: 'smuggled', kind: 'generic', data: 'X', createdBy: 'u1' } }))
-      .rejects.toThrow(/denied by @@allow/)
+      .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
     await expect(caller.apiKey.create({ data: {
       workspaceId: b.id, userId: a.ownerId, name: 'smuggled', tokenHint: 'bc_x' } }))
-      .rejects.toThrow(/denied by @@allow/)
+      .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
 
     for (const accessor of ACCESSORS) {
       await expect(moveTo(caller, sys, accessor, (mine as any)[accessor].id, b.id))
-        .rejects.toThrow(/denied by @@allow/)
+        .rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
       expect((await sys[accessor].findUnique({ where: { id: (mine as any)[accessor].id } })).workspaceId)
         .toBe(a.id)
     }
@@ -1949,8 +1955,21 @@ describe('the access and constraints this schema declares are enforced', () => {
     // with a 200 and nothing raises anywhere. This grades the compiled WHERE
     // against litestone's own JS evaluator — two independent implementations of
     // one rule. `Server`'s workspace tenancy is the live case.
-    const env = await makeEnv()
-    expect((await env.verifyRowPolicies()).map((m: any) => m.message)).toEqual([])
+    // `got: 'skipped'` is the checker REPORTING rather than guessing — a
+    // delegated `check()` policy or one gated at SYSTEM, which no synthetic
+    // principal can hold. Since `tenancy { strategy row }` generates a
+    // `check(parent)` rule for each of the fourteen models scoped through a
+    // parent, skipped rows are now the normal state and a violation is what
+    // must be empty.
+    const env       = await makeEnv()
+    const graded    = (await env.verifyRowPolicies()) as any[]
+    const violations = graded.filter(m => m.got !== 'skipped')
+
+    expect(violations.map(m => m.message)).toEqual([])
+    // The report is asserted too: it should be delegations and SYSTEM gates and
+    // nothing else, so a NEW ungradable shape is loud rather than absorbed.
+    for (const m of graded)
+      expect(m.message).toMatch(/delegates to another model's policy|which no principal can hold/)
   }, 60_000)
 
   test('every gated model, every level, all four operations', async () => {

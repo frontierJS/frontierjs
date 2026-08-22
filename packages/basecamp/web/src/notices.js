@@ -1,4 +1,4 @@
-// src/notices.js — the attention engine.
+// src/notices.js — the attention rules.
 //
 // The mock's `computeNotices()` (BasecampUI.jsx) is the reference for WHAT
 // deserves attention. This is that rule set against the real schema.
@@ -119,7 +119,7 @@ export function computeNotices({ servers = [], deployments = [], jobs = [] } = {
     }
 
     if (DEPLOY_IN_FLIGHT.includes(d.status)) {
-      // startedAt is null until the engine picks it up, so fall back to
+      // startedAt is null until the job picks it up, so fall back to
       // queuedAt — a release stuck IN THE QUEUE is the more alarming of the two.
       const age = since(d.startedAt ?? d.queuedAt, now)
       if (age !== null && age > DEPLOY_STUCK_MS) {

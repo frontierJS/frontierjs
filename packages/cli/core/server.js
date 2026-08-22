@@ -135,12 +135,12 @@ function handleMeta_info(req, res) {
   try {
     const pkg = JSON.parse(readFileSync(resolve(__dir, '../package.json'), 'utf8'))
     json(res, 200, {
-      version: pkg.version || '0.1.0',
+      version: pkg.version || null,
       built:   pkg._built  || null,
       name:    pkg.name    || 'fli',
     })
   } catch {
-    json(res, 200, { version: '0.1.0', built: null, name: 'fli' })
+    json(res, 200, { version: null, built: null, name: 'fli' })
   }
 }
 

@@ -1,4 +1,4 @@
-// src/engine/job-schedule.ts
+// src/services/jobs/job-schedule.ts
 // The one place this app binds a Job row to a clock.
 //
 // A scheduled Job is a database ROW, so its schedule has the row's lifetime: it
@@ -7,12 +7,12 @@
 // ephemeral, and reaching for it here bought a timer with none of the queue's
 // durability, retry or principal.
 //
-// Two functions rather than a method on the engine, because the SERVICE is what
-// knows a job changed and the ENGINE is what restores them at boot; a shared
+// Three functions rather than a method somewhere, because the SERVICE is what
+// knows a job changed and the APP is what restores them at boot; a shared
 // module is what keeps the caravan name from being spelled in two places.
 
-import type { BasecampApp } from '../basecamp.types.ts'
-import type { Job }         from '../../../db/schema.d.ts'
+import type { BasecampApp } from '../../basecamp.types.ts'
+import type { Job }         from '../../../../db/schema.d.ts'
 
 /**
  * The caravan registration name for a job's schedule.
@@ -73,4 +73,44 @@ export function syncSchedule(
 
   if (onTheClock) scheduleJob(app, job)
   else            unscheduleJob(app, job.id)
+}
+
+// ─── restoreSchedules ────────────────────────────────────────────────────────
+//
+// Re-register every live scheduled job from the database.
+//
+// A cron registration is in-process in both caravan and junction, so it does not
+// survive a restart on its own — and the only place a Job's schedule was ever
+// registered was the service's `create()`. Every scheduled job in the app
+// therefore stopped firing at the first deploy, silently, with the row still
+// saying `scheduled` in the UI (`FJS-327`). This is the half that makes the row
+// the source of truth rather than the request that happened to create it.
+//
+// It reads rows, so it belongs to the app's boot rather than to a job file: the
+// handler that RUNS a job has no reason to know how many were scheduled.
+
+export async function restoreSchedules(app: BasecampApp): Promise<number> {
+  const db  = app.data.asSystem()
+  const log = app.logger.child('job-schedule')
+
+  const jobs = await db.job.findMany({
+    where: { kind: 'scheduled', status: { not: 'cancelled' } },
+  })
+
+  let restored = 0
+  for (const job of jobs) {
+    if (!job.cronExpression) continue
+    try {
+      scheduleJob(app, job)
+      restored++
+    } catch (err) {
+      // One unparseable expression must not cost every other job its schedule.
+      // It is already refused on the way in, so reaching this means a row that
+      // predates the check or was written around it.
+      log.error('could not restore schedule', {
+        job_id: job.id, cron: job.cronExpression, error: (err as Error).message,
+      })
+    }
+  }
+  return restored
 }

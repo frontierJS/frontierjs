@@ -40,3 +40,39 @@ export interface QueryDirectives {
   withTemplates?: boolean
   onlyTemplates?: boolean
 }
+
+// ─── The page ─────────────────────────────────────────────────────────────
+// What a limit and an offset MEAN, answered once.
+//
+// Two callers had two answers and only one of them worked. `parseQuery` reads
+// `Number()` and falls back on a non-finite result, because a NaN limit reaches
+// SQLite as a bind failure rather than as "no limit" — and treats a limit of 0
+// as meaningful, since that is how a caller asks for the count alone. The
+// `paginate()` hook used `parseInt` + `Math.min`, so `$limit=abc` gave it
+// `Math.min(NaN, 100)` — NaN — where the same request through a model service
+// gave the default.
+//
+// It lives here rather than beside either caller because this module imports
+// nothing: it is where the directive table already is, and a clamp is a fact
+// about a directive.
+
+export interface Page { limit: number; offset: number }
+
+export function clampPage(
+  directives:   QueryDirectives | undefined,
+  defaultLimit: number,
+  maxLimit:     number,
+  fallback:     { limit?: unknown; offset?: unknown } = {},
+): Page {
+  // `??` not `||`: a limit of 0 is a real request, for the count alone.
+  const limitRaw  = directives?.limit  ?? fallback.limit  ?? defaultLimit
+  const offsetRaw = directives?.offset ?? fallback.offset ?? 0
+
+  const limit  = Number(limitRaw)
+  const offset = Number(offsetRaw)
+
+  return {
+    limit:  Math.min(Number.isFinite(limit) ? limit : defaultLimit, maxLimit),
+    offset: Number.isFinite(offset) ? offset : 0,
+  }
+}

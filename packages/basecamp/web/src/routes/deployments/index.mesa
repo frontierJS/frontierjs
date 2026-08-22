@@ -30,7 +30,7 @@ title: Deployments
   load()
   $: session.workspaceId, () => load()
 
-  // Live: the engine pushes `deployments patched` to workspace:<id> on every
+  // Live: the job pushes `deployments patched` to workspace:<id> on every
   // step transition. Merging the payload beats re-fetching the list — the push
   // carries the whole row, and a list that re-queries on every step of every
   // concurrent release is a poll with extra steps.

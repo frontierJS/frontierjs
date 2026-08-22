@@ -20,6 +20,8 @@ core/
   checks.js     the architecture rules — shared with scripts/ci.mjs
   typecheck.js  tsc's output, filtered to your files — shared with scripts/typecheck.mjs
   app-config.js what a scaffolded app is GIVEN — deps, scripts, configs, workflow
+  crud-templates.js     what a GENERATED CRUD page IS — shared by `make:scaffold`
+                        and `admin:generate`. Built on @frontierjs/ui
   widget-surface.js     what a `widgets/` surface IS — shared by `new` and `make:widget`
   extension-surface.js  what an `extension/` surface IS — ditto, `make:extension`
   vendor.js     pack the workspace into an app's build context
@@ -266,6 +268,23 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   no artefact, so the `createResource(...)` call is all there is — it reads that
   CALL, with comments stripped first, because a resource file is mostly prose and
   a `model:` in a sentence is not a declaration.
+- **`core/crud-templates.js` is the one answer to what a generated CRUD page
+  looks like**, and it has two callers for the reason every shared engine here
+  does: `make:scaffold` and `admin:generate` both emit a list, a create form and
+  an edit page, and while each carried its own copy they drifted — one filtered
+  `id` by name, the other asked the resource for its idField. The pages are
+  built on `@frontierjs/ui`, so the form is `<Form {resource} />` and nothing
+  about the model is written into the file. **The list is the deliberate
+  exception**: which of twenty columns belong in a table is a judgement, so it is
+  named at generate time (scaffold) or taken off the schema at runtime (admin,
+  which cannot name them). Anything here that names a field, a type or an enum
+  member belongs in the kit or in the resource instead.
+- **The scaffold's package list has one owner too, now.** `fli new` used to keep
+  `neededPkgs` — what `--source local` runs `bun link` over — beside the deps
+  `makePackageJson` writes, and the two had to agree by hand. They stopped
+  agreeing the moment the kit was added to one of them, and the failure surfaced
+  three commands later in `deploy:vendor`, naming every package at once. It is
+  read off the manifest now.
 - **`core/checks.js` has two callers and one of them is not in this package.**
   `scripts/ci.mjs` imports it by relative path and runs it over this repo as the
   `structure` phase. Loosening a rule here loosens it for every app on the next

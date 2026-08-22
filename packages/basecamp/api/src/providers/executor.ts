@@ -1,8 +1,8 @@
-// src/engine/executor.ts
+// src/providers/executor.ts
 // Who actually carries out a release — resolved in ONE place, asked by both
-// the service that accepts the request and the engine that runs it.
+// the service that accepts the request and the job that runs it.
 //
-// Until FJS-257 there was no such question. `deployment.engine.ts` looked for a
+// Until FJS-257 there was no such question. `deployment-run.job.ts` looked for a
 // placement, found none, returned early from every step, and the caller marked
 // each one `success` — a release that finished green in 23ms having issued no
 // command, with the App left reading `running`. The early return was labelled
@@ -19,7 +19,7 @@
 //             shipped.
 //   none    — nothing can carry this release. A refusal, never a quiet pass.
 //
-// The Outpost protocol itself lives at the top of `deployment.engine.ts`; this
+// The Outpost protocol itself lives at the top of `deployment-run.job.ts`; this
 // module only decides who speaks it.
 
 import type { BasecampApp } from '../basecamp.types.ts'
@@ -98,7 +98,7 @@ function outpostExecutor(app: BasecampApp, serverId: string, target: string): Ex
  * Who runs this app's next release.
  *
  * Asked twice on purpose: `deployments.create` asks it to refuse the request
- * where the operator can see the refusal, and the engine asks it again because
+ * where the operator can see the refusal, and the job asks it again because
  * a placement can go away between the click and the job — the two must not be
  * able to disagree, which is why the rule is here rather than in either.
  */

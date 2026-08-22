@@ -10,6 +10,7 @@ import {
   healthPlugin,
   authenticate,
   mailerPlugin,
+  membershipClaim,
 } from '@frontierjs/junction'
 
 import { conduit }           from '@frontierjs/conduit'
@@ -23,13 +24,12 @@ import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './db.ts'
 import { createSecretResolver }          from './credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './mailer.ts'
-import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, withWorkspaceStanding } from './hooks.ts'
+import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, resolveWorkspaceId } from './hooks.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './session-auth.ts'
 import { apiKeyGuard, apiKeyUsage }       from '../services/api-keys/scopes.ts'
 import { slugify }                        from './resource.ts'
-import { createDeploymentEngine }    from '../engine/deployment.engine.ts'
-import { createJobEngine }           from '../engine/job.engine.ts'
-import { createFleetEngine }         from '../engine/fleet.engine.ts'
+import { restoreSchedules }          from '../services/jobs/job-schedule.ts'
+import { workspaceChannelName }      from '../channels.ts'
 
 import type { BasecampApp } from '../basecamp.types.ts'
 
@@ -79,7 +79,7 @@ export async function buildBasecampApp(
   //              bun:sqlite handle to Conduit's store and the health check,
   //              both of which want a Database, not an ORM.
   //   db       — the Litestone client. THE Data boundary: every service,
-  //              engine and bootstrap path reads and writes through it.
+  //              job and bootstrap path reads and writes through it.
   //
   // Migrations run first, so the Litestone client opens a database whose
   // tables already exist.
@@ -154,7 +154,34 @@ export async function buildBasecampApp(
   // @frontierjs/testing found no services at all. An absolute path is the same
   // answer from either.
   const servicesDir = new URL('../services', import.meta.url).pathname
-  const app = createApp({ config, auth, db, autoload: servicesDir }) as BasecampApp
+  // `principal:` is what makes this app's tenancy work, and it is the whole of
+  // what used to be `withWorkspaceStanding` + `applyStanding` (`FJS-D113`).
+  //
+  // A workspace is the tenant and a person belongs to several, holding a
+  // different role in each — so neither the claim nor the level can sit on the
+  // session. Both are resolved per request off the WorkspaceMember row for the
+  // workspace this request names, and junction merges them onto a fresh
+  // principal and re-scopes the client before any hook or method runs.
+  //
+  // `membershipClaim` cannot emit a claim it did not verify, which is the whole
+  // reason to use it rather than a hand-written resolver: under declared row
+  // tenancy, emitting `workspaceId` for a caller with no membership scopes them
+  // INTO that workspace and every read answers 200.
+  const app = createApp({
+    config, auth, db, autoload: servicesDir,
+    principal: membershipClaim({
+      tenantFrom:  resolveWorkspaceId,
+      model:       'workspaceMember',
+      subject:     'userId',
+      tenant:      'workspaceId',
+      standing:    'role',
+      standingAs:  'memberRole',
+      // The workspace's own row travels with the membership: its status is one
+      // join away from a row already being read, and a second query per request
+      // for it is the thing this option exists to avoid.
+      include:     ['workspace'],
+    }),
+  }) as BasecampApp
 
   // Attach DB and Basecamp-specific subsystems.
   // app.claim() is the guarded namespace claim — it throws on a collision
@@ -213,6 +240,10 @@ export async function buildBasecampApp(
   // Plugin augments app with app.jobs and wires /metrics job stats.
   const queue = createCaravan({
     db:          dbPath.replace('.db', '-jobs.db'),
+    // Relative to cwd, which is the package root — `bun api/src/index.ts`.
+    // A job file names the job, declares its own queue and retry budget, and
+    // is the dispatch handle every service imports.
+    jobsDir:     './api/src/jobs',
     pollInterval: 1_000,
     queues: {
       default:     { concurrency: 2 },
@@ -282,7 +313,7 @@ export async function buildBasecampApp(
         select: { workspaceId: true },
       })
 
-      for (const m of memberships) a.channel?.(`workspace:${m.workspaceId}`).join(conn)
+      for (const m of memberships) a.channel?.(workspaceChannelName(m.workspaceId)).join(conn)
     })
   }))
 
@@ -299,13 +330,6 @@ export async function buildBasecampApp(
   app.hooks({
     around: {
       all: [
-        // FIRST, and an around hook rather than a before one: it decides what
-        // the caller's Litestone client is, and every before hook after it —
-        // and every method — reads through that client. Junction installs its
-        // own scoping around hook at createApp({ db }), before this file runs,
-        // so this composes INSIDE it and replaces the client it made with one
-        // whose principal carries the workspace role. See core/hooks.ts.
-        withWorkspaceStanding(app),
         async (ctx, next) => {
           const t = Date.now()
           await next()
@@ -361,10 +385,18 @@ export async function buildBasecampApp(
     },
   })
 
-  // ── Engines ───────────────────────────────────────────────────────────
-  createDeploymentEngine(app).register()
-  createJobEngine(app).register()
-  createFleetEngine(app).register()
+  // ── Schedules held in the database ────────────────────────────────────
+  // A job file registers its own handler — caravan autoloads `api/src/jobs`.
+  // What no file can declare is a schedule that came from a ROW: cron
+  // registration is in-process, so every scheduled Job stopped firing at the
+  // first restart with the row still reading `scheduled` (`FJS-327`).
+  //
+  // Not awaited: this runs while the app is being built, and the queue's own
+  // database opens on first use. A failure must not take the API down — an
+  // unschedulable fleet is worse served by an app that will not boot.
+  restoreSchedules(app)
+    .then(n => logger.info('schedules restored', { count: n }))
+    .catch(err => logger.error('could not restore schedules', { error: (err as Error).message }))
 
   // ── Custom routes — wrapped in configure() ────────────────────────────
   // Must be inside configure() so they register during start() Phase 1,

@@ -7,8 +7,8 @@
 // POST /portal/:id  → ping (force health check, admin only) — dispatched
 //                    by X-Service-Method: ping, not a /ping sub-path
 
-import { createService, NotFound } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { createService, NotFound, $ } from '@frontierjs/junction'
+import { sessionScope, requireWorkspaceRole, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
@@ -102,16 +102,16 @@ export function createPortalService(app: BasecampApp) {
       return { total: entries.length, limit: entries.length, offset: 0, data: entries }
     },
 
-    async get(ctx: ServiceContext) {
-      const svc = SERVICES.find(s => s.id === ctx.id)
-      if (!svc) throw new NotFound(`Portal service '${ctx.id}' not found`)
+    async get() {
+      const svc = SERVICES.find(s => s.id === $.id)
+      if (!svc) throw new NotFound(`Portal service '${$.id}' not found`)
 
       const adapter = app.infra[svc.id as InfraKey]
       return buildEntry(svc, adapter, await pingAdapter(adapter), app.config)
     },
 
     async create(ctx: ServiceContext) {
-      const id  = (ctx.data as Record<string, unknown>)?.id as string ?? ctx.id as string
+      const id  = ($.data as Record<string, unknown>)?.id as string ?? $.id as string
       const svc = SERVICES.find(s => s.id === id)
       if (!svc) throw new NotFound(`Portal service '${id}' not found`)
 
@@ -126,9 +126,9 @@ export function createPortalService(app: BasecampApp) {
         all: [
           sessionScope(app),
           (ctx: ServiceContext) => {
-            if (ctx.method !== 'create') return
+            if ($.method !== 'create') return
             const level = ({ viewer: 1, billing: 1, developer: 2, admin: 3, owner: 4 } as Record<string, number>)
-              [ctx.locals.memberRole as string ?? ''] ?? 0
+              [roleOf(ctx) ?? ''] ?? 0
             if (level < 3) throw new NotFound('Not found')
           },
         ],

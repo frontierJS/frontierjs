@@ -163,6 +163,9 @@ export function mesaPlugin(options = {}) {
         const ctx = await compiler.compileSource(source, {
           filename: id,
           dev: isDev,
+          // The inspector's attribute is stamped for a client to read, and this
+          // surface serves none: an extension page is not the app's dev server.
+          loc: false,
           externalSignals,
         })
 

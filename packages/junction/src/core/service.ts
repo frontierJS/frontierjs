@@ -5,7 +5,7 @@
 // Services are registered in the app and called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { requestMeta, runWithMeta, runInServiceCall, withCallEffects } from './context.ts'
+import { requestMeta, reenterAs, enterCall, runInServiceCall, withCallEffects } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
 import {
@@ -445,26 +445,16 @@ export async function callService(
   // and anything B calls would inherit ALICE — the request's — rather than the
   // context it is actually running inside.
   //
-  // So the scope is re-established whenever this call's principal differs from
-  // the one in scope. Only then: an ALS `run()` on every service call would be
-  // paid by the common path, where the two are the same object by construction.
-  // A call that enters with NO store is an entry point of its own — a job, a
-  // script, a test, a boot task. It opens one, which is what gives background
-  // work a principal to propagate at all.
-  const scoped = requestMeta()
-
-  if (!scoped) {
-    return runWithMeta(
-      { correlationId: crypto.randomUUID(), origin: 'internal', user: ctx.auth.user },
-      () => _callService(service, ctx, appHooks, events, telemetry))
-  }
-
-  if (scoped.user !== ctx.auth.user) {
-    return runWithMeta({ ...scoped, user: ctx.auth.user }, () =>
-      _callService(service, ctx, appHooks, events, telemetry))
-  }
-
-  return _callService(service, ctx, appHooks, events, telemetry)
+  // reenterAs() is the one owner of that rule, including the two cases that
+  // are not re-entry at all: same principal opens nothing, and no store at all
+  // means this call IS the entry point (a job, a script, a boot task).
+  // enterCall is the SECOND scope and it wraps the whole of _callService —
+  // pipeline, announcement, afterCommit drain, outbox handoff. Not merged into
+  // runInServiceCall below: that one is read by litestone's write tap to
+  // suppress a double announcement, and widening it to this span would stop a
+  // write inside an afterCommit effect from announcing at all.
+  return reenterAs(ctx.auth.user, () =>
+    enterCall(ctx, () => _callService(service, ctx, appHooks, events, telemetry)))
 }
 
 async function _callService(

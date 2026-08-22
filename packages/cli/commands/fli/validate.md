@@ -86,8 +86,11 @@ function parseResourceRefs(src) {
 // Finds resource imports in route files. Sierra resolves no `@/` alias, so the
 // import is relative — what matters is the resources/ segment and the basename:
 //
-//   import { leads } from '../../resources/leads.mesa'
-//   import { leads } from '@/resources/leads'          (legacy alias, still read)
+//   import { leads } from '../../resources/Lead.mesa'
+//   import { leads } from '@/resources/Lead'           (legacy alias, still read)
+//
+// The basename is the MODEL and the binding is the SERVICE (invariant 19), so
+// this reads the left side and never infers one from the other.
 
 function parseRouteResourceImports(src) {
   const imports = []

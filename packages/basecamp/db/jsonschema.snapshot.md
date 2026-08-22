@@ -260,13 +260,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `email` | `string` | yes | — | `format: "email"` `minLength: 6` `maxLength: 200` | — |
 | `role` | `WorkspaceRole` = `"developer"` | — | — | — | — |
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 | `invitedBy` | `string`? | — | — | — | — |
 
-**On create**: required — `workspaceId`, `email`, `expiresAt` · not accepted — `id`
+**On create**: required — `email`, `expiresAt` · not accepted — `id`
 
 ### `Secret`
 
@@ -276,7 +276,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `kind` | `SecretKind` = `"generic"` | — | — | — | — |
 | `data` | `string` = `"{}"` | — | — | — | — |
@@ -284,7 +284,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name` · not accepted — `id`, `version`
+**On create**: required — `name` · not accepted — `id`, `version`
 
 ### `ApiKey`
 
@@ -295,7 +295,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `userId` | `string` | yes | — | — | — |
 | `credentialId` | `string`? | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
@@ -309,7 +309,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `usesOnDate` | `integer` = `0` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
 
-**On create**: required — `workspaceId`, `userId`, `name`, `tokenHint` · not accepted — `id`
+**On create**: required — `userId`, `name`, `tokenHint` · not accepted — `id`
 
 ### `Server`
 
@@ -323,7 +323,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `slug` | `string` | yes | — | — | — |
 | `status` | `ServerStatus` = `"pending"` | — | — | — | — |
@@ -347,7 +347,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `dockerState` | `json`? | — | — | — | — |
 | `labels` | `json` = `{}` | — | — | — | — |
 
-**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`
+**On create**: required — `name`, `slug` · not accepted — `id`
 
 ### `ServerEvent`
 
@@ -394,7 +394,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `name` | `string` | yes | — | — | — |
 | `slug` | `string` | yes | — | — | — |
 | `type` | `string` = `"mesh"` | — | — | — | — |
@@ -403,7 +403,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `config` | `json` = `{}` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`, `version`
+**On create**: required — `name`, `slug` · not accepted — `id`, `version`
 
 ### `ServerNetwork`
 
@@ -430,7 +430,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `description` | `string`? | — | — | — | — |
@@ -439,7 +439,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `metadata` | `json` = `{}` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`, `version`
+**On create**: required — `name`, `slug` · not accepted — `id`, `version`
 
 ### `Environment`
 
@@ -454,7 +454,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `projectId` | `string` | yes | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `tier` | `EnvironmentTier` = `"development"` | — | — | — | — |
@@ -462,7 +462,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `variables` | `json` = `[]` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `projectId`, `workspaceId`, `name`, `slug` · not accepted — `id`, `version`
+**On create**: required — `projectId`, `name`, `slug` · not accepted — `id`, `version`
 
 ### `App`
 
@@ -477,7 +477,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `environmentId` | `string` | yes | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
@@ -488,7 +488,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `port` | `integer`? | — | — | — | — |
 | `isPublic` | `boolean` = `false` | — | — | — | — |
 
-**On create**: required — `workspaceId`, `environmentId`, `name`, `slug` · not accepted — `id`
+**On create**: required — `environmentId`, `name`, `slug` · not accepted — `id`
 
 ### `Domain`
 
@@ -498,7 +498,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `appId` | `string` | yes | — | — | — |
 | `hostname` | `string` | yes | — | `minLength: 1` `maxLength: 253` | — |
 | `isPrimary` | `boolean` = `false` | — | — | — | — |
@@ -512,7 +512,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `certExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `appId`, `hostname` · not accepted — `id`, `version`
+**On create**: required — `appId`, `hostname` · not accepted — `id`, `version`
 
 ### `AppServer`
 
@@ -565,7 +565,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `appId` | `string` | yes | — | — | — |
 | `environmentId` | `string`? | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `status` | `DeployStatus` = `"pending"` | — | — | — | — |
 | `trigger` | `string` = `"manual"` | — | — | — | — |
 | `fromImage` | `string`? | — | — | — | — |
@@ -583,7 +583,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `durationMs` | `integer`? | — | — | — | — |
 
-**On create**: required — `appId`, `workspaceId` · not accepted — `id`
+**On create**: required — `appId` · not accepted — `id`
 
 ### `DeploymentStep`
 
@@ -615,7 +615,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `appId` | `string`? | — | — | — | — |
 | `environmentId` | `string`? | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
@@ -632,7 +632,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `lastRunAt` | `string`? | — | — | `format: "date-time"` | — |
 | `lastRunStatus` | `string`? | — | — | — | — |
 
-**On create**: required — `workspaceId`, `name` · not accepted — `id`
+**On create**: required — `name` · not accepted — `id`
 
 ### `JobRun`
 
@@ -663,7 +663,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
 | `slug` | `string` | yes | — | — | — |
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 500` | — |
@@ -673,7 +673,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `runCount` | `integer` = `0` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
 
-**On create**: required — `workspaceId`, `name`, `slug`, `script` · not accepted — `id`
+**On create**: required — `name`, `slug`, `script` · not accepted — `id`
 
 ### `RecipeRun`
 
@@ -753,7 +753,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `key` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
 | `description` | `string`? | — | — | — | — |
 | `type` | `FlagType` = `"boolean"` | — | — | — | — |
@@ -764,7 +764,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `key` · not accepted — `id`, `version`
+**On create**: required — `key` · not accepted — `id`, `version`
 
 ### `FlagOverride`
 
@@ -792,7 +792,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `kind` | `ChannelKind` | yes | — | — | — |
 | `config` | `json` = `{}` | — | — | — | — |
@@ -803,7 +803,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `kind` · accepted and never stored — `secret` · not accepted — `id`, `version`
+**On create**: required — `name`, `kind` · accepted and never stored — `secret` · not accepted — `id`, `version`
 
 ### `AlertRule`
 
@@ -815,7 +815,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `description` | `string`? | — | — | — | — |
 | `severity` | `AlertSeverity` = `"warning"` | — | — | — | — |
@@ -824,7 +824,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `isActive` | `boolean` = `true` | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `metricName` · not accepted — `id`, `version`
+**On create**: required — `name`, `metricName` · not accepted — `id`, `version`
 
 ### `AlertRuleChannel`
 
@@ -871,7 +871,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | yes | — | — | — |
+| `workspaceId` | `string` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
 | `slug` | `string` | yes | — | — | — |
 | `description` | `string`? | — | — | — | — |
@@ -880,7 +880,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `workspaceId`, `name`, `slug` · not accepted — `id`, `version`
+**On create**: required — `name`, `slug` · not accepted — `id`, `version`
 
 ### `DashboardWidget`
 

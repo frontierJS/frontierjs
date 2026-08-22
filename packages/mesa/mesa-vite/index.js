@@ -26,6 +26,10 @@
  *   css         {boolean}   Emit a component's <style> block. Default: true.
  *                           `false` DROPS it — the module renders unstyled.
  *   hmr         {boolean}   Enable HMR in dev mode. Default: true
+ *   inspect     {boolean|{key}}  Click-to-source in dev — hold the modifier
+ *                           (alt by default) and click an element to open the
+ *                           line that wrote it. Default: true. Off means the
+ *                           compiler stamps no location attribute either.
  *   compilerPath {string}   Path to compiler.js. Auto-resolved if omitted.
  */
 
@@ -35,6 +39,7 @@ import { pathToFileURL, fileURLToPath } from 'url'
 
 import { injectHMR, canInject } from './hmr.js'
 import { hmrClientSource } from './client-source.js'
+import { inspectClientSource } from './inspect-client.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -43,6 +48,8 @@ const RESOLVED_CLIENT_ID      = '\0@frontierjs/mesa-client'
 const DEVTOOLS_ROUTE          = '/__mesa/devtools'
 const VIRTUAL_DEV_CLIENT_ID   = '/@frontierjs/mesa-dev-client'
 const RESOLVED_DEV_CLIENT_ID  = '\0@frontierjs/mesa-dev-client'
+const VIRTUAL_INSPECT_ID      = '/@frontierjs/mesa-inspect'
+const RESOLVED_INSPECT_ID     = '\0@frontierjs/mesa-inspect'
 
 // ─── Compiler resolution ──────────────────────────────────────────────────────
 
@@ -142,7 +149,12 @@ export default function mesaPlugin(options = {}) {
     extensions  = ['.mesa', '.md'],
     css         = true,
     hmr         = true,
+    inspect     = true,
   } = options
+
+  // `inspect: { key: 'meta' }` is the same switch with the modifier named.
+  const inspectOn  = inspect !== false
+  const inspectKey = (typeof inspect === 'object' && inspect.key) || 'alt'
 
   /** Vite server instance (set in configureServer) */
   let server = null
@@ -230,11 +242,17 @@ export default function mesaPlugin(options = {}) {
     // The client sets up the BroadcastChannel relay to the devtools page.
     transformIndexHtml() {
       if (!isDev) return []
-      return [{
+      const tags = [{
         tag:      'script',
         attrs:    { type: 'module', src: VIRTUAL_DEV_CLIENT_ID },
         injectTo: 'head',
       }]
+      if (inspectOn) tags.push({
+        tag:      'script',
+        attrs:    { type: 'module', src: VIRTUAL_INSPECT_ID },
+        injectTo: 'head',
+      })
+      return tags
     },
 
     // ── Virtual module resolution ─────────────────────────────────────────────
@@ -244,6 +262,8 @@ export default function mesaPlugin(options = {}) {
       if (id === VIRTUAL_CLIENT_ID) return RESOLVED_CLIENT_ID
       // Virtual dev client (BroadcastChannel relay)
       if (id === VIRTUAL_DEV_CLIENT_ID) return RESOLVED_DEV_CLIENT_ID
+      // Inspector
+      if (id === VIRTUAL_INSPECT_ID) return RESOLVED_INSPECT_ID
       return null
     },
 
@@ -265,6 +285,9 @@ export function __mesa_register() { return () => {} }
 export function __mesa_hot_update() {}
 `
         }
+      }
+      if (id === RESOLVED_INSPECT_ID) {
+        return inspectClientSource({ root, key: inspectKey })
       }
       // Virtual dev client — BroadcastChannel relay between app and devtools page
       if (id === RESOLVED_DEV_CLIENT_ID) {
@@ -330,6 +353,10 @@ export function __mesa_hot_update() {}
           // which styles are already on the page (Invariant 12).
           css,
           dev: isDev,
+          // Off means no attribute at all: the inspector is the only reader,
+          // and an app that turned it off should not pay for the DOM noise.
+          loc: isDev && inspectOn,
+          locRoot: root,
           warning: (w) => this.warn(
             typeof w === 'string' ? w : (w.message ?? String(w))
           )

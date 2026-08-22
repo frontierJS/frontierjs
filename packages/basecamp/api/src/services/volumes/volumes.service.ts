@@ -36,9 +36,9 @@
 // reads better as MB or GB, and a rounded number stored is a number nothing can
 // un-round — `0.01 GB` in the mock is 10.7 MB.
 
-import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { dbOf, wsOf, actorOf }  from '../../core/resource.ts'
+import { db, ws, actor }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
 import type { ServiceContext }  from '@frontierjs/junction'
 
@@ -77,9 +77,9 @@ export function createVolumesService(app: BasecampApp) {
    * query that skipped this would answer another workspace's disks to anyone
    * holding an id.
    */
-  async function serversOf(ctx: ServiceContext): Promise<Map<string, string>> {
-    const rows = await dbOf(ctx).server.findMany({
-      where:  { workspaceId: wsOf(ctx) },
+  async function serversOf(): Promise<Map<string, string>> {
+    const rows = await db().server.findMany({
+      where:  { workspaceId: ws() },
       select: { id: true, name: true },
       limit:  500,
     })
@@ -87,9 +87,9 @@ export function createVolumesService(app: BasecampApp) {
   }
 
   /** One volume inside the caller's fleet, or 404. */
-  async function getScopedVolume(ctx: ServiceContext, fleet: Map<string, string>) {
-    const id  = ctx.id as string
-    const row = await dbOf(ctx).volume.findFirst({ where: { id } })
+  async function getScopedVolume(fleet: Map<string, string>) {
+    const id  = $.id as string
+    const row = await db().volume.findFirst({ where: { id } })
     if (!row || !fleet.has(row.serverId as string)) throw new NotFound(`Volume '${id}' not found`)
     return row
   }
@@ -120,10 +120,10 @@ export function createVolumesService(app: BasecampApp) {
    *  disappeared is answerable from the fleet feed rather than only the audit
    *  trail. Both are read by /activity/. */
   async function recordEvent(
-    ctx: ServiceContext, serverId: string, kind: string, message: string,
+    serverId: string, kind: string, message: string,
     metadata: Record<string, unknown> = {},
   ) {
-    await dbOf(ctx).serverEvent.create({ data: { serverId, kind, message, metadata } })
+    await db().serverEvent.create({ data: { serverId, kind, message, metadata } })
   }
 
   return createService({
@@ -147,19 +147,19 @@ export function createVolumesService(app: BasecampApp) {
 
     // ── find ──────────────────────────────────────────────────────────
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx, { limit: 50, max: 200 })
-      const serverId = ctx.query.serverId as string | undefined
-      const search   = ctx.query.search   as string | undefined
+      const { limit, offset } = getPagination({ limit: 50, max: 200 })
+      const serverId = $.query.serverId as string | undefined
+      const search   = $.query.search   as string | undefined
       // The wire carries strings and the column is a boolean; comparing them
       // raw matches nothing and reports an empty list rather than an error.
-      const inUse    = ctx.query.inUse as string | boolean | undefined
+      const inUse    = $.query.inUse as string | boolean | undefined
 
-      const fleet = await serversOf(ctx)
+      const fleet = await serversOf()
       if (!fleet.size) return { total: 0, limit, offset, data: [] }
 
       if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
 
-      const { rows, total } = await dbOf(ctx).volume.findManyAndCount({
+      const { rows, total } = await db().volume.findManyAndCount({
         where: {
           serverId: { in: serverId ? [serverId] : [...fleet.keys()] },
           ...(inUse !== undefined ? { inUse: inUse === true || inUse === 'true' } : {}),
@@ -182,8 +182,8 @@ export function createVolumesService(app: BasecampApp) {
 
     // ── get ───────────────────────────────────────────────────────────
     async get(ctx: ServiceContext) {
-      const fleet  = await serversOf(ctx)
-      const volume = await getScopedVolume(ctx, fleet)
+      const fleet  = await serversOf()
+      const volume = await getScopedVolume(fleet)
       return { ...volume, serverName: fleet.get(volume.serverId as string) ?? null }
     },
 
@@ -197,11 +197,11 @@ export function createVolumesService(app: BasecampApp) {
     // whole fleet rather than the page: a header stating "12 GB across the
     // fleet" from the first 50 rows is wrong exactly when it matters.
     async usage(ctx: ServiceContext) {
-      ctx.dispatch = false   // read-shaped
-      const fleet = await serversOf(ctx)
+      $.dispatch = false   // read-shaped
+      const fleet = await serversOf()
       if (!fleet.size) return { volumes: 0, inUse: 0, unused: 0, totalBytes: 0, reclaimableBytes: 0, servers: [] }
 
-      const rows = await dbOf(ctx).volume.findMany({
+      const rows = await db().volume.findMany({
         where:  { serverId: { in: [...fleet.keys()] } },
         select: { serverId: true, sizeBytes: true, inUse: true },
         limit:  5_000,
@@ -241,8 +241,8 @@ export function createVolumesService(app: BasecampApp) {
     // machine at one moment, so a volume missing from it is a volume that no
     // longer exists — forgetting it here is recording a fact, not deleting a
     // disk.
-    async report(ctx: ServiceContext) {
-      const data     = ctx.data as ReportData
+    async report() {
+      const data     = $.data as ReportData
       const serverId = data?.server_id
       if (!serverId)         throw new BadRequest('server_id is required')
       if (!Array.isArray(data.volumes)) throw new BadRequest('volumes must be an array')
@@ -256,7 +256,7 @@ export function createVolumesService(app: BasecampApp) {
       // sessionScope skips this method, so nothing else has stamped one. Without
       // it the after-hook publishes to `workspace:undefined` and the open
       // volumes screen never hears that the fleet's disks changed.
-      ctx.locals.workspaceId = server.workspaceId
+      $.locals.workspaceId = server.workspaceId
 
       const now      = new Date().toISOString()
       const existing = await sys().volume.findMany({ where: { serverId }, limit: 1_000 })
@@ -302,8 +302,8 @@ export function createVolumesService(app: BasecampApp) {
 
     // ── remove ────────────────────────────────────────────────────────
     async remove(ctx: ServiceContext) {
-      const fleet  = await serversOf(ctx)
-      const volume = await getScopedVolume(ctx, fleet)
+      const fleet  = await serversOf()
+      const volume = await getScopedVolume(fleet)
       const name   = volume.name as string
       const server = fleet.get(volume.serverId as string) as string
 
@@ -331,9 +331,9 @@ export function createVolumesService(app: BasecampApp) {
       if (res.error)
         throw new BadRequest(`The outpost on '${server}' could not remove '${name}' (${res.error.kind}): ${res.error.message}`)
 
-      await dbOf(ctx).volume.delete({ where: { id: volume.id } })
-      await recordEvent(ctx, volume.serverId as string, 'volume_removed',
-        `Volume '${name}' removed`, { requested_by: actorOf(ctx), size_bytes: volume.sizeBytes })
+      await db().volume.delete({ where: { id: volume.id } })
+      await recordEvent(volume.serverId as string, 'volume_removed',
+        `Volume '${name}' removed`, { requested_by: actor(), size_bytes: volume.sizeBytes })
 
       return volume
     },
@@ -346,11 +346,11 @@ export function createVolumesService(app: BasecampApp) {
     // pruning is what `docker volume prune` does in a single call, and forty
     // round trips to the same outpost is forty chances to half-finish.
     async prune(ctx: ServiceContext) {
-      const fleet    = await serversOf(ctx)
-      const serverId = (ctx.data as { serverId?: string } | null)?.serverId
+      const fleet    = await serversOf()
+      const serverId = ($.data as { serverId?: string } | null)?.serverId
       if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
 
-      const unused = await dbOf(ctx).volume.findMany({
+      const unused = await db().volume.findMany({
         where: { serverId: { in: serverId ? [serverId] : [...fleet.keys()] }, inUse: false },
         limit: 1_000,
       })
@@ -392,11 +392,11 @@ export function createVolumesService(app: BasecampApp) {
         const gone    = volumes.filter(v => removed.has(v.name as string))
 
         if (gone.length) {
-          await dbOf(ctx).volume.deleteMany({ where: { id: { in: gone.map(v => v.id as string) } } })
+          await db().volume.deleteMany({ where: { id: { in: gone.map(v => v.id as string) } } })
           freedBytes += gone.reduce((a, v) => a + ((v.sizeBytes as number) ?? 0), 0)
           forgotten.push(...gone.map(v => v.name as string))
-          await recordEvent(ctx, id, 'volumes_pruned',
-            `${gone.length} unused volume(s) pruned`, { requested_by: actorOf(ctx), names: gone.map(v => v.name) })
+          await recordEvent(id, 'volumes_pruned',
+            `${gone.length} unused volume(s) pruned`, { requested_by: actor(), names: gone.map(v => v.name) })
         }
       }
 

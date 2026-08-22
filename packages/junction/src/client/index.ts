@@ -1200,7 +1200,16 @@ export class JunctionClient extends EventEmitter {
         return
       }
 
-      // ── Pong ──────────────────────────────────────────────────────
+      // ── Keepalive ─────────────────────────────────────────────────
+      // The SERVER drives liveness (transport/channels.ts): it pings an idle
+      // socket and evicts one that has said nothing. Answering here rather
+      // than from a timer is what keeps a backgrounded tab connected —
+      // browsers throttle timers to ~1/min in a hidden tab, which is slower
+      // than any eviction window, but a message handler is not throttled.
+      if (type === 'ping') {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'pong' }))
+        return
+      }
       if (type === 'pong') return
 
       // ── Auth error ────────────────────────────────────────────────
@@ -1381,7 +1390,11 @@ export class JunctionClient extends EventEmitter {
 
   // ── Heartbeat ────────────────────────────────────────────────────────
 
-  startHeartbeat(intervalMs = 30_000): () => void {
+  // Optional. The server pings an idle socket and any frame answers it, so a
+  // client that does nothing still holds its connection. This is for a client
+  // whose server predates that, or one that wants a shorter leash; the
+  // interval must be well under the server's heartbeatTimeout (40s).
+  startHeartbeat(intervalMs = 15_000): () => void {
     const timer = setInterval(() => {
       if (this._wsReady && this._ws) {
         this._ws.send(JSON.stringify({ type: 'ping' }))

@@ -90,11 +90,14 @@ ${body}
 
 // ─── A page wired to a Resource ───────────────────────────────────────────────
 
-const makeResourcePage = (title, service, up) => `---
+// The import is the resource's FILE on the left of `from` and its EXPORT on
+// the right of the braces, and the two are spelled differently on purpose: the
+// file is named for the model, the export for the service (repo invariant 19).
+const makeResourcePage = (title, model, service, up) => `---
 title: ${title}
 ---
 <script>
-  import { ${service} } from '${up}resources/${service}.mesa'
+  import { ${service} } from '${up}resources/${model}.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
   import { $onDestroy } from '@frontierjs/mesa/runtime'
 
@@ -174,7 +177,7 @@ that use it.
 `--layout` writes `_module.mesa` instead: a layout wrapping this directory and
 everything beneath it. Layouts nest rather than replace.
 
-`--resource Invoice` wires the page to `src/resources/invoices.mesa`. It does not
+`--resource Invoice` wires the page to `src/resources/Invoice.mesa`. It does not
 write that file — `fli make:resource` owns that template, and this command tells
 you to run it when the resource is missing.
 
@@ -208,7 +211,7 @@ const model   = flag.resource ? flag.resource.charAt(0).toUpperCase() + flag.res
 const service = model ? servicePlural(model) : ''
 
 const content = flag.layout ? makeLayout(display)
-              : model       ? makeResourcePage(display, service, up)
+              : model       ? makeResourcePage(display, model, service, up)
               :               makePage(display, params)
 
 if (flag.dry) {
@@ -251,9 +254,9 @@ if (!flag.layout) {
 
 // The route imports the resource whether or not it exists; say so rather than
 // letting the dev server be the one to mention it.
-if (flag.resource && !existsSync(resolve(context.paths.webResources, `${service}.js`))) {
+if (flag.resource && !existsSync(resolve(context.paths.webResources, `${model}.mesa`))) {
   echo('')
-  log.warn(`The page imports resources/${service}.mesa, which does not exist yet:`)
+  log.warn(`The page imports resources/${model}.mesa, which does not exist yet:`)
   echo(`    fli make:resource ${model}`)
 }
 

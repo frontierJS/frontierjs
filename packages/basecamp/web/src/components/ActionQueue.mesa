@@ -3,7 +3,7 @@
   //
   // NoticeBar is the shell's condensed view; this is the list the home screen
   // shows: every notice, counted by priority, with the "show N more" fold the
-  // mock has. Same engine, same notices — one definition of "needs attention"
+  // mock has. Same rules, same notices — one definition of "needs attention"
   // (src/notices.js), two presentations.
   //
   // The empty state is not an absence: "All clear" is the answer to a question

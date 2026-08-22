@@ -16,7 +16,7 @@ import { describe, it, expect, afterEach } from 'bun:test'
 import { createCaravan } from '@frontierjs/caravan'
 import type { CaravanInstance } from '@frontierjs/caravan'
 
-import { syncSchedule, unscheduleJob, scheduleName } from '../src/engine/job-schedule.ts'
+import { syncSchedule, unscheduleJob, scheduleName } from '../src/services/jobs/job-schedule.ts'
 import type { BasecampApp } from '../src/basecamp.types.ts'
 
 const queues: CaravanInstance[] = []

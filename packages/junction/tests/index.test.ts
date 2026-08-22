@@ -3468,6 +3468,77 @@ describe('cors() + csrf() ordering', () => {
   })
 })
 
+import { paginate } from '../src/core/hooks-builtin.ts'
+
+// ─── the paginate() hook ──────────────────────────────────────────────────
+// FJS-367. It read `$limit` off ctx.query for its whole life, and the bridge
+// moves every `$` key onto ctx.directives before a hook runs — so it fell back
+// to its defaults on every request and a caller's page size was ignored, in
+// every app that used it. Note this is a different thing from `ctx.paginate()`
+// below, which is a response helper taking an explicit page.
+
+describe('paginate() hook', () => {
+
+  async function pageFor(url: string, hook = paginate(20, 100)) {
+    let directives: unknown, locals: unknown
+    const app = await createTestApp({
+      services: [() => createService({
+        name:  'things',
+        hooks: { before: { find: [hook] } },
+        find:  async (ctx) => {
+          directives = { ...(ctx.directives ?? {}) }
+          locals     = ctx.locals.paginate
+          return []
+        },
+      })],
+    })
+    await request(app).get(url)
+    return { directives, locals }
+  }
+
+  it('reads the caller page off ctx.directives', async () => {
+    const { locals } = await pageFor('/things?$limit=5&$offset=10')
+    expect(locals).toEqual({ limit: 5, offset: 10 })
+  })
+
+  it('NARROWS ctx.directives rather than publishing a second copy', async () => {
+    // The ceiling has to reach the query. A custom find() hands ctx.directives
+    // to Litestone; if the clamp lived only on ctx.locals it would have to be
+    // threaded by hand, and two homes for one fact is what broke this hook.
+    const { directives } = await pageFor('/things?$limit=9999')
+    expect(directives).toMatchObject({ limit: 100 })
+  })
+
+  it('clamps to max and keeps the declared default', async () => {
+    expect((await pageFor('/things')).locals).toEqual({ limit: 20, offset: 0 })
+    expect((await pageFor('/things?$limit=9999')).locals).toEqual({ limit: 100, offset: 0 })
+  })
+
+  it('falls back to the default on a non-numeric limit', async () => {
+    // parseInt('abc') is NaN and Math.min(NaN, 100) is NaN — which reaches
+    // SQLite as a bind failure rather than as "no limit".
+    expect((await pageFor('/things?$limit=abc')).locals).toEqual({ limit: 20, offset: 0 })
+  })
+
+  it('keeps a limit of 0, which is how a caller asks for the count alone', async () => {
+    expect((await pageFor('/things?$limit=0')).locals).toEqual({ limit: 0, offset: 0 })
+  })
+
+  it('honours a plainly-spelled limit from an internal caller', async () => {
+    // No bridge involved, so no directives — `{ limit: 5 }` is on ctx.query.
+    let locals: unknown
+    const app = await createTestApp({
+      services: [() => createService({
+        name:  'things',
+        hooks: { before: { find: [paginate(20, 100)] } },
+        find:  async (ctx) => { locals = ctx.locals.paginate; return [] },
+      })],
+    })
+    await app.service('things').find({ limit: 5, offset: 2 })
+    expect(locals).toEqual({ limit: 5, offset: 2 })
+  })
+})
+
 describe('ctx.paginate()', () => {
 
   async function makeApp() {

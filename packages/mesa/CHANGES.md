@@ -1,5 +1,36 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-19 — click an element, open the line that wrote it
+
+`data-fjs-loc="src/pages/Home.mesa:12:3"` on every template element in a dev
+build, and a client the Vite plugin injects that reads it: hold Alt and the
+element under the pointer is outlined with its location, click and Vite's own
+`/__open-in-editor` opens the file. `Alt`+`Z` does the same to whatever has
+focus, for the keyboard.
+
+**An attribute rather than a runtime map**, which is where this differs from the
+Svelte plugin it is modelled on. Svelte builds a DOM element at a time and can
+hang `__svelte_meta` on each one; Mesa clones a template, so an element with no
+binding has no runtime reference for a map to be keyed by — and those are most
+of them. The attribute goes into the template string, so it costs nothing at
+mount and reaches every element.
+
+The compiler option is `loc`, defaulting to whatever `dev` is, with `locRoot`
+naming the prefix the stamped path is relative to. `inspect: false` on either
+plugin turns off the injection AND the attribute: the client is its only reader.
+A production build stamps nothing.
+
+Both plugins serve one implementation — `mesa-vite/inspect-client.js` as a
+string, the way the HMR client is served, each at an id of its own (`FJS-D16`).
+Sierra's surface is the same. Jetty passes `loc: false`: an extension page is
+not the app's dev server and serves no client to read it.
+
+Proven in the Vite drive (`test/browser/vite/specs/inspect.spec.mjs`, 11
+assertions), which is the only place the chain is visible — the attribute
+graded against the FILE rather than a literal line number, the alt-click
+reaching the inspector, and the app's own click handler NOT running while it
+does.
+
 ## 2026-08-18 — a snippet parameter may be a destructuring pattern, and the read is where it happens
 
 `{#snippet row([name, q])}` compiled and could not work. A snippet argument is

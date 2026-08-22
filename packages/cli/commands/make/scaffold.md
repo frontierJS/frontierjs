@@ -50,11 +50,6 @@ flags:
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 
-// A literal closing script tag ends this block — core/compiler.js extracts it
-// with a non-greedy match and does not care that the tag is inside a string.
-// Every generated Mesa file needs one, so it is assembled from two halves.
-const SC = '<' + '/script>'
-
 // ─── Field parser ─────────────────────────────────────────────────────────────
 // Parses "name:string email:email total:float" into structured field objects.
 
@@ -182,7 +177,8 @@ function makeResourceFile(model, plural) {
 // src/resources/${model}.mesa — the Resource layer.
 //
 // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18):
-// no markup, everything in <script module>.
+// the data half in <script module>, and markup below it — optional — is the
+// model's default form.
 //
 // Read this next to db/schema.lite. Nothing here restates anything there: no
 // field list, no types, no enum values, no required list, no relations. A
@@ -213,314 +209,48 @@ export const ${plural} = createResource('${plural}', {
 `
 }
 
-// ─── Template: route — index (list) ──────────────────────────────────────────
-// Columns are named here rather than derived: which five of twenty fields
-// belong in a table is a judgement, and this is the file to make it in.
+// ─── Templates: routes ────────────────────────────────────────────────────────
+// The pages themselves are `core/crud-templates.js`, shared with
+// `fli admin:generate` — two commands wrote the same form twice and had already
+// drifted apart on which field is the id. They are built on `@frontierjs/ui`:
+// `<Form {resource} />` with no children IS the form, so nothing about the model
+// is written into the file and a column added to schema.lite later still shows
+// up without regenerating.
+//
+// The list is the exception, and deliberately: which of twenty columns belong in
+// a table is a judgement, so it is named here and that file is where to change
+// it.
 
-function makeIndexRoute(model, plural, fields) {
-  const cols = fields.length ? fields.map(f => f.name) : ['id']
-  const ths  = cols.map(c => `      <th>${toLabel(c)}</th>`).join('\n')
-  const tds  = cols.map(c => `        <td>{row.${c}}</td>`).join('\n')
+const { listPage, createPage, editPage } =
+  await import(resolve(global.fliRoot, 'core/crud-templates.js'))
 
-  return `---
-title: ${toLabel(plural)}
----
-<script>
-  import { ${plural} } from '../../resources/${model}.mesa'
-  import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
+const routePages = (model, plural, fields) => {
+  const singularLabel = toLabel(model)
+  const pluralLabel   = toLabel(plural)
+  const imports       = [`import { ${plural} } from '../../resources/${model}.mesa'`]
+  const basePath      = `/${plural}/`
+  const columns       = (fields.length ? fields.map(f => f.name) : ['id'])
+    .map(name => ({ key: name, label: toLabel(name) }))
 
-  const { get: rows, unsubscribe } = useStore(${plural}.store)
-  $onDestroy(unsubscribe)
-
-  let error = null
-
-  ${plural}.load().catch(e => { error = e.message })
-${SC}
-
-<header class="head">
-  <h1>${toLabel(plural)}</h1>
-  <a class="btn" href="/${plural}/create/">New ${toLabel(model)}</a>
-</header>
-
-{#if error}<p class="err">{error}</p>{/if}
-
-<table>
-  <thead>
-    <tr>
-${ths}
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {#each rows() as row}
-      <tr>
-${tds}
-        <td><a href={'/${plural}/' + row.id + '/'}>Open</a></td>
-      </tr>
-    {/each}
-  </tbody>
-</table>
-
-{#if !rows().length && !error}
-  <p class="muted">Nothing here yet.</p>
-{/if}
-
-<style>
-  .head { display: flex; align-items: center; gap: 16px }
-  .head h1 { margin: 0; font-size: 22px }
-  .btn { margin-left: auto; border: 1px solid #d1d5db; border-radius: 6px; padding: 5px 12px; text-decoration: none; color: #111; font-size: 14px }
-  table { border-collapse: collapse; width: 100%; margin-top: 16px }
-  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 14px }
-  th { color: #6b7280; font-weight: 500 }
-  .muted { color: #6b7280; font-size: 13px }
-  .err { color: #b91c1c }
-</style>
-`
-}
-
-// ─── The derived form ─────────────────────────────────────────────────────────
-// Shared by create.mesa and [id].mesa. Which fields exist, their types, their
-// enum members, which are required and which are references are all read off
-// `resource.fields` at runtime — which is why a column added to schema.lite
-// later shows up on these pages without regenerating them.
-
-function formScript(plural, indent) {
-  const i = indent
-  return [
-    `${i}// The registered document is the CREATE-mode schema, so @id and the`,
-    `${i}// columns the server assigns (@default(now()), @updatedAt) are not in it`,
-    `${i}// and cannot be rendered as inputs.`,
-    `${i}const entries = Object.entries(${plural}.fields).filter(([n]) => n !== 'id')`,
-    ``,
-    `${i}// A foreign key is emitted as a plain integer; x-relations is the only`,
-    `${i}// place it is knowable as a reference, and that is what makes it a picker`,
-    `${i}// instead of a number spinner. Regular English plurals only — for an`,
-    `${i}// irregular, import that resource and use it here instead.`,
-    `${i}const pickers = entries`,
-    `${i}  .filter(([, rule]) => rule.references)`,
-    `${i}  .map(([name, rule]) => {`,
-    `${i}    const target = rule.references.model`,
-    `${i}    const res    = createResource(`,
-    `${i}      target.charAt(0).toLowerCase() + target.slice(1) + 's',`,
-    `${i}      { model: target },`,
-    `${i}    )`,
-    `${i}    const label = Object.keys(res.fields).find(f => res.fields[f].type === 'string')`,
-    `${i}    return { name, res, label: label ?? 'id' }`,
-    `${i}  })`,
-    ``,
-    `${i}// Replaced wholesale rather than mutated: replacement is the reactive`,
-    `${i}// operation (Mesa RULE 43).`,
-    `${i}let options = {}`,
-    ``,
-    `${i}Promise.all(pickers.map(p =>`,
-    `${i}  p.res.service.getOptions({}, { limit: 200, orderBy: p.label })`,
-    `${i}    .then(r => [p.name, (r.data ?? r ?? []).map(row => ({`,
-    `${i}      value: row.id, label: String(row[p.label] ?? row.id),`,
-    `${i}    }))])`,
-    `${i}    .catch(() => [p.name, []])`,
-    `${i})).then(pairs => { options = Object.fromEntries(pairs) })`,
-    ``,
-    `${i}const problem = (name) => errors.find(e => e.field === name)?.message`,
-  ].join('\n')
-}
-
-function formMarkup() {
-  return `  {#each entries as [name, rule]}
-    <label>
-      <span class="lbl">
-        <b>{name}</b>
-        {#if rule.required}<i class="req">*</i>{/if}
-      </span>
-
-      {#if rule.references}
-        <select bind:value={draft[name]}>
-          <option value="">—</option>
-          {#each (options[name] ?? []) as opt}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
-      {:else if rule.enum}
-        <select bind:value={draft[name]}>
-          <option value="">—</option>
-          {#each rule.enum as choice}
-            <option value={choice}>{choice}</option>
-          {/each}
-        </select>
-      {:else if rule.type === 'boolean'}
-        <input type="checkbox" bind:checked={draft[name]} />
-      {:else if rule.type === 'integer' || rule.type === 'number'}
-        <input type="number" bind:value={draft[name]} min={rule.minimum} max={rule.maximum} />
-      {:else if rule.format === 'date-time'}
-        <input type="datetime-local" bind:value={draft[name]} />
-      {:else}
-        <input
-          type={rule.format === 'email' ? 'email' : rule.format === 'uri' ? 'url' : 'text'}
-          bind:value={draft[name]}
-          maxlength={rule.maxLength}
-        />
-      {/if}
-
-      {#if problem(name)}<span class="err">{problem(name)}</span>{/if}
-    </label>
-  {/each}`
-}
-
-const FORM_STYLE = `<style>
-  form { display: grid; gap: 14px; max-width: 520px; margin-top: 16px }
-  label { display: grid; gap: 4px }
-  .lbl { font-size: 13px; color: #374151 }
-  .req { color: #b91c1c; font-style: normal }
-  input, select { padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px; font: inherit }
-  .row { display: flex; gap: 10px; align-items: center }
-  button { border: 1px solid #d1d5db; background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit }
-  button[disabled] { opacity: .45; cursor: not-allowed }
-  button.danger { color: #b91c1c; border-color: #fca5a5 }
-  a.cancel { color: #6b7280; text-decoration: none; font-size: 14px }
-  .err { color: #b91c1c; font-size: 12px }
-  .muted { color: #6b7280; font-size: 13px }
-</style>`
-
-// ─── Template: route — create ─────────────────────────────────────────────────
-
-function makeCreateRoute(model, plural) {
-  return `---
-title: New ${toLabel(model)}
----
-<script>
-  import { ${plural} } from '../../resources/${model}.mesa'
-  import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
-  import { goto } from '@frontierjs/sierra/router'
-
-  let draft  = ${plural}.make()
-  let errors = []
-  let failed = null
-  let saving = false
-
-${formScript(plural, '  ')}
-
-  async function save() {
-    failed = null
-
-    // Validate what will actually be SENT, not what the DOM holds: the inputs
-    // give back strings and coerce() casts them using the schema's types.
-    // Checking the raw draft reports "must be a number" for a good "42".
-    const payload = ${plural}.coerce(draft)
-    errors = ${plural}.validate(payload, 'create')
-    if (errors.length) return
-
-    saving = true
-    try {
-      const created = await ${plural}.service.create(payload)
-      goto('/${plural}/' + created.id + '/')
-    } catch (e) {
-      // A ResourceValidationError never left the browser. Anything else is the
-      // server's answer — including @@gate's 401.
-      errors = e instanceof ResourceValidationError ? e.errors : []
-      failed = e.message
-    } finally {
-      saving = false
-    }
+  return {
+    list: listPage({
+      title: pluralLabel, heading: pluralLabel, newLabel: `New ${singularLabel}`,
+      basePath, imports, res: plural, columns,
+    }),
+    create: createPage({
+      title: `New ${singularLabel}`, heading: `New ${singularLabel}`,
+      submitLabel: `Create ${singularLabel}`, backLabel: 'Back to list',
+      basePath, imports, res: plural,
+    }),
+    edit: editPage({
+      title: singularLabel, heading: singularLabel,
+      submitLabel: 'Save', backLabel: `All ${pluralLabel.toLowerCase()}`,
+      deleteLabel: 'Delete',
+      basePath, imports, res: plural,
+    }),
   }
-${SC}
-
-<h1>New ${toLabel(model)}</h1>
-
-<form on:submit|preventDefault={save}>
-${formMarkup()}
-
-  <div class="row">
-    <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Create'}</button>
-    <a class="cancel" href="/${plural}/">Cancel</a>
-  </div>
-</form>
-
-{#if failed}<p class="err">{failed}</p>{/if}
-
-${FORM_STYLE}
-`
 }
 
-// ─── Template: route — detail and edit, one page ─────────────────────────────
-
-function makeEditRoute(model, plural) {
-  return `---
-title: ${toLabel(model)}
----
-<script>
-  import { ${plural} } from '../../resources/${model}.mesa'
-  import { createResource, ResourceValidationError } from '@frontierjs/sierra/junction'
-  import { page, goto } from '@frontierjs/sierra/router'
-
-  // Read once at setup: navigating to a different id remounts the component.
-  const id = page.params.id
-
-  let draft    = ${plural}.make()
-  let loaded   = false
-  let errors   = []
-  let failed   = null
-  let saving   = false
-  let deleting = false
-
-${formScript(plural, '  ')}
-
-  ${plural}.service.get(id)
-    .then(record => { draft = record; loaded = true })
-    .catch(e => { failed = e.message })
-
-  async function save() {
-    failed = null
-    const payload = ${plural}.coerce(draft)
-    // 'patch' mode: an absent field means "leave it alone", so required is not
-    // re-asserted on fields this form did not touch.
-    errors = ${plural}.validate(payload, 'patch')
-    if (errors.length) return
-
-    saving = true
-    try { draft = await ${plural}.service.patch(id, payload) }
-    catch (e) {
-      errors = e instanceof ResourceValidationError ? e.errors : []
-      failed = e.message
-    } finally { saving = false }
-  }
-
-  async function remove() {
-    if (!confirm('Delete ${model} ' + id + '?')) return
-    failed = null
-    deleting = true
-    try {
-      await ${plural}.service.remove(id)
-      goto('/${plural}/')
-    } catch (e) {
-      failed = e.message
-      deleting = false
-    }
-  }
-${SC}
-
-<header class="row">
-  <h1>${toLabel(model)} {id}</h1>
-  <a class="cancel" href="/${plural}/">← All ${toLabel(plural).toLowerCase()}</a>
-</header>
-
-{#if !loaded && !failed}<p class="muted">Loading…</p>{/if}
-
-{#if loaded}
-  <form on:submit|preventDefault={save}>
-${formMarkup()}
-
-    <div class="row">
-      <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-      <button type="button" class="danger" on:click={remove} disabled={deleting}>Delete</button>
-    </div>
-  </form>
-{/if}
-
-{#if failed}<p class="err">{failed}</p>{/if}
-
-${FORM_STYLE}
-`
-}
 </script>
 
 Generates a complete vertical slice from a single model name — one stanza in
@@ -538,10 +268,19 @@ Supported field types: `string` `text` `email` `url` `phone` `secret` `slug`
 `int` `float` `boolean` `date` `datetime` `json`. Defaults to `string` when the
 type is omitted.
 
-The **list** route names its columns, because which fields belong in a table is
-a judgement call and that file is where to make it. The **create and edit**
-routes name nothing: they read `resource.fields` at runtime, so a column added
-to `schema.lite` later appears on the next reload without regenerating.
+The routes are built on `@frontierjs/ui`. `<Form {resource} />` with no children
+IS the form — every writable column in schema order, each with the control its
+type implies, the picker rows for a foreign key fetched from the related
+service, and a rejection mapped back under the field that caused it — so the
+**create and edit** routes name no field, no type and no enum member, and a
+column added to `schema.lite` later appears on the next reload without
+regenerating. The **list** route is the exception and names its columns, because
+which fields belong in a table is a judgement call and that file is where to
+make it.
+
+The pages themselves live in `core/crud-templates.js`, shared with
+`fli admin:generate`: two commands emitting one form is how the two drifted
+apart on which column is the id.
 
 Without `--fields` a minimal stub is generated — id + timestamps only — ready to
 extend in `schema.lite`.
@@ -639,9 +378,11 @@ if (!flag['no-resource']) {
 if (!skipRoutes) {
   const routesBase = resolve(context.paths.webPages, plural)
 
-  write(resolve(routesBase, 'index.mesa'),  makeIndexRoute(modelName, plural, fields), 'route/list')
-  write(resolve(routesBase, 'create.mesa'), makeCreateRoute(modelName, plural),        'route/create')
-  write(resolve(routesBase, '[id].mesa'),   makeEditRoute(modelName, plural),          'route/edit')
+  const pages = routePages(modelName, plural, fields)
+
+  write(resolve(routesBase, 'index.mesa'),  pages.list,   'route/list')
+  write(resolve(routesBase, 'create.mesa'), pages.create, 'route/create')
+  write(resolve(routesBase, '[id].mesa'),   pages.edit,   'route/edit')
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────

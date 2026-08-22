@@ -13,9 +13,9 @@
 // `members` returns the join rows with their servers included rather than
 // making the browser fan out one request per server.
 
-import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, changesNothing, assertSlugFree, dbOf, wsOf }
+import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, assertSlugFree, ws }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -32,14 +32,14 @@ export function createNetworksService(app: BasecampApp) {
    *  as a plain function and not `this.get(ctx)`: a service's methods are
    *  collected into a definition object and calling one through `this` binds to
    *  whatever the pipeline happens to invoke it with, which is not a contract. */
-  async function withCounts(ctx: ServiceContext, network: Record<string, unknown>) {
-    const server_count = await dbOf(ctx).serverNetwork.count({ where: { networkId: network.id } })
-    const app_count    = await dbOf(ctx).appNetwork.count({ where: { networkId: network.id } })
+  async function withCounts(network: Record<string, unknown>) {
+    const server_count = await db().serverNetwork.count({ where: { networkId: network.id } })
+    const app_count    = await db().appNetwork.count({ where: { networkId: network.id } })
     return { ...network, server_count, app_count }
   }
 
-  async function serverInWorkspace(ctx: ServiceContext, serverId: string) {
-    const server = await dbOf(ctx).server.findFirst({ where: { id: serverId, workspaceId: wsOf(ctx) } })
+  async function serverInWorkspace(serverId: string) {
+    const server = await db().server.findFirst({ where: { id: serverId, workspaceId: ws() } })
     if (!server) throw new NotFound(`Server '${serverId}' not found in this workspace`)
     return server
   }
@@ -55,31 +55,31 @@ export function createNetworksService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
-      const type = ctx.query.type as string | undefined
-      return findScoped(ctx, 'network', { where: { ...(type ? { type } : {}) }, limit, offset })
+      const { limit, offset } = getPagination()
+      const type = $.query.type as string | undefined
+      return findScoped('network', { where: { ...(type ? { type } : {}) }, limit, offset })
     },
 
     async get(ctx: ServiceContext) {
       // Counts, not the rows: this is the summary read, and `members` is the
       // one that pays for the join.
-      return withCounts(ctx, await getScoped(ctx, 'network', 'Network'))
+      return withCounts(await getScoped('network', 'Network'))
     },
 
-    async create(ctx: ServiceContext) {
-      const data = ctx.data as Record<string, unknown>
+    async create() {
+      const data = $.data as Record<string, unknown>
       if (data.cidr && !CIDR.test(data.cidr as string))
         throw new BadRequest(`cidr must look like 10.0.0.0/16 — got '${data.cidr}'`)
 
-      await assertSlugFree(ctx, 'network', { workspaceId: wsOf(ctx), slug: data.slug },
+      await assertSlugFree('network', { workspaceId: ws(), slug: data.slug },
         `A network with slug '${data.slug}' already exists in this workspace`)
 
-      return dbOf(ctx).network.create({ data })
+      return db().network.create({ data })
     },
 
-    async patch(ctx: ServiceContext) {
-      await getScoped(ctx, 'network', 'Network')
-      const data = ctx.data as Record<string, unknown>
+    async patch() {
+      await getScoped('network', 'Network')
+      const data = $.data as Record<string, unknown>
 
       if (data.cidr && !CIDR.test(data.cidr as string))
         throw new BadRequest(`cidr must look like 10.0.0.0/16 — got '${data.cidr}'`)
@@ -88,30 +88,30 @@ export function createNetworksService(app: BasecampApp) {
       // points at this id. Renaming the display name is free; renaming the
       // handle is a migration.
       const patch = narrowPatch(data, ['slug', 'provider'])
-      if (changesNothing(patch)) return getScoped(ctx, 'network', 'Network')
-      return dbOf(ctx).network.update({ where: { id: ctx.id as string }, data: patch })
+      if (changesNothing(patch)) return getScoped('network', 'Network')
+      return db().network.update({ where: { id: $.id as string }, data: patch })
     },
 
     async remove(ctx: ServiceContext) {
-      const network = await getScoped(ctx, 'network', 'Network')
+      const network = await getScoped('network', 'Network')
       // Refused rather than cascaded. The schema WOULD cascade the join rows,
       // which is right for referential integrity and wrong as a default here:
       // detaching a live server from its network is an operational act, and
       // doing it as a side effect of a delete is how a fleet loses routing
       // without anyone deciding to.
-      const attached = await dbOf(ctx).serverNetwork.count({ where: { networkId: network.id } })
+      const attached = await db().serverNetwork.count({ where: { networkId: network.id } })
       if (attached > 0)
         throw new Conflict(`${attached} server(s) are still attached — detach them first`)
 
-      return removeScoped(ctx, 'network', 'Network')
+      return removeScoped('network', 'Network')
     },
 
     // ── members ───────────────────────────────────────────────────────
-    async members(ctx: ServiceContext) {
-      const network = await getScoped(ctx, 'network', 'Network')
-      ctx.dispatch = false   // read-shaped
+    async members() {
+      const network = await getScoped('network', 'Network')
+      $.dispatch = false   // read-shaped
 
-      const rows = await dbOf(ctx).serverNetwork.findMany({
+      const rows = await db().serverNetwork.findMany({
         where:   { networkId: network.id },
         include: { server: true },
         orderBy: { joinedAt: 'asc' },
@@ -121,16 +121,16 @@ export function createNetworksService(app: BasecampApp) {
 
     // ── attach ────────────────────────────────────────────────────────
     async attach(ctx: ServiceContext) {
-      const network  = await getScoped(ctx, 'network', 'Network')
-      const { serverId, ipAddress } = (ctx.data ?? {}) as Record<string, string>
+      const network  = await getScoped('network', 'Network')
+      const { serverId, ipAddress } = ($.data ?? {}) as Record<string, string>
       if (!serverId) throw new BadRequest('serverId is required')
 
-      await serverInWorkspace(ctx, serverId)
+      await serverInWorkspace(serverId)
 
-      if (await dbOf(ctx).serverNetwork.exists({ where: { serverId, networkId: network.id } }))
+      if (await db().serverNetwork.exists({ where: { serverId, networkId: network.id } }))
         throw new Conflict('That server is already on this network')
 
-      await dbOf(ctx).serverNetwork.create({
+      await db().serverNetwork.create({
         data: { serverId, networkId: network.id, ipAddress: ipAddress ?? null },
       })
 
@@ -138,26 +138,26 @@ export function createNetworksService(app: BasecampApp) {
       // load-bearing (junction FJS-020): a client assigning this over the
       // record it is rendering must get that record back, and a join row has
       // neither the network's id nor its name.
-      return withCounts(ctx, network)
+      return withCounts(network)
     },
 
     // ── detach ────────────────────────────────────────────────────────
     async detach(ctx: ServiceContext) {
-      const network   = await getScoped(ctx, 'network', 'Network')
-      const { serverId } = (ctx.data ?? {}) as Record<string, string>
+      const network   = await getScoped('network', 'Network')
+      const { serverId } = ($.data ?? {}) as Record<string, string>
       if (!serverId) throw new BadRequest('serverId is required')
 
-      const link = await dbOf(ctx).serverNetwork.findFirst({ where: { serverId, networkId: network.id } })
+      const link = await db().serverNetwork.findFirst({ where: { serverId, networkId: network.id } })
       if (!link) throw new NotFound('That server is not on this network')
 
-      await dbOf(ctx).serverNetwork.remove({ where: { id: link.id } })
-      return withCounts(ctx, network)
+      await db().serverNetwork.remove({ where: { id: link.id } })
+      return withCounts(network)
     },
 
     hooks: {
       before: {
         all:    [sessionScope(app)],
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampWorkspace],
+        create: [requireWorkspaceRole(app, 'admin', 'owner'), deriveSlug],
         patch:  [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
         // Attaching a server to a network changes what can reach what, so it is

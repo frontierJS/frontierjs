@@ -9,7 +9,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { createService, callService } from '../src/core/service.ts'
-import { runWithMeta } from '../src/core/context.ts'
+import { enterRequest } from '../src/core/context.ts'
 import { bridge } from '../src/transport/bridge.ts'
 import { BadRequest } from '../src/core/errors.ts'
 
@@ -38,7 +38,7 @@ async function callWithKey(
     auth: { user: (opts.user ?? null) as never },
   }, app)
   ctx.method = method
-  await runWithMeta(
+  await enterRequest(
     { correlationId: 'c1', idempotencyKey: key, origin: 'internal' },
     () => callService(svc, ctx, app._appHooks, app.events, app.telemetry)
   )

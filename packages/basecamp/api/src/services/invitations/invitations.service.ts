@@ -33,9 +33,9 @@
 // link comes back from `create` either way, exactly once, the way an API key's
 // token does.
 
-import { createService, NotFound, BadRequest, Conflict, Forbidden, Unauthorized, Gone } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, Forbidden, Unauthorized, Gone, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { wsOf, actorOf, findScoped, getScoped } from '../../core/resource.ts'
+import { db, ws, actor, findScoped, getScoped } from '../../core/resource.ts'
 import { env } from '../../core/env.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -161,13 +161,13 @@ export function createInvitationsService(app: BasecampApp) {
 
     // The workspace channel, except for `accept` — whose result carries a
     // session token, and an announcement announces the RESULT. Silencing it
-    // with `ctx.dispatch = false` would have worked and cost the audit trail:
+    // with `$.dispatch = false` would have worked and cost the audit trail:
     // `recordable()` reads the same flag to mean *this method is read-shaped*,
     // so an accept would have gone unrecorded. Two different statements —
     // "nobody needs to hear this" and "nobody may hear this" — and only one of
     // them belongs on the publish side.
     channel: (data: unknown, ctx: ServiceContext) =>
-      ctx.method === 'accept' ? null : workspaceChannel(app)(data, ctx),
+      $.method === 'accept' ? null : workspaceChannel(app)(data, ctx),
 
     reservedQuery: WORKSPACE_QUERY,
 
@@ -184,39 +184,39 @@ export function createInvitationsService(app: BasecampApp) {
      * silently drops what has lapsed answers "no" to a question it was not
      * asked. `expiresAt` is on every row, so the screen says which are dead.
      *
-     * The token is not here: `dbOf` is the CALLER's client and `@guarded(all)`
+     * The token is not here: `db()` is the CALLER's client and `@guarded(all)`
      * means the column is absent from a scoped read entirely, not redacted.
      */
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
-      return findScoped(ctx, 'invitation', { limit, offset })
+      const { limit, offset } = getPagination()
+      return findScoped('invitation', { limit, offset })
     },
 
-    async create(ctx: ServiceContext) {
-      const data      = (ctx.data ?? {}) as Record<string, unknown>
+    async create() {
+      const data      = ($.data ?? {}) as Record<string, unknown>
       const email     = data.email as string          // lower-cased by stampInvitation
-      const workspace = await sys().workspace.findUnique({ where: { id: wsOf(ctx) } })
+      const workspace = await sys().workspace.findUnique({ where: { id: ws() } })
 
       // Both refusals name the state rather than leaving SQLite to answer the
       // @@unique with a constraint error at the end of the write.
       const existing = await sys().user.findFirst({ where: { email } })
       if (existing && await sys().workspaceMember.exists({
-        where: { workspaceId: wsOf(ctx), userId: existing.id },
+        where: { workspaceId: ws(), userId: existing.id },
       }))
         throw new Conflict(`${email} is already a member of this workspace`)
 
-      if (await sys().invitation.exists({ where: { workspaceId: wsOf(ctx), email } }))
+      if (await sys().invitation.exists({ where: { workspaceId: ws(), email } }))
         throw new Conflict(`${email} already has an open invitation — resend it or revoke it first`)
 
       // asSystem, and the token generated HERE rather than stamped onto
-      // ctx.data: `token` is `@guarded(all)`, which puts it outside the
+      // $.data: `token` is `@guarded(all)`, which puts it outside the
       // create-mode JSON Schema, and that schema is closed — so a stamped token
       // is refused as an unknown key before the write is ever attempted.
       const token = mintToken()
       const row   = await sys().invitation.create({ data: { ...data, token } })
 
       const url  = acceptUrl(token)
-      const post = await deliver(email, workspace?.name ?? 'a workspace', await inviterName(actorOf(ctx)), url)
+      const post = await deliver(email, workspace?.name ?? 'a workspace', await inviterName(actor()), url)
 
       // The only moment the token exists outside the row. `token` and
       // `acceptUrl` are not columns and are on no later read — the same shape
@@ -231,9 +231,9 @@ export function createInvitationsService(app: BasecampApp) {
      * mailing the same link again: an invitation forwarded to the wrong person
      * is revoked by resending it.
      */
-    async resend(ctx: ServiceContext) {
-      const current   = await getScoped(ctx, 'invitation', 'Invitation')
-      const workspace = await sys().workspace.findUnique({ where: { id: wsOf(ctx) } })
+    async resend() {
+      const current   = await getScoped('invitation', 'Invitation')
+      const workspace = await sys().workspace.findUnique({ where: { id: ws() } })
 
       const token = mintToken()
       const row   = await sys().invitation.update({
@@ -243,7 +243,7 @@ export function createInvitationsService(app: BasecampApp) {
 
       const url  = acceptUrl(token)
       const post = await deliver(current.email as string, workspace?.name ?? 'a workspace',
-                                 await inviterName(actorOf(ctx)), url)
+                                 await inviterName(actor()), url)
 
       return { ...row, token, acceptUrl: url, ...post }
     },
@@ -253,8 +253,8 @@ export function createInvitationsService(app: BasecampApp) {
      * `revokedAt` to set, and a tombstone would be a second place a membership's
      * origin is recorded that nothing reads. `@@log(audit)` keeps the record.
      */
-    async remove(ctx: ServiceContext) {
-      const row = await getScoped(ctx, 'invitation', 'Invitation')
+    async remove() {
+      const row = await getScoped('invitation', 'Invitation')
       await sys().invitation.delete({ where: { id: row.id } })
       return row
     },
@@ -272,9 +272,9 @@ export function createInvitationsService(app: BasecampApp) {
      * choose a password. Telling the holder of the token whether that address
      * has an account leaks nothing: they were handed a link addressed to it.
      */
-    async preview(ctx: ServiceContext) {
-      ctx.dispatch = false
-      const { invitation, workspace } = await resolveToken((ctx.data as Record<string, unknown>)?.token)
+    async preview() {
+      $.dispatch = false
+      const { invitation, workspace } = await resolveToken(($.data as Record<string, unknown>)?.token)
       const user = await sys().user.findFirst({ where: { email: invitation.email } })
 
       return {
@@ -305,17 +305,17 @@ export function createInvitationsService(app: BasecampApp) {
      * it happened in, which is set below because sessionScope normally sets it
      * and sessionScope is not running here.
      */
-    async accept(ctx: ServiceContext) {
-      const data = (ctx.data ?? {}) as Record<string, unknown>
+    async accept() {
+      const data = ($.data ?? {}) as Record<string, unknown>
       const { invitation, workspace } = await resolveToken(data.token)
 
       const email   = invitation.email as string
-      const caller  = ctx.auth?.user as { userId?: string; email?: string } | undefined
+      const caller  = $.auth?.user as { userId?: string; email?: string } | undefined
       const account = await sys().user.findFirst({ where: { email } })
 
       // The trail files this under the workspace it happened in. Nothing else
       // set it: sessionScope, which normally does, is not running here.
-      ctx.locals.workspaceId = workspace.id
+      $.locals.workspaceId = workspace.id
 
       let userId: string
       let session: { token: string; user: unknown } | null = null
@@ -410,13 +410,12 @@ export function createInvitationsService(app: BasecampApp) {
    *
    * `token` is deliberately NOT here — see `create`.
    */
-  function stampInvitation(ctx: ServiceContext): void {
-    const data = (ctx.data ?? {}) as Record<string, unknown>
-    data.workspaceId = wsOf(ctx)
+  function stampInvitation(): void {
+    const data = ($.data ?? {}) as Record<string, unknown>
     data.email       = toEmail(data.email)
     data.role        = toRole(data.role)
     data.expiresAt   = expiryFrom()
-    data.invitedBy   = actorOf(ctx)
-    ctx.data = data
+    data.invitedBy   = actor()
+    $.data = data
   }
 }

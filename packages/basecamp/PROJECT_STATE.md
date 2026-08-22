@@ -19,7 +19,7 @@ This file describes what it currently does.
 | Realm | State |
 | --- | --- |
 | **Data** (`db/`) | **Real.** `schema.lite` is the seed — 37 models, 21 enums, 0 errors / 0 warnings; the migration is generated from it and verified against a fresh database. **All 37 declare `@@gate`** (2026-08-10), graded per WORKSPACE by `api/src/core/gate.ts`. **15 declare `@@allow`** — every model carrying a `workspaceId` bar `WorkspaceMember` and `AuditEvent`; the other 22 carry no workspace column and want `check(parent)` |
-| **API** (`api/`) | **Real.** **21 services** + 3 engines on Litestone accessors, zero raw SQL. Twenty are workspace-scoped; `hub` is the one that is not — it takes no workspace at all and sits behind `requireSystemAdmin` |
+| **API** (`api/`) | **Real.** **21 services** + 4 job files on Litestone accessors, zero raw SQL. Twenty are workspace-scoped; `hub` is the one that is not — it takes no workspace at all and sits behind `requireSystemAdmin` |
 | **UI** (`web/`) | **Real.** Sierra SPA over every service — 39 route files, driven end to end in a browser by `bun run verify`, and the BUILT output probed by `bun run verify:build` |
 
 ## How to run it
@@ -110,9 +110,10 @@ and completing all six steps, setting the app to `running`, and the job engine
 recording JobRuns.
 
 `core/resource.ts` holds what the seven workspace-scoped services share
-(`findScoped`, `getScoped`, `stampWorkspace`, `narrowPatch`, `removeScoped`).
-The workspace clause lives there rather than in each service because omitting
-it is a tenancy leak, not a style slip.
+(`findScoped`, `getScoped`, `deriveSlug`, `narrowPatch`, `removeScoped`). The
+workspace clause is not among them: it is declared once in `db/schema.lite` and
+compiled into every query, which is the version of *omitting it is a tenancy
+leak* that a service cannot get wrong.
 
 Three bugs fixed on the way through:
 

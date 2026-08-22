@@ -25,9 +25,9 @@
 // @@softDelete, so the ordinary case is a row that still exists and is excluded
 // from every read — `get` resolves that to the same answer.
 
-import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, assertSlugFree, slugify, dbOf, wsOf, actorOf }
+import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, assertSlugFree, slugify, ws, actor }
   from '../../core/resource.ts'
 import { WIDGET_KINDS, WIDGET_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
 import { PORTAL_SERVICE_IDS } from '../portal/portal.service.ts'
@@ -56,8 +56,8 @@ export function createDashboardsService(app: BasecampApp) {
    * `subjectMissing`, which is a state the card renders — never an empty
    * string that reads as a widget with no subject at all.
    */
-  async function withWidgets(ctx: ServiceContext, dashboard: Record<string, unknown>) {
-    const widgets = await dbOf(ctx).dashboardWidget.findMany({
+  async function withWidgets(dashboard: Record<string, unknown>) {
+    const widgets = await db().dashboardWidget.findMany({
       where:   { dashboardId: dashboard.id },
       orderBy: { position: 'asc' },
       limit:   200,
@@ -70,12 +70,12 @@ export function createDashboardsService(app: BasecampApp) {
     // widget pointing at another workspace's server resolves to nothing here
     // and renders as missing — which is also the refusal, one layer down.
     const servers = serverIds.length
-      ? await dbOf(ctx).server.findMany({
-          where: { id: { in: serverIds }, workspaceId: wsOf(ctx) }, select: { id: true, name: true }, limit: 200 })
+      ? await db().server.findMany({
+          where: { id: { in: serverIds }, workspaceId: ws() }, select: { id: true, name: true }, limit: 200 })
       : []
     const apps = appIds.length
-      ? await dbOf(ctx).app.findMany({
-          where: { id: { in: appIds }, workspaceId: wsOf(ctx) }, select: { id: true, name: true }, limit: 200 })
+      ? await db().app.findMany({
+          where: { id: { in: appIds }, workspaceId: ws() }, select: { id: true, name: true }, limit: 200 })
       : []
 
     const serverName = new Map(servers.map((s: any) => [s.id, s.name]))
@@ -108,7 +108,7 @@ export function createDashboardsService(app: BasecampApp) {
    * walked around by editing afterwards.
    */
   async function resolveWidget(
-    ctx: ServiceContext, kind: string, input: WidgetInput,
+    kind: string, input: WidgetInput,
   ): Promise<Record<string, unknown>> {
     const spec = WIDGET_KIND_BY_NAME[kind]
     if (!spec)
@@ -126,12 +126,12 @@ export function createDashboardsService(app: BasecampApp) {
 
     if (spec.subject === 'server') {
       if (!serverId && spec.required) throw new BadRequest(`A ${spec.label} widget needs a server`)
-      if (serverId && !await dbOf(ctx).server.exists({ where: { id: serverId, workspaceId: wsOf(ctx) } }))
+      if (serverId && !await db().server.exists({ where: { id: serverId, workspaceId: ws() } }))
         throw new NotFound(`Server '${serverId}' not found in this workspace`)
     }
     if (spec.subject === 'app') {
       if (!appId && spec.required) throw new BadRequest(`A ${spec.label} widget needs an app`)
-      if (appId && !await dbOf(ctx).app.exists({ where: { id: appId, workspaceId: wsOf(ctx) } }))
+      if (appId && !await db().app.exists({ where: { id: appId, workspaceId: ws() } }))
         throw new NotFound(`App '${appId}' not found in this workspace`)
     }
 
@@ -175,9 +175,9 @@ export function createDashboardsService(app: BasecampApp) {
    *  through a dashboard that `getScoped` has already put inside the
    *  workspace, so a widget id from another tenant answers the same 404 as one
    *  that never existed. */
-  async function widgetOf(ctx: ServiceContext, dashboardId: string, widgetId?: string) {
+  async function widgetOf(dashboardId: string, widgetId?: string) {
     if (!widgetId) throw new BadRequest('widgetId is required')
-    const widget = await dbOf(ctx).dashboardWidget.findFirst({ where: { id: widgetId, dashboardId } })
+    const widget = await db().dashboardWidget.findFirst({ where: { id: widgetId, dashboardId } })
     if (!widget) throw new NotFound(`Widget '${widgetId}' not found on this dashboard`)
     return widget
   }
@@ -201,11 +201,11 @@ export function createDashboardsService(app: BasecampApp) {
               'kinds', 'addWidget', 'updateWidget', 'removeWidget', 'reorder'],
 
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
+      const { limit, offset } = getPagination()
       // Pinned first, then newest — in SQL, not in JavaScript afterwards. A
       // sort applied to the page puts a pinned board at the top of page two
       // and leaves it there, which reads as a pin that stopped working.
-      const page = await findScoped(ctx, 'dashboard', {
+      const page = await findScoped('dashboard', {
         limit, offset,
         orderBy: { isPinned: 'desc', createdAt: 'desc' },
       })
@@ -213,29 +213,29 @@ export function createDashboardsService(app: BasecampApp) {
       // A count per row rather than the widgets themselves: the list says how
       // full a board is, and `get` is the read that pays for the layout.
       const counts = await Promise.all(page.data.map((d: any) =>
-        dbOf(ctx).dashboardWidget.count({ where: { dashboardId: d.id } })))
+        db().dashboardWidget.count({ where: { dashboardId: d.id } })))
 
       return { ...page, data: page.data.map((d: any, i: number) => ({ ...d, widget_count: counts[i] })) }
     },
 
     async get(ctx: ServiceContext) {
-      return withWidgets(ctx, await getScoped(ctx, 'dashboard', 'Dashboard'))
+      return withWidgets(await getScoped('dashboard', 'Dashboard'))
     },
 
     async create(ctx: ServiceContext) {
-      const data = ctx.data as Record<string, unknown>
-      await assertSlugFree(ctx, 'dashboard', { workspaceId: wsOf(ctx), slug: data.slug },
+      const data = $.data as Record<string, unknown>
+      await assertSlugFree('dashboard', { workspaceId: ws(), slug: data.slug },
         `A dashboard called '${data.name}' already exists in this workspace`)
 
-      const created = await dbOf(ctx).dashboard.create({ data })
+      const created = await db().dashboard.create({ data })
       // The same shape `get` answers, so a screen that navigates straight to
       // the new board renders it rather than a record with no widgets key.
-      return withWidgets(ctx, created)
+      return withWidgets(created)
     },
 
     async patch(ctx: ServiceContext) {
-      const dashboard = await getScoped(ctx, 'dashboard', 'Dashboard')
-      const data      = ctx.data as Record<string, unknown>
+      const dashboard = await getScoped('dashboard', 'Dashboard')
+      const data      = $.data as Record<string, unknown>
 
       // The slug follows the name, because a dashboard's handle is not in
       // anyone else's source code — unlike a flag key or a network slug, which
@@ -243,17 +243,17 @@ export function createDashboardsService(app: BasecampApp) {
       const patch = narrowPatch(data, ['slug', 'createdBy'])
       if (typeof patch.name === 'string' && patch.name !== dashboard.name) {
         patch.slug = slugify(patch.name as string)
-        await assertSlugFree(ctx, 'dashboard',
-          { workspaceId: wsOf(ctx), slug: patch.slug, id: { not: dashboard.id } },
+        await assertSlugFree('dashboard',
+          { workspaceId: ws(), slug: patch.slug, id: { not: dashboard.id } },
           `A dashboard called '${patch.name}' already exists in this workspace`)
       }
 
-      if (changesNothing(patch)) return withWidgets(ctx, dashboard)
-      return withWidgets(ctx, await dbOf(ctx).dashboard.update({ where: { id: dashboard.id }, data: patch }))
+      if (changesNothing(patch)) return withWidgets(dashboard)
+      return withWidgets(await db().dashboard.update({ where: { id: dashboard.id }, data: patch }))
     },
 
     async remove(ctx: ServiceContext) {
-      return removeScoped(ctx, 'dashboard', 'Dashboard')
+      return removeScoped('dashboard', 'Dashboard')
     },
 
     // ── kinds — POST /dashboards  X-Service-Method: kinds ─────────────
@@ -271,8 +271,8 @@ export function createDashboardsService(app: BasecampApp) {
     // them with. Three answers in one call means an object with three named
     // keys, which unwraps whole. Same trap `volumes.usage` documents from the
     // other side.
-    async kinds(ctx: ServiceContext) {
-      ctx.dispatch = false   // read-shaped
+    async kinds() {
+      $.dispatch = false   // read-shaped
       return {
         kinds:          WIDGET_KINDS,
         statSources:    [...STAT_SOURCES],
@@ -282,39 +282,39 @@ export function createDashboardsService(app: BasecampApp) {
 
     // ── addWidget — POST /dashboards/:id  X-Service-Method: addWidget ─
     async addWidget(ctx: ServiceContext) {
-      const dashboard = await getScoped(ctx, 'dashboard', 'Dashboard')
-      const input     = (ctx.data ?? {}) as WidgetInput
+      const dashboard = await getScoped('dashboard', 'Dashboard')
+      const input     = ($.data ?? {}) as WidgetInput
       if (!input.kind) throw new BadRequest('kind is required')
 
-      const columns = await resolveWidget(ctx, input.kind, input)
+      const columns = await resolveWidget(input.kind, input)
 
       // Appended. Position is dense only by convention — `reorder` rewrites the
       // whole set — so the next one goes after the last, not at count+1, which
       // collides the moment anything was removed from the middle.
-      const last = await dbOf(ctx).dashboardWidget.findMany({
+      const last = await db().dashboardWidget.findMany({
         where: { dashboardId: dashboard.id }, orderBy: { position: 'desc' }, limit: 1,
       })
       const position = last.length ? (last[0].position as number) + 1 : 0
 
       // A board nothing can lay out is worse than a refusal: 200 cards is a
       // page that never finishes rendering, and the layout is thirds of a row.
-      const count = await dbOf(ctx).dashboardWidget.count({ where: { dashboardId: dashboard.id } })
+      const count = await db().dashboardWidget.count({ where: { dashboardId: dashboard.id } })
       if (count >= 60) throw new Conflict('A dashboard holds at most 60 widgets')
 
-      await dbOf(ctx).dashboardWidget.create({ data: { dashboardId: dashboard.id, position, ...columns } })
+      await db().dashboardWidget.create({ data: { dashboardId: dashboard.id, position, ...columns } })
 
       // The DASHBOARD, not the widget. A custom method's return shape is
       // load-bearing (junction FJS-020): the screen assigns this over the
       // record it is rendering, and a widget row has neither the board's id nor
       // its other cards.
-      return withWidgets(ctx, dashboard)
+      return withWidgets(dashboard)
     },
 
     // ── updateWidget ─────────────────────────────────────────────────
     async updateWidget(ctx: ServiceContext) {
-      const dashboard = await getScoped(ctx, 'dashboard', 'Dashboard')
-      const input     = (ctx.data ?? {}) as WidgetInput
-      const widget    = await widgetOf(ctx, dashboard.id as string, input.widgetId)
+      const dashboard = await getScoped('dashboard', 'Dashboard')
+      const input     = ($.data ?? {}) as WidgetInput
+      const widget    = await widgetOf(dashboard.id as string, input.widgetId)
 
       // The kind is immutable. Changing it changes what the card is, and every
       // subject and config key it validated against — that is a new widget, and
@@ -324,27 +324,27 @@ export function createDashboardsService(app: BasecampApp) {
 
       // Key presence, not `??` (Invariant 9): an explicit null clears the
       // subject, which is how a deploy feed goes back to the whole workspace.
-      const columns = await resolveWidget(ctx, widget.kind as string, {
+      const columns = await resolveWidget(widget.kind as string, {
         serverId: 'serverId' in input ? input.serverId : (widget.serverId as string | null),
         appId:    'appId'    in input ? input.appId    : (widget.appId    as string | null),
         config:   'config'   in input ? input.config   : (widget.config as Record<string, unknown>),
         cols:     'cols'     in input ? input.cols     : (widget.cols as number),
       })
 
-      await dbOf(ctx).dashboardWidget.update({ where: { id: widget.id }, data: columns })
-      return withWidgets(ctx, dashboard)
+      await db().dashboardWidget.update({ where: { id: widget.id }, data: columns })
+      return withWidgets(dashboard)
     },
 
     // ── removeWidget ─────────────────────────────────────────────────
     async removeWidget(ctx: ServiceContext) {
-      const dashboard = await getScoped(ctx, 'dashboard', 'Dashboard')
-      const widget    = await widgetOf(ctx, dashboard.id as string, (ctx.data as WidgetInput)?.widgetId)
+      const dashboard = await getScoped('dashboard', 'Dashboard')
+      const widget    = await widgetOf(dashboard.id as string, ($.data as WidgetInput)?.widgetId)
 
       // Hard delete: DashboardWidget declares no @@softDelete. A card taken off
       // a board is not history — it is a layout decision, and the audit trail
       // already records that it was taken off.
-      await dbOf(ctx).dashboardWidget.delete({ where: { id: widget.id } })
-      return withWidgets(ctx, dashboard)
+      await db().dashboardWidget.delete({ where: { id: widget.id } })
+      return withWidgets(dashboard)
     },
 
     // ── reorder ──────────────────────────────────────────────────────
@@ -353,11 +353,11 @@ export function createDashboardsService(app: BasecampApp) {
     // at once produce an order neither chose. Sending the sequence makes the
     // last writer's intent the one on screen.
     async reorder(ctx: ServiceContext) {
-      const dashboard = await getScoped(ctx, 'dashboard', 'Dashboard')
-      const ids       = ((ctx.data ?? {}) as { ids?: string[] }).ids
+      const dashboard = await getScoped('dashboard', 'Dashboard')
+      const ids       = (($.data ?? {}) as { ids?: string[] }).ids
       if (!Array.isArray(ids) || !ids.length) throw new BadRequest('ids must be a non-empty array of widget ids')
 
-      const widgets = await dbOf(ctx).dashboardWidget.findMany({
+      const widgets = await db().dashboardWidget.findMany({
         where: { dashboardId: dashboard.id }, select: { id: true }, limit: 200,
       })
       const known = new Set(widgets.map((w: any) => w.id))
@@ -371,9 +371,9 @@ export function createDashboardsService(app: BasecampApp) {
         throw new BadRequest(`ids must name every widget on this dashboard — ${known.size} of them, got ${ids.length}`)
 
       for (const [position, id] of ids.entries())
-        await dbOf(ctx).dashboardWidget.update({ where: { id }, data: { position } })
+        await db().dashboardWidget.update({ where: { id }, data: { position } })
 
-      return withWidgets(ctx, dashboard)
+      return withWidgets(dashboard)
     },
 
     hooks: {
@@ -403,10 +403,9 @@ export function createDashboardsService(app: BasecampApp) {
  * method, every request 400s on a `workspaceId` the browser was never meant to
  * supply.
  */
-function stampDashboard(ctx: ServiceContext): void {
-  const data = ctx.data as Record<string, unknown>
+function stampDashboard(): void {
+  const data = $.data as Record<string, unknown>
   if (!data) return
-  data.workspaceId = wsOf(ctx)
-  data.createdBy   = actorOf(ctx)
+  data.createdBy   = actor()
   if (typeof data.name === 'string' && !data.slug) data.slug = slugify(data.name)
 }

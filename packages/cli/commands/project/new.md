@@ -171,6 +171,10 @@ function makePackageJson(spec) {
     deps['@frontierjs/mesa']   = specFor('@frontierjs/mesa')
     // web/src/main.js imports it — the styling language, not an optional extra.
     deps['@frontierjs/css']    = specFor('@frontierjs/css')
+    // Every CRUD page `fli scaffold` and `fli admin:generate` write imports the
+    // kit — `<Form {resource} />` with no children IS the generated form — so
+    // an app without it gets pages that cannot resolve their own imports.
+    deps['@frontierjs/ui']     = specFor('@frontierjs/ui')
   }
   if (useExtension) {
     // jetty builds the extension and Mesa renders its surfaces. Both are the
@@ -507,7 +511,7 @@ function makeApiAppTs(useAuth, useWeb) {
 // file without binding a port.
 
 import { createApp, requestLogger, correlationId, healthPlugin, manifestPlugin, channels } from '@frontierjs/junction'
-import { auth, authPlugin } from './core/auth.ts'
+import { auth, authPlugin, authCleanup } from './core/auth.ts'
 import { withDb }           from './core/hooks.ts'
 import { env }              from './core/env.ts'
 
@@ -553,6 +557,18 @@ app.configure(channels())
 // Mounts {apiPrefix}/auth/register, /auth/login, /auth/logout and the
 // rest — apiPrefix moves the plugin's routes with everything else.
 app.configure(authPlugin)
+
+// ─── Auth cleanup ─────────────────────────────────────────────────────────
+// Expired sessions and verification tokens. In boot() rather than register(),
+// which junction never awaits — and here rather than in core/auth.ts, because
+// a module that starts a timer by being imported starts one in every test that
+// imports it too.
+app.configure({
+  name: 'auth-cleanup',
+  register() {},
+  async boot() { authCleanup.start() },
+  async shutdown() { authCleanup.stop() },
+})
 
 // ─── Per-request db scoping ──────────────────────────────────────────────
 // withLitestoneDb attaches a request-scoped db client to ctx.locals.db.
@@ -637,6 +653,13 @@ export const env = defineEnv({
   // Database file path. Use ':memory:' for tests.
   DATABASE_URL: { type: 'string', default: './db/app.db' },
 
+  // fli auth:install generates this into .env. Declared so defineEnv can see it
+  // — the name is one of three it warns about for length and placeholder values
+  // — and NOT required, because no code in @frontierjs/auth or junction reads it:
+  // auth signs with encryptionKey. A required refusal over a value nothing uses
+  // is a container that will not boot for no reason (FJS-360).
+  AUTH_SECRET: { type: 'string', required: false },
+
   // App
   PORT:     { type: 'port',   default: 8100 },
   APP_URL:  { type: 'url',    default: 'http://localhost:8100' },
@@ -709,12 +732,25 @@ function makeApiCoreAuthTs() {
 // Both reference the same \`db\` import — auth uses db.asSystem()
 // internally so its writes bypass gates and policies.
 
-import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
+import { createLitestoneAuth, createAuthPlugin, createAuthCleanupJobs } from '@frontierjs/auth'
 import { db }   from './db.ts'
 import { env }  from './env.ts'
 
 export const auth = createLitestoneAuth(db, {
   encryptionKey:        env.ENCRYPTION_KEY,
+
+  // The one place this app says what 'admin' MEANS, and it is load-bearing.
+  // db.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
+  // \`@@gate("4.4.4.5")\` for who may delete a person, \`@@allow('update', … ||
+  // auth().isAdmin)\` for whose row, \`@allow('write', auth().isAdmin)\` on role
+  // and emailVerified. The User model ships a role STRING, which auth stores
+  // and never interprets, so without this line \`isAdmin\` is never on the
+  // session and all three are dead: an administrator grades USER(4), a delete
+  // is a 403 nobody can clear, editing another person's row is a 404 because a
+  // row policy that matches nothing hides it, and a write to role returns 200
+  // with the field silently stripped.
+  sessionFields: (user) => ({ isAdmin: user.role === 'admin' }),
+
   sessionTtl:           '30 days',
   passwordResetTtl:     '1 hour',
   emailVerificationTtl: '24 hours',
@@ -733,6 +769,11 @@ export const authPlugin = createAuthPlugin(auth, {
   // Token in response body by default. Set true for httpOnly session cookie.
   cookieAuth: false,
 })
+
+// Expired sessions and verification tokens. app.ts starts these — nothing
+// starts a timer by being imported, so a cleanup that is only constructed here
+// is a table that grows for ever.
+export const authCleanup = createAuthCleanupJobs(db)
 `
 }
 
@@ -1293,18 +1334,23 @@ if (fjsSource !== 'local' && fjsSource !== 'npm') {
   return
 }
 
-// The @frontierjs packages this project will actually depend on
-const neededPkgs = ['@frontierjs/junction', '@frontierjs/litestone']
-if (useAuth) neededPkgs.push('@frontierjs/auth')
-// Every dependency makePackageJson writes for the web half belongs here too —
-// a `link:` spec for a package nobody linked fails the install outright.
-if (useWeb)  neededPkgs.push('@frontierjs/sierra', '@frontierjs/mesa', '@frontierjs/css')
-for (const p of withPkgs) neededPkgs.push(`@frontierjs/${p}`)
-// The dev half counts as much as the runtime half — `bun run check` is the
-// first thing anyone runs and it needs both of these resolved.
-for (const p of Object.keys(APP_DEV_DEPS)) {
-  if (p.startsWith('@frontierjs/')) neededPkgs.push(p)
-}
+// What this project will be given, decided once. `makePackageJson` is the one
+// answer to that question and the manifest is written from it later.
+const spec = { name: appName, scope: flag.scope, useAuth, useWeb, useApi, useWidgets, useExtension, withPkgs, source: fjsSource }
+
+// The @frontierjs packages this project will actually depend on — READ OFF the
+// manifest rather than listed again beside it. A `link:` spec for a package
+// nobody linked fails the install outright, and the two lists had to agree by
+// hand: adding `@frontierjs/ui` to the manifest and not here broke every
+// `--source local` scaffold, install and all, with the error naming the vendor
+// step three commands later. The dev half counts as much as the runtime half —
+// `bun run check` is the first thing anyone runs.
+const _manifest = makePackageJson(spec)
+const _declared = JSON.parse(_manifest)
+const neededPkgs = [
+  ...Object.keys(_declared.dependencies ?? {}),
+  ...Object.keys(_declared.devDependencies ?? {}),
+].filter(n => n.startsWith('@frontierjs/'))
 
 // Where local package sources live. fli lives at <root>/packages/cli, so the
 // FJS packages are its siblings under <root>/packages/. Override with
@@ -1376,10 +1422,8 @@ for (const d of dirs) {
 
 // ─── 9. Write base files ──────────────────────────────────────────────────────
 
-const spec = { name: appName, scope: flag.scope, useAuth, useWeb, useApi, useWidgets, useExtension, withPkgs, source: fjsSource }
-
 const filesToWrite = [
-  ['package.json',                makePackageJson(spec)],
+  ['package.json',                _manifest],
   ['.gitignore',                  makeGitignore()],
   ['.env.example',                makeEnvExample(useAuth)],
   ['.fli.json',                   makeFliJson(appName)],

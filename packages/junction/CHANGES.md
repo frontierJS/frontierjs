@@ -1,5 +1,273 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-22 — claims on the principal, and a refusal that stops signing people out
+
+1283 tests, 0 fail. Typecheck clean.
+
+**`createApp({ principal })`** — claims resolved per REQUEST and merged onto the
+calling principal before the Data boundary scopes the client from it (`FJS-D113`,
+`FJS-374`). One seam, inside `withLitestoneDb` and `withTenantDb`, because those
+are already the two places a client is scoped and a third order of operations is
+how a standing comes to live on the client alone: `getTable()` re-derives its own
+copy from `ctx.auth.user`, so anything the resolver put only on `ctx.locals.db`
+is dropped the moment a service touches a model.
+
+Two things it refuses. A resolver may not set `userId` or `id` — claims say what
+this caller HOLDS, not who they are, and a framework that stripped the key in
+silence would leave an app believing it had switched identity. And it does not
+run for an anonymous caller, because minting a principal out of claims alone
+turns *nobody* into *someone*: an object that satisfies `auth() != null` while
+carrying no identity.
+
+**`membershipClaim()`** ships the shape almost every B2B app has — a person
+belongs to several tenants through a membership row, picks one per request, and
+holds a standing that lives on that row. The whole of its safety is one line: no
+row is no claim. The hand-written version that forgets the membership check emits
+the claim anyway and every read answers 200 over somebody else's rows. The
+membership row is parked at `ctx.locals.membership`, so the standing costs no
+second query.
+
+**`tenantClaimGuard` now answers 403 rather than 401** (`FJS-383`). It refuses a
+signed-in caller holding no tenant claim on a row-scoped service, which is right;
+the status was not. 401 means *you have not proved who you are*, and the caller
+has — so every client treats it as a dead token, and a member of A following a
+link into B was not refused but logged out of A. The two refusals are also two
+sentences, and `applyClaims` marks that a resolver ran so the guard can tell them
+apart: *nothing in this app emits this claim* is a developer's, *you do not belong
+to the tenant this request names* is the caller's.
+
+## 2026-08-22 — `$`, the service call you are inside
+
+1283 tests, 17 new, 0 fail. Workspace typecheck clean. `example`: `verify` 37/37,
+`verify:live` 14/14, `verify:jobs` 9/10 (the tenth is a pre-existing mismatch between
+`occurrenceKey('outbox', …)` and the drive's bare-uuid assertion, unrelated).
+
+Every service reached its caller-scoped Litestone client by digging it out of the context
+and every helper took a `ctx` parameter to carry it — basecamp wrote `dbOf(ctx)`/`wsOf(ctx)`/
+`actorOf(ctx)` and used them **251 times**, with a comment on the module saying it existed so
+the fact was stated once. The failure that shape produces is not verbosity: reaching for a
+module-level client instead writes as the system, with the gate and every row policy gone,
+and nothing says so.
+
+**`$` is the context of the call in progress**, read out of a second AsyncLocalStorage store.
+`$.db`, `$.data`, `$.id`, `$.locals`, `$.enqueue`, `$.me` — the whole `ServiceContext`, plus
+`db` (`ctx.locals.db`) and `me` (`ctx.auth.user`) as derived accessors.
+
+**Two rules make a surface this broad safe, and neither is smallness.**
+
+*Read-only.* Every write trap throws. A writable ambient object is cross-cutting mutable
+state with no owner, which is the thing worth refusing; `ctx.locals` is the per-call bag and
+`app.claim()` is the app's (Invariant 5).
+
+*Call lifetime.* Outside a call `$` throws by name rather than answering `undefined`. An
+ambient dependency is an undeclared one — `steps(id)` does not say in its signature that it
+needs a call — and what makes that acceptable is that the failure is loud, immediate, and
+names where `$` IS legal. Answering `undefined` would trade a loud bug for a silent one,
+which is the trade this exists to reverse.
+
+**Resolved on every property read, never snapshotted.** `transactional:` assigns
+`ctx.locals.db = tx` before running the method, so a captured value is the wrong client and
+every write in the method would commit outside the transaction.
+
+**The span is the whole of `_callService`** — method policy, idempotency claim, pipeline,
+announcement, `afterCommit` drain, outbox handoff. Everything that semantically belongs to
+the invocation. A nested call runs it again with its own context. A replayed idempotent call
+returns before any of it and runs no user code, so it is owed nothing.
+
+**It is a second store, deliberately, and not `runInServiceCall`.** That one is read by
+litestone's write tap to suppress a double announcement, and widening it to this span would
+stop a write inside an `afterCommit` effect from being announced at all. `tests/call-scope.test.ts`
+asserts the narrow store is already closed by `afterCommit`, so a later merge fails loudly.
+
+**`db` and `me` are not enumerable.** They are accessors, not data, and listing them in
+`ownKeys` made a spread EVALUATE them — `{ ...$ }` on an app with no Litestone client threw
+the "no client" error from a spread that never asked for a db. Found by the suite.
+
+Perf: one extra ALS `run()` per service call, measured at **42ns** against a 5,634ns no-op
+call — 0.75% of the cheapest call that exists, and far less of a real one. The three-branch
+block in `callService` that existed to avoid exactly this cost is unaffected; it guards the
+request store, which still opens only on a principal change.
+
+**`example/api/services/orders.service.ts` is the first migration** — the one service with
+`transactional:` and `ctx.enqueue`, and three drives on it. Both "no scoped db on ctx.locals"
+guards are gone with the casts that fed them, `move()` takes no parameter at all, and the
+file is two lines shorter while saying more.
+
+## 2026-08-21 — the request scope has one owner (`enterRequest`)
+
+1266 tests, 10 new, 0 fail. Workspace typecheck clean. `example`: `verify` (37) and
+`verify:live` (14) green; basecamp's suite 132 green.
+
+Five entry points establish a request — the HTTP handler, the WebSocket frame dispatcher,
+`app.runAs()`, a service call that arrives with no store at all, and the test harness — and
+each of them built a `RequestMeta` literal by hand. The five copies were not the same, and
+both failures that shipped are the same shape as each other: **the socket path wrapped
+nothing for its whole life**, so `requestMeta()` was `undefined` for every WS call and the
+`Idempotency-Key` that decides whether a create runs twice applied to half the transports;
+and **`withTestMeta` forwarded four of six fields**, dropping `user` and `client`, so
+propagation behaved one way under test and another in production.
+
+**`enterRequest(src, fn)` is the one owner.** A transport hands over what it holds — an
+origin, headers where it has them, a principal, a client — and the meta is built here. The
+three header-derived fields have one reader: `x-request-id`, `idempotency-key`,
+`accept-language`. A sixth transport cannot forget a field it never names.
+
+**`reenterAs(user, fn)` is the other question, kept separate.** `enterRequest` says *a
+request starts here*; this one says *the same request, someone else* — service A running as
+alice calling B as bob. Everything but the principal carries over, because a correlation id
+that changed mid-request is a broken trace. It also owns the two cases that are not
+re-entry: the same principal opens **nothing** (on the common path the two are the same
+object by construction, and an ALS `run()` per service call would be paid by every nested
+call in the app to change nothing), and no store at all means this call IS the entry point.
+`callService`'s three-branch block collapses into one line.
+
+`runWithMeta` is gone from the module's exports — `_requestStore.run` now has exactly one
+caller, so the ownership is structural rather than conventional. It was never in the
+package's public surface; `requestMeta()` is unchanged.
+
+**`tests/request-scope.test.ts` is the gate**, and it asserts from OUTSIDE: a service method
+that records `requestMeta()`, driven down each entry point in turn. Neither shipped failure
+is visible from inside the entry point that has it — the app runs, the call answers, and
+what is missing is a store nobody in that file reads. Both mutations were re-applied and
+each turns exactly one assertion red.
+
+## 2026-08-21 — a claim can be resolved per request (`FJS-D113`, `FJS-374` part one)
+
+1256 tests, 13 new, 0 fail. Workspace typecheck clean.
+
+Row tenancy read its claim off the principal and told you to put the column on the
+session, which is **one tenant per sign-in**. A person who belongs to several accounts
+and holds a different authority in each could not be expressed, so basecamp declared its
+tenancy by hand on fifteen models and wrote ~260 lines around it.
+
+**`createApp({ principal })`** resolves claims per request and puts them on the principal
+before the Data boundary scopes the client from it. No new schema syntax: `tenantClaimGuard`
+already reads the claim's name off `$tenancy`, and row tenancy already compiles the
+predicate and the `@default(auth().<claim>)` stamp — the only thing missing was a second
+route onto the principal.
+
+**It lives inside `withLitestoneDb` rather than beside it.** Three things have to happen in
+one order — resolve, build a fresh principal and assign `ctx.auth.user`, then scope — and
+each is something an app got wrong at least once: writing only the client loses the standing
+the moment a service touches a model, because `getTable()` re-derives its own scoped copy;
+mutating the session leaks one call's tenant into the next call on a socket, since a WS
+session is resolved once at upgrade and handed to every frame. One hook means there is no
+order left for an app to arrange.
+
+**A resolver may not set `userId` or `id`** — refused by name. A claim says what a caller
+holds for this request, never who they are, and a framework that quietly dropped the key
+would leave an app believing it had switched identity.
+
+**It does not run for an anonymous caller**, on the ground `tenantClaimGuard` already
+states: minting a principal out of claims alone turns *anonymous* into *someone* — an
+object satisfying `auth() != null` while carrying no identity.
+
+**`membershipClaim()` is the battery**, and its whole value is one line: it cannot emit a
+claim it did not verify. Under declared row tenancy the hand-written version that forgets
+the membership check scopes a stranger INTO the tenant and every read answers 200. It is a
+function rather than seed syntax because `@@tenant(via:)` already means *scoped through
+this parent*, and because a declaration would hard-code one model, one subject column and
+one standing column — false for membership through a team or a role that is a join.
+
+**Two things the tests found rather than confirmed.** A caller with no claim is not an
+empty list: `tenantClaimGuard` refuses with a sentence, which is better than the behaviour
+these tests were first written to expect, so a non-member gets a refusal naming the claim
+rather than a silent empty screen. And that guard's advice predated this seam — it said
+*put the column on the session* and nothing else, which is exactly wrong for the shape
+this release adds; it now names both routes and which one fits.
+
+`withTenantDb` takes the resolver too. A standing is orthogonal to which database a tenant
+lives in, and wiring it to one strategy would make `createApp({ tenants, principal })`
+silently do nothing.
+
+
+## 2026-08-21 — the page had two homes and one of them was inert (`FJS-367`, `FJS-370`)
+
+1243 tests, 6 new, 0 fail. Workspace typecheck clean.
+
+Both found reading basecamp's `core/hooks.ts` and `core/resource.ts` to decide where
+they should move, and asking whether anything in them belonged closer to the framework.
+Both are things every app pays for and only a dogfooding app notices.
+
+**`paginate()` was inert in every app that used it.** Measured: `GET
+/things?$limit=5&$offset=10` through a service carrying the hook answered
+`ctx.locals.paginate = {limit:20, offset:0}`. `$` is transport syntax, the bridge moves
+every `$` key onto `ctx.directives`, and the hook read `ctx.query.$limit` — never there
+past the bridge. This exact class was swept once before and the comment recording it sits
+twenty lines from the hook; a grep for `$` reads off `ctx.query` now finds only
+`parseQuery`'s documented pre-directives fallback.
+
+**The fix is that it stops publishing a second copy.** Reading directives instead would
+have fixed the symptom and left the cause: `ctx.locals.paginate` was a parallel home for
+a fact the bridge owns, in a different shape under a different name, and that is what
+drifted. The hook NARROWS `ctx.directives` now, which is also what makes a ceiling reach
+anything — a custom `find` handing directives to Litestone gets it without threading a
+second value. `ctx.locals.paginate` is still written, typed as the same `Page`.
+
+**`clampPage` is the one answer to what a limit means**, in `core/directives.ts`, the
+module that imports nothing. `parseQuery` calls it too: the hook used `parseInt` +
+`Math.min`, so `$limit=abc` reached it as `Math.min(NaN, 100)` where the same request
+through a model service gave the default. A limit of 0 survives — it is how a caller asks
+for the count alone. **A model service was never affected**: `paginate: { default, max }`
+is a service option threaded into `parseQuery` correctly, which is why the hook could
+stay broken.
+
+**`ctx.locals.db` was declared and still unusable.** The defect was filed as *junction
+declares nothing* and that was wrong — the litestone adapter has always augmented
+`ServiceContextLocals`. What a compile actually says is that `asSystem()` types,
+`ctx.auth.user?.userId` types, and **`ctx.locals.db.post.findMany({})` is `unknown`**,
+which is every data call. `[model: string]: unknown` sat beside a fully-written
+`LitestoneTable` the index signature never used, so an app wrote `dbOf(ctx): any` and
+lost the client's safety to reach its own tables.
+
+**Why it could only say `unknown`**: an interface's declared members must satisfy its own
+index signature, and `asSystem(): LitestoneClient` is not a table. Split into
+`LitestoneClientApi` and intersected with `{ [model: string]: LitestoneTable }`, which
+that rule does not reach. `LitestoneTable | unknown` is not the fix and looks like it — a
+union with `unknown` collapses to `unknown`, the trap `FJS-034` hit on
+`ServiceDefinition`. The cost is that any accessor name resolves, traded knowing a
+Litestone client throws on an unknown property and an app wanting compile-time names
+generates its own types. `tests/context-db-types.ts` is compiled rather than run.
+
+
+## 2026-08-20 — the keepalive with no client half (`FJS-366`)
+
+1237 tests, 0 fail. Typecheck clean.
+
+**Every WebSocket in every app was evicted after 30s.** The channels plugin
+reaped any connection that had not sent `{type:'ping'}`, and the client method
+that sends one was called by nothing — not junction, not sierra, not the
+scaffold. A fresh app opened a socket, got `{type:'connected'}`, and was closed
+with `connection evicted` ~35s later, reconnecting ~1s after each. It hid
+because the reconnect worked and the socket carried no event in between: a live
+list just never updated.
+
+**The drive moved to the server.** It pings an idle socket every 15s and evicts
+one silent for 40s. The client answers from its message handler and not from a
+timer, which is what keeps a backgrounded tab connected — browsers throttle
+timers to ~1/min in a hidden tab, slower than any eviction window, while a
+message handler is not throttled. An app calls nothing.
+
+Two smaller things were wrong under it. **Only a ping refreshed liveness**, so a
+client making service calls over that same socket was evicted while plainly
+alive; any frame counts now, malformed ones included, since the parse can refuse
+a frame the sender was alive to send. And **the client's default interval was
+30s against a 30s timeout**, so calling it would have raced the reaper anyway.
+
+`channels(setup, { heartbeatInterval, heartbeatTimeout })` are the knobs.
+`startHeartbeat()` stays, at 15s, for a client whose server predates this.
+`tests/heartbeat.test.ts` runs the loop against real sockets at 100ms/400ms.
+
+
+## 2026-08-19 — a 404 that named `undefined` (`FJS-359`)
+
+`createLitestoneBase` resolves its accessor with `model ?? ctx.service`, and six
+`NotFound` messages interpolated the bare option. `model` is undefined whenever a
+service relies on its filename — the default the autoloader is built around — so
+every miss in a scaffolded app answered `undefined with id=… not found`. One
+`modelLabel(ctx)` reading the same fallback the table resolution already uses.
+
+
 ## 2026-08-19 — the body a signature is computed over, and a test request that waited (`FJS-349`, `FJS-350`)
 
 1232 tests, 0 fail. Typecheck clean.

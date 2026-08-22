@@ -336,7 +336,16 @@ export async function mutationScore({ schema, build, check, kinds = null, onMuta
       // read 93% while four mutations were going completely unnoticed. A
       // mutation score that counts its own harness failures as successes is the
       // oracle problem wearing a percentage.
-      const verdicts = mismatches.filter(m => m.got !== 'error' && m.got !== 'skipped')
+      //
+      // `uncheckable` and `rejected-by-another-rule` are the same shape and were
+      // added later (`FJS-351`): both say *this case could not tell you
+      // anything*. `uncheckable` is generated from the ORIGINAL schema, so it
+      // appears identically under every mutant — the exact shape the 22 error
+      // rows had. No schema in this repo has one of these AND a mutant that
+      // would otherwise survive, so this is the argument rather than a measured
+      // regression; the argument is the same one already written above it.
+      const INCONCLUSIVE = new Set(['error', 'skipped', 'uncheckable', 'rejected-by-another-rule'])
+      const verdicts = mismatches.filter(m => !INCONCLUSIVE.has(m.got))
       outcome = verdicts.length ? 'killed' : 'survived'
       if (outcome === 'killed') killed++
       else survived.push({ ...mutant, noise: mismatches.length })

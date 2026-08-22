@@ -1,10 +1,11 @@
 <script module>
   // The in-app half of a notification, as a UI resource.
   //
-  // A `.mesa` file with no markup — Invariant 18: a Resource is a UI-realm noun,
-  // so it is written in the UI-realm language even when all it does is bind a
-  // name to a service. `<script module>` runs once at import and its named
-  // exports are importable anywhere.
+  // A `.mesa` file — Invariant 18: a Resource is a UI-realm noun, so it is
+  // written in the UI-realm language even when all it does is bind a name to a
+  // service. `<script module>` runs once at import and its named exports are
+  // importable anywhere. No markup here because this model has no form — a
+  // notification is read, never filled in.
   //
   // Nothing here says "only mine". The model does
   // (`@@allow('read', userId == auth().id)`), and the server is what enforces

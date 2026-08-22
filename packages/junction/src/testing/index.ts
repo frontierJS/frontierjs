@@ -25,7 +25,7 @@
 
 import { createApp, type App, type AppOptions } from '../core/app.ts'
 import { createInMemoryDatabase }               from '../storage/database/index.ts'
-import { bridge, runWithMeta, type ServiceContext }           from '../transport/bridge.ts'
+import { bridge, enterRequest, type ServiceContext }          from '../transport/bridge.ts'
 import { defaultConfig, deepMerge }               from '../config/index.ts'
 import type { IAuth, SessionContext }            from '../auth/types.ts'
 import type { Service }                          from '../core/service.ts'
@@ -409,16 +409,21 @@ export function testCtx(
   return ctx
 }
 
-// Run fn inside a request-meta ALS scope, for tests asserting on
-// requestMeta(). Mirrors what the bridge does per real request.
+// Run fn inside a request scope, for tests asserting on requestMeta().
+// Goes through the same enterRequest() every transport does, which is the
+// point: this used to build the meta itself and forward four of its six
+// fields, so `user` and `client` were silently dropped and propagation
+// behaved one way under test and another in production.
 export function withTestMeta<T>(
   meta: Partial<import('../transport/bridge.ts').RequestMeta>,
   fn: () => T
 ): T {
-  return runWithMeta({
-    correlationId: meta.correlationId ?? 'test-correlation',
+  return enterRequest({
+    origin:         meta.origin ?? 'internal',
+    correlationId:  meta.correlationId ?? 'test-correlation',
     idempotencyKey: meta.idempotencyKey,
-    locale:        meta.locale,
-    origin:        meta.origin ?? 'internal',
+    locale:         meta.locale,
+    user:           meta.user,
+    client:         meta.client,
   }, fn)
 }

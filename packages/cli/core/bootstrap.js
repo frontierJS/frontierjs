@@ -8,7 +8,7 @@ import minimist from 'minimist'
 import { chalk } from './color.js'
 import { resolve } from 'path'
 import { homedir } from 'os'
-import { logger, loadEnv } from './utils.js'
+import { logger, loadEnv, fliVersion } from './utils.js'
 import { printPlanFromFile } from './prose.js'
 import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { loadConfig } from './config.js'
@@ -225,6 +225,14 @@ export async function run(process) {
     _: [cmd, ...rawArgs],
     ...flag
   } = argv
+  // `fli --version` before anything else — a stranger asking which build they
+  // have must not be answered with the usage screen, which is what minimist's
+  // empty `_` used to fall through to.
+  if (!cmd && (flag.version || flag.v)) {
+    process.stdout.write((fliVersion() ?? 'unknown') + '\n')
+    return
+  }
+
   // Treat `?` as an alias for `help`
   if (cmd === '?') {
     cmd = 'help'
@@ -242,7 +250,7 @@ export async function run(process) {
     const cyan = (s) => chalk.cyan(s)
     const amber = (s) => chalk.hex('#f5a623')(s)
     line('')
-    line(`  ${amber('fli')}  ${dim('·  frontier cli')}`)
+    line(`  ${amber('fli')}  ${dim('v' + (fliVersion() ?? '?'))}  ${dim('·  frontier cli')}`)
     line('')
     line(`  ${dim('Usage:')}`)
     line(`    ${cyan('fli')} ${green('<command>')} ${dim('[args] [--flags]')}`)
@@ -281,8 +289,13 @@ export async function run(process) {
     line('')
     line(`  ${dim('Examples:')}`)
     line(`    ${dim('fli git:commit')}`)
-    line(`    ${dim('fli github')}                  ${dim('→ shows github namespace')}`)
-    line(`    ${dim('fli ? deploy')}                ${dim('→ search for deploy commands')}`)
+    // `#` rather than an arrow: every line here is one somebody pastes whole,
+    // and a paste-safe example is one the shell reads as a command plus a
+    // comment. A `→` on a line that looks like a command is three junk argv
+    // entries — the same shape that sent a reader's `npm i -g @frontierjs/cli
+    // → fli` to the registry looking for a package called `→`.
+    line(`    ${dim('fli github')}                  ${dim('# shows github namespace')}`)
+    line(`    ${dim('fli ? deploy')}                ${dim('# search for deploy commands')}`)
     line(`    ${dim('fli git:push --help')}`)
     line('')
     return
@@ -349,7 +362,7 @@ export async function run(process) {
     // Header
     line()
     process.stdout.write(
-      `  ${bold('FLI')}  ${dim('v0.1.0')}  ${dim('·')}  ${dim(
+      `  ${bold('FLI')}  ${dim('v' + (fliVersion() ?? '?'))}  ${dim('·')}  ${dim(
         commands.length + ' commands'
       )}\n`
     )

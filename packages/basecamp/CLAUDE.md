@@ -48,13 +48,16 @@ it (`strictPort` + `scripts/preflight.mjs`).
 ```
 db/       schema.lite (38 models, 21 enums) · generate.js · migrations/ · seed.js ·
           litestone.config.js · test/ · README.md (the depth doc)
-api/src/  index.ts · services/ (22) · engine/ (3, on accessors) · core/ · infra/
+api/src/  index.ts · services/ (22) · jobs/ (4 *.job.ts) · providers/ · core/ · infra/
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
           core/session-auth.ts projects this app's OWN User columns onto the
           session and owns both doors suspension is refused at
-          engine/fleet.engine.ts is both ways this app acts on a MACHINE —
-          `recipe:run` and `cleanup:run`, one shape, opposite safeguards
+          jobs/ is what runs unattended — a file per job, autoloaded by
+          caravan (`jobsDir`), and the default export is the dispatch handle
+          jobs/{recipe,cleanup}-run are both ways this app acts on a MACHINE —
+          one shape, opposite safeguards; jobs/outpost-run.ts is their half
+          providers/ is who the app SPEAKS to — executor.ts and outpost.ts
           services/hub/ is the ONLY service that takes no workspace
           services/invitations/ holds the only two UNAUTHENTICATED methods —
           `preview` and `accept`; the token is the credential and the service
@@ -81,15 +84,14 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   1). The level comes from the `WorkspaceMember` row for the workspace the
   request is FOR, which is why `sessionGateLevel()` is not used here — it grades
   standing that travels with the user and would answer the same in every
-  workspace. `applyStanding()` (`core/hooks.ts`) resolves it once per request,
-  puts `memberRole` on **a fresh copy of the principal** and re-scopes
-  `ctx.locals.db` from it. Three traps in that one sentence: it must be the
-  principal, because junction's `getTable()` re-derives its own scoped client
-  from `ctx.auth.user`; it must be a copy, because the WS session object is
-  shared across every frame on the socket and frozen; and it must re-resolve
-  when the workspace changes mid-request, which the workspaces service does
-  (it addresses `ctx.id`, not the header). The role hooks stay — a gate refuses
-  with a level, a person needs the sentence.
+  workspace. **The resolution is the framework's**: `createApp({ principal:
+  membershipClaim(…) })` in `core/app.ts` reads the `WorkspaceMember` row once
+  per request and puts `workspaceId` and `memberRole` on a fresh principal
+  before the Data boundary scopes the client from it (`FJS-D113`). Two things
+  stay this app's: `restandingFor()`, for the workspaces service, which
+  addresses `ctx.id` rather than the header and would otherwise carry an admin's
+  standing into any other workspace they can name; and the role hooks, because a
+  gate refuses with a level and a person needs the sentence.
 - **Ten models declare `@version`, and a service-side write of a row must carry
   the version it read.** The rule for which ten is in `db/schema.lite`'s header:
   a row a PERSON edits, never one a machine also writes on its own schedule —
@@ -122,17 +124,21 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   casts once, and nothing downstream casts at all. `bun run test` fails if the
   file is not what the schema generates right now, which is the half that makes a
   committed generated file safe. **A hand-written row interface is the thing this
-  replaces**: `job.engine.ts` carried `JobRow` in snake_case with `service_id` on
+  replaces**: `job-run.job.ts` carried `JobRow` in snake_case with `service_id` on
   it — three renames stale, describing no row that has ever existed, while the
   code around it read the right camelCase names.
-- **16 models keep their tenancy in the schema** —
-  `@@allow('all', workspaceId == auth().workspaceId)`, graded off the same
-  principal. Every model carrying a `workspaceId` except two: `WorkspaceMember`
-  (what standing is READ from, before there is a workspace on the principal to
-  compare against) and `AuditEvent` (nullable workspace — a hub action belongs to
-  none, and a null comparison would hide the rows the trail exists for). The
-  other 20 carry no `workspaceId` of their own — a `DeploymentStep`, a `JobRun`,
-  a `Volume` — so the next move there is `check(parent)`, not a restated column.
+- **Tenancy is DECLARED, and it is one block at the top of the schema** —
+  `tenancy { strategy row  column workspaceId  claim workspaceId }`, which
+  desugars into a `@@deny` per model plus a `@default(auth().workspaceId)` stamp.
+  Eight models say `@@tenant(none)` by name: the five auth models, `Workspace`
+  itself, `WorkspaceMember` (what standing is READ from, before there is a
+  workspace on the principal to compare against) and `AuditEvent` (nullable
+  workspace — a hub action belongs to none, and a null comparison would hide the
+  rows the trail exists for). The other fourteen say `@@tenant(via: parent)`:
+  a `DeploymentStep`, a `JobRun`, a `Volume` carry no `workspaceId` of their
+  own, and before the declaration they carried no rule either — **17 models with
+  row policies became 31**. Nothing in a service restates the column: `deriveSlug`
+  does not stamp it and `findScoped`/`getScoped` do not filter on it.
   `Deployment`/`Job`/`Domain`
   brought a shape the hierarchy did not have — a read filtered on `appId` alone
   (an app's recent releases, a hostname's siblings), safe before only because the
@@ -229,7 +235,7 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   rather than a refusal from the API, so it reads as a missing route. Add the
   path when you add the service.
 - **A resource over a workspace-scoped model needs `stampWorkspace` in its own
-  before/create, even though the service stamps `workspaceId` anyway.**
+  before/create, even though the column is stamped at the Data boundary.**
   Browser-side validation runs FIRST, and `workspaceId` is required on every
   create schema here — so a resource without the hook refuses every save in the
   form with *workspace is required*, naming a field no form shows. `Recipe.mesa`
@@ -244,7 +250,7 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
 - **The audit trail must cover custom methods.** It recorded `create`/`patch`/
   `remove` only, so drain, deploy, cancel and trigger were in no trail at all. It
   now runs on `all` minus reads, with `servers.heartbeat` excluded by name.
-- **A scheduled Job's clock is Caravan's, and `engine/job-schedule.ts` is the one
+- **A scheduled Job's clock is Caravan's, and `services/jobs/job-schedule.ts` is the one
   place a row is bound to it.** `app.scheduler` is junction's in-process timer —
   no persistence, no retry, no principal — and this app used it to fire
   `app.jobs.dispatch(…)`, which is a clock with none of the queue's durability
@@ -255,13 +261,15 @@ docs/     SCREENS.md — the mock inventory, 31 of 41 screens built, the rest
   without touching the clock, so **an edit was accepted and the old schedule
   kept firing** (`FJS-328`). `syncSchedule(app, row)` is the whole rule and it
   reads the UPDATED row, because `kind` and `status` change a schedule as surely
-  as the expression does; `restoreSchedules()` rebuilds the clock at boot.
+  as the expression does; `restoreSchedules(app)` rebuilds the clock at boot, called from `core/app.ts` — a
+  job file declares its own handler and cannot declare a schedule that came from
+  a row.
 - **A deploy resolves an EXECUTOR before it does anything, and there are three
-  answers.** `api/src/engine/executor.ts` is the one owner: a registered outpost,
+  answers.** `api/src/providers/executor.ts` is the one owner: a registered outpost,
   the named stub (`BASECAMP_STUB_OUTPOST=1`, refused under `NODE_ENV=production`,
   and it writes *no /deploy was issued* into every step it touches), or a refusal.
   It is asked twice — `deployments.create` refuses where the person can see it,
-  the engine asks again when the job runs, because a placement can be removed
+  the job asks again when it runs, because a placement can be removed
   between the two. Never add a fourth branch that returns early and lets the
   caller mark the step `success`: that was the whole of `FJS-257`, a release
   finishing green in 23ms having issued no command.

@@ -35,7 +35,7 @@ title: Deployment
   load()
   $: page.params.id, () => load()
 
-  // The engine pushes on every step transition. This is the screen the channel
+  // The job pushes on every step transition. This is the screen the channel
   // exists for: a release advances over ~10 seconds and a person watching it
   // should not have to reload to find out it finished.
   const off = deployments.service.on('patched', (row) => {

@@ -90,7 +90,7 @@ export function basecampGateLevel(user?: BasecampPrincipal | null): number {
 
   // Suspension is refused at two doors already (login, and an app-level before
   // hook for a token issued earlier). This is the third, and it is the only one
-  // an engine calling a service in-process passes through — a hook refuses a
+  // a job calling a service in-process passes through — a hook refuses a
   // REQUEST, and the Data boundary does not take a caller's word for anything.
   if (user.status === 'suspended') return LEVELS.STRANGER
 

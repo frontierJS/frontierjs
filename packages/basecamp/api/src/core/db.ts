@@ -2,7 +2,7 @@
 // The Data boundary. One Litestone client for the whole app.
 //
 // Everything that touches Basecamp's data goes through here — services via
-// `ctx.locals.db` (scoped to the caller by createApp({ db })), engines and
+// `ctx.locals.db` (scoped to the caller by createApp({ db })), jobs and
 // bootstrap code via `asSystem()`. There is no second path: raw SQL against
 // this database is how the previous version drifted out of sync with the
 // schema, and the columns it assumed no longer exist.

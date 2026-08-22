@@ -39,11 +39,13 @@ const servicePlural = (model) => {
 }
 
 const makeResource = (model, service) => `<script module>
-// src/resources/${service}.mesa — the Resource layer.
+// src/resources/${model}.mesa — the Resource layer.
 //
 // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
-// There is no markup: everything lives in <script module>, which runs once at
-// import and whose named exports any other module can import.
+// The data half lives in <script module>, which runs once at import and whose
+// named exports any other module can import. Markup below it is the model's
+// default form — optional, and the reason a create page can be <Model /> and
+// nothing else.
 //
 // Read this next to db/schema.lite. Nothing here restates anything there: no
 // field list, no types, no enum values, no required list, no relations. A
@@ -77,9 +79,11 @@ export const ${service} = createResource('${service}', {
 `
 </script>
 
-Creates the Resource for one model — a `.mesa` file with no markup, its code in `<script module>`. It is the
-UI's half of the API boundary: forms are built **from** a Resource and are not
-one. `fli make:route` builds the pages that consume it.
+Creates the Resource for one model — a `.mesa` file whose data half is `<script module>`. It is the
+UI's half of the API boundary. A form is built **from** a Resource, and the
+default one belongs in the same file: markup here is what a create or edit page
+renders (invariant 18, `FJS-D112`). `fli make:route` builds the pages that
+consume it.
 
 The file names a service and a model and nothing else. `resource.fields`,
 `.relations` and `.gate` are read off the registered schema at runtime, so a
@@ -93,7 +97,12 @@ if (!/^[A-Z]/.test(model)) {
   log.warn(`Model names are PascalCase and singular — got '${model}'. Continuing anyway.`)
 }
 
-const filePath = resolve(context.paths.webResources, service + '.mesa')
+// The file is named for the MODEL and the export is named for the SERVICE
+// (repo invariant 19) — the same split the Data realm makes between
+// `model Order` and `db.order`. Naming the file for the service put every
+// irregular plural in a place nothing reads, and `fli check`'s own
+// `resource-file-name` rule refused what this command had just written.
+const filePath = resolve(context.paths.webResources, model + '.mesa')
 
 if (flag.dry) {
   log.dry(`Would create: ${filePath}`)
@@ -111,7 +120,7 @@ log.success(`Created ${filePath}`)
 
 echo('')
 echo(`  Import it from a route with a relative path — Sierra has no @/ alias:`)
-echo(`    import { ${service} } from '../../resources/${service}.mesa'`)
+echo(`    import { ${service} } from '../../resources/${model}.mesa'`)
 echo('')
 echo(`  It calls the '${service}' service, so api/src/services/${service}.service.ts must register it.`)
 echo('')

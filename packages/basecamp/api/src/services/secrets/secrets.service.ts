@@ -18,9 +18,9 @@
 // Verified in the Data realm rebuild by planting an SSH key through the real
 // client: 0 occurrences in `strings bc.db`, 0 in the audit log.
 
-import { createService, BadRequest } from '@frontierjs/junction'
+import { createService, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
+import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -29,14 +29,13 @@ const KINDS = ['ssh_key', 'provider_key', 'registry_auth', 'tls_cert', 'generic'
 
 export function createSecretsService(app: BasecampApp) {
 
-  /** Secret has no `slug` column, so the shared stampWorkspace — which derives
+  /** Secret has no `slug` column, so the shared deriveSlug — which derives
    *  one from `name` — would add a key autoValidate then strips. Stamping what
    *  this model actually has says so out loud instead of relying on that. */
-  function stampSecret(ctx: ServiceContext): void {
-    const data = ctx.data as Record<string, unknown>
+  function stampSecret(): void {
+    const data = $.data as Record<string, unknown>
     if (!data) return
-    data.workspaceId = wsOf(ctx)
-    data.createdBy   = actorOf(ctx)
+    data.createdBy   = actor()
   }
 
   return createService({
@@ -50,36 +49,36 @@ export function createSecretsService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
-      const kind = ctx.query.kind as string | undefined
-      return findScoped(ctx, 'secret', {
+      const { limit, offset } = getPagination()
+      const kind = $.query.kind as string | undefined
+      return findScoped('secret', {
         where:   { ...(kind ? { kind } : {}) },
         orderBy: { name: 'asc' },
         limit, offset,
       })
     },
 
-    async get(ctx: ServiceContext) {
-      return getScoped(ctx, 'secret', 'Secret')
+    async get() {
+      return getScoped('secret', 'Secret')
     },
 
-    async create(ctx: ServiceContext) {
-      const data = ctx.data as Record<string, unknown>
+    async create() {
+      const data = $.data as Record<string, unknown>
       if (data.kind && !KINDS.includes(data.kind as string))
         throw new BadRequest(`kind must be one of ${KINDS.join(', ')}`)
       if (!data.data) throw new BadRequest('data is required — a secret with no value is a name')
 
       // The unique is [workspaceId, name], and a raw constraint violation
       // reaches an HTTP caller as a SQLite message rather than a sentence.
-      if (await dbOf(ctx).secret.exists({ where: { workspaceId: wsOf(ctx), name: data.name } }))
+      if (await db().secret.exists({ where: { workspaceId: ws(), name: data.name } }))
         throw new BadRequest(`A secret named '${data.name}' already exists in this workspace`)
 
-      return dbOf(ctx).secret.create({ data })
+      return db().secret.create({ data })
     },
 
-    async patch(ctx: ServiceContext) {
-      await getScoped(ctx, 'secret', 'Secret')
-      const data = ctx.data as Record<string, unknown>
+    async patch() {
+      await getScoped('secret', 'Secret')
+      const data = $.data as Record<string, unknown>
 
       if (data.kind && !KINDS.includes(data.kind as string))
         throw new BadRequest(`kind must be one of ${KINDS.join(', ')}`)
@@ -92,12 +91,12 @@ export function createSecretsService(app: BasecampApp) {
       // A rotated secret is unverified again until something proves otherwise.
       if ('data' in patch) patch.isVerified = false
 
-      if (changesNothing(patch)) return getScoped(ctx, 'secret', 'Secret')
-      return dbOf(ctx).secret.update({ where: { id: ctx.id as string }, data: patch })
+      if (changesNothing(patch)) return getScoped('secret', 'Secret')
+      return db().secret.update({ where: { id: $.id as string }, data: patch })
     },
 
-    async remove(ctx: ServiceContext) {
-      return removeScoped(ctx, 'secret', 'Secret')
+    async remove() {
+      return removeScoped('secret', 'Secret')
     },
 
     // ── verify ────────────────────────────────────────────────────────
@@ -106,9 +105,9 @@ export function createSecretsService(app: BasecampApp) {
     // adapter this app does not have yet. Stated rather than faked — a verify
     // that always says yes is worse than no verify, because the flag is then
     // read as evidence.
-    async verify(ctx: ServiceContext) {
-      const secret = await getScoped(ctx, 'secret', 'Secret')
-      return dbOf(ctx).secret.update({
+    async verify() {
+      const secret = await getScoped('secret', 'Secret')
+      return db().secret.update({
         where: { id: secret.id },
         data:  { isVerified: true, version: secret.version },
       })

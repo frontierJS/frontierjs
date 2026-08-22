@@ -1,5 +1,26 @@
 # Changes — @frontierjs/auth
 
+## 2026-08-19 — the harness leaked every database it made (`FJS-362`)
+
+137 tests, 0 fail.
+
+`removeAtExit` registered a `process.on('exit')` handler. **That handler does not
+run under `bun test`** — probed with a one-test file whose hook printed nothing
+and whose directory survived. So the suite leaked 23 directories per run from
+2026-08-02: 2,093 of them, 748MB in `/tmp`, and nobody looked.
+
+It cannot be an `afterAll` either, and the comment saying so is right: `@@log(audit)`
+flushes through the jsonl driver after the awaited call returns, so tearing the
+directory down there raced it into `SQLITE_READONLY_DBMOVED` between tests.
+
+So each run reaps the PREVIOUS runs' instead — the one moment the owning process
+has provably exited, whatever way it exited — past a one-hour floor, which is
+what keeps a concurrent run of this same suite safe. One run took `/tmp` from
+748MB to 19MB with every test still green.
+
+The same shape is in `notifications` and in every browser drive, where the
+directory is a Chrome profile and the numbers are larger; that is `FJS-361`.
+
 ## 2026-08-16 — the route layer is typed, and it found a hole the same hour (FJS-063, FJS-296)
 
 137 tests. Typecheck baseline unchanged at 4 — all of it still the two nullable

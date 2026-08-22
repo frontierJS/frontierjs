@@ -1,3 +1,4 @@
+import { $ } from '@frontierjs/junction'
 // src/services/workspaces/workspaces.service.ts
 // Workspaces — the multi-tenancy boundary. Every other resource belongs to one.
 //
@@ -11,8 +12,8 @@
 
 import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized, authenticate }
   from '@frontierjs/junction'
-import { requireWorkspaceRole, applyStanding, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { dbOf, actorOf, slugify, narrowPatch, changesNothing } from '../../core/resource.ts'
+import { requireWorkspaceRole, restandingFor, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { db, actor, slugify, narrowPatch, changesNothing } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
@@ -28,27 +29,27 @@ export function createWorkspacesService(app: BasecampApp) {
   /**
    * Point the role hooks at the workspace being addressed.
    *
-   * requireWorkspaceRole reads ctx.locals.workspaceId, which sessionScope's
+   * requireWorkspaceRole reads $.locals.workspaceId, which sessionScope's
    * requireWorkspace() normally stamps from the X-Workspace-Id header. This
-   * service has no such header — the workspace is ctx.id. Without this the
+   * service has no such header — the workspace is $.id. Without this the
    * hook found no workspaceId, hit its `if (!userId || !workspaceId) return`
    * guard and **enforced nothing**: any authenticated user could rename or
    * delete any workspace, or promote themselves inside it.
    */
-  async function stampSelfAsWorkspace(ctx: ServiceContext): Promise<void> {
-    if (!ctx.id) return
-    ctx.locals.workspaceId = String(ctx.id)
+  async function stampSelfAsWorkspace(): Promise<void> {
+    if (!$.id) return
+    $.locals.workspaceId = String($.id)
     // Re-resolve the standing against THIS workspace. The around hook already
     // resolved one from X-Workspace-Id — the workspace the UI is currently
     // showing — and that is a different workspace from the one being addressed
     // whenever a person renames or leaves one from a list. Without this an
     // admin of the workspace they are LOOKING AT would carry ADMINISTRATOR(5)
     // into a patch of any other workspace they can name.
-    await applyStanding(app, ctx, String(ctx.id))
+    await restandingFor(app, $, String($.id))
   }
 
   /**
-   * Put the session-derived columns on ctx.data BEFORE validation sees it.
+   * Put the session-derived columns on $.data BEFORE validation sees it.
    *
    * `accountId` and `ownerId` are required and NOT the caller's to send —
    * create() takes both from the session, which is the whole point: a client
@@ -59,14 +60,14 @@ export function createWorkspacesService(app: BasecampApp) {
    *
    * Order is what makes this work: user hooks run BEFORE the derived
    * gateAuth/autoValidate pair (junction core/service.ts ~688), so a
-   * before/create hook is the documented place to shape ctx.data. Found by the
+   * before/create hook is the documented place to shape $.data. Found by the
    * UI — POST /workspaces was unreachable over HTTP entirely.
    */
-  function stampOwnership(ctx: ServiceContext): void {
-    const user = sessionOf(ctx)
+  function stampOwnership(): void {
+    const user = sessionOf()
     if (!user.accountId) throw new Unauthorized('Session carries no account')
 
-    const data = (ctx.data ?? {}) as Record<string, unknown>
+    const data = ($.data ?? {}) as Record<string, unknown>
     // Assigned, not defaulted: whatever a client sent for these is discarded.
     data.accountId = user.accountId
     data.ownerId   = user.userId
@@ -76,11 +77,11 @@ export function createWorkspacesService(app: BasecampApp) {
     // in create() 400s with `slug is required` on every caller that did not
     // send one. The browser sends one, which is why nothing caught it.
     data.slug ??= slugify(String(data.name ?? ''))
-    ctx.data = data
+    $.data = data
   }
 
-  function sessionOf(ctx: ServiceContext) {
-    const user = ctx.auth?.user as { userId?: string; accountId?: string } | undefined
+  function sessionOf() {
+    const user = $.auth?.user as { userId?: string; accountId?: string } | undefined
     if (!user?.userId) throw new Unauthorized('Not authenticated')
     return user
   }
@@ -103,7 +104,7 @@ export function createWorkspacesService(app: BasecampApp) {
   }
 
   /** Membership decides access, so it is read as system, not through the caller. */
-  function members(ctx: ServiceContext) {
+  function members() {
     return app.data.asSystem().workspaceMember
   }
 
@@ -116,15 +117,15 @@ export function createWorkspacesService(app: BasecampApp) {
     // JOIN; `memberships: { some: { userId } }` is the relation the schema
     // already declares.
     async find(ctx: ServiceContext) {
-      const user = ctx.auth?.user as { userId?: string } | undefined
+      const user = $.auth?.user as { userId?: string } | undefined
       if (!user?.userId) return { total: 0, limit: 20, offset: 0, data: [] }
 
-      const { limit, offset } = getPagination(ctx)
-      const mine = await members(ctx).findMany({ where: { userId: user.userId } })
+      const { limit, offset } = getPagination()
+      const mine = await members().findMany({ where: { userId: user.userId } })
       const ids  = mine.map((m: any) => m.workspaceId)
       if (!ids.length) return { total: 0, limit, offset, data: [] }
 
-      const { rows, total } = await dbOf(ctx).workspace.findManyAndCount({
+      const { rows, total } = await db().workspace.findManyAndCount({
         where:   { id: { in: ids } },
         orderBy: { createdAt: 'desc' },
         limit, offset,
@@ -135,24 +136,24 @@ export function createWorkspacesService(app: BasecampApp) {
     // Non-membership is reported as 404, not 403 — a workspace you cannot see
     // should not be confirmable by id.
     async get(ctx: ServiceContext) {
-      const user = sessionOf(ctx)
-      const ws   = await dbOf(ctx).workspace.findUnique({ where: { id: ctx.id as string } })
-      if (!ws) throw new NotFound(`Workspace '${ctx.id}' not found`)
+      const user = sessionOf()
+      const ws   = await db().workspace.findUnique({ where: { id: $.id as string } })
+      if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
-      const member = await members(ctx).findFirst({ where: { workspaceId: ctx.id as string, userId: user.userId } })
-      if (!member) throw new NotFound(`Workspace '${ctx.id}' not found`)
+      const member = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.userId } })
+      if (!member) throw new NotFound(`Workspace '${$.id}' not found`)
 
       return ws
     },
 
     async create(ctx: ServiceContext) {
-      const user = sessionOf(ctx)
+      const user = sessionOf()
       if (!user.accountId) throw new Unauthorized('Session carries no account')
 
-      const data = ctx.data as Record<string, unknown>
+      const data = $.data as Record<string, unknown>
       data.slug ??= slugify(String(data.name ?? ''))
 
-      if (await dbOf(ctx).workspace.exists({ where: { slug: data.slug } }))
+      if (await db().workspace.exists({ where: { slug: data.slug } }))
         throw new Conflict(`Slug '${data.slug}' is already taken`)
 
       // One transaction: a workspace whose creator is not a member of it is
@@ -171,13 +172,13 @@ export function createWorkspacesService(app: BasecampApp) {
       return ws
     },
 
-    async patch(ctx: ServiceContext) {
-      const ws   = await dbOf(ctx).workspace.findUnique({ where: { id: ctx.id as string } })
-      if (!ws) throw new NotFound(`Workspace '${ctx.id}' not found`)
+    async patch() {
+      const ws   = await db().workspace.findUnique({ where: { id: $.id as string } })
+      if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
-      const data = ctx.data as Record<string, unknown>
+      const data = $.data as Record<string, unknown>
       if (data.slug && data.slug !== ws.slug &&
-          await dbOf(ctx).workspace.exists({ where: { slug: data.slug } }))
+          await db().workspace.exists({ where: { slug: data.slug } }))
         throw new Conflict(`Slug '${data.slug}' is already taken`)
 
       // accountId and ownerId are not a client's to change: one moves the
@@ -185,17 +186,17 @@ export function createWorkspacesService(app: BasecampApp) {
       // belongs on a general PATCH.
       const patch = narrowPatch(data, ['accountId', 'ownerId'])
       if (changesNothing(patch)) return ws
-      return dbOf(ctx).workspace.update({ where: { id: ctx.id as string }, data: patch })
+      return db().workspace.update({ where: { id: $.id as string }, data: patch })
     },
 
     async remove(ctx: ServiceContext) {
-      const ws = await dbOf(ctx).workspace.findUnique({ where: { id: ctx.id as string } })
-      if (!ws) throw new NotFound(`Workspace '${ctx.id}' not found`)
+      const ws = await db().workspace.findUnique({ where: { id: $.id as string } })
+      if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
       // @@softDelete(cascade) — projects, servers, secrets and jobs are stamped
       // with it rather than left live under a deleted parent.
-      const removed = await dbOf(ctx).workspace.remove({ where: { id: ctx.id as string } })
-      app.events.emit('workspace:deleted', { id: ctx.id })
+      const removed = await db().workspace.remove({ where: { id: $.id as string } })
+      app.events.emit('workspace:deleted', { id: $.id })
       return Array.isArray(removed) ? removed[0] : removed
     },
 
@@ -203,8 +204,8 @@ export function createWorkspacesService(app: BasecampApp) {
     // asSystem: User is auth's model. Even with gates absent today, member
     // listing is a membership question and reads as one.
     async members(ctx: ServiceContext) {
-      const rows = await members(ctx).findMany({
-        where:   { workspaceId: ctx.id as string },
+      const rows = await members().findMany({
+        where:   { workspaceId: $.id as string },
         include: { user: true },
         orderBy: { createdAt: 'asc' },
       })
@@ -212,52 +213,52 @@ export function createWorkspacesService(app: BasecampApp) {
     },
 
     async addMember(ctx: ServiceContext) {
-      const { userId, user_id, role } = (ctx.data ?? {}) as Record<string, string>
+      const { userId, user_id, role } = ($.data ?? {}) as Record<string, string>
       const target = userId ?? user_id
       if (!target) throw new BadRequest('userId is required')
 
-      const wsId = ctx.id as string
-      if (await members(ctx).exists({ where: { workspaceId: wsId, userId: target } }))
+      const wsId = $.id as string
+      if (await members().exists({ where: { workspaceId: wsId, userId: target } }))
         throw new Conflict('User is already a member of this workspace')
 
-      return members(ctx).create({
+      return members().create({
         data: { workspaceId: wsId, userId: target, role: toRole(role ?? 'developer'),
-                invitedBy: actorOf(ctx), invitedAt: new Date().toISOString() },
+                invitedBy: actor(), invitedAt: new Date().toISOString() },
       })
     },
 
     async setMemberRole(ctx: ServiceContext) {
-      const { userId, user_id, role } = (ctx.data ?? {}) as Record<string, string>
+      const { userId, user_id, role } = ($.data ?? {}) as Record<string, string>
       const target = userId ?? user_id
       if (!target) throw new BadRequest('userId is required')
       if (!role)   throw new BadRequest('role is required')
 
-      const wsId   = ctx.id as string
-      const member = await members(ctx).findFirst({ where: { workspaceId: wsId, userId: target } })
+      const wsId   = $.id as string
+      const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
       if (!member) throw new NotFound('Member not found')
 
       // Demoting the last owner would leave the workspace unadministrable.
       if (member.role === 'owner' && role !== 'owner') {
-        const owners = await members(ctx).count({ where: { workspaceId: wsId, role: 'owner' } })
+        const owners = await members().count({ where: { workspaceId: wsId, role: 'owner' } })
         if (owners <= 1) throw new Forbidden('Cannot demote the last owner of a workspace')
       }
 
-      return members(ctx).update({ where: { id: member.id }, data: { role: toRole(role) } })
+      return members().update({ where: { id: member.id }, data: { role: toRole(role) } })
     },
 
     async removeMember(ctx: ServiceContext) {
-      const target = (ctx.query.userId ?? ctx.query.user_id ??
-                      (ctx.data as Record<string, string> | null)?.userId) as string | undefined
+      const target = ($.query.userId ?? $.query.user_id ??
+                      ($.data as Record<string, string> | null)?.userId) as string | undefined
       if (!target) throw new BadRequest('userId is required')
 
-      const wsId   = ctx.id as string
-      const member = await members(ctx).findFirst({ where: { workspaceId: wsId, userId: target } })
+      const wsId   = $.id as string
+      const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
       if (!member) throw new NotFound('Member not found')
       if (member.role === 'owner') throw new Forbidden('Cannot remove the workspace owner')
 
       // Hard delete: WorkspaceMember has no @@softDelete — a revoked membership
       // should stop matching, not linger as a tombstone the role hooks read.
-      await members(ctx).delete({ where: { id: member.id } })
+      await members().delete({ where: { id: member.id } })
       return { workspace_id: wsId, user_id: target, removed: true }
     },
 

@@ -1,5 +1,4 @@
-import { createBaseService } from '@frontierjs/junction'
-import type { ServiceContext } from '@frontierjs/junction'
+import { createBaseService, $ } from '@frontierjs/junction'
 
 // The job DEFINITIONS, not their names. `dispatch(bookCourier, …)` states the
 // name nowhere, so it cannot drift from the file that answers to it, and the
@@ -35,22 +34,24 @@ import bookCourier     from '../jobs/book-courier.job.ts'
 // `X-Service-Method: {name}` header. The browser calls them through
 // `resource.service.invoke(name, id)`. Nothing here registers a route.
 //
-// A custom method's ctx is a SERVICE context: `ctx.id` is the row and
-// `ctx.locals.db` the per-request Litestone client that withLitestoneDb scoped
-// to the caller — so the gate sees the real user, not a system bypass.
+// A custom method runs inside a SERVICE CALL, and `$` is that call: `$.id` is
+// the row, `$.db` the per-request Litestone client that withLitestoneDb scoped
+// to the caller — so the gate sees the real user, not a system bypass. `$` is
+// read-only and dies with the call, and it throws by name if a function that
+// reads it is ever called from outside one.
 
-type ScopedDb = { order: { transition(id: unknown, name: string): Promise<unknown> } }
+/** The one verb this service needs that junction's minimal client type does
+ *  not declare — `transition` is Litestone's, off `@@transitions`. */
+type Orders = { order: { transition(id: unknown, name: string): Promise<unknown> } }
+const orders = () => $.db as unknown as Orders
 
 /** One move. Litestone owns every rule about it; this only names it. */
-const move = (name: string) => async (ctx: ServiceContext) => {
-  const db = (ctx.locals as { db?: ScopedDb } | undefined)?.db
-  if (!db) throw new Error('no scoped db on ctx.locals — is withLitestoneDb installed?')
+const move = (name: string) => async () =>
   // Which states this is legal from, what it moves to, and what level it needs
   // are all in db/schema.lite. An illegal move throws TransitionViolationError
   // (409), a lost race TransitionConflictError (409), too low a level
   // TransitionGateError (403) — each carries its own status.
-  return db.order.transition((ctx as ServiceContext & { id?: unknown }).id, name)
-}
+  orders().order.transition($.id, name)
 
 /**
  * `pay` is the move plus telling two audiences about it — durably.
@@ -66,7 +67,7 @@ const move = (name: string) => async (ctx: ServiceContext) => {
  * A dispatch here is a second thing that happens after the move commits, and
  * nothing joins the two: the process dying in between leaves an order that is
  * paid and a customer who is never told, with no row anywhere saying the
- * announcement was owed. `ctx.enqueue` writes that row INSIDE this method's
+ * announcement was owed. `$.enqueue` writes that row INSIDE this method's
  * transaction — see `transactional:` below — so it commits with the move or
  * rolls back with it, and the relay hands it to the queue afterwards.
  *
@@ -76,10 +77,10 @@ const move = (name: string) => async (ctx: ServiceContext) => {
  * this line to write a second row. What `unique` could never cover is the case
  * above, because a key on a job that was never queued guards nothing.
  */
-const pay = async (ctx: ServiceContext) => {
-  const order = await move('pay')(ctx) as { id: number }
+const pay = async () => {
+  const order = await move('pay')() as { id: number }
 
-  await ctx.enqueue(announcePayment, { orderId: order.id })
+  await $.enqueue(announcePayment, { orderId: order.id })
 
   return order
 }
@@ -97,8 +98,8 @@ const pay = async (ctx: ServiceContext) => {
  * refused move (409, 403) still books a courier for an order that never
  * shipped — and a job cannot be un-dispatched.
  */
-const ship = async (ctx: ServiceContext) => {
-  const order = await move('ship')(ctx) as
+const ship = async () => {
+  const order = await move('ship')() as
     { id: number; reference: string; trackingCode: string | null }
 
   // Shipping a SHIPPED order is a no-op at the Data boundary — the row is
@@ -114,7 +115,7 @@ const ship = async (ctx: ServiceContext) => {
   if (order.trackingCode) return order
 
   // `app.jobs` is Caravan's claim on the app, made through app.claim().
-  await ctx.app?.jobs?.dispatch(bookCourier,
+  await $.app?.jobs?.dispatch(bookCourier,
     { orderId: order.id, reference: order.reference },
     { unique: `book-courier:${order.id}` })
 
@@ -139,13 +140,10 @@ const ship = async (ctx: ServiceContext) => {
  * the courier said" is a thing the shop does, and a service that says so reads
  * better than a payload that happens to carry one column.
  */
-const recordTracking = async (ctx: ServiceContext) => {
-  const db = (ctx.locals as { db?: { order: { update(a: unknown): Promise<unknown> } } } | undefined)?.db
-  if (!db) throw new Error('no scoped db on ctx.locals — is withLitestoneDb installed?')
-
-  const { id, data } = ctx as ServiceContext & { id?: unknown; data?: { trackingCode?: string } }
-  return db.order.update({
-    where:  { id: Number(id) },
+const recordTracking = async () => {
+  const data = $.data as { trackingCode?: string } | null
+  return $.db.order.update({
+    where:  { id: Number($.id) },
     data:   { trackingCode: data?.trackingCode },
     system: ['trackingCode'],
   })
@@ -156,7 +154,7 @@ export function createOrdersService() {
     channel: 'orders',
 
     // `pay` alone. It is the one move that records a durable effect, and
-    // ctx.enqueue refuses outside a transaction — an outbox row is only worth
+    // $.enqueue refuses outside a transaction — an outbox row is only worth
     // writing if it rolls back with the write it belongs to.
     transactional: ['pay'],
 

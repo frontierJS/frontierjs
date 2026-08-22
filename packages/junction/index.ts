@@ -60,6 +60,8 @@ export { bridge, jsonResponse, errorResponse, redirectResponse } from './src/tra
 export type { ServiceContext, ServiceMethod, AnyMethod, ServiceContextLocals, CallOptions, RequestMeta } from './src/transport/bridge.ts'
 export type { QueryDirectives } from './src/core/context.ts'
 export { requestMeta } from './src/transport/bridge.ts'
+export { $, currentCall } from './src/core/context.ts'
+export type { CallContext } from './src/core/context.ts'
 
 // ─── Transport ────────────────────────────────────────────────────────────
 export { HttpTransport }                                          from './src/transport/http.ts'
@@ -123,8 +125,10 @@ export type { Schema, FieldDef, SchemaOptions, CompiledSchema, ValidationResult,
 export { createLitestoneBase, parseQuery as parseLitestoneQuery, parseWhere,
          deriveModelName, accessorCandidates, withLitestoneDb,
          sessionGateLevel, toDataPrincipal, LEVELS,
+         applyClaims, membershipClaim, MEMBERSHIP,
          jsonSchemaToJunctionSchema }                              from './src/core/litestone.ts'
 export type { GradableUser } from './src/core/litestone.ts'
+export type { PrincipalResolver, PrincipalClaims, MembershipClaimOptions } from './src/core/litestone.ts'
 export type { LitestoneServiceOptions, ParsedQuery,
               LitestoneJsonSchema,
               LitestoneQueryEvent }                                   from './src/core/litestone.ts'

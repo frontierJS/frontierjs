@@ -21,7 +21,7 @@ flags:
   resource:
     char: r
     type: boolean
-    description: Also scaffold web/src/resources/<plural>.mesa
+    description: Also scaffold web/src/resources/<Model>.mesa
     defaultValue: false
   soft-delete:
     type: boolean
@@ -104,10 +104,11 @@ export function create${pascalPlural}Service() {
 // A plain module, not a component. Same template make:resource writes.
 
 const makeResourceFile = (model, plural) => `<script module>
-// src/resources/${plural}.mesa — the Resource layer.
+// src/resources/${model}.mesa — the Resource layer.
 //
 // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18):
-// no markup, everything in <script module>.
+// the data half in <script module>, and markup below it — optional — is the
+// model's default form.
 //
 // Read this next to db/schema.lite. Nothing here restates anything there: no
 // field list, no types, no enum values, no required list, no relations.
@@ -196,7 +197,9 @@ if (flag.service) {
 
 if (flag.resource) {
   const resourcesDir = resolve(context.paths.web, 'src/resources')
-  const resourcePath = resolve(resourcesDir, `${plural}.mesa`)
+  // Named for the MODEL, exported as the SERVICE — repo invariant 19, and the
+  // rule `fli check` enforces on the file this command writes.
+  const resourcePath = resolve(resourcesDir, `${model}.mesa`)
 
   if (existsSync(resourcePath)) {
     log.warn(`${resourcePath} already exists — skipping`)

@@ -21,9 +21,9 @@
 // a bucketing decision that has to happen where the user is, per request, and
 // inventing it here would produce a number the SDK could not reproduce.
 
-import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
+import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -79,9 +79,9 @@ export function createFlagsService(app: BasecampApp) {
   /** An environment inside the caller's workspace, or 404. Scoped to the
    *  WORKSPACE, not merely to existence: an id from another workspace would
    *  otherwise let a caller flip a flag in somebody else's environment. */
-  async function environmentInWorkspace(ctx: ServiceContext, environmentId: string) {
-    const env = await dbOf(ctx).environment.findFirst({
-      where: { id: environmentId, workspaceId: wsOf(ctx) },
+  async function environmentInWorkspace(environmentId: string) {
+    const env = await db().environment.findFirst({
+      where: { id: environmentId, workspaceId: ws() },
     })
     if (!env) throw new NotFound(`Environment '${environmentId}' not found in this workspace`)
     return env
@@ -93,8 +93,8 @@ export function createFlagsService(app: BasecampApp) {
    *  (junction FJS-020). A plain function, not `this.get(ctx)`: a service's
    *  methods are collected into a definition object and calling one through
    *  `this` binds to whatever the pipeline happened to invoke it with. */
-  async function flagWithOverrides(ctx: ServiceContext, flag: Record<string, unknown>) {
-    const overrides = await dbOf(ctx).flagOverride.findMany({
+  async function flagWithOverrides(flag: Record<string, unknown>) {
+    const overrides = await db().flagOverride.findMany({
       where:   { flagId: flag.id },
       include: { environment: true },
       orderBy: { createdAt: 'asc' },
@@ -116,11 +116,11 @@ export function createFlagsService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
-      const type = ctx.query.type as string | undefined
-      const tag  = ctx.query.tag  as string | undefined
+      const { limit, offset } = getPagination()
+      const type = $.query.type as string | undefined
+      const tag  = $.query.tag  as string | undefined
 
-      const page = await findScoped(ctx, 'featureFlag', {
+      const page = await findScoped('featureFlag', {
         where:   { ...(type ? { type } : {}) },
         orderBy: { key: 'asc' },
         limit, offset,
@@ -139,30 +139,30 @@ export function createFlagsService(app: BasecampApp) {
       // read that pays for the join.
       const data = await Promise.all(rows.map(async f => ({
         ...f,
-        override_count: await dbOf(ctx).flagOverride.count({ where: { flagId: f.id } }),
+        override_count: await db().flagOverride.count({ where: { flagId: f.id } }),
       })))
       return { ...page, data, total: tag ? data.length : page.total }
     },
 
     async get(ctx: ServiceContext) {
-      return flagWithOverrides(ctx, await getScoped(ctx, 'featureFlag', 'Flag'))
+      return flagWithOverrides(await getScoped('featureFlag', 'Flag'))
     },
 
     async create(ctx: ServiceContext) {
-      const data = ctx.data as Record<string, unknown>
+      const data = $.data as Record<string, unknown>
       assertVariants((data.type as string) ?? 'boolean', data.variants)
 
       // The unique is [workspaceId, key]; a raw constraint violation reaches an
       // HTTP caller as a SQLite message rather than a sentence.
-      if (await dbOf(ctx).featureFlag.exists({ where: { workspaceId: wsOf(ctx), key: data.key } }))
+      if (await db().featureFlag.exists({ where: { workspaceId: ws(), key: data.key } }))
         throw new Conflict(`A flag with key '${data.key}' already exists in this workspace`)
 
-      return flagWithOverrides(ctx, await dbOf(ctx).featureFlag.create({ data }))
+      return flagWithOverrides(await db().featureFlag.create({ data }))
     },
 
     async patch(ctx: ServiceContext) {
-      const flag = await getScoped(ctx, 'featureFlag', 'Flag')
-      const data = ctx.data as Record<string, unknown>
+      const flag = await getScoped('featureFlag', 'Flag')
+      const data = $.data as Record<string, unknown>
 
       if ('variants' in data || 'type' in data)
         assertVariants((data.type as string) ?? (flag.type as string), data.variants ?? flag.variants)
@@ -171,9 +171,9 @@ export function createFlagsService(app: BasecampApp) {
       // half of a @@unique. Renaming it silently turns every SDK call into a
       // miss, which resolves to the default and looks like the flag being off.
       const patch = narrowPatch(data, ['key', 'createdBy'])
-      if (changesNothing(patch)) return flagWithOverrides(ctx, flag)
+      if (changesNothing(patch)) return flagWithOverrides(flag)
 
-      return flagWithOverrides(ctx, await dbOf(ctx).featureFlag.update({
+      return flagWithOverrides(await db().featureFlag.update({
         where: { id: flag.id }, data: patch,
       }))
     },
@@ -184,7 +184,7 @@ export function createFlagsService(app: BasecampApp) {
       // of this flag's configuration, and the schema cascades it. What the two
       // refusals protect is a row somebody ELSE depends on; nothing depends on
       // an override but its flag.
-      return removeScoped(ctx, 'featureFlag', 'Flag')
+      return removeScoped('featureFlag', 'Flag')
     },
 
     // ── setOverride ───────────────────────────────────────────────────
@@ -192,12 +192,12 @@ export function createFlagsService(app: BasecampApp) {
     // not have to know whether an override already exists there, and the
     // @@unique means a blind create is a 409 half the time.
     async setOverride(ctx: ServiceContext) {
-      const flag = await getScoped(ctx, 'featureFlag', 'Flag')
+      const flag = await getScoped('featureFlag', 'Flag')
       const { environmentId, isEnabled, rollout, variantKey } =
-        (ctx.data ?? {}) as Record<string, unknown>
+        ($.data ?? {}) as Record<string, unknown>
 
       if (!environmentId) throw new BadRequest('environmentId is required')
-      await environmentInWorkspace(ctx, environmentId as string)
+      await environmentInWorkspace(environmentId as string)
 
       if (variantKey != null) {
         if (flag.type !== 'variant')
@@ -212,13 +212,13 @@ export function createFlagsService(app: BasecampApp) {
         variantKey: (variantKey as string | null) ?? null,
       }
 
-      const existing = await dbOf(ctx).flagOverride.findFirst({
+      const existing = await db().flagOverride.findFirst({
         where: { flagId: flag.id, environmentId },
       })
-      if (existing) await dbOf(ctx).flagOverride.update({ where: { id: existing.id }, data: values })
-      else          await dbOf(ctx).flagOverride.create({ data: { flagId: flag.id, environmentId, ...values } })
+      if (existing) await db().flagOverride.update({ where: { id: existing.id }, data: values })
+      else          await db().flagOverride.create({ data: { flagId: flag.id, environmentId, ...values } })
 
-      return flagWithOverrides(ctx, flag)
+      return flagWithOverrides(flag)
     },
 
     // ── clearOverride ─────────────────────────────────────────────────
@@ -227,17 +227,17 @@ export function createFlagsService(app: BasecampApp) {
     // and clearing it means "follow whatever the flag says", including later
     // changes to the flag.
     async clearOverride(ctx: ServiceContext) {
-      const flag = await getScoped(ctx, 'featureFlag', 'Flag')
-      const { environmentId } = (ctx.data ?? {}) as Record<string, string>
+      const flag = await getScoped('featureFlag', 'Flag')
+      const { environmentId } = ($.data ?? {}) as Record<string, string>
       if (!environmentId) throw new BadRequest('environmentId is required')
 
-      const existing = await dbOf(ctx).flagOverride.findFirst({
+      const existing = await db().flagOverride.findFirst({
         where: { flagId: flag.id, environmentId },
       })
       if (!existing) throw new NotFound('This flag has no override in that environment')
 
-      await dbOf(ctx).flagOverride.remove({ where: { id: existing.id } })
-      return flagWithOverrides(ctx, flag)
+      await db().flagOverride.remove({ where: { id: existing.id } })
+      return flagWithOverrides(flag)
     },
 
     // ── resolve ───────────────────────────────────────────────────────
@@ -247,17 +247,17 @@ export function createFlagsService(app: BasecampApp) {
     // the header rather than `POST /flags/{id}`. Read-shaped, so it opts out
     // of the announcement the after-hook makes for every other method.
     async resolve(ctx: ServiceContext) {
-      ctx.dispatch = false
-      const environmentId = (ctx.query.environmentId ?? (ctx.data as Record<string, string>)?.environmentId) as string
+      $.dispatch = false
+      const environmentId = ($.query.environmentId ?? ($.data as Record<string, string>)?.environmentId) as string
       if (!environmentId) throw new BadRequest('environmentId is required')
-      await environmentInWorkspace(ctx, environmentId)
+      await environmentInWorkspace(environmentId)
 
-      const flags = await dbOf(ctx).featureFlag.findMany({
-        where: { workspaceId: wsOf(ctx) }, orderBy: { key: 'asc' }, limit: 500,
+      const flags = await db().featureFlag.findMany({
+        where: { workspaceId: ws() }, orderBy: { key: 'asc' }, limit: 500,
       })
       if (!flags.length) return { total: 0, environmentId, data: [] }
 
-      const overrides = await dbOf(ctx).flagOverride.findMany({
+      const overrides = await db().flagOverride.findMany({
         where: { environmentId, flagId: { in: flags.map((f: { id: string }) => f.id) } },
       })
       const byFlag = new Map(overrides.map((o: Record<string, unknown>) => [o.flagId, o]))
@@ -292,12 +292,11 @@ export function createFlagsService(app: BasecampApp) {
   })
 }
 
-/** FeatureFlag has no `slug` column, so the shared stampWorkspace — which
+/** FeatureFlag has no `slug` column, so the shared deriveSlug — which
  *  derives one from `name` — would add a key autoValidate then strips. This
  *  model's identifier is `key`, and `@slug` in the schema is what shapes it. */
-function stampFlag(ctx: ServiceContext): void {
-  const data = ctx.data as Record<string, unknown>
+function stampFlag(): void {
+  const data = $.data as Record<string, unknown>
   if (!data) return
-  data.workspaceId = wsOf(ctx)
-  data.createdBy   = actorOf(ctx)
+  data.createdBy   = actor()
 }

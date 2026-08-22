@@ -85,6 +85,11 @@ table `alert_event` · db `main` · gate `2.8.4.8`
 ```
 @@index(ruleId)
 @@index(status)
+@@deny('create', !check(rule, 'read'))
+@@deny('delete', !check(rule, 'read'))
+@@deny('post-update', !check(rule, 'read'))
+@@deny('read', !check(rule, 'read'))
+@@deny('update', !check(rule, 'read'))
 ```
 
 ### `AlertRule`
@@ -110,11 +115,11 @@ table `alert_rule` · db `main` · gate `2.5`
 
 ```
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `AlertRuleChannel`
@@ -133,6 +138,16 @@ table `alert_rule_channel` · db `main` · gate `2.5`
 ```
 @@unique(channelId, ruleId)
 @@index(channelId)
+@@deny('create', !check(channel, 'read'))
+@@deny('create', !check(rule, 'read'))
+@@deny('delete', !check(channel, 'read'))
+@@deny('delete', !check(rule, 'read'))
+@@deny('post-update', !check(channel, 'read'))
+@@deny('post-update', !check(rule, 'read'))
+@@deny('read', !check(channel, 'read'))
+@@deny('read', !check(rule, 'read'))
+@@deny('update', !check(channel, 'read'))
+@@deny('update', !check(rule, 'read'))
 ```
 
 ### `ApiKey`
@@ -164,11 +179,11 @@ table `api_key` · db `main` · gate `5`
 @@unique(name, workspaceId)
 @@index(credentialId)
 @@index(userId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `App`
@@ -203,11 +218,11 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 @@index(environmentId)
 @@index(status)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `AppNetwork`
@@ -227,6 +242,16 @@ table `app_network` · db `main` · gate `2.8`
 
 ```
 @@unique(appId, networkId)
+@@deny('create', !check(app, 'read'))
+@@deny('create', !check(network, 'read'))
+@@deny('delete', !check(app, 'read'))
+@@deny('delete', !check(network, 'read'))
+@@deny('post-update', !check(app, 'read'))
+@@deny('post-update', !check(network, 'read'))
+@@deny('read', !check(app, 'read'))
+@@deny('read', !check(network, 'read'))
+@@deny('update', !check(app, 'read'))
+@@deny('update', !check(network, 'read'))
 ```
 
 ### `AppServer`
@@ -249,6 +274,16 @@ table `app_server` · db `main` · gate `2.8`
 
 ```
 @@unique(appId, replicaIndex, serverId)
+@@deny('create', !check(app, 'read'))
+@@deny('create', !check(server, 'read'))
+@@deny('delete', !check(app, 'read'))
+@@deny('delete', !check(server, 'read'))
+@@deny('post-update', !check(app, 'read'))
+@@deny('post-update', !check(server, 'read'))
+@@deny('read', !check(app, 'read'))
+@@deny('read', !check(server, 'read'))
+@@deny('update', !check(app, 'read'))
+@@deny('update', !check(server, 'read'))
 ```
 
 ### `AuditEvent`
@@ -296,6 +331,11 @@ table `cleanup_run` · db `main` · gate `2.4.8.8`
 
 ```
 @@index(serverId)
+@@deny('create', !check(server, 'read'))
+@@deny('delete', !check(server, 'read'))
+@@deny('post-update', !check(server, 'read'))
+@@deny('read', !check(server, 'read'))
+@@deny('update', !check(server, 'read'))
 ```
 
 ### `Credential`
@@ -345,11 +385,11 @@ table `dashboard` · db `main` · gate `2.4.4.4` · @@softDelete
 ```
 @@unique(slug, workspaceId)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `DashboardWidget`
@@ -374,6 +414,21 @@ table `dashboard_widget` · db `main` · gate `2.4.4.4`
 
 ```
 @@index(dashboardId)
+@@deny('create', !check(app, 'read'))
+@@deny('create', !check(dashboard, 'read'))
+@@deny('create', !check(server, 'read'))
+@@deny('delete', !check(app, 'read'))
+@@deny('delete', !check(dashboard, 'read'))
+@@deny('delete', !check(server, 'read'))
+@@deny('post-update', !check(app, 'read'))
+@@deny('post-update', !check(dashboard, 'read'))
+@@deny('post-update', !check(server, 'read'))
+@@deny('read', !check(app, 'read'))
+@@deny('read', !check(dashboard, 'read'))
+@@deny('read', !check(server, 'read'))
+@@deny('update', !check(app, 'read'))
+@@deny('update', !check(dashboard, 'read'))
+@@deny('update', !check(server, 'read'))
 ```
 
 ### `Deployment`
@@ -413,11 +468,11 @@ table `deployment` · db `main` · gate `2.4.4.4`
 @@index(appId)
 @@index(status)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 transition status.build: pending → building
 transition status.cancel: building, deploying, pending, pushing → cancelled
 transition status.fail: building, deploying, pending, pushing → failed
@@ -445,6 +500,11 @@ table `deployment_step` · db `main` · gate `2.4.8.8`
 
 ```
 @@index(deploymentId)
+@@deny('create', !check(deployment, 'read'))
+@@deny('delete', !check(deployment, 'read'))
+@@deny('post-update', !check(deployment, 'read'))
+@@deny('read', !check(deployment, 'read'))
+@@deny('update', !check(deployment, 'read'))
 ```
 
 ### `DiskUsage`
@@ -470,6 +530,11 @@ table `disk_usage` · db `main` · gate `2.8`
 
 ```
 @@unique(serverId)
+@@deny('create', !check(server, 'read'))
+@@deny('delete', !check(server, 'read'))
+@@deny('post-update', !check(server, 'read'))
+@@deny('read', !check(server, 'read'))
+@@deny('update', !check(server, 'read'))
 ```
 
 ### `Domain`
@@ -500,11 +565,11 @@ table `domain` · db `main` · gate `2.5` · @@softDelete
 ```
 @@unique(hostname, workspaceId)
 @@index(appId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `Environment`
@@ -534,11 +599,11 @@ table `environment` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 ```
 @@unique(projectId, slug)
 @@index(projectId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `FeatureFlag`
@@ -567,11 +632,11 @@ table `feature_flag` · db `main` · gate `2.4.4.5` · @@softDelete
 ```
 @@unique(key, workspaceId)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `FlagOverride`
@@ -594,6 +659,16 @@ table `flag_override` · db `main` · gate `2.4.4.4`
 ```
 @@unique(environmentId, flagId)
 @@index(environmentId)
+@@deny('create', !check(environment, 'read'))
+@@deny('create', !check(flag, 'read'))
+@@deny('delete', !check(environment, 'read'))
+@@deny('delete', !check(flag, 'read'))
+@@deny('post-update', !check(environment, 'read'))
+@@deny('post-update', !check(flag, 'read'))
+@@deny('read', !check(environment, 'read'))
+@@deny('read', !check(flag, 'read'))
+@@deny('update', !check(environment, 'read'))
+@@deny('update', !check(flag, 'read'))
 ```
 
 ### `Invitation`
@@ -616,11 +691,11 @@ table `invitation` · db `main` · gate `5`
 ```
 @@unique(email, workspaceId)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `Job`
@@ -657,11 +732,11 @@ table `job` · db `main` · gate `2.4.4.5` · @@softDelete
 ```
 @@index(nextRunAt)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 transition status.cancel: failed, pending, running → cancelled
 transition status.fail: running → failed
 transition status.idle: running → pending
@@ -689,6 +764,11 @@ table `job_run` · db `main` · gate `2.8`
 
 ```
 @@index(jobId)
+@@deny('create', !check(job, 'read'))
+@@deny('delete', !check(job, 'read'))
+@@deny('post-update', !check(job, 'read'))
+@@deny('read', !check(job, 'read'))
+@@deny('update', !check(job, 'read'))
 ```
 
 ### `Network`
@@ -714,11 +794,11 @@ table `network` · db `main` · gate `2.5` · @@softDelete
 
 ```
 @@unique(slug, workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `NotificationChannel`
@@ -748,11 +828,11 @@ table `notification_channel` · db `main` · gate `2.5` · @@softDelete
 ```
 @@unique(name, workspaceId)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `Project`
@@ -779,11 +859,11 @@ table `project` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 ```
 @@unique(slug, workspaceId)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `Recipe`
@@ -811,11 +891,11 @@ table `recipe` · db `main` · gate `4.5` · @@softDelete
 ```
 @@unique(slug, workspaceId)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `RecipeRun`
@@ -844,6 +924,16 @@ table `recipe_run` · db `main` · gate `2.4.8.8`
 ```
 @@index(recipeId)
 @@index(serverId)
+@@deny('create', !check(recipe, 'read'))
+@@deny('create', !check(server, 'read'))
+@@deny('delete', !check(recipe, 'read'))
+@@deny('delete', !check(server, 'read'))
+@@deny('post-update', !check(recipe, 'read'))
+@@deny('post-update', !check(server, 'read'))
+@@deny('read', !check(recipe, 'read'))
+@@deny('read', !check(server, 'read'))
+@@deny('update', !check(recipe, 'read'))
+@@deny('update', !check(server, 'read'))
 ```
 
 ### `Secret`
@@ -867,11 +957,11 @@ table `secret` · db `main` · gate `5` · @@softDelete
 
 ```
 @@unique(name, workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `Server`
@@ -918,11 +1008,11 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 @@index(lastHeartbeatAt)
 @@index(status)
 @@index(workspaceId)
-@@allow('create', workspaceId == auth().workspaceId)
-@@allow('delete', workspaceId == auth().workspaceId)
-@@allow('post-update', workspaceId == auth().workspaceId)
-@@allow('read', workspaceId == auth().workspaceId)
-@@allow('update', workspaceId == auth().workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `ServerEvent`
@@ -941,6 +1031,11 @@ table `server_event` · db `main` · gate `2.4.8.8`
 
 ```
 @@index(serverId)
+@@deny('create', !check(server, 'read'))
+@@deny('delete', !check(server, 'read'))
+@@deny('post-update', !check(server, 'read'))
+@@deny('read', !check(server, 'read'))
+@@deny('update', !check(server, 'read'))
 ```
 
 ### `ServerNetwork`
@@ -959,6 +1054,16 @@ table `server_network` · db `main` · gate `2.5`
 
 ```
 @@unique(networkId, serverId)
+@@deny('create', !check(network, 'read'))
+@@deny('create', !check(server, 'read'))
+@@deny('delete', !check(network, 'read'))
+@@deny('delete', !check(server, 'read'))
+@@deny('post-update', !check(network, 'read'))
+@@deny('post-update', !check(server, 'read'))
+@@deny('read', !check(network, 'read'))
+@@deny('read', !check(server, 'read'))
+@@deny('update', !check(network, 'read'))
+@@deny('update', !check(server, 'read'))
 ```
 
 ### `Session`
@@ -1053,6 +1158,11 @@ table `volume` · db `main` · gate `2.5.5.5`
 ```
 @@unique(name, serverId)
 @@index(serverId)
+@@deny('create', !check(server, 'read'))
+@@deny('delete', !check(server, 'read'))
+@@deny('post-update', !check(server, 'read'))
+@@deny('read', !check(server, 'read'))
+@@deny('update', !check(server, 'read'))
 ```
 
 ### `Workspace`

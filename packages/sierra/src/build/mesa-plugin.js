@@ -24,6 +24,11 @@ import { createRequire } from 'module'
 // leaves for a workspace dep, which is a snapshot of the last install.
 const HMR_CLIENT_ID = '/@frontierjs/sierra/hmr-client'
 
+// The inspector is Mesa's too — the compiler stamps the location attribute and
+// mesa-vite owns what reads it. Sierra serves the same source at an id of its
+// own, exactly as it does the HMR client.
+const INSPECT_CLIENT_ID = '/@frontierjs/sierra/inspect-client'
+
 const MESA_EXTENSIONS = /\.(mesa|md)$/
 
 // src/build/mesa-plugin.js → the sierra package root
@@ -128,6 +133,11 @@ function _escapeFencedCodeBlocks(src) {
 }
 
 export function mesaPlugin(mesaOptions = {}, sierraContext) {
+  // Click-to-source. `inspect: false` turns off the injection AND the attribute
+  // the compiler would stamp — the client is its only reader.
+  const inspect    = mesaOptions.inspect ?? true
+  const inspectOn  = inspect !== false
+  const inspectKey = (typeof inspect === 'object' && inspect.key) || 'alt'
   // Files that received an import.meta.hot.accept boundary via injectHMR.
   // Mesa's own accept handler owns updates for these, so handleHotUpdate must
   // not also emit sierra:hmr — that would drive a route remount on top of the
@@ -163,6 +173,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
     // load phase we fall back to process.cwd().
     resolveId(id) {
       if (id === HMR_CLIENT_ID) return HMR_CLIENT_ID
+      if (id === INSPECT_CLIENT_ID) return INSPECT_CLIENT_ID
       // Every compiled .mesa module imports the runtime, so this is the single
       // resolution every Mesa build depends on.
       //
@@ -191,7 +202,24 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
     // relative import, so the source has to arrive already joined. Mesa owns
     // that join; reading `client.js` alone would serve an import that cannot
     // resolve, which is a dev server where every edit full-reloads.
+    // Dev only. A production build stamps no location attribute, so the client
+    // would have nothing to read and every element would be a dead zone.
+    transformIndexHtml() {
+      if (!isDev || !inspectOn) return []
+      return [{
+        tag:      'script',
+        attrs:    { type: 'module', src: INSPECT_CLIENT_ID },
+        injectTo: 'head',
+      }]
+    },
+
     async load(id) {
+      if (id === INSPECT_CLIENT_ID) {
+        const mod = findMesaFile('mesa-vite/inspect-client.js', root)
+        if (!mod) return null
+        const { inspectClientSource } = await import(pathToFileURL(mod).href)
+        return inspectClientSource({ root, key: inspectKey })
+      }
       if (id !== HMR_CLIENT_ID) return null
       const assembler = findMesaFile('mesa-vite/client-source.js', root)
       if (!assembler) return null
@@ -354,6 +382,8 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
           externalReactivityHints: 'strict',
           filename: id,
           dev: isDev,
+          loc: isDev && inspectOn,
+          locRoot: root,
           // Everything the app configured, including any `externalSignals` of
           // its own. Sierra declares NONE: it exports no module-level signal, so
           // it has nothing to tell the compiler about (`FJS-060`). The map is an

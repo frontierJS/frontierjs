@@ -21,9 +21,9 @@
 // that silently goes stale overnight — a certificate does not expire when
 // somebody remembers to run an update.
 
-import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, stampWorkspace, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
+import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
@@ -38,7 +38,7 @@ export type CertStatus = 'none' | 'active' | 'expiring_soon' | 'expired'
 /**
  * The one definition of a certificate's condition.
  *
- * Exported because the notice engine will want it and a second copy would
+ * Exported because the notice rules will want it and a second copy would
  * disagree the first time the threshold moves.
  */
 export function certStatusOf(
@@ -60,8 +60,8 @@ const decorate = (row: Record<string, unknown>) => ({ ...row, ...certStatusOf(ro
 
 export function createDomainsService(app: BasecampApp) {
 
-  async function appInWorkspace(ctx: ServiceContext, appId: string) {
-    const row = await dbOf(ctx).app.findFirst({ where: { id: appId, workspaceId: wsOf(ctx) } })
+  async function appInWorkspace(appId: string) {
+    const row = await db().app.findFirst({ where: { id: appId, workspaceId: ws() } })
     if (!row) throw new NotFound(`App '${appId}' not found in this workspace`)
     return row
   }
@@ -69,15 +69,15 @@ export function createDomainsService(app: BasecampApp) {
   /** Exactly one primary per app. Demoting the others is the write that makes
    *  "primary" mean something; without it two rows both claim it and the
    *  screen picks whichever sorted first. */
-  async function demoteSiblings(ctx: ServiceContext, appId: string, keepId: string) {
-    const siblings = await dbOf(ctx).domain.findMany({ where: { appId, isPrimary: true } })
+  async function demoteSiblings(appId: string, keepId: string) {
+    const siblings = await db().domain.findMany({ where: { appId, isPrimary: true } })
     for (const sib of siblings)
       if (sib.id !== keepId)
         // Domain declares @version, so every scoped update states the version it
         // read. Not a formality here: two people promoting different hostnames
         // at once is exactly the race, and the loser is told rather than
         // silently demoted back.
-        await dbOf(ctx).domain.update({
+        await db().domain.update({
           where: { id: sib.id },
           data:  { isPrimary: false, version: sib.version },
         })
@@ -94,10 +94,10 @@ export function createDomainsService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
-      const appId = ctx.query.appId as string | undefined
+      const { limit, offset } = getPagination()
+      const appId = $.query.appId as string | undefined
 
-      const result = await findScoped(ctx, 'domain', {
+      const result = await findScoped('domain', {
         where:   { ...(appId ? { appId } : {}) },
         orderBy: { hostname: 'asc' },
         limit, offset,
@@ -105,81 +105,81 @@ export function createDomainsService(app: BasecampApp) {
       return { ...result, data: result.data.map(decorate) }
     },
 
-    async get(ctx: ServiceContext) {
-      return decorate(await getScoped(ctx, 'domain', 'Domain'))
+    async get() {
+      return decorate(await getScoped('domain', 'Domain'))
     },
 
     async create(ctx: ServiceContext) {
-      const data = ctx.data as Record<string, unknown>
-      await appInWorkspace(ctx, data.appId as string)
+      const data = $.data as Record<string, unknown>
+      await appInWorkspace(data.appId as string)
 
       // The unique is [workspaceId, hostname], and a raw constraint violation
       // reaches an HTTP caller as a SQLite message rather than a sentence.
-      if (await dbOf(ctx).domain.exists({ where: { workspaceId: wsOf(ctx), hostname: data.hostname } }))
+      if (await db().domain.exists({ where: { workspaceId: ws(), hostname: data.hostname } }))
         throw new Conflict(`'${data.hostname}' is already claimed in this workspace`)
 
       // The first hostname an app gets IS its primary — nobody means to add a
       // domain and leave the app with none.
-      const existing = await dbOf(ctx).domain.count({ where: { appId: data.appId } })
+      const existing = await db().domain.count({ where: { appId: data.appId } })
       if (existing === 0) data.isPrimary = true
 
-      const created = await dbOf(ctx).domain.create({ data })
-      if (created.isPrimary) await demoteSiblings(ctx, created.appId, created.id)
+      const created = await db().domain.create({ data })
+      if (created.isPrimary) await demoteSiblings(created.appId, created.id)
       return decorate(created)
     },
 
     async patch(ctx: ServiceContext) {
-      const domain = await getScoped(ctx, 'domain', 'Domain')
+      const domain = await getScoped('domain', 'Domain')
       // appId is immutable — moving a hostname to another app is a delete and a
       // create, and doing it as a patch would carry the certificate with it.
       // The cert columns are `uploadCert`'s, never a client's.
-      const patch = narrowPatch(ctx.data as Record<string, unknown>,
+      const patch = narrowPatch($.data as Record<string, unknown>,
         ['appId', 'certSecretId', 'certKind', 'certIssuedAt', 'certExpiresAt'])
 
       if (changesNothing(patch)) return decorate(domain)
 
-      const updated = await dbOf(ctx).domain.update({ where: { id: domain.id }, data: patch })
-      if (updated.isPrimary) await demoteSiblings(ctx, updated.appId, updated.id)
+      const updated = await db().domain.update({ where: { id: domain.id }, data: patch })
+      if (updated.isPrimary) await demoteSiblings(updated.appId, updated.id)
       return decorate(updated)
     },
 
     async remove(ctx: ServiceContext) {
-      const domain = await getScoped(ctx, 'domain', 'Domain')
+      const domain = await getScoped('domain', 'Domain')
       // Refused rather than silently repointing: which hostname is primary is a
       // routing decision, and making it by deletion is how an app ends up
       // answering on one nobody chose.
-      if (domain.isPrimary && await dbOf(ctx).domain.count({ where: { appId: domain.appId } }) > 1)
+      if (domain.isPrimary && await db().domain.count({ where: { appId: domain.appId } }) > 1)
         throw new Conflict('That is the primary hostname — make another one primary first')
 
-      return removeScoped(ctx, 'domain', 'Domain')
+      return removeScoped('domain', 'Domain')
     },
 
     // ── uploadCert ────────────────────────────────────────────────────
     // The certificate arrives here ONCE. The material goes into a Secret,
     // whose `data` is `@encrypted`; this row keeps only what an operator reads.
-    async uploadCert(ctx: ServiceContext) {
-      const domain = await getScoped(ctx, 'domain', 'Domain')
+    async uploadCert() {
+      const domain = await getScoped('domain', 'Domain')
       const { certPem, keyPem, kind, issuedAt, expiresAt } =
-        (ctx.data ?? {}) as Record<string, string>
+        ($.data ?? {}) as Record<string, string>
 
       if (!certPem || !keyPem) throw new BadRequest('certPem and keyPem are both required')
       if (!expiresAt || Number.isNaN(Date.parse(expiresAt)))
         throw new BadRequest('expiresAt is required and must be a date — it is what decides renewal')
 
-      const secret = await dbOf(ctx).secret.create({
+      const secret = await db().secret.create({
         data: {
-          workspaceId: wsOf(ctx),
+          workspaceId: ws(),
           name:        `tls:${domain.hostname}`,
           kind:        'tls_cert',
           // One value, both halves. Splitting them across two Secrets would
           // let a rotation replace one and not the other.
           data:        JSON.stringify({ certPem, keyPem }),
-          createdBy:   actorOf(ctx),
+          createdBy:   actor(),
           isVerified:  false,
         },
       })
 
-      const updated = await dbOf(ctx).domain.update({
+      const updated = await db().domain.update({
         where: { id: domain.id },
         data: {
           certSecretId:  secret.id,
@@ -194,13 +194,13 @@ export function createDomainsService(app: BasecampApp) {
 
     // ── makePrimary ───────────────────────────────────────────────────
     async makePrimary(ctx: ServiceContext) {
-      const domain = await getScoped(ctx, 'domain', 'Domain')
+      const domain = await getScoped('domain', 'Domain')
       if (domain.isPrimary) throw new BadRequest('Already the primary hostname')
 
-      const updated = await dbOf(ctx).domain.update({
+      const updated = await db().domain.update({
         where: { id: domain.id }, data: { isPrimary: true, version: domain.version },
       })
-      await demoteSiblings(ctx, updated.appId, updated.id)
+      await demoteSiblings(updated.appId, updated.id)
       return decorate(updated)
     },
 
@@ -209,10 +209,10 @@ export function createDomainsService(app: BasecampApp) {
         all:    [sessionScope(app)],
         // A hostname decides where traffic lands and a certificate decides
         // whether it is private. Both are admin acts.
-        // stampWorkspace must be a HOOK, not the first line of create():
+        // deriveSlug must be a HOOK, not the first line of create():
         // `model:` brings autoValidate with it, and workspaceId is required by
         // the schema but never sent by a client.
-        create:      [requireWorkspaceRole(app, 'admin', 'owner'), stampWorkspace],
+        create:      [requireWorkspaceRole(app, 'admin', 'owner'), deriveSlug],
         patch:       [requireWorkspaceRole(app, 'admin', 'owner')],
         remove:      [requireWorkspaceRole(app, 'admin', 'owner')],
         uploadCert:  [requireWorkspaceRole(app, 'admin', 'owner')],

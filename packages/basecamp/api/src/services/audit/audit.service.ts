@@ -29,9 +29,9 @@
 // Access is admin/owner. A trail that every member can read is a list of what
 // their colleagues have been doing.
 
-import { createService } from '@frontierjs/junction'
+import { createService, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { dbOf, wsOf } from '../../core/resource.ts'
+import { db, ws } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
@@ -43,18 +43,18 @@ export function createAuditService(app: BasecampApp) {
     methods: 'readOnly',
 
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx, { limit: 50 })
+      const { limit, offset } = getPagination({ limit: 50 })
 
-      // Filters are declared here rather than passed through: `ctx.query` is
+      // Filters are declared here rather than passed through: `$.query` is
       // whatever a caller sent, and handing it to the client verbatim would let
       // one filter on columns this service does not mean to expose.
-      const action      = ctx.query.action      as string | undefined
-      const subjectType = ctx.query.subjectType as string | undefined
-      const actorId     = ctx.query.actorId     as string | undefined
+      const action      = $.query.action      as string | undefined
+      const subjectType = $.query.subjectType as string | undefined
+      const actorId     = $.query.actorId     as string | undefined
 
-      const { rows, total } = await dbOf(ctx).auditEvent.findManyAndCount({
+      const { rows, total } = await db().auditEvent.findManyAndCount({
         where: {
-          workspaceId: wsOf(ctx),
+          workspaceId: ws(),
           ...(action      ? { action }      : {}),
           ...(subjectType ? { subjectType } : {}),
           ...(actorId     ? { actorId }     : {}),

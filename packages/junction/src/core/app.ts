@@ -5,7 +5,7 @@
 
 import { HttpTransport }            from '../transport/http.ts'
 import { bridge } from '../transport/bridge.ts'
-import { freezeUser, runWithMeta, requestMeta, resolvePrincipal, inheritedClient, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type RequestMeta } from './context.ts'
+import { freezeUser, enterRequest, requestMeta, resolvePrincipal, inheritedClient, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
 import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites } from './litestone.ts'
@@ -390,6 +390,25 @@ export interface AppOptions {
    * handle and is the older, lower-level path.
    */
   db?:          unknown
+  /**
+   * Claims resolved per REQUEST and put on the principal, before the Data
+   * boundary scopes the client from it (`FJS-D113`).
+   *
+   * A tenant claim and a per-request standing are the same thing — a value this
+   * caller holds for THIS call, one read by a tenancy predicate and one by the
+   * gate — and until this existed the only route onto the principal was
+   * `sessionFields`, fixed at sign-in. That is one tenant per session, which
+   * cannot express a person who belongs to several accounts and holds a
+   * different authority in each.
+   *
+   *   createApp({ db, principal: async (ctx, user) => ({ workspaceId, memberRole }) })
+   *
+   * Runs only for an authenticated caller, and may not set `userId`/`id` — a
+   * claim says what a caller holds, never who they are. `membershipClaim()` is
+   * the shipped resolver for the common shape, and it cannot emit a claim it
+   * did not verify.
+   */
+  principal?:   import('./litestone.ts').PrincipalResolver
   /**
    * The tenant registry, for a schema declaring `tenancy { strategy database }`
    * — one SQLite file per tenant, so the CLIENT changes per request.
@@ -807,8 +826,8 @@ export function createApp(opts: AppOptions = {}): App {
       }
 
       const frozen = user ? freezeUser(user) : null
-      return runWithMeta(
-        { correlationId: crypto.randomUUID(), origin: 'internal', user: frozen },
+      return enterRequest(
+        { origin: 'internal', user: frozen },
         () => Promise.resolve(fn(frozen)),
       )
     },
@@ -1013,9 +1032,9 @@ export function createApp(opts: AppOptions = {}): App {
   // than per app, so `withTenantDb` resolves it and assigns the same
   // `ctx.locals.db`. Installing both would leave the assignment to hook order.
   if (opts.tenants) {
-    app.hooks({ around: { all: [withTenantDb(opts.tenants)] } })
+    app.hooks({ around: { all: [withTenantDb(opts.tenants, opts.principal)] } })
   } else if (db && typeof (db as { $setAuth?: unknown }).$setAuth === 'function') {
-    app.hooks({ around: { all: [withLitestoneDb(db as never)] } })
+    app.hooks({ around: { all: [withLitestoneDb(db as never, opts.principal)] } })
     // Row tenancy scopes with policies rather than with a second database, so
     // there is nothing to swap — the failure mode is the opposite one, a
     // principal with no claim seeing an empty version of every screen.
@@ -1362,24 +1381,23 @@ export function registerServiceRoutes(app: App): void {
       rawWrapParam === undefined ? undefined : rawWrapParam !== 'false'
     const svcCtx = bridge.toContext(ctx, serviceName, model, 'http', app)
 
-    // Build request-wide metadata once and wrap the whole pipeline run
-    // in the ALS store so requestMeta() works at any depth, including
-    // across internal app.service() calls — without threading it.
-    const meta: RequestMeta = {
-      correlationId:  ctx.headers['x-request-id']
-        ?? (ctx as unknown as { requestId?: string }).requestId
-        ?? crypto.randomUUID(),
-      idempotencyKey: ctx.headers['idempotency-key'],
-      locale:         ctx.headers['accept-language']?.split(',')[0]?.trim(),
-      origin:         'http',
-      // WHO, request-wide. This is what makes `ctx.auth` propagate: an internal
-      // call naming no principal reads it back out of the store, at any depth.
-      user:           svcCtx.auth.user,
-      client:         svcCtx.client,
-    }
-
+    // Open the request scope once, around the whole pipeline run, so
+    // requestMeta() works at any depth — including across internal
+    // app.service() calls — without threading it. The three header-derived
+    // fields are read by enterRequest(), which owns which headers they are.
     try {
-      return await runWithMeta(meta, async () => {
+      return await enterRequest({
+        origin:  'http',
+        headers: ctx.headers,
+        // The transport's own id where the header is absent; `x-request-id`
+        // itself is enterRequest's to read, and stated beats derived there.
+        correlationId: ctx.headers['x-request-id']
+          ?? (ctx as unknown as { requestId?: string }).requestId,
+        // WHO, request-wide. This is what makes `ctx.auth` propagate: an
+        // internal call naming no principal reads it back out of the store.
+        user:   svcCtx.auth.user,
+        client: svcCtx.client,
+      }, async () => {
         await callService(service, svcCtx, app._appHooks, app.events, app.telemetry)
         return bridge.toResponse(svcCtx, wrap)
       })

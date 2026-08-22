@@ -12,7 +12,7 @@ import { toFrameworkError, FrameworkError } from '../core/errors.ts'
 // re-exports it so existing `from '.../transport/bridge.ts'` imports keep
 // working unchanged.
 import {
-  RESERVED_PARAMS, runWithMeta, requestMeta, freezeUser, withCallEffects,
+  RESERVED_PARAMS, enterRequest, requestMeta, freezeUser, withCallEffects,
   type ServiceContext, type ServiceContextLocals, type ServiceResult,
   type ServiceMethod, type AnyMethod, type HookType,
   type CallOptions, type RequestMeta, type QueryDirectives,
@@ -21,7 +21,7 @@ import { isListResult, unwrapResult } from '../core/envelope.ts'
 import { splitParams } from '@frontierjs/toolbelt/directives'
 
 export {
-  RESERVED_PARAMS, runWithMeta, requestMeta, freezeUser,
+  RESERVED_PARAMS, enterRequest, requestMeta, freezeUser,
 }
 export type {
   ServiceContext, ServiceContextLocals, ServiceResult,

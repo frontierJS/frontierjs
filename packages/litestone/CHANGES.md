@@ -1,5 +1,42 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-22 — three defects found by an app adopting declared tenancy
+
+2380 tests, 0 fail. Typecheck at baseline.
+
+`tenancy { strategy row }` had shipped and nothing had migrated ONTO it. Basecamp
+moving sixteen hand-written `@@allow('all', workspaceId == auth().workspaceId)`
+lines onto the declaration is what found all three, and the shape of that is
+worth keeping: each one was invisible to the checks because the checks and the
+defect shared an assumption.
+
+**A caller could move their own row out of their tenant** (`FJS-378`). The
+generated denies named `read`, `update`, `delete`, `create` — *may you touch this
+row* — and never `post-update`, *may the row end up there*. So
+`update({ where: { id: mine }, data: { workspaceId: theirs } })` succeeded with a
+WHERE that matched legitimately at the moment it ran. The hand-written form never
+had the hole: `all` expands to every operation, `post-update` included, so an
+allow was graded against the resulting row for free. Both generated rules carry
+it now, delegated included.
+
+**A delegated child whose parent is OPTIONAL was invisible to every scoped read**
+(`FJS-382`). Two implementations of `check(parent)` disagreed about a null foreign
+key — `evalCheck` answers true, `compileSql` emitted a bare `EXISTS`, which is
+false. A row with no parent yet was filtered out of every read with a 200 and
+nothing said, and `verifyRowPolicies` could not see it because it skips `check()`
+policies by name. Fixed in the SQL half, since the evaluator is the one that
+matches what the declaration says.
+
+**`verifyFieldProtection` reported every field on a scoped model as unchecked**
+(`FJS-381`). It seeds a row to satisfy the model's *allow* rules; tenancy
+generates a *deny*, so the seed matched nothing and every protected column came
+back unchecked — a green run over an assertion that never executed. The seeder
+stamps the tenancy claim now, skipping `@@tenant(none)`.
+
+`FJS-380` is the fourth thing that migration found and it is still open:
+`litestone access --from` grades the allow→deny inversion as WIDENS, so
+`--strict` would fail the safest refactor in the feature.
+
 ## 2026-08-19 — a generated case has to isolate the rule it names (`FJS-351`)
 
 2373 tests, 0 fail. Typecheck clean.
@@ -18,15 +55,30 @@ rule from the schema, which is exactly what happened to basecamp's
 `Invitation.email` before this landed.
 
 **An invalid case was refused by somebody else's rule and counted as proof of
-its own.** `''` on that column is rejected by `@email`, so `@length` could be
-deleted from `validate.js` and the check stayed green — and a mutant that
-widened it survived, which is the one thing `litestone mutate` exists to catch.
+its own.** `''` on that column is rejected by `@email`, so the two cases naming
+`@length` proved nothing about it. Measured by disabling `@length` in
+`validate.js` and asking what the runner noticed: on a single-rule field it says
+*the schema declares @length(3,20) and the write was ACCEPTED*; on the `@email`
+field it said **nothing at all**, and the only entries against that field were
+the two false alarms, which appear whether the rule is enforced or not. So the
+checker could not tell an enforced `@length` from a missing one there — and the
+false alarm is what hid it, because a schema that always reports something looks
+like a schema being checked. The same measurement now yields four findings, all
+naming `@length`, and zero on the schema with nothing wrong with it.
+
 `attempt()` carried the message every case already declared and never compared
-it; it does now, and a refusal by the wrong rule is reported as
-`rejected-by-another-rule` rather than passing.
+it; it does now, and a refusal by the wrong rule is `rejected-by-another-rule`
+rather than a pass. It is the backstop rather than the cure — once a case is
+built to isolate its own rule this should never fire, and what it catches is an
+implementation refusing for a reason the schema did not predict.
 
 **The judge is `validateField`**, newly exported from `core/validate.js` — the
-function that decides this on a real write. A table of formats in the generator
+function that decides this on a real write, and it is asked about the field's
+OTHER rules only. Whether a value satisfies or breaks the rule the case NAMES is
+established by construction, because asking the implementation about it makes
+the runner its own oracle: the first version did, and disabling `@length` then
+reported *not checked* rather than *the write was ACCEPTED* — the runner losing
+the one finding it exists to produce. A table of formats in the generator
 would be a second definition of every rule, drifting the moment one is tuned.
 
 **The repair is format-blind.** It grows or trims the factory's own valid
@@ -40,6 +92,12 @@ Which dimension is free depends on the rule: a boundary IS its length, an
 invalid `@length` case only has to sit outside the bound, and every other rule's
 length is incidental — `@url`'s `'not-a-url'` is nine characters and was refused
 by a sibling `@length(10, 60)` until it could be padded.
+
+**`litestone mutate` excludes both new outcomes from the kill count.** An
+`uncheckable` row is generated from the ORIGINAL schema, so it appears
+identically under every mutant — the same shape as the 22 `error` rows that once
+scored a 14-mutant schema 93% with four mutations unnoticed. That lesson was
+already written in `mutate.js`; the new outcomes just had to join it.
 
 **What cannot be isolated is reported, never dropped.** `uncheckable` names the
 rule, the blocking rules' own messages, and says the case was NOT checked —

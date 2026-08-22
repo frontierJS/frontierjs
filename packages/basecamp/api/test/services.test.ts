@@ -338,8 +338,14 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
     const u    = await sys.user.create({ data: { email: `q2-${uniq}@x.co`, accountId: acct.id } })
     const bare = session({ userId: u.id })
 
+    // Refused by `tenantClaimGuard` now rather than by `requireWorkspace`: the
+    // schema declares row tenancy, so junction installs a guard that fires
+    // app-level, ahead of any service hook, for exactly this case — a signed-in
+    // caller whose principal carries no claim, whose every read would otherwise
+    // be an empty list with a 200. The app's own sentence still covers the
+    // services that are not row-scoped.
     await expect(env.as(bare).service('projects').find())
-      .rejects.toThrow(/workspace_id required/)
+      .rejects.toThrow(/do not belong to the 'workspaceId'/)
   })
 
   test('a filter the service honours still filters beside it', async () => {

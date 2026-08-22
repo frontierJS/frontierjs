@@ -3,7 +3,7 @@
 // realized at a point in time (VISION.md §Where Basecamp Fits).
 //
 // Mounted at /deployments. Append-only from a person's point of view: creating
-// one is a user action, advancing its status is the engine's, and `remove` is
+// one is a user action, advancing its status is the job's, and `remove` is
 // a cancel rather than a delete — deployment history is the audit surface for
 // "what is actually running", so it is never erased here.
 //
@@ -11,12 +11,13 @@
 // `include: { app: { include: { environment: true } } }` — declared in the
 // schema rather than spelled out as SQL.
 
-import { createService, NotFound, BadRequest } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { getScoped, stampWorkspace, changesNothing, dbOf, wsOf, actorOf } from '../../core/resource.ts'
-import { resolveExecutor, isExecutor } from '../../engine/executor.ts'
+import { db, getScoped, deriveSlug, changesNothing, ws, actor } from '../../core/resource.ts'
+import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
+import deploymentRun from '../../jobs/deployment-run.job.ts'
 
 const WITH_APP = { app: { include: { environment: true } } }
 
@@ -33,8 +34,8 @@ function buildInitialSteps(appType: string): string[] {
 
 export function createDeploymentsService(app: BasecampApp) {
 
-  function steps(ctx: ServiceContext, deploymentId: string) {
-    return dbOf(ctx).deploymentStep.findMany({
+  function steps(deploymentId: string) {
+    return db().deploymentStep.findMany({
       where:   { deploymentId },
       orderBy: { startedAt: 'asc' },
     })
@@ -51,12 +52,12 @@ export function createDeploymentsService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
-      const appId  = (ctx.query.appId ?? ctx.query.service_id) as string | undefined
-      const status = ctx.query.status as string | undefined
+      const { limit, offset } = getPagination()
+      const appId  = ($.query.appId ?? $.query.service_id) as string | undefined
+      const status = $.query.status as string | undefined
 
-      const { rows, total } = await dbOf(ctx).deployment.findManyAndCount({
-        where:   { workspaceId: wsOf(ctx), ...(appId ? { appId } : {}), ...(status ? { status } : {}) },
+      const { rows, total } = await db().deployment.findManyAndCount({
+        where:   { workspaceId: ws(), ...(appId ? { appId } : {}), ...(status ? { status } : {}) },
         include: WITH_APP,
         orderBy: { queuedAt: 'desc' },
         limit, offset,
@@ -65,23 +66,23 @@ export function createDeploymentsService(app: BasecampApp) {
     },
 
     async get(ctx: ServiceContext) {
-      const row = await dbOf(ctx).deployment.findFirst({
-        where:   { id: ctx.id as string, workspaceId: wsOf(ctx) },
+      const row = await db().deployment.findFirst({
+        where:   { id: $.id as string, workspaceId: ws() },
         include: WITH_APP,
       })
-      if (!row) throw new NotFound(`Deployment '${ctx.id}' not found`)
-      return { ...row, steps: await steps(ctx, row.id) }
+      if (!row) throw new NotFound(`Deployment '${$.id}' not found`)
+      return { ...row, steps: await steps(row.id) }
     },
 
-    async create(ctx: ServiceContext) {
-      const data  = ctx.data as Record<string, unknown>
+    async create() {
+      const data  = $.data as Record<string, unknown>
       const appId = data.appId as string
 
-      const target = await dbOf(ctx).app.findFirst({ where: { id: appId, workspaceId: wsOf(ctx) } })
+      const target = await db().app.findFirst({ where: { id: appId, workspaceId: ws() } })
       if (!target) throw new NotFound(`App '${appId}' not found in this workspace`)
 
       // Refused here, where the person who pressed the button is still looking.
-      // The engine asks the same question again when the job runs — this is not
+      // The job asks the same question again when it runs — this is not
       // the enforcement, it is the message: a release created and failed a
       // second later tells an operator their app is broken, where a 400 naming
       // the missing placement tells them what to do (FJS-257).
@@ -92,35 +93,35 @@ export function createDeploymentsService(app: BasecampApp) {
       // columns, so these are already objects — the old code JSON.parse'd them.
       data.configSnapshot = { source: target.source ?? {}, config: target.config ?? {} }
       data.environmentId  = target.environmentId
-      data.triggeredBy    = actorOf(ctx) === 'system' ? null : actorOf(ctx)
+      data.triggeredBy    = actor() === 'system' ? null : actor()
 
       // Chain to the last successful release so a rollback knows where to go.
-      const prev = await dbOf(ctx).deployment.findFirst({
+      const prev = await db().deployment.findFirst({
         where:   { appId, status: 'success' },
         orderBy: { finishedAt: 'desc' },
       })
       if (prev) data.previousDeploymentId = prev.id
 
-      const deployment = await dbOf(ctx).deployment.create({ data })
+      const deployment = await db().deployment.create({ data })
 
-      await dbOf(ctx).deploymentStep.createMany({
+      await db().deploymentStep.createMany({
         data: buildInitialSteps(target.type).map(name => ({
           deploymentId: deployment.id, name, status: 'pending',
         })),
       })
 
       // Durable hand-off — survives a restart mid-release.
-      await app.jobs.dispatch('deployment:run', {
+      await app.jobs.dispatch(deploymentRun, {
         deployment_id: deployment.id,
         app_id:        appId,
-        workspace_id:  wsOf(ctx),
+        workspace_id:  ws(),
       }, { queue: 'deployments', priority: 5 })
 
       return deployment
     },
 
-    async patch(ctx: ServiceContext) {
-      const deployment = await getScoped(ctx, 'deployment', 'Deployment')
+    async patch() {
+      const deployment = await getScoped('deployment', 'Deployment')
 
       // No terminal-state guard here. `@@transitions(status, …)` on Deployment
       // is the one statement of what a release may do next, and it is enforced
@@ -128,17 +129,17 @@ export function createDeploymentsService(app: BasecampApp) {
       // with a 409 that NAMES the moves it can make, which the list here never
       // did. What is left is the field allow-list, which is a different rule:
       // which columns a caller may write at all.
-      const data  = ctx.data as Record<string, unknown>
+      const data  = $.data as Record<string, unknown>
       const ALLOWED = ['status', 'builtImage', 'startedAt', 'finishedAt', 'durationMs']
       const patch: Record<string, unknown> = {}
       for (const key of ALLOWED) if (key in data) patch[key] = data[key]
 
       if (changesNothing(patch)) return deployment
 
-      const updated = await dbOf(ctx).deployment.update({ where: { id: deployment.id }, data: patch })
+      const updated = await db().deployment.update({ where: { id: deployment.id }, data: patch })
       if (patch.status)
         app.events.emit(`deployment:${patch.status}`,
-          { id: deployment.id, workspace_id: wsOf(ctx), status: patch.status })
+          { id: deployment.id, workspace_id: ws(), status: patch.status })
 
       return updated
     },
@@ -146,25 +147,25 @@ export function createDeploymentsService(app: BasecampApp) {
     // `remove` cancels an in-flight release. It does NOT delete the row: the
     // deployment record is how you answer "what shipped, when, by whom", and a
     // cancelled release is part of that answer.
-    async remove(ctx: ServiceContext) {
-      const deployment = await getScoped(ctx, 'deployment', 'Deployment')
+    async remove() {
+      const deployment = await getScoped('deployment', 'Deployment')
 
       // `cancel: [pending, building, pushing, deploying] -> cancelled` is the
       // guard, declared on the model. Writing the status IS the enforced path;
       // `transition()` is sugar for the move alone and this one stamps
       // `finishedAt` with it.
-      const updated = await dbOf(ctx).deployment.update({
+      const updated = await db().deployment.update({
         where: { id: deployment.id },
         data:  { status: 'cancelled', finishedAt: new Date().toISOString() },
       })
-      app.events.emit('deployment:cancelled', { id: deployment.id, workspace_id: wsOf(ctx) })
+      app.events.emit('deployment:cancelled', { id: deployment.id, workspace_id: ws() })
       return updated
     },
 
     hooks: {
       before: {
         all:    [sessionScope(app)],
-        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), stampWorkspace],
+        create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
         patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
       },

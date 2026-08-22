@@ -8,28 +8,43 @@
 //
 // These are helpers, not a factory. Each service still declares its own methods
 // so the ones with real behaviour (servers' drain/heartbeat, deployments'
-// engine handoff) read as themselves rather than as config for a base class.
+// job handoff) read as themselves rather than as config for a base class.
 
-import { NotFound, Conflict } from '@frontierjs/junction'
+import { NotFound, Conflict, $ } from '@frontierjs/junction'
 import type { ServiceContext } from '@frontierjs/junction'
 
-// ─── Context accessors ───────────────────────────────────────────────────
-// A ServiceContext has no `ctx.params`. It splits into auth / client / route /
-// locals — see core/hooks.ts. These three exist so that fact is stated once.
+// ─── Reading the call ────────────────────────────────────────────────────
+// `$` is the service call in progress — read-only, fresh per call, and it
+// throws by name if one of these is ever called from outside a call. The
+// caller-scoped Litestone client is `$.db`, so nothing here has to be handed
+// a context to reach it and nothing threads one to pass it on.
+//
+// Two things `$` does not answer, because they are this app's and not the
+// framework's: which workspace a call is acting in, and who counts as the
+// actor when nobody asked. Both live on `$.locals`/`$.me` and are named here
+// once rather than spelled out at 91 call sites.
 
-/** The caller-scoped Litestone client, installed by createApp({ db }). */
-export function dbOf(ctx: ServiceContext): any {
-  return (ctx.locals as { db: any }).db
+/**
+ * The caller-scoped Litestone client — `$.db`, typed for THIS app.
+ *
+ * `any`, exactly as `dbOf()` was. Junction's `LitestoneClient` is a deliberate
+ * minimal stand-in: it declares the surface junction's own adapter uses so the
+ * adapter compiles without Litestone installed, not this schema's accessors.
+ * So `$.db` alone does not know `exists()` or what a row of `App` looks like.
+ * The cast belongs to the app that owns the schema, and it belongs here once.
+ */
+export function db(): any {
+  return $.db
 }
 
 /** The acting workspace, stamped by requireWorkspace() in sessionScope. */
-export function wsOf(ctx: ServiceContext): string {
-  return ctx.locals.workspaceId as string
+export function ws(): string {
+  return $.locals.workspaceId as string
 }
 
-/** The acting user's id, or 'system' for engine/outpost paths. */
-export function actorOf(ctx: ServiceContext): string {
-  return (ctx.auth?.user as { userId?: string } | undefined)?.userId ?? 'system'
+/** The acting user's id, or 'system' for job and outpost paths. */
+export function actor(): string {
+  return ($.me as { userId?: string } | null | undefined)?.userId ?? 'system'
 }
 
 export function slugify(s: string): string {
@@ -41,17 +56,17 @@ export function slugify(s: string): string {
 /**
  * List within the caller's workspace.
  *
- * `deletedAt IS NULL` is never spelled out — @@softDelete makes exclusion the
- * default for every read, and restating it by hand is the one place that
- * disagrees when the convention changes.
+ * Neither half of the scope is spelled out. `deletedAt IS NULL` is @@softDelete's
+ * and `workspaceId` is the tenancy declaration's — both compile into the WHERE
+ * for every read, and a restated clause is the one that disagrees when the
+ * declaration moves.
  */
 export async function findScoped(
-  ctx:      ServiceContext,
   accessor: string,
   opts:     { where?: Record<string, unknown>; limit: number; offset: number; orderBy?: Record<string, string> | Record<string, string>[] },
 ) {
-  const { rows, total } = await dbOf(ctx)[accessor].findManyAndCount({
-    where:   { workspaceId: wsOf(ctx), ...(opts.where ?? {}) },
+  const { rows, total } = await db()[accessor].findManyAndCount({
+    where:   opts.where ?? {},
     limit:   opts.limit,
     offset:  opts.offset,
     orderBy: opts.orderBy ?? { createdAt: 'desc' },
@@ -62,47 +77,46 @@ export async function findScoped(
 /**
  * Fetch one row inside the caller's workspace, or 404.
  *
- * The workspace clause is the tenancy boundary: without it a caller who knows
- * an id can read another workspace's row. It is here rather than in each
- * service so it cannot be forgotten in one of them.
+ * The workspace clause is the schema's — a caller who knows an id reads nothing
+ * outside their own tenant because the declaration compiles a predicate into
+ * every query. What is left here is the 404, which is this app's sentence.
  */
 export async function getScoped(
-  ctx:      ServiceContext,
   accessor: string,
   label:    string,
-  id:       string = ctx.id as string,
+  id:       string = $.id as string,
 ) {
-  const row = await dbOf(ctx)[accessor].findFirst({ where: { id, workspaceId: wsOf(ctx) } })
+  const row = await db()[accessor].findFirst({ where: { id } })
   if (!row) throw new NotFound(`${label} '${id}' not found`)
   return row
 }
 
 /** Throw Conflict if a sibling already holds this slug. */
 export async function assertSlugFree(
-  ctx:      ServiceContext,
   accessor: string,
   where:    Record<string, unknown>,
   message:  string,
 ) {
-  if (await dbOf(ctx)[accessor].exists({ where })) throw new Conflict(message)
+  if (await db()[accessor].exists({ where })) throw new Conflict(message)
 }
 
 // ─── Writes ──────────────────────────────────────────────────────────────
 
 /**
- * before/create hook: stamp what the client does not send.
+ * before/create hook: derive the slug the client does not send.
+ *
+ * `workspaceId` is not stamped here. The tenancy declaration desugars into a
+ * `@default(auth().workspaceId)`, so the column is filled at the Data boundary
+ * from the claim the principal already carries — which covers the paths no hook
+ * runs on as well as this one.
  *
  * Must be a HOOK, not the first lines of create(). `model:` brings
- * autoValidate(model, 'create') with it, which validates ctx.data against the
- * schema's required fields — and Junction runs user hooks BEFORE the derived
- * ones precisely so a hook can shape ctx.data first. Do this inside create()
- * and every request 400s on "workspaceId is required" for a field the client
- * was never meant to supply.
+ * autoValidate(model, 'create') with it, and Junction runs user hooks BEFORE
+ * the derived ones precisely so a hook can shape ctx.data first.
  */
-export function stampWorkspace(ctx: ServiceContext): void {
+export function deriveSlug(ctx: ServiceContext): void {
   const data = ctx.data as Record<string, unknown>
   if (!data) return
-  data.workspaceId = wsOf(ctx)
   if (typeof data.name === 'string' && !data.slug) data.slug = slugify(data.name)
 }
 
@@ -140,8 +154,8 @@ export function changesNothing(patch: Record<string, unknown>): boolean {
 }
 
 /** Soft-delete (schema declares @@softDelete) and return the stamped row. */
-export async function removeScoped(ctx: ServiceContext, accessor: string, label: string) {
-  await getScoped(ctx, accessor, label)          // 404s outside the workspace
-  const removed = await dbOf(ctx)[accessor].remove({ where: { id: ctx.id as string } })
+export async function removeScoped(accessor: string, label: string) {
+  await getScoped(accessor, label)               // 404s outside the workspace
+  const removed = await db()[accessor].remove({ where: { id: $.id as string } })
   return Array.isArray(removed) ? removed[0] : removed
 }

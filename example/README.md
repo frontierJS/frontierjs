@@ -67,7 +67,7 @@ example/
     │   └── verify.mjs          ← drives a real browser; see "Verified" below
     └── src/
         ├── main.js  App.mesa  session.js
-        ├── resources/           ← .mesa files (invariant 18), no markup
+        ├── resources/           ← .mesa files (invariant 18): data in <script module>, markup is the default form
         └── routes/
 ```
 

@@ -103,7 +103,7 @@ the same person here is `owner` in one workspace and `viewer` in the next.
 | `admin` | ADMINISTRATOR (5) |
 | `owner` | OWNER (6) |
 | `User.isSystemAdmin` | SYSADMIN (7) |
-| `asSystem()` | SYSTEM (8) — engines, outposts, the seed, migrations |
+| `asSystem()` | SYSTEM (8) — jobs, outposts, the seed, migrations |
 
 CREATOR(3) is unused: the narrowest role reads and the next one up writes.
 
@@ -151,7 +151,7 @@ of shapes, so the next model is a row rather than a copy.
 of that model has to be workspace-filtered already and every path that
 legitimately crosses has to be `asSystem()`. For all 14 it came out clean:
 the services read through `dbOf(ctx)` with `workspaceId: wsOf(ctx)` throughout,
-the three engines and the hub take `asSystem()`. Proven a second way, over HTTP
+the jobs and the hub take `asSystem()`. Proven a second way, over HTTP
 with two workspaces owned by one person: each lists only its own rows, a
 cross-workspace `GET` is a 404, and a create naming the other workspace in the
 BODY lands in the caller's own — the service stamps the header's workspace and
@@ -185,7 +185,7 @@ two attributes on one model.
 **A policy filters where a gate refuses**, and that is the whole risk in the
 remaining 22. A read that legitimately crosses a workspace and is not
 `asSystem()` matches nothing — no error, an empty screen. The paths that do
-cross are the three engines, the hub and the outpost's heartbeat, and every one of
+cross are the jobs, the hub and the outpost's heartbeat, and every one of
 them already takes `asSystem()`. What is left carries no `workspaceId` column of
 its own — a `DeploymentStep`, a `JobRun`, a `Volume` — so the next move is
 `check(parent)`, delegating to the parent's policy rather than restating it.
@@ -229,7 +229,7 @@ recorded before they landed, both because a path reads what it needs:
   developer's — but running one means reading its script, so a read gate above
   `developer` refuses the person the service is written to allow.
 - **The machine-written models read at 2 and take 8 only on the writes the
-  ENGINE makes.** `ServerEvent`, `DeploymentStep`, `RecipeRun` and `CleanupRun`
+  JOB makes.** `ServerEvent`, `DeploymentStep`, `RecipeRun` and `CleanupRun`
   are created as a side effect of a person's action, through that person's own
   client; it is the later advance-the-run updates that no caller may make.
 
@@ -351,6 +351,6 @@ snake_case columns and epoch-ms timestamps that no longer existed, and
 auth's `Credential`. That was the intended consequence of the schema being the
 seed — the alternative is two shapes drifting apart quietly.
 
-All of it has since been converted: **9 services and both engines run on
+All of it has since been converted: **9 services and both runners run on
 Litestone accessors** with `createService({ model })`, `basecamp-auth.ts` is
 deleted, and there is zero raw SQL in `api/src`.

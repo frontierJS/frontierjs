@@ -332,7 +332,7 @@ export class OrderAlert extends Notification {
 
 ## Sierra resource
 
-`fli add notifications` creates `web/src/resources/Notification.mesa` — a resource file with no markup, per Invariant 18. `examples/Notification.mesa` is what it writes:
+`fli add notifications` creates `web/src/resources/Notification.mesa` — a resource file whose data half is `<script module>`, per Invariant 18. `examples/Notification.mesa` is what it writes:
 
 - `notifications` — `createResource('notifications', { model: 'Notification' })`; `.store` is the live list, `.service` the client
 - `isUnread(n)` — what the bell counts and the list styles

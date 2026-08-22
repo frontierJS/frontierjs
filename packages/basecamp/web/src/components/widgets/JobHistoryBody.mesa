@@ -2,7 +2,7 @@
   // job_history — scheduled and one-shot jobs, with the outcome of their last
   // run.
   //
-  // `Job.lastRunAt` / `lastRunStatus` are columns the job engine stamps, so this
+  // `Job.lastRunAt` / `lastRunStatus` are columns the job run stamps, so this
   // is one read rather than a run query per job — the same pair the jobs screen
   // renders in its table.
   import { jobs } from '../../resources/Job.mesa'

@@ -122,7 +122,8 @@ basecamp/
     src/
       core/                  ← app, db client, env, hooks, resource helpers
       services/              ← one directory per service
-      engine/                ← deployment + job runners (Caravan handlers)
+      jobs/                  ← one *.job.ts per job — autoloaded by Caravan
+      providers/             ← who the app speaks to: executor, outpost
       infra/                 ← adapters for the 8 self-hosted appliances
   web/                       ← UI realm — Sierra + Mesa
     config/                  ← sierra.config.js + vite.config.js
@@ -141,14 +142,14 @@ is generated from it; editing that SQL by hand is how the two drift apart, and
 
 | Realm | | |
 |---|---|---|
-| **Data** | ✅ Done | 37 models, 21 enums, `database main` declared. **Every model declares a `@@gate`**, and 15 carry row-level tenancy in the schema (`@@allow('all', workspaceId == auth().workspaceId)`). Migration generated and verified against a fresh database. |
-| **API** | ✅ Done | 21 services + 3 engines on Litestone accessors, zero raw SQL. Auth via `@frontierjs/auth`. `/hub/` is the cross-workspace tier — a separate service behind one `requireSystemAdmin` hook. Verified over HTTP end to end. |
+| **Data** | ✅ Done | 38 models, 21 enums, `database main` declared. **Every model declares a `@@gate`**, and tenancy is one declared block — `tenancy { strategy row  column workspaceId  claim workspaceId }`, with eight `@@tenant(none)` and fourteen `@@tenant(via: parent)`, so **31 models carry a row policy**. Migration generated and verified against a fresh database. |
+| **API** | ✅ Done | 21 services + 4 job files on Litestone accessors, zero raw SQL. Auth via `@frontierjs/auth`. `/hub/` is the cross-workspace tier — a separate service behind one `requireSystemAdmin` hook. Verified over HTTP end to end. |
 | **UI** | ✅ Built | Sierra SPA covering every service: setup, login, guard, workspace switcher, Projects → Environments → Apps, deployments with a live step timeline, the server fleet (drain/reboot/sync, event trail, outpost heartbeats), jobs with run history, and an admin zone (members, audit trail, adapters). `bun run verify` drives all of it in a real browser — **90 checks**, including an accessibility pass on every screen. `docs/UI_PLAN.md` has what building it found. |
 
 What works today, checked by running it: first-run setup, password login,
 workspaces and membership, projects → environments → apps, environment
 variables, servers (including outpost heartbeat and drain/undrain), jobs, and
-deployments — where the engine runs through Caravan and advances a release
+deployments — where the job runs through Caravan and advances a release
 step by step.
 
 ### Access control
@@ -166,15 +167,17 @@ the ladder is per WORKSPACE rather than per app. `api/src/core/gate.ts` maps
 | `owner` | OWNER (6) | |
 | `isSystemAdmin` | SYSADMIN (7) | the hub tier, above any membership |
 
-`applyStanding()` resolves it once per request **onto the principal**, not onto
-the client — Junction re-derives its scoped client from `ctx.auth.user`, so a
-standing set on the client alone is dropped. An unknown role grades VISITOR
-rather than defaulting upward: an enum value added to the schema and forgotten
-here must lose access, not gain it.
+`createApp({ principal: membershipClaim(…) })` resolves it once per request
+**onto the principal**, not onto the client — Junction re-derives its scoped
+client from `ctx.auth.user`, so a standing set on the client alone is dropped.
+An unknown role grades VISITOR rather than defaulting upward: an enum value
+added to the schema and forgotten here must lose access, not gain it.
 
-The 22 models with no `workspaceId` want `check(parent)` and do not have it yet;
-`WorkspaceMember` (standing is read from it) and `AuditEvent` (nullable
-workspace) are deliberately outside row tenancy.
+The same read answers *which tenant*, which is why it is one seam and not two.
+The fourteen models with no `workspaceId` of their own declare
+`@@tenant(via: parent)`; `Workspace`, `WorkspaceMember` (standing is read from
+it), `AuditEvent` (nullable workspace) and the five auth models declare
+`@@tenant(none)` by name.
 
 ### Known gaps
 

@@ -12,7 +12,7 @@
   // labels, required fields and validation being schema-derived.
   //
   // There is no create hook and no `make()` caller, because a run is never
-  // authored from a form: `cleanup.run` writes the row and the engine finishes
+  // authored from a form: `cleanup.run` writes the row and the job finishes
   // it. This resource exists for the reads and for the custom methods.
   import { createResource } from '@frontierjs/sierra/junction'
 

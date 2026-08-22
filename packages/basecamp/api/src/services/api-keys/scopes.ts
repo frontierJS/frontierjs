@@ -6,7 +6,7 @@
 // Same file so that granting a scope and checking one cannot drift: the string
 // the screen shows in a checkbox is the string the guard tests for.
 
-import { Forbidden } from '@frontierjs/junction'
+import { Forbidden, $ } from '@frontierjs/junction'
 import type { Hook, ServiceContext } from '@frontierjs/junction'
 import type { BasecampApp } from '../../basecamp.types.ts'
 import { resolveWorkspaceId } from '../../core/hooks.ts'
@@ -66,13 +66,13 @@ export function scopeFor(service: string, method: string): string {
 
 export function apiKeyGuard(app: BasecampApp): Hook {
   return async (ctx: ServiceContext): Promise<void> => {
-    const user = ctx.auth?.user as
+    const user = $.auth?.user as
       { authMethod?: string; scopes?: string[]; credentialId?: string } | undefined
 
     if (user?.authMethod !== 'apiKey') return
 
-    if (OFF_LIMITS.has(ctx.service))
-      throw new Forbidden(`An API key cannot reach ${ctx.service}`)
+    if (OFF_LIMITS.has($.service))
+      throw new Forbidden(`An API key cannot reach ${$.service}`)
 
     // asSystem(): whether this key may act is what DECIDES the caller's
     // access, so it cannot be read through a client already scoped by it.
@@ -97,13 +97,13 @@ export function apiKeyGuard(app: BasecampApp): Hook {
     if (workspaceId && workspaceId !== key.workspaceId)
       throw new Forbidden('This API key belongs to a different workspace')
 
-    const needed = scopeFor(ctx.service, ctx.method)
+    const needed = scopeFor($.service, $.method)
     const held   = user.scopes ?? []
     if (!held.includes('admin') && !held.includes(needed))
       throw new Forbidden(`This API key needs the '${needed}' scope`)
 
     // For the usage hook, so it does not repeat the lookup.
-    ctx.locals.apiKeyId = key.id
+    $.locals.apiKeyId = key.id
   }
 }
 
@@ -117,7 +117,7 @@ export function apiKeyGuard(app: BasecampApp): Hook {
 
 export function apiKeyUsage(app: BasecampApp): Hook {
   return async (ctx: ServiceContext): Promise<void> => {
-    const id = ctx.locals.apiKeyId as string | undefined
+    const id = $.locals.apiKeyId as string | undefined
     if (!id) return
 
     const today = new Date().toISOString().slice(0, 10)

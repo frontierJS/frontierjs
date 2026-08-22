@@ -83,9 +83,31 @@ mesa({
   extensions:   ['.mesa', '.md'],   // file extensions to process
   css:          true,               // emit <style> blocks. false DROPS them
   hmr:          true,               // enable HMR in dev (.mesa only)
+  inspect:      true,               // click-to-source in dev. { key: 'meta' } names the modifier
   compilerPath: undefined,          // explicit compiler path (overrides auto-resolution)
 })
 ```
+
+## Click-to-source
+
+Hold **Alt** and the element under the pointer is outlined with the line that
+wrote it; click and the dev server opens that line in your editor. `Alt`+`Z`
+does the same to whatever has focus, and `window.__fjsInspect.locate(el)`
+answers a location from the console.
+
+Two halves, and both are dev-only. The compiler stamps
+`data-fjs-loc="src/pages/Home.mesa:12:3"` on every template element — an
+ATTRIBUTE rather than a runtime map, because a template is cloned rather than
+built element by element, so an element with no binding has no reference for a
+map to be keyed by and those are most of them. The plugin injects the client
+that reads it and calls Vite's own `/__open-in-editor`, so which editor opens is
+Vite's answer (`$EDITOR`, or its own detection) and not this package's.
+
+The path in the attribute is relative to the Vite root; the client puts the root
+back on before it asks. `inspect: false` turns off the injection AND the
+attribute — the client is its only reader, so there is nothing to keep.
+
+A production build stamps nothing and injects nothing.
 
 ## HMR
 

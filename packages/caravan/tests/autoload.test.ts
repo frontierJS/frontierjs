@@ -17,6 +17,8 @@ import { createCaravan } from '../src/index.ts'
 import type { HandlerOptions, JobHandler, JobRegistrar } from '../src/types.ts'
 
 const FIXTURES = resolve(import.meta.dir, 'fixtures/jobs')
+const COLON    = resolve(import.meta.dir, 'fixtures/colon-jobs')
+const DUPES    = resolve(import.meta.dir, 'fixtures/dup-jobs')
 
 // Collects what autoload registers, so the assertions are about the call
 // autoload makes rather than about queue internals.
@@ -83,6 +85,33 @@ describe('autoloadJobs against a directory with job files', () => {
   it('returns an empty list for a directory that does not exist', async () => {
     expect(await autoloadJobs(resolve(FIXTURES, 'nope'), c.stub)).toEqual([])
     expect(c.registered).toHaveLength(0)
+  })
+})
+
+// A job name is commonly namespaced with a colon, and a colon is not a legal
+// filename character on Windows — so the file convention used to exclude the
+// most common way of naming a job, by refusing the only file name it could have.
+
+describe('a namespaced job name', () => {
+  it('accepts the dash spelling of a colon as the file name', async () => {
+    const c = collector()
+    const loaded = await autoloadJobs(COLON, c.stub)
+
+    // The NAME keeps its colon — the translation is one-way, for the file only.
+    expect(loaded).toEqual(['deployment:run'])
+    expect(c.registered[0]!.name).toBe('deployment:run')
+    expect(c.registered[0]!.opts.queue).toBe('deployments')
+  })
+})
+
+// The scan recurses and the name is the basename, so two directories can claim
+// one name. `handlers` is a Map: without this the loser stops existing and
+// every dispatch to it runs the winner's handler instead.
+
+describe('two files claiming one job name', () => {
+  it('refuses, naming both files', async () => {
+    const c = collector()
+    await expect(autoloadJobs(DUPES, c.stub)).rejects.toThrow(/already registered by/)
   })
 })
 

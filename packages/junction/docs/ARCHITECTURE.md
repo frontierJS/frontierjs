@@ -274,8 +274,11 @@ by `example/web/test/verify-live.mjs` — a watcher tab that never acts.*
 
 Channels and presence live in `src/transport/channels.ts` and
 `src/transport/presence.ts`: server-controlled membership,
-`presence:sync/join/leave/update`, `app.presence()` / `app.presenceOf()`,
-30s heartbeat.
+`presence:sync/join/leave/update`, `app.presence()` / `app.presenceOf()`, and
+server-driven liveness — the server pings an idle socket every 15s and evicts
+one that has sent nothing for 40s. Any frame answers it; the client replies to
+the ping from its message handler, so an app calls nothing and a backgrounded
+tab (whose timers are throttled to ~1/min) stays connected.
 
 **Still open:** Litestone's `onEvent` has zero Junction subscribers — writes
 made directly through the db client, not through a service, announce nothing.

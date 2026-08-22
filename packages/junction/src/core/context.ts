@@ -15,7 +15,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { FrameworkError } from './errors.ts'
 import type { SessionContext } from '../auth/types.ts'
-import type { QueryDirectives } from './directives.ts'
+import type { QueryDirectives, Page } from './directives.ts'
 // A value import, and outbox.ts imports only TYPES back — so the cycle is
 // erased at compile time and there is none at runtime.
 import { enqueueOutbox } from './outbox.ts'
@@ -247,7 +247,10 @@ export function withCallEffects(
 // collision where `state` means app-global shared; `locals` has the
 // Astro/SvelteKit per-request meaning we want.)
 export interface ServiceContextLocals {
-  paginate?: { limit: number; offset: number; [k: string]: unknown }
+  /** `Page`, not a restatement of it — `paginate()` and `parseQuery` both
+   *  answer the same shape through `clampPage`, and a third spelling here is
+   *  how the hook and the query builder came to disagree in the first place. */
+  paginate?: Page
   [key: string]: unknown
 }
 
@@ -257,7 +260,7 @@ export interface ServiceContextLocals {
 // node:async_hooks into a bundle. Re-exported here because this is where the
 // API realm has always found it.
 
-export type { QueryDirectives } from './directives.ts'
+export type { QueryDirectives, Page } from './directives.ts'
 
 // ─── Hook type ────────────────────────────────────────────────────────────
 // `method` is the phase where the service method itself runs. It is not a hook
@@ -359,10 +362,85 @@ export interface RequestMeta {
 
 const _requestStore = new AsyncLocalStorage<RequestMeta>()
 
-// Framework-internal: the bridge wraps the entire pipeline run in this
-// so every hook/method/internal-call is "inside the truck."
-export function runWithMeta<T>(meta: RequestMeta, fn: () => T): T {
+// The one call that opens the store. Everything else goes through
+// enterRequest()/reenterAs() below, which is what makes those two the only
+// place a RequestMeta is ever built.
+function open<T>(meta: RequestMeta, fn: () => T): T {
   return _requestStore.run(meta, fn)
+}
+
+// ─── Entering the request scope — the ONE owner ───────────────────────────
+//
+// Five entry points establish a request: the HTTP handler, the WebSocket
+// frame dispatcher, app.runAs(), a service call that arrives with no store at
+// all (a job, a script, a boot task), and the test harness. Each of them used
+// to build a RequestMeta literal by hand, and the five copies were not the
+// same: the socket path wrapped nothing for its whole life, so requestMeta()
+// was undefined for every WS call and the Idempotency-Key that decides
+// whether a create runs twice applied to half the transports; the test
+// harness dropped `user` and `client` on the floor, so propagation behaved
+// one way under test and another in production.
+//
+// So the meta is built HERE and nowhere else, and a transport hands over what
+// it has rather than what the shape needs. A sixth transport cannot forget a
+// field it never names.
+export interface RequestSource {
+  origin: RequestMeta['origin']
+
+  /**
+   * The request's own headers, where there are any.
+   *
+   * Three keys are read off them and this is the only place that knows which:
+   * `x-request-id`, `idempotency-key`, `accept-language`. A transport with no
+   * headers (a job, a script) states the values it has instead.
+   */
+  headers?: Record<string, string | undefined>
+
+  /** Stated explicitly. Wins over `headers` — a transport that already
+   *  resolved a correlation id of its own is not overruled by a header. */
+  correlationId?:  string
+  idempotencyKey?: string
+  locale?:         string
+
+  /** WHO and WHERE. Both propagate; see the doc on RequestMeta. */
+  user?:   RequestMeta['user']
+  client?: RequestMeta['client']
+}
+
+export function enterRequest<T>(src: RequestSource, fn: () => T): T {
+  const h = src.headers
+  return open({
+    correlationId:  src.correlationId  ?? h?.['x-request-id'] ?? crypto.randomUUID(),
+    idempotencyKey: src.idempotencyKey ?? h?.['idempotency-key'],
+    locale:         src.locale         ?? h?.['accept-language']?.split(',')[0]?.trim(),
+    origin:         src.origin,
+    user:           src.user,
+    client:         src.client,
+  }, fn)
+}
+
+/**
+ * Re-establish the scope because THIS call's principal differs from the one
+ * already in it — service A running as alice calling B as bob, where anything
+ * B calls must inherit bob.
+ *
+ * Not merged into enterRequest() because it is the other question: that one
+ * says *a request starts here*, this one says *the same request, someone
+ * else*. Everything but the principal is carried over, which is the whole
+ * difference — a correlation id that changed mid-request is a broken trace.
+ *
+ * A call whose principal is already the one in scope opens NOTHING: on the
+ * common path the two are the same object by construction, and an ALS run()
+ * per service call would be paid by every nested call in the app to change
+ * nothing. A call arriving with no store at all is an entry point of its own
+ * and gets an internal request, which is what gives background work a
+ * principal to propagate at all.
+ */
+export function reenterAs<T>(user: RequestMeta['user'], fn: () => T): T {
+  const scoped = _requestStore.getStore()
+  if (!scoped) return enterRequest({ origin: 'internal', user }, fn)
+  if (scoped.user === user) return fn()
+  return open({ ...scoped, user }, fn)
 }
 
 // The accessor authors use. Returns undefined outside a request
@@ -370,6 +448,150 @@ export function runWithMeta<T>(meta: RequestMeta, fn: () => T): T {
 export function requestMeta(): RequestMeta | undefined {
   return _requestStore.getStore()
 }
+
+// ─── `$` — the service call you are inside ────────────────────────────────
+//
+// A request is one thing; a CALL inside it is another. `ctx.auth` and
+// `ctx.client` belong to the request and ride RequestMeta above. `ctx.data`,
+// `ctx.id`, `ctx.locals` and `ctx.locals.db` belong to one invocation: fresh
+// per call, and `transactional:` swaps the db under the method mid-call. So
+// this is a second store with a second span, and NOT the announcing-service
+// store below — that one is deliberately narrower, because widening it would
+// stop a write inside an afterCommit effect from being announced.
+//
+// The span is the whole of _callService: the method policy, the idempotency
+// claim, the pipeline, the announcement, the afterCommit drain, the outbox
+// handoff. Everything that semantically belongs to this invocation. A nested
+// call runs this again with its own context, so `$` inside it is the inner
+// call and the outer one is untouched when it returns.
+//
+// A replayed idempotent call returns before any of that: it runs no hook and
+// no method, so there is no user code to read `$` and nothing is owed.
+
+const _callStore = new AsyncLocalStorage<ServiceContext>()
+
+export function enterCall<T>(ctx: ServiceContext, fn: () => T): T {
+  return _callStore.run(ctx, fn)
+}
+
+/** The context of the call in progress, or undefined outside one. */
+export function currentCall(): ServiceContext | undefined {
+  return _callStore.getStore()
+}
+
+/**
+ * `$` reads the call in progress. Two rules make it safe to be this broad:
+ *
+ *   NO INVENTED KEYS. Only junction's own contract properties can be assigned
+ *   (WRITABLE below) — `$.dispatch = false` works, `$.myThing = 1` throws. What
+ *   makes an ambient object dangerous is that anyone can keep state on it, not
+ *   that it can be written at all: a fixed list cannot grow, so it is not a
+ *   bag. Per-call state is `$.locals`, app state is `app.claim()` (Invariant 5).
+ *
+ *   CALL LIFETIME. Outside a call it throws by name rather than answering
+ *   undefined. An ambient dependency is an undeclared one — `steps(id)` does
+ *   not say in its signature that it needs a call — and the whole of what
+ *   makes that acceptable is that the failure is loud, immediate and names
+ *   itself. Answering undefined would trade a loud bug for a silent one,
+ *   which is the trade this exists to reverse.
+ *
+ * Resolved on every property read, never snapshotted: `transactional:` sets
+ * `ctx.locals.db = tx` before running the method, so a value captured earlier
+ * is the wrong client.
+ */
+export type CallContext = ServiceContext & {
+  /** `ctx.locals.db` — the caller-scoped Litestone client. */
+  readonly db: NonNullable<ServiceContextLocals['db']>
+  /** `ctx.auth.user` — the principal this call is running as. */
+  readonly me: ServiceContext['auth']['user']
+}
+
+function held(key: string | symbol): ServiceContext {
+  const ctx = _callStore.getStore()
+  if (ctx) return ctx
+  throw new Error(
+    `[Junction] '$' was read outside a service call (reading '${String(key)}').
+` +
+    `'$' is the context of the service call in progress, so it exists inside a ` +
+    `service method, a hook, an afterCommit effect, and anything they call — and ` +
+    `nowhere else. At module scope it runs at import, before any call exists.
+` +
+    `From a job, a script or a boot task, go through a service ` +
+    `(app.service('x').find()) or take the ctx parameter.`
+  )
+}
+
+// The properties a service or a hook is MEANT to assign — junction's own
+// contract, and nothing else. `$` refuses every other key, which is the whole
+// of the read-only rule: what makes an ambient object dangerous is that anyone
+// can invent a key on it and keep state there, not that it can be written at
+// all. A fixed contract list cannot grow, so it is not a bag.
+//
+// Without this, `ctx.dispatch = false` — the documented way for a read-shaped
+// custom method to say "do not broadcast this" — had no spelling on `$`, and
+// eighteen call sites in one app had to keep taking a context for it.
+const WRITABLE = new Set(['data', 'query', 'id', 'result', 'error', 'statusCode', 'dispatch'])
+
+const NOT_WRITABLE = (key: string | symbol) =>
+  `[Junction] '$.${String(key)}' cannot be assigned. A service may set ` +
+  `${[...WRITABLE].join(', ')} — everything else is a view of the call, not a ` +
+  `place to keep state: use $.locals for one call, or app.claim() for the app.`
+
+export const $: CallContext = new Proxy({} as CallContext, {
+  get(_t, key) {
+    // A context is not a promise. Left to fall through, `await $` and every
+    // library that probes for a thenable would resolve it to something else.
+    if (key === 'then') return undefined
+    if (key === 'db') {
+      const db = held(key).locals.db
+      if (!db) throw new Error(
+        `[Junction] '$.db' — this call has no Litestone client on ctx.locals.db. ` +
+        `Build the app with createApp({ db }) or createApp({ tenants }).`
+      )
+      return db
+    }
+    if (key === 'me') return held(key).auth.user
+    // Symbols are protocol, not data — inspection and toString must not throw
+    // outside a call, or a logger printing `$` becomes the error.
+    if (typeof key === 'symbol') return _callStore.getStore()?.[key as never]
+    return held(key)[key as keyof ServiceContext]
+  },
+
+  set(_t, key, value) {
+    if (typeof key === 'string' && WRITABLE.has(key)) {
+      (held(key) as unknown as Record<string, unknown>)[key] = value
+      return true
+    }
+    throw new Error(NOT_WRITABLE(key))
+  },
+  defineProperty(_t, key) { throw new Error(NOT_WRITABLE(key)) },
+  deleteProperty(_t, key) { throw new Error(NOT_WRITABLE(key)) },
+
+  has(_t, key) {
+    if (key === 'db' || key === 'me') return true
+    return key in held(key)
+  },
+
+  // Destructuring, spread and Object.keys() go through these, and they answer
+  // the CONTEXT's own keys only.
+  //
+  // `db` and `me` are deliberately absent: they are derived accessors, not
+  // data, and enumerating them makes a spread EVALUATE them — so `{ ...$ }` on
+  // an app with no Litestone client threw the "no client on ctx.locals.db"
+  // error from inside a spread that never asked for a db. They stay reachable
+  // by name through get() and `in`, which is what an accessor should be.
+  //
+  // `configurable: true` is required: the target is an empty object, and a
+  // proxy may not report a non-configurable property its target does not have.
+  ownKeys() {
+    return Reflect.ownKeys(held('ownKeys'))
+  },
+  getOwnPropertyDescriptor(_t, key) {
+    if (key === 'db' || key === 'me') return undefined
+    const d = Reflect.getOwnPropertyDescriptor(held(key), key)
+    return d ? { ...d, configurable: true } : undefined
+  },
+})
 
 // ─── Which service is announcing this call? ───────────────────────────────
 // Read by the Litestone adapter's write tap, which announces a write that

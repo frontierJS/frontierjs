@@ -485,7 +485,14 @@ export function createChannelManager() {
 
 export type ChannelSetupFn = (app: App & { channels: ReturnType<typeof createChannelManager> }) => void
 
-export function channels(setup?: ChannelSetupFn): Plugin {
+export interface ChannelsOptions {
+  /** How often the server pings an otherwise silent connection. Default 15s. */
+  heartbeatInterval?: number
+  /** How long a connection may say nothing before it is evicted. Default 40s. */
+  heartbeatTimeout?:  number
+}
+
+export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Plugin {
   let _manager:        ReturnType<typeof createChannelManager> | null = null
   let _heartbeatTimer: ReturnType<typeof setInterval> | null = null
 
@@ -510,13 +517,13 @@ export function channels(setup?: ChannelSetupFn): Plugin {
       let _bridge:    typeof import('./bridge.ts')      | null = null
       let _callSvc:   typeof import('../core/service.ts') | null = null
       let _errUtils:  typeof import('../core/errors.ts')  | null = null
-      let _runWithMeta: typeof import('../core/context.ts').runWithMeta | null = null
+      let _enterRequest: typeof import('../core/context.ts').enterRequest | null = null
 
       async function ensureDeps() {
         if (!_bridge)   _bridge   = await import('./bridge.ts')
         if (!_callSvc)  _callSvc  = await import('../core/service.ts')
         if (!_errUtils) _errUtils = await import('../core/errors.ts')
-        if (!_runWithMeta) _runWithMeta = (await import('../core/context.ts')).runWithMeta
+        if (!_enterRequest) _enterRequest = (await import('../core/context.ts')).enterRequest
       }
 
       // Pre-warm on next tick so the first WS message isn't slow
@@ -527,22 +534,39 @@ export function channels(setup?: ChannelSetupFn): Plugin {
       // Auth is already resolved by http.ts _wsOpen before open() is called.
       // socketToConnId maps the raw $ws object → connId for lifecycle tracking.
       const socketToConnId = new WeakMap<object, { connId: string; connectedAt: number }>()
-      const lastPing        = new Map<string, number>()   // connId → last ping epoch ms
+      const lastSeen        = new Map<string, number>()   // connId → last frame epoch ms
 
-      // ── Heartbeat timeout ─────────────────────────────────────────────
-      // Evict connections that haven't pinged within heartbeatTimeout.
-      // Default: 30s. Handles silent drops (TCP close, browser crash) that
-      // don't fire the WS close event.
-      const heartbeatTimeout = 30_000
+      // ── Liveness ──────────────────────────────────────────────────────
+      // A connection is evicted once nothing has arrived from it in
+      // heartbeatTimeout — the only way to notice a silent drop (TCP reset,
+      // machine sleep, browser crash) that fires no close event.
+      //
+      // **The server drives it.** A client-side timer cannot: browsers
+      // throttle timers to ~1/min in a hidden tab, so a backgrounded tab
+      // would age out and reconnect on focus forever. An arriving ping runs
+      // the client's message handler, which is not throttled, so the pong
+      // goes out on time.
+      //
+      // **Any frame counts**, not just a pong — a client in the middle of a
+      // service call is plainly alive. Grading liveness on pings alone
+      // evicted every connection whose client did not run a heartbeat, which
+      // was all of them: nothing in the framework called startHeartbeat().
+      const heartbeatInterval = opts.heartbeatInterval ?? 15_000
+      const heartbeatTimeout  = opts.heartbeatTimeout  ?? 40_000
       _heartbeatTimer = setInterval(() => {
         const staleAt = Date.now() - heartbeatTimeout
-        for (const [connId, last] of lastPing) {
+        for (const [connId, last] of lastSeen) {
           if (last < staleAt) {
-            lastPing.delete(connId)
+            lastSeen.delete(connId)
             manager.handleDisconnect(connId).catch(() => {})
+            continue
+          }
+          const conn = manager.connections.get(connId)
+          if (conn && conn.socket.readyState === 1) {
+            wsSend(conn.socket, JSON.stringify({ type: 'ping' }))
           }
         }
-      }, 10_000)
+      }, heartbeatInterval)
       if ((_heartbeatTimer as unknown as { unref?: () => void }).unref) {
         (_heartbeatTimer as unknown as { unref: () => void }).unref()
       }
@@ -562,7 +586,7 @@ export function channels(setup?: ChannelSetupFn): Plugin {
           )
 
           socketToConnId.set(ctx.$ws as object, { connId: conn.id, connectedAt: Date.now() })
-          lastPing.set(conn.id, Date.now())
+          lastSeen.set(conn.id, Date.now())
 
           app.telemetry?.emit('junction.ws.connect', {
             connectionId: conn.id,
@@ -576,15 +600,22 @@ export function channels(setup?: ChannelSetupFn): Plugin {
           if (!entry) return
           const connId = entry.connId
 
+          // Anything arriving on this socket is proof of life, malformed
+          // frames included — the parse below can refuse a frame the sender
+          // was plainly alive to send.
+          lastSeen.set(connId, Date.now())
+
           const parsed = manager.handleMessage(connId, msg)
           if (!parsed) return
 
           // ── Ping/pong keepalive ──────────────────────────────────
+          // Either side may ping; the other answers. lastSeen is already
+          // stamped above, so neither branch has anything else to do.
           if (parsed.type === 'ping') {
-            lastPing.set(connId, Date.now())
             ctx.send({ type: 'pong' })
             return
           }
+          if (parsed.type === 'pong') return
 
           // ── Service call ─────────────────────────────────────────
           // Clients can call any registered service method over the socket.
@@ -695,25 +726,25 @@ export function channels(setup?: ChannelSetupFn): Plugin {
               const paramId = extra?.id ?? (data as Record<string, unknown>)?.id
               if (paramId) svcCtx.id = String(paramId)
 
-              // Request metadata is an AsyncLocalStorage store the HTTP handler
-              // wraps its pipeline run in, and this path wrapped nothing — so
-              // requestMeta() was undefined for every socket call and anything
-              // reading it (a correlation id in a log, the Idempotency-Key that
-              // decides whether a create runs twice) silently applied to half
-              // the transports. The frame carries them under `meta`, the same
-              // place it carries the id and the workspace.
-              const meta: import('../core/context.ts').RequestMeta = {
-                correlationId:  (extra.correlationId as string) ?? crypto.randomUUID(),
-                idempotencyKey: extra.idempotencyKey as string | undefined,
-                origin:         'websocket',
-                // Same as the HTTP path — the principal is request-wide, and it
-                // is what an internal call inherits when it names none.
-                user:           svcCtx.auth.user,
-                client:         svcCtx.client,
-              }
-
+              // Request metadata is an AsyncLocalStorage store, and this path
+              // wrapped nothing for its whole life — so requestMeta() was
+              // undefined for every socket call and anything reading it (a
+              // correlation id in a log, the Idempotency-Key that decides
+              // whether a create runs twice) silently applied to half the
+              // transports. enterRequest() is the one owner now; a socket has
+              // no per-call headers, so the frame carries the two values it
+              // needs under `meta`, the same place it carries the id and the
+              // workspace, and they are stated rather than derived.
               try {
-                await _runWithMeta!(meta, () =>
+                await _enterRequest!({
+                  origin:         'websocket',
+                  correlationId:  extra.correlationId as string | undefined,
+                  idempotencyKey: extra.idempotencyKey as string | undefined,
+                  // Same as the HTTP path — the principal is request-wide, and
+                  // it is what an internal call inherits when it names none.
+                  user:           svcCtx.auth.user,
+                  client:         svcCtx.client,
+                }, () =>
                   _call(svc, svcCtx, app._appHooks, app.events, app.telemetry))
                 // The second hand-copy of the bridge's rule. Both now call it.
                 ctx.send({ type: 'service_result', id: callId, result: unwrapResult(svcCtx.result) })
@@ -774,7 +805,7 @@ export function channels(setup?: ChannelSetupFn): Plugin {
         close: async (ctx: WsContext) => {
           const entry = socketToConnId.get(ctx.$ws as object)
           if (!entry) return
-          lastPing.delete(entry.connId)
+          lastSeen.delete(entry.connId)
           await manager.handleDisconnect(entry.connId)
           app.telemetry?.emit('junction.ws.disconnect', {
             connectionId: entry.connId,

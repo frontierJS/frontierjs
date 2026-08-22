@@ -13,7 +13,7 @@ title: Recipes
   //
   // What is on screen is never simulated. The mock streams invented output line
   // by line from a fixed table; here a run row goes `pending → running →` an
-  // exit code, pushed from the engine, and a machine with no outpost is refused
+  // exit code, pushed from the job, and a machine with no outpost is refused
   // at the click with the name of the machine in the sentence.
   import { session } from '../../session.js'
   import { recipes } from '../../resources/Recipe.mesa'
@@ -70,7 +70,7 @@ title: Recipes
   load()
   $: session.workspaceId, () => load()
 
-  // The engine pushes 'recipes patched' as each run starts and finishes, so a
+  // The job pushes 'recipes patched' as each run starts and finishes, so a
   // fleet run fills in machine by machine with nothing polling. `runs` is a
   // read and would otherwise reload the screen for having looked at it.
   const READS = new Set(['get', 'find', 'runs'])

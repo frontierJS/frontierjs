@@ -750,7 +750,14 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
       const selfDef   = schema.models.find(m => m.name === modelName)
       const selfTable = selfDef ? modelToTableName(selfDef, false) : modelName
 
-      return `EXISTS (SELECT 1 FROM "${targetTable}" WHERE "${targetTable}"."${rel.referencedKey}" = "${selfTable}"."${rel.foreignKey}" AND (${subSql}))`
+      // An ABSENT foreign key allows, in SQL exactly as it does in JS. Without
+      // the guard the EXISTS is simply false for a null column, so a delegated
+      // child with an OPTIONAL parent — a dashboard widget with no server, a
+      // note on no document — was invisible to every scoped read while
+      // `evalCheck` allowed the same row on write. Two implementations of one
+      // rule, disagreeing, and `verifyRowPolicies` skips a `check()` policy by
+      // name, so the net that grades the other rules could not see this one.
+      return `("${selfTable}"."${rel.foreignKey}" IS NULL OR EXISTS (SELECT 1 FROM "${targetTable}" WHERE "${targetTable}"."${rel.referencedKey}" = "${selfTable}"."${rel.foreignKey}" AND (${subSql})))`
     }
 
     default:

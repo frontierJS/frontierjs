@@ -20,16 +20,16 @@
 // one is worse than no figure, because nothing on screen says which is which.
 //
 // **A run is not carried out here.** `run` writes rows and queues them;
-// `engine/fleet.engine.ts` asks the outpost and records what came back. A sweep
+// `jobs/cleanup-run.job.ts` asks the outpost and records what came back. A sweep
 // that deletes forty gigabytes is not an HTTP request, and one that dies
 // mid-fleet leaves half the machines done with nothing saying which half.
 //
 // No `workspaceId` on either model — a disk is meaningless without its server,
 // so the scope is the join, the same one `volumes` and `servers.feed` make.
 
-import { createService, NotFound, BadRequest } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { dbOf, wsOf, actorOf }  from '../../core/resource.ts'
+import { db, ws, actor }  from '../../core/resource.ts'
 import {
   RECLAIM_TARGETS, RECLAIM_TARGET_NAMES, RECLAIM_TARGET_BY_NAME, estimateTarget,
 } from './targets.ts'
@@ -37,53 +37,9 @@ import type { ReclaimFigures } from './targets.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
-// ─── The outpost's wire contract ───────────────────────────────────────────
-// snake_case, like the heartbeat and the volume report and unlike every other
-// call into this app: the schema's camelCase applies to MODEL fields, and these
-// are `docker system df`'s words relayed. A mis-spelled key here does not
-// error — it reports a machine with nothing to reclaim.
-
-export interface DiskReport {
-  server_id?: string
-  images?:     { total?: number; unused?: number; dangling?: number; size_bytes?: number; reclaimable_bytes?: number }
-  containers?: { running?: number; stopped?: number; reclaimable_bytes?: number }
-  build_cache?: { size_bytes?: number; reclaimable_bytes?: number }
-}
-
-const int = (n: unknown): number => Math.max(0, Math.round(Number(n) || 0))
-
-/**
- * Write what an outpost reported about one machine's disk.
- *
- * Exported because two callers have it: this service's `report` method, and the
- * engine, when a prune answers with a fresh `usage` snapshot — the outpost has
- * just run `docker system df` to work out what it freed, so asking it again a
- * second later would be a second answer to the same question. One owner, so the
- * two cannot disagree about which key means what.
- */
-export async function applyDiskReport(sys: any, serverId: string, data: DiskReport) {
-  const row = {
-    imagesTotal:                int(data.images?.total),
-    imagesUnused:               int(data.images?.unused),
-    imagesDangling:             int(data.images?.dangling),
-    imageBytes:                 int(data.images?.size_bytes),
-    imagesReclaimableBytes:     int(data.images?.reclaimable_bytes),
-    containersRunning:          int(data.containers?.running),
-    containersStopped:          int(data.containers?.stopped),
-    containersReclaimableBytes: int(data.containers?.reclaimable_bytes),
-    buildCacheBytes:            int(data.build_cache?.size_bytes),
-    buildCacheReclaimableBytes: int(data.build_cache?.reclaimable_bytes),
-    reportedAt:                 new Date().toISOString(),
-  }
-
-  // @@unique([serverId]) makes this an upsert rather than an append — without
-  // it a machine checking in every minute would grow a row a minute and the
-  // screen would show the first one it found.
-  const existing = await sys.diskUsage.findFirst({ where: { serverId } })
-  return existing
-    ? sys.diskUsage.update({ where: { id: existing.id }, data: row })
-    : sys.diskUsage.create({ data: { serverId, ...row } })
-}
+import { applyDiskReport } from './disk-report.ts'
+import type { DiskReport } from './disk-report.ts'
+import cleanupRun from '../../jobs/cleanup-run.job.ts'
 
 export function createCleanupService(app: BasecampApp) {
 
@@ -93,9 +49,9 @@ export function createCleanupService(app: BasecampApp) {
   /** The caller's fleet, as id → name. The tenancy boundary for this whole
    *  service: neither model carries a workspace, so a query that skipped this
    *  would answer another workspace's disks to anyone holding an id. */
-  async function fleetOf(ctx: ServiceContext): Promise<Map<string, string>> {
-    const rows = await dbOf(ctx).server.findMany({
-      where:  { workspaceId: wsOf(ctx) },
+  async function fleetOf(): Promise<Map<string, string>> {
+    const rows = await db().server.findMany({
+      where:  { workspaceId: ws() },
       select: { id: true, name: true },
       limit:  500,
     })
@@ -103,10 +59,10 @@ export function createCleanupService(app: BasecampApp) {
   }
 
   async function recordEvent(
-    ctx: ServiceContext, serverId: string, kind: string, message: string,
+    serverId: string, kind: string, message: string,
     metadata: Record<string, unknown> = {},
   ) {
-    await dbOf(ctx).serverEvent.create({ data: { serverId, kind, message, metadata } })
+    await db().serverEvent.create({ data: { serverId, kind, message, metadata } })
   }
 
   return createService({
@@ -120,21 +76,21 @@ export function createCleanupService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // The whole surface, declared. A cleanup run is written by `run` and
-    // updated by the engine; `create` and `patch` from the wire would let a
+    // updated by the job; `create` and `patch` from the wire would let a
     // caller record a sweep that never happened, which is the one thing this
     // model exists to rule out.
     methods: ['find', 'get', 'usage', 'targets', 'report', 'run'],
 
     // ── find — the history ────────────────────────────────────────────
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx, { limit: 25, max: 100 })
-      const serverId = ctx.query.serverId as string | undefined
+      const { limit, offset } = getPagination({ limit: 25, max: 100 })
+      const serverId = $.query.serverId as string | undefined
 
-      const fleet = await fleetOf(ctx)
+      const fleet = await fleetOf()
       if (!fleet.size) return { total: 0, limit, offset, data: [] }
       if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
 
-      const { rows, total } = await dbOf(ctx).cleanupRun.findManyAndCount({
+      const { rows, total } = await db().cleanupRun.findManyAndCount({
         where:   { serverId: { in: serverId ? [serverId] : [...fleet.keys()] } },
         orderBy: { createdAt: 'desc' },
         limit, offset,
@@ -149,9 +105,9 @@ export function createCleanupService(app: BasecampApp) {
     },
 
     async get(ctx: ServiceContext) {
-      const fleet = await fleetOf(ctx)
-      const row   = await dbOf(ctx).cleanupRun.findFirst({ where: { id: ctx.id as string } })
-      if (!row || !fleet.has(row.serverId as string)) throw new NotFound(`Cleanup run '${ctx.id}' not found`)
+      const fleet = await fleetOf()
+      const row   = await db().cleanupRun.findFirst({ where: { id: $.id as string } })
+      if (!row || !fleet.has(row.serverId as string)) throw new NotFound(`Cleanup run '${$.id}' not found`)
       return { ...row, serverName: fleet.get(row.serverId as string) ?? null }
     },
 
@@ -160,8 +116,8 @@ export function createCleanupService(app: BasecampApp) {
     // COLLECTION: there is no subject run, which neither client could express
     // until `FJS-122`. A named key rather than `data`, so `wrapResult` treats it
     // as a single and hands it over whole.
-    async targets(ctx: ServiceContext) {
-      ctx.dispatch = false   // read-shaped
+    async targets() {
+      $.dispatch = false   // read-shaped
       return { targets: RECLAIM_TARGETS }
     },
 
@@ -173,29 +129,29 @@ export function createCleanupService(app: BasecampApp) {
     // beside the button have to come from one place, or they disagree the first
     // time a figure is renamed.
     async usage(ctx: ServiceContext) {
-      ctx.dispatch = false   // read-shaped
-      const fleet = await fleetOf(ctx)
+      $.dispatch = false   // read-shaped
+      const fleet = await fleetOf()
       if (!fleet.size) return { servers: [], reported: 0, totalReclaimableBytes: 0 }
 
       const ids = [...fleet.keys()]
 
       const [disks, volumes, runs] = await Promise.all([
-        dbOf(ctx).diskUsage.findMany({ where: { serverId: { in: ids } }, limit: 500 }),
+        db().diskUsage.findMany({ where: { serverId: { in: ids } }, limit: 500 }),
         // Unused volumes come from `Volume`, which already owns per-disk sizes.
         // A count on DiskUsage would be a second answer, and the two would part
         // company the first time a report was missed.
-        dbOf(ctx).volume.findMany({
+        db().volume.findMany({
           where: { serverId: { in: ids }, inUse: false },
           select: { serverId: true, sizeBytes: true },
           limit: 5_000,
         }),
         // Newest first, so the first row seen for a server is its last sweep.
-        dbOf(ctx).cleanupRun.findMany({
+        db().cleanupRun.findMany({
           where: { serverId: { in: ids } }, orderBy: { createdAt: 'desc' }, limit: 500,
         }),
       ])
 
-      // `any` for the same reason `dbOf` is: the Litestone accessors have no
+      // `any` for the same reason `db()` is: the Litestone accessors have no
       // generated types yet (`litestone types` is pending), so every column
       // read off a row is otherwise its own diagnostic.
       const diskBy = new Map<string, any>(disks.map((d: any) => [d.serverId as string, d]))
@@ -259,8 +215,8 @@ export function createCleanupService(app: BasecampApp) {
     // which rows Basecamp holds. Exempted from sessionScope by NAME below — a
     // comment claiming exemption is not one, and that mistake 401'd every
     // server check-in once.
-    async report(ctx: ServiceContext) {
-      const data     = ctx.data as DiskReport
+    async report() {
+      const data     = $.data as DiskReport
       const serverId = data?.server_id
       if (!serverId) throw new BadRequest('server_id is required')
 
@@ -272,7 +228,7 @@ export function createCleanupService(app: BasecampApp) {
       // sessionScope skips this method, so nothing else has stamped one.
       // Without it the after-hook publishes to `workspace:undefined` and an
       // open cleanup screen never hears that the picture changed.
-      ctx.locals.workspaceId = server.workspaceId
+      $.locals.workspaceId = server.workspaceId
 
       return applyDiskReport(sys(), serverId, data)
     },
@@ -282,8 +238,8 @@ export function createCleanupService(app: BasecampApp) {
     // machine an outpost has registered for; `{ targets }` is a subset of the
     // vocabulary and defaults to the ones marked on in `targets.ts`.
     async run(ctx: ServiceContext) {
-      const data     = (ctx.data ?? {}) as { serverId?: string; targets?: string[]; keepImages?: number }
-      const fleet    = await fleetOf(ctx)
+      const data     = ($.data ?? {}) as { serverId?: string; targets?: string[]; keepImages?: number }
+      const fleet    = await fleetOf()
       const serverId = data.serverId
 
       if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
@@ -320,17 +276,16 @@ export function createCleanupService(app: BasecampApp) {
           'nothing was swept. An outpost registers itself on its first heartbeat.'
         )
 
-      const actor = actorOf(ctx)
       const runs  = []
       for (const id of reachable) {
-        const run = await dbOf(ctx).cleanupRun.create({
-          data: { serverId: id, targets, keepImages, requestedBy: actor, status: 'pending' },
+        const run = await db().cleanupRun.create({
+          data: { serverId: id, targets, keepImages, requestedBy: actor(), status: 'pending' },
         })
-        await app.jobs.dispatch('cleanup:run',
-          { runId: run.id, workspaceId: wsOf(ctx) },
+        await app.jobs.dispatch(cleanupRun,
+          { runId: run.id, workspaceId: ws() },
           { queue: 'fleet', priority: 5 })
-        await recordEvent(ctx, id, 'cleanup_queued',
-          `Disk cleanup queued (${targets.join(', ')})`, { requested_by: actor })
+        await recordEvent(id, 'cleanup_queued',
+          `Disk cleanup queued (${targets.join(', ')})`, { requested_by: actor() })
         runs.push({ ...run, serverName: fleet.get(id) ?? null })
       }
 

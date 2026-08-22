@@ -107,7 +107,7 @@ siteName: Basecamp
     { id: 'new-recipe',  group: 'Create', label: 'New recipe',        action: () => goto('/recipes/') },
 
     // A server the palette can reach is a server the fleet actually has —
-    // the rows are the ones already loaded for the notice engine, so this
+    // the rows are the ones already loaded for the notice rules, so this
     // group costs no extra request.
     ...srv().map(s => ({
       id: `srv-${s.id}`, group: 'Servers', label: s.name, sub: s.status,
@@ -321,7 +321,7 @@ siteName: Basecamp
     <div class="container stack">
       <!-- The condensed attention view rides above every screen. The full list,
            with the fold and the counts, is the home screen's ActionQueue —
-           same notices, same engine, two presentations. -->
+           same notices, same rules, two presentations. -->
       {#if session.user}
         <NoticeBar notices={notices} max={2} />
       {/if}

@@ -1,5 +1,18 @@
 # Changes
 
+## 2026-08-19 — click an element in a running app, open the line that wrote it
+
+Mesa's inspector, served through Sierra's plugin. Hold Alt over any element in
+the dev server and it is outlined with `src/routes/index.mesa:100:1`; click and
+the editor opens there. The compiler stamps the location, `mesa-vite/inspect-client.js`
+is the browser half, and this package serves that same source at
+`/@frontierjs/sierra/inspect-client` and injects the script into the HTML shell —
+the arrangement the HMR client already had (`FJS-D16`), for the same reason: one
+implementation, an id per plugin.
+
+`mesaPlugin({ inspect: false })` turns off the injection and the attribute
+together. A build stamps nothing and injects nothing.
+
 ## 2026-08-19 — an installed sierra was a blank screen, and the toolbar shouted at a port nobody held (`FJS-356`, `FJS-353`)
 
 980 tests, 0 fail.

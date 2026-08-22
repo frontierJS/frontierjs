@@ -1,9 +1,10 @@
-// src/engine/deployment.engine.ts
-// Deployment Engine — drives the step pipeline for each deploy.
+import { $ } from '@frontierjs/junction'
+// src/jobs/deployment-run.job.ts
+// Drives the step pipeline for one deploy. Dispatched as `deployment:run`.
 //
 // Lifecycle:
-//   Caravan dispatches 'deployment:run'
-//   → Engine picks it up, transitions pending → building
+//   The service dispatches this job
+//   → the handler picks it up, transitions pending → building
 //   → For each step, calls the outpost via Conduit, updates step status
 //   → On completion, marks success/failed, pushes WS update
 //
@@ -15,7 +16,7 @@
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
 //
-// WHO speaks it is `engine/executor.ts` — a registered outpost, or the named
+// WHO speaks it is `providers/executor.ts` — a registered outpost, or the named
 // stub, or a refusal. This file no longer has a path where nothing is sent and
 // the step is marked `success` anyway (FJS-257).
 //
@@ -28,8 +29,11 @@
 // Reliability: jobs are persisted in Caravan's SQLite store before execution.
 // A Basecamp restart resets in-flight jobs to pending — no stuck deploys.
 
-import { resolveExecutor, isExecutor } from './executor.ts'
-import type { Executor }    from './executor.ts'
+import { defineJob }       from '@frontierjs/caravan'
+import { resolveExecutor, isExecutor } from '../providers/executor.ts'
+import type { Executor }    from '../providers/executor.ts'
+import { appFrom }         from './context.ts'
+import { announce }        from '../channels.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -43,32 +47,26 @@ type DeploymentRow = any
 type StepRow       = any
 type ServiceRow    = any
 
-export function createDeploymentEngine(app: BasecampApp) {
+function runner(app: BasecampApp) {
 
-  // asSystem(): the engine runs on Caravan's thread, not a request's. There is
-  // no caller to scope to, and advancing a deployment is the engine's job —
+  // asSystem(): a job runs on the queue's thread, not a request's. There is
+  // no caller to scope to, and advancing a deployment is this job's —
   // the service layer deliberately refuses those writes.
   const db  = app.data.asSystem()
-  const log = app.logger.child('deploy-engine')
+  const log = app.logger.child('deployment-run')
 
   // ── Channel push ──────────────────────────────────────────────────
   // A Channel's method is `send(event, data)`. This used to call `ch.publish()`
   // behind a `if (!ch?.publish) return` guard — publish() is on the MANAGER,
-  // not on a channel, so the guard was true every single time and the engine
+  // not on a channel, so the guard was true every single time and this
   // pushed nothing, ever, without a line in the log. The deployments screen
   // showed a release frozen at 'pending' until it was reloaded.
   async function pushUpdate(deployId: string, workspaceId: string): Promise<void> {
-    const manager = (app as unknown as Record<string, unknown>).channels as
-      { channel: (n: string) => { send?: (e: string, d: unknown) => void } | undefined } | undefined
-
-    const ch = manager?.channel?.(`workspace:${workspaceId}`)
-    if (!ch?.send) return
-
     // The whole row, not a projection. A client that assigns an event payload
     // over the record it is rendering loses every field the projection omits —
     // the same trap `setVariable` had when it answered `{ id, variables }`.
     const row = await db.deployment.findUnique({ where: { id: deployId } })
-    if (row) ch.send('deployments patched', row)
+    if (row) announce(app, workspaceId, 'deployments patched', row)
   }
 
   // ── Step helpers ──────────────────────────────────────────────────
@@ -290,17 +288,17 @@ export function createDeploymentEngine(app: BasecampApp) {
     await pushUpdate(id, workspaceId)
   }
 
-  // ── Register Caravan handler ──────────────────────────────────────
-  function register(): void {
-    app.jobs.handle<{ deployment_id: string }>('deployment:run', async (job) => {
-      await runDeployment(job.data.deployment_id)
-    }, {
-      queue:       'deployments',
-      maxAttempts: 1,   // deploys are not retried automatically — re-trigger manually
-    })
-
-    log.info('deployment engine registered')
-  }
-
-  return { register, runDeployment }
+  return { runDeployment }
 }
+
+// ── The job ───────────────────────────────────────────────────────
+// maxAttempts 1: a deploy is not retried automatically. Half of one that
+// failed has already happened on the machine, and the way back is a person
+// looking at the steps and triggering another.
+
+export default defineJob<{ deployment_id: string }>('deployment:run', async (ctx) => {
+  await runner(appFrom(ctx, 'deployment:run')).runDeployment(ctx.data.deployment_id)
+}, {
+  queue:       'deployments',
+  maxAttempts: 1,
+})

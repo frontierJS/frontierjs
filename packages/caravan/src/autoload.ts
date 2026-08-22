@@ -7,6 +7,15 @@
 // the file is refused here rather than registered: the symptom otherwise is a
 // handler answering to `send-emial` while every dispatch says `send-email`, and
 // a job that silently never runs is the worst failure this package has.
+//
+// Two things the file name cannot say, and both are handled here rather than by
+// bending the rule above. A job name is commonly NAMESPACED with a colon
+// (`deployment:run`), and a colon is not a legal filename character on Windows
+// — so `deployment-run.job.ts` is accepted for it, since a dash is the only
+// thing a colon can become on the way to a file. And the scan is recursive
+// while the name is the BASENAME, so two files in different subdirectories can
+// claim one name; that is refused by naming both files, because the registry is
+// a map and the loser would simply stop existing.
 
 import type { JobDefinition, JobRegistrar } from './types.ts'
 
@@ -16,6 +25,12 @@ const JOB_SUFFIX = /\.job\.(ts|js)$/
 export function jobNameFromFile(path: string): string {
   const base = path.split('/').pop() ?? path
   return base.replace(JOB_SUFFIX, '')
+}
+
+/** The file name a job name asks for. Only `:` is translated — every other
+ *  character a name may hold is one a file may hold too. */
+export function fileNameForJob(name: string): string {
+  return name.replaceAll(':', '-')
 }
 
 /**
@@ -33,6 +48,9 @@ export async function autoloadJobs(
   caravan: JobRegistrar,
 ): Promise<string[]> {
   const loaded: string[] = []
+
+  /** name → the file that claimed it, for the duplicate refusal below. */
+  const claimed = new Map<string, string>()
 
   // `dir` must outlive the try — the loop below builds absolute paths from it.
   let dir: string
@@ -69,14 +87,25 @@ export async function autoloadJobs(
     }
 
     const expected = jobNameFromFile(entry)
-    if (def.name !== expected) {
+    if (def.name !== expected && fileNameForJob(def.name) !== expected) {
       throw new Error(
         `[Caravan] ${entry}: defineJob('${def.name}') does not match the file name. ` +
         `A job in jobsDir is named by its file, so this would register '${def.name}' ` +
         `while every dispatch naming '${expected}' waits for a handler that never arrives. ` +
-        `Rename the file to '${def.name}.job.ts', or the job to '${expected}'.`
+        `Rename the file to '${fileNameForJob(def.name)}.job.ts', or the job to '${expected}'.`
       )
     }
+
+    const first = claimed.get(def.name)
+    if (first) {
+      throw new Error(
+        `[Caravan] ${entry}: '${def.name}' is already registered by ${first}. ` +
+        `The scan is recursive and a job is named by its BASENAME, so two files in ` +
+        `different directories claim one name and the registry keeps only the last. ` +
+        `Rename one of them.`
+      )
+    }
+    claimed.set(def.name, entry)
 
     // The DEFINITION, not its keys re-listed. `handle()` already reads every
     // field off a definition, and restating them here made this the third

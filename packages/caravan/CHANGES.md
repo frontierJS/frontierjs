@@ -1,5 +1,29 @@
 # Changes — @frontierjs/caravan
 
+## 2026-08-20 — the two names a job file could not have
+
+167 tests, 2 of them new, 0 fail.
+
+Found by moving basecamp off five hand-registered handlers and onto job files
+(`packages/basecamp/CHANGES.md`). Both are about the one rule that makes the
+convention safe — *a job is named by its file* — and both are ways that rule was
+answering a question it had not been asked.
+
+**A namespaced name could not be a file.** `deployment:run` is the ordinary way
+to name a job and a colon is not a legal filename character on Windows, so the
+file convention silently excluded the most common naming style: the only file
+name the job could have was refused for not matching. `deployment-run.job.ts` is
+now accepted for it. The translation is one-way and narrow — a colon becomes a
+dash on the way to a file, nothing else is touched, and the NAME keeps its colon
+everywhere it is dispatched.
+
+**Two files could claim one name.** The scan is recursive and the name is the
+BASENAME, so `jobs/a/cleanup.job.ts` and `jobs/b/cleanup.job.ts` both register
+`cleanup` — and the registry is a Map, so the loser stopped existing while every
+dispatch to it ran the winner's handler. Refused at load, naming both files.
+Nothing here could have been asked about it: `registrations()` would report one
+job, correctly, and no count anywhere is wrong.
+
 ## 2026-08-18 — a bound on one attempt, and a stall you can see (`FJS-295`)
 
 165 tests, 11 of them new, 0 fail. Typecheck clean.

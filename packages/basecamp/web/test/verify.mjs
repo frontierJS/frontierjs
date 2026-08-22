@@ -248,7 +248,7 @@ const realOutpost = createOutpostServer(
         return res.end(JSON.stringify({ ok: true }))
       }
       // A recipe run. The command it was handed is the half nothing else can
-      // see: a run row saying `success` proves the engine wrote a row, not that
+      // see: a run row saying `success` proves the job wrote a row, not that
       // a machine was ever asked to do anything.
       if (req.method === 'POST' && req.url === '/exec') {
         const command = JSON.parse(body || '{}').command ?? ''
@@ -735,11 +735,11 @@ check('variables survive a reload',
 // ── 10. Deployments, and the live channel ─────────────────────────────
 // This is the one screen the WebSocket exists for. Everything asserted below
 // happens WITHOUT a reload: the page is loaded once, a release is started, and
-// the engine's pushes are what change it.
+// the job's pushes are what change it.
 //
 // The channel had never had a subscriber before this phase, and it did not
 // work: the connection joined `workspace:${session.workspace_id}` (a field that
-// does not exist — it is workspaceId, and auth never sets it), and the engine
+// does not exist — it is workspaceId, and auth never sets it), and the job
 // called `channel.publish()` (a manager method, not a channel one) behind a
 // guard that swallowed the miss. Both are fixed; these checks are what stop
 // them regressing into silence again.
@@ -930,7 +930,7 @@ check('…and it is still here', await path(), serverPath)
 // ── 11b. A release, now that there is a machine to run it on ──────────
 // This is the one screen the WebSocket exists for. Everything asserted below
 // happens WITHOUT a reload: the page is loaded once, a release is started, and
-// the engine's pushes are what change it.
+// the job's pushes are what change it.
 //
 // It runs HERE rather than beside the app screen because a release now needs a
 // placement, and a placement needs a server that has reported an outpost. The
@@ -940,7 +940,7 @@ check('…and it is still here', await path(), serverPath)
 //
 // The channel had never had a subscriber before this phase, and it did not
 // work: the connection joined `workspace:${session.workspace_id}` (a field that
-// does not exist — it is workspaceId, and auth never sets it), and the engine
+// does not exist — it is workspaceId, and auth never sets it), and the job
 // called `channel.publish()` (a manager method, not a channel one) behind a
 // guard that swallowed the miss. Both are fixed; these checks are what stop
 // them regressing into silence again.
@@ -995,7 +995,7 @@ await goto(appOwnerEnvPath)
 // rather than a second connection made for the test.
 //
 // Asserting "the status is still 'pending' three seconds in" would be racy:
-// the engine's work is simulated and a release can finish before the page
+// the job's work is simulated and a release can finish before the page
 // settles. What is not racy is whether pushes arrived at all — which is the
 // actual claim, and the thing that was broken.
 await evaluate(`
@@ -1028,10 +1028,10 @@ const live = await waitFor(
   v => ['success', 'failed', 'rolled_back', 'cancelled'].includes(v),
   40_000)
 check('the release finishes on screen with no reload', live, 'success')
-// The engine pushes on every step transition, so a six-step release produces
+// The job pushes on every step transition, so a six-step release produces
 // several. Zero means the socket delivered nothing and the screen only looked
 // right because it was re-fetched.
-check('…because the engine pushed over the socket',
+check('…because the job pushed over the socket',
   await evaluate(`(window.__pushes ?? []).length`), n => n > 0)
 check('…including the terminal state',
   await evaluate(`JSON.stringify(window.__pushes ?? [])`), t => t.includes('success'))
@@ -1074,7 +1074,7 @@ check('…and the health check was addressed by it',
 
 // ── 11c. Shell chrome — the attention system and ⌘K ───────────────────
 // The mock's NoticeBar / ActionQueue / CommandPalette, over real rows. The
-// notice engine is src/notices.js, a leaf module both the shell and the home
+// notice rules are src/notices.js, a leaf module both the shell and the home
 // screen call, so "needs attention" has one definition.
 
 // Pressure reported by the outpost. Nothing here reloads: the heartbeat
@@ -1144,7 +1144,7 @@ check('the job opens', await heading(), 'Nightly backup')
 check('the job shows what it will run',
   await evaluate(`document.body.textContent`), t => t.includes('/usr/local/bin/backup.sh'))
 
-// A one_shot job is dispatched ON CREATION — the engine picks up anything
+// A one_shot job is dispatched ON CREATION — the queue picks up anything
 // pending — so it has already run by the time this page loads. The run fails
 // with 'No server assigned and no local target registered', which is correct
 // for a fleet with nothing attached, and is exactly the kind of history this
@@ -1948,7 +1948,7 @@ check('running on a machine with no outpost is refused, naming it',
   await waitFor(`document.getElementById('screen-error')?.textContent ?? ''`, t => t.includes('outpost')),
   t => t.includes('no-outpost-01') && t.includes('No outpost is registered'))
 
-// Now the machine that has one. The queue carries it, the engine sends it, and
+// Now the machine that has one. The queue carries it, the job sends it, and
 // the run row fills in from a channel push with nothing polling.
 await goto('/recipes/')
 await evaluate(`(() => {
@@ -1963,7 +1963,7 @@ check('a run finishes and the exit code is on screen',
   await waitFor(`document.getElementById('recipe-runs')?.textContent ?? ''`, t => t.includes('success')),
   t => t.includes('success') && t.includes('gateway-01'))
 // The check that makes the one above mean anything: a run row saying success
-// proves the engine wrote a row, not that any machine was asked.
+// proves the job wrote a row, not that any machine was asked.
 check('…because the script really reached the outpost',
   outpostSaw.ran.join('|'), t => t.includes('df -h /'))
 check('…and its output is the machine\'s, not the recipe\'s text',

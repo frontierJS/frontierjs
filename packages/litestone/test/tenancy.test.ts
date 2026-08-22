@@ -121,11 +121,16 @@ describe('tenancy { strategy row } — desugaring', () => {
     expect(project.attributes.filter((a: any) => a.kind === 'allow')).toHaveLength(1)
   })
 
-  it('splits create from the reading operations', () => {
+  it('splits create from the reading operations, and grades the result of an update', () => {
     const ops = project.attributes
       .filter((a: any) => a.generated === 'tenancy')
       .map((a: any) => a.operations.join(','))
-    expect(ops).toEqual(['read,update,delete', 'create'])
+    // `create` is its own rule because `checkCreatePolicy` runs BEFORE the
+    // stamp: an absent column is legitimate on create and belongs to nobody on
+    // read. `post-update` rides with the first rule because it asks the same
+    // question of the row the write produced — *is this still mine* — which is
+    // what stops a caller pushing their own row into another tenant.
+    expect(ops).toEqual(['read,update,delete,post-update', 'create'])
   })
 
   it('stamps the column', () => {
@@ -347,5 +352,70 @@ describe('createTenantRegistry reads the block', () => {
 
   it('refuses a row schema instead of writing files nobody reads', async () => {
     await expect(createTenantRegistry({ schema: ROW_SCHEMA })).rejects.toThrow('strategy row')
+  })
+})
+
+// ─── Moving a row OUT of the tenant ──────────────────────────────────────────
+//
+// The generated rules used to be read/update/delete plus create, which asks
+// *may you touch this row* and never *may the row end up there*. So a caller
+// could `update({ where: { id: mine }, data: { workspaceId: theirs } })` — the
+// WHERE matched legitimately at the moment it ran, and the row landed in
+// somebody else's tenant.
+//
+// A hand-written `@@allow('all', col == auth().claim)` never had the hole, and
+// that is what found it: basecamp's own tests kept passing on the hand-written
+// version and failed the moment the same models moved to the declaration. `all`
+// expands to every operation including `post-update`, so an allow was graded
+// against the RESULTING row for free.
+
+describe('a row cannot be moved out of its tenant', () => {
+  const SCHEMA = `
+    tenancy { strategy row  column workspaceId  claim workspaceId }
+    model Doc  { id Int @id @default(autoincrement())  workspaceId Int  title String  notes Note[] }
+    model Note { id Int @id @default(autoincrement())  docId Int  doc Doc @relation(fields: [docId], references: [id])  body String }
+  `
+
+  async function seeded() {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+    const sys = db.asSystem()
+    await sys.doc.create({ data: { workspaceId: 1, title: 'mine' } })
+    await sys.doc.create({ data: { workspaceId: 2, title: 'theirs' } })
+    await sys.note.create({ data: { docId: 1, body: 'n' } })
+    return { db, sys, caller: db.$setAuth({ id: 'u1', workspaceId: 1 }) }
+  }
+
+  it('refuses an update that changes the tenant column, and rolls the row back', async () => {
+    const { sys, caller } = await seeded()
+
+    await expect(caller.doc.update({ where: { id: 1 }, data: { workspaceId: 2 } }))
+      .rejects.toThrow(/Outside your workspaceId/)
+
+    // The refusal is evaluated after the write, inside the transaction — so the
+    // assertion that matters is not the throw, it is that nothing persisted.
+    expect((await sys.doc.findUnique({ where: { id: 1 } })).workspaceId).toBe(1)
+  })
+
+  it('refuses re-pointing a delegated child at another tenant\'s parent', async () => {
+    const { sys, caller } = await seeded()
+
+    await expect(caller.note.update({ where: { id: 1 }, data: { docId: 2 } }))
+      .rejects.toThrow(/Outside your workspaceId/)
+    expect((await sys.note.findUnique({ where: { id: 1 } })).docId).toBe(1)
+  })
+
+  it('still allows an ordinary edit — the rule is about the tenant, not the row', async () => {
+    const { sys, caller } = await seeded()
+
+    await caller.doc.update({ where: { id: 1 }, data: { title: 'renamed' } })
+    expect((await sys.doc.findUnique({ where: { id: 1 } })).title).toBe('renamed')
+  })
+
+  it('asSystem() still moves a row deliberately', async () => {
+    // The audited bypass is the way a support tool or a merge script does this.
+    const { sys } = await seeded()
+
+    await sys.doc.update({ where: { id: 1 }, data: { workspaceId: 2 } })
+    expect((await sys.doc.findUnique({ where: { id: 1 } })).workspaceId).toBe(2)
   })
 })

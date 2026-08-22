@@ -41,6 +41,33 @@ const RESERVED_WORDS = new Set([
  */
 const MESA_DYNAMIC_TAG = 'mesa-dynamic-element'
 
+/**
+ * The attribute a dev build stamps on every template element, holding where the
+ * element was written: `path/to/File.mesa:12:3`, relative to the compiler's
+ * `locRoot`. It is an ATTRIBUTE rather than a runtime map because a template is
+ * cloned rather than built element by element — an element with no binding has
+ * no reference at runtime for a map to be keyed by, and those are most of them.
+ */
+export const LOC_ATTR = 'data-fjs-loc'
+
+/**
+ * Offset → 1-based line/column, over a line-start index built once per compile.
+ * A per-element scan is O(source) each and there is one call per element.
+ */
+function makeLocator(source) {
+  const starts = [0]
+  for (let i = 0; i < source.length; i++) if (source.charCodeAt(i) === 10) starts.push(i + 1)
+  return (index) => {
+    let lo = 0, hi = starts.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1
+      if (starts[mid] <= index) lo = mid
+      else hi = mid - 1
+    }
+    return { line: lo + 1, column: index - starts[lo] + 1 }
+  }
+}
+
 // ─── 1. UTILS ─────────────────────────────────────────────────────────────────
 
 // Events that do not bubble and therefore cannot be delegated to a root listener.
@@ -3774,6 +3801,8 @@ export function buildBlock(data, option = {}) {
           if (b?.bind) binds.push(b.bind)
         })
         n.classes.forEach((c) => el.class.add(c))
+        const _loc = ctx.locOf(n.start)
+        if (_loc) el.attributes.push({ name: LOC_ATTR, value: _loc.replace(/"/g, '&quot;') })
         el.voidTag = n.voidTag
         if (!n.closedTag) go(n, false, el)
       } else if (n.type === 'each') {
@@ -7152,11 +7181,33 @@ export async function compile(source, config = {}) {
     config
   )
 
+  // Where each element was written, stamped into the template. On in dev unless
+  // the caller says otherwise, because the affordance it feeds — click a node,
+  // open the line — is worthless if an app has to know to ask for it.
+  if (config.loc === undefined) config.loc = !!config.dev
+
+  const _locate = config.loc ? makeLocator(source) : null
+  // Relative to the app's root so the DOM carries `src/pages/Home.mesa:12:3`
+  // rather than an absolute path; the client puts the root back on before it
+  // asks the dev server to open anything.
+  const _locFile = (() => {
+    const file = config.filename ?? config.path ?? ''
+    const root = (config.locRoot ?? '').replace(/[\\/]+$/, '')
+    if (root && file.startsWith(root)) return file.slice(root.length).replace(/^[\\/]+/, '')
+    return file
+  })()
+
   const ctx = {
     source,
     config,
     uniqIndex: 0,
     warning: config.warning,
+    /** `File.mesa:line:column` for a parse-node offset, or null when off. */
+    locOf(index) {
+      if (!_locate || index == null || !_locFile) return null
+      const { line, column } = _locate(index)
+      return `${_locFile}:${line}:${column}`
+    },
     // Present only when the file carried a `---` block. A caller that keeps its
     // own frontmatter parser (Sierra's scanner does) is unaffected; a caller
     // that has only the compiled ctx can now see what the file declared.

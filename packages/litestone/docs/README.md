@@ -7,6 +7,7 @@
 
 ## Schema
 - [schema.md](schema.md) — .lite DSL: types, field attributes, model attributes, enums, functions
+- [modelling.md](modelling.md) — the recurring judgment calls: uuid vs Int id, surrogate vs natural key, Json array vs join table
 - [migrations.md](migrations.md) — autoMigrate, file migrations, JS migrations, CLI
 - [typescript.md](typescript.md) — litestone types, generated .d.ts, WhereBase, WindowSpec
 - [jsonschema.md](jsonschema.md) — generateJsonSchema: every key it emits, modes, audience, who reads each

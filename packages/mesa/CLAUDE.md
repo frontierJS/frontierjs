@@ -40,6 +40,8 @@ mesa-vite/
                          jetty imports this one: no import.meta, no imports
   client-source.js     — client.js + swap.js joined, for a plugin serving the
                          client at a virtual id
+  inspect-client.js    — click-to-source, as a string for a plugin to serve.
+                         Sierra serves this same source at an id of its own
   hmr.js               — the HMR boundary, @frontierjs/mesa/vite/hmr
   devtools.html        — the /__mesa/devtools panel it serves
 
@@ -71,6 +73,12 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
 ---
 
 ## What bites here
+
+**A dev build stamps `data-fjs-loc` on every template element.** It is what
+click-to-source reads (`mesa-vite/inspect-client.js`), it is dev-only, and it is
+in the TEMPLATE — so an assertion comparing a compiled template string against a
+literal has to compile with `loc: false`, not merely with `dev: true`. `loc`
+defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
 
 - **An instance `<script>` has exactly two export forms** — `export let` (a
   prop) and `export function` (a method on what `bind:this` hands the parent,

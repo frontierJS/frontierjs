@@ -67,8 +67,11 @@ indent_style = tab
 // ─── the framework packages an app can be given ───────────────────────────────
 // The runtime half of the same decision. `fli new` writes a subset of these,
 // chosen by the surfaces asked for. It is not every publishable package: what
-// an app is OFFERED is a product decision, and `ui`, `testing`, `email-kit` and
-// `toolbelt` are deliberately absent for now. The list lives here rather than in
+// an app is OFFERED is a product decision, and `testing`, `email-kit` and
+// `toolbelt` are deliberately absent for now. `ui` is IN: every CRUD page
+// `fli scaffold` and `fli admin:generate` write is built on it — `<Form
+// {resource} />` with no children is the generated form — so a scaffold without
+// it produces pages that cannot resolve their own imports. The list lives here rather than in
 // the command because the `registry` CI phase asks the npm registry whether it
 // can serve every name in it — a scaffold that installs a package nobody
 // published is an app that cannot start, and nothing else in the repo compares
@@ -84,6 +87,7 @@ export const FJS_PACKAGES = {
   '@frontierjs/mesa':           'latest',
   '@frontierjs/litestone':      'latest',
   '@frontierjs/css':            'latest',
+  '@frontierjs/ui':             'latest',
   '@frontierjs/auth':           'latest',
   '@frontierjs/conduit':        'latest',
   '@frontierjs/caravan':        'latest',

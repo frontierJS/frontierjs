@@ -285,11 +285,32 @@ describe('transformIndexHtml', () => {
     const p = mesaPlugin()
     p.configResolved({ root: ROOT, command: 'serve' })
 
-    expect(p.transformIndexHtml()).toEqual([{
+    expect(p.transformIndexHtml()).toContainEqual({
       tag:      'script',
       attrs:    { type: 'module', src: '/@frontierjs/mesa-dev-client' },
       injectTo: 'head',
-    }])
+    })
+  })
+
+  test('injects the inspector in dev', () => {
+    const p = mesaPlugin()
+    p.configResolved({ root: ROOT, command: 'serve' })
+
+    expect(p.transformIndexHtml()).toContainEqual({
+      tag:      'script',
+      attrs:    { type: 'module', src: '/@frontierjs/mesa-inspect' },
+      injectTo: 'head',
+    })
+  })
+
+  // Off means off at both ends: no client to read the attribute, and the
+  // compile below stamps none for it to read.
+  test('injects no inspector when it is turned off', () => {
+    const p = mesaPlugin({ inspect: false })
+    p.configResolved({ root: ROOT, command: 'serve' })
+
+    expect(p.transformIndexHtml().map((t) => t.attrs.src))
+      .not.toContain('/@frontierjs/mesa-inspect')
   })
 
   // The dev client is a BroadcastChannel relay to a devtools page that does not

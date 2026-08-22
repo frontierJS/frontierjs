@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 38 models · 38 gated · 0 unrestricted
-17 with row policies · 6 with protected fields · 11 gated transitions
+31 with row policies · 6 with protected fields · 11 gated transitions
 ```
 
 ## Gates
@@ -66,137 +66,289 @@ A policy compiles into the WHERE clause. It never raises — a wrong one is an
 empty result with a 200, so read these as "which rows", not "which callers".
 An operation with no `@@allow` is unrestricted at this layer.
 
+### `AlertEvent`
+
+- deny **read** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(rule, 'read')` — "Outside your workspaceId"
+
 ### `AlertRule`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `AlertRuleChannel`
+
+- deny **read** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(channel, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(channel, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(channel, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(channel, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(channel, 'read')` — "Outside your workspaceId"
 
 ### `ApiKey`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `App`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `AppNetwork`
+
+- deny **read** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(network, 'read')` — "Outside your workspaceId"
+
+### `AppServer`
+
+- deny **read** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+
+### `CleanupRun`
+
+- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
 
 ### `Dashboard`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `DashboardWidget`
+
+- deny **read** — `!check(dashboard, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(dashboard, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(dashboard, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(dashboard, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(dashboard, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(app, 'read')` — "Outside your workspaceId"
 
 ### `Deployment`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `DeploymentStep`
+
+- deny **read** — `!check(deployment, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(deployment, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(deployment, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(deployment, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(deployment, 'read')` — "Outside your workspaceId"
+
+### `DiskUsage`
+
+- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
 
 ### `Domain`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Environment`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `FeatureFlag`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `FlagOverride`
+
+- deny **read** — `!check(flag, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(environment, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(flag, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(environment, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(flag, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(environment, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(flag, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(environment, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(flag, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(environment, 'read')` — "Outside your workspaceId"
 
 ### `Invitation`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Job`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `JobRun`
+
+- deny **read** — `!check(job, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(job, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(job, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(job, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(job, 'read')` — "Outside your workspaceId"
 
 ### `Network`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `NotificationChannel`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Project`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Recipe`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `RecipeRun`
+
+- deny **read** — `!check(recipe, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(recipe, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(recipe, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(recipe, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(recipe, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
 
 ### `Secret`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Server`
 
-- allow **read** — `workspaceId == auth().workspaceId`
-- allow **create** — `workspaceId == auth().workspaceId`
-- allow **update** — `workspaceId == auth().workspaceId`
-- allow **post-update** — `workspaceId == auth().workspaceId`
-- allow **delete** — `workspaceId == auth().workspaceId`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `ServerEvent`
+
+- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+
+### `ServerNetwork`
+
+- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(network, 'read')` — "Outside your workspaceId"
 
 ### `User`
 
 - allow **update** — `id == auth().id`
+
+### `Volume`
+
+- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
 
 ## Protected fields
 

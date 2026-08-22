@@ -3,9 +3,10 @@
 // Framework hooks (authenticate, requireRole, etc.) imported from '@frontierjs/junction'.
 
 import { verifyRequest } from '@frontierjs/toolbelt/signature'
-import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, toDataPrincipal } from '@frontierjs/junction'
+import { BadRequest, Forbidden, NotFound, Unauthorized, authenticate, applyClaims, MEMBERSHIP, $} from '@frontierjs/junction'
 import type { Hook, AroundHook, ServiceContext }  from '@frontierjs/junction'
 import { env }                             from './env.ts'
+import { channelManager, workspaceChannelName } from '../channels.ts'
 import type { BasecampApp }                from '../basecamp.types.ts'
 
 // ─── The session ─────────────────────────────────────────────────────────
@@ -84,98 +85,84 @@ export function requireWorkspace(): Hook {
 }
 
 // ─── Standing ────────────────────────────────────────────────────────────
-// Who the caller is IN THE WORKSPACE this request is for — resolved once, and
-// put where both halves of access control can read it.
+// Who the caller is IN THE WORKSPACE this request is for.
 //
-// Two readers, and they are not the same reader:
+// The resolution itself is the framework's now: `createApp({ principal })` in
+// core/app.ts, through `membershipClaim()`, which reads the WorkspaceMember row
+// once per request and puts `workspaceId` and `memberRole` on a fresh principal
+// before the Data boundary scopes the client from it (`FJS-D113`). What used to
+// be `applyStanding` + `withWorkspaceStanding` here — the read, the fresh
+// object, the `$setAuth`, and the ordering against junction's own scoping hook
+// — is all of it gone.
 //
-//   the hooks below      read ctx.locals.memberRole and answer 403 with a
+// Two readers of the result, and they are not the same reader:
+//
+//   the hooks below      read the membership row and answer 403 with a
 //                        sentence naming the role you would need.
-//   @@gate               reads `memberRole` off the PRINCIPAL, through
-//                        core/gate.ts, at the Data boundary — which is where
-//                        Invariant 6 says access is decided, and which also
-//                        covers every path a hook does not: an engine calling
-//                        a service in-process, a custom method nobody wired a
-//                        role hook onto, a query built by hand in a method.
-//
-// The principal is where the interesting part is. Junction scopes the client
-// from `ctx.auth.user` in an around hook installed by createApp({ db }) — which
-// runs before any hook can know which workspace is being addressed — so the
-// standing has to be put ON the principal and the client re-scoped from it.
-// Doing that on the client alone is not enough: junction's getTable() re-derives
-// its own scoped copy from ctx.auth.user, so a standing that lives only on
-// ctx.locals.db is dropped the moment a service touches a model.
-//
-// A fresh object, never a mutation. Over WebSocket the session is resolved
-// once at upgrade and the same object is handed to every frame — and the
-// internal-call path freezes it. Mutating it would either throw or leak one
-// call's workspace role into the next call on that socket.
+//   @@gate + tenancy     read `memberRole` and `workspaceId` off the PRINCIPAL,
+//                        at the Data boundary — which is where Invariant 6 says
+//                        access is decided, and which covers every path a hook
+//                        does not: a job calling a service in-process, a custom
+//                        method nobody wired a role hook onto, a query built by
+//                        hand in a method.
 
-const STANDING_FOR = '__standingFor'
+/** The membership row the resolver parked, for a hook that needs the rest of
+ *  it. `null` where the caller named no workspace or belongs to none. */
+export function memberOf(ctx: ServiceContext): MemberRow | null {
+  return (ctx.locals[MEMBERSHIP] as MemberRow | undefined) ?? null
+}
+
+/** The caller's role in the workspace this request is for. */
+export function roleOf(ctx: ServiceContext): string | undefined {
+  return memberOf(ctx)?.role as string | undefined
+}
 
 /**
- * Resolve the caller's standing in `workspaceId` and apply it to this call.
+ * Re-resolve the standing against a DIFFERENT workspace, mid-call.
  *
- * Idempotent per workspace: called from the around hook with the header's
- * workspace, and again by any service that addresses a different one (the
- * workspaces service, where the workspace IS the id). Re-resolving is what
- * keeps a caller who is admin of workspace A from carrying that level into a
- * request against workspace B.
+ * One caller: the workspaces service, where the workspace IS the id being
+ * addressed. The request's own resolution ran against `X-Workspace-Id` — the
+ * workspace the UI is currently showing — and that is a different workspace
+ * from the one being renamed or left whenever a person acts on one from a list.
+ * Without this an admin of the workspace they are LOOKING AT would carry
+ * ADMINISTRATOR(5) into a patch of any other workspace they can name.
+ *
+ * A no-op where the caller is not a member: no claim, which the gate grades a
+ * visitor and tenancy answers nothing for — the same shape as naming a
+ * workspace you do not belong to on the way in.
  */
-export async function applyStanding(
+export async function restandingFor(
   app:         BasecampApp,
   ctx:         ServiceContext,
-  workspaceId: string | undefined
+  workspaceId: string,
 ): Promise<MemberRow | null> {
   const user = userOf(ctx)
-  if (!user?.userId || !workspaceId) return null
-  if (ctx.locals[STANDING_FOR] === workspaceId) return (ctx.locals.member as MemberRow | null) ?? null
+  if (!user?.userId) return null
 
-  // asSystem(): membership is what DECIDES the caller's access, so it cannot be
-  // read through a client already scoped by that access — and with @@gate live,
-  // WorkspaceMember is not readable at the level a caller with no standing yet
-  // holds. `include`, not a second findUnique: this runs on every request to
-  // every workspace-scoped service, and the workspace's status is one join away
-  // from a row already being read.
   const sys: any = app.data.asSystem()
   const member: MemberRow | null = await sys.workspaceMember.findFirst({
     where:   { workspaceId, userId: user.userId },
     include: { workspace: true },
   })
 
-  ctx.locals[STANDING_FOR] = workspaceId
-  ctx.locals.member        = member
-  ctx.locals.memberRole    = member?.role
+  ctx.locals[MEMBERSHIP]   = member
+  ctx.locals.workspaceId   = workspaceId
 
-  const principal = { ...user, memberRole: member?.role, workspaceId }
-  ctx.auth.user   = principal as unknown as typeof ctx.auth.user
-  ctx.locals.db   = (app.data as any).$setAuth(toDataPrincipal(principal))
+  applyClaims(ctx, app.data, member
+    ? { workspaceId, memberRole: member.role }
+    : {})
 
   return member
 }
 
-/**
- * App-level around hook: every service call starts with the caller's standing.
- *
- * Registered in app.ts, so it composes INSIDE junction's own withLitestoneDb —
- * which is the order that works, since this replaces the client that one
- * installed with a copy scoped to a principal carrying the workspace role.
- *
- * It refuses nothing. A request naming a workspace the caller is not in gets a
- * principal with no role, which @@gate grades VISITOR(1) and scopeToWorkspace
- * turns into a sentence. Refusing here would 403 the services that legitimately
- * run with no workspace at all — /workspaces, /hub, the outpost endpoints.
- */
-export function withWorkspaceStanding(app: BasecampApp): AroundHook {
-  return async (ctx, next) => {
-    await applyStanding(app, ctx, resolveWorkspaceId(ctx))
-    await next()
-  }
-}
-
 // ─── scopeToWorkspace ────────────────────────────────────────────────────
-// Verifies the authenticated user is a member of the requested workspace.
-// The membership row is already in hand — the around hook read it.
+// Verifies the authenticated user is a member of the requested workspace, and
+// turns *not a member* into a SENTENCE.
+//
+// Tenancy already makes a non-member's reads answer nothing and their writes be
+// refused, which is correct and is not an explanation. This hook exists so the
+// screen says why. The membership row is already in hand — `membershipClaim()`
+// resolved it once for this request and parked it.
 
 export function scopeToWorkspace(app: BasecampApp): Hook {
   return async (ctx: ServiceContext): Promise<void> => {
@@ -184,7 +171,7 @@ export function scopeToWorkspace(app: BasecampApp): Hook {
 
     if (!userId || !workspaceId) return
 
-    const member = await applyStanding(app, ctx, workspaceId)
+    const member = memberOf(ctx)
 
     if (!member) throw new Forbidden('You are not a member of this workspace')
 
@@ -212,7 +199,7 @@ export function scopeToWorkspace(app: BasecampApp): Hook {
 // derived from the same WorkspaceMember row, so the two cannot disagree about
 // WHO the caller is; they can only differ in what they say when refusing.
 //
-// Reads ctx.locals.memberRole, stamped by applyStanding — no extra query.
+// Reads the membership row `membershipClaim()` already resolved — no extra query.
 
 const ROLE_LEVEL: Record<string, number> = {
   viewer: 1, billing: 1, developer: 2, admin: 3, owner: 4,
@@ -227,8 +214,10 @@ export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook
 
     if (!userId || !workspaceId) return
 
-    await applyStanding(app, ctx, workspaceId)
-    const role = ctx.locals.memberRole as string | undefined
+    // No re-read: the request's own resolution already ran against this
+    // workspace, and the one case where a service addresses a DIFFERENT one
+    // calls `restandingFor` before this hook sees it.
+    const role = roleOf(ctx)
 
     const userLevel = ROLE_LEVEL[role ?? ''] ?? 0
     if (userLevel < minLevel)
@@ -303,10 +292,9 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
     // cast that lands on `unknown` makes the return type unassignable to the
     // very signature this function declares.
     type Channel  = ReturnType<import('@frontierjs/junction').PublishFn> & object
-    const manager = (app as unknown as Record<string, unknown>).channels as
-      { channel: (name: string) => Channel } | undefined
+    const manager = channelManager(app) as { channel: (name: string) => Channel } | undefined
     if (!manager?.channel) return null
-    return manager.channel(`workspace:${wsId}`)
+    return manager.channel(workspaceChannelName(wsId))
   }
 }
 
@@ -370,7 +358,7 @@ export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?
     const raw    = (ctx as { $raw?: { rawBody?: string; headers?: Record<string, string>; method?: string; path?: string } }).$raw
 
     // Fail closed, and say which half is missing. An in-process call has no
-    // `$raw` at all — the engines call these methods through the app — so this
+    // `$raw` at all — the jobs call these methods through the app — so this
     // refuses those too rather than letting the absence of a transport read as
     // permission. An app that needs to write a heartbeat for itself uses the
     // system client, not this door.
@@ -575,7 +563,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
         data: {
           workspaceId: (ctx.locals.workspaceId as string | undefined) ?? null,
           actorId:     session?.userId ?? null,
-          // No session is not an anonymous user — it is the engine, a job or an
+          // No session is not an anonymous user — it is a job or an
           // outpost acting for itself. `AuditEvent.actorType` defaults to 'user',
           // so leaving it unstated would file every machine write under people.
           actorType:   session ? (session.authMethod === 'api_key' ? 'api_key' : 'user') : 'system',
@@ -601,11 +589,10 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
 // ctx.query.limit is still honoured for internal callers that pass it plainly.
 
 export function getPagination(
-  ctx:      ServiceContext,
   defaults: { limit?: number; max?: number } = {}
 ): { limit: number; offset: number } {
-  const q = ctx.query as Record<string, unknown>
-  const d = (ctx.directives ?? {}) as { limit?: number; offset?: number }
+  const q = $.query as Record<string, unknown>
+  const d = ($.directives ?? {}) as { limit?: number; offset?: number }
 
   const limit  = Math.min(
     parseInt(String(d.limit ?? q.limit ?? defaults.limit ?? 20), 10),

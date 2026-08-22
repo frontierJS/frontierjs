@@ -477,7 +477,7 @@ export class BasecampSeeder extends Seeder {
 
             for (const app of apps) {
               // Where it runs. A seeded app with no placement is an app whose
-              // Deploy button answers 400 — the deployment engine resolves an
+              // Deploy button answers 400 — the deploy job resolves an
               // executor from `AppServer` and refuses without one, so a fleet
               // demo that skipped this would look complete and deploy nothing.
               // Round-robin across the online machines, so the placement column
@@ -659,8 +659,8 @@ export class BasecampSeeder extends Seeder {
   }
 }
 
-// The six steps the deployment engine actually runs (api/src/engine/
-// deployment.engine.ts), so a seeded deployment and a real one look the same.
+// The six steps the deploy job actually runs (api/src/jobs/
+// deployment-run.job.ts), so a seeded deployment and a real one look the same.
 const STEPS = ['prepare', 'build', 'push', 'configure', 'release', 'verify']
 
 async function seedSteps(db, deployment) {

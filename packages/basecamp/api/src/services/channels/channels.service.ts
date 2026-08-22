@@ -26,9 +26,9 @@
 // evidence. Email is the one kind that cannot be tested: it needs a mailer this
 // app has not configured, and it says so rather than pretending.
 
-import { createService, NotFound, BadRequest, Conflict } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import { findScoped, getScoped, removeScoped, narrowPatch, changesNothing, dbOf, wsOf, actorOf }
+import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import { secretRef }           from '../../core/credentials.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -109,8 +109,8 @@ export function createChannelsService(app: BasecampApp) {
   /** A channel plus how many rules deliver through it. The count is what makes
    *  a channel legible — an unused channel and one carrying every page-out look
    *  identical without it, and it is also what `remove` refuses on. */
-  async function withRuleCount(ctx: ServiceContext, channel: Record<string, unknown>) {
-    const rule_count = await dbOf(ctx).alertRuleChannel.count({ where: { channelId: channel.id } })
+  async function withRuleCount(channel: Record<string, unknown>) {
+    const rule_count = await db().alertRuleChannel.count({ where: { channelId: channel.id } })
     return { ...channel, rule_count }
   }
 
@@ -122,7 +122,6 @@ export function createChannelsService(app: BasecampApp) {
    * only path back out is conduit's resolver, at send time.
    */
   async function storeCredential(
-    ctx:   ServiceContext,
     kind:  string,
     name:  string,
     value: string,
@@ -132,14 +131,14 @@ export function createChannelsService(app: BasecampApp) {
     // back either — the column is absent from the row it would produce.
     const secret = await sys().secret.create({
       data: {
-        workspaceId: wsOf(ctx),
+        workspaceId: ws(),
         // The unique is [workspaceId, name] and a channel's name is already
         // unique in the workspace, so this cannot collide where the channel did
         // not. The prefix keeps it out of the way of secrets a person authored.
         name:      `channel:${name}`,
         kind:      'notification',
         data:      JSON.stringify({ [field]: value }),
-        createdBy: actorOf(ctx),
+        createdBy: actor(),
       },
     })
     return secret.id as string
@@ -156,13 +155,13 @@ export function createChannelsService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
-      const kind     = ctx.query.kind as string | undefined
+      const { limit, offset } = getPagination()
+      const kind     = $.query.kind as string | undefined
       // The wire carries strings and the column is a boolean; comparing them
       // raw matches nothing and reports an empty list rather than an error.
-      const isActive = ctx.query.isActive as string | boolean | undefined
+      const isActive = $.query.isActive as string | boolean | undefined
 
-      const page = await findScoped(ctx, 'notificationChannel', {
+      const page = await findScoped('notificationChannel', {
         where: {
           ...(kind ? { kind } : {}),
           ...(isActive !== undefined ? { isActive: isActive === true || isActive === 'true' } : {}),
@@ -175,17 +174,17 @@ export function createChannelsService(app: BasecampApp) {
       // count is paid for here rather than making the browser fan out one
       // request per row to find out.
       const data = await Promise.all(
-        (page.data as Record<string, unknown>[]).map(row => withRuleCount(ctx, row))
+        (page.data as Record<string, unknown>[]).map(row => withRuleCount(row))
       )
       return { ...page, data }
     },
 
     async get(ctx: ServiceContext) {
-      return withRuleCount(ctx, await getScoped(ctx, 'notificationChannel', 'Channel'))
+      return withRuleCount(await getScoped('notificationChannel', 'Channel'))
     },
 
     async create(ctx: ServiceContext) {
-      const data = ctx.data as Record<string, unknown>
+      const data = $.data as Record<string, unknown>
       const kind = data.kind as string
       const spec = KINDS[kind]
       // The schema's CHECK already refuses an unknown kind and autoValidate
@@ -194,12 +193,12 @@ export function createChannelsService(app: BasecampApp) {
       // credential it could never send.
       if (!spec) throw new BadRequest(`kind must be one of ${Object.keys(KINDS).join(', ')}`)
 
-      if (await dbOf(ctx).notificationChannel.exists({ where: { workspaceId: wsOf(ctx), name: data.name } }))
+      if (await db().notificationChannel.exists({ where: { workspaceId: ws(), name: data.name } }))
         throw new Conflict(`A channel named '${data.name}' already exists in this workspace`)
 
       // `secret` is @transient — validated by the model's own rules and lifted
       // off the payload by autoValidate, so `data` is columns only.
-      const credential = ctx.transients.secret as string | undefined
+      const credential = $.transients.secret as string | undefined
 
       if (spec.secretField && kind !== 'webhook' && !credential)
         throw new BadRequest(`${spec.label} needs a credential — send it as \`secret\``)
@@ -207,17 +206,17 @@ export function createChannelsService(app: BasecampApp) {
         throw new BadRequest(`${spec.label} channels carry no credential`)
 
       if (credential)
-        data.secretId = await storeCredential(ctx, kind, data.name as string, credential)
+        data.secretId = await storeCredential(kind, data.name as string, credential)
 
-      return withRuleCount(ctx, await dbOf(ctx).notificationChannel.create({ data }))
+      return withRuleCount(await db().notificationChannel.create({ data }))
     },
 
     async patch(ctx: ServiceContext) {
-      const channel = await getScoped(ctx, 'notificationChannel', 'Channel')
-      const data    = ctx.data as Record<string, unknown>
+      const channel = await getScoped('notificationChannel', 'Channel')
+      const data    = $.data as Record<string, unknown>
 
       // Rotating the credential is allowed and is most of why patch exists.
-      const credential = ctx.transients.secret as string | undefined
+      const credential = $.transients.secret as string | undefined
 
       // `kind` is immutable: a channel that changes what it IS keeps every
       // rule pointing at it while the credential, the payload shape and the
@@ -239,30 +238,30 @@ export function createChannelsService(app: BasecampApp) {
           })
         } else {
           patch.secretId = await storeCredential(
-            ctx, channel.kind as string, channel.name as string, credential
+            channel.kind as string, channel.name as string, credential
           )
         }
       }
 
-      if (changesNothing(patch)) return withRuleCount(ctx, channel)
-      return withRuleCount(ctx, await dbOf(ctx).notificationChannel.update({
+      if (changesNothing(patch)) return withRuleCount(channel)
+      return withRuleCount(await db().notificationChannel.update({
         where: { id: channel.id }, data: patch,
       }))
     },
 
-    async remove(ctx: ServiceContext) {
-      const channel = await getScoped(ctx, 'notificationChannel', 'Channel')
+    async remove() {
+      const channel = await getScoped('notificationChannel', 'Channel')
 
       // Refused rather than cascaded — the same call the networks service
       // makes about a populated network. The FK WOULD cascade the join rows,
       // which is right for integrity and wrong as a default: silently
       // unhooking a rule from the only place it pages anyone is how an alert
       // stops reaching a human without anybody deciding it should.
-      const attached = await dbOf(ctx).alertRuleChannel.count({ where: { channelId: channel.id } })
+      const attached = await db().alertRuleChannel.count({ where: { channelId: channel.id } })
       if (attached > 0)
         throw new Conflict(`${attached} alert rule(s) still deliver here — detach them first`)
 
-      const removed = await removeScoped(ctx, 'notificationChannel', 'Channel')
+      const removed = await removeScoped('notificationChannel', 'Channel')
 
       // The Secret goes with it. A credential whose only reader has been
       // deleted is a live bearer token nothing is watching. Soft-delete, like
@@ -276,11 +275,11 @@ export function createChannelsService(app: BasecampApp) {
     // ── rules ─────────────────────────────────────────────────────────
     // Which rules deliver here. Read-shaped, so it opts out of the
     // announcement the after-hook makes for every other method.
-    async rules(ctx: ServiceContext) {
-      const channel = await getScoped(ctx, 'notificationChannel', 'Channel')
-      ctx.dispatch = false
+    async rules() {
+      const channel = await getScoped('notificationChannel', 'Channel')
+      $.dispatch = false
 
-      const rows = await dbOf(ctx).alertRuleChannel.findMany({
+      const rows = await db().alertRuleChannel.findMany({
         where:   { channelId: channel.id },
         include: { rule: true },
         orderBy: { createdAt: 'asc' },
@@ -290,8 +289,8 @@ export function createChannelsService(app: BasecampApp) {
 
     // ── test ──────────────────────────────────────────────────────────
     // Deliver a test notification, for real, through app.conduit.
-    async test(ctx: ServiceContext) {
-      const channel = await getScoped(ctx, 'notificationChannel', 'Channel')
+    async test() {
+      const channel = await getScoped('notificationChannel', 'Channel')
       const kind    = channel.kind as string
       const spec    = KINDS[kind]
       const config  = (channel.config ?? {}) as Record<string, unknown>
@@ -357,7 +356,7 @@ export function createChannelsService(app: BasecampApp) {
         throw new BadRequest(`Delivery failed (${res.error.kind}): ${res.error.message}`)
       }
 
-      return dbOf(ctx).notificationChannel.update({
+      return db().notificationChannel.update({
         where: { id: channel.id },
         data:  { lastTestAt: new Date().toISOString(), version: channel.version },
       })
@@ -391,14 +390,13 @@ export function createChannelsService(app: BasecampApp) {
   }
 }
 
-/** NotificationChannel has no `slug` column, so the shared stampWorkspace —
+/** NotificationChannel has no `slug` column, so the shared deriveSlug —
  *  which derives one from `name` — would add a key autoValidate then strips.
  *  Stamping what this model actually has says so out loud. */
-function stampChannel(ctx: ServiceContext): void {
-  const data = ctx.data as Record<string, unknown>
+function stampChannel(): void {
+  const data = $.data as Record<string, unknown>
   if (!data) return
-  data.workspaceId = wsOf(ctx)
-  data.createdBy   = actorOf(ctx)
+  data.createdBy   = actor()
 }
 
 /** A URL, or null. `new URL()` throws on anything unparseable, and a throw out

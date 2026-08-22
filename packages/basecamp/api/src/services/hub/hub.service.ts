@@ -43,9 +43,9 @@
 // (FJS-032). A bot is different and is built: it has no password and no way to
 // sign in, so nothing is being handed to anyone.
 
-import { createService, BadRequest, Conflict, Forbidden, NotFound } from '@frontierjs/junction'
+import { createService, BadRequest, Conflict, Forbidden, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin, getPagination } from '../../core/hooks.ts'
-import { slugify } from '../../core/resource.ts'
+import { db, slugify } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
@@ -82,14 +82,14 @@ const STARTED_AT = Date.now()
 export function createHubService(app: BasecampApp) {
 
   /** Every read here is a hub read. Stated once so no method can forget it.
-   *  `any` for the same reason `dbOf()` is: a Litestone client is a proxy and
+   *  `any` for the same reason `db()` is: a Litestone client is a proxy and
    *  its accessors exist only at runtime, so a typed handle would be a fiction
    *  maintained by hand. */
   const sys = (): any => app.data.asSystem()
 
   /** The acting sysadmin, for the two self-lockout guards. */
-  function actor(ctx: ServiceContext): string {
-    return (ctx.auth?.user as { userId?: string } | undefined)?.userId as string
+  function actor(): string {
+    return ($.auth?.user as { userId?: string } | undefined)?.userId as string
   }
 
   async function userOr404(id: unknown) {
@@ -138,8 +138,8 @@ export function createHubService(app: BasecampApp) {
     // that renders nothing while the API is right.
     //
     // Named keys and no `data`, so it wraps as a `single` and unwraps whole.
-    async overview(ctx: ServiceContext) {
-      ctx.dispatch = false
+    async overview() {
+      $.dispatch = false
       const raw     = (app.db as { db: { query: (s: string) => { get: () => any } } }).db
       const dbPath  = (app.config as { database?: { url?: string } }).database?.url
         || process.env.DATABASE_URL || './db/basecamp.db'
@@ -194,9 +194,9 @@ export function createHubService(app: BasecampApp) {
     // ── workspaces — every tenant ─────────────────────────────────────
     // A pure list envelope: total/limit/offset/data and nothing beside it.
     async workspaces(ctx: ServiceContext) {
-      ctx.dispatch = false                     // a read, not an announcement
-      const { limit, offset } = getPagination(ctx, { limit: 50, max: 200 })
-      const q = (ctx.query.q as string | undefined)?.trim().toLowerCase()
+      $.dispatch = false                     // a read, not an announcement
+      const { limit, offset } = getPagination({ limit: 50, max: 200 })
+      const q = ($.query.q as string | undefined)?.trim().toLowerCase()
 
       const { rows, total } = await sys().workspace.findManyAndCount({
         orderBy: { createdAt: 'desc' }, limit, offset,
@@ -228,9 +228,9 @@ export function createHubService(app: BasecampApp) {
 
     // ── users — every actor ───────────────────────────────────────────
     async users(ctx: ServiceContext) {
-      ctx.dispatch = false
-      const { limit, offset } = getPagination(ctx, { limit: 50, max: 200 })
-      const kind = ctx.query.kind as string | undefined
+      $.dispatch = false
+      const { limit, offset } = getPagination({ limit: 50, max: 200 })
+      const kind = $.query.kind as string | undefined
 
       const { rows, total } = await sys().user.findManyAndCount({
         where:   { ...(kind && kind !== 'all' ? { kind } : {}) },
@@ -263,8 +263,8 @@ export function createHubService(app: BasecampApp) {
     // is the one flag whose audience is the operator of the platform rather
     // than the team that shipped the feature.
     async flags(ctx: ServiceContext) {
-      ctx.dispatch = false
-      const { limit, offset } = getPagination(ctx, { limit: 100, max: 300 })
+      $.dispatch = false
+      const { limit, offset } = getPagination({ limit: 100, max: 300 })
 
       const { rows, total } = await sys().featureFlag.findManyAndCount({
         include: { workspace: true }, orderBy: { key: 'asc' }, limit, offset,
@@ -283,8 +283,8 @@ export function createHubService(app: BasecampApp) {
     // ── setWorkspaceStatus ────────────────────────────────────────────
     // One method rather than suspend/restore, because the two would be one
     // rule written twice and the vocabulary is already a declared enum.
-    async setWorkspaceStatus(ctx: ServiceContext) {
-      const { workspaceId, status } = (ctx.data ?? {}) as Record<string, unknown>
+    async setWorkspaceStatus() {
+      const { workspaceId, status } = ($.data ?? {}) as Record<string, unknown>
       if (!WORKSPACE_STATUSES.includes(status as string))
         throw new BadRequest(`status must be one of ${WORKSPACE_STATUSES.join(', ')}`)
 
@@ -294,7 +294,7 @@ export function createHubService(app: BasecampApp) {
 
     // ── setUserStatus ─────────────────────────────────────────────────
     async setUserStatus(ctx: ServiceContext) {
-      const { userId, status } = (ctx.data ?? {}) as Record<string, unknown>
+      const { userId, status } = ($.data ?? {}) as Record<string, unknown>
       if (!USER_STATUSES.includes(status as string))
         throw new BadRequest(`status must be one of ${USER_STATUSES.join(', ')}`)
 
@@ -303,7 +303,7 @@ export function createHubService(app: BasecampApp) {
       if (status === 'suspended') {
         // Suspending yourself signs you out of the screen you did it on, with
         // no way back in — this app has no console and no env allowlist.
-        if (user.id === actor(ctx))
+        if (user.id === actor())
           throw new Forbidden('You cannot suspend your own account')
         if (user.isSystemAdmin && await liveAdmins() <= 1)
           throw new Forbidden('Cannot suspend the last system administrator')
@@ -323,14 +323,14 @@ export function createHubService(app: BasecampApp) {
 
     // ── setSystemAdmin ────────────────────────────────────────────────
     async setSystemAdmin(ctx: ServiceContext) {
-      const { userId, isSystemAdmin } = (ctx.data ?? {}) as Record<string, unknown>
+      const { userId, isSystemAdmin } = ($.data ?? {}) as Record<string, unknown>
       if (typeof isSystemAdmin !== 'boolean')
         throw new BadRequest('isSystemAdmin must be true or false')
 
       const user = await userOr404(userId)
 
       if (!isSystemAdmin) {
-        if (user.id === actor(ctx))
+        if (user.id === actor())
           throw new Forbidden('You cannot revoke your own system administrator access')
         if (user.isSystemAdmin && await liveAdmins() <= 1)
           throw new Forbidden('Cannot revoke the last system administrator')
@@ -353,7 +353,7 @@ export function createHubService(app: BasecampApp) {
     // anything else to own one. So CI's key was somebody's key, and revoking
     // it when they left broke the pipeline.
     async createBot(ctx: ServiceContext) {
-      const { workspaceId, name, role } = (ctx.data ?? {}) as Record<string, unknown>
+      const { workspaceId, name, role } = ($.data ?? {}) as Record<string, unknown>
       const label = typeof name === 'string' ? name.trim() : ''
       if (!label) throw new BadRequest('name is required')
 
@@ -383,7 +383,7 @@ export function createHubService(app: BasecampApp) {
         })
         await tx.workspaceMember.create({
           data: { workspaceId: ws.id, userId: bot.id, role: wsRole,
-                  invitedBy: actor(ctx), invitedAt: new Date().toISOString(),
+                  invitedBy: actor(), invitedAt: new Date().toISOString(),
                   acceptedAt: new Date().toISOString() },
         })
         return bot
@@ -394,8 +394,8 @@ export function createHubService(app: BasecampApp) {
     // The flag's own default, across tenants. NOT an override: an override
     // belongs to an environment inside a workspace, and a hub screen has no
     // environment in hand. Flipping the default is what a killswitch is.
-    async setFlag(ctx: ServiceContext) {
-      const { flagId, isEnabled } = (ctx.data ?? {}) as Record<string, unknown>
+    async setFlag() {
+      const { flagId, isEnabled } = ($.data ?? {}) as Record<string, unknown>
       if (typeof isEnabled !== 'boolean') throw new BadRequest('isEnabled must be true or false')
       if (typeof flagId !== 'string' || !flagId) throw new BadRequest('flagId is required')
 

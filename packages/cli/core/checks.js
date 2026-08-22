@@ -43,7 +43,7 @@ export const RULES = [
   { id: 'resource-dir-mesa',    scope: 'app',  severity: 'error', invariant: 18,
     title: 'src/resources/ holds only .mesa files' },
   { id: 'resource-script',      scope: 'app',  severity: 'error', invariant: 18,
-    title: 'a resource is a <script module> and no markup' },
+    title: 'a resource has a <script module>' },
   { id: 'resource-file-name',   scope: 'app',  severity: 'error', invariant: 19,
     title: 'a resource file is named for its model' },
   { id: 'resource-one-per-file', scope: 'app', severity: 'error', invariant: 19,
@@ -168,9 +168,13 @@ const CHECKS = {
     return { findings }
   },
 
-  // Invariant 18, second half: no markup, everything in `<script module>`. A
-  // plain `<script>` is instance scope — it would run per component rather than
-  // once per module, and a resource has no instance.
+  // Invariant 18, second half: the DATA half is `<script module>`, which runs
+  // once at import and is what every other module imports. Markup is not
+  // checked — a resource carries its model's default form, so a plain
+  // `<script>` beside it is that form's instance scope (`FJS-D112`). What is
+  // still refused is a file with no module scope at all: a resource whose
+  // `createResource` ran per instance would give every page its own store, and
+  // the import that another module writes would resolve to nothing.
   'resource-script': ({ root }) => {
     const files = resourceFiles(root)
     if (!files.length) return { skipped: 'no .mesa files in web/src/resources/' }
@@ -179,18 +183,9 @@ const CHECKS = {
       const src = readFileSync(path, 'utf8')
       if (!/<script\s+module[\s>]/.test(src)) findings.push({
         file: path,
-        message: `a resource's code goes in <script module>. A plain <script> is instance scope — it runs ` +
-                 `once per component, and a Resource has no instances.`,
-      })
-      const rest = src
-        .replace(/<script[\s\S]*?<\/script>/g, '')
-        .replace(/<style[\s\S]*?<\/style>/g, '')
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .trim()
-      if (rest) findings.push({
-        file: path,
-        message: `a resource file has no markup, and this one has ${rest.length} character(s) of it: ` +
-                 `${JSON.stringify(rest.slice(0, 60))}. A Resource is data, not a component.`,
+        message: `a resource's data layer goes in <script module> — it runs once at import and its named ` +
+                 `exports are what another module imports. Markup and a plain <script> are the model's ` +
+                 `default form and belong here too; a file with only a plain <script> is a component.`,
       })
     }
     return { findings }

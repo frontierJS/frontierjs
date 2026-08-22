@@ -90,7 +90,7 @@ export interface BasecampApp extends App {
   db:     DatabaseClient       // Junction's database client (db.db = raw bun:sqlite)
   // THE Data boundary — the Litestone client. Services normally use the
   // caller-scoped copy on ctx.locals.db; `app.data` is the unscoped root, for
-  // engines and for the outpost paths that have no session to scope to.
+  // jobs and for the outpost paths that have no session to scope to.
   data:   BasecampDb
   infra:  BasecampInfra
   logger: ILogger

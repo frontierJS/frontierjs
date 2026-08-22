@@ -21,8 +21,8 @@ a method — it applies to each one.
 
 | Phase | Method | Chain |
 | --- | --- | --- |
-| before | `all` | `anonymous` → `anonymous` → `anonymous` → `anonymous` |
-| around | `all` | `anonymous` → `anonymous` → `anonymous` → `anonymous` |
+| before | `all` | `tenantClaimGuard` → `anonymous` → `anonymous` → `anonymous` → `anonymous` |
+| around | `all` | `anonymous` → `anonymous` → `anonymous` |
 | after | `all` | `anonymous` → `anonymous` |
 | error | `all` | `anonymous` |
 
@@ -57,7 +57,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `deriveSlug` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `attachChannel` | `anonymous` |
@@ -94,7 +94,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `deriveSlug` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `place` | `anonymous` |
@@ -193,7 +193,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `deriveSlug` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
@@ -209,7 +209,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `deriveSlug` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `uploadCert` | `anonymous` |
@@ -227,7 +227,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `deriveSlug` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `setVariable` | `anonymous` |
@@ -295,7 +295,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `deriveSlug` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `trigger` | `anonymous` |
@@ -313,7 +313,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `deriveSlug` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `attach` | `anonymous` |
@@ -344,7 +344,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `deriveSlug` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `find` | `gateAuth` → `autoFilter` → `autoSort` |
@@ -394,7 +394,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampWorkspace` → `gateAuth` → `autoValidate` |
+| before | `create` | `anonymous` → `deriveSlug` → `gateAuth` → `autoValidate` |
 | before | `patch` | `anonymous` → `gateAuth` → `autoValidate` |
 | before | `remove` | `anonymous` → `gateAuth` |
 | before | `reboot` | `anonymous` |

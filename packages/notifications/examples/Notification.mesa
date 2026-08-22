@@ -2,10 +2,11 @@
   // web/src/resources/Notification.mesa — the in-app half of a notification,
   // as a UI resource.
   //
-  // A `.mesa` file with no markup: a Resource is a UI-realm noun, so it is
-  // written in the UI-realm language even when all it does is bind a name to a
-  // service (Invariant 18). `<script module>` runs once at import and its named
-  // exports are importable anywhere.
+  // A `.mesa` file: a Resource is a UI-realm noun, so it is written in the
+  // UI-realm language even when all it does is bind a name to a service
+  // (Invariant 18). `<script module>` runs once at import and its named exports
+  // are importable anywhere. There is no markup here because this model has no
+  // form — a notification is read, never filled in.
   //
   // Nothing here says "only mine". The model does — `@@allow('read', userId ==
   // auth().id)` — and the server enforces it, which is why signing out and back

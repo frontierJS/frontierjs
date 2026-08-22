@@ -80,12 +80,21 @@ else sat on the field, and both halves of that were wrong once a column carried
 two rules. A boundary claimed a value the field REFUSED — measured at 8 of 12
 false on a six-field schema, 4 of 6 fields reported broken when nothing was —
 and an invalid case was refused by somebody ELSE's rule while counting as proof
-of its own, so `@length` could be deleted from `validate.js` with the check
-still green and a mutant that widened it survived.
+of its own. That second half was measured rather than argued: disable `@length`
+in `validate.js` and the runner reports *the write was ACCEPTED* on a
+single-rule field and **nothing at all** on the `@email` field — so it could not
+tell an enforced `@length` from a missing one there, and the false alarm is what
+hid it, because a schema that always reports something looks like a schema being
+checked. Four findings now, all naming `@length`, and zero on a clean schema.
 
 Closed against one judge: `validateField`, now exported from `core/validate.js`,
 because a table of formats in the generator would be a second definition of
-every rule. The repair is format-blind — grow or trim the factory's own valid
+every rule — and asked about the field's OTHER rules only. Whether a value
+satisfies or breaks the rule it NAMES is settled by construction; the first
+version asked the implementation, which makes the runner its own oracle, and
+disabling `@length` then reported *not checked* rather than *ACCEPTED*. Caught
+by measuring the claim I had already written down, which is the only reason it
+did not ship. The repair is format-blind — grow or trim the factory's own valid
 sample and ask the validators — so an email grows in front of its own domain and
 `@startsWith("ORD-")` keeps its prefix with nothing here knowing either word;
 shrinking works on alphanumeric RUNS and leaves punctuation alone, which turns

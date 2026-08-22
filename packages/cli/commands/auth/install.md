@@ -181,10 +181,10 @@ export const auth = createLitestoneAuth(db, {
 export const authCleanup = createAuthCleanupJobs(db)
 `
 
-// ─── server.ts wiring hint ────────────────────────────────────────────────────
+// ─── app.ts wiring hint ────────────────────────────────────────────────────
 
 const serverHint = `
-// ─── Add to api/src/server.ts ──────────────────────────────────────────────────
+// ─── Add to api/src/app.ts ──────────────────────────────────────────────────
 
 import { auth, db, authCleanup }           from './auth.ts'
 import { createAuthPlugin }             from '@frontierjs/auth'
@@ -226,7 +226,7 @@ What it does:
 - Pushes the schema changes to the database
 - Generates `ENCRYPTION_KEY` and `AUTH_SECRET` in `.env`
 - Scaffolds `api/src/auth.ts` with `createLitestoneAuth` wired up
-- Prints the two lines to add to `api/server.ts`
+- Prints the two lines to add to `api/src/app.ts`
 
 The split is by owner. `User` lands in your own `schema.lite`, where you can add
 columns to it and point relations at it. The other three are `@@gate("8")` —
@@ -444,8 +444,20 @@ if (!flag.dry && existsSync(envExPath)) {
 }
 
 // ─── 8. Scaffold api/src/auth.ts ──────────────────────────────────────────────
+//
+// Only for an app that has no auth wiring. `fli new` writes `api/src/core/auth.ts`
+// and imports it from `api/src/app.ts`, so writing this file into that layout
+// produced a SECOND `createLitestoneAuth` over a SECOND `createClient` on the
+// same SQLite file, imported by nothing — and the hint below then named
+// `api/src/server.ts`, which does not exist in that app, and told the reader to
+// call `createApp({ auth })` again when app.ts already does.
 
-if (existsSync(authTsPath)) {
+const coreAuthPath = resolve(context.paths.api, 'src/core/auth.ts')
+const alreadyWired = existsSync(coreAuthPath)
+
+if (alreadyWired) {
+  log.info('api/src/core/auth.ts is already wired from api/src/app.ts — nothing to scaffold')
+} else if (existsSync(authTsPath)) {
   log.warn(`${authTsPath} already exists — skipping scaffold`)
 } else if (flag.dry) {
   log.dry(`Would create ${authTsPath}`)
@@ -456,15 +468,19 @@ if (existsSync(authTsPath)) {
   log.success(`Created api/src/auth.ts`)
 }
 
-// ─── 9. Print server.ts wiring hint ──────────────────────────────────────────
+// ─── 9. Print wiring hint ────────────────────────────────────────────────────
 
 echo('')
 log.success('Auth installed')
 echo('')
-echo('  Next — add to api/src/server.ts:')
-echo('')
-for (const line of serverHint.trim().split('\n')) {
-  echo(`  ${line}`)
+if (alreadyWired) {
+  echo('  api/src/app.ts already configures it. Nothing to add.')
+} else {
+  echo('  Next — add to api/src/app.ts:')
+  echo('')
+  for (const line of serverHint.trim().split('\n')) {
+    echo(`  ${line}`)
+  }
 }
 
 echo('')

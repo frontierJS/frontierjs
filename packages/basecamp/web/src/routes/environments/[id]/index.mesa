@@ -39,7 +39,7 @@ title: Environment
   // A release starts from the app it releases. Creating the Deployment is the
   // whole of the user action: the service snapshots the app's source/config,
   // writes the step list for that app type, and hands off to Caravan — so the
-  // engine is running before this navigation lands.
+  // job is running before this navigation lands.
   let deploying = null
 
   async function deploy(app) {

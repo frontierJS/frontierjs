@@ -23,9 +23,9 @@
 ///
 /// The level is a fact about the caller IN A WORKSPACE, not about their row in
 /// `user`: the same person is `owner` in one workspace and `viewer` in the next.
-/// api/src/core/gate.ts is the mapping and the whole ladder; core/hooks.ts
-/// applyStanding() is what puts `memberRole` on the principal, once per request,
-/// off the WorkspaceMember row for the workspace being addressed.
+/// api/src/core/gate.ts is the mapping and the whole ladder; `membershipClaim()`
+/// is what puts `memberRole` on the principal, once per request, off the
+/// WorkspaceMember row for the workspace being addressed.
 ///
 ///   0 STRANGER   no session, or suspended
 ///   1 VISITOR    authenticated, no standing in any workspace — reads Workspace
@@ -34,46 +34,41 @@
 ///   5 ADMIN      admin
 ///   6 OWNER      owner
 ///   7 SYSADMIN   User.isSystemAdmin — the hub tier
-///   8 SYSTEM     asSystem() only: engines, outposts, seeds, migrations
+///   8 SYSTEM     asSystem() only: jobs, outposts, seeds, migrations
 ///   9 LOCKED     nothing passes, asSystem() included
 ///
 /// Reading the gates below: "2.4.4.5" is R.C.U.D — a viewer reads, a developer
 /// creates and updates, an admin deletes. A missing position inherits the one
 /// before it, so "5" is admin for all four and "2.5" is read-by-anyone,
-/// written-by-admin. 8 in a write position means only an engine or an outpost
+/// written-by-admin. 8 in a write position means only a job or an outpost
 /// writes this; 9 means not even they do.
 ///
 /// The levels are not a design drawn on paper — they are the requireWorkspaceRole
 /// calls the services were already making, moved to the one place that covers
-/// the paths a hook does not (an engine calling a service in-process, a custom
+/// the paths a hook does not (a job calling a service in-process, a custom
 /// action nobody wired a role hook onto, a where-clause built by hand). The
 /// hooks stay: a gate refuses with a level, and a person needs the sentence.
 ///
-/// A gate is per MODEL and never per row. WHICH rows is @@allow, and 15 models
-/// declare one — every model carrying a `workspaceId` except two:
-/// `WorkspaceMember` (it is what standing is READ from, through asSystem(), so a
-/// policy graded off auth().workspaceId would read the field it is deciding) and
-/// `AuditEvent` (whose workspaceId is nullable, because a hub action belongs to
-/// no workspace, and a null compared to a caller's workspace hides exactly the
-/// rows the trail exists for).
+/// A gate is per MODEL and never per row. WHICH rows is TENANCY, declared once
+/// in the `tenancy { }` block below rather than as a rule per model: every model
+/// carrying `workspaceId` is scoped on it, the 14 that reach one through a
+/// relation are scoped through that parent, and the seven that legitimately
+/// span workspaces say so by name with `@@tenant(none)` — identity, the
+/// Workspace itself, WorkspaceMember (it is what the claim is READ from) and
+/// AuditEvent (whose workspaceId is nullable, because a hub action belongs to
+/// no workspace, and a null compared to a caller's claim hides exactly the rows
+/// the trail exists for).
 ///
-///   Server · Project · Environment · App          the hierarchy every screen walks
-///   Deployment · Job · Domain                     what a person does to an app
-///   Network · Recipe · FeatureFlag                the workspace's own settings
-///   NotificationChannel · AlertRule · Dashboard
-///   Secret · ApiKey                               credential material
-///
-/// `workspaceId == auth().workspaceId`, graded against the workspace
-/// applyStanding() put on the principal. The other 22 are still the workspaceId
-/// filter in every service read plus scopeToWorkspace refusing a non-member —
-/// which works, and is the thing being moved into the schema a batch at a
-/// time (see db/README.md § Access control). Each declaration is an AUDIT
-/// first: every scoped read of that model has to be workspace-filtered already,
-/// and every path that legitimately crosses has to be asSystem().
+/// This replaced sixteen hand-written `@@allow('all', workspaceId ==
+/// auth().workspaceId)` lines. The claim it grades against is resolved per
+/// REQUEST — `createApp({ principal: membershipClaim(...) })` in
+/// api/src/core/app.ts — because a person belongs to several workspaces and
+/// holds a different role in each, which is the shape framework tenancy could
+/// not express until `FJS-D113`.
 ///
 /// A policy FILTERS, where a gate REFUSES. So the failure shape of a wrong one
 /// is an empty screen and no error: any read that legitimately crosses a
-/// workspace has to be asSystem() — the three engines, the hub and the outpost's
+/// workspace has to be asSystem() — the jobs, the hub and the outpost's
 /// heartbeat all are.
 ///
 /// ALSO ENFORCED AT THE DATA BOUNDARY, independently of any level: @guarded and
@@ -94,7 +89,7 @@
 /// teaches everyone to retry blindly:
 ///
 ///   Server · ApiKey · Volume        an outpost heartbeat / a usage counter
-///   Deployment · Job · Recipe · App an engine drives status through a run
+///   Deployment · Job · Recipe · App a job drives status through a run
 ///   DashboardWidget                 reorder writes position, updateWidget
 ///                                   writes config, and neither cares about
 ///                                   the other. Sending the whole sequence is
@@ -141,6 +136,22 @@
 database main { path env("DATABASE_URL", "./db/basecamp.db") }
 
 database audit { path "./db/audit/" driver logger retention 90d }
+
+// ============================================================
+// TENANCY
+// ============================================================
+//
+// A workspace is the tenant, and this app is the shape the framework's own
+// tenancy could not express until `FJS-D113`: a person belongs to several
+// workspaces and holds a different role in each, so the claim cannot sit on
+// the session — it is resolved per REQUEST, from the WorkspaceMember row, by
+// `createApp({ principal: membershipClaim(...) })` in api/src/core/app.ts.
+//
+// Declaring it here replaces sixteen hand-written
+// `@@allow('all', workspaceId == auth().workspaceId)` lines, which was sixteen
+// chances to leave one off and no way to notice: a missing one is a screen
+// showing another workspace's rows with a 200.
+tenancy { strategy row  column workspaceId  claim workspaceId }
 
 // ============================================================
 // ENUMS
@@ -323,6 +334,10 @@ model User {
   @@unique([accountId, username])
   @@index([accountId])
   @@index([email])
+
+  // @@tenant(none) — identity spans workspaces — a person is one person in all of
+  // them, and `@frontierjs/auth` owns this model
+  @@tenant(none)
 }
 
 // How you prove who you are — passwords, API keys, OAuth tokens.
@@ -344,6 +359,10 @@ model Credential {
   @@log(audit)
   @@index([userId, type])
   @@index([type, value])
+
+  // @@tenant(none) — identity spans workspaces — a person is one person in all of
+  // them, and `@frontierjs/auth` owns this model
+  @@tenant(none)
 }
 
 model Session {
@@ -360,6 +379,10 @@ model Session {
   @@log(audit)
   @@index([userId])
   @@index([expiresAt])
+
+  // @@tenant(none) — identity spans workspaces — a person is one person in all of
+  // them, and `@frontierjs/auth` owns this model
+  @@tenant(none)
 }
 
 model Verification {
@@ -372,6 +395,10 @@ model Verification {
   @@gate("8")
   @@log(audit)
   @@index([identifier])
+
+  // @@tenant(none) — identity spans workspaces — a person is one person in all of
+  // them, and `@frontierjs/auth` owns this model
+  @@tenant(none)
 }
 
 // ============================================================
@@ -396,6 +423,10 @@ model Account {
   @@gate("6.8")
   @@softDelete(cascade)
   @@log(audit)
+
+  // @@tenant(none) — identity spans workspaces — a person is one person in all of
+  // them, and `@frontierjs/auth` owns this model
+  @@tenant(none)
 }
 
 // ============================================================
@@ -441,6 +472,10 @@ model Workspace {
   @@softDelete(cascade)
   @@log(audit)
   @@index([accountId])
+
+  // @@tenant(none) — the tenant itself. Scoping a workspace by the workspace claim
+  // would make the switcher, /hub and the create-a-workspace path answer nothing
+  @@tenant(none)
 }
 
 model WorkspaceMember {
@@ -461,6 +496,11 @@ model WorkspaceMember {
   @@log(audit)
   @@unique([workspaceId, userId])
   @@index([workspaceId, userId])
+
+  // @@tenant(none) — this is the row the CLAIM is read from, and the workspace
+  // switcher lists a person's memberships ACROSS workspaces — scoping it to the
+  // current claim would answer only the workspace you are already in
+  @@tenant(none)
 }
 
 // An offer of membership to an EMAIL ADDRESS — the half `addMember` cannot do.
@@ -513,7 +553,6 @@ model Invitation {
   // Read at 5 as well as written: the row names a person who is not a member
   // yet, and who has been asked to join is an administrator's business.
   @@gate("5")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@log(audit)
   @@unique([workspaceId, email])
   @@index([workspaceId])
@@ -549,7 +588,6 @@ model Secret {
   deletedAt   DateTime?
 
   @@gate("5")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, name])
@@ -616,7 +654,6 @@ model ApiKey {
   // at it. A second, invisible deleted state on top would make "revoked" and
   // "gone" four combinations instead of two.
   @@gate("5")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@log(audit)
   @@unique([workspaceId, name])
   @@index([credentialId])
@@ -669,19 +706,10 @@ model Server {
   serverNetworks   ServerNetwork[]
 
   @@gate("2.4.4.5")
-  // WHICH servers, where the gate answers only whether Server may be touched at
-  // all. `workspaceId` reaches auth() through applyStanding(), which resolves
-  // the workspace being addressed once per request and puts it on the principal
-  // — so this is the same fact the service where-clauses filter on, declared
-  // where it cannot be forgotten. Compiled into the SQL of every read, update
-  // and delete from a scoped client, and checked in JS before a create.
-  //
-  // The paths that legitimately cross a workspace are the three engines, the
-  // hub and the outpost's heartbeat, and every one of them already goes through
-  // asSystem(), which bypasses this. A path that is NOT system and names no
-  // workspace matches nothing — quietly, since a policy filters rather than
-  // refuses. That is the failure shape to look for if a screen empties.
-  @@allow('all', workspaceId == auth().workspaceId)
+  // WHICH servers — the tenancy block at the top of this file, not a rule
+  // written here. `workspaceId` is the declared claim, resolved per request
+  // from the caller's WorkspaceMember row, and compiled into the SQL of
+  // every read, update and delete from a scoped client.
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -780,7 +808,6 @@ model Network {
   serverNetworks ServerNetwork[]
 
   @@gate("2.5")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -823,14 +850,10 @@ model Project {
   environments Environment[]
 
   @@gate("2.4.4.5")
-  // Row-level tenancy in the schema, the second model to carry it after
-  // Server. The services already filter on workspaceId; this is the same
-  // fact where it cannot be left out of a new query. Every path that
-  // legitimately crosses a workspace is asSystem() — the three engines and
-  // the hub — and that audit is what precedes each declaration, because a
-  // policy FILTERS where a gate refuses: a scoped read that crosses starts
-  // matching nothing, with a 200 and an empty screen.
-  @@allow('all', workspaceId == auth().workspaceId)
+  // Scoped by the tenancy block at the top of this file. Every path that
+  // legitimately crosses a workspace is asSystem() — the jobs and the hub —
+  // because a policy FILTERS where a gate refuses, so a scoped read that
+  // crosses answers an empty list rather than an error.
   @@softDelete(cascade)
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -860,10 +883,8 @@ model Environment {
   flagOverrides FlagOverride[]
 
   @@gate("2.4.4.5")
-  // Same declaration as Project. Environment carries its own workspaceId
-  // rather than reaching through projectId, so the policy is one column
-  // comparison and not a relation hop.
-  @@allow('all', workspaceId == auth().workspaceId)
+  // Environment carries its own workspaceId rather than reaching through
+  // projectId, so tenancy scopes it on a column rather than through a parent.
   @@softDelete(cascade)
   @@log(audit)
   @@unique([projectId, slug])
@@ -905,9 +926,8 @@ model App {
   domains       Domain[]
 
   @@gate("2.4.4.5")
-  // Same declaration as Project. The deployment engine writes App.status
-  // across workspaces and is asSystem(), which passes the policy.
-  @@allow('all', workspaceId == auth().workspaceId)
+  // The deploy job writes App.status through asSystem(), which is how it
+  // crosses the tenancy the block at the top of this file compiles in.
   @@softDelete(cascade)
   @@log(audit)
   @@unique([environmentId, slug])
@@ -954,7 +974,6 @@ model Domain {
   deletedAt     DateTime?
 
   @@gate("2.5")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, hostname])
@@ -962,7 +981,7 @@ model Domain {
 }
 
 // Placement — which servers an App's replicas actually landed on.
-// Written by the deployment engine, never by a person.
+// Written by the deploy job, never by a person.
 model AppServer {
   id           String   @id @default(uuid())
   appId        String
@@ -999,7 +1018,7 @@ model AppNetwork {
 // ============================================================
 // A Release — a Manifest realized at a point in time (VISION.md §Where
 // Basecamp Fits). The record is append-only from a user's point of view:
-// creating a deployment is a USER action, advancing its status is the engine's
+// creating a deployment is a USER action, advancing its status is the job's
 // (SYSTEM), and erasing deployment history takes a SYSADMIN.
 
 model Deployment {
@@ -1035,10 +1054,9 @@ model Deployment {
   steps                DeploymentStep[]
 
   @@gate("2.4.4.4")
-  @@allow('all', workspaceId == auth().workspaceId)
   // The release pipeline, declared once and enforced at the Data boundary
   // rather than as a TERMINAL/CANCELLABLE list in the service. `succeed` comes
-  // from `building` as well as the later two because the engine short-circuits
+  // from `building` as well as the later two because the job short-circuits
   // a no-op release; `pushing` and `deploying` are written by a fuller
   // pipeline and by the seed, and the UI already tones them.
   //
@@ -1108,7 +1126,6 @@ model Job {
   runs           JobRun[]
 
   @@gate("2.4.4.5")
-  @@allow('all', workspaceId == auth().workspaceId)
   // A job's status is its CURRENT state, not the outcome of its last run —
   // that is `lastRunStatus`, and JobRun.status is the run's own. So a run that
   // succeeds returns the job to `pending`, which is what "idle, awaiting the
@@ -1198,7 +1215,7 @@ model Recipe {
   // script. The outpost is told, and the run is stamped `timeout` if it exceeds.
   timeoutSeconds Int        @default(300) @gte(5) @lte(3600)
 
-  // Bookkeeping the list reads, written by the engine. `runCount` is a counter
+  // Bookkeeping the list reads, written by the job. `runCount` is a counter
   // rather than a COUNT(*) because the runs it counts are pruned and the
   // number of times a script has been let loose on the fleet is not.
   lastRunAt      DateTime?
@@ -1212,7 +1229,6 @@ model Recipe {
   runs           RecipeRun[]
 
   @@gate("4.5")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -1380,7 +1396,6 @@ model FeatureFlag {
   overrides   FlagOverride[]
 
   @@gate("2.4.4.5")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, key])
@@ -1466,7 +1481,6 @@ model NotificationChannel {
   rules       AlertRuleChannel[]
 
   @@gate("2.5")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, name])
@@ -1493,7 +1507,6 @@ model AlertRule {
   channels    AlertRuleChannel[]
 
   @@gate("2.5")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@log(audit)
   @@index([workspaceId])
 }
@@ -1584,7 +1597,6 @@ model Dashboard {
   widgets     DashboardWidget[]
 
   @@gate("2.4.4.4")
-  @@allow('all', workspaceId == auth().workspaceId)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -1656,4 +1668,9 @@ model AuditEvent {
   @@gate("5.8.9.9")
   @@index([workspaceId])
   @@index([subjectType, subjectId])
+
+  // @@tenant(none) — workspaceId is nullable here (a sign-in is nobody's
+  // workspace), and a null column never equals a claim, so scoping this model
+  // would make exactly the rows with no workspace invisible rather than global
+  @@tenant(none)
 }

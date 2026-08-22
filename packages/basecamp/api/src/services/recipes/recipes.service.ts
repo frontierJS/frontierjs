@@ -27,20 +27,18 @@
 // exit codes; a single row has to pick one status for "three succeeded and two
 // failed", which is the answer an operator most needs.
 //
-// Execution is not here. `run` queues, and `engine/fleet.engine.ts` carries it
+// Execution is not here. `run` queues, and `jobs/recipe-run.job.ts` carries it
 // out through `app.conduit` at the `outpost:<id>` target a heartbeat registers —
 // a script with a five-minute timeout on twenty machines is not an HTTP
 // request, and a request that dies mid-fleet leaves half of it done with
 // nothing recording which half.
 
-import { createService, NotFound, BadRequest } from '@frontierjs/junction'
+import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
-import {
-  dbOf, wsOf, actorOf, slugify,
-  findScoped, getScoped, assertSlugFree, removeScoped, narrowPatch, changesNothing,
-} from '../../core/resource.ts'
+import { db, ws, actor, slugify, findScoped, getScoped, assertSlugFree, removeScoped, narrowPatch, changesNothing } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
+import recipeRun from '../../jobs/recipe-run.job.ts'
 
 /** How many runs a screen is handed at once. A fleet run writes one row per
  *  machine, so a recipe on fifty servers is fifty rows from a single click. */
@@ -49,9 +47,9 @@ const RUN_PAGE = 50
 export function createRecipesService(app: BasecampApp) {
 
   /** The caller's fleet, as id → name. */
-  async function fleetOf(ctx: ServiceContext): Promise<Map<string, string>> {
-    const rows = await dbOf(ctx).server.findMany({
-      where:  { workspaceId: wsOf(ctx) },
+  async function fleetOf(): Promise<Map<string, string>> {
+    const rows = await db().server.findMany({
+      where:  { workspaceId: ws() },
       select: { id: true, name: true },
       limit:  500,
     })
@@ -61,9 +59,9 @@ export function createRecipesService(app: BasecampApp) {
   /** Runs for a recipe, newest first, with the machine's name resolved here
    *  rather than by the browser — a history of `4f3a-…` is a history nobody
    *  reads, and the alternative ships a whole server row per run. */
-  async function runsFor(ctx: ServiceContext, recipeId: string, limit = RUN_PAGE) {
-    const fleet = await fleetOf(ctx)
-    const rows  = await dbOf(ctx).recipeRun.findMany({
+  async function runsFor(recipeId: string, limit = RUN_PAGE) {
+    const fleet = await fleetOf()
+    const rows  = await db().recipeRun.findMany({
       where: { recipeId }, orderBy: { createdAt: 'desc' }, limit,
     })
     return rows.map((r: Record<string, unknown>) => ({
@@ -89,10 +87,10 @@ export function createRecipesService(app: BasecampApp) {
 
     // ── find ──────────────────────────────────────────────────────────
     async find(ctx: ServiceContext) {
-      const { limit, offset } = getPagination(ctx)
-      const search = ctx.query.search as string | undefined
+      const { limit, offset } = getPagination()
+      const search = $.query.search as string | undefined
 
-      return findScoped(ctx, 'recipe', {
+      return findScoped('recipe', {
         where: search ? { name: { contains: search } } : {},
         limit, offset,
         orderBy: { name: 'asc' },
@@ -101,20 +99,20 @@ export function createRecipesService(app: BasecampApp) {
 
     // ── get ───────────────────────────────────────────────────────────
     async get(ctx: ServiceContext) {
-      const recipe = await getScoped(ctx, 'recipe', 'Recipe')
-      return { ...recipe, runs: await runsFor(ctx, recipe.id as string) }
+      const recipe = await getScoped('recipe', 'Recipe')
+      return { ...recipe, runs: await runsFor(recipe.id as string) }
     },
 
     // ── create ────────────────────────────────────────────────────────
-    async create(ctx: ServiceContext) {
-      const data = ctx.data as Record<string, unknown>
+    async create() {
+      const data = $.data as Record<string, unknown>
       if (!(data.script as string | undefined)?.trim())
         throw new BadRequest('script is required — a recipe with no script is a name')
 
-      await assertSlugFree(ctx, 'recipe', { workspaceId: wsOf(ctx), slug: data.slug },
+      await assertSlugFree('recipe', { workspaceId: ws(), slug: data.slug },
         `A recipe called '${data.name}' already exists in this workspace`)
 
-      const recipe = await dbOf(ctx).recipe.create({ data })
+      const recipe = await db().recipe.create({ data })
       // The same shape `get` answers, so a screen that selects the new recipe
       // renders it rather than a record with no runs key.
       return { ...recipe, runs: [] }
@@ -122,23 +120,23 @@ export function createRecipesService(app: BasecampApp) {
 
     // ── patch ─────────────────────────────────────────────────────────
     async patch(ctx: ServiceContext) {
-      const recipe = await getScoped(ctx, 'recipe', 'Recipe')
-      const data   = ctx.data as Record<string, unknown>
+      const recipe = await getScoped('recipe', 'Recipe')
+      const data   = $.data as Record<string, unknown>
 
-      // The counters belong to the engine: a client that could set `runCount`
+      // The counters belong to the job: a client that could set `runCount`
       // could say a script had never been run.
       const patch = narrowPatch(data, ['slug', 'createdBy', 'runCount', 'lastRunAt'])
       if (typeof patch.name === 'string' && patch.name !== recipe.name) {
         patch.slug = slugify(patch.name as string)
-        await assertSlugFree(ctx, 'recipe',
-          { workspaceId: wsOf(ctx), slug: patch.slug, id: { not: recipe.id } },
+        await assertSlugFree('recipe',
+          { workspaceId: ws(), slug: patch.slug, id: { not: recipe.id } },
           `A recipe called '${patch.name}' already exists in this workspace`)
       }
 
-      if (changesNothing(patch)) return { ...recipe, runs: await runsFor(ctx, recipe.id as string) }
+      if (changesNothing(patch)) return { ...recipe, runs: await runsFor(recipe.id as string) }
 
-      const updated = await dbOf(ctx).recipe.update({ where: { id: recipe.id }, data: patch })
-      return { ...updated, runs: await runsFor(ctx, recipe.id as string) }
+      const updated = await db().recipe.update({ where: { id: recipe.id }, data: patch })
+      return { ...updated, runs: await runsFor(recipe.id as string) }
     },
 
     // ── remove ────────────────────────────────────────────────────────
@@ -146,21 +144,21 @@ export function createRecipesService(app: BasecampApp) {
     // undone by deleting the script, and the run rows carry their own copy of
     // it. They are reachable through the server's own history rather than
     // through a recipe that is gone.
-    async remove(ctx: ServiceContext) {
-      return removeScoped(ctx, 'recipe', 'Recipe')
+    async remove() {
+      return removeScoped('recipe', 'Recipe')
     },
 
     // ── run — POST /recipes/:id  X-Service-Method: run ────────────────
     // Queue this recipe. `{ serverId }` names one machine; omitting it means
     // every machine in the workspace an outpost has registered for.
     //
-    // Nothing is executed here. The rows are written `pending` and the engine
+    // Nothing is executed here. The rows are written `pending` and the job
     // picks them up, so the answer to the click is *what was queued and where*
     // — which is also what the screen renders while it waits.
     async run(ctx: ServiceContext) {
-      const recipe   = await getScoped(ctx, 'recipe', 'Recipe')
-      const serverId = (ctx.data as { serverId?: string } | null)?.serverId
-      const fleet    = await fleetOf(ctx)
+      const recipe   = await getScoped('recipe', 'Recipe')
+      const serverId = ($.data as { serverId?: string } | null)?.serverId
+      const fleet    = await fleetOf()
 
       if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)
 
@@ -188,37 +186,36 @@ export function createRecipesService(app: BasecampApp) {
         )
 
       const script = recipe.script as string
-      const actor  = actorOf(ctx)
       const runs   = []
 
       for (const id of reachable) {
         // The script AS RUN. The recipe is editable and the run is evidence.
-        const run = await dbOf(ctx).recipeRun.create({
-          data: { recipeId: recipe.id, serverId: id, script, requestedBy: actor, status: 'pending' },
+        const run = await db().recipeRun.create({
+          data: { recipeId: recipe.id, serverId: id, script, requestedBy: actor(), status: 'pending' },
         })
-        await app.jobs.dispatch('recipe:run',
-          { runId: run.id, workspaceId: wsOf(ctx) },
+        await app.jobs.dispatch(recipeRun,
+          { runId: run.id, workspaceId: ws() },
           { queue: 'fleet', priority: 5 })
         runs.push({ ...run, serverName: fleet.get(id) ?? null })
       }
 
       // The whole row plus what was queued: a client assigning this over the
       // record it renders keeps every field. The fourth time that pattern bit
-      // (setVariable, the deployment engine's projection, servers.heartbeat,
+      // (setVariable, the deploy job's projection, servers.heartbeat,
       // jobs.trigger) it stopped being a coincidence.
       return { ...recipe, runs, queued: runs.length, unreachable }
     },
 
     // ── runs — POST /recipes/:id  X-Service-Method: runs ──────────────
     async runs(ctx: ServiceContext) {
-      ctx.dispatch = false   // read-shaped
-      const recipe = await getScoped(ctx, 'recipe', 'Recipe')
-      const { limit } = getPagination(ctx, { limit: RUN_PAGE, max: 200 })
+      $.dispatch = false   // read-shaped
+      const recipe = await getScoped('recipe', 'Recipe')
+      const { limit } = getPagination({ limit: RUN_PAGE, max: 200 })
       // Named keys, not `{ total, data }`: only `find` is built into a list
       // envelope, and that envelope holds total/limit/offset/data/errors and
       // refuses anything else. A single travels whole, so naming the keys is
       // what lets this answer two things at once.
-      return { recipeId: recipe.id, runs: await runsFor(ctx, recipe.id as string, limit) }
+      return { recipeId: recipe.id, runs: await runsFor(recipe.id as string, limit) }
     },
 
     hooks: {
@@ -241,14 +238,13 @@ export function createRecipesService(app: BasecampApp) {
  * before/create: stamp what the client does not send.
  *
  * Must be a hook rather than the first lines of create(): `model:` brings
- * autoValidate(model, 'create'), which checks ctx.data against the schema's
+ * autoValidate(model, 'create'), which checks $.data against the schema's
  * required fields, and Junction runs user hooks BEFORE the derived ones exactly
- * so a hook can shape ctx.data first.
+ * so a hook can shape $.data first.
  */
-function stampRecipe(ctx: ServiceContext): void {
-  const data = ctx.data as Record<string, unknown>
+function stampRecipe(): void {
+  const data = $.data as Record<string, unknown>
   if (!data) return
-  data.workspaceId = wsOf(ctx)
-  data.createdBy   = actorOf(ctx)
+  data.createdBy   = actor()
   if (typeof data.name === 'string' && !data.slug) data.slug = slugify(data.name)
 }

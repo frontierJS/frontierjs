@@ -2690,8 +2690,17 @@ function expandTenancy(schema) {
     const mismatch    = { type: 'compare', op: '!=', left: col(),       right: authClaim() }
     const message     = `Outside your ${column}`
 
+    // `post-update` is in this list and it is the half a hand-written
+    // `@@allow('all', col == auth().claim)` got for free: `all` expands to every
+    // operation, so an allow was graded against the RESULTING row too. The
+    // generated rules were read/update/delete + create, which asks *may you
+    // touch this row* and never *may the row end up there* — so a caller could
+    // `update({ where: { id: mine }, data: { workspaceId: theirs } })` and push
+    // their own row into somebody else's tenant, with the WHERE matching
+    // legitimately at the moment it ran. Evaluated in JS after the write, inside
+    // the transaction, so a violation rolls back.
     model.attributes.push({
-      kind: 'deny', operations: ['read', 'update', 'delete'], generated: 'tenancy', message,
+      kind: 'deny', operations: ['read', 'update', 'delete', 'post-update'], generated: 'tenancy', message,
       expr: { type: 'or', left: noPrincipal, right: mismatch },
     })
     model.attributes.push({
@@ -2773,7 +2782,11 @@ function expandTenancy(schema) {
 
       for (const r of usable)
         p.model.attributes.push({
-          kind: 'deny', operations: ['read', 'update', 'delete', 'create'], generated: 'tenancy',
+          // Same four plus `post-update`, for the same reason the column rule
+          // above takes it: without it a child could be re-pointed at a parent
+          // in another tenant, which is the delegated spelling of the same
+          // move.
+          kind: 'deny', operations: ['read', 'update', 'delete', 'create', 'post-update'], generated: 'tenancy',
           message: `Outside your ${t.column}`,
           expr: { type: 'not', expr: { type: 'check', field: r.field, operation: 'read' } },
         })

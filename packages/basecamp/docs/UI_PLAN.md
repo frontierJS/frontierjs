@@ -139,7 +139,7 @@ Everything downstream 400s without `X-Workspace-Id`.
   resource.
 - `src/resources/*.mesa` declaring all 8 services then in existence — `audit`
   joined them in Phase 6. `.mesa` with a
-  `<script module>` and no markup — Invariant 18.
+  `<script module>` for the data half — Invariant 18; markup there is the model's default form.
 
 **Checkpoint — met.** `bun run verify --reset`, **26/26**: the switcher lists
 both workspaces, the first shows its one project and only its own row,
