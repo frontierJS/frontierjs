@@ -38,9 +38,10 @@ title: New project
     e.preventDefault()
     errors = []; failed = null; saving = true
     try {
-      // workspaceId is NOT sent. The service stamps it from the header, which
-      // is the only way it can be trusted — a client-supplied workspace is a
-      // client choosing its own tenant.
+      // workspaceId is NOT sent, and cannot be: the tenancy declaration makes
+      // it readOnly, so `make()` does not seed it and the Data boundary fills
+      // it from the principal. A client-supplied workspace is a client choosing
+      // its own tenant.
       const created = await projects.service.create(draft)
       goto(`/projects/${created.id}/`)
     } catch (err) {

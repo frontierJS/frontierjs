@@ -179,3 +179,31 @@ export function tone(name) {
 export function cx(...parts) {
   return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
 }
+
+/*
+ * ── A list that was cut ───────────────────────────────────────────────
+ */
+
+/**
+ * What a control says when the server had more rows than it sent.
+ *
+ * `resource.options()` answers `{ options, total, truncated }` and a caller
+ * that renders only the rows cannot tell a list of a hundred from the first
+ * hundred of four hundred — the row somebody is looking for is simply absent,
+ * with nothing on screen saying why (`FJS-391`).
+ *
+ * `total` is `null`/`undefined` where the service reported none, and *unknown*
+ * is not *complete*: no number, no sentence, because a wrong count is worse
+ * than none. One owner, so three controls cannot word it three ways.
+ */
+export function truncationNote(shown, total, { searchable = false } = {}) {
+  if (!Number.isFinite(total) || !Number.isFinite(shown) || total <= shown) return ''
+  return searchable
+    ? `Showing ${shown} of ${total} — type to search the rest.`
+    : `Showing ${shown} of ${total}.`
+}
+
+/** The caller's hint and the count, in that order, as one line. */
+export function withNote(hint, note) {
+  return [hint, note].filter(Boolean).join(' ')
+}

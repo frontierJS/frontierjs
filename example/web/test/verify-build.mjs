@@ -1,5 +1,5 @@
 /**
- * web/test/verify-build.mjs — run the same 37 assertions against the PRODUCTION
+ * web/test/verify-build.mjs — run verify.mjs's assertions against the PRODUCTION
  * build. Started by `bun run verify:build`, which builds first.
  *
  * The API must already be up (`bun run api`); the preview server is started and

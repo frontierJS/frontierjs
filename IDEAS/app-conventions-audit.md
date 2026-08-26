@@ -53,7 +53,9 @@ model and every consumer reads them:
 - `query` — the canonical include-shape for the detail view
 - `save(data)` — upsert plus the coercion the model needs (date + time strings → Date)
 
-`createResource` in this repo has no equivalent, and the drift shows what that costs:
+`createResource` in this repo already takes `optionsQuery` and nothing in the tree passes it — no generator, no
+app — so one of the three is permitted and undemonstrated rather than missing; `query` and `save` have no home at
+all. The drift in the app shows what having no home costs:
 in maid.tech the convention is followed **6 times out of 36**, and **80 route files
 hand-write their own `$include` shape**. Where the answer has no home it is written
 per call site, and the version in the file nobody edited is the stale one.
@@ -73,9 +75,12 @@ documents what the first six months intended.
 
 ---
 
-## 3 · Worth taking, not yet filed as work
+## 3 · Worth taking — filed 2026-08-22
 
-### 3.1 `data-confirm` — a declarative confirm with one delegated listener
+Each of these now carries an id, so the register answers for them rather than this
+file. Nothing below is built.
+
+### 3.1 `data-confirm` — a declarative confirm with one delegated listener — `FJS-D115`
 
 A button writes `data-confirm="Delete forever?"`. One document-level capture listener
 shows the popover, then re-fires the click behind a flag. Zero per-component wiring,
@@ -89,21 +94,21 @@ them dead, which is Invariant 4's argument in miniature.
 
 Sibling: `data-return`, same shape, stashes a return path.
 
-### 3.2 An async affordance returns a HANDLE, not an id
+### 3.2 An async affordance returns a HANDLE, not an id — `FJS-390`
 
 `const release = Element.temporary(e.target)` → `release('There was an error')`. Lock
 and restore in one value. This repo already chose the same shape for toasts
 (`toasts.loading()` → `{update, dismiss}`, `FJS-119`), independently. Worth stating
 once as house style rather than rediscovering per component.
 
-### 3.3 A component file exports its own actions from module scope
+### 3.3 A component file exports its own actions from module scope — `FJS-D116`
 
 `import Table, { empty, exportCSV } from '.../Table.svelte'`, then
 `use:empty={{name:'webhooks', span:5}}`. Same shape as a resource: the file owns the
 noun and the verbs that touch it. Also `Map.svelte` → `getGeoLocation`,
 `Form.svelte` → `useForm`.
 
-### 3.4 Route-folder naming that survives a flat search
+### 3.4 Route-folder naming that survives a flat search — `FJS-D117`
 
 - `index` / `create` / `[xId]` — pages
 - `_module` — layout
@@ -113,6 +118,14 @@ noun and the verbs that touch it. Also `Map.svelte` → `getGeoLocation`,
 The namespaced filename (`_tasks.TaskStatus.svelte`) means an import list is readable
 without paths and a flat search is unambiguous — better than twelve files named
 `List.svelte`. See 4.4 for how it fails.
+
+### 3.5 The page owns its own title — `FJS-389`
+
+Not read off the app until a second pass; the app sets a `$title` store from the page
+and the layout renders it. Sierra has the data half and not the effect: `title:` is
+ordinary frontmatter, spread onto `page`, and `document.title` is assigned nowhere in
+`packages/sierra/src` outside the prerenderer — so a `static` build titles every file
+correctly and an SPA shows `index.html`'s one string on every route.
 
 ---
 

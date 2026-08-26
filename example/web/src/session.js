@@ -6,7 +6,7 @@
 // writing its own copy of it slightly differently (`FJS-D20`).
 //
 // The LEVEL is still the server's judgement — GET /api/account/me answers it
-// because api/app.ts passes `services: { level: shopGateLevel }`, so the
+// because api/src/app.ts passes `services: { level: shopGateLevel }`, so the
 // role→level mapping stays in api/gate.ts and is never derived here. The UI
 // reads it only to decide what to offer; every request is graded again on
 // arrival.

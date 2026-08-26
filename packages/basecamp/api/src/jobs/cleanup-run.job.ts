@@ -11,43 +11,38 @@ import { $ } from '@frontierjs/junction'
 // run, and it throws so the queue can apply its own backoff.
 
 import { defineJob } from '@frontierjs/caravan'
-import { applyDiskReport } from '../services/cleanup/disk-report.ts'
-import { announce }   from '../channels.ts'
 import { outbound, outpostFor } from '../providers/outpost.ts'
-import { tail, recordServerEvent } from './outpost-run.ts'
-import { appFrom }    from './context.ts'
+import type { DiskReport } from '../services/cleanup/disk-report.ts'
+import { recordServerEvent } from './outpost-run.ts'
+import { runsAsCaller } from './context.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 
-async function runCleanup(app: BasecampApp, runId: string, workspaceId: string): Promise<void> {
-  // asSystem(): a job runs on the queue's thread, not a request's. There is
-  // no caller to scope to, and it legitimately writes any workspace's rows.
-  const db  = app.data.asSystem() as any
+async function runCleanup(app: BasecampApp, runId: string): Promise<void> {
   const log = app.logger.child('cleanup-run')
 
-  const run = await db.cleanupRun.findUnique({ where: { id: runId } })
-  if (!run) { log.warn('cleanup run not found', { id: runId }); return }
+  // No client here (`FJS-384`). The sweep runs as whoever asked for it, so the
+  // service call below resolves their membership in the workspace the queue
+  // recorded — and a run in another one answers nothing rather than being
+  // written by id. The row writes stay system, because `CleanupRun` is
+  // update-at-SYSTEM and a `Volume` delete is ADMINISTRATOR.
+  const cleanup = app.service('cleanup')
 
-  const startedAt  = Date.now()
-  const startedIso = new Date(startedAt).toISOString()
-
-  await db.cleanupRun.update({ where: { id: runId }, data: { status: 'running', startedAt: startedIso } })
-  announce(app, workspaceId, 'cleanup patched', run)
-
-  async function finish(data: Record<string, unknown>) {
-    const finishedAt = Date.now()
-    const updated = await db.cleanupRun.update({
-      where: { id: runId },
-      data: {
-        ...data,
-        finishedAt: new Date(finishedAt).toISOString(),
-        durationMs: finishedAt - startedAt,
-      },
-    })
-    announce(app, workspaceId, 'cleanup patched', updated)
-    return updated
+  let run: { runId: string; serverId: string; targets: string[]; keepImages: number | null
+             requestedBy: string | null; startedAt: string }
+  try {
+    run = await cleanup.call('startRun', runId) as typeof run
+  } catch (err) {
+    // A run whose server has gone, or that this actor may no longer reach, is
+    // a no-op rather than a crash loop.
+    log.warn('cleanup run not startable', { id: runId, error: (err as Error).message })
+    return
   }
 
-  const target = await outpostFor(app, run.serverId as string)
+  async function finish(data: Record<string, unknown>) {
+    return await cleanup.call('finishRun', runId, data) as Record<string, unknown>
+  }
+
+  const target = await outpostFor(app, run.serverId)
   if (!target) {
     await finish({ status: 'failed', error: 'No outpost is registered for this server' })
     return
@@ -57,7 +52,7 @@ async function runCleanup(app: BasecampApp, runId: string, workspaceId: string):
     freed_bytes?: number
     removed?:     Record<string, unknown>
     volumes?:     string[]
-    usage?:       Parameters<typeof applyDiskReport>[2]
+    usage?:       DiskReport
   }>({
     target,
     method:     'POST',
@@ -71,34 +66,28 @@ async function runCleanup(app: BasecampApp, runId: string, workspaceId: string):
   if (res.error) {
     const status = res.error.kind === 'timeout' ? 'timeout' : 'failed'
     await finish({ status, error: `${res.error.kind}: ${res.error.message}` })
-    await recordServerEvent(app, run.serverId as string, 'cleanup_failed',
+    await recordServerEvent(app, run.serverId, 'cleanup_failed',
       `Disk cleanup did not complete (${res.error.kind})`, { run_id: runId })
     throw new Error(res.error.message)
   }
 
   const freedBytes = Math.max(0, Math.round(Number(res.data?.freed_bytes ?? 0)))
 
-  // Exactly the volumes the outpost says it removed, never the ones it was
-  // asked about. Same rule `volumes.prune` follows: an outpost that could
-  // delete three of five leaves the fourth on disk, and forgetting the row
-  // is how that disk becomes invisible.
+  // What the outpost REPORTED travels to the service, which owns every write
+  // it implies — the volume rows for the disks it actually removed (never the
+  // ones it was asked about) and the fresh `docker system df` picture it took
+  // on the way. Three system writes that used to be three lines here.
   const gone = Array.isArray(res.data?.volumes) ? res.data!.volumes! : []
-  if (gone.length)
-    await db.volume.deleteMany({ where: { serverId: run.serverId, name: { in: gone } } })
-
-  // The outpost has just run `docker system df` to work out what it freed, so
-  // its answer is a fresher picture than the last report. Written through the
-  // same function the report endpoint uses, so the two cannot disagree about
-  // which key means what.
-  if (res.data?.usage) await applyDiskReport(db, run.serverId as string, res.data.usage)
 
   await finish({
     status:     'success',
     freedBytes,
     detail:     { removed: res.data?.removed ?? {}, volumes: gone },
+    volumesRemoved: gone,
+    usage:          res.data?.usage,
   })
 
-  await recordServerEvent(app, run.serverId as string, 'cleanup_ran',
+  await recordServerEvent(app, run.serverId, 'cleanup_ran',
     `Disk cleanup freed ${freedBytes} bytes`,
     { run_id: runId, targets: run.targets, requested_by: run.requestedBy })
 
@@ -110,8 +99,9 @@ async function runCleanup(app: BasecampApp, runId: string, workspaceId: string):
 // lost the answer, and the second attempt covers a transport failure only.
 
 export default defineJob<{ runId: string; workspaceId: string }>('cleanup:run', async (ctx) => {
-  const app = appFrom(ctx, 'cleanup:run')
-  await runCleanup(app, ctx.data.runId, ctx.data.workspaceId)
+  // Somebody asked for this sweep. The queue recorded them and the workspace.
+  const { app } = runsAsCaller(ctx, 'cleanup:run')
+  await runCleanup(app, ctx.data.runId)
 }, {
   queue:       'fleet',
   maxAttempts: 2,

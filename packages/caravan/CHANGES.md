@@ -1,5 +1,74 @@
 # Changes — @frontierjs/caravan
 
+## 2026-08-23 — a job records WHICH TENANT, beside who asked
+
+170 tests, 0 fail. Typecheck clean.
+
+`actor_id` crossed the boundary and nothing else did, so a handler under row
+tenancy had no legal way to be in a tenant and reached for `asSystem()` — which
+drops the gate, the row policies and the audit actor together to relax exactly
+one of them (`FJS-384`).
+
+`tenant_id` is a nullable column added the way `actor_id` and `owner_id` were,
+so an existing `jobs.db` keeps working and NULL is honest: an app that declares
+no tenancy, and work that is the app's own. It is read at dispatch from
+`host.tenant()` on the same absent-is-not-null rule the actor follows —
+`tenant: null` is work that belongs to no tenant, stated — and handed back
+through `runAs(actor, { tenant }, fn)`, so a service call inside the handler
+resolves to it without being threaded anything. `ctx.tenantId` is the
+informational half, exactly as `ctx.auth` is.
+
+**Storing a tenant is not storing a session.** An id names WHICH ROWS; the
+standing that decides what may be done with them is still the principal
+re-resolved at run time, so a caller demoted — or removed from the tenant —
+between asking and running is graded at what they hold now.
+
+
+## 2026-08-22 — the config block is read at boot, because that is when it exists
+
+167 tests, 0 fail. Typecheck clean.
+
+The `caravan:` section of `junction.config.js` was read in `register()`.
+`configure()` runs `register()` synchronously, and junction does not load that
+file until its `load-config` start phase — so what the plugin saw was the config
+as it was *before* the file, which is to say without it (`FJS-416`).
+
+Every app configures its queue at module scope, so the whole section was dead:
+`admin: true` mounted no routes, a `queues` block set no concurrency, a
+`jobsDir` was ignored. It appeared to work because the one app exercising it
+hand-loads the config and passes it to `createApp`, which puts `_junction` in
+`opts.config` before any plugin registers.
+
+`applyJunctionConfig` and `mountAdminRoutes` are named functions now and both
+run in `boot()`. That is late enough for the file to be loaded and early enough
+for the routes: `boot-plugins` runs before `service-routes` and before `listen`.
+
+Found by giving `example` the config file it should have had and watching
+`/api/jobs` 404 — 22 routes became 28 with the block honoured.
+
+
+## 2026-08-22 — the queue contributes a readiness check
+
+167 tests, 0 fail. Typecheck clean.
+
+Junction grew `app.registerHealthCheck(name, fn)` (`FJS-414`), the sibling of
+the metrics seam this package has always used. Caravan is one of the first two
+callers.
+
+The check is the one thing the counts cannot show on their own: a queue holding
+a stuck job reports `running: 1` for the life of the process, which is exactly
+what a queue doing steady work reports. `oldestRunningMs` is what separates
+them, and it is graded against the **longest declared `timeout`** — past twice
+that, every bounded job should already have been given up on.
+
+Only bounded work is graded. A handler that declared no timeout said it has no
+bound, and failing an app's readiness probe on a long job somebody deliberately
+left unbounded would take a healthy app out of a load balancer; a queue where
+nothing declares a timeout is never unhealthy here.
+
+Nothing is required of an app: the registration is behind a `typeof` probe, so
+this package still runs against a host that is not a Junction app at all.
+
 ## 2026-08-20 — the two names a job file could not have
 
 167 tests, 2 of them new, 0 fail.

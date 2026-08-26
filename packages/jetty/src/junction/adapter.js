@@ -25,6 +25,17 @@
 //     // OPTIONAL — Re-auth without disconnecting. Default: disconnect+reconnect.
 //     setToken(token): Promise<void>
 //
+//     // OPTIONAL — Establishing a session. An adapter declaring this block owns
+//     // sign-in; one that does not falls back to call('auth', 'login'|'logout'
+//     // |'verify'), which is the placeholder's pseudo-service and cannot be the
+//     // real spelling — Junction has no service called `auth`, and an app that
+//     // has one would find it shadowed.
+//     auth: {
+//       login(credentials): Promise<{ token, user, expiresAt }>
+//       logout():           Promise<unknown>
+//       verify(token):      Promise<{ user, expiresAt } | null>
+//     }
+//
 //     // OPTIONAL — Subscribe to a server-pushed channel. Returns unsubscribe.
 //     // The handler is called (data, event) where `event` is the WIRE event
 //     // name Junction sends — `posts created`, space-separated, past tense.
@@ -45,6 +56,10 @@
 // The default placeholder adapter (./default-adapter.js) implements REQUIRED
 // + a minimal WebSocket protocol so Phase 2 can boot without external code.
 // Treat it as a stand-in — replace before production.
+//
+// **The real one is ./junction-adapter.js** (`createJunctionAdapter`), over
+// `@frontierjs/junction/client`. It is what an app with a Junction API wants,
+// and it is exported as `@frontierjs/jetty/junction`.
 
 const REQUIRED_METHODS = ['connect', 'disconnect', 'isConnected', 'call']
 

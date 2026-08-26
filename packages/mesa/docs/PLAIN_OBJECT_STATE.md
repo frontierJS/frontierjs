@@ -24,9 +24,9 @@ Everything below was verified against the current runtime.
 The compiler already emits the right thing. For `$: cart.total` + `{cart.total}`:
 
 ```js
-const $$proxy_cart = $runtime.watchProxy(cart);
-const [$$watch_cart_total] = $runtime.watchPath(cart, 'total');
-$runtime.createEffect(() => { $$watch_cart_total(); });
+const $$proxy_cart = $$runtime.watchProxy(cart);
+const [$$watch_cart_total] = $$runtime.watchPath(cart, 'total');
+$$runtime.createEffect(() => { $$watch_cart_total(); });
 var __a = `${$$proxy_cart.total}`;
 ```
 

@@ -23,6 +23,13 @@
 // Both declared paths resolve against the PROCESS CWD, not this file — the
 // database and the audit trail alike. Start the API from the package root or
 // they land somewhere surprising.
+//
+// That is a property this app DEPENDS on rather than merely tolerates, so do not
+// "fix" it with `resolveFrom: 'schema'`: db/test/seed.test.ts isolates a run by
+// giving it a scratch CWD, which redirects `database main` by env var and
+// `database audit` — which has no env var — by the CWD alone. Anchoring sends
+// that audit log back to the shared db/audit/ and the suite fails on a locked
+// database (`FJS-449`).
 
 import { createClient, GatePlugin } from '@frontierjs/litestone'
 import { env, DEV_ENCRYPTION_KEY } from './env.ts'

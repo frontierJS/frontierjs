@@ -1,14 +1,30 @@
 ---
 id: diagnostics
-status: idea
+status: shipped
 dated: 2026-08-04
 ---
 
 # Idea — `fli doctor`: the landmine catalogue as a runnable check
 
-**Status: IDEA. Nothing here is built.** Dated 2026-08-04. No diagnostic command
-exists in `packages/cli/commands/`. Do not cite this file as describing behavior —
-see `VERIFYING.md`.
+**Status: PART SHIPPED 2026-08-24, under a different name.** Ruled `FJS-D133`:
+the rules live in **`fli check`**'s registry, not in a second command — `fli
+doctor` already exists and means *can this machine run fli*. The registry, the
+two severities, `--list`, `--json` with a non-zero exit and the named allowance
+were already there; what shipped is nine rules, the ones that read source:
+`raw-route-param`, `ctx-params`, `set-auth-discarded`, `call-header-declared`,
+`service-model`, `resource-model-miss`, `service-module-db`,
+`scheduler-dispatch`, `gate-unreachable` — **plus `--fix`**, for the three where
+the rewrite is the whole fix.
+**Three rows below were killed by measuring them** and are struck through: two
+had been FIXED since this file was written, one was ruled the intended state.
+**The ratchet shipped too** — `check-baseline.json`, one number per rule id,
+`--update` unable to raise and `--adopt` the verb that can — and so did the
+build-time half, in the only form it can take here: two rules that ask whether
+Sierra's publish proof is **switched on**, never whether it passes. **All four
+steps of § What would have to be built are done.** What is left in this file is
+argument, and one row that wants re-measuring. Everything below is the original argument, kept because it is the
+argument — read the table as a backlog, not as behaviour, and see
+`VERIFYING.md`.
 
 ---
 
@@ -31,18 +47,25 @@ proposal to turn that corpus into an asset.
 Drawn directly from hazards and invariants that already exist. Each is a rule with a
 known failure mode, not a heuristic:
 
+The five marked **shipped** are in `packages/cli/core/checks.js`, with a pair of
+tests each in `tests/checks.test.js`.
+
 | Check | Failure it prevents |
 | --- | --- |
-| a raw route registered with `:id` | registers as a literal segment and **404s silently forever** |
-| `ctx.params` referenced in a *service* context | always `undefined` — role checks silently pass for everyone |
-| `createResource('x')` whose name resolves to no model | degrades to a bare `make()`; the form quietly has no field rules |
-| a service defined without `model:` | no `gateAuth`, no `autoValidate`, no derived anything |
-| `@encrypted` on a `Json` field | round-trips as `"[object Object]"`; nothing throws |
-| a schema declaring `@@gate` with no custom `getLevel` | the shipped resolver grades every junction/auth session at `VISITOR(1)` |
+| a raw route registered with `:id` — **shipped** | registers as a literal segment and **404s silently forever** |
+| `ctx.params` referenced in a *service* context — **shipped** | always `undefined` — role checks silently pass for everyone |
+| `createResource('x')` whose name resolves to no model — **shipped** as `resource-model-miss`, reported only where the model plainly exists | degrades to a bare `make()`; the form quietly has no field rules |
+| a service that resolves to no model — **shipped**, and sharper: a service with no `model:` whose NAME derives to one is correct, so what is reported is the miss | no `gateAuth`, no `autoValidate`, no derived anything |
+| ~~`@encrypted` on a `Json` field~~ — **measured 2026-08-24 and false**: Json, Boolean, DateTime and String all round-trip; `Int`, `Float` and an array THROW at the write, which is loud and belongs to the thing that raises it | ~~round-trips as `"[object Object]"`~~ |
+| ~~a schema declaring `@@gate` with no custom `getLevel`~~ — the resolver was fixed 2026-08-04 and grades a verified session USER(4); an app with plain signed-in authority is correct with no `getLevel` at all. **What shipped instead is the true remainder**, `gate-unreachable`: a gate at 5+ where nothing can grade a caller past 4 | a role STRING is never interpreted, so ADMINISTRATOR is unreachable without a standing column |
 | a model name that is not PascalCase singular | three resolvers disagree; one of them silently opens |
-| `render: static` on a route that read gated data | publishes authenticated data as a public file — see `IDEAS/static-safety.md` |
-| a client expecting realtime on a service with no `channel:` | no events, no error, a store that never updates |
-| a `String? @unique` form field with `blankToNull` off | second empty submission fails a constraint nobody wrote |
+| `render: static` on a route that read gated data — **the check is SIERRA's and shipped 2026-08-06** (`FJS-081`); what `fli check` adds is whether it is switched on: `static-publish-db` and `static-publishes-0` | publishes authenticated data as a public file — see `IDEAS/static-safety.md` |
+| ~~a client expecting realtime on a service with no `channel:`~~ — **ruled against**, `DECISIONS.md` § API design: with no `publishDefault` that is the intended state and a report on it "would fire on nearly every service in every app, which is how a warning gets trained out". Junction reports the fall-through case itself, at boot | — |
+| a `String? @unique` form field with `blankToNull` off — **needs re-measuring**: `createResource` blank-strips by default now, so the trap is narrower than this row | second empty submission fails a constraint nobody wrote |
+| a per-call header set in `web/` and never declared in `api/`'s `http.callHeaders` — **shipped** | works over HTTP, dropped the moment the socket connects |
+| a discarded `db.$setAuth(user)` — **shipped** | scopes nothing; every write after it is anonymous and every row policy compares against a null principal |
+| the module `db` client inside a service — **shipped** as `service-module-db` | no principal: `auth()` is null, every row policy matches nothing, a write belongs to nobody |
+| `app.scheduler` dispatching into the queue — **shipped** as `scheduler-dispatch` | a clock with none of the queue's durability, fired once per replica (`FJS-D36`) |
 | a package root with a fifth markdown file | invariant 17 |
 | a typecheck baseline raised rather than lowered | invariant 14 |
 
@@ -74,10 +97,16 @@ line alone. That is the actual behavioural change being proposed.
 ## Shape
 
 ```
-fli doctor              # check the app in the working directory
-fli doctor --fix        # apply the mechanical repairs (`:id` → `{id}`)
-fli doctor --json       # for CI and for agents
+fli check               # check the app in the working directory
+fli check --fix         # apply the mechanical repairs (`:id` → `{id}`)
+fli check --json        # for CI and for agents
 ```
+
+All three ship (`FJS-D133` for the name). What the `--fix` line above does not
+say, and the implementation had to decide, is **which rules may carry one**: only
+where the rewrite is the WHOLE fix. `const scoped = db.$setAuth(u)` would satisfy
+`set-auth-discarded` and leave every write below it going through the unscoped
+client — a green check over the bug, which is worse than no fix at all.
 
 Output should name the fix, not just the fault — the precedent is the `modelNameFor`
 warning, which was improved specifically to say what to do about it.
@@ -94,9 +123,12 @@ when one arrives the risk is not the tool, it is the overlap: `:id` in a raw rou
 rules, so somebody will write four of the checks above a second time in a place that
 feels natural.
 
-> **A linter owns generic JavaScript correctness. `fli doctor` owns everything derived
+> **A linter owns generic JavaScript correctness. `fli check` owns everything derived
 > from the seed. Neither reimplements the other, and the VS Code extension surfaces
 > both rather than implementing either.**
+
+(`fli check` rather than `fli doctor` since `FJS-D133` — the command exists and
+means *can this machine run fli*. The boundary is unchanged.)
 
 The line is not arbitrary. Doctor's inputs are `parseFile()`, the service registry and
 `project:map --json`, and almost every check above is **cross-file** — *does this
@@ -117,30 +149,46 @@ cheaper to state the sentence now than to unpick it later.
    Source-text scanning is the fallback and should be the minority.
 3. **The first ten rules**, taken verbatim from § Live hazards.
 4. **A CI mode** — `--json`, non-zero exit, and a stable rule-id surface so a
-   baseline can ratchet the way typecheck already does.
+   baseline can ratchet the way typecheck already does. **Done.**
+   `check-baseline.json` at the app root; its PRESENCE is the declaration, so an
+   app's own `bun run check` gets the ratchet with no flag to remember. The one
+   thing this line did not anticipate: a rule that SKIPPED reports 0 findings,
+   which is what a fixed rule reports, so its ceiling is held rather than
+   ratcheted — typecheck has no equivalent, because a package is always checked.
 
 Steps 1 and 3 are the whole first version. This is `M` at most, and the first four
 rules are an afternoon.
 
+**Shipped 2026-08-24 and it was an afternoon, twice.** Steps 1 and 2 were already
+`core/checks.js`; step 3 is nine rules rather than ten, because three of the ten
+did not survive being measured. Step 4 is done, baseline included, `--fix`
+shipped beside it, and the build-time half landed as two switched-on rules.
+
 ## Open questions
 
-- **Where does it live?** `fli` is the natural home and the markdown command format
-  suits a rule catalogue unusually well — each rule is a document with the failure,
-  the fix, and the check together, which is what the CLAUDE.md entries already are.
-  Against that: rules need to be importable by CI and by editors, which argues for a
-  library with a `fli` front end.
+- ~~**Where does it live?**~~ **Answered — `FJS-D133`.** A library with a `fli`
+  front end, which is what `core/checks.js` already was: two callers, one of them
+  `scripts/ci.mjs`. The command is `fli check`, not a new one.
 - **Does it overlap `atlas`?** Both read `project:map --json`. Probably the same
   substrate, different question — atlas asks *what is this app*, doctor asks *what is
   wrong with it*.
-- **Static analysis has limits.** `ctx.params` in a service is findable by text;
-  proving a `render: static` route reads gated data needs the prerenderer
-  (`IDEAS/static-safety.md`). Some checks are build-time, not scan-time, and the
-  registry should not pretend otherwise.
+- ~~**Static analysis has limits.**~~ **Answered, and the answer generalises.**
+  Proving a `render: static` route reads gated data needs the prerenderer, and
+  that check is Sierra's. But *is the proof switched on* is decidable from text,
+  and it is where this class actually fails: a static surface wiring no `db:`
+  can observe nothing, and `publishes: 0` is the default bar, so it raises
+  nothing and silences the two fail-closed branches. **The build owns the
+  verdict; `fli check` owns the wiring.** That is the rule for the next one of
+  these — the registry does not pretend to reach a build, and it does not
+  concede the whole question either.
 - **Does the framework check itself?** Several hazards are about this repo, not about
   apps — the workspace-copy trap, the runner heterogeneity, baseline ratchets. Those
   may want a separate `fli doctor --workspace`, or they may belong in CI directly.
-- **Severity model.** A silent-authorization failure and a fifth markdown file are
-  not the same thing. Two levels minimum; resist inventing five.
+- ~~**Severity model.**~~ **Answered: two, `error` and `warn`**, and the resisting
+  held. What carries the nuance instead is the MESSAGE — every finding names the
+  failure and the fix — and, since 2026-08-24, whether a finding carries an
+  `edit` at all: *this one is a spelling* and *this one is a decision* is a
+  sharper distinction than a third severity would have been.
 
 ## See also
 

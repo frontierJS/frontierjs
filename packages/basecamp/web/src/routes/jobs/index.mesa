@@ -4,7 +4,6 @@ title: Jobs
 <script>
   import { session } from '../../session.js'
   import { jobs } from '../../resources/Job.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
 
@@ -38,7 +37,7 @@ title: Jobs
     if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
     else load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   async function trigger(job) {
     error = null; busy = job.id

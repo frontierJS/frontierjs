@@ -28,8 +28,8 @@
   // `disabled` goes over as a getter rather than a value: it is a prop and may
   // change after this runs, and a stale copy is a strip that keeps stepping
   // onto a tab that has since been turned off.
-  $onMount(() => { registerTab?.(id, () => disabled) })
-  $onDestroy(() => { unregisterTab?.(id) })
+  $.onMount(() => { registerTab?.(id, () => disabled) })
+  $.onDestroy(() => { unregisterTab?.(id) })
 
   function handleClick() {
     if (!disabled) setActive(id)

@@ -33,7 +33,7 @@ import type { HookMap } from './hooks.ts'
 import { NotFound, BadRequest, Unauthorized, Forbidden } from './errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
-import { announcingService, freezeUser } from './context.ts'
+import { announcingService, freezeUser, requestMeta } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { normalizeOrderBy, type SortParam } from './sort.ts'
@@ -134,6 +134,13 @@ export interface LitestoneWriteEvent {
   count?:  number
   /** The caller's filter, on a collection event. In-process only — see below. */
   where?:  unknown
+  /** `transition` only: the move's own name (`pay`), which is what it
+   *  announces under — the same name the service call would have used. */
+  transition?: string
+  /** `transition` only: the row after the move. `result` is the CRUD events'
+   *  name for the same thing; they are two keys because Litestone builds the
+   *  two payloads in two places and this side must not guess which it got. */
+  record?: unknown
   [k: string]: unknown
 }
 
@@ -554,6 +561,24 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     return softDelete ? { [softDelete]: null } : {}
   }
 
+  /**
+   * The same filter, and the one directive that lifts it on a WRITE.
+   *
+   * Every read passes `$withDeleted` through and no write did, so the escape
+   * hatch a `SoftDeletedUniqueError` points AT was unreachable through a
+   * service (`FJS-523`). That 409 says a caller's value is held by a row they
+   * cannot see, and litestone's documented way out is to move the value aside —
+   * `update({ …, withDeleted: true })` — which is this.
+   *
+   * `remove` is deliberately not a caller: against an already-deleted row the
+   * only remaining action is to stop keeping it, which is a HARD delete, and
+   * giving `DELETE ?$withDeleted=true` that meaning is a semantic decision
+   * rather than a passthrough. It stays open on `FJS-523`.
+   */
+  function writeWhere(q: { withDeleted?: boolean }): Record<string, unknown> {
+    return q.withDeleted ? {} : softDeleteFilter()
+  }
+
   function ensureBulkAllowed(op: string): void {
     if (!allowBulk) {
       throw new BadRequest(
@@ -797,14 +822,15 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         throw new BadRequest(`Cannot set ${softDelete} directly — use remove()`)
       }
 
-      const where = { [idField]: ctx.id, ...softDeleteFilter() }
+      const where = { [idField]: ctx.id, ...writeWhere(q) }
 
       // Single round trip: litestone's update() returns null when no row
       // matches — no need for a findUnique existence probe first (which
       // doubled the query count and was a TOCTOU race).
       const args: Record<string, unknown> = { where, data: ctx.data }
-      if (q.select)  args.select  = q.select
-      if (q.include) args.include = q.include
+      if (q.select)      args.select      = q.select
+      if (q.include)     args.include     = q.include
+      if (q.withDeleted) args.withDeleted = true
       const updated = await table.update(args)
       if (!updated) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
       return updated
@@ -821,12 +847,13 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       }
 
       if (ctx.id) {
-        const where = { [idField]: ctx.id, ...softDeleteFilter() }
+        const where = { [idField]: ctx.id, ...writeWhere(q) }
 
         // Single round trip — update() returns null when no row matches.
         const args: Record<string, unknown> = { where, data: ctx.data }
-        if (q.select)  args.select  = q.select
-        if (q.include) args.include = q.include
+        if (q.select)      args.select      = q.select
+        if (q.include)     args.include     = q.include
+        if (q.withDeleted) args.withDeleted = true
         const updated = await table.update(args)
         if (!updated) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
         return updated
@@ -845,6 +872,10 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         )
       }
 
+      // BY ID only, above. A bulk patch keeps the ordinary filter: `bulkByRow`
+      // counts and selects its targets through `table.count`/`findMany`, which
+      // apply litestone's own soft-delete filter, so widening the WHERE here
+      // alone would match nothing and read as the directive being ignored.
       const where = { ...q.where, ...softDeleteFilter() }
       return bulkByRow(ctx, 'patch', table, where, (id, version) =>
         table.update({
@@ -1200,6 +1231,88 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
       : compiled[mode].parse(ctx.data)
 
     liftTransient(ctx, compiled.transient)
+  }
+}
+
+// ─── A custom method's declared input ─────────────────────────────────────
+//
+// `autoValidate` derives from a MODEL and covers create/patch on a model
+// service. Everything else a service answers — `pay`, `ship`, `prune` — took
+// `ctx.data` unvalidated, which is the largest unguarded surface junction had:
+// the interesting operations in an app are exactly the ones that are not CRUD.
+//
+// The declaration is `methods: [{ method: 'pay', input: 'PayOrder' }]` and
+// `PayOrder` is a `type T { … }` in the app's own seed, so nothing new decides
+// what a shape is. It reaches `$defs` alongside the models, and the same
+// `jsonSchemaToJunctionSchema` → `createSchema` pair compiles it.
+//
+// A named type that is not there THROWS rather than warning. A missing MODEL
+// definition is a config that used to work, so autoValidate warns and carries
+// on; an `input:` is a statement the author made this morning, and failing open
+// on it hands back the assurance it was written to provide.
+
+const _compiledInputs = new WeakMap<object, Map<string, import('./schema.ts').CompiledSchema | Error>>()
+
+/** The `$defs` keys that describe an object — what an `input:` may name. */
+function _objectDefNames(jsonSchema: LitestoneJsonSchema): string[] {
+  return Object.entries(jsonSchema.$defs ?? {})
+    .filter(([, def]) => (def as { type?: string })?.type === 'object')
+    .map(([name]) => name)
+    .sort()
+}
+
+/**
+ * before-hook that validates ctx.data against a `type` declared in the seed.
+ *
+ * Resolved at call time for the same reason autoValidate is: the client — and
+ * therefore the schema — is not known when the service module is imported.
+ */
+export function validateInput(defsKey: string, serviceName: string, method: string) {
+  // Named for the same reason as gateAuth — see the note there.
+  return async function validateInput(ctx: ServiceContext): Promise<void> {
+    const client = ctx.locals.db as { $schema?: unknown } | undefined
+    if (!client) return
+
+    const jsonSchema = await _deriveJsonSchema(client, 'create')
+    if (!jsonSchema) return
+
+    let perKey = _compiledInputs.get(client as object)
+    if (!perKey) { perKey = new Map(); _compiledInputs.set(client as object, perKey) }
+
+    let compiled = perKey.get(defsKey)
+    if (!compiled) {
+      const def = jsonSchema.$defs?.[defsKey] as { type?: string } | undefined
+      if (!def || def.type !== 'object') {
+        compiled = new Error(
+          `[Junction] service '${serviceName}': ${method} declares ` +
+          `input: '${defsKey}', which is not an object type in the schema. ` +
+          `Declare \`type ${defsKey} { … }\` in the seed. ` +
+          `Available: ${_objectDefNames(jsonSchema).join(', ') || '(none)'}`
+        )
+      } else {
+        try {
+          compiled = createSchema(jsonSchemaToJunctionSchema(defsKey, jsonSchema, 'create'))
+        } catch (err) {
+          compiled = new Error(
+            `[Junction] service '${serviceName}': ${method}'s input type ` +
+            `'${defsKey}' would not compile (${(err as Error)?.message ?? String(err)})`
+          )
+        }
+      }
+      perKey.set(defsKey, compiled)
+    }
+
+    if (compiled instanceof Error) throw compiled
+    const schema = compiled
+
+    if (!ctx.data) throw new BadRequest('Request body is required')
+
+    // Element-wise for a bulk payload, exactly as autoValidate does — parse()
+    // rejects an array outright, so a custom method taking a list would 400 on
+    // every call.
+    ctx.data = Array.isArray(ctx.data)
+      ? partitionBulk(ctx, ctx.data, row => schema.parse(row) as Record<string, unknown>)
+      : schema.parse(ctx.data)
   }
 }
 
@@ -1734,6 +1847,44 @@ export function gateAuth(accessor: string | undefined, op: GateOp) {
   }
 }
 
+/**
+ * The same refusal, as an AROUND hook — which is the position it has to hold.
+ *
+ * A before hook cannot lead the chain: `resolvePipelines` runs `before.all`
+ * ahead of `before.<method>`, so a service declaring `before: { all: [...] }`
+ * still had its own rule execute for a stranger no matter where the derived
+ * layer was spliced into the per-method list (`FJS-403`). An around hook wraps
+ * every before hook there is, and a SERVICE-level one sits inside the app-level
+ * `withLitestoneDb` that scopes the client this reads — so the gate is graded
+ * with a client in hand and before anything an app wrote, at either scope.
+ *
+ * One hook rather than six: the operation is a property of the method, and a
+ * method the map does not name is not gated here — which is what a custom
+ * method has always got.
+ */
+const OP_FOR_METHOD: Record<string, GateOp> = {
+  find: 'read', get: 'read', create: 'create',
+  patch: 'update', update: 'update', remove: 'delete',
+}
+
+export function gateAuthAround(accessor: string | undefined) {
+  // Aliased before the returned function shadows the name. Keeping the name is
+  // not cosmetic: DERIVED_HOOKS, the telemetry waterfall and every committed
+  // surface.snapshot.md read a hook by it.
+  const make   = gateAuth
+  const checks = new Map<GateOp, (ctx: ServiceContext) => void>()
+
+  return async function gateAuth(ctx: ServiceContext, next: () => Promise<void>): Promise<void> {
+    const op = OP_FOR_METHOD[ctx.method as string]
+    if (op) {
+      let check = checks.get(op)
+      if (!check) { check = make(accessor, op); checks.set(op, check) }
+      check(ctx)
+    }
+    await next()
+  }
+}
+
 // ─── Session → gate level ─────────────────────────────────────────────────
 
 /**
@@ -1925,17 +2076,46 @@ export type PrincipalClaims = Record<string, unknown>
  */
 export type PrincipalResolver = (
   ctx:  ServiceContext,
-  user: NonNullable<ServiceContext['auth']['user']>,
+  user: ServiceContext['auth']['user'] | null,
 ) => PrincipalClaims | Promise<PrincipalClaims>
+
+/**
+ * Where the app parks its principal resolver, so a tool can read it back.
+ *
+ * A Symbol rather than a property: `app.principal()` is already a method (WHO is
+ * in scope right now) and a resolver is a different noun wearing the same word.
+ * Non-enumerable by construction, so a spread of the app does not carry it.
+ */
+export const PRINCIPAL_RESOLVER = Symbol.for('junction.principalResolver')
+
+/** Where `createApp({ tenants })` parks the registry, for the same reason. Under
+ *  that strategy there is no app-wide client to ask the declaration of. */
+export const TENANT_REGISTRY = Symbol.for('junction.tenantRegistry')
 
 /** Claims that would change WHO is calling rather than what they hold here. */
 const IDENTITY_KEYS = ['userId', 'id'] as const
 
-// Whether a resolver ran for this call. Two refusals wear the same empty
-// principal and they are not the same sentence: nothing in the app emits this
-// claim at all, or a resolver ran and answered that this caller does not hold
-// it here. Only the second is about the caller.
+// Whether a resolver ran for this call, and why it produced nothing.
+//
+// Three refusals wear the same empty principal and they are three different
+// answers. Nothing in the app emits this claim at all — a developer's problem,
+// and the only one where no resolver has run. The request named no tenant — a
+// 400, because the request is incomplete rather than refused. The request named
+// one this caller does not belong to — a 403.
+//
+// The resolver is the only thing that can tell the last two apart, so it says
+// so; a resolver that states nothing falls to the refusal, which is the safe
+// half.
 const RESOLVED = 'principal.resolved'
+const NO_CLAIM = 'principal.noClaim'
+
+/** Why a resolver produced no claim, and — where the request named no tenant —
+ *  how one is named, which only the resolver knows. Set by the resolver, read
+ *  by `tenantClaimGuard`. */
+export interface NoClaim {
+  reason:   'unnamed' | 'refused'
+  namedBy?: string
+}
 
 /**
  * Merge claims onto the calling principal and re-scope the client from it.
@@ -1951,7 +2131,6 @@ export function applyClaims(
   claims: PrincipalClaims,
 ): void {
   const user = ctx.auth?.user
-  if (!user) return
 
   // Refused by name rather than stripped in silence. A resolver answering
   // `{ userId: someoneElse }` is not a claim about what this caller holds, it
@@ -1966,12 +2145,58 @@ export function applyClaims(
 
   ctx.locals[RESOLVED] = true
 
+  const client = db as LitestoneClient
+
+  liftRowTenant(ctx, client, claims)
+
+  // ── A guest ───────────────────────────────────────────────────────────────
+  //
+  // A caller with no session may still hold a claim the REQUEST proves: a cart
+  // token, an invitation token, an unsubscribe token. The claims reach the Data
+  // boundary so `@@allow('read', token == auth().cartToken)` can scope rows to
+  // the bearer, which is the only way a schema can own access for a population
+  // that has no `auth().id`.
+  //
+  // **The claims must NOT become `ctx.auth.user`, and this is the whole of the
+  // care this path needs.** `sessionGateLevel` grades any object it is handed:
+  // a claims-only principal sets none of `isSystemAdmin`/`isOwner`/`isAdmin`
+  // and leaves `verifiedAt`/`activatedAt` undefined — which is SILENCE, not
+  // `null` — so it falls through to `LEVELS.USER`. Promoting a guest to a
+  // session object would therefore grade every anonymous caller 4 in every app
+  // that adopted a resolver, silently. `ctx.auth.user` stays null, the gate
+  // still grades STRANGER(0), and the claim decides only WHICH ROWS.
+  if (!user) {
+    if (!Object.keys(claims).length) return
+    if (typeof client?.$setAuth === 'function')
+      ctx.locals.db = client.$setAuth({ ...claims })
+    return
+  }
+
   const principal = freezeUser({ ...user, ...claims })
   ctx.auth.user   = principal as typeof user
 
-  const client = db as LitestoneClient
   if (typeof client?.$setAuth === 'function')
     ctx.locals.db = client.$setAuth(toDataPrincipal(principal))
+}
+
+/**
+ * Resolve this tenant's configuration before anything downstream reads it.
+ *
+ * `$.config` is a property read and a resolver that reads a row is async, so the
+ * two can only meet where the tenant is ALREADY known — which is here, in the
+ * hook that just established it, exactly as `applyClaims` resolves the principal
+ * here rather than at the point a policy needs it.
+ *
+ * A failure is NOT swallowed: a tenant whose configuration could not be resolved
+ * would otherwise silently serve the floor, which for a from-address or a bucket
+ * means one tenant's mail going out under another's name.
+ */
+async function warmTenantConfig(ctx: ServiceContext): Promise<void> {
+  const app = (ctx as { app?: { loadTenantConfig?: (id: string) => Promise<unknown>; tenantConfig?: unknown } }).app
+  if (!app?.tenantConfig) return
+  const id = ctx.locals?.tenantId
+  if (id == null) return
+  await app.loadTenantConfig?.(String(id))
 }
 
 export function withLitestoneDb(db: unknown, principal?: PrincipalResolver): import('./hooks.ts').AroundHook {
@@ -1995,10 +2220,26 @@ export function withLitestoneDb(db: unknown, principal?: PrincipalResolver): imp
         ? client.$setAuth(toDataPrincipal(ctx.auth.user))
         : client
 
+    // Before the resolver, because most apps have no resolver: the claim came
+    // from `sessionFields` at sign-in and is already on the principal.
+    // `applyClaims` lifts it again afterwards, where a resolver moved it.
+    liftRowTenant(ctx, db)
+
     // After the scope above and before `next()`: the resolver may read through
     // `ctx.locals.db`, and everything downstream must see the claims.
-    if (principal && ctx.auth?.user)
-      applyClaims(ctx, db, await principal(ctx, ctx.auth.user))
+    //
+    // Run for a GUEST as well as for a session. The resolver is the only thing
+    // that can turn something the request carries — a cart token, an invitation
+    // — into a claim a row policy can read, and the population that needs it
+    // most is exactly the one with no `auth().id`. A resolver written before
+    // this is now called with `null`, which is why `membershipClaim` refuses by
+    // name rather than reading `userId` off nothing.
+    if (principal)
+      applyClaims(ctx, db, await principal(ctx, ctx.auth?.user ?? null))
+
+    // After the claims, because under `strategy row` the tenant IS a claim and
+    // is not known until they are merged.
+    await warmTenantConfig(ctx)
 
     await next()
   }
@@ -2046,19 +2287,51 @@ export interface MembershipClaimOptions {
    *  own row one join away rather than one query away, which is what a status
    *  check on it costs otherwise. */
   include?:   string[]
+  /** How a caller names the tenant, quoted into the refusal when they named
+   *  none — `'the X-Workspace-Id header or ?workspace_id='`. `tenantFrom` is
+   *  the only thing that knows, and *this request names no workspace* is not
+   *  actionable without it. */
+  namedBy?:   string
 }
 
 /** Where this call's resolved membership row is parked, so a caller can read
  *  the rest of it without a second query. */
 export const MEMBERSHIP = 'membership'
 
-export function membershipClaim(opts: MembershipClaimOptions): PrincipalResolver {
+export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver {
   const claimName    = opts.as ?? opts.tenant
   const standingName = opts.standingAs ?? opts.standing
 
-  return async function membershipClaim(ctx, user) {
-    const tenant = opts.tenantFrom(ctx)
-    if (!tenant) return {}
+  const resolver = async function membershipClaim(ctx: ServiceContext, user: ServiceContext['auth']['user'] | null) {
+    // A GUEST cannot hold a membership. The resolver runs for a caller with no
+    // session now — that is what lets a bearer-token claim reach a row policy —
+    // so this refuses by name rather than reading `userId` off nothing and
+    // querying `where: { userId: undefined }`, which matches the first row with
+    // a null column and would hand a stranger someone else's standing.
+    if (!user) {
+      ctx.locals[NO_CLAIM] = { reason: 'refused' } satisfies NoClaim
+      return {}
+    }
+
+    // A request names its tenant however the app says; work with no request
+    // behind it named one when it was enqueued, and that is the fallback.
+    //
+    // Without it a job under row tenancy has no legal tenant at all —
+    // `tenantFrom` reads a header a queue does not have — so every handler that
+    // touches scoped rows reaches for `asSystem()`, which drops the gate, the
+    // row policies and the audit actor together to relax exactly one of them
+    // (`FJS-384`). The membership row is still READ HERE, for this actor and
+    // this tenant, so a caller who lost the membership between asking and
+    // running is refused rather than replayed.
+    const tenant = opts.tenantFrom(ctx) ?? requestMeta()?.tenant ?? null
+
+    // Not the same answer as the one below, and collapsing them produces a
+    // refusal that names nothing: *you do not belong to the tenant this
+    // request names*, to a request that named none.
+    if (!tenant) {
+      ctx.locals[NO_CLAIM] = { reason: 'unnamed', namedBy: opts.namedBy } satisfies NoClaim
+      return {}
+    }
 
     // asSystem(): membership is what DECIDES this caller's access, so it cannot
     // be read through a client already scoped by that access — and under a
@@ -2092,7 +2365,7 @@ export function membershipClaim(opts: MembershipClaimOptions): PrincipalResolver
     // they do not belong to comes out of here holding nothing, which is an
     // empty screen and a gate that grades them a stranger, rather than a full
     // one belonging to somebody else.
-    if (!row) return {}
+    if (!row) { ctx.locals[NO_CLAIM] = { reason: 'refused' } satisfies NoClaim; return {} }
 
     ctx.locals[MEMBERSHIP] = row
 
@@ -2101,6 +2374,166 @@ export function membershipClaim(opts: MembershipClaimOptions): PrincipalResolver
       ...(standingName && opts.standing ? { [standingName]: row[opts.standing] } : {}),
     }
   }
+
+  // What this resolver IS, for a tool that has to write it down.
+  //
+  // A resolver is a function, so the only thing a snapshot can otherwise say
+  // about one is its name — and *the app has a resolver called membershipClaim*
+  // is not the fact worth committing. Which model proves membership, which
+  // column holds the caller, which holds the tenant and what the claims are
+  // called are the four that decide who a request turns out to be, and all four
+  // are in this closure.
+  //
+  // `tenantFrom` is deliberately absent — a function, which a diff cannot grade.
+  // `namedBy` is NOT: it is a constant the app wrote, and once a resolver is
+  // installed it is the only static answer to *how does a request name its
+  // tenant*, which the tenancy declaration's own `resolve` stops answering.
+  // A hand-written resolver may carry a `describe` of its own; one that does not
+  // is reported by name, which is honest and is what it is.
+  const described = resolver as DescribedResolver
+  described.describe = () => ({
+    kind:       'membership',
+    model:      opts.model,
+    subject:    opts.subject,
+    tenant:     opts.tenant,
+    standing:   opts.standing   ?? null,
+    claims:     [claimName, ...(standingName && opts.standing ? [standingName] : [])],
+    include:    opts.include    ?? [],
+    namedBy:    opts.namedBy    ?? null,
+  })
+
+  return described
+}
+
+/** A resolver that can say what it is — `junction principal` reads this, and an
+ *  app writing its own may carry one. */
+export type DescribedResolver = PrincipalResolver & { describe: () => PrincipalDescription }
+
+/** What a principal resolver can say about itself to a tool that writes it down. */
+export interface PrincipalDescription {
+  kind:     string
+  model:    string | null
+  subject:  string | null
+  tenant:   string | null
+  standing: string | null
+  /** The claim NAMES this resolver can emit. Never values — a value is a caller. */
+  claims:   string[]
+  include:  string[]
+  /** How a caller names the tenant, as the app words it. Constant, so committable. */
+  namedBy:  string | null
+}
+
+// ─── describePrincipalRealm ──────────────────────────────────────────────────
+//
+// Who a caller ARRIVES as, and who they BECOME before the Data boundary.
+//
+// `db/access.snapshot.md` commits the predicate — `workspaceId !=
+// auth().workspaceId` — and the `snapshots` CI phase fails a stale one. Nothing
+// commits its INPUT: who emits that claim, off which request, verified against
+// which model. So a resolver that emits the wrong tenant leaves every artefact
+// byte-identical and every read answering somebody else's rows (`FJS-514`).
+//
+// Read off a BUILT app for the same reason `junction surface` is: a resolver is
+// wired in application code and no file tree can answer which one an app ended
+// up with.
+//
+// The one thing deliberately NOT derived is the value→level mapping. A standing
+// is graded by `getLevel`, which is a function an app passes to `GatePlugin`,
+// and a client exposes plugin NAMES rather than instances — so the values are
+// reported from the schema's own enum and the mapping is named as app code. The
+// check that executes it is litestone's `verifyGateLadder`; guessing it here
+// would be a second answer to a question that already has an executed one.
+
+/** The tenancy claim's own name and how a request names its tenant. */
+export interface PrincipalRealm {
+  tenancy:   { strategy: string; column: string | null; claim: string | null; resolve: string | null } | null
+  resolver:  { name: string; described: PrincipalDescription | null } | null
+  /** Models the schema exempts from tenancy by name. */
+  exempt:    string[]
+  /** Models scoped through a parent rather than a column of their own. */
+  delegated: string[]
+  /** Models carrying the tenant column. */
+  scoped:    string[]
+  /** Whether a schema was reachable at all — false under `strategy database`,
+   *  where the client is per request and nothing app-wide holds one. */
+  hasSchema: boolean
+  /** The standing column's declared values, where it is an enum. */
+  standing:  { column: string; claim: string; values: string[] } | null
+  /** The config paths a tenant may override (`FJS-D126`), or null where the app
+   *  installs no resolver. Empty is a resolver with an empty list, which is a
+   *  different statement from no resolver at all. */
+  tenantConfigKeys: string[] | null
+}
+
+export function describePrincipalRealm(app: unknown, db: unknown): PrincipalRealm | null {
+  const resolverFn = (app as Record<symbol, unknown>)?.[PRINCIPAL_RESOLVER] as
+    (PrincipalResolver & { describe?: () => PrincipalDescription }) | undefined
+
+  // Two sources and they are not interchangeable. `createApp({ db })` has one
+  // client and the declaration is on it; `createApp({ tenants })` has none — a
+  // client is per request — so the registry is the only thing holding it, and
+  // asking `app.db` there answers *no tenancy* about an app that is nothing but.
+  const registry = (app as Record<symbol, unknown>)?.[TENANT_REGISTRY] as
+    { tenancy?: ResolvedTenancy | null } | undefined
+  const t = tenancyOf(db) ?? registry?.tenancy ?? null
+
+  // The model breakdown needs a schema, and under `strategy database` there is
+  // no app-wide client to read one off. Opening a tenant to get it would make a
+  // description tool create a database file, so it is reported absent instead —
+  // which is also the honest answer: that strategy scopes nothing by predicate,
+  // so there is no per-model rule to break down.
+  const schema = (db as { $schema?: { models?: ModelLike[]; enums?: EnumLike[] } })?.$schema ?? null
+  if (!t && !resolverFn) return null
+
+  const described = typeof resolverFn?.describe === 'function' ? resolverFn.describe() : null
+
+  const exempt: string[] = []
+  const delegated: string[] = []
+  const scoped: string[] = []
+
+  for (const model of schema?.models ?? []) {
+    const attrs = model.attributes ?? []
+    if (attrs.some(a => a.kind === 'tenant' && a.mode === 'none')) { exempt.push(model.name); continue }
+    if (!attrs.some(a => a.kind === 'deny' && a.generated === 'tenancy')) continue
+    const column = t?.column
+    if (column && model.fields?.some(f => f.name === column)) scoped.push(model.name)
+    else delegated.push(model.name)
+  }
+
+  // The standing's VALUES where the column is an enum — which is the half a
+  // diff can grade. A role added to the ladder and not to the app's `getLevel`
+  // is a caller silently graded at whatever the default answers, and the enum
+  // gaining a member is the visible edge of it.
+  let standing: PrincipalRealm['standing'] = null
+  if (described?.standing && described.model) {
+    const owner = (schema?.models ?? []).find(m => modelAccessorMatches(m.name, described.model as string))
+    const field = owner?.fields?.find(f => f.name === described.standing)
+    const values = (schema?.enums ?? []).find(e => e.name === field?.type?.name)?.values ?? []
+    standing = { column: `${owner?.name ?? described.model}.${described.standing}`,
+                 claim: described.claims[described.claims.length - 1] ?? described.standing,
+                 values: values.map(v => (typeof v === 'string' ? v : (v as { name: string }).name)) }
+  }
+
+  return {
+    tenancy:  t ? { strategy: t.strategy, column: t.column ?? null, claim: t.claim ?? null,
+                    resolve: t.resolve ? describeResolution(t.resolve) : null } : null,
+    resolver: resolverFn ? { name: resolverFn.name || 'anonymous', described } : null,
+    hasSchema: !!schema,
+    tenantConfigKeys: (app as { tenantConfig?: { keys?: string[] } | null })?.tenantConfig?.keys ?? null,
+    exempt, delegated, scoped, standing,
+  }
+}
+
+interface ModelLike { name: string; attributes?: Array<{ kind?: string; mode?: string; generated?: string }>; fields?: Array<{ name: string; type?: { name?: string } }> }
+interface EnumLike  { name: string; values?: Array<string | { name: string }> }
+
+// `workspaceMember` ⇄ `WorkspaceMember`, without importing the inflector for a
+// comparison that is a case fold: an accessor is the model name with a lowered
+// first letter, and `accessorCandidates` owns the plural direction that this is
+// not asking about.
+function modelAccessorMatches(modelName: string, accessor: string): boolean {
+  return modelName === accessor ||
+         modelName.charAt(0).toLowerCase() + modelName.slice(1) === accessor
 }
 
 // ─── A write nothing announced ───────────────────────────────────────────────
@@ -2160,16 +2593,47 @@ export function announceDataWrites(
   const serviceFor = (model: string): string | undefined => {
     if (!index) {
       index = new Map()
+      // ── Every spelling, not one ──────────────────────────────────────────
+      //
+      // This used to index a single key per service — `svc.model ?? singularize(name)`
+      // — and compare it against Litestone's own model name. It never matched
+      // for any conventionally named service, so the whole of this function's
+      // reason to exist was dead: a write outside its own service announced
+      // NOTHING, in every app, since FJS-010 (FJS-464).
+      //
+      // Two things defeat one key. `svc.model` is an ACCESSOR and may
+      // legitimately be the plural — `createBaseService({ model: 'posts' })`
+      // is documented and supported — while Litestone announces `Post`. And
+      // `singularize(name)` was unreachable, because `createService` fills
+      // `model` with the service NAME when a file declares none, so the `??`
+      // never took its right-hand side.
+      //
+      // `accessorCandidates` is the one owner of the set of spellings a name
+      // can take (Invariant 2, the same table `getTable` and `_gateLevels`
+      // walk), so both are expanded through it rather than through a rule
+      // written again here.
+      const claim = (spelling: string | undefined, name: string, wins: boolean) => {
+        if (!spelling) return
+        for (const candidate of accessorCandidates(spelling)) {
+          const key = candidate.toLowerCase()
+          if (wins || !index!.has(key)) index!.set(key, name)
+        }
+      }
+      // The service NAME first, then the declared `model:` over the top: a
+      // file that says which model it is wins over the one derived from its
+      // URL, which is the only order under which declaring one can never make
+      // things worse.
+      for (const name of app.services.list()) claim(name, name, false)
       for (const name of app.services.list()) {
         const svc = app.services.get(name) as { model?: string } | undefined
-        // `model:` when declared, otherwise the same singularisation every
-        // other resolver uses (Invariant 2) — one owner, so a service named for
-        // its URL resolves here exactly as it does for the gate and the filter.
-        const m = svc?.model ?? singularize(name)
-        index.set(m.toLowerCase(), name)
+        if (svc?.model && svc.model !== name) claim(svc.model, name, true)
       }
     }
-    return index.get(model.toLowerCase())
+    const key = model.toLowerCase()
+    // The singular fallback covers a model whose name pluralises irregularly
+    // in a way no service name reached — `singularize` and `accessorCandidates`
+    // are the same table, so this is one more lookup and not a second rule.
+    return index.get(key) ?? index.get(singularize(key).toLowerCase())
   }
 
   const sendToChannel = (name: string, event: string, payload: unknown): void => {
@@ -2197,8 +2661,47 @@ export function announceDataWrites(
   }
 
   return tap((e) => {
+    if (!e.model) return
+
+    // ── A state move ──────────────────────────────────────────────────────
+    // A transition is a row change and announces like one. It arrives under
+    // its own event name rather than a CRUD one, and this used to drop it —
+    // so a move made outside the service that OWNS the model reached no bus
+    // subscriber and no open tab. That is not a rare shape: a webhook settling
+    // an order, a job advancing a state, anything calling `db.x.transition()`
+    // from another service. The same failure as the bulk writes in FJS-307,
+    // and just as silent: the write succeeds, the screen does not move.
+    //
+    // Announced under the MOVE's name (`orders pay`), which is exactly what
+    // callService announces when the same transition goes through the owning
+    // service — so a subscriber has one event to handle either way, and the
+    // browser store's custom-method branch already merges it as a patch.
+    if (e.event === 'transition') {
+      const name = serviceFor(e.model)
+      if (!name || !e.transition) return
+      if (announcingService() === name) return
+      const record = e.record
+      // No row to hand over — the same position a `select: false` write is in
+      // below, and it takes the same answer rather than a guess.
+      if (record === null || record === undefined) {
+        const detail = { model: e.model, operation: e.transition, count: e.count ?? 1 }
+        app.events?.emit(`${name}:changed`, detail)
+        sendToChannel(name, 'changed', detail)
+        return
+      }
+      app.events?.emit(`${name}:${e.transition}`, record)
+      sendToChannel(name, e.transition, record)
+      return
+    }
+
     const past = PAST[e.event as string]
-    if (!past || !e.model) return              // 'transition' has its own event, not a CRUD one
+    if (!past) return
+    // A named move is announced by the `transition` event above, and Litestone
+    // sets this key on the update only when that event is really coming. One
+    // write is one announcement — a store merging the same row twice is
+    // harmless and a handler that appends or counts or raises a toast is not
+    // (the rule `refuseDoubleBroadcast` enforces for the service path).
+    if (e.transition) return
     const name = serviceFor(e.model)
     if (!name) return
     // The write is already covered by callService's announcement point — but
@@ -2276,9 +2779,93 @@ export interface TenantRegistryLike {
 
 declare module './context.ts' {
   interface ServiceContextLocals {
-    /** The tenant this call is for, under `tenancy { strategy database }`. */
+    /**
+     * The tenant this call is for. Assigned under BOTH strategies and read by
+     * everything downstream that needs the answer — `tenantOf(ctx)` is the
+     * accessor.
+     *
+     * Two assignment points and no third: `withTenantDb`, which resolves it
+     * from the request under `strategy database`, and `applyClaims`, which
+     * lifts it off the principal under `strategy row` when the claim it merged
+     * is the one the schema names. Before it was assigned under row tenancy at
+     * all, three subsystems with no request in hand — the cache key, the
+     * outbox relay, a queued job — each answered the question themselves and
+     * each answered it wrong.
+     */
     tenantId?: string
   }
+}
+
+/**
+ * Which tenant is this call for — one owner, both strategies.
+ *
+ * `null` where the app declares no tenancy, and where a call legitimately has
+ * no tenant: an anonymous read under `strategy row`, a service over a
+ * `@@tenant(none)` model, a job the app runs on its own behalf.
+ */
+export function tenantOf(ctx: ServiceContext): string | null {
+  return ctx.locals?.tenantId ?? null
+}
+
+/** The tenancy declaration off a client, or null. Reading an unknown property
+ *  off a Litestone client THROWS, so the probe is itself a throwing
+ *  expression — the same shape `tenantClaimGuard` and `autoFilter` use. */
+function tenancyOf(client: unknown): ResolvedTenancy | null {
+  try { return (client as { $tenancy?: ResolvedTenancy | null })?.$tenancy ?? null } catch { return null }
+}
+
+/**
+ * Under `strategy row`, put the tenant where a reader with no principal can
+ * find it.
+ *
+ * Nothing swaps a client on this strategy, so the tenant exists only as a
+ * value inside the principal — which is unreachable for a cache key built
+ * from a service and a query, for a relay sweeping a table, and for a job
+ * running an hour after the request that asked for it.
+ *
+ * The claim is named by the schema and never guessed. `tenancy { claim }`
+ * says which one carries the tenant, so a cart token or an invitation claim —
+ * both legitimate claims on a principal — set nothing here.
+ *
+ * Two sources and the resolver's answer wins: a resolver runs per call and is
+ * the reason `membershipClaim` exists, where `sessionFields` fixes the value
+ * at sign-in for an app whose caller has one tenant for the life of a session.
+ */
+function liftRowTenant(ctx: ServiceContext, client: unknown, claims?: PrincipalClaims): void {
+  const t = tenancyOf(client)
+  if (t?.strategy !== 'row' || !t.claim) return
+
+  const fromClaims = claims?.[t.claim]
+  const user       = ctx.auth?.user
+  const fromUser   = user ? (toDataPrincipal(user) as Record<string, unknown>)[t.claim] : undefined
+  const value      = fromClaims ?? fromUser
+
+  if (value != null) ctx.locals.tenantId = String(value)
+}
+
+/**
+ * Tap a tenant's client for writes that went through no service — once.
+ *
+ * `announceDataWrites` is installed on the app's ONE client by `createApp({ db })`.
+ * Under `createApp({ tenants })` there is no such client: a shop is a file and
+ * the client is per request. So the tap is installed the first time each
+ * tenant's client is seen, and a `WeakSet` keeps it to once — a client evicted
+ * from the pool and reopened is a new object and is tapped again, which is
+ * exactly right.
+ *
+ * Without it the whole seam is off under `strategy database`: a job writing
+ * with `asSystem()`, a webhook moving a row through a Litestone client, a bulk
+ * write — none of them reach an open tab. Measured in `example`, where a signed
+ * payment webhook settled an order and the seller's screen stayed on `pending`
+ * with nothing logged (`FJS-489`); the same shape as `FJS-010` and `FJS-464`,
+ * one strategy over.
+ */
+const _tapped = new WeakSet<object>()
+function tapTenantWrites(app: unknown, client: unknown): void {
+  if (!client || typeof client !== 'object' || _tapped.has(client as object)) return
+  if (!app || typeof app !== 'object') return
+  _tapped.add(client as object)
+  announceDataWrites(app as Parameters<typeof announceDataWrites>[0], client)
 }
 
 /**
@@ -2298,8 +2885,15 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
     // — and that is the only way work with no request behind it can name one.
     // A job, a scheduled sweep and a webhook replay all arrive with no host, no
     // header and often no principal.
-    const stated = ctx.locals.tenantId
-    const id = stated ?? registry.tenantFor?.({ host, headers, principal: dataPrincipal }) ?? null
+    //
+    // The ambient tenant sits between the two: `app.runAs(actor, { tenant })`
+    // puts it on the request meta, so a queued job resolves to the tenant that
+    // enqueued it without every handler having to thread `locals` through
+    // every call it makes. A per-call `locals.tenantId` still wins, because a
+    // job legitimately addressing a second tenant said so on the call.
+    const stated  = ctx.locals.tenantId
+    const ambient = requestMeta()?.tenant ?? null
+    const id = stated ?? ambient ?? registry.tenantFor?.({ host, headers, principal: dataPrincipal }) ?? null
 
     if (!id) {
       const how = registry.tenancy?.resolve
@@ -2308,7 +2902,8 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
         `${how ? describeResolution(how) : 'nothing — the tenancy block declares no `resolve`'}` +
         `${host ? `, and this request's Host is '${host}'` : ''}. ` +
         `Work with no request behind it names its tenant explicitly: ` +
-        `app.service(name).method(…, { locals: { tenantId } }).`,
+        `app.runAs(actor, { tenant }, fn) for a whole unit of work, or ` +
+        `app.service(name).method(…, { locals: { tenantId } }) for one call.`,
       )
     }
 
@@ -2324,6 +2919,11 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
       throw err
     }
 
+    // The tap goes on the TENANT's client, not on a scoped view of it: a
+    // scoped client is a proxy built per call, and tapping one would announce
+    // for the length of that call and no longer.
+    tapTenantWrites((ctx as { app?: unknown }).app, client)
+
     ctx.locals.tenantId = id
     ctx.locals.db = dataPrincipal && typeof client?.$setAuth === 'function'
       ? client.$setAuth(dataPrincipal)
@@ -2333,8 +2933,18 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
     // on this strategy can still want a per-request level — so the resolver
     // runs here too, against the tenant's own client. Wiring it to one strategy
     // would make `createApp({ tenants, principal })` silently do nothing.
-    if (principal && ctx.auth?.user)
-      applyClaims(ctx, client, await principal(ctx, ctx.auth.user))
+    //
+    // For a GUEST as well as for a session, exactly as `withLitestoneDb` does
+    // twenty lines up. These two hooks are one seam wearing two names, and this
+    // one kept the older half of it: a resolver that runs only for a caller who
+    // already has a principal cannot serve the population it exists for. In
+    // `example` that is a shopper with no account — the cart token is a claim
+    // and nothing else can carry it — so every basket call answered 404 under
+    // `strategy database` and only under it (`FJS-490`).
+    if (principal)
+      applyClaims(ctx, client, await principal(ctx, ctx.auth?.user ?? null))
+
+    await warmTenantConfig(ctx)
 
     await next()
   }
@@ -2382,10 +2992,7 @@ function isRowScoped(client: unknown, accessor: string): boolean {
  */
 export function tenantClaimGuard(db: unknown): (ctx: ServiceContext) => void {
   return function tenantClaimGuard(ctx: ServiceContext): void {
-    // Reading an unknown property off a Litestone client THROWS, so the
-    // capability probe is itself a throwing expression (see autoFilter).
-    let tenancy: ResolvedTenancy | null | undefined
-    try { tenancy = (db as { $tenancy?: ResolvedTenancy | null })?.$tenancy } catch { return }
+    const tenancy = tenancyOf(db)
     if (!tenancy || tenancy.strategy !== 'row' || !tenancy.claim) return
 
     const user = ctx.auth?.user
@@ -2396,14 +3003,26 @@ export function tenantClaimGuard(db: unknown): (ctx: ServiceContext) => void {
 
     if (!isRowScoped(db, ctx.service)) return
 
-    // 403 and never 401 in both branches. The caller PROVED who they are — a
-    // 401 is what a client is built to answer by discarding the token and
-    // bouncing to sign-in, so naming a tenant you do not belong to would sign
-    // you out of the one you do.
-    if (ctx.locals[RESOLVED]) throw new Forbidden(
-      `You do not belong to the '${tenancy.claim}' this request names, and '${ctx.service}' is scoped ` +
-      `to it by the schema. Nothing here is readable at that standing.`,
-    )
+    // Never 401 in any branch. The caller PROVED who they are — a 401 is what a
+    // client is built to answer by discarding the token and bouncing to
+    // sign-in, so naming a tenant you do not belong to would sign you out of
+    // the one you do.
+    if (ctx.locals[RESOLVED]) {
+      const no = ctx.locals[NO_CLAIM] as NoClaim | undefined
+
+      // An incomplete request rather than a refused one, so 400. Without the
+      // split, a caller who named no tenant is told they do not belong to the
+      // one this request names, which names nothing.
+      if (no?.reason === 'unnamed') throw new BadRequest(
+        `This request names no '${tenancy.claim}', and '${ctx.service}' is scoped to it by the schema` +
+        (no.namedBy ? ` — name one with ${no.namedBy}.` : '.'),
+      )
+
+      throw new Forbidden(
+        `You do not belong to the '${tenancy.claim}' this request names, and '${ctx.service}' is scoped ` +
+        `to it by the schema. Nothing here is readable at that standing.`,
+      )
+    }
 
     throw new Forbidden(
       `This session carries no '${tenancy.claim}', and '${ctx.service}' is scoped to it by the schema — ` +
@@ -2465,6 +3084,7 @@ interface LiJsonProp {
   exclusiveMaximum?: number
   pattern?:          string
   default?:          unknown
+  readOnly?:         boolean
 }
 
 export function jsonSchemaToJunctionSchema(
@@ -2485,6 +3105,24 @@ export function jsonSchemaToJunctionSchema(
     (modelDef as LitestoneModelDef).properties ?? {}
   )) {
     const def = mapProp(prop, field, required, fullSchema.$defs)
+
+    // A `readOnly` column's default belongs to the DATA BOUNDARY, not to this
+    // validator — on either mode.
+    //
+    // Litestone emits `readOnly` for every column the caller may not write:
+    // `@system`, a tenancy-stamped column, `@version`, `@from`, `@derived`.
+    // Several of those also carry a `@default`, and the two together were fatal
+    // in create mode: validate() fills a default in for any absent key, so the
+    // payload reaching the model named a column the caller never sent, and the
+    // Data boundary refused it BY NAME — correctly, and about a key nobody
+    // wrote. A `redemptions Int @default(0) @system` made its model uncreatable
+    // through any service, with a 403 quoting a column the request did not
+    // contain (`FJS-504`).
+    //
+    // Nothing is lost by dropping it: the default is declared in the seed and
+    // Litestone applies it at the write, which is where a default a caller may
+    // not override has to be applied anyway.
+    if (prop.readOnly === true) delete def.default
 
     // A PATCH must not invent a value for a key the caller did not send.
     //
@@ -2679,9 +3317,17 @@ export function describeDataRealm(db: unknown): Record<string, unknown> | null {
     const enums = client?.$schema?.enums
     const dbs   = client?.$databases ?? {}
 
-    // Absolute paths are correct and unreadable. Anything under the process
-    // CWD prints relative to it — which is also where a logger `path` resolves
-    // from, so the two agree.
+    // Absolute paths are correct and unreadable, so anything under the process
+    // CWD still prints relative to it — but the CWD is printed BESIDE them, and
+    // that is the whole point rather than a detail.
+    //
+    // Shortening alone is what hid `FJS-449`. A path is resolved against the
+    // process CWD, so a command run from the wrong directory opens a different
+    // file — and then printing that file relative to the same CWD renders the
+    // right answer and the catastrophic one character-identical: `litestone
+    // studio` in `db/` served an empty `db/db/shop.db` for nineteen hours
+    // logging `./db/shop.db`, exactly what a correct run logs. A path outside
+    // the CWD prints absolute, which is now a signal rather than noise.
     const cwd = process.cwd()
     const short = (p?: string) =>
       !p ? '?' : p.startsWith(cwd + '/') ? '.' + p.slice(cwd.length) : p
@@ -2694,6 +3340,7 @@ export function describeDataRealm(db: unknown): Record<string, unknown> | null {
       enums:     Array.isArray(enums) && enums.length ? enums.length : undefined,
       gated:     `${gated}/${models.length}`,
       databases: stores.length ? stores.join(', ') : undefined,
+      cwd,
     }
   } catch {
     return null           // not a Litestone client — say nothing rather than throw

@@ -95,7 +95,13 @@ export interface TransportContext {
    * Junction's contexts, `page.params` in Sierra (`FJS-D03`).
    */
   route:    Record<string, string>
-  query:    Record<string, string>
+  /**
+   * The search string, PARSED — `?qty=5&live=true&qty[gte]=3` is
+   * `{ qty: 5, live: true }` with structure, not text (`FJS-D125`,
+   * `@frontierjs/toolbelt/query`). `$` keys are still present: splitting those
+   * off is the service boundary's job, not the transport's.
+   */
+  query:    Record<string, unknown>
   headers:  Record<string, string>
   body:     unknown
   /**
@@ -237,7 +243,8 @@ export function createStats(): TransportStats {
 export interface WsData {
   path:     string
   params:   Record<string, string>
-  query:    Record<string, string>
+  /** The UPGRADE request's search string, parsed — see TransportContext.query. */
+  query:    Record<string, unknown>
   headers:  Record<string, string>
   ip:       string
   // Resolved during _wsOpen after async auth — null until then.
@@ -255,7 +262,7 @@ export interface WsContext {
   route:    Record<string, string>
 
   // Request info — same fields as TransportContext
-  query:    Record<string, string>
+  query:    Record<string, unknown>
   headers:  Record<string, string>
   ip:       string
   user:     SessionContext | null

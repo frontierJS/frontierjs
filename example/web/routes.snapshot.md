@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-7 routes · 1 layout · target spa · trailing slash always
+10 routes · 1 layout · target spa · trailing slash always
 ```
 
 ## Routes
@@ -23,11 +23,14 @@ column is what the page DECLARED, already merged down the layout chain.
 | Route | File | Layout | Params |
 | --- | --- | --- | --- |
 | `/` | `src/routes/index.mesa` | `src/routes/_module.mesa` | — |
+| `/cart/` | `src/routes/cart/index.mesa` | `src/routes/_module.mesa` | — |
 | `/customers/` | `src/routes/customers/index.mesa` | `src/routes/_module.mesa` | — |
+| `/inventory/` | `src/routes/inventory/index.mesa` | `src/routes/_module.mesa` | — |
 | `/orders/` | `src/routes/orders/index.mesa` | `src/routes/_module.mesa` | — |
 | `/orders/:id/` | `src/routes/orders/[id].mesa` | `src/routes/_module.mesa` | `id` |
 | `/orders/create/` | `src/routes/orders/create.mesa` | `src/routes/_module.mesa` | — |
 | `/products/` | `src/routes/products/index.mesa` | `src/routes/_module.mesa` | — |
+| `/products/:id/` | `src/routes/products/[id].mesa` | `src/routes/_module.mesa` | `id` |
 | `/settings/` | `src/routes/settings/index.mesa` | `src/routes/_module.mesa` | — |
 
 ## Declared meta
@@ -38,11 +41,14 @@ arriving from a layout appears on every page under it, which is the change
 this section exists to show.
 
 - `/` — siteName: `Kitchen sink` · title: `Home`
+- `/cart/` — siteName: `Kitchen sink` · title: `Basket`
 - `/customers/` — siteName: `Kitchen sink` · title: `Customers`
+- `/inventory/` — siteName: `Kitchen sink` · title: `Inventory`
 - `/orders/` — siteName: `Kitchen sink` · title: `Orders`
 - `/orders/:id/` — siteName: `Kitchen sink` · title: `Order`
 - `/orders/create/` — siteName: `Kitchen sink` · title: `New order`
 - `/products/` — siteName: `Kitchen sink` · title: `Products`
+- `/products/:id/` — siteName: `Kitchen sink` · title: `Product`
 - `/settings/` — siteName: `Kitchen sink` · title: `Settings`
 
 ## Layouts
@@ -50,4 +56,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 7 routes: `/`, `/customers/`, `/orders/`, `/orders/:id/`, `/orders/create/`, `/products/`, `/settings/`
+- `src/routes/_module.mesa` — 10 routes: `/`, `/cart/`, `/customers/`, `/inventory/`, `/orders/`, `/orders/:id/`, `/orders/create/`, `/products/`, `/products/:id/`, `/settings/`

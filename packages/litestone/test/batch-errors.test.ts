@@ -47,9 +47,16 @@ describe('a failing batch names its row (FJS-207)', () => {
     expect(err.batchIndex).toBe(2)
     expect(err.batchSize).toBe(3)
     expect(err.message).toContain('data[2] of 3')
-    expect(err.message).toContain('slug = "a"')
-    // SQLite's own account of which constraint fired is kept, not replaced.
-    expect(err.message).toContain('UNIQUE constraint failed: post.slug')
+    // The translated conflict names the value itself, so the annotation no
+    // longer restates it — one sentence, said once (FJS-441).
+    expect(err.message).toContain('slug "a" is already taken')
+    // What is NOT kept is SQLite's own sentence: the physical table name is not
+    // the name the caller used, and the class carries which constraint fired
+    // where the wording used to (FJS-441).
+    expect(err.name).toBe('UniqueConflictError')
+    expect(err.status).toBe(409)
+    expect(err.fields).toEqual(['slug'])
+    expect(err.message).not.toContain('post.slug')
   })
 
   test('the batch rolled back, and the message says so', async () => {
@@ -93,7 +100,7 @@ describe('a failing batch names its row (FJS-207)', () => {
     }))
     expect(err.batchIndex).toBe(1)
     expect(err.message).toContain('data[1] of 2')
-    expect(err.message).toContain('slug = "q"')
+    expect(err.message).toContain('slug "q" is already taken')
   })
 
   test('a single-row write is not annotated', async () => {

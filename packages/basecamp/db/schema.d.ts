@@ -26,6 +26,8 @@ export interface WhereBase {
 
 // ── Enums ────────────────────────────────────────────────────────────────────
 
+export type VerificationPurpose = 'passwordReset' | 'emailVerify' | 'oauthLink'
+
 export type AccountType = 'individual' | 'organization'
 
 export type WorkspaceType = 'personal' | 'team' | 'enterprise'
@@ -68,86 +70,15 @@ export type FlagType = 'boolean' | 'variant'
 
 export type WidgetKind = 'server_fleet' | 'server_health' | 'app_status' | 'deploy_feed' | 'job_history' | 'activity_feed' | 'alert_status' | 'service_health' | 'stat_counter'
 
+export type ParamGenerator = 'random_hex_16' | 'random_hex_32' | 'random_hex_64'
+
+export type BackupKind = 'manual' | 'scheduled'
+
+export type BackupDestination = 'local' | 's3'
+
+export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'member_joined' | 'job_failed' | 'weekly_digest'
+
 // ── Models ───────────────────────────────────────────────────────────────────
-
-// ─── User ────────────────────────────────────────────────────────
-
-export interface User {
-  id: string
-  email: string
-  name?: string | null
-  emailVerified: boolean
-  role: string
-  accountId?: string | null
-  kind: UserKind
-  status: UserStatus
-  username?: string | null
-  displayName?: string | null
-  avatarUrl?: string | null
-  scopes: unknown
-  isSystemAdmin: boolean
-  createdAt: string
-  updatedAt: string
-  deletedAt?: string | null
-}
-
-export interface UserCreate {
-  id?: string
-  email: string
-  name?: string | null
-  emailVerified?: boolean
-  role?: string
-  accountId?: string | null
-  kind?: UserKind
-  status?: UserStatus
-  username?: string | null
-  displayName?: string | null
-  avatarUrl?: string | null
-  scopes?: unknown
-  isSystemAdmin?: boolean
-}
-
-export interface UserUpdate {
-  id?: string
-  email?: string
-  name?: string | null
-  emailVerified?: boolean
-  role?: string
-  accountId?: string | null
-  kind?: UserKind
-  status?: UserStatus
-  username?: string | null
-  displayName?: string | null
-  avatarUrl?: string | null
-  scopes?: unknown
-  isSystemAdmin?: boolean
-}
-
-export interface UserWhere extends WhereBase {
-  id?: string | WhereOp<string> | null
-  email?: string | WhereOp<string> | null
-  name?: string | WhereOp<string> | null
-  emailVerified?: boolean | WhereOp<boolean> | null
-  role?: string | WhereOp<string> | null
-  accountId?: string | WhereOp<string> | null
-  kind?: UserKind | WhereOp<UserKind> | null
-  status?: UserStatus | WhereOp<UserStatus> | null
-  username?: string | WhereOp<string> | null
-  displayName?: string | WhereOp<string> | null
-  avatarUrl?: string | WhereOp<string> | null
-  scopes?: unknown | WhereOp<unknown> | null
-  isSystemAdmin?: boolean | WhereOp<boolean> | null
-  createdAt?: string | WhereOp<string> | null
-  updatedAt?: string | WhereOp<string> | null
-  deletedAt?: string | WhereOp<string> | null
-  AND?: UserWhere[]
-  OR?:  UserWhere[]
-  NOT?: UserWhere
-}
-
-export type UserOrderBy =
-  | { [K in keyof Omit<User, never>]?: OrderDir }
-  | Array<{ [K in keyof Omit<User, never>]?: OrderDir }>
 
 // ─── Credential ──────────────────────────────────────────────────
 
@@ -158,9 +89,9 @@ export interface Credential {
   /** @guarded */
   value: string
   label?: string | null
-  /** @guarded */
+  /** @guarded @encrypted @secret */
   accessToken?: string | null
-  /** @guarded */
+  /** @guarded @encrypted @secret */
   refreshToken?: string | null
   tokenExpiresAt?: string | null
   scope?: string | null
@@ -263,31 +194,67 @@ export type SessionOrderBy =
 
 export interface Verification {
   id: string
+  purpose: VerificationPurpose
+  /**
+   * The address being proved. Required, and every purpose has one — that is
+   * the test for whether something belongs in this table at all.
+   */
   identifier: string
-  /** @guarded */
+  /**
+   * The secret the caller presents, and what the row is found by. One meaning
+   * on every row.
+   * @guarded
+   */
   value: string
+  /**
+   * oauthLink only: which identity is waiting to be attached once the address
+   * answers for itself. Null for the other two, which attach nothing.
+   */
+  provider?: string | null
+  subject?: string | null
   expiresAt: string
   createdAt: string
 }
 
 export interface VerificationCreate {
   id?: string
+  purpose: VerificationPurpose
+  /**
+   * The address being proved. Required, and every purpose has one — that is
+   * the test for whether something belongs in this table at all.
+   */
   identifier: string
+  /**
+   * The secret the caller presents, and what the row is found by. One meaning
+   * on every row.
+   */
   value: string
+  /**
+   * oauthLink only: which identity is waiting to be attached once the address
+   * answers for itself. Null for the other two, which attach nothing.
+   */
+  provider?: string | null
+  subject?: string | null
   expiresAt: string
 }
 
 export interface VerificationUpdate {
   id?: string
+  purpose?: VerificationPurpose
   identifier?: string
   value?: string
+  provider?: string | null
+  subject?: string | null
   expiresAt?: string
 }
 
 export interface VerificationWhere extends WhereBase {
   id?: string | WhereOp<string> | null
+  purpose?: VerificationPurpose | WhereOp<VerificationPurpose> | null
   identifier?: string | WhereOp<string> | null
   value?: string | WhereOp<string> | null
+  provider?: string | WhereOp<string> | null
+  subject?: string | WhereOp<string> | null
   expiresAt?: string | WhereOp<string> | null
   createdAt?: string | WhereOp<string> | null
   AND?: VerificationWhere[]
@@ -298,6 +265,175 @@ export interface VerificationWhere extends WhereBase {
 export type VerificationOrderBy =
   | { [K in keyof Omit<Verification, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Verification, never>]?: OrderDir }>
+
+// ─── OauthFlow ───────────────────────────────────────────────────
+
+/**
+ * An authorization in flight.
+ * 
+ * `Oauth` and not `OAuth`, for the reason basecamp's `ThreeCX` is not `3CX`:
+ * the accessor is the model name with its first character lowered and nothing
+ * else, so `OAuthFlow` would be reached as `db.oAuthFlow`.
+ * 
+ * NOT a Verification, and the reuse was the mistake: nobody is proving
+ * anything here, there is no address yet and there may be no account at the
+ * end of it. `state` is a CSRF token echoed back by a redirect rather than a
+ * secret sent to a person, its life is minutes rather than hours, and it
+ * carries a PKCE verifier that no other row in this schema has a use for.
+ * Three different answers to what a column means is three tables wearing one
+ * name.
+ */
+export interface OauthFlow {
+  id: string
+  /**
+   * Half of the browser binding. The other half is a cookie, and a flow found
+   * by this value ALONE is login CSRF — RFC 9700 requires the token be bound
+   * to the user agent, which a database row cannot do by itself.
+   * @guarded
+   */
+  state: string
+  provider: string
+  /**
+   * PKCE code_verifier. Never leaves this process — it goes to the token
+   * endpoint and nowhere else.
+   * @guarded
+   */
+  verifier: string
+  /**
+   * Already checked against the app's allow-list when the flow started, so
+   * what is stored here is known good and the way back decides nothing.
+   */
+  returnTo?: string | null
+  expiresAt: string
+  createdAt: string
+}
+
+export interface OauthFlowCreate {
+  id?: string
+  /**
+   * Half of the browser binding. The other half is a cookie, and a flow found
+   * by this value ALONE is login CSRF — RFC 9700 requires the token be bound
+   * to the user agent, which a database row cannot do by itself.
+   */
+  state: string
+  provider: string
+  /**
+   * PKCE code_verifier. Never leaves this process — it goes to the token
+   * endpoint and nowhere else.
+   */
+  verifier: string
+  /**
+   * Already checked against the app's allow-list when the flow started, so
+   * what is stored here is known good and the way back decides nothing.
+   */
+  returnTo?: string | null
+  expiresAt: string
+}
+
+export interface OauthFlowUpdate {
+  id?: string
+  state?: string
+  provider?: string
+  verifier?: string
+  returnTo?: string | null
+  expiresAt?: string
+}
+
+export interface OauthFlowWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  state?: string | WhereOp<string> | null
+  provider?: string | WhereOp<string> | null
+  verifier?: string | WhereOp<string> | null
+  returnTo?: string | WhereOp<string> | null
+  expiresAt?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: OauthFlowWhere[]
+  OR?:  OauthFlowWhere[]
+  NOT?: OauthFlowWhere
+}
+
+export type OauthFlowOrderBy =
+  | { [K in keyof Omit<OauthFlow, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<OauthFlow, never>]?: OrderDir }>
+
+// ─── User ────────────────────────────────────────────────────────
+
+export interface User {
+  id: string
+  email: string
+  name?: string | null
+  emailVerified: boolean
+  role: string
+  accountId?: string | null
+  kind: UserKind
+  status: UserStatus
+  username?: string | null
+  displayName?: string | null
+  avatarUrl?: string | null
+  scopes: unknown
+  isSystemAdmin: boolean
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string | null
+}
+
+export interface UserCreate {
+  id?: string
+  email: string
+  name?: string | null
+  emailVerified?: boolean
+  role?: string
+  accountId?: string | null
+  kind?: UserKind
+  status?: UserStatus
+  username?: string | null
+  displayName?: string | null
+  avatarUrl?: string | null
+  scopes?: unknown
+  isSystemAdmin?: boolean
+}
+
+export interface UserUpdate {
+  id?: string
+  email?: string
+  name?: string | null
+  emailVerified?: boolean
+  role?: string
+  accountId?: string | null
+  kind?: UserKind
+  status?: UserStatus
+  username?: string | null
+  displayName?: string | null
+  avatarUrl?: string | null
+  scopes?: unknown
+  isSystemAdmin?: boolean
+}
+
+export interface UserWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  email?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  emailVerified?: boolean | WhereOp<boolean> | null
+  role?: string | WhereOp<string> | null
+  accountId?: string | WhereOp<string> | null
+  kind?: UserKind | WhereOp<UserKind> | null
+  status?: UserStatus | WhereOp<UserStatus> | null
+  username?: string | WhereOp<string> | null
+  displayName?: string | WhereOp<string> | null
+  avatarUrl?: string | WhereOp<string> | null
+  scopes?: unknown | WhereOp<unknown> | null
+  isSystemAdmin?: boolean | WhereOp<boolean> | null
+  createdAt?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  deletedAt?: string | WhereOp<string> | null
+  AND?: UserWhere[]
+  OR?:  UserWhere[]
+  NOT?: UserWhere
+}
+
+export type UserOrderBy =
+  | { [K in keyof Omit<User, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<User, never>]?: OrderDir }>
 
 // ─── Account ─────────────────────────────────────────────────────
 
@@ -419,6 +555,7 @@ export interface WorkspaceMember {
   id: string
   workspaceId: string
   userId: string
+  /** This caller's authority in this workspace. Nobody may change their own. */
   role: WorkspaceRole
   invitedBy?: string | null
   invitedAt?: string | null
@@ -431,6 +568,7 @@ export interface WorkspaceMemberCreate {
   id?: string
   workspaceId: string
   userId: string
+  /** This caller's authority in this workspace. Nobody may change their own. */
   role?: WorkspaceRole
   invitedBy?: string | null
   invitedAt?: string | null
@@ -2513,6 +2651,430 @@ export type AuditEventOrderBy =
   | { [K in keyof Omit<AuditEvent, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<AuditEvent, never>]?: OrderDir }>
 
+// ─── Blueprint ───────────────────────────────────────────────────
+
+export interface Blueprint {
+  id: string
+  slug: string
+  name: string
+  category: string
+  description: string
+  version: string
+  image: string
+  icon?: string | null
+  brandColor?: string | null
+  appType: AppType
+  port?: number | null
+  persistent: boolean
+  volumePath?: string | null
+  healthCheck?: string | null
+  replicas: number
+  cpuLimit?: string | null
+  memLimit?: string | null
+  notes?: string | null
+  links: unknown
+  deprecatedAt?: string | null
+  createdAt: string
+  updatedAt: string
+  /** @version */
+  revision: number
+}
+
+export interface BlueprintCreate {
+  id?: string
+  slug: string
+  name: string
+  category: string
+  description: string
+  version: string
+  image: string
+  icon?: string | null
+  brandColor?: string | null
+  appType?: AppType
+  port?: number | null
+  persistent?: boolean
+  volumePath?: string | null
+  healthCheck?: string | null
+  replicas?: number
+  cpuLimit?: string | null
+  memLimit?: string | null
+  notes?: string | null
+  links?: unknown
+  deprecatedAt?: string | null
+}
+
+export interface BlueprintUpdate {
+  id?: string
+  slug?: string
+  name?: string
+  category?: string
+  description?: string
+  version?: string
+  image?: string
+  icon?: string | null
+  brandColor?: string | null
+  appType?: AppType
+  port?: number | null
+  persistent?: boolean
+  volumePath?: string | null
+  healthCheck?: string | null
+  replicas?: number
+  cpuLimit?: string | null
+  memLimit?: string | null
+  notes?: string | null
+  links?: unknown
+  deprecatedAt?: string | null
+  revision: number
+}
+
+export interface BlueprintWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  slug?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  category?: string | WhereOp<string> | null
+  description?: string | WhereOp<string> | null
+  version?: string | WhereOp<string> | null
+  image?: string | WhereOp<string> | null
+  icon?: string | WhereOp<string> | null
+  brandColor?: string | WhereOp<string> | null
+  appType?: AppType | WhereOp<AppType> | null
+  port?: number | WhereOp<number> | null
+  persistent?: boolean | WhereOp<boolean> | null
+  volumePath?: string | WhereOp<string> | null
+  healthCheck?: string | WhereOp<string> | null
+  replicas?: number | WhereOp<number> | null
+  cpuLimit?: string | WhereOp<string> | null
+  memLimit?: string | WhereOp<string> | null
+  notes?: string | WhereOp<string> | null
+  links?: unknown | WhereOp<unknown> | null
+  deprecatedAt?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  revision?: number | WhereOp<number> | null
+  AND?: BlueprintWhere[]
+  OR?:  BlueprintWhere[]
+  NOT?: BlueprintWhere
+}
+
+export type BlueprintOrderBy =
+  | { [K in keyof Omit<Blueprint, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Blueprint, never>]?: OrderDir }>
+
+// ─── BlueprintParam ──────────────────────────────────────────────
+
+export interface BlueprintParam {
+  id: string
+  blueprintId: string
+  key: string
+  label: string
+  hint?: string | null
+  defaultValue?: string | null
+  required: boolean
+  secret: boolean
+  generate?: ParamGenerator | null
+  position: number
+}
+
+export interface BlueprintParamCreate {
+  id?: string
+  blueprintId: string
+  key: string
+  label: string
+  hint?: string | null
+  defaultValue?: string | null
+  required?: boolean
+  secret?: boolean
+  generate?: ParamGenerator | null
+  position?: number
+}
+
+export interface BlueprintParamUpdate {
+  id?: string
+  blueprintId?: string
+  key?: string
+  label?: string
+  hint?: string | null
+  defaultValue?: string | null
+  required?: boolean
+  secret?: boolean
+  generate?: ParamGenerator | null
+  position?: number
+}
+
+export interface BlueprintParamWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  blueprintId?: string | WhereOp<string> | null
+  key?: string | WhereOp<string> | null
+  label?: string | WhereOp<string> | null
+  hint?: string | WhereOp<string> | null
+  defaultValue?: string | WhereOp<string> | null
+  required?: boolean | WhereOp<boolean> | null
+  secret?: boolean | WhereOp<boolean> | null
+  generate?: ParamGenerator | WhereOp<ParamGenerator> | null
+  position?: number | WhereOp<number> | null
+  AND?: BlueprintParamWhere[]
+  OR?:  BlueprintParamWhere[]
+  NOT?: BlueprintParamWhere
+}
+
+export type BlueprintParamOrderBy =
+  | { [K in keyof Omit<BlueprintParam, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<BlueprintParam, never>]?: OrderDir }>
+
+// ─── RegistryImage ───────────────────────────────────────────────
+
+export interface RegistryImage {
+  id: string
+  workspaceId: string
+  repository: string
+  tag: string
+  digest: string
+  sizeBytes: number
+  inUse: boolean
+  pushedAt?: string | null
+  pushedBy?: string | null
+  observedAt: string
+}
+
+export interface RegistryImageCreate {
+  id?: string
+  workspaceId: string
+  repository: string
+  tag: string
+  digest: string
+  sizeBytes?: number
+  inUse?: boolean
+  pushedAt?: string | null
+  pushedBy?: string | null
+  observedAt?: string
+}
+
+export interface RegistryImageUpdate {
+  id?: string
+  workspaceId?: string
+  repository?: string
+  tag?: string
+  digest?: string
+  sizeBytes?: number
+  inUse?: boolean
+  pushedAt?: string | null
+  pushedBy?: string | null
+  observedAt?: string
+}
+
+export interface RegistryImageWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  repository?: string | WhereOp<string> | null
+  tag?: string | WhereOp<string> | null
+  digest?: string | WhereOp<string> | null
+  sizeBytes?: number | WhereOp<number> | null
+  inUse?: boolean | WhereOp<boolean> | null
+  pushedAt?: string | WhereOp<string> | null
+  pushedBy?: string | WhereOp<string> | null
+  observedAt?: string | WhereOp<string> | null
+  AND?: RegistryImageWhere[]
+  OR?:  RegistryImageWhere[]
+  NOT?: RegistryImageWhere
+}
+
+export type RegistryImageOrderBy =
+  | { [K in keyof Omit<RegistryImage, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<RegistryImage, never>]?: OrderDir }>
+
+// ─── Backup ──────────────────────────────────────────────────────
+
+export interface Backup {
+  id: string
+  kind: BackupKind
+  status: RunStatus
+  destination: BackupDestination
+  sizeBytes?: number | null
+  location?: string | null
+  error?: string | null
+  requestedBy?: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  durationMs?: number | null
+  createdAt: string
+}
+
+export interface BackupCreate {
+  id?: string
+  kind?: BackupKind
+  status?: RunStatus
+  destination?: BackupDestination
+  sizeBytes?: number | null
+  location?: string | null
+  error?: string | null
+  requestedBy?: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  durationMs?: number | null
+}
+
+export interface BackupUpdate {
+  id?: string
+  kind?: BackupKind
+  status?: RunStatus
+  destination?: BackupDestination
+  sizeBytes?: number | null
+  location?: string | null
+  error?: string | null
+  requestedBy?: string | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  durationMs?: number | null
+}
+
+export interface BackupWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  kind?: BackupKind | WhereOp<BackupKind> | null
+  status?: RunStatus | WhereOp<RunStatus> | null
+  destination?: BackupDestination | WhereOp<BackupDestination> | null
+  sizeBytes?: number | WhereOp<number> | null
+  location?: string | WhereOp<string> | null
+  error?: string | WhereOp<string> | null
+  requestedBy?: string | WhereOp<string> | null
+  startedAt?: string | WhereOp<string> | null
+  finishedAt?: string | WhereOp<string> | null
+  durationMs?: number | WhereOp<number> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: BackupWhere[]
+  OR?:  BackupWhere[]
+  NOT?: BackupWhere
+}
+
+export type BackupOrderBy =
+  | { [K in keyof Omit<Backup, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Backup, never>]?: OrderDir }>
+
+// ─── HubConfig ───────────────────────────────────────────────────
+
+export interface HubConfig {
+  id: string
+  name: string
+  baseUrl: string
+  adminEmail: string
+  heartbeatTimeoutSeconds: number
+  sessionTtlHours: number
+  requireTwoFactorForOwners: boolean
+  allowApiKeyAuth: boolean
+  allowBotUsers: boolean
+  backupEnabled: boolean
+  backupCron: string
+  backupDestination: BackupDestination
+  mailFromAddress?: string | null
+  mailFromName?: string | null
+  updatedAt: string
+  /** @version */
+  version: number
+}
+
+export interface HubConfigCreate {
+  id?: string
+  name?: string
+  baseUrl: string
+  adminEmail: string
+  heartbeatTimeoutSeconds?: number
+  sessionTtlHours?: number
+  requireTwoFactorForOwners?: boolean
+  allowApiKeyAuth?: boolean
+  allowBotUsers?: boolean
+  backupEnabled?: boolean
+  backupCron?: string
+  backupDestination?: BackupDestination
+  mailFromAddress?: string | null
+  mailFromName?: string | null
+}
+
+export interface HubConfigUpdate {
+  id?: string
+  name?: string
+  baseUrl?: string
+  adminEmail?: string
+  heartbeatTimeoutSeconds?: number
+  sessionTtlHours?: number
+  requireTwoFactorForOwners?: boolean
+  allowApiKeyAuth?: boolean
+  allowBotUsers?: boolean
+  backupEnabled?: boolean
+  backupCron?: string
+  backupDestination?: BackupDestination
+  mailFromAddress?: string | null
+  mailFromName?: string | null
+  version: number
+}
+
+export interface HubConfigWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  baseUrl?: string | WhereOp<string> | null
+  adminEmail?: string | WhereOp<string> | null
+  heartbeatTimeoutSeconds?: number | WhereOp<number> | null
+  sessionTtlHours?: number | WhereOp<number> | null
+  requireTwoFactorForOwners?: boolean | WhereOp<boolean> | null
+  allowApiKeyAuth?: boolean | WhereOp<boolean> | null
+  allowBotUsers?: boolean | WhereOp<boolean> | null
+  backupEnabled?: boolean | WhereOp<boolean> | null
+  backupCron?: string | WhereOp<string> | null
+  backupDestination?: BackupDestination | WhereOp<BackupDestination> | null
+  mailFromAddress?: string | WhereOp<string> | null
+  mailFromName?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  version?: number | WhereOp<number> | null
+  AND?: HubConfigWhere[]
+  OR?:  HubConfigWhere[]
+  NOT?: HubConfigWhere
+}
+
+export type HubConfigOrderBy =
+  | { [K in keyof Omit<HubConfig, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<HubConfig, never>]?: OrderDir }>
+
+// ─── NotificationPreference ──────────────────────────────────────
+
+export interface NotificationPreference {
+  id: string
+  userId: string
+  kind: NotificationKind
+  email: boolean
+  inApp: boolean
+  updatedAt: string
+}
+
+export interface NotificationPreferenceCreate {
+  id?: string
+  userId: string
+  kind: NotificationKind
+  email?: boolean
+  inApp?: boolean
+}
+
+export interface NotificationPreferenceUpdate {
+  id?: string
+  userId?: string
+  kind?: NotificationKind
+  email?: boolean
+  inApp?: boolean
+}
+
+export interface NotificationPreferenceWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  userId?: string | WhereOp<string> | null
+  kind?: NotificationKind | WhereOp<NotificationKind> | null
+  email?: boolean | WhereOp<boolean> | null
+  inApp?: boolean | WhereOp<boolean> | null
+  updatedAt?: string | WhereOp<string> | null
+  AND?: NotificationPreferenceWhere[]
+  OR?:  NotificationPreferenceWhere[]
+  NOT?: NotificationPreferenceWhere
+}
+
+export type NotificationPreferenceOrderBy =
+  | { [K in keyof Omit<NotificationPreference, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<NotificationPreference, never>]?: OrderDir }>
+
 // ── Services ─────────────────────────────────────────────────────────────────
 
 /**
@@ -2520,10 +3082,11 @@ export type AuditEventOrderBy =
  * registry, so `client.service('posts')` needs no type argument.
  */
 export interface ServiceTypes {
-  users: User
   credentials: Credential
   sessions: Session
   verifications: Verification
+  oauthFlows: OauthFlow
+  users: User
   accounts: Account
   workspaces: Workspace
   workspaceMembers: WorkspaceMember
@@ -2558,6 +3121,12 @@ export interface ServiceTypes {
   dashboards: Dashboard
   dashboardWidgets: DashboardWidget
   auditEvents: AuditEvent
+  blueprints: Blueprint
+  blueprintParams: BlueprintParam
+  registryImages: RegistryImage
+  backups: Backup
+  hubConfigs: HubConfig
+  notificationPreferences: NotificationPreference
 }
 
 // ── Cursor pagination result ─────────────────────────────────────────────────
@@ -2644,10 +3213,11 @@ export interface WriteEvent {
 // ── LitestoneClient ──────────────────────────────────────────────────────────
 
 export interface LitestoneClient {
-  readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere>
+  readonly oauthFlow: TableClient<OauthFlow, OauthFlowCreate, OauthFlowUpdate, OauthFlowWhere>
+  readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere>
   readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere>
   readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere>
@@ -2682,6 +3252,12 @@ export interface LitestoneClient {
   readonly dashboard: TableClient<Dashboard, DashboardCreate, DashboardUpdate, DashboardWhere>
   readonly dashboardWidget: TableClient<DashboardWidget, DashboardWidgetCreate, DashboardWidgetUpdate, DashboardWidgetWhere>
   readonly auditEvent: TableClient<AuditEvent, AuditEventCreate, AuditEventUpdate, AuditEventWhere>
+  readonly blueprint: TableClient<Blueprint, BlueprintCreate, BlueprintUpdate, BlueprintWhere>
+  readonly blueprintParam: TableClient<BlueprintParam, BlueprintParamCreate, BlueprintParamUpdate, BlueprintParamWhere>
+  readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere>
+  readonly backup: TableClient<Backup, BackupCreate, BackupUpdate, BackupWhere>
+  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere>
+  readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere>
 
   // Auth scoping
   asSystem(): LitestoneClient

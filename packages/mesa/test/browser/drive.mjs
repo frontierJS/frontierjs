@@ -31,7 +31,7 @@
  * expression with `return` on its own line — ASI turns it into `return;`.
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, readdirSync, existsSync } from 'node:fs'
+import { mkdtempSync, rmSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
 
@@ -40,6 +40,83 @@ const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 export const green = (s) => `\x1b[32m${s}\x1b[0m`
 export const red   = (s) => `\x1b[31m${s}\x1b[0m`
 export const dim   = (s) => `\x1b[2m${s}\x1b[0m`
+
+// ─── the browser's lifetime ───────────────────────────────────────────
+//
+// A drive that reaches close() cleans up after itself. A drive that throws, or
+// takes a Ctrl-C, or dies on an unhandled rejection, used to leave Chrome
+// running and its profile behind — and Chrome does not notice its launcher has
+// gone, so it is reparented to init and stays up forever. Nineteen of them
+// were found alive on one machine, the oldest 6.7 days old, holding 5GB of RAM
+// and profile directories that were still growing (FJS-361).
+//
+// Two halves, because neither alone is enough:
+//   · a signal-safe sweep of what THIS process launched, so an interrupted run
+//     takes its browsers with it. Synchronous — an exit handler cannot await.
+//   · a reap of PREVIOUS runs' profiles on the way in, past an age floor,
+//     which is the only thing that covers a SIGKILL no handler can see. The
+//     floor is what keeps a concurrent drive of the same suite safe.
+//
+// The sweep cannot come from litestone's tmp-dirs.js: mesa is the leaf and
+// takes no framework dependency but @frontierjs/toolbelt, which does no I/O by
+// ruling (FJS-D26). Change one, ask whether the other needs it.
+
+const REAP_AFTER_MS = 60 * 60 * 1000
+const PROFILE_PREFIX = 'fjs-drive-'
+
+/** Chrome processes this run launched, with the profile each one holds. */
+const launched = new Set()
+let sweepInstalled = false
+
+/** Block the thread. An exit handler cannot await, and the wait below is not
+ *  optional — see sweepLaunched(). */
+function sleepSync(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) }
+
+function sweepLaunched() {
+  if (!launched.size) return
+  for (const entry of launched) {
+    try { entry.chrome.kill('SIGKILL') } catch { /* already gone */ }
+  }
+  // Every browser dies BEFORE any profile is removed, and then the thread
+  // waits. Removing straight after the kill does not fail — it SUCCEEDS, and
+  // Chrome, still shutting down, writes the directory back: measured, a
+  // profile removed at 0ms was on disk again 1.5s later with Default/ in it
+  // and 16MB, while 200ms was already enough for it to stay gone. `maxRetries`
+  // cannot cover that, because the removal is not what fails.
+  sleepSync(300)
+  for (const entry of launched) {
+    try { rmSync(entry.profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch { /* the next run's reap gets it */ }
+  }
+  launched.clear()
+}
+
+function installSweep() {
+  if (sweepInstalled) return
+  sweepInstalled = true
+  process.on('exit', sweepLaunched)
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(sig, () => { sweepLaunched(); process.exit(sig === 'SIGINT' ? 130 : 143) })
+  }
+  // Without this an unhandled rejection prints and leaves Chrome up: the
+  // default handler exits without running an ordinary exit path on every
+  // runtime here.
+  process.on('uncaughtException',  (e) => { sweepLaunched(); console.error(e); process.exit(1) })
+  process.on('unhandledRejection', (e) => { sweepLaunched(); console.error(e); process.exit(1) })
+}
+
+function reapStaleProfiles() {
+  const cutoff = Date.now() - REAP_AFTER_MS
+  let entries
+  try { entries = readdirSync(tmpdir()) } catch { return }
+  for (const name of entries) {
+    if (!name.startsWith(PROFILE_PREFIX)) continue
+    const full = join(tmpdir(), name)
+    try {
+      if (statSync(full).mtimeMs > cutoff) continue
+      rmSync(full, { recursive: true, force: true })
+    } catch { /* a concurrent drive got there first */ }
+  }
+}
 
 // ─── the browser ──────────────────────────────────────────────────────
 
@@ -51,7 +128,9 @@ export const dim   = (s) => `\x1b[2m${s}\x1b[0m`
  *  partial tree, so a spec asserting on what IS there passes over the top of
  *  it; the drive reads this after every spec. */
 export async function openChrome({ windowSize = '1280,900', bootstrap } = {}) {
-  const profile = mkdtempSync(join(tmpdir(), 'fjs-drive-'))
+  installSweep()
+  reapStaleProfiles()
+  const profile = mkdtempSync(join(tmpdir(), PROFILE_PREFIX))
   const chrome  = spawn(CHROME, [
     '--headless=new', '--disable-gpu', '--no-sandbox',
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
@@ -61,6 +140,9 @@ export async function openChrome({ windowSize = '1280,900', bootstrap } = {}) {
     '--force-color-profile=srgb', '--hide-scrollbars',
     'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'] })
+
+  const entry = { chrome, profile }
+  launched.add(entry)
 
   chrome.on('error', (e) => {
     console.error(`Could not launch ${CHROME}: ${e.message}\n` +
@@ -288,8 +370,17 @@ export async function openChrome({ windowSize = '1280,900', bootstrap } = {}) {
     // the directory straight away throws ENOTEMPTY — and threw it before the
     // report was printed, which turned every run into a stack trace with no
     // results.
+    //
+    // Waiting for 'exit' is not enough either, and the failure is the other
+    // way round: the removal SUCCEEDS and Chrome's children, still winding
+    // down, write the profile back. Measured — every drive run left a full
+    // ~1MB profile behind for as long as this file has existed, 174 of them
+    // and 1.8GB by the time anyone looked (FJS-361). The extra wait is after
+    // the browser is already gone, so it costs one run 300ms, once.
     await new Promise((r) => { chrome.once('exit', r); setTimeout(r, 3000) })
-    try { rmSync(profile, { recursive: true, force: true }) } catch {}
+    await new Promise((r) => setTimeout(r, 300))
+    try { rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch {}
+    launched.delete(entry)
   }
 
   return { cmd, evaluate, navigate, newPage, key, press, type, clickAt, errors, close }

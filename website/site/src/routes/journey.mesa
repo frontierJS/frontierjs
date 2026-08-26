@@ -1,0 +1,244 @@
+---
+title: "FrontierJS — the journey"
+description: "A single POST /api/leads, and every seam it crosses — seventeen named handoffs from the transport to the reactive UI."
+render: static
+publishes: 0
+---
+<!--
+  The journey. The board, the two nodes, the legend and all seventeen
+  explanations are prerendered; the island draws the connectors, which are
+  measured from where the boxes land, and runs the playback timer.
+-->
+<script>
+  import JourneyBoard from '../islands/JourneyBoard.mesa'
+
+  export let data = null
+
+  const d = data ?? { steps: [], nodes: [], key: [], total: 0 }
+</script>
+
+<div class="wrap head">
+  <p class="eyebrow">The journey</p>
+  <h1>One request, every seam it crosses.</h1>
+  <p>A single <code>POST /api/leads</code>. Click a step, or walk it with <kbd>←</kbd> <kbd>→</kbd>.</p>
+</div>
+
+<div class="wrap stage">
+  <div>
+    <div class="board">
+      <div class="lanehead">
+        <div class="l1">Transport <small>HTTP / WS</small></div>
+        <div class="l2">Framework core <small>Junction</small></div>
+        <div class="l3">Data layer <small>Litestone</small></div>
+        <div class="l4">Database <small>SQLite</small></div>
+      </div>
+      <div class="grid" data-grid>
+        <div class="lanebg" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <svg class="wires" data-wires aria-hidden="true"></svg>
+        {#each d.steps as s}
+          <button class="stepbtn" class:now={s.i === 0}
+                  style="grid-column:{s.lane}; grid-row:{s.row}; --tint:{s.tint}"
+                  data-i={s.i} data-tint={s.tint}
+                  aria-label={`Step ${s.n}: ${s.t}`}>
+            <span class="n">{s.n}</span><span class="t">{s.t}</span><span class="f">{s.f}</span>
+          </button>
+        {/each}
+        {#each d.nodes as n}
+          <div class="node" style="grid-column:{n.lane}; grid-row:{n.row}">
+            <b>{n.t}</b><span>{n.s}</span>
+          </div>
+        {/each}
+      </div>
+    </div>
+
+    <!-- Every explanation is in the file; one is shown. -->
+    <div class="explain" data-explain>
+      {#each d.steps as s}
+        <div class="ex" class:is-shown={s.i === 0} data-i={s.i}>
+          <div class="top">
+            <span class="num">{s.n}</span>
+            <h2>{s.t}</h2>
+            <span class="file">{s.f}</span>
+          </div>
+          <p class="what">{s.what}</p>
+          <p class="why"><b>Why it matters.</b> {s.why}</p>
+        </div>
+      {/each}
+    </div>
+
+    <div class="controls">
+      <button class="btn outlined" data-prev disabled>← Back</button>
+      <button class="btn" data-next>Next →</button>
+      <button class="btn ghost" data-play>▶ Play</button>
+      <div class="bar"><i data-bar></i></div>
+      <span class="count" data-count>Step 1 of {d.total}</span>
+    </div>
+  </div>
+
+  <aside class="side">
+    <div class="panel">
+      <h3>Legend</h3>
+      <div class="key">
+        {#each d.key as k}
+          <div><i style="background:{k.colour}"></i>{k.label}</div>
+        {/each}
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Boundaries are the point</h3>
+      <p>Each boundary has one job and one job only. Cross it once. Name it. Reason about it.</p>
+    </div>
+    <div class="panel">
+      <h3>The context</h3>
+      <div class="ctxlist">
+        <div><b>ctx.data</b><span>body</span></div>
+        <div><b>ctx.route</b><span>path params</span></div>
+        <div><b>ctx.query</b><span>filters</span></div>
+        <div><b>ctx.directives</b><span>$limit, $orderBy</span></div>
+        <div><b>ctx.auth.user</b><span>identity</span></div>
+        <div><b>ctx.locals</b><span>per-request state</span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Error flow</h3>
+      <p>Any step can throw. <code>FrameworkError</code> carries its status code;
+      <code>AccessDeniedError</code> becomes 403 and <code>ValidationError</code> becomes 400.
+      All leave through the same around hook.</p>
+    </div>
+  </aside>
+</div>
+
+<div class="wrap">
+  <div class="principles">
+    <div><b>One request</b><span>Same path for HTTP and WebSocket</span></div>
+    <div><b>Named seams</b><span>Every handoff is a real function</span></div>
+    <div><b>Policy at the data layer</b><span>Enforced where the data lives</span></div>
+    <div><b>Single announcement</b><span>One mutation, two fan-outs</span></div>
+    <div><b>Reactive by default</b><span>The Resource updates the UI</span></div>
+  </div>
+</div>
+
+<div class="container pagenote">
+  <span>Every name here is a real function — see the bridge index in <code>CLAUDE.md</code>.</span>
+  <span><a class="link" href="/showroom5/">&larr; All eight packages</a></span>
+</div>
+
+<JourneyBoard client:load />
+
+<style>
+.wrap { max-width: 92rem; margin-inline: auto; padding-inline: 1.25rem; }
+
+.head { padding: 2.5rem 0 1.25rem; }
+.head h1 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.4rem); }
+.head p { margin: .3rem 0 0; color: var(--ink-mute); font-size: .95rem; }
+
+.stage { display: grid; gap: 1.5rem; align-items: start; }
+@media (min-width: 78rem) { .stage { grid-template-columns: 1fr 17rem; } }
+
+/* ── Lanes ─────────────────────────────────────────────────────────── */
+.board {
+  position: relative; border: 1px solid var(--rule); border-radius: 14px;
+  background: var(--surface-raised); padding: 0 0 1.25rem;
+  overflow: hidden;
+}
+.lanehead { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--rule); }
+.lanehead div {
+  padding: .7rem .85rem; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
+  font-weight: 700; border-left: 1px solid var(--rule); color: var(--ink-mute);
+}
+.lanehead div:first-child { border-left: 0; }
+.lanehead .l1 { color: var(--color-info); }
+.lanehead .l2 { color: var(--color-success); }
+.lanehead .l3 { color: var(--color-warning); }
+.lanehead .l4 { color: var(--color-primary); }
+.lanehead small { display: block; font-size: .64rem; letter-spacing: .04em; text-transform: none; color: var(--ink-mute); font-weight: 400; }
+
+.grid {
+  position: relative; display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: .5rem .75rem; padding: 1.1rem .85rem 0;
+}
+.lanebg { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, 1fr); pointer-events: none; }
+.lanebg i { border-left: 1px solid var(--rule); }
+.lanebg i:first-child { border-left: 0; }
+
+svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+svg.wires path { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+                 opacity: .22; transition: opacity .25s ease, stroke-width .25s ease; }
+svg.wires path.lit { opacity: 1; stroke-width: 2.5; }
+
+/* Own class, not .step — @frontierjs/css owns that one as a stepper item:
+   a column flex with a connector bar drawn between siblings. */
+.stepbtn {
+  position: relative; z-index: 1; text-align: left; font: inherit; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 10px;
+  padding: .55rem .7rem .6rem 2.2rem; transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+.stepbtn:hover { border-color: var(--rule-strong); }
+.stepbtn .n {
+  position: absolute; left: .55rem; top: .55rem;
+  width: 1.35rem; height: 1.35rem; border-radius: 50%;
+  display: grid; place-items: center; font-size: .68rem; font-weight: 700;
+  background: var(--surface-sunken); color: var(--ink-mute);
+  border: 1.5px solid var(--rule-strong); transition: all .18s ease;
+}
+.stepbtn .t { display: block; font-size: .8rem; font-weight: 600; color: var(--ink); line-height: 1.25; }
+.stepbtn .f { display: block; font-size: .66rem; color: var(--ink-mute); font-family: ui-monospace, Menlo, monospace; margin-top: .1rem; }
+.stepbtn.done .n { background: color-mix(in srgb, var(--tint) 22%, transparent); color: var(--tint); border-color: var(--tint); }
+.stepbtn.now {
+  border-color: var(--tint); background: color-mix(in srgb, var(--tint) 10%, transparent);
+  transform: translateY(-1px);
+}
+.stepbtn.now .n { background: var(--tint); color: var(--surface); border-color: var(--tint); }
+.stepbtn.now .t { color: var(--tint); }
+
+.node {
+  position: relative; z-index: 1; border: 1px dashed var(--rule-strong); border-radius: 10px;
+  padding: .6rem .7rem; text-align: center; align-self: center;
+}
+.node b { display: block; font-size: .76rem; color: var(--ink); }
+.node span { display: block; font-size: .66rem; color: var(--ink-mute); margin-top: .15rem; }
+
+/* ── Explainer ─────────────────────────────────────────────────────── */
+.explain {
+  border: 1px solid var(--rule); border-left: 3px solid var(--tint, var(--rule-strong));
+  border-radius: 12px; background: var(--surface-raised);
+  padding: 1.1rem 1.25rem; margin-top: 1.25rem;
+}
+.explain .top { display: flex; align-items: baseline; gap: .65rem; flex-wrap: wrap; }
+.explain .num {
+  font-size: .7rem; font-weight: 700; color: var(--surface);
+  background: var(--tint); border-radius: 999px; padding: .1rem .5rem;
+}
+.explain h2 { margin: 0; font-size: 1.15rem; letter-spacing: -.01em; }
+.explain .file { font-family: ui-monospace, Menlo, monospace; font-size: .72rem; color: var(--ink-mute); margin-left: auto; }
+.explain .what { margin: .7rem 0 0; font-size: .92rem; color: var(--ink); line-height: 1.6; max-width: 74ch; }
+.explain .why { margin: .6rem 0 0; font-size: .88rem; color: var(--ink-soft); line-height: 1.6; max-width: 74ch; }
+.explain .why b { color: var(--tint); font-weight: 600; }
+
+.controls { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; margin-top: 1rem; }
+.bar { flex: 1 1 8rem; height: 3px; background: var(--rule); border-radius: 999px; overflow: hidden; min-width: 6rem; }
+.bar i { display: block; height: 100%; background: var(--tint); transition: width .3s ease; }
+.count { font-size: .78rem; color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+
+/* ── Side panels ───────────────────────────────────────────────────── */
+.side { display: grid; gap: .9rem; }
+.panel { border: 1px solid var(--rule); border-radius: 12px; padding: .85rem .95rem; background: var(--surface-raised); }
+.panel h3 { margin: 0 0 .5rem; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); }
+.panel p { margin: 0; font-size: .8rem; color: var(--ink-soft); line-height: 1.55; }
+.key { display: grid; gap: .3rem; }
+.key div { display: flex; align-items: center; gap: .5rem; font-size: .76rem; color: var(--ink-soft); }
+.key i { width: 1.5rem; height: 3px; border-radius: 999px; flex: none; }
+.ctxlist { font-family: ui-monospace, Menlo, monospace; font-size: .72rem; display: grid; gap: .15rem; }
+.ctxlist div { display: flex; gap: .5rem; }
+.ctxlist b { color: var(--color-info); font-weight: 400; min-width: 8.5rem; }
+.ctxlist span { color: var(--ink-mute); }
+
+.principles { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); margin: 1.75rem 0 3rem; }
+.principles div { border: 1px solid var(--rule); border-radius: 10px; padding: .7rem .8rem; background: var(--surface-raised); }
+.principles b { display: block; font-size: .82rem; color: var(--ink); }
+.principles span { display: block; font-size: .74rem; color: var(--ink-mute); margin-top: .15rem; }
+
+/* All seventeen explanations are in the file and one is shown. */
+.ex { display: none; }
+.ex.is-shown { display: block; }
+</style>

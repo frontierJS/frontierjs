@@ -14,17 +14,17 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
 
-import { discoverWidgets, widgetEntrySource, CSS_PLACEHOLDER } from '../src/build/widget-build.js'
+import { discoverWidgets, widgetEntrySource, CSS_PLACEHOLDER, widgetCssPlugin } from '../src/build/widget-build.js'
 import { kebab, CSS_MARK } from '../src/widget/index.js'
+import { tmpDir } from './tmp.js'
 
 let dir
 
 beforeAll(() => {
-  dir = mkdtempSync(join(tmpdir(), 'fjs-widgets-'))
+  dir = tmpDir('fjs-widgets-')
   const file = (p, body = '') => {
     mkdirSync(join(dir, p, '..'), { recursive: true })
     writeFileSync(join(dir, p), body)
@@ -107,5 +107,65 @@ describe('kebab', () => {
     expect(kebab('Counter')).toBe('counter')
     expect(kebab('MapView3')).toBe('map-view3')
     expect(kebab('lead_form')).toBe('lead-form')
+  })
+})
+
+// ─── the CSS swap ─────────────────────────────────────────────────────────
+//
+// `generateBundle` runs AFTER minification, so what it has to find is not what
+// `widgetEntrySource` wrote — the bundler has requoted it. Every quote a
+// bundler may choose is asserted here, because the failure this covers was
+// total and silent: esbuild writes BACKTICKS when minifying (the default, and
+// what every app ships), the matcher knew about `"` and `'`, and the CSS asset
+// is deleted whether or not the swap lands. So an imported stylesheet vanished
+// from the bundle and the literal `@sierra-widget-css` was handed to the shadow
+// root as its stylesheet.
+//
+// It survived because the fixture that proves widgets in a browser builds with
+// `minify: false` — for a good reason (a minified bundle says nothing about why
+// it is inert) — so the one case that works was the only case under test.
+
+describe('the CSS swap', () => {
+  const entry = (quote) => ({
+    type: 'chunk', isEntry: true, fileName: 'W.js',
+    code: `mount(C,{name:"W",css:${quote}${CSS_PLACEHOLDER}${quote}})`,
+  })
+  const asset = (source) => ({ type: 'asset', fileName: 'style.css', source })
+
+  const run = (bundle) => {
+    widgetCssPlugin().generateBundle({}, bundle)
+    return bundle
+  }
+
+  for (const [label, quote] of [['double', '"'], ['single', "'"], ['backtick', '`']]) {
+    test(`a ${label}-quoted placeholder is replaced`, () => {
+      const bundle = { 'W.js': entry(quote), 'style.css': asset('.a{color:red}') }
+      run(bundle)
+      expect(bundle['W.js'].code).toContain('.a{color:red}')
+      expect(bundle['W.js'].code).not.toContain(CSS_PLACEHOLDER)
+    })
+  }
+
+  test('the CSS asset is removed, so the host page makes no second request', () => {
+    const bundle = { 'W.js': entry('`'), 'style.css': asset('.a{color:red}') }
+    run(bundle)
+    expect(bundle['style.css']).toBeUndefined()
+  })
+
+  // The asset is deleted before the swap, so a swap that does not land ships a
+  // widget with no stylesheet and a placeholder where one should be. Louder is
+  // the only correct answer.
+  test('a placeholder the matcher cannot find fails the build', () => {
+    const bundle = {
+      'W.js': { type: 'chunk', isEntry: true, fileName: 'W.js', code: 'mount(C,{css:"nothing here"})' },
+      'style.css': asset('.a{color:red}'),
+    }
+    expect(() => run(bundle)).toThrow(/placeholder was not found/)
+  })
+
+  test('a widget with no imported CSS still swaps, to an empty string', () => {
+    const bundle = { 'W.js': entry('`') }
+    run(bundle)
+    expect(bundle['W.js'].code).toContain('css:""')
   })
 })

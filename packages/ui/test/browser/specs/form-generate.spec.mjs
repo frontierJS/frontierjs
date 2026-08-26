@@ -28,7 +28,7 @@ export async function run(t) {
   // mount in. A form is read top to bottom and the schema is the only thing
   // that knows which order the columns mean anything in.
   t.is(await t.evaluate(`return ${controlsIn('#all')};`),
-    'title,notes,status,qty,customerId,dueOn,archived',
+    'title,notes,status,qty,customerId,dueOn,archived,tags',
     'every writable field appears, in schema order')
 
   // readOnly is the schema saying this is not the caller's to write, so the
@@ -36,15 +36,15 @@ export async function run(t) {
   // it simply has no control for.
   t.is(await t.evaluate(`return document.querySelector('#all [name=createdAt]');`), null,
     'a readOnly column is not offered')
-  t.is(await t.evaluate(`return document.querySelector('#all [name=tags]');`), null,
-    'and neither is one the kit has no control for')
+  t.is(await t.evaluate(`return document.querySelector('#all [name=shape]');`), null,
+    'and neither is a column of a type the table cannot place')
 
   // The difference between the two is the whole point. A readOnly column is
   // the schema working; a column with no control is a field silently missing
   // from a form, which is the exact failure generating the list is meant to
   // end — so it is warned about, by model, name and reason.
   const warned = await t.evaluate(`return window.kitWarnings.filter(w => w.startsWith('[Form]'));`)
-  t.ok(warned.some(w => w.includes('Order.tags') && w.includes('array')),
+  t.ok(warned.some(w => w.includes('Order.shape') && w.includes('geography')),
     'a column with no control is warned about by name and reason')
   t.ok(warned.every(w => !w.includes('createdAt')),
     'and a readOnly column is not — leaving it out is the annotation working')
@@ -99,12 +99,19 @@ export async function run(t) {
   // relation is the schema fact, the control is a choice made over it.
   await t.eventually(`document.querySelector('#options-calls').textContent.split(',')[0]`, 'customerId',
     'a foreign key asks the resource for its rows')
+  // A picker is a SEARCHABLE select (`FJS-459`), so its rows are listbox
+  // options that exist while it is open rather than `<option>` elements that
+  // are always in the document.
+  await t.evaluate(`
+    document.querySelector('#all [name=customerId]').focus();
+    await waitSettled('body');
+  `)
   // `eventually`, not a plain read: the call being recorded is not the rows
-  // having arrived, and the select repopulates a turn later.
-  await t.eventually(`document.querySelectorAll('#all [name=customerId] option').length`, '3',
-    'and the select repopulates when they arrive (two rows plus the empty)')
+  // having arrived, and the list repopulates a turn later.
+  await t.eventually(`document.querySelectorAll('#all [role=option]').length`, '2',
+    'and the list repopulates when they arrive')
   t.ok(await t.evaluate(`
-    return [...document.querySelectorAll('#all [name=customerId] option')]
+    return [...document.querySelectorAll('#all [role=option]')]
       .some(o => o.textContent.trim() === 'Ada Lovelace');
   `), 'showing the human column rather than the id')
   // Only the foreign key. Asking for rows per field would be one request per

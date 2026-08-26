@@ -44,7 +44,8 @@ pages that embed it, from a static origin rather than the API's container.
 ```
 widgets/
   config/sierra.config.js    target: 'widget', the tag prefix, the output dir
-  config/vite.config.js      the Vite root is widgets/, port 8200
+  config/vite.config.js      the Vite root is widgets/, on this app's own
+                             widgetDev port (8200 for a fresh scaffold)
   index.html                 the dev harness — vite dev, while a widget is written
   src/Embeds/<Name>.mesa     the widget. A directory holding index.mesa also works,
                              and a .mesa BESIDE that index is its part, not a widget
@@ -64,6 +65,8 @@ what deploys), and prove it with a real browser against `test/`.
 ```js
 const { scaffoldWidgetSurface, isWidgetName, widgetTag, widgetScripts } =
   await import(resolve(global.fliRoot, 'core/widget-surface.js'))
+const { port: portFor, projectIdFor } =
+  await import(resolve(global.fliRoot, 'core/ports.js'))
 
 const name = arg.name.replace(/\.mesa$/, '').replace(/^.*\//, '')
 const dir  = flag.dir || 'widgets'
@@ -106,7 +109,29 @@ if (flag.dry) {
 }
 
 const appName = basename(root)
-const { written, skipped } = scaffoldWidgetSurface({ root, dir, name, prefix, appName })
+
+// Derived, not chosen. `port = env*1000 + category*100 + project*10 + service`,
+// and the two categories a widget surface needs are widgetDev (2, the server
+// you write against) and widgetServe (3, the origin a stranger's page loads
+// from). Written into this app's own numbers rather than the template's,
+// because every generated file below carries one: the Vite port, the host
+// page's `<script src>`, the deploy entry and the Dockerfile's EXPOSE.
+//
+// The templates said 8200/8300 unconditionally, which is project 0 — right for
+// a fresh scaffold and wrong for every app with a number. `strictPort` turns
+// that into a refusal rather than a silent hop, so the way it went wrong was a
+// second app's widget server failing to start, naming a port nobody had chosen.
+const appPkgPath = join(root, 'package.json')
+const appPkgName = existsSync(appPkgPath)
+  ? (JSON.parse(readFileSync(appPkgPath, 'utf8')).name ?? null)
+  : null
+const projectId = projectIdFor(appPkgName, basename(root))
+const devPort   = portFor('widgetDev',   { env: 'dev', projectId })
+const servePort = portFor('widgetServe', { env: 'dev', projectId })
+
+const { written, skipped } = scaffoldWidgetSurface({
+  root, dir, name, prefix, appName, devPort, servePort,
+})
 
 for (const f of written) log.success(`Created ${f}`)
 if (skipped.length) log.info(`Kept ${skipped.length} existing file(s) — a scaffold never overwrites your config.`)
@@ -119,7 +144,7 @@ if (fresh) {
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
     pkg.scripts ??= {}
     const added = []
-    for (const [key, value] of Object.entries(widgetScripts({ dir }))) {
+    for (const [key, value] of Object.entries(widgetScripts({ dir, servePort }))) {
       if (pkg.scripts[key]) continue
       pkg.scripts[key] = value
       added.push(key)
@@ -134,7 +159,7 @@ if (fresh) {
 log.info('')
 log.info(`  <${widgetTag(name, prefix)}></${widgetTag(name, prefix)}>  — the tag a host page writes`)
 log.info('')
-log.info(`  bun run dev:widgets     write it, live at :8200`)
+log.info(`  bun run dev:widgets     write it, live at :${devPort}`)
 log.info(`  bun run build:widgets   → ${dir}/dist/embeds/${name}.js`)
 log.info(`  bun run serve:widgets   the widget origin, headers and all`)
 log.info('')

@@ -1,0 +1,39 @@
+<script module>
+  // OrderResource.mesa — the file `fli make:resource` writes, by hand.
+  //
+  // The shape is the point, not the wiring: a Resource is the model's whole
+  // client-side surface (`FJS-D114`), so the data half is the module script and
+  // the markup half is the model's default form. `createResource` is stubbed
+  // the way every fixture in this folder stubs it — the question here is what
+  // the WRAPPER does to <Form>'s own "did I get children" test, and that
+  // question needs no network.
+  import { formFieldList } from '@frontierjs/sierra/field-rules'
+
+  const FIELDS = {
+    reference: { type: 'string', required: true, title: 'Reference' },
+    status:    { type: 'string', required: true, enum: ['draft', 'sent'], title: 'State' },
+  }
+
+  export const orders = {
+    context: { model: 'Order', service: 'orders', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ reference: '', status: 'draft' }),
+    validate: () => [],
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service: {},
+    save: (data) => Promise.resolve({ ok: true, reference: data?.reference }),
+  }
+</script>
+
+<script>
+  import Form from '../../../components/forms/Form.mesa'
+
+  export let record  = undefined
+  export let onsaved = undefined
+</script>
+
+<Form resource={orders} {record} ondone={onsaved} auto={!$slots.default}>
+  <slot />
+</Form>

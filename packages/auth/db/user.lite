@@ -26,7 +26,12 @@ model User {
   // package sets them.
   emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
   role           String    @default("user") @allow('write', auth().isAdmin)
-  accountId      Int?
+  // The app's own Account, if it has one. STRING, because every id this package
+  // declares is a uuid and an app that followed the scaffold has uuids too — an
+  // Int here could not hold one, which is what made this column unusable for the
+  // one app that reached for it. An app keyed on integers stores the digits;
+  // `SessionContext.accountId` has always been a string either way.
+  accountId      String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @default(now()) @updatedAt
 

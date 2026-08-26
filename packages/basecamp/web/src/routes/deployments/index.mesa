@@ -4,7 +4,6 @@ title: Deployments
 <script>
   import { session } from '../../session.js'
   import { deployments } from '../../resources/Deployment.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
 
@@ -40,7 +39,7 @@ title: Deployments
     // notifies nothing (RULE 43).
     if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   // A tone per state, decided once. 'deploying' has no tone on purpose — it is
   // in progress, which is neither good nor bad news.

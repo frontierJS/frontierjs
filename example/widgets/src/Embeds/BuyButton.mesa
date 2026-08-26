@@ -1,0 +1,225 @@
+<script module>
+  // A buy button on a page the shop does not own.
+  //
+  // The tag is the file name, kebab-cased, under the surface's prefix:
+  // <fjs-buy-button data-sku="FJS-TEE-NVY-M">. Nothing else is needed on the
+  // host page — no bundler, no init call, no framework.
+  //
+  // ─── What this proves that the SPA cannot ────────────────────────────────
+  //
+  //   · a cross-ORIGIN call to the shop's API, which needs CORS and needs the
+  //     `x-cart-token` header to survive a preflight
+  //   · shadow isolation in both directions — the host page's CSS is hostile on
+  //     purpose in widgets/test/, and this widget must not reach out of itself
+  //   · a basket that lives in the HOST's storage, and the one-time code that
+  //     hands it to the shop's own checkout
+  //
+  // No `selector:` — this widget is addressed by its tag. The escape hatch is
+  // for host markup nobody can edit; a merchant pasting a script tag can paste
+  // an element beside it.
+  export const widget = {}
+</script>
+
+<script>
+  import { createShop } from '../lib/shop.js'
+
+  // ── Props ────────────────────────────────────────────────────────────────
+  //
+  // `data-*` attributes, so every one arrives as a STRING. Nothing here is
+  // parsed as a number: `data-sku="007"` is a SKU and guessing would make it 7.
+  //
+  // The two origins are props with defaults rather than constants, because a
+  // widget is built once and embedded by pages that point at staging, at
+  // production, and at a developer's laptop.
+  export let sku   = ''
+  export let api   = 'http://localhost:8110'
+  export let shop  = 'http://localhost:8010'
+  export let label = 'Add to basket'
+
+  const client = createShop({ api })
+
+  let item    = null
+  let error   = null
+  let loading = true
+  let busy    = false
+  let count   = client.count()
+  let handoff = null
+
+  async function load() {
+    if (!sku) { error = 'This button has no data-sku'; loading = false; return }
+    try {
+      item = await client.item(sku)
+    } catch (e) {
+      // The shop's own sentence — "No product with SKU X" — rather than a
+      // status. A merchant who mistyped the SKU is the likeliest reader of
+      // this string and they are looking at it on their own page.
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  // AVAILABLE, never on hand. `available` is on hand less every unexpired hold
+  // some open basket is carrying, and it is the number the Data boundary will
+  // grade the add against — offering what is merely in the warehouse is how a
+  // shopper is told yes and then no.
+  $: sellable = !!item && item.active && item.available > 0
+
+  $: price = item
+    ? new Intl.NumberFormat('en-US', {
+        style: 'currency', currency: item.currency ?? 'USD', currencyDisplay: 'narrowSymbol',
+      }).format(item.price)
+    : ''
+
+  async function add() {
+    busy = true; error = null
+    try {
+      const view = await client.add(item.variantId, 1)
+      count = view.count
+      // Re-read, because this shopper's own add took stock off what everyone
+      // else may buy and this page is one of the everyone. It is also the only
+      // refresh there is: no socket, by design.
+      item = await client.item(sku)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = false
+    }
+  }
+
+  async function checkout() {
+    busy = true; error = null
+    try {
+      // The link is minted on the CLICK and not on load: a code lives two
+      // minutes, so one made when the page rendered would be dead by the time
+      // anybody pressed it.
+      handoff = await client.checkoutUrl(shop)
+      if (!handoff) { error = 'Your basket is empty'; return }
+      // The basket belongs to the shop's own site from here on. Released
+      // BEFORE the navigation, so a shopper who comes back does not see a
+      // count for a basket somebody else is now holding.
+      client.release()
+      count = 0
+      window.location.href = handoff
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = false
+    }
+  }
+</script>
+
+<div class="buy" data-sku={sku}>
+  {#if loading}
+    <span class="muted" data-state="loading">Checking with the shop…</span>
+  {:else if error && !item}
+    <span class="bad" data-state="error">{error}</span>
+  {:else if item}
+    {#if item.image}
+      <img class="shot" src={item.image} alt={item.alt ?? item.product} width="56" height="56" />
+    {/if}
+
+    <span class="what">
+      <strong class="name" data-name>{item.product}</strong>
+      <span class="muted opts">{item.colour} · {item.size}</span>
+    </span>
+
+    <span class="price" data-price>{price}</span>
+
+    <button
+      type="button"
+      class="go"
+      data-add
+      disabled={!sellable || busy}
+      onclick={add}
+    >
+      {#if busy}
+        Working…
+      {:else if !item.active}
+        Not on sale
+      {:else if item.available === 0}
+        <!-- Two different sentences, because one of them comes back on its own
+             in twenty minutes and the other does not. "Sold out" about stock
+             sitting in somebody's basket loses a customer the shop had. -->
+        {item.onHand > 0 ? 'In other baskets' : 'Sold out'}
+      {:else}
+        {label}
+      {/if}
+    </button>
+
+    {#if count}
+      <button type="button" class="link" data-checkout disabled={busy} onclick={checkout}>
+        Checkout — {count} item{count === 1 ? '' : 's'}
+      </button>
+    {/if}
+
+    {#if error}
+      <span class="bad" data-error>{error}</span>
+    {/if}
+  {/if}
+</div>
+
+<style>
+  /* Everything is declared, and nothing is inherited on purpose.
+     A shadow root stops the host page's RULES from reaching in, and it does not
+     stop INHERITANCE — `font-size: 40px` on their <body> lands on every element
+     in here that did not say otherwise. So this block states the properties
+     that inherit rather than assuming a reset.
+
+     `all: initial` on the host would be the blunt version and is worse: it
+     throws away the host's font family too, and a buy button should look like
+     it belongs on the page it is on. */
+  .buy {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.4;
+    color: #111;
+    text-align: left;
+    letter-spacing: normal;
+    /* The host page's `* { box-sizing: content-box }` cannot reach in here, but
+       saying it costs nothing and the failure it prevents is a button whose
+       padding falls outside its own border. */
+    box-sizing: border-box;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d8d8d4;
+    border-radius: 10px;
+    background: #fff;
+  }
+
+  .shot  { width: 56px; height: 56px; object-fit: contain; border-radius: 6px; background: #f5f5f2 }
+  .what  { display: flex; flex-direction: column }
+  .name  { font-weight: 600; font-size: 14px }
+  .opts  { font-size: 12px }
+  .muted { color: #6b6b66 }
+  .bad   { color: #a32020; font-size: 12px; max-width: 18ch }
+  .price { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums }
+
+  .go {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.45rem 0.9rem;
+    border-radius: 8px;
+    border: 1px solid #111;
+    background: #111;
+    color: #fff;
+    cursor: pointer;
+  }
+  .go[disabled] { background: #8a8a85; border-color: #8a8a85; cursor: not-allowed }
+
+  .link {
+    font: inherit;
+    font-size: 12px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #1f5fbf;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+</style>

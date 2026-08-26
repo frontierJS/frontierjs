@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-38 models · 38 gated · 0 unrestricted
-31 with row policies · 6 with protected fields · 11 gated transitions
+45 models · 45 gated · 0 unrestricted
+35 with row policies · 7 with protected fields · 19 gated transitions
 ```
 
 ## Gates
@@ -30,6 +30,9 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `AppNetwork` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppServer` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AuditEvent` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
+| `Backup` | 7 SYSADMIN | 7 SYSADMIN | 8 SYSTEM | 7 SYSADMIN |
+| `Blueprint` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
+| `BlueprintParam` | 1 VISITOR | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `CleanupRun` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
 | `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Dashboard` | 2 READER | 4 USER | 4 USER | 4 USER |
@@ -41,14 +44,18 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Environment` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `FeatureFlag` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `FlagOverride` | 2 READER | 4 USER | 4 USER | 4 USER |
+| `HubConfig` | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `Invitation` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Job` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `JobRun` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Network` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `NotificationChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `NotificationPreference` | 1 VISITOR | 1 VISITOR | 1 VISITOR | 1 VISITOR |
+| `OauthFlow` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Project` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `Recipe` | 4 USER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `RecipeRun` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
+| `RegistryImage` | 2 READER | 8 SYSTEM | 8 SYSTEM | 5 ADMINISTRATOR |
 | `Secret` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Server` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ServerEvent` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
@@ -136,6 +143,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
 - deny **delete** — `!check(app, 'read')` — "Outside your workspaceId"
 - deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+
+### `AuditEvent`
+
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `CleanupRun`
 
@@ -272,6 +287,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
+### `NotificationPreference`
+
+- allow **read** — `userId == auth().id`
+- allow **create** — `userId == auth().id`
+- allow **update** — `userId == auth().id`
+- allow **post-update** — `userId == auth().id`
+- allow **delete** — `userId == auth().id`
+
 ### `Project`
 
 - deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
@@ -300,6 +323,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
 - deny **delete** — `!check(recipe, 'read')` — "Outside your workspaceId"
 - deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+
+### `RegistryImage`
+
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Secret`
 
@@ -350,6 +381,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
 - deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
 
+### `WorkspaceMember`
+
+- allow **read** — `userId == auth().id`
+- allow **create** — `workspaceId == auth().workspaceId`
+- allow **update** — `workspaceId == auth().workspaceId`
+- deny **update** — `userId == auth().id`
+- allow **delete** — `workspaceId == auth().workspaceId`
+
 ## Protected fields
 
 `@guarded` needs a system context. `@encrypted`/`@secret` are ciphertext at rest
@@ -359,11 +398,15 @@ rather than refusing the row.
 | Model | Field | Rule |
 | --- | --- | --- |
 | `Credential` | `value` | `@guarded(all)` |
-| `Credential` | `accessToken` | `@guarded(all)` |
-| `Credential` | `refreshToken` | `@guarded(all)` |
+| `Credential` | `accessToken` | `@secret` |
+| `Credential` | `refreshToken` | `@secret` |
 | `Invitation` | `token` | `@guarded(all)` |
+| `OauthFlow` | `state` | `@guarded(all)` |
+| `OauthFlow` | `verifier` | `@guarded(all)` |
 | `Secret` | `data` | `@encrypted` |
 | `Session` | `token` | `@guarded(all)` |
+| `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
+| `User` | `role` | `@allow('write', auth().isAdmin)` |
 | `User` | `kind` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `status` | `@allow('write', auth().isSystemAdmin)` |
 | `User` | `isSystemAdmin` | `@allow('write', auth().isSystemAdmin)` |
@@ -387,6 +430,14 @@ An ungated move needs only the model's update level.
 | `Job` | `status` | `idle` | running → pending | — |
 | `Job` | `status` | `fail` | running → failed | — |
 | `Job` | `status` | `cancel` | pending, running, failed → cancelled | — |
+| `Server` | `status` | `reboot` | online, unreachable → pending | — |
+| `Server` | `status` | `drain` | online → draining | 5 ADMINISTRATOR |
+| `Server` | `status` | `undrain` | draining → online | 5 ADMINISTRATOR |
+| `Server` | `status` | `checkIn` | pending, installing, unreachable → online | 8 SYSTEM |
+| `Server` | `status` | `reportRunning` | pending, provisioning, installing, ready, unreachable, stopped → online | — |
+| `Server` | `status` | `reportStopped` | pending, provisioning, installing, ready, online, unreachable, draining → stopped | — |
+| `Server` | `status` | `reportRebuilding` | pending, installing, ready, online, unreachable, draining, stopped → provisioning | — |
+| `Server` | `status` | `reportDestroyed` | pending, provisioning, installing, ready, online, unreachable, draining, stopped → destroyed | — |
 
 ## Levels
 

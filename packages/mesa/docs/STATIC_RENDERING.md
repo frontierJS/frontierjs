@@ -50,14 +50,14 @@ message.
 
 `initRenderer()` calls `setRenderEnvironment(true, false)`: the DOM is
 available, but this is not a client. Those are two different questions, and
-conflating them is what made every server render fire `$onMount` before the
+conflating them is what made every server render fire `$.onMount` before the
 reactivity pass split them.
 
 | | Server render |
 |---|---|
 | Effects, memos, derived `const` | **run** — this is how markup gets built |
 | `{#if}`, `{#each}`, `{#key}`, `{@html}`, `{@render}` | **run** |
-| `$onMount` / `$onMounted` | inert (RULE 19) |
+| `$.onMount` / `$onMounted` | inert (RULE 19) |
 | `watchProxy`, `watchPath`, `localWatchProxy` | inert (RULE 19) |
 | `{#await}` | renders `{:pending}` — nothing settles inside a synchronous render |
 | `<mesa:mounted>` | renders its pending branch, for the same reason |

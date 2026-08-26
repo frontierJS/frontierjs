@@ -13,8 +13,15 @@
     "./history": "./src/history/history.js",
     "./hooks": "./src/hooks/hooks.js",
     "./inflect": "./src/inflect/inflect.js",
+    "./json": "./src/json/json.js",
     "./jsonschema": "./src/jsonschema/jsonschema.js",
-    "./signature": "./src/signature/signature.js"
+    "./query": {
+      "types":   "./src/query/query.d.ts",
+      "default": "./src/query/query.js"
+    },
+    "./search": "./src/search/search.js",
+    "./signature": "./src/signature/signature.js",
+    "./units": "./src/units/units.js"
   },
   "files": [
     "src",

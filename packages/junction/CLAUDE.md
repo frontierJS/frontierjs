@@ -19,14 +19,21 @@ src/
     app.ts          createApp() — wires every subsystem. Plugin protocol lives here.
                     Lifecycle: configure → start → ready → running → shutdown
     service.ts      the heart — createBaseService (5 CRUD) + createService (compose)
-    context.ts      ServiceContext, OWNED BY CORE. auth / client / route / locals
-    directives.ts   QueryDirectives — the `$` fields, and nothing else.
+    context.ts      ServiceContext, OWNED BY CORE. auth / client / route / locals.
+                    Also the two ALS stores and their one owner each —
+                    enterRequest/reenterAs (the request) and enterCall + `$`
+                    (the call in progress)
+    directives.ts   QueryDirectives — the `$`-PREFIXED KEY fields, and nothing
+                    else. Unrelated to `$` above.
                     Imports NOTHING, so the browser client can name them without
                     dragging node:async_hooks into a bundle. context.ts re-exports
     hooks.ts        Feathers-style pipeline + `around`
     hooks-builtin.ts, hooks-resilience.ts
     litestone.ts    the Data adapter — withLitestoneDb, withTenantDb, gateAuth,
-                    sessionGateLevel, toDataPrincipal, accessorCandidates
+                    sessionGateLevel, toDataPrincipal, accessorCandidates.
+                    autoValidate (a MODEL, create/patch) and validateInput (a
+                    `type` in the seed, any method) both compile through
+                    jsonSchemaToJunctionSchema → createSchema
     envelope.ts     the result envelope — one module, one owner
     outbox.ts       the transactional outbox — ctx.enqueue + the relay pass
     errors.ts       named HTTP error classes + `retryable`
@@ -47,6 +54,9 @@ src/
                     the services for what the caller does to their own
                     credentials, both, because to the person signing in that is
                     one subject
+  ../tools/principal-snapshot.ts  `junction principal` — the committed principal.snapshot.md:
+                       who a caller ARRIVES as and who they BECOME. The access snapshot's
+                       input, which nothing else commits (`FJS-514`).
   ../tools/surface.ts  `junction surface` — the committed surface.snapshot.md,
                     read off a BUILT app (describe() + buildRoutes()), --check in CI
   ../tools/errors-snapshot.ts  `junction errors` — the committed errors.snapshot.md,
@@ -70,6 +80,39 @@ src/
   one word per realm, and the crossing is stated in both docs.
 
   See **§ The two contexts** below for which one you are holding and when.
+
+- **A `methods:` list that names one method narrows the service to it.** The
+  entry form that carries an `input:` is the same declaration as a bare name, so
+  a service written without `methods:` — which answers every verb — starts
+  answering 405 to all but the ones now listed. `surface.snapshot.md` is where
+  you see it: it carries the policy-applied list, and CI fails a stale one.
+
+- **`$` is the call you are inside, and it throws outside one.** Not Invariant
+  10's `$`-prefixed keys — a different thing sharing a character. It is the whole
+  `ServiceContext` (`$.db`, `$.data`, `$.id`, `$.locals`), read-only except for
+  junction's own contract keys, and dead the moment the call ends. Reading it at
+  module scope runs at import, before any call exists, and says so. In a
+  `*.job.ts` handler it throws too: a job's `ctx` is Caravan's, and deferred work
+  reaches the database through a service.
+
+  See **§ `$` — the call you are inside** below.
+- **A query string is PARSED, and a WS frame is not.** `ctx.query` on a
+  `TransportContext` is `?qty=5&live=true&qty[gte]=3` as numbers, booleans and
+  structure — `@frontierjs/toolbelt/query`, which Sierra's router and this
+  package's own client also read (`FJS-D125`). The socket was always the correct
+  half: `buildWsQuery` spreads filters into a JSON frame, while
+  `buildQueryString` used to `String()` every scalar, `JSON.stringify` every
+  operator object and drop `null` outright — so an app worked until its socket
+  dropped and then silently filtered on text, three of the five kinds answering
+  an empty list with a 200 (`FJS-450`). A frame is JSON and already carries its
+  types, so the parser must never run over one: it would turn a filter that
+  genuinely says the string `'5'` into 5.
+  - **A raw route reads the parsed query too**, so a value that looks numeric
+    arrives as a number. An id is text whatever it looks like — `String()` it.
+  - `$` keys are still present on a transport context; splitting those off is
+    the service boundary's job (`splitParams`), not the transport's.
+  - **A string is a number only if `String(Number(v)) === v`.** `'007'`, `'+1'`,
+    `'1.50'`, `'1e5'` and a snowflake id stay text. `?code="5"` is the escape.
 - **Raw routes use `{id}`, not `:id`.** A `:id` registers as a literal segment
   and 404s silently forever.
 - **`app.get`/`app.post`/… apply `apiPrefix`; `app.http.router.get` does not.**
@@ -212,6 +255,35 @@ src/
   `channel` are otherwise eaten by the deny-list with no error). Without one,
   function keys are scanned for, exactly as before. A name in the list with no
   function throws at construction, naming what IS available.
+- **A `methods:` entry may be `{ method, input }`, and `input` names a `type` in
+  the seed.** `autoValidate` derives from a MODEL and covers create/patch on a
+  model service; every other method a service answers — `pay`, `ship`, `prune` —
+  took `ctx.data` on trust, which is the largest surface here with no declared
+  shape at all, because the interesting operations in an app are exactly the ones
+  that are not CRUD. `type PayOrder { … }` in `db/schema.lite` reaches `$defs`
+  beside the models, and `validateInput` compiles it with the same
+  `jsonSchemaToJunctionSchema` → `createSchema` pair `autoValidate` uses — so
+  nothing new decides what a shape is, and the 400 renders in `<Form>` like a
+  CRUD one. A CRUD name may carry one too, and it REPLACES the model-derived
+  validator: the only way a create accepts a payload the model does not describe.
+  **A named type that is not there THROWS**, where a missing model warns — a
+  missing model definition is a config that used to work, and an `input:` is a
+  statement the author made this morning, so failing open on it hands back the
+  assurance it was written to provide.
+- **Declaring an input is also declaring the SURFACE, and that is the sharp
+  edge.** `{ method: 'pay', input: … }` narrows exactly as `'pay'` does, so a
+  service that declared no `methods:` and gains one to turn validation on answers
+  405 to every verb it did not name. Name the whole surface. It is not left to
+  production: `surface.snapshot.md` carries the policy-applied method list AND
+  the declared inputs, and the `snapshots` CI phase fails a stale one — a verb
+  that stopped being answered is a diff before it is a bug.
+- **What a declared input does NOT buy is a transform.** `@trim`/`@lower`/
+  `@upper`/`@slug` are enforced at the Data boundary and are not emitted into
+  JSON Schema at all, and a custom method's payload never becomes a model write —
+  so it never meets them. Worse than absent, the two boundaries would disagree
+  about what is VALID if they were wired naively: litestone transforms BEFORE
+  validating, junction's `def.transform` runs AFTER, so `@trim @length(3,12)` on
+  `'  ab  '` fails at one and passes at the other. `FJS-401`.
 - **`svc.pipelines(appHooks)` is memoised on BOTH inputs** — the app map by
   identity, the service's own by a version `hooks()` bumps. That is what makes
   staleness unreachable. `app.hooks()` reassigns `app._appHooks` rather than
@@ -272,12 +344,84 @@ src/
   data. `tenantClaimGuard` refuses that by name on a scoped service. Anonymous
   is deliberately not its business: nobody is not a caller missing a claim, and
   refusing there breaks every public read the app's `@@gate` exists to grade.
+  **It refuses in three sentences and never in a 401.** The caller proved who
+  they are, and a 401 is what a client is built to answer by discarding the
+  token — so naming a tenant you do not belong to would sign you out of the one
+  you do. *Nothing here emits this claim* is a developer's problem; *this
+  request names no tenant* is a **400**, an incomplete request rather than a
+  refused one; *you do not belong to the one it names* is a 403. Only the
+  resolver can tell the last two apart, so it says so.
+- **`ctx.locals.tenantId` is WHICH TENANT, under both strategies, and it has two
+  assignment points.** `withTenantDb` resolves it from the request
+  (`strategy database`); `liftRowTenant` takes it off the principal
+  (`strategy row`) — from `sessionFields` before a resolver runs, and off
+  `applyClaims` after one has. **The claim is NAMED by the schema**
+  (`tenancy { claim }`), so a cart token or an invitation claim is a claim and is
+  not a tenant. `tenantOf(ctx)` is the accessor; `app.tenant()` is the same
+  question from somewhere holding no ctx and reads the CALL before the request,
+  because a service whose subject is the tenant may re-resolve mid-request.
+  Before this, three subsystems with no request in hand each answered it
+  themselves: the cache key, the outbox relay and a queued job (`FJS-386`,
+  `FJS-365`, `FJS-384`).
+- **A cached service is partitioned by tenant, and the segment lands outside
+  `keyBy`.** The cache is on the APP and not on the client, so one process
+  serving two tenants shares one cache under EITHER strategy — the `uid` segment
+  is what hid it, since a cached list is keyed by the caller and the leak needs
+  the same person in two workspaces. A custom key function says what makes two
+  calls the same call within a tenant and was never asked about the tenant, so
+  it cannot opt out; `cache: { shared: true }` is the declared opt-out, and it is
+  the app's statement to make.
+- **The outbox relay sweeps every database the request path can write to.** One
+  per tenant off the registry, and the dispatch names the tenant so the handler
+  writes back to the file the row came from. An app built with both
+  `createApp({ db })` and `createApp({ tenants })` holding the model in both is
+  refused at BOOT — `assertOutboxShape`, not the pass, because `pass()` logs and
+  continues and the failure is a queue that quietly never drains.
+- **`createApp({ principal })` is where a claim gets onto the principal, and the
+  ordering is the feature.** It runs INSIDE `withLitestoneDb`/`withTenantDb` —
+  after the client is scoped to the caller, before `next()` — because
+  `getTable()` re-derives its own scoped client from `ctx.auth.user`, so a
+  standing that lives only on `ctx.locals.db` is dropped the moment a service
+  touches a model (`FJS-D113`). A tenant claim and a per-request standing are
+  the same thing and resolve together; `applyClaims` is exported because a
+  service whose SUBJECT is the tenant must re-resolve mid-call.
+  Two refusals are built in: a resolver may not set `userId`/`id` — a claim says
+  what a caller HOLDS, not who they are — and it does not run for an anonymous
+  caller, because minting a principal out of claims turns *nobody* into
+  *someone*, an object satisfying `auth() != null` while carrying no identity.
+  **It does not run for work with no request behind it either**, which is ruled
+  and is the reason `FJS-384` is open.
+- **`membershipClaim()` is the battery, and its whole safety is one line: no row
+  is no claim.** The hand-written version that forgets the membership check
+  emits the claim anyway and every read answers 200 over somebody else's rows —
+  so the read that DECIDES access goes through `asSystem()` (it cannot be
+  scoped by the access it decides) and a caller naming a tenant they do not
+  belong to comes out holding nothing. The row is parked at
+  `ctx.locals.membership`, so the standing costs no second query. `namedBy:`
+  is how the app's own actionable sentence — *pass X-Workspace-Id or
+  ?workspace_id=* — reaches a framework refusal that could not otherwise know
+  it; `tenantFrom` is the only thing that knows where a tenant is named.
 - **`sessionGateLevel()` is a hand copy** of the same function in Litestone
   (which cannot import Junction). Change one, change both. `toDataPrincipal()` is
   the other half of that boundary — `userId` → `id`, without which every
   `@@allow(... auth().id)` matches nothing, silently.
 - **`before: { all: [...] }` applies to every method**, machine-facing endpoints included.
   A comment claiming exemption is not one.
+- **The gate runs before anything an app wrote, and `validated:` is the phase
+  after the derived layer.** `gateAuth` is a service-level AROUND hook, so it
+  wraps every before hook at either scope — it used to be appended to the
+  per-method before list after the app's own, and an app rule that read the
+  database therefore read it for strangers (`FJS-403`, ruled `FJS-D124`). Leading
+  the per-method list would not have fixed it: `resolvePipelines` runs
+  `before.all` ahead of `before.<method>`. The validators still trail the app's
+  hooks, because a before hook shapes `ctx.data` and it is the shaped payload
+  that must satisfy them. **The order is
+  `around(gateAuth) → before → validated → method → after`**, and `validated:` is
+  where a rule that reads the database off `ctx.data` belongs: it needs a caller
+  the gate has graded and a payload the validator has coerced. It short-circuits
+  like `before` and is skipped when a before hook has already answered the call.
+  The one thing still ahead of the gate is an APP-level `around` hook, which must
+  be: `withLitestoneDb` establishes the client the gate grades against.
 - **`after` means after the METHOD, not after the call succeeded — and
   `ctx.afterCommit(fn)` is the phase that does.** Queued from any phase, drained
   once in `callService` on `!ctx.error && !pipelineError`, after the
@@ -469,7 +613,8 @@ and handed on.
 - **`query`.** On the transport it is the search string as it arrived, `$limit`
   and all. On a service the bridge has split it into `query` (filters — becomes
   the WHERE) and `directives` (`{limit, offset, orderBy, select}` — shape).
-  Nothing past the bridge reads a `$` (Invariant 10). Conflating the two is what
+  No `$`-prefixed KEY survives the bridge (Invariant 10 — the rule is about the
+  prefix on a parameter name, not about `$` the identifier). Conflating the two is what
   once made `?limit=1` a filter on a column named `limit` — zero rows, no error.
 - **The principal's spelling.** `ctx.user` is flat because a raw route has no
   pipeline and nothing to propagate. `ctx.auth.user` is nested because `auth` is
@@ -504,10 +649,20 @@ documented here for months while being false.
 | `transients` | The `@transient` keys of this call's payload — accepted on the wire, stored nowhere. `autoValidate` validates them with the model's own rules and then MOVES them here, so the write never carries one. Fresh `{}` every call, does not propagate, and there is no seed option: this is input the caller sent, not scratch a hook keeps. A model declaring none leaves it `{}` |
 | `reserved` | The query keys the SERVICE declared as its own — `reservedQuery: ['workspace_id']`. Same freshness, same non-propagation, same reason as `transients`. Lifted in **`callService`, before the pipeline** rather than in a hook, so `ctx.query` is columns alone for the app's own leading hook as much as for the derived `autoFilter` behind it, and a custom method — which runs neither — is covered on the same terms as `find`. A `$`-name is refused at construction (the directive table owns those); a name that is also a column is refused on first use, because the client is not known when a service module is imported |
 
-Propagation rides the `AsyncLocalStorage` store the transport already wraps a
-request in, so nothing is threaded and no caller is rebuilt. A call whose
-principal *differs* re-scopes — which is what makes a sub-call issued as somebody
-else pass **that** principal to its own children rather than the request's.
+Propagation rides an `AsyncLocalStorage` store, so nothing is threaded and no
+caller is rebuilt. A call whose principal *differs* re-scopes — which is what
+makes a sub-call issued as somebody else pass **that** principal to its own
+children rather than the request's.
+
+**There are two stores and they are not interchangeable.** The REQUEST store
+holds `RequestMeta` — who, where from, correlation id, idempotency key — and is
+opened by `enterRequest(src, fn)`, which is its one owner: five entry points
+establish a request and each used to build the meta by hand, which is how the
+socket path came to wrap nothing at all for its whole life and the test harness
+came to drop `user` and `client`. `reenterAs(user, fn)` is the same request as
+somebody else, carrying everything but the principal, and opening nothing when
+the principal in scope is already the one asked for. The CALL store holds the
+`ServiceContext` itself and is `$`, below.
 
 ### One object, three boundaries
 
@@ -524,6 +679,80 @@ of the split; and it named five of them, so `$search`, `$withDeleted` and
 stay out of the type — transport-only, no structured form on the other side,
 which is the same line `DIRECTIVE_PARAMS` / `TRANSPORT_PARAMS` already draws.
 
+### `$` — the call you are inside
+
+`$` is the `ServiceContext` of the call in progress, read out of the call store
+rather than taken as a parameter. `$.data`, `$.id`, `$.query`, `$.locals`,
+`$.enqueue`, `$.afterCommit` — the whole context — plus `$.db` (`ctx.locals.db`)
+and `$.me` (`ctx.auth.user`), which are the two an app reaches for most.
+
+It exists because every service reached its caller-scoped client by digging it
+out of the context, and every helper took a `ctx` parameter to carry it —
+basecamp wrote `dbOf(ctx)`/`wsOf(ctx)`/`actorOf(ctx)` 251 times, with a comment
+on the module saying it existed so the fact was stated once. The cost is not
+verbosity: reaching for a module-level client instead writes as the system, with
+the gate and every row policy gone, and nothing says so.
+
+**Nothing shared with Invariant 10's `$`-prefixed keys but the character.**
+
+Two rules make a surface this broad safe, and neither of them is smallness.
+
+- **No invented keys.** Only junction's own contract properties can be assigned
+  — `data · query · id · result · error · statusCode · dispatch`. So
+  `$.dispatch = false` works and `$.myThing = 1` throws by name. What makes an
+  ambient object dangerous is that anyone can keep state on it, not that it can
+  be written at all; a fixed list cannot grow, so it is not a bag. Per-call state
+  is `$.locals`, app state is `app.claim()`.
+- **Call lifetime.** Outside a call it THROWS, naming the key and saying where
+  `$` is legal. An ambient dependency is an undeclared one — `steps(id)` does not
+  say in its signature that it needs a call — and the whole of what makes that
+  acceptable is a failure that is loud, immediate and names itself. Answering
+  `undefined` would trade a loud bug for a silent one, which is the trade this
+  exists to reverse.
+
+**Resolved on every property read, never snapshotted.** `transactional:` assigns
+`ctx.locals.db = tx` before running the method, so a captured value is the wrong
+client and every write in the method would commit outside the transaction.
+
+**The span is the whole of `_callService`** — method policy, idempotency claim,
+pipeline, announcement, `afterCommit` drain, outbox handoff. Everything that
+semantically belongs to the invocation, which is why an effect queued with
+`ctx.afterCommit` can still read `$`. A nested call runs it again with its own
+context. A replayed idempotent call returns before any of it and runs no user
+code, so it is owed nothing.
+
+**It is a second store on purpose, not a widening of `runInServiceCall`.** That
+one holds the service NAME and is read by litestone's write tap to suppress a
+double announcement, so widening it to this span would stop a write inside an
+`afterCommit` effect from being announced at all. `tests/call-scope.test.ts`
+asserts the narrow store is already closed by `afterCommit`, so a later merge
+fails loudly.
+
+**`$.db` is typed as junction's `LitestoneClient`**, which is a deliberate
+minimal stand-in for the surface this adapter uses — it knows neither `exists()`
+nor what a row of any particular model looks like. An app that owns a schema owns
+that cast, in one place (basecamp's `db()`).
+
+**`$` throws in a `*.job.ts` handler**, and that is correct rather than missing.
+A job's `ctx` is Caravan's, not a `ServiceContext`, and a job wanting the
+database should go through a service — which is where the gate, the policies and
+the announcement are. `app.principal()` is what a job asks for the caller.
+
+**`enterCall(ctx, fn)` is the escape hatch, and it is exported.** `callService`
+opens the scope for every ordinary path — HTTP, a socket frame,
+`app.service(x).find()`. What it does not cover is a hand-built context calling
+a method as a plain function, which several suites here do
+(`tests/populate.test.ts`, `tests/real-litestone-client.test.ts`); those pass
+because `createBaseService`'s CRUD reads the ctx PARAMETER, and a method reading
+`$` would have no way in at all. It nests and restores, so a direct call inside
+a real one leaves the outer scope as it found it. Also on
+`@frontierjs/junction/testing` beside `testCtx`, which is the thing that
+produces the context it needs.
+
+`tests/call-scope.test.ts` runs all of it, including the leaks: 25 concurrent
+calls each seeing only their own, a nested call not overwriting its parent's
+`locals`, and a throw leaving no scope standing.
+
 ### Work that outlives the request
 
 A job, a retry, a scheduled sweep runs after the store is gone, so it has no
@@ -532,11 +761,20 @@ principal at all — and no principal is STRANGER(0), refused by the model's own
 
 - **`app.principal()`** — who is in scope, asked from somewhere holding no `ctx`.
   Read when work is *enqueued*, to record who asked.
-- **`app.runAs(userId, fn)`** — opens a scope for a principal **re-resolved now**,
+- **`app.runAs(userId, [{ tenant }], fn)`** — opens a scope for a principal **re-resolved now**,
   through `IAuth.sessionFor(userId)`. Inside it, `auth` propagates as it does
   anywhere else, so `fn` makes ordinary service calls that name no principal.
   `null` means the app's own `createApp({ system })`; an app declaring none gets
   `null` rather than an invented identity.
+
+**`{ tenant }` is the other half, and it is a second argument because it is a
+second fact: WHO is re-resolved and WHERE is stated.** It rides `RequestMeta`, so
+`withTenantDb` picks it up with no extra plumbing and `membershipClaim` falls
+back to it when `tenantFrom` finds no header — the membership row is still READ
+for that actor and that tenant. Storing a tenant is not the captured privilege
+storing a session would be: an id names WHICH ROWS, and the standing that decides
+what may be done with them is the re-resolved principal. Absent inherits the
+tenant in scope; `{ tenant: null }` is work that belongs to none.
 
 **Re-resolved, never replayed.** Storing the session would be shorter and would
 let a caller demoted between asking and running keep the authority they had when

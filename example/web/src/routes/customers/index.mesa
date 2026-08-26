@@ -2,28 +2,60 @@
 title: Customers
 ---
 <script>
+  // The ledger of people, and the screen where a row can be taken back.
+  //
+  // Two Data-boundary features are on this page and neither of them appears in
+  // customers.service.ts, which is still four lines:
+  //
+  //   @@softDelete   Remove stamps `deletedAt`; every read filters on it. The
+  //                  orders do NOT go with the person — `orders Order[] @keep`
+  //                  in the seed says so — and the Orders column is what makes
+  //                  that visible rather than merely true.
+  //
+  //   @version       Two staff editing one customer. The second save carries a
+  //                  revision the row has moved past, and Litestone answers 409
+  //                  with both numbers instead of overwriting the first edit.
+  //                  Nothing here reads that column: <Form> round-trips it
+  //                  because it is on the record, and `customers.conflict(err)`
+  //                  is what turns the refusal into the two numbers below.
+  //
+  // The removed view is `$onlyDeleted`, a DIRECTIVE — not a filter on a
+  // `deletedAt` column. A filter would go through `autoFilter`, which grades
+  // keys against the model's real columns; a directive is one of the ten names
+  // `@frontierjs/toolbelt/directives` carries, and both boundaries read that
+  // one table.
   import { customers } from '../../resources/Customer.mesa'
   import { session } from '../../session.js'
   import { prefs } from '../../prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
-  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
-  import Avatar        from '@frontierjs/ui/components/display/Avatar.mesa'
-  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
-  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
-  import Popover       from '@frontierjs/ui/components/overlay/Popover.mesa'
-  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
-  import Spinner       from '@frontierjs/ui/components/feedback/Spinner.mesa'
-  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import Alert                from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Avatar               from '@frontierjs/ui/components/display/Avatar.mesa'
+  import Button               from '@frontierjs/ui/components/forms/Button.mesa'
+  import ConfirmationPopover  from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
+  import Drawer               from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Form                 from '@frontierjs/ui/components/forms/Form.mesa'
+  import Mono                 from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill                 from '@frontierjs/ui/components/display/Pill.mesa'
+  import Popover              from '@frontierjs/ui/components/overlay/Popover.mesa'
+  import SectionHeader        from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Spinner              from '@frontierjs/ui/components/feedback/Spinner.mesa'
+  import Switch               from '@frontierjs/ui/components/forms/Switch.mesa'
+  import Table                from '@frontierjs/ui/components/display/Table.mesa'
 
   const { get: rows, unsubscribe } = useStore(customers.store)
-  $onDestroy(unsubscribe)
+  $.onDestroy(unsubscribe)
 
   $: (session.level, session.user, prefs.dense)
 
   let error   = null
   let loading = false
+  let removed = false
+
+  // Who may act. Both are affordances — the API grades every call again — and
+  // both come from the schema rather than from a number typed here.
+  $: canEdit   = customers.can('update', session.level)
+  $: canRemove = customers.can('delete', session.level)
 
   // Reload is a button a person presses, so it has to say it is working. The
   // Table's own `loading` covers the first fetch and nothing else — by the
@@ -31,11 +63,20 @@ title: Customers
   // would be a worse answer than a spinner in the button.
   const reload = () => {
     loading = true
-    return customers.load()
+    return customers.load({}, removed ? { onlyDeleted: true } : {})
       .catch(e => { error = e.message })
       .finally(() => { loading = false })
   }
   reload()
+
+  // The toggle re-asks the SERVER rather than filtering what is on the page: a
+  // removed row was never in the response, which is the whole of what
+  // @@softDelete does. `Switch` hands its handler a boolean where `Input` hands
+  // an event, so there is no `.target` here.
+  function showRemoved(on) {
+    removed = on
+    reload()
+  }
 
   // Whether `notes` came back is a fact about the RESPONSE, not a rule copied
   // from the schema — the field is simply absent for anyone the policy rejects.
@@ -44,27 +85,108 @@ title: Customers
   // The column list is derived from the RESPONSE, the same fact the cells are.
   // A `const` is a memo in Mesa, so naming hasNotes here is what re-draws the
   // head when an admin's reload brings the column back.
-  const columns = hasNotes
-    ? [{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }, { key: 'notes', label: 'Notes' }]
-    : [{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }]
+  const columns = [
+    { key: 'name',   label: 'Name' },
+    { key: 'email',  label: 'Email' },
+    { key: 'orders', label: 'Orders' },
+    ...(hasNotes ? [{ key: 'notes', label: 'Notes' }] : []),
+    ...(canEdit || canRemove ? [{ key: 'actions', label: 'Actions' }] : []),
+  ]
+
+  // ── Removal ──────────────────────────────────────────────────────────────
+
+  let busy = null
+
+  async function remove(c) {
+    error = null; busy = c.id
+    try { await customers.service.remove(c.id); await reload() }
+    catch (e) { error = e.message }
+    finally { busy = null }
+  }
+
+  async function restore(c) {
+    error = null; busy = c.id
+    try { await customers.service.restore(c.id); await reload() }
+    catch (e) { error = e.message }
+    finally { busy = null }
+  }
+
+  // ── Editing, and the race ────────────────────────────────────────────────
+  //
+  // `draft` is a COPY. Editing the store's own row would move the version this
+  // screen believes it read, which is the half `FJS-341` was about — and it
+  // would also make Cancel a lie.
+
+  let editing  = null      // the row as it was when the drawer opened
+  let draft    = null
+  let conflict = null      // { model, field, expected, actual }
+
+  function open(c) {
+    conflict = null
+    editing  = c
+    draft    = { ...c }
+  }
+
+  function close() { editing = null; draft = null; conflict = null }
+
+  // A 409 carrying two revisions is not a field error and `<Form>` correctly
+  // renders it as a sentence. The numbers are the half a sentence cannot hold,
+  // and they are what a person needs to choose between the two ways out.
+  function onerror(err) {
+    conflict = customers.conflict(err)
+  }
+
+  // Reload — throw away what was typed and show what the row actually says.
+  async function takeTheirs() {
+    const fresh = await customers.service.get(editing.id)
+    editing  = fresh
+    draft    = { ...fresh }
+    conflict = null
+  }
+
+  // Overwrite — keep what was typed and stamp the revision that is current
+  // NOW. Deliberately a second decision rather than a retry loop: the whole
+  // value of the column is that somebody looked at the other edit first.
+  async function takeMine() {
+    error = null
+    try {
+      const fresh = await customers.service.get(editing.id)
+      await customers.save({ ...draft, [customers.versionField]: fresh[customers.versionField] },
+                           { mode: 'patch' })
+      conflict = null
+      close()
+      await reload()
+    } catch (e) { error = e.message }
+  }
 </script>
 
 <SectionHeader title="Customers" level={1}>
   {#snippet action()}
-    <Button variant="outlined" onclick={reload} disabled={loading}>
-      {#if loading}<Spinner size="sm" label="Reloading" />{/if}
-      Reload
-    </Button>
+    <div class="cluster" style="align-items: center; gap: 1rem">
+      <Switch id="c-removed" label="Removed" checked={removed} onchange={showRemoved} />
+      <Button variant="outlined" onclick={reload} disabled={loading}>
+        {#if loading}<Spinner size="sm" label="Reloading" />{/if}
+        Reload
+      </Button>
+    </div>
   {/snippet}
 </SectionHeader>
 
 {#if error}
-  <Alert tone="danger">{error}</Alert>
+  <Alert tone="danger" id="c-error">{error}</Alert>
+{/if}
+
+{#if removed}
+  <Alert tone="muted" id="c-removed-note">
+    <code>$onlyDeleted</code> — rows with a <code>deletedAt</code>. Their orders
+    are still in the ledger and still count below, because
+    <code>orders Order[] @keep</code> says the receipts outlive the record.
+  </Alert>
 {/if}
 
 <Table {columns} rows={rows()} striped hover compact={prefs.dense}>
   {#snippet row(c)}
-    <tr>
+    <tr data-customer={c.id}>
       <!--
         The name cell is a contact card behind a Popover, and the Popover is
         portaled to <body> — which is the whole reason it is a kit component
@@ -80,23 +202,108 @@ title: Customers
           {#snippet trigger()}
             <Button variant="link">
               {#snippet leading()}<Avatar name={c.name} size="sm" />{/snippet}
-              {c.name}
+              <span data-name>{c.name}</span>
             </Button>
           {/snippet}
           {#snippet content()}
             <dl class="facts" style="max-width: 22rem">
               <dt>Email</dt><dd><Mono size="xs">{c.email}</Mono></dd>
               <dt>Customer since</dt><dd>{c.createdAt}</dd>
+              <dt>Revision</dt><dd><Mono size="xs">{c[customers.versionField]}</Mono></dd>
               {#if c.notes}<dt>Note</dt><dd>{c.notes}</dd>{/if}
             </dl>
           {/snippet}
         </Popover>
       </td>
       <td><Mono size="xs">{c.email}</Mono></td>
-      {#if hasNotes}<td class="text-muted">{c.notes}</td>{/if}
+      <td data-orders>{c.orderCount}</td>
+      {#if hasNotes}<td class="text-muted" data-notes>{c.notes}</td>{/if}
+      {#if canEdit || canRemove}
+        <td>
+          <div class="cluster">
+            {#if removed}
+              <Button
+                variant="ghost"
+                data-restore
+                disabled={!canRemove || busy === c.id}
+                onclick={() => restore(c)}
+              >Restore</Button>
+            {:else}
+              <Button variant="ghost" data-edit disabled={!canEdit} onclick={() => open(c)}>Edit</Button>
+
+              <!--
+                Remove asks first, and asks where the button is. Not a Modal: a
+                two-button question does not need focus trapped or the top
+                layer, and the popover keeps the row on screen behind it.
+              -->
+              <ConfirmationPopover
+                title="Remove this customer?"
+                message="They leave every list. Their orders stay in the ledger, and Removed brings them back."
+                confirmLabel="Remove"
+                onconfirm={() => remove(c)}
+              >
+                {#snippet trigger()}
+                  <Button variant="ghost" tone="danger" data-remove disabled={!canRemove}>Remove</Button>
+                {/snippet}
+              </ConfirmationPopover>
+            {/if}
+          </div>
+        </td>
+      {/if}
     </tr>
   {/snippet}
 </Table>
+
+<Drawer
+  open={editing !== null}
+  title={editing ? editing.name : ''}
+  side="right"
+  onclose={close}
+>
+  {#if editing}
+    {#if conflict}
+      <!--
+        The 409 said which two revisions disagreed. A status and a sentence
+        cannot carry that, which is why `resource.conflict(err)` exists beside
+        `fieldErrors(err)` — one answers *what went wrong*, the other answers
+        *what has to be decided*.
+      -->
+      <Alert tone="warning" id="c-conflict">
+        <p>
+          Somebody else saved this customer while you were editing.
+          You read revision <Mono size="xs"><span data-expected>{conflict.expected}</span></Mono>;
+          it is now at <Mono size="xs"><span data-actual>{conflict.actual}</span></Mono>.
+        </p>
+        <div class="cluster">
+          <Button variant="outlined" id="c-take-theirs" onclick={takeTheirs}>Reload theirs</Button>
+          <Button tone="danger" id="c-take-mine" onclick={takeMine}>Overwrite with mine</Button>
+        </div>
+      </Alert>
+    {/if}
+
+    <!--
+      No field list. Every writable column of `Customer`, in schema order, with
+      the control its type implies — `<Form>` asks the resource, which read the
+      model. `fullName` is @generated and `userId` is @system, so neither is
+      offered, and neither is written here.
+    -->
+    <!--
+      `showError` is off while the panel above is up. <Form> renders the stale-
+      write SENTENCE, which is the right thing to say when nothing else does —
+      but the panel says the same thing with the two numbers and the two ways
+      out, and two alerts about one refusal reads as two refusals.
+    -->
+    <Form resource={customers} bind:record={draft} method="patch" showError={!conflict}
+          {onerror} ondone={() => { close(); reload() }}>
+      {#snippet actions()}
+        <div class="cluster">
+          <Button type="submit" id="c-save">Save</Button>
+          <Button variant="ghost" onclick={close}>Cancel</Button>
+        </div>
+      {/snippet}
+    </Form>
+  {/if}
+</Drawer>
 
 {#if hasNotes}
   <Alert tone="success">

@@ -72,6 +72,35 @@ describe('a provider is what Junction calls', () => {
     await app.stop()
   })
 
+  // ── where the credential came from ──────────────────────────────────────
+  //
+  // One case, and without it that case cannot work at all: `tenancy { strategy
+  // database }` puts a tenant's people in the tenant's own file, and this
+  // resolution happens at the transport — before any hook, and therefore before
+  // `withTenantDb` has resolved a tenant. A provider handed a bare token has no
+  // way to know which shop's users it is being asked about.
+  it('hands the provider WHERE the credential arrived', async () => {
+    let seen: { host?: string | null; headers?: Record<string, unknown> | null } | undefined
+    const app = appWith({
+      async verifySession(t, from) {
+        seen = from
+        return t === 'good'
+          ? ({ userId: 'u1', userType: 'user', authMethod: 'session' } as SessionContext)
+          : null
+      },
+    })
+    await app.start()
+    await app.http.fetch(new Request('http://acme.shop.test/whoami', {
+      headers: { authorization: 'Bearer good', 'x-tenant-id': 'acme' },
+    }))
+    await app.stop()
+
+    // The Host is what `resolve subdomain` reads; the headers are what
+    // `resolve header(...)` reads. Both, because the schema decides which.
+    expect(seen?.host).toBe('acme.shop.test')
+    expect((seen?.headers as Record<string, unknown>)['x-tenant-id']).toBe('acme')
+  })
+
   // sessionFor stays optional, and its absence must stay LOUD. Downgrading to
   // STRANGER(0) is the hazard runAs exists to remove; inventing the system
   // principal would be worse.

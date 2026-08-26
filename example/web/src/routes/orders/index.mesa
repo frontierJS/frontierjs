@@ -6,7 +6,6 @@ title: Orders
   import { session } from '../../session.js'
   import { prefs } from '../../prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -36,7 +35,7 @@ title: Orders
   ]
 
   const { get: rows, unsubscribe } = useStore(orders.store)
-  $onDestroy(unsubscribe)
+  $.onDestroy(unsubscribe)
 
   $: (session.level, prefs.dense, prefs.quickView)
 
@@ -264,10 +263,16 @@ title: Orders
             and the popover keeps the row you are deleting on screen behind it.
             The trigger is still the same `.btn.danger`, still disabled by the
             same gate answer — the server refuses either way.
+
+            It said "there is no undo" until `Order` declared `@@softDelete`.
+            It stamps `deletedAt` now and `(cascade)` takes the lines with it,
+            so the row leaves every list and the receipt is still there. The
+            copy says what actually happens, because a warning that overstates
+            the consequence is the one people learn to click through.
           -->
           <ConfirmationPopover
             title="Delete this order?"
-            message={'@@gate wants level ' + deleteLevel + ' and there is no undo.'}
+            message={'@@gate wants level ' + deleteLevel + ' — it leaves every list, and its lines go with it.'}
             confirmLabel="Delete"
             onconfirm={() => remove(order.id)}
           >

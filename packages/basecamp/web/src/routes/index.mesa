@@ -15,13 +15,12 @@ title: Home
   import { deployments } from '../resources/Deployment.mesa'
   import { jobs } from '../resources/Job.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import ActionQueue from '../components/ActionQueue.mesa'
   import { computeNotices } from '../notices.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
 
   const { get: rows, unsubscribe } = useStore(projects.store)
-  $onDestroy(unsubscribe)
+  $.onDestroy(unsubscribe)
 
   // The queue subscribes; it does NOT load. The shell already loaded these
   // three for the notice bar and a resource store is a module singleton, so
@@ -30,7 +29,7 @@ title: Home
   const { get: srv, unsubscribe: unsubSrv } = useStore(servers.store)
   const { get: dep, unsubscribe: unsubDep } = useStore(deployments.store)
   const { get: jbs, unsubscribe: unsubJbs } = useStore(jobs.store)
-  $onDestroy(() => { unsubSrv(); unsubDep(); unsubJbs() })
+  $.onDestroy(() => { unsubSrv(); unsubDep(); unsubJbs() })
 
   $: notices = computeNotices({ servers: srv(), deployments: dep(), jobs: jbs() })
 

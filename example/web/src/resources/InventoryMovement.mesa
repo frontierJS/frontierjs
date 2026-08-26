@@ -1,0 +1,28 @@
+<script module>
+  // web/src/resources/InventoryMovement.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor. `model:` is stated because the
+  // service is called `inventory`: it is a service over the LEDGER, and
+  // 'inventory' singularises to 'inventory', which is not a model anything
+  // declares. A miss warns and degrades to a bare `make()`, so the symptom
+  // would be a screen with no field metadata rather than an error.
+  //
+  // ─── Why this file has no markup half ─────────────────────────────────────
+  //
+  // A resource file carries its model's default form, and this model has none
+  // to carry: `InventoryMovement` is `@@gate("5.5.9.9")` — append-only, with
+  // update and delete LOCKED at 9, which nothing passes including `asSystem()`.
+  // A movement is written beside a shelf moving, by `inventory.receive` and
+  // `inventory.adjust`, and a generated form over the row itself would offer to
+  // file one on its own — a ledger entry with nothing behind it, which is the
+  // exact drift the table exists to make impossible.
+  //
+  // The two forms that DO exist are on /inventory/ and are hand-written, for
+  // the reason the checkout form is: their payloads are `type StockReceipt` and
+  // `type StockAdjustment` in db/schema.lite, which are not models, so there is
+  // no record to generate a form from.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const movements = createResource('inventory', { model: 'InventoryMovement' })
+</script>

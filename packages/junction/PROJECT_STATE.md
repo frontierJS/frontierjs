@@ -69,9 +69,10 @@ accounts are in `CHANGES.md`.
 - **Never pattern-match on a caller-supplied name in SQL.** Webhook event
   matching is `json_each()` equality; a `LIKE` built from an event name leaked
   payloads across subscriptions.
-- **`ctx.query` is filters, `ctx.directives` is result shaping.** `$` is
-  transport syntax only, parsed by the bridge and by nothing else — nothing past
-  `src/transport/bridge.ts` sees a `$`.
+- **`ctx.query` is filters, `ctx.directives` is result shaping.** A
+  `$`-PREFIXED KEY is transport syntax only, parsed by the bridge and by nothing
+  else — no `$limit`/`$orderBy` survives `src/transport/bridge.ts`. The ambient
+  `$` (the service call in progress) is unrelated.
 
 ## Typecheck — why the runner exists, and the rule
 

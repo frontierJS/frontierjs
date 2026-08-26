@@ -14,10 +14,9 @@ Standalone package — same pattern as `@frontierjs/auth`. No changes to Junctio
 bun add @frontierjs/notifications
 ```
 
-Then scaffold the schema model:
+Then add the model below to your `db/schema.lite` and migrate:
 
 ```bash
-fli add notifications
 fli db:migrate
 ```
 
@@ -25,7 +24,7 @@ fli db:migrate
 
 ## Schema
 
-`fli add notifications` appends this model to your `schema.lite`:
+The model this package expects in your `schema.lite`:
 
 ```litestone
 model Notification {              // PascalCase singular → accessor db.notification
@@ -332,7 +331,7 @@ export class OrderAlert extends Notification {
 
 ## Sierra resource
 
-`fli add notifications` creates `web/src/resources/Notification.mesa` — a resource file whose data half is `<script module>`, per Invariant 18. `examples/Notification.mesa` is what it writes:
+The UI half is a resource file whose data half is `<script module>`, per Invariant 18 — `web/src/resources/Notification.mesa`. `examples/Notification.mesa` is the one this package ships to copy:
 
 - `notifications` — `createResource('notifications', { model: 'Notification' })`; `.store` is the live list, `.service` the client
 - `isUnread(n)` — what the bell counts and the list styles

@@ -95,6 +95,12 @@ const dirs = {
   // config, its host pages and its release are a different set of answers, and
   // an app may have this one and no web/ at all. See core/widget-surface.js.
   widgets:   env.WIDGETS_DIR   || 'widgets',
+  // The public, prerendered site — `target: 'static'`, one HTML file per route,
+  // served from an origin with no application server behind it. A peer of
+  // `web/` and never a routesDir inside it: a page built at one moment and read
+  // at another is a different set of answers about config, tests and release.
+  // See core/site-surface.js. `fli ksite:*` uses this directory too, with its
+  // own `content/` layout — same folder, different generation.
   site:      env.SITE_DIR      || 'site',
   mobile:    env.MOBILE_DIR    || 'mobile',
   extension: env.EXTENSION_DIR || 'extension',
@@ -1021,9 +1027,14 @@ function buildPaths() {
     widgets:       resolve(r, d.widgets),
     widgetEmbeds:  resolve(r, d.widgets, 'src/Embeds'),
     widgetTests:   resolve(r, d.widgets, 'test'),
-    site:          resolve(r, d.site),
-    siteContent:   resolve(r, d.site, 'content'),
-    siteMedia:     resolve(r, d.site, 'content/media'),
+    site:           resolve(r, d.site),
+    sitePages:      resolve(r, d.site, 'src/routes'),
+    siteIslands:    resolve(r, d.site, 'src/islands'),
+    siteComponents: resolve(r, d.site, 'src/components'),
+    siteResources:  resolve(r, d.site, 'src/resources'),
+    // ksite's layout, not the surface's — `fli ksite:fetch` writes here.
+    siteContent:    resolve(r, d.site, 'content'),
+    siteMedia:      resolve(r, d.site, 'content/media'),
     mobile:        resolve(r, d.mobile),
     extension:     resolve(r, d.extension),
   }

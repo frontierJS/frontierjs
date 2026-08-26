@@ -14,11 +14,11 @@
 import { describe, test, expect, beforeAll, afterEach, vi } from 'vitest'
 import { resolve, dirname, join } from 'path'
 import { fileURLToPath } from 'url'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
-import { tmpdir } from 'os'
+import { mkdirSync, writeFileSync, readFileSync } from 'fs'
 
 import { islandEntrySource, injectIslandScript, injectIntoPages } from '../src/build/island-bundle.js'
 import { prerenderRoutes } from '../src/build/prerender.js'
+import { tmpDir } from './tmp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -37,6 +37,30 @@ describe('islandEntrySource', () => {
     expect(src).not.toMatch(/^import \S+ from "\/app/m)
     expect(src).toContain('hydrateIslands(registry)')
     expect(src).toContain(`from "@frontierjs/sierra/islands"`)
+  })
+
+  test('carries the app\'s theme block, because virtual:sierra never loads here (FJS-501)', () => {
+    // A prerendered page ships HTML plus these chunks and nothing else, so this
+    // entry is the ONE place a static site can be told what its app declared.
+    // Without it the theme module keeps normalise({}) — DEFAULT_THEMES and key
+    // 'theme' — so an app declaring six themes had four refused by name and
+    // persisted under a key its own injected <head> script does not read.
+    const src = islandEntrySource(
+      [{ component: 'Switch', module: '/a.mesa' }],
+      { theme: { themes: ['theme-a', 'theme-b', 'theme-c'], default: 'theme-a', key: 'fjs-theme' } },
+    )
+    expect(src).toContain(`import { initTheme } from '@frontierjs/sierra/theme'`)
+    expect(src).toContain('"theme-c"')
+    expect(src).toContain('"fjs-theme"')
+    // Before hydration, so a component reading theme.value at mount sees the
+    // resolved theme rather than the empty string it starts as.
+    expect(src.indexOf('initTheme(')).toBeLessThan(src.indexOf('hydrateIslands('))
+  })
+
+  test('an app with no theme block imports no theme code', () => {
+    const src = islandEntrySource([{ component: 'Switch', module: '/a.mesa' }])
+    expect(src).not.toContain('initTheme')
+    expect(src).not.toContain('@frontierjs/sierra/theme')
   })
 
   test('quotes component names that are not bare identifiers', () => {
@@ -76,7 +100,7 @@ describe('injectIslandScript', () => {
 
 describe('injectIntoPages', () => {
   test('only touches pages that actually have an island', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'sierra-islands-'))
+    const dir = tmpDir('sierra-islands-')
     mkdirSync(join(dir, 'plain'), { recursive: true })
     writeFileSync(join(dir, 'index.html'), '<html><body>has island</body></html>')
     writeFileSync(join(dir, 'plain', 'index.html'), '<html><body>no island</body></html>')
@@ -104,7 +128,7 @@ describe('prerenderRoutes — island collection', () => {
   }
 
   function fixture() {
-    const root = mkdtempSync(join(tmpdir(), 'sierra-prerender-'))
+    const root = tmpDir('sierra-prerender-')
     mkdirSync(join(root, 'src/routes'), { recursive: true })
     writeFileSync(join(root, 'src/routes/index.mesa'), '---\nrender: static\n---\n<p>x</p>')
     return root

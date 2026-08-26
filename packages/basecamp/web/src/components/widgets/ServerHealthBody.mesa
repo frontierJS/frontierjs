@@ -9,7 +9,6 @@
   // A server with no `health` has not checked in. That is a state worth naming
   // rather than three bars at zero, which reads as a machine at rest.
   import { servers } from '../../resources/Server.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { onWrite } from './live.js'
   import Bar from '@frontierjs/ui/components/display/Bar.mesa'
 
@@ -32,7 +31,7 @@
   }
 
   load()
-  $onDestroy(onWrite(servers.service, load))
+  $.onDestroy(onWrite(servers.service, load))
 
   // Only the three the mock draws, and only when the outpost reported a number.
   // Anything else the outpost sends is its own vocabulary and belongs on the

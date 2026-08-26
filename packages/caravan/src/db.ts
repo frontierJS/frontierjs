@@ -29,6 +29,16 @@ const SCHEMA = `
     -- An id rather than a session: the standing is re-resolved when the job
     -- runs, so a caller demoted in between is graded at what they hold then.
     actor_id      TEXT,
+    -- WHICH TENANT the work is for, where the app declares tenancy. Resolved
+    -- at dispatch and re-bound when the job runs, so a handler reaches the same
+    -- rows the request that asked for it could. NULL is honest and common: an
+    -- app with no tenancy, and work that is the app's own.
+    --
+    -- A tenant is stored where a session deliberately is not, and the two are
+    -- not the same kind of thing. This is a pointer to a set of rows; the
+    -- standing that decides what may be done with them is still re-resolved
+    -- from actor_id when the job runs.
+    tenant_id     TEXT,
     -- WHICH Caravan instance is executing this row. Written by the claim,
     -- cleared when the row leaves 'running'. Recovery cannot tell a crashed
     -- process's job from a live one's without it, and one jobs.db is trivially
@@ -109,6 +119,7 @@ export function openDb(path: string): Database {
   // a jobs table created before that column existed the index is a hard error
   // naming a column the same statement never adds.
   addColumn(db, 'actor_id')
+  addColumn(db, 'tenant_id')
   addColumn(db, 'owner_id')
   db.exec(SCHEMA)
 
@@ -125,6 +136,8 @@ export function openDb(path: string): Database {
  *
  * What NULL means differs per column and both readings are the honest one.
  * `actor_id`: nothing recorded who asked, so the job runs as the app itself.
+ * `tenant_id`: nothing recorded which tenant, which is every app that declares
+ * no tenancy and every job that is the app's own work.
  * `owner_id`: nothing recorded which process is executing it, so a running row
  * carrying NULL is reclaimed by the first instance that sweeps — the same
  * answer this package gave before owners existed.
@@ -240,11 +253,12 @@ export function buildStatements(db: Database) {
     status: string; priority: number; max_attempts: number
     retry_delay: string | null; unique_key: string | null
     run_at: number; created_at: number; actor_id: string | null
+    tenant_id: string | null
   }>(db.prepare(`
     INSERT INTO jobs
-      (id, queue, name, data, status, priority, max_attempts, retry_delay, unique_key, run_at, created_at, actor_id)
+      (id, queue, name, data, status, priority, max_attempts, retry_delay, unique_key, run_at, created_at, actor_id, tenant_id)
     VALUES
-      ($id, $queue, $name, $data, $status, $priority, $max_attempts, $retry_delay, $unique_key, $run_at, $created_at, $actor_id)
+      ($id, $queue, $name, $data, $status, $priority, $max_attempts, $retry_delay, $unique_key, $run_at, $created_at, $actor_id, $tenant_id)
   `))
 
   // ── Claim next job (atomic — uses RETURNING to avoid race conditions) ────────

@@ -95,6 +95,68 @@ export async function run(t) {
   t.is(await t.evaluate(`return document.querySelectorAll('.fjs-cp-panel').length;`), 0,
     'and closes the palette')
 
+  /* ── ranking, not just filtering ──────────────────────────────────────── */
+
+  // The palette filtered with `String.includes` and imposed no order, so every
+  // command containing the query came back in the order it was REGISTERED —
+  // typing a command's own name could leave it below others that merely
+  // mention the word.
+  //
+  // `cust` is the case that separates the two. It matches `Customers` on its
+  // label and `Find an order` on its sub line ("By id or customer"), and
+  // `Find an order` is declared first. Ranked, the label match wins; filtered,
+  // registration order does. This fixture declares no `groupOrder`, so the
+  // group order follows the ranked list too and the FIRST ROW differs — which
+  // is the thing a person actually experiences.
+  // Reopened rather than remounted: the block above closed the palette, and a
+  // remount here loses the keyboard focus ⌘K is delivered through.
+  await t.press('k', 2)
+  await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)
+  await t.type('cust')
+
+  await t.eventually(`${rows}.map(r => r.querySelector('.item-title').textContent.trim()).join(',')`,
+    'Customers,Find an order',
+    'the label match outranks the sub-line match, rather than following it')
+
+  t.is(await t.evaluate(`return ${activeLabel};`), 'Customers',
+    'and the cursor starts on the best match, so Enter runs what was typed')
+
+  /* ── and the match is marked ──────────────────────────────────────────── */
+
+  // Ranges rather than markup is the whole shape of the search kit: it answers
+  // index pairs and the component emits its own elements, so a label out of a
+  // database row cannot inject. What that buys is only real if something is
+  // actually marked.
+  t.is(await t.evaluate(`
+    const row = [...document.querySelectorAll('.fjs-cp-row')]
+      .find(r => r.querySelector('.item-title').textContent.trim() === 'Customers');
+    return row?.querySelector('.item-title mark')?.textContent ?? null;
+  `), 'Cust', 'the matched run is marked, and only that run')
+
+  // The label is assembled from pieces now. Written across lines, the
+  // whitespace between them lands INSIDE the word — "Customers" comes back as
+  // "Cust omers" and every existing textContent assertion starts lying.
+  t.is(await t.evaluate(`
+    const row = [...document.querySelectorAll('.fjs-cp-row')]
+      .find(r => r.querySelector('.item-title').textContent.trim() === 'Customers');
+    return row?.querySelector('.item-title').textContent;
+  `), 'Customers', 'and the pieces rejoin with no whitespace between them')
+
+  // The sub line carries its OWN ranges. `Find an order` matched on
+  // "By id or customer", so a flat range list would mark its label at the
+  // offsets belonging to its sub.
+  const findRow = `
+    const row = [...document.querySelectorAll('.fjs-cp-row')]
+      .find(r => r.querySelector('.item-title').textContent.trim() === 'Find an order');
+  `
+  t.is(await t.evaluate(`${findRow} return row?.querySelector('.item-sub mark')?.textContent ?? null;`),
+    'cust', 'a sub-line match marks the sub line')
+  t.is(await t.evaluate(`${findRow} return row?.querySelector('.item-title mark')?.textContent ?? null;`),
+    null, 'and leaves the label alone — the ranges are per field, not one flat list')
+
+  await t.press('Escape')
+  await t.evaluate(`await waitFor(() => !document.querySelector('.fjs-cp-panel')); return true;`)
+
   // A search with no hits has to say so rather than render an empty box.
   await t.press('k', 2)
   await t.evaluate(`return await waitVisible('.fjs-cp-panel');`)

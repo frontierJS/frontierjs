@@ -225,11 +225,11 @@ describe('renderComponent — target: fragment', () => {
 // ── JS target ─────────────────────────────────────────────────────────────────
 
 describe('renderComponent — RULE 19 server semantics', () => {
-  it('does not run $onMount on the server', async () => {
+  it('does not run $.onMount on the server', async () => {
     globalThis.__ssrMount = 0
     for (let i = 0; i < 3; i++) {
       await renderComponent(
-        `<script>$onMount(() => { globalThis.__ssrMount++ })</script><p>x</p>`,
+        `<script>$.onMount(() => { globalThis.__ssrMount++ })</script><p>x</p>`,
         { filename: `Mount${i}.mesa`, cwd: '/tmp/mesa', target: 'html' }
       )
     }
@@ -387,6 +387,30 @@ describe('renderComponent — tmpDir', () => {
   })
 
   afterAll(async () => { try { rmSync(ROOT, { recursive: true, force: true }) } catch {} })
+
+  it("renders a component that imports its own NEIGHBOUR by relative path", async () => {
+    // The compiled module is written to a temp directory, so every relative
+    // specifier in it points somewhere else. A bare specifier survives (Node
+    // walks up to a node_modules) and an absolute one survives; a relative one
+    // did not — so a component importing a sibling store, formatter or table
+    // of constants failed to render, which is an ordinary thing for a page or
+    // an island to do. Measured on `example`'s prerendered catalogue, where
+    // the whole page silently stopped being built.
+    await writeFile(path.join(APP, 'money.js'),
+      `export const money = (n) => '$' + n.toFixed(2)\n`)
+    await writeFile(path.join(APP, 'Priced.mesa'),
+      `<script>\n  import { money } from './money.js'\n</script>\n<p>{money(28)}</p>`)
+
+    const { html } = await renderFile(path.join(APP, 'Priced.mesa'), {
+      target: 'fragment',
+      // ROOT and not APP: the temp module has to land somewhere OTHER than the
+      // source directory, or a relative specifier resolves by accident and the
+      // test proves nothing. ROOT is inside packages/mesa, so the runtime import
+      // still resolves.
+      tmpDir: ROOT,
+    })
+    expect(html).toBe('<p>$28.00</p>')
+  })
 
   it('renders a bare specifier that only resolves from the caller tree', async () => {
     const { html } = await renderFile(path.join(APP, 'Page.mesa'), {

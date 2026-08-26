@@ -7,5 +7,8 @@
   // nothing is ever sent here.
   import { createResource } from '@frontierjs/sierra/junction'
 
-  export const audit = createResource('audit')
+  // The service noun does not singularise to the model name — `audit` is
+  // already singular, so the registry would resolve `Audit`, find nothing, and
+  // degrade to a bare make() with no field rules behind it.
+  export const audit = createResource('audit', { model: 'AuditEvent' })
 </script>

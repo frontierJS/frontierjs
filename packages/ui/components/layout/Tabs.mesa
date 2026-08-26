@@ -71,8 +71,8 @@
   }
 
   // Initialize activeId from the first SELECTABLE tab if not set by parent.
-  // Deferred to $onMount so tabs have time to register.
-  $onMount(() => {
+  // Deferred to $.onMount so tabs have time to register.
+  $.onMount(() => {
     if (!activeId && _registry.length) {
       const first = edgeId(-1)
       if (first) {

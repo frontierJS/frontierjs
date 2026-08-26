@@ -295,11 +295,13 @@ if (!existsSync(envExamplePath)) {
 }
 
 // ─── 5. Health endpoint reminder ─────────────────────────────────────────────
-// The scaffold's own entry is api/src/app.ts; server.ts is checked because an
-// app may have split them. What matters is that SOMETHING answers health.path,
-// and the remedy offered has to be one that can actually produce that path —
-// `app.get('/health')` cannot, in an app with a prefix.
-const entryCandidates = ['api/src/app.ts', 'api/src/app.js', 'api/src/server.ts', 'api/src/server.js']
+// The plugin is configured in api/src/app.ts — the composition root, not the
+// entry: api/index.ts is what a runner is pointed at and it only calls start().
+// api/index.* is checked too because an app is free to configure there. What
+// matters is that SOMETHING answers health.path, and the remedy offered has to
+// be one that can actually produce that path — `app.get('/health')` cannot, in
+// an app with a prefix.
+const entryCandidates = ['api/src/app.ts', 'api/src/app.js', 'api/index.ts', 'api/index.js']
   .map(p => ({ rel: p, abs: resolve(context.paths.root, p) }))
   .filter(c => existsSync(c.abs))
 

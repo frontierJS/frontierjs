@@ -1,5 +1,490 @@
 # Changes
 
+## 2026-08-23 — a relation picker is a searchable select
+
+`FJS-459`, and it is the direct consequence of the change above it. Giving every
+list control the count made two of them honest and no more usable: `controlFor`
+answers `picker` for a plain foreign key and for `@values(Set, required)`, and
+`picker` was a native `<select>` — so those two now said *Showing 100 of 400* and
+offered no interaction that could reach row 250. The searchable half had landed
+only where the control already had a text box, which is `open`/`suggested` and
+the array form. **The weakest bindings got the better control and the commonest
+shape in any app got the worse one.**
+
+`picker` is bound to `Combobox` with `allowNew: false` now. The NAME did not
+move — `controlFor` still answers `picker`, which is the schema-level word for
+*choose one existing row* and the thing a contributed control registers against
+(`FJS-D17`) — so only this kit's binding of it changed.
+
+Always, rather than past a threshold. A control that changes shape once a count
+arrives is a surprise, and every admin platform with a reference field —
+Salesforce's lookup, ServiceNow's, Frappe's Link — is a typeahead at every list
+size. The cost is a native select's two advantages: the OS picker on a phone,
+and a value that submits with the form on its own. The second does not apply
+under `<Form>`, which writes through the resource.
+
+It is a behaviour change for every generated foreign-key form in every app, and
+the drives are what said so: `example`'s `verify` reported `Customer:select`
+where it now reports `Customer:combobox`, and its create step had been choosing
+a customer by writing an `<option>` value — which types into the search box and
+chooses nothing. A picker's value is the option somebody clicked, which is the
+whole difference between the label on screen and the id that gets written.
+
+
+## 2026-08-23 — a control says how many rows it is not showing
+
+`FJS-391`, the half that was left. `resource.options()` has answered
+`{ options, total, truncated }` since 2026-08-22 and no control read the count,
+so a picker over four hundred rows offered an alphabetical hundred and looked
+exactly like a complete list — the row somebody wanted was absent and nothing on
+screen said why.
+
+`truncationNote()` in `utils.js` is the one owner of the sentence, so three
+controls cannot word it three ways. It says **nothing** when `total` is unknown:
+*unknown* is not *complete*, and a wrong count is worse than none.
+
+`<Form>` keeps the count beside the rows it already prefetched and passes it
+down. `Select` renders it and offers nothing further — a native select cannot
+search, which is the argument for reaching for a combobox over a big relation.
+
+`Combobox` **latches** on a cut list and sends what is typed to the server from
+then on. Latched, because a search that narrows the answer makes the next one
+look complete: type `zo`, get 3 of 3, delete a character, and local filtering
+over three rows is all that would be left. Its own count wins once it has
+fetched — the form's count describes the page the FORM fetched, and after a
+search that page is gone.
+
+`MultiSelect` already had the seam and it was the CALLER's to supply, which a
+generated form has nobody to ask; `asyncOptions` is supplied where the form can
+answer one, and a stated one still wins.
+
+8 assertions in `test/browser/specs/options-truncated.spec.mjs`, three of which
+fail against the previous controls — including the negative control, that a
+complete list says nothing.
+
+## 2026-08-22 — the JSON tree has a keyboard, and it is a treegrid
+
+`role="treegrid"`, one tab stop, arrow navigation in two dimensions, and
+expand/collapse from the first cell.
+
+**`treegrid` rather than `tree`, because that is what the component IS** — a
+tree whose rows carry several focusable things: a key, a value, and up to five
+controls. A treeitem's interactive descendants are not separately reachable
+under a roving tabindex, so `tree` would have meant moving every row control
+somewhere else.
+
+**The blocker was focus, not the accessibility tree.** Measured before deciding
+anything: a `display: contents` row keeps its `role` in the a11y tree of current
+Chrome — the folklore is out of date — but has no box, so `.focus()` leaves
+`activeElement` on the body, and a roving tabindex is the whole of keyboard tree
+navigation. `grid-template-columns: subgrid` restores the box and keeps the
+column alignment exactly; the swap is invisible on screen and is what made the
+rest possible.
+
+Navigation is read off the DOM rather than mirrored in state. The rows are
+already there and already carry their identity in `data-path`; a parallel model
+of them is a second thing to keep in step with a filter, a search, an undo and a
+collapse.
+
+Two rules with an assertion each. **The column survives a row change** — arrowing
+down a document must not throw the cursor back to the key every time. And **a
+caret owns the arrows**: inside an open editor, a type select or the search box,
+Left and Right belong to that control. Stealing Left from a text field is the
+fastest way to make a keyboard user distrust the whole widget.
+
+Building it found a defect underneath, in every component and not just this one:
+an ARIA `false` was being removed rather than written. `packages/mesa/CHANGES.md`
+has it — `Combobox` and `CommandPalette` were both affected and are fixed for
+free, with assertions here that fail without the runtime change.
+
+## 2026-08-22 — copy a value, and copy where it is
+
+`copy` now puts two buttons on every row as well as one on the document: the
+value — a container's being its whole subtree, which is the one thing a tree
+can give that a `<pre>` cannot — and the path to it. `pathStyle="pointer"`
+switches the second to RFC 6901; `pathRoot` names what the accessor is rooted
+at.
+
+**A path read off the screen by eye is wrong the first time a key is not an
+identifier**, and wrong invisibly: `headers.content-type` parses as a
+subtraction and `odd.0` is a syntax error. `accessorPath` brackets those;
+`jsonPointer` escapes `~` and `/`, which is what stops a key holding a slash
+from naming a member that does not exist.
+
+**`copyText` moved into `CopyButton`'s `<script module>`** (`FJS-D116`) rather
+than being written a second time here. The part that matters is the fallback:
+`navigator.clipboard` does not exist on plain HTTP or in an older browser, so a
+second implementation works on every machine its author tested and silently
+does nothing on somebody's staging box.
+
+**Found by looking at it, again.** The document's copy button sits in `.code`'s
+own top padding and a `.btn.square` is taller than that padding, so the FIRST
+row's controls ended up underneath it — present, correct, and clicking
+something else. No assertion about whether a button exists can see that; the
+one that holds it now is a `document.elementFromPoint` hit test, and it fails
+against the old padding.
+
+## 2026-08-22 — you can find something in the document
+
+`<Json search />` — a filter box over the tree: matching rows and the route to
+them, everything else hidden, with a count.
+
+The component exists because a JSON document is a wall of unindexable text with
+no way to fold a branch away. **Folding shipped and finding did not**, and a
+document big enough to want one wants both.
+
+**The filter has to open its own ancestors.** `treeRows` emits children of an
+open container only, so a match four levels down is not a row yet — a filter
+that skips this finds everything and shows nothing. `searchDoc` answers `open`
+for exactly that, and the fixture is `expand={0}` so the assertion would fail
+without it.
+
+**The highlight is the package's `<mark>`** — `code.css` themes it inside a
+`code[language]` as *draw the eye to one run inside a line*, with a negative
+margin against equal padding so it does not push the monospace grid out of
+alignment. Third time the design system already held the answer, after the
+tokens and the diff's stripes.
+
+A count, because a filter that matched nothing and a document that is simply
+empty look identical from an empty screen. Escape clears the box. Clearing it
+is not a search for nothing — the tree comes back closed as it was.
+
+## 2026-08-22 — a leaf can become a container
+
+The editing model had a hole. `coerceLike` keeps the type an edit replaces —
+right for a text box, and it meant a document could be edited and never
+**reshaped**: typing `{}` into a string field produced the string `"{}"`, and
+there was no way at all to turn a value into an object or an array.
+
+So the type is a control rather than something an edit infers, and both rules
+are live at once: **the box coerces, the control converts.** Each has its own
+assertion, and removing either reddens only its own.
+
+The control is a native `<select>` in the row tools, and it earns its place
+twice — it is also the only thing that SAYS what kind a row holds, which a tree
+otherwise cannot: `""` and `"null"` read identically until something names them.
+`convertTo` carries what it can (an object becomes an array of its values, an
+array an object keyed by index, a string that parses becomes the parsed value);
+where it cannot, the value is dropped and one press of undo brings it back —
+which is the whole reason it is allowed to be lossy.
+
+**Found by looking at it, not by the tests.** The select was first written with
+`value={row.kind}`, and a select's value is applied before its `{#each}` has
+built the options — so nothing matched, every row fell back to the first option,
+and the entire document reported itself as strings. The probe set `el.value`
+itself, so no assertion could see it. The kind is marked on the OPTION now, and
+there is an assertion on what the control reports.
+
+One thing came out of the same pass: five template branches still tested
+`editable` rather than `canEdit`, so `<Json against editable>` warned that it
+was ignoring `editable` and then rendered every edit affordance anyway.
+
+## 2026-08-22 — undo in the JSON editor, and why it is affordable
+
+Undo, redo, ⌘Z/⌃Z and ⇧⌘Z/⌃Y, on any `<Json editable>`.
+
+**It costs a stack of documents, and that is only payable because every write
+already answers a copy.** `setIn` and its siblings share every branch they did
+not touch, so an entry is the path that changed and nothing else. A component
+that edited its document in place could not offer this at any price — there
+would be nothing left to go back to. Capped at 50 documents.
+
+**The echo is recognised by VALUE, not by identity, and that is the whole of
+what makes it work in a controlled tree.** A caller that adopts a write and
+rebuilds its own object — which is exactly what `example`'s /settings/ does,
+key by key — hands back a document that is equal and not identical. Compared by
+identity that reads as a second, foreign change, the write lands on the stack
+twice, and every edit costs two presses to undo. It looks like undo being
+broken rather than like a rule, so the drive holds it with a fixture whose
+caller spreads into a new object.
+
+A document arriving from outside that is **not** the one we announced is
+somebody else's edit — a restore, another editor, a reload — and it goes on the
+stack like any other step, so undo can walk back over it. What it must not do
+is vanish, which is what dropping it would look like from the screen.
+
+Three more rules, each with an assertion that fails without it: an undo is
+**announced** like any other write, because an undo the caller never hears
+about is a screen disagreeing with the object it is editing; a fresh edit
+**drops the forward stack**, since redoing onto a document that no longer exists
+is how an editor loses work; and the shortcut is bound to the **tree**, not the
+document, because taking ⌘Z off a page that has its own, from inside a
+component, is the kind of thing nobody can find the source of.
+
+## 2026-08-22 — the JSON tree can show two documents
+
+`<Json value={after} against={before} />`. Added, removed and changed rows, in
+one walk.
+
+**It ships no palette for this either**, and for the reason the tree already
+had: `code.css` themes `<ins>`, `<del>` and `<dfn>` inside a `code[language]`
+as full-width stripes with a coloured rule and a 14% tint, off `--code-ins` /
+`--code-del` / `--code-note`. Three states, already measured across every
+shipped theme. A hand-drawn green and red here would have been a fourth thing
+to reconcile and wrong in most of them. The drive asserts the three resolve to
+three different colours, because a theme that stopped reaching them would
+render three identical stripes — which looks like a working diff and says
+nothing.
+
+**The tree walks a MERGED document, not the new one.** That is the whole
+feature: a removed key is in neither `value` nor any tree built from it, so a
+diff that walks `value` shows every change except the ones that took something
+away. `diffDocs` in `@frontierjs/toolbelt/json` answers the merge, the status
+per path, the previous value, and the rows to open — a change three levels down
+is otherwise folded behind a summary that says nothing.
+
+**A changed leaf shows both sides, old above new.** The stripes are the width
+of the cell, so `<del>1</del><ins>9</ins>` reads the way a diff reads
+everywhere else, and it is the only rendering that answers *changed from what*
+— which a status word cannot. A changed CONTAINER is `<dfn>`, a rollup: the
+detail is in the rows under it.
+
+`editable` is refused while `against` is set, by name — a diff is two documents
+and an edit has no side to land on.
+
+One thing came out of writing it that was overdue: every value in the component
+now renders through **one** snippet — the plain tree, the buttons edit mode
+wraps them in, and the diff's marks, including the value that has no row of its
+own. It was three code paths marking a `null` as a keyword, and three chances
+to stop.
+
+## 2026-08-22 — a value-set column has a control, and `<Form>` stopped handing pickers the envelope
+
+770 passing, 69/69 opened in a browser.
+
+`FormField` gains two entries: `combobox` over `Combobox` and `multiselect` over
+`MultiSelect`, which is what a `@values` column whose strength is not `required`
+resolves to. `allowNew` comes off the field, so the same control serves `open`
+and `suggested` — the difference between them is on the server.
+
+`FJS-431`, self-inflicted and found the same day: `<Form>`'s prefetch stored
+whatever `resource.options()` answered and passed it straight down. That answer
+became `{ options, total, truncated }` earlier in the day so a caller could say
+*showing 12 of 400*, and every control below takes a plain array — so a
+generated form over a foreign key handed `<Select>` an object to iterate.
+Nothing caught it because no fixture has a form over a real foreign key whose
+rows ARRIVE: with none, `pickers[name]` stays `undefined` and every control
+takes its `?? []` branch. Unwrapped at the prefetch, one place, so the control
+contract stays *an array*.
+
+The prefetch now fires for a declared value set as well as a foreign key. The
+fetch is for a schema FACT, not for the control named `picker`.
+
+## 2026-08-22 — the JSON tree is one grid, and it was a screen tall per row
+
+765 assertions in the browser drive, 0 fail.
+
+**The tree rendered nine rows in 1619px.** `.fjs-json-tree` wears `.code`, which
+is `white-space: pre` — right for a document, and wrong for a block whose
+children are elements the compiler emits with the template's own newlines
+between them. Every one of those newlines rendered. On `example`'s /settings/
+that is roughly seven blank lines per entry, and the five-key preferences
+document filled the panel with whitespace.
+
+Nothing caught it, and the reason is worth keeping: there WAS an assertion —
+*every row is a single line* — and it measured `.fjs-json-row`. The blank lines
+are between the rows, which is outside every row box. It now measures the tree
+against its own row count, where the old layout reads 1619px for 9 rows at
+22.4px and reddens.
+
+**The fix is the layout, not a whitespace override.** The tree is one grid of
+three columns — key · value · tools — and a row is `display: contents`, so its
+cells are the grid's items. A whitespace-only text node is not a grid item, so
+the template's newlines are dropped the same way flex already dropped them
+inside a row. What that buys beyond the bug is the thing a flex line per row
+cannot give: a value at depth three starts at the same x as a value at depth
+zero, and every remove button shares one right edge. A second assertion holds
+it, and it fails against the row-of-flex-lines version.
+
+Three things came with it:
+
+- **Depth guides are the key cell's own background** — one hairline per
+  ancestor level, repeated across exactly the indent width, so the lines run
+  continuously down the tree without a single extra element. A nested box would
+  give the same containment and cost a wrapper per level.
+- **An add row spans the grid and lays itself out.** Its key box is an
+  `<input>`, and an input in column one sizes that column to itself: 90px of
+  keys pushed the value column to 235px, and the deeper the document the more
+  disconnected it read.
+- **The root's add row is always on screen** rather than behind a `+`. It is the
+  one thing on an editable tree that says it can be written to, and a disclosure
+  that has to be found first says nothing until it is. `.fjs-json-addroot` is
+  now the row, not a trigger; `example`'s drive and the kit's spec both type
+  into it directly.
+
+A closed container's whole summary opens it, too — the triangle is a 1rem target
+at the far left of a row that can be very wide.
+
+**And the hover said nothing, in every theme at once.** The row band was
+`--surface-sunken` and `.code`'s ground is `var(--code-bg, var(--surface-sunken))`
+— the rule matched, the declaration applied, and it painted the ground onto the
+ground. The band is mixed from the block's own ink now, so it lands the right
+way round on a light theme and a dark one without either being named. An
+editable cell also showed `cursor: text`, which is what ordinary selectable text
+already shows: it is a pointer, and on hover the cell takes a hairline ring, so
+the affordance names the CELL that answers a click rather than the row the
+pointer happens to be on.
+
+Both are asserted, and the band's assertion reads the authored declaration out
+of the sheet and resolves it in place rather than restating the recipe — against
+the old rule it prints `rgb(245, 245, 245) against rgb(245, 245, 245)`.
+
+Fixing the switch that would not move found a defect underneath all of this that
+is not the tree's: a bound checkbox could be turned on and never off, in any
+component in any app. `packages/mesa/CHANGES.md` has it.
+
+## 2026-08-22 — a component owns its verbs (`FJS-D116`)
+
+`FileUpload` grew a `<script module>` and `formatBytes` / `isImage` left its
+private scope: a caller rendering a file list somewhere else asked the same two
+questions and had to rewrite them.
+
+Allowed because it costs nothing, which was measured — a module-script export
+compiles to a plain top-level ESM export beside `export default`, so importing the
+function imports a function. Two boundaries hold: a second component needing a
+verb moves it to `utils.js`, and anything the server would also want goes to
+`@frontierjs/toolbelt`, since a `.mesa` import needs the Mesa build plugin.
+
+The kit's drive imports both by name from the `.mesa` file and renders what they
+answer — a claim about the compiler and the bundler, asserted through both.
+
+## 2026-08-22 — a `Json` column has a renderer, an editor and a control, and a control can refuse a submit (`FJS-404`)
+
+761 assertions in the browser drive, 0 fail. 69 components.
+
+`Json.mesa` reads a document — a folding tree, or `mode="raw"` for the
+highlighted source. `JsonInput.mesa` edits one, and Sierra's control table now
+answers `json` for an object and an array where it answered `null`, so a `Json`
+column appears on a generated form instead of being warned about and left off
+it. Both stand on `@frontierjs/toolbelt/json`, which is where the walking, the
+paths and the immutable writes live.
+
+**The viewer ships no palette.** It marks a key, a value and a keyword with the
+elements `glow()` already uses for them — `<b>`, `<em>`, `<strong>`, `<i>`,
+`<sup>` — inside a `<code language="json">`, which is exactly the shape
+`@frontierjs/css`'s `components/code.css` themes. So the tree retints with the
+theme and a theme setting its own `--code-*` reaches it for free; a private
+palette would have been a sixth thing to reconcile against eleven themes. The
+drive asserts the computed colours differ, because a theme that stops matching
+still renders a perfectly legible tree in one colour.
+
+**A row carries `data-path`** — its own path, as JSON. Two keys at two depths
+can read identically, and a document with a key that CONTAINS a dot is the
+shape that breaks a joined path, so there is no text a test or an app can
+select a row by.
+
+**The control holds text and writes a document, and those are not the same
+thing.** `{"a":` is a state every valid document passes through while it is
+being typed, so an unparseable buffer is shown with the engine's own message and
+NOT written.
+
+**Which is why `<Form>` gained a fourth error source.**
+`$context.form.reportInvalid(name, message)` is a control saying *the value I am
+showing is not one I can hand over*; a null message retracts it. It is the only
+one of the four that judges the BOX rather than the record — the record holds
+the last value the control could convert, so every check on it passes while the
+screen shows something else, and the save stores a value the person can see is
+not in front of them (`FJS-404`). It merges last, over a server and a live
+message. It refuses a submit **in a hand-written form too**, where `FJS-316`
+deliberately stops the record-level checks, because the control that reported is
+on screen by construction. And `clearErrors()` leaves it alone: it is about text
+still in the box, and only its own control can retract it.
+
+Both halves are in the drive, and both were checked by breaking them — with the
+guard removed the generated form still refuses and the hand-written one submits,
+which is the case it exists for.
+
+Filing `Json` also found `FJS-405`, fixed in `@frontierjs/toolbelt`: `glow`
+marked no keyword in JSON, so `true`, `false` and `null` were the only values in
+a highlighted document with no colour.
+
+**`editable` turns the tree into an editor**: edit a leaf, rename a key, remove
+a row, add a key or an item, at any depth, with the root carrying its own add
+affordance because it is not a row. Every write is
+`@frontierjs/toolbelt/json`'s, so every one answers a COPY — which is what makes
+a rename keep its key in place, a removal go by index rather than by value
+identity, and a leaf edit keep the type it replaced. A boolean is a toggle
+rather than a box to type in; two values is not a thing anybody should spell.
+Refusals are rendered in the row that refused, because an edit that silently
+does nothing is indistinguishable from a broken component.
+
+**A new `value` identity clears the draft.** That is what makes the tree one
+editor among several rather than a copy that drifts: a caller binding `onchange`
+back into `value` is controlled and always shows its own state, and a caller
+that ignores `onchange` keeps its draft because `value` never moves. `example`'s
+/settings/ is the live case — the preferences document is edited by the form
+controls and by the tree, either way round, and `verify:ui` asserts the round
+trip in a real browser.
+
+There is no reorder. The kit has no move operation and adding one here would be
+a second definition of what a write is.
+
+**The immutability assertion had to be rewritten to be able to fail.** It read
+`JSON.stringify(pristine)` out of an `<output>`, and an in-place mutation
+changes no binding — so the element still showed what it rendered at mount and
+the assertion passed against a deliberately mutating `removeRow`. It reads the
+live object now, and fails against that same version.
+
+Three apps in this repo were each rendering
+`<pre>{JSON.stringify(x, null, 2)}</pre>` by hand.
+
+## 2026-08-22 — `data-confirm`, and one panel instead of two (`FJS-D115`, `FJS-402`)
+
+698 assertions in the browser drive, 0 fail.
+
+`<ConfirmProvider />` mounts once and installs one document-level capture
+listener. After that a destructive action asks for a confirmation by writing
+`data-confirm="Delete this order?"` — no wiring, no component, and it works on an
+element this kit does not own. The measurement behind it: basecamp had 16
+destructive one-click buttons and zero confirmations of any kind, with
+`ConfirmationPopover` shipped and available the whole time.
+
+Capture phase is what makes it work: the listener runs before Mesa's delegation
+root, so stopping propagation there is what keeps the guarded handler from
+running. Confirming marks the element and re-fires `el.click()`, and that one
+re-fire covers a delegated handler, a form submit and an anchor alike.
+
+`ConfirmPanel.mesa` is new and is the confirmation itself; `ConfirmationPopover`
+is now its trigger and its open state and nothing else. Two of them would have
+drifted on which closes on Escape — the app this idea was read from proves it,
+with a dead `use:confirm` action beside the attribute that won.
+
+Extracting it found `FJS-402`, shipped in `ConfirmationPopover` since it was
+written: placement waited for `requestAnimationFrame` while the panel sat
+`visibility: hidden`, so where no frame arrives the panel is invisible at 0,0 and
+a click aimed at its confirm button lands on whatever is behind it. It places
+synchronously now, off a forced layout.
+
+## 2026-08-22 — `<Form>` hands the write to the resource (`FJS-D114`)
+
+668 assertions in the browser drive, 0 fail.
+
+`_send` used to answer `method="auto"` itself, off the `idField` prop. The
+resource answers it now — `resource.save(data, { mode })` — because the question
+is about the MODEL's id field and this component only knows what it was handed.
+
+A resource object with no `save` still works: a hand-made one, or an app on an
+older `@frontierjs/sierra`. The form drive's fixture is exactly that, so the
+fallback is covered by the assertions that were already there, and a second
+fixture resource carrying `save` proves the new path in a real browser.
+
+## 2026-08-22 — a form inside a wrapper lost its seeded blank (`FJS-400`)
+
+Found by opening the file `fli make:resource` now writes. A Resource file
+declares `export let record` and passes it down, so `<Form>` is handed
+`record: undefined` a second time when the parent pushes its props — and *not
+stated* is not *cleared*, the same distinction Invariant 9 makes about a patch.
+The seed was a one-shot at setup, so the second push replaced the schema-seeded
+blank with nothing and every control read a field off `undefined`: two uncaught
+TypeErrors per form and a create page with no values.
+
+Two lines: the seed is reinstated when the prop comes back absent, and the value
+read is guarded so the flush that carries the push cannot throw before the
+reinstatement runs. Both are load-bearing — removing either fails the drive.
+
+Nothing in this repo hit it, because every `<Form>` here is written inline by the
+page that owns the record. It would have hit every app that ran the generator.
+
 ## 2026-08-18 — `label=""` suppresses the label, as thirteen controls already claimed (`FJS-340`)
 
 Every form control resolves an unstated label from the schema and then from the

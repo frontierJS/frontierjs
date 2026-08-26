@@ -14,12 +14,25 @@ export { createAuthCleanupJobs } from './cleanup.ts'
 // assembling one schema string in memory.
 export { authUserModel, authMachineryModels, authSchemaFragments, retargetDb } from './schema.ts'
 
+// ─── OAuth ────────────────────────────────────────────────────────────────
+// The flow engine. Separate from the routes that drive it, because a URL, a
+// token exchange and an identity are decidable with no server and no database.
+export {
+  defineProvider, beginFlow, exchangeCode, fetchIdentity,
+  generateVerifier, challengeFor, stateMatches, isAllowedReturnTo,
+  OAUTH_STATE_COOKIE, PROVIDER_PRESETS, OAuthError,
+} from './oauth.ts'
+export type {
+  OAuthProvider, OAuthProviderOptions, OAuthIdentity, TokenSet, BeginResult, AuthOAuth,
+} from './oauth.ts'
+
 // ─── Errors ───────────────────────────────────────────────────────────────
 // Exported so a consumer calling createLitestoneAuth() directly — with no
 // Junction in the picture — can branch on what actually went wrong.
 export {
   AuthError, InvalidCredentialsError, EmailTakenError,
   InvalidTokenError, UserNotFoundError, AuthConfigError,
+  LastCredentialError, NotFoundError,
 } from './errors.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────

@@ -28,7 +28,6 @@ import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, na
 // them rendered as "no certificate" — including the expired ones.
 import { certStatusOf } from '../domains/domains.service.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 const WITH_ENV = { environment: true }
 
@@ -86,7 +85,7 @@ export function createAppsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const environmentId = ($.query.environmentId ?? $.query.environment_id) as string | undefined
       const type          = $.query.type as string | undefined
@@ -104,11 +103,11 @@ export function createAppsService(app: BasecampApp) {
       return { total, limit, offset, data: rows }
     },
 
-    async get(ctx: ServiceContext) {
+    async get() {
       return detail($.id as string)
     },
 
-    async create(ctx: ServiceContext) {
+    async create() {
       const data = $.data as Record<string, unknown>
       await assertEnvironmentInWorkspace(data.environmentId as string)
       await assertSlugFree('app', { environmentId: data.environmentId, slug: data.slug },
@@ -157,7 +156,7 @@ export function createAppsService(app: BasecampApp) {
     // WORKSPACE, and the write goes through asSystem(). The second of the two
     // asSystem() calls in this file's realm; the other is the outpost heartbeat.
 
-    async place(ctx: ServiceContext) {
+    async place() {
       const data     = $.data as Record<string, unknown>
       const serverId = data.serverId as string | undefined
       if (!serverId) throw new BadRequest('place needs a serverId')
@@ -189,7 +188,7 @@ export function createAppsService(app: BasecampApp) {
       return detail(target.id)
     },
 
-    async unplace(ctx: ServiceContext) {
+    async unplace() {
       const data     = $.data as Record<string, unknown>
       const serverId = data.serverId as string | undefined
       if (!serverId) throw new BadRequest('unplace needs a serverId')

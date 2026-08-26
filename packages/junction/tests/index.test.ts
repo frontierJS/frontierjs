@@ -4,6 +4,9 @@
 
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { asRecord } from './helpers.ts'
+// Relative, not '@frontierjs/litestone/testing': bun resolves workspace:* to a
+// COPY under node_modules/.bun, so the package spec tests a stale reaper.
+import { tempDir } from '../../litestone/src/tmp-dirs.js'
 
 // ─── Router tests ─────────────────────────────────────────────────────────
 
@@ -267,8 +270,11 @@ import { parseBody, parseQuery, parseCookies, extractIP } from '../src/transport
 
 describe('parseQuery', () => {
 
-  it('parses simple key=value', () => {
-    expect(parseQuery('?name=john&age=30')).toEqual({ name: 'john', age: '30' })
+  // The transport parses types now (`FJS-D125`) — `age=30` is 30, and a SKU
+  // stays text because `String(Number('007'))` is not '007'.
+  it('parses key=value and types what round-trips', () => {
+    expect(parseQuery('?name=john&age=30')).toEqual({ name: 'john', age: 30 })
+    expect(parseQuery('?sku=007&live=true&gone=null')).toEqual({ sku: '007', live: true, gone: null })
   })
 
   it('decodes URL-encoded values', () => {
@@ -1790,7 +1796,7 @@ describe('createDatabase', () => {
     const { db, migrate, close } = createInMemoryDatabase()
 
     // Write a temp migration file
-    const dir = '/tmp/test-migrations-' + Date.now()
+    const dir = tempDir('junction-migrations-')
     await Bun.write(`${dir}/001_create_notes.sql`,
       'CREATE TABLE notes (id TEXT PRIMARY KEY, title TEXT NOT NULL)'
     )
@@ -1806,7 +1812,7 @@ describe('createDatabase', () => {
 
   it('skips already-applied migrations on second run', async () => {
     const { migrate, close } = createInMemoryDatabase()
-    const dir = '/tmp/test-migrations2-' + Date.now()
+    const dir = tempDir('junction-migrations-')
     await Bun.write(`${dir}/001_init.sql`, 'CREATE TABLE t1 (id TEXT PRIMARY KEY)')
 
     const first  = await migrate(dir)
@@ -1819,7 +1825,7 @@ describe('createDatabase', () => {
 
   it('transactions roll back failed migrations', async () => {
     const { db, migrate, close } = createInMemoryDatabase()
-    const dir = '/tmp/test-migrations3-' + Date.now()
+    const dir = tempDir('junction-migrations-')
     await Bun.write(`${dir}/001_bad.sql`, 'THIS IS NOT VALID SQL @@@@')
 
     await expect(migrate(dir)).rejects.toThrow()
@@ -2761,9 +2767,9 @@ describe('pipelines — one owner', () => {
     // What this pins is that the pipeline resolved at all, and that the app's
     // own hook survived alongside the derived ones. It used to assert
     // `.length === 2` and broke the day a second derived hook was added.
-    const before = app.services.get('pings')!.pipelines(app._appHooks)['find']!.before
-    expect(before.some(h => h.name === 'gateAuth')).toBe(true)
-    expect(before.filter(h => !DERIVED_HOOKS.has(h.name)).length).toBe(1)
+    const pipeline = app.services.get('pings')!.pipelines(app._appHooks)['find']!
+    expect(pipeline.around.some(h => h.name === 'gateAuth')).toBe(true)
+    expect(pipeline.before.filter(h => !DERIVED_HOOKS.has(h.name)).length).toBe(1)
   })
 
   it('a call ALWAYS runs the app hooks it was handed', async () => {
@@ -3361,6 +3367,53 @@ describe('csrf middleware', () => {
 // otherwise a legitimate preflight from an allowed origin would be blocked.
 
 import { cors } from '../index.ts'
+
+// ─── cors() reaches routes registered before it ───────────────────────────
+//
+// `cors()` patches the router's registration methods, so it reaches every route
+// registered AFTER it. Nothing said what happens to the ones registered before
+// — and every raw route a plugin mounts is one of those: `configure()` runs
+// `register()` synchronously, long before the `cors` START PHASE.
+//
+// SERVICE routes are registered in a later start phase, so they were fine. What
+// was not fine was `/auth/login`, caravan's `/jobs`, a webhook route and every
+// `app.post` an app writes at module scope — which made sign-in the one call in
+// a Junction app that no browser on another origin could make. It does not look
+// like a CORS problem from either end: the preflight answers 204, the POST
+// answers 200 and creates the session, and the browser throws the response away
+// with `Failed to fetch` (`FJS-496`).
+
+describe('cors() and registration order', () => {
+
+  it('adds the headers to a route registered BEFORE cors() was configured', async () => {
+    const app = await createTestApp({ services: [] })
+
+    // Registered first — the shape of every plugin's raw routes.
+    app.post('/sign-in', async () => ({ ok: true }))
+
+    app.configure(cors({ origins: ['https://shop.example'] }))
+
+    // …and one after, which always worked.
+    app.post('/later', async () => ({ ok: true }))
+
+    const before = await request(app)
+      .post('/sign-in').set('Origin', 'https://shop.example').send({})
+    const after = await request(app)
+      .post('/later').set('Origin', 'https://shop.example').send({})
+
+    expect(before.headers['access-control-allow-origin']).toBe('https://shop.example')
+    expect(after.headers['access-control-allow-origin']).toBe('https://shop.example')
+  })
+
+  it('and does not double-wrap the ones registered after it', async () => {
+    const app = await createTestApp({ services: [] })
+    let ran = 0
+    app.post('/counted', async () => { ran++; return { ok: true } })
+    app.configure(cors({ origins: '*' }))
+    await request(app).post('/counted').set('Origin', 'https://x.test').send({})
+    expect(ran).toBe(1)
+  })
+})
 
 describe('cors() + csrf() ordering', () => {
 

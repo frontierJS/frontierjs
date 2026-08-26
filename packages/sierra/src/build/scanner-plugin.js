@@ -29,6 +29,10 @@ export function scannerPlugin(config, sierraContext) {
 
   let root = process.cwd()
   let watcher = null
+  // `build` or `serve`. A static target is the SPA's config plus a prerender
+  // pass, so the same plugin runs in a client-routed dev server and in a build
+  // that emits files — and the two need different route tables.
+  let command = 'serve'
   // Last route table emitted. The dev watchers rescan on every route-file save,
   // but the vast majority of saves are body edits that leave the route tree
   // untouched — invalidating virtual:sierra and forcing a full reload for those
@@ -43,7 +47,11 @@ export function scannerPlugin(config, sierraContext) {
 
     // Write the route table to disk. generateRouteTable is a no-op when the
     // bytes are unchanged, so this does not touch the watcher on a body-only edit.
-    const code = await generateRouteTable(tree, resolve(root, tableOutput), root)
+    // A static BUILD drops the loader imports: `load()` has already run, in
+    // Node, and pulling the companions into the client graph publishes whatever
+    // they import — for a storefront, the app's own database client.
+    const omitLoaders = command === 'build' && (config.target ?? 'spa') === 'static'
+    const code = await generateRouteTable(tree, resolve(root, tableOutput), root, { omitLoaders })
     const tableChanged = _lastTable !== null && _lastTable !== code
     _lastTable = code
 
@@ -60,7 +68,7 @@ export function scannerPlugin(config, sierraContext) {
 
     // Build error: dynamic route with render:static but no getStaticPaths
     if (error) {
-      await checkStaticPaths(tree, root, error)
+      await checkStaticPaths(tree, root, error, warn)
     }
 
     return { tree, tableChanged }
@@ -70,7 +78,7 @@ export function scannerPlugin(config, sierraContext) {
    * Walk the tree and error on any dynamic route that has render:static
    * in its frontmatter but no getStaticPaths export in its companion.
    */
-  async function checkStaticPaths(tree, root, error) {
+  async function checkStaticPaths(tree, root, error, warn) {
     const nodes = flattenTree(tree)
     for (const node of nodes) {
       if (!node.meta?.dynamic) continue
@@ -85,21 +93,33 @@ export function scannerPlugin(config, sierraContext) {
         continue
       }
 
+      // Only the IMPORT is guarded. `error` is rollup's `this.error`, which
+      // throws — inside the try it was caught here and reported as a companion
+      // that would not import, so the refusal this check exists for was a
+      // warning on a green build.
+      let mod
       try {
         const { pathToFileURL } = await import('url')
-        const mod = await import(pathToFileURL(resolve(root, node.companion)).href)
-        if (typeof mod.getStaticPaths !== 'function') {
-          error(
-            `[Sierra] Dynamic route '${node.path}' has render:static but '${node.companion}' ` +
-            `does not export getStaticPaths().\n` +
-            `Add: export async function getStaticPaths() { return [{ slug: '...' }, ...] }`
+        mod = await import(pathToFileURL(resolve(root, node.companion)).href)
+      } catch (err) {
+        // Can't import companion — warn but don't hard error (may be a new file).
+        // The cause is in the message: without it this reads as the companion
+        // being absent, when it is usually the companion's own imports throwing.
+        if (warn) {
+          warn(
+            `[Sierra] Could not import companion '${node.companion}' to check getStaticPaths: ` +
+            `${err?.message ?? err}`
           )
         }
-      } catch {
-        // Can't import companion — warn but don't hard error (may be a new file)
-        if (warn) {
-          warn(`[Sierra] Could not import companion '${node.companion}' to check getStaticPaths.`)
-        }
+        continue
+      }
+
+      if (typeof mod.getStaticPaths !== 'function') {
+        error(
+          `[Sierra] Dynamic route '${node.path}' has render:static but '${node.companion}' ` +
+          `does not export getStaticPaths().\n` +
+          `Add: export async function getStaticPaths() { return [{ slug: '...' }, ...] }`
+        )
       }
     }
   }
@@ -110,10 +130,14 @@ export function scannerPlugin(config, sierraContext) {
 
     configResolved(viteConfig) {
       root = viteConfig.root ?? process.cwd()
+      command = viteConfig.command ?? 'serve'
     },
 
     async buildStart() {
-      const isBuild = this.environment?.mode !== 'serve'
+      // `command`, off configResolved — not `this.environment.mode`, which is
+      // `dev` in a dev server rather than `serve`, so a `!== 'serve'` test made
+      // every dev boot take the build branch (`FJS-473`).
+      const isBuild = command === 'build'
       // Only enforce getStaticPaths during production builds — not dev server
       const errorFn = isBuild ? (msg) => this.error(msg) : null
       await runScan(root, (msg) => this.warn(msg), errorFn)

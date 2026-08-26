@@ -33,9 +33,27 @@ import { generateMarkdownPages } from './markdown-pages.js'
  * @param {object} routeTable — parsed config/routes.js (tree, all, indexed, redirects)
  * @param {string} outDir   — absolute path to Vite's build output directory
  * @param {string} root     — absolute path to project root
+ * @param {string[]|null} [prerenderedUrls] — on a static target, the URLs the
+ *   prerenderer actually emitted. Null on an SPA.
  */
-export async function runPostBuild(config, routeTable, outDir, root) {
+export async function runPostBuild(config, routeTable, outDir, root, prerenderedUrls = null) {
   const results = []
+
+  // What this site's pages ARE, for the steps that have to enumerate them.
+  //
+  // `routeTable.indexed` is the right answer for an SPA and the wrong one for a
+  // static build: it drops every dynamic route, because an SPA cannot know
+  // which URLs `/products/:slug/` stands for. A static build does know — the
+  // pages are on disk, `getStaticPaths()` named them — so it hands over what it
+  // emitted. Before this, a prerendered storefront's sitemap listed four URLs
+  // for a thirteen-product catalogue and nothing said so (`FJS-502`).
+  //
+  // A prerendered page can still opt out: `indexed` has already dropped drafts
+  // and `robots: noindex`, so anything the route table excluded is excluded
+  // here too.
+  const indexed = prerenderedUrls?.length
+    ? prerenderedUrls.filter((u) => isIndexable(u, routeTable))
+    : (routeTable.indexed ?? [])
 
   // 1. 404 page
   const r404 = await move404(outDir)
@@ -51,7 +69,7 @@ export async function runPostBuild(config, routeTable, outDir, root) {
 
   // 4. sitemap.xml
   const siteUrl = config.siteUrl ?? ''
-  const rSitemap = await generateSitemap(routeTable.indexed ?? [], outDir, siteUrl)
+  const rSitemap = await generateSitemap(indexed, outDir, siteUrl)
   if (rSitemap) results.push(rSitemap)
 
   // 5. llms.txt (conditional)
@@ -76,7 +94,11 @@ export async function runPostBuild(config, routeTable, outDir, root) {
 
   // 7. Speculation Rules (conditional — when static routes exist)
   if (config.speculationRules !== false) {
-    const staticRoutes = (routeTable.indexed ?? []).filter(
+    // Same reason as the sitemap: on a static target the pages a dynamic route
+    // produced are real URLs and belong here. The `:`/`*` filter still applies
+    // — a prerendered URL is concrete by construction, so it removes nothing
+    // there, and on an SPA it is doing the work it always did (`FJS-502`).
+    const staticRoutes = indexed.filter(
       p => !p.includes(':') && !p.includes('*')
     )
     if (staticRoutes.length > 0) {
@@ -105,4 +127,35 @@ export async function runPostBuild(config, routeTable, outDir, root) {
   }
 
   return results
+}
+
+/**
+ * Is this emitted URL one the route table wanted indexed?
+ *
+ * A static page's URL is concrete (`/products/explorer-tee/`) while the entry
+ * it came from is a pattern (`/products/:slug/`), so a set lookup misses every
+ * page a dynamic route produced. `indexable` is the draft/noindex decision with
+ * the dynamic exclusion left off, which is the list to ask.
+ *
+ * A URL matching nothing is KEPT: it was prerendered, so it exists, and a
+ * pattern this cannot match is a gap in the matcher rather than a page somebody
+ * asked to hide.
+ */
+function isIndexable(url, routeTable) {
+  const ok = routeTable.indexable ?? routeTable.indexed ?? []
+  if (!ok.length) return true
+  if (ok.includes(url)) return true
+
+  const known = (routeTable.all ?? []).some((p) => p === url || matchesPattern(url, p))
+  if (!known) return true
+
+  return ok.some((p) => p.includes(':') && matchesPattern(url, p))
+}
+
+/** `/products/explorer-tee/` against `/products/:slug/`, segment by segment. */
+function matchesPattern(url, pattern) {
+  const u = url.split('/').filter(Boolean)
+  const p = pattern.split('/').filter(Boolean)
+  if (u.length !== p.length) return false
+  return p.every((seg, i) => seg.startsWith(':') || seg === u[i])
 }

@@ -104,7 +104,7 @@ describe('the primary key is what decides a race', () => {
     const row = {
       id: 'outbox-1', queue: 'default', name: 'send-email', data: '{}',
       status: 'pending', priority: 0, max_attempts: 3, retry_delay: null,
-      unique_key: null, run_at: Date.now(), created_at: Date.now(), actor_id: null,
+      unique_key: null, run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null,
     }
 
     stmts.insert.run(row)
@@ -127,7 +127,7 @@ describe('the primary key is what decides a race', () => {
       stmts.insert.run({
         id: 'outbox-2', queue: 'default', name: 'send-email', data: null,
         status: 'pending', priority: 0, max_attempts: 3, retry_delay: null,
-        unique_key: null, run_at: Date.now(), created_at: Date.now(), actor_id: null,
+        unique_key: null, run_at: Date.now(), created_at: Date.now(), actor_id: null, tenant_id: null,
       } as never)
     } catch (err) { raised = err }
 

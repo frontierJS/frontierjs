@@ -1,0 +1,127 @@
+<script>
+  // The popup — the shop's despatch queue, in the toolbar.
+  //
+  // It has NO connection of its own. `harbor` is the port to the service
+  // worker, supplied by jetty's auto-generated entry, and every service call
+  // and every pushed event travels over it. That is the whole shape of a jetty
+  // app: one socket, in the one context that outlives the surfaces.
+  //
+  // Everything below is `@frontierjs/jetty/resources`, which is jetty's own
+  // orchestrator and deliberately NOT a copy of Sierra's — Sierra calls
+  // `client.service(name)` and this calls `harbor.request('service:call')`.
+  import { createResource, login, logout, getConnectionState } from '@frontierjs/jetty/resources'
+
+  export let harbor = null
+
+  let session  = getConnectionState()
+  let orders   = []
+  let status   = harbor ? 'connecting' : 'no harbor'
+  let error    = ''
+  let email    = 'alex@shop.test'
+  let password = ''
+
+  // One resource, one channel. `createResource` subscribes to `orders` and the
+  // EVENT that arrives decides what happens to the store — `orders pay` from
+  // another tab is an upsert here, with nothing in this file polling.
+  const queue = createResource('orders')
+
+  // Filtered on the way out, and that is a workaround rather than a style.
+  // jetty's store upserts every record its channel delivers — an order this
+  // dock has just SHIPPED arrives back as `orders ship` and goes straight into
+  // the list it has left. Sierra's store asks `matchesQuery` and removes the
+  // row instead; jetty has no such half (`FJS-493`), so the screen makes the
+  // decision the store cannot.
+  queue.store.subscribe(rows =>
+    { orders = (rows ?? []).filter(o => o.status === 'paid') })
+
+  // Paid and not yet shipped: what a person standing at the bench is for.
+  const load = () => guard(() => queue.load({ status: 'paid' }, { orderBy: 'createdAt' }))
+
+  async function guard(fn) {
+    try { error = ''; return await fn() }
+    catch (e) { error = e?.message ?? String(e) }
+  }
+
+  if (harbor) {
+    harbor.on('session', p => {
+      session = { authenticated: p?.authenticated, user: p?.user }
+      status  = p?.authenticated ? 'signed in' : 'signed out'
+      if (p?.authenticated) load()
+    })
+    harbor.onDisconnect(() => status = 'harbor gone')
+  }
+
+  const signIn  = () => guard(async () => { await login({ email, password }); })
+  const signOut = () => guard(async () => { await logout(); orders = [] })
+
+  // `ship` is a TRANSITION, declared in db/schema.lite and named by the orders
+  // service. Not a PATCH of `status`: the machine narrows the UPDATE with the
+  // state it expects, so two people shipping the same order produce one winner
+  // and one 409 rather than two silent successes.
+  const ship = row => guard(() => queue.service.call('ship', row.id, null))
+
+  const money = pennies => `£${(pennies / 100).toFixed(2)}`
+</script>
+
+<div class="dock">
+  <header>
+    <strong>Shop Desk</strong>
+    <span class="status" data-status>{status}</span>
+  </header>
+
+  {#if session?.authenticated}
+    <div class="who">
+      <span data-who>{session.user?.email ?? 'signed in'}</span>
+      <button onclick={signOut}>Sign out</button>
+    </div>
+
+    <div class="bar">
+      <span>Awaiting despatch</span>
+      <span class="count" data-count>{orders.length}</span>
+      <button onclick={load} data-refresh>Refresh</button>
+    </div>
+
+    <ul class="orders" data-orders>
+      {#each orders as row (row.id)}
+        <li data-order={row.id}>
+          <span class="ref">#{row.id}</span>
+          <span class="total">{money(row.total)}</span>
+          <button onclick={() => ship(row)} data-ship={row.id}>Ship</button>
+        </li>
+      {:else}
+        <li class="empty">Nothing waiting.</li>
+      {/each}
+    </ul>
+  {:else}
+    <div class="signin">
+      <input bind:value={email} placeholder="email" data-email />
+      <input bind:value={password} type="password" placeholder="password" data-password />
+      <button onclick={signIn} data-signin>Sign in</button>
+    </div>
+  {/if}
+
+  {#if error}
+    <p class="error" data-error>{error}</p>
+  {/if}
+</div>
+
+<style>
+  .dock    { font: 13px system-ui, sans-serif; padding: 12px; width: 320px; }
+  header   { display: flex; justify-content: space-between; align-items: baseline;
+             padding-bottom: 8px; border-bottom: 1px solid #e3e3e3; margin-bottom: 10px; }
+  .status  { font-size: 11px; color: #666; }
+  .who     { display: flex; justify-content: space-between; align-items: center;
+             margin-bottom: 10px; font-size: 12px; }
+  .bar     { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .bar span:first-child { flex: 1; font-weight: 600; }
+  .count   { background: #eee; border-radius: 10px; padding: 1px 8px; }
+  .orders  { list-style: none; margin: 0; padding: 0; border: 1px solid #e3e3e3;
+             border-radius: 4px; max-height: 220px; overflow-y: auto; }
+  .orders li { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+               border-bottom: 1px solid #f0f0f0; }
+  .ref     { font-variant-numeric: tabular-nums; }
+  .total   { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
+  .empty   { color: #999; justify-content: center; }
+  .signin  { display: grid; gap: 6px; }
+  .error   { color: #b3261e; margin: 8px 0 0; }
+</style>

@@ -87,7 +87,8 @@
     "build:lib": "bun scripts/build-lib.js",
     "build:lib:testing": "bun scripts/build-lib.js --with-testing",
     "typecheck": "node ../../scripts/typecheck.mjs",
-    "verify:studio": "node test/verify-studio-access.mjs"
+    "verify:studio": "node test/verify-studio-access.mjs && node test/verify-studio-explore.mjs",
+    "verify:studio:explore": "node test/verify-studio-explore.mjs"
   },
   "types": "./src/index.d.ts",
   "dependencies": {

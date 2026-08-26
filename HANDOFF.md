@@ -1,10 +1,57 @@
-# Handoff — 2026-08-19
+# Handoff — 2026-08-24
 
-> **Basecamp declares `@@gate` on all 38 models**, and 16 of them keep their
-> tenancy in the schema too. The gate ladder is per WORKSPACE, not per user,
-> which is why `example/api/gate.ts` could not be copied; the policy is graded
-> off the same principal. Every screen whose blocker was an API is built —
-> `packages/basecamp/docs/SCREENS.md` is the map, 41 mock screens, **31 built**.
+> **Mesa now has four prefixes and each one is a different KIND of name.** `$`
+> is the door, `$:` is the label, `$$` is the compiler's own locals, and `__` is
+> the CALLING CONVENTION — `__anchor`/`__props`/`__block` are a component
+> function's parameters, read by name out of compiled output by jetty's build
+> plugin, which is why they do not converge on `$$` (`FJS-D137`). Five door
+> members keep a canonical BARE spelling (`FJS-D135`), element `bind:` is form
+> values only (`FJS-D136`), and `$main` is gone.
+
+> **A cleanup pass over the register: six items, five of them already filed and
+> the sixth found by reading a header.** No new features. The one worth knowing
+> about is `FJS-441` — a taken `@unique` value reached the browser as a **500**
+> carrying `UNIQUE constraint failed: product_variant.sku`, and it is a 409 with
+> the field on it now, measured through `example`'s own API before and after.
+> The others: the language server counted a DECLARED warning as a parse failure
+> and was CI's only standing red (`FJS-461`); `fli list | head` died printing 980
+> bytes of stack (`FJS-379`); an SPA route's `title:` never reached the tab while
+> the static target had always written one (`FJS-389`); `AUTH_SECRET` was
+> generated, declared and required across four packages with **no reader
+> anywhere** and is gone rather than wired (`FJS-360`); and junction's webhook
+> delivery signed `${timestamp}.${body}`, binding neither method nor path, now on
+> `@frontierjs/toolbelt/signature`'s canonical string (`FJS-472`).
+
+> **The shop takes money, and the framework's oldest live-update seam turned out
+> never to have run.** `example` grew a payment provider: a conduit target with
+> `auth: { type: 'hmac' }` that the provider VERIFIES, and a signed webhook
+> against a raw route that drives the order state machine with no session
+> anywhere. `verify:pay` is 16 assertions. Building it found that
+> `announceDataWrites` — the seam that puts a write nothing routed onto an open
+> tab — has never announced anything in any app, plus two more beside it.
+
+> **And then one of its buttons moved onto somebody else's page.** `widgets/` is
+> a third surface beside `api/` and `web/`; the buy button on it reads the shop
+> cross-origin (so CORS and a real preflight, which nothing here needed before)
+> and hands its basket to the shop's own site as a **one-time code in the URL
+> fragment**, never the token. `verify:widget` is 36 assertions over four
+> origins. It found three framework defects, two of them in the router.
+
+> **The example shop grew a warehouse.** `ProductVariant.stock` is now ON HAND
+> and a basket takes a HOLD with a clock on it, so AVAILABLE — on hand less the
+> unexpired holds — is a number no column carries. `api/inventory.ts` is its one
+> owner and pairs every write to `stock` with an append-only
+> `InventoryMovement`. `verify:stock` is 41 assertions. It found one gate that
+> had been wrong since the basket was written, and two things about the drives
+> themselves.
+
+> **Tenancy is declared, and basecamp is the first app on it.** One
+> `tenancy { strategy row }` block replaced sixteen hand-written `@@allow` lines
+> and the app-side machinery behind them; `createApp({ principal })` is the seam
+> that puts the claim and the standing on the principal
+> (`FJS-D113`/`FJS-374`). Adoption found **five defects, four inside the tenancy
+> feature itself** — the first thing to know is that this feature had never been
+> used by anything until 2026-08-21.
 
 Session state for picking up cold. Read `CLAUDE.md` first (the map), then this.
 
@@ -12,6 +59,492 @@ Everything below was verified by running it, not by reading. Where I could not
 verify something, it says so.
 
 **Sessions are recorded here, newest first.**
+
+---
+
+## Four prefixes, and the one that could not converge (2026-08-24)
+
+**Where it stands.** `$` is the door and it is legal only as the object of a
+member expression — `$.onMount`, `$.emit`, `$.tick`. Five members are the
+exception and their BARE spelling is the canonical one: `$props`,
+`$attributes`, `$slots`, `$context`, `$async` (`FJS-D135`). They are read as a
+bag and a key rather than called, and `{...$attributes}` is 81 of this repo's 82
+uses of that member — it sits in markup, where `$.` is JavaScript punctuation in
+the middle of HTML. Both spellings are one binding aliased at emit; the bare
+names stay RESERVED, so declaring one at script top is refused rather than
+shadowing it.
+
+**`__` is a fourth tier, not an unfinished migration** (`FJS-D137`). The
+framing that kept it looking unfinishable was *converge everything on `$$`*, and
+it cannot happen: `packages/jetty/src/build/mesa-plugin.js` matches
+`__anchor`, `__props` and `__block` BY NAME in mesa's compiled output to inject
+its HMR registration. That is `FJS-D134`'s class — a name that crosses a package
+boundary as text is protocol, and protocol is frozen. `__` also holds three
+different kinds of thing and only one is touchable: the four parameters, runtime
+*properties* (`$$runtime.__dev`, which no local can shadow), and generated
+locals. All four parameters are reserved now, so declaring one is refused rather
+than shadowing a parameter and failing at mount.
+
+**Two names correctly wear a single `$`.** `$class`, the prop `{class}` travels
+under, and `$dom`, the key a block factory answers with. Both are read from
+outside the compiler, so `FJS-470`'s "no single-`$` name in output" now reads
+with its exception declared instead of as an oversight.
+
+**Element `bind:` is form values and nothing else** (`FJS-D136`). `value`,
+`checked`, `files`, plus `group` and `this` on their own paths; every other
+`bind:x` on an element is refused, naming `x={expr}`. The argument is that there
+was never a second direction — nothing but you changes `readonly` or `colspan` —
+and for the eight attributes whose DOM property is spelled differently
+(`for`/`htmlFor`, `class`/`className`, `readonly`/`readOnly`, …) there was no
+FIRST direction either: `bindInput`'s generic branch is `el[name] = v`, which
+writes a JS expando the DOM never reads. `bind:class` was the measured one
+(`FJS-478`), and `compiler.test.js` held a test PINNING it — asserting
+`bindInput` was emitted. On a COMPONENT `bind:x` is an ordinary two-way prop and
+is untouched, which is every non-form `bind:` in this repo.
+
+**`$main` is removed.** It was a runtime resolver (`makeClassResolver`) with no
+author-facing spelling and no reader in any `.mesa` file here. Styling a child's
+parts from a parent is a real occasional need and is now a design record rather
+than a half-mechanism — `IDEAS/child-part-styling.md`, `overview.md` 5.23.
+
+### What it cost to find
+
+**Two defects, both filed and fixed.** `$.mounted`'s one-per-component gate was
+a REGEX over script text (`FJS-477`) — it is an AST walk now — and
+`$.context.use` / `.provide` emitted an undeclared `$context`, so the compiled
+module threw at mount.
+
+**A brace-depth template scanner, because prose is not code.** My first refusal
+pass rejected a REPL example whose markup contains the sentence "It provides
+`$.context.count`". `templateExpressions()` walks `{ … }` regions and is now
+what both the compiled-door refusal and `refuseBareBuiltins` read, which closed
+the same latent trap in the second one.
+
+**The recurring shape, hit five times in one session: a hand-kept copy drifts
+from the enforced list.** VISION's §17 member table against `DOOR_MEMBERS`; the
+CLI generators emitting `.mesa` as strings; RULE 31a missing from the rules
+index; `FJS-470` never having swept the docs; and jetty's regex against mesa's
+output. Every fix READS the authoritative list instead of restating it —
+`generated-mesa.test.js` computes `DOOR_MEMBERS` minus `SUGAR_MEMBERS` out of
+the compiler source, and a new VISION rules-index drift test found **eleven more
+unindexed rules** (43–53) on its first run.
+
+**jetty's plugin now fails loudly.** It threw nothing when its regex stopped
+matching — it just emitted a module with no HMR registration, and the symptom
+was hot updates silently not applying. It throws by name now, and
+`packages/jetty/test/phase9.test.js` (7 tests) drives `injectJettyHMR` with real
+compiler output rather than a fixture string.
+
+**`fli check`'s `test-files-run` was widened wrong first.** Requiring only "no
+runner" broke a deliberate case — a harness beside the tests is support code.
+The real signal is that support code is IMPORTED, so the rule now requires no
+runner AND no importer. It found two dead harnesses in jetty that import
+`/home/claude/repo/...`; they are in `packages/jetty/docs/dead/` with a README.
+
+**Verified, not assumed.** `example` 31/31 and `packages/basecamp` 76/76 `.mesa`
+compile under the new compiler; zero residual door spellings in either; all
+`bind:` usage in both is form values or component props. `fli check` clean on
+both (23 and 20 rules). Full suite green — mesa 1293 + 82 + 47, sierra 1093, ui
+857, jetty 11 phases, cli 848 + 31, typecheck 0.
+
+**Left open.** `packages/basecamp/db/access.snapshot.md` is stale against its
+source and is NOT from this work — a concurrent session was editing basecamp's
+schema, and regenerating it would bury their change. Four packages sit at a
+local version equal to the published one with substantially different trees
+(mesa 0.1.3, sierra 0.1.3, ui 0.1.2, jetty 0.0.3); they ship as 0.1.x patches.
+The CLI's `.mesa` templates are still emitted as strings, deliberately, for now.
+
+---
+
+## Money, and a live-update seam that had never run (2026-08-23)
+
+**Where it stands.** `example` has a payment provider. A shopper's order is paid
+by a machine now, not by a seller pressing a button: `payments.start` asks the
+provider for an intent over conduit, the shopper confirms at the provider, and
+the provider POSTs a **signed webhook** back, which is what moves the order
+`pending -> paid`. `bun run verify:pay` is 16 assertions and it is repeatable —
+run twice, back to back, from a database it has already written to.
+
+**The two directions are two credentials and that is the point.** The shop signs
+outbound with `SHOP_PSP_KEY`; the provider signs its webhooks with
+`SHOP_PSP_WEBHOOK_SECRET`. Sharing one would mean that leaking the key used to
+spend money also lets anybody forge an event saying money arrived. Both sides run
+`@frontierjs/toolbelt/signature` and neither has an implementation of its own —
+and `api/src/core/psp-sink.ts`, the dev provider on **8112**, actually REFUSES an
+unsigned call. That is the whole reason it is a separate listener: a signer with
+no verifier reads as a scheme being enforced while enforcing nothing, which is
+`FJS-349`, and an in-process fake would have proved the payload gets built and
+nothing else.
+
+**Four refusals, four lifetimes, four assertions.** A forged signature, a body
+swapped under a real signature, a clock outside the five-minute window, and a
+replayed nonce all end in "nothing happened twice", and which one did it matters
+enormously. The fifth is a redelivered EVENT, which is the ledger's job:
+`model PaymentEvent` is append-only with a `@unique` event id. The nonce store is
+in memory and per-process on purpose — it guards a SIGNATURE inside its freshness
+window, where the ledger guards the EFFECT for all time — and the file says so,
+because "the nonce set is per-process" reads like a defect until you ask what it
+is guarding.
+
+**The claim and the effect are one transaction, and that is load-bearing.** The
+obvious arrangement — claim the event id, commit, then do the work — has a hole a
+crash fits through exactly: the event is claimed, the order is still pending, and
+the provider's retry is deduped away by the very row that recorded nothing
+happening. `transactional: ['record']` closes it.
+
+**`api/src/core/settle.ts` is the one owner of "this order has been paid for".**
+Two callers reach it — a seller pressing Mark paid, and a webhook at four in the
+morning — and it takes no client, no context and no transaction: it reads `$`,
+junction's ambient service call, so it inherits the caller's transaction, client
+and audit actor. It is the shape `$` exists for, and it is what let the webhook
+path avoid a nested transactional service call.
+
+### What building it found
+
+**`announceDataWrites` has never announced anything, in any app** (`FJS-464`).
+The tap that puts a write nothing routed onto an open tab — `FJS-010`, and
+`FJS-307` on top of it — finds the service for a model through one index, and
+that index was keyed by the SERVICE name while the lookup used the MODEL name.
+Every service in every app is named in the plural (Invariant 2), so it missed for
+all of them. Measured by printing the index on `example`: fourteen services,
+fourteen plural keys, zero hits.
+
+**The unit tests could not see it because all of them declare `model: 'Order'` by
+hand**, which is the one shape no real service file has. Three new cases cover
+what an autoloaded file actually writes.
+
+**`createBaseService` was dropping four of the options it accepts** (`FJS-462`) —
+which is why `svc.model` held the wrong thing. The loader spreads what a factory
+returns into `createService`, so a key that object does not carry was never
+declared. `idField` and `softDelete` are the quiet ones: both reach `_meta`,
+which the devtools and manifest plugins read, so they were REPORTED correctly and
+ENFORCED as undefined. `db` is still deliberately not carried — it is a function,
+and no config key may land on that object as a callable own key.
+
+**A transition made outside its own service announced nothing, and fixing it made
+it announce twice** (`FJS-463`). The tap mapped create/update/remove and let
+`transition` fall through, so the seller's tab stayed on `pending` with a 200. It
+announces under the move's name now (`orders pay`) — the same event
+`callService` announces for that move through the owning service. The second half
+is that `update()` fires BOTH event kinds for one write, so the first fix
+broadcast twice; litestone stamps the update with the move's name, and only when
+the transition event is really coming, since `asSystem()` suppresses it.
+
+### Traps worth carrying forward
+
+- **A drive against an append-only table cannot use fixed ids.** `verify:pay`
+  hand-signs six events, and with literal ids the second run of the drive read
+  every one of them as a redelivery — the ledger doing exactly its job. Every id
+  is stamped with a per-run token now.
+- **`bun run reset` does not clear `db/jobs.db`**, so an absolute count of
+  `announce-payment` rows for order 4 includes whichever order held id 4 last
+  time. Counted as a delta, like `verify-jobs` already does.
+- **Ids collide with the other session.** 457–461 were taken while I was writing;
+  mine moved to 462–464. Check `ISSUES.md` immediately before writing a row, not
+  when you start the work.
+
+**Verified.** junction 1392, litestone 2946, sierra 1079, cli, mesa — all 0 fail.
+All thirteen `example` drives green (331 assertions), `verify:pay` twice.
+`node scripts/ci.mjs --fast` passes.
+
+---
+
+## A buy button on a page the shop does not own (2026-08-23)
+
+Feature #4 of the five turning `example/` into a shop. Three framework packages
+changed — sierra twice, the cli once — and each change was found by the example.
+
+**The surface.** `fli make:widget BuyButton --prefix fjs-` scaffolds
+`widgets/` at the app root: its own Vite root, its own host pages under `test/`,
+its own `deploy/`. One `.mesa` in `src/Embeds/` becomes one self-contained IIFE
+with its runtime and CSS inside it, mounted in a shadow root by a custom
+element. A host page writes one tag and one deferred script — no bundler, no
+init call.
+
+**Three things are true here and nowhere else in this app.**
+
+1. **CORS is real.** The SPA is served by Vite, which proxies `/api`, so every
+   call it makes is same-origin and no preflight has ever happened in this
+   repo's own drives. A widget is a guest. `origins: ['*']` is the right answer
+   and the comment in `api/app.ts` says why at length, because it reads like a
+   mistake: CORS stops a page READING a response the BROWSER attached
+   credentials to, and this app attaches none — no cookie session, and a Bearer
+   token is put on a request by code that already holds it. The two things that
+   would make it wrong are both absent and both named there.
+2. **One call, not three.** `product-variants.embed` answers the product, the
+   price, the photograph and what may be SOLD in one request, addressed by the
+   SKU a merchant pastes. An embed's budget is round trips on a page it does not
+   own.
+3. **The basket cannot be shared, so it is handed over.** `localStorage` is per
+   origin. Sending the shopper to checkout is handing a capability ACROSS an
+   origin, and the token must not travel — a URL goes into history, into
+   `Referer`, into every log on the way, and this one is good for the life of
+   the basket. `carts.handoff` mints a **one-time code**, the link carries it in
+   the **fragment** (never sent to a server), and `carts.redeem` exchanges it
+   and clears it in the transaction that read it. Worth one basket, two minutes,
+   once.
+
+**Three framework defects, and the router pair is the one to know about.**
+
+- **`FJS-447` — the boot navigation dropped the URL fragment.** `initRouter`
+  booted with `pathname + search` and `_navigate` rewrote the address bar with
+  `replace: true`, so the fragment was ERASED on every direct load and every
+  refresh. `/docs/#install` became `/docs/`, did not scroll, and left the reader
+  with a URL that no longer says where they were. Clicking the same link inside
+  the app carried it — so it failed only for the person who pasted one, which is
+  the person a deep link is for. `scrollRestoration = 'manual'` is what makes it
+  total: the router had taken the browser's own handling away and then did not
+  do it.
+- **`FJS-446` — a URL with a query AND a fragment wrote the fragment twice.**
+  `_navigate` split the whole URL on `?`, so the fragment landed inside `search`
+  and `page.query.status` came out as `open#top`. Unreachable while the boot
+  path dropped the hash; found the moment it stopped.
+- **`FJS-448` — a minified widget lost every stylesheet it imported.**
+  `widgetCssPlugin` deletes Vite's `style.css` asset and swaps its text in at a
+  placeholder. `generateBundle` runs after minification and the matcher knew `"`
+  and `'`; esbuild writes **backticks**. The asset is deleted whether or not the
+  swap lands, so the widget carried the literal `@sierra-widget-css` into its
+  shadow root as its stylesheet. A widget's own scoped `<style>` was unaffected
+  (Mesa's runtime is shadow-aware), so it looked styled. It survived because the
+  fixture builds with `minify: false` — for a good reason — leaving the one
+  working case as the only one under test. The swap is asserted now: not finding
+  the placeholder throws rather than shipping.
+- **`FJS-445` — `fli make:widget` wrote project 0's ports into every app.**
+  8200/8300 in four generated files. `ports.js` is explicit that the numbers are
+  derived; `strictPort` turns the collision into a refusal, so it surfaces as a
+  second widget server that will not start naming a port nobody chose.
+
+**And one in the example, worth the same attention.** `carts.redeem` built the
+basket it hands over through the CALLER's client, like every other method there
+— and the caller redeeming a code holds no claim yet, because the claim rides a
+header on the NEXT request. So `@@allow('read', token == auth().cartToken)`
+filtered every line out and the shopper landed on the shop's own site looking at
+an empty basket with a 200. It is the one call in that service where reading as
+the shop is correct, because the code IS the proof.
+
+**Where it stands.** All eleven example drives green, `verify:widget` 36/36.
+sierra 1056 tests + 25 widget-browser assertions + 5 safety. `bun run ci:fast`
+green.
+
+**Next**: #5, a payment provider and a signed inbound webhook.
+
+---
+
+## Inventory, reservations, and a shelf that is not a column (2026-08-23)
+
+Feature #3 of the five that are turning `example/` into a shop. Everything here
+is in `example/`; **no framework package changed**.
+
+**The shape.** Three numbers, one of them a column:
+
+```
+ON HAND    ProductVariant.stock      what the warehouse could pick now
+HELD       Σ StockReservation        set aside for a basket, with an expiry
+AVAILABLE  on hand − held            what may be sold, computed every read
+```
+
+The two obvious designs are both wrong and in opposite directions.
+Decrementing `stock` on add is unrecoverable — the thing that would put it back
+is a person who has closed the tab. Leaving it until checkout oversells the last
+one to two shoppers, and the second finds out at the till. A hold is the third
+answer: a row with a clock on it, so nothing has to come back and undo it.
+
+**Three things that break silently, and are what `verify:stock` is for.**
+
+1. **A hold is a row about the SHELF, not a column on the line.** `CartLine`
+   already carries a variant and a quantity, so `heldUntil` there was three
+   characters of schema — and wrong, because the line is scoped by the shopper's
+   own token. Summing holds from their client answers a sum over their own
+   basket: always plausible, usually zero, never the number asked for. It is
+   Invariant 6's failure mode exactly — a wrong policy is an empty screen.
+2. **A shopper's own hold must not count against them.** Holding 2 of the last
+   5 and raising the line to 3 is legal, and the naive sum refuses it — which
+   looks exactly like a stock shortage and is not one. `levelsFor(client, ids,
+   { exceptCartId })` is the whole of it.
+3. **The expiry is in the READ.** Every availability sum filters
+   `expiresAt > now`, so a hold is dead the instant it passes.
+   `api/jobs/release-holds.job.ts` deletes the rows and is HOUSEKEEPING: the
+   queue can be down for a week and every price and every button is still right.
+   A sweep that "releases" stock by putting a number back means a queue outage
+   quietly stops the shop selling, and it looks identical from outside until the
+   day it happens.
+
+**The ledger is `@@gate("5.5.9.9")` and every digit is load-bearing.** Read 5;
+create 5, so `inventory.receive` writes the movement through the CALLER's own
+client and the Data boundary is what grades them — there is no level check
+anywhere in `inventory.service.ts`; update and delete **9**, which nothing
+passes including `asSystem()`. That is what append-only is spelled with. The one
+movement written any other way is `sold`, which a shopper at level 0 causes and
+the shop records for itself through `asSystem()` — the asymmetry is the whole
+authorisation story for stock and it is two sentences long.
+
+**`asSystem()` where it is genuinely needed, and said out loud.**
+`product-variants.availability` is a public method that sums a table a stranger
+may not read. The number is public — it is what the shop is telling people it
+can sell — and the rows are not; what crosses the wire is `{ variantId,
+available }` and never a cartId or somebody else's quantity. The same reasoning
+is why holds do **not** travel on a channel: a broadcast does not re-check the
+gate, so publishing them would hand every open browser the rows the Data
+boundary refuses it. The cost is that another shopper's hold does not move your
+buy box live; the server refuses regardless and says which of *sold out* and *in
+other baskets right now* it is.
+
+**Three things found.**
+
+- **A guest could not remove a line from their own basket.** `CartLine` was
+  `@@gate("0.0.0.5")` — delete at 5 — with `@@allow('delete', token ==
+  auth().cartToken)` written underneath it saying what was meant. So
+  `removeLine` and `setQuantity(0)` answered 403 to every shopper in the shop
+  for as long as the basket had existed. Nothing noticed because the two drives
+  that fill a basket only ever added to it. Now `"0.0.0.0"`.
+- **Two self-hosting drives could not run in a row.** They start `npx vite`,
+  which is a launcher: SIGTERM killed the launcher and left vite on 8010, so the
+  next drive refused the port and reported *a dev server from an earlier run* —
+  true, and nothing said which run. `detached: true` and signalling the process
+  GROUP, in all three.
+- **`preview.mjs` re-labelled decoded bytes as gzip.** It forwarded
+  `accept-encoding`, junction compressed past a threshold, `arrayBuffer()`
+  handed back decoded bytes, and the proxy answered with the upstream's
+  `content-encoding: gzip`. `ERR_CONTENT_DECODING_FAILED`, for whichever
+  response happened to cross the threshold — so it surfaced as `verify:build`
+  failing at sign-in with *Failed to fetch*, reading as a regression in whatever
+  grew a payload last.
+
+**`FJS-424` was hit again** on the same page, and the second occurrence narrows
+it: `rows.find(v => availOf(v) > 0)` throws while
+`variants().reduce((n, v) => n + availOf(v), 0)` in the same file and the same
+edit does not. `find` and `reduce` are not equivalent here, which is a sharper
+lead than *nested callback* and is the first thing to try in a fixture.
+
+**`FJS-444` filed**: `litestone access --from` answered *no change to who may do
+what* for a branch that added seven gated models, because a model with no
+counterpart at the base ref contributes no findings. Defensible by the axis's
+own definition and wrong for the reader — `release --from` grades a new model as
+an expand and says so, so the two commands disagree about whether a new table is
+worth a line.
+
+**Where it stands.** `bun run ci:fast` green in 73s; 21 snapshots current;
+registers agree. All ten example drives green against one database:
+`verify` 38, `verify:build` 38, `verify:ui` 31, `verify:values` 14,
+`verify:live` 14, `verify:jobs` 10, `verify:notify` 9, `verify:public` 22,
+`verify:catalogue` 20, `verify:cart` 27, `verify:stock` 41.
+
+**Next**, from the five approved for the shop: #4 a `widgets/` surface with a
+buy-button embed, #5 a payment provider with a signed inbound webhook.
+
+---
+
+## Tenancy stopped being written out (2026-08-22)
+
+`FJS-D113` ruled that a tenant claim and a per-request standing are the same
+thing — claims on the principal — and that resolving them is an API-realm
+question with one seam. `FJS-374` was the work. Both are closed.
+
+**What junction gained.** `createApp({ principal })` takes a resolver that runs
+once per service call and merges its answer onto a fresh principal, composed
+INSIDE `withLitestoneDb`/`withTenantDb`. That ordering is the whole thing and it
+is the one an app cannot arrange for itself: `getTable()` re-derives its own
+scoped client from `ctx.auth.user`, so a standing that lives only on
+`ctx.locals.db` is dropped the moment a service touches a model. Two refusals
+are built in — a resolver may not set `userId`/`id` (a claim says what a caller
+HOLDS, not who they are) and it does not run for an anonymous caller (minting a
+principal out of claims turns *nobody* into *someone*, an object satisfying
+`auth() != null` while carrying no identity).
+
+`membershipClaim()` ships the shape almost every B2B app has, and its whole
+safety is one line: **no row is no claim**. The hand-written version that
+forgets the membership check emits the claim anyway and every read answers 200
+over somebody else's rows. Its tests run against a real Litestone client because
+that failure looks exactly like success to a stub.
+
+**What basecamp lost.** `applyStanding`, `withWorkspaceStanding`, sixteen
+`@@allow` lines, the workspace clause inside `findScoped`/`getScoped`, and seven
+copies of `data.workspaceId = ws()` — the declaration desugars a
+`@default(auth().workspaceId)` that fills the column at the Data boundary, which
+was probed rather than assumed. `stampWorkspace` is `deriveSlug` now.
+**17 models with row policies became 31**: the fourteen carrying no `workspaceId`
+of their own had nothing to hand-write and were relying on a parent, and they
+say `@@tenant(via: parent)` now. Eight say `@@tenant(none)` by name.
+
+**The five defects, and why none was findable from inside the package that
+owned it.**
+
+- `FJS-378` — **a caller could move their own row OUT of their tenant.** The
+  generated denies asked *may you touch this row* and never *may the row end up
+  there*. The hand-written `@@allow('all', …)` never had the hole, because `all`
+  expands to `post-update` for free. Found when basecamp's own tests started
+  failing on the framework version of a rule they had passed for months.
+- `FJS-382` — **a delegated child whose parent is optional was invisible to
+  every scoped read.** Two implementations of `check(parent)` disagreed about a
+  null foreign key: `evalCheck` true, `compileSql` a bare `EXISTS`, false. Four
+  dashboard widgets went empty with a 200 and nothing said, and
+  `verifyRowPolicies` skips `check()` by name so it could not see it.
+- `FJS-381` — **`verifyFieldProtection` reported every field on a scoped model
+  as unchecked.** Its seeder satisfies *allow* rules; tenancy generates a *deny*.
+  A green run over an assertion that never executed.
+- `FJS-383` — **`tenantClaimGuard` answered 401**, so a member of workspace A
+  following a link into B was not refused, they were logged out of A. Every
+  client treats 401 as a dead token. 403 in every branch now.
+- `FJS-380` — **still open.** `litestone access --from` grades the allow→deny
+  inversion as WIDENS (16 widen · 30 narrow), so `--strict` would fail the
+  safest refactor the feature has. The `access` CI phase only prints, so nothing
+  is blocked today.
+
+**A late one, caught by a peer session and worth reading as a lesson.** The
+first cut of the guard collapsed *named no tenant* and *named one, not a member*
+into one empty answer — so a caller who named nothing was told they do not
+belong to "the workspaceId this request names", naming nothing. The status was
+wrong too: basecamp's own hook had answered **400** with the header and the
+query param spelled out, and the guard buried it under a 403. Three branches
+now, and `membershipClaim({ namedBy })` carries the app's actionable sentence
+into the framework's refusal, because `tenantFrom` is the only thing that knows
+where a tenant is named.
+
+**Verified:** basecamp 132 pass · `verify` 301/301 · junction 1287 pass ·
+litestone 2380 pass · typecheck clean workspace-wide · 19 snapshots current ·
+registers clean. `ci:fast` has one standing ✗ — `--source npm: fli deploy:local`
+— which fails because this shell's `/tmp` is private to it and prints exactly
+that. Environmental.
+
+**What the Laravel comparison bought.** Reading Crowd Favorite's Orthicon
+architecture (same shape: row tenancy, one database, a scope injected into every
+query) against ours produced three rows. We are ahead where data leaks — their
+`TenantScope` is applied per model by a human, ours is exhaustive with named
+exemptions, and an Eloquent global scope filters reads without stopping a row
+LEAVING, which is `FJS-378` in their design too. They are ahead on everything
+that makes it a product:
+
+- `FJS-386` (S2) — the cache is not tenant-aware, so under `strategy row` the
+  first caller to warm an entry decides what every other tenant reads. **Not
+  measured** — the next action is a two-caller probe, not a fix.
+- `FJS-385` — no per-tenant configuration. A tenant can differ in its rows and
+  in nothing else: bucket, timezone, locale, mail from-address all resolved once
+  at boot.
+- `FJS-384` — background work has no tenant, so jobs reach for `asSystem()` to
+  do ordinary work, dropping the gate, the row policies and the audit actor
+  together. Measured: all four of basecamp's job files. `FJS-D113` ruled the
+  resolver does not run there and the reasoning holds; the consequence was not
+  weighed. Wants a ruling before code.
+
+### Pick up here
+
+1. **Give `example` declared tenancy.** The feature is proven on exactly one app
+   and the first adoption found five defects; a second independent one is the
+   cheapest bug-finder available. `example` is also the app a reader copies, and
+   its paved road is still hand-written.
+2. **Split basecamp's `core/`.** The question that started this whole thread.
+   Two-thirds of what made it a grab-bag was framework gap and is now gone, but
+   `hooks.ts` is still 607 lines and `app.ts` 539 — the folder is smaller, not
+   yet named. Worth doing AFTER `example`, which will say which of the remaining
+   helpers is really app-specific.
+3. **`FJS-380`**, so `fli test:access --strict` is usable by the branch most
+   likely to trip it.
+
+Smaller and unstarted: `FJS-368` wants a ruling (litestone no-op vs junction
+drop for a version-only patch); forty-two `workspaceId: ws()` clauses survive
+inside basecamp service methods, each redundant against the declaration but each
+needing its accessor checked against the eight exempt models first; the
+conformance checker (an L1 lexical vocabulary rule) was offered and never filed.
 
 ---
 

@@ -1,0 +1,200 @@
+<script>
+  // JsonInput.mesa
+  // The control for a column the schema describes as `Json` and no further.
+  //
+  // Sierra's table answered `control: null` for an object or an array, so a
+  // `Json` column was warned about by name and left off every generated form —
+  // the column existed, the API accepted it, and there was no way to edit it in
+  // an app that had not written a control of its own.
+  //
+  // ── What it edits, and why that is text ──────────────────────────────
+  //
+  // A document with no schema has no field list, so there is nothing to
+  // generate a row of controls from: the only complete editor for *any* JSON
+  // value is the value's own syntax. A structured tree is a better editor for
+  // the shapes it covers and a worse one for everything else, and the shapes it
+  // does not cover — a mixed array, a deep nesting — are exactly the ones an
+  // app reaches for a `Json` column to hold.
+  //
+  // ── The buffer ───────────────────────────────────────────────────────
+  //
+  // Text is held here and the DOCUMENT is written out, and the two are
+  // deliberately not the same thing: `{"a":` is a state every valid document
+  // passes through while it is being typed, and a control that wrote on every
+  // keystroke would either write a string where an object belongs or refuse the
+  // keystroke. So an unparseable buffer is shown with its error and NOT written,
+  // and the record keeps the last document that parsed.
+  //
+  // A `<Form>` above it is told, through `$context.form.reportInvalid`, and
+  // refuses the submit for as long as the box cannot be converted — otherwise
+  // the save stores the last good document while the screen shows something
+  // else (`FJS-404`). Standing alone there is no form to tell, and the message
+  // is rendered here instead.
+  //
+  // Usage:
+  //   <JsonInput name="payload" value={row.payload} onvalue={v => row.payload = v} />
+
+  import Field from './Field.mesa'
+  import { format, tryParse } from '@frontierjs/toolbelt/json'
+  import { nameToLabel, uid, resolveError, resolveRule, stated } from '../../utils.js'
+
+  export let value = undefined      // the document — an object, an array, a scalar
+
+  export let rows        = 8
+  export let placeholder = '{ }'
+  export let disabled    = undefined  // undefined = ask the form; false overrides it
+  export let required    = undefined
+  export let readonly    = false
+
+  // Field integration
+  export let name   = ''
+  export let label  = undefined
+  export let hint   = ''
+  export let error  = ''
+  export let errors = undefined
+  export let badge  = undefined
+  export let help   = undefined
+
+  // `onvalue` and not `oninput`, for the same reason DateTimeInput has no
+  // `oninput`: what this control holds is text and what it writes is a parsed
+  // document, so a handler reading `e.target.value` would get the one value
+  // that must never reach the write.
+  export let onvalue   = undefined
+  export let oninvalid = undefined   // (message, text) => void
+  export let onblur    = undefined
+  export let onfocus   = undefined
+
+  export var id = ''
+  const areaId    = id || uid('json')
+  const autoLabel = nameToLabel(name)
+
+  const form = $context.form
+
+  // Whether this control draws its own <Field>. The message goes there when it
+  // does, so that a parse error is rendered exactly where a server error is
+  // and by the same component; the local <p> below is only for the bare case,
+  // where there is structurally nowhere else to put it.
+  const wrapped = !!(label || (name && autoLabel))
+
+  const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
+  const rule             = resolveRule(form, name)
+  const resolvedRequired = stated(required, rule?.required)
+  const serverError      = resolveError(form, name, error, errors)
+
+  // Seeded once, then owned by the person typing. Re-deriving it from `value`
+  // would reformat the document under the caret on every keystroke — the write
+  // goes out, the prop comes back, and the text is replaced mid-word.
+  let text = format(value)
+
+  // A parse failure is local state and not a form error: the form's errors come
+  // from the server through toFieldErrors(), and putting this in there would
+  // make it look like one and be cleared by the next response.
+  let parseError = ''
+
+  let el
+  export function focus() { el?.focus() }
+
+  function handleInput(e) {
+    text = e.target.value
+
+    // An empty box is an absent document, not a syntax error. A required field
+    // is refused by the schema at the boundary — that is not this control's
+    // call to make, and reporting it here as "Unexpected end of JSON input"
+    // says nothing a person can act on.
+    if (text.trim() === '') {
+      setParseError('')
+      onvalue?.(null)
+      return
+    }
+
+    const parsed = tryParse(text)
+    if (parsed.ok) {
+      setParseError('')
+      onvalue?.(parsed.value)
+      return
+    }
+
+    setParseError(parsed.error)
+    oninvalid?.(parsed.error, text)
+  }
+
+  // One place, because the form has to hear about both directions: a control
+  // that reports its refusal and never retracts it is a form that can never be
+  // submitted again.
+  function setParseError(message) {
+    parseError = message
+    form?.reportInvalid?.(name, message)
+  }
+
+  function handleBlur(e) {
+    // Reformatting on blur is the one place it cannot interrupt anybody, and it
+    // is what makes a pasted one-liner readable without a Format button.
+    if (!parseError && text.trim() !== '') {
+      const parsed = tryParse(text)
+      if (parsed.ok) text = format(parsed.value)
+    }
+    onblur?.(e)
+  }
+</script>
+
+{#snippet control()}
+  <textarea
+    bind:this={el}
+    class="field"
+    id={areaId}
+    name={name || undefined}
+    rows={rows}
+    placeholder={placeholder}
+    disabled={resolvedDisabled}
+    readonly={readonly}
+    spellcheck="false"
+    autocomplete="off"
+    autocapitalize="off"
+    autocorrect="off"
+    style:font-family="var(--font-mono)"
+    style:white-space="pre"
+    aria-invalid={parseError || serverError ? true : null}
+    aria-describedby={parseError && !wrapped ? `${areaId}-parse` : null}
+    on:input={handleInput}
+    on:blur={handleBlur}
+    on:focus={onfocus}
+    {...$attributes}
+  >{text}</textarea>
+
+  {#if parseError && !wrapped}
+    <!--
+      Only when this control draws no <Field> of its own — with one, the message
+      goes through `error` below and is rendered there, in the same place and by
+      the same component a server error is. `.field-hint danger` is what <Field>
+      renders one as, and aria-live rather than its role="alert": this message
+      changes on every keystroke of a half-typed document, and an assertive one
+      would interrupt continuously.
+    -->
+    <p class="field-hint danger" id={`${areaId}-parse`} aria-live="polite">{parseError}</p>
+  {/if}
+{/snippet}
+
+{#if wrapped}
+  <!--
+    The stated `error` wins over the form's map inside <Field>, which is what is
+    wanted here: a parse failure is the most current fact about this field. The
+    form is holding the same message anyway — this control reported it there —
+    so the two cannot disagree.
+  -->
+  <Field
+    id={areaId}
+    name={name}
+    label={label}
+    required={resolvedRequired}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={parseError || error}
+    errors={errors}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  {@render control()}
+{/if}

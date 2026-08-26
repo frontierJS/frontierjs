@@ -5,7 +5,7 @@ export default {
   trailingSlash: 'always',
 
   // The schema is found by convention: ../db/schema.lite, a sibling of web/ —
-  // the same file api/db.ts reads. The build parses it with Litestone, generates
+  // the same file api/src/core/db.ts reads. The build parses it with Litestone, generates
   // the JSON Schema and emits registerSchemas() into virtual:sierra, so every
   // resource is seeded before the first route module evaluates. The build prints
   // which file it found.

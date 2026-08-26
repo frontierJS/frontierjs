@@ -19,7 +19,7 @@
  * imports its own instance rather than sharing one.
  */
 
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, afterEach } from 'vitest'
 
 async function freshSession() {
   // The module holds `session`, `ready` and the boot state, so each test needs
@@ -30,10 +30,14 @@ async function freshSession() {
 }
 
 /** The smallest thing initSession() can drive: a client with an auth surface. */
-function fakeClient({ token = null, me = null, fail = null } = {}) {
+function fakeClient({ token = null, cookieAuth = false, me = null, fail = null } = {}) {
   const calls = []
   return {
     token,
+    // The real client's own accessor, restated because this stub is not one:
+    // `token` alone is the Bearer answer, and in cookie mode the credential is
+    // a cookie no script can read (FJS-474).
+    get hasCredential() { return cookieAuth || !!this.token },
     calls,
     auth: {
       async me() {
@@ -60,6 +64,135 @@ function fakeClient({ token = null, me = null, fail = null } = {}) {
   }
 }
 
+describe('an OAuth refusal on the URL', () => {
+
+  // The callback is a browser redirect, so there is no promise to reject and no
+  // response to read — a query parameter on a page load is the ONLY channel a
+  // refusal has. Until something lifts it off, the app boots as if nothing
+  // happened and a person who clicked Deny sees the sign-in page again with no
+  // explanation.
+
+  function atUrl(href) {
+    const url = new URL(href)
+    const state = { href: url.href }
+    vi.stubGlobal('location', { href: url.href, pathname: url.pathname, search: url.search, hash: url.hash })
+    vi.stubGlobal('history', {
+      state: null,
+      replaceState(_s, _t, next) { state.href = new URL(next, url.origin).href },
+    })
+    return state
+  }
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  test('is lifted onto the session', async () => {
+    atUrl('https://shop.test/sign-in?oauth_error=denied')
+    const s = await freshSession()
+
+    s.initSession(fakeClient())
+    await s.ready
+
+    expect(s.session.oauthError).toBe('denied')
+  })
+
+  test('is removed from the URL, so a refresh does not replay it', async () => {
+    // Left in place it survives a reload and every share of the link, so a
+    // message about one attempt reappears for ever — including for whoever it
+    // is pasted to.
+    const nav = atUrl('https://shop.test/sign-in?oauth_error=state&next=/orders')
+    const s = await freshSession()
+
+    s.initSession(fakeClient())
+
+    expect(nav.href).not.toContain('oauth_error')
+    // and nothing else on the URL is disturbed
+    expect(nav.href).toContain('next=%2Forders')
+  })
+
+  test('is absent when there is nothing to report', async () => {
+    atUrl('https://shop.test/')
+    const s = await freshSession()
+
+    s.initSession(fakeClient())
+    await s.ready
+
+    expect(s.session.oauthError).toBeNull()
+  })
+
+  test('does not stop the ordinary restore from running', async () => {
+    // A failed attempt with one provider says nothing about the session the
+    // browser may already be holding.
+    atUrl('https://shop.test/?oauth_error=denied')
+    const s = await freshSession()
+    const client = fakeClient({ cookieAuth: true, me: { userId: 'u1', email: 'a@b.c' } })
+
+    s.initSession(client)
+    await s.ready
+
+    expect(s.session.oauthError).toBe('denied')
+    expect(s.session.user?.userId).toBe('u1')
+  })
+
+  // ── the sentence ─────────────────────────────────────────────────────────
+  //
+  // The codes are coarse because the route refuses to say whether a state
+  // existed or an exchange failed — that is an oracle for anyone who can reach
+  // the URL. What is left is five tokens no person can read, so the table is
+  // here rather than in each app: this module exists because `example` and
+  // `basecamp` each wrote their own session.js, and five untranslated codes is
+  // where the next divergence starts.
+
+  test('arrives with words beside it', async () => {
+    atUrl('https://shop.test/sign-in?oauth_error=denied')
+    const s = await freshSession()
+
+    s.initSession(fakeClient())
+    await s.ready
+
+    expect(s.session.oauthMessage).toBe(s.OAUTH_ERRORS.denied)
+    // A sentence, not the token — the thing a screen renders.
+    expect(s.session.oauthMessage).not.toBe('denied')
+  })
+
+  test('every emitted code has one', async () => {
+    const s = await freshSession()
+    // The five the plugin's oauthFailure() can emit. A sixth added there with
+    // no entry here falls to the generic sentence, which is the right failure
+    // and still worth knowing about.
+    for (const code of ['denied', 'state', 'exchange', 'unavailable', 'link_required']) {
+      expect(s.OAUTH_ERRORS[code]).toBeTruthy()
+      expect(s.oauthErrorMessage(code)).toBe(s.OAUTH_ERRORS[code])
+    }
+  })
+
+  test('a code this build has never heard of still says something', async () => {
+    // The API deploys separately from the app, so a code added on one side
+    // reaches a browser running the other. Nothing at all on screen is the
+    // failure this whole channel exists to fix, so the fallback is a sentence
+    // rather than null.
+    const s = await freshSession()
+    expect(s.oauthErrorMessage('teleported')).toBeTruthy()
+    expect(s.oauthErrorMessage(null)).toBeNull()
+    expect(s.oauthErrorMessage('')).toBeNull()
+  })
+
+  // `link_required` is the flow WORKING: an account already holds the address
+  // and a confirmation link has gone out. An app that renders all five codes in
+  // one red alert tells that person their sign-in failed, when the next step is
+  // in their inbox. The code is kept beside the sentence so a screen can branch
+  // on it — which is the only reason both fields exist.
+  test('link_required reads as an instruction, and keeps its code to branch on', async () => {
+    atUrl('https://shop.test/sign-in?oauth_error=link_required')
+    const s = await freshSession()
+
+    s.initSession(fakeClient())
+    await s.ready
+
+    expect(s.session.oauthError).toBe('link_required')
+    expect(s.session.oauthMessage).toMatch(/inbox|email/i)
+  })
+})
+
 describe('the boot restore', () => {
 
   test('with no token it asks nothing and still resolves ready', async () => {
@@ -74,6 +207,20 @@ describe('the boot restore', () => {
     expect(client.calls).toEqual([])
     expect(s.session.checked).toBe(true)
     expect(s.session.user).toBeNull()
+  })
+
+  test('in cookie mode it asks even though there is no token', async () => {
+    // The case FJS-474 was: a credential that cannot be read is not a credential
+    // that is absent, and reading `token` alone rendered every cookie-mode app
+    // signed out on each cold load with a valid session in the jar.
+    const s = await freshSession()
+    const client = fakeClient({ cookieAuth: true, me: { userId: 'u1', email: 'a@b.c' } })
+
+    s.initSession(client)
+    await s.ready
+
+    expect(client.calls).toEqual(['me'])
+    expect(s.session.user?.userId).toBe('u1')
   })
 
   test('with a token it loads the session before ready resolves', async () => {

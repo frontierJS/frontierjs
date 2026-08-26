@@ -15,6 +15,8 @@ import { generateSitemap } from '../src/postbuild/sitemap.js'
 import { generateLlms } from '../src/postbuild/llms.js'
 import { injectSpeculationRules } from '../src/postbuild/speculation.js'
 import { deferJsLoading } from '../src/postbuild/defer-js.js'
+import { injectThemeScript } from '../src/postbuild/inject-theme.js'
+import { runPostBuild } from '../src/postbuild/index.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const TMP = join(__dirname, 'tmp-postbuild')
@@ -36,6 +38,121 @@ function dirname2(p) {
 
 afterAll(async () => {
   await rm(TMP, { recursive: true, force: true })
+})
+
+// ─── injectThemeScript (FJS-501) ─────────────────────────────────────────────
+
+describe('injectThemeScript', () => {
+  const THEME = { themes: ['theme-a', 'theme-b'], default: 'theme-a', key: 'k' }
+  const page  = '<!DOCTYPE html><html><head><title>x</title></head><body></body></html>'
+
+  test('injects into EVERY page, at any depth', async () => {
+    // This used to write `join(outDir, "index.html")` and nothing else, which
+    // is the whole output of an SPA and one page out of N on a static target.
+    // A prerendered site got the script on its home page and every other page
+    // flashed — which reads as an intermittent bug, not a missing step.
+    const outDir = await setup('theme-many', {
+      'index.html':               page,
+      '404.html':                 page,
+      'catalog/index.html':       page,
+      'products/a-thing/index.html': page,
+    })
+    const result = await injectThemeScript(THEME, outDir)
+    expect(result).toContain('4 pages')
+
+    for (const f of ['index.html', '404.html', 'catalog/index.html', 'products/a-thing/index.html']) {
+      const html = await readFile(join(outDir, f), 'utf8')
+      expect(html).toContain('id="sierra-theme"')
+      // Before any stylesheet — a script after one has already lost the race.
+      expect(html.indexOf('sierra-theme')).toBeLessThan(html.indexOf('<title>'))
+    }
+  })
+
+  test('names the file when there is one, rather than counting it', async () => {
+    const outDir = await setup('theme-one', { 'index.html': page })
+    expect(await injectThemeScript(THEME, outDir)).toContain('index.html')
+  })
+
+  test('does not stack on a re-run over an existing output directory', async () => {
+    const outDir = await setup('theme-rerun', { 'index.html': page })
+    await injectThemeScript(THEME, outDir)
+    expect(await injectThemeScript(THEME, outDir)).toBe(null)
+    const html = await readFile(join(outDir, 'index.html'), 'utf8')
+    expect(html.match(/sierra-theme/g)).toHaveLength(1)
+  })
+
+  test('skips assets/, which holds no pages', async () => {
+    const outDir = await setup('theme-assets', {
+      'index.html':        page,
+      'assets/thing.html': page,
+    })
+    await injectThemeScript(THEME, outDir)
+    const asset = await readFile(join(outDir, 'assets/thing.html'), 'utf8')
+    expect(asset).not.toContain('sierra-theme')
+  })
+
+  test('no theme config is no injection', async () => {
+    const outDir = await setup('theme-none', { 'index.html': page })
+    expect(await injectThemeScript(null, outDir)).toBe(null)
+  })
+})
+
+// ─── the sitemap on a static target (FJS-502) ────────────────────────────────
+
+describe('runPostBuild — what counts as a page', () => {
+  const page = '<!DOCTYPE html><html><head><title>x</title></head><body></body></html>'
+
+  // `indexed` drops every dynamic route, because an SPA cannot know which URLs
+  // `/products/:slug/` stands for. A static build DOES know — getStaticPaths()
+  // named them and the files are on disk — so a storefront's sitemap listed
+  // four URLs for a thirteen-product catalogue, and nothing said so.
+  const table = {
+    all:       ['/', '/catalog/', '/products/:slug/', '/secret/', '/wip/'],
+    indexed:   ['/', '/catalog/'],
+    indexable: ['/', '/catalog/', '/products/:slug/'],   // /secret/ noindex, /wip/ draft
+    redirects: [],
+  }
+
+  test('lists the pages a dynamic route produced', async () => {
+    const outDir = await setup('sitemap-static', { 'index.html': page })
+    await runPostBuild({ llms: false }, table, outDir,
+      outDir, ['/', '/catalog/', '/products/a/', '/products/b/'])
+
+    const xml = await readFile(join(outDir, 'sitemap.xml'), 'utf8')
+    expect(xml).toContain('<loc>/products/a/</loc>')
+    expect(xml).toContain('<loc>/products/b/</loc>')
+    expect(xml.match(/<loc>/g)).toHaveLength(4)
+  })
+
+  test('a noindex route stays out, even prerendered', async () => {
+    // The dynamic exclusion is not a decision; draft and noindex are. Dropping
+    // the first must not drop the second.
+    const outDir = await setup('sitemap-noindex', { 'index.html': page })
+    await runPostBuild({ llms: false }, table, outDir, outDir, ['/', '/secret/', '/wip/'])
+
+    const xml = await readFile(join(outDir, 'sitemap.xml'), 'utf8')
+    expect(xml).not.toContain('/secret/')
+    expect(xml).not.toContain('/wip/')
+    expect(xml.match(/<loc>/g)).toHaveLength(1)
+  })
+
+  test('an SPA is unchanged — the route table is still the whole answer', async () => {
+    const outDir = await setup('sitemap-spa', { 'index.html': page })
+    await runPostBuild({ llms: false }, table, outDir, outDir, null)
+
+    const xml = await readFile(join(outDir, 'sitemap.xml'), 'utf8')
+    expect(xml).toContain('<loc>/catalog/</loc>')
+    expect(xml).not.toContain(':slug')
+    expect(xml.match(/<loc>/g)).toHaveLength(2)
+  })
+
+  test('prefetch rules see the same set', async () => {
+    const outDir = await setup('spec-static', { 'index.html': page })
+    await runPostBuild({ llms: false }, table, outDir, outDir, ['/', '/products/a/'])
+
+    const html = await readFile(join(outDir, 'index.html'), 'utf8')
+    expect(html).toContain('"/products/a/"')
+  })
 })
 
 // ─── move404 ─────────────────────────────────────────────────────────────────

@@ -108,7 +108,14 @@ export function tenantFrom(resolution, { host = null, headers = null, principal 
       // `localhost:8100` must not answer 'localhost' as a tenant.
       const name  = String(host).split(':')[0]
       const parts = name.split('.')
-      if (parts.length < 3) return null
+      // `acme.localhost` is TWO labels and is a tenant, because `.localhost` is
+      // a reserved TLD (RFC 6761) that every browser and resolver already sends
+      // to the loopback. Without this, `resolve subdomain` is the one
+      // resolution nobody can develop against: the first thing anyone types is
+      // `acme.localhost:8000`, and it answered null — which reads as the
+      // registry not knowing the tenant rather than the host never naming one.
+      const floor = parts[parts.length - 1] === 'localhost' ? 2 : 3
+      if (parts.length < floor) return null
       return parts[0] || null
     }
     case 'header': {

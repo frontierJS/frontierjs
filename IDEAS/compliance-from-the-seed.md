@@ -10,6 +10,16 @@ dated: 2026-08-04
 attribute exists in the `.lite` grammar, and nothing generates any of the artifacts
 below. Do not cite this file as describing behavior — see `VERIFYING.md`.
 
+> **One neighbour DOES ship, added 2026-08-25** — and it is the closest thing in the
+> tree to what item 5 below proposes, so read it before designing `@retain`. A
+> `database` block takes `retention 30d`, and `tools/retention.js` deletes rows older
+> than that from every model in the block carrying a `createdAt`. It is at the wrong
+> granularity for this file (a database, not a field) and it is the shape a field-level
+> version must not copy: the cutoff is `new Date(Date.now() - ms)` with `d` a flat
+> 86,400,000, so there is no calendar and no day boundary, and it runs **once, at
+> `createClient`** — a server that stays up never prunes again. `FJS-521`, and
+> `IDEAS/time-and-recurrence.md` for why the boundary half cannot be settled here.
+
 ---
 
 ## The claim
@@ -182,7 +192,10 @@ three read the same declarations. Build the reader once.
 3. **The subject traversal** — one graph walk, shared by DSAR export and erasure.
 4. **`fli marshal:map`** — the report, joining fields to gates to Conduit targets.
 5. **Retention enforcement** — a Caravan job per `@retain`, which is the only piece
-   with a runtime cost and should be opt-in.
+   with a runtime cost and should be opt-in. **A Caravan job and not a startup pass**,
+   which is exactly where the shipping database-level `retention` went wrong
+   (`FJS-521`) — and the clock belongs there by ruling, since unattended recurring
+   work is the queue's (`FJS-D36`).
 
 Proposed home: **`@frontierjs/marshal`** (see `IDEAS/package-map.md`).
 

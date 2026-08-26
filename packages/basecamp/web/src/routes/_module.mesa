@@ -4,7 +4,6 @@ siteName: Basecamp
 <script>
   import { page, goto, isActive } from '@frontierjs/sierra/router'
   import { status, useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { session, signOut, switchWorkspace } from '../session.js'
 
   import Badge          from '@frontierjs/ui/components/display/Badge.mesa'
@@ -38,7 +37,7 @@ siteName: Basecamp
   const { get: srv,  unsubscribe: unsubSrv }  = useStore(servers.store)
   const { get: dep,  unsubscribe: unsubDep }  = useStore(deployments.store)
   const { get: jbs,  unsubscribe: unsubJbs }  = useStore(jobs.store)
-  $onDestroy(() => { unsubSrv(); unsubDep(); unsubJbs() })
+  $.onDestroy(() => { unsubSrv(); unsubDep(); unsubJbs() })
 
   // Failures are swallowed on purpose: the shell is not the screen that owns
   // any of these lists, and a workspace the caller cannot read is the guard's
@@ -82,6 +81,9 @@ siteName: Basecamp
     { id: 'go-api-keys',    group: 'Navigate', label: 'API keys',    sub: 'tokens we issue',    action: () => goto('/api-keys/') },
     { id: 'go-activity',    group: 'Navigate', label: 'Activity',    sub: 'what happened here', action: () => goto('/activity/') },
     { id: 'go-portal',      group: 'Navigate', label: 'Portal',      sub: 'shared appliances',  action: () => goto('/portal/') },
+    { id: 'go-registry',    group: 'Navigate', label: 'Registry',    sub: 'images this workspace pushed', action: () => goto('/registry/') },
+    { id: 'go-blueprints',  group: 'Navigate', label: 'Blueprints',  sub: 'the deployment catalogue', action: () => goto('/blueprints/') },
+    { id: 'go-settings',    group: 'Navigate', label: 'Your settings', sub: 'password, notifications, sessions', action: () => goto('/settings/') },
     { id: 'go-admin',       group: 'Navigate', label: 'Admin',       action: () => goto('/admin/') },
     { id: 'go-audit',       group: 'Navigate', label: 'Audit trail', sub: 'Admin', action: () => goto('/admin/audit/') },
     { id: 'go-adapters',    group: 'Navigate', label: 'Adapters',    sub: 'Admin', action: () => goto('/admin/adapters/') },
@@ -93,6 +95,8 @@ siteName: Basecamp
       { id: 'go-hub-ws',     group: 'Navigate', label: 'Hub workspaces', sub: 'Hub', action: () => goto('/hub/workspaces/') },
       { id: 'go-hub-users',  group: 'Navigate', label: 'Hub users & bots', sub: 'Hub', action: () => goto('/hub/users/') },
       { id: 'go-hub-flags',  group: 'Navigate', label: 'Hub flags',      sub: 'Hub', action: () => goto('/hub/flags/') },
+      { id: 'go-hub-backups', group: 'Navigate', label: 'Hub backups',   sub: 'Hub', action: () => goto('/hub/backups/') },
+      { id: 'go-hub-settings', group: 'Navigate', label: 'Hub settings', sub: 'Hub', action: () => goto('/hub/settings/') },
       { id: 'new-bot',       group: 'Create',   label: 'New bot account', action: () => goto('/hub/users/') },
     ] : []),
 
@@ -166,6 +170,8 @@ siteName: Basecamp
     ] },
     { label: 'Manage', links: [
       { href: '/volumes/',    label: 'Volumes'     },
+      { href: '/registry/',   label: 'Registry'    },
+      { href: '/blueprints/', label: 'Blueprints'  },
       { href: '/cleanup/',    label: 'Cleanup'     },
       { href: '/recipes/',    label: 'Recipes'     },
       { href: '/channels/',   label: 'Channels'    },
@@ -174,6 +180,10 @@ siteName: Basecamp
       { href: '/admin/',      label: 'Admin'       },
     ] },
   ]
+
+  // Not in NAV, and deliberately: this is the caller's OWN account rather than
+  // anything in the workspace, so it hangs off the account menu in the topbar
+  // where a person looks for it — beside their email and sign-out.
 
   // The hub tier is not a workspace role, so it is not in the switcher and it
   // is not offered to people who do not hold it. `isSystemAdmin` rides on the
@@ -300,6 +310,7 @@ siteName: Basecamp
           {/snippet}
           <DropdownLabel>{session.user.email}</DropdownLabel>
           <DropdownSeparator />
+          <DropdownItem onclick={() => goto('/settings/')}>Your settings</DropdownItem>
           <DropdownItem onclick={out}>Sign out</DropdownItem>
         </DropdownMenu>
       {/if}

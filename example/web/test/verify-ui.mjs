@@ -35,6 +35,8 @@ import { join } from 'node:path'
 
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
+// The dev payment provider, started by `bun run api` beside the mail sink.
+const PSP    = process.env.PSP_URL ?? 'http://localhost:8112'
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]]) {
@@ -212,7 +214,7 @@ try {
   // A run that threw before its cleanup leaves the row behind, and `reference`
   // is @unique — so the next run's create is a 500 that has nothing to do with
   // what is being tested. Clear it first rather than requiring `bun run reset`.
-  const stale = await (await fetch(`${API}/api/orders?reference=ORD-UI-1`)).json()
+  const stale = await (await fetch(`${API}/api/orders?reference=ORD-UI-1`, { headers: auth })).json()
   for (const row of stale.data ?? [])
     await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
 
@@ -293,6 +295,20 @@ try {
     };
   `))
 
+  // ─── 1b. The Payments tab ─────────────────────────────────────────────
+  //
+  // The order above is pending and nothing has been taken for it, which is the
+  // empty state — asserted here because it is the state most screens get wrong
+  // by rendering an empty list and saying nothing.
+  t('payments.emptyState', await evaluate(`
+    byText('[role="tab"]', 'Payments').click();
+    await waitFor(() => byText('[role="tab"]', 'Payments').getAttribute('aria-selected') === 'true');
+    return {
+      said: !!document.querySelector('#no-payments'),
+      rows: document.querySelectorAll('[data-payment]').length,
+    };
+  `))
+
   await key('Escape', 'Escape', 27)
   t('menu.escapeCloses', await evaluate(`
     await waitFor(() => !document.querySelector('[role="menu"]'), 3000).catch(() => {});
@@ -350,9 +366,102 @@ try {
   `))
 
   t('detail.afterCancel', await (async () => {
-    const r = await (await fetch(`${API}/api/orders/${orderId}`)).json()
+    const r = await (await fetch(`${API}/api/orders/${orderId}`, { headers: auth })).json()
     return r?.status ?? r?.data?.status ?? null
   })())
+
+  // ─── 1c. A settled order, and a refund a PERSON performs ──────────────
+  //
+  // A second order, because the one above has to stay `pending` for the menu
+  // and modal assertions. This one is taken through the real money path —
+  // `payments.start` out to the provider on :8112, the shopper confirming
+  // there, and the provider's signed webhook coming back — so what the panel
+  // renders was written by a webhook and not by this drive.
+  //
+  // The API half is `verify:pay`'s, exhaustively. What is only reachable here
+  // is the half a person does: seeing what was taken, and clicking Refund.
+  const staleB = await (await fetch(`${API}/api/orders?reference=ORD-UI-2`, { headers: auth })).json()
+  for (const row of staleB.data ?? [])
+    await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
+
+  const orderB = (await (await fetch(`${API}/api/orders`, {
+    method: 'POST', headers: { 'content-type': 'application/json', ...auth },
+    body: JSON.stringify({ reference: 'ORD-UI-2', status: 'pending', total: 24, customerId: 1 }),
+  })).json())?.id
+
+  const intent = await (await fetch(`${API}/api/payments`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
+    body: JSON.stringify({ orderId: orderB }),
+  })).json()
+  await fetch(`${PSP}/v1/intents/${intent.providerRef}/confirm`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ outcome: 'succeeded' }),
+  })
+
+  await goto(`/orders/${orderB}/`)
+
+  t('payments.settled', await evaluate(`
+    await waitFor(() => document.querySelector('h1'));
+    byText('[role="tab"]', 'Payments').click();
+    await waitFor(() => document.querySelector('[data-payment]'));
+    // The payment row and its EVENTS arrive separately. The row exists as soon
+    // as the intent was started; the event is written by the provider's
+    // webhook, which is a second HTTP round trip the confirm above only kicks
+    // off — so waiting on the row alone read no events about one run in three
+    // and reported the ledger as missing when it was merely later.
+    await waitFor(() => document.querySelector('[data-payment] [data-events] li'), 5000)
+      .catch(() => {});
+    const row = document.querySelector('[data-payment]');
+    return {
+      rows:   document.querySelectorAll('[data-payment]').length,
+      status: row.querySelector('.pill')?.textContent.trim(),
+      amount: row.querySelector('[data-amount]')?.textContent.trim(),
+      // The button only appears while something is left to give back.
+      refundable: !!row.querySelector('[data-refund]'),
+      events: row.querySelectorAll('[data-events] li').length,
+    };
+  `))
+
+  // The order-level `refund` move warns that it is not the money — and only
+  // because this order HAS a settled payment. Opened and closed without
+  // running it: what is being asserted is the sentence, not the move.
+  t('payments.moveIsNotMoney', await evaluate(`
+    document.querySelector('#order-actions').click();
+    await waitFor(() => document.querySelector('[role="menu"]'));
+    byText('[role="menu"] [role="menuitem"]', 'refund').click();
+    await waitFor(() => document.querySelector('#refund-not-money'), 3000).catch(() => {});
+    const warned = !!document.querySelector('#refund-not-money');
+    byText('[role="dialog"] button', 'Keep it')?.click();
+    await waitFor(() => !document.querySelector('[role="dialog"]'), 3000).catch(() => {});
+    return { warned };
+  `))
+
+  // And the refund itself, from the panel. The box is left blank, which is
+  // what the service reads as "all of what is left".
+  const refunded = await evaluate(`
+    byText('[role="tab"]', 'Payments').click();
+    await waitFor(() => document.querySelector('[data-refund]'));
+    document.querySelector('[data-refund]').click();
+    await waitFor(() => document.querySelector('#refund-amount'));
+    document.querySelector('#refund-confirm').click();
+
+    // The provider's webhook lands inside the request, so the reload the
+    // handler does already holds the moved rows — waiting on the ROW rather
+    // than on a toast, because a toast is a message and this is the claim.
+    await waitFor(() => document.querySelector('[data-refunded]'), 15000);
+    const row = document.querySelector('[data-payment]');
+    return {
+      payment:  row.querySelector('.pill')?.textContent.trim(),
+      refunded: row.querySelector('[data-refunded]')?.textContent.trim(),
+      events:   row.querySelectorAll('[data-events] li').length,
+    };
+  `)
+
+  // The order's own status is asked of the API rather than read off the Steps:
+  // `refunded` is filtered OUT of the lifecycle strip (it is an exit, not a
+  // step), so there is deliberately no step to be current.
+  refunded.order = (await (await fetch(`${API}/api/orders/${orderB}`, { headers: auth })).json())?.status
+  t('payments.refunded', refunded)
 
   // ─── 2. Products — Combobox, MultiSelect, Slider, Pagination, EmptyState ──
   await goto('/products/')
@@ -397,7 +506,7 @@ try {
     const name = document.querySelector('#f-name');
     name.focus(); name.click();
     await waitFor(() => document.querySelector('.fjs-combobox-panel [role="option"]'));
-    byText('.fjs-combobox-panel [role="option"]', 'Field Notebook').click();
+    byText('.fjs-combobox-panel [role="option"]', 'Junction Notebook').click();
     await waitFor(() => document.querySelectorAll('tbody tr').length === 1);
 
     const box = document.querySelector('#f-status');
@@ -477,6 +586,51 @@ try {
     };
   `))
 
+  // ── The preferences document, edited as a document ───────────────────────
+  //
+  // The one screen here with no schema behind it, which is exactly the shape
+  // <Json editable> is for. Two claims that nothing else in this repo makes:
+  // that the tree and the form are editors of ONE object (edit the tree, the
+  // spinner follows), and that a key the screen does not own is dropped OUT
+  // LOUD rather than vanishing between two frames.
+  t('settings.jsonTree', await evaluate(`
+    const tree = document.querySelector('#prefs-doc');
+    const at   = '[data-path=' + JSON.stringify('["perPage"]') + ']';
+    const row  = tree.querySelector(at + ' .fjs-json-edit');
+    row.click();
+    // Scoped to the row on purpose: the root add row is always on screen, so
+    // an unscoped input lookup answers that box and types into the wrong one.
+    // (No backticks in here — this whole probe is a template literal.)
+    await waitFor(() => tree.querySelector(at + ' input'));
+
+    const box = tree.querySelector(at + ' input');
+    box.value = '25';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    // The spinner above is the other editor of the same object.
+    await waitFor(() => document.querySelector('#p-per-page input, #p-per-page')?.value === '25');
+    return {
+      spinner: document.querySelector('#p-per-page input, #p-per-page')?.value,
+      stillMono: !!tree.querySelector('code[language=json]'),
+    };
+  `))
+
+  t('settings.jsonStray', await evaluate(`
+    const tree = document.querySelector('#prefs-doc');
+    // No disclosure to open — the add row is always on screen, which is the
+    // one thing on an editable tree that says it can be written to.
+    const [key, val] = tree.querySelectorAll('[data-add=root] input');
+    key.value = 'notAThing';
+    key.dispatchEvent(new Event('input', { bubbles: true }));
+    val.value = '1';
+    val.dispatchEvent(new Event('input', { bubbles: true }));
+    tree.querySelector('[data-add=root] .fjs-json-confirm').click();
+
+    await waitFor(() => [...document.querySelectorAll('.toast')].some(el => el.textContent.includes('Ignored')));
+    return { said: true };
+  `))
+
   // The theme has to change a TOKEN, and the class has to land on the root.
   //
   // Nothing asserted this before, and nothing could: Sierra's theme module set
@@ -525,6 +679,35 @@ try {
     await waitFor(() => document.querySelector('table'));
     return { compact: document.querySelector('table').classList.contains('compact') };
   `))
+
+  // Currency is a preference with arithmetic behind it, so the assertion is
+  // the NUMBER and not the glyph. A toggle that only swapped the symbol would
+  // show one price as two different amounts, and asserting `£` alone would
+  // pass against exactly that bug.
+  await goto('/settings/')
+  await evaluate(`
+    [...document.querySelectorAll('#p-currency input[type=radio]')]
+      .find(r => r.value === 'GBP').click();
+    document.querySelector('#p-save').click();
+    return true;
+  `)
+  await goto('/products/')
+  t('settings.currencyApplies', await evaluate(`
+    await waitFor(() => document.querySelectorAll('.product-row td').length);
+    const cell = [...document.querySelectorAll('.product-row td')]
+      .map(td => td.textContent.trim()).find(t => /[£$€]/.test(t));
+    return { symbol: (cell.match(/[£$€]/) ?? [])[0], converted: !/28\.00/.test(cell) };
+  `))
+
+  // Back to the shop's own currency, so every screen after this is asserted in
+  // the one the rest of this file was written against.
+  await goto('/settings/')
+  await evaluate(`
+    [...document.querySelectorAll('#p-currency input[type=radio]')]
+      .find(r => r.value === 'USD').click();
+    document.querySelector('#p-save').click();
+    return true;
+  `)
 
   // ─── 4. Command palette — the global one ─────────────────────────────────
   //
@@ -618,39 +801,70 @@ const expected = {
   'detail.steps': { labels: ['pending', 'paid', 'shipped'], current: 'pending' },
 
   'tabs.initial': {
-    labels:   ['Summary', 'Moves', 'Raw record'],
+    labels:   ['Summary', 'Items', 'Moves', 'Payments', 'Raw record'],
     selected: ['Summary'],
-    tabindex: [0, -1, -1],     // roving tabindex: one stop for the whole strip
-    panels:   1,               // exactly one panel visible
+    tabindex: [0, -1, -1, -1, -1], // roving tabindex: one stop for the whole strip
+    panels:   1,                   // exactly one panel visible
   },
   'tabs.click':    { selected: 'Moves', shownPanels: 1, hasMoveButton: true },
-  'tabs.arrowKey': { focused: 'Raw record', selected: 'Raw record' },
+  'tabs.arrowKey': { focused: 'Payments', selected: 'Payments' },
 
   // A pending order can be paid or cancelled — the schema's answer, reached
   // through a menu this time.
   'menu.items':         { expanded: 'true', items: ['pay', 'cancel'], opacity: '1' },
   'menu.escapeCloses':  { open: false },
 
+  // ── The money, on the screen that spends it ──────────────────────────
+  //
+  // An order with nothing taken says so, and says it in the shop's words
+  // rather than by rendering an empty list.
+  'payments.emptyState':  { said: true, rows: 0 },
+
+  // A settled payment: the provider's id, what it took, and what is still
+  // refundable — which is arithmetic over two columns rather than a flag.
+  'payments.settled':     { rows: 1, status: 'succeeded', amount: '$24.00', refundable: true, events: 1 },
+
+  // The trap this whole panel exists to remove. `orders.refund` is a real move
+  // and a legitimate one — a sale settled some other way — and it does not
+  // touch the card. The confirmation says so, and only when there IS money to
+  // be confused about.
+  'payments.moveIsNotMoney': { warned: true },
+
+  // A person clicks Refund, leaves the box blank meaning all of it, and the
+  // provider's webhook is what moves every row.
+  'payments.refunded':    { payment: 'refunded', refunded: '$24.00 of $24.00', events: 2, order: 'refunded' },
+
   'modal.opens':        { title: 'Confirm cancel', focusInside: true, body: true },
   'modal.keepIt':       { open: false, status: 'pending' },
   'modal.confirmRuns':  { toast: true, startedWithSpinner: true, settledInPlace: true, current: { step: null } },
   'detail.afterCancel': 'cancelled',
 
-  'filters.present':  { combobox: true, multiselect: true, slider: 2, rows: 4 },
+  // Ten rows and not thirteen: the page size is a preference, default 10.
+  'filters.present':  { combobox: true, multiselect: true, slider: 2, rows: 10 },
   'combobox.filters': {
-    options: ['Field Notebook', 'Enamel Mug', 'Canvas Tote', 'Discontinued Cap'],
-    rows: 1, first: 'Field Notebook',
+    options: [
+      'FrontierJS Explorer Tee', 'FrontierJS Explorer Hoodie',
+      'Junction Tee', 'Junction Hoodie', 'Junction Cap', 'Junction Camp Mug',
+      'Junction Notebook', 'Junction Sticker Pack',
+      'Litestone Tee', 'Litestone Hoodie', 'Litestone Cap', 'Litestone Camp Mug',
+      'Litestone Tote',
+    ],
+    rows: 1, first: 'FrontierJS Explorer Tee',
   },
-  'filters.clear':    { rows: 4 },
+  'filters.clear':    { rows: 10 },
   'emptyState.shows': { title: 'No product matches those filters', hasAction: true },
-  'pagination.info':  { present: true, pages: ['1'] },
+  // Two pages: thirteen products at ten per page.
+  'pagination.info':  { present: true, pages: ['1', '2'] },
 
   'settings.accordion': { sections: ['Appearance', 'Lists', 'Order notes'], openAtStart: ['Appearance'] },
   'settings.expand':    { expanded: true, numberInput: true, radiogroup: true },
   'settings.switch':    { role: 'switch', toggled: true },
   'settings.save':      { toast: 'Preferences saved', toastOpacity: '1', stored: true },
+  'settings.jsonTree':  { spinner: '25', stillMono: true },
+  'settings.jsonStray': { said: true },
   'settings.themeApplies': { onRoot: true, replaced: true, changed: true, stored: 'theme-forest' },
   'settings.densityApplies': { compact: true },
+  'settings.currencyApplies': { symbol: '£', converted: true },
 
   'palette.opensOnClick': { panelOpacity: '1', backdropOpacity: '1', topmostIsPalette: true, hasSize: true },
   'palette.opensOnCtrlK': { open: true, focused: 'INPUT' },

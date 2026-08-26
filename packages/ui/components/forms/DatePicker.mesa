@@ -385,14 +385,14 @@
     isOpen = false
   }
 
-  $onMount(() => {
+  $.onMount(() => {
     _clickOutsideHandler = ({ target }) => {
       if (wrapperEl && !wrapperEl.contains(target)) onClickOutside()
     }
     document.addEventListener('click', _clickOutsideHandler, { passive: true, capture: true })
   })
 
-  $onDestroy(() => {
+  $.onDestroy(() => {
     if (_clickOutsideHandler) {
       document.removeEventListener('click', _clickOutsideHandler, { capture: true })
     }

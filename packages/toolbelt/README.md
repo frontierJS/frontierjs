@@ -13,6 +13,14 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/glow` | source code → highlighted HTML | shipping |
 | `/inflect` | English singular ⇄ plural | shipping |
 | `/directives` | the `$` convention — filters vs directives | shipping |
+| `/history` | the key naming one occurrence of change | shipping |
+| `/hooks` | the four-phase resource pipeline | shipping |
+| `/json` | reading and editing a JSON document nothing describes | shipping |
+| `/jsonschema` | follow a `$ref`; what a blank record looks like | shipping |
+| `/query` | what a query string MEANS — types, structure, both directions | shipping |
+| `/search` | ranking a corpus nobody indexed | shipping |
+| `/signature` | what a signed machine-to-machine request is | shipping |
+| `/units` | a magnitude with a unit, as a person reads it | shipping |
 | `/datetime` | date, time and timezone formatting | [`docs/datetime.md`](docs/datetime.md) is the intent; the prototype is parked in `mockup/datetime/` |
 
 The whole package holds to one rule:
@@ -36,6 +44,59 @@ Cross-cutting. Not a realm noun — toolbelt introduces no Model, Service, or Re
 Ruled `FJS-D26`, `DECISIONS.md` § Dependencies & the ecosystem. The purity rule above is what the ruling rests on: a single `Date.now()` in `src/` costs the exemption, not just the style.
 
 ---
+
+## `query` — what a query string means
+
+```js
+import { parseQueryString, encodeQueryString } from '@frontierjs/toolbelt/query'
+
+parseQueryString('?qty=5&live=true&sku=007&id[in][]=1&id[in][]=2')
+// { qty: 5, live: true, sku: '007', id: { in: [1, 2] } }
+```
+
+A URL carries text, so something has to decide whether `?qty=5` is a number.
+Three boundaries decide it — Junction's transport, Junction's client writing one,
+Sierra's router — and they used to give three answers (`FJS-D125`).
+
+**A string is a number only if it round-trips**: `String(Number(v)) === v`. One
+test, and the traps of the usual `parseFloat` version fall out of it — `'007'`
+stays a SKU, `'+1'` stays a phone number, `'1.50'` keeps its cents, and
+`'9007199254740993'` stays a string because the round trip loses its last digit.
+
+`true`, `false` and `null` are themselves. Structure is bracket notation, never a
+sigil. A repeated key is an array. `?code="5"` is the one escape, for text that
+would otherwise read back as something else — and it is exactly what
+`encodeQueryString` emits for such a string, which is what makes the two halves
+inverses rather than approximately so.
+
+**It is not validation and not schema coercion.** It answers *what did the caller
+type*, with no model in the room. Where a model exists it has the last word:
+`id String` filtered by `?id=5` reads 5 here and Litestone converts it back.
+
+## `units` — a magnitude with a unit
+
+```js
+import { formatBytes } from '@frontierjs/toolbelt/units'
+
+formatBytes(5 * 1024 ** 2)              // '5.0 MB'
+formatBytes(45 * 1024 ** 2)             // '45 MB'
+formatBytes(500 * 1024 ** 3)            // '500 GB'
+formatBytes(45 * 1024 ** 2, { decimals: 2 })   // '45.00 MB'
+formatBytes(undefined)                  // ''  — absent is not zero
+```
+
+Binary steps with the familiar labels: 1024 to the step, and the step is called
+MB rather than MiB, which is what almost every tool a reader has used shows them.
+Precision is adaptive — one decimal below ten of a unit, none above, and never on
+bytes — because a long list is scanned for magnitudes, and `503.2 GB` carries a
+digit nobody is reading. `decimals` fixes it for a column that must not jitter.
+
+`''` for `undefined`, `null`, `NaN` and a non-numeric string: answering `0 B` for
+a missing size is how *we do not know* reads as *an empty file*.
+
+Four copies of this function existed before it did, and two of them disagreed —
+`@frontierjs/ui` said `5.0 MB` where three basecamp screens said `5 MB`, so one
+application showed one disk two ways (`FJS-408`).
 
 ## `inflect` — English singular ⇄ plural
 

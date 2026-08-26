@@ -24,20 +24,71 @@
 /// model nothing outside auth has anything to say to, not for identity.
 
 
+// ─── Tenancy ──────────────────────────────────────────────────────────────
+//
+// MANY SHOPS, one file each. A shop is the tenant, and the isolation is the
+// filesystem rather than a column: two shops cannot see each other's orders
+// because there is no query that reaches both, and taking a backup of one shop
+// is copying a file.
+//
+// `strategy row` would have been the other answer, and it is the wrong one
+// here. A shop is not a workspace inside one company's product — it is a
+// separate business with its own staff, its own customers and its own money,
+// and the failure mode of a missing row policy is one shop reading another's
+// orders. Under this strategy that failure cannot be expressed.
+//
+// **The people are per shop too**, which follows from the same file: `User`,
+// `Credential`, `Session` and `Verification` are appended into every tenant's
+// database, so an account at one shop is not an account at another. That is
+// what makes a sign-in a question about WHICH shop before it is a question
+// about who — see `api/src/core/auth.ts`.
+//
+// `resolve subdomain` is the deployment fact: `highstreet.shop.test` is the
+// High Street shop. There is no default here, deliberately — which of a host, a
+// header and a claim names the tenant is something nothing can infer — and the
+// app's own answer for a request that names none is in `api/src/core/db.ts`.
+//
+// `dir` and `registry` are declared for the CLI's benefit (`litestone tenant
+// list`, run from db/) and passed explicitly by the app, which assembles its
+// schema in memory and so has no file to resolve a relative path against.
+tenancy {
+  strategy database
+  dir      "./shops"
+  registry "./shops-registry.db"
+  maxOpen  25
+  resolve  subdomain
+}
+
+
 // ─── Databases ────────────────────────────────────────────────────────────
 //
 // `main` is where everything lands: a model with no @@db goes here, and auth's
-// fragments name it explicitly. NOTE the sharp edge — once a schema declares
-// `database main`, THIS PATH WINS and createClient's `db:` option is ignored
-// entirely. Passing `db: ':memory:'` here would not give you an in-memory
-// database; it would silently write ./db/shop.db and you would not be told.
-
+// fragments name it explicitly. NOTE the sharp edge in a schema with no
+// tenancy — once `database main` is declared THIS PATH WINS and createClient's
+// `db:` option is ignored entirely, so `db: ':memory:'` would silently write
+// ./db/shop.db and you would not be told.
+//
+// Under `tenancy { strategy database }` the path below is never used: the
+// registry redirects every sqlite database to the tenant's own file, because a
+// declared path sends every shop to one database, which is the isolation hole
+// this whole block exists to close. It stays declared because a schema still
+// needs to say where `main` is for every reader that is not a fleet — the CLI,
+// Studio, the browser build.
 database main {
   path env("SHOP_DB_PATH", "./db/shop.db")
 }
 
-// @@log(audit) writes here. `path` resolves against the process CWD, not this
-// file — run the API from the example root or the directory lands elsewhere.
+// @@log(audit) writes here, and this is the ONE database a tenant registry does
+// not redirect — a logger database is shared across the whole fleet by design.
+// So this is also the one path still resolving against the process CWD, and
+// every site and widget script runs `cd <surface>` first: it is how an orphan
+// `example/site/db/` came to exist and sit there for two days, unnoticed
+// because the repo ignores `*.db*` everywhere. api/src/core/db.ts names it
+// absolutely for that reason.
+//
+// A litestone CLI command anchors to the app root instead and is safe from any
+// directory (`FJS-449`); an app assembling its schema in memory, as
+// api/src/core/db.ts does, has no location to anchor to and gets the CWD.
 database audit {
   path      env("AUDIT_PATH", "./db/audit/")
   driver    logger
@@ -45,24 +96,292 @@ database audit {
 }
 
 
+// ─── Removal and revision ─────────────────────────────────────────────────
+//
+// Two Data-boundary features declared here and restated in no service and no
+// component. Both are about a SECOND writer.
+//
+// **@@softDelete** — Customer, Order (+ OrderLine) and Product (+
+// ProductVariant, ProductImage). Every one is a row something else in this file
+// points AT, so destroying it destroys history belonging to somebody other than
+// the person who pressed the button. The ledger is the proof that this is not
+// hypothetical: `InventoryMovement.variant` is `onDelete: Restrict` precisely so
+// a shelf that has moved cannot be deleted out from under its own tape — which
+// meant that a product which had ever sold could not be taken out of the
+// catalogue AT ALL. The refusal was right and there was no other way out.
+//
+// It is NOT a second `active`. `active: false` is *we are not selling this right
+// now*: the row stays in the catalogue, staff see it, it comes back for next
+// season. `deletedAt` is *this is not ours any more*. What makes them different
+// rather than merely differently spelled is `@unique` — a deleted product keeps
+// its slug, deliberately, because a way back that fails when a stranger has
+// taken the value is not a way back. So re-using a deleted product's name is a
+// 409 naming the row holding it, and freeing the slot is a decision the app
+// makes (move the value, or stop keeping the row).
+//
+// **@version** — Product, Customer, ShippingMethod, TaxRate. Every one is a row
+// a FORM edits and nothing else writes. Two people on one both PATCH, and
+// without the column the second silently erases the first.
+//
+// The rest are left out on purpose, because @version is per ROW and not per
+// column: where two writers touch DISJOINT columns it reports a conflict about a
+// change nobody made, and a 409 nobody can act on teaches everyone to retry
+// blindly.
+//
+//   ProductVariant     a person edits the price; every sale, delivery and
+//                      stocktake writes `stock`. Those two never collide, and
+//                      the column would say that they had
+//   Order              @@transitions(status, …) is already a compare-and-swap on
+//                      the one column two writers contend for, and it refuses BY
+//                      NAME; `trackingCode` is written by the courier job.
+//                      @version on top refuses a second time for a reason nobody
+//                      asked about
+//   Discount           `redemptions` is incremented inside every checkout
+//   Cart · CartLine    one shopper, one basket. There is no second editor
+//   OrderLine · InventoryMovement · PaymentEvent
+//                      append-only — written once, never edited
+
+
 // ─── Catalogue ────────────────────────────────────────────────────────────
 
-model Product {
-  id     Int    @id
-  name   String @length(1, 80) @unique
-  sku    String @length(3, 20) @unique @upper
-  price  Float  @gte(0)
+/// Which of the three a piece of merch carries. A brand is a small fixed set
+/// the shop does not invent, so it is an enum; a Collection — the thing a
+/// merchant makes up and edits — is a table, and is not this.
+enum Brand { frontierjs junction litestone }
 
-  /// Nullable AND unique — the pairing that makes `blankToNull` matter on the
-  /// client. An empty text box submits '', SQLite accepts any number of NULLs
-  /// in a UNIQUE column but rejects a second '', so without normalisation the
-  /// second product saved with a blank barcode fails a constraint nobody wrote.
-  barcode  String? @unique
+/// The sizes stocked. `one` is not a filler member: a mug and a sticker
+/// genuinely have one size, and a NULLABLE size would take the composite
+/// @@unique on ProductVariant down with it. SQLite counts two NULLs as
+/// distinct, so `(1, NULL, NULL)` inserts twice and two rows end up sharing
+/// one shelf. Measured — litestone refuses @@unique over an @encrypted member
+/// by name and says nothing about a nullable one.
+enum Size { one xs s m l xl xxl }
+
+/// A Product is the FAMILY, not the thing with a price on it. "FrontierJS Tee"
+/// is a product; the navy one in medium is what a person puts in a basket and
+/// what a warehouse counts down.
+///
+/// That split is why `sku`, `price` and `barcode` are NOT on this model. They
+/// were, while every product was one buyable thing — and the moment one design
+/// carried four colourways, a price on the family had no answer.
+model Product {
+  id   Int    @id
+  name String @length(1, 80) @unique
+
+  /// The storefront URL segment. A real column rather than @generated from the
+  /// name, because a slug must SURVIVE a rename: a link somebody bookmarked is
+  /// not something the catalogue may rewrite. @generated would also make it
+  /// readOnly, and the merchant is the one who decides it.
+  slug String @length(1, 80) @unique @lower
+
+  description String? @length(0, 2000)
+  brand       Brand
 
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  /// read public, create/update need a user (4), delete needs an admin (5).
+  /// Not a second `active`, and the difference is which question it answers.
+  /// `active: false` is *we are not selling this right now* — it stays in the
+  /// catalogue, staff see it, it comes back for next season. This is *it is not
+  /// ours any more*, and until it existed the catalogue had no way to say so:
+  /// `InventoryMovement.variant` is `onDelete: Restrict`, so a product that had
+  /// ever sold one unit could not be deleted, correctly and with no way out.
+  ///
+  /// `(cascade)` below, because the variants and the photographs are this
+  /// product and there is nothing they mean without it.
+  deletedAt DateTime?
+
+  /// Two merchants editing one product. Without this the second save silently
+  /// erases the first; with it the second is a 409 carrying both revisions, and
+  /// a screen can offer the choice the person would have wanted.
+  ///
+  /// Here and not on `ProductVariant` for the reason at the top of this file:
+  /// nothing but a person writes a column on this row.
+  version Int @version
+
+  variants ProductVariant[]
+  images   ProductImage[]
+
+  /// What the variants add up to, answered by SQLite on the row rather than by
+  /// the screen after it.
+  ///
+  /// The products list computed all four of these in the browser, which meant
+  /// loading every variant of every product to show a column — fine at twelve
+  /// SKUs and wrong at twelve thousand, and the shape that makes a list page
+  /// slow long before anybody profiles it. A `@from` is a correlated subquery:
+  /// it costs no extra round trip, it is not a column, and it cannot go stale
+  /// because there is nothing cached to invalidate.
+  ///
+  /// `priceFrom` / `priceTo` are the range the catalogue prints as `£10–£14`,
+  /// and they are the same two numbers whether one variant exists or twelve —
+  /// equal when there is nothing to choose between.
+  ///
+  /// `onHand` is the sum of the shelves and NOT what is buyable: available is
+  /// stock minus the unexpired holds, which lives in `api/inventory.ts` for the
+  /// reason written on `ProductVariant.stock`. A shopper is never shown this
+  /// number.
+  variantCount Int   @from(ProductVariant, count: true)
+  priceFrom    Float @from(ProductVariant, min: price)
+  priceTo      Float @from(ProductVariant, max: price)
+  onHand       Int   @from(ProductVariant, sum: stock)
+
+  /// What a person is shown when a picker offers one of these. Without it the
+  /// scan picks the first plain string — here `name`, correctly, but by luck.
+  @@label(name)
+
+  /// The catalogue is searchable, and it is searchable on the SERVER.
+  ///
+  /// This is the one thing a prerendered storefront cannot do for itself. The
+  /// catalogue island is handed the products that were baked into the page, so
+  /// what it can filter is what was baked — which is every product in a shop
+  /// this size and a page of them in a shop that is not. A search box that
+  /// silently means *of the ones on this page* is the kind of wrong that looks
+  /// right until the shop grows.
+  ///
+  /// Two columns and not three. `brand` is an enum and matching it is an
+  /// ordinary equality filter; putting it in the index would make a search for
+  /// `junction` rank a brand match against a name match with nothing saying
+  /// which it did. SKUs are not here either, and cannot be: they live on
+  /// `ProductVariant`, and an FTS index spans one table.
+  @@fts([name, description])
+
+  @@softDelete(cascade)
+
+  @@gate("0.4.4.5")
+}
+
+/// The colourways this shop has run. `ProductVariant.colour` stores the NAME
+/// rather than a foreign key, because the value has to outlive the row: a
+/// colourway that is retired is still what the navy tees in the warehouse are,
+/// and a deleted row must not take that answer with it.
+model Colour {
+  id   Int    @id
+  name String @length(1, 30) @unique
+
+  /// For the swatch a picker draws. Optional — a colourway added by a merchant
+  /// typing it into the variant form has no hex until somebody sets one.
+  hex String? @length(4, 7)
+
+  /// Out of the offered list, still on every variant that ran in it. This is
+  /// what @@scope below reads, and it is why the set is a table and not an enum:
+  /// retiring a colourway is a row edit rather than a deploy.
+  retired Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  /// What a picker shows, and — because `value` and this are the same column —
+  /// the column an `open` binding writes what the merchant typed into.
+  @@label(name)
+
+  /// The narrowing the value set names. It travels to the browser as a filter,
+  /// so the list the picker offers is the list the Data boundary will accept.
+  @@scope(current, retired == false)
+
+  @@gate("0.4.4.5")
+}
+
+/// The list behind `ProductVariant.colour`. `value name` rather than the id is
+/// the whole point: what is stored is the colourway, readable on its own, and
+/// the row is the metadata about it.
+valueset ProductColour {
+  source Colour
+  value  name
+  scope  current
+}
+
+/// The buyable thing. One row per option combination, and the row a basket
+/// line, a price and a stock count all point at.
+model ProductVariant {
+  id        Int     @id
+  productId Int     @label("Product") @required("Every variant belongs to a product")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  sku String @length(3, 20) @unique @upper
+
+  /// The option columns. NOT nullable, and the @@unique below is the whole
+  /// reason — see the note on `enum Size`. A product with nothing to choose
+  /// takes the defaults, which is what Shopify spells "Default Title".
+  ///
+  /// `colour` is the pair `size` is not: a stored STRING with a declared list
+  /// behind it. `open` is what makes it a colourway rather than an enum — the
+  /// merchant picks one the shop has run before, and typing a new one adds it
+  /// to the list instead of asking for a schema change and a deploy.
+  colour String @length(1, 30) @default("Default") @values(ProductColour, open)
+  size   Size    @default(one)
+
+  price   Float   @gte(0)
+  barcode String? @unique
+
+  /// ON HAND: what the warehouse could physically pick right now. NOT what is
+  /// buyable — a basket holding a reservation has not taken this down yet, and
+  /// a shopper who is offered the last one after somebody else is already
+  /// holding it finds out at the till, which is the worst place to find out.
+  ///
+  /// AVAILABLE = stock − the unexpired holds. It is not a column and cannot be:
+  /// it is a sum over another table that changes with the clock, and a column
+  /// would be a cached answer with nothing to invalidate it. `api/inventory.ts`
+  /// is the one place it is computed and the one place this column is written.
+  stock Int @default(0) @gte(0)
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  /// Stamped by `Product`'s cascade, and reachable on its own for a colourway
+  /// that was a mistake. The ledger and the holds hanging off this row are not
+  /// touched by either: they belong to the shelf, and what physically moved did
+  /// not stop having happened.
+  deletedAt DateTime?
+
+  images       ProductImage[]
+  /// The holds against this shelf, and every reason it ever moved.
+  reservations StockReservation[]
+  movements    InventoryMovement[]
+
+  /// One row per combination. Without it a second "navy / m" is a legal insert
+  /// and the two rows fight over one shelf.
+  @@unique([productId, colour, size])
+
+  /// A picker over variants shows the SKU — the option columns are two fields
+  /// and a label field is one, and a SKU is what the shop floor says out loud.
+  @@label(sku)
+
+  /// `(cascade)` reaches the photographs of THIS colourway and nothing else — a
+  /// flat-lay of the whole range names no variant, so its foreign key is null
+  /// and it is not matched. The holds and the ledger below are not soft-delete
+  /// tables at all, so the cascade cannot touch them by construction.
+  @@softDelete(cascade)
+
+  @@gate("0.4.4.5")
+  @@log(audit)
+}
+
+/// A photograph. The bytes live in object storage and this column holds the
+/// reference — `File` is the type that means that, and `FileStorage` in
+/// api/db.ts is what turns a path or an upload into one.
+model ProductImage {
+  id        Int     @id
+  productId Int     @label("Product")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  /// Null means "shows the family". A colourway shot names its variant, and a
+  /// flat-lay of the whole range names none.
+  variantId Int?            @label("Variant")
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  file File   @accept("image/png, image/jpeg, image/webp")
+  alt  String @length(1, 160) @label("Alt text")
+                              @required("Describe the photo — a shop with no alt text is a shop half its customers cannot use")
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  /// Stamped by `Product`'s cascade. The bytes are not deleted with the row —
+  /// a restored product with no photographs is a product nobody will buy.
+  deletedAt DateTime?
+
+  @@softDelete
+
   @@gate("0.4.4.5")
 }
 
@@ -72,6 +391,9 @@ model Product {
 model Customer {
   id    Int    @id
   name  String @length(1, 80)
+  firstName  String @length(1, 80)
+  lastName  String @length(1, 80)
+  fullName  String? @generated(`{firstName} {lastName}`)
   email String @email @unique @lower
 
   /// Staff-only. Field-level @allow is the tool for "some callers may read this
@@ -82,13 +404,264 @@ model Customer {
   /// not a level, and it takes no numeric argument. @guarded(5) does not parse.
   notes String? @allow('read', auth().role == 'admin')
 
-  orders    Order[]
+  /// The credential behind this record, once there is one.
+  ///
+  /// A `Customer` is the SHOP's record of a person — it exists the moment
+  /// somebody checks out as a guest, with no password and no way back in. A
+  /// `User` is the credential. They are two facts and the second is optional,
+  /// which is why this is nullable and why it is here rather than the other way
+  /// round: every buyer has a record, and only some of them have an account.
+  ///
+  /// `@unique` because two accounts claiming one customer record is two people
+  /// reading each other's orders. Written by the app — at checkout when the
+  /// caller is signed in, and at registration when an address already has a
+  /// history — never by the caller, which is what `@system` says.
+  userId String? @unique @system
+
+  /// `@keep` is the whole of the paragraph below, said in one word: when this
+  /// row is soft-deleted these do NOT go with it. Without it the schema warns
+  /// that the children were left live — which is what forgetting the cascade
+  /// looks like, and here it is the intention.
+  orders    Order[] @keep
   createdAt DateTime @default(now())
 
-  @@gate("0.4.4.5")
+  /// How many orders this person has, answered by SQLite on the row.
+  ///
+  /// It is on screen because it is what makes `@keep` VISIBLE rather than
+  /// merely true: a removed customer still reads 2, and had the orders been
+  /// cascaded it would read 0 with nothing on the page saying which happened.
+  /// A `@from` reads its target the way the target is read, so this counts LIVE
+  /// orders — an order removed on its own does come off it.
+  orderCount Int @from(Order, count: true)
+
+  /// ─── Removal, and why the orders do not go with it ──────────────────────
+  ///
+  /// A customer asks to be taken off the books. Until this column the shop
+  /// could not do it: `Order.customerId` is `onDelete: Cascade`, so `remove()`
+  /// took every order the person had ever placed with it. An order is a
+  /// financial record — it is what the revenue is made of and what an auditor
+  /// reads — and losing one because somebody unsubscribed is a bookkeeping
+  /// failure wearing a privacy feature's clothes.
+  ///
+  /// Soft delete is a VISIBILITY rule, so the person leaves every list, every
+  /// picker and every search while the rows pointing at them stay where they
+  /// are. Plain and deliberately not `(cascade)`, which is the one thing that
+  /// would reintroduce the bug.
+  ///
+  /// `email` is `@unique` and a deleted row keeps it, so a returning customer
+  /// is a `restore()` and not a second record — and re-registering the address
+  /// against a NEW record is a 409 the app has to answer on purpose.
+  deletedAt DateTime?
+
+  /// Two staff editing one customer. `userId` is `@system`, but it is stamped
+  /// once when an account is linked and never written again — a one-shot stamp
+  /// is not a second editor, which is what keeps this row inside the rule at the
+  /// top of the file.
+  version Int @version
+
+  /// Read needs a SIGNED-IN caller, and the policies below decide which rows.
+  ///
+  /// It was `"0.4.4.5"` — the catalogue's gate, pasted onto the ledger — so
+  /// `GET /api/customers` with no token at all answered every customer's name
+  /// and email. Four models legitimately read at 0 and they are all catalogue:
+  /// the prerendered storefront reads them with no session, which is the whole
+  /// of what a public shop front is. This is not one of them.
+  ///
+  /// 1 rather than 4 because a shopper who has registered and not yet clicked
+  /// the link in their email is VISITOR(1), and their own order history is
+  /// exactly the thing they should be able to see while they wait.
+  @@gate("1.4.4.5")
+
+  /// Staff read every customer. `isStaff` is a column on User and NOT a level:
+  /// a verified shopper and a member of staff both grade USER(4), so the ladder
+  /// cannot tell them apart and was never meant to — a gate answers *what kind
+  /// of caller*, and this is *which person*.
+  @@allow('read', auth().isStaff)
+
+  /// …and a shopper reads their own record and no other.
+  @@allow('read', userId == auth().id)
+
+  @@softDelete
+
   @@log(audit)
 }
 
+
+// ─── Money ────────────────────────────────────────────────────────────────
+//
+// Three things stand between the sum of the lines and what the card is
+// charged, and each one is a different KIND of thing:
+//
+//   Discount        the shop giving something up, on a code somebody typed
+//   ShippingMethod  a service the shop is buying on the shopper's behalf
+//   TaxRate         money that was never the shop's, collected for somebody else
+//
+// They share one property that decides every design below: **the arithmetic
+// has exactly one owner**, `api/src/pricing.ts`, and the basket screen, the
+// checkout and the receipt all ask it rather than each doing the multiplication
+// themselves. A total computed in two places is two totals, and the day they
+// disagree is the day a customer is charged a number no screen ever showed.
+//
+// The second property is that a receipt must EXPLAIN itself. `Order` carries
+// nine columns below that are copies of rows here — the code, the wording, the
+// rate — for `OrderLine`'s reason: what the shop charges today is one fact and
+// what this shopper was charged is another, and re-reading the first to render
+// the second rewrites history every time a merchant edits a rate.
+
+/// How a discount reduces a subtotal. Two members and no third: a
+/// buy-one-get-one is a rule about LINES and cannot be expressed as a number
+/// against the whole, so it would be a different feature wearing this enum's
+/// name.
+enum DiscountKind { percent fixed }
+
+/// A code somebody types at the till.
+///
+/// ─── Why a shopper may not read this table ────────────────────────────────
+///
+/// `@@gate("5.5.5.5")` — staff only, read included. Every other thing a
+/// shopper interacts with here is readable at 0, because a storefront has to
+/// list it; a discount code is the exception, and the reason is that listing
+/// them IS the exploit. `GET /api/discounts` answering the table hands every
+/// unreleased code to anyone who asks, and a shop's codes are worth money.
+///
+/// So the shopper never reads a row: they send a string to
+/// `carts.applyDiscount`, which validates it through the SYSTEM client and
+/// answers the basket with the money recalculated — the same shape
+/// `StockReservation` uses for holds, and for the same reason. What comes back
+/// is what this code is worth to THIS basket, which is the only fact about it
+/// they are entitled to.
+model Discount {
+  id Int @id
+
+  /// What is typed. `@upper` so `welcome10` and `WELCOME10` are one code —
+  /// a shopper reading a code off a poster is not going to match its case,
+  /// and a lookup that fails on that is a support ticket.
+  code String @length(3, 20, "A code is 3 to 20 characters") @unique @upper
+                @label("Code")
+
+  /// What the basket screen CALLS it. The code is an identifier; this is the
+  /// sentence beside the amount, and a receipt saying `-$4.00 (WELCOME10)`
+  /// tells a customer less than one saying `-$4.00 (10% off your first order)`.
+  label String @length(1, 60) @label("Description")
+
+  kind  DiscountKind @default(percent) @label("Kind")
+
+  /// Percent: 0–100. Fixed: an amount in the shop's base currency. One column
+  /// for two units, which is the cost of not having two tables — `@@check`
+  /// cannot see `kind` from here, so the bound that matters (a percentage
+  /// above 100) is enforced in `pricing.ts` where both halves are in scope,
+  /// and the discount is capped at the subtotal regardless.
+  value Float @gte(0) @label("Value")
+
+  /// The floor this code is worth anything at. Zero means none.
+  minSubtotal Float @default(0) @gte(0) @label("Minimum spend")
+
+  /// The window. Both nullable — a code with no start is live now, a code with
+  /// no end runs until somebody turns it off.
+  startsAt DateTime? @label("Starts")
+  endsAt   DateTime? @label("Ends")
+
+  /// How many times it may be used, and how many times it has been. Null means
+  /// no limit.
+  ///
+  /// `redemptions` is `@system`: the application writes it, never a caller,
+  /// and never a merchant editing the form — a counter a person can set is not
+  /// a count of anything. It is incremented inside `carts.checkout`'s
+  /// transaction by read-modify-write rather than `{ increment: 1 }`, for
+  /// `stock`'s reason: an atomic operator computes the new value inside SQLite
+  /// where no validator can see it, so the limit would be passed and the
+  /// constraint would never fire (`FJS-D27`). The transaction is what makes
+  /// the read-then-write safe, and it is the same transaction the order is
+  /// written in — a code redeemed by an order that rolls back was not redeemed.
+  maxRedemptions Int? @gte(1) @label("Redemption limit")
+  redemptions    Int  @default(0) @gte(0) @system @label("Times used")
+
+  active Boolean @default(true) @label("Active")
+
+  /// The baskets currently carrying it. Not the redemption count — a basket
+  /// that is abandoned redeemed nothing, which is why `redemptions` is a
+  /// column incremented at checkout rather than a count of these.
+  carts Cart[]
+
+  createdAt DateTime @default(now())
+
+  @@gate("5.5.5.5")
+  @@log(audit)
+}
+
+/// What the shop charges to send it.
+///
+/// Readable at 0, unlike a discount: a storefront has to OFFER these, and the
+/// prices are printed on the shipping page anyway. That difference — one table
+/// public, its neighbour staff-only, both on the same screen — is the clearest
+/// statement in this schema that a gate answers *what kind of caller* and not
+/// *what kind of table*.
+model ShippingMethod {
+  id Int @id
+
+  name        String  @length(1, 40) @unique @label("Method")
+  description String? @length(0, 120) @label("Description")
+
+  price Float @gte(0) @label("Price")
+
+  /// The subtotal at which this method costs nothing. Null means never free.
+  ///
+  /// Measured against the subtotal AFTER the discount, which is a decision and
+  /// not an accident: a shop that gives free shipping over 50 and a code worth
+  /// 10 off has to choose whether a 55 basket with the code applied still
+  /// qualifies. Discount-first is the answer that cannot surprise a merchant
+  /// into shipping for free at a loss, and `pricing.ts` is where it is written
+  /// down once.
+  freeOver Float? @gte(0) @label("Free over")
+
+  /// The order they are offered in. A merchant decides which one is at the
+  /// top; alphabetical would put Express above Standard and change what most
+  /// people pick.
+  position Int     @default(0) @label("Position")
+  active   Boolean @default(true) @label("Active")
+
+  carts Cart[]
+
+  /// A rate table two people maintain, and nothing else writes a column on it.
+  version Int @version
+
+  @@gate("0.5.5.5")
+}
+
+/// The rate this shop collects, and what it is called where the shop is.
+///
+/// A row rather than a constant because this is a FLEET: `tenancy { strategy
+/// database }` gives every shop its own file, so a shop in one jurisdiction
+/// and a shop in another disagree about both numbers — and a constant in the
+/// API would be the one fact about a shop that every shop had to share.
+///
+/// `label` is not decoration. A line on a receipt reading `Tax` where the law
+/// says `VAT` is a receipt a business customer cannot file.
+model TaxRate {
+  id Int @id
+
+  label String @length(1, 30) @label("Shown as")
+
+  /// A FRACTION, not a percentage — 0.2 and not 20. One representation, chosen
+  /// because it is the one the arithmetic uses; a column storing 20 and a
+  /// calculation dividing by 100 puts a unit conversion between the merchant
+  /// and the money, and it only has to be forgotten once.
+  rate Float @gte(0) @lte(1) @label("Rate")
+
+  /// Which one applies when nothing else says. Exactly one row should carry
+  /// it; `pricing.ts` takes the first active default and charges nothing when
+  /// there is none, because a shop that has not configured tax is a shop that
+  /// does not charge it — not one that should refuse to sell.
+  isDefault Boolean @default(false) @label("Default")
+  active    Boolean @default(true)  @label("Active")
+
+  /// Same shape as `ShippingMethod`, and the stakes are higher: two people
+  /// editing one rate and the second write winning silently is a shop charging
+  /// a number nobody chose.
+  version Int @version
+
+  @@gate("0.5.5.5")
+}
 
 // ─── Orders ───────────────────────────────────────────────────────────────
 
@@ -98,11 +671,86 @@ model Customer {
 /// decision and not the user's.
 enum OrderStatus { pending paid shipped refunded cancelled }
 
+/// The payload `orders.recordTracking` accepts — the courier job's way back in.
+///
+/// A CUSTOM METHOD has no model behind it, so nothing derived `ctx.data` for
+/// one: `recordTracking` read `$.data as { trackingCode?: string }` and a cast
+/// is not a check. `methods: [{ method, input }]` in the service names this
+/// type, and it is validated exactly as a model create is — same generated
+/// JSON Schema, same wording, same 400.
+///
+/// It is a `type` rather than a second model because there is nothing to store:
+/// the column lives on Order and this describes only what may arrive.
+type TrackingUpdate {
+  trackingCode String @length(4, 40, "A tracking code is 4 to 40 characters")
+                      @label("Tracking")
+}
+
 model Order {
   id        Int         @id
   reference String      @length(3, 20, "A reference is 3 to 20 characters, like ORD-1001") @unique @upper
   status    OrderStatus @default(pending)
-  total     Float       @default(0) @gte(0)
+
+  /// ─── What was charged, and why ──────────────────────────────────────────
+  ///
+  /// Nine columns for one number, and every one of them is a copy of something
+  /// that lives somewhere else — the code, its wording, the method, the rate.
+  /// `OrderLine`'s header argues the general case; the specific one is that a
+  /// merchant changes the VAT rate the week after a sale and every historical
+  /// receipt silently reprices itself if the rate is joined rather than
+  /// written down.
+  ///
+  /// The arithmetic is `api/src/pricing.ts` and nothing here recomputes it:
+  ///
+  ///     subtotal − discount + shipping + tax = total
+  ///
+  /// Each component is rounded once, on the server, at the moment of sale, and
+  /// `total` is the sum of the ROUNDED components — so the breakdown a customer
+  /// reads adds up to the figure they were charged, by construction rather than
+  /// by luck. A screen that re-derived any line of it would round on its own
+  /// and be a penny out on exactly the orders where a penny is noticed.
+  ///
+  /// Every one is `@system`: the shop computes them, and there is no request in
+  /// which a caller stating their own total is anything but an attack. They are
+  /// `@default(0)` rather than nullable because an order with no discount was
+  /// discounted by zero, which is a fact — where null would mean *nobody has
+  /// worked it out yet*, and that state does not exist after checkout.
+
+  /// The lines, added up. What `OrderLine.lineTotal` sums to.
+  subtotal Float @default(0) @gte(0) @system @label("Subtotal")
+
+  /// What came off, and the code that took it off. The code is nullable
+  /// because most orders have none; `discount` is 0 for those, and the two
+  /// must agree — a row with a code and a zero is a bug worth being able to
+  /// find.
+  discountCode  String? @system @label("Code")
+  discountLabel String? @system @label("Discount")
+  discount      Float   @default(0) @gte(0) @system @label("Discount amount")
+
+  /// What was charged to send it, and what the shopper picked. A label of
+  /// `Standard` against a zero is the free-over threshold having been met, and
+  /// that reads correctly on a receipt without a fourth column to say so.
+  shippingLabel String? @system @label("Shipping")
+  shipping      Float   @default(0) @gte(0) @system @label("Shipping cost")
+
+  /// Money that was never the shop's. The RATE is stored beside the amount
+  /// because a receipt has to be checkable: an auditor reading `$8.40` needs
+  /// the 0.2 it came from, and the row in `TaxRate` may have moved since.
+  taxLabel String? @system @label("Tax")
+  taxRate  Float   @default(0) @gte(0) @system @label("Rate")
+  tax      Float   @default(0) @gte(0) @system @label("Tax amount")
+
+  /// What the card was charged. The sum of the five above, stored rather than
+  /// derived, and the only one of them a payment is ever compared against.
+  ///
+  /// The ONE money column here that is not `@system`, and the exception is
+  /// deliberate: staff raise an order by hand for a sale that happened on the
+  /// telephone, and that order has a total and no itemisation — no lines, and
+  /// therefore no breakdown to add up. A screen renders the five above only
+  /// where there are lines to explain, which is the same condition under which
+  /// they were computed at all.
+  total Float @default(0) @gte(0)
+
   note      String?
 
   /// belongsTo. `customerId` is emitted as a plain integer, so the browser only
@@ -134,7 +782,29 @@ model Order {
   // list to stop it (FJS-095).
   trackingCode String? @system @label("Tracking")
 
+  /// What was bought. An order that carries only a total is a receipt with the
+  /// itemisation torn off — see `model OrderLine` for what that cost.
+  lines OrderLine[]
+
   createdAt DateTime @default(now())
+
+  /// ─── Removal ────────────────────────────────────────────────────────────
+  ///
+  /// The orders screen has a Delete button behind level 5, and until this column
+  /// it destroyed the row and cascaded into `OrderLine` — an itemised financial
+  /// record gone on one mis-click behind a two-button popover. `(cascade)`
+  /// stamps the lines with the same instant, so an order and what it was made of
+  /// leave together and come back together.
+  ///
+  /// It does not reach `InventoryMovement`: the ledger hangs off the VARIANT and
+  /// not off the order, and what left the shelf did not stop having happened
+  /// because a receipt was withdrawn.
+  ///
+  /// `remove()` does not consult `@@transitions` — stamping this column is a SQL
+  /// UPDATE and not a state change — so nothing here stops a `pending` order
+  /// being removed. Deliberate: the state machine says which states follow which,
+  /// and whether a row may leave the list is an access question.
+  deletedAt DateTime?
 
   /// The state machine, declared where every other access rule lives rather
   /// than in whichever service handler was written first. Litestone enforces
@@ -148,10 +818,601 @@ model Order {
     pay:    pending         -> paid,
     ship:   paid            -> shipped,
     refund: paid            -> refunded @gate(5),
-    cancel: [pending, paid] -> cancelled)
+    cancel: [pending, paid] -> cancelled
+  )
 
-  @@gate("0.4.4.5")
+  /// Whose order this is, when the buyer had an account at the moment of sale.
+  ///
+  /// DENORMALISED from `Customer.userId`, deliberately. A row policy compares
+  /// columns on its own model against `auth()` and does not traverse a
+  /// relation, and `@from` crosses one only to AGGREGATE (`count: true`) — so
+  /// *the orders of the customer this account is linked to* has nowhere to be
+  /// written except here. The alternative was a service filter, which is a rule
+  /// living outside the boundary that enforces every other rule about this row.
+  ///
+  /// Null for a guest sale, and it stays null: an account registered later
+  /// takes the customer record with it, and the orders under it, through the
+  /// policy on `Customer` — but an order already written is a receipt, and
+  /// back-filling receipts is a write nobody asked for.
+  userId String? @system
+
+  @@gate("1.4.4.5")
+
+  /// Staff read every order; a shopper reads their own. Two allows rather than
+  /// one expression, because within an operation they are OR'd — and because
+  /// they are two different sentences that will change at different times.
+  @@allow('read', auth().isStaff)
+  @@allow('read', userId == auth().id)
+
+  @@softDelete(cascade)
+
   @@log(audit)
+}
+
+
+/// What was bought, at the price it was bought for.
+///
+/// ─── Why the columns are copies ──────────────────────────────────────────
+///
+/// Every column below except the two ids is a value this row already has a
+/// relation to. That is not denormalisation for speed — it is that a line is a
+/// statement about a MOMENT and its neighbours are statements about now. A
+/// variant's price is what the shop charges today; `unitPrice` is what this
+/// shopper was charged, and re-reading the first to render the second rewrites
+/// what past customers paid every time somebody edits the catalogue. Same for
+/// the wording: `description` is the sentence that was on the screen, and a
+/// colourway renamed next year does not un-sell this one.
+///
+/// The relation stays for the one thing a copy cannot do — link back to the
+/// product page — and it is `Restrict` for the reason `InventoryMovement`'s is:
+/// history that a DELETE somewhere else can empty is not history.
+///
+/// ─── This does not replace the ledger, and the two are not the same fact ──
+///
+/// `InventoryMovement` records what left the SHELF; these record what was
+/// SOLD. A refund still reads the movements back (`api/src/inventory.ts`
+/// `restock`), because the question there is what physically moved and the
+/// signed tape is the only thing that answers it. The question here is what
+/// the shop billed for, which the tape cannot answer: it carries no prices.
+model OrderLine {
+  id      Int   @id
+  orderId Int   @label("Order")
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  variantId Int            @label("Variant")
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  /// The three copies. `sku` is what a picker in the warehouse reads,
+  /// `description` is what the customer read, and neither is looked up again.
+  sku         String @length(1, 40)
+  description String @length(1, 160) @label("Item")
+
+  quantity  Int   @gte(1) @lte(99)
+  unitPrice Float @gte(0) @label("Unit price")
+
+  /// STORED, not multiplied at read time — and this is the column that decides
+  /// whether the lines add up to the total. Rounding is done once, on the
+  /// server, at the moment of sale; a screen that recomputed `unitPrice *
+  /// quantity` in JavaScript would round on its own and the sum of what is
+  /// shown would not be what was charged, by a penny, on the orders where it
+  /// matters most.
+  lineTotal Float @gte(0) @label("Total")
+
+  /// A FOURTH copy, and the one that is not about the sale.
+  ///
+  /// The three above are copies because a price and a description are facts
+  /// about the moment of sale. This one is a copy for a duller reason: a row
+  /// policy compares columns on ITS OWN model against `auth()` and cannot name
+  /// one on a related model — `@@allow('read', order.userId == auth().id)` is a
+  /// parse error at the dot (`FJS-499`). So *the lines of my own orders* has
+  /// nowhere to live but here.
+  ///
+  /// Stated rather than hidden, because the cost is real: this column and
+  /// `Order.userId` can disagree, and nothing in the schema can stop them.
+  /// `carts.checkout` writes both inside one transaction, which is the whole of
+  /// what keeps them together.
+  userId String? @system
+
+  createdAt DateTime @default(now())
+
+  /// Stamped by `Order`'s cascade and by nothing else — there is no path that
+  /// removes a line on its own, the same way there is none that writes one.
+  deletedAt DateTime?
+
+  /// Read where the order reads; write only through `asSystem()`.
+  ///
+  /// A line has no caller-facing write path at all — `carts.checkout` is the
+  /// one thing that makes one, as the shop recording its own sale, and nothing
+  /// ever edits one afterwards. So the write levels are 8 rather than 5: an
+  /// administrator has nothing to say to this table either, and putting 5 here
+  /// would offer a generated form for editing what a customer was charged.
+  ///
+  /// Read was 0. That is the catalogue's answer and this is the sales ledger:
+  /// every SKU, every quantity and every price the shop has ever charged,
+  /// answerable to anyone with `curl`. Same paste as `Order` and `Customer`.
+  @@gate("1.8.8.8")
+
+  @@allow('read', auth().isStaff)
+  @@allow('read', userId == auth().id)
+
+  @@softDelete
+
+  /// Every read of this table is "the lines of one order".
+  @@index([orderId])
+}
+
+
+// ─── Payments ─────────────────────────────────────────────────────────────
+//
+// The money, and the one thing in this shop the shop does not decide. Every
+// row below is written because a PROVIDER said something — never because a
+// caller asked — and that is what the gates say: read at ADMINISTRATOR(5),
+// write only through `asSystem()`, which is the shop recording what it was
+// told. A shopper never touches either table; they learn the answer from the
+// order, whose status is the thing they actually care about.
+
+/// `refunded` means FULLY refunded and nothing else. A partly refunded payment
+/// stays `succeeded` and carries the amount that went back — those are two
+/// facts and a fifth enum member would fuse them, so the one question a shop
+/// asks constantly ("is this settled?") would need to name two states.
+enum PaymentStatus { pending succeeded failed refunded }
+
+/// One attempt to take money for one order.
+///
+/// ─── Why `providerRef` is @unique and is not the id ──────────────────────
+///
+/// A webhook arrives naming the PROVIDER's id and nothing else — it has never
+/// heard of this database. So the column the lookup goes through has to be the
+/// provider's, and it has to be unique or a redelivery could settle a second
+/// row. It is not the primary key because a provider id is theirs to change
+/// the shape of, and a foreign key pointing at a string somebody else mints is
+/// a migration waiting to happen.
+model Payment {
+  id Int @id
+
+  providerRef String @unique @length(3, 64) @label("Provider reference")
+
+  status PaymentStatus @default(pending)
+
+  /// COPIED from the order at the moment the intent was created, not joined.
+  /// What was authorised is a fact about that authorisation, and an order
+  /// whose total was corrected afterwards must not silently rewrite what the
+  /// provider was asked for — the disagreement between the two numbers is the
+  /// thing a person needs to see.
+  amount   Float  @gte(0)
+  currency String @default("USD") @length(3, 3) @upper
+
+  orderId Int   @label("Order")
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  /// How much has gone back, of `amount`. A number rather than a flag because a
+  /// refund is not one event: a shop refunds the postage today and the item
+  /// next week, and each is a separate call to the provider with its own
+  /// ledger row. The order only moves when this reaches `amount`.
+  refundedAmount Float @default(0) @gte(0)
+
+  /// The provider's words, kept verbatim. Nothing branches on it — it is for
+  /// the person reading the row, and inventing a taxonomy over somebody else's
+  /// failure strings is a mapping that goes stale without ever failing.
+  failureReason String? @length(0, 200)
+
+  createdAt DateTime  @default(now())
+  settledAt DateTime?
+
+  /// One live attempt per order at a time is a rule this shop does not need:
+  /// a failed card followed by a good one is two rows, and the history is the
+  /// point. The index is what makes "this order's payments" cheap.
+  @@index([orderId])
+
+  /// RCUD. Read 5 — an administrator; a payment names amounts and a provider
+  /// reference. Create and update 8 — SYSTEM, because the only writer is the
+  /// shop recording what a provider said, and a level is not what separates
+  /// those: no PERSON at any standing writes one. Delete 9 — LOCKED. Money
+  /// that was taken cannot stop having been taken, and 9 is how that is spelt
+  /// for every caller including the application itself.
+  @@gate("5.8.8.9")
+  @@log(audit)
+}
+
+/// Every event the provider has delivered, once each. Append-only.
+///
+/// ─── What this table is for, and what it is NOT for ──────────────────────
+///
+/// It is NOT what makes paying an order idempotent. That is the state machine:
+/// `pay` is `pending -> paid`, so a second one is refused at the Data boundary
+/// whatever this table says. Nor is it the signature replay check, which is a
+/// nonce inside a five-minute window and is gone the moment the window passes.
+///
+/// It is the answer to "what did they tell us, and when" — the row a person
+/// reads when the order and the provider's dashboard disagree. The @unique is
+/// what makes a redelivery cheap: the handler claims the id and stops, rather
+/// than re-deriving that there is nothing to do.
+///
+/// The claim and the effect are written in ONE transaction (`transactional:`
+/// on `payments.record`), which is the only arrangement that is correct. Claim
+/// first and commit separately, and a crash in between leaves the event
+/// claimed and the order unpaid — and the provider's retry is deduped away by
+/// the very row that recorded nothing happening.
+model PaymentEvent {
+  id Int @id
+
+  /// The provider's id FOR THE EVENT, not for the payment — one payment
+  /// produces several, and deduping on the payment would drop the ones that
+  /// come after the first.
+  eventId String @unique @length(3, 80) @label("Event")
+
+  kind String @length(1, 60) @label("Type")
+
+  /// Which payment it was about, as the provider spelt it. A plain string and
+  /// not a relation: an event may name a payment this shop has no row for
+  /// (a provider-side refund, a test event fired from their dashboard), and a
+  /// foreign key would refuse to record the one event most worth recording.
+  paymentRef String? @length(0, 64) @label("Payment")
+
+  receivedAt DateTime @default(now())
+
+  /// Read 5, create 8, update and delete 9. Append-only, and LOCKED rather
+  /// than SYSTEM for the two that would edit history: a ledger `asSystem()`
+  /// can rewrite is a ledger.
+  @@gate("5.8.9.9")
+}
+
+
+// ─── Basket ───────────────────────────────────────────────────────────────
+
+enum CartStatus { open ordered abandoned }
+
+/// A basket, and the one model in this app owned by NOBODY.
+///
+/// A shopper is a stranger — no account, no session, level 0 — and a stranger
+/// still has to be the only person who can see their own basket. That cannot
+/// be `userId == auth().id`, because there is no `auth().id` to compare, and it
+/// must not be a service reading through `asSystem()`, because access is
+/// declared in the schema and not in hooks (Invariant 6).
+///
+/// So the owner is a BEARER TOKEN, and `api/cart-claim.ts` turns the header
+/// carrying it into a claim on the principal before the Data boundary scopes
+/// the client. `auth().cartToken` is then a claim a stranger holds, and the
+/// policies below are ordinary row policies over it.
+///
+/// The token is `@guarded`: the app writes it, `asSystem()` reads it, and no
+/// caller ever gets it back in a response — the browser knows it because it
+/// was handed it once, at creation, by the service that minted it.
+model Cart {
+  id    Int    @id
+  token String @unique @guarded @default(cuid())
+
+  /// Set when a signed-in person owns the basket, null while they are a guest.
+  /// Both audiences use the same policies — the token is what proves ownership
+  /// either way, so signing in mid-shop does not lose the basket.
+  userId String?
+
+  status CartStatus @default(open)
+
+  /// ─── The money, while it is still changeable ────────────────────────────
+  ///
+  /// Two references and no amounts. A basket stores WHICH code and WHICH
+  /// method, and every figure is computed on read by `api/src/pricing.ts` —
+  /// the opposite of `Order`, which stores the figures and no references.
+  ///
+  /// That inversion is the whole distinction between the two tables. A basket
+  /// is a question the shop answers again on every request, so a rate that
+  /// changed or a code that expired while the shopper was deciding must show
+  /// up immediately; an order is a statement about a moment, so nothing about
+  /// it may move afterwards. Storing amounts on the basket would quote a price
+  /// the shop no longer offers, and storing references on the order would
+  /// reprice history.
+  ///
+  /// Both are `@system`. The basket's own policy lets its holder update it —
+  /// `@@allow('update', token == auth().cartToken)` — which is what makes the
+  /// quantity stepper work without a session, and it would just as happily let
+  /// them point `discountId` at any row in the table. So neither is set by a
+  /// write: `carts.applyDiscount` takes a CODE and validates it, and
+  /// `carts.setShipping` takes a method and checks it is active.
+  discountId Int?      @system @label("Discount")
+  discount   Discount? @relation(fields: [discountId], references: [id], onDelete: SetNull)
+
+  shippingMethodId Int?            @system @label("Shipping")
+  shippingMethod   ShippingMethod? @relation(fields: [shippingMethodId], references: [id], onDelete: SetNull)
+
+  /// ─── Handing a basket to another ORIGIN ─────────────────────────────────
+  ///
+  /// An embeddable buy button runs on a page the shop does not own, so its
+  /// basket token lives in THAT origin's storage and the shop's own site cannot
+  /// read it. Sending the shopper to checkout therefore means handing the
+  /// capability across an origin boundary, and the token itself must not be
+  /// what travels: a URL is written to history, to a `Referer` header and to
+  /// every log between here and there, and this one is a bearer secret good for
+  /// the life of the basket.
+  ///
+  /// So what travels is a ONE-TIME CODE. `carts.handoff` mints it, the link
+  /// carries it in the fragment (which is never sent to a server), and
+  /// `carts.redeem` exchanges it for the token and clears it in the same write.
+  /// It is worth one basket, for two minutes, once.
+  ///
+  /// `@guarded` for the same reason `token` is: the code is answered by exactly
+  /// one method, to the caller already holding the basket.
+  handoffCode    String?   @unique @guarded
+  handoffExpires DateTime? @guarded
+
+  lines CartLine[]
+  /// The stock this basket is holding. A hold is NOT the line: the line is what
+  /// the shopper chose, the hold is what the warehouse has set aside for them,
+  /// and the second one expires on its own.
+  holds StockReservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Create at 0 — a stranger starting a basket is the entire point. Read and
+  /// update at 0 too, because the POLICY is what scopes them; a gate answers
+  /// *what kind of caller*, never *which rows*. Delete needs an admin: a
+  /// basket is abandoned by the sweep, not removed by its holder.
+  @@gate("0.0.0.5")
+
+  @@allow('read',   token == auth().cartToken)
+  @@allow('update', token == auth().cartToken)
+}
+
+/// One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
+/// the same fact as the variant's price today — a basket left overnight must
+/// either honour what it quoted or say out loud that it changed, and it can do
+/// neither if the number was never written down.
+model CartLine {
+  id     Int  @id
+  cartId Int  @label("Basket")
+  cart   Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  variantId Int            @label("Variant") @required("Pick a size and colour")
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  quantity  Int   @gte(1) @lte(99) @default(1)
+  unitPrice Float @gte(0) @system
+
+  createdAt DateTime @default(now())
+
+  /// One line per variant. A second "navy / m" is a quantity change, not a
+  /// second row — and without this the basket shows the same thing twice and
+  /// the two rows disagree about how many.
+  @@unique([cartId, variantId])
+
+  /// The basket's token, copied onto the line.
+  ///
+  /// A policy cannot traverse a relation — `cart.token == auth().cartToken`
+  /// does not parse — so a child row that is scoped by its parent has to carry
+  /// the parent's key itself. (`@@tenant(via: parent)` does exactly this for
+  /// the tenancy feature; a plain `@@allow` has no equivalent.) It is written
+  /// once, with the line, and a line never moves basket.
+  ///
+  /// NOT `@guarded`, unlike the copy on `Cart`. A guard locks BOTH directions,
+  /// so the caller who has to write this column could not — measured, an
+  /// `AccessDeniedError` on a guest adding a line to their own basket. It does
+  /// not need one: the create policy below only admits the caller's own token,
+  /// and reading it back tells the bearer a secret they are already holding.
+  token String
+
+  /// All four at 0, unlike `Cart` above, and the difference is delete.
+  ///
+  /// A gate answers *what kind of caller* and a policy answers *which rows*.
+  /// Taking a line out of a basket is an ordinary thing a shopper does, and the
+  /// shopper is a stranger — so the gate has nothing to say and the policy
+  /// below is the whole of the protection. `Cart` keeps 5 for delete because
+  /// removing a BASKET is not something its holder does: it is abandoned by the
+  /// sweep.
+  ///
+  /// This read 5 for delete for as long as the basket existed, with the allow
+  /// beneath it saying what was meant. Nothing noticed, because nothing removed
+  /// a line: `removeLine` and `setQuantity(0)` both answered 403 to every guest
+  /// in the shop, and the two drives that fill a basket only ever added to it.
+  @@gate("0.0.0.0")
+  @@allow('read',   token == auth().cartToken)
+  @@allow('create', token == auth().cartToken)
+  @@allow('update', token == auth().cartToken)
+  @@allow('delete', token == auth().cartToken)
+}
+
+
+/// What `carts.checkout` accepts. A basket knows what is in it; it does not
+/// know who is buying, and a guest has no Customer row until this moment.
+///
+/// A `type` rather than a model for the same reason `TrackingUpdate` is one:
+/// there is nothing to store. It describes only what may arrive, and naming it
+/// in the service's `methods:` gets it the same generated JSON Schema, the same
+/// wording and the same 400 a model create would get — which is the half a
+/// custom method otherwise has to do by hand with a cast.
+/// The payload `carts.applyDiscount` accepts.
+///
+/// A `type` and not a model for `TrackingUpdate`'s reason — there is nothing to
+/// store, only something to validate. What it buys is that a three-character
+/// minimum and the sentence explaining it are declared in the seed beside every
+/// other rule, so the 400 a mistyped code gets is generated rather than written
+/// by hand in the service and forgotten when the column changes.
+type DiscountCode {
+  code String @length(3, 20, "A discount code is 3 to 20 characters") @upper
+              @label("Discount code")
+              @required("Enter the code you were given")
+}
+
+/// The payload `carts.setShipping` accepts. Nullable on purpose: choosing no
+/// method is a legitimate choice — it is how a shopper goes back to undecided —
+/// and a separate `clearShipping` method for one null would be a second name
+/// for one idea.
+type ShippingChoice {
+  shippingMethodId Int? @label("Shipping")
+}
+
+type CheckoutDetails {
+  email String @email @lower @label("Email")
+                @required("We need an email address to send the receipt to")
+  name  String @length(2, 80) @label("Name")
+                @required("Please give a name for the order")
+  note  String? @length(0, 500) @label("Order note")
+}
+
+
+// ─── Inventory ────────────────────────────────────────────────────────────
+//
+// Two tables and one number that is neither of them.
+//
+//   ProductVariant.stock   ON HAND   — what the warehouse could pick right now
+//   StockReservation       HELD      — set aside for a basket, with an expiry
+//   available              stock − the unexpired holds, computed, never stored
+//
+// The whole feature is that third line. A shop that offers what it has ON HAND
+// sells the last one twice: two shoppers both see `1 left`, both add it, and
+// the second finds out at the till. A shop that decrements on ADD instead sells
+// it zero times — an abandoned basket takes stock off the shelf forever, and
+// there is nothing left to put it back.
+//
+// So adding to a basket takes a HOLD with a clock on it, and `api/inventory.ts`
+// is the one module that reads or writes any of the three.
+
+/// Why the shelf moved. An adjustment with no reason is a number nobody can
+/// audit, and `adjusted` alone would make a stocktake correction and a theft
+/// look the same in the ledger.
+enum StockMovementKind { received sold returned adjusted damaged }
+
+/// Stock set aside for one basket, until a moment.
+///
+/// ─── Why this is a row and not a column on CartLine ──────────────────────
+///
+/// It would fit there — a line already names a variant and a quantity, and an
+/// `heldUntil` column would have been three characters of schema. It is wrong
+/// for one reason and the reason is a POLICY: CartLine is scoped by the
+/// shopper's token (`@@allow('read', token == auth().cartToken)`), and
+/// availability is a sum over *everybody's* holds. Summing CartLine from a
+/// shopper's own client answers a sum over their own basket — a number that is
+/// always plausible, usually zero, and never the one asked for. It is the exact
+/// shape the house rule warns about: a wrong policy is an empty screen, not an
+/// error.
+///
+/// A hold is a fact about the SHELF, so it is a table about the shelf, and the
+/// gate says who may look: an administrator reads them (that is the inventory
+/// screen), and nothing below `asSystem()` writes one. There is no row policy
+/// because there is no caller-facing read — the shopper learns about their own
+/// hold from the basket the `carts` service builds for them.
+model StockReservation {
+  id Int @id
+
+  variantId Int            @label("Variant")
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  cartId Int  @label("Basket")
+  cart   Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  quantity Int @gte(1) @lte(99)
+
+  /// When the shelf takes it back. THE READ IS THE TRUTH: every availability
+  /// sum filters on this instant, so a hold is dead the moment it passes even
+  /// if no sweep has run. `release-holds` deletes the rows, which keeps the
+  /// table small and is housekeeping — correctness must not depend on a cron
+  /// having fired, because then a queue outage quietly stops the shop selling.
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+
+  /// One hold per basket per shelf, mirroring the line it stands for.
+  @@unique([cartId, variantId])
+
+  /// Every availability sum is `(variantId, expiresAt)` — the one query this
+  /// table exists to answer, and the one on the path of every add to basket.
+  @@index([variantId, expiresAt])
+
+  @@gate("5.8.8.8")
+}
+
+/// Why the shelf is at the number it is at. Append-only.
+///
+/// `stock` is the running total and this is the tape behind it: nothing writes
+/// that column without writing a row here in the same breath, which is what
+/// makes the two reconcilable at all. It is not the audit trail — `@@log(audit)`
+/// records that SOMEBODY changed a row and Litestone owns its format. This
+/// records what happened to the SHELF, in the shop's own words, and a customer
+/// service agent reads it.
+///
+/// ─── The gate is "5.5.9.9" and each digit is deliberate ──────────────────
+///
+///   read   5  an administrator; a movement names orders and quantities
+///   create 5  receiving stock is an administrator's act, so the Data boundary
+///             is what refuses it — `inventory.receive` contains no check of
+///             its own and needs none
+///   update 9  LOCKED — nothing passes 9, `asSystem()` included
+///   delete 9  LOCKED
+///
+/// 9 is what "append-only" is spelled with. A comment saying the same thing is
+/// a comment; this is enforced at the Data boundary for every caller including
+/// the application itself, which is the only version of the promise worth
+/// having.
+///
+/// The one movement an ADMINISTRATOR does not write is `sold`: that one is
+/// written by a shopper at level 0 checking out, so `carts.checkout` makes it
+/// through `asSystem()` — the shop recording a sale on its own behalf. Which
+/// client a `move()` is handed is therefore a real decision at every call site,
+/// and it is why `api/inventory.ts` takes one rather than reaching for a global.
+model InventoryMovement {
+  id Int @id
+
+  variantId Int            @label("Variant")
+  /// Restrict, not Cascade. A shelf that has ever moved cannot be deleted out
+  /// from under its own ledger — retiring a variant is `active: false`, which
+  /// is what a shop means by "we do not sell this any more". The alternative
+  /// is an append-only table a DELETE on another table can empty.
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  kind StockMovementKind
+
+  /// SIGNED, and it is the movement rather than the new total: +12 received,
+  /// −2 sold. A ledger of totals cannot be summed, and summing is the only
+  /// thing anybody ever wants to do with one.
+  quantity Int
+
+  /// Both ends, written down. A movement that says only "−2" is unreadable the
+  /// moment two of them race; with both, a row is checkable on its own and a
+  /// gap between one row's `after` and the next one's `before` is visible.
+  stockBefore Int @gte(0)
+  stockAfter  Int @gte(0)
+
+  /// What it was for. An order reference for a sale, a delivery note for a
+  /// receipt, blank for a stocktake correction that only has the note.
+  reference String? @length(1, 40)
+  note      String? @length(0, 200)
+
+  createdAt DateTime @default(now())
+
+  @@gate("5.5.9.9")
+}
+
+/// What `inventory.receive` accepts — a delivery arriving at the warehouse.
+///
+/// A `type` and not a model for the reason `TrackingUpdate` and
+/// `CheckoutDetails` are: there is nothing to store. What gets stored is the
+/// InventoryMovement this produces, and its shape is not this one — `quantity`
+/// here is what turned up, and there it is signed and sits beside both ends of
+/// the shelf it moved.
+type StockReceipt {
+  variantId Int @label("Variant") @required("Which shelf did this arrive on?")
+  quantity  Int @gte(1, "A delivery is at least one item")
+                @lte(10000, "More than ten thousand in one delivery is a typo more often than it is a pallet")
+                @label("How many")
+  reference String? @length(1, 40) @label("Delivery note")
+  note      String? @length(0, 200) @label("Note")
+}
+
+/// What `inventory.adjust` accepts — a stocktake correction, a breakage, a
+/// return to the shelf.
+///
+/// `quantity` is SIGNED here and required to be, because the three reasons go
+/// in different directions and a form with a separate up/down control would let
+/// somebody file a breakage that added stock. `note` is required, which
+/// `receive`'s is not: a delivery explains itself and a correction does not.
+type StockAdjustment {
+  variantId Int @label("Variant") @required("Which shelf is being corrected?")
+  quantity  Int @gte(-10000) @lte(10000) @label("Change")
+                @required("How many, and which way — negative takes stock off the shelf")
+  kind StockMovementKind @label("Reason")
+                         @required("Say why the number is moving")
+  note String @length(3, 200) @label("Note")
+              @required("An adjustment with no reason is a number nobody can audit")
 }
 
 
@@ -186,3 +1447,12 @@ model Notification {
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
 }
+
+
+// ─── What is NOT in this file ─────────────────────────────────────────────
+//
+// `extend model User { isStaff … }` lives in db/user.lite and is assembled by
+// api/src/core/db.ts, not imported here. This file is read by the browser build
+// alone, where auth's `User` does not exist and an extend naming it is refused
+// by name — which empties the schema registry and makes every generated form
+// stop working, with a parse error nobody is looking at as the only clue.

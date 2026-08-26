@@ -32,8 +32,7 @@ import { $ } from '@frontierjs/junction'
 import { defineJob }       from '@frontierjs/caravan'
 import { resolveExecutor, isExecutor } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
-import { appFrom }         from './context.ts'
-import { announce }        from '../channels.ts'
+import { runsAsCaller }         from './context.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -49,46 +48,30 @@ type ServiceRow    = any
 
 function runner(app: BasecampApp) {
 
-  // asSystem(): a job runs on the queue's thread, not a request's. There is
-  // no caller to scope to, and advancing a deployment is this job's —
-  // the service layer deliberately refuses those writes.
-  const db  = app.data.asSystem()
-  const log = app.logger.child('deployment-run')
+  // No client here (`FJS-384`). A deploy runs as whoever asked for it, so the
+  // service calls below resolve their membership in the workspace the queue
+  // recorded — and a release in another one answers nothing rather than being
+  // advanced by id. The writes themselves stay system inside those methods,
+  // because `DeploymentStep` is update-at-SYSTEM.
+  const deployments = app.service('deployments')
+  const log         = app.logger.child('deployment-run')
 
-  // ── Channel push ──────────────────────────────────────────────────
-  // A Channel's method is `send(event, data)`. This used to call `ch.publish()`
-  // behind a `if (!ch?.publish) return` guard — publish() is on the MANAGER,
-  // not on a channel, so the guard was true every single time and this
-  // pushed nothing, ever, without a line in the log. The deployments screen
-  // showed a release frozen at 'pending' until it was reloaded.
-  async function pushUpdate(deployId: string, workspaceId: string): Promise<void> {
-    // The whole row, not a projection. A client that assigns an event payload
-    // over the record it is rendering loses every field the projection omits —
-    // the same trap `setVariable` had when it answered `{ id, variables }`.
-    const row = await db.deployment.findUnique({ where: { id: deployId } })
-    if (row) announce(app, workspaceId, 'deployments patched', row)
-  }
-
-  // ── Step helpers ──────────────────────────────────────────────────
+  // ── Step writes ───────────────────────────────────────────────────
+  // Through the service, which owns the row and announces the release after
+  // each one — the push used to be a second call here and a step that moved
+  // without it left the screen frozen at 'pending'.
+  //
   // `StepStatus`, not `string`: the column is an enum with a CHECK behind it, so
   // a typo here is a constraint error at the end of a deploy rather than a
   // refusal at the call.
-  async function setStepStatus(stepId: string, status: StepStatus, output?: string): Promise<void> {
-    await db.deploymentStep.update({
-      where: { id: stepId },
-      data: {
-        status,
-        // Key presence, not `??`: only overwrite output when one was produced.
-        ...(output !== undefined ? { output } : {}),
-        finishedAt: status !== 'running' ? new Date().toISOString() : null,
-      },
-    })
-  }
-
-  async function startStep(stepId: string): Promise<void> {
-    await db.deploymentStep.update({
-      where: { id: stepId },
-      data:  { status: 'running', startedAt: new Date().toISOString() },
+  async function step(
+    deploymentId: string, stepId: string, status: StepStatus,
+    extra: { output?: string; digest?: string | null } = {},
+  ): Promise<void> {
+    await deployments.call('stepStatus', deploymentId, {
+      stepId, status,
+      ...(extra.output !== undefined ? { output: extra.output } : {}),
+      ...(extra.digest ? { digest: extra.digest } : {}),
     })
   }
 
@@ -103,29 +86,30 @@ function runner(app: BasecampApp) {
 
   // ── Core runner ───────────────────────────────────────────────────
   async function runDeployment(deploymentId: string): Promise<void> {
-    const deploy = await db.deployment.findUnique({ where: { id: deploymentId } })
-    if (!deploy) { log.warn('deployment not found', { id: deploymentId }); return }
+    const startedAt = Date.now()
 
-    if (!['pending', 'building'].includes(deploy.status)) {
-      log.warn('deployment not in runnable state', { id: deploymentId, status: deploy.status })
+    // One call for the row, its steps and its app — and the refusal. A release
+    // this actor may not reach, or one that has gone, throws here rather than
+    // being advanced.
+    let opened: { runnable: boolean; status?: string
+                  deploy?: DeploymentRow; steps?: StepRow[]; app?: ServiceRow }
+    try {
+      opened = await deployments.call('startRun', deploymentId) as typeof opened
+    } catch (err) {
+      log.warn('deployment not startable', { id: deploymentId, error: (err as Error).message })
       return
     }
 
-    const startedAt = Date.now()
-    await db.deployment.update({
-      where: { id: deploymentId },
-      data:  { status: 'building', startedAt: new Date(startedAt).toISOString() },
-    })
-    await pushUpdate(deploymentId, deploy.workspaceId)
+    if (!opened.runnable) {
+      log.warn('deployment not in runnable state', { id: deploymentId, status: opened.status })
+      return
+    }
 
-    const steps = await db.deploymentStep.findMany({
-      where:   { deploymentId },
-      orderBy: { startedAt: 'asc' },
-    })
-
-    const service = await db.app.findUnique({ where: { id: deploy.appId } })
+    const deploy  = opened.deploy as DeploymentRow
+    const steps   = (opened.steps ?? []) as StepRow[]
+    const service = opened.app as ServiceRow
     if (!service) {
-      await failDeploy(deploymentId, deploy.workspaceId, startedAt, 'App not found')
+      await failDeploy(deploymentId, startedAt, 'App not found')
       return
     }
 
@@ -136,7 +120,7 @@ function runner(app: BasecampApp) {
       // The release stops here, with the reason on the row. Every step stays
       // `pending` until failDeploy marks them failed — none of them is touched,
       // which is the difference from the behaviour this replaced.
-      await failDeploy(deploymentId, deploy.workspaceId, startedAt, executor.reason)
+      await failDeploy(deploymentId, startedAt, executor.reason)
       log.error('deployment refused — no executor', { id: deploymentId, reason: executor.reason })
       return
     }
@@ -157,43 +141,28 @@ function runner(app: BasecampApp) {
       // /deploy is asked to start, and what /health-check is asked about.
       let digest: string | null = asDigest(deploy.builtImage)
 
-      for (const step of steps) {
-        await startStep(step.id)
-        await pushUpdate(deploymentId, deploy.workspaceId)
+      for (const s of steps) {
+        await step(deploymentId, s.id, 'running')
 
-        const result = await runStep(step, { deploy, service, config, executor, digest })
+        const result = await runStep(s, { deploy, service, config, executor, digest })
 
         // A later step's digest wins: /deploy names the bytes that were started,
         // where /pull names the bytes that were fetched, and a release records
-        // what RAN.
-        if (result.digest && result.digest !== digest) {
-          digest = result.digest
-          await db.deployment.update({ where: { id: deploymentId }, data: { builtImage: digest } })
-        }
+        // what RAN. It travels with the step write rather than as a second one.
+        if (result.digest && result.digest !== digest) digest = result.digest
 
-        await setStepStatus(step.id, 'success', result.output)
-        await pushUpdate(deploymentId, deploy.workspaceId)
+        await step(deploymentId, s.id, 'success', { output: result.output, digest })
       }
 
-      const finishedAt = Date.now()
-      await db.deployment.update({
-        where: { id: deploymentId },
-        data: {
-          status:     'success',
-          finishedAt: new Date(finishedAt).toISOString(),
-          durationMs: finishedAt - startedAt,
-        },
+      await deployments.call('finishRun', deploymentId, {
+        status: 'success',
+        startedAt: new Date(startedAt).toISOString(),
       })
-
-      await db.app.update({ where: { id: deploy.appId }, data: { status: 'running' } })
-
-      app.events.emit('deployment:success', { id: deploymentId, workspace_id: deploy.workspaceId })
-      await pushUpdate(deploymentId, deploy.workspaceId)
-      log.info('deployment succeeded', { id: deploymentId, duration_ms: finishedAt - startedAt })
+      log.info('deployment succeeded', { id: deploymentId, duration_ms: Date.now() - startedAt })
 
     } catch (err: unknown) {
       const msg = (err as Error).message ?? 'unknown error'
-      await failDeploy(deploymentId, deploy.workspaceId, startedAt, msg)
+      await failDeploy(deploymentId, startedAt, msg)
       log.error('deployment failed', { id: deploymentId, error: msg })
     }
   }
@@ -264,28 +233,13 @@ function runner(app: BasecampApp) {
     }
   }
 
-  async function failDeploy(id: string, workspaceId: string, startedAt: number, error: string): Promise<void> {
-    const finishedAt = Date.now()
-    const deploy = await db.deployment.update({
-      where: { id },
-      data: {
-        status:     'failed',
-        finishedAt: new Date(finishedAt).toISOString(),
-        durationMs: finishedAt - startedAt,
-      },
+  // The release, the steps it left behind, the app's status and the event —
+  // one call, because they are one fact and four writes that used to be able
+  // to half-happen.
+  async function failDeploy(id: string, startedAt: number, error: string): Promise<void> {
+    await deployments.call('finishRun', id, {
+      status: 'failed', error, startedAt: new Date(startedAt).toISOString(),
     })
-
-    // Any step still pending or running died with the deployment.
-    await db.deploymentStep.updateMany({
-      where: { deploymentId: id, status: { in: ['pending', 'running'] } },
-      data:  { status: 'failed' },
-    })
-
-    if (deploy?.appId)
-      await db.app.update({ where: { id: deploy.appId }, data: { status: 'error' } })
-
-    app.events.emit('deployment:failed', { id, workspace_id: workspaceId, error })
-    await pushUpdate(id, workspaceId)
   }
 
   return { runDeployment }
@@ -297,7 +251,9 @@ function runner(app: BasecampApp) {
 // looking at the steps and triggering another.
 
 export default defineJob<{ deployment_id: string }>('deployment:run', async (ctx) => {
-  await runner(appFrom(ctx, 'deployment:run')).runDeployment(ctx.data.deployment_id)
+  // Somebody asked for this release. The queue recorded them and the workspace.
+  const { app } = runsAsCaller(ctx, 'deployment:run')
+  await runner(app).runDeployment(ctx.data.deployment_id)
 }, {
   queue:       'deployments',
   maxAttempts: 1,

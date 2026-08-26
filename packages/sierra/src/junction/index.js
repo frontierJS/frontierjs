@@ -23,19 +23,27 @@ import { createJunctionClient, localTokenStore } from '@frontierjs/junction/clie
 // on its own subpath, because `status` and `session` are the two things a
 // component asks this module for and splitting them would be two imports for
 // one subject.
-export { session, ready, refresh, signIn, signUp, signOut } from './session.js'
+export { session, ready, refresh, signIn, signUp, signOut, oauthErrorMessage, OAUTH_ERRORS } from './session.js'
 import { initSession, _onUnauthorized, session, ready as sessionReady } from './session.js'
 
 // Resource factory — re-exported from the resource module
 export {
   createResource, createStore, createMakeFromSchema,
   buildFieldRules, buildRelations, buildGate, canAtLevel,
-  buildTransitions, transitionsAt,
+  buildTransitions, transitionsAt, buildVersion,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
+  // A thrown value → per-field messages, and the two questions a 409 raises.
+  // `resource.fieldErrors(err)` is the same function reached through a
+  // resource; these are for the screens that have no resource to reach it
+  // through — a form over a CUSTOM METHOD, which is most checkouts. Without
+  // them an app holding a 400 from `input:` validation has to re-implement
+  // the unwrapping (three shapes, because each hop wraps once) to put the
+  // server's own sentence under the right box.
+  toFieldErrors, isStaleWrite, toConflict, STALE_WRITE_MESSAGE, matchesQuery,
   // The control table and the registry over it — how an app or a kit says which
   // control a column gets. The other half of a contribution is the component,
   // which is the kit's to bind (`@frontierjs/ui/controls`).
-  controlFor, defaultControlFor, formFieldList, labelFieldFor,
+  controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo,
   registerControl, unregisterControl, registeredControls,
 } from './resource.js'
 
@@ -133,10 +141,10 @@ function _tokenChanged(token) {
  * Call this once per component instance (in the <script> block, not in
  * a reactive computation) so the subscription is created only once.
  *
- * Returns an unsubscribe function — pass it to $onDestroy() to avoid leaks:
+ * Returns an unsubscribe function — pass it to onDestroy() to avoid leaks:
  *
  *   const { get, unsubscribe } = useStore(leadsStore)
- *   $onDestroy(unsubscribe)
+ *   onDestroy(unsubscribe)
  *
  * @template T
  * @param {{ get(): T, subscribe(fn: (v: T) => void): () => void }} store
@@ -323,9 +331,30 @@ export function initJunction(config) {
 
   client.on('token', _tokenChanged)
 
-  // Ask the server who this token is — and resolve `ready` either way, which
+  // Ask the server who this caller is — and resolve `ready` either way, which
   // is what the navigation guard below waits on.
   initSession(client)
+
+  // The socket, in cookie mode. The branch above opens it on the strength of a
+  // token the constructor adopted, and in cookie mode there is never one — so
+  // without this a cookie-mode app has no WebSocket after any reload, for the
+  // life of the page, and nothing says so. The same root cause as FJS-474: a
+  // credential that cannot be read is not a credential that is absent.
+  //
+  // It waits for the restore rather than opening on `hasCredential`, because
+  // that is true for a stranger too — the cookie is unreadable either way — and
+  // opening a socket for every anonymous visitor to a public page is a cost the
+  // Bearer path never pays.
+  if (!client.token && client.hasCredential) {
+    whenReady = sessionReady.then(() => {
+      if (!session.user) return
+      client.connect?.()
+      return new Promise(resolve => {
+        const timer = setTimeout(resolve, 2000)
+        client.once('connect', () => { clearTimeout(timer); resolve() })
+      })
+    })
+  }
 
   // Mid-session expiry — 401 from any service call. The client clears its own
   // token (and therefore storage); what is left is this app's own state.

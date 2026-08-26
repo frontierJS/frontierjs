@@ -40,6 +40,7 @@ import {
 } from 'vscode-languageserver/node'
 import { TextDocument } from 'vscode-languageserver-textdocument'
 import * as path from 'path'
+import * as fs   from 'fs'
 
 // ─── Connection ───────────────────────────────────────────────────────────────
 
@@ -68,7 +69,10 @@ function loadParser() {
   if (_parse) return
   try {
     const bundle = require(path.join(__dirname, 'parser-bundle'))
-    _parse = bundle.parse
+    _parse         = bundle.parse
+    _hasImports    = bundle.hasImports    ?? null
+    _inlineImports = bundle.inlineImports ?? null
+    _resolveImport = bundle.resolveImportSpecifier ?? null
   } catch (e: any) {
     _parseError = [
       `Litestone parser bundle not found.`,
@@ -81,7 +85,55 @@ function loadParser() {
   }
 }
 
-function callParser(src: string): ParseResult {
+// ─── Imports ──────────────────────────────────────────────────────────────────
+//
+// `parse()` takes text and resolves nothing, so a schema that imports a
+// package's models — `import "@frontierjs/auth/schema.lite"` — is parsed as if
+// those models did not exist. Every reference to one is then an error the author
+// cannot remove: a relation pointing at it, and, since `extend model` shipped,
+// every extend of one. The editor said basecamp's schema was broken while the
+// same file parsed clean everywhere else.
+//
+// So the imports are spliced in before parsing, using the parser's OWN resolver
+// so the editor follows a bare specifier to the same file `parseFile` does.
+// Reading is this process's job — the bundle carries no `fs` — and the ROOT is
+// the open buffer rather than the file on disk, because an unsaved edit is the
+// state the author is looking at.
+//
+// Ranges are unaffected: `makeDiagnostic` searches the open document's own text
+// for the name in the message and never uses a line number, so an error about an
+// imported model simply lands at line 0 rather than at a wrong line.
+//
+// Feature-detected, because the language server is expected to work against an
+// older checkout of litestone (see the catalog fallback below): without these
+// exports it parses the buffer alone, exactly as it always did.
+let _hasImports:    ((text: string) => boolean) | null = null
+let _inlineImports: ((text: string, parent: string, opts: any) => string) | null = null
+let _resolveImport: ((spec: string, from: string) => { path: string | null }) | null = null
+
+function withImports(src: string, uri?: string): string {
+  if (!uri || !uri.startsWith('file://'))          return src
+  if (!_hasImports || !_inlineImports || !_resolveImport) return src
+  if (!_hasImports(src))                            return src
+
+  const abs = decodeURIComponent(uri.slice('file://'.length))
+  try {
+    return _inlineImports(src, abs, {
+      resolveChild: (parent: string, spec: string) => _resolveImport!(spec, parent).path,
+      read:         (p: string) => { try { return fs.readFileSync(p, 'utf8') } catch { return null } },
+      seen:         new Set([abs]),
+      // An unresolvable import drops its line and lands here. Not reported: the
+      // package may simply not be installed in this checkout, and a red squiggle
+      // on an `import` line the author cannot act on is worse than a schema that
+      // describes less.
+      missing:      [],
+    })
+  } catch {
+    return src
+  }
+}
+
+function callParser(src: string, uri?: string): ParseResult {
   loadParser()
   if (!_parse) {
     return {
@@ -92,7 +144,7 @@ function callParser(src: string): ParseResult {
     }
   }
   try {
-    return _parse(src)
+    return _parse(withImports(src, uri))
   } catch (e: any) {
     return {
       valid:    false,
@@ -134,7 +186,7 @@ documents.onDidClose(e => {
 
 function validateDocument(doc: TextDocument) {
   const text   = doc.getText()
-  const result = callParser(text)
+  const result = callParser(text, doc.uri)
   parseCache.set(doc.uri, result)
 
   const diagnostics = [
@@ -179,51 +231,120 @@ function makeDiagnostic(doc: TextDocument, msg: string, severity: DiagnosticSeve
 
 const SCALAR_TYPES = ['Int', 'Float', 'String', 'Boolean', 'DateTime', 'Json', 'Bytes', 'File']
 
-const FIELD_ATTRS = [
-  // Identity / constraints
-  '@id', '@unique',
-  // Defaults
-  '@default(now())', '@default(uuid())', '@default(ulid())', '@default(cuid())', '@default(nanoid())',
-  // Relations & generation
-  '@relation', '@generated', '@computed',
-  // Lifecycle stamps
-  '@updatedAt', '@updatedBy',
-  // Sequence
-  '@sequence',
-  // Security
-  '@omit', '@omit(all)',
-  '@guarded', '@guarded(all)',
-  '@encrypted', '@encrypted(deterministic: true)', '@hashed',
-  '@secret', '@secret(rotate: false)',
-  // Audit
-  '@log',
-  // File storage
-  '@keepVersions', '@accept',
-  // Derived fields
-  '@from',
-  // Mapping
-  '@map',
-  // Validators
-  '@email', '@url', '@phone', '@date', '@datetime',
-  '@regex', '@length', '@gt', '@gte', '@lt', '@lte',
-  '@startsWith', '@endsWith', '@contains',
-  // Transforms
-  '@trim', '@lower', '@upper', '@slug',
-  // Annotations
-  '@markdown', '@hardDelete',
-  // Field-level policy
-  "@allow('read',", "@allow('write',", "@allow('all',",
-]
+// ─── What the language contains ───────────────────────────────────────────────
+//
+// Asked of `@frontierjs/litestone`'s catalog rather than listed here. The list
+// that used to live in this file offered 50 field attributes against the
+// catalog's 55 and 15 model attributes against 22, and never offered `tenancy`,
+// `view`, `trait` or `type` at all — so completion silently hid a quarter of the
+// language, and nothing could tell, because a hand-written list has no way to
+// be wrong out loud.
+//
+// The fallback is the old list, kept only for a checkout whose litestone
+// predates the catalog: a language server that degrades is better than one that
+// refuses to start.
 
-const MODEL_ATTRS = [
-  '@@db', '@@index', '@@unique', '@@fts',
-  '@@softDelete', '@@softDelete(cascade)',
-  '@@gate', '@@auth', '@@allow', '@@deny',
-  '@@log', '@@external',
-  '@@map', '@@noStrict', '@@strict',
-]
+interface CatalogRow {
+  word: string
+  level: 'schema' | 'field' | 'model'
+  arity: string
+  blurb: string
+  example: string
+  context?: string
+  note?: string
+  seeAlso?: string[]
+  excludes?: string[]
+  removed?: boolean
+  replacedBy?: string
+  values?: { arg: string, of: (string | { value: string })[] }[]
+  positions?: string[]
+}
 
-const TOP_KEYWORDS = ['model', 'enum', 'function', 'database', 'import']
+let _catalog: CatalogRow[] | null = null
+let _positionNames: Record<string, string> = {}
+let _positionsOf: ((row: CatalogRow) => string[]) | null = null
+let _probeFor: ((row: CatalogRow) => string) | null = null
+let _docFor: ((row: CatalogRow) => string | null) | null = null
+
+try {
+  const bundle = require(path.join(__dirname, 'catalog-bundle'))
+  _catalog       = bundle.CATALOG
+  _positionNames = bundle.POSITIONS ?? {}
+  _positionsOf   = bundle.positionsOf ?? null
+  _probeFor      = bundle.probeFor ?? null
+  _docFor        = bundle.docFor ?? null
+} catch {
+  _catalog = null   // fall through to the built-in lists below
+}
+
+const FALLBACK_FIELD_ATTRS = [
+  '@id', '@unique', '@default(now())', '@default(uuid())', '@relation', '@generated',
+  '@computed', '@updatedAt', '@omit', '@guarded', '@encrypted', '@hashed', '@secret',
+  '@log', '@from', '@map', '@email', '@url', '@regex', '@length', '@trim',
+]
+const FALLBACK_MODEL_ATTRS = ['@@db', '@@index', '@@unique', '@@fts', '@@softDelete', '@@gate', '@@auth', '@@allow', '@@deny']
+const FALLBACK_TOP         = ['model', 'enum', 'function', 'database', 'import']
+
+/** Words at one level, as typed. Removed words are offered by nobody. */
+function wordsAt(level: 'schema' | 'field' | 'model', fallback: string[]): string[] {
+  if (!_catalog) return fallback
+  const prefix = level === 'field' ? '@' : level === 'model' ? '@@' : ''
+  return _catalog.filter(r => r.level === level && !r.removed).map(r => prefix + r.word)
+}
+
+const FIELD_ATTRS  = wordsAt('field',  FALLBACK_FIELD_ATTRS)
+const MODEL_ATTRS  = wordsAt('model',  FALLBACK_MODEL_ATTRS)
+const TOP_KEYWORDS = wordsAt('schema', FALLBACK_TOP)
+
+const catalogRow = (typed: string): CatalogRow | null => {
+  if (!_catalog) return null
+  const bare  = typed.replace(/^@@?/, '').replace(/[(\s].*$/, '')
+  const level = typed.startsWith('@@') ? 'model' : typed.startsWith('@') ? 'field' : 'schema'
+  return _catalog.find(r => r.word === bare && r.level === level) ?? null
+}
+
+/**
+ * A word's hover, from the catalog.
+ *
+ * ATTR_DOCS below is longer and better where it has an entry — worked examples,
+ * the reasoning — so it wins, and this is what the other 29 words get instead of
+ * nothing. Where both exist the catalog still contributes the two facts prose
+ * keeps getting wrong: where the word is legal, and what its arguments accept.
+ */
+function catalogHover(typed: string): string | null {
+  const row = catalogRow(typed)
+  if (!row) return null
+
+  const out: string[] = []
+  out.push(`**\`${typed.startsWith('@') || row.level !== 'schema' ? typed : row.word}\`** ${row.arity ? '`' + row.arity + '`' : ''}`.trim())
+  if (row.removed) out.push(`\n\n⚠️ **Removed** — use \`${row.replacedBy}\`.`)
+  out.push('\n\n' + row.blurb)
+  if (row.note) out.push('\n\n' + row.note)
+
+  const where = _positionsOf?.(row) ?? row.positions ?? []
+  const ordinary = row.level === 'field' ? 3 : row.level === 'model' ? 2 : 1
+  if (where.length && where.length !== ordinary)
+    out.push(`\n\n**Legal** ${where.map(p => _positionNames[p] ?? p).join(', ')}`)
+
+  for (const v of row.values ?? [])
+    out.push(`\n\n**${v.arg}** ${v.of.map(e => typeof e === 'string' ? e : e.value).map(x => '`' + x + '`').join(' · ')}`)
+
+  if (row.seeAlso?.length) out.push(`\n\nSee also ${row.seeAlso.map(w => '`' + w + '`').join(', ')}`)
+
+  // Named, never linked. The docs ship inside @frontierjs/litestone and not
+  // beside the app being edited, and the package's homepage is a repo URL this
+  // has no way to verify — a hover that renders a 404 is worse than one that
+  // tells you the filename.
+  const doc = _docFor?.(row)
+  if (doc) out.push(`\n\n📖 \`${doc}\` in \`@frontierjs/litestone\``)
+
+  // probeFor is the catalog's own assembler, the same text its suite parses.
+  // Building the example here again is how a hover ends up showing a snippet
+  // that does not compile.
+  const example = _probeFor?.(row) ?? ((row.context ? row.context + '\n\n' : '') + row.example)
+  out.push('\n\n```lite\n' + example + '\n```')
+  return out.join('')
+}
 
 const DATABASE_DRIVERS = ['sqlite', 'jsonl', 'logger']
 
@@ -574,6 +695,9 @@ connection.onHover((pos: TextDocumentPositionParams): Hover | null => {
     const m = rest.match(/^@@?\w+(\([^)]*\))?/)
     return m ? m[0] : null
   })()
+  // ATTR_DOCS wins where it has an entry — it is longer, carries worked examples
+  // and explains the reasoning. The catalog is what the other 29 words get, and
+  // it is why hovering @system or @@tenant now says anything at all.
   if (lineWord && ATTR_DOCS[lineWord]) {
     return { contents: { kind: MarkupKind.Markdown, value: ATTR_DOCS[lineWord] } }
   }
@@ -581,6 +705,10 @@ connection.onHover((pos: TextDocumentPositionParams): Hover | null => {
     if (ATTR_DOCS[c]) {
       return { contents: { kind: MarkupKind.Markdown, value: ATTR_DOCS[c] } }
     }
+  }
+  for (const c of [lineWord, ...candidates]) {
+    const fromCatalog = c ? catalogHover(c.replace(/\(.*$/, '')) : null
+    if (fromCatalog) return { contents: { kind: MarkupKind.Markdown, value: fromCatalog } }
   }
 
   // Type hover

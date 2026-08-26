@@ -39,7 +39,7 @@ database audit {
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
 enum Plan {
-  starter
+  starter  @label("Starter")
   pro
   enterprise
 }
@@ -233,7 +233,9 @@ model DailyStat {
   updatedAt   DateTime @updatedAt
 
   @@db(analytics)
-  @@unique([date, accountId])
+  // `accountId` is null on the all-accounts row, and two NULLs never compare
+  // equal — so the per-account pair is constrained and the global row is not.
+  @@unique([date, accountId], nullsDistinct: true)
   @@index([date])
   @@allow('read', auth() != null)
 }

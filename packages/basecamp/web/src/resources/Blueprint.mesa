@@ -1,0 +1,18 @@
+<script module>
+  // src/resources/Blueprint.mesa — the Resource layer.
+  //
+  // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18),
+  // named for the model and exporting the accessor (invariant 19). No markup:
+  // everything is module scope, which is what <script module> means.
+  //
+  // No `model:` — `blueprints` is the regular plural of `Blueprint`.
+  //
+  // **This resource reaches a service that takes no workspace.** `Blueprint` is
+  // `@@tenant(none)`: the catalogue is curated for the whole installation, so
+  // there is no tenant to scope it by. The client stamps `X-Workspace-Id` on
+  // every call regardless and the service ignores it, exactly as `hub` does —
+  // the header is not what makes a service tenant-scoped, the schema is.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const blueprints = createResource('blueprints')
+</script>

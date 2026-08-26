@@ -15,6 +15,7 @@ import { scan } from '../src/scanner/index.js'
 
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
+import { tmpDir } from './tmp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FIXTURE_DIR = resolve(__dirname, 'fixtures/basic-spa')
@@ -92,6 +93,30 @@ describe('segment helpers', () => {
 // ─── parseFrontmatter ────────────────────────────────────────────────────────
 
 describe('parseFrontmatter', () => {
+  test('a malformed block reports the error rather than swallowing it (FJS-509)', () => {
+    // The catch here used to set `{}` under a comment saying Sierra warned
+    // separately, and nothing did. On a static target `{}` means no
+    // `render: static`, so the page was never emitted and the build reported
+    // success — an unquoted colon in a description was enough to do it.
+    const src = '---\ntitle: A thing\ndescription: what it is: and why\n---\n<p>hi</p>'
+    const { frontmatter, error } = parseFrontmatter(src)
+    expect(frontmatter).toEqual({})
+    expect(error).toBeTruthy()
+  })
+
+  test('a well-formed block reports no error', () => {
+    const { frontmatter, error } = parseFrontmatter('---\ntitle: A thing\n---\nbody')
+    expect(frontmatter.title).toBe('A thing')
+    expect(error).toBeNull()
+  })
+
+  test('a quoted colon is fine, which is the fix an author writes', () => {
+    const src = '---\ndescription: "what it is: and why"\n---\nbody'
+    const { frontmatter, error } = parseFrontmatter(src)
+    expect(error).toBeNull()
+    expect(frontmatter.description).toBe('what it is: and why')
+  })
+
   test('parses basic YAML frontmatter', () => {
     const src = `---\ntitle: About Us\nrender: static\n---\n<h1>Hello</h1>`
     const { frontmatter, content } = parseFrontmatter(src)
@@ -176,6 +201,16 @@ describe('buildTree', () => {
   test('root node has correct path', () => {
     expect(tree.path).toBe('/')
     expect(tree.id).toBe('root')
+  })
+
+  test('the root route keeps its companion', () => {
+    // The root is SYNTHESISED and the entry's fields are copied onto it one at
+    // a time, so a field left out of that copy is dropped in silence. This one
+    // was: `src/routes/index.meta.js` was found, parsed and then discarded, so
+    // a home page's load() never ran and the page rendered its empty state with
+    // a green build — while every other route's companion worked, which makes
+    // it read as a bug in the one file somebody is writing.
+    expect(tree.companion).toBe('src/routes/index.meta.js')
   })
 
   test('top-level routes are direct children of root', () => {
@@ -363,13 +398,12 @@ function flattenNode(node) {
   return [node, ...node.children.flatMap(flattenNode)]
 }
 
-import { mkdtemp, writeFile, mkdir } from 'fs/promises'
-import { tmpdir } from 'os'
+import { writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 
 // Helper: create a temp dir with given files
 async function makeTmpFixture(fileMap) {
-  const dir = await mkdtemp(join(tmpdir(), 'sierra-test-'))
+  const dir = tmpDir('sierra-test-')
   for (const [rel, content] of Object.entries(fileMap)) {
     const abs = join(dir, rel)
     await mkdir(dirname(abs), { recursive: true })

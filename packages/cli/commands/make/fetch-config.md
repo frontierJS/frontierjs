@@ -1,6 +1,6 @@
 ---
 title: make:fetch-config
-description: Scaffold a fetch.config.js for site:fetch — sitemap, frontmatter mapping, image transform, cleanup rules
+description: Scaffold a fetch.config.js for ksite:fetch — sitemap, frontmatter mapping, image transform, cleanup rules
 alias: mkfetchconfig
 examples:
   - fli make:fetch-config
@@ -29,7 +29,7 @@ import { resolve } from 'path'
 // Self-documenting template. Built as an array of lines to keep the source
 // readable and avoid template-literal/backtick nesting issues inside the .md.
 const TEMPLATE_LINES = [
-  '// fetch.config.js — config for fli site:fetch',
+  '// fetch.config.js — config for fli ksite:fetch',
   '//',
   '// Pass with --config ./fetch.config.js',
   '// Flag values on the CLI override values defined here.',
@@ -121,7 +121,7 @@ const TEMPLATE_LINES = [
 
 Scaffold a `fetch.config.js` next to your project root with sensible defaults
 and inline documentation for every option. Drop in your sitemap URL, uncomment
-the sections you need, and run `fli site:fetch --config ./fetch.config.js`.
+the sections you need, and run `fli ksite:fetch --config ./fetch.config.js`.
 
 ```js
 const filename = flag.name ?? 'fetch.config.js'
@@ -141,7 +141,7 @@ if (flag.dry) {
 
 writeFileSync(filePath, TEMPLATE_LINES, 'utf8')
 log.success(`wrote ${filePath}`)
-log.info(`edit it, then run: fli site:fetch --config ./${filename}`)
+log.info(`edit it, then run: fli ksite:fetch --config ./${filename}`)
 
 if (flag.open) {
   const editor = process.env.EDITOR || context.env.OPEN_COMMAND || 'vi'

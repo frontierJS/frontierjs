@@ -5,12 +5,11 @@ title: Projects
   import { session } from '../../session.js'
   import { projects } from '../../resources/Project.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
 
   const { get: rows, unsubscribe } = useStore(projects.store)
-  $onDestroy(unsubscribe)
+  $.onDestroy(unsubscribe)
 
   $: session.workspaceId
 

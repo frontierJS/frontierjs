@@ -174,3 +174,11 @@ database audit {
 ```
 
 Also applies to JSONL databases. Accepts: `30d`, `24h`, `2w`, `1y`.
+
+**On startup means only on startup**, and a long-lived process is the normal case: the
+pass runs inside `createClient` and nothing reschedules it, so a server that boots on
+Monday prunes on Monday and not afterwards. The cutoff is also a rolling instant rather
+than a day boundary — `Date.now()` minus the duration, with `d` a flat 24 hours and `y`
+a flat 365 days — so *ninety days* is measured from whenever the process last started,
+in no particular zone. Both are `FJS-521`; a window that has to hold for a regulator
+needs a job, not a boot.

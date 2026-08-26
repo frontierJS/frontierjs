@@ -359,3 +359,285 @@ describe('the verdict is the alarming answer, not the common one', () => {
     expect(r.findings[0].access).toBe('widens')   // worst first
   })
 })
+
+// ─── value sets ───────────────────────────────────────────────────────────────
+//
+// A `@values` binding is a rule about which values are legal, declared in one
+// place and enforced at the Data boundary — so a column gaining a `required`
+// one starts refusing writes N-1 has been making all along, with no column, no
+// type and no constraint moving. Nothing else in the surface can see it.
+//
+// The severity is not a ladder over the three strengths. Only `required`
+// refuses: `open` accepts a value outside the set and adds it, and `suggested`
+// enforces nothing at all.
+
+const VS = ({ scope = '', where = '', value = 'code', strength = '', second = '' } = {}) => `
+model Tag {
+  id   Int    @id
+  code String @unique
+  slug String @unique
+  name String
+  team String?
+  @@label(name)
+  @@scope(mine, team == auth().team)
+}
+
+valueset TaskTag { source Tag  value ${value}${scope}${where} }
+${second}
+model Task {
+  id    Int     @id
+  title String
+  tag   String? @values(TaskTag${strength})
+}
+`
+
+/** The same schema with no binding on `tag` at all. */
+const VS_UNBOUND = VS().replace(/ @values\(TaskTag[^)]*\)/, '')
+
+describe('value sets — a rule about legal values, which no other line of the surface carries', () => {
+  it('carries the set and the binding', () => {
+    const s = surface(VS())
+    expect(s.valuesets).toEqual([{ name: 'TaskTag', source: 'Tag', value: 'code', scope: null, where: null }])
+    expect(s.models.find(m => m.name === 'Task')!.fields.find(f => f.name === 'tag')!.values)
+      .toEqual({ set: 'TaskTag', strength: 'required' })
+  })
+
+  it('records the resolved value column, so stating the default is not a change', () => {
+    // `value` unstated is the source's own @id. A baseline that omitted it and a
+    // schema that spells it out describe one set.
+    const implicit = surface(VS().replace('value code', ''))
+    const explicit = surface(VS().replace('value code', 'value id'))
+    expect(implicit.valuesets[0].value).toBe('id')
+    expect(classifyPivot(implicit, explicit).verdict).toBe('unchanged')
+  })
+
+  it('binding a column as required is a contract — N-1 writes values it now refuses', () => {
+    const v = verdictOf(VS_UNBOUND, VS())
+    expect(v.verdict).toBe('contract')
+    expect(about(v, 'Task.tag')!.detail).toContain('every N-1 write of a value outside')
+  })
+
+  it('binding it weakly is an expand — nothing is refused', () => {
+    expect(verdictOf(VS_UNBOUND, VS({ strength: ', suggested' })).verdict).toBe('expand')
+    expect(verdictOf(VS_UNBOUND, VS({ strength: ', open' })).verdict).toBe('expand')
+  })
+
+  it('removing a binding is an expand', () => {
+    expect(verdictOf(VS(), VS_UNBOUND).verdict).toBe('expand')
+  })
+
+  it('tightening into required is the pivot; every other move between strengths is not', () => {
+    const at = (s: string) => VS({ strength: s ? `, ${s}` : '' })
+
+    expect(verdictOf(at('suggested'), at('')).verdict).toBe('contract')
+    expect(verdictOf(at('open'),      at('')).verdict).toBe('contract')
+
+    // `suggested` → `open` starts CREATING rows in the source table and still
+    // fails nothing N-1 does, which is why the three are not a ladder.
+    expect(verdictOf(at('suggested'), at('open')).verdict).toBe('expand')
+    expect(verdictOf(at(''), at('open')).verdict).toBe('expand')
+    expect(verdictOf(at(''), at('suggested')).verdict).toBe('expand')
+  })
+
+  it('cannot compare two different lists', () => {
+    const other = `valueset OtherTags { source Tag  value slug }\n`
+    const v = verdictOf(VS({ second: other }), VS({ second: other, strength: '' }).replace('@values(TaskTag)', '@values(OtherTags)'))
+    expect(v.verdict).toBe('unknown')
+    expect(about(v, 'Task.tag')!.detail).toContain('a different list')
+  })
+
+  it('narrowing the set is a contract where something binds it as required', () => {
+    const v = verdictOf(VS(), VS({ scope: '  scope mine' }))
+    expect(v.verdict).toBe('contract')
+    expect(about(v, 'valueset TaskTag')!.detail).toContain('scope `mine` added')
+
+    const w = verdictOf(VS(), VS({ where: '  where "archivedAt IS NULL"' }))
+    expect(w.verdict).toBe('contract')
+  })
+
+  it('…and an expand where nothing enforces it — a picker offers less and nothing refuses', () => {
+    const weak = (o = {}) => VS({ ...o, strength: ', suggested' })
+    const v = verdictOf(weak(), weak({ scope: '  scope mine' }))
+    expect(v.verdict).toBe('expand')
+    expect(about(v, 'valueset TaskTag')!.detail).toContain('nothing binds it as `required`')
+  })
+
+  it('widening the set is an expand in either spelling', () => {
+    expect(verdictOf(VS({ scope: '  scope mine' }), VS()).verdict).toBe('expand')
+    expect(verdictOf(VS({ where: '  where "archivedAt IS NULL"' }), VS()).verdict).toBe('expand')
+  })
+
+  it('a predicate that moved is undecidable, like every other predicate here', () => {
+    const a = VS({ where: '  where "archivedAt IS NULL"' })
+    const b = VS({ where: '  where "archivedAt IS NULL AND team IS NOT NULL"' })
+    expect(verdictOf(a, b).verdict).toBe('unknown')
+  })
+
+  it('changing which column a record stores is a contract whatever the strength', () => {
+    // Not gated on enforcement: the stored form changed, so a value N-1 wrote
+    // and a value this release writes stop meaning the same thing.
+    const v = verdictOf(VS({ strength: ', suggested' }), VS({ value: 'slug', strength: ', suggested' }))
+    expect(v.verdict).toBe('contract')
+    expect(about(v, 'valueset TaskTag')!.detail).toContain('value column `code` → `slug`')
+  })
+
+  it('declaring a set is an expand, and dropping one refuses nothing', () => {
+    const other = `valueset OtherTags { source Tag  value slug }\n`
+    expect(verdictOf(VS(), VS({ second: other })).verdict).toBe('expand')
+    expect(verdictOf(VS({ second: other }), VS()).verdict).toBe('expand')
+  })
+
+  it('is not on the access axis — it narrows by value, identically for every caller', () => {
+    // `classifyAccess` grades who may do what. A value set says nothing about
+    // who, so a reviewer is not shown a permission change that did not happen.
+    expect(classifyAccess(surface(VS_UNBOUND), surface(VS())).verdict).toBe('unchanged')
+  })
+
+  it('renders into the snapshot, and rendering twice produces one file', () => {
+    const s   = surface(VS({ scope: '  scope mine' }))
+    const md  = renderReleaseSnapshot(s)
+
+    expect(md).toContain('## Value sets')
+    expect(md).toContain('| `TaskTag` | `Tag` | `code` | `mine` | — |')
+    expect(md).toContain('`@values(TaskTag, required)`')
+    expect(renderReleaseSnapshot(surface(VS({ scope: '  scope mine' })))).toBe(md)
+  })
+
+  it('says nothing about value sets in a schema that declares none', () => {
+    expect(renderReleaseSnapshot(surface(BASE))).not.toContain('value set')
+  })
+})
+
+// ─── what the access axis was blind to ───────────────────────────────────────
+//
+// Two failures, opposite directions, one walk:
+//
+//   • **FJS-444** — a model absent from the baseline has no counterpart, so
+//     every per-model rule skipped it and it left the access axis entirely. A
+//     branch that added nine gated tables to `example` reported *no change to
+//     who may do what*. Defensible by the axis's own definition (nobody could
+//     do anything with a table that did not exist) and useless to the reviewer
+//     who ran the command to ask what the branch did to access.
+//
+//   • **FJS-380** — an allow→deny inversion is one change that reads as two,
+//     and the classifier took the worst half. Measured on basecamp adopting
+//     declared tenancy: verdict WIDENS on the safest refactor there is.
+
+const NEWMODEL = (extra = '') => `
+model Post {
+  id     Int    @id
+  title  String
+  @@gate("2.4.4.5")
+}
+${extra}`
+
+describe('a model the baseline never had (FJS-444)', () => {
+  it('is reported, with what it declares about access', () => {
+    const r = accessOf(NEWMODEL(), NEWMODEL(`
+model Secret {
+  id    Int    @id
+  token String @secret
+  @@gate("8.8.8.8")
+}`))
+    expect(r.verdict).toBe('new')
+    expect(r.counts.new).toBe(1)
+    const f = r.findings.find((x: any) => x.subject === 'model Secret')!
+    expect(f.access).toBe('new')
+    expect(f.accessDetail).toContain('@@gate("8.8.8.8")')
+    expect(f.accessDetail).toContain('1 protected field')
+  })
+
+  it('names the unrestricted case, which is the one worth stopping on', () => {
+    const r = accessOf(NEWMODEL(), NEWMODEL(`
+model Open {
+  id Int @id
+}`))
+    expect(r.findings.find((x: any) => x.subject === 'model Open')!.accessDetail)
+      .toContain('declares neither @@gate nor @@allow — every caller reaches every row')
+  })
+
+  it('is ranked below narrows, so a branch that also narrows still reads as narrowing', () => {
+    const r = accessOf(NEWMODEL(), NEWMODEL().replace('@@gate("2.4.4.5")', '@@gate("4.4.4.5")') + `
+model Extra {
+  id Int @id
+  @@gate("2.2.2.2")
+}`)
+    expect(r.verdict).toBe('narrows')
+    expect(r.counts.new).toBe(1)
+  })
+
+  it('grades the deploy axis as it always did — a new model is an expand', () => {
+    const before = surface(NEWMODEL())
+    const after  = surface(NEWMODEL(`model Extra { id Int @id }`))
+    const p = classifyPivot(before, after)
+    expect(p.verdict).toBe('expand')
+    expect(p.findings.find((x: any) => x.subject === 'model Extra')!.severity).toBe('expand')
+  })
+
+  it('reports a REMOVED model as narrowing — nothing reaches it through the client now', () => {
+    const r = accessOf(NEWMODEL(`model Gone { id Int @id  @@gate("2.4.4.5") }`), NEWMODEL())
+    expect(r.verdict).toBe('narrows')
+    expect(r.findings.find((x: any) => x.subject === 'model Gone')!.access).toBe('narrows')
+  })
+})
+
+const OWNED = (policy: string) => `
+model Doc {
+  id          Int    @id
+  workspaceId Int
+  title       String
+  @@gate("2.4.4.5")
+${policy}
+}
+`
+
+describe('an allow→deny inversion (FJS-380)', () => {
+  const ALLOW = `  @@allow('all', workspaceId == auth().workspaceId)`
+  const DENY  = `  @@deny('all', workspaceId != auth().workspaceId)`
+
+  it('is undecidable, not a widening', () => {
+    const r = accessOf(OWNED(ALLOW), OWNED(DENY))
+    expect(r.verdict).toBe('unknown')
+    expect(r.counts.widens).toBe(0)
+  })
+
+  it('is ONE finding on the access axis and two on the deploy one', () => {
+    const before = surface(OWNED(ALLOW)), after = surface(OWNED(DENY))
+    const a = classifyAccess(before, after)
+    const p = classifyPivot(before, after)
+
+    expect(a.findings.filter((x: any) => x.subject === 'model Doc')).toHaveLength(1)
+    // The deploy still sees both halves, and they still disagree: removing an
+    // allow is an expand, adding a deny is a contract.
+    const both = p.findings.filter((x: any) => x.subject === 'model Doc')
+    expect(both.map((x: any) => x.severity).sort()).toEqual(['contract', 'expand'])
+  })
+
+  it('says what it saw rather than deciding it', () => {
+    const f = accessOf(OWNED(ALLOW), OWNED(DENY)).findings[0]
+    expect(f.accessDetail).toContain('replaced by a @@deny over the same operations')
+    expect(f.accessDetail).toContain('not decidable from the text')
+  })
+
+  it('an allow removed with NO deny behind it is still a widening', () => {
+    const r = accessOf(OWNED(ALLOW), OWNED(''))
+    expect(r.verdict).toBe('widens')
+    expect(r.counts.widens).toBe(1)
+  })
+
+  it('a deny added with no allow removed is still a narrowing', () => {
+    const r = accessOf(OWNED(''), OWNED(DENY))
+    expect(r.verdict).toBe('narrows')
+  })
+
+  it('a PARTIAL overlap is not an inversion — the bare half is a real widening', () => {
+    // Some operations inverted, some left bare. Grading the bare half as
+    // undecidable would hide a widening inside a refactor, which is the failure
+    // this axis exists to catch.
+    const r = accessOf(
+      OWNED(`  @@allow('all', workspaceId == auth().workspaceId)`),
+      OWNED(`  @@deny('read', workspaceId != auth().workspaceId)`))
+    expect(r.counts.widens).toBe(1)
+    expect(r.verdict).toBe('widens')
+  })
+})

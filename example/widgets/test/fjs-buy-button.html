@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>BuyButton — on a page the shop does not own</title>
+    <style>
+      /* A HOST PAGE'S CSS IS NOT WRITTEN TO BE HELPFUL.
+         Everything here is hostile on purpose, and each rule is a real thing
+         somebody's site does:
+
+           · `* { box-sizing: content-box }`  — the old reset, still everywhere
+           · a global `button` rule with `!important` — a design system that
+             assumed it owned every button on the page
+           · a huge inherited font-size on <body> — a shadow root stops RULES
+             from reaching in and does NOT stop INHERITANCE, so this is the one
+             that actually lands inside the widget unless it declares otherwise
+
+         A widget that is not isolated only looks broken on somebody else's
+         site, which is the worst place to find out. */
+      * { box-sizing: content-box; }
+      body {
+        font-family: "Comic Sans MS", cursive;
+        font-size: 28px;
+        line-height: 3;
+        letter-spacing: 4px;
+        color: #d000d0;
+        background: #fffbe6;
+        margin: 2rem;
+      }
+      button {
+        background: red !important;
+        color: yellow !important;
+        font-size: 40px !important;
+        border: 6px dashed lime !important;
+        padding: 30px !important;
+      }
+      img { border: 8px solid magenta !important; }
+    </style>
+  </head>
+  <body>
+    <h1>Somebody's blog</h1>
+
+    <p>
+      A post about a t-shirt, on a site that has never heard of FrontierJS. The
+      only thing this page knows is the SKU and one script tag.
+    </p>
+
+    <!-- The whole embed. No bundler, no init call, no framework on this page. -->
+    <fjs-buy-button
+      data-sku="FJS-TEE-NVY-M"
+      data-api="http://localhost:8110"
+      data-shop="http://localhost:8010"
+      data-label="Add to basket"
+    ></fjs-buy-button>
+
+    <p>
+      This one is deliberately wrong — a SKU the shop has never issued. It must
+      say so on the page rather than rendering an empty box.
+    </p>
+    <fjs-buy-button id="nonesuch" data-sku="NO-SUCH-SKU" data-api="http://localhost:8110"></fjs-buy-button>
+
+    <p>More of the post, so the widget is not the last thing in the document.</p>
+
+    <!-- Loaded from the widget ORIGIN, which is not this page's. `fli
+         widgets:serve` (sierra widgets --serve) is what runs there, so the CORS
+         and cache headers a browser is tested against are the ones that ship.
+         Deferred, like a real embed: a widget must not block the page it is a
+         guest on.
+
+         The port is the DEV one, so opening this file against `bun run
+         serve:widgets` works by hand. `verify:widget` serves this page with
+         8310 rewritten to 7310 — the test-env slot — so a drive cannot collide
+         with a dev server somebody has open, and the rewrite is one string
+         rather than a second copy of this page. -->
+    <script defer src="http://localhost:8310/BuyButton.js"></script>
+  </body>
+</html>

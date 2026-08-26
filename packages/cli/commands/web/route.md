@@ -98,13 +98,13 @@ title: ${title}
 <script>
   import { ${service} } from '${up}resources/${model}.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { $.onDestroy } from '@frontierjs/mesa/runtime'
 
   // useStore wraps the Resource's store as a Mesa signal. Call it once here —
   // in the script block, never inside a reactive computation — and hand the
-  // unsubscribe to $onDestroy so the subscription dies with the component.
+  // unsubscribe to $.onDestroy so the subscription dies with the component.
   const { get: rows, unsubscribe } = useStore(${service}.store)
-  $onDestroy(unsubscribe)
+  $.onDestroy(unsubscribe)
 
   let error = null
 

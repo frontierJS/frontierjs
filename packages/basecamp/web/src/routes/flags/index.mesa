@@ -21,7 +21,6 @@ title: Flags
   import { messageFor } from '../../errors.js'
   import { flags }   from '../../resources/FeatureFlag.mesa'
   import { environments } from '../../resources/Environment.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -80,7 +79,7 @@ title: Flags
     if (READS.has(method) || !row?.id) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   // Loaded on demand: a flag overridden nowhere is the common case, and the
   // list already carries the count that says so.

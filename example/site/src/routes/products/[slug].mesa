@@ -1,0 +1,129 @@
+---
+render: static
+---
+<!--
+  One product, one file.
+
+  This page is the argument for the whole surface, because it is where the two
+  halves of a static site with dynamic data sit side by side:
+
+    · Everything outside <LivePrices> was written into this file at build time.
+      The name, the description, the photographs and the SKUs are all in the
+      HTML — which is what a crawler reads and what a visitor sees before a
+      single byte of JavaScript has run.
+
+    · The prices in that table are a SNAPSHOT. They were true when the site was
+      built and a shop changes them without rebuilding, so the page must not
+      pretend otherwise. <LivePrices> asks the shop what they are now and
+      corrects the table in place, naming anything that moved.
+
+  A page that baked the price and said nothing would be wrong quietly, which is
+  the failure this surface is for.
+
+  The <title> and the meta description are in `[slug].meta.js`'s `head()`, not
+  in the frontmatter above: frontmatter is static text, so every product page
+  would otherwise carry one title — the single field a search result is built
+  from.
+-->
+<script>
+  import { money }   from '../../money.js'
+  import LivePrices  from '../../islands/LivePrices.mesa'
+
+  export let data = null
+
+  const variants = data?.variants ?? []
+  const hero     = data?.images?.[0] ?? null
+  const rest     = (data?.images ?? []).slice(1)
+</script>
+
+<article class="container product">
+  <div class="product-media stack-sm">
+    {#if hero}
+      <img class="product-hero" src={hero.src} alt={hero.alt} />
+    {/if}
+    {#if rest.length}
+      <ul class="product-thumbs">
+        {#each rest as img}
+          <li><img src={img.src} alt={img.alt} loading="lazy" /></li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+
+  <div class="stack">
+    <header class="stack-sm">
+      <p class="text-sm text-muted" id="product-brand">{data?.brand}</p>
+      <h1 id="product-name">{data?.name}</h1>
+      {#if data?.description}
+        <p id="product-description">{data.description}</p>
+      {/if}
+    </header>
+
+    <section class="stack-sm">
+      <h2 class="h4">Options</h2>
+      <table class="table" id="product-variants">
+        <thead>
+          <tr><th>SKU</th><th>Colour</th><th>Size</th><th>Price</th><th>Availability</th></tr>
+        </thead>
+        <tbody>
+          {#each variants as v}
+            <tr data-sku={v.sku}>
+              <td><code>{v.sku}</code></td>
+              <td>{v.colour}</td>
+              <td>{v.size}</td>
+              <!-- The baked price. `data-baked` keeps the build's number
+                   readable after the island has corrected the cell, which is
+                   what lets a drive assert that the two DISAGREED. -->
+              <td class="price" data-baked={v.price}>{money(v.price)}</td>
+              <!-- Empty in the file, on purpose. What can be sold right now is
+                   a sum over live holds that changes by the minute, and baking
+                   a number a CDN will hold for a week would be a promise the
+                   shop cannot keep. The island fills it. -->
+              <td class="avail text-muted">—</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </section>
+
+    <!-- client:load, not client:visible: this corrects prices that are already
+         on screen, and a correction that waits for a scroll is a correction the
+         reader has already acted on. -->
+    <LivePrices client:load productId={data?.productId} />
+  </div>
+</article>
+
+<style>
+  .product {
+    display: grid;
+    gap: var(--space-6);
+    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+    align-items: start;
+  }
+  @media (max-width: 48rem) {
+    .product { grid-template-columns: minmax(0, 1fr) }
+  }
+
+  .product-hero {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: contain;
+    background: var(--surface);
+    border-radius: var(--radius);
+  }
+  .product-thumbs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(4rem, 1fr));
+    gap: var(--space-2);
+  }
+  .product-thumbs img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: contain;
+    background: var(--surface);
+    border-radius: var(--radius-sm, var(--radius));
+  }
+</style>

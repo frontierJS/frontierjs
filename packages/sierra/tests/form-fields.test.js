@@ -21,6 +21,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest'
 let _asked = []
 let _rows  = []
 let _fail  = null
+let _total = undefined
 
 vi.mock('@frontierjs/sierra/junction', () => ({
   getClient: () => ({
@@ -28,7 +29,7 @@ vi.mock('@frontierjs/sierra/junction', () => ({
       find: async (query, params) => {
         _asked.push({ name, query, params })
         if (_fail) throw _fail
-        return { data: _rows }
+        return _total === undefined ? { data: _rows } : { data: _rows, total: _total }
       },
       on:   () => {},
     }),
@@ -84,6 +85,7 @@ beforeEach(() => {
   _asked = []
   _rows  = []
   _fail  = null
+  _total = undefined
   // The registry is module state, so a registration that outlives its test
   // changes the answer for every test after it.
   for (const name of registeredControls()) unregisterControl(name)
@@ -127,11 +129,88 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(controlFor({ type: 'string', format: 'date-time' })).toEqual({ control: 'datetime' })
   })
 
+  // ── Against a real schema, because the fixtures above are hand-written ─────
+  //
+  // Every rule in this file is typed out by hand, which is fast and is also how
+  // the `json` control shipped not working for the one column it was written
+  // for: a `Json` field does NOT arrive as `type: 'object'`. Litestone emits it
+  // as `{}` — the empty schema, no type at all, since a JSON document may be
+  // any of the seven things JSON can hold — and the table waited for a type
+  // that never comes. The same pass turned a `File` column into a JSON
+  // textarea, because FileRef derefs to an ordinary object.
+  //
+  // So this one derives its rules from litestone itself. Fake fixtures hide
+  // real bugs; this is the fixture that cannot.
+  test('a real .lite schema resolves the shapes the hand-written rules cannot', async () => {
+    // The two modules by path, not the package index — that one opens
+    // `bun:sqlite` and these tests run under vitest on node. Both of these are
+    // pure: a parser and an emitter.
+    const { parse }              = await import('../../litestone/src/core/parser.js')
+    const { generateJsonSchema } = await import('../../litestone/src/jsonschema.js')
+
+    const { schema } = parse(
+      'model Doc {\n' +
+      '  id Int @id\n' +
+      '  title String\n' +
+      '  attachment File?\n' +
+      '  meta Json\n' +
+      '  opt Json?\n' +
+      '  tags String[]\n' +
+      '}\n',
+    )
+    const defs = generateJsonSchema(schema).$defs
+
+    // The resolver is passed rather than registered globally: `$defs` is the
+    // whole definition table and a `File` column is a `$ref` into it, so
+    // without one the FileRef below never derefs — and an unresolved ref and a
+    // `Json` column are indistinguishable by type alone, which the table has to
+    // be told apart rather than guess at.
+    const rules = buildFieldRules(defs.Doc, (ref) => defs[ref.replace('#/$defs/', '')])
+
+    // A Json column: `{}` in, the json control out. This is the assertion that
+    // was missing, and the reason it was missing is that no fixture here was
+    // ever built by the thing that builds them in an app.
+    expect(rules.meta.type).toBe(null)
+    expect(controlFor(rules.meta, { field: 'meta', model: 'Doc' }).control).toBe('json')
+    expect(controlFor(rules.opt, { field: 'opt', model: 'Doc' }).control).toBe('json')
+
+    expect(controlFor(rules.tags, { field: 'tags', model: 'Doc' }).control).toBe('json')
+    expect(controlFor(rules.title, { field: 'title', model: 'Doc' }).control).toBe('input')
+
+    // A File column derefs to FileRef — an object with eight properties — so a
+    // table that answers `json` for an object offers a textarea over a storage
+    // key and a bucket. It has no control yet, and says so.
+    const file = controlFor(rules.attachment, { field: 'attachment', model: 'Doc' })
+    expect(file.control).toBe(null)
+    expect(file.reason).toMatch(/file/)
+
+    // And the other half of that ambiguity: with NO resolver the same `File`
+    // column has no type either, which reads exactly like a Json document. It
+    // must not become a textarea — an unpopulated registry would otherwise turn
+    // every enum and every relation on a form into one.
+    const blind = buildFieldRules(defs.Doc)
+    const guess = controlFor(blind.attachment, { field: 'attachment', model: 'Doc' })
+    expect(guess.control).toBe(null)
+    expect(guess.reason).toMatch(/unresolved/)
+    // …while a real Json column is still a document, resolver or not.
+    expect(controlFor(blind.meta, { field: 'meta', model: 'Doc' }).control).toBe('json')
+  })
+
+  test('the two types the schema stops describing are edited as their own syntax', () => {
+    // A `Json` column and a `String[]` have no field list under them, so there
+    // is nothing to generate a row of controls from and the only editor that
+    // covers every value they may hold is the document's own text.
+    // `@frontierjs/ui` binds this name to JsonInput.
+    expect(controlFor(rules().notes).control).toBe('json')
+    expect(controlFor(rules().tags).control).toBe('json')
+  })
+
   test('a column with no control answers with a reason, not with nothing', () => {
-    expect(controlFor(rules().tags)).toMatchObject({ control: null })
-    expect(controlFor(rules().tags).reason).toMatch(/array/)
-    expect(controlFor(rules().notes).reason).toMatch(/Json|object/)
     expect(controlFor({ type: 'string', readOnly: true })).toMatchObject({ control: null, reason: 'readOnly' })
+    // A type this table has never heard of. Dropping it silently is the failure
+    // the reason exists to prevent.
+    expect(controlFor({ type: 'geography' })).toMatchObject({ control: null })
+    expect(controlFor({ type: 'geography' }).reason).toMatch(/geography/)
   })
 })
 
@@ -140,15 +219,18 @@ describe('formFieldList — the field set, derived', () => {
   test('every writable column, in schema order', () => {
     const list = formFieldList(rules()).filter(f => f.control)
     expect(list.map(f => f.name)).toEqual(
-      ['reference', 'status', 'total', 'active', 'body', 'dueOn', 'customerId'],
+      ['reference', 'status', 'total', 'active', 'body', 'dueOn', 'customerId', 'tags', 'notes'],
     )
   })
 
   test('a column with no control stays in the list so a renderer can say so', () => {
-    const list = formFieldList(rules())
-    const tags = list.find(f => f.name === 'tags')
-    expect(tags.control).toBeNull()
-    expect(tags.reason).toBeTruthy()
+    // A type the table has never heard of. It declines and says why, rather
+    // than dropping the entry, because a field missing from a form in silence
+    // is the failure generating the list exists to end.
+    const list = formFieldList({ ...rules(), shape: { type: 'geography' } })
+    const shape = list.find(f => f.name === 'shape')
+    expect(shape.control).toBeNull()
+    expect(shape.reason).toBeTruthy()
   })
 
   test('only narrows AND orders — naming five fields names their order too', () => {
@@ -217,18 +299,22 @@ describe('resource.options — a picker filled from the relation', () => {
     _rows = [{ id: 7, name: 'Ada', email: 'ada@example.com' }, { id: 9, name: 'Grace' }]
     const orders = createResource('orders', { model: 'Order' })
 
-    const options = await orders.options('customerId')
+    const { options, total, truncated } = await orders.options('customerId')
 
     expect(_asked[0].name).toBe('customers')          // from the relation, not from a name typed anywhere
     expect(_asked[0].params.orderBy).toBe('name')
     expect(options).toEqual([{ value: 7, label: 'Ada' }, { value: 9, label: 'Grace' }])
+    // The stub answers `{ data }` with no `total`, which is the case that has
+    // to stay distinguishable from a complete list: unknown, not "no".
+    expect(total).toBe(null)
+    expect(truncated).toBe(null)
   })
 
   test('a stated labelField wins over the convention', async () => {
     _rows = [{ id: 7, name: 'Ada', email: 'ada@example.com' }]
     const orders = createResource('orders', { model: 'Order' })
 
-    expect(await orders.options('customerId', { labelField: 'email' }))
+    expect((await orders.options('customerId', { labelField: 'email' })).options)
       .toEqual([{ value: 7, label: 'ada@example.com' }])
   })
 
@@ -242,12 +328,82 @@ describe('resource.options — a picker filled from the relation', () => {
     expect(_asked).toHaveLength(1)
   })
 
+  test('an enum answers from the rule, with no request, and still a promise', async () => {
+    // One call shape for both kinds of field is the point: a caller asking
+    // what a field's options are cannot know which kind it holds without
+    // re-deriving the thing this function decides. An enum resolves off the
+    // schema, so nothing is asked of the network — but it is still awaited,
+    // so the caller has one path rather than two.
+    const orders = createResource('orders', { model: 'Order' })
+
+    const { options, total, truncated } = await orders.options('status')
+
+    expect(options).toEqual([
+      { value: 'pending', label: 'pending' },
+      { value: 'paid',    label: 'paid' },
+      { value: 'shipped', label: 'shipped' },
+    ])
+    expect(_asked).toHaveLength(0)
+    // A declared set is entirely in hand, so the count is the whole set and
+    // truncation is decidably false — never the null a paged relation gives.
+    expect(total).toBe(3)
+    expect(truncated).toBe(false)
+  })
+
+  test('search goes to the SERVER as a filter on the label column', async () => {
+    // The half that makes a relation bigger than the page reachable at all.
+    // Filtering the hundred rows that already arrived cannot find row 4,000.
+    _rows = [{ id: 7, name: 'Ada' }]
+    const orders = createResource('orders', { model: 'Order' })
+
+    await orders.options('customerId', { search: 'ad' })
+
+    expect(_asked[0].query).toEqual({ name: { contains: 'ad' } })
+  })
+
+  test('search composes with a standing filter rather than replacing it', async () => {
+    _rows = []
+    const orders = createResource('orders', { model: 'Order' })
+
+    await orders.options('customerId', { query: { active: true }, search: 'ad' })
+
+    expect(_asked[0].query).toEqual({ active: true, name: { contains: 'ad' } })
+  })
+
+  test('a searched result is not cached, an unsearched one is', async () => {
+    // The key would carry the term, so every keystroke would leave an entry
+    // behind for the life of the resource — and it is the one answer certain
+    // to be superseded a moment later.
+    _rows = [{ id: 1, name: 'Ada' }]
+    const orders = createResource('orders', { model: 'Order' })
+
+    await orders.options('customerId', { search: 'a' })
+    await orders.options('customerId', { search: 'a' })
+    expect(_asked).toHaveLength(2)
+
+    await orders.options('customerId')
+    await orders.options('customerId')
+    expect(_asked).toHaveLength(3)
+  })
+
+  test('a total the service reports is carried, and decides truncated', async () => {
+    _rows  = [{ id: 1, name: 'Ada' }]
+    _total = 400
+    const orders = createResource('orders', { model: 'Order' })
+
+    const { total, truncated } = await orders.options('customerId')
+
+    expect(total).toBe(400)
+    expect(truncated).toBe(true)
+    _total = undefined
+  })
+
   test('a field that is not a foreign key answers [] and says why', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const orders = createResource('orders', { model: 'Order' })
 
-    expect(await orders.options('reference')).toEqual([])
-    expect(warn.mock.calls[0][0]).toMatch(/not a foreign key/)
+    expect((await orders.options('reference')).options).toEqual([])
+    expect(warn.mock.calls[0][0]).toMatch(/neither an enum nor a foreign key/)
     warn.mockRestore()
   })
 
@@ -256,14 +412,14 @@ describe('resource.options — a picker filled from the relation', () => {
     _fail = new Error('offline')
     const orders = createResource('orders', { model: 'Order' })
 
-    await expect(orders.options('customerId')).resolves.toEqual([])
+    expect((await orders.options('customerId')).options).toEqual([])
     expect(warn.mock.calls[0][0]).toMatch(/offline/)
 
     // …and the failure is not remembered as an answer: the next render asks
     // again, which is what makes a dropped connection recoverable.
     _fail = null
     _rows = [{ id: 1, name: 'Ada' }]
-    await expect(orders.options('customerId')).resolves.toEqual([{ value: 1, label: 'Ada' }])
+    expect((await orders.options('customerId')).options).toEqual([{ value: 1, label: 'Ada' }])
 
     warn.mockRestore()
   })
@@ -287,10 +443,11 @@ describe('the resource hands the list out', () => {
 
 // ── Contributed controls ──────────────────────────────────────────────────────
 //
-// `FJS-D17`. The table above is the framework's answer and it is five controls
-// wide; everything else — a Json document, a String[], money, a rich editor —
-// is a control somebody else owns. Before this registry `controlFor` was a
-// switch inside a published package, so contributing one meant forking Sierra.
+// `FJS-D17`. The table above is the framework's answer and it is deliberately
+// narrow; everything past it — money, a rich editor, chips for a `String[]`,
+// a structured tree over a Json document — is a control somebody else owns.
+// Before this registry `controlFor` was a switch inside a published package, so
+// contributing one meant forking Sierra.
 //
 // Only the NAME is decided here. The component is the kit's half
 // (`@frontierjs/ui/controls`), because this module is a leaf that has to run in
@@ -298,8 +455,11 @@ describe('the resource hands the list out', () => {
 
 describe('registerControl — the half of a contribution that names the control', () => {
 
-  test('a resolver claims a column the built-in table has no answer for', () => {
-    expect(controlFor(rules().tags).control).toBe(null)
+  test('a resolver takes a column the built-in table already answers', () => {
+    // The registry is asked BEFORE the table, so this is the same mechanism a
+    // brand-new type uses — an app that wants chips for a `String[]` beats the
+    // json editor the table falls back to, without forking Sierra.
+    expect(controlFor(rules().tags).control).toBe('json')
 
     registerControl('tags', (rule) => (rule.type === 'array' ? 'tag-input' : null))
 

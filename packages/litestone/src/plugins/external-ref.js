@@ -70,6 +70,7 @@ export class ExternalRefPlugin extends Plugin {
     super()
     this.config      = config
     this._fieldMap   = {}   // { model: { field: { isArray, ...opts } } }
+    this._relationMap = {}  // { model: { relationField: targetModel } }
     this._cache      = new Map()  // cacheKey → resolved value (bounded LRU)
     this._cacheMax   = config.cacheSize ?? 1000   // hard cap on cached entries
     this._autoResolve = config.autoResolve ?? false  // subclasses can override default
@@ -108,6 +109,18 @@ export class ExternalRefPlugin extends Plugin {
 
     for (const model of schema.models) {
       for (const field of model.fields) {
+        if (field.type.kind === 'relation' || field.type.kind === 'implicitM2M') {
+          // Where an INCLUDED row came from. A read resolves the fields of the
+          // model it names and nothing else, so a `File` one join away was
+          // handed back as its raw stored JSON while the identical column read
+          // at the top level answered a URL — the same column, two answers,
+          // depending on how it was reached. Nothing reports it: both are
+          // strings, and the wrong one only fails where it is finally used, as
+          // a broken <img>.
+          if (!this._relationMap[model.name]) this._relationMap[model.name] = {}
+          this._relationMap[model.name][field.name] = field.type.name
+          continue
+        }
         if (field.type.name !== this.fieldType) continue
         if (!this._fieldMap[model.name]) this._fieldMap[model.name] = {}
         this._fieldMap[model.name][field.name] = {
@@ -345,14 +358,32 @@ export class ExternalRefPlugin extends Plugin {
 
   async onAfterRead(model, rows, ctx, opts = {}) {
     if (!this._autoResolve) return
-    const fields = this._fieldMap[model]
-    if (!fields) return
+    await this._resolveRows(model, rows, ctx, opts.select ?? null, new Set())
+  }
 
-    const select = opts.select ?? null
+  /**
+   * Resolve this model's ref fields on every row, then do the same for every
+   * INCLUDED row hanging off them.
+   *
+   * `select: { avatar: { resolve: false } }` is honoured at the level it was
+   * written and does not descend, because there is no spelling for a nested
+   * one — `include: { photos: true }` takes no per-field options.
+   *
+   * @param {Set<object>} seen  rows already visited. An include tree is finite,
+   *        but one row object can be reached twice through two relations, and
+   *        resolving it twice would hand `resolve()` a URL where it expects a
+   *        ref — which is not an error, just the wrong string.
+   */
+  async _resolveRows(model, rows, ctx, select, seen) {
+    const fields    = this._fieldMap[model]
+    const relations = this._relationMap[model]
+    if (!fields && !relations) return
 
     await Promise.all(rows.map(async row => {
-      for (const [field, fieldOpts] of Object.entries(fields)) {
-        // select: { avatar: { resolve: false } } — skip resolution for this field
+      if (!row || typeof row !== 'object' || seen.has(row)) return
+      seen.add(row)
+
+      for (const [field, fieldOpts] of Object.entries(fields ?? {})) {
         const selectVal = select?.[field]
         if (selectVal && typeof selectVal === 'object' && selectVal.resolve === false) continue
 
@@ -365,6 +396,16 @@ export class ExternalRefPlugin extends Plugin {
           const ref = this._parseRef(row[field])
           row[field] = await this._resolveRef(ref, { field, model, ctx })
         }
+      }
+
+      // A relation the caller did not include is simply absent from the row,
+      // so this loop costs one property read per declared relation and nothing
+      // else on the common path.
+      for (const [relation, target] of Object.entries(relations ?? {})) {
+        const value = row[relation]
+        if (value == null) continue
+        const nested = Array.isArray(value) ? value : [value]
+        await this._resolveRows(target, nested, ctx, null, seen)
       }
     }))
   }

@@ -153,28 +153,45 @@ if (existsSync(dockerfilePath)) {
   fail()
 }
 
-// ─── api/package.json — db:migrate script ─────────────────────────────────
-// The Dockerfile's CMD runs `bun run db:migrate && bun run src/server.ts`.
-// If db:migrate is missing, the container exits non-zero on every start.
+// ─── the scripts THIS Dockerfile invokes ──────────────────────────────────────
 // The app root holds the only manifest — root README § Project Structure. This
 // looked in api/ and so warned "entrypoint may not work" on every app fli new
 // has ever produced, while being right that the entrypoint would not work
 // (FJS-232).
+//
+// The scripts required are READ OFF the configured Dockerfile rather than
+// assumed from the template. `fli make:deploy` writes a CMD that runs
+// `db:migrate` then `start`, and asserting that unconditionally makes this
+// refuse an app whose Dockerfile is correct and different — `basecamp` runs its
+// migrations at boot inside app.ts, on purpose, so it has no `db:migrate` and
+// the deploy it was being blocked from is one that works (`FJS-417`).
+//
+// A hand-written Dockerfile is the normal case for an app past its first week,
+// and a check that only understands the generated one is a check that gets
+// turned off.
 const rootPkgPath = resolvePath(context.paths.root, 'package.json')
 const rootPkg     = readJson(rootPkgPath)
+
+const dockerfileForScripts = existsSync(dockerfilePath) ? readFileSync(dockerfilePath, 'utf8') : ''
+// No Dockerfile to read means the template's is what will be written.
+const required = dockerfileForScripts ? dockerfileScripts(dockerfileForScripts) : ['db:migrate', 'start']
+
 if (!rootPkg) {
   renderCheck('package.json', 'fail', 'no manifest at the app root — the image cannot install anything')
   fail()
-} else if (!rootPkg.scripts?.['db:migrate']) {
-  renderCheck(`package.json has 'db:migrate' script`, 'fail',
-    `the Dockerfile entrypoint runs 'bun run db:migrate' before it serves — without it the container exits non-zero on every start`)
-  fail()
-} else if (!rootPkg.scripts?.['start']) {
-  renderCheck(`package.json has 'start' script`, 'fail',
-    `the Dockerfile entrypoint runs 'bun run start' — add it, or change deploy/Dockerfile's CMD`)
-  fail()
+} else if (!required.length) {
+  renderCheck('Dockerfile CMD names a script', 'warn',
+    `no 'bun run <script>' on a CMD or ENTRYPOINT line — nothing here can say which scripts the image needs`)
 } else {
-  renderCheck(`package.json has 'db:migrate' + 'start'`, 'pass')
+  const missing = required.filter(name => !rootPkg.scripts?.[name])
+  if (missing.length) {
+    renderCheck(`package.json has ${missing.map(n => `'${n}'`).join(' + ')}`, 'fail',
+      `deploy/Dockerfile's entrypoint runs ${missing.map(n => `'bun run ${n}'`).join(' and ')} — ` +
+      `without it the container exits non-zero on every start`)
+    fail()
+  } else {
+    renderCheck(`package.json has ${required.map(n => `'${n}'`).join(' + ')} — every script the Dockerfile runs`, 'pass')
+  }
 }
 
 // ─── The schema must be in the image ──────────────────────────────────────────
@@ -187,6 +204,39 @@ if (dockerfileSrc && !/^\s*COPY\s+db\b/m.test(dockerfileSrc)) {
   warn()
 } else if (dockerfileSrc) {
   renderCheck('Dockerfile copies db/', 'pass')
+}
+
+// ─── The migration history must build the schema ──────────────────────────────
+//
+// The one check that catches a deploy which builds, starts, answers /health and
+// cannot serve a request. `migrate apply` replays FILES; `fli db:push` writes
+// tables and no file, so a change developed with push is in the developer's
+// database and in no image. It used to be found in the container, by the first
+// write, as `no such table: user` (FJS-345, FJS-388).
+//
+// `migrate apply` refuses at container start now, which covers every deployer
+// including a hand-written Dockerfile. This asks the identical question HERE,
+// before the image is built, because the answer is a pure function of the repo:
+// replay db/migrations/ into memory, diff against db/schema.lite. No database,
+// no container, no network (FJS-D123 section 6). Same command, so there is one
+// implementation of the rule and not two.
+if (existsSync(resolvePath(context.paths.root, 'db/schema.lite'))) {
+  // `bunx litestone` inline rather than the `litestone(context)` helper: that
+  // is a hand copy in db/_module.md and release/_module.md, and a third one
+  // here would be the drift those two already are.
+  const probe = context.exec({
+    command: `bunx litestone migrate check --schema db/schema.lite`,
+    cwd: context.paths.root, stdio: 'pipe', allowFailure: true,
+  })
+  const code = probe?.exitCode ?? probe?.code ?? 0
+  if (code !== 0) {
+    renderCheck('migration history builds the schema', 'fail',
+      `db/migrations/ does not build db/schema.lite — the deploy will refuse at start. ` +
+      `Run 'fli db:migrate' (or 'litestone migrate check' to see the gap)`)
+    fail()
+  } else {
+    renderCheck('migration history builds the schema', 'pass')
+  }
 }
 
 // ─── The Dockerfile must install from the generated manifest ─────────────────
@@ -224,12 +274,20 @@ if (dockerfileSrc && linked.length && !installsGenerated) {
 // ─── /health route — required for auto-rollback ───────────────────────────
 // Heuristic: check the API source for a /health route definition.
 // Won't catch dynamic registrations but covers the common case.
+// `api/src/app.ts` first, because that is where `fli new` configures the plugin
+// and it is the file the layout calls the composition root. `api/index.ts` is
+// the ENTRY — it starts the app and assembles nothing — but an app is free to
+// configure there, and `api/src/index.*` is the shape of an app that made the
+// entry and the assembly one file. `api/src/server.*` was in this list and has
+// never been written by any scaffold, which is what a hedge costs: it reads as
+// a layout somebody supports.
 const apiSrcCandidates = [
-  resolvePath(context.paths.root, 'api/src/server.ts'),
-  resolvePath(context.paths.root, 'api/src/server.js'),
+  resolvePath(context.paths.root, 'api/src/app.ts'),
+  resolvePath(context.paths.root, 'api/src/app.js'),
+  resolvePath(context.paths.root, 'api/index.ts'),
+  resolvePath(context.paths.root, 'api/index.js'),
   resolvePath(context.paths.root, 'api/src/index.ts'),
   resolvePath(context.paths.root, 'api/src/index.js'),
-  resolvePath(context.paths.root, 'api/src/app.ts'),
 ]
 const healthPath = deployConf.api?.health ?? '/health'
 // healthPlugin() registers /health without the path ever appearing as a literal,

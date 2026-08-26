@@ -17,7 +17,6 @@
   import { jobs } from '../../resources/Job.mesa'
   import { volumes } from '../../resources/Volume.mesa'
   import { alerts } from '../../resources/AlertRule.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { onWrite } from './live.js'
   import Stat from '@frontierjs/ui/components/display/Stat.mesa'
 
@@ -58,7 +57,7 @@
   }
 
   load()
-  $onDestroy(source ? onWrite(source.resource.service, load) : () => {})
+  $.onDestroy(source ? onWrite(source.resource.service, load) : () => {})
 </script>
 
 {#if !source}

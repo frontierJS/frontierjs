@@ -12,12 +12,12 @@
 // schema rather than spelled out as SQL.
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, getScoped, deriveSlug, changesNothing, ws, actor } from '../../core/resource.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
+import { announce } from '../../channels.ts'
 
 const WITH_APP = { app: { include: { environment: true } } }
 
@@ -41,6 +41,32 @@ export function createDeploymentsService(app: BasecampApp) {
     })
   }
 
+
+  /**
+   * The release this call is about, read through the CALLER's client.
+   *
+   * The confinement (`FJS-384`): `Deployment` carries its own `workspaceId`, so
+   * a release in another workspace answers nothing here — and every write below
+   * is addressed by an id that came out of this read rather than off a payload.
+   */
+  async function deployInScope(id: string) {
+    const row = await db().deployment.findUnique({ where: { id } })
+    if (!row) throw new NotFound(`Deployment '${id}' not found`)
+    return row as Record<string, any>
+  }
+
+  /** `DeploymentStep` is update-at-SYSTEM — a step's outcome is what the
+   *  machine reported, and no standing a workspace grants writes one. */
+  const sys = () => app.data.asSystem() as any
+
+  /** The whole row, announced. A client assigning an event payload over the
+   *  record it renders loses every field a projection omits. */
+  async function pushRow(id: string) {
+    const row = await sys().deployment.findUnique({ where: { id } })
+    if (row) announce(app, ws(), 'deployments patched', row)
+    return row
+  }
+
   return createService({
     name:  'deployments',
     model: 'Deployment',
@@ -51,7 +77,7 @@ export function createDeploymentsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const appId  = ($.query.appId ?? $.query.service_id) as string | undefined
       const status = $.query.status as string | undefined
@@ -65,7 +91,7 @@ export function createDeploymentsService(app: BasecampApp) {
       return { total, limit, offset, data: rows }
     },
 
-    async get(ctx: ServiceContext) {
+    async get() {
       const row = await db().deployment.findFirst({
         where:   { id: $.id as string, workspaceId: ws() },
         include: WITH_APP,
@@ -111,6 +137,10 @@ export function createDeploymentsService(app: BasecampApp) {
       })
 
       // Durable hand-off — survives a restart mid-release.
+      // The actor and the tenant are carried by the dispatch: caravan reads
+      // both off the request in scope, and the handler declares
+      // `runsAsCaller` — so this work runs as the person who asked for it,
+      // in the workspace they asked in (`FJS-384`).
       await app.jobs.dispatch(deploymentRun, {
         deployment_id: deployment.id,
         app_id:        appId,
@@ -162,12 +192,125 @@ export function createDeploymentsService(app: BasecampApp) {
       return updated
     },
 
+
+    // ── The engine's writes ───────────────────────────────────────────
+    //
+    // `deployment:run` used to open `asSystem()` and advance the release
+    // itself. It runs as whoever asked for the deploy now (`FJS-384`), and the
+    // confinement is `deployInScope` — a release in another workspace answers
+    // nothing, where an id off the payload used to be written wherever it
+    // pointed. The step writes stay system: `DeploymentStep` is
+    // update-at-SYSTEM, which is the schema saying a step's outcome is what the
+    // machine reported.
+    //
+    // All four are `internalOnly`: a person moving a release through its own
+    // steps by hand is a fabricated history, and the screen reads these rows.
+
+    async startRun() {
+      const deploy = await deployInScope(String($.id))
+
+      // Not runnable is not an error: a release already terminal has been
+      // retried, cancelled or finished by another attempt.
+      if (!['pending', 'building'].includes(deploy.status))
+        return { runnable: false, status: deploy.status }
+
+      const startedAt = new Date().toISOString()
+      await sys().deployment.update({
+        where: { id: deploy.id },
+        data:  { status: 'building', startedAt },
+      })
+
+      const steps = await sys().deploymentStep.findMany({
+        where:   { deploymentId: deploy.id },
+        orderBy: { startedAt: 'asc' },
+      })
+      const target = await sys().app.findUnique({ where: { id: deploy.appId } })
+
+      await pushRow(deploy.id)
+
+      return { runnable: true, deploy, steps, app: target, startedAt }
+    },
+
+    async stepStatus() {
+      const deploy = await deployInScope(String($.id))
+      const { stepId, status, output, digest } = ($.data ?? {}) as {
+        stepId: string; status: string; output?: string; digest?: string
+      }
+
+      // Addressed by the deployment as well as the step, so a step id from
+      // another release cannot be moved through this method.
+      await sys().deploymentStep.updateMany({
+        where: { id: stepId, deploymentId: deploy.id },
+        data:  {
+          status,
+          ...(output !== undefined ? { output } : {}),
+          ...(status === 'running'
+            ? { startedAt: new Date().toISOString(), finishedAt: null }
+            : { finishedAt: new Date().toISOString() }),
+        },
+      })
+
+      // A later step's digest wins: /deploy names the bytes that were started
+      // where /pull names the bytes that were fetched, and a release records
+      // what RAN.
+      if (digest && digest !== deploy.builtImage)
+        await sys().deployment.update({ where: { id: deploy.id }, data: { builtImage: digest } })
+
+      await pushRow(deploy.id)
+      return { stepId, status }
+    },
+
+    async finishRun() {
+      const deploy = await deployInScope(String($.id))
+      const { status, error, startedAt } = ($.data ?? {}) as {
+        status: 'success' | 'failed'; error?: string; startedAt?: string
+      }
+
+      const finishedAt = Date.now()
+      const startedMs  = startedAt ? Date.parse(startedAt)
+                       : deploy.startedAt ? Date.parse(String(deploy.startedAt))
+                       : finishedAt
+
+      await sys().deployment.update({
+        where: { id: deploy.id },
+        data:  {
+          status,
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs: finishedAt - startedMs,
+        },
+      })
+
+      // Any step still pending or running died with the release.
+      if (status === 'failed')
+        await sys().deploymentStep.updateMany({
+          where: { deploymentId: deploy.id, status: { in: ['pending', 'running'] } },
+          data:  { status: 'failed' },
+        })
+
+      if (deploy.appId)
+        await sys().app.update({
+          where: { id: deploy.appId },
+          data:  { status: status === 'success' ? 'running' : 'error' },
+        })
+
+      app.events.emit(status === 'success' ? 'deployment:success' : 'deployment:failed',
+        { id: deploy.id, workspace_id: deploy.workspaceId, ...(error ? { error } : {}) })
+
+      await pushRow(deploy.id)
+      return { id: deploy.id, status }
+    },
+
     hooks: {
       before: {
         all:    [sessionScope(app)],
         create: [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
         patch:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // The engine's three. The standing was graded when `create` queued the
+        // release; the queue runs as that same actor.
+        startRun:   [internalOnly()],
+        stepStatus: [internalOnly()],
+        finishRun:  [internalOnly()],
       },
     },
   })

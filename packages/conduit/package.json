@@ -4,7 +4,7 @@
   "description": "Outbound transport layer for FrontierJS Junction apps. One interface. Any protocol. Any direction.",
   "type": "module",
   "license": "MIT",
-  "author": "Kobami",
+  "author": "FrontierJS",
   "exports": {
     ".": "./src/index.ts",
     "./testing": "./src/testing.ts",

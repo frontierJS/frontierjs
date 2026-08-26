@@ -8,19 +8,12 @@
   // No `model:` — `recipes` is the regular plural of `Recipe`, which is what
   // modelNameFor() resolves.
   //
-  // `stampWorkspace` is not optional bookkeeping. The service stamps
-  // `workspaceId` in its own before/create — but browser-side validation runs
-  // FIRST, and `workspaceId` is required on the create schema, so without this
-  // hook every save is refused in the form with *workspace is required*, a
-  // field no form on this screen shows. Measured, not assumed: the first
-  // version of this file left it out and the browser drive caught it.
-  //
-  // `createdBy` needs no equivalent — it is nullable, so validation has no
-  // opinion and the server's stamp is the only writer.
+  // Nothing stamps `workspaceId` here and nothing should: the tenancy
+  // declaration desugars a `@default(auth().workspaceId)` onto the column, so
+  // it is out of create-mode `required` and the server fills it from the
+  // principal. A client naming its own workspace is a client choosing its own
+  // tenant (`FJS-387`).
   import { createResource } from '@frontierjs/sierra/junction'
-  import { stampWorkspace } from '../session.js'
 
-  export const recipes = createResource('recipes', {
-    hooks: { before: { create: [stampWorkspace] } },
-  })
+  export const recipes = createResource('recipes')
 </script>

@@ -23,10 +23,19 @@ function hooksOf(svc: unknown): Record<string, Function[]> {
   return ((svc as { _hookMap?: { before?: Record<string, Function[]> } })._hookMap?.before ?? {})
 }
 
+/** The around chain. `gateAuth` lives here — see FJS-403. */
+function aroundOf(svc: unknown): Record<string, Function[]> {
+  return ((svc as { _hookMap?: { around?: Record<string, Function[]> } })._hookMap?.around ?? {})
+}
+
 /** Every derived name, counted per method. */
 function derivedCounts(svc: unknown): Record<string, Record<string, number>> {
   const out: Record<string, Record<string, number>> = {}
-  for (const [method, list] of Object.entries(hooksOf(svc))) {
+  const all = { ...hooksOf(svc) }
+  for (const [key, list] of Object.entries(aroundOf(svc))) {
+    all[`around.${key}`] = list
+  }
+  for (const [method, list] of Object.entries(all)) {
     const counts: Record<string, number> = {}
     for (const h of list) {
       if (!isDerivedHook(h)) continue
@@ -72,9 +81,10 @@ describe('the derived layer installs once', () => {
 
   test('every derived hook is still present — dedupe must not delete the layer', () => {
     const counts = derivedCounts(throughTheLoader())
-    expect(Object.keys(counts.find  ?? {}).sort()).toEqual(['autoFilter', 'autoSort', 'gateAuth'])
-    expect(Object.keys(counts.create ?? {}).sort()).toEqual(['autoValidate', 'gateAuth'])
-    expect(Object.keys(counts.remove ?? {}).sort()).toEqual(['gateAuth'])
+    expect(Object.keys(counts['around.all'] ?? {})).toEqual(['gateAuth'])
+    expect(Object.keys(counts.find  ?? {}).sort()).toEqual(['autoFilter', 'autoSort'])
+    expect(Object.keys(counts.create ?? {}).sort()).toEqual(['autoValidate'])
+    expect(counts.remove).toBeUndefined()
   })
 
   test('a hand-spread base is the same case', () => {
@@ -87,13 +97,17 @@ describe('the derived layer installs once', () => {
     }
   })
 
-  test("the user's own hook still runs first", () => {
+  test('the gate wraps the chain, the validator trails the user hook (FJS-403)', () => {
+    // The 401 is an around hook, so it runs before every before hook there is —
+    // `before: { all: [...] }` included. The shaping hook still runs before the
+    // validator that grades what it shaped.
     const mine = function authenticate(_ctx: ServiceContext) {}
     const svc  = createService({
       name: 'leads', model: 'lead', db,
       hooks: { before: { create: [mine] } },
     })
-    expect(hooksOf(svc).create?.[0]).toBe(mine)
+    expect((aroundOf(svc).all ?? []).map(h => h.name)).toEqual(['gateAuth'])
+    expect((hooksOf(svc).create ?? []).map(h => h.name)).toEqual(['authenticate', 'autoValidate'])
   })
 
   test('a USER hook named gateAuth does not suppress the real one', () => {
@@ -105,9 +119,9 @@ describe('the derived layer installs once', () => {
       hooks: { before: { find: [impostor] } },
     })
 
-    const find = hooksOf(svc).find ?? []
-    expect(find[0]).toBe(impostor)
-    expect(find.filter(h => isDerivedHook(h) && h.name === 'gateAuth')).toHaveLength(1)
+    expect((hooksOf(svc).find ?? [])[0]).toBe(impostor)
+    expect((aroundOf(svc).all ?? []).filter(h => isDerivedHook(h) && h.name === 'gateAuth'))
+      .toHaveLength(1)
   })
 
   test('the mark does not leak onto user hooks', () => {

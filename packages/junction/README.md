@@ -256,10 +256,11 @@ ctx.locals.db       // per-call scratch. FRESH {} every call, does NOT propagate
 Alongside them, the two halves of what used to be one query object:
 
 ```typescript
-ctx.query       // FILTERS ONLY — becomes the WHERE clause. Never sees a `$`.
+ctx.query       // FILTERS ONLY — becomes the WHERE clause. Never holds a
+                //   `$`-prefixed key.
 ctx.directives  // { limit, offset, orderBy, select, … } — how to SHAPE the
                 //   result. The bridge translates `$limit` on the wire into
-                //   this; nothing past the bridge reads a `$`.
+                //   this; no `$`-prefixed key survives it.
 ```
 
 Internal callers pass directives under their own key — a flat `{ limit: 10 }`

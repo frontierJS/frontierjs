@@ -25,6 +25,8 @@ import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { join, extname, normalize, resolve } from 'node:path'
 
+import { isHashedAsset } from '../serve/hashed-asset.js'
+
 const TYPES = {
   '.js':   'text/javascript; charset=utf-8',
   '.mjs':  'text/javascript; charset=utf-8',
@@ -38,11 +40,8 @@ const TYPES = {
   '.woff2': 'font/woff2',
 }
 
-/** Vite's hashed asset names. Only these may be cached forever. */
-const HASHED = /-[A-Za-z0-9_]{8,}\.[a-z0-9]+$/
-
 function cacheFor(path) {
-  if (HASHED.test(path)) return 'public, max-age=31536000, immutable'
+  if (isHashedAsset(path)) return 'public, max-age=31536000, immutable'
   // The entry: a host page's <script src> is written once and never updated, so
   // a long max-age here is a widget nobody can ship a fix to.
   return 'public, max-age=300, must-revalidate'

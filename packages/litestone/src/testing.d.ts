@@ -512,3 +512,23 @@ export declare function sampleWrites(
   system:  unknown,
   opts?:   { models?: string[] | null },
 ): Promise<Record<string, ModelSample>>
+
+/**
+ * A fresh temp directory with the previous runs' already swept. A harness here
+ * can delete its own directory at neither of the two moments it would want to
+ * — an afterAll races the audit logger's flush, and `process.on('exit')` does
+ * not fire under `bun test` — so a run reaps on the way IN, where the owning
+ * process is provably gone. `prefix` is what the sweep matches on and must
+ * identify one harness.
+ */
+export declare function tempDir(
+  prefix: string,
+  opts?:  { olderThanMs?: number, root?: string },
+): string
+
+/** The sweep alone, for a harness that names its directory itself. Answers how
+ *  many it removed. One sweep per prefix per process unless `force`. */
+export declare function reapTempDirs(
+  prefixes: string | string[],
+  opts?:    { olderThanMs?: number, root?: string, force?: boolean },
+): number

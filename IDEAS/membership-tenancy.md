@@ -6,7 +6,7 @@ dated: 2026-08-21
 
 # Idea — Membership tenancy: when the tenant AND the standing are decided per request
 
-**Status: RULED 2026-08-21 (`FJS-D113`), not yet built (`FJS-374`).** Found by reading
+**Status: RULED 2026-08-21 (`FJS-D113`) and BUILT 2026-08-22 (`FJS-374`).** Found by reading
 basecamp's `core/hooks.ts` and `core/resource.ts` while deciding where to move them, and
 asking whether anything in them belonged closer to the framework. Most of it does.
 
@@ -182,6 +182,20 @@ declaration can hide them.
 - What does a **job** do? Basecamp's jobs run `asSystem()` across every tenant, which is
   correct and is also the answer that makes the tenant claim absent. `app.runAs` rebuilds
   a principal from an id — does it rebuild the tenant claim, and from which tenant?
+- **Is there a client flavour that is system AND still inside one tenant?** Today there
+  is not, and it is a hole in what shipped rather than a question about what did not.
+  `asSystem()` is a complete bypass of all policies (`src/core/policy.js` — `if
+  (ctx.isSystem) return null`) and declared row tenancy desugars to `@@deny`, which is a
+  policy, so **the bypass a `@@gate("8")` model requires is the same bypass that leaves
+  its tenant**. Any model holding material only the system may touch AND belonging to one
+  tenant falls in the gap; `$scopedBy` is not it, since it binds `@scoped`/`@edge`
+  dimensions. Found 2026-08-24 while scoping `third-party-credentials.md`, where it is
+  load-bearing: `Credential` is `@@gate("8")`, carries `userId` and no tenant column, and
+  auth's models are `@@tenant(none)` — so *whose* Slack connection this is cannot be
+  declared, only hand-written into a resolver's where-clause, which is what Invariant 6
+  exists to refuse. The prior question is whose it should be, and that is this file's
+  subject: person-owned dies when they leave, tenant-owned survives and any admin spends
+  it. Not filed.
 
 ---
 

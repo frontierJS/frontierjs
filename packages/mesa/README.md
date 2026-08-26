@@ -143,7 +143,7 @@ const cities = await getCities(selectedState)
 ```
 
 For the full spec — `var` semantics, `$:` patterns, context, `<mesa:*>`
-elements, `bind:value|mask`, `$inspect`, the render pipeline — see
+elements, `bind:value|mask`, `$.inspect`, the render pipeline — see
 [`docs/VISION.md`](./docs/VISION.md).
 
 ---
@@ -217,9 +217,9 @@ Useful options:
 
 | Option | Effect |
 |---|---|
-| `dev: true` | Emit `$runtime.__dev?.r(...)` registration calls — required for DevTools |
-| `debug: false` | Strip `$inspect` calls entirely |
-| `css: true` (default) | Scope styles and emit a `$runtime.addStyles(id, css)` call into `ctx.result` — the compiler injects them for you |
+| `dev: true` | Emit `$$runtime.__dev?.r(...)` registration calls — required for DevTools |
+| `debug: false` | Strip `$.inspect` calls entirely |
+| `css: true` (default) | Scope styles and emit a `$$runtime.addStyles(id, css)` call into `ctx.result` — the compiler injects them for you |
 | `css: false` | Scope styles and hand them back on **`ctx.css.result`**, emitting nothing. **The caller must inject them.** Styles are silently absent if you don't — every element still carries the scope class, so the markup looks right and matches no rule |
 | `filename` | Used in dev component labels and source maps |
 | `remarkPlugins` | Array passed through to the markdown processor (`.md` only) |
@@ -352,7 +352,7 @@ const pages = await renderAll([
 ])
 ```
 
-On the server, `$onMount` and path watches are inert while effects and block
+On the server, `$.onMount` and path watches are inert while effects and block
 directives run and are then disposed; `{#await}` renders its `{:pending}`
 branch; `{#virtual each}` renders its first window, since there is no viewport to
 measure. Comment anchors are stripped unless

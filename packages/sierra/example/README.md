@@ -48,7 +48,7 @@ example/
 
 Nothing points the UI at the schema: `web/`'s Vite root is one level below the
 app root, so Sierra's auto-detection finds `../db/schema.lite` — the same file
-`api/app.ts` reads. The build prints which one it found.
+`api/src/app.ts` reads. The build prints which one it found.
 
 ## Styling
 
@@ -83,7 +83,7 @@ Two habits the system rewards, both visible in `web/src/routes/`:
 | file | what it seeds |
 | --- | --- |
 | [`db/schema.lite`](db/schema.lite) | everything below |
-| [`api/services/leads.service.ts`](api/services/leads.service.ts) | 4 lines. CRUD, 401s and 400s are all derived |
+| [`api/src/services/leads.service.ts`](api/src/services/leads.service.ts) | 4 lines. CRUD, 401s and 400s are all derived |
 | [`web/src/resources/leads.mesa`](web/src/resources/leads.mesa) | names a model, turns two flags on |
 | [`web/src/routes/leads/create.mesa`](web/src/routes/leads/create.mesa) | a form with no field list in it |
 
@@ -112,7 +112,7 @@ resource it fetches options from is derived from
 
 **No `tags` field appears**, although `Lead` has `tags Tag[]`. A relation is not
 a column. It used to be emitted as a required array-of-string, which meant the
-seed in `api/app.ts` could not have created a lead without inventing one.
+seed in `api/src/app.ts` could not have created a lead without inventing one.
 
 **The delete button is disabled until you sign in as admin.** `@@gate("0.4.4.5")`
 wants level 5 to delete; `leads.can('delete', session.level)` asks before
@@ -205,7 +205,7 @@ submit, delete) with the console watched, rather than having two pages dumped:
 | `bind:value={draft[key]}` | **Mesa emitted a broken setter.** The read was rewritten through the accessors, the write was not — `($$v) => { draft[key] = $$v }`, referring to a name that no longer exists. Valid JS, mounted fine, threw `ReferenceError: draft is not defined` on the first keystroke. Binding to an object property — which is what every form does — could not accept input at all. Fixed in `packages/mesa/compiler.js`, with regression tests in `emission.test.js`. |
 | Numbers arrived as strings | `el.value` is a string for every control, `<select>` and `type="number"` included, and Mesa passes it through unchanged (correctly — it does not know the field). The form failed validation with *"value must be a number"*. Only the schema knows the types, so Sierra now casts them: `coerce: true`. |
 | Running `dev` without `api` | `signIn()` did `await res.json()` without checking the response. With the API down, Vite answers `/login` with an empty-bodied 502, so the parse threw inside a promise nobody awaited — and the only trace was the dev overlay logging `[Sierra] PromiseRejectionEvent` at `virtual:sierra:24`, which is the *listener*, not the cause. **Check `res.ok` before parsing**: the header now says `API not reachable on :8130 — run bun run api`. Reported by a user, reproduced with the API stopped, fixed in `web/src/routes/_module.mesa`. |
-| `$:` on a plain `let` | While fixing the above: adding the new local to the `$:` path-watch tuple compiled cleanly and threw `$runtime.get(...) is not a function` on mount. `$:` is for fields of plain objects (Mesa RULE 43) — a `let` is already component state and must stay out of it. |
+| `$:` on a plain `let` | While fixing the above: adding the new local to the `$:` path-watch tuple compiled cleanly and threw `$$runtime.get(...) is not a function` on mount. `$:` is for fields of plain objects (Mesa RULE 43) — a `let` is already component state and must stay out of it. |
 | A wrapped paragraph lost its spaces | Adopting the design system meant reading the rendered prose, and it said *"its 401s and its400s from it"*. Mesa's `compactDOM` **deleted** every newline-plus-indent in a text node instead of collapsing it to a space, so every paragraph written across two source lines welded its words together. Fixed in `packages/mesa/compiler.js`, pinned by `whitespace-collapse.test.js`. |
 | `{name}{#if …}` rendered backwards | The required-field marker came out as `* name`. A bare interpolation immediately followed by a block is inserted **after** the block on the client, though the static renderer emits it correctly. **Not fixed** — logged in Mesa's `CHANGES.md`; the workaround here is `<span>{name}</span>`, which pins the position. |
 | `isActive()` alone is not reactive | The nav highlight never moved off Home. Sierra's own source comment claimed a call to `isActive()` re-evaluates when the route changes; it does not, because Mesa reads an expression's dependencies from its text and the route read is hidden inside the function. `aria-current={(page.route, isActive('/leads/')) ? 'page' : null}` works. Comment and README corrected. |

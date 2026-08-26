@@ -40,7 +40,6 @@ import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/ju
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor }  from '../../core/resource.ts'
 import type { BasecampApp }     from '../../basecamp.types.ts'
-import type { ServiceContext }  from '@frontierjs/junction'
 
 // ─── The outpost's wire contract ───────────────────────────────────────────
 // snake_case, like the heartbeat payload and unlike every other call into this
@@ -146,7 +145,7 @@ export function createVolumesService(app: BasecampApp) {
     methods: ['find', 'get', 'remove', 'usage', 'report', 'prune'],
 
     // ── find ──────────────────────────────────────────────────────────
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination({ limit: 50, max: 200 })
       const serverId = $.query.serverId as string | undefined
       const search   = $.query.search   as string | undefined
@@ -181,7 +180,7 @@ export function createVolumesService(app: BasecampApp) {
     },
 
     // ── get ───────────────────────────────────────────────────────────
-    async get(ctx: ServiceContext) {
+    async get() {
       const fleet  = await serversOf()
       const volume = await getScopedVolume(fleet)
       return { ...volume, serverName: fleet.get(volume.serverId as string) ?? null }
@@ -196,7 +195,7 @@ export function createVolumesService(app: BasecampApp) {
     // beside them is refused by wrapResult. And it must be the
     // whole fleet rather than the page: a header stating "12 GB across the
     // fleet" from the first 50 rows is wrong exactly when it matters.
-    async usage(ctx: ServiceContext) {
+    async usage() {
       $.dispatch = false   // read-shaped
       const fleet = await serversOf()
       if (!fleet.size) return { volumes: 0, inUse: 0, unused: 0, totalBytes: 0, reclaimableBytes: 0, servers: [] }
@@ -301,7 +300,7 @@ export function createVolumesService(app: BasecampApp) {
     },
 
     // ── remove ────────────────────────────────────────────────────────
-    async remove(ctx: ServiceContext) {
+    async remove() {
       const fleet  = await serversOf()
       const volume = await getScopedVolume(fleet)
       const name   = volume.name as string
@@ -345,7 +344,7 @@ export function createVolumesService(app: BasecampApp) {
     // One request per server carrying the names, rather than one per volume:
     // pruning is what `docker volume prune` does in a single call, and forty
     // round trips to the same outpost is forty chances to half-finish.
-    async prune(ctx: ServiceContext) {
+    async prune() {
       const fleet    = await serversOf()
       const serverId = ($.data as { serverId?: string } | null)?.serverId
       if (serverId && !fleet.has(serverId)) throw new NotFound(`Server '${serverId}' not found`)

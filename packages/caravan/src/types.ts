@@ -28,6 +28,9 @@ export interface JobRecord {
   created_at:   number
   /** Who asked for the work. NULL when nobody did — cron, boot, standalone. */
   actor_id:     string | null
+  /** Which tenant the work is for, where the app declares tenancy. NULL for an
+   *  app that declares none and for work that is the app's own. */
+  tenant_id:    string | null
   /**
    * Which Caravan instance is executing the row. Set by the claim and cleared
    * when the row leaves 'running', so it is non-null exactly while somebody is
@@ -83,6 +86,15 @@ export interface JobContext<T = unknown> extends Job<T> {
 
   /** The id recorded at dispatch. null when nobody asked — cron, boot. */
   actorId: string | null
+
+  /**
+   * The tenant recorded at dispatch, re-bound for the length of the handler.
+   *
+   * Informational here, exactly as `auth` is: a service call the handler makes
+   * is already running inside the tenant, so nothing has to be threaded. Null
+   * where the app declares no tenancy, and where the work is the app's own.
+   */
+  tenantId: string | null
 }
 
 // ─── Handler + registration options ──────────────────────────────────────────
@@ -228,6 +240,19 @@ export interface DispatchOptions {
    * when the job runs. See `App.runAs`.
    */
   actor?:    string | null
+
+  /**
+   * WHICH TENANT the work is for. Read from `app.tenant()`, so a job queued
+   * inside a request already runs in the tenant that asked for it.
+   *
+   * State `null` for work that spans tenants or belongs to none. An app that
+   * declares no tenancy records null either way and nothing downstream reads it.
+   *
+   * Stored where a session is not, and the distinction is the same one `actor`
+   * makes: this is a pointer to a set of rows, and the standing that decides
+   * what may be done with them is still re-resolved when the job runs.
+   */
+  tenant?:   string | null
 
   /**
    * The row id to queue this job under. Default: a fresh uuid.
@@ -386,6 +411,8 @@ export interface CaravanTelemetry {
 export interface CaravanApp {
   /** Junction's metrics seam — if present, Caravan contributes job stats */
   registerMetricsSource?: (name: string, fn: () => unknown) => void
+  /** Junction's readiness seam — if present, Caravan contributes a stall check */
+  registerHealthCheck?: (name: string, fn: () => boolean | Promise<boolean>) => void
   /** Junction's telemetry bus — if present, Caravan emits job lifecycle events */
   telemetry?: CaravanTelemetry
   /** Where Caravan attaches itself — Junction's augmentable `App.jobs` slot */
@@ -409,6 +436,14 @@ export interface CaravanApp {
   principal?: () => { userId?: string } | null
 
   /**
+   * WHICH TENANT is in scope right now — read at dispatch, beside the actor.
+   *
+   * Optional for `principal`'s reason: Caravan runs standalone, and an app that
+   * declares no tenancy never defines it.
+   */
+  tenant?: () => string | null
+
+  /**
    * Run the handler on behalf of a principal, re-resolved now.
    *
    * The seam that removes the oldest hazard in this package: a job had no
@@ -423,7 +458,11 @@ export interface CaravanApp {
    * Absent (standalone Caravan) means the handler is called directly and
    * `ctx.auth.user` is null. Nothing to be graded by, and nothing pretending.
    */
-  runAs?: <T>(userId: string | null, fn: (user: SessionContext | null) => T | Promise<T>) => Promise<T>
+  runAs?: <T>(
+    userId:   string | null,
+    optsOrFn: { tenant?: string | null } | ((user: SessionContext | null) => T | Promise<T>),
+    fn?:      (user: SessionContext | null) => T | Promise<T>,
+  ) => Promise<T>
 
   /** Junction's service caller — reached from a handler as `ctx.app.service(…)`. */
   service?: (name: string) => unknown

@@ -3,8 +3,9 @@ siteName: Kitchen sink
 ---
 <script>
   import { page, isActive, goto } from '@frontierjs/sierra/router'
-  import { status } from '@frontierjs/sierra/junction'
+  import { status, getClient } from '@frontierjs/sierra/junction'
   import { session, signIn, signOut } from '../session.js'
+  import { cart, refresh as refreshCart } from '../cart.js'
 
   import AccountStatus  from '@frontierjs/ui/components/display/AccountStatus.mesa'
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -26,14 +27,13 @@ siteName: Kitchen sink
 
   import { notifications, isUnread } from '../resources/Notification.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   // The bell. `notifications` is a resource like any other, and the store is
   // fed by the same WS events every other table uses — the inApp driver
-  // publishes to `notifications:user:<id>`, api/app.ts joins a signed-in
+  // publishes to `notifications:user:<id>`, api/src/app.ts joins a signed-in
   // connection to it, and nothing here polls.
   const { get: notes, unsubscribe: unsubNotes } = useStore(notifications.store)
-  $onDestroy(unsubNotes)
+  $.onDestroy(unsubNotes)
 
   // Reload on sign-in and sign-out, not once at mount: the list is scoped to
   // the caller by the model's own row policy, so a session change is a
@@ -76,6 +76,12 @@ siteName: Kitchen sink
     if (url) goto(url)
   }
 
+  // The basket is restored once, here, rather than on the basket screen — a
+  // count in the header that only appears after you visit /cart/ is a count
+  // nobody trusts. A browser holding no token makes no request at all.
+  refreshCart()
+
+  $: (cart.count)
   $: (page.siteName, page.route)
   $: (status.connected, session.user, session.level, session.error)
   $: commandPalette.open
@@ -87,7 +93,9 @@ siteName: Kitchen sink
     { id: 'go-orders',    group: 'Navigate', label: 'Orders',     action: () => goto('/orders/') },
     { id: 'go-new-order', group: 'Navigate', label: 'New order',  sub: 'Create an order', action: () => goto('/orders/create/') },
     { id: 'go-products',  group: 'Navigate', label: 'Products',   action: () => goto('/products/') },
+    { id: 'go-cart',      group: 'Navigate', label: 'Basket',     action: () => goto('/cart/') },
     { id: 'go-customers', group: 'Navigate', label: 'Customers',  action: () => goto('/customers/') },
+    { id: 'go-inventory', group: 'Navigate', label: 'Inventory',  sub: 'On hand, held, and the ledger', action: () => goto('/inventory/') },
     { id: 'go-settings',  group: 'Navigate', label: 'Settings',   action: () => goto('/settings/') },
     { id: 'sign-in-user',  group: 'Session', label: 'Sign in as sam (level 4)',  action: () => as('user') },
     { id: 'sign-in-admin', group: 'Session', label: 'Sign in as alex (level 5)', action: () => as('admin') },
@@ -101,6 +109,21 @@ siteName: Kitchen sink
   let email    = 'sam@shop.test'
   let password = 'correct-horse-battery'
   let busy     = false
+
+  // Which providers to draw a button for is ASKED, never listed here. The API
+  // configures them (api/src/app.ts, `oauthProviders`) and this app is a
+  // separate build — a copy of the list here would be a button that redirects
+  // into `oauth_error=unavailable` the first time the two disagree.
+  //
+  // Empty in the ordinary run: the shop only configures a provider under
+  // SHOP_COOKIE_AUTH=1, because the callback can only hand back a cookie. So
+  // this row appears and disappears with the server's own configuration, which
+  // is the whole point of asking.
+  let providers = []
+
+  $.onMount(async () => {
+    try { providers = await getClient().auth.providers() } catch { providers = [] }
+  })
 
   async function submit() {
     busy = true
@@ -153,6 +176,17 @@ siteName: Kitchen sink
       <a class="navlink" href="/orders/create/" aria-current={(page.route, isActive('/orders/create/')) ? 'page' : null}>New order</a>
       <a class="navlink" href="/products/" aria-current={(page.route, isActive('/products/')) ? 'page' : null}>Products</a>
       <a class="navlink" href="/customers/" aria-current={(page.route, isActive('/customers/')) ? 'page' : null}>Customers</a>
+      <!-- A shopper is not a user: this one is here at level 0 with no
+           account, which is what the Cart gate says. -->
+      <a class="navlink" id="nav-basket" href="/cart/" aria-current={(page.route, isActive('/cart/')) ? 'page' : null}>
+        Basket{#if cart.count}<Badge tone="info" id="nav-basket-count">{cart.count}</Badge>{/if}
+      </a>
+      <!-- Level 5. An affordance and not a boundary: both tables behind that
+           screen are `@@gate("5.…")`, so hiding the link changes what is worth
+           clicking and changes nothing about what is reachable. -->
+      {#if session.level >= 5}
+        <a class="navlink" id="nav-inventory" href="/inventory/" aria-current={(page.route, isActive('/inventory/')) ? 'page' : null}>Inventory</a>
+      {/if}
       <a class="navlink" href="/settings/"  aria-current={(page.route, isActive('/settings/')) ? 'page' : null}>Settings</a>
     </nav>
 
@@ -223,6 +257,15 @@ siteName: Kitchen sink
       {:else}
         <Button variant="outlined" onclick={() => as('user')}  disabled={busy}>Sign in (user)</Button>
         <Button variant="primary"  onclick={() => as('admin')} disabled={busy}>Sign in (admin)</Button>
+        {#each providers as name}
+          <!-- signInWith LEAVES THE PAGE — the flow is a browser navigation, so
+               nothing after it runs and there is no promise to await. -->
+          <Button
+            variant="ghost"
+            data-oauth={name}
+            onclick={() => getClient().auth.signInWith(name, { returnTo: page.path })}
+          >Continue with {name}</Button>
+        {/each}
       {/if}
     </span>
   </header>
@@ -230,6 +273,24 @@ siteName: Kitchen sink
   <main class="screen">
     {#if session.error}
       <Alert tone="danger">{session.error}</Alert>
+    {/if}
+
+    <!--
+      How a provider sign-in ended. It cannot arrive the way session.error does:
+      the callback is a redirect, so there is no promise to reject — the only
+      channel back is a query parameter, which sierra lifts off the URL at boot.
+
+      TWO TONES, from one field. `link_required` is not a failure — the flow
+      worked and the next step is in the person's inbox — and rendering all five
+      codes in one red alert says the opposite. The sentence comes from sierra
+      (`session.oauthMessage`) so this app writes no switch; the code is what
+      the branch is on.
+    -->
+    {#if session.oauthError}
+      <Alert
+        id="oauth-alert"
+        tone={session.oauthError === 'link_required' ? 'info' : 'danger'}
+      >{session.oauthMessage}</Alert>
     {/if}
 
     <div class="container stack"><slot /></div>

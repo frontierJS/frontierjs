@@ -31,7 +31,7 @@ const build = async (src, name, Child) => {
   const code = ctx.result.replace(/^import\s+.+?from\s+'[^']+';$/gm, '')
     .replace(/^export default\s+/m, 'const __c = ')
     .replace(/^(\s*)export (function|class|const|let|var) /gm, '$1$2 ')
-  return new Function('$runtime', 'Child', code + '\nreturn __c')($rt, Child)
+  return new Function('$$runtime', 'Child', code + '\nreturn __c')($rt, Child)
 }
 
 const mount = (Comp) => {
@@ -43,6 +43,81 @@ const mount = (Comp) => {
   $rt.flushSync()
   return c
 }
+
+describe('++ and -- on a reactive let, as an expression', () => {
+  // Every test on this pair asserted the emitted TEXT, and the text was wrong
+  // in two ways that only a value can see: `$$runtime.set` answered nothing, so
+  // `const a = ++n` bound `undefined`; and postfix compiled to the prefix form,
+  // so `n++` would have answered the new value once it answered one at all.
+  //
+  // Found in `example`'s storefront, where `const mine = ++inflight` guarded a
+  // search box against an out-of-order response: `mine` was `undefined`, the
+  // guard `mine !== inflight` was therefore always true, and every answer the
+  // shop gave was discarded. No error, no warning, an empty list.
+  it('answers the value each form is defined to answer', async () => {
+    const C = await build(`<script>
+  let n = 0
+  let out = ''
+  function go() {
+    const pre  = ++n          // 1 — the new value
+    const post = n++          // 1 — the OLD value, n is now 2
+    const comp = (n += 10)    // 12 — the new value
+    out = [pre, post, comp, n].join(',')
+  }
+</script>
+<button on:click={go}>go</button><p>{out}</p>`, 'Update.mesa')
+
+    const c = mount(C)
+    c.querySelector('button').click()
+    $rt.flushSync()
+    expect(c.querySelector('p').textContent).toBe('1,1,12,12')
+    c.remove()
+  })
+
+  // The shape that made the first fix worse than the bug. Inlined as
+  // `(($$v) => …)(…)`, this statement continued the `throw` above it — no
+  // semicolons in this house — so it parsed as a call on the Error object and
+  // the increment never ran on either path.
+  it('runs as a statement under a line with no semicolon', async () => {
+    const C = await build(`<script>
+  let done = 0
+  let fail = true
+  function save() {
+    if (fail) throw new Error('rejected')
+    done++
+  }
+  function go() { try { save() } catch {} }
+</script>
+<button id="go" on:click={go}>go</button>
+<button id="ok" on:click={() => fail = false}>ok</button>
+<output>{done}</output>`, 'Save.mesa')
+
+    const c = mount(C)
+    const read = () => c.querySelector('output').textContent
+    c.querySelector('#go').click(); $rt.flushSync()
+    expect(read()).toBe('0')
+    c.querySelector('#ok').click(); $rt.flushSync()
+    c.querySelector('#go').click(); $rt.flushSync()
+    expect(read()).toBe('1')
+    c.remove()
+  })
+
+  it('still writes the signal when it is a statement', async () => {
+    const C = await build(
+      `<script>let n = 0</script><button on:click={() => n++}>go</button><p>{n}</p>`,
+      'Bump.mesa')
+    const c = mount(C)
+    const read = () => c.querySelector('p').textContent
+    expect(read()).toBe('0')
+    c.querySelector('button').click()
+    $rt.flushSync()
+    expect(read()).toBe('1')
+    c.querySelector('button').click()
+    $rt.flushSync()
+    expect(read()).toBe('2')
+    c.remove()
+  })
+})
 
 describe('bind: on a component prop', () => {
   it('is two-way — parent to child, and child back to parent', async () => {
@@ -171,7 +246,7 @@ describe('an assignment inside a component prop', () => {
     const { result } = await compile(
       `<script>import C from './C.mesa'\n let open = true</script><C onclick={() => open = false} />`)
     expect(result).toContain('$$set_open(false)')
-    expect(result).not.toMatch(/\$runtime\.get\(\$\$sig_open\)\s*=/)
+    expect(result).not.toMatch(/\$\$runtime\.get\(\$\$sig_open\)\s*=/)
     parseJs(result, { ecmaVersion: 'latest', sourceType: 'module' })   // throws if not
   })
 
@@ -193,16 +268,16 @@ describe('an assignment inside a component prop', () => {
   })
 })
 
-describe('$attributes', () => {
+describe('$.attributes', () => {
   // VISION §12 calls it "all attributes passed to this component… use for
-  // forwarding". It was `$option.props` unfiltered — the same thing as $props —
+  // forwarding". It was `$$option.props` unfiltered — the same thing as $.props —
   // so forwarding it wrote every declared prop onto the DOM node.
 
   it('excludes declared props, and class', async () => {
-    // `{class}` is the opt-in that merges the caller's classes; `$attributes`
+    // `{class}` is the opt-in that merges the caller's classes; `$.attributes`
     // must not carry `class` as well, or the spread would REPLACE them.
     const Child = await build(
-      `<script>export let tone = ''</script><i class="pill {tone}" {class} {...$attributes}></i>`,
+      `<script>export let tone = ''</script><i class="pill {tone}" {class} {...$.attributes}></i>`,
       'Child.mesa')
     const Parent = await build(
       `<script>import Child from './Child.mesa'</script>
@@ -398,8 +473,8 @@ describe('multi-line interpolated attributes', () => {
     // The fix must not disable the optimisation for the ordinary case.
     const { result } = await compile(
       `<script>let a = 1\n let b = 2</script><div id={a} title={b}>{a}</div>`)
-    expect(result).toContain('$runtime.render(')
-    expect((result.match(/\$runtime\.render\(/g) ?? []).length).toBe(1)
+    expect(result).toContain('$$runtime.render(')
+    expect((result.match(/\$\$runtime\.render\(/g) ?? []).length).toBe(1)
   })
 })
 
@@ -408,7 +483,7 @@ describe('bind: to a member expression', () => {
    * The setter's target was emitted verbatim while the getter was rewritten
    * through the accessors, so binding to a property of a reactive `let` produced
    *
-   *   getter: () => ($runtime.get($$sig_draft)[key])
+   *   getter: () => ($$runtime.get($$sig_draft)[key])
    *   setter: ($$v) => { draft[key] = $$v }
    *
    * — valid JavaScript referring to a name that no longer exists. It parsed, it
@@ -473,7 +548,7 @@ describe('bind: to a member expression', () => {
   })
 
   it('still emits a plain assignment for a non-reactive bare identifier', async () => {
-    // `$runtime.get($$sig_x) = $$v` would be a syntax error, so only member
+    // `$$runtime.get($$sig_x) = $$v` would be a syntax error, so only member
     // expressions are rewritten.
     const { result } = await compile(
       `<script>export let value = ''</script><input bind:value={value} />`)
@@ -509,7 +584,7 @@ describe('a const holding a function that writes to a reactive let', () => {
    * `const bump = () => { n = n + 1 }` is the most ordinary handler there is,
    * and until 2026-08-03 it emitted
    *
-   *   const bump = $runtime.trackDerived(() => (() => { $runtime.get($$sig_n) = … }))
+   *   const bump = $$runtime.trackDerived(() => (() => { $$runtime.get($$sig_n) = … }))
    *
    * — an invalid assignment target. analysis.errors was empty and the module
    * threw on load. The read was rewritten through the accessor; the *write* was
@@ -522,7 +597,7 @@ describe('a const holding a function that writes to a reactive let', () => {
   it('rewrites the write through the setter, not the getter', async () => {
     const { result } = await compile(
       `<script>let n = 0\nconst bump = () => { n = n + 1 }</script><button on:click={bump}>{n}</button>`)
-    expect(result).not.toMatch(/\$runtime\.get\([^)]*\)\s*=[^=]/)
+    expect(result).not.toMatch(/\$\$runtime\.get\([^)]*\)\s*=[^=]/)
     expect(result).toContain('$$set_n')
   })
 
@@ -539,12 +614,12 @@ describe('a const holding a function that writes to a reactive let', () => {
     c.remove()
   })
 
-  it('applies to a mutator provided through $context', async () => {
+  it('applies to a mutator provided through $.context', async () => {
     // How every compound component here shares state — Accordion/Tabs provide
     // a toggle down to their items. Same emitter path, same broken output.
     const { result } = await compile(
-      `<script>let open = {}\n$context.toggle = (id) => { open = { ...open, [id]: true } }</script><b>x</b>`)
-    expect(result).not.toMatch(/\$runtime\.get\([^)]*\)\s*=[^=]/)
+      `<script>let open = {}\n$.context.toggle = (id) => { open = { ...open, [id]: true } }</script><b>x</b>`)
+    expect(result).not.toMatch(/\$\$runtime\.get\([^)]*\)\s*=[^=]/)
     expect(result).toContain('$$set_open')
   })
 
@@ -560,7 +635,7 @@ describe('a const holding a function that writes to a reactive let', () => {
 
 describe('a destructuring assignment to reactive lets', () => {
   /*
-   * `[a, b] = [b, a]` used to emit `[$runtime.get($$sig_a), …] = …` — the same
+   * `[a, b] = [b, a]` used to emit `[$$runtime.get($$sig_a), …] = …` — the same
    * invalid target the suite above covers, reached a different way: both
    * rewriters recognised only a bare Identifier on the left, so a pattern fell
    * through to the generic descent and every target was rewritten as a READ.
@@ -750,10 +825,14 @@ describe('the {class} passthrough', () => {
  *   new.mesa    → `export default function new(…)`  — a reserved word
  *   leads.mesa  → `export const leads = …` in <script module>,
  *                 then `export default function leads(…)` — a redeclaration
+ *   404.mesa    → `export default function 404(…)`  — starts with a digit
  *
- * Both compiled cleanly, ran in dev, and failed only at `vite build`. The
- * second became the ordinary case once Sierra resources moved to .mesa (repo
- * invariant 18): a resource file is named after the thing it exports.
+ * All three compiled cleanly and failed later. The second became the ordinary
+ * case once Sierra resources moved to .mesa (repo invariant 18): a resource
+ * file is named after the thing it exports. The third arrived with the `site/`
+ * surface, where `404.mesa` is the ordinary name for a not-found page — the
+ * character sweep allows digits, because every one of them is legal further
+ * along an identifier, and only the FIRST is not.
  */
 describe('the component function name', () => {
   const topLevelNames = (code) =>
@@ -804,6 +883,19 @@ describe('the component function name', () => {
     }
   })
 
+  it('does not start with a digit', async () => {
+    // The character sweep passes digits, so this reached esbuild as
+    // `export default function 404(` and came back as six parse errors about a
+    // temp file nobody wrote. `404.mesa` is what a static site calls its
+    // not-found page, so the surface that has one finds this immediately.
+    for (const base of ['404', '500', '2026-review', '1']) {
+      const ctx = await compile(`<p>hi</p>`, `${base}.mesa`)
+      expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' }), base)
+        .not.toThrow()
+      expect(topLevelNames(ctx.result).some(n => /^[0-9]/.test(n)), base).toBe(false)
+    }
+  })
+
   it('is left alone when nothing collides', async () => {
     const ctx = await compile(`<script module>export const rows = []</script><p>hi</p>`, 'Orders.mesa')
     expect(ctx.result).toContain('export default function Orders(')
@@ -816,5 +908,526 @@ describe('the component function name', () => {
     )
     expect(ctx.result).toContain(`push_component('leads'`)
     expect(ctx.result).not.toContain('export default function leads(')
+  })
+})
+
+/**
+ * A builtin name declared by the author (FJS-471).
+ *
+ * The compiler injects `$.props`, `$.onMount` and eleven others as `const` into
+ * the component factory scope. An instance script declaring one emitted a
+ * second `const` of that name — a duplicate binding, so the module did not
+ * parse — while the compile reported nothing, which is this file's premise
+ * exactly. Measured before the fix: 27 silently-invalid combinations across
+ * `const`, `var` and `function`; `let` survived only because a reactive `let`
+ * is renamed to `$$sig_<name>` before emit.
+ */
+describe('a declaration colliding with an injected builtin', () => {
+  const RESERVED = [
+    '$$option', '$$slots', '$$props', '$$attributes', '$context', '$$emit',
+    '$$onMount', '$$onDestroy', '$$onCleanup', '$mounted', '$inspect',
+    '$$ctxProvide', '$$ctxRead',
+  ]
+  const forms = {
+    let:      (n) => `<script>let show = true; let ${n} = 1</script>{#if show}<p>x</p>{/if}`,
+    const:    (n) => `<script>let show = true; const ${n} = 1</script>{#if show}<p>x</p>{/if}`,
+    var:      (n) => `<script>let show = true; var ${n} = 1</script>{#if show}<p>x</p>{/if}`,
+    function: (n) => `<script>let show = true; function ${n}(){ return 1 }</script>{#if show}<p>x</p>{/if}`,
+    destructured: (n) => `<script>let show = true; const { v: ${n} } = {}</script>{#if show}<p>x</p>{/if}`,
+  }
+
+  for (const [form, make] of Object.entries(forms)) {
+    it(`is refused by name for every builtin, declared as ${form}`, async () => {
+      for (const name of RESERVED) {
+        await expect(compile(make(name), `${name}.mesa`), `${form} ${name}`)
+          .rejects.toThrow(/is a Mesa builtin and cannot be declared/)
+      }
+    })
+  }
+
+  it('names the builtin and the declaration form it found', async () => {
+    await expect(compile(forms.const('$$props'), 'T.mesa'))
+      .rejects.toThrow(/'\$\$props' is a Mesa builtin and cannot be declared as a const/)
+  })
+
+  // The refusal is about the factory scope, so a nested function may still use
+  // the name — over-refusing here would break ordinary code that never collides.
+  it('leaves a nested declaration of the same name alone', async () => {
+    const ctx = await compile(
+      `<script>function f(){ const $props = 1; return $props }</script><p>{f()}</p>`, 'T.mesa')
+    expect(ctx.analysis.errors).toEqual([])
+    expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+  })
+
+  it('leaves USING a builtin alone', async () => {
+    for (const src of [
+      `<script>$.onMount(() => {})</script><p>x</p>`,
+      `<script>$.context.a = 1</script><p>x</p>`,
+      `<script>const n = $.props.x</script><p>{n}</p>`,
+      `<script>let a = 1; $: a, (v) => v</script><p>{a}</p>`,
+    ]) {
+      const ctx = await compile(src, 'T.mesa')
+      expect(ctx.analysis.errors, src).toEqual([])
+      expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' }), src).not.toThrow()
+    }
+  })
+})
+
+/**
+ * `$` — the component's door (FJS-D132, phase 1).
+ *
+ * Both spellings work here: the injected `$.onMount` and the door `$.onMount`.
+ * The old one dies in phase 4, so these cases are about the door existing and
+ * behaving, not about the old one being gone.
+ *
+ * Most of the door is a plain value on a real object, which is why `$.props`
+ * and `$.slots` need no compiler support. Four are compiled rather than read —
+ * `$.context` becomes a provide/read call, `$.inspect` is tracked then stripped,
+ * `$.mounted` is counted, `$.async` is generated — and each is asserted by its
+ * EFFECT, because all four compile and parse whether or not they were wired.
+ */
+describe('the $ door', () => {
+  const src = (body, tmpl = '<p>x</p>') => `<script>${body}</script>${tmpl}`
+
+  it('splits into a shared half at module scope and an instance half', async () => {
+    const ctx = await compile(src(`$.onMount(() => {})`), 'T.mesa')
+    const out = ctx.result
+    expect(out).toContain('const $$shared = {')
+    expect(out).toContain('const $ = Object.create($$shared);')
+    // shared is declared once, outside the component function
+    expect(out.indexOf('const $$shared')).toBeLessThan(out.indexOf('export default function'))
+    // and the instance half is inside it
+    expect(out.indexOf('export default function')).toBeLessThan(out.indexOf('Object.create($$shared)'))
+  })
+
+  it('is not emitted at all by a component that does not use it', async () => {
+    const ctx = await compile(src(`let count = 0`, '<p>{count}</p>'), 'T.mesa')
+    expect(ctx.result).not.toContain('$$shared')
+    expect(ctx.result).not.toContain('Object.create')
+  })
+
+  it('emits valid JS for every member of the door', async () => {
+    const cases = [
+      `$.onMount(() => {})`,
+      `$.onDestroy(() => {})`,
+      `$.onMount(() => $.tick(() => {}))`,
+      `const p = $.props.x`,
+      `function go() { $.emit('go', 1) }`,
+      `const a = $.entrance({})`,
+      `$.context.k = 1`,
+      `const t = $.context.k`,
+    ]
+    for (const body of cases) {
+      const ctx = await compile(src(body), 'T.mesa')
+      expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' }), body).not.toThrow()
+    }
+  })
+
+  it('compiles $.context to a provide and a read, not a property set', async () => {
+    // Left as a member access this would assign to the shared context object
+    // and provide nothing — it would compile, parse, and do nothing.
+    const provide = await compile(src(`$.context.k = 1`), 'T.mesa')
+    expect(provide.result).toMatch(/\$\$ctxProvide\('k'/)
+    const read = await compile(src(`const t = $.context.k`, '<p>{t}</p>'), 'T.mesa')
+    expect(read.result).toMatch(/\$\$ctxRead\('k'/)
+  })
+
+  it('tracks $.inspect, and strips it when debug is off', async () => {
+    const on = await compileSource(src(`let a = 1; $.inspect(a)`, '<p>{a}</p>'),
+      { filename: 'T.mesa', css: false, debug: true })
+    expect(on.result).toMatch(/\$inspect\(/)
+    const off = await compile(src(`let a = 1; $.inspect(a)`, '<p>{a}</p>'), 'T.mesa')
+    expect(off.result).not.toMatch(/\$inspect\(/)
+  })
+
+  it('counts $.mounted for its one-per-component rule', async () => {
+    const one = await compile(src(`const m = $.mounted(async () => {})`, '<mesa:mounted></mesa:mounted>'), 'T.mesa')
+    expect(one.analysis.mountedVar).toBe('m')
+    const two = await compile(src(`const a = $.mounted(async()=>{}); const b = $.mounted(async()=>{})`), 'T.mesa')
+    expect(two.analysis.errors.some((e) => /only be called once/.test(e))).toBe(true)
+  })
+
+  it('reaches $.async from a template, where the script rewrite cannot see it', async () => {
+    const ctx = await compile(src(`const rows = await fetch('/x')`, '<p>{$.async.rows.loading}</p>'), 'T.mesa')
+    expect(ctx.result).toContain('$.async = $$async;')
+    // assigned beside its own declaration, not with the rest of `$`, which has
+    // already run past by then
+    expect(ctx.result.indexOf('const $$async = {}')).toBeLessThan(ctx.result.indexOf('$.async = $$async;'))
+  })
+
+  it('is refused in <script module>, which runs outside any instance', async () => {
+    await expect(compile(`<script module>$.onMount(() => {})</script><p>x</p>`, 'T.mesa'))
+      .rejects.toThrow(/not available in <script module>/)
+    // a module block that does not reach for it is untouched
+    const ok = await compile(`<script module>export const rows = []</script><p>x</p>`, 'T.mesa')
+    expect(ok.analysis.errors).toEqual([])
+  })
+
+  // Phase 4: the bare spelling is gone. It was working alongside the door
+  // through phases 1-3, which is what let the 120-file rewrite land separately
+  // from the compiler change.
+  // Seven of the twelve. The other five are the data bags and carry a bare
+  // spelling of their own (`FJS-D135`) — the case below this one.
+  it('refuses the bare spelling of a CALLED member, naming the replacement', async () => {
+    for (const [bare, member] of [
+      [`$onMount(() => {})`,          'onMount'],
+      [`$onDestroy(() => {})`,        'onDestroy'],
+      [`function g(){ $emit('x') }`,  'emit'],
+      [`const t = $tick()`,           'tick'],
+    ]) {
+      await expect(compile(src(bare), 'T.mesa'), bare)
+        .rejects.toThrow(new RegExp(`'\\$${member}' is no longer injected — write '\\$\\.${member}'`))
+    }
+  })
+
+  it('refuses a called member in a template too, which does not parse as JS', async () => {
+    await expect(compile(`<script>let a = 1</script><p>{$tick}</p>`, 'T.mesa'))
+      .rejects.toThrow(/'\$tick' is no longer injected/)
+  })
+
+  // The spread is the shape the phase-3 codemod nearly missed: `...` puts a dot
+  // straight before the `$`, so a guard against a preceding dot skipped 66 of
+  // the files it was written for. It is now the CANONICAL spelling, and the
+  // door one still compiles — one binding under two names, so a component
+  // mixing them cannot end up with two of anything.
+  it('accepts both spellings of a data bag, and they are one binding', async () => {
+    for (const spread of ['{...$attributes}', '{...$.attributes}']) {
+      const ok = await compile(`<script>export let a</script><div ${spread}>{a}</div>`, 'T.mesa')
+      expect(() => parseJs(ok.result, { ecmaVersion: 'latest', sourceType: 'module' }), spread).not.toThrow()
+      expect(ok.result, spread).toContain('$$runtime.restProps($$option.props')
+    }
+    // Both in one component: one restProps call, and the alias reads it.
+    const mixed = await compile(
+      `<script>const p = $props.x</script><div {...$.attributes}>{p}</div>`, 'T.mesa')
+    expect(mixed.result.match(/restProps\(/g) ?? []).toHaveLength(1)
+    expect(mixed.result).toContain('const $props = $$props;')
+  })
+
+  // The bare spelling is canonical, so the collision check has to reserve it —
+  // a top-level `let $props` would otherwise shadow the injected one silently.
+  it('reserves the bare spelling against a top-level declaration', async () => {
+    await expect(compile(`<script>let $props = 1</script><p>{$props}</p>`, 'T.mesa'))
+      .rejects.toThrow(/\$props/)
+  })
+
+  // A name the author declared for themselves is not the builtin, and the
+  // factory-scope collision check deliberately allows it in a nested scope.
+  it('leaves a local the author declared alone', async () => {
+    const ctx = await compile(
+      `<script>function f(){ const $props = 1; return $props }</script><p>{f()}</p>`, 'T.mesa')
+    expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+  })
+})
+
+/**
+ * `$` may not be destructured, aliased or shadowed (FJS-D132, phase 2).
+ *
+ * All three compile without this, and each loses the door differently: a
+ * destructure at script top reads `$.async` before it is assigned, a copy is
+ * not what the compiler tracks when it rewrites `$.context`, and a shadow
+ * leaves the name pointing somewhere else entirely.
+ *
+ * The rule that covers all of them is that `$` is legal only as the object of a
+ * member expression. Anything else naming it hands out a reference the compiler
+ * cannot follow — which is what catches `function f({ x } = $)`, a destructure
+ * wearing a default value, that the three named checks each walked past.
+ */
+describe('$ is not the author’s to take', () => {
+  const s = (body, tmpl = '<p>x</p>') => `<script>${body}</script>${tmpl}`
+
+  const REFUSED = {
+    'destructured as an object':   `const { props } = $`,
+    'destructured as an array':    `const [a] = $`,
+    'aliased':                     `const d = $`,
+    'shadowed by const':           `const $ = 1`,
+    'shadowed by let':             `let $ = 1`,
+    'shadowed by var':             `var $ = 1`,
+    'shadowed by a function':      `function $(){}`,
+    'shadowed by a class':         `class $ {}`,
+    'a parameter':                 `function f($) { return $ }`,
+    'an arrow parameter':          `const f = ($) => $`,
+    'a parameter of a nested fn':  `function o(){ return function i($){ return $ } }`,
+    'a catch binding':             `try { } catch ($) { }`,
+    'imported':                    `import $ from 'x'`,
+    'assigned to':                 `$ = 1`,
+    'a parameter default':         `function f({ x } = $) { return x }`,
+    'passed as an argument':       `function f(v){ return v }; const r = f($)`,
+  }
+  for (const [what, body] of Object.entries(REFUSED)) {
+    it(`is refused when ${what}`, async () => {
+      await expect(compile(s(body), 'T.mesa')).rejects.toThrow(/'\$' cannot be/)
+    })
+  }
+
+  // The reactive label wears the same character and is not a binding at all —
+  // JavaScript keeps labels in their own namespace. 77 files in this repo use
+  // one, so over-refusing here breaks most of the tree.
+  it('leaves the reactive label alone', async () => {
+    for (const body of [`let a = 1; $: a, (v) => v`, `let a = 1; $_watch: a, (v) => v`]) {
+      const ctx = await compile(s(body, '<p>{a}</p>'), 'T.mesa')
+      expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' }), body).not.toThrow()
+    }
+  })
+
+  it('leaves a property named $ alone', async () => {
+    const ctx = await compile(s(`const o = { $: 1 }; const v = o.$`, '<p>{v}</p>'), 'T.mesa')
+    expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+  })
+
+  it('leaves reaching through the door alone', async () => {
+    const ctx = await compile(s(`$.onMount(() => {}); const p = $.props.x`, '<p>{p}</p>'), 'T.mesa')
+    expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+  })
+})
+
+/**
+ * The documented door and the enforced door are the same door.
+ *
+ * `DOOR_MEMBERS` in the compiler is what a bare spelling is refused against;
+ * VISION § 17's table is what a person reads. They were a hand-kept copy of each
+ * other, and the copy lost: the table listed thirteen of eighteen members, with
+ * `$.tick`, `$.fade`, `$.slide` and `$.fly` reachable and written down nowhere.
+ * Phase 5 renamed that table without grading it against the list.
+ */
+describe('VISION documents every member of the door', () => {
+  it('lists each one the compiler knows about', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, resolve } = await import('node:path')
+    const here = dirname(fileURLToPath(import.meta.url))
+
+    const vision = readFileSync(resolve(here, '../docs/VISION.md'), 'utf8')
+    // Either spelling documents a member: the five data bags are listed under
+    // their canonical BARE name (`FJS-D135`), the other twelve under the door.
+    const documented = new Set(
+      [...vision.matchAll(/^\| `\$\.?([a-zA-Z]+)/gm)].map((m) => m[1]))
+
+    // Read off the compiler rather than restated — a second list is the bug.
+    const src = readFileSync(resolve(here, '../src/compiler.js'), 'utf8')
+    const members = new Set([
+      ...src.match(/const DOOR_MEMBERS = \[([\s\S]*?)\]/)[1].match(/'(\w+)'/g).map((s) => s.slice(1, -1)),
+      ...src.match(/\[\.\.\.DOOR_MEMBERS, ([^\]]*)\]/)[1].match(/'(\w+)'/g).map((s) => s.slice(1, -1)),
+    ])
+
+    const undocumented = [...members].filter((m) => !documented.has(m))
+    expect(undocumented, `reachable but absent from VISION § 17: ${undocumented.join(', ')}`).toEqual([])
+  })
+})
+
+/**
+ * A compiled door member emits a local, and the local must exist (`FJS-477`).
+ *
+ * `$.mounted` and `$.context` are rewritten to `$mounted` / `$context` before
+ * the script is parsed, and the DECLARATION of those locals was gated on a
+ * sniff that recognised one shape each. Every other shape emitted a reference
+ * to a binding nothing declared — which compiles, parses, and throws
+ * ReferenceError on first render. Invariant 15's failure exactly, so the
+ * assertion is Invariant 15's shape: parse the output, then check that every
+ * single-`$` name it USES it also DECLARES.
+ */
+describe('a compiled door member never emits an undeclared local', () => {
+  const s = (body, tmpl = '<p>x</p>') => `<script>${body}</script>${tmpl}`
+
+  /** Every `$name` (not `$$name`) the output reads must be declared in it. */
+  const undeclared = (code) => {
+    const used = [...new Set(code.match(/(?<![$\w])\$[a-zA-Z_][\w]*/g) || [])]
+    return used.filter((n) => !new RegExp(`(?:const|let|var)\\s+\\${n}\\b`).test(code))
+  }
+
+  const wired = [
+    ['$.mounted, assigned',   s(`const ready = $.mounted(() => 1)`, '<p>{ready}</p>')],
+    ['$.context consume',     s(`const v = $.context.k`, '<p>{v}</p>')],
+    ['$.context provide',     s(`$.context.k = 1`)],
+    ['$.context.use',         s(`const v = $.context.use('k')`, '<p>{v}</p>')],
+    ['$.context.provide',     s(`$.context.provide('k', () => 1)`)],
+    ['$.context itself',      s(`const c = $.context`)],
+    ['$.context.use, template', `<p>{$.context.use('k')}</p>`],
+  ]
+  for (const [label, src] of wired) {
+    it(`compiles and declares what it uses — ${label}`, async () => {
+      const ctx = await compile(src)
+      expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+      expect(undeclared(ctx.result), label).toEqual([])
+    })
+  }
+
+  // The shapes the compiler cannot wire. Each refuses by name AND names the
+  // spelling that works — an error that only says no leaves the author guessing
+  // which of the four forms was meant to be the one.
+  const refused = [
+    ['$.mounted as a bare call',    s(`$.mounted(() => 1)`),        /gates the template|const ready = \$\.mounted/],
+    ['$.mounted as a reference',    s(`const m = $.mounted`),       /const ready = \$\.mounted/],
+    ['$.mounted from the template', `<p>{$.mounted}</p>`,           /not readable from the template/],
+    ['$.context sugar in template', `<p>{$.context.k}</p>`,         /compile step is script-only/],
+  ]
+  for (const [label, src, names] of refused) {
+    it(`refuses by name — ${label}`, async () => {
+      await expect(compile(src), label).rejects.toThrow(names)
+    })
+  }
+
+  // The gate reads the AST the rewrite produced. A regex over the text is what
+  // let three of the four above through, so a form that only an AST can tell
+  // apart is pinned: `$mounted` inside a string is not a use of the builtin.
+  it('does not refuse the spelling inside a string literal', async () => {
+    const ctx = await compile(s(`const label = 'call $.mounted(fn) to gate'`, '<p>{label}</p>'))
+    expect(undeclared(ctx.result)).toEqual([])
+  })
+})
+
+/**
+ * VISION's rules index is a second copy of its own rules, and it drifts.
+ *
+ * Three times now: RULE 31a kept "compiler-internal name" in the index after
+ * the inline rule was corrected, and RULE 18's row still read "`$builtins` are
+ * auto-injected — never manually imported" after `FJS-D132` retired exactly
+ * that, with 18a and 18b never added at all. Each time the inline rule was
+ * fixed and the table was not, because nothing reads the table.
+ *
+ * So: every `**RULE n**` written inline must have a row in the index. The
+ * reverse is deliberately NOT asserted — a row for a rule stated as prose
+ * rather than as a RULE block is a documentation choice, not a defect.
+ */
+describe("VISION's rules index carries every rule", () => {
+  it('has a row for each inline RULE', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, resolve } = await import('node:path')
+    const vision = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../docs/VISION.md'), 'utf8')
+
+    const inline  = new Set([...vision.matchAll(/\*\*RULE (\d+[a-z]?)\*\*/g)].map((m) => m[1]))
+    const indexed = new Set([...vision.matchAll(/^\| (\d+[a-z]?) \| /gm)].map((m) => m[1]))
+    expect(inline.size, 'found no inline rules — the pattern moved').toBeGreaterThan(30)
+
+    const missing = [...inline].filter((r) => !indexed.has(r))
+    expect(missing, `stated inline but absent from the rules index: ${missing.join(', ')}`).toEqual([])
+  })
+})
+
+/**
+ * `bind:class` on an element is refused, because it never worked (`FJS-478`).
+ *
+ * It lands in the FORM-VALUE path, whose generic branch is `el[name] = v` —
+ * and there is no `class` DOM property. Measured in a real DOM: after
+ * `el.class = 'raised'`, both `getAttribute('class')` and `className` are
+ * unchanged and only `el.class` reads back, which is a JS expando. So neither
+ * direction touched the element. VISION § 10.8 documented it as the two-way
+ * half of class passthrough for its whole life, and no `.mesa` file used it.
+ *
+ * The component form is a different mechanism and stays: there `bind:class` is
+ * an ordinary two-way prop, wired with `bindProp`.
+ */
+describe('class passthrough — the accepted surface', () => {
+  const wired = (code) => /bindClassPassthrough/.test(code)
+
+  it('accepts the forms that merge', async () => {
+    for (const el of [
+      `<div class="own" {class}>x</div>`,
+      `<div class="own" class={$class}>x</div>`,
+      `<script>let t='a'</script><div class={t} {class}>x</div>`,
+    ]) {
+      const ctx = await compile(el, 'T.mesa')
+      expect(wired(ctx.result), el).toBe(true)
+      expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' }), el).not.toThrow()
+    }
+  })
+
+  // `bind:` on an element means the DOM writes back, and it does that for form
+  // values and nothing else (`FJS-D136`). Everything else reached the generic
+  // `el[name] = v` branch, which for any attribute whose DOM property is spelled
+  // differently wrote an expando in BOTH directions.
+  it('accepts the form values an element writes back on', async () => {
+    for (const el of [
+      `<script>let v=''</script><input bind:value={v} />`,
+      `<script>let v=false</script><input type="checkbox" bind:checked={v} />`,
+      `<script>let v=null</script><input type="file" bind:files={v} />`,
+      `<script>let v=[]</script><input type="checkbox" bind:group={v} value="a" />`,
+      `<script>let el</script><div bind:this={el}>x</div>`,
+    ]) {
+      const ctx = await compile(el, 'T.mesa')
+      expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' }), el).not.toThrow()
+    }
+  })
+
+  it('refuses every other bind: on an element, naming the one-way form', async () => {
+    for (const [attr, el] of [
+      ['readonly',        `<script>let v=false</script><input bind:readonly={v} />`],
+      ['contenteditable', `<script>let v=true</script><div bind:contenteditable={v}>x</div>`],
+      ['innerHTML',       `<script>let v=''</script><div bind:innerHTML={v}>x</div>`],
+    ]) {
+      await expect(compile(el, 'T.mesa'), attr)
+        .rejects.toThrow(new RegExp(`not a two-way binding[\\s\\S]*${attr}=\\{expr\\}`))
+    }
+  })
+
+  // A component is a different mechanism and every one of these is legal there.
+  it('leaves a component two-way prop alone, whatever it is called', async () => {
+    for (const p of ['open', 'sort', 'readonly', 'record']) {
+      const ctx = await compile(
+        `<script>import C from './C.mesa'\nlet v = 1</script><C bind:${p}={v} />`, 'T.mesa')
+      expect(ctx.result, p).toContain('bindProp(')
+    }
+  })
+
+  it('refuses bind:class on an element, naming {class}', async () => {
+    for (const el of [
+      `<div class="own" bind:class>x</div>`,
+      `<div class="own" :class>x</div>`,
+      `<div class="own" bind:class={$class}>x</div>`,
+    ]) {
+      await expect(compile(el, 'T.mesa'), el).rejects.toThrow(/is not a DOM property[\s\S]*\{class\}/)
+    }
+  })
+
+  // The same spelling on a COMPONENT is an ordinary two-way prop and must
+  // survive — the refusal above is about the element path alone.
+  it('leaves bind:class on a component alone', async () => {
+    const ctx = await compile(
+      `<script>import C from './C.mesa'\nlet t='a'</script><C bind:class={t} />`, 'T.mesa')
+    expect(ctx.result).toContain(`bindProp(`)
+    expect(ctx.result).toContain(`'$class'`)
+  })
+
+  // Shares a colon with bind:class and is a different feature entirely.
+  it('leaves the class:name toggle alone', async () => {
+    const ctx = await compile(`<script>let on=true</script><div class="own" class:active={on}>x</div>`, 'T.mesa')
+    expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+    expect(wired(ctx.result)).toBe(false)
+  })
+})
+
+/**
+ * The calling convention is reserved too (`FJS-482`).
+ *
+ * `__anchor` and `__props` are the component function's own parameters,
+ * `__block` is threaded into every `track()` call, and `__prev` is the render
+ * callback's. A top-level declaration of one lands in the same scope and WINS,
+ * which is a shadow rather than a redeclaration — so unlike `FJS-471`'s
+ * builtins these compiled to valid JavaScript and failed later, or not at all:
+ *
+ *   function __anchor(){}   → throws at mount, `anchor.before is not a function`
+ *   const __prev = 9        → renders `[object Object]`, silently
+ *
+ * A nested scope is untouched, exactly as it is for the `$$` builtins: a
+ * parameter of the author's own function shadows nothing of the compiler's.
+ */
+describe('a component may not declare the calling convention', () => {
+  for (const [label, body] of Object.entries({
+    'function __anchor()': `function __anchor(){ return 1 }`,
+    'function __block()':  `function __block(){ return 1 }`,
+    'const __prev':        `const __prev = 9`,
+    'let __props':         `let __props = 9`,
+  })) {
+    it(`refuses ${label}, naming what it is`, async () => {
+      await expect(compile(`<script>${body}\nlet c = 7</script><p>v{c}</p>`, 'T.mesa'), label)
+        .rejects.toThrow(/is part of how Mesa calls a component/)
+    })
+  }
+
+  it('leaves a nested scope alone', async () => {
+    const ctx = await compile(
+      `<script>const f = (__anchor) => __anchor + 1\nlet c = 7</script><p>{f(c)}</p>`, 'T.mesa')
+    expect(() => parseJs(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
   })
 })

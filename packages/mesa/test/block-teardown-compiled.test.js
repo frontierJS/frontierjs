@@ -123,7 +123,7 @@ async function renderBoundary(src, fetchIt) {
   if (ctx.analysis?.errors?.length) throw new Error(ctx.analysis.errors[0])
   let code = ctx.result.replace(/^import\s+.+?from\s+'[^']+';$/gm, '').trim()
   code = code.replace(/^export default\s+/m, 'const __component = ') + '\nreturn __component'
-  const Comp = new Function('$runtime', 'fetchIt', code)(runtime, fetchIt)
+  const Comp = new Function('$$runtime', 'fetchIt', code)(runtime, fetchIt)
 
   const wrap = document.createElement('div')
   document.body.appendChild(wrap)

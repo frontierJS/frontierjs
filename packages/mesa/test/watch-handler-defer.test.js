@@ -49,7 +49,7 @@ describe('emitted shape', () => {
 
   test('a single dep passes the value directly, not wrapped', async () => {
     const { result } = await compile(`let a = 1\nfunction f(){}\n$: a, () => f()`)
-    expect(result).toMatch(/const \$\$v = \$runtime\.get\(\$\$sig_a\);/)
+    expect(result).toMatch(/const \$\$v = \$\$runtime\.get\(\$\$sig_a\);/)
   })
 
   test('multiple deps pass an array', async () => {
@@ -62,7 +62,7 @@ describe('emitted shape', () => {
     // so the value has to come off the proxy.
     const { result } = await compile(
       `import { cart } from './s.js'\nfunction f(){}\n$: cart.total, () => f()`)
-    expect(result).toMatch(/\$runtime\.get\(\$\$watch_cart_total\)/) // subscribe
+    expect(result).toMatch(/\$\$runtime\.get\(\$\$watch_cart_total\)/) // subscribe
     expect(result).toMatch(/const \$\$v = \$\$proxy_cart\.total;/)   // value
   })
 
@@ -74,8 +74,8 @@ describe('emitted shape', () => {
     // watch mounted — see the mounted test at the bottom of this file.
     const { result } = await compile(
       `let o = { a: 1 }\nfunction f(){}\n$: o.a, () => f()`)
-    expect(result).toMatch(/const \$\$watch_o_a = \$runtime\.track\(/)  // object, not fn
-    expect(result).toMatch(/\$runtime\.get\(\$\$watch_o_a\)/)
+    expect(result).toMatch(/const \$\$watch_o_a = \$\$runtime\.track\(/)  // object, not fn
+    expect(result).toMatch(/\$\$runtime\.get\(\$\$watch_o_a\)/)
     // Not a bare call. The lookbehind is load-bearing: the fire function is
     // named `$fire_o_$$watch_o_a`, so a loose match hits its own call site.
     expect(result).not.toMatch(/(?<![\w$])\$\$watch_o_a\(\)/)
@@ -204,7 +204,7 @@ describe('mounted', () => {
   const exec = (js) => {
     let code = js.replace(/^import\s+.+?from\s+'[^']+';$/gm, '').trim()
     code = code.replace(/^export default\s+/m, 'const __component = ')
-    return new Function('$runtime', code + '\nreturn __component')($rt)
+    return new Function('$$runtime', code + '\nreturn __component')($rt)
   }
 
   const render = async (src) => {

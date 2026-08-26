@@ -34,7 +34,7 @@
 // token does.
 
 import { createService, NotFound, BadRequest, Conflict, Forbidden, Unauthorized, Gone, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, refuseRoleAboveOwn, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped } from '../../core/resource.ts'
 import { env } from '../../core/env.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -187,7 +187,7 @@ export function createInvitationsService(app: BasecampApp) {
      * The token is not here: `db()` is the CALLER's client and `@guarded(all)`
      * means the column is absent from a scoped read entirely, not redacted.
      */
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       return findScoped('invitation', { limit, offset })
     },
@@ -393,7 +393,11 @@ export function createInvitationsService(app: BasecampApp) {
         // caller who is not a member yet and may not exist yet, which is the
         // entire population this service is for.
         all:    [sessionScope(app, { except: ['preview', 'accept'] })],
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampInvitation],
+        // refuseRoleAboveOwn runs AFTER stampInvitation, which normalises the
+        // role — and it is here because an invitation is the second way to hand
+        // out standing: an admin inviting an address they own as `owner` signs
+        // in as that account and holds level 6 (`FJS-410`).
+        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampInvitation, refuseRoleAboveOwn()],
         resend: [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
       },
@@ -416,6 +420,14 @@ export function createInvitationsService(app: BasecampApp) {
     data.role        = toRole(data.role)
     data.expiresAt   = expiryFrom()
     data.invitedBy   = actor()
+    // The tenant, because `create` writes through `sys()` and a system client
+    // carries no principal for `@default(auth().workspaceId)` to read. Every
+    // other create here goes through the scoped client and is stamped at the
+    // Data boundary; this one bypasses it, so the tenant has to be stated —
+    // from `ws()`, the workspace the request resolved to, never from the
+    // payload. The browser used to supply it, which is a client naming its own
+    // tenant for a write nothing was checking (`FJS-387`).
+    data.workspaceId = ws()
     $.data = data
   }
 }

@@ -1,0 +1,1326 @@
+<script>
+  // Json.mesa
+  // A JSON document, read.
+  //
+  // Every other value this kit renders arrives with a schema behind it. A
+  // `Json` column does not — the seed says `Json` and stops — so three apps in
+  // this repo each reached for the same `<pre>{JSON.stringify(x, null, 2)}</pre>`
+  // and got a wall of unindexable text with no way to fold a branch away.
+  //
+  // ── Why there is no palette in this file ──────────────────────────────
+  //
+  // A key, a string and a number are marked with the elements `glow()` already
+  // uses for them — <b>, <em>, <strong>, <i>, <sup> — inside a
+  // `<code language="json">`, which is the exact shape @frontierjs/css's
+  // components/code.css themes. So this component makes no colour decision at
+  // all: it retints with the theme, and a theme that sets its own --code-*
+  // variables reaches the tree for free. A private palette here would be a
+  // sixth thing to reconcile against eleven themes, and would be wrong in ten
+  // of them.
+  //
+  // Usage:
+  //   <Json value={record.payload} />
+  //   <Json value={config} expand={2} copy />
+  //   <Json value={payload} mode="raw" />
+  //   <Json value={doc} editable onchange={(next) => doc = next} />
+
+  import {
+    arrayKind, classify, coerceLike, convertTo, diffDocs, expandToDepth, format, insertIn,
+    isContainer, JSON_KINDS, accessorPath, jsonPointer, markRuns, pathKey,
+    preview as previewOf, removeIn, renameKey, sameValue, searchDoc, setIn,
+    treeRows, tryParse,
+  } from '@frontierjs/toolbelt/json'
+  import { glow } from '@frontierjs/toolbelt/glow'
+  import CopyButton, { copyText } from './CopyButton.mesa'
+
+  export let value  = undefined
+  // 'tree' folds; 'raw' is the highlighted document, which is what you want
+  // when the shape matters less than the exact bytes.
+  export let mode   = 'tree'
+  // How many levels start open. The set below is SEEDED from this and then
+  // owned by the person looking at it — re-deriving it on every render would
+  // spring a branch they closed back open.
+  export let expand = 1
+  // `copy` puts a button on the whole document AND on every row: what an
+  // inspector is asked for is almost always one value, not the file.
+  export let copy   = false
+  // How a row names its own place. 'accessor' is what you paste into code;
+  // 'pointer' is RFC 6901, which is how a JSON Schema validator says which
+  // member it refused, so a team reading validation reports wants that one.
+  export let pathStyle = 'accessor'
+  // What the accessor is rooted at — `payload.items[0].sku` rather than
+  // `items[0].sku`, when the caller knows what the document is called.
+  export let pathRoot  = ''
+  export let empty  = 'No data'
+
+  // ── Diff ─────────────────────────────────────────────────────────────
+  //
+  // `against` is the OLD document; `value` is the new one. The tree then walks
+  // the MERGED document rather than `value`, because a removed key is in
+  // neither `value` nor any tree built from it — a diff that shows only what
+  // the new document has can show every change except the ones that took
+  // something away, which is the half people are looking for.
+  //
+  // It ships no palette here either, and for the same reason the tree does
+  // not: `code.css` already themes `<ins>`, `<del>` and `<dfn>` inside a
+  // `code[language]` as full-width stripes with a rule and a tint, keyed off
+  // --code-ins / --code-del / --code-note. Three states, already measured
+  // across every shipped theme. A hand-drawn green and red here would be a
+  // fourth thing to reconcile and wrong in most of them.
+  export let against = undefined
+
+  // ── Search ───────────────────────────────────────────────────────────
+  //
+  // The reason this component exists is a wall of unindexable text with no way
+  // to fold a branch away. Folding shipped; finding did not, and a document
+  // big enough to need one needs both.
+  export let search = false
+
+  // ── Edit mode ────────────────────────────────────────────────────────
+  //
+  // Every write goes through `@frontierjs/toolbelt/json`, which answers a COPY
+  // and never touches the document it was handed. That is not a style choice:
+  // an in-place edit reaches the runtime as a value `===` to the one it
+  // replaced, so nothing re-renders — and the two edits people make most often
+  // are the two an in-place tree gets wrong, renaming a key (which `delete` +
+  // set sends to the bottom) and removing an array item (which by identity
+  // takes the first equal one).
+  //
+  // What it does NOT do is reorder. There is no move operation in the kit, and
+  // inventing one here would be a second definition of what a write is.
+  export let editable = false
+  export let onchange = undefined     // (next) => void
+
+  // The draft is `undefined` until the first edit, so a viewer always shows the
+  // live prop and only an EDITED tree holds its own copy. Seeding a working
+  // copy at setup instead would freeze every read-only `<Json>` at the document
+  // it first saw.
+  let draft = undefined
+
+  const doc = draft === undefined ? value : draft
+
+  // A NEW document from above wins over the draft. Both callers are served by
+  // that and they are served differently:
+  //
+  //   - a caller that binds `onchange` back into `value` is controlled. Its
+  //     update arrives here as a new identity, the draft steps aside, and what
+  //     is on screen is what the caller holds — which is what makes this usable
+  //     as one editor among several over the same object.
+  //   - a caller that ignores `onchange` never changes `value`, so its draft
+  //     survives and the tree is self-contained.
+  //
+  // Identity, not equality: an in-place mutation is invisible from here, which
+  // is the same fact every write in this component is built around.
+  // ── Undo ─────────────────────────────────────────────────────────────
+  //
+  // A stack of documents, which is only affordable because every write in this
+  // component answers a COPY: `setIn` and friends share every branch they did
+  // not touch, so an entry costs the path that changed and nothing else. A
+  // component that edited in place could not offer this at any price — there
+  // would be nothing left to go back to.
+  let past   = []
+  let future = []
+
+  // The last document this component announced. It is compared BY VALUE rather
+  // than by identity, and that is the whole of what makes undo work in a
+  // controlled tree: a caller that adopts a write and rebuilds its own object
+  // — which is what `example`'s /settings/ does, key by key — hands back an
+  // equal document with a different identity. By identity that reads as a
+  // second, foreign change, and every edit would cost two presses to undo.
+  let announced = undefined
+
+  const HISTORY = 50   // documents, not edits; a person does not scroll past it
+
+  function remember(previous) {
+    past   = [...past, previous].slice(-HISTORY)
+    future = []
+  }
+
+  $: value, () => {
+    // A document arriving from outside that is NOT the one we announced is
+    // somebody else's edit — a restore, another editor, a reload. It is a step
+    // in this tree's history like any other, so undo can walk back over it;
+    // what it must not do is silently vanish, which is what dropping it would
+    // look like from the screen.
+    if (draft !== undefined && !sameValue(value, announced)) remember(draft)
+    draft = undefined
+  }
+
+  // Read off `value`, never off the draft: a diff is a statement about two
+  // documents the caller named, and editing one of them is a different feature.
+  const diff = against === undefined ? null : diffDocs(against, value)
+
+  // A change three levels down is folded away behind a summary that says
+  // nothing, so the routes to every difference are open from the start. Union,
+  // not replacement — `expand` still says how much of the rest to show.
+  let expanded = new Set([...expandToDepth(value, expand), ...(diff ? diff.open : [])])
+
+  const shown = diff ? diff.merged : doc
+
+  let query = ''
+
+  const found = search ? searchDoc(shown, query) : null
+
+  // A hit four levels down is not a ROW until every container above it is open
+  // — `treeRows` only emits children of an open one — so a filter that does not
+  // open its own ancestors finds everything and shows nothing.
+  const openNow = found?.active ? new Set([...expanded, ...found.open]) : expanded
+
+  const keptRows = treeRows(shown, { expanded: openNow })
+
+  // A Set, not `.includes` — the filter runs once per row, and a document big
+  // enough to want a search is the one where O(n²) shows.
+  const keepSet = found?.active ? new Set(found.keep) : null
+
+  const rows = keepSet ? keptRows.filter((r) => keepSet.has(r.key)) : keptRows
+
+  // `format` answers '' for a value JSON cannot carry, which is also what an
+  // absent document looks like — both are "nothing to show" here.
+  const text = format(shown)
+
+  // prefix: false — glow strips a leading `+`, `-` or `>` as a diff marker, and
+  // a JSON document can legitimately begin a line with `-` (a negative number
+  // at the head of an array). The character would vanish with nothing saying so.
+  const highlighted = text ? glow(text, { language: 'json', prefix: false, mark: false }) : ''
+
+  const isEmpty = shown === undefined || shown === null || text === ''
+
+  function toggle(row) {
+    // A new Set rather than a mutation: a reassignment is what the runtime can
+    // see, and `rows` above is derived from this. Seeded from the EFFECTIVE
+    // set, so closing a branch a search opened closes it rather than silently
+    // doing nothing.
+    const next = new Set(openNow)
+    if (next.has(row.key)) next.delete(row.key)
+    else next.add(row.key)
+    expanded = next
+  }
+
+  // ── The operations ───────────────────────────────────────────────────
+  //
+  // One writer, so there is one place a change is announced from and one place
+  // the draft is taken over.
+  function write(next) {
+    remember(doc)
+    apply(next)
+  }
+
+  /** Put a document on screen and tell the caller, without touching history. */
+  function apply(next) {
+    draft     = next
+    announced = next
+    onchange?.(next)
+  }
+
+  const canUndo = () => past.length > 0
+  const canRedo = () => future.length > 0
+
+  function undo() {
+    if (!past.length) return
+    const previous = past[past.length - 1]
+    past   = past.slice(0, -1)
+    future = [...future, doc]
+    // Announced like any other write, so a controlled caller adopts it exactly
+    // as it adopts an edit. An undo the caller never hears about is a screen
+    // disagreeing with the object it is editing.
+    apply(previous)
+    editing = ''
+    renaming = ''
+  }
+
+  function redo() {
+    if (!future.length) return
+    const next = future[future.length - 1]
+    future = future.slice(0, -1)
+    past   = [...past, doc]
+    apply(next)
+    editing = ''
+    renaming = ''
+  }
+
+  /** ⌘Z / ⌃Z, and ⇧⌘Z or ⌃Y for redo — bound to the TREE, not the document.
+   *  A global handler would take the shortcut off a page that has its own. */
+  function onHistoryKey(e) {
+    if (!canEdit || !(e.metaKey || e.ctrlKey)) return
+    const k = e.key.toLowerCase()
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
+    else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo() }
+  }
+
+  /*
+   * ── Keyboard navigation ──────────────────────────────────────────────
+   *
+   * `role="treegrid"` rather than `role="tree"`, because that is what this
+   * component IS: a tree whose rows carry several focusable things — a key, a
+   * value, and up to five controls. A treeitem's interactive descendants are
+   * not separately reachable under a roving tabindex, so `tree` would have
+   * meant moving every row control somewhere else.
+   *
+   * ONE tab stop. The tree itself carries `tabindex="0"` and every stop inside
+   * it carries `-1`; tabbing in lands on the tree, which immediately hands
+   * focus to the cursor. The alternative — the cursor's stop holding the only
+   * `0` — means rewriting a tabindex on two elements every time focus moves,
+   * across a list the framework is also re-rendering.
+   *
+   * Navigation is read off the DOM rather than mirrored in state. The rows are
+   * already there, they already carry their own identity in `data-path`, and a
+   * parallel model of them is a second thing to keep in step with a filter, a
+   * search, an undo and a collapse.
+   */
+  let gridEl = null
+  let cursor = { row: '', stop: 0 }
+
+  const bindGrid  = (el) => { gridEl = el }
+  const rowEls    = () => (gridEl ? [...gridEl.querySelectorAll('.fjs-json-row[data-path]')] : [])
+  const stopsIn   = (rowEl) => (rowEl ? [...rowEl.querySelectorAll('[data-stop]')] : [])
+  const rowFor    = (node) => node?.closest?.('.fjs-json-row[data-path]') ?? null
+
+  function focusStop(rowEl, index) {
+    const stops = stopsIn(rowEl)
+    if (!stops.length) return false
+    const i = Math.max(0, Math.min(index, stops.length - 1))
+    stops[i].focus()
+    cursor = { row: rowEl.dataset.path, stop: i }
+    return true
+  }
+
+  /** Where the cursor is now, resolved against the rows that actually exist —
+   *  a search or a collapse can remove the row it was on. */
+  function currentRow() {
+    const all = rowEls()
+    return all.find((r) => r.dataset.path === cursor.row) ?? all[0] ?? null
+  }
+
+  function moveRow(delta) {
+    const all = rowEls()
+    if (!all.length) return
+    const here = all.indexOf(currentRow())
+    const next = all[Math.max(0, Math.min(here + delta, all.length - 1))]
+    // The column is kept across rows, clamped: a row with fewer stops than the
+    // one above it should not throw the cursor back to the start.
+    focusStop(next, cursor.stop)
+  }
+
+  /** The row one level up — a collapse from the first cell goes there. */
+  function parentOf(rowEl) {
+    const path = JSON.parse(rowEl.dataset.path)
+    if (path.length < 2) return null
+    const want = pathKey(path.slice(0, -1))
+    return rowEls().find((r) => r.dataset.path === want) ?? null
+  }
+
+  function rowByKey(key) { return rowEls().find((r) => r.dataset.path === key) ?? null }
+
+  function onGridKey(e) {
+    onHistoryKey(e)
+    if (e.defaultPrevented) return
+
+    // A caret owns the arrows. Anything typed into an open editor, a type
+    // select or the search box belongs to that control, and stealing Left from
+    // a text field is the fastest way to make a keyboard user distrust the
+    // whole widget. Escape is theirs too — they close themselves.
+    const tag = e.target?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+
+    const all = rowEls()
+    if (!all.length) return
+    const here = rowFor(e.target) ?? currentRow()
+    if (!here) return
+
+    const stops = stopsIn(here)
+    const at    = Math.max(0, stops.indexOf(e.target))
+    const row   = rows.find((r) => r.key === here.dataset.path)
+
+    switch (e.key) {
+      case 'ArrowDown': e.preventDefault(); moveRow(1); break
+      case 'ArrowUp':   e.preventDefault(); moveRow(-1); break
+
+      case 'ArrowRight':
+        e.preventDefault()
+        // On the first cell of a closed container, Right opens it — the
+        // treegrid reading of *go deeper*. Everywhere else it is the next cell.
+        if (at === 0 && row?.container && !row.open && !row.circular) toggle(row)
+        else focusStop(here, at + 1)
+        break
+
+      case 'ArrowLeft':
+        e.preventDefault()
+        if (at > 0) { focusStop(here, at - 1); break }
+        // First cell: close an open container, otherwise climb to the parent.
+        if (row?.container && row.open && !row.circular) toggle(row)
+        else { const up = parentOf(here); if (up) focusStop(up, 0) }
+        break
+
+      case 'Home': e.preventDefault(); focusStop(all[0], 0); break
+      case 'End':  e.preventDefault(); focusStop(all[all.length - 1], 0); break
+
+      case 'Enter':
+      case ' ':
+        // A cell that holds a control activates it. The cells that hold none —
+        // a plain key, a value in a read-only tree — do nothing, which is the
+        // honest answer rather than a guess at what Enter meant.
+        if (e.target?.tagName === 'BUTTON') return
+        {
+          const control = e.target?.querySelector?.('button, select')
+          if (control) { e.preventDefault(); control.click() }
+        }
+        break
+    }
+  }
+
+  /** Tabbing in lands on the tree; hand focus straight to the cursor, so a
+   *  keyboard user never has to press an arrow to find out where they are. */
+  function onGridFocus(e) {
+    if (e.target !== gridEl) {
+      const stop = e.target?.closest?.('[data-stop]')
+      const rowEl = rowFor(e.target)
+      if (stop && rowEl) cursor = { row: rowEl.dataset.path, stop: stopsIn(rowEl).indexOf(stop) }
+      return
+    }
+    const here = currentRow()
+    if (here) focusStop(here, cursor.stop)
+  }
+
+  // Which row is mid-edit. A pathKey, because two keys at two depths can read
+  // identically and a key may contain any character at all.
+  let editing   = ''
+  let renaming  = ''
+  let addTarget = ''
+  let addKey    = ''
+  let addValue  = ''
+  let rowError  = {}
+
+  // Which row copied what, so the ✓ lands on the button that was pressed and
+  // not on every one of them.
+  let copied  = ''
+  var _copyTimer = null
+
+  async function copyRow(row, what) {
+    const text = what === 'path'
+      ? (pathStyle === 'pointer' ? jsonPointer(row.path) : accessorPath(row.path, pathRoot))
+      : format(row.value)
+    await copyText(text)
+    copied = `${row.key}:${what}`
+    clearTimeout(_copyTimer)
+    _copyTimer = setTimeout(() => { copied = '' }, 1200)
+  }
+
+  $.onDestroy(() => clearTimeout(_copyTimer))
+
+  const focusMe = (el) => { el.focus(); el.select?.() }
+  const noop    = () => {}
+
+  function fail(key, message) { rowError = { ...rowError, [key]: message } }
+  function clearFail(key) {
+    if (!(key in rowError)) return
+    const next = { ...rowError }
+    delete next[key]
+    rowError = next
+  }
+
+  /** Enter commits, Escape abandons. Both before the blur that follows. */
+  function onEditKey(e, commit, cancel) {
+    if (e.key === 'Enter')       { e.preventDefault(); commit(e.target.value) }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel() }
+  }
+
+  function commitValue(row, raw) {
+    editing = ''
+    clearFail(row.key)
+    // `coerceLike` keeps the type of the value being replaced, so a number
+    // column stays a number. Without it every edit degrades one type until a
+    // boolean is the string "false", which is truthy.
+    write(setIn(doc, row.path, coerceLike(row.value, raw)))
+  }
+
+  // A boolean has two values and a text box is the wrong control for a set of
+  // two — clicking it flips it, with no edit state at all.
+  function flip(row) { write(setIn(doc, row.path, !row.value)) }
+
+  /*
+   * Changing what KIND a value is.
+   *
+   * `coerceLike` keeps the type an edit replaces, which is right for a text
+   * box — without it every edit degrades one step until a boolean is the
+   * string "false", which is truthy — and it means a document could be edited
+   * and never reshaped: typing `{}` into a string field gave the STRING "{}",
+   * and there was no way at all to turn a value into an object.
+   *
+   * So the type is a separate, deliberate control rather than something an
+   * edit infers. `convertTo` carries what it can; where it cannot, the value
+   * is dropped and one press of undo brings it back.
+   */
+  const KIND_LABEL = {
+    string: '"abc"', number: '123', boolean: 'true', null: 'null', object: '{ }', array: '[ ]',
+  }
+  const kinds = JSON_KINDS
+
+  function changeKind(row, kind) {
+    if (kind === row.kind) return
+    editing  = ''
+    renaming = ''
+    write(setIn(doc, row.path, convertTo(row.value, kind)))
+  }
+
+  function commitRename(row, next) {
+    const name = String(next ?? '').trim()
+    renaming = ''
+    if (!name || name === row.name) return clearFail(row.key)
+    try {
+      // The kit refuses a rename onto a key that already exists rather than
+      // overwriting a value that is on screen. That refusal is the message.
+      write(renameKey(doc, row.path.slice(0, -1), row.name, name))
+      clearFail(row.key)
+    } catch (e) {
+      fail(row.key, e.message)
+    }
+  }
+
+  function removeRow(row) {
+    clearFail(row.key)
+    write(removeIn(doc, row.path))
+  }
+
+  /** What a new entry starts as: parsed where it parses, text where it does not. */
+  function seedOf(raw) {
+    const text = String(raw ?? '')
+    if (text.trim() === '') return ''
+    const parsed = tryParse(text)
+    return parsed.ok ? parsed.value : text
+  }
+
+  function openAdd(key) {
+    addTarget = key
+    addKey    = ''
+    // An array of objects takes another object; anything else takes a value the
+    // person types. `arrayKind` is the one definition of that question.
+    const target = key === pathKey([]) ? doc : rows.find(r => r.key === key)?.value
+    addValue = Array.isArray(target) && arrayKind(target) === 'objects' ? '{}' : ''
+  }
+
+  function commitAdd(path) {
+    const target = path.length ? rows.find(r => r.key === pathKey(path))?.value : doc
+    const value  = seedOf(addValue)
+
+    if (Array.isArray(target)) {
+      write(insertIn(doc, path, value))
+    } else {
+      const name = addKey.trim()
+      if (!name) return
+      // `setIn` on an object does not require the key to exist, so this is an
+      // add and an overwrite by the same operation — which is why the name is
+      // refused when it is already there rather than silently replacing.
+      if (Object.prototype.hasOwnProperty.call(target ?? {}, name)) {
+        return fail(pathKey(path), `'${name}' already exists here`)
+      }
+      write(setIn(doc, [...path, name], value))
+    }
+
+    addTarget = ''
+    addKey    = ''
+    addValue  = ''
+    clearFail(pathKey(path))
+  }
+
+  // The root is not a row, so adding to it needs its own affordance.
+  const rootKey     = pathKey([])
+  const rootIsArray = Array.isArray(doc)
+
+  // What a row shows in its value column. Keyed off the VALUE rather than the
+  // row, because the diff path renders values that have no row of their own —
+  // the one that used to be there.
+  const quoted = (v) => JSON.stringify(v)
+  const brace  = (v, side) => (Array.isArray(v) ? (side === 'open' ? '[' : ']') : (side === 'open' ? '{' : '}'))
+  const sizeOf = (v) => (Array.isArray(v) ? v.length : Object.keys(v ?? {}).length)
+  const units  = (v) => {
+    const n = sizeOf(v)
+    return `${n} ${Array.isArray(v) ? (n === 1 ? 'item' : 'items') : (n === 1 ? 'key' : 'keys')}`
+  }
+
+  /** What happened at this row, or '' where nothing did. */
+  const diffOf = (row) => (diff ? (diff.status[row.key] ?? '') : '')
+
+  // A diff is a statement about two documents the caller named. An edit has no
+  // side to land on, so it is refused out loud rather than half-applied.
+  if (against !== undefined && editable) {
+    console.warn('[Json] `editable` is ignored while `against` is set — a diff is two documents, and an edit has no side to land on.')
+  }
+  const canEdit = editable && !diff
+</script>
+
+<!--
+  One value → its token markup. The whole component renders values through
+  this: the plain tree, the buttons edit mode wraps them in, and the diff's
+  <ins>/<del>, which also renders a value that has NO row — the one that used
+  to be there. Three renderers would be three chances to mark a `null` as a
+  string somewhere.
+-->
+<!--
+  One run of text → the same text with its hits marked. `<mark>` is the
+  package's, not this file's: `code.css` themes it inside a `code[language]` as
+  *draw the eye to one run inside a line*, with a negative margin against equal
+  padding so a highlight does not push the monospace grid out of alignment.
+  On one line, because whitespace between these tags is text INSIDE the token.
+-->
+{#snippet marked(text)}{#if !found?.active}{text}{:else}{#each markRuns(text, query) as run (run.i)}{#if run.hit}<mark>{run.text}</mark>{:else}{run.text}{/if}{/each}{/if}{/snippet}
+
+{#snippet tokens(v, open)}
+  {#if isContainer(v)}
+    <i>{brace(v, 'open')}</i>{#if !open}<i>{brace(v, 'close')}</i>{/if}
+    <sup>{units(v)}</sup>
+    {#if !open}<span class="fjs-json-preview">{previewOf(v)}</span>{/if}
+  {:else if v === null}
+    <!-- Keyword colour, not value colour: `true` and `null` are the language's
+         own words, and reading them as strings is how a null gets mistaken for
+         the text "null". -->
+    <strong>null</strong>
+  {:else if typeof v === 'string'}
+    <em>{@render marked(quoted(v))}</em>
+  {:else if typeof v === 'number'}
+    <em>{@render marked(String(v))}</em>
+  {:else if typeof v === 'boolean'}
+    <strong>{String(v)}</strong>
+  {:else if v instanceof Date}
+    <em>{v.toJSON()}</em>
+  {:else}
+    <sup>{classify(v)}</sup>
+  {/if}
+{/snippet}
+
+{#if isEmpty}
+  <p class="fjs-json-empty" {class} {...$attributes}>{empty}</p>
+{:else if mode === 'raw'}
+  <div class="fjs-json-frame" {class} {...$attributes}>
+    {#if copy}
+      <div class="fjs-json-actions"><CopyButton text={text} /></div>
+    {/if}
+    <!--
+      glow escapes everything it emits — every slice of the source goes through
+      its own encode(), tokens and the gaps between them alike — so this is the
+      one place in the kit where {@html} is not a hole. Never hand it a string
+      that has not been through glow.
+    -->
+    <pre class="code">{@html highlighted}</pre>
+  </div>
+{:else}
+  <!-- The shortcut is bound HERE rather than on the document: a page may have
+       an undo of its own, and taking ⌘Z off it from inside a component is the
+       kind of thing nobody can find the source of. -->
+  <div
+    class="code fjs-json-tree"
+    role="treegrid"
+    aria-label="JSON document"
+    tabindex="0"
+    {class}
+    {...$attributes}
+    {@attach bindGrid}
+    on:keydown={onGridKey}
+    on:focusin={onGridFocus}
+  >
+    {#if copy || canEdit}
+      <div class="fjs-json-actions">
+        {#if canEdit}
+          <button
+            type="button"
+            class="fjs-json-history"
+            aria-label="Undo"
+            title="Undo (Ctrl+Z)"
+            disabled={!canUndo()}
+            on:click={() => undo()}
+          >↶</button>
+          <button
+            type="button"
+            class="fjs-json-history"
+            aria-label="Redo"
+            title="Redo (Ctrl+Shift+Z)"
+            disabled={!canRedo()}
+            on:click={() => redo()}
+          >↷</button>
+        {/if}
+        {#if copy}<CopyButton text={text} />{/if}
+      </div>
+    {/if}
+
+    {#if search}
+      <!-- Spans the grid and lays itself out, for the reason the add row does:
+           an input in column one sizes that column to itself and pushes every
+           value in the document right. -->
+      <div class="fjs-json-row fjs-json-searchrow">
+        <input
+          class="field fjs-json-input fjs-json-query"
+          type="search"
+          placeholder="Find a key or a value"
+          aria-label="Find in this document"
+          value={query}
+          on:input={(e) => { query = e.target.value }}
+          on:keydown={(e) => { if (e.key === 'Escape') { e.preventDefault(); query = '' } }}
+        />
+        {#if found?.active}
+          <!-- A count, because a filter that matched nothing and a document
+               that is simply empty look the same from an empty screen. -->
+          <span class="fjs-json-count">{found.count === 0 ? 'no matches' : `${found.count} ${found.count === 1 ? 'match' : 'matches'}`}</span>
+        {/if}
+      </div>
+    {/if}
+
+    {#each rows as row (row.key)}
+      <!--
+        data-path is the row's own path, as JSON. It is here because the tree is
+        the one component in the kit whose rows have no stable text to select by
+        — two keys at two depths can read identically — and because a document
+        with a key that CONTAINS a dot is the shape that breaks a joined path.
+
+        A row is `display: contents`, so these three cells are the grid's items
+        and every value in the document lines up in one column whatever its
+        depth. That is the whole reason the row is not a box: a per-row flex
+        line aligns nothing to the row above it, which is what made a nested
+        document unreadable.
+      -->
+      <div
+        class="fjs-json-row"
+        data-path={row.key}
+        role="row"
+        aria-level={row.depth + 1}
+        aria-expanded={row.container && !row.circular ? row.open : null}
+      >
+        <span
+          class="fjs-json-cell"
+          role="gridcell"
+          data-stop
+          tabindex="-1"
+          style:padding-inline-start={`calc(${row.depth} * 1.15rem)`}
+          style:background-size={`calc(${row.depth} * 1.15rem) 100%`}
+        >
+          {#if row.container && !row.circular}
+            <button
+              type="button"
+              class="fjs-json-toggle"
+              aria-expanded={row.open}
+              aria-label={`${row.open ? 'Collapse' : 'Expand'} ${row.name}`}
+              on:click={() => toggle(row)}
+            >{row.open ? '▾' : '▸'}</button>
+          {:else}
+            <span class="fjs-json-toggle" aria-hidden="true"></span>
+          {/if}
+
+          {#if canEdit && renaming === row.key}
+            <!-- Only an object member can be renamed. An array index is a
+                 position, not a name, and editing it would be a move. -->
+            <input
+              class="field fjs-json-input"
+              type="text"
+              value={row.name}
+              aria-label={`Rename ${row.name}`}
+              {@attach focusMe}
+              on:keydown={(e) => onEditKey(e, (v) => commitRename(row, v), () => { renaming = '' })}
+              on:blur={(e) => { if (renaming === row.key) commitRename(row, e.target.value) }}
+            />
+          {:else if canEdit && typeof row.name === 'string'}
+            <code language="json" class="fjs-json-key">
+              <button type="button" class="fjs-json-name" on:click={() => { renaming = row.key; editing = '' }}>
+                <b>{@render marked(String(row.name))}</b>
+              </button><i>:</i>
+            </code>
+          {:else}
+            <code language="json" class="fjs-json-key">
+              {#if row.name !== null}<b>{@render marked(String(row.name))}</b><i>:</i>{/if}
+            </code>
+          {/if}
+        </span>
+
+        {#if canEdit && editing === row.key}
+          <!-- While a cell is being edited the row holds a textbox where a
+               gridcell was. Deliberate and temporary: giving the input
+               role="gridcell" would stop it announcing itself as a text field,
+               which is the one thing its user needs to hear. -->
+          <input
+            data-stop
+            class="field fjs-json-input fjs-json-vinput"
+            type={row.kind === 'number' ? 'number' : 'text'}
+            step={row.kind === 'number' ? 'any' : null}
+            value={row.kind === 'string' ? row.value : (row.kind === 'null' ? 'null' : row.value)}
+            aria-label={`Edit ${row.name}`}
+            {@attach focusMe}
+            on:keydown={(e) => onEditKey(e, (v) => commitValue(row, v), () => { editing = '' })}
+            on:blur={(e) => { if (editing === row.key) commitValue(row, e.target.value) }}
+          />
+        {:else}
+        <!-- The cell truncates rather than widening, so the tools column stays
+             where it is on every row. A truncated value keeps its full text in
+             `title`, and opening the editor shows all of it. -->
+        <code
+          language="json"
+          class="fjs-json-value"
+          role="gridcell"
+          data-stop
+          tabindex="-1"
+          data-diff={diffOf(row) || null}
+          title={row.container || row.circular ? null : String(row.value)}
+        >
+          {#if row.circular}
+            <!-- A cycle is not a JSON document, but a value handed to a viewer
+                 is not necessarily a parsed one, and recursing takes the tab. -->
+            <sup>↺ circular reference</sup>
+          {:else if diffOf(row) === 'removed'}
+            <del>{@render tokens(row.value, row.open)}</del>
+          {:else if diffOf(row) === 'added'}
+            <ins>{@render tokens(row.value, row.open)}</ins>
+          {:else if diffOf(row) === 'changed' && !row.container}
+            <!-- Both sides, in reading order. `<del>` and `<ins>` are stripes
+                 the width of the cell, so the old value sits on the line above
+                 the new one — which is how a diff reads everywhere else, and
+                 the only rendering that answers *changed from what*. -->
+            <del>{@render tokens(diff.previous[row.key], false)}</del><ins>{@render tokens(row.value, row.open)}</ins>
+          {:else if diffOf(row) === 'changed'}
+            <!-- A container is a rollup: the detail is in the rows under it,
+                 so this says only that something below moved. -->
+            <dfn>{@render tokens(row.value, row.open)}</dfn>
+          {:else if canEdit && row.kind === 'boolean'}
+            <!-- A boolean has two values, so in edit mode it is a toggle rather
+                 than a box to type in. -->
+            <button type="button" class="fjs-json-edit" on:click={() => flip(row)}>
+              {@render tokens(row.value, row.open)}
+            </button>
+          {:else if canEdit && (row.kind === 'string' || row.kind === 'number' || row.kind === 'null')}
+            <button type="button" class="fjs-json-edit" on:click={() => { editing = row.key; renaming = '' }}>
+              {@render tokens(row.value, row.open)}
+            </button>
+          {:else if row.container && !row.open}
+            <!-- A closed container's whole summary opens it. The triangle is
+                 a 1rem target at the far left of a row that can be very wide,
+                 so the thing a person actually aims at is the summary. -->
+            <button type="button" class="fjs-json-summary" on:click={() => toggle(row)}>
+              {@render tokens(row.value, false)}
+            </button>
+          {:else}
+            {@render tokens(row.value, row.open)}
+          {/if}
+        </code>
+        {/if}
+
+        <!-- Emitted whether or not it holds anything: three cells per row is
+             what keeps grid auto-placement in step, and a row short of one
+             would pull the next row's key into the tools column. -->
+        <!-- A gridcell, but not a STOP: it holds no content of its own, and
+             its buttons are each reachable instead, so Left/Right walks them
+             rather than landing on an empty box. -->
+        <span class="fjs-json-tools" role="gridcell">
+          {#if copy && !row.circular}
+            <!-- The value, and a container's is its whole subtree — which is
+                 the one thing a tree can give that a `<pre>` cannot. -->
+            <button
+              type="button"
+              class="fjs-json-copy"
+              data-stop
+              tabindex="-1"
+              aria-label={`Copy the value of ${row.name}`}
+              title="Copy value"
+              on:click={() => copyRow(row, 'value')}
+            >{copied === `${row.key}:value` ? '✓' : '⧉'}</button>
+            <!-- And where it IS. An id in a payload is worth nothing without
+                 the route to it, and a route read off the screen by eye is
+                 wrong the first time a key contains a dot. -->
+            <button
+              type="button"
+              class="fjs-json-copy"
+              data-stop
+              tabindex="-1"
+              aria-label={`Copy the path to ${row.name}`}
+              title={pathStyle === 'pointer' ? 'Copy JSON Pointer' : 'Copy path'}
+              on:click={() => copyRow(row, 'path')}
+            >{copied === `${row.key}:path` ? '✓' : '/'}</button>
+          {/if}
+          {#if canEdit}
+            {#if !row.circular && kinds.includes(row.kind)}
+              <!-- The type is a control and not something an edit infers. A
+                   `<select>` rather than a menu because it is also the only
+                   place the tree SAYS what kind a value is — `""` and `"null"`
+                   read identically until something names them — and because a
+                   native one is keyboard-operable and needs no overlay. -->
+              <!-- The current kind is marked on the OPTION, not set as the
+                   select's value: a select's value is applied before the
+                   {#each} has built its options, so nothing matches and every
+                   row falls back to the first one — which reads as a document
+                   where everything is a string. -->
+              <select
+                class="fjs-json-type"
+              data-stop
+              tabindex="-1"
+                aria-label={`Type of ${row.name}`}
+                on:change={(e) => changeKind(row, e.target.value)}
+              >
+                {#each kinds as k (k)}
+                  <option value={k} selected={k === row.kind}>{KIND_LABEL[k]}</option>
+                {/each}
+              </select>
+            {/if}
+            {#if row.container && row.open && !row.circular}
+              <button
+                type="button"
+                class="fjs-json-add"
+              data-stop
+              tabindex="-1"
+                aria-label={`Add to ${row.name}`}
+                on:click={() => openAdd(row.key)}
+              >+</button>
+            {/if}
+            <button
+              type="button"
+              class="fjs-json-remove"
+              data-stop
+              tabindex="-1"
+              aria-label={`Remove ${row.name}`}
+              on:click={() => removeRow(row)}
+            >×</button>
+          {/if}
+        </span>
+
+        {#if rowError[row.key]}
+          <!-- The kit refuses rather than overwrites, and the refusal is the
+               only thing that can explain why nothing happened. -->
+          <span class="fjs-json-rowerror" role="alert">{rowError[row.key]}</span>
+        {/if}
+      </div>
+
+      {#if canEdit && addTarget === row.key}
+        <div class="fjs-json-row fjs-json-addrow" data-add={row.key}>
+          <span
+            class="fjs-json-cell"
+            style:padding-inline-start={`calc(${row.depth + 1} * 1.15rem)`}
+            style:background-size={`calc(${row.depth + 1} * 1.15rem) 100%`}
+          >
+            <span class="fjs-json-toggle" aria-hidden="true"></span>
+            {#if row.kind !== 'array'}
+              <input
+                class="field fjs-json-input"
+                type="text"
+                placeholder="key"
+                aria-label="New key"
+                value={addKey}
+                {@attach focusMe}
+                on:input={(e) => { addKey = e.target.value }}
+                on:keydown={(e) => onEditKey(e, () => commitAdd(row.path), () => { addTarget = '' })}
+              />
+            {/if}
+          </span>
+          <!-- An array has no key box, so the value box is the only box and the
+               one that has to take focus. Attaching unconditionally would move
+               focus off the key box on an object. -->
+          <input
+            class="field fjs-json-input fjs-json-vinput"
+            type="text"
+            placeholder="value"
+            aria-label="New value"
+            value={addValue}
+            {@attach row.kind === 'array' ? focusMe : noop}
+            on:input={(e) => { addValue = e.target.value }}
+            on:keydown={(e) => onEditKey(e, () => commitAdd(row.path), () => { addTarget = '' })}
+          />
+          <span class="fjs-json-tools">
+            <button type="button" class="fjs-json-confirm" aria-label="Add" on:click={() => commitAdd(row.path)}>✓</button>
+            <button type="button" class="fjs-json-cancel" aria-label="Cancel" on:click={() => { addTarget = '' }}>×</button>
+          </span>
+        </div>
+      {/if}
+
+      {#if row.open && row.size === 0}
+        <div class="fjs-json-row" data-empty={row.key}>
+          <span
+            class="fjs-json-cell"
+            style:padding-inline-start={`calc(${row.depth + 1} * 1.15rem)`}
+            style:background-size={`calc(${row.depth + 1} * 1.15rem) 100%`}
+          >
+            <span class="fjs-json-toggle" aria-hidden="true"></span>
+          </span>
+          <code language="json" class="fjs-json-value"><sup>empty</sup></code>
+          <span class="fjs-json-tools"></span>
+        </div>
+      {/if}
+    {/each}
+
+    <!--
+      The root is not a row — it has no name and nothing to put in a key column
+      — so adding to it needs an affordance of its own. It is always on screen
+      rather than behind a `+`: it is the one thing that says this tree can be
+      written to at all, and a disclosure that has to be found first says
+      nothing until it is.
+    -->
+    {#if canEdit && isContainer(doc)}
+      <div class="fjs-json-row fjs-json-addrow fjs-json-addroot" data-add="root">
+        <span class="fjs-json-cell">
+          <span class="fjs-json-toggle" aria-hidden="true">+</span>
+          {#if !rootIsArray}
+            <input
+              class="field fjs-json-input"
+              type="text"
+              placeholder="key"
+              aria-label="New key"
+              value={addKey}
+              on:input={(e) => { addKey = e.target.value }}
+              on:keydown={(e) => onEditKey(e, () => commitAdd([]), () => { addKey = ''; addValue = '' })}
+            />
+          {/if}
+        </span>
+        <input
+          class="field fjs-json-input fjs-json-vinput"
+          type="text"
+          placeholder={rootIsArray ? 'item' : 'value'}
+          aria-label="New value"
+          value={addValue}
+          on:input={(e) => { addValue = e.target.value }}
+          on:keydown={(e) => onEditKey(e, () => commitAdd([]), () => { addKey = ''; addValue = '' })}
+        />
+        <span class="fjs-json-tools">
+          <button type="button" class="fjs-json-confirm" aria-label="Add" on:click={() => commitAdd([])}>+</button>
+        </span>
+      </div>
+      {#if rowError[rootKey]}
+        <div class="fjs-json-row">
+          <span class="fjs-json-cell"></span>
+          <span class="fjs-json-rowerror" role="alert">{rowError[rootKey]}</span>
+          <span class="fjs-json-tools"></span>
+        </div>
+      {/if}
+    {/if}
+  </div>
+{/if}
+
+<style>
+  /*
+   * `.code` is the block — ground, hairline, radius, mono, tab-size and the
+   * scroll — and it is @frontierjs/css's, so the tree wears it rather than
+   * restating the recipe. What is left here is the layout, the row, and the two
+   * overrides the package cannot know about.
+   *
+   * ── The grid ─────────────────────────────────────────────────────────
+   *
+   * Three columns for the whole tree, and a row is `display: contents` so its
+   * cells ARE the grid's items. That is what puts every value in one column and
+   * every remove button on one right edge whatever the depth — a per-row flex
+   * line aligns each row only with itself, which is what made a nested document
+   * read as a ragged wall.
+   *
+   * The grid is also what makes `.code`'s `white-space: pre` survivable. A
+   * whitespace-only text node is not a grid item, so the newlines and the
+   * indentation BETWEEN the tags in this file are dropped — as a block, with
+   * `pre` inherited, they render as blank lines and every row comes out a
+   * screen from the next with nothing in the markup saying why. Measured: nine
+   * rows, 1619px. `white-space: normal` here is for the text that is NOT in a
+   * cell, a refusal message, which must wrap; the cells opt back into `nowrap`.
+   */
+  .fjs-json-tree {
+    display:               grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items:           baseline;
+    column-gap:            var(--space-xs);
+    white-space:           normal;
+    position:              relative;
+  }
+
+  /* Both frames hold an absolutely positioned copy button. */
+  .fjs-json-frame { position: relative; }
+
+  /*
+   * The actions sit in `.code`'s own top padding, and a `.btn.square` is taller
+   * than that padding — so the first row's tools end up UNDERNEATH the document
+   * copy button, which is a control that is on screen, hit-tests as something
+   * else, and looks completely fine. Measured on the fixture: the first row's
+   * copy-path button was unclickable.
+   */
+  .fjs-json-tree:has(> .fjs-json-actions),
+  .fjs-json-frame:has(> .fjs-json-actions) {
+    padding-block-start: calc(var(--space-xl) + var(--space-md));
+  }
+
+  .fjs-json-actions {
+    position:          absolute;
+    inset-block-start: var(--space-2xs);
+    inset-inline-end:  var(--space-2xs);
+    z-index:           1;
+    display:           flex;
+    align-items:       center;
+    gap:               var(--space-3xs);
+  }
+
+  /* Same quiet treatment as the row tools — the history is an affordance, not
+     a toolbar the document has to be read around. */
+  .fjs-json-history {
+    padding:     0 var(--space-2xs);
+    border:      0;
+    background:  none;
+    color:       var(--ink-mute);
+    font:        inherit;
+    line-height: 1.4;
+    cursor:      pointer;
+  }
+  .fjs-json-history:hover:enabled { color: var(--ink); }
+  .fjs-json-history:disabled {
+    opacity: 0.4;
+    cursor:  default;
+  }
+
+  /*
+   * A row is a grid item spanning every column, and it borrows the tree's own
+   * column tracks with `subgrid` — so a value at depth three still starts at
+   * the same x as a value at depth zero, and the row has a BOX.
+   *
+   * The box is the whole reason. `display: contents` gives the same alignment
+   * and no box, and an element with no box cannot take focus — measured: a
+   * `display: contents` row with `tabindex="0"` leaves `document.activeElement`
+   * on the body. A roving tabindex is the whole of keyboard tree navigation, so
+   * that ruled the pattern out entirely. (The ROLE survives `display: contents`
+   * in current Chrome; the folklore about the accessibility tree is out of date
+   * and was never the blocker here.)
+   */
+  .fjs-json-row {
+    display:               grid;
+    grid-column:           1 / -1;
+    grid-template-columns: subgrid;
+    align-items:           baseline;
+  }
+
+  /* Mixed from the block's OWN ink rather than taken from the surface pair,
+     because `.code`'s ground is `var(--code-bg, var(--surface-sunken))`:
+     painting `--surface-sunken` on hover paints the ground onto the ground, in
+     every theme at once, and the row highlight did nothing at all. Derived from
+     `currentColor` it lands the right way round on a light ground and a dark
+     one without either being named here. */
+  .fjs-json-row:hover {
+    background-color: color-mix(in oklab, currentColor 7%, transparent);
+  }
+
+  /*
+   * The key cell carries the indent, and the guide lines are drawn as the
+   * cell's own background: one hairline per ancestor level, repeated across
+   * exactly the indent width. Every row paints its own segment, so the lines
+   * are continuous down the tree without a single extra element — and the
+   * containment a nested box would give is there without nesting anything.
+   */
+  .fjs-json-cell {
+    display:            flex;
+    align-items:        baseline;
+    gap:                var(--space-2xs);
+    min-inline-size:    0;
+    white-space:        nowrap;
+    background-image:   repeating-linear-gradient(to right, var(--rule) 0 1px, transparent 1px 1.15rem);
+    background-repeat:  no-repeat;
+    background-position: left top;
+  }
+
+  /* The toggle is a button because it does something; every property below
+     undoes what being a button looks like. The empty span beside it holds the
+     same width so leaf rows line up with their siblings. */
+  .fjs-json-toggle {
+    flex:        none;
+    inline-size: 1rem;
+    padding:     0;
+    border:      0;
+    background:  none;
+    color:       var(--ink-mute);
+    font:        inherit;
+    font-size:   var(--text-xs);
+    line-height: 1;
+    text-align:  start;
+    cursor:      pointer;
+  }
+  span.fjs-json-toggle { cursor: default; }
+  .fjs-json-toggle:hover { color: var(--ink); }
+
+  /* code[language] is display:block and scrolls on its own — correct for a
+     block of source, wrong for one cell of a row that is already in a grid.
+     Only the token elements inside it are wanted here, for their colour. */
+  .fjs-json-key,
+  .fjs-json-value {
+    display:     inline;
+    overflow-x:  visible;
+    white-space: nowrap;
+  }
+
+  /* The value cell truncates instead of widening. Without it one long string
+     pushes the tools column off the right edge of every row in the document. */
+  .fjs-json-value {
+    display:       block;
+    min-inline-size: 0;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+  }
+
+  /*
+   * The diff marks are the package's own — `<ins>`, `<del>` and `<dfn>` inside
+   * a `code[language]`, which `code.css` draws as a stripe with a coloured rule
+   * and a 14% tint off --code-ins / --code-del / --code-note. So this file
+   * makes no colour decision here either, and a theme that redefines those
+   * three reaches the tree for free.
+   *
+   * The one thing to correct is the bleed: `.code` publishes its own horizontal
+   * padding as --code-pad so a full-width stripe can reach the block's edge,
+   * which is right for a source line and wrong for one cell of a grid — the
+   * stripe would run back underneath the key column and the row would read as
+   * though the KEY had changed too.
+   */
+  .fjs-json-value { --code-pad: 0px; }
+
+  /* A cell that opens an editor is a button, and every property here undoes
+     what being a button looks like — the row must read as the document, not as
+     a toolbar. The focus ring is drawn from --ring-* rather than left to the
+     package, because focus.css opts elements in BY CLASS and cannot name a
+     class this kit invented. */
+  .fjs-json-name,
+  .fjs-json-edit,
+  .fjs-json-summary {
+    padding:       0 var(--space-3xs);
+    margin-inline: calc(var(--space-3xs) * -1);
+    border:        0;
+    background:    none;
+    color:         inherit;
+    font:          inherit;
+    text-align:    start;
+    cursor:        pointer;
+    border-radius: 3px;
+  }
+
+  /*
+   * On hover an editable cell becomes the box it is about to be. Nothing else
+   * on the row can say the document is writable before the click: the value is
+   * plain text on a plain ground, and `cursor: text` — which is what this was —
+   * is what ordinary selectable text already shows, so the affordance read as
+   * no affordance. The ring is what distinguishes it from the row band under
+   * it; the band alone moves with the pointer down a whole row and says nothing
+   * about WHICH cell answers a click.
+   */
+  .fjs-json-name:hover,
+  .fjs-json-edit:hover,
+  .fjs-json-summary:hover {
+    background:    color-mix(in oklab, currentColor 12%, transparent);
+    box-shadow:    inset 0 0 0 var(--border-width) var(--rule-strong);
+  }
+  .fjs-json-name:focus-visible,
+  .fjs-json-edit:focus-visible,
+  .fjs-json-summary:focus-visible {
+    outline:        var(--ring-width, 2px) solid var(--ring-color, currentColor);
+    outline-offset: var(--ring-offset, 1px);
+  }
+
+  /* An inline editor is a real .field so it inherits the package's own control
+     — its ground, its ring and its disabled state — and only the geometry is
+     narrowed to sit inside a row. */
+  .fjs-json-input {
+    inline-size:     auto;
+    min-inline-size: 6rem;
+    padding-block:   0;
+    font-family:     var(--font-mono);
+    font-size:       inherit;
+    line-height:     1.4;
+  }
+  .fjs-json-vinput { inline-size: 100%; min-inline-size: 0; }
+
+  /*
+   * An add row spans the whole grid and lays itself out, rather than being
+   * three more items in the columns. Its key box is an INPUT, and an input in
+   * column one sizes that column to itself — so every value in the document
+   * jumps right by the width of an empty text box, and the further left the
+   * keys are the more disconnected the tree reads. Measured on the fixture:
+   * 90px of keys pushed the value column to 235px.
+   */
+  .fjs-json-addrow {
+    display:     flex;
+    align-items: center;
+    gap:         var(--space-xs);
+    grid-column: 1 / -1;
+  }
+  .fjs-json-addrow .fjs-json-cell { flex: none; background-image: none; }
+  .fjs-json-addrow .fjs-json-vinput { flex: 1; }
+
+  /* Spans the grid and lays itself out, for the reason the add row does. It
+     leaves the corner clear, because the history and copy controls are
+     absolutely positioned there. */
+  .fjs-json-searchrow {
+    display:            flex;
+    align-items:        center;
+    gap:                var(--space-xs);
+    grid-column:        1 / -1;
+    margin-block-end:   var(--space-2xs);
+    padding-block-end:  var(--space-2xs);
+    padding-inline-end: 5rem;
+    border-block-end:   var(--border-width) solid var(--rule);
+  }
+  .fjs-json-query { flex: 1; min-inline-size: 0; }
+  .fjs-json-count {
+    flex:      none;
+    color:     var(--ink-mute);
+    font-size: var(--text-xs);
+  }
+
+  /* The root's add row is not part of the document, so it is separated from it
+     rather than reading as another entry. */
+  .fjs-json-addroot {
+    margin-block-start:  var(--space-2xs);
+    padding-block-start: var(--space-2xs);
+    border-block-start:  var(--border-width) solid var(--rule);
+  }
+
+  .fjs-json-tools {
+    display:     inline-flex;
+    gap:         var(--space-3xs);
+    flex:        none;
+    align-self:  baseline;
+  }
+
+  .fjs-json-tools button {
+    padding:     0 var(--space-2xs);
+    border:      0;
+    background:  none;
+    color:       var(--ink-mute);
+    font:        inherit;
+    font-size:   var(--text-xs);
+    line-height: 1.4;
+    cursor:      pointer;
+  }
+  /* The type control sits with the row tools and reads as one of them — a
+     full `.field` here would be a box on every row of the document. */
+  .fjs-json-type {
+    padding:      0;
+    border:       0;
+    background:   none;
+    color:        var(--ink-mute);
+    font:         inherit;
+    font-size:    var(--text-xs);
+    line-height:  1.4;
+    cursor:       pointer;
+    appearance:   none;
+    text-align:   end;
+  }
+  .fjs-json-type:hover { color: var(--ink); }
+  .fjs-json-type:focus-visible {
+    outline:        var(--ring-width, 2px) solid var(--ring-color, currentColor);
+    outline-offset: var(--ring-offset, 1px);
+  }
+
+  .fjs-json-copy { font-variant-numeric: tabular-nums; }
+
+  .fjs-json-tools button:hover { color: var(--ink); }
+  .fjs-json-remove:hover       { color: var(--color-danger); }
+  .fjs-json-confirm:hover      { color: var(--color-success); }
+
+  /* A refusal has to be visible in the row it refused, or the edit simply looks
+     like it did nothing. It takes the value column and whatever is to its right
+     — a message is a sentence and the tools column is a few characters wide. */
+  .fjs-json-rowerror {
+    grid-column: 2 / -1;
+    color:       var(--color-danger);
+    font-size:   var(--text-xs);
+  }
+
+  .fjs-json-preview {
+    margin-inline-start: var(--space-sm);
+    color:               var(--ink-mute);
+    font-size:           var(--text-xs);
+  }
+
+  .fjs-json-empty {
+    margin:    0;
+    color:     var(--ink-mute);
+    font-size: var(--text-sm);
+  }
+</style>

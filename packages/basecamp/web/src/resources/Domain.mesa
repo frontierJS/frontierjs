@@ -8,9 +8,6 @@
   // modelNameFor() resolves, so the schema's labels, required list and field
   // rules arrive without restating any of them here.
   import { createResource } from '@frontierjs/sierra/junction'
-  import { stampWorkspace } from '../session.js'
 
-  export const domains = createResource('domains', {
-    hooks: { before: { create: [stampWorkspace] } },
-  })
+  export const domains = createResource('domains')
 </script>

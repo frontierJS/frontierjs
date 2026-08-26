@@ -1,0 +1,15 @@
+<script module>
+  // src/resources/NotificationPreference.mesa — the Resource layer.
+  //
+  // `model:` stated, for the same reason as RegistryImage: no rule turns
+  // `notification-preferences` into `NotificationPreference`.
+  //
+  // The service answers seven rows and stores fewer — `find` merges what a
+  // person has chosen over the kind's default — so what comes back is not a row
+  // of this model. The resource is here for the service handle and for the
+  // model's own labels, not to make() one.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const notificationPreferences =
+    createResource('notification-preferences', { model: 'NotificationPreference' })
+</script>

@@ -7,7 +7,6 @@
   // What is real is the rules themselves and whether they are active, which is
   // what this shows; the frame says what is missing.
   import { alerts } from '../../resources/AlertRule.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { onWrite } from './live.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
@@ -29,7 +28,7 @@
   }
 
   load()
-  $onDestroy(onWrite(alerts.service, load))
+  $.onDestroy(onWrite(alerts.service, load))
 
   $: active = rows.filter(r => r.isActive).length
 </script>

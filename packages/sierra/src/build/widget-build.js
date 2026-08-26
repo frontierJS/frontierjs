@@ -157,8 +157,23 @@ export default embed(Component, {
  * into the entry chunk, where the runtime puts it in the shadow root.
  *
  * `generateBundle` runs after minification, so the placeholder is matched with
- * either quote style — esbuild rewrites quotes, and a literal search for one of
- * them silently stops matching.
+ * ANY of the three quote characters — esbuild rewrites quotes, and a literal
+ * search for one of them silently stops matching. It writes BACKTICKS when
+ * minifying, which is the default and is what every app ships; the two-quote
+ * matcher this replaces therefore worked for exactly the unminified case that
+ * the fixture builds and failed for every real one.
+ *
+ * The failure was total and silent: the CSS asset is deleted here whether or
+ * not the swap lands, so an imported stylesheet vanished from the bundle and
+ * the literal string `@sierra-widget-css` was handed to the shadow root as its
+ * stylesheet. A widget's own scoped `<style>` blocks were unaffected — Mesa
+ * registers those through the runtime — which is what made it invisible: the
+ * widget looked styled and its imported CSS was simply gone.
+ *
+ * So the swap is now ASSERTED. The entry always contains the placeholder
+ * (`widgetEntrySource` writes it unconditionally), so failing to find one means
+ * the matcher no longer matches what the bundler emits, and that must be a
+ * failed build rather than a widget shipped with a stylesheet made of nonsense.
  */
 export function widgetCssPlugin() {
   return {
@@ -173,10 +188,21 @@ export function widgetCssPlugin() {
         }
       }
 
-      const marker = new RegExp(`["']${CSS_PLACEHOLDER}["']`, 'g')
+      const marker = new RegExp(`["'\`]${CSS_PLACEHOLDER}["'\`]`, 'g')
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== 'chunk' || !chunk.isEntry) continue
-        chunk.code = chunk.code.replace(marker, JSON.stringify(css.trim()))
+
+        const swapped = chunk.code.replace(marker, JSON.stringify(css.trim()))
+        if (swapped === chunk.code) {
+          throw new Error(
+            `[Sierra] widget ${chunk.fileName}: the CSS placeholder was not found in the built ` +
+            `entry, so its stylesheet could not be inlined. The bundler has quoted ` +
+            `${CSS_PLACEHOLDER} in a way this plugin does not recognise — widgetCssPlugin's ` +
+            `matcher needs updating. Shipping is worse than failing here: the CSS asset is ` +
+            `already deleted, so the widget would carry the placeholder as its stylesheet.`
+          )
+        }
+        chunk.code = swapped
       }
     },
   }

@@ -17,7 +17,7 @@
   // bind:this exposes: focus()
 
   import Field from './Field.mesa'
-  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
+  import { nameToLabel, uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote } from '../../utils.js'
 
   export let value       = null
   export let options     = []          // flat or grouped (see above)
@@ -50,13 +50,34 @@
   const resolvedDisabled = stated(disabled, form?.disabled || form?.submitting) ?? false
   const rule = resolveRule(form, name)
 
-  // An enum column already carries its members — `fields.status.enum` exists
-  // because `{"$ref":"#/$defs/OrderStatus"}` was resolved against the registry
-  // — so inside a <Form> the option list is a schema fact like the label and
-  // the `required` beside it. Stated options always win; this is the fallback,
-  // not an override, and a select over anything that is not an enum is
-  // unaffected.
-  const resolved = options?.length ? options : (rule?.enum ?? [])
+  // Inside a <Form> the option list is a schema fact, like the label and the
+  // `required` beside it. Stated options always win; this is the fallback,
+  // not an override.
+  //
+  // Two sources, and the order matters. An enum column carries its members on
+  // the rule — `fields.status.enum` exists because `{"$ref":"#/$defs/…"}` was
+  // resolved against the registry — so it answers synchronously and paints
+  // with no flash of empty. A foreign key's options are ROWS, which only the
+  // form can fetch, so they arrive later and only when the caller stated none
+  // and the rule could not answer.
+  const _sync = rule?.options ?? rule?.enum ?? null
+
+  let _fetched = []
+  let _total   = null
+  if (!options?.length && !_sync && name && form?.optionsFor)
+    form.optionsFor(name).then(r => { _fetched = r?.options ?? []; _total = r?.total ?? null })
+
+  const resolved = options?.length ? options : (_sync ?? _fetched)
+
+  // How many rows the server HAS. A `<select>` shows a page of a big relation
+  // and reads identically to one showing all of it, so the row somebody is
+  // looking for is missing with nothing saying why (`FJS-391`). Stated by the
+  // form, which already holds the count from its own prefetch; read off this
+  // control's own fetch otherwise. Nothing offers to search, because a native
+  // select cannot — that is what `combobox` is for.
+  export let total = undefined
+  const resolvedTotal = stated(total, _total)
+  const resolvedHint  = withNote(hint, truncationNote(resolved.length, resolvedTotal))
 
   // …and the `required` that comment names. It was read off the rule for the
   // option list alone, so a select stated no constraint the model insisted on.
@@ -153,7 +174,7 @@
     required={resolvedRequired}
     badge={badge}
     help={help}
-    hint={hint}
+    hint={resolvedHint}
     error={error}
     errors={errors}
     {class}

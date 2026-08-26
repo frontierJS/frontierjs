@@ -27,6 +27,19 @@ const dropFiles = (files) => `
 export async function run(t) {
   await t.mount('fileupload')
 
+
+  /* ── the component's own verbs, imported by a caller ──────────────────── */
+
+  // `FJS-D116`: a component file may export the verbs that belong to its noun,
+  // and a caller imports them by name. Asserted through the real pipeline —
+  // the fixture imports them from the .mesa file and renders the answers.
+  t.is(await t.evaluate(`return document.querySelector('#kinds').textContent;`),
+    'true|false', 'isImage is importable by name from the component file')
+  // The size string the component renders is toolbelt's, not a fourth copy of
+  // it — the boundary `FJS-D116` names, met by `FJS-408`.
+  t.is(await t.evaluate(`return document.querySelector('#sizes').textContent;`),
+    '900 B|2.0 KB|5.0 MB', 'and the size formatter is the shared one')
+
   t.ok(await t.evaluate(`return !!document.querySelector('#stage .fjs-dropzone');`),
     'the dropzone renders')
   t.ok(await t.evaluate(`

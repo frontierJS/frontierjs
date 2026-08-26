@@ -1,6 +1,6 @@
 # Migrations
 
-Litestone uses two migration modes: `autoMigrate` for development (like `prisma db push`) and file-based migrations for production (like `prisma migrate deploy`).
+Litestone uses two migration modes: `autoMigrate` for development (like `prisma db push`) and file-based migrations for production (like `prisma migrate deploy`). **Only the files reach a deploy** — see *The three schemas* below before mixing them.
 
 ## autoMigrate — development
 
@@ -21,12 +21,55 @@ litestone migrate dry-run   # preview what autoMigrate would do, no changes
 ## File migrations — production
 
 ```bash
+litestone migrate dev [label]            # create + apply, with a drift check — the everyday verb
 litestone migrate create add-users       # generate 20240101000001_add_users.sql
 litestone migrate apply                  # apply all pending migrations in order
 litestone migrate apply --backup         # …copying every database first
+litestone migrate check                  # does the history build the schema? no database needed
+litestone migrate baseline               # record the files as applied WITHOUT running them
 litestone migrate status                 # show applied / pending / modified
 litestone migrate verify                 # confirm live db matches schema
 ```
+
+## The three schemas, and which two you are comparing
+
+There are three, and most confusion about migrations is a comparison between
+the wrong two.
+
+| | is |
+| --- | --- |
+| **declared** | `schema.lite` — what the app says it needs |
+| **shadow** | the migration files replayed into an empty database — what a deploy will build |
+| **live** | the database in front of you |
+
+`migrate create` and `migrate check` compare **declared ↔ shadow**: *what
+migration is missing.* `migrate dev` and `migrate baseline` also compare
+**shadow ↔ live**: *has somebody changed this database without writing a file.*
+
+It used to be one comparison, declared ↔ live, doing both jobs. That is why a
+database developed with `db push` — which matches the declaration by
+construction — made `migrate create` answer *already in sync* at the exact
+moment a migration was needed, while the deploy refused for want of one
+([`FJS-D123`](../../../DECISIONS.md#fjs-d123)).
+
+## `db push` is prototyping only
+
+It writes tables directly and no file, so **a deploy replaying migrations will
+not have the change**. That is fine before a project deploys and a trap after.
+Use `migrate dev` once there is somewhere to deploy to.
+
+If you have been pushing and need to catch up:
+
+```bash
+litestone migrate create catchup   # the delta, derived from the history
+litestone migrate baseline         # record it as applied — your database already has it
+```
+
+`baseline` refuses when the database does not actually hold what those files
+build, because one wrong baseline is a database that reports a complete history
+and is missing a column. The other way out is to reset the development database
+and let `migrate dev` build it, which is what Prisma does; a development
+database is disposable, and this is the option that keeps the data.
 
 ```js
 import { create, apply, status, verify } from '@frontierjs/litestone'
@@ -156,6 +199,12 @@ them by hand after reviewing the generated output — the CLI emits a comment sa
 - `@@gate`
 - `@@fts`
 - `@@db` (database assignment)
+- `valueset` and `@values` — a binding is a rule about legal values, and SQLite records only the column
+
+A `@generated` column IS recovered — as `@generated("…")`, with `"col"` written
+back as `{col}`. An expression that cannot be spelled inside that string (one
+holding a double-quoted literal) is handed over as a `/// FIXME` line instead of
+being mangled into a plain, writable column.
 
 Introspecting a database whose schema used any of the above and pushing the result
 back is **lossy**: the access rules are silently gone, and the tables become readable
@@ -171,6 +220,28 @@ Unlike Prisma, Litestone does not create a shadow database. It builds a pristine
 
 The diff covers tables, columns, indexes, foreign keys, STRICT, views and
 triggers.
+
+### `@generated` columns
+
+A generated column is not in `PRAGMA table_info` at all, so this diff reads
+`table_xinfo`, and its expression is read off the table's own `CREATE`
+statement — the only place SQLite keeps it. What follows is SQLite's, not a
+choice made here:
+
+| Change | What is emitted |
+| --- | --- |
+| add a VIRTUAL one | `ALTER TABLE … ADD COLUMN … GENERATED ALWAYS AS (…) VIRTUAL` |
+| add a STORED one | a table rebuild — SQLite answers `cannot add a STORED column` on a table that has rows |
+| change the expression, or the storage | a table rebuild — no `ALTER` reaches either |
+| drop one | a table rebuild, like any other dropped column |
+
+A rebuild never copies a generated column: `INSERT` naming one is refused
+(`cannot INSERT into generated column`), and there is nothing to copy — the
+rebuilt table computes it from the columns that were.
+
+The one thing that cannot be diffed is an expression this cannot read back. It
+is reported as *unchanged* rather than guessed at, so an exotic expression costs
+a migration you write by hand, not a rebuild on every run.
 
 ## Schema objects Litestone did not create
 

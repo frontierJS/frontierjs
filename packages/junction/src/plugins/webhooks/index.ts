@@ -11,9 +11,13 @@
 //   Every request carries:
 //     X-Webhook-Id:        delivery row id
 //     X-Webhook-Timestamp: unix seconds
+//     X-Webhook-Nonce:     one per delivery — the row id
 //     X-Webhook-Event:     event name  e.g. 'orders:created'
 //     X-Webhook-Signature: sha256=<hmac>
-//   HMAC input: `${timestamp}.${rawBodyString}`
+//   HMAC input: @frontierjs/toolbelt/signature's canonical string —
+//     METHOD \n path \n timestamp \n nonce \n sha256(body), newline-joined.
+//   A receiver verifies with verifyRequest({ prefix: 'X-Webhook', … }) rather
+//   than reimplementing it.
 //   Secret is per-registration, shown once on creation.
 //
 // Usage:
@@ -32,6 +36,7 @@
 import type { App, Plugin }    from '../../core/app.ts'
 import type { IEventBus }      from '../../events/index.ts'
 import type { DatabaseClient } from '../../storage/database/index.ts'
+import { signRequest }         from '@frontierjs/toolbelt/signature'
 
 // ─── Retry schedule ────────────────────────────────────────────────────────
 // Delays in ms after each failed attempt.
@@ -49,9 +54,6 @@ const RETRY_DELAYS = [
 const MAX_ATTEMPTS = RETRY_DELAYS.length + 1  // 7 total (1 initial + 6 retries)
 
 // ─── Types ─────────────────────────────────────────────────────────────────
-
-// Singleton — avoids allocating TextEncoder on every HMAC sign
-const ENCODER = new TextEncoder()
 
 export interface WebhookRegistration {
   id:        string
@@ -308,21 +310,18 @@ export function createSqliteWebhookStore(dbClient: DatabaseClient): IWebhookStor
 }
 
 // ─── HMAC signing ──────────────────────────────────────────────────────────
-
-async function sign(secret: string, timestamp: number, body: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    ENCODER.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-  const data = ENCODER.encode(`${timestamp}.${body}`)
-  const sig  = await crypto.subtle.sign('HMAC', key, data)
-  return 'sha256=' + Array.from(new Uint8Array(sig))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-}
+//
+// `@frontierjs/toolbelt/signature` is the one definition of what a signed
+// machine-to-machine request is, and that file's own header names this delivery
+// path as one of the three signers it exists to unify. It signed
+// `${timestamp}.${body}`, which binds neither the METHOD nor the PATH — so a
+// captured signature replays against any other endpoint on the same receiver
+// that trusts the same secret, and there is no nonce for a receiver to reject a
+// repeat with. Both are things a subscriber has no way to add from its side.
+//
+// The prefix keeps this plugin's own header names (`X-Webhook-*`), which is what
+// the prefix parameter is for: the canonical string is shared, the spelling on
+// the wire stays the product's.
 
 function generateSecret(): string {
   return Array.from(crypto.getRandomValues(new Uint8Array(24)))
@@ -352,7 +351,24 @@ async function attemptDelivery(
   })
 
   const timestamp = Math.floor(Date.now() / 1000)
-  const signature = await sign(registration.secret, timestamp, body)
+  // The path alone, not the whole URL: a receiver behind a proxy recomputes from
+  // the request it was handed, which carries no origin.
+  const path   = (() => { try { return new URL(registration.url).pathname } catch { return registration.url } })()
+  const signed = await signRequest({
+    secret: registration.secret,
+    method: 'POST',
+    path,
+    body,
+    prefix: 'X-Webhook',
+    timestamp,
+    // Per ATTEMPT, not per delivery. A nonce is what a receiver refuses a REPLAY
+    // by, and this plugin retries the same delivery up to six times — reusing
+    // the id would make every legitimate retry indistinguishable from an attack
+    // and dead-letter it against any receiver that keeps a nonce store. The
+    // identity of the EVENT is `x-webhook-id`, which is stable across attempts
+    // and is what a receiver deduplicates on. Two mechanisms, two lifetimes.
+    nonce:  crypto.randomUUID()
+  })
 
   const start = Date.now()
 
@@ -363,8 +379,7 @@ async function attemptDelivery(
         'content-type':        'application/json',
         'x-webhook-id':        delivery.id,
         'x-webhook-event':     delivery.event,
-        'x-webhook-timestamp': String(timestamp),
-        'x-webhook-signature': signature,
+        ...signed,
       },
       body,
       signal: AbortSignal.timeout(10_000),   // 10s timeout per attempt
@@ -710,8 +725,12 @@ export function webhooks(opts: WebhookOptions): Plugin {
       // Delivery history
       app.get(`/webhook-deliveries`, async (ctx) => {
         const denied = guard(ctx); if (denied) return denied
-        const webhookId  = ctx.query.webhookId
-        const limit      = parseInt(ctx.query.limit ?? '50', 10)
+        // A raw route reads the parsed query (`FJS-D125`), so a numeric-looking
+        // id arrives as a number and a limit arrives as one already. Both are
+        // named rather than assumed: an id is text whatever it looks like.
+        const raw        = ctx.query.webhookId
+        const webhookId  = raw === undefined || raw === null ? undefined : String(raw)
+        const limit      = Number(ctx.query.limit ?? 50) || 50
         const deliveries = await store.getDeliveries(webhookId, limit)
         return ctx.json(deliveries)
       })

@@ -12,10 +12,9 @@ import { $ } from '@frontierjs/junction'
 
 import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized, authenticate }
   from '@frontierjs/junction'
-import { requireWorkspaceRole, restandingFor, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { requireWorkspaceRole, refuseRoleAboveOwn, roleOf, restandingFor, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, actor, slugify, narrowPatch, changesNothing } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
 // The roles are graded in core/gate.ts and the enum lives in schema.lite; the
 // map's KEYS are the one place this app already states the vocabulary, and a
@@ -116,7 +115,7 @@ export function createWorkspacesService(app: BasecampApp) {
     // Only workspaces the caller belongs to. The old version did this with a
     // JOIN; `memberships: { some: { userId } }` is the relation the schema
     // already declares.
-    async find(ctx: ServiceContext) {
+    async find() {
       const user = $.auth?.user as { userId?: string } | undefined
       if (!user?.userId) return { total: 0, limit: 20, offset: 0, data: [] }
 
@@ -135,7 +134,7 @@ export function createWorkspacesService(app: BasecampApp) {
 
     // Non-membership is reported as 404, not 403 — a workspace you cannot see
     // should not be confirmable by id.
-    async get(ctx: ServiceContext) {
+    async get() {
       const user = sessionOf()
       const ws   = await db().workspace.findUnique({ where: { id: $.id as string } })
       if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
@@ -146,7 +145,7 @@ export function createWorkspacesService(app: BasecampApp) {
       return ws
     },
 
-    async create(ctx: ServiceContext) {
+    async create() {
       const user = sessionOf()
       if (!user.accountId) throw new Unauthorized('Session carries no account')
 
@@ -189,7 +188,7 @@ export function createWorkspacesService(app: BasecampApp) {
       return db().workspace.update({ where: { id: $.id as string }, data: patch })
     },
 
-    async remove(ctx: ServiceContext) {
+    async remove() {
       const ws = await db().workspace.findUnique({ where: { id: $.id as string } })
       if (!ws) throw new NotFound(`Workspace '${$.id}' not found`)
 
@@ -203,7 +202,7 @@ export function createWorkspacesService(app: BasecampApp) {
     // ── members ───────────────────────────────────────────────────────
     // asSystem: User is auth's model. Even with gates absent today, member
     // listing is a membership question and reads as one.
-    async members(ctx: ServiceContext) {
+    async members() {
       const rows = await members().findMany({
         where:   { workspaceId: $.id as string },
         include: { user: true },
@@ -212,7 +211,7 @@ export function createWorkspacesService(app: BasecampApp) {
       return { total: rows.length, data: rows }
     },
 
-    async addMember(ctx: ServiceContext) {
+    async addMember() {
       const { userId, user_id, role } = ($.data ?? {}) as Record<string, string>
       const target = userId ?? user_id
       if (!target) throw new BadRequest('userId is required')
@@ -227,15 +226,43 @@ export function createWorkspacesService(app: BasecampApp) {
       })
     },
 
-    async setMemberRole(ctx: ServiceContext) {
+    async setMemberRole() {
       const { userId, user_id, role } = ($.data ?? {}) as Record<string, string>
       const target = userId ?? user_id
       if (!target) throw new BadRequest('userId is required')
       if (!role)   throw new BadRequest('role is required')
 
+      // FJS-410. `role` is what core/gate.ts grades every gate from, so a
+      // caller naming their OWN userId with `role: 'owner'` was granting
+      // themselves level 6 — measured through this method, no throw, 200, the
+      // trail recording a legitimate-looking role change.
+      //
+      // `WorkspaceMember` denies it at the Data boundary as well
+      // (`@@deny('update', userId == auth().id)`), and that is the rule that
+      // covers a job, a hub screen and a `fli tinker` session — but not this
+      // path: `members()` is `asSystem()`, because membership is what decides
+      // access and cannot be read through the caller it is deciding about. So
+      // the one door a person actually walks through is the one door the
+      // boundary rule cannot hold, and the refusal is stated here.
+      if (target === sessionOf().userId)
+        throw new Forbidden(
+          'You cannot change your own role in a workspace. Ask another owner or administrator.'
+        )
+
       const wsId   = $.id as string
       const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
       if (!member) throw new NotFound('Member not found')
+
+      // A member who outranks you is not yours to move either. `refuseRoleAboveOwn`
+      // grades what is being HANDED OUT and this grades who is being acted on —
+      // an admin demoting an owner is the same inversion pointed the other way,
+      // and the last-owner guard below only catches it where there happens to
+      // be exactly one.
+      const myRole = roleOf($) ?? ''
+      if ((WORKSPACE_ROLE_LEVEL[member.role] ?? 0) > (WORKSPACE_ROLE_LEVEL[myRole] ?? 0))
+        throw new Forbidden(
+          `You cannot change the role of ${member.role === 'owner' ? 'an' : 'a'} ${member.role} — you hold ${myRole || 'none'}.`
+        )
 
       // Demoting the last owner would leave the workspace unadministrable.
       if (member.role === 'owner' && role !== 'owner') {
@@ -246,7 +273,7 @@ export function createWorkspacesService(app: BasecampApp) {
       return members().update({ where: { id: member.id }, data: { role: toRole(role) } })
     },
 
-    async removeMember(ctx: ServiceContext) {
+    async removeMember() {
       const target = ($.query.userId ?? $.query.user_id ??
                       ($.data as Record<string, string> | null)?.userId) as string | undefined
       if (!target) throw new BadRequest('userId is required')
@@ -270,8 +297,11 @@ export function createWorkspacesService(app: BasecampApp) {
         create:        [stampOwnership],
         patch:         [requireWorkspaceRole(app, 'admin', 'owner')],
         remove:        [requireWorkspaceRole(app, 'owner')],
-        addMember:     [requireWorkspaceRole(app, 'admin', 'owner')],
-        setMemberRole: [requireWorkspaceRole(app, 'admin', 'owner')],
+        // refuseRoleAboveOwn is the other half of FJS-410: the hook above says
+        // *may you manage the team*, this one says *not a role above your own*.
+        // Without it an admin still mints an owner, on somebody else's row.
+        addMember:     [requireWorkspaceRole(app, 'admin', 'owner'), refuseRoleAboveOwn()],
+        setMemberRole: [requireWorkspaceRole(app, 'admin', 'owner'), refuseRoleAboveOwn()],
         removeMember:  [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },

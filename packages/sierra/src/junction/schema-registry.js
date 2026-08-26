@@ -81,6 +81,19 @@ export function registerSchemas(defs, modelNames) {
 
     const plural = _pluralOf(accessor)
     _index[plural] = _index[plural] ?? modelName
+
+    // The TABLE spelling, which is snake_case of the model name. A caller
+    // holding one is not hypothetical: litestone's `$tapQuery` reports the
+    // table, and the static-safety gate resolves what a prerendered route read
+    // through here — so without this row every MULTI-WORD model is
+    // unpublishable. It fails closed, which is the safe direction and the
+    // confusing one: `product_variant` was reported as a name "the schema does
+    // not describe" while `db/schema.lite` plainly declares `ProductVariant`.
+    // A single-word model resolved by accident, its table being its accessor.
+    const table = _tableOf(modelName)
+    _index[table] = _index[table] ?? modelName
+    const tablePlural = _pluralOf(table)
+    _index[tablePlural] = _index[tablePlural] ?? modelName
   }
 }
 
@@ -97,6 +110,22 @@ export function registerSchemas(defs, modelNames) {
  */
 function _pluralOf(accessor) {
   return pluralize(accessor)
+}
+
+/**
+ * The SQL table a model is stored in — `ProductVariant` → `product_variant`.
+ *
+ * The same derivation litestone's `modelToTableName` applies, restated here
+ * rather than imported because sierra must not depend on litestone. What it
+ * cannot see is `@@map("custom_name")`, which always wins on the Data side; a
+ * mapped model resolves by its own name and its accessor as before, and only
+ * the table spelling is missed.
+ */
+function _tableOf(modelName) {
+  return modelName
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/([a-z\d])([A-Z])/g,     '$1_$2')
+    .toLowerCase()
 }
 
 /**

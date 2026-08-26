@@ -201,3 +201,53 @@ model Job {
     }
   })
 })
+
+// ─── The same field, inside a `type` ──────────────────────────────────────
+//
+// A `type T { … }` field went through fieldToJsonSchema for its structure and
+// through nothing for its presentation, so the identical declaration emitted
+// `title` and `x-messages` on a model column and neither inside a type. The
+// author's sentence then died exactly where this file says it must not — for a
+// nested `Json @type(T)` value, and for a custom method whose declared input is
+// a type (junction `methods: [{ method, input }]`), which has no model behind
+// it and therefore no second chance to pick the wording up.
+
+describe('a type declares presentation too', () => {
+
+  const TYPED = `
+    type TrackingUpdate {
+      trackingCode String @length(4, 40, "A tracking code is 4 to 40 characters")
+                          @label("Tracking")
+      carrier      String? @label("Carrier")
+    }
+
+    model Parcel {
+      id           Int    @id
+      trackingCode String @length(4, 40, "A tracking code is 4 to 40 characters")
+                          @label("Tracking")
+    }
+  `
+
+  test('a type field emits what the identical model column emits', async () => {
+    const db = await createClient({ db: ':memory:', schema: TYPED })
+    const js = generateJsonSchema(db.$schema) as any
+
+    const inType  = js.$defs.TrackingUpdate.properties.trackingCode
+    const inModel = js.$defs.Parcel.properties.trackingCode
+
+    expect(inType.title).toBe('Tracking')
+    expect(inType['x-messages'].length).toBe('A tracking code is 4 to 40 characters')
+    // Keyed by the compiled keyword too, which is what a consumer looks up.
+    expect(inType['x-messages'].minLength).toBe('A tracking code is 4 to 40 characters')
+    // The two are the same declaration and must be the same schema.
+    expect(inType).toEqual(inModel)
+  })
+
+  test('a label with no message still travels', async () => {
+    const db = await createClient({ db: ':memory:', schema: TYPED })
+    const js = generateJsonSchema(db.$schema) as any
+    const carrier = js.$defs.TrackingUpdate.properties.carrier
+    expect(carrier.title).toBe('Carrier')
+    expect(carrier['x-messages']).toBeUndefined()
+  })
+})

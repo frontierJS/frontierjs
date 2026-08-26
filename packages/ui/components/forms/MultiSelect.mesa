@@ -1,27 +1,3 @@
-<script module>
-  // ── Module-level helpers — shared across all MultiSelect instances ──────────
-
-  /** Simple weighted text search — scores by position of match, prefers prefix */
-  export function scoreMatch(text, query) {
-    if (!query) return 1
-    const t = text.toLowerCase()
-    const q = query.toLowerCase()
-    const i = t.indexOf(q)
-    if (i === -1) return 0
-    // Prefix match scores higher than mid-string match
-    return i === 0 ? 2 : 1
-  }
-
-  /** Filter and sort options by query string */
-  export function filterOptions(options, query) {
-    if (!query?.trim()) return options
-    return options
-      .map(o => ({ ...o, _score: scoreMatch(o.textContent, query) + scoreMatch(String(o.value), query) }))
-      .filter(o => o._score > 0)
-      .sort((a, b) => b._score - a._score)
-  }
-</script>
-
 <script>
   // MultiSelect.mesa
   // Token input with dropdown. Supports single/multiple selection, async search,
@@ -40,7 +16,8 @@
   //   <MultiSelect bind:value asyncOptions={{ trigger: searchFn, delay: 200, min: 1 }} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, truncationNote, withNote } from '../../utils.js'
+  import { rank, segments } from '@frontierjs/toolbelt/search'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -90,6 +67,23 @@
   export let asyncOptions = undefined
 
   export let onchange = undefined   // (value) => void
+
+  // Granular events. `onchange` says the selection is now X; these say WHAT
+  // moved, which is the thing a caller cannot recover from the value alone —
+  // comparing before and after means holding a copy of before.
+  export let onadd    = undefined   // (value, option) => void
+  export let onremove = undefined   // (value) => void
+  // Fired only for a value `allowNew` minted, and fired BEFORE onadd: a
+  // listener that has to persist the new option needs it to exist before
+  // anything reacts to it being selected.
+  export let oncreate = undefined   // (option) => void
+
+  // Past this many selections the tokens collapse to one summary chip, which
+  // expands on click and re-collapses on blur. 0 is off, and off is the
+  // default: collapsing is a rendering change for every caller that already
+  // has one of these on a screen, and a control that silently hides what was
+  // chosen is worse than a tall one unless somebody asked for it.
+  export let collapseAfter = 0
 
   export var id = ''
   const inputId = id || uid('ms')
@@ -145,6 +139,44 @@
   // and typing filtered an empty list.
   let optionsMap = mapOf(options)
 
+  // Schema-driven options, the same two sources as Select — an enum off the
+  // rule, a relation fetched by the form. MERGED under what is already there
+  // rather than assigned, because the async search and `allowNew` write to
+  // this map too, and a stated option must keep its own shape.
+  const _sync = rule?.options ?? rule?.enum ?? null
+  let _total = null
+  if (_sync) optionsMap = { ...mapOf(_sync), ...optionsMap }
+  else if (!options?.length && name && form?.optionsFor)
+    form.optionsFor(name).then(r => {
+      optionsMap = { ...mapOf(r?.options ?? []), ...optionsMap }
+      _total = r?.total ?? null
+    })
+
+  // ── a list bigger than the answer ──────────────────────────────────
+  //
+  // `resource.options()` caps at the server's limit, so a bound array over a
+  // big table arrives as a page of it and typing filters the page (`FJS-391`).
+  // This control already had a search seam — `asyncOptions` — and it was the
+  // CALLER's job to supply one, which a generated form has nobody to ask. Where
+  // the form can answer and the list came back cut, it is supplied here.
+  export let total = undefined
+
+  const _count  = stated(total, _total)
+  const _shown  = Object.keys(optionsMap).length
+  const _canAsk = !!(name && form?.optionsFor)
+
+  let _searchAll = false
+  const _latch = () => { if (Number.isFinite(_count) && _count > _shown) _searchAll = true }
+  _latch()
+  $: (_count, _shown), () => _latch()
+
+  // A stated `asyncOptions` always wins — the caller is writing it.
+  const _async = asyncOptions ?? ((_canAsk && _searchAll)
+    ? { min: 0, trigger: (q) => form.optionsFor(name, { search: q || undefined }).then(r => r?.options ?? []) }
+    : null)
+
+  const resolvedHint = withNote(hint, truncationNote(_shown, _count, { searchable: !!_async }))
+
   // Later arrivals merge in; a value already known keeps its newest shape.
   $: options, () => { optionsMap = { ...optionsMap, ...mapOf(options) } }
 
@@ -172,51 +204,126 @@
     // Trigger re-render — selectedItems is recomputed reactively
   }
 
-  // Filtered dropdown options
-  const filtered = (() => {
+  // Ranked rather than filtered. What was here scored by `indexOf` with a bonus
+  // for a prefix, so "ace" ranked `Lovelace` and `Ace Ltd` the same and the
+  // order was whatever the options map happened to hold.
+  //
+  // The ranked answer is kept whole — rows to render, and ranges to mark them
+  // with. The ranges come from `byKey.textContent` and not from `ranges`,
+  // because a match may have scored on `value`: those indexes point into the
+  // value string, and marking the LABEL with them highlights whichever
+  // characters happen to sit at those offsets.
+  const ranked = (() => {
     const all = Object.values(optionsMap)
-    const results = filterOptions(all, inputValue)
-    // Don't show already-selected in single mode
-    if (!multiple) return results.filter(o => !selectedValues.has(o.value))
-    return results
+    if (!inputValue?.trim()) return all.map(item => ({ item, marks: [] }))
+    return rank(all, inputValue, { keys: ['textContent', 'value'] })
+      .map(r => ({ item: r.item, marks: r.byKey?.textContent ?? [] }))
   })()
+
+  // Held in a Map keyed by the option OBJECT rather than written onto it: an
+  // option can appear in two lists, and ranges belong to a query rather than
+  // to an option.
+  const marksOf = new Map(ranked.map(r => [r.item, r.marks]))
+
+  // Expanded is per interaction, not per value: the chip is a way to look at a
+  // long selection, and it closes again when focus leaves so the control goes
+  // back to its declared height.
+  let expanded = false
+
+  const collapsed = collapseAfter > 0 && selectedValues.size > collapseAfter && !expanded
+
+  // Don't show already-selected in single mode
+  const filtered = multiple
+    ? ranked.map(r => r.item)
+    : ranked.map(r => r.item).filter(o => !selectedValues.has(o.value))
 
   // Reset cursor when filter changes
   $: inputValue, () => { activeIndex = 0 }
 
   // ── Constraints ───────────────────────────────────────────────────────────────
 
+  // Asked before OFFERING an action — whether the × shows, whether Backspace
+  // does anything. `commitValue` is what actually refuses; these only keep the
+  // UI from presenting a control that would decline.
   const canAdd    = () => !max || selectedValues.size < max
   const canRemove = () => !min || selectedValues.size > min
 
   // ── Selection actions ──────────────────────────────────────────────────────
 
-  function add(opt) {
-    if (readonly || resolvedDisabled || !canAdd()) return
-    selectedValues.add(opt.value)
+  function add(opt, { created = false } = {}) {
+    // Single mode REPLACES. Adding to the set instead left the first pick at
+    // index 0, and `value` is that index — so choosing a second option changed
+    // the set, changed nothing anyone could see, and wrote back the old value.
+    const next = multiple ? new Set(selectedValues).add(opt.value) : new Set([opt.value])
+
+    // Before the commit: a token renders from this map, so a value committed
+    // without its option has nothing to draw.
     optionsMap[opt.value] = opt
-    commitValue()
-    if (closeOnSelect) open = false
-    if (closeOnSelect) inputValue = ''
+
+    if (!commitValue(next, () => {
+      if (created) oncreate?.(opt)
+      onadd?.(opt.value, opt)
+    })) return false
+
+    if (closeOnSelect) { open = false; inputValue = '' }
+    return true
   }
 
   function remove(val) {
-    if (readonly || resolvedDisabled || !canRemove()) return
-    selectedValues.delete(coerce(val))
-    commitValue()
+    const value = coerce(val)
+    const next  = new Set(selectedValues)
+    next.delete(value)
+    return commitValue(next, () => onremove?.(value))
   }
 
   function clearAll() {
-    if (readonly || resolvedDisabled) return
-    selectedValues.clear()
+    // Every value that leaves fires `onremove`, including these. A clear that
+    // announced nothing per value would make "onremove means this value left"
+    // false exactly when the most values left at once.
+    const going = [...selectedValues]
+    if (!commitValue(new Set(), () => { for (const v of going) onremove?.(v) })) return false
+
     inputValue = ''
-    commitValue()
+    return true
   }
 
-  function commitValue() {
-    const vals = [...selectedValues]
+  /**
+   * The one place the selection changes — every action proposes a set and this
+   * decides. Per-action guards were how `clearAll` came to ignore `min`: three
+   * mutators, two of them checked, and nothing making the third declare itself.
+   *
+   * `min`/`max` are bounds on the FINISHED selection, not on every intermediate
+   * state, so they are asked about the DIRECTION of the change. A control
+   * declared `min={2}` starts empty and has to reach two somehow — refusing
+   * every state below the floor would refuse the first add and the field could
+   * never be filled at all. So a change is refused only when it moves the
+   * wrong way past the bound; one already outside it may always move back.
+   *
+   * @returns {boolean} whether the change was applied, so a caller can skip
+   *   the follow-on work (closing, clearing the input) on a refusal.
+   */
+  function commitValue(next, announce) {
+    if (readonly || resolvedDisabled) return false
+
+    const now = selectedValues.size
+    if (max && next.size > max && next.size > now) return false
+    if (min && next.size < min && next.size < now) return false
+
+    // Synced in place rather than reassigned: `selectedValues` is a const Set
+    // and the watches above are registered against that object.
+    selectedValues.clear()
+    for (const v of next) selectedValues.add(v)
+
+    const vals = [...next]
     value = multiple ? vals : (vals[0] ?? undefined)
+
+    // What MOVED, then what the selection now IS. A listener that has to
+    // persist a minted option needs it to exist before anything reacts to the
+    // selection containing it — announcing the aggregate first hands `onchange`
+    // a value naming a row the server has never heard of.
+    announce?.()
     onchange?.(value)
+    return true
   }
 
   // ── Dropdown visibility ──────────────────────────────────────────────────────
@@ -258,7 +365,7 @@
         selectedValues.has(target.value) ? remove(target.value) : add(target)
       } else if (allowNew && inputValue.trim()) {
         const newOpt = { value: coerce(inputValue.trim()), textContent: inputValue.trim(), disabled: false }
-        add(newOpt)
+        add(newOpt, { created: true })
         inputValue = ''
       }
       return
@@ -276,34 +383,37 @@
   function handleBlur(e) {
     // Delay close so option click fires first
     setTimeout(() => {
-      if (!containerEl?.contains(document.activeElement)) closeDropdown()
+      if (!containerEl?.contains(document.activeElement)) {
+        closeDropdown()
+        expanded = false
+      }
     }, 150)
   }
 
   // ── Async search ──────────────────────────────────────────────────────────────
 
   $: inputValue, () => {
-    if (!asyncOptions) return
+    if (!_async) return
     clearTimeout(_debounceTimer)
     const q = inputValue?.trim() ?? ''
-    if (q.length < (asyncOptions.min ?? 1)) return
+    if (q.length < (_async.min ?? 1)) return
     _debounceTimer = setTimeout(async () => {
-      const results = await asyncOptions.trigger(q)
+      const results = await _async.trigger(q)
       const normalised = (results ?? []).map(normalise)
       for (const o of normalised) optionsMap[o.value] = o
-    }, asyncOptions.delay ?? 200)
+    }, _async.delay ?? 200)
   }
 
   // ── Click outside ────────────────────────────────────────────────────────────
 
   var _outsideHandler = null
-  $onMount(() => {
+  $.onMount(() => {
     _outsideHandler = (e) => {
       if (containerEl && !containerEl.contains(e.target)) closeDropdown()
     }
     document.addEventListener('click', _outsideHandler, { capture: true })
   })
-  $onDestroy(() => {
+  $.onDestroy(() => {
     document.removeEventListener('click', _outsideHandler, { capture: true })
     clearTimeout(_debounceTimer)
   })
@@ -338,8 +448,22 @@
       style:cursor={resolvedDisabled ? 'not-allowed' : 'text'}
       on:click={openDropdown}
     >
+      <!--
+        Collapsed: one chip standing for the whole selection. A button and not
+        a styled span, because it is the only way back to the tokens and a
+        keyboard has to reach it.
+      -->
+      {#if collapsed}
+        <button
+          type="button"
+          class="pill fjs-multiselect-summary"
+          aria-expanded="false"
+          on:click|stopPropagation={() => { expanded = true }}
+        >{selectedValues.size} selected</button>
+      {/if}
+
       <!-- Selected tokens -->
-      {#each [...selectedValues] as val (val)}
+      {#each collapsed ? [] : [...selectedValues] as val (val)}
         {@const opt = optionsMap[val]}
         {#if opt}
           <span class="pill {!readonly && !resolvedDisabled ? 'removable' : ''}">
@@ -443,7 +567,12 @@
                 on:mousemove={() => { if (activeIndex !== i) activeIndex = i }}
                 on:click|preventDefault={() => isSelected ? remove(opt.value) : add(opt)}
               >
-                <span style:flex="1">{opt.textContent}</span>
+                <!--
+                  One line on purpose. Broken across lines, the whitespace
+                  between the pieces renders INSIDE the word — "Lovelace"
+                  matched at "Love" comes out as "Love lace".
+                -->
+                <span style:flex="1">{#each segments(opt.textContent, marksOf.get(opt) ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
                 {#if isSelected}
                   <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/>
@@ -464,7 +593,7 @@
     name={name}
     label={label}
     required={resolvedRequired}
-    hint={hint}
+    hint={resolvedHint}
     error={error}
     errors={errors}
     badge={badge}
@@ -526,6 +655,22 @@
     padding:           0.25rem;
     z-index:           50;
   }
+  /* The summary chip. `.pill` is the package's chip and this only adds the
+     affordance that it is pressable — a caller must be able to tell it apart
+     from the tokens it replaced. */
+  .fjs-multiselect-summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  /* The matched run. Weight rather than a colour — the design system owns
+     tone, and "this is why the row matched" is not one of them. */
+  .fjs-multiselect-option mark {
+    background: transparent;
+    color: inherit;
+    font-weight: 700;
+  }
+
   .fjs-multiselect-option {
     display:     flex;
     align-items: center;

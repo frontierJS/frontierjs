@@ -52,12 +52,24 @@
 /// A gate is per MODEL and never per row. WHICH rows is TENANCY, declared once
 /// in the `tenancy { }` block below rather than as a rule per model: every model
 /// carrying `workspaceId` is scoped on it, the 14 that reach one through a
-/// relation are scoped through that parent, and the seven that legitimately
-/// span workspaces say so by name with `@@tenant(none)` — identity, the
-/// Workspace itself, WorkspaceMember (it is what the claim is READ from) and
-/// AuditEvent (whose workspaceId is nullable, because a hub action belongs to
-/// no workspace, and a null compared to a caller's claim hides exactly the rows
-/// the trail exists for).
+/// relation are scoped through that parent, and the THIRTEEN that legitimately
+/// span workspaces say so by name with `@@tenant(none)`. They are three kinds
+/// of thing and the kind is the argument:
+///
+///   identity          User, Credential, Session, Verification, OauthFlow,
+///                     Account — a person is one person in every workspace
+///   the tenant itself Workspace, and WorkspaceMember, which is what the claim
+///                     is READ from
+///   the installation  HubConfig and Backup describe the whole install,
+///                     Blueprint/BlueprintParam are one curated catalogue
+///                     every workspace sees, and NotificationPreference has no
+///                     workspace column at all
+///
+/// A NULLABLE column is not a fourth kind and `AuditEvent` used to be listed as
+/// one. It is scoped like everything else, and its null means the row belongs
+/// to no workspace rather than to all of them (`FJS-D141`) — sharing is a
+/// property of a MODEL, said with `@@tenant(none)`, never of a row that happens
+/// to have nothing in the column.
 ///
 /// This replaced sixteen hand-written `@@allow('all', workspaceId ==
 /// auth().workspaceId)` lines. The claim it grades against is resolved per
@@ -77,9 +89,10 @@
 ///
 /// CONCURRENCY — @version is on the rows a PERSON owns, and only those.
 ///
-/// Ten models declare it: Workspace, Project, Environment, Secret, Network,
-/// Domain, FeatureFlag, NotificationChannel, AlertRule, Dashboard. Every one is
-/// a row a form edits. Two people on one both PATCH and the second silently
+/// Twelve models declare it: Workspace, Project, Environment, Secret, Network,
+/// Domain, FeatureFlag, NotificationChannel, AlertRule, Dashboard, Blueprint
+/// (as `revision`, since `version` there is the upstream software's) and
+/// HubConfig. Every one is a row a form edits. Two people on one both PATCH and the second silently
 /// erases the first; with the column, the second gets a 409 it can retry off a
 /// fresh read.
 ///
@@ -241,28 +254,54 @@ enum WidgetKind {
   stat_counter
 }
 
+// How a blueprint parameter's value is minted when nobody supplies one. A
+// DECLARED vocabulary rather than the mock's free string, which it parsed with
+// a regex in the browser (`parseInt(generate.replace(/[^0-9]/g,''))`) — so a
+// typo produced a 32-character default and said nothing. The server owns what
+// each name means; the browser is told which one applies.
+enum ParamGenerator { random_hex_16 random_hex_32 random_hex_64 }
+
+// A backup is taken by hand or by the schedule. Nothing else distinguishes
+// them, and the schedule's own settings live on `HubConfig`.
+enum BackupKind        { manual scheduled }
+
+// Where the archive was written. `local` is the machine basecamp runs on,
+// which is a backup of a disk onto the same disk — honest, and the reason the
+// screen nudges towards the second one.
+enum BackupDestination { local s3 }
+
+// What a person may be told about, and how. Seven kinds and two transports —
+// `NotificationPreference` is one row per (person, kind), so a transport is a
+// column rather than a third key: adding a third transport is a column, where
+// a row per transport makes "off everywhere" the ABSENCE of rows and therefore
+// indistinguishable from never having chosen.
+//
+// `deploy_failed` rather than the mock's `deploy_fail`, so it reads the same
+// way as `job_failed` beside it.
+enum NotificationKind {
+  deploy_success
+  deploy_failed
+  alert_firing
+  alert_resolved
+  member_joined
+  job_failed
+  weekly_digest
+}
+
 // ============================================================
 // IDENTITY — owned by @frontierjs/auth
 // ============================================================
-// These four models are auth's schema fragments (`authSchemaFragments()` in
-// packages/auth/schema.ts). auth.ts reaches for the accessors db.user,
-// db.credential, db.session and db.verification via asSystem(), so the model
-// names are load-bearing — do not rename them.
+// auth.ts reaches the accessors db.user, db.credential, db.session,
+// db.verification and db.oauthFlow via asSystem(), so those model names are
+// load-bearing — do not rename them.
 //
-// Two deliberate deviations from the shipped fragment, each load-bearing:
-//   1. `accountId` is String, not Int. Account.id is a uuid; Int cannot hold
-//      it. Safe for auth.ts, which only does String(user.accountId).
-//   2. `@secret` → `@guarded(all)` on the Credential/Session token columns.
-//      Not for the logging reason any more — log entries redact protected
-//      fields as of 2026-08-03, so `@secret` is safe here. What still defers it
-//      was encryption: `@secret` implies `@encrypted`, and `Session.token` is
-//      looked up BY VALUE, which a random IV cannot answer. That is no longer a
-//      blocker — `Session.token` is matched and never displayed, which is exactly
-//      `@hashed`, and `@secret(deterministic: true)` covers a secret that must be
-//      both looked up and read back. Credential.value already holds a hash.
-//      Revisit in the API pass alongside the rest of the auth wiring.
+// `User` is the one model this app OWNS: auth ships it to be appended and
+// edited, and everything below the "Basecamp additions" line is this app's.
+// The other four are imported and adjusted with `extend model`; see the
+// section below them.
 //
-// `@@log(audit)` is kept, as auth ships it.
+// `accountId` is String, not Int. Account.id is a uuid and Int cannot hold it.
+// Safe for auth.ts, which only does String(user.accountId).
 //
 // Everything Basecamp adds to User is nullable or defaulted ON PURPOSE:
 // auth's createUser() writes only { email, name, role }, so a required
@@ -272,8 +311,18 @@ model User {
   id             String    @id @default(uuid())
   email          String    @email @unique @lower
   name           String?   @trim
-  emailVerified  Boolean   @default(false)
-  role           String    @default("user")
+  // Both carry auth's own field policy, and they carry it because this model
+  // gates update at USER(4) with `@@allow('update', id == auth().id)` — your own
+  // row. Without it the field policy is the only thing between a caller and
+  // their own `emailVerified`, and marking your own address verified is skipping
+  // the verification. Nothing here exposes a write path to `db.user` today,
+  // which is exactly why it went missing from the copy unnoticed (`FJS-483`).
+  //
+  // `role` is auth's and is read nowhere in this app — the privileged bit is
+  // `isSystemAdmin` below. It keeps the policy anyway: a column nobody reads is
+  // one somebody will.
+  emailVerified  Boolean   @default(false) @allow('write', auth().isAdmin)
+  role           String    @default("user") @allow('write', auth().isAdmin)
   accountId      String?
   account        Account?  @relation(fields: [accountId], references: [id])
 
@@ -331,7 +380,9 @@ model User {
   @@allow('update', id == auth().id)
   @@softDelete
   @@log(audit)
-  @@unique([accountId, username])
+  // Both members are optional and that is the shape wanted: one username per
+  // account, and no constraint at all between people who have neither.
+  @@unique([accountId, username], nullsDistinct: true)
   @@index([accountId])
   @@index([email])
 
@@ -340,64 +391,44 @@ model User {
   @@tenant(none)
 }
 
-// How you prove who you are — passwords, API keys, OAuth tokens.
-// NOT to be confused with Secret below, which is machine credentials.
-model Credential {
-  id              String     @id @default(uuid())
-  userId          String
-  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type            String
-  value           String     @guarded(all)
-  label           String?
-  accessToken     String?    @guarded(all)
-  refreshToken    String?    @guarded(all)
-  tokenExpiresAt  DateTime?
-  scope           String?
-  createdAt       DateTime   @default(now())
+// ── The credential machinery, imported ──────────────────────────────────────
+//
+// Credential / Session / Verification / OauthFlow are `@frontierjs/auth`'s, and
+// this app IMPORTS them rather than declaring copies. It used to declare
+// copies — it had to, because each one needs three things the shipped file
+// cannot know: a relation back to THIS app's User, `@@log(audit)`, and
+// `@@tenant(none)`, since identity spans workspaces and row tenancy otherwise
+// reports a model with no tenant column.
+//
+// A copy stops being the package's the first time either side moves, and
+// nothing here can fail: the copies had `@guarded(all)` on the OAuth token
+// columns where the package writes `@secret`, so turning OAuth on would have
+// stored every provider access and refresh token unencrypted, with this app's
+// whole suite green either side of the divergence.
+//
+// `extend model` is how the three app-owned facts get said without owning the
+// columns — litestone docs/traits.md.
+import "@frontierjs/auth/schema.lite"
 
-  @@gate("8")
+extend model Credential {
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@log(audit)
-  @@index([userId, type])
-  @@index([type, value])
-
-  // @@tenant(none) — identity spans workspaces — a person is one person in all of
-  // them, and `@frontierjs/auth` owns this model
   @@tenant(none)
 }
 
-model Session {
-  id         String    @id @default(uuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token      String    @unique @guarded(all)
-  expiresAt  DateTime
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime  @default(now())
-
-  @@gate("8")
-  @@log(audit)
-  @@index([userId])
-  @@index([expiresAt])
-
-  // @@tenant(none) — identity spans workspaces — a person is one person in all of
-  // them, and `@frontierjs/auth` owns this model
+extend model Session {
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // No @@log(audit) here — the shipped model already carries it, and a second
+  // one is refused rather than merged.
   @@tenant(none)
 }
 
-model Verification {
-  id          String    @id @default(uuid())
-  identifier  String
-  value       String    @guarded(all)
-  expiresAt   DateTime
-  createdAt   DateTime  @default(now())
-
-  @@gate("8")
+extend model Verification {
   @@log(audit)
-  @@index([identifier])
+  @@tenant(none)
+}
 
-  // @@tenant(none) — identity spans workspaces — a person is one person in all of
-  // them, and `@frontierjs/auth` owns this model
+extend model OauthFlow {
   @@tenant(none)
 }
 
@@ -484,6 +515,7 @@ model WorkspaceMember {
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   userId      String
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// This caller's authority in this workspace. Nobody may change their own.
   role        WorkspaceRole @default(viewer)
   invitedBy   String?
   invitedAt   DateTime?
@@ -496,6 +528,57 @@ model WorkspaceMember {
   @@log(audit)
   @@unique([workspaceId, userId])
   @@index([workspaceId, userId])
+  // Both of the above LEAD with workspaceId, so *which workspaces is this
+  // person in* — what the switcher asks on every session — had no index to use
+  // (`FJS-413`). A composite is usable for a prefix and for nothing else.
+  @@index([userId])
+
+  // FJS-410. A @@gate is per MODEL, so `@@gate("1.5")` says *an admin may update
+  // a membership* and has no way to say *not their own* — while `role` is the
+  // column every gate in this app is graded from. `setMemberRole` is hooked
+  // requireWorkspaceRole('admin', 'owner') with one guard, *cannot demote the
+  // last owner*, so an admin naming their own userId with role: 'owner' was
+  // granting themselves level 6. A hook is one door; a job, a hub screen and a
+  // `fli tinker` session at level 5 are others.
+  //
+  // A model-level @@deny rather than `role @allow('write', userId != auth().id)`,
+  // and the difference is the whole reason this is written twice: a FIELD write
+  // policy is evaluated against the PAYLOAD (`evalJs(expr, ctx, transformed)`),
+  // not against the stored row — so `userId` is undefined in a patch of
+  // `{ role }`, the comparison is true, and the column is permitted. It reads
+  // exactly like protection and is none. An update @@deny compiles into the
+  // WHERE, against columns the row actually holds. Measured both ways in
+  // db/test/schema.test.ts; the field form is `FJS-433` upstream.
+  //
+  // Nothing legitimately updates a caller's own membership: the invitation
+  // accept CREATES the row with acceptedAt on it, leaving is a delete, and
+  // asSystem() bypasses this for the hub and the setup path.
+  @@deny('update', userId == auth().id)
+
+  // What this cannot reach is the door a person walks through:
+  // `workspaces.setMemberRole` writes through asSystem(), because membership
+  // is what decides access and cannot be read through the caller it is
+  // deciding about — and asSystem() bypasses every policy here. The refusals
+  // that hold that path are in the service tier (core/hooks.ts §
+  // refuseRoleAboveOwn, and the self-check in setMemberRole itself).
+
+  // A model with no @@allow for an operation is OPEN, and litestone says so at
+  // parse. With only the deny above, a scoped client read every workspace's
+  // membership — measured: an authenticated caller holding no membership
+  // anywhere read another workspace's row, id, user and role. Nothing in the
+  // app reached it that way (every reader here is asSystem(), and the API
+  // answers 404 through the workspaces service), so the boundary was open and
+  // a hook was holding the door — which is Invariant 6 the wrong way round.
+  //
+  // Read is your own rows, across workspaces, which is what the switcher asks
+  // for and why @@tenant(none) is right below. Writes are the workspace being
+  // acted in: the gate already says ADMINISTRATOR(5), and this says whose
+  // workspace. Neither reaches asSystem(), which is every path the app itself
+  // takes.
+  @@allow('read',   userId == auth().id)
+  @@allow('create', workspaceId == auth().workspaceId)
+  @@allow('update', workspaceId == auth().workspaceId)
+  @@allow('delete', workspaceId == auth().workspaceId)
 
   // @@tenant(none) — this is the row the CLAIM is read from, and the workspace
   // switcher lists a person's memberships ACROSS workspaces — scoping it to the
@@ -710,6 +793,44 @@ model Server {
   // written here. `workspaceId` is the declared claim, resolved per request
   // from the caller's WorkspaceMember row, and compiled into the SQL of
   // every read, update and delete from a scoped client.
+  //
+  // The machine. Three writers move this column and each used to carry its own
+  // from-list: a `transition()` helper in servers.service.ts, the provider map
+  // inside `sync`, and a `transitionStates` set inside `heartbeat` — plus a
+  // fourth copy in the browser deciding which buttons to draw. The move itself
+  // was read-then-write in two statements, so two concurrent drains both read
+  // `online`, both passed the check and both wrote; a server could be recorded
+  // online while it was draining. Declared here it is a compare-and-swap on the
+  // one column two writers contend for, and the loser is refused BY NAME.
+  //
+  // Three tiers, and the gate is what separates them:
+  //   no gate   a person, at the model's own update level (developer)
+  //   @gate(5)  a person one level up — taking a machine out of rotation is
+  //             not the same authority as restarting it
+  //   @gate(8)  the machine's own report. Nothing below asSystem() reaches it,
+  //             which is what `heartbeat` runs as
+  //
+  // `report*` are the provider's answer relayed through a person pressing Sync,
+  // so they are NOT at 8 — the write happens on that person's client and an 8
+  // would refuse it. Two authorities in one move is `FJS-506`'s open question.
+  //
+  // What the from-lists say that the old code did not: a provider reporting
+  // `running` does not undo a drain. `draining` is basecamp's word for what IT
+  // is doing with the machine, and the provider has no opinion about it — the
+  // old map flipped the row back to `online` silently.
+  //
+  // `checkIn` names the from-set heartbeat has always used. A server sitting at
+  // `ready` or `provisioning` that starts checking in stays where it is; that
+  // is today's behaviour written down rather than a decision made here.
+  @@transitions(status,
+    reboot:           [online, unreachable]                                        -> pending,
+    drain:            online                                                       -> draining @gate(5),
+    undrain:          draining                                                     -> online   @gate(5),
+    checkIn:          [pending, installing, unreachable]                           -> online   @gate(8),
+    reportRunning:    [pending, provisioning, installing, ready, unreachable, stopped]           -> online,
+    reportStopped:    [pending, provisioning, installing, ready, online, unreachable, draining]  -> stopped,
+    reportRebuilding: [pending, installing, ready, online, unreachable, draining, stopped]       -> provisioning,
+    reportDestroyed:  [pending, provisioning, installing, ready, online, unreachable, draining, stopped] -> destroyed)
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -824,6 +945,10 @@ model ServerNetwork {
 
   @@gate("2.5")
   @@unique([serverId, networkId])
+  // networkId leads no index otherwise: the @@unique above starts with
+  // serverId, and the FK cascades — SQLite scans the child table once per
+  // deleted network without this (`FJS-413`).
+  @@index([networkId])
 }
 
 // ============================================================
@@ -997,6 +1122,7 @@ model AppServer {
 
   @@gate("2.8")
   @@unique([appId, serverId, replicaIndex])
+  @@index([serverId])
 }
 
 model AppNetwork {
@@ -1011,6 +1137,7 @@ model AppNetwork {
 
   @@gate("2.8")
   @@unique([appId, networkId])
+  @@index([networkId])
 }
 
 // ============================================================
@@ -1074,6 +1201,8 @@ model Deployment {
   @@index([appId])
   @@index([workspaceId])
   @@index([status])
+  @@index([environmentId])
+  @@index([triggeredBy])
 }
 
 model DeploymentStep {
@@ -1143,6 +1272,8 @@ model Job {
   @@log(audit)
   @@index([workspaceId])
   @@index([nextRunAt])
+  @@index([appId])
+  @@index([environmentId])
 }
 
 model JobRun {
@@ -1643,6 +1774,8 @@ model DashboardWidget {
   @@gate("2.4.4.4")
   @@log(audit)
   @@index([dashboardId])
+  @@index([serverId])
+  @@index([appId])
 }
 
 // ============================================================
@@ -1669,8 +1802,371 @@ model AuditEvent {
   @@index([workspaceId])
   @@index([subjectType, subjectId])
 
-  // @@tenant(none) — workspaceId is nullable here (a sign-in is nobody's
-  // workspace), and a null column never equals a claim, so scoping this model
-  // would make exactly the rows with no workspace invisible rather than global
+  // SCOPED, by declaring nothing: the `tenancy { }` block sees `workspaceId`
+  // and this model takes the ordinary desugar. It said `@@tenant(none)` on the
+  // argument that a null column never equals a claim, so scoping it would hide
+  // the rows with no workspace rather than sharing them — which is true, and is
+  // the intended reading rather than the cost of it. A null here says the row
+  // belongs to NO workspace and the hub alone may read it (`FJS-D141`); the
+  // rows that hold one are the workspace's own trail, at the Data boundary
+  // rather than in the one service that remembers to filter.
+}
+
+// ============================================================
+// CATALOGUE
+// ============================================================
+// What can be deployed, and what has been pushed to the registry. Both are
+// things an operator PICKS from rather than authors, and they sit at opposite
+// ends of the same question: a blueprint is a template nobody has run yet, a
+// registry image is an artefact somebody has already built.
+
+// A pre-configured deployment template — image, ports, storage and the
+// parameters a person fills in before it becomes an App.
+//
+// **Hub-curated, so it carries no workspaceId and says `@@tenant(none)`.** The
+// mock's marketplace is a catalogue of third-party software (n8n, Postgres,
+// Redis, Meilisearch, Plausible); not one of its entries is somebody's own.
+// Making it workspace-scoped would give every tenant a private copy of the same
+// nine rows, and the alternative — a nullable `workspaceId` meaning *shared* —
+// is refused outright: a null means the row belongs to NO workspace and only
+// the hub reads it, which is the opposite of shared (`FJS-D141`). A workspace
+// authoring its OWN blueprint is therefore a second model, not a nullable
+// column on this one, and it is not owed until somebody asks for it.
+//
+// The `app` block in the mock's JSON is flattened into columns here, and the
+// names are `App`'s own where they overlap, so composing one into the other is
+// a copy rather than a translation.
+model Blueprint {
+  id             String     @id @default(uuid())
+  slug           String     @trim @length(1, 64) @unique
+  name           String     @trim @length(1, 80)
+
+  // A FREE STRING, and deliberately not an enum, which is a departure from
+  // `WidgetKind` and `ChannelKind` beside it. Those are enums because each
+  // value names a read or a delivery the server implements, so a value the
+  // column would refuse is a feature that does not exist. A category names
+  // nothing: it is a filter chip, and the list of them is `distinct(category)`
+  // over the rows. Making it an enum would turn *add a blueprint in a new
+  // category* into a migration for no gain.
+  category       String     @trim @length(1, 40)
+
+  description    String     @trim @length(1, 300)
+  version        String     @trim @length(1, 40)
+  image          String     @trim @length(1, 200)
+
+  // Presentational, and the one place this schema stores a colour. It is the
+  // vendor's brand, which is data about a third party rather than a styling
+  // decision — a tone (`danger`, `info`) cannot say *n8n pink*. The UI uses it
+  // for the card's icon tile and nothing else; every other surface on the card
+  // is `@frontierjs/css`'s.
+  icon           String?    @trim @length(1, 8)
+  brandColor     String?    @trim @length(4, 9)
+
+  // The App this blueprint becomes. Column for column what `App` and its
+  // deployment config already hold.
+  appType        AppType    @default(container)
+  port           Int?       @gte(1) @lte(65535)
+  persistent     Boolean    @default(false)
+  volumePath     String?    @trim @length(1, 255)
+  healthCheck    String?    @trim @length(1, 255)
+  replicas       Int        @default(1) @gte(1) @lte(50)
+  cpuLimit       String?    @trim @length(1, 16)
+  memLimit       String?    @trim @length(1, 16)
+
+  // Operator-facing prose shown once, on the deploy modal.
+  notes          String?    @length(0, 1000)
+
+  // `[{ label, url }]`. Json rather than a child model because these point at
+  // documentation on the open web — nothing joins them, nothing queries them,
+  // and no row anywhere refers to one. That is the distinction `AlertRule`
+  // taught: its `channels` was a Json array naming rows no model declared, and
+  // became a real join. A link names nothing here.
+  links          Json       @default("[]")
+
+  // A blueprint that is no longer offered but is still referenced by the apps
+  // it created. Withdrawn rather than deleted, for the same reason `Recipe`
+  // soft-deletes: the record of what something was built from outlives the
+  // offer to build it again.
+  deprecatedAt   DateTime?
+
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @default(now()) @updatedAt
+
+  // `revision`, not `version` — `version` above is the upstream software's
+  // (`1.1.1`, `16`, `7.2`) and is what the card shows. This one is the
+  // optimistic-concurrency column two editors race on, and `@version` marks
+  // whichever column carries it rather than requiring a name.
+  revision       Int        @version
+
+  params         BlueprintParam[]
+
+  // Read by anyone signed in — VISITOR(1), because browsing the catalogue is
+  // what a person with no workspace yet is doing. Written by the hub tier only.
+  @@gate("1.7")
+  @@log(audit)
+  @@index([category])
+
+  // @@tenant(none) — a curated catalogue is the same nine rows for every
+  // workspace, and there is no column to scope it by
+  @@tenant(none)
+}
+
+// One field a person fills in before a blueprint becomes an App — which is an
+// environment variable, with a label and a rule about who mints it.
+//
+// A child model rather than a Json array on `Blueprint`, because these are
+// ORDERED, individually validated, and the deploy form is generated from them:
+// a Json array would put the shape of a form in a column nothing describes,
+// which is the one place this repo has been bitten twice.
+model BlueprintParam {
+  id           String          @id @default(uuid())
+  blueprintId  String
+  blueprint    Blueprint       @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
+
+  // The environment variable itself — `N8N_ENCRYPTION_KEY`, not a display name.
+  key          String          @trim @length(1, 100)
+  label        String          @trim @length(1, 80)
+  hint         String?         @trim @length(0, 200)
+
+  // NOT `@secret`, and the difference matters: this is the value shipped with
+  // the catalogue (`admin`, `UTC`, `256mb`), never anybody's. What a person
+  // types lands in a `Secret` or in the app's own env, where `secret` below
+  // says which.
+  defaultValue String?         @length(0, 500)
+
+  required     Boolean         @default(false)
+  // Whether the VALUE a person supplies is a credential — the form masks it and
+  // the deploy writes it as a secret env var rather than a plain one.
+  secret       Boolean         @default(false)
+  // Absent means the person supplies it. Present means the form offers a minted
+  // value they can regenerate.
+  generate     ParamGenerator?
+
+  // The order the form asks in. Explicit, because a blueprint's parameters have
+  // an order its author chose and `createdAt` is not it.
+  position     Int             @default(0)
+
+  @@gate("1.7")
+  @@unique([blueprintId, key])
+  @@index([blueprintId])
+
+  // @@tenant(none) — it belongs to a Blueprint, which spans workspaces
+  @@tenant(none)
+}
+
+// One tag in a container registry. OBSERVED, like `Volume` and `DiskUsage`: a
+// row exists because a registry reported it, and there is no way to author one.
+//
+// **This commits to MIRRORING a registry rather than querying it live**, which
+// is the choice `SCREENS.md` left open for `RegistryView`. Mirroring is what
+// makes `inUse` answerable at all — it is a join against this workspace's
+// deployments, and a live registry API knows nothing about who deployed what.
+// The cost is staleness, which `observedAt` is here to make visible rather than
+// hide: a repository nobody has synced reads as empty, and the screen can tell
+// that from a repository with no tags.
+//
+// There is no `RegistryRepo` model. A repository is `distinct(repository)` over
+// these rows plus a `SUM(sizeBytes)`, and a stored total is a second answer to
+// a question the rows already answer — the same reasoning that keeps a total
+// off `DiskUsage`.
+model RegistryImage {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  repository  String    @trim @length(1, 200)
+  tag         String    @trim @length(1, 128)
+
+  // Two tags of one digest is the ordinary case (`v2.14.1` and `latest`), so
+  // this is NOT unique — the unique key is the tag, which is what a registry
+  // addresses and what a delete removes.
+  digest      String    @trim @length(1, 100)
+
+  // Bytes, for `Volume`'s reason: the registry reports bytes and a stored
+  // megabyte is a number nothing can un-round.
+  sizeBytes   Int       @default(0)
+
+  // Whether any live deployment addresses this tag. Derived at sync and stored,
+  // because the screen's whole purpose is deciding what is safe to delete and
+  // recomputing it per row per render is a join per row.
+  inUse       Boolean   @default(false)
+
+  pushedAt    DateTime?
+  pushedBy    String?   @trim @length(0, 120)
+
+  // When the mirror last saw it — the difference between *no images* and *no
+  // sync*, which is `Volume.lastSeenAt`'s distinction.
+  observedAt  DateTime  @default(now())
+
+  // Read by a viewer; written only by the sync. Deleting a TAG is an
+  // administrator's action and really removes it at the registry, which is why
+  // delete is 5 and not 8.
+  @@gate("2.8.8.5")
+  @@log(audit)
+  @@unique([workspaceId, repository, tag])
+  @@index([workspaceId])
+  @@index([workspaceId, repository])
+}
+
+// ============================================================
+// HUB OPERATIONS
+// ============================================================
+// The tier above every tenant — what `/hub/` reads and writes. Both models here
+// are `@@tenant(none)` because they describe the INSTALLATION, which no
+// workspace owns.
+
+// One archive of the application database and its configuration.
+//
+// The outcome columns are written at SYSTEM, exactly as `RecipeRun` and
+// `CleanupRun` are: a person asks for a backup and a machine reports what it
+// managed, and a status a caller can write is not evidence of anything.
+// `RunStatus` is reused rather than restated — its own comment says why three
+// models share five states, and this is the fourth.
+model Backup {
+  id           String            @id @default(uuid())
+
+  kind         BackupKind        @default(manual)
+  status       RunStatus         @default(pending)
+  destination  BackupDestination @default(local)
+
+  // Absent until it finishes. Bytes.
+  sizeBytes    Int?
+
+  // Where the archive landed — a path for `local`, an object key for `s3`.
+  // Never a URL with a credential in it.
+  location     String?           @trim @length(0, 500)
+  error        String?           @length(0, 2000)
+
+  // Who asked. Null for the scheduled one, which is the app acting on its own
+  // behalf and has no actor by construction.
+  requestedBy  String?
+
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  durationMs   Int?
+  createdAt    DateTime          @default(now())
+
+  // A sysadmin reads them and asks for one; the job writes the outcome;
+  // pruning an old archive is a sysadmin's again.
+  @@gate("7.7.8.7")
+  @@log(audit)
+  @@index([status])
+  @@index([createdAt])
+
+  // @@tenant(none) — a backup is of the whole installation, every workspace in it
+  @@tenant(none)
+}
+
+// The installation's own settings. ONE ROW, keyed by a constant.
+//
+// A singleton with typed columns rather than a key/value table, because a
+// key/value table is a schema this file does not describe: no validation, no
+// JSON Schema, no generated form, and a typo in a key is a setting that
+// silently reverts to its default. The cost is that adding a setting is a
+// migration, which is the correct cost for something the app's behaviour reads.
+//
+// **The credentials in the mock's Settings screen are deliberately absent** —
+// its auth secret, agent secret, Resend key and Infisical token. Three reasons,
+// and each on its own is enough: they are read at BOOT, before any database, so
+// a row here would not reach the running process; rotating one is a deploy, not
+// a form; and this app already has a model for credential material (`Secret`,
+// whose `data` is `@encrypted` and unreadable at every level). What is here is
+// configuration a person can genuinely change while the app runs.
+model HubConfig {
+  // Not a uuid. There is one row and its id is the constant every reader asks
+  // for, so a second row is a mistake with an obvious symptom rather than a
+  // silent fork where two screens disagree about what the installation is
+  // called.
+  id                        String   @id @default("hub")
+
+  name                      String   @trim @length(1, 80) @default("Basecamp")
+
+  // Used for webhook callbacks, outpost registration and every link in an
+  // email — so it is the one setting that is wrong in a way nothing local can
+  // detect: mail goes out with a hostname nobody can reach.
+  //
+  // `@url` and no `@length`. A bound alongside it cannot be ISOLATED — every
+  // 301-character string that would exercise it is refused by `@url` first, so
+  // `verifyConstraints` reports the length rule as unchecked rather than
+  // passing it on the wrong refusal (`FJS-351`). A rule nothing can test is a
+  // rule nobody should declare.
+  baseUrl                   String   @trim @url
+  adminEmail                String   @email @lower
+
+  // A server goes `unreachable` after this long without a check-in. Bounded
+  // below by the outpost's own heartbeat interval — anything under it marks
+  // every healthy machine unreachable between beats.
+  heartbeatTimeoutSeconds   Int      @default(120) @gte(30) @lte(3600)
+
+  // Hours. The default is seven days, which is what the mock showed as 168.
+  sessionTtlHours           Int      @default(168) @gte(1) @lte(8760)
+
+  requireTwoFactorForOwners Boolean  @default(false)
+  allowApiKeyAuth           Boolean  @default(true)
+  allowBotUsers             Boolean  @default(true)
+
+  // The scheduled backup. The cron lives here rather than on `Backup` because
+  // it describes the schedule, and a `Backup` row is one thing that already
+  // happened. A schedule that comes from a ROW has to be re-registered at boot
+  // and unregistered when it stops being true — `app.jobs.unschedule`.
+  backupEnabled             Boolean  @default(false)
+  backupCron                String   @default("0 2 * * *") @trim @length(1, 100)
+  backupDestination         BackupDestination @default(local)
+
+  mailFromAddress           String?  @email @lower
+  mailFromName              String?  @trim @length(0, 80)
+
+  updatedAt                 DateTime @default(now()) @updatedAt
+  version                   Int      @version
+
+  // Nothing below the hub tier reads or writes this — it is the installation,
+  // not a tenant's.
+  @@gate("7")
+  @@log(audit)
+
+  // @@tenant(none) — one row for the whole installation
+  @@tenant(none)
+}
+
+// ============================================================
+// PREFERENCES
+// ============================================================
+
+// What one person wants to be told about, and how.
+//
+// One row per (person, kind), with a column per transport. Per PERSON and not
+// per membership: the mock asks once, and a preference that had to be set again
+// in every workspace is a preference nobody sets. If that turns out to be
+// wrong, the fix is a row per (person, workspace, kind) — and NOT a nullable
+// `workspaceId` meaning *everywhere*, because a null says the row belongs to no
+// workspace and hides it from every one of them (`FJS-D141`).
+//
+// **The absence of a row is not *off*.** A person who has never opened this
+// screen has no rows, and the service resolves an unset kind to the kind's own
+// default rather than to silence — which is why this model can be empty for
+// everyone and the app still delivers.
+model NotificationPreference {
+  id       String           @id @default(uuid())
+  userId   String
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  kind     NotificationKind
+  email    Boolean          @default(false)
+  inApp    Boolean          @default(true)
+
+  updatedAt DateTime        @default(now()) @updatedAt
+
+  // VISITOR(1) — this is your own row and belongs to no workspace, so standing
+  // in one has nothing to say about it. The policy is what confines it, and it
+  // names `userId` on create rather than defaulting the column: a create policy
+  // is checked BEFORE a default is stamped, so `@default(auth().id)` here would
+  // grade an absent column and admit everybody.
+  @@gate("1")
+  @@allow('all', userId == auth().id)
+  @@unique([userId, kind])
+  @@index([userId])
+
+  // @@tenant(none) — a person is one person in every workspace, and this row
+  // has no workspace column to scope by
   @@tenant(none)
 }

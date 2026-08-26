@@ -3,13 +3,14 @@
 // app.conduit is typed via @frontierjs/conduit's module augmentation.
 // app.jobs   is typed via @frontierjs/caravan's duck-typed CaravanInstance.
 
-import type { App, DatabaseClient, ILogger } from '@frontierjs/junction'
+import type { App, ILogger } from '@frontierjs/junction'
 import type { BasecampDb } from './core/db.ts'
 import type { CaravanInstance } from '@frontierjs/caravan'
 
-// ─── Basecamp infra interfaces ─────────────────────────────────────────────────
+// ─── Provider interfaces ──────────────────────────────────────────────────────
 // Junction covers: cache, events, scheduler, workers, filestorage, mail, ai
-// Basecamp adds 8 more infrastructure-control-plane-specific services.
+// Basecamp speaks to 8 more — self-hosted appliances, each a party outside
+// the app in the sense FJS-D06 rules the word.
 // (IQueue is gone — replaced by app.jobs via Caravan)
 
 export interface ISecrets {
@@ -68,9 +69,9 @@ export interface IIntegrations {
   }): Promise<unknown>
 }
 
-// ─── Infra container ──────────────────────────────────────────────────────
+// ─── Provider container ───────────────────────────────────────────────────
 
-export interface BasecampInfra {
+export interface BasecampProviders {
   secrets:       ISecrets
   flags:         IFlags
   search:        ISearch
@@ -87,12 +88,16 @@ export interface BasecampInfra {
 // app.jobs    is added explicitly here (Caravan uses duck-typing).
 
 export interface BasecampApp extends App {
-  db:     DatabaseClient       // Junction's database client (db.db = raw bun:sqlite)
   // THE Data boundary — the Litestone client. Services normally use the
   // caller-scoped copy on ctx.locals.db; `app.data` is the unscoped root, for
   // jobs and for the outpost paths that have no session to scope to.
-  data:   BasecampDb
-  infra:  BasecampInfra
-  logger: ILogger
-  jobs:   CaravanInstance      // durable job queue — replaces IQueue stub
+  data:      BasecampDb
+  // The raw bun:sqlite handle, for the two callers that want a Database and
+  // not an ORM. `app.db` is Junction's own and is the Litestone client this
+  // app passed to createApp — nothing here reads it, and nothing should:
+  // `data` is the name for that.
+  sqlite:    import('bun:sqlite').Database
+  providers: BasecampProviders
+  logger:    ILogger
+  jobs:      CaravanInstance   // durable job queue — replaces IQueue stub
 }

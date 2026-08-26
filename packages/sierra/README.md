@@ -307,6 +307,17 @@ Router-owned fields — these are reserved, and the scanner warns if frontmatter
 `page` replaced eight separate signals (`params`, `activeRoute`, `meta`, `data`, …). The
 old names are gone.
 
+**`title` is NOT one of them, and it does two jobs.** It stays an ordinary
+frontmatter key spread onto `page`, so `{page.title}` renders in a heading as
+every example here shows — and the router also writes it to `document.title` on
+every navigation, which is the tab, the bookmark, the history entry and what a
+screen reader announces on arrival. The sources are the two the static target
+reads, in the same order: `head({ params, data, url })` off the route's `.meta.js`
+companion first, then frontmatter, then whatever `index.html` booted with for a
+route that declares neither. Nothing is templated and no site name is appended —
+the static half composes neither, and an app wanting `Page · Acme` says so in
+`head()`, the one place that can see both.
+
 ---
 
 ## Navigation API
@@ -482,7 +493,32 @@ around:enter → before → [network call] → after → around:exit
                            error
 ```
 
-Returns `{ service, store, stale, make, load, fields, relations, gate, can, validate, normalize, coerce, context, hooks }`.
+Returns `{ service, store, stale, make, load, save, fields, relations, gate, can, validate, normalize, coerce, context, hooks }`.
+
+**A Resource is the model's whole client-side surface** (`FJS-D114`) — the store, the
+verbs, the reads it is asked for, and its default form. Three of those are worth naming:
+
+```js
+export const leads = createResource('leads', {
+  detailQuery:  { directives: { populate: ['company'] } },   // what get(id) asks for
+  optionsQuery: { directives: { orderBy: 'name', limit: 500 } },  // what a picker asks for
+})
+
+await leads.save(record)                     // create — the record has no id
+await leads.save(row)                        // patch  — it has one
+await leads.save(row, { mode: 'create' })    // force it
+```
+
+`save()` is **the one owner of the write**. `auto` decides off the model's OWN id field,
+which is why the decision lives here and not in a component: a caller answering it with
+the literal `id` on a model keyed by something else creates a duplicate row while looking
+like an edit. `upsert` is an alias of `auto`, not a fourth thing. `<Form {resource} />`
+calls exactly this, and everything the pipeline does — coercion, blank-stripping,
+validation, the `@version` this screen read, the resource's own hooks — happens on the way
+through.
+
+Both declared reads are `{ query, directives }`. It is `detailQuery` rather than plain
+`query` because `query` means FILTERS at every other boundary here (Invariant 10).
 
 **Return shapes — read this before `.map()`.** The service methods are a pass-through of
 Junction's browser client, and Junction's envelope rule applies unchanged: a list keeps
@@ -842,6 +878,43 @@ SPA.
 > does fail, the summary still reports "no route declares `render: static`", which is
 > misleading — read the `prerender:` warning above it.
 
+**`static/` is a SURFACE too, and it is `site/`** — a peer of `api/` and `web/`,
+never a second config inside the SPA (Invariant 3, `FJS-D127`). Its build
+prerenders and checks what it may publish, its tests run against FILES rather
+than a running app, and its release is a bucket with no application server behind
+it. The fourth answer is what makes folding it in a defect rather than a
+preference: **one Vite root is one `dist/`**, so a static site inside `web/` lands
+inside the SPA's output, and `vite build` empties `outDir` — the SPA's build
+deletes the site and says nothing. `fli make:site` writes the surface;
+`fli check`'s `app-layout` reports a `target: 'static'` config found inside
+another one.
+
+```
+site/                         ← beside api/ and web/, never inside either
+  config/
+    vite.config.js            ← the Vite root is site/, port 8600
+    sierra.config.js          ← target: 'static', plus `db` and `document`
+  index.html                  ← the DEV shell; a built page never uses it
+  src/
+    main.js                   ← the dev entry — routes served as an app
+    routes/                   ← file-tree routes, the same convention as web/
+    islands/                  ← the only JavaScript a prerendered page runs
+  test/                       ← what proves the BUILD: files, not a running app
+  deploy/                     ← serve.js + Dockerfile — the site origin
+  dist/                       ← one index.html per route, plus island chunks
+```
+
+**Dev is an SPA and the build is files.** `target: 'static'` uses the SPA's Vite
+config, so `vite dev` on the surface serves the routes client-routed — that is the
+writing loop. Everything that makes the target what it is happens in
+`closeBundle`, so a change to a `load()` or to frontmatter is proved by building.
+
+**`sierra site --serve`** is the origin the surface deploys with, and a drive
+should point at it rather than a `createServer` of its own: it resolves a
+directory to its `index.html`, revalidates HTML while leaving hashed assets
+immutable, and serves the site's own `404.html` with a 404 status. It sends no
+CORS, deliberately — this origin serves documents a browser navigates to.
+
 **`widget`** — an embeddable script for a page this app does not own. One `.mesa` file
 in `src/Embeds/` becomes one self-contained IIFE: the component, the Mesa runtime and
 the CSS in a single file a host page loads with one `<script src>` and nothing else.
@@ -1032,7 +1105,7 @@ Runs automatically after `vite build`:
 - **Error overlay.** Runtime errors are forwarded to an in-page overlay and the terminal.
   `load()` failures are excluded — they are data errors, and the page renders `page.error`.
 - **Devtools toolbar.** Injected in dev only. It connects over WebSocket to Junction's
-  devtools plugin (`app.configure(devtools({ port: 4000 }))`) and shows requests, events,
+  devtools plugin (`app.configure(devtools())`, port 8503) and shows requests, events,
   logs, connections and an N+1 waterfall. Zero production bundle cost.
 - **Build warnings.** Unexported snippets, frontmatter shadowing a reserved `page` field,
   and duplicate snippet/layout-prop names.
@@ -1126,6 +1199,8 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 | `.../analytics` | `initAnalytics`, `track` |
 | `.../devtools` | `initToolbar` |
 | `.../postbuild` | `runPostBuild` |
+| `.../site/serve` | `serveSite` — the prerendered-site origin |
+| `.../widget/serve` | `serveWidgets` — the widget origin |
 | `.../components/RouterView` | the router outlet component |
 
 ---

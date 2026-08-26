@@ -43,6 +43,7 @@
 // ============================================================
 
 import { spawnSync }                       from 'node:child_process'
+import { createRequire }                   from 'node:module'
 import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs'
 import { join, dirname, relative }         from 'node:path'
 import { fileURLToPath }                   from 'node:url'
@@ -106,6 +107,7 @@ function main() {
     access()
     coverage()
     registry()
+    advisories()
     scaffold()
     typecheck()
   }
@@ -271,6 +273,152 @@ function sourceFilesUnder(dir) {
     else if (/\.(js|mjs|ts)$/.test(entry.name)) out.push(full)
   }
   return out
+}
+
+// ─── phase 8 · advisories ───────────────────────────────────────────────────
+// Dependency posture, decided the way everything else here is decided: a phase,
+// not a bot (`IDEAS/tooling-decisions.md` 5). `fli npm:audit` has existed as a
+// command for months and nothing ran it on any schedule; an external bot would
+// have been this project's first check that cannot run on a laptop.
+//
+// **It is a comparison rather than a scan, which is the whole of its value.**
+// `bun audit` answers what is ADVISED against, and almost all of it is dev
+// tooling — a vitest advisory is not something an app installing this framework
+// can be hurt by. What matters is whether an advised package is reachable from a
+// PUBLISHED package's runtime `dependencies`, because that is the set every app
+// installs. So the closure is walked from each publishable package's own
+// directory, resolving the way node resolves — bun installs into `.bun/` with
+// symlinks, so a path guess finds nothing and would report every advisory as
+// dev-only.
+//
+// Its first run found `packages/mesa` declaring `happy-dom` as a runtime
+// dependency, which carries two CRITICAL advisories, so every app installing
+// mesa installs it. That is the class this exists for and no scan would have
+// separated it from the eleven that do not ship.
+//
+// A shipping advisory FAILS; a dev-only one is a note. `bun audit` needs the
+// network, so no answer is a named skip and `FJS_CI_REQUIRE_AUDIT=1` makes that
+// skip fatal — a check that quietly stops running is worse than one nobody
+// wrote. An advisory that is known and accepted is a named entry with a reason
+// under `knownAdvisories`, like every other allowance here.
+
+function advisories() {
+  const from = phase('advisories')
+
+  const r = spawnSync('bun', ['audit', '--json'], {
+    cwd: ROOT, encoding: 'utf8', shell: false, timeout: 120_000, maxBuffer: MAX_BUFFER,
+  })
+
+  let report = null
+  try { report = JSON.parse((r.stdout ?? '').slice((r.stdout ?? '').indexOf('{'))) } catch { /* not JSON */ }
+
+  if (!report || typeof report !== 'object') {
+    const why = r.error ? `bun audit did not run — ${r.error.message}` : 'no answer from the advisory database'
+    if (process.env.FJS_CI_REQUIRE_AUDIT === '1') fail(`advisories phase skipped and FJS_CI_REQUIRE_AUDIT=1 — ${why}`)
+    else {
+      note(`advisories phase SKIPPED — ${why}. Set FJS_CI_REQUIRE_AUDIT=1 to make this a failure.`)
+      warn(`skipped — ${why}`)
+    }
+    return
+  }
+
+  const advised = Object.entries(report)
+  if (!advised.length) { ok('nothing advised against'); return }
+
+  const ships   = runtimeClosure()
+  const known   = allowances.knownAdvisories ?? {}
+  const worst   = list => list.map(a => a.severity).sort(bySeverity)[0] ?? 'unknown'
+  const shipping = [], devOnly = []
+
+  for (const [name, list] of advised) (ships.has(name) ? shipping : devOnly).push([name, list])
+
+  for (const [name, list] of shipping) {
+    // The advisory names a PACKAGE; the closure resolved a VERSION. Both are
+    // printed and neither is compared, because a range parser written here
+    // would be a security judgement made by a regex — and the two numbers side
+    // by side settle it for a reader in one line. A name installed twice (a
+    // current copy at runtime, an old one for a dev tool) is exactly the case
+    // that needs a person.
+    const at = ships.get(name)
+    const line = `${name}@${at ?? '?'} — ${list.length} advisory(ies), worst ${worst(list)}: ${list[0].title}`
+    if (name in known) { note(`${name}@${at} advised and shipping — known: ${known[name]}`); warn(`${name} (known)`) }
+    else fail(
+      `${line}\n` +
+      `      Vulnerable per the advisory: ${list.map(a => a.vulnerable_versions).join(' · ')}\n` +
+      `      The runtime copy resolves to ${at}, and it is reachable from a PUBLISHED package's\n` +
+      `      dependencies, so every app that installs this framework installs it. Upgrade it, move\n` +
+      `      it to devDependencies if nothing at runtime needs it, or name it under knownAdvisories\n` +
+      `      in scripts/ci-allowances.json with the reason. ${list[0].url}`
+    )
+  }
+
+  if (devOnly.length) {
+    const counts = {}
+    for (const [, list] of devOnly) for (const a of list) counts[a.severity] = (counts[a.severity] ?? 0) + 1
+    const summary = Object.entries(counts).sort((a, b) => bySeverity(a[0], b[0]))
+      .map(([sev, n]) => `${n} ${sev}`).join(', ')
+    note(`${devOnly.length} advised package(s) reach no published runtime dependency (${summary}): ` +
+         devOnly.map(([n]) => n).join(', '))
+  }
+
+  // The count that matters is how many SHIP, and a known one still ships — a
+  // summary that says "none" over three allowances is the phase lying about the
+  // thing it exists to report.
+  if (clean(from)) {
+    const knownShipping = shipping.length
+    ok(`${advised.length} advised · ${knownShipping} reach a published runtime dependency` +
+       `${knownShipping ? ' (all known)' : ''} · ${devOnly.length} dev-only`)
+  }
+}
+
+const SEVERITY = ['critical', 'high', 'moderate', 'low', 'info']
+const bySeverity = (a, b) => SEVERITY.indexOf(a) - SEVERITY.indexOf(b)
+
+/**
+ * Every package reachable from a publishable package's runtime `dependencies`.
+ *
+ * Resolved the way node resolves, from the dependent's own directory: bun
+ * installs into `node_modules/.bun/<name>@<version>/` and links, so the root
+ * `node_modules` holds almost nothing and a path guess answers an empty set —
+ * which would report every advisory as dev-only and make the phase useless
+ * while looking like it passed.
+ *
+ * A workspace sibling is walked THROUGH rather than counted: `@frontierjs/mesa`
+ * is not somebody else's advisory surface, but what it depends on is.
+ *
+ * Answers name → resolved VERSION, because an advisory names a package and a
+ * package can be installed twice — a current copy at runtime and an old one for
+ * some dev tool. Without the version the phase reports the second as though it
+ * were the first.
+ */
+function runtimeClosure() {
+  const names = new Map()
+  const seen  = new Set()
+
+  const walk = (name, fromDir, depth) => {
+    if (depth > 10) return
+    let dir = null
+    try {
+      const req = createRequire(join(fromDir, 'package.json'))
+      dir = dirname(req.resolve(`${name}/package.json`))
+    } catch { return }              // not installed, or no package.json export
+    if (seen.has(dir)) return
+    seen.add(dir)
+
+    let manifest = null
+    try { manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch { return }
+    if (!name.startsWith('@frontierjs/')) names.set(name, manifest.version ?? 'unknown')
+    for (const dep of Object.keys(manifest.dependencies ?? {})) walk(dep, dir, depth + 1)
+  }
+
+  for (const rel of workspaceDirs()) {
+    const dir = join(ROOT, rel)
+    let manifest = null
+    try { manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch { continue }
+    if (manifest.private) continue
+    for (const dep of Object.keys(manifest.dependencies ?? {})) walk(dep, dir, 0)
+  }
+  return names
 }
 
 // ─── phase 2 · structure ────────────────────────────────────
@@ -516,11 +664,16 @@ function access() {
     }
     if (result.verdict === 'unchanged') continue
 
-    const mark = result.verdict === 'narrows' ? ok : warn
+    const mark = result.verdict === 'narrows' || result.verdict === 'new' ? ok : warn
     mark(`${label} — access ${result.verdict}: ` +
-         `${result.counts.widens} widen · ${result.counts.unknown} undecidable · ${result.counts.narrows} narrow`)
+         `${result.counts.widens} widen · ${result.counts.unknown} undecidable · ${result.counts.narrows} narrow` +
+         (result.counts.new ? ` · ${result.counts.new} new` : ''))
 
-    for (const f of result.findings) console.log(`      ${f.access.padEnd(8)} ${f.subject} — ${f.detail}`)
+    // The access wording where the finding carries one: a new model's deploy
+    // sentence is `N-1 never reads it`, and what it declares about access is
+    // the half this phase exists to print.
+    for (const f of result.findings)
+      console.log(`      ${f.access.padEnd(8)} ${f.subject} — ${f.accessDetail ?? f.detail}`)
   }
 
   // Said out loud rather than inferred from silence: zero apps compared and zero

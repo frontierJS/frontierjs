@@ -1,6 +1,6 @@
 # @frontierjs/ui
 
-Mesa components over [`@frontierjs/css`](../css). 65 components across forms,
+Mesa components over [`@frontierjs/css`](../css). 69 components across forms,
 display, layout, overlay and feedback.
 
 ```bash
@@ -97,23 +97,48 @@ The old six-value `variant` conflated the two, which is why `outline` and
 
 **forms** — `Form` `Button` `Field` `Fieldset` `Label` `Input` `Textarea`
 `Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Combobox`
-`MultiSelect` `DatePicker` `DateTimeInput` `FileUpload`
+`MultiSelect` `DatePicker` `DateTimeInput` `JsonInput` `FileUpload`
 
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`
 `Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton`
 `Avatar` `AvatarGroup` `Stat` `StatCard` `Table` `Bar` `Sparkline`
-`AccountStatus`
+`AccountStatus` `Json` (read, or `editable`)
 
 **layout** — `Card` `Accordion` `AccordionItem` `Tabs` `TabList` `Tab` `TabPanel`
 
 **overlay** — `Modal` `Drawer` `Popover` `Tooltip` `DropdownMenu`
 `DropdownItem` `DropdownLabel` `DropdownSeparator` `CommandPalette`
-`ConfirmationPopover`
+`ConfirmationPopover` `ConfirmPanel` `ConfirmProvider`
 
 **feedback** — `Alert` `AlertProvider` `Toast` `Toaster` `Progress` `Spinner`
 `Skeleton`
 
 **stores** — `toastStore` `alertStore` `commandPaletteStore`
+
+## A destructive action confirms itself
+
+Mount `<ConfirmProvider />` once near the root, beside `<Toaster />`. After that
+any element asks for a confirmation by writing an attribute — no wiring, no
+component, and it works on an element this kit does not own:
+
+```html
+<button class="btn danger" data-confirm="Delete this order?"
+        on:click={() => remove(order)}>Delete</button>
+
+<a href="/leave/" data-confirm data-confirm-title="Leave the workspace?"
+   data-confirm-label="Leave">Leave</a>
+```
+
+One listener, at the document, in capture phase — so the guarded handler does not
+run while the question is open. Confirming re-fires the click, which covers a
+delegated handler, a form submit and an anchor with one mechanism. Wording comes
+off the element (`data-confirm-title`, `data-confirm-label`, `data-confirm-tone`);
+a valueless `data-confirm` takes the provider's defaults, which is where an app
+sets its own house wording once.
+
+`ConfirmationPopover` is the same panel with a trigger of its own, for a
+confirmation a component wants to own. Both render `ConfirmPanel`, so there is one
+confirmation in this kit and not two (`FJS-D115`).
 
 There is no `themeStore` here. A theme in `@frontierjs/css` is a class of
 inheriting tokens, and applying it before first paint needs a script in
@@ -346,7 +371,7 @@ Four suites, and the split matters:
   perfectly.
 - **`test/attributes.mjs`** — every component forwards its caller's attributes,
   the caller's value replaces the component's own, and `id` lands wherever it
-  is not a declared prop. Renders all 65; the five it cannot render are named
+  is not a declared prop. Renders all 69; the ones it cannot render are named
   with the reason rather than filtered out, so nothing goes quiet. 55 of 64
   components dropped every undeclared attribute before it existed.
 - **`test/form.mjs`** — `<Form>` and the form context. Asserts the claim that

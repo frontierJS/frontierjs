@@ -1,5 +1,5 @@
 /*
- * $context — content a block creates later still finds the provider.
+ * $.context — content a block creates later still finds the provider.
  *
  * The context stack is setup-time state, so a block that instantiates its
  * content after the provider's frame has unwound would read `undefined` — and
@@ -7,7 +7,7 @@
  * asserted on the rendered text rather than on a thrown error. It broke every
  * compound component behind a conditional (`FJS-311`).
  */
-export const name = '$context'
+export const name = '$.context'
 export const covers = ['context-provide', 'context-late-blocks']
 
 export async function run(t) {

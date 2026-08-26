@@ -1,0 +1,47 @@
+<!--
+  The theme swatches — the one interactive thing in the site shell, and
+  therefore the one thing in it that has to be an island.
+
+  A prerendered page ships no JavaScript, so the hand-written site's approach
+  (a <script> at the bottom of every page, copied thirteen times) has nowhere
+  to run. This is the whole of that script, once: Sierra owns the persistence
+  and the class on <html>, and this only says which name was clicked.
+-->
+<script>
+  import { theme, setTheme } from '@frontierjs/sierra/theme'
+
+  // theme is a plain object, not a signal — a path watch is what makes it
+  // reactive here (Mesa VISION §4.1).
+  $: theme.value
+
+  const SWATCHES = [
+    { name: 'theme-default',  label: 'Default',  swatch: '#0d83dd' },
+    { name: 'theme-sunset',   label: 'Sunset',   swatch: '#e07a3f' },
+    { name: 'theme-forest',   label: 'Forest',   swatch: '#2f7d4f' },
+    { name: 'theme-midnight', label: 'Midnight', swatch: '#3b4a6b' },
+    { name: 'theme-dark',     label: 'Dark',     swatch: '#1c1b18' },
+    { name: 'theme-elite',    label: 'Elite',    swatch: '#8b6f2e' },
+  ]
+</script>
+
+<div class="swatches" role="group" aria-label="Theme">
+  {#each SWATCHES as s}
+    <button
+      class="swatch"
+      title={s.label}
+      aria-label={s.label}
+      aria-pressed={theme.value === s.name}
+      style="background:{s.swatch}"
+      on:click={() => setTheme(s.name)}
+    ></button>
+  {/each}
+</div>
+
+<style>
+  .swatches { display: flex; gap: .3rem; }
+  .swatch {
+    width: 1.1rem; height: 1.1rem; border-radius: 50%;
+    border: 1px solid var(--rule-strong); cursor: pointer; padding: 0;
+  }
+  .swatch[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }
+</style>

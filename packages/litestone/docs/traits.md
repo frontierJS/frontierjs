@@ -215,6 +215,38 @@ ZenStack v3 has a similar feature called `type X / model M with X`. Litestone's 
 
 Litestone reserves the `type` keyword for typed JSON columns (`Json @type(Address)`) — a different feature, shipped separately. See [json-types.md](./json-types.md).
 
+## `extend model` — the other direction
+
+A trait is opted **into**, by the model. That requires the model's author to have known about it, which is exactly what is not true of a model a package shipped.
+
+`@frontierjs/auth` ships `Credential`, `Session`, `Verification` and `OauthFlow`. It owns their columns. What it cannot know is where those rows sit in *your* schema: the relation back to your own `User`, whether you audit them, and — under row tenancy — that they span tenants rather than belonging to one. So an app imports the file and says the rest:
+
+```
+import "@frontierjs/auth/db/auth.lite"
+
+extend model Session {
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@tenant(none)
+  @@log(audit)
+}
+```
+
+Before this the only way to say it was to paste the four models in and edit them, and a copy stops being the package's the first time either side moves. Basecamp's did: it carried `@guarded(all)` where the package writes `@secret`, so every OAuth token it stored was in plain text — and its own test suite was green throughout, because nothing anywhere compares a copy to its original.
+
+### The rules
+
+An extend **adds**. Three things are refused by name rather than resolved, and each is a real mistake that otherwise looks like a working schema:
+
+| Refused | Why |
+| --- | --- |
+| an extend naming no model | a misspelling, or an import that did not resolve, does nothing at all — forever, and silently |
+| a field the model already declares | that is editing a package's column, which is the copy this feature removes |
+| a second `@@gate`, `@@db`, `@@softDelete`… | a single-valued attribute twice is two answers, not a narrowing |
+
+`@@allow`, `@@deny`, `@@index`, `@@unique`, `@@check` and `@@trait` are repeatable and compose as they do anywhere else — an app adding an `@@allow` to an imported model widens it exactly as if the line had been written in the model's own body.
+
+Order does not matter. Extends are collected across the whole import tree and applied once it is merged, so a file may extend a model it is imported *by*. They are applied **before** traits, so an extend may carry a `@@trait(T)` of its own.
+
 ## See also
 
 - [schema.md](./schema.md) — full schema language reference

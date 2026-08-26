@@ -1,0 +1,20 @@
+<script module>
+  // web/src/resources/PaymentEvent.mesa — the Resource layer.
+  //
+  // `model:` is stated. `payment-events` singularises to `payment-event`, and
+  // the model is `PaymentEvent` — the hyphenated URL and the PascalCase model
+  // are the same two words in two spellings, and a resolver that guessed
+  // between them would be a fourth rule. A miss warns and degrades to a bare
+  // `make()`, so the symptom would be a screen with no field metadata rather
+  // than an error, which is exactly the kind of quiet that is worth one line to
+  // avoid.
+  //
+  // No markup half, and here the model says so most plainly of the three:
+  // `@@gate("5.8.9.9")` puts update and delete at 9 — LOCKED, which
+  // `asSystem()` does not pass either. This is the provider's own account of
+  // what it told the shop, and the only thing a person does with it is read it.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const paymentEvents = createResource('payment-events', { model: 'PaymentEvent' })
+</script>

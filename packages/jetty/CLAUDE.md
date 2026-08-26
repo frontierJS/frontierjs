@@ -92,14 +92,37 @@ It is the only place that scheme is written down.
   `test/phase3.test.js` reads `AUTO_EVENT_MAP` out of Junction's source rather
   than restating it — a vocabulary asserted only against itself is how this
   drifted, and the old test PINNED the bug instead of catching it.
-- **Nothing here can talk to a real Junction yet** (`FJS-279`). `default-adapter.js`
-  says it is a placeholder, and the gap is wider than that: its envelope
-  (`{ kind: 'call' | 'subscribe' | 'event' }`) is not Junction's
-  (`{ type: 'event', event, data }` / `service_call`), and Junction's browser
-  client exposes no `subscribe(channel)` for `adapter.js`'s contract to bind to.
-  So the event-name fix above is correct and still unobservable end to end.
+- **The real adapter is `junction-adapter.js`, and `default-adapter.js` is still
+  a placeholder.** `createJunctionAdapter` (`@frontierjs/jetty/junction`) wraps
+  `@frontierjs/junction/client`, so there is one implementation of the
+  transport, the token, the reconnect and the result envelope rather than a
+  second written to the same protocol. Junction is an OPTIONAL peer, so the
+  import is dynamic. Three things about it are not obvious: **`url` is spelled
+  differently by the two packages** (jetty's config field has always been
+  `wss://`, the client takes an http origin and derives the socket, and handing
+  one over unchanged builds `wsss://`); **a subscription is a FILTER**, because
+  membership is the server's and what arrives is `client.on('event', name)`;
+  and **`isConnected()` is about the client, not the socket** — every call falls
+  back to HTTP, so answering `false` mid-reconnect would stop Harbor hydrating a
+  session it can hydrate. `fetchSchema()` answers null and says why.
+- **Sign-in is `adapter.auth`, not `call('auth', …)`.** Junction has no service
+  by that name — `@frontierjs/auth` registers `account`, `sessions` and
+  `api-keys`, and establishing a session is a ROUTE (`FJS-D20`) — so the
+  pseudo-service the placeholder invented would shadow the methods of an app
+  that has one. `makeAuthFlow` prefers the block and falls back to the call.
+- **A pushed record is upserted whatever it is** (`FJS-493`). `store.upsert` for
+  anything that is not a `removed`, so a row that has LEFT the loaded filter
+  stays in the list — Sierra answers this with `matchesQuery`, which is pure and
+  lives in a module jetty may not import. `example/extension/`'s dock filters on
+  render and says so.
 
 ## Proving a change
 
 `bun run test` (all ten phases), plus `bun run build:fixture` and loading the
 result — the failure above is exactly the kind a build that "succeeds" hides.
+
+**And `example`: `verify:extension`**, which is the only place this package
+talks to a real Junction and the only place an extension is loaded into a
+browser profile. A fake Junction here is the mock that hid `FJS-279` for as long
+as it existed, so the adapter's WIRE behaviour is proved there and only its
+shape is asserted in `test/phase2.test.js`.

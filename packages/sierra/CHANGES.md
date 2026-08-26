@@ -1,4 +1,559 @@
-# Changes
+# Changes — @frontierjs/sierra
+
+## 2026-08-26 — an edit form was sending the server its own columns back (`FJS-526`)
+
+`@system`, `@generated`, `@computed`, `@from`, `@version` and a tenancy stamp
+reach the browser as `readOnly`. Two things read that already: a generated form
+does not offer the control, and `make()` does not seed the value. Neither covers
+an EDIT form — it is handed a row the SERVER wrote, carrying every column the
+caller could read, and writes the whole record back. The Data boundary then
+refuses `@system` **by name**, correctly, and the person is shown a 403 about a
+column that is not on their screen.
+
+`stripReadOnly(fields, data, { keep })` runs first in `_call`'s create/patch
+pipeline, so nothing downstream coerces, blanks or validates a value that is not
+going to be sent. **It takes a keep list rather than dropping every read-only
+key**, because the `@version` column is `readOnly` and is the one the server
+requires back — that is the reason the rule cannot be spelled *delete every
+readOnly key*. A key with no rule behind it is left alone.
+
+Three of the thirteen tests go through `createResource().save()` rather than the
+pure function: a refactor that dropped the call would leave the other ten green
+and put the 403 straight back.
+
+## 2026-08-25 — `resource.record(id)`, and what a live row must NOT move (`FJS-518`, `FJS-D138`)
+
+A row is live now: `record(id)` is a view of ONE over the nodes a list is a
+view over, so a detail screen moves when anybody else writes the row. The
+resource passes its `model` to `client.resource()` — Junction cannot derive it,
+and without it two services over one model are two rows.
+
+**The first read goes through this resource's own `_call('get')`**, so its
+hooks run, its coercion applies and the `@version` it returns is remembered;
+Junction keeps only the rule about *when* to read, which is *when nothing has
+read this row yet*. A list that already loaded the row costs the detail screen
+no request at all.
+
+**A push moves the value and does not move the remembered version.** That is
+`FJS-341` restated: a live store answering with a revision nobody on the screen
+had read won the race `@version` exists to lose, and making the row live is
+exactly the change that could bring it back. The node is the synced truth; the
+view is what this screen READ; a draft is in neither. `tests/resource-record.test.js`
+asserts it against Junction's real client rather than a stand-in — a fake would
+not have nodes at all.
+
+**`resource.mutate(id, intent, run)`** is the optimistic write, and
+`save(data, { optimistic: true })` delegates to it — one mechanism, two doors.
+`run` defaults to a patch of the intent through this resource's own pipeline,
+so the second argument is for a transition or a custom method, where the call
+is not a patch and the intent is what the caller knows the move will do.
+
+**A create is refused by name**: there is no id, so there is no row to show the
+change against, and inventing a temporary one is a different feature with its
+own question — what every view holding that id does when the real one arrives.
+
+The version rule holds through it: an overlay is a submitted intent, not a
+read, so nothing about an optimistic value reaches `_versions`. That is
+`FJS-341` in the one place it could plausibly come back.
+
+Green: 1140 tests, typecheck clean.
+
+## 2026-08-25 — `transitionsAt` is the gate half, and now says so
+
+`db.<model>.transitions(row)` grades a row policy as well as the gate
+(`FJS-495`). Nothing here can: `x-transitions` carries a gate and not a
+predicate, and a browser has no policy engine — so this half answers
+`allowed: true` for a move an `@@allow('update', …)` refuses, and the boundary
+403s when it is pressed.
+
+That is the affordance contract rather than a gap — unknown is permissive, the
+server refuses regardless, and a button that gets refused is the better failure
+than one that is missing when it would have worked. What changed is that the
+docblock said *mirrors litestone's `transitions(row)` field for field*, which
+stopped being true. `refusedBy` is carried so the shapes still match, `'gate'`
+or `null` where the server may also say `'policy'`, and a test asserts this half
+never claims the other one.
+
+## 2026-08-25 — a page that cannot state what it is no longer just disappears
+
+`FJS-509`. 1116 tests, 0 fail.
+
+`parseFrontmatter` caught a YAML error and returned `{}` under a comment saying
+*Sierra will emit a build warning separately*. Nothing did. `build-tree` then
+wrapped the same call in `.catch(() => ({}))`, so there were two swallows on one
+path.
+
+On a static target `{}` means no `render: static`, so the route is not
+prerendered — and it does not reach `skipped` either, because it never claimed
+to be static. The page is absent, the count looks plausible, the build exits 0.
+
+An unquoted colon is enough:
+
+    description: Laravel is the framework FrontierJS most resembles: what maps
+
+Two of five pages vanished that way porting the website, and the only symptom
+was two missing directories.
+
+`parseFrontmatter` returns the error beside the frontmatter now, and
+`readFrontmatter` throws with the file, the YAML message and its line. Thrown
+rather than warned, on `FJS-439`'s precedent: frontmatter is how a route says
+what it IS, so a block that will not parse has no correct reading — and a
+warning about a missing page scrolls past in the one build where it matters.
+
+## 2026-08-25 — a prerendered site's sitemap knows what it prerendered
+
+`FJS-508`. 1113 tests, 0 fail.
+
+`runPostBuild` fed the sitemap and the Speculation Rules `routeTable.indexed`,
+which excludes dynamic routes. That is right for an SPA — `/products/:slug/`
+stands for a set nothing can enumerate — and wrong for a static build, where
+`getStaticPaths()` named the set and the files are on disk.
+
+`example`'s storefront emitted 14 pages and wrote `sitemap.xml (4 URLs)`, with
+every product page missing: a catalogue invisible to the crawler it was
+prerendered for, and the build's own log calling it a success.
+
+`prerenderRoutes` reports the URLs it emitted — it is the only thing that knows
+them — and `runPostBuild` takes them as a fifth argument, `null` on an SPA.
+
+**The filter needed a second list, not a cleverer match.** `indexed` has already
+dropped the dynamic PATTERN, so asking whether `/products/:slug/` is indexed
+answers no for every page it produced, and the first attempt excluded exactly
+what it was meant to include. `routeTable.indexable` is the same draft and
+`robots: noindex` decision with only the dynamic exclusion left off — so a
+noindex page stays out whether it was prerendered or not, which is the half a
+looser match would have lost.
+
+`example`: 4 → 16 URLs.
+
+## 2026-08-25 — a static site's theme switcher actually switches
+
+`FJS-501`. 1109 tests, 0 fail. Three faults in one feature, each hiding the next,
+all of them silent.
+
+**The config never reached the browser.** `initTheme(config)` is called by
+`virtual:sierra`, which a prerendered page never loads — it ships HTML plus one
+chunk per island and nothing else. So the theme module kept `normalise({})`:
+`DEFAULT_THEMES` and key `theme`. An app declaring six themes had four refused
+by name, and the two that worked persisted under a key that the
+flash-prevention script *the same config block generated* does not read, so
+every reload reverted. The block is carried into the generated island entry
+now, which is the one place a static build can tell the browser what the app
+declared.
+
+**The script reached one page.** `injectThemeScript` wrote
+`join(outDir, 'index.html')` — the whole output of an SPA, and one page out of N
+on a target that emits one HTML file per route. It walks the directory.
+
+**The baked class was on the wrong element, and this is the one that made the
+feature useless.** `wrapDocument` could only put a class on `<body>` while the
+switcher writes `<html>`, so `<html class="theme-elite">` sat over
+`<body class="theme-default">` and every token both of them defined resolved to
+the baked one for the whole page. Measured: `--color-primary` moved on `<html>`
+and stayed `#0d83dd` on every element inside `<body>`, for all six themes, with
+no error anywhere — which is why the first two fixes read as *still broken*
+rather than as progress.
+
+`wrapDocument` takes `htmlClass`; the static build derives it from
+`theme.default` rather than asking an author for it, because an author writing
+it by hand writes it onto `<body>`, which is the one place it does not work.
+`default: 'system'` derives nothing on purpose — which half a visitor gets is
+the injected script's question, and baking either one is a guess a CDN caches.
+A `theme-*` class in `document.bodyClass` is warned about by name at build.
+
+`example/site` declares no theme block and its output is byte-identical.
+
+## 2026-08-24 — a hash with a hyphen in it is still a hash
+
+1099 tests, 0 fail. `FJS-484`. Both static servers decided *may this be cached
+forever* with `/-[A-Za-z0-9_]{8,}\.[a-z0-9]+$/`. Vite's hash is base64url and
+may contain a `-`, so `island-CatalogList-C_TQPJ-f.js` — a file `example`'s site
+build emitted — was read as an unhashed name and served `must-revalidate`.
+
+Quiet, and on the files a site is mostly made of. It surfaced only because
+`verify:site` reads the FIRST `.js` in the assets directory, and directory order
+changes when the files do, so which asset it graded was luck.
+
+Anchored on LENGTH now: a `-` exactly eight allowed characters before the
+extension. `my-file-name.js` is still refused, which is the direction that
+matters — a name wrongly called hashed is cached for a year and the only way
+back is to rename the file — and a build with a longer hash falls out and is
+revalidated, which is the safe way to be wrong.
+
+**It was written twice**, and both copies had it. `src/serve/hashed-asset.js` is
+the one owner, and it is the only thing the two servers share: a site's HTML
+revalidates and a widget's entry is `max-age=300`, because a host page's
+`<script src>` is written once and can never be updated.
+
+## 2026-08-24 — an OAuth refusal arrives in words, not as a token
+
+1101 tests, 0 fail (+4).
+
+`session.oauthError` has carried the code since the flow shipped, and a code is
+not something a person can read. The route that emits it is coarse on purpose —
+it refuses to say whether a state existed or an exchange failed, because that is
+an oracle for anyone who can reach the URL — so what reaches the browser is five
+tokens, and without a table here every app writes the same switch. This module
+exists because `example` and `basecamp` each wrote their own `session.js`, and
+five untranslated codes is where the next divergence starts.
+
+`session.oauthMessage` is the sentence; `OAUTH_ERRORS` is the table and
+`oauthErrorMessage(code)` the lookup. A code this build has never heard of gets
+a generic sentence rather than null: the API deploys separately from the app, so
+a code added on one side reaches a browser running the other, and *nothing at
+all on screen* is the failure this whole channel exists to fix.
+
+**Both fields, because `link_required` is not a failure.** The flow worked — an
+account already holds that address and a confirmation link has gone out — and an
+app rendering all five codes in one red alert tells that person their sign-in
+broke when the next step is in their inbox. The code stays beside the sentence
+so a screen can branch on it.
+
+
+## 2026-08-23 — the scanner plugin, run rather than restated
+
+1088 tests, 0 fail. Three defects in `checkStaticPaths` and its caller
+(`FJS-473`), one of which stopped `bun run dev:site` from starting at all.
+
+`buildStart` asked `this.environment?.mode !== 'serve'` whether it was a build.
+Vite 8 reports `dev` there for a dev server, so the test was true in both and
+every dev boot ran a check written for production only. It reads `command` off
+`configResolved` now — `serve` or `build`, which is the question.
+
+The check itself then threw `ReferenceError: warn is not defined`, because
+`warn` is a parameter of `runScan` and not of `checkStaticPaths`. And the
+refusal it exists to raise sat inside the `try` guarding the companion import:
+`error` is rollup's `this.error`, which throws, so the refusal was caught by its
+own guard and reported as *could not import companion* on a green build — the
+shape `FJS-439` had already found once. Only the import is guarded now, and the
+warning carries the cause, since a companion that will not import is almost
+always its own imports throwing rather than the file being absent.
+
+All three survived because `tests/static-paths.test.js` restates what the plugin
+does — scan, import, build the message by hand — so every assertion passed
+against a function nothing called. `tests/scanner-plugin.test.js` calls
+`buildStart` through a context that behaves like rollup's and asserts the three
+outcomes.
+
+## 2026-08-23 — the tab says which page you are on
+
+1085 tests, 0 fail. An SPA route's `title:` reaches `document.title`
+(`FJS-389`). `document.title` appeared nowhere in `src/` outside the
+prerenderer, so every route showed whatever `index.html` hardcoded — one string
+for all of `example`, one for all of basecamp — and a bookmark, a history entry
+and what a screen reader announces on arrival all named the app instead of the
+page. The worst shape is an app that prerenders AND hydrates, where the title is
+right on first paint and stale from the first client navigation.
+
+The router reads the SAME two sources the static target reads, in the same
+order: `head({ params, data, url })` off the route's companion, then
+frontmatter. Two decisions came with it and both are stated rather than
+defaulted. **No template and no site name is appended** — the static half
+composes neither, and two halves of one feature disagreeing about where a title
+comes from would be worse than the original bug; an app wanting `Page · Acme`
+says so in `head()`, the one place that can see both. **`title` stays an
+ordinary frontmatter key** rather than joining `PAGE_RESERVED`: every example in
+the docs renders `{page.title}` in a heading, and claiming the name would empty
+them.
+
+A route declaring none puts the DOCUMENT's own title back, not the previous
+page's. A `head()` that throws falls back to frontmatter and warns in dev, where
+the static build refuses to emit the page — here the page is already on screen,
+so refusing is not available and silence is not honest.
+
+## 2026-08-23 — the router reads the same query syntax Junction does
+
+1073 tests, 0 fail. Typecheck clean.
+
+`parseQueryParams` had its own `coerce()`, and it inferred with `Number(value)` —
+so `?sku=007` became the number 7, which is the guess this package's own widget
+props already refuse for `data-pid="007"`. Junction's transport meanwhile did not
+infer at all, so a filter typed into the URL bar and the same filter sent by the
+client meant different things and both answered a 200 (`FJS-450`, ruled as
+`FJS-D125`).
+
+Both boundaries read `@frontierjs/toolbelt/query` now. `buildUrl` writes with the
+same encoder, so a URL Sierra builds parses back as what was put in — `{ code:
+'5' }` is `?code="5"` and comes home a string, where `String(value)` made it the
+number 5. Brackets are left readable rather than percent-encoded, which is what
+every bracket-notation parser emits.
+
+Dropping an empty filter stays `buildUrl`'s own decision: a filter box nobody
+typed in should not add a parameter, which is not the same question as whether
+`null` can be sent.
+
+
+## 2026-08-23 — a prerendered site has an origin to be served from
+
+1073 tests, 17 of them new, 0 fail.
+
+`FJS-D127` made `site/` a surface. `sierra site --serve` and
+`@frontierjs/sierra/site/serve` are its origin — the module the generated
+`site/deploy/` runs and the one a drive points a browser at, so what is tested
+locally is what ships.
+
+Three answers a static host gives for free are the three a hand-rolled
+`createServer` in a harness forgets, and then the harness proves the site works
+under rules nothing in production applies:
+
+- **A directory index.** `trailingSlash: 'always'` emits `about/index.html` and
+  every link says `/about/`. Without it, every URL but the root is a 404 and the
+  build looks broken when it is not. A URL missing its slash resolves too.
+- **A cache answer per file kind.** HTML is revalidated — its URL is permanent
+  and its bytes are a build artefact — and only hashed assets are immutable.
+  Backwards, and a visitor is served last week's page for a year.
+- **The site's own `404.html`, with a 404 status.** A soft 404 is a page a
+  crawler indexes.
+
+It sends **no CORS**, which is deliberate and the opposite of `widget/serve.js`:
+this origin serves documents a browser navigates to, and the API is what a page's
+islands call.
+
+## 2026-08-23 — a widget's imported CSS reached its shadow root
+
+1056 tests, 0 fail. 25 browser assertions, 0 fail.
+
+`FJS-448`. `widgetCssPlugin` deletes Vite's `style.css` asset and swaps its text
+into the entry at a placeholder, so a widget ships as one file. `generateBundle`
+runs after minification and the matcher knew `"` and `'`; **esbuild writes
+backticks when it minifies**, which is the default and what every app ships. The
+asset was deleted, the swap missed, and the widget carried the literal
+`@sierra-widget-css` into its shadow root as a stylesheet.
+
+Only IMPORTED css was affected — a widget's own scoped `<style>` blocks go
+through Mesa's runtime, which is shadow-aware — so the widget looked styled and
+nothing said otherwise. It survived because the fixture builds with
+`minify: false`, for a good reason, which left the one working case as the only
+one under test.
+
+Three quote characters now, and the swap is **asserted**: the entry always
+carries the placeholder, so not finding one throws rather than shipping a widget
+whose stylesheet is a placeholder — the asset is already gone by then.
+
+## 2026-08-23 — the URL fragment survives
+
+1056 tests, 0 fail.
+
+Two defects in one parse, and the second was hiding behind the first.
+
+`FJS-447`: the boot navigation passed `pathname + search` and rewrote the
+address bar with `replace: true`, so **the fragment was erased on every direct
+load and every refresh**. `/docs/#install` became `/docs/`, did not scroll, and
+left the reader holding a URL that no longer says where they were. Clicking the
+same link inside the app carried it, so it failed only for the person who pasted
+one — and `scrollRestoration = 'manual'` is what makes it total, since the
+router has taken the browser's own handling of a fragment away.
+
+`FJS-446`: `_navigate` split the whole URL on `?` to find the search, so a
+fragment landed INSIDE it — `/leads/?status=open#top` was rewritten
+`?status=open#top#top`, and `page.query.status` came out as `open#top`, a filter
+with an anchor glued to it. Unreachable while the boot path dropped the hash.
+
+Found in `example`, by a widget handing a basket to the shop through
+`#h=<code>`: the code was gone before the screen could read it and the symptom
+was an empty basket with no error anywhere.
+
+## 2026-08-23 — every narrowing a value set applies now travels
+
+`FJS-430`. `options()` sent `$scope` for a declared scope and nothing for a
+declared `where`, and warned once per field that the picker was over-offering.
+A `where` mints a scope of its own in litestone now, so both arrive as names in
+`x-values.scopes` and go out as one `$scope` array. The warning is gone with the
+case it described.
+
+## 2026-08-23 — a prerender that threw fails the build
+
+1046 tests, 0 fail.
+
+`prerender` puts every reason a route produced no page on one `skipped` list:
+*route file not found*, *no paths to emit*, `load() threw`, `render failed`.
+Two of those are a page opting out and two are a broken build, and the caller
+printed them all as warnings and carried on — so a deploy shipped with a page
+missing and nothing red anywhere.
+
+Worse when it was the only static route: `written.length === 0` then fired the
+*no route declares `render: static`* message, blaming the frontmatter of a page
+that plainly declares it. The failing kinds throw now, naming every route and
+its reason (`FJS-439`).
+
+## 2026-08-23 — `toFieldErrors` is reachable
+
+1041 tests, 0 fail.
+
+`resource.js` re-exports it with the comment "so `sierra/junction` stays the
+one import for resource work", and `index.js`'s own export list dropped it
+along with `isStaleWrite`, `toConflict`, `STALE_WRITE_MESSAGE`, `buildVersion`
+and `matchesQuery`. `resource.fieldErrors(err)` reaches the same function,
+which is what hid it: the gap only shows for a screen with no resource to reach
+through — a form over a CUSTOM METHOD, which is most checkouts, and which
+`validateInput`'s `input:` exists to make possible. An app holding a 400 from
+one had to re-implement the unwrapping, three shapes deep because each hop
+wraps once (`FJS-429`).
+
+## 2026-08-23 — a litestone refusal reaches the control it names
+
+`FJS-436`. Two boundaries write a per-field refusal and they spell the field
+differently: junction's validator says `field`, litestone's `ValidationError`
+says `path: ['colour']`. `toFieldErrors` read the first only, so every entry
+from the second fell to the form-level message — a banner, away from the box it
+is about, with `<Form>` unable to mark it invalid.
+
+That is the wrong half to lose. Litestone carries every rule a browser cannot
+pre-check, because the check needs a query or a stored row: a value set, a
+`@@transitions` move, a soft-deleted `@unique`. The rules sierra CAN check
+itself are the ones that never reach this function.
+
+`_fieldOf` reads `field` first, then `path` — joined when nested, since no form
+field is named `address.city` and saying so beats reporting none. An empty path
+stays a whole-payload failure. 5 cases in `tests/field-errors-writer.test.js`,
+built against the real class rather than a literal.
+
+Found in a real browser: `example` refusing a value-set save through
+`resource.save()`, with the message arriving and the field gone.
+
+
+
+## 2026-08-22 — a `@values` column renders from its set
+
+1039 tests, 0 fail. 12 in `tests/value-sets.test.js`.
+
+The client half of `FJS-412`. `x-values` arrives on the rule as `rule.values`,
+and two branches read it.
+
+**`controlFor` asks the set before the foreign key.** A bound FK is both, and
+the set is the narrower answer — it carries the scope the list is narrowed by
+and the column a person reads, where the relation carries neither. Answered as a
+plain relation it would fetch the whole related table and offer rows the set
+excludes.
+
+The strength picks the control and the two weak ones pick the same one:
+`required` is a picker, `open` and `suggested` are a combobox with `allowNew`,
+because what separates those two is what the SERVER does with a new value and
+not what a caller may type. A bound array is a multiselect where an unbound one
+is still `json` — the schema stops describing an unbound array, and a bound one
+has a list behind it.
+
+**`resource.options()` sends the declared `@@scope` as a filter.** `$checkWhere`
+validates a `$scope`, so it survives junction's autoFilter and litestone applies
+it — which is what makes the offered list the same list the Data boundary will
+accept. A declared `where` cannot cross: it is SQL, and a browser may never send
+SQL. That set over-offers and says so once per field (`FJS-430`) rather than
+being discovered on save.
+
+## 2026-08-22 — the toolbar follows junction's console to 8503
+
+1039 tests, 0 fail.
+
+The devtools toolbar connects to junction's `devtools()` plugin, which moved off
+4000 and into the framework's reserved tooling block (`FJS-431`). Both defaults
+here follow it — the build plugin's injected config and `initToolbar`'s own
+fallback.
+
+The number is restated rather than imported: sierra cannot import junction, and
+neither depends on the CLI that assigns it. A toolbar pointed at the wrong port
+is ten failed WebSocket retries the browser writes itself and no page can
+suppress (`FJS-353`), so both sides name where the number comes from.
+
+
+## 2026-08-22 — a picker's display column is declared, and a guess says so
+
+1026 tests, 0 fail. 21 new across `tests/label-field.test.js` and
+`tests/resource-no-client.test.js`.
+
+`labelFieldFor` guessed from eight conventional column names, then the first
+plain string, then the id — and every step down that ladder was a worse answer
+given in silence. A `Person` with `firstName`/`lastName` labels every option
+*Ada, Ada, Ada* and looks like it worked (`FJS-392`).
+
+Two halves, separable. **The schema can say it** — `@@label(field)` arrives as
+`x-label-field` and is resolved once per resource onto `resource.labelField`, so
+a hand-written picker and a generated one ask the same owner. **And a guess says
+that it guessed** — `labelFieldInfo` answers `{field, source}` where
+`labelFieldFor` answered a bare name, and the two guessing tiers warn once per
+field, naming the model and the fix. The two upper tiers stay silent: a message
+that fires on every correct `name` column teaches everyone to skip it.
+
+**A declaration is not checked against the field rules, and must not be.** The
+case it exists for is a `@generated` full name, which is `readOnly` — the scan
+skips those by design — and absent from a create-mode registry altogether, while
+a picker reads `row[shown]` off a fetched row.
+
+Found while wiring it: `_emptyResource.options()` still answered a bare array
+after the envelope change, so the no-client fallback threw inside the render it
+exists to prevent.
+
+## 2026-08-22 — the control table answers `json` where the schema stops describing
+
+1005 tests, 0 fail.
+
+`controlFor` answered `{ control: null, reason: 'object — a Json column has no
+single control' }`, so `<Form>` warned about the column by name and left it off —
+the column existed, the API accepted it, and there was no way to edit it in an
+app that had not written a control of its own. It now answers
+`{ control: 'json' }`, which `@frontierjs/ui` binds to its new `JsonInput`.
+
+**A `Json` column is not `type: 'object'`, which is how the first cut of this
+shipped not working for the one column it was written for.** Litestone emits a
+`Json` field as `{}` — the empty schema, no `type` at all, because a JSON
+document may be any of the seven things JSON can hold — so a table waiting for
+`type: 'object'` never sees it. Every fixture in `form-fields.test.js` is typed
+out by hand and every one of them said `type: 'object'`, which is why the tests
+were green against a table that did nothing. There is now a case that derives
+its rules from litestone's own parser and emitter, and it is the one that
+matters.
+
+Two shapes are carved out of *no type*, because both look identical from the
+table and neither is a document:
+
+- **A `File` column.** It `$ref`s FileRef, which derefs to an ordinary object
+  with eight properties, so the json control briefly offered a textarea over a
+  storage key and a bucket. `x-litestone-file` is carried through
+  `buildFieldRules` and answers `control: null` with a reason (`FJS-409`).
+- **A `$ref` nothing resolved.** It leaves no type behind either, so an
+  unpopulated `$defs` registry would turn every enum and every relation on a
+  form into a JSON textarea, silently. `buildFieldRules` is the only place still
+  holding the raw schema, so it records `unresolvedRef` and the table refuses
+  rather than guesses.
+
+A `Json` column and a `String[]` have no field list under them, so there is
+nothing to generate a row of controls from and the only editor that covers every
+value they may hold is the document's own syntax. An app that wants something
+better — chips for a `String[]`, a structured tree — registers it, and the
+registry is asked before this table, so that is one line rather than a fork
+(`FJS-D17`).
+
+`control: null` still means what it meant, for the cases that are really it: a
+`readOnly` column, and a type this table has never heard of. Both still carry a
+reason.
+
+## 2026-08-22 — the Resource owns the write, and the reads it is asked for (`FJS-D114`)
+
+994 tests, 0 fail.
+
+`save(data, { mode })` is new and it is the one owner of create-or-patch. `auto`
+— the default — creates when the model's OWN id field is absent and patches when
+it is present; `create` and `patch` force one; `upsert` is an ALIAS of `auto`
+rather than a fourth thing, because the two ask the same question and a separate
+word for it says the server has an upsert method it does not have.
+
+Nothing about the pipeline changed, because `save` goes through `_call`: a
+payload is still coerced, blank-stripped and validated, the `@version` this
+screen read is still stamped on the patch, and the resource's own hooks still
+run. What changed is who decides, and that was measured as a defect before it was
+a ruling — `<Form method="auto">` fell through to the client's `upsert`, which is
+hardcoded to `id`, so editing a row on a model keyed by anything else created a
+duplicate (`FJS-316`). The id field is the schema's, and only the resource knows
+it.
+
+`detailQuery` is the read half: `{ query, directives }`, what `get(id)` asks for
+when the caller states none. Sibling of `optionsQuery`, which already existed and
+which **nothing in this repo passed** — no generator, no app. Both are declared
+beside the model instead of at every call site, which is the whole of the
+argument: in the app this was read from, the convention was followed 6 times in
+36 resource files while 80 route files hand-wrote their own include shape.
+
+Named `detailQuery` rather than the plain `query` the convention came from,
+because `query` means FILTERS at every other boundary here (Invariant 10).
 
 ## 2026-08-19 — click an element in a running app, open the line that wrote it
 

@@ -26,10 +26,10 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
+import { mkdirSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { _resolveFrontierSubpathForTest as resolveSub } from '../src/virtual/virtual-sierra.js'
+import { tmpDir } from './tmp.js'
 
 // ─── Fixture packages ─────────────────────────────────────────────────────────
 // Laid out as siblings of the sierra package, which is what _monoRoot points at.
@@ -49,7 +49,7 @@ function pkg(name, manifest, files) {
 }
 
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), 'frontier-res-'))
+  root = tmpDir('frontier-res-')
 
   // Junction's real shape: subpath exports pointing into src/
   pkg('junction', {

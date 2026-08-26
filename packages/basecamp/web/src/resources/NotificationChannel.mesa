@@ -12,10 +12,8 @@
   // make() — validation, labels and field rules all silently stop being
   // schema-derived.
   import { createResource } from '@frontierjs/sierra/junction'
-  import { stampWorkspace } from '../session.js'
 
   export const channels = createResource('channels', {
     model: 'NotificationChannel',
-    hooks: { before: { create: [stampWorkspace] } },
   })
 </script>

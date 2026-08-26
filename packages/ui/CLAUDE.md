@@ -1,6 +1,6 @@
 # ui — package map
 
-**`@frontierjs/ui`** — a Mesa component kit over `@frontierjs/css`. 65
+**`@frontierjs/ui`** — a Mesa component kit over `@frontierjs/css`. 69
 components, no build step, no utility classes (Invariant 13: style with a tone
 and a treatment, never a color).
 
@@ -17,12 +17,15 @@ starts its server and stays up, for looking at a component in a real browser.
 components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
               Checkbox · RadioGroup · Switch · Slider · NumberInput · Combobox ·
-              MultiSelect · DatePicker · DateTimeInput · FileUpload · Button
+              MultiSelect · DatePicker · DateTimeInput · JsonInput · FileUpload ·
+              Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
-              Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline · …
+              Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
+              Json · …
   layout/     Card · Tabs (Tabs/TabList/Tab/TabPanel) · Accordion(+Item)
   overlay/    Modal · Drawer · Popover · Tooltip · DropdownMenu(+Item/Label/
-              Separator) · ConfirmationPopover · CommandPalette
+              Separator) · ConfirmationPopover · ConfirmPanel · ConfirmProvider ·
+              CommandPalette
   feedback/   Alert(+Provider) · Toast(+er) · Progress · Spinner · Skeleton
 stores/       alertStore · toastStore · commandPaletteStore
 controls.js   control name → component; where an app contributes one
@@ -43,7 +46,8 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
 ## What bites here
 
 - **`$context.form` is the seam.** `forms/Form.mesa` provides
-  `{ errors, submitting, disabled, fields, submitted }`; **every control reads it**
+  `{ errors, submitting, disabled, fields, submitted, optionsFor, reportInvalid }`;
+  **every control reads it**
   to resolve its own label, constraints, `aria-invalid` and message. An absent form
   reads `undefined` and every fallback is what the control did standing alone.
   **A stated prop always wins**, including `required={false}`.
@@ -150,13 +154,159 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   placement. So every open shows one frame wherever the trigger used to be,
   and when that lands ON the trigger the click meant to close the panel falls
   inside it, where click-away deliberately lets it through: the panel stays
-  open and nothing on screen says why (`FJS-331`). `DropdownMenu`, `Popover`
-  and `ConfirmationPopover` render `visibility: hidden` and are shown by the
+  open and nothing on screen says why (`FJS-331`). `DropdownMenu` and `Popover`
+  render `visibility: hidden` and are shown by the
   frame that places them — not painted, not hit-tested, and no extra frame,
   because `placed` reaches the DOM on the microtask inside that same frame.
   **Focus goes after that flush, not before it**: focus is refused on a hidden
   element. Assert it at INSERTION with a `MutationObserver`; a poll cannot see
   a single frame.
+  **`ConfirmPanel` places itself synchronously instead**, off a forced layout,
+  and only then becomes visible — waiting for a frame is a bet that a frame
+  arrives, and headless Chrome delivers almost none after load, so the panel sat
+  hidden at 0,0 while a click aimed at its confirm button landed behind it
+  (`FJS-402`). The frame callback is kept as a re-place for a panel whose content
+  resized.
+- **A `Json` column is the one shape with no schema under it, and both halves of
+  the answer are new.** `display/Json.mesa` reads a document and
+  `forms/JsonInput.mesa` edits one; Sierra's table answers `json` where the
+  schema states no type at all — which is what a `Json` column emits, and NOT
+  `type: 'object'` — where it used to answer `null` and have `<Form>` warn the
+  column off the form. Three things about them:
+  - **The viewer ships no palette.** It marks tokens with the elements `glow()`
+    uses — `<b>` a key, `<em>` a value, `<strong>` a keyword, `<i>`
+    punctuation, `<sup>` an annotation — inside a `<code language="json">`,
+    which is the shape `code.css` themes. So it retints with the theme for free.
+    A theme that stops matching still renders a legible tree in ONE colour,
+    which is why the drive asserts the computed colours differ.
+  - **A row is selected by `data-path`, not by its text.** Two keys at two
+    depths read identically, and a key that CONTAINS a dot is the shape that
+    breaks a joined path — `['a.b']` and `['a','b']` are two nodes and one
+    string.
+  - **The tree is ONE grid and a row is `display: contents`.** Three columns —
+    key · value · tools — so a value at depth three starts at the same x as a
+    value at depth zero and every remove button shares one right edge; a flex
+    line per row aligns each row only with itself. Two consequences bite. A row
+    has no box, so `getBoundingClientRect()` on one is empty and any assertion
+    built on a row's height passes against anything — measure the tree. And
+    **every row must emit exactly three cells**, empty ones included, or grid
+    auto-placement pulls the next row's key into the tools column. An add row
+    and a refusal message opt out with `grid-column`, the add row because an
+    `<input>` in column one sizes that column to itself and pushes every value
+    in the document right.
+    The grid is also what makes `.code`'s `white-space: pre` survivable: a
+    whitespace-only text node is not a grid item, so the newlines the compiler
+    emits between the rows are dropped. As a block they render, and the tree
+    came out 1619px tall for 9 rows on a screen nobody could read.
+  - **`editable` adds edit, rename, remove and add, and every write answers a
+    COPY** — the operations are `@frontierjs/toolbelt/json`'s, so a rename keeps
+    its key in place and a removal goes by index. The draft is `undefined` until
+    the first edit, so a read-only tree always shows the live prop and only an
+    edited one holds its own document. A boolean is a toggle rather than a box
+    (two values is not a thing to type), a leaf edit runs through `coerceLike`
+    so a number stays a number, and the ROOT has its own add affordance because
+    it is not a row, and it is always on screen rather than behind a `+` —
+    `.fjs-json-addroot` is that row, not a trigger, so a drive types into it
+    directly. There is no reorder: the kit has no move operation and
+    inventing one here would be a second definition of what a write is.
+    **Asserting immutability needs the LIVE object** — an in-place mutation
+    changes no binding, so an `<output>` holding `JSON.stringify(doc)` still
+    shows what it rendered at mount, and the assertion passes against exactly
+    the bug it exists for. Measured: the fixture exposes the object on `window`
+    for that reason.
+  - **The tree is a `treegrid`, and a row must have a BOX.** `display: contents`
+    keeps the role in the a11y tree (measured — the folklore is out of date) but
+    gives no box, and an element with no box cannot take focus, which rules out
+    a roving tabindex and with it the whole pattern. `grid-template-columns:
+    subgrid` gives the box AND the column alignment. One tab stop: the tree
+    carries `tabindex="0"`, every stop inside carries `-1`, and focusing the
+    tree hands focus straight to the cursor. Navigation reads the DOM rather
+    than mirroring it in state — the rows already carry `data-path`, and a
+    parallel model is a second thing to keep in step with search, undo and
+    collapse. Two rules that need holding: the column survives a row change, and
+    **a caret owns the arrows** inside any input or select.
+  - **`copy` is per row as well as per document**, and the path it copies is
+    built rather than joined: `headers.content-type` parses as a subtraction,
+    `odd.0` is a syntax error, and a pointer joined with slashes names nothing
+    once a key holds one. `pathStyle="pointer"` is the RFC 6901 spelling.
+    **The document actions overlap the first row** unless the block reserves
+    room — they sit in `.code`'s top padding and a `.btn.square` is taller than
+    it, so the first row's buttons were present, correct and unclickable. Assert
+    that class of thing with `elementFromPoint`, never with a presence check.
+    The copy itself is `CopyButton`'s exported `copyText` (`FJS-D116`), because
+    its non-HTTPS fallback is what a second implementation would silently drop.
+  - **`search` is a filter over the rows, and it must open its own ancestors.**
+    `treeRows` emits children of an OPEN container only, so a hit four levels
+    down is not a row — `searchDoc` answers `open` for that, and the drive's
+    fixture is `expand={0}` so the assertion cannot pass without it. Hits are
+    marked with the package's `<mark>` (themed inside `code[language]`, with a
+    negative margin so it does not disturb the monospace grid), every
+    occurrence and in the document's own casing. The count is there because a
+    filter that matched nothing and an empty document look identical.
+  - **The box coerces, the control converts, and both rules are live.**
+    `coerceLike` keeps the type an edit replaces; a `<select>` in the row tools
+    changes it on purpose through `convertTo`. Without the second a document
+    can be edited and never reshaped. The select is also the only thing that
+    says what kind a row holds — `""` and `"null"` read identically otherwise.
+    **Mark the current kind on the OPTION, never as the select's `value`**: a
+    select's value is applied before its `{#each}` builds the options, so
+    nothing matches and every row falls back to the first one, reporting the
+    whole document as strings. A probe that sets `el.value` itself cannot see
+    that; assert what the control REPORTS.
+  - **Undo is a stack of documents, and it is affordable only because every
+    write answers a copy** — `setIn` shares every branch it did not touch, so an
+    entry costs the path that changed. Capped at 50. The rule that matters:
+    **the echo is recognised by VALUE, not identity.** A controlled caller that
+    adopts a write and rebuilds its own object hands back an equal document with
+    a different identity; by identity that is a second, foreign change, the
+    write lands twice, and every edit costs two presses to undo. A document that
+    is genuinely not the one we announced IS a history step, so undo walks back
+    over somebody else's edit rather than letting it vanish. An undo is
+    announced like any other write, a fresh edit drops the forward stack, and
+    ⌘Z is bound to the TREE — a document-level handler takes the shortcut off a
+    page that has its own.
+  - **`against` is diff mode, and it walks a MERGED document.** A removed key
+    is in neither `value` nor any tree built from it, so a diff that walks
+    `value` shows every change except the ones that took something away.
+    `diffDocs` answers the merge, the per-path status, the previous value and
+    the rows to open. The marks are the PACKAGE's — `<ins>`/`<del>`/`<dfn>`
+    inside a `code[language]`, which `code.css` draws as stripes off
+    `--code-ins`/`--code-del`/`--code-note` — so this makes no colour decision
+    here either. Two shapes worth knowing: a changed leaf renders both sides,
+    old above new, because a status word cannot say *changed from what*; and
+    `--code-pad` is zeroed on the value cell, since the package bleeds a stripe
+    out to the block's edge (right for a source line, wrong for one cell of a
+    grid, where it runs back under the key column and reads as though the key
+    changed too). `editable` is refused while `against` is set.
+  - **A new `value` IDENTITY clears the draft**, which is what makes the tree
+    usable as one editor among several over the same object: a caller that
+    binds `onchange` back into `value` is controlled and always sees its own
+    state, a caller that ignores it keeps its draft because `value` never
+    moves. `example`'s /settings/ is the live case — the tree and the form
+    controls edit one preferences document, either way round.
+  - **The control writes only what parses, and tells the form so.**
+    `$context.form.reportInvalid(name, message)` is the channel (`FJS-404`) — a
+    control saying *the value I am showing is not one I can hand over*, with a
+    null message retracting it. It is the FOURTH error source in `Form.mesa`
+    and the only one that judges the box rather than the record: the record
+    holds the last value the control could convert, so every check on it passes
+    while the screen shows something else. Three things follow from that:
+    it merges LAST, over a server and a live message, because it is the only
+    one describing what is on screen now; it refuses a submit **even in a
+    hand-written form**, where `FJS-316` deliberately stops the record-level
+    checks (the control is on screen by construction — it is the thing that
+    reported); and `clearErrors()` does NOT clear it, because it is about text
+    still in the box and only the control that raised it can retract it. Guard
+    a `reportInvalid` on no-change: it rebuilds `$context.form`, which
+    re-derives the control that called it.
+- **A component file may export the verbs that belong to its noun** (`FJS-D116`).
+  `import FileUpload, { formatBytes, isImage } from '.../FileUpload.mesa'` — a
+  `<script module>` export compiles to a plain top-level ESM export beside the
+  default, so a caller importing the function imports a function and no
+  component. Two boundaries: a SECOND component needing it moves it to
+  `utils.js`, or this kit grows component→component imports; and anything the
+  server would also want goes to `@frontierjs/toolbelt`, because a `.mesa`
+  import needs the Mesa build plugin.
 - **A local `<style>` may not name a class `@frontierjs/css` owns.** That is the
   only way a kit component silently changes the package for an app that never
   imports the kit. Two did and both are gone: `DropdownItem` styled `.item`

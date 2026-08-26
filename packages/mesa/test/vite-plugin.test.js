@@ -192,7 +192,7 @@ describe('compiler warnings', () => {
     for (const command of ['serve', 'build']) {
       const { code, errors } = await transform(WARNS, `${ROOT}/W.mesa`, { command })
       expect(errors).toHaveLength(0)
-      expect(code).toContain('$runtime.template')
+      expect(code).toContain('$$runtime.template')
     }
   })
 
@@ -207,7 +207,7 @@ describe('compiler warnings', () => {
 describe('styles', () => {
   test('css: true inlines the scoped rules into the module', async () => {
     const { code } = await transform(STYLED, `${ROOT}/S.mesa`)
-    expect(code).toContain('$runtime.addStyles(')
+    expect(code).toContain('$$runtime.addStyles(')
     expect(code).toContain('color: red')
     parses(code)
   })

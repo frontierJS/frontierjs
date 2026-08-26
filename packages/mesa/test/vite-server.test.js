@@ -83,7 +83,7 @@ describe('a .mesa module over HTTP', () => {
   test('is compiled, not served as source', async () => {
     const { body } = await GET('/src/Counter.mesa?import')
 
-    expect(body).toContain('$runtime.template')
+    expect(body).toContain('$$runtime.template')
     expect(body).not.toContain('<style>')
   })
 
@@ -93,7 +93,7 @@ describe('a .mesa module over HTTP', () => {
   test('carries its scoped styles, and asks for no stylesheet', async () => {
     const { body } = await GET('/src/Counter.mesa?import')
 
-    expect(body).toContain('$runtime.addStyles(')
+    expect(body).toContain('$$runtime.addStyles(')
     expect(body).toContain('color: red')
     expect(body).not.toContain('mesa-css')
   })

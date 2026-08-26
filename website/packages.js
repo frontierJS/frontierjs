@@ -276,7 +276,7 @@ const PKGS = [
   ],
 },
 {
-  id:'basecamp', install:'npm i @frontierjs/basecamp', page:'basecamp.html', name:'Basecamp', realm:'Control plane', tone:'warning', who:'@frontierjs/basecamp',
+  id:'basecamp', install:'git clone frontierjs/basecamp && bun run dev', page:'basecamp.html', name:'Basecamp', realm:'Control plane', tone:'warning', who:'@frontierjs/basecamp',
   pitch:'The app for managing your apps — and itself a FrontierJS app.',
   rows:[
     { k:'Releases', v:'What is deployed where, and one button to undo it',
@@ -306,7 +306,7 @@ const PKGS = [
   ],
 },
 {
-  id:'editor', install:'code --install-extension frontierjs.frontierjs-vscode', page:'vscode.html', name:'Editor support', realm:'Tooling', tone:'warning', who:'frontierjs-vscode',
+  id:'editor', install:'bun run package  # build the .vsix — not on the marketplace yet', page:'vscode.html', name:'Editor support', realm:'Tooling', tone:'warning', who:'frontierjs-vscode',
   pitch:'The seed is as pleasant to write as the code it produces.',
   rows:[
     { k:'Diagnostics', v:'Errors as you type, from the parser the runtime uses',

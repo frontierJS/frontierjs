@@ -28,7 +28,7 @@ if (!wsRoot) { log.error('No workspace path provided'); return }
 
 if (!packages.length) {
   log.warn(`No packages found in ${wsRoot}/packages/`)
-  log.info('Run `fli ws-add <path>` to add a package')
+  log.info('Run `fli ws:add <path>` to add a package')
   return
 }
 

@@ -294,6 +294,15 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
   whether the peer range should be mandatory for a slice and who enforces it.
 - Deployment (Release) is unrepresented above. Does a slice contribute ports,
   secrets, or migration ordering to `fli deploy`?
+- **The fragment question has a second seam, and one ruling should cover both.**
+  The `getLevel` problem above — only one `GatePlugin({ getLevel })` may be installed,
+  so a slice supplying standing either owns the ladder or contributes a fragment — is
+  the same shape conduit has for credentials: only one `CredentialResolver` may be
+  installed on a conduit, so a slice supplying per-user third-party credentials either
+  owns resolution outright or contributes a fragment an app composes. Noticed
+  2026-08-24 while scoping `third-party-credentials.md`; `authSchemaFragments(db)` is
+  the precedent for both, and settling them apart is how one idea grows two
+  vocabularies.
 
 ## See also
 

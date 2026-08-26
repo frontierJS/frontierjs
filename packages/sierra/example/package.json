@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Runnable Sierra app — one db/schema.lite, seeding both halves.",
   "scripts": {
-    "api": "bun run api/app.ts",
+    "api": "bun run api/index.ts",
     "dev": "vite -c web/config/vite.config.js",
     "build": "vite build -c web/config/vite.config.js"
   },

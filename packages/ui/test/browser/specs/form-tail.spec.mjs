@@ -70,6 +70,21 @@ export async function run(t) {
     return document.querySelector('input[name=notify]')?.closest('label')?.textContent.trim();
   `), 'Send notices', 'Switch takes its label from @label')
 
+  /* ── a bound control the APP turns off ────────────────────────────────── */
+
+  // The direction a click cannot test. `checked` reaches the DOM through
+  // `set_attribute`, and `el.checked` stops reflecting its attribute the moment
+  // anything writes the property — so removing the attribute leaves the switch
+  // ON, the parent reading `false`, and nothing saying the two disagree.
+  // `<Switch bind:checked>` was one-way for as long as it existed: on
+  // `example`'s /settings/ the JSON tree moved the switch once and never again.
+  await t.clickAt('#notify-on')
+  await t.eventually(`document.querySelector('input[name=notify]').checked`, true,
+    'the app can switch a bound Switch on')
+  await t.clickAt('#notify-off')
+  await t.eventually(`document.querySelector('input[name=notify]').checked`, false,
+    'and off again — the property is reset, not just the attribute')
+
   /* ── required, which is the same schema fact ──────────────────────────── */
 
   // A native `required` where the element is the value…
@@ -294,4 +309,34 @@ export async function run(t) {
     'and clearing the failure lets the same form submit')
   await t.eventually(`document.querySelector('#errorKeys').textContent`, '',
     'with every field error cleared')
+
+  /* ── an unselected option SAYS it is unselected ───────────────────────── */
+
+  // `aria-selected={false}` used to remove the attribute outright, so an option
+  // that was not chosen announced itself as *not selectable* rather than as
+  // selectable-and-not-selected — and a combobox that was CLOSED had no
+  // `aria-expanded` at all, which announces it as not expandable. Both were
+  // silent and both looked correct. Fixed in mesa's `set_attribute`, which
+  // writes "false" for the four ARIA states whose default is `undefined`; this
+  // is what holds it here, in a component that actually uses them.
+  const ariaState = await t.evaluate(`
+    const box = document.querySelector('input[name=regions]');
+    const closed = box.getAttribute('aria-expanded');
+    box.focus(); box.click();
+    await new Promise(r => setTimeout(r, 120));
+    const opts = [...document.querySelectorAll('.fjs-combobox-panel [role=option]')];
+    return {
+      closed,
+      open: box.getAttribute('aria-expanded'),
+      unselected: opts.length ? opts[opts.length - 1].getAttribute('aria-selected') : null,
+    };
+  `)
+  t.is(ariaState.closed, 'false', 'a closed combobox says it is closed, not that it cannot open')
+  t.is(ariaState.open, 'true', 'and open when it is')
+  t.is(ariaState.unselected, 'false', 'an option that is not chosen says so rather than vanishing the attribute')
+  // Last in the file on purpose. This has to OPEN the control to read its open
+  // state, and a spec that leaves an overlay open — or closes one the next
+  // block expected to find open — makes the next assertion fail for a reason
+  // that has nothing to do with it.
+  await t.press('Escape')
 }

@@ -268,7 +268,7 @@ export type { QueryDirectives, Page } from './directives.ts'
 // while the method executes, so a hook or an `around` reading `ctx.type` can
 // legitimately see it. Leaving it out of the union made the assignment a type
 // error inside the pipeline and a lie to everyone reading it.
-export type HookType = 'before' | 'method' | 'after' | 'around' | 'error'
+export type HookType = 'before' | 'validated' | 'method' | 'after' | 'around' | 'error'
 
 // ─── Result envelope ──────────────────────────────────────────────────────
 // Owned by core/envelope.ts — the single module that builds, inspects and
@@ -358,6 +358,22 @@ export interface RequestMeta {
    * never authority — nothing in the framework grades a caller by it.
    */
   client?:         { ip?: string; userAgent?: string; headers: Record<string, string>; [k: string]: unknown }
+
+  /**
+   * WHICH TENANT the work is for, where the app declares tenancy.
+   *
+   * Request-wide because a tenant is a property of the work and not of any one
+   * call in it, and because the readers that need it most hold no `ctx`: a job
+   * running an hour later, an outbox relay, a cache key. A transport that has
+   * a request resolves the tenant from it and the answer lands on
+   * `ctx.locals.tenantId`; this is the other direction — work with no request
+   * behind it STATES its tenant here, and `withTenantDb` reads it.
+   *
+   * It is a pointer to a set of rows and never an authority. Whoever the work
+   * runs as is still re-resolved and still graded; naming a tenant decides
+   * which rows are in scope and nothing about who may touch them.
+   */
+  tenant?:         string | null
 }
 
 const _requestStore = new AsyncLocalStorage<RequestMeta>()
@@ -405,6 +421,9 @@ export interface RequestSource {
   /** WHO and WHERE. Both propagate; see the doc on RequestMeta. */
   user?:   RequestMeta['user']
   client?: RequestMeta['client']
+
+  /** WHICH TENANT, for work that has no request to resolve one from. */
+  tenant?: RequestMeta['tenant']
 }
 
 export function enterRequest<T>(src: RequestSource, fn: () => T): T {
@@ -416,6 +435,7 @@ export function enterRequest<T>(src: RequestSource, fn: () => T): T {
     origin:         src.origin,
     user:           src.user,
     client:         src.client,
+    tenant:         src.tenant,
   }, fn)
 }
 
@@ -504,6 +524,18 @@ export type CallContext = ServiceContext & {
   readonly db: NonNullable<ServiceContextLocals['db']>
   /** `ctx.auth.user` — the principal this call is running as. */
   readonly me: ServiceContext['auth']['user']
+  /**
+   * What this app is configured with, FOR THIS CALL.
+   *
+   * A read-only view over `app.config`, resolved through the one owner
+   * (`core/config-scope.ts`) rather than reached for directly — so a value that
+   * becomes per-tenant later becomes per-tenant for every reader at once,
+   * instead of needing every reader found again (`FJS-D126`).
+   *
+   * Today it is `app.config`, for every caller, identically. Reading it is a
+   * statement about WHEN the value is read and none at all about what it is.
+   */
+  readonly config: import('../config/index.ts').AppConfig
 }
 
 function held(key: string | symbol): ServiceContext {
@@ -551,6 +583,15 @@ export const $: CallContext = new Proxy({} as CallContext, {
       return db
     }
     if (key === 'me') return held(key).auth.user
+    if (key === 'config') {
+      const app = (held(key) as { app?: { configFor?: (t: string | null) => unknown } }).app
+      if (!app?.configFor) throw new Error(
+        `[Junction] '$.config' — this call has no app on it. A hand-built context ` +
+        `passed to a method directly carries no app; call through app.service(name) ` +
+        `or use app.configFor() where you hold the app.`
+      )
+      return app.configFor(held(key).locals?.tenantId ?? null)
+    }
     // Symbols are protocol, not data — inspection and toString must not throw
     // outside a call, or a logger printing `$` becomes the error.
     if (typeof key === 'symbol') return _callStore.getStore()?.[key as never]
@@ -568,16 +609,16 @@ export const $: CallContext = new Proxy({} as CallContext, {
   deleteProperty(_t, key) { throw new Error(NOT_WRITABLE(key)) },
 
   has(_t, key) {
-    if (key === 'db' || key === 'me') return true
+    if (key === 'db' || key === 'me' || key === 'config') return true
     return key in held(key)
   },
 
   // Destructuring, spread and Object.keys() go through these, and they answer
   // the CONTEXT's own keys only.
   //
-  // `db` and `me` are deliberately absent: they are derived accessors, not
-  // data, and enumerating them makes a spread EVALUATE them — so `{ ...$ }` on
-  // an app with no Litestone client threw the "no client on ctx.locals.db"
+  // `db`, `me` and `config` are deliberately absent: they are derived accessors,
+  // not data, and enumerating them makes a spread EVALUATE them — so `{ ...$ }`
+  // on an app with no Litestone client threw the "no client on ctx.locals.db"
   // error from inside a spread that never asked for a db. They stay reachable
   // by name through get() and `in`, which is what an accessor should be.
   //
@@ -587,7 +628,7 @@ export const $: CallContext = new Proxy({} as CallContext, {
     return Reflect.ownKeys(held('ownKeys'))
   },
   getOwnPropertyDescriptor(_t, key) {
-    if (key === 'db' || key === 'me') return undefined
+    if (key === 'db' || key === 'me' || key === 'config') return undefined
     const d = Reflect.getOwnPropertyDescriptor(held(key), key)
     return d ? { ...d, configurable: true } : undefined
   },

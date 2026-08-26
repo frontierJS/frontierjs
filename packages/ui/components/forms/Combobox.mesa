@@ -14,7 +14,7 @@
   //   <Combobox bind:value allowNew placeholder="Select or type a tag…" {options} />
 
   import Field from '../forms/Field.mesa'
-  import { uid, resolveError, resolveRule, stated, nativeValidationGuard } from '../../utils.js'
+  import { uid, resolveError, resolveRule, stated, nativeValidationGuard, truncationNote, withNote } from '../../utils.js'
 
   export let value       = undefined    // scalar — bindable
   export let options     = []           // string[] | { value, label, disabled? }[]
@@ -68,7 +68,64 @@
     return { value: o.value, label: o.label ?? o.textContent ?? String(o.value), disabled: o.disabled ?? false }
   }
 
-  const normOptions = options.map(normalise)
+  // Same fallback as Select: the rule answers an enum synchronously, the form
+  // fetches a relation's rows. A stated list always wins.
+  const _sync = rule?.options ?? rule?.enum ?? null
+
+  let _fetched = []
+  let _total   = null
+  if (!options?.length && !_sync && name && form?.optionsFor)
+    form.optionsFor(name).then(r => { _fetched = r?.options ?? []; _total = r?.total ?? null })
+
+  // ── a list bigger than the answer ──────────────────────────────────
+  //
+  // `resource.options()` caps at the server's limit, so a relation with four
+  // hundred rows arrives as an alphabetical hundred — and filtering THOSE by
+  // what somebody types searches the page rather than the table (`FJS-391`).
+  // Once this control has seen a cut list it sends the query to the server
+  // instead, which is the only thing that can reach row 250.
+  //
+  // Latched, because a search that narrows the answer makes the next one look
+  // complete: type `zo`, get 3 of 3, delete a character, and local filtering
+  // over three rows would be all that was left.
+  export let total = undefined
+
+  let _searched  = null      // the server's answer for the current query
+  let _searchAll = false     // has this field ever come back cut?
+  var _seq       = 0         // out-of-order responses lose to the newest
+  var _timer     = null
+
+  const _base  = options?.length ? options : (_sync ?? _fetched)
+  const _rows  = _searched ?? _base
+  // Once this control has fetched its own list, its own count is the one that
+  // describes what is on screen. The form's count is for the page the FORM
+  // fetched, and after a search that page is gone — leaving it in charge said
+  // *showing 1 of 400* about an answer that had one row in it.
+  const _count = _searched ? _total : stated(total, _total)
+
+  // The count arrives after mount, so the latch is a watch: a plain top-level
+  // statement runs once and would never see the prefetch land.
+  const _latch = () => { if (Number.isFinite(_count) && _count > _base.length) _searchAll = true }
+  _latch()
+  $: (_count, _base), () => _latch()
+
+  const canSearchServer = !!(name && form?.optionsFor)
+
+  function askServer(text) {
+    if (!canSearchServer) return
+    clearTimeout(_timer)
+    const q = text.trim()
+    _timer = setTimeout(() => {
+      const mine = ++_seq
+      form.optionsFor(name, { search: q || undefined }).then(r => {
+        if (mine !== _seq) return
+        _searched = r?.options ?? []
+        _total    = r?.total ?? null
+      }).catch(() => {})
+    }, 200)
+  }
+
+  const normOptions = _rows.map(normalise)
 
   // Find the display label for the current value
   function labelFor(v) {
@@ -83,9 +140,14 @@
   var _clickHandler = null
 
   // Derived — filter options by query
-  const filtered = query.trim()
+  // The server already applied the query where it answered one, so filtering
+  // its rows again would drop every row whose LABEL column is not the one the
+  // set searches on.
+  const filtered = (query.trim() && !_searched)
     ? normOptions.filter(o => o.label.toLowerCase().includes(query.toLowerCase()))
     : normOptions
+
+  const resolvedHint = withNote(hint, truncationNote(filtered.length, _count, { searchable: canSearchServer }))
 
   // Reset active index when filter changes
   $: query, () => { activeIdx = 0 }
@@ -111,6 +173,9 @@
   function handleInput() {
     open = true
     if (!query) { value = undefined; onchange?.(undefined) }
+    // Only once the list is known to be cut. A six-member enum stays instant
+    // and issues nothing; a relation nobody can scroll to becomes reachable.
+    if (_searchAll) askServer(query)
   }
 
   function handleKeydown(e) {
@@ -248,7 +313,7 @@
     name={name}
     label={label}
     required={resolvedRequired}
-    hint={hint}
+    hint={resolvedHint}
     error={error}
     errors={errors}
     badge={badge}

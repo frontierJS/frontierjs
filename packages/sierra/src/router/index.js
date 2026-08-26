@@ -51,6 +51,12 @@ export * from './internals.js'
 let _tree = null
 let _components = {}
 let _loaders = {}
+
+// What index.html hardcoded. Read once, before any navigation can move it, so a
+// route that declares no title puts the app's own name back rather than leaving
+// the previous page's — the failure a per-navigation title has that a static
+// one does not.
+let _bootTitle = null
 let _options = {}
 let _layouts = {}
 
@@ -281,9 +287,26 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
     // synchronous turn, so a microtask scheduled here lands after the app has
     // mounted and registered its guards.
     queueMicrotask(() => {
-      _navigate(window.location.pathname + window.location.search, {
+      // The FRAGMENT is part of the URL and was dropped here. `_navigate`
+      // rebuilds the address bar as `normalized + search + hash`, so an absent
+      // hash was written back as an absent hash: every direct load or refresh
+      // of `/docs/#install` silently lost its anchor, did not scroll, and left
+      // the reader with a URL that no longer says where they were. Clicking the
+      // same link inside the app worked, because that path carries the hash —
+      // so it fails only for the person who pasted a link, which is the person
+      // a deep link is for.
+      //
+      // `scroll` follows: at boot it is false so the router does not fight
+      // scroll restoration, but a hash IS an instruction about where to be, and
+      // the browser's own handling of it is what `scrollRestoration = 'manual'`
+      // above took away.
+      // `|| ''` because a test double is a plain object and a missing `hash`
+      // would concatenate the string "undefined" onto every boot URL — which
+      // is a 404 on a route that plainly exists.
+      const hash = window.location.hash || ''
+      _navigate(window.location.pathname + window.location.search + hash, {
         replace: true,
-        scroll: false,
+        scroll: !!hash,
         isPopstate: false,
       })
     })
@@ -441,6 +464,42 @@ export function url(path, queryParams = {}) {
 
 let _currentHistoryIndex = 0
 let _previousHistoryIndex = 0
+// ─── the document title ───────────────────────────────────────────────────────
+//
+// The SAME two sources the static target reads, in the same order: `head()` off
+// the route's companion, then frontmatter. Two halves of one feature that
+// disagreed about where a title comes from would be worse than the bug.
+//
+// No template and no site name is appended, for the same reason: the static
+// half composes neither, and an app that wants "Page · Acme" says so in head(),
+// which is the one place that can see both. `title` also stays an ordinary
+// frontmatter key rather than joining PAGE_RESERVED — every example in the docs
+// renders {page.title} in a heading, and claiming the name would empty them.
+async function _applyTitle(node, loaderModule, params, url, data) {
+  if (typeof document === 'undefined') return
+  if (_bootTitle === null) _bootTitle = document.title
+
+  let title = null
+  const head = loaderModule?.head ?? loaderModule?.default?.head
+  if (typeof head === 'function') {
+    try {
+      const answered = await head({ params, data, url })
+      if (answered?.title) title = answered.title
+    } catch (err) {
+      // The static build refuses to emit the page. Here the page is already on
+      // screen, so falling back to frontmatter is the only honest move — said
+      // out loud, because a silent catch is how a head() that always throws
+      // looks exactly like one nobody wrote.
+      if (import.meta.env?.DEV) {
+        console.warn(`[Sierra] head() threw for ${node.file ?? node.id}:`, err?.message ?? err)
+      }
+    }
+  }
+
+  title = title ?? node.meta?.title ?? node.meta?.frontmatter?.title ?? _bootTitle
+  if (title != null && document.title !== title) document.title = String(title)
+}
+
 let _navigating = false
 
 /**
@@ -449,9 +508,16 @@ let _navigating = false
 async function _navigate(url, { replace = false, scroll = true, isPopstate = false, _hmr = false } = {}) {
   if (!_tree) return
 
-  const pathname = url.split('?')[0].split('#')[0]
-  const search = url.includes('?') ? '?' + url.split('?')[1] : ''
-  const hash = url.includes('#') ? '#' + url.split('#')[1] : ''
+  // Split the FRAGMENT off first, then the search. Splitting on '?' against the
+  // whole URL puts the fragment inside `search`, so `/leads/?status=open#top`
+  // was rewritten as `?status=open#top#top` and `page.query.status` came out as
+  // `open#top`. It was unreachable while the boot navigation dropped the hash
+  // and every internal link carried one only rarely, which is why a URL with
+  // both a query and an anchor is the shape that finds it.
+  const beforeHash = url.split('#')[0]
+  const pathname   = beforeHash.split('?')[0]
+  const search     = beforeHash.includes('?') ? '?' + beforeHash.slice(beforeHash.indexOf('?') + 1) : ''
+  const hash       = url.includes('#') ? '#' + url.slice(url.indexOf('#') + 1) : ''
 
   const normalized = normalizePath(pathname, _options.trailingSlash ?? 'always')
   const match = matchRoute(normalized, _tree, _options)
@@ -563,7 +629,8 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   await layoutsReady
 
   // Run load() if this route has a .meta.js companion
-  let loadedData = null
+  let loadedData   = null
+  let loaderModule = null
   const loaderFactory = _loaders[toNode.id]
   if (loaderFactory) {
     try {
@@ -574,9 +641,13 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
       const cacheKey = `${toNode.id}:${normalized}${search}`
       if (_prefetchCacheHas(cacheKey)) {
         loadedData = _prefetchCacheTake(cacheKey)   // consume once
+        // The data came from the cache, so the module was never imported on
+        // this navigation — but head() lives in it. The import is already
+        // resolved (the prefetch did it), so asking again costs a map lookup.
+        loaderModule = await loaderFactory().catch(() => null)
       } else {
         // Lazy-import the loader module
-        const loaderMod = await loaderFactory()
+        const loaderMod = loaderModule = await loaderFactory()
         const loadFn = loaderMod?.load ?? loaderMod?.default?.load
 
         if (typeof loadFn === 'function') {
@@ -654,9 +725,23 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   if (!_sameParams(page.directives, directives)) _w().directives = directives
   _w().route   = toNode
   _w().data    = loadedData
+
+  // The tab, the bookmark, the history entry and what a screen reader announces
+  // on arrival. The static target has written a real <title> per page since it
+  // existed and the SPA wrote none at all, so every route of an app showed
+  // whatever index.html hardcoded — one string for the whole app, and the worst
+  // shape is an app that prerenders AND hydrates, where the title is right on
+  // first paint and stale from the first client navigation (FJS-389).
   _w().pending = null
   _w().slots   = {}   // cleared — the new page repopulates during its render
   _navigating = false
+
+  // AFTER the navigation state is settled, not between the commit and it: this
+  // awaits `head()`, and holding `pending` open across a dynamic import would
+  // make every route with a companion look like it was still navigating for an
+  // extra tick. Awaited rather than fired, so a caller that awaited the
+  // navigation can read the title.
+  await _applyTitle(toNode, loaderModule, toContext.params, normalized + search, loadedData)
 
   // Scroll behavior
   _handleScroll(scroll, hash, isPopstate)

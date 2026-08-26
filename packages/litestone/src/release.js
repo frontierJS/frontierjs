@@ -52,9 +52,10 @@ const OPS = ['read', 'create', 'update', 'delete']
 // schema → {
 //   databases: [{ name, driver }],
 //   enums:     [{ name, values: [...] }],
+//   valuesets: [{ name, source, value, scope, where }],
 //   models: [{
 //     name, db, table, external, softDelete, gate, gateSource,
-//     fields:      [{ name, kind, type, optional, unique, id, default, writeRequired, protection, allows }],
+//     fields:      [{ name, kind, type, optional, unique, id, default, writeRequired, protection, allows, values }],
 //     uniques:     [[col, ...]],   indexes: [[col, ...]],
 //     policies:    { <op>: { allows: [expr], denies: [expr] } },
 //     transitions: [{ field, name, from, to, gate }],
@@ -80,7 +81,23 @@ export function deriveReleaseSurface(schema, { pluralize = false } = {}) {
     .map(d => ({ name: d.name, driver: d.driver ?? 'sqlite' }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
-  return { databases, enums, models }
+  // A value set is declared once and bound from many columns, so narrowing it
+  // narrows every one of them at once — which is a fact about the set and is
+  // unreadable from any single field's row.
+  const valuesets = [...(schema.valuesets ?? [])]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(v => ({
+      name:   v.name,
+      // The column a record stores, resolved: unstated means the source's @id,
+      // and a baseline that recorded the default while this one records it
+      // spelled out is not a change.
+      source: v.source,
+      value:  v.valueField ?? v.value ?? null,
+      scope:  v.scope ?? null,
+      where:  v.where ?? null,
+    }))
+
+  return { databases, enums, valuesets, models }
 }
 
 // An enum member is a bare name or a name with a mapped value, depending on how
@@ -172,7 +189,17 @@ function describeField(field, access) {
     allows: (rules?.allows ?? [])
       .map(a => `${[...(a.operations ?? [])].sort().join(',') || 'all'}: ${a.expr}`)
       .sort(),
+    // A `@values` binding is a rule about which values are legal, so a column
+    // gaining a `required` one starts refusing writes N-1 makes with no other
+    // line of the schema moving. It is on this axis and not the access one:
+    // it narrows by VALUE, identically for every caller.
+    values: valueBinding(attrs),
   }
+}
+
+function valueBinding(attrs) {
+  const b = attrs.find(a => a.kind === 'values')
+  return b ? { set: b.set, strength: b.strength } : null
 }
 
 function fieldKind(field, attrs) {
@@ -213,14 +240,24 @@ const RANK   = { unchanged: 0, [EXPAND]: 1, [UNKNOWN]: 2, [CONTRACT]: 3 }
 // sits highest, so the verdict is the worst thing present rather than the last
 // thing found. `unknown` is shared: a predicate whose text moved is undecidable
 // on both axes, for the same reason.
-const WIDENS = 'widens', NARROWS = 'narrows'
-const ARANK  = { unchanged: 0, [NARROWS]: 1, [UNKNOWN]: 2, [WIDENS]: 3 }
+const WIDENS = 'widens', NARROWS = 'narrows', DECLARED = 'new'
+//
+// `new` is the bucket for a model the baseline never had, and it is ranked
+// LOWEST because it is reported rather than graded. Nobody could do anything
+// with a table that did not exist, so it cannot widen — but the question a
+// reviewer asks this command is *what did this branch do to access*, and the
+// honest answer for a branch that adds nine tables is those nine tables and
+// their gates, not silence (`FJS-444`). Ranking it below `narrows` is what
+// keeps `--strict` meaning exactly what it meant: a branch whose only findings
+// are new models passes, and one that also narrows reads as narrowing.
+const ARANK  = { unchanged: 0, [DECLARED]: 1, [NARROWS]: 2, [UNKNOWN]: 3, [WIDENS]: 4 }
 
 export function classifyPivot(before, after) {
   const f = []
 
   compareDatabases(before, after, f)
   compareEnums(before, after, f)
+  compareValueSets(before, after, f)
   compareModels(before, after, f)
 
   const counts = {
@@ -297,19 +334,92 @@ function compareEnums(before, after, f) {
       add(f, CONTRACT, `enum ${name}`, 'no longer declared')
 }
 
+// ─── value sets ───────────────────────────────────────────────────────────────
+//
+// A set is a named list and a binding says how hard it is enforced. Only
+// `required` refuses a write — `open` accepts a value outside the set and adds
+// it, `suggested` enforces nothing — so narrowing a set that nothing binds as
+// required changes what a picker OFFERS and refuses nothing, which is an
+// affordance and not a compatibility break.
+//
+// The bindings consulted are the ones in the release STARTING, because the
+// question is whether that release refuses what N-1 writes.
+
+function compareValueSets(before, after, f) {
+  const was = new Map((before.valuesets ?? []).map(v => [v.name, v]))
+  const now = new Map((after.valuesets ?? []).map(v => [v.name, v]))
+  const enforced = enforcedSets(after)
+
+  for (const [name, v] of now) {
+    const at = `valueset ${name}`
+    const b  = was.get(name)
+
+    if (!b) { add(f, EXPAND, at, `declared over \`${v.source}\` — nothing bound to it before`); continue }
+
+    // Narrower than it was. Only bites where something enforces the set.
+    const narrower = (detail) => enforced.has(name)
+      ? add(f, CONTRACT, at, `${detail} — an N-1 write of a value that has left the set is refused`)
+      : add(f, EXPAND,   at, `${detail} — nothing binds it as \`required\`, so no write is refused`)
+
+    if (b.source !== v.source)
+      add(f, UNKNOWN, at, `source \`${b.source}\` → \`${v.source}\` — the legal values come from a different table and nothing here can compare two tables`)
+
+    // Not gated on enforcement: the stored form changed, so a value N-1 wrote
+    // and a value this release writes no longer mean the same thing, whether or
+    // not anything refuses either of them.
+    if (b.value !== v.value)
+      add(f, CONTRACT, at, `value column \`${b.value ?? '—'}\` → \`${v.value ?? '—'}\` — N-1 stores the old column's values into every column bound to this set`)
+
+    if (b.scope !== v.scope) {
+      if (!b.scope)      narrower(`scope \`${v.scope}\` added`)
+      else if (!v.scope) add(f, EXPAND,  at, `scope \`${b.scope}\` removed — the set is at least as wide as it was`)
+      else               add(f, UNKNOWN, at, `scope \`${b.scope}\` → \`${v.scope}\` — two predicates are not comparable by name`)
+    }
+
+    if (b.where !== v.where) {
+      if (!b.where)      narrower('where added')
+      else if (!v.where) add(f, EXPAND,  at, 'where removed — the set is at least as wide as it was')
+      else               add(f, UNKNOWN, at, 'where predicate changed — whether that widens or narrows is not decidable from the text')
+    }
+  }
+
+  // A set nothing binds enforces nothing, and a binding that outlived its set
+  // does not parse — so by the time two surfaces exist, a removed set has taken
+  // its bindings with it and each of those is its own finding.
+  for (const [name] of was)
+    if (!now.has(name))
+      add(f, EXPAND, `valueset ${name}`, 'no longer declared — nothing in this release enforces it')
+}
+
+/** The sets some column binds as `required` — the only strength that refuses. */
+function enforcedSets(surface) {
+  const out = new Set()
+  for (const m of surface.models ?? [])
+    for (const x of m.fields)
+      if (x.values?.strength === 'required') out.add(x.values.set)
+  return out
+}
+
 // ─── models ───────────────────────────────────────────────────────────────────
 
 function compareModels(before, after, f) {
   const was = new Map(before.models.map(m => [m.name, m]))
   const now = new Map(after.models.map(m => [m.name, m]))
 
+  // A model with no counterpart at the baseline has nothing to be compared
+  // against, so every per-model rule below skips it and it used to leave the
+  // access axis entirely — a branch that added nine gated tables reported
+  // *no change to who may do what* (`FJS-444`). It carries what it declares
+  // instead: reported on the access axis, graded on neither.
   for (const [name, m] of now)
     if (!was.has(name))
-      add(f, EXPAND, `model ${name}`, `declared as \`${m.table}\` — N-1 never reads it`)
+      add(f, EXPAND, `model ${name}`, `declared as \`${m.table}\` — N-1 never reads it`,
+          { access: DECLARED, accessDetail: `new — ${declares(m)}` })
 
   for (const [name, m] of was)
     if (!now.has(name))
-      add(f, CONTRACT, `model ${name}`, `removed — N-1 still reads \`${m.table}\``)
+      add(f, CONTRACT, `model ${name}`, `removed — N-1 still reads \`${m.table}\``,
+          { access: NARROWS, accessDetail: `removed — nothing declares \`${m.table}\` now, so no caller reaches it through the client` })
 
   for (const [name, m] of now) {
     const b = was.get(name)
@@ -319,6 +429,25 @@ function compareModels(before, after, f) {
     compareConstraints(b, m, f)
     compareAccess(b, m, f)
   }
+}
+
+// What a model SAYS about access, for a model there is nothing to compare it
+// against. The unrestricted case leads because it is the one worth stopping on:
+// a new table with neither declaration is reachable by every caller.
+function declares(m) {
+  const policied = Object.entries(m.policies ?? {})
+    .filter(([, p]) => (p.allows?.length ?? 0) + (p.denies?.length ?? 0))
+    .map(([op]) => op)
+  const protectedFields = (m.fields ?? []).filter(x => x.protection).length
+
+  if (!m.gate && !policied.length)
+    return 'declares neither @@gate nor @@allow — every caller reaches every row'
+
+  const parts = [m.gate ? `@@gate("${m.gate}")` : 'no @@gate']
+  if (policied.length) parts.push(`policies on ${policied.sort().map(q).join(', ')}`)
+  else                 parts.push('no row policy')
+  if (protectedFields) parts.push(`${protectedFields} protected field${protectedFields !== 1 ? 's' : ''}`)
+  return parts.join(' · ')
 }
 
 function compareModelShape(b, m, f) {
@@ -407,6 +536,7 @@ function compareFields(b, m, f) {
     }
 
     compareFieldAllows(old, field, at, f)
+    compareValueBinding(old, field, at, f)
   }
 
   for (const [name, field] of was)
@@ -443,6 +573,37 @@ function compareFieldAllows(old, field, at, f) {
   for (const [ops] of was)
     if (!now.has(ops))
       add(f, EXPAND, at, `@allow('${ops}') removed — nothing at the field refuses this column now`, { access: WIDENS })
+}
+
+// The one strength that refuses is `required`, so the severity is not a ladder
+// over the three names: `suggested` → `open` starts CREATING rows in the source
+// table and still fails nothing N-1 does, where anything → `required` refuses
+// the values N-1 has been writing all along.
+function compareValueBinding(old, field, at, f) {
+  const b = old.values, n = field.values
+  if (!b && !n) return
+
+  if (!b) {
+    add(f, n.strength === 'required' ? CONTRACT : EXPAND, at, n.strength === 'required'
+      ? `@values(${n.set}) added — every N-1 write of a value outside \`${n.set}\` is refused`
+      : `@values(${n.set}, ${n.strength}) added — the set is offered and a value outside it is still accepted`)
+    return
+  }
+
+  if (!n) {
+    add(f, EXPAND, at, `@values(${b.set}) removed — nothing at the column refuses a value now`)
+    return
+  }
+
+  if (b.set !== n.set) {
+    add(f, UNKNOWN, at, `@values \`${b.set}\` → \`${n.set}\` — the legal values come from a different list and nothing here can compare two of them`)
+    return
+  }
+
+  if (b.strength !== n.strength)
+    add(f, n.strength === 'required' ? CONTRACT : EXPAND, at,
+      `@values(${n.set}) ${b.strength} → ${n.strength}` +
+      (n.strength === 'required' ? ' — a value outside the set was accepted and is now refused' : ''))
 }
 
 function compareConstraints(b, m, f) {
@@ -496,10 +657,11 @@ function compareAccess(b, m, f) {
   // one line in the schema and five operations in the policy map, so a per-op
   // finding says the same sentence five times — and a tenancy predicate added
   // across fifteen models is then seventy rows nobody reads.
-  for (const kind of ['allows', 'denies']) {
-    const ops     = [...new Set([...Object.keys(b.policies), ...Object.keys(m.policies)])].sort()
-    const added   = [], removed = [], moved = []
+  const ops    = [...new Set([...Object.keys(b.policies), ...Object.keys(m.policies)])].sort()
+  const policy = {}
 
+  for (const kind of ['allows', 'denies']) {
+    const added = [], removed = [], moved = []
     for (const op of ops) {
       const was = (b.policies[op] ?? {})[kind] ?? []
       const now = (m.policies[op] ?? {})[kind] ?? []
@@ -507,17 +669,57 @@ function compareAccess(b, m, f) {
       else if (was.length && !now.length) removed.push(op)
       else if (was.join(' | ') !== now.join(' | ')) moved.push(op)
     }
+    policy[kind] = { added, removed, moved }
+  }
 
+  // ── an INVERSION is one change and used to read as two ──────────────────────
+  //
+  // `@@allow(X)` and `@@deny(!X)` admit the same set, so replacing one with the
+  // other over the same operations moves nobody — and the walk saw an allow
+  // removed (widens) beside a deny added (narrows) and took the worst.
+  // Measured on basecamp's move from sixteen hand-written `@@allow('all',
+  // workspaceId == auth().workspaceId)` lines to `tenancy { strategy row }`,
+  // which desugars to exactly that pairing: **verdict WIDENS on the safest
+  // refactor there is** (`FJS-380`).
+  //
+  // Reported as undecidable rather than resolved, for the reason the module
+  // already gives about a predicate whose text moved: `deny(!X)` admits what
+  // `allow(X)` did only when the two are complements, and deciding that is
+  // predicate algebra this deliberately does not attempt.
+  //
+  // The op sets must be EQUAL. A partial overlap is a mixed change — some
+  // operations inverted and some left bare — and grading the bare half as
+  // undecidable would hide a real widening inside a refactor, which is the
+  // failure mode this axis exists to catch.
+  const sameOps  = (a, b2) => a.length === b2.length && a.every(op => b2.includes(op))
+  const inverted = policy.allows.removed.length &&
+                   sameOps(policy.allows.removed, policy.denies.added)
+
+  for (const kind of ['allows', 'denies']) {
+    const { added, removed, moved } = policy[kind]
     const decl = kind === 'allows' ? '@@allow' : '@@deny'
 
     // Adding a predicate narrows what a caller reaches; removing one widens it.
     // Where both sides have one and the text moved, nothing here can say which
     // way — a policy is an expression, and comparing two of them is the thing
     // this module deliberately does not pretend to do.
+    //
+    // An inversion is ONE finding on the access axis and two on the deploy one.
+    // Both halves are real to a deploy — an allow removed is an expand and a
+    // deny added is a contract, whatever they mean together — but a reviewer
+    // reading the same change twice under two verdicts is how a 46-line report
+    // stops being read. The allow carries it, because *what used to be allowed*
+    // is the half that names what moved.
     if (added.length)
-      add(f, CONTRACT, at, `${decl}(${added.map(q).join(', ')}) added — ${narrows(added)}`, { access: NARROWS })
+      add(f, CONTRACT, at, `${decl}(${added.map(q).join(', ')}) added — ${narrows(added)}`,
+          inverted && kind === 'denies' ? {} : { access: NARROWS })
     if (removed.length)
-      add(f, EXPAND, at, `${decl}(${removed.map(q).join(', ')}) removed — nothing declared refuses those operations now`, { access: WIDENS })
+      add(f, EXPAND, at, `${decl}(${removed.map(q).join(', ')}) removed — nothing declared refuses those operations now`,
+          inverted && kind === 'allows'
+            ? { access: UNKNOWN,
+                accessDetail: `@@allow(${removed.map(q).join(', ')}) replaced by a @@deny over the same operations — ` +
+                              `an inversion, and \`deny(!X)\` admits exactly what \`allow(X)\` did. Whether these two are complements is not decidable from the text` }
+            : { access: WIDENS })
     if (moved.length)
       add(f, UNKNOWN, at, `${decl}(${moved.map(q).join(', ')}) predicate changed — whether that widens or narrows is not decidable from the text`,
           { access: UNKNOWN })
@@ -577,6 +779,10 @@ function levels(gate) {
 
 const q = (s) => `\`${s}\``
 
+// A table cell that may hold raw SQL. A `|` ends the cell and silently drops
+// the rest of the row.
+const cell = (v) => (v ? `\`${String(v).replace(/\|/g, '\\|')}\`` : '—')
+
 // ─── classifyAccess ───────────────────────────────────────────────────────────
 //
 //   classifyAccess(before, after) → { verdict, findings, counts }
@@ -599,6 +805,7 @@ export function classifyAccess(before, after) {
     widens:  findings.filter(x => x.access === WIDENS).length,
     unknown: findings.filter(x => x.access === UNKNOWN).length,
     narrows: findings.filter(x => x.access === NARROWS).length,
+    new:     findings.filter(x => x.access === DECLARED).length,
   }
 
   const verdict = findings.reduce((worst, x) => (ARANK[x.access] > ARANK[worst] ? x.access : worst), 'unchanged')
@@ -608,6 +815,7 @@ export function classifyAccess(before, after) {
 
 const ACCESS_HEADLINE = {
   unchanged: 'no change to who may do what',
+  new:       'NEW — models the baseline never had. Nothing that existed moved',
   narrows:   'NARROWS — every declared change here takes access away',
   unknown:   'UNKNOWN — a predicate moved, and which way is not decidable from its text',
   widens:    'WIDENS — this change hands callers access they did not have',
@@ -621,12 +829,17 @@ export function formatAccessDiff({ verdict, findings, counts }, { baseline = 'th
     return out
   }
 
-  out.push(`Against ${baseline} — ${counts.widens} widen · ${counts.unknown} undecidable · ${counts.narrows} narrow`)
+  out.push(`Against ${baseline} — ${counts.widens} widen · ${counts.unknown} undecidable · ` +
+           `${counts.narrows} narrow${counts.new ? ` · ${counts.new} new` : ''}`)
   out.push('')
 
+  // The access wording where the finding has one. The two axes describe the
+  // same change and rarely in the same sentence — `declared as \`carts\`, N-1
+  // never reads it` is what a DEPLOY needs to hear about a new model, and what
+  // it declares about access is what a reviewer needs.
   for (const x of findings) {
     out.push(`  ${x.access.padEnd(8)} ${x.subject}`)
-    out.push(`           ${x.detail}`)
+    out.push(`           ${x.accessDetail ?? x.detail}`)
   }
 
   return out
@@ -640,6 +853,7 @@ export function formatAccessDiff({ verdict, findings, counts }, { baseline = 'th
 export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) {
   const out = []
   const { models, enums, databases } = surface
+  const valuesets = surface.valuesets ?? []
 
   out.push('# Release surface')
   out.push('')
@@ -653,7 +867,8 @@ export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) 
   out.push('back; a change it does not is a **contract**, and that deploy is the pivot.')
   out.push('')
   out.push('```')
-  out.push(`${models.length} model(s) · ${enums.length} enum(s) · ${databases.length} database(s)`)
+  out.push(`${models.length} model(s) · ${enums.length} enum(s) · ${databases.length} database(s)` +
+           (valuesets.length ? ` · ${valuesets.length} value set(s)` : ''))
   out.push(`${databases.map(d => `${d.name} → ${d.driver}`).join(' · ')}`)
   out.push('```')
   out.push('')
@@ -666,6 +881,19 @@ export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) 
     out.push('| Enum | Members |')
     out.push('| --- | --- |')
     for (const e of enums) out.push(`| \`${e.name}\` | ${e.values.map(q).join(' · ') || '—'} |`)
+    out.push('')
+  }
+
+  if (valuesets.length) {
+    out.push('## Value sets')
+    out.push('')
+    out.push('The list a `@values` binding resolves against. Narrowing one narrows every')
+    out.push('column bound to it, so it is a fact about the set rather than about a field.')
+    out.push('')
+    out.push('| Set | Source | Value | Scope | Where |')
+    out.push('| --- | --- | --- | --- | --- |')
+    for (const v of valuesets)
+      out.push(`| \`${v.name}\` | \`${v.source}\` | ${cell(v.value)} | ${cell(v.scope)} | ${cell(v.where)} |`)
     out.push('')
   }
 
@@ -698,6 +926,7 @@ export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) 
           // A policy expression legitimately contains `||`, which ends the cell
           // and silently drops the rest of the row.
           ...x.allows.map(a => `\`@allow(${a.replace(/\|/g, '\\|')})\``),
+          x.values ? `\`@values(${x.values.set}, ${x.values.strength})\`` : null,
           x.writeRequired ? '**required on write**' : null,
         ].filter(Boolean)
         const nullable = x.optional === null ? '—' : x.optional ? 'yes' : 'no'

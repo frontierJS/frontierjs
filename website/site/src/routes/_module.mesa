@@ -1,0 +1,101 @@
+<!--
+  The site shell — every page under src/routes/ renders inside it.
+
+  Thirteen hand-written pages each carried a copy of this topbar, this footer
+  and the same 429-byte theme script. One copy here is the single biggest thing
+  the conversion buys.
+
+  A layout on a static target holds no state: there is no application around
+  these pages. Everything here is markup except the swatches, which are an
+  island for exactly that reason.
+-->
+<script>
+  import ThemeSwitch from '../islands/ThemeSwitch.mesa'
+</script>
+
+<a href="#top" class="skip-link">Skip to content</a>
+
+<header class="topbar">
+  <div class="container topbar-inner">
+    <a class="brand" href="/">Frontier<span>JS</span></a>
+    <nav class="navset" aria-label="Site">
+      <a href="/#idea">Idea</a>
+      <a href="/#code">See it</a>
+      <a href="/showroom/">Showroom</a>
+      <a href="/showroom2/">Walkthrough</a>
+      <a href="/showroom3/">The ripple</a>
+      <a href="/showroom4/">The loop</a>
+      <a href="/showroom5/">The stack</a>
+      <a href="/journey/">The journey</a>
+      <a href="/flow/">The flow</a>
+      <a href="/landscape/">Landscape</a>
+      <a href="/#start">Start</a>
+    </nav>
+    <ThemeSwitch client:load />
+  </div>
+</header>
+
+<slot />
+
+<footer class="site-footer">
+  <div class="container split">
+    <span>FrontierJS — MIT licensed. Built with Bun and SQLite.</span>
+    <span>This page is styled entirely by <code>@frontierjs/css</code>.</span>
+  </div>
+</footer>
+
+<style>
+  /* `.container` is @frontierjs/css's own class and the page content is a
+     child component, so a scoped rule cannot reach it — the site's narrower
+     measure has to be stated globally. This is the shape every site-wide tweak
+     to a design-system class takes here. */
+  :global(.container) { max-width: 68rem; }
+  :global(html) { scroll-behavior: smooth; }
+  :global(body) { background: var(--surface); color: var(--ink); }
+
+  .skip-link { position: absolute; left: -9999px; }
+  .skip-link:focus {
+    left: var(--space-4); top: var(--space-4); z-index: 60;
+    background: var(--surface); padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius);
+  }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--rule);
+  }
+  .topbar-inner { display: flex; align-items: center; gap: 1.5rem; padding: .75rem 1.25rem; }
+
+  .brand { font-weight: 700; letter-spacing: -.02em; margin-right: auto; text-decoration: none; color: var(--ink); }
+  .brand span { color: var(--color-primary); }
+
+  .navset { display: flex; gap: .25rem; flex-wrap: wrap; }
+  .navset a { padding: .35rem .6rem; border-radius: 6px; color: var(--ink-soft); text-decoration: none; font-size: .875rem; }
+  .navset a:hover { background: var(--surface-sunken); color: var(--ink); }
+
+  /* A page's own section nav. Five pages carry one, so the rule is here rather
+     than repeated — but it is :global() because the markup is in the PAGE, and
+     a scoped rule hashes against this component. */
+  :global(.subnav) {
+    position: sticky; top: 3.05rem; z-index: 45;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
+  }
+  :global(.subnav .container) { display: flex; gap: .15rem; overflow-x: auto; padding: .45rem 1.25rem; }
+  :global(.subnav a) {
+    white-space: nowrap; font-size: .78rem; text-decoration: none; color: var(--ink-mute);
+    padding: .28rem .55rem; border-radius: 6px;
+  }
+  :global(.subnav a:hover) { background: var(--surface-sunken); color: var(--ink); }
+  :global(.subnav a[aria-current]) { background: var(--surface-sunken); color: var(--ink); }
+
+  :global(.pagenote) {
+    display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between;
+    padding-top: 2rem; margin-top: 2rem; border-top: 1px solid var(--rule);
+    font-size: .85rem; color: var(--ink-mute);
+  }
+
+  .site-footer { border-top: 1px solid var(--rule); padding: 2.5rem 0 3.5rem; color: var(--ink-mute); font-size: .875rem; }
+</style>

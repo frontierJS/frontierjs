@@ -8,7 +8,6 @@ title: Networking
   import { session } from '../../session.js'
   import { networks } from '../../resources/Network.mesa'
   import { servers } from '../../resources/Server.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -72,7 +71,7 @@ title: Networking
     if (READS.has(method) || !row?.id) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   // The resource validates against the schema before anything is sent, so a
   // bad CIDR is refused twice: here in the browser by shape, and at the service

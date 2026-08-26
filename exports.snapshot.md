@@ -28,7 +28,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/auth`
 
-`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `types.ts`
+`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -130,6 +130,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./resources` | `src/resources/index.js` | yes |
 | exports | `./island` | `src/island/index.js` | yes |
 | exports | `./audit` | `src/audit/index.js` | yes |
+| exports | `./junction` | `src/junction/junction-adapter.js` | yes |
 | bin | `jetty-build-ext` | `bin/build-ext.js` | yes |
 | bin | `jetty-dev-ext` | `bin/dev-ext.js` | yes |
 | bin | `jetty-info` | `bin/info.js` | yes |
@@ -273,6 +274,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./devtools` | `src/devtools/index.js` | yes |
 | exports | `./widget` | `src/widget/index.js` | yes |
 | exports | `./widget/serve` | `src/widget/serve.js` | yes |
+| exports | `./site/serve` | `src/site/serve.js` | yes |
 | bin | `sierra` | `src/tools/cli.js` | yes |
 
 - peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0` · `@frontierjs/litestone`: `^1.1.0`
@@ -298,8 +300,13 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./history` | `src/history/history.js` | yes |
 | exports | `./hooks` | `src/hooks/hooks.js` | yes |
 | exports | `./inflect` | `src/inflect/inflect.js` | yes |
+| exports | `./json` | `src/json/json.js` | yes |
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
+| exports | `./query (types)` | `src/query/query.d.ts` | yes |
+| exports | `./query (default)` | `src/query/query.js` | yes |
+| exports | `./search` | `src/search/search.js` | yes |
 | exports | `./signature` | `src/signature/signature.js` | yes |
+| exports | `./units` | `src/units/units.js` | yes |
 
 ## `@frontierjs/ui`
 
@@ -313,8 +320,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 65 files |
-| exports | `./components/*` | `components/*.mesa` | 65 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 69 files |
+| exports | `./components/*` | `components/*.mesa` | 69 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

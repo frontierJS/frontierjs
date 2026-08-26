@@ -116,6 +116,79 @@ export interface LitestoneAuthOptions {
     email: string
     name:  string | null
   }) => Promise<void> | void
+
+  // ─── OAuth ──────────────────────────────────────────────────────────────
+  //
+  // Providers live here rather than on the plugin because `clientSecret` is
+  // credential material and this is already where `encryptionKey` goes —
+  // splitting them would put half the app's secrets in each constructor. The
+  // plugin names a provider and never holds one, which is what keeps it to its
+  // own contract: it calls IAuth and touches no database.
+
+  /**
+   * Keyed by the name that appears in the URL and in `Credential.type`
+   * (`oauth:<name>`). Build them with `defineProvider`.
+   *
+   *   oauthProviders: {
+   *     google: defineProvider('google', 'google', { clientId, clientSecret }),
+   *   }
+   *
+   * Absent means the app does no OAuth, and the routes refuse by name.
+   */
+  oauthProviders?: Record<string, import('./oauth.ts').OAuthProvider>
+
+  /**
+   * How long a person has between being sent to the provider and coming back.
+   * Default '10 minutes' — long enough for a password manager and a second
+   * factor, short enough that an abandoned flow is not a row somebody can come
+   * back to tomorrow.
+   */
+  oauthFlowTtl?: string
+
+  /**
+   * Where the browser may be sent after a flow. Same-origin paths only; an
+   * entry ending in `/` covers what is under it.
+   *
+   * Checked when the flow STARTS, so the value stored on the row is already
+   * known good and the callback has nothing left to decide. Empty means no
+   * `returnTo` is ever honoured, which is the safe default: an open redirector
+   * is how an authorization code leaves the building, and RFC 9700 states that
+   * as a MUST rather than as hardening.
+   */
+  oauthReturnToAllow?: string[]
+
+  /**
+   * How long a pending link invitation is good for. Default '1 hour' — the same
+   * order as a password reset, because it is the same act: proving you control
+   * an address.
+   */
+  oauthLinkTtl?: string
+
+  /**
+   * An OAuth identity wants to attach to an account that has NOT proved it owns
+   * this address, so the address is being asked to prove itself. Send the link.
+   *
+   * The token is the raw value; build a URL to `/auth/oauth/link/confirm`.
+   *
+   * REQUIRED for the recovery path to exist at all. Without it the rule still
+   * holds — the identity is refused and nothing unsafe happens — but there is
+   * no way through, and a person whose address collides can never sign in. This
+   * is the same shape as `onPasswordResetRequested`: optional to the type
+   * system, a required performer in practice.
+   *
+   *   onOAuthLinkRequested: async ({ email, token, provider }) => {
+   *     await mailer.send({
+   *       to:      email,
+   *       subject: `Connect ${provider} to your account`,
+   *       html:    `<a href="${APP_URL}/auth/oauth/link/confirm?token=${token}">Connect</a>`,
+   *     })
+   *   }
+   */
+  onOAuthLinkRequested?: (event: {
+    email:    string
+    token:    string
+    provider: string
+  }) => Promise<void> | void
 }
 
 // ─── createAuthServices options ───────────────────────────────────────
@@ -125,6 +198,8 @@ export interface AuthServicesOptions {
   account?:  string | false
   sessions?: string | false
   apiKeys?:  string | false
+  /** Which providers are attached, and detaching one. */
+  connections?: string | false
 
   /**
    * Grade the caller onto the app's own 0–7 ladder for `account.me`.
@@ -178,4 +253,54 @@ export interface AuthPluginOptions {
   // option — the registry is a Map, so the alternative is one of the two
   // silently replacing the other depending on registration order.
   services?: false | AuthServicesOptions
+
+  /**
+   * Mount the OAuth routes. Absent = no OAuth surface at all.
+   *
+   * The providers themselves are `LitestoneAuthOptions.oauthProviders`, not
+   * here — `clientSecret` is credential material and belongs beside
+   * `encryptionKey`. This block is only what the TRANSPORT needs to know.
+   */
+  oauth?: OAuthRouteOptions
+}
+
+export interface OAuthRouteOptions {
+  /**
+   * This app's public origin — `https://shop.test`, no trailing slash.
+   *
+   * Stated rather than derived, and there is no way around that: behind a proxy
+   * the server sees neither its own hostname nor its scheme, and a provider
+   * matches the redirect URI as an EXACT string — RFC 9700 removed pattern
+   * matching from the acceptable set. A derived value that is wrong fails 100%
+   * of the time and is visible only at the provider, never in these logs.
+   */
+  publicUrl: string
+
+  /**
+   * Where a FAILED callback sends the browser. Default `/`.
+   *
+   * The callback is a browser navigation, not an XHR — every other route in
+   * this plugin answers JSON to a `fetch()`, and this one arrives as a redirect
+   * from the provider into somebody's address bar. So a refusal cannot be a 400
+   * with a JSON body: a person who clicks *Deny*, or comes back to an expired
+   * flow, would be looking at `{"error":...}` in the URL bar.
+   *
+   * The path is sent `?oauth_error=<code>`, where the code is one of
+   * `denied` · `state` · `exchange` · `unavailable` · `link_required` —
+   * deliberately coarse, and never the provider's own message, which is
+   * attacker-influenced text headed for a screen.
+   *
+   * `link_required` is the one that says something specific: an account holds
+   * this address and has not proved it owns it. That discloses the address
+   * exists — which `POST /auth/register` already discloses by answering 409,
+   * so hiding it here would buy nothing and leave somebody who cannot sign in
+   * with no idea why.
+   */
+  errorRedirect?: string
+
+  /**
+   * Starting a flow WRITES A ROW, unauthenticated, once per click. Default
+   * `{ max: 20, window: '15 minutes' }`.
+   */
+  rateLimit?: RateLimitHookOptions
 }

@@ -149,7 +149,6 @@ title: ${o.title}
 <script>
 ${o.imports.map(l => '  ' + l).join('\n')}
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 ${session}
   ${KIT.alert}
   ${KIT.button}
@@ -159,7 +158,7 @@ ${session}
 ${idFieldLine(o.res)}
 
   const { get: rows, unsubscribe } = useStore(${o.res}.store)
-  $onDestroy(unsubscribe)
+  $.onDestroy(unsubscribe)
 
 ${fields}
 

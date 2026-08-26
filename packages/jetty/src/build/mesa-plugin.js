@@ -212,8 +212,8 @@ export function mesaPlugin(options = {}) {
  * but jetty's own dev-client triggers the swap (no import.meta.hot bridge).
  *
  * Compiled component shape:
- *   export default function Name(__anchor, __props, __block) { ... $runtime.pop_component(); }
- *   $runtime.$$delegate([...]);  // optional
+ *   export default function Name(__anchor, __props, __block) { ... $$runtime.pop_component(); }
+ *   $$runtime.$$delegate([...]);  // optional
  *
  * After wrapping:
  *   - export default = thin wrapper that creates an hmrMark comment node
@@ -226,7 +226,7 @@ export function mesaPlugin(options = {}) {
  * @param {string} id — absolute path of the .mesa file
  * @param {string} root — Vite root (used to normalize id to a stable key)
  */
-function injectJettyHMR(js, id, root) {
+export function injectJettyHMR(js, id, root) {
   // Stable HMR key — posix-relative path so server (classifier emits 'src/...')
   // and client agree on the same id. Strip leading slash so id matches the
   // event's `file` field exactly.
@@ -249,8 +249,15 @@ function injectJettyHMR(js, id, root) {
   // calls aren't accidentally hooked. The pattern looks for pop_component()
   // immediately before the function's closing brace (preceded by optional
   // whitespace + closing of any inner blocks).
+  //
+  // The trailing delegate call is matched by SHAPE rather than by the runtime
+  // namespace's name: this lookahead read `$runtime.$$delegate` and mesa's
+  // `FJS-470` renamed every emitted identifier to `$$`, so from that day every
+  // component carrying a delegated event — which is nearly all of them — got
+  // no registration and simply stopped hot-updating, with the build green and
+  // nothing said (`FJS-481`).
   result = result.replace(
-    /(\.pop_component\(\);)([\s\S]*?\n\})(?=\n\$runtime\.\$\$delegate|\s*$)/,
+    /(\.pop_component\(\);)([\s\S]*?\n\})(?=\n\$+runtime\.\$\$delegate|\s*$)/,
     (_, pop, rest) => {
       const reg = `
   // ── Jetty HMR registration ────────────────────────────────────────────
@@ -260,6 +267,20 @@ function injectJettyHMR(js, id, root) {
       return `${pop}${rest.replace(/^(\n\})/, `${reg}$1`)}`
     }
   )
+
+  // Both steps must land or the module is worse than unwrapped: it exports a
+  // wrapper that mounts fine and never registers, so HMR silently does nothing
+  // for that component and the only symptom is an edit that does not appear.
+  // Mesa's output shape is a thing jetty reads rather than owns, so the failure
+  // to recognise it is reported at BUILD time instead of at someone's desk.
+  if (!result.includes('__jettyMesa.register(')) {
+    throw new Error(
+      `[jetty] could not inject HMR registration into ${shortName} — the compiled Mesa ` +
+      `shape this plugin matches has moved. Expected 'pop_component();' before the ` +
+      `component function's closing brace. Fix the pattern in mesa-plugin.js rather ` +
+      `than shipping a component that cannot hot-update.`
+    )
+  }
 
   // Step 3 — module-level hmrMark + the wrapper that becomes the default
   // export. On initial mount, we synthesize the mark comment and pass it

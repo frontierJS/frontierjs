@@ -17,9 +17,23 @@
 // exactly — it is what both substitutions match on.
 //
 // Session carries @@log(audit), so a host schema must declare `database audit`.
+//
+// Every id here is a uuid rather than a rowid, and the deciding one is
+// Credential's: `connections()` hands it to the browser and `removeConnection`
+// takes it back, so a sequential integer there is enumerable and publishes how
+// many credentials the whole installation holds. The other three follow it
+// because one file with two id strategies is a question every reader has to
+// answer again.
+//
+// An app adds what this file cannot know — a relation back to its own User,
+// @@log(audit), @@tenant(none) under row tenancy — with `extend model`, NOT by
+// pasting these models into its own schema. A copy stops being this file's the
+// first time either side moves and nothing fails: basecamp's had @guarded(all)
+// where this file writes @secret, so it stored every OAuth token in plain text
+// with its whole suite green. See litestone's docs/traits.md.
 
 model Credential {
-  id              Int        @id
+  id              String     @id @default(uuid())
   userId          String
   type            String
   value           String     @guarded(all)
@@ -52,14 +66,69 @@ model Session {
   @@index([expiresAt])
 }
 
+/// What a `Verification` row is for. Three acts and one question — does this
+/// person control this address? — which is what makes them one table rather
+/// than three, and what `purpose` stops them being: without it both lookups
+/// matched on the token alone, so a token minted for one act was accepted by
+/// another's endpoint and refused two steps later by a coincidence of string
+/// handling (FJS-476).
+enum VerificationPurpose { passwordReset emailVerify oauthLink }
+
 model Verification {
-  id          Int       @id
+  id          String               @id @default(uuid())
+  purpose     VerificationPurpose
+  /// The address being proved. Required, and every purpose has one — that is
+  /// the test for whether something belongs in this table at all.
   identifier  String
-  value       String    @guarded(all)
+  /// The secret the caller presents, and what the row is found by. One meaning
+  /// on every row.
+  value       String               @unique @guarded(all)
+
+  /// oauthLink only: which identity is waiting to be attached once the address
+  /// answers for itself. Null for the other two, which attach nothing.
+  provider    String?
+  subject     String?
+
   expiresAt   DateTime
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime             @default(now())
 
   @@db(main)
   @@gate("8")
-  @@index([identifier])
+  @@index([purpose, identifier])
+  @@index([expiresAt])
+}
+
+/// An authorization in flight.
+///
+/// `Oauth` and not `OAuth`, for the reason basecamp's `ThreeCX` is not `3CX`:
+/// the accessor is the model name with its first character lowered and nothing
+/// else, so `OAuthFlow` would be reached as `db.oAuthFlow`.
+///
+/// NOT a Verification, and the reuse was the mistake: nobody is proving
+/// anything here, there is no address yet and there may be no account at the
+/// end of it. `state` is a CSRF token echoed back by a redirect rather than a
+/// secret sent to a person, its life is minutes rather than hours, and it
+/// carries a PKCE verifier that no other row in this schema has a use for.
+/// Three different answers to what a column means is three tables wearing one
+/// name.
+model OauthFlow {
+  id          String   @id @default(uuid())
+  /// Half of the browser binding. The other half is a cookie, and a flow found
+  /// by this value ALONE is login CSRF — RFC 9700 requires the token be bound
+  /// to the user agent, which a database row cannot do by itself.
+  state       String   @unique @guarded(all)
+  provider    String
+  /// PKCE code_verifier. Never leaves this process — it goes to the token
+  /// endpoint and nowhere else.
+  verifier    String   @guarded(all)
+  /// Already checked against the app's allow-list when the flow started, so
+  /// what is stored here is known good and the way back decides nothing.
+  returnTo    String?
+
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@db(main)
+  @@gate("8")
+  @@index([expiresAt])
 }

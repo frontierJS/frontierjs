@@ -1,3 +1,5 @@
+import { parseQueryString, encodeQueryString } from '@frontierjs/toolbelt/query'
+
 /**
  * router/match.js — URL pattern matching
  *
@@ -210,68 +212,32 @@ export function buildUrl(path, params = {}, trailingSlash = 'always') {
 
   if (entries.length === 0) return normalized
 
-  const query = new URLSearchParams()
-  for (const [key, value] of entries) {
-    if (Array.isArray(value)) {
-      for (const v of value) query.append(`${key}[]`, String(v))
-    } else if (typeof value === 'object') {
-      for (const [k, v] of Object.entries(value)) {
-        query.set(`${key}[${k}]`, String(v))
-      }
-    } else {
-      query.set(key, String(value))
-    }
-  }
-
-  return normalized + '?' + query.toString()
+  // The same encoder `parseQueryParams` is the inverse of, so a URL this builds
+  // reads back as what was put in — `{ code: '5' }` is `?code="5"` and comes
+  // back a string, where `String(value)` made it the number 5 on the way home.
+  //
+  // The empty filter above is dropped before it gets here and stays a
+  // navigation decision rather than an encoding one: a filter box nobody typed
+  // in should not add a parameter, which is not the same question as whether
+  // `null` can be sent (it can — see `encodePairs`).
+  return normalized + encodeQueryString(Object.fromEntries(entries))
 }
 
 /**
  * Parse and type-coerce query params from a URL search string.
+ *
+ * `@frontierjs/toolbelt/query` is the one definition (`FJS-D125`). This used to
+ * be a local `coerce()`, and the two boundaries that read the syntax disagreed:
+ * here `Number(value)` turned `?sku=007` into 7 — the same guess Sierra's own
+ * widget props already refuse for `data-pid="007"` — while Junction's transport
+ * did not infer at all, so a filter that worked typed into the URL bar matched
+ * nothing when the client sent it.
+ *
  * '?page=1&active=true&ids[]=1&ids[]=2' → { page: 1, active: true, ids: [1, 2] }
  *
  * @param {string} search — e.g. '?page=1&active=true'
  * @returns {Record<string, unknown>}
  */
 export function parseQueryParams(search) {
-  if (!search || search === '?') return {}
-
-  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
-  const result = {}
-
-  for (const [key, value] of params.entries()) {
-    // Array notation: ids[]
-    if (key.endsWith('[]')) {
-      const k = key.slice(0, -2)
-      if (!result[k]) result[k] = []
-      result[k].push(coerce(value))
-      continue
-    }
-
-    // Nested object notation: filter[min]
-    const nested = key.match(/^(\w+)\[(\w+)\]$/)
-    if (nested) {
-      const [, obj, prop] = nested
-      if (!result[obj] || typeof result[obj] !== 'object') result[obj] = {}
-      result[obj][prop] = coerce(value)
-      continue
-    }
-
-    result[key] = coerce(value)
-  }
-
-  return result
-}
-
-/**
- * Coerce a string value to its most natural type.
- */
-function coerce(value) {
-  if (value === 'true') return true
-  if (value === 'false') return false
-  if (value === 'null') return null
-  if (value === '') return ''
-  const num = Number(value)
-  if (!isNaN(num) && value.trim() !== '') return num
-  return value
+  return parseQueryString(search)
 }

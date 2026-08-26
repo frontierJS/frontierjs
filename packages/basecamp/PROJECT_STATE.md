@@ -1,6 +1,6 @@
 # Basecamp — project state
 
-Last reviewed by running: **2026-08-14**.
+Last reviewed by running: **2026-08-24**.
 
 > **Picking up this app?** `docs/UI_HANDOFF.md` is the API contract;
 > `docs/UI_PLAN.md` is what building the UI found. Run `bun run verify` before
@@ -18,15 +18,16 @@ This file describes what it currently does.
 
 | Realm | State |
 | --- | --- |
-| **Data** (`db/`) | **Real.** `schema.lite` is the seed — 37 models, 21 enums, 0 errors / 0 warnings; the migration is generated from it and verified against a fresh database. **All 37 declare `@@gate`** (2026-08-10), graded per WORKSPACE by `api/src/core/gate.ts`. **15 declare `@@allow`** — every model carrying a `workspaceId` bar `WorkspaceMember` and `AuditEvent`; the other 22 carry no workspace column and want `check(parent)` |
-| **API** (`api/`) | **Real.** **21 services** + 4 job files on Litestone accessors, zero raw SQL. Twenty are workspace-scoped; `hub` is the one that is not — it takes no workspace at all and sits behind `requireSystemAdmin` |
-| **UI** (`web/`) | **Real.** Sierra SPA over every service — 39 route files, driven end to end in a browser by `bun run verify`, and the BUILT output probed by `bun run verify:build` |
+| **Data** (`db/`) | **Real.** `schema.lite` is the seed — 45 models, 26 enums, 0 errors and one standing warning; the migration is generated from it and verified against a fresh database. **All 45 declare `@@gate`**, graded per WORKSPACE by `api/src/core/gate.ts`. **Three carry a declared state machine** — `Server`, `Deployment` and `Job`, 19 gated transitions — so a status move is a compare-and-swap with its own authority level rather than a from-list in a service file. Row scoping is the declared `tenancy { }` block rather than hand-written allows: **fourteen `@@tenant(none)`** by name, **seventeen** scoped by their own `workspaceId`, and **fourteen through a parent** — inferred, not declared, and reported as that one warning. `@@tenant(via: rel)` is the wrong answer for seven of the fourteen: two scoped parents get one deny each and they are AND'd, so naming one drops the other |
+| **API** (`api/`) | **Real.** **27 services** + 5 job files on Litestone accessors, zero raw SQL. Twenty-two are workspace-scoped; **five are not** and each says so in the schema rather than in a hook — `hub` (over no model), plus `blueprints`, `hub-config`, `backups` and `notification-preferences`, whose models are `@@tenant(none)`, which is what makes junction's `tenantClaimGuard` exempt them. Four sit behind `requireSystemAdmin`; `blueprints` reads at VISITOR(1), because browsing the catalogue is what a person with no workspace yet is doing |
+| **UI** (`web/`) | **Real.** Sierra SPA over every service — 40 route files, driven end to end in a browser by `bun run verify`, and the BUILT output probed by `bun run verify:build` |
 
 ## How to run it
 
 ```bash
 bun run dev          # API on :8120, UI on :8020
 bun run db:seed      # an example fleet to look at
+bun run verify:screens # blueprints · registry · backups · hub settings · your settings
 bun run verify       # drive the whole thing in a browser (add --reset)
 ```
 
@@ -61,9 +62,12 @@ Wired:
 - All 8 services + both engines on accessors with `createService({ model })`,
   zero raw SQL. `core/hooks.ts` and `core/resource.ts` likewise.
 - `ENCRYPTION_KEY` in `core/env.ts`, required — `createClient()` throws without it.
-- **Layout**: `app.ts`, `db.ts`, `env.ts`, `hooks.ts` live in `api/src/core/`.
-  Note the root `README.md` §Project Structure puts `app.ts` at `src/` root with
-  only env/db/auth/hooks under `core/` — Basecamp keeps all four together.
+- **Layout**: the canonical one (`FJS-D128`). `api/index.ts` starts the app;
+  `api/src/app.ts` builds one and never starts it, which is what lets
+  `junction surface` and `junction jobs` import it; `db.ts`, `env.ts`,
+  `hooks.ts` and the rest of the infrastructure stay in `api/src/core/`.
+  Basecamp used to keep `app.ts` in `core/` with the entry at `src/index.ts`,
+  recorded here as a deliberate departure — the ruling overturned it.
 
 Both audit trails confirmed live: row-level `@@log(audit)` captured 12 writes
 (including `credential create`), and the application `AuditEvent` trail recorded
@@ -641,10 +645,12 @@ at once, which is not guaranteed to be loud. `fli deploy:vendor` is the same
 module over a client app, so a scaffolded app and this one are packed one way.
 
 Two containers. The API is an image; the SPA is static files behind Caddy, whose
-config is generated from `web/config/api-paths.js` — the same list the Vite dev
-proxy reads, now one file with two readers rather than an array that had gone
-stale four times and was about to be copied a fifth. Both have to make the same
-call: `/projects` is a service AND a page, and only `Accept` tells them apart.
+config is generated from `web/config/api-paths.js` — the same paths the Vite dev
+proxy reads, and no longer a list at all: it is parsed out of
+`surface.snapshot.md`, so both proxies are derived from what the app actually
+mounts rather than from an array that had gone stale six times. Both have to make
+the same call: `/projects` is a service AND a page, and only `Accept` tells them
+apart. The image copies the snapshot, because the SPA build runs inside it.
 
 **Packaging it found four framework defects and none of them were in this app.**
 All the same shape — *a path predicate that is true in the workspace for a
@@ -765,7 +771,7 @@ The order, decided 2026-08-14:
 **`@@gate` landed 2026-08-10 and closed `FJS-007`** — deferred to last, as
 decided 2026-08-06, and it cost nothing to defer: the admin zone everyone
 expected to break was already written through `asSystem()` because `User` was
-`@@gate("8")` at the time. All 37 models declare a level; the ladder is per WORKSPACE
+`@@gate("8")` at the time. All 45 models declare a level; the ladder is per WORKSPACE
 (`api/src/core/gate.ts`), which is the part `example/api/gate.ts` could not
 supply.
 
@@ -857,11 +863,11 @@ before the rest follow.
 
 | | |
 |---|---|
-| `bun run test` | 92 data-layer tests — schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
-| `bun run verify` | **271** browser checks across all three realms, incl. an a11y pass on every screen |
+| `bun run test` | **144 tests** across 6 files — the data layer (schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility) and the API tier through `@frontierjs/testing`, which is where the standing rules are graded: schema, gates, who may write the columns the gate is graded from, encryption, auth compatibility, the alert-delivery join, what an API key's table may not contain, where a volume's tenancy comes from, that the widget vocabulary is one list rather than two, and that a recipe run keeps the script it ran while the reclaim vocabulary has exactly one home |
+| `bun run verify` | **302** browser checks across all three realms, incl. an a11y pass on every screen |
 | `bun run verify:build` | the PRODUCTION build — the tags survive comment-stripping, and the page comes up in a real browser |
 | `bun run db:check` | fails if the migration has drifted from `db/schema.lite` |
-| `bun run typecheck` | 20 diagnostics, at the committed baseline. Was 63 until `db/schema.d.ts` landed — two thirds of the count was rows read out of an untyped Proxy |
+| `bun run typecheck` | 15 diagnostics, at the committed baseline. Was 63 until `db/schema.d.ts` landed — two thirds of the count was rows read out of an untyped Proxy |
 | `bun run db:types` | regenerates `db/schema.d.ts` from the schema (`audience=system`). `bun run test` fails if the committed file is stale |
 | `bun run db:seed --force` | the only thing here that writes every model — and `db/test/seed.test.ts` runs the script itself, from a throwaway directory, so it cannot rot unnoticed again |
 

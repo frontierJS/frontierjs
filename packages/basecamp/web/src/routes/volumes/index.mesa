@@ -15,8 +15,8 @@ title: Volumes
   // through the outpost and fail in words when nothing answers. The screen never
   // pre-empts that refusal by disabling itself: the decision is the server's.
   import { session } from '../../session.js'
+  import { formatBytes as size } from '@frontierjs/toolbelt/units'
   import { volumes } from '../../resources/Volume.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -81,7 +81,7 @@ title: Volumes
     if (READS.has(method)) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   function setFilter(value) { filter = value; load() }
   function setServer(value) { server = value; load() }
@@ -115,17 +115,6 @@ title: Volumes
     } finally {
       busy = null
     }
-  }
-
-  // Bytes in, a sentence out. The column is bytes precisely so this decision
-  // lives here — `0.01 GB` in the mock is 10.7 MB, and a number rounded on the
-  // way into the database cannot be un-rounded on the way out.
-  function size(bytes) {
-    const n = Number(bytes) || 0
-    if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
-    if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`
-    if (n >= 1024)      return `${Math.round(n / 1024)} KB`
-    return `${n} B`
   }
 
   function when(iso) {

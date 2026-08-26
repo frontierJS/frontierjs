@@ -1,0 +1,8 @@
+---
+title: About us
+render: static
+---
+<!-- A static route with a frontmatter title and no companion at all: what a
+     page whose title does not vary looks like, and the fallback `head()` does
+     not take away. -->
+<h1>About</h1>

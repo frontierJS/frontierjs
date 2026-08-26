@@ -6,11 +6,12 @@
 // the failure this whole file exists to prevent, because it passes.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
-import { RULES, runChecks, findApps } from '../core/checks.js'
+import { RULES, runChecks, findApps, applyFixes,
+         BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline } from '../core/checks.js'
 
 let ROOT
 
@@ -25,9 +26,25 @@ function tree(name, files) {
   return dir
 }
 
+// `Lead` carries a state machine so `transition-methods` RUNS over the clean
+// tree — a rule that only ever skips is what this file exists to catch. Both
+// moves are UNGATED deliberately: a transition `@gate(N)` is a level
+// `declaredGates()` counts, and one here would move what `gate-unreachable`
+// reports as the worst level in every other test in this file.
 const SCHEMA = `
+enum LeadStatus { new qualified closed }
+
 model Account { id Int @id  name String }
-model Lead    { id Int @id  name String  accountId Int }
+model Lead {
+  id        Int    @id
+  name      String
+  accountId Int
+  status    LeadStatus @default(new)
+  @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
+  @@transitions(status,
+    qualify: new              -> qualified,
+    close:   [new, qualified] -> closed)
+}
 `
 
 const resource = (service, opts = '') => `<script module>
@@ -39,7 +56,24 @@ const resource = (service, opts = '') => `<script module>
 /** The shape a passing app has — every rule runs, nothing fires. */
 const CLEAN = {
   'db/schema.lite':                     SCHEMA,
-  'api/app.ts':                         '// api\n',
+  // A dependency that ships a schema fragment, and no copy of its model here.
+  // Present so `package-model-drift` RUNS on the clean tree rather than skipping
+  // — a rule that only ever skips is the failure this file exists to prevent —
+  // and its absence of findings is the shape an app is meant to be in: import
+  // the file, declare nothing twice.
+  'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*' } }),
+  'node_modules/@acme/kit/package.json':
+    JSON.stringify({ name: '@acme/kit', exports: { './schema.lite': './db/kit.lite' } }),
+  'node_modules/@acme/kit/db/kit.lite':
+    'model Token {\n  id String @id @default(uuid())\n}\n',
+  // Invariant 3, both halves. Configuration in config/, because junction
+  // resolves that directory whether or not the app meant it to, so absent means
+  // a path that goes nowhere. And source in src/, with only the ENTRY beside
+  // it — the file a runner is pointed at, which starts the app that app.ts
+  // assembles without starting.
+  'api/index.ts':                       "import app from './src/app.ts'\nawait app.start()\n",
+  'api/src/app.ts':                     '// api\n',
+  'api/config/junction.config.js':      'export default {}\n',
   'web/index.html':                     '<!doctype html>\n<body><div id="app"></div></body>\n',
   'web/config/vite.config.js':          'export default { server: { port: 8010, strictPort: true } }\n',
   'web/src/resources/Lead.mesa':        resource('leads'),
@@ -51,9 +85,147 @@ const CLEAN = {
   'widgets/src/Embeds/Booking.mesa':    '<button>book</button>\n',
   'widgets/src/Embeds/LeadForm/index.mesa': '<form></form>\n',
   'widgets/src/Embeds/LeadForm/Field.mesa': '<input>\n',
+  // The deploy pair, here for the same reason the third surface is: every rule
+  // must RUN over this tree. `migration-history` only applies to an app whose
+  // container replays migrations on boot, so without a Dockerfile naming
+  // `db:migrate` it would skip — and a rule that only ever skips is what this
+  // file exists to catch.
+  'deploy/Dockerfile':                  'FROM oven/bun\nCMD ["sh","-c","bun run db:migrate && bun run start"]\n',
+  'db/migrations/20260101000000_init.sql': 'CREATE TABLE "lead" ("id" INTEGER);\n',
+  // And the service, for the same reason: `service-model` skips an app with no
+  // `*.service.*` file in it, so without one here the rule would only ever skip.
+  // It also drives both of `Lead`'s declared moves, one by NAME and one by the
+  // state it moves to — the two spellings `transition-methods` accepts, so the
+  // clean tree exercises both branches of its reachability test.
+  'api/src/services/leads.service.ts':
+    "import { createBaseService } from '@frontierjs/junction'\n" +
+    "export default () => createBaseService({})\n" +
+    "export const qualify = () => $.db.lead.transition($.id, 'qualify')\n" +
+    "export const close   = () => $.db.lead.update({ where: {}, data: { status: 'closed' } })\n",
+  // The resolver, for the third time: SCHEMA declares a delete gate at
+  // ADMINISTRATOR(5), which nothing can reach without one — so `gate-unreachable`
+  // runs here and is answered. It is its own file rather than a line in app.ts
+  // because the `api()` helper below replaces app.ts wholesale, and a comment
+  // would not do: readCode blanks those before a rule sees them.
+  'api/src/core/gate.ts':
+    "import { sessionGateLevel } from '@frontierjs/junction'\nexport const getLevel = (u) => sessionGateLevel(u)\n",
+  // The fourth surface, for the same reason as the third: both static rules skip
+  // an app with no `target: 'static'` config, and a rule that only ever skips is
+  // what this file exists to catch. It wires `db`, which is the thing the
+  // publish check taps, and declares no `publishes:`.
+  'site/config/sierra.config.js':
+    "export default {\n  target: 'static',\n  routesDir: 'src/routes',\n  db: '../api/src/core/db.ts',\n}\n",
+  'site/src/routes/index.mesa':   '---\nrender: static\n---\n<h1>catalogue</h1>\n',
+  'site/src/routes/index.meta.js': 'export async function load() { return { products: [] } }\n',
 }
 
 const only = (root, id, extra = {}) => runChecks({ root, only: [id], ...extra })
+
+/**
+ * CLEAN without a whole directory — `without('api/')`.
+ *
+ * Named rather than destructured, because a test that lists the files it is
+ * removing breaks the day CLEAN grows one, and it breaks by ASSERTING THE WRONG
+ * THING rather than by failing to compile.
+ */
+const without = (prefix, extra = {}) => ({
+  ...Object.fromEntries(Object.entries(CLEAN).filter(([path]) => !path.startsWith(prefix))),
+  ...extra,
+})
+
+// ─── migration-history ────────────────────────────────────────────────────────
+
+describe('migration-history', () => {
+  const DOCKER = 'FROM oven/bun\nCMD ["sh","-c","bun run db:migrate && bun run start"]\n'
+
+  test('an app that migrates on boot with no migration to replay is an error', () => {
+    // The measured shape of FJS-345: the image builds, starts, answers /health
+    // and 500s on the first write, because `migrate apply` had no files.
+    const root = tree('mh-none', {
+      'db/schema.lite': SCHEMA, 'deploy/Dockerfile': DOCKER,
+    })
+    const { findings } = only(root, 'migration-history')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/no migration to replay/)
+  })
+
+  test('a migration one directory deep counts — a multi-database schema keeps them there', () => {
+    const root = tree('mh-nested', {
+      'db/schema.lite': SCHEMA, 'deploy/Dockerfile': DOCKER,
+      'db/migrations/main/20260101000000_init.sql': 'CREATE TABLE "lead" ("id" INTEGER);\n',
+    })
+    expect(only(root, 'migration-history').findings).toEqual([])
+  })
+
+  test('an app with no Dockerfile is skipped, not passed', () => {
+    const root = tree('mh-nodocker', { 'db/schema.lite': SCHEMA })
+    const { findings, skipped } = only(root, 'migration-history')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+
+  test('an entrypoint that does not migrate is skipped', () => {
+    // basecamp runs its migrations inside app.ts and has no db:migrate script,
+    // on purpose (FJS-417). Asserting the script unconditionally blocked a
+    // deploy that works.
+    const root = tree('mh-noboot', {
+      'db/schema.lite': SCHEMA,
+      'deploy/Dockerfile': 'FROM oven/bun\nCMD ["bun","run","start"]\n',
+    })
+    const { findings, skipped } = only(root, 'migration-history')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+})
+
+// ─── surface-config ───────────────────────────────────────────────────────────
+
+describe('surface-config', () => {
+  const withApi = (extra) => ({ 'db/schema.lite': SCHEMA, 'api/app.ts': '// api\n', ...extra })
+
+  test('an api/ with no config/ is a finding', () => {
+    const root = tree('sc-none', withApi({}))
+    const { findings } = only(root, 'surface-config')
+    expect(findings.length).toBe(1)
+    expect(findings[0].message).toMatch(/no config\//)
+  })
+
+  test('a config file at the surface root is the sharper finding', () => {
+    const root = tree('sc-stray', withApi({ 'api/junction.config.js': 'export default {}\n' }))
+    const { findings } = only(root, 'surface-config')
+    expect(findings.length).toBe(1)
+    expect(findings[0].message).toMatch(/sits at the surface root/)
+  })
+
+  test('a config file BESIDE a config/ names the ambiguity', () => {
+    const root = tree('sc-both', withApi({
+      'api/junction.config.js':        'export default {}\n',
+      'api/config/junction.config.js': 'export default {}\n',
+    }))
+    const { findings } = only(root, 'surface-config')
+    expect(findings.length).toBe(1)
+    expect(findings[0].message).toMatch(/sits beside/)
+  })
+
+  test('config/ present is clean, even holding nothing this rule knows', () => {
+    const root = tree('sc-ok', withApi({ 'api/config/junction.config.js': 'export default {}\n' }))
+    expect(only(root, 'surface-config').findings).toEqual([])
+  })
+
+  test('a surface directory with no source in it is not judged', () => {
+    // A directory somebody made is not a surface yet. Scolding it is how a rule
+    // gets turned off.
+    const root = tree('sc-empty', { 'db/schema.lite': SCHEMA, 'api/notes.md': 'later\n',
+                                    'web/config/vite.config.js': 'export default {}\n',
+                                    'web/src/main.js': '// x\n' })
+    expect(only(root, 'surface-config').findings).toEqual([])
+  })
+
+  test('a schema with no surface beside it skips rather than fires', () => {
+    const root = tree('sc-fixture', { 'db/schema.lite': SCHEMA })
+    expect(only(root, 'surface-config').skipped.length).toBe(1)
+  })
+})
 
 beforeAll(() => { ROOT = mkdtempSync(join(tmpdir(), 'fli-checks-')) })
 afterAll(()  => { rmSync(ROOT, { recursive: true, force: true }) })
@@ -105,6 +277,132 @@ describe('model names', () => {
       'db/schema.lite': 'model legacy_users {\n  id Int @id\n  @@external\n}\n',
     })
     expect(only(root, 'model-name-case').findings).toEqual([])
+  })
+})
+
+describe('package-model-drift', () => {
+
+  // A package that ships a `.lite` and an app that declares one of its models
+  // anyway. Both halves happen legitimately — `@frontierjs/auth` ships one file
+  // to be IMPORTED and one to be appended and grown — so the copy itself decides
+  // nothing and the rule is about the columns the package declares.
+
+  const DEP = (files) => Object.fromEntries(Object.entries(files)
+    .map(([k, v]) => [`node_modules/@acme/kit/${k}`, v]))
+
+  const KIT = {
+    ...DEP({
+      'package.json': JSON.stringify({ name: '@acme/kit', exports: { './schema.lite': './db/kit.lite' } }),
+      'db/kit.lite': [
+        'model Token {',
+        '  id      String  @id @default(uuid())',
+        '  secret  String  @secret',
+        '  label   String?',
+        '}',
+      ].join('\n'),
+    }),
+    'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*' } }),
+  }
+
+  const withModel = (body) => ({ ...CLEAN, ...KIT, 'db/schema.lite': SCHEMA + '\n' + body })
+
+  test('a column declared differently from the package is a warning naming both', () => {
+    // The measured case: `@secret` becomes `@guarded(all)` in the copy, so the
+    // column stops being encrypted and the package goes on writing to it.
+    const root = tree('pmd-drift', withModel([
+      'model Token {',
+      '  id      String  @id @default(uuid())',
+      '  secret  String  @guarded(all)',
+      '  label   String?',
+      '}',
+    ].join('\n')))
+
+    const { findings } = only(root, 'package-model-drift')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('warn')
+    expect(findings[0].message).toContain('@secret')       // what the package says
+    expect(findings[0].message).toContain('@guarded(all)') // what this says
+    expect(findings[0].message).toContain('@acme/kit')
+  })
+
+  test('a column the package declares and the copy omits is a warning too', () => {
+    // The package's code still writes to it; the copy has no column to take it.
+    const root = tree('pmd-missing', withModel([
+      'model Token {',
+      '  id      String  @id @default(uuid())',
+      '  secret  String  @secret',
+      '}',
+    ].join('\n')))
+
+    const { findings } = only(root, 'package-model-drift')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/missing its column 'label'/)
+  })
+
+  // ── and the half that makes it a rule rather than a tripwire ───────────────
+
+  test('a column the APP added is not a finding', () => {
+    // This is what an app does to a model a package ships to be extended —
+    // auth's `User` grows a dozen. A rule that fired here would fire on every
+    // correct install, which is why it is keyed on the package's columns alone.
+    const root = tree('pmd-added', withModel([
+      'model Token {',
+      '  id        String    @id @default(uuid())',
+      '  secret    String    @secret',
+      '  label     String?',
+      '  ownerId   String?',
+      '  createdAt DateTime  @default(now())',
+      '}',
+    ].join('\n')))
+
+    expect(only(root, 'package-model-drift').findings).toEqual([])
+  })
+
+  test('a model-level attribute the app added is not a finding', () => {
+    // `@@tenant(none)`, `@@log(audit)` and the app's own policies are the app's
+    // business by construction — they are the three things a package cannot know.
+    const root = tree('pmd-attrs', withModel([
+      'model Token {',
+      '  id      String  @id @default(uuid())',
+      '  secret  String  @secret',
+      '  label   String?',
+      '  @@tenant(none)',
+      '  @@log(audit)',
+      '  @@allow(\'read\', ownerId == auth().id)',
+      '}',
+    ].join('\n')))
+
+    expect(only(root, 'package-model-drift').findings).toEqual([])
+  })
+
+  test('realigning a column is not a change to it', () => {
+    // The declaration is compared with runs of whitespace collapsed, because
+    // this house aligns columns and a formatter pass is not a schema change.
+    const root = tree('pmd-align', withModel([
+      'model Token {',
+      '  id String @id @default(uuid())',
+      '  secret        String   @secret',
+      '  label   String?   // what a person calls it',
+      '}',
+    ].join('\n')))
+
+    expect(only(root, 'package-model-drift').findings).toEqual([])
+  })
+
+  test('a model the app does not declare at all is silent — that is the import', () => {
+    // The whole point: import the file and the rule has nothing to compare,
+    // because there is no second declaration to disagree with the first.
+    const root = tree('pmd-imported', { ...CLEAN, ...KIT })
+    expect(only(root, 'package-model-drift').findings).toEqual([])
+  })
+
+  test('a dependency that ships no .lite is skipped by name', () => {
+    const root = tree('pmd-none', {
+      ...CLEAN,
+      'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/plain': '*' } }),
+      'node_modules/@acme/plain/package.json': JSON.stringify({ name: '@acme/plain', exports: { '.': './index.js' } }),
+    })
+    expect(only(root, 'package-model-drift').skipped).toBeTruthy()
   })
 })
 
@@ -247,6 +545,58 @@ describe('the silent config hazards', () => {
   })
 })
 
+// ─── surface-src ──────────────────────────────────────────────────────────────
+
+describe('surface-src', () => {
+  test('a surface with every file at its root is a finding', () => {
+    // `example`'s measured shape: api/app.ts, api/db.ts, api/gate.ts and the
+    // rest beside them, with no src/ and no entry. It passed `app-layout` and
+    // `surface-config` — both of which it satisfies — for as long as it existed.
+    const root = tree('ss-flat', without('api/', {
+      'api/config/junction.config.js': 'export default {}\n',
+      'api/app.ts':                    '// api\n',
+      'api/db.ts':                     '// db\n',
+    }))
+    const { findings } = only(root, 'surface-src')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/api\/ has no src\//)
+    // The names are in the message: "no src/" is a shape, and what the reader
+    // needs is which files it is talking about.
+    expect(findings[0].message).toMatch(/app\.ts/)
+  })
+
+  test('a stray module beside src/ is a finding, and the entry is not', () => {
+    const root = tree('ss-stray', { ...CLEAN, 'api/seed.ts': '// seed\n' })
+    const { findings } = only(root, 'surface-src')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].file).toMatch(/api\/seed\.ts$/)
+  })
+
+  test('a config file at the surface root belongs to surface-config, not here', () => {
+    // Two rules pointing at one file teaches the reader to skip both.
+    const root = tree('ss-config', {
+      ...CLEAN,
+      'web/vite.config.js': 'export default { server: { strictPort: true } }\n',
+    })
+    expect(only(root, 'surface-src').findings).toEqual([])
+    expect(only(root, 'surface-config').findings).toHaveLength(1)
+  })
+
+  test('a surface entered through index.html has no root script and does not fire', () => {
+    // web/ and widgets/ are two of the four surfaces and neither has an entry
+    // script. A rule that read "no entry beside src/" as a finding would fire
+    // on the normal case for half of them.
+    expect(only(tree('ss-html', CLEAN), 'surface-src').findings).toEqual([])
+  })
+
+  test('a surface directory with nothing in it is skipped, not passed', () => {
+    const root = tree('ss-empty', { 'db/schema.lite': SCHEMA, 'web/.keep': '' })
+    const { findings, skipped } = only(root, 'surface-src')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+})
+
 describe('what the runner reports about itself', () => {
   test('a rule with nothing to look at is skipped, not passed', () => {
     const root = tree('bare', { 'db/schema.lite': SCHEMA, 'api/app.ts': '// api\n' })
@@ -330,6 +680,59 @@ describe('the widget surface', () => {
     // CLEAN already carries LeadForm/index.mesa + Field.mesa. The assertion is
     // that the part does not fire anything — it is not a widget with a bad name.
     expect(only(tree('w-parts', CLEAN), 'widget-entry-name').findings).toEqual([])
+  })
+})
+
+describe('the site surface', () => {
+  test('a site-only project is a whole project', () => {
+    // db/ + api/ + site/ and no SPA: a project whose whole product is a public
+    // site with live islands is a normal FrontierJS project.
+    const root = tree('s-only', {
+      'db/schema.lite':             SCHEMA,
+      'site/config/sierra.config.js': "export default { target: 'static' }\n",
+      'site/config/vite.config.js':   'export default { server: { strictPort: true } }\n',
+      'site/src/routes/index.mesa':   '<h1>hi</h1>\n',
+    })
+    expect(only(root, 'app-layout').findings).toEqual([])
+    expect(only(root, 'surface-config').findings).toEqual([])
+  })
+
+  test("a `target: 'static'` config inside web/ is a surface in the wrong place", () => {
+    // The one folded surface that reads as reasonable while it is written: a
+    // second config beside the first looks like two targets of one app. Four
+    // answers differ, and the OUTPUT is the decisive one — one Vite root means
+    // the site's dist/ sits inside the SPA's, and `vite build` empties outDir.
+    const root = tree('s-nested', {
+      ...CLEAN,
+      'web/config/sierra.static.config.js':
+        "export default { target: 'static', routesDir: 'src/public-site' }\n",
+    })
+    const { findings } = only(root, 'app-layout')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/prerendered site inside web\//)
+    expect(findings[0].message).toMatch(/empties outDir/)
+  })
+
+  test('the SPA\'s own config is not a static site, whatever else it says', () => {
+    // The rule reads `target:` and nothing else. A config mentioning the word
+    // static in a comment or a path must not fire it, or the rule is noise.
+    const root = tree('s-spa', {
+      ...CLEAN,
+      'web/config/sierra.config.js':
+        "// static assets live in public/\nexport default { target: 'spa' }\n",
+    })
+    expect(only(root, 'app-layout').findings).toEqual([])
+  })
+
+  test('site/ keeps its configuration in config/, like every other surface', () => {
+    const root = tree('s-stray', {
+      'db/schema.lite':             SCHEMA,
+      'site/sierra.config.js':      "export default { target: 'static' }\n",
+      'site/src/routes/index.mesa': '<h1>hi</h1>\n',
+    })
+    const { findings } = only(root, 'surface-config')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/site\/config\//)
   })
 })
 
@@ -435,5 +838,905 @@ describe('the repo scope', () => {
       'packages/thing/docs/DEPTH.md':    '#\n',
     })
     expect(runChecks({ root, scope: 'repo' }).findings).toEqual([])
+  })
+})
+
+
+// ─── the source hazards ───────────────────────────────────────────────────────
+//
+// Five rules that read a line of an app's own JavaScript. Each gets the pair
+// this file demands — a tree that violates it and one that does not — plus, for
+// three of them, the case that decides whether the rule is usable at all: the
+// same words written in a COMMENT, which is how this repo's own api/ files
+// describe every one of these hazards.
+
+const api = (body) => ({ ...CLEAN, 'api/src/app.ts': body })
+
+describe('raw-route-param', () => {
+  test('a :name segment in a raw route is an error', () => {
+    const root = tree('rr-colon', api("app.get('/orders/:id', h)\n"))
+    const { findings } = only(root, 'raw-route-param')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(1)
+    expect(findings[0].message).toMatch(/'\/orders\/\{id\}'/)
+  })
+
+  test('the router beneath the shortcuts is the same matcher', () => {
+    const root = tree('rr-router', api("app.http.router.post('/hooks/:provider', h)\n"))
+    expect(only(root, 'raw-route-param').findings).toHaveLength(1)
+  })
+
+  test('{id} is the spelling and is not reported', () => {
+    const root = tree('rr-brace', api("app.get('/orders/{id}', h)\napp.post('/orders', h)\n"))
+    expect(only(root, 'raw-route-param').findings).toEqual([])
+  })
+
+  test('a route written inside a comment is not a route', () => {
+    const root = tree('rr-comment', api("// app.get('/orders/:id', h) is the shape that 404s\n"))
+    expect(only(root, 'raw-route-param').findings).toEqual([])
+  })
+})
+
+describe('ctx-params', () => {
+  test('reading ctx.params is an error', () => {
+    const root = tree('cp-read', api('export const guard = ctx => ctx.params.user.isAdmin\n'))
+    const { findings } = only(root, 'ctx-params')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/does not exist/)
+  })
+
+  test('the four that do exist are not reported', () => {
+    const root = tree('cp-real', api(
+      'export const guard = ctx => ctx.auth.user && ctx.route.id && ctx.client.ip && ctx.locals.db\n'))
+    expect(only(root, 'ctx-params').findings).toEqual([])
+  })
+
+  test('a comment saying there is no ctx.params is not a use of it', () => {
+    // basecamp's api/src/core/hooks.ts says exactly this, in these words.
+    const root = tree('cp-comment', api('/* There is NO ctx.params: the previous version read it. */\n'))
+    expect(only(root, 'ctx-params').findings).toEqual([])
+  })
+})
+
+describe('set-auth-discarded', () => {
+  test('calling $setAuth as a statement is an error', () => {
+    const root = tree('sa-bare', api('db.$setAuth(user)\nawait db.lead.create({ data })\n'))
+    const { findings } = only(root, 'set-auth-discarded')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(1)
+    expect(findings[0].message).toMatch(/const scoped = db\.\$setAuth/)
+  })
+
+  test('an await in front changes nothing — the client is still dropped', () => {
+    const root = tree('sa-await', api('await db.$setAuth(user);\n'))
+    expect(only(root, 'set-auth-discarded').findings).toHaveLength(1)
+  })
+
+  test('keeping the answer, either way, is the correct shape', () => {
+    const root = tree('sa-kept', api(
+      'const scoped = db.$setAuth(as("admin", { workspaceId }))\n' +
+      'await db.$setAuth(user).lead.create({ data })\n' +
+      'return db.$setAuth(user)\n'))
+    expect(only(root, 'set-auth-discarded').findings).toEqual([])
+  })
+
+  test('a call spanning two lines is left alone rather than guessed at', () => {
+    const root = tree('sa-multiline', api('db.$setAuth(\n  user,\n)\n'))
+    expect(only(root, 'set-auth-discarded').findings).toEqual([])
+  })
+})
+
+describe('call-header-declared', () => {
+  const CART = "export const CART_HEADER = 'x-cart-token'\n"
+  const sets = "getClient().setCallHeader(CART_HEADER, token)\n"
+
+  test('a per-call header the API never declared is an error', () => {
+    const root = tree('ch-missing', {
+      ...CLEAN,
+      'api/src/core/cart.ts': CART,
+      'web/src/cart.js':      CART + sets,
+    })
+    const { findings } = only(root, 'call-header-declared')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/'x-cart-token' is set per call/)
+    expect(findings[0].message).toMatch(/callHeaders/)
+  })
+
+  test('both halves resolve through a shared constant, which is how apps write it', () => {
+    const root = tree('ch-declared', {
+      ...CLEAN,
+      'api/src/core/cart.ts': CART,
+      'api/src/app.ts':       "import { CART_HEADER } from './core/cart.ts'\n" +
+                              'export const config = { http: { callHeaders: [CART_HEADER] } }\n',
+      'web/src/cart.js':      CART + sets,
+    })
+    expect(only(root, 'call-header-declared').findings).toEqual([])
+  })
+
+  test('a // inside a string does not blank the declaration after it', () => {
+    // The failure this guards is the expensive direction: blanking from the
+    // `//` in an origin URL to the end of the line hides the callHeaders beside
+    // it, and the rule then reports a correctly-declared header as undeclared.
+    const root = tree('ch-url', {
+      ...CLEAN,
+      'api/src/app.ts':  "export const config = { http: { cors: { origin: 'http://localhost:8010' }, " +
+                         "callHeaders: ['x-cart-token'] } }\n",
+      'web/src/cart.js': "getClient().setCallHeader('x-cart-token', t)\n",
+    })
+    expect(only(root, 'call-header-declared').findings).toEqual([])
+  })
+
+  test('a declaration this rule cannot read is skipped, not treated as absent', () => {
+    const root = tree('ch-opaque', {
+      ...CLEAN,
+      'api/src/app.ts':  'export const config = { http: { callHeaders: HEADERS } }\n' +
+                         "export const other = { callHeaders: [...BASE, 'x-a'] }\n",
+      'web/src/cart.js': "getClient().setCallHeader('x-cart-token', token)\n",
+    })
+    const { findings, skipped } = only(root, 'call-header-declared')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+
+  test('an app with no api/ surface is skipped — the server is somebody else’s', () => {
+    const root = tree('ch-noapi', without('api/', { 'web/src/cart.js': "c.setCallHeader('x-a', 1)\n" }))
+    const { findings, skipped } = only(root, 'call-header-declared')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+})
+
+describe('service-model', () => {
+  const SCHEMA2 = SCHEMA + 'model ProductVariant { id Int @id }\nmodel Person { id Int @id }\n'
+  const base = (body = '{}') =>
+    `import { createBaseService } from '@frontierjs/junction'\nexport default () => createBaseService(${body})\n`
+
+  test('a hyphenated service name resolves to no model and is an error', () => {
+    const root = tree('sm-kebab', {
+      ...CLEAN, 'db/schema.lite': SCHEMA2,
+      'api/src/services/product-variants.service.ts': base(),
+    })
+    const { findings } = only(root, 'service-model')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/product-variant/)
+    expect(findings[0].message).toMatch(/fails open/)
+  })
+
+  test('stating the model is the fix, and it is checked against the schema', () => {
+    const root = tree('sm-stated', {
+      ...CLEAN, 'db/schema.lite': SCHEMA2,
+      'api/src/services/product-variants.service.ts': base("{ model: 'ProductVariant' }"),
+    })
+    expect(only(root, 'service-model').findings).toEqual([])
+  })
+
+  test('a model: naming nothing in the schema is the same failure, stated', () => {
+    const root = tree('sm-bogus', {
+      ...CLEAN, 'db/schema.lite': SCHEMA2,
+      'api/src/services/variants.service.ts': base("{ model: 'Varient' }"),
+    })
+    const { findings } = only(root, 'service-model')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/names no model/)
+  })
+
+  test('an irregular plural resolves — the singular has one owner and this asks it', () => {
+    // `people` → `person` comes from @frontierjs/toolbelt/inflect, the module
+    // litestone derives a table name with. A rule with its own rules here would
+    // grade an app by an inflection the app does not run (Invariant 2).
+    const root = tree('sm-irregular', {
+      ...CLEAN, 'db/schema.lite': SCHEMA2,
+      'api/src/services/people.service.ts': base(),
+    })
+    expect(only(root, 'service-model').findings).toEqual([])
+  })
+
+  test('a service over no model is judged on nothing', () => {
+    // A hub, a webhook receiver, a payment callback. It asks for no derived
+    // layer, so there is nothing for a missing model to switch off.
+    const root = tree('sm-custom', {
+      ...CLEAN, 'db/schema.lite': SCHEMA2,
+      'api/src/services/hub.service.ts':
+        "import { createService } from '@frontierjs/junction'\nexport default () => createService({ find: () => [] })\n",
+    })
+    expect(only(root, 'service-model').findings).toEqual([])
+  })
+})
+
+
+// ─── the cross-realm hazards ──────────────────────────────────────────────────
+//
+// Four more source rules. Two of them are the same question asked twice — *does
+// this name reach a model* — from the API realm and the UI realm, which is why
+// they share one resolver rather than one regex each.
+
+describe('resource-model-miss', () => {
+  const withVariant = (body) => ({
+    ...CLEAN,
+    'db/schema.lite':      SCHEMA + '\nmodel ProductVariant { id Int @id }\n',
+    'web/src/pages/x.mesa': body,
+  })
+
+  test('a name that reaches no model, where the model plainly exists, is an error', () => {
+    const root = tree('rm-kebab', withVariant("<script module>\n" +
+      "export const variants = createResource('product-variants')\n</script>\n"))
+    const { findings } = only(root, 'resource-model-miss')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/model: 'ProductVariant'/)
+  })
+
+  test('stating the model answers it, even three lines down', () => {
+    const root = tree('rm-stated', withVariant("<script module>\n" +
+      "export const variants = createResource('product-variants', {\n" +
+      "  idField: 'id',\n  model: 'ProductVariant',\n})\n</script>\n"))
+    expect(only(root, 'resource-model-miss').findings).toEqual([])
+  })
+
+  test('a resource over no model is judged on nothing', () => {
+    // `createResource('hub')` with no model Hub is a whole kind of resource.
+    // Reporting it is how a rule gets turned off.
+    const root = tree('rm-none', withVariant("<script module>\n" +
+      "export const hub = createResource('hub')\n</script>\n"))
+    expect(only(root, 'resource-model-miss').findings).toEqual([])
+  })
+
+  test('a name that resolves is silent — including an irregular', () => {
+    const root = tree('rm-ok', {
+      ...CLEAN,
+      'db/schema.lite':       SCHEMA + '\nmodel Person { id Int @id }\n',
+      'web/src/pages/x.mesa': "<script module>\nexport const people = createResource('people')\n" +
+                              "export const leads = createResource('leads')\n</script>\n",
+    })
+    expect(only(root, 'resource-model-miss').findings).toEqual([])
+  })
+})
+
+describe('service-module-db', () => {
+  const svc = (body) => ({
+    ...CLEAN,
+    'api/src/services/leads.service.ts':
+      "import { db } from '../core/db.ts'\nimport { createService } from '@frontierjs/junction'\n" + body,
+  })
+
+  test('the module client inside a service is an error', () => {
+    const root = tree('md-module', svc('export default () => createService({\n' +
+      '  find: () => db.lead.findMany({ where: {} }),\n})\n'))
+    const { findings } = only(root, 'service-module-db')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(4)
+    expect(findings[0].message).toMatch(/carries no principal/)
+  })
+
+  test('the request-scoped client, either spelling, is the correct shape', () => {
+    const root = tree('md-scoped', svc('export default () => createService({\n' +
+      '  find:   () => $.db.lead.findMany({ where: {} }),\n' +
+      '  get:    (ctx) => ctx.locals.db.lead.findFirst({ where: {} }),\n})\n'))
+    expect(only(root, 'service-module-db').findings).toEqual([])
+  })
+
+  test('asSystem() off the module client is the deliberate bypass', () => {
+    // It says which client it means, in the one word that means it. The shape
+    // this rule is for is the one that says nothing.
+    const root = tree('md-system', svc('export default () => createService({\n' +
+      '  find: () => db.asSystem().lead.findMany({ where: {} }),\n})\n'))
+    expect(only(root, 'service-module-db').findings).toEqual([])
+  })
+
+  test('a local binding off ctx is not the module client', () => {
+    const root = tree('md-local', {
+      ...CLEAN,
+      'api/src/services/leads.service.ts':
+        "import { createService } from '@frontierjs/junction'\n" +
+        'export default () => createService({\n' +
+        '  find: (ctx) => { const db = ctx.locals.db; return db.lead.findMany({ where: {} }) },\n})\n',
+    })
+    expect(only(root, 'service-module-db').findings).toEqual([])
+  })
+})
+
+describe('scheduler-dispatch', () => {
+  test('a timer that dispatches into the queue is an error', () => {
+    const root = tree('sd-inline', api(
+      "app.scheduler.every('5m', () => app.jobs.dispatch(sweep, { at: 1 }))\n"))
+    const { findings } = only(root, 'scheduler-dispatch')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/every replica/)
+  })
+
+  test('the callback is read whole, not the line it opened on', () => {
+    const root = tree('sd-multiline', api(
+      "app.scheduler.cron('*/5 * * * *', async () => {\n" +
+      '  const rows = await pending()\n' +
+      '  for (const r of rows) await dispatch(bookCourier, r)\n' +
+      '})\n'))
+    expect(only(root, 'scheduler-dispatch').findings).toHaveLength(1)
+  })
+
+  test('the queue owning its own schedule is the fix, and is silent', () => {
+    const root = tree('sd-jobs', api(
+      "app.jobs.schedule('sweep', '*/5 * * * *', () => dispatch(sweep, {}))\n"))
+    expect(only(root, 'scheduler-dispatch').findings).toEqual([])
+  })
+
+  test('a timer with no row behind it is what app.scheduler is for', () => {
+    const root = tree('sd-cache', api("app.scheduler.every('1m', () => cache.sweep())\n"))
+    expect(only(root, 'scheduler-dispatch').findings).toEqual([])
+  })
+})
+
+describe('transition-methods', () => {
+  // A machine plus the code that drives it. `moves` replaces the schema's
+  // clause list; `drives` replaces the service body.
+  const app = (moves, drives) => ({
+    ...CLEAN,
+    'db/schema.lite': CLEAN['db/schema.lite'].replace(
+      /@@transitions\(status,[\s\S]*?\)\n/,
+      `@@transitions(status,\n    ${moves})\n`),
+    'api/src/services/leads.service.ts':
+      "import { createBaseService } from '@frontierjs/junction'\n" +
+      'export default () => createBaseService({})\n' + drives,
+  })
+
+  test('the clean tree drives every move it declares', () => {
+    const root = tree('tm-clean', CLEAN)
+    const { findings, skipped } = only(root, 'transition-methods')
+    expect(skipped).toHaveLength(0)
+    expect(findings).toHaveLength(0)
+  })
+
+  test('a move nothing names, by either spelling, is a warning', () => {
+    const root = tree('tm-dead', app(
+      'qualify: new -> qualified,\n    close: qualified -> closed',
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n"))
+    const { findings } = only(root, 'transition-methods')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('warn')
+    expect(findings[0].message).toMatch(/Lead\.close -> closed/)
+    // Reported where the declaration is — the service has nothing to point at.
+    expect(findings[0].file).toMatch(/schema\.lite$/)
+  })
+
+  test('naming the state it moves TO counts as driving it', () => {
+    // `update({ data: { status: 'closed' } })` is the same move litestone
+    // enforces, spelled by its target. A rule asking only for the move name
+    // reports eleven of basecamp's nineteen and is wrong about eight.
+    const root = tree('tm-by-state', app(
+      'qualify: new -> qualified,\n    close: qualified -> closed',
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n" +
+      "export const c = () => $.db.lead.update({ where: {}, data: { status: 'closed' } })\n"))
+    expect(only(root, 'transition-methods').findings).toHaveLength(0)
+  })
+
+  test('a comment naming the move does not count as driving it', () => {
+    // readCode blanks comments before any rule sees them. Without that, a file
+    // documenting its own machine would silence the rule about it.
+    const root = tree('tm-comment', app(
+      'qualify: new -> qualified,\n    close: qualified -> closed',
+      "// close: qualified -> closed, and the string 'closed' is in this comment\n" +
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n"))
+    expect(only(root, 'transition-methods').findings).toHaveLength(1)
+  })
+
+  test('a transition() naming no declared move is the other direction', () => {
+    const root = tree('tm-undeclared', app(
+      'qualify: new -> qualified,\n    close: [new, qualified] -> closed',
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n" +
+      "export const c = () => $.db.lead.transition($.id, 'close')\n" +
+      "export const x = () => $.db.lead.transition($.id, 'archive')\n"))
+    const { findings } = only(root, 'transition-methods')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/'archive'\) names no move/)
+    expect(findings[0].message).toMatch(/qualify, close/)
+    expect(findings[0].file).toMatch(/leads\.service\.ts$/)
+  })
+
+  test("the state a move lands on is not a name transition() accepts", () => {
+    // The two spellings are not interchangeable in both directions, and this
+    // test exists because writing it the other way is what caught it. An
+    // `update({ data: { status: 'closed' } })` makes the move; a
+    // `transition(id, 'closed')` throws, because transition() resolves a move
+    // NAME and this one is called `close`. Only an UNNAMED move is reachable by
+    // its target, which is the case below this one.
+    const root = tree('tm-target-name', app(
+      'qualify: new -> qualified,\n    close: [new, qualified] -> closed',
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n" +
+      "export const c = () => $.db.lead.transition($.id, 'closed')\n"))
+    const { findings } = only(root, 'transition-methods')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/'closed'\) names no move/)
+  })
+
+  test('a from-LIST is one clause, and the move keeps its name', () => {
+    // The parse that costs the most: `close: [new, qualified] -> closed` splits
+    // on a top-level comma only. Split naively it becomes two clauses, the name
+    // is lost, and the move is reported as `closed` — which is also a legal
+    // spelling of it, so the bug hides.
+    const root = tree('tm-fromlist', app(
+      'qualify: new -> qualified,\n    close: [new, qualified] -> closed',
+      "export const q = () => $.db.lead.transition($.id, 'qualify')\n" +
+      "export const c = () => $.db.lead.transition($.id, 'close')\n"))
+    expect(only(root, 'transition-methods').findings).toHaveLength(0)
+  })
+
+  test('an unnamed move is named after the state it moves to', () => {
+    // `new -> qualified` names itself `qualified`, which is the spelling
+    // transition() then has to use.
+    const root = tree('tm-unnamed', app(
+      'new -> qualified,\n    close: qualified -> closed',
+      "export const q = () => $.db.lead.transition($.id, 'qualified')\n" +
+      "export const c = () => $.db.lead.transition($.id, 'close')\n"))
+    expect(only(root, 'transition-methods').findings).toHaveLength(0)
+  })
+
+  test('a schema with no machine skips rather than passing', () => {
+    const root = tree('tm-none', {
+      ...CLEAN,
+      'db/schema.lite': CLEAN['db/schema.lite'].replace(/@@transitions\(status,[\s\S]*?\)\n/, ''),
+    })
+    const { skipped, findings } = only(root, 'transition-methods')
+    expect(findings).toHaveLength(0)
+    expect(skipped[0].why).toMatch(/no @@transitions/)
+  })
+
+  test('an app with no api/ source skips — the machine is driven elsewhere', () => {
+    const root = tree('tm-noapi', without('api/'))
+    expect(only(root, 'transition-methods').skipped[0].why).toMatch(/no api\/ source/)
+  })
+})
+
+describe('gate-unreachable', () => {
+  // Everything but the resolver: the app declares the gate and has nothing that
+  // can grade a caller up to it.
+  const app5 = (extra = {}) => without('api/src/core/', extra)
+
+  test('a gate at ADMINISTRATOR with nothing that can reach it is a warning', () => {
+    const root = tree('gu-named', app5())
+    const { findings } = only(root, 'gate-unreachable')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('warn')
+    expect(findings[0].message).toMatch(/never interprets a role STRING/)
+  })
+
+  test('the compact spelling is the same declaration', () => {
+    const root = tree('gu-compact', app5({
+      'db/schema.lite': 'model Lead {\n  id Int @id\n  @@gate("0.4.4.5")\n}\n',
+    }))
+    expect(only(root, 'gate-unreachable').findings).toHaveLength(1)
+  })
+
+  test('a standing column the shipped resolver reads answers it', () => {
+    const root = tree('gu-column', app5({
+      'db/schema.lite': SCHEMA + '\nmodel User {\n  id Int @id\n  isAdmin Boolean?\n}\n',
+    }))
+    expect(only(root, 'gate-unreachable').findings).toEqual([])
+  })
+
+  test('a getLevel of the app’s own answers everything below it', () => {
+    expect(only(tree('gu-resolver', CLEAN), 'gate-unreachable').findings).toEqual([])
+  })
+
+  test('8 and 9 are deliberate and are not reported at all', () => {
+    // `8` means nothing outside asSystem() has anything to say to this model —
+    // the identity models ship that way — and `9` is locked. Neither is a level
+    // a resolver was supposed to reach.
+    const root = tree('gu-eight', app5({
+      'db/schema.lite': 'model Session {\n  id Int @id\n  @@gate("8")\n}\n',
+    }))
+    const { findings, skipped } = only(root, 'gate-unreachable')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+})
+
+
+// ─── --fix ────────────────────────────────────────────────────────────────────
+//
+// The assertion that matters for every one of these is not the bytes — it is
+// that the RULE IS QUIET AFTERWARDS, checked from disk. A fix that satisfies the
+// test and not the rule is the failure mode, and a byte comparison is exactly
+// how you would not notice.
+
+describe('applyFixes', () => {
+  const fixAll = (root, id) => {
+    const first  = only(root, id)
+    const result = applyFixes(first.findings)
+    return { ...result, before: first.findings, after: only(root, id).findings }
+  }
+  const read = (root, path) => readFileSync(join(root, path), 'utf8')
+
+  test('a raw route is rewritten in the quotes it was written in, and the rule goes quiet', () => {
+    const root = tree('fx-route', api(
+      "app.get('/orders/:id', h)\n" +
+      'app.post("/orders/:id/lines/:line", h)\n' +
+      "// app.get('/left/:alone') — a comment stays one\n"))
+
+    const { fixed, after } = fixAll(root, 'raw-route-param')
+    expect(fixed).toHaveLength(2)
+    expect(after).toEqual([])
+
+    const src = read(root, 'api/src/app.ts')
+    expect(src).toContain("app.get('/orders/{id}', h)")
+    expect(src).toContain('app.post("/orders/{id}/lines/{line}", h)')
+    expect(src).toContain("// app.get('/left/:alone')")
+  })
+
+  test('an empty options object takes the key and no comma', () => {
+    const root = tree('fx-empty', {
+      ...CLEAN,
+      'db/schema.lite': SCHEMA + '\nmodel ProductVariant { id Int @id }\n',
+      'api/src/services/product-variants.service.ts':
+        "import { createBaseService } from '@frontierjs/junction'\n" +
+        'export default () => createBaseService({})\n',
+    })
+    const { after } = fixAll(root, 'service-model')
+    expect(after).toEqual([])
+    expect(read(root, 'api/src/services/product-variants.service.ts'))
+      .toContain("createBaseService({ model: 'ProductVariant' })")
+  })
+
+  test('an object opened on its own line takes a line, indented like its neighbour', () => {
+    // The alternative is one canonical form, which reformats somebody's file to
+    // add a missing key — how a --fix gets a reputation.
+    const root = tree('fx-block', {
+      ...CLEAN,
+      'db/schema.lite': SCHEMA + '\nmodel ProductVariant { id Int @id }\n',
+      'api/src/services/product-variants.service.ts':
+        "import { createBaseService } from '@frontierjs/junction'\n" +
+        'export default () => createBaseService({\n' +
+        "    channel: 'variants',\n" +
+        '  })\n',
+    })
+    const { after } = fixAll(root, 'service-model')
+    expect(after).toEqual([])
+    expect(read(root, 'api/src/services/product-variants.service.ts'))
+      .toContain("createBaseService({\n    model: 'ProductVariant',\n    channel: 'variants',\n  })")
+  })
+
+  test('a resource with no options gets the whole option, one with options gets the key', () => {
+    const root = tree('fx-resource', {
+      ...CLEAN,
+      'db/schema.lite': SCHEMA + '\nmodel ProductVariant { id Int @id }\n',
+      'web/src/pages/x.mesa': '<script module>\n' +
+        "export const a = createResource('product-variants')\n" +
+        "export const b = createResource('product-variants', { idField: 'id' })\n</script>\n",
+    })
+    const { fixed, after } = fixAll(root, 'resource-model-miss')
+    expect(fixed).toHaveLength(2)
+    expect(after).toEqual([])
+
+    const src = read(root, 'web/src/pages/x.mesa')
+    expect(src).toContain("createResource('product-variants', { model: 'ProductVariant' })")
+    expect(src).toContain("createResource('product-variants', { model: 'ProductVariant', idField: 'id' })")
+  })
+
+  test('two fixes in one file both land — the later one is applied first', () => {
+    // Back to front, or the second edit is written at an offset the first one
+    // moved. Two on ONE line is the sharp case.
+    const root = tree('fx-order', api("app.get('/a/:id', h); app.get('/b/:key', h)\n"))
+    const { after } = fixAll(root, 'raw-route-param')
+    expect(after).toEqual([])
+    expect(read(root, 'api/src/app.ts')).toBe("app.get('/a/{id}', h); app.get('/b/{key}', h)\n")
+  })
+
+  test('a file that changed since the check is refused, not written at a stale offset', () => {
+    const root = tree('fx-stale', api("app.get('/orders/:id', h)\n"))
+    const { findings } = only(root, 'raw-route-param')
+    writeFileSync(join(root, 'api/src/app.ts'), "// moved\napp.get('/orders/:id', h)\n")
+
+    const { fixed, failed } = applyFixes(findings)
+    expect(fixed).toEqual([])
+    expect(failed).toHaveLength(1)
+    expect(failed[0].why).toMatch(/has changed/)
+    expect(read(root, 'api/src/app.ts')).toBe("// moved\napp.get('/orders/:id', h)\n")
+  })
+
+  test('a finding with no fix is left alone — and most of them have none', () => {
+    // set-auth-discarded is the argument: `const scoped = …` would silence the
+    // rule and leave every write below it going through the unscoped client.
+    const root = tree('fx-nofix', api('db.$setAuth(user)\nexport const g = ctx => ctx.params.user\n'))
+    const findings = [...only(root, 'set-auth-discarded').findings, ...only(root, 'ctx-params').findings]
+    expect(findings).toHaveLength(2)
+    expect(findings.every(f => !f.edit)).toBe(true)
+
+    const { fixed, failed } = applyFixes(findings)
+    expect(fixed).toEqual([])
+    expect(failed).toEqual([])
+    expect(read(root, 'api/src/app.ts')).toBe('db.$setAuth(user)\nexport const g = ctx => ctx.params.user\n')
+  })
+
+  test('running it twice changes nothing the second time', () => {
+    const root = tree('fx-idempotent', api("app.get('/orders/:id', h)\n"))
+    fixAll(root, 'raw-route-param')
+    const src = read(root, 'api/src/app.ts')
+
+    const second = fixAll(root, 'raw-route-param')
+    expect(second.fixed).toEqual([])
+    expect(read(root, 'api/src/app.ts')).toBe(src)
+  })
+})
+
+
+// ─── the baseline ─────────────────────────────────────────────────────────────
+//
+// Invariant 14's ratchet, applied to a second kind of count. The two tests that
+// matter are the two that are not about arithmetic: `--update` must be unable to
+// raise, and a rule that did not RUN must not be read as a rule that improved.
+
+describe('the baseline', () => {
+  const run  = (root, ids) => runChecks({ root, only: ids })
+  const file = (root) => JSON.parse(readFileSync(join(root, BASELINE_FILE), 'utf8'))
+
+  const dirty = (extra = {}) => api(
+    "app.get('/orders/:id', h)\nexport const g = ctx => ctx.params.user\n", extra)
+
+  test('an absent file is not an empty one, and both mean clean', () => {
+    const root = tree('bl-absent', CLEAN)
+    const baseline = readBaseline(root)
+    expect(baseline.present).toBe(false)
+    expect(baseline.counts).toEqual({})
+  })
+
+  test('a `//` key is a comment, not a rule', () => {
+    const root = tree('bl-comment', { ...CLEAN, [BASELINE_FILE]: '{ "//": "why", "ctx-params": 2 }' })
+    expect(readBaseline(root).counts).toEqual({ 'ctx-params': 2 })
+  })
+
+  test('above is a regression, below is an improvement, equal is neither', () => {
+    const root = tree('bl-grade', { ...dirty(), [BASELINE_FILE]:
+      '{ "raw-route-param": 0, "ctx-params": 1, "set-auth-discarded": 3 }' })
+    const ids  = ['raw-route-param', 'ctx-params', 'set-auth-discarded']
+    const grade = gradeBaseline(run(root, ids), readBaseline(root))
+
+    expect(grade.regressions).toEqual([{ rule: 'raw-route-param', count: 1, ceiling: 0 }])
+    expect(grade.improvements).toEqual([{ rule: 'set-auth-discarded', count: 0, ceiling: 3 }])
+    expect(grade.ok).toBe(false)
+  })
+
+  test('a rule that did not RUN is held, not improved', () => {
+    // It reports 0 findings, which is what a fixed rule reports. Ratcheting it
+    // to nothing locks in a baseline no later run can meet — the same doctrine
+    // as `skipped` in the summary, one layer along.
+    const root = tree('bl-held', without('web/', { [BASELINE_FILE]: '{ "resource-file-name": 2 }' }))
+    const result = run(root, ['resource-file-name'])
+    expect(result.skipped).toHaveLength(1)
+
+    const grade = gradeBaseline(result, readBaseline(root))
+    expect(grade.held).toEqual([{ rule: 'resource-file-name', ceiling: 2 }])
+    expect(grade.improvements).toEqual([])
+    expect(grade.ok).toBe(true)
+
+    writeBaseline(root, { counts: grade.counts, ran: result.ran, baseline: readBaseline(root) })
+    expect(file(root)['resource-file-name']).toBe(2)
+  })
+
+  test('a ceiling for a rule that no longer exists is reported, like a stale allowance', () => {
+    const root = tree('bl-unknown', { ...CLEAN, [BASELINE_FILE]: '{ "rule-we-deleted": 4 }' })
+    const grade = gradeBaseline(run(root, ['ctx-params']), readBaseline(root))
+    expect(grade.unknown).toEqual([{ rule: 'rule-we-deleted', ceiling: 4 }])
+  })
+
+  test('--update cannot raise a number', () => {
+    // The whole ratchet. One flag that both locks in a fix and records a
+    // regression is how a ceiling goes up with nobody deciding to raise it.
+    const root = tree('bl-noraise', { ...dirty(), [BASELINE_FILE]: '{ "ctx-params": 0 }' })
+    const result = run(root, ['ctx-params'])
+    const grade  = gradeBaseline(result, readBaseline(root))
+
+    writeBaseline(root, { counts: grade.counts, ran: result.ran, baseline: readBaseline(root) })
+    // Not 1. A zero is not written at all, since it says what an absent key says.
+    expect(file(root)['ctx-params']).toBeUndefined()
+  })
+
+  test('--adopt does raise, which is why it is its own verb', () => {
+    const root = tree('bl-adopt', dirty())
+    const result = run(root, ['ctx-params', 'raw-route-param'])
+    const grade  = gradeBaseline(result, readBaseline(root))
+
+    writeBaseline(root, { counts: grade.counts, ran: result.ran, baseline: readBaseline(root), mode: 'adopt' })
+    expect(file(root)['ctx-params']).toBe(1)
+    expect(file(root)['raw-route-param']).toBe(1)
+
+    // And the app is now green against what it just recorded.
+    expect(gradeBaseline(run(root, ['ctx-params', 'raw-route-param']), readBaseline(root)).ok).toBe(true)
+  })
+
+  test('a rule that ran clean loses its entry rather than keeping a ceiling nobody needs', () => {
+    const root = tree('bl-clear', { ...CLEAN, [BASELINE_FILE]: '{ "ctx-params": 3 }' })
+    const result = run(root, ['ctx-params'])
+    const grade  = gradeBaseline(result, readBaseline(root))
+
+    writeBaseline(root, { counts: grade.counts, ran: result.ran, baseline: readBaseline(root) })
+    expect(file(root)['ctx-params']).toBeUndefined()
+  })
+
+  test('the written file carries its own instructions and is sorted', () => {
+    const root = tree('bl-header', dirty())
+    const result = run(root, ['ctx-params', 'raw-route-param', 'set-auth-discarded'])
+    const grade  = gradeBaseline(result, readBaseline(root))
+    writeBaseline(root, { counts: grade.counts, ran: result.ran, baseline: readBaseline(root), mode: 'adopt' })
+
+    const keys = Object.keys(file(root))
+    expect(keys[0]).toBe('//')
+    expect(file(root)['//']).toMatch(/may never rise/)
+    expect(keys.slice(1)).toEqual([...keys.slice(1)].sort())
+  })
+})
+
+
+// ─── the build-time half ──────────────────────────────────────────────────────
+//
+// Sierra proves a prerendered page at BUILD time — reads tapped around the
+// route's companion, graded against @@gate, fail-closed — and no text rule can
+// replace that. What text can see is whether the proof is switched on, and both
+// rules below were measured by running `checkRoute` rather than read off the
+// source: `publishes: 0` turns two refusals into passes.
+
+describe('static-publish-db', () => {
+  const site = (config, extra = {}) => ({
+    ...CLEAN,
+    'site/config/sierra.config.js': config,
+    ...extra,
+  })
+
+  test('a static surface that loads data and wires no client is an error', () => {
+    const root = tree('sp-nodb', site("export default { target: 'static', routesDir: 'src/routes' }\n"))
+    const { findings } = only(root, 'static-publish-db')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/publish check taps that client/)
+  })
+
+  test('a static surface with no companion reads nothing and needs no client', () => {
+    // Nothing to observe, so nothing to prove. Scolding it is how a rule gets
+    // turned off by the app that had it right.
+    const { 'site/src/routes/index.meta.js': _c, ...rest } = CLEAN
+    const root = tree('sp-nodata', {
+      ...rest,
+      'site/config/sierra.config.js': "export default { target: 'static', routesDir: 'src/routes' }\n",
+    })
+    expect(only(root, 'static-publish-db').findings).toEqual([])
+  })
+
+  test('an SPA is not a prerendered site', () => {
+    const root = tree('sp-spa', without('site/'))
+    const { findings, skipped } = only(root, 'static-publish-db')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+
+  test('db: wired is the answer, and CLEAN carries it', () => {
+    expect(only(tree('sp-ok', CLEAN), 'static-publish-db').findings).toEqual([])
+  })
+})
+
+describe('static-publishes-0', () => {
+  test('publishes: 0 in a route’s frontmatter is a warning', () => {
+    const root = tree('pz-mesa', {
+      ...CLEAN,
+      'site/src/routes/index.mesa': '---\nrender: static\npublishes: 0\n---\n<h1>x</h1>\n',
+    })
+    const { findings } = only(root, 'static-publishes-0')
+    expect(findings).toHaveLength(1)
+    // The line in the FILE, not in the frontmatter block — and the keyword's
+    // line, not the newline the match opens on.
+    expect(findings[0].line).toBe(3)
+    expect(findings[0].severity).toBe('warn')
+    expect(findings[0].message).toMatch(/turn off the two refusals/)
+  })
+
+  test('a companion exporting the word is not a declaration', () => {
+    // The build reads `r.meta.publishes`, which is the page's own frontmatter.
+    // A companion export of that name is a variable nothing consults, and
+    // reporting it would be this rule inventing a mechanism.
+    const root = tree('pz-meta', {
+      ...CLEAN,
+      'site/src/routes/index.meta.js': 'export const publishes = 0\nexport async function load() { return {} }\n',
+    })
+    expect(only(root, 'static-publishes-0').findings).toEqual([])
+  })
+
+  test('a declared LEVEL is the mechanism working and is not reported', () => {
+    const root = tree('pz-level', {
+      ...CLEAN,
+      'site/src/routes/index.mesa': '---\nrender: static\npublishes: 4\n---\n<h1>x</h1>\n',
+    })
+    expect(only(root, 'static-publishes-0').findings).toEqual([])
+  })
+
+  test('the word in a comment or in prose is not a declaration', () => {
+    const root = tree('pz-prose', {
+      ...CLEAN,
+      'site/src/routes/index.mesa':
+        '---\nrender: static\n---\n<!-- There is no publishes: 0 here, which is a claim -->\n',
+      'site/src/routes/index.meta.js': 'export async function load() { return {} }\n',
+    })
+    expect(only(root, 'static-publishes-0').findings).toEqual([])
+  })
+})
+
+
+// ─── test-files-run ───────────────────────────────────────────────────────────
+//
+// Found its own first case: `packages/cli`'s `tests/pipe.test.js` pins FJS-379
+// and had never been run by `bun run test`. A green suite, a rising count, and
+// the unlisted file is the one written last — which is the one written for the
+// defect just fixed.
+
+describe('test-files-run', () => {
+  // Labelled explicitly: deriving the directory name from the file list made two
+  // trees collide, and a stale file from the first one failed the second — a
+  // fixture leak, which reads exactly like a rule that over-fires.
+  const pkg = (label, scripts, files) => tree('tf-' + label, {
+    'packages/thing/package.json': JSON.stringify({ name: 'thing', scripts }),
+    ...Object.fromEntries(Object.entries(files).map(([f, body]) => [`packages/thing/${f}`, body])),
+  })
+  const check = (root) => runChecks({ root, scope: 'repo', only: ['test-files-run'] })
+
+  test('a file no script names is an error', () => {
+    const root = pkg('missing', { test: 'bun test tests/a.test.js tests/b.test.js' },
+      { 'tests/a.test.js': '//\n', 'tests/b.test.js': '//\n', 'tests/c.test.js': '//\n' })
+    const { findings } = check(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/tests\/c\.test\.js/)
+  })
+
+  test('a complete list is silent', () => {
+    const root = pkg('complete', { test: 'node test/a.test.js && node test/b.test.js' },
+      { 'test/a.test.js': '//\n', 'test/b.test.js': '//\n' })
+    expect(check(root).findings).toEqual([])
+  })
+
+  test('another test:* script naming it counts — the question is whether ANYTHING runs it', () => {
+    const root = pkg('other-script', { test: 'bun test tests/a.test.js tests/b.test.js',
+                       'test:browser': 'node tests/drive.test.js' },
+      { 'tests/a.test.js': '//\n', 'tests/b.test.js': '//\n', 'tests/drive.test.js': '//\n' })
+    expect(check(root).findings).toEqual([])
+  })
+
+  test('a runner that walks the directory cannot forget a file, so it is not graded', () => {
+    // vitest, jest, `node --test`, and `bun test` pointed at a directory. The
+    // whole rule is about a script that names its files one at a time.
+    for (const [i, script] of ['vitest run', 'bun test test/', 'node --test'].entries()) {
+      const root = tree(`tf-walk-${i}`, {
+        'packages/thing/package.json': JSON.stringify({
+          name: 'thing', scripts: { test: script, 'test:one': 'bun test test/a.test.js', 'test:two': 'bun test test/b.test.js' } }),
+        'packages/thing/test/a.test.js': '//\n',
+        'packages/thing/test/b.test.js': '//\n',
+        'packages/thing/test/c.test.js': '//\n',
+      })
+      expect(check(root).findings).toEqual([])
+    }
+  })
+
+  test('a :watch script is not read — it is the bare runner by nature', () => {
+    // Reading it would make every hand-listing package look like it discovers,
+    // which is how this rule would quietly stop covering anything.
+    const root = pkg('watch', { test: 'bun test tests/a.test.js tests/b.test.js', 'test:watch': 'bun test --watch' },
+      { 'tests/a.test.js': '//\n', 'tests/b.test.js': '//\n', 'tests/c.test.js': '//\n' })
+    expect(check(root).findings).toHaveLength(1)
+  })
+
+  // The fixture used to leave `stub.js` unreferenced, which does not model what
+  // this case is called: support code is support code because a test IMPORTS
+  // it. Unimported and unrun, it is indistinguishable from a dead harness —
+  // which is exactly what jetty's two `.mjs` HMR files were (`FJS-481`).
+  test('a harness beside the tests is support code, not an unrun test', () => {
+    const root = pkg('harness', { test: 'node test/a.test.js && node test/b.test.js' },
+      { 'test/a.test.js': "import './stub.js'\n", 'test/b.test.js': '//\n', 'test/stub.js': '//\n' })
+    expect(check(root).findings).toEqual([])
+  })
+
+  test('a file no script runs and no test imports is dead, whatever it is called', () => {
+    const root = pkg('dead', { test: 'node test/a.test.js && node test/b.test.js' },
+      { 'test/a.test.js': '//\n', 'test/b.test.js': '//\n', 'test/hmr-fullflow.mjs': '//\n' })
+    const { findings } = check(root)
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toContain('test/hmr-fullflow.mjs')
+  })
+
+  test('a repo where nobody hand-lists is skipped, not passed', () => {
+    const root = pkg('nolist', { test: 'vitest run' }, { 'tests/a.test.js': '//\n' })
+    const { findings, skipped } = check(root)
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
   })
 })

@@ -19,8 +19,17 @@ const path    = require('path')
 const fs      = require('fs')
 
 const ROOT    = path.resolve(__dirname, '..')
-const OUTFILE = path.join(ROOT, 'out', 'litestone', 'parser-bundle.js')
+const OUTDIR  = path.join(ROOT, 'out', 'litestone')
+const OUTFILE = path.join(OUTDIR, 'parser-bundle.js')
 const WATCH   = process.argv.includes('--watch')
+
+// The catalog rides the same resolver as the parser, for the same reason: the
+// editor must not carry its own list of what the language contains. It had one —
+// 50 field attributes against the catalog's 55, 15 model attributes against 22,
+// and four declarations it never offered at all — so completion silently hid a
+// quarter of the language. Optional, because a checkout old enough to predate
+// the catalog still has a parser and should still get a language server.
+const CATALOG_OUT = path.join(OUTDIR, 'catalog-bundle.js')
 
 // ─── Locate parser ────────────────────────────────────────────────────────────
 
@@ -58,13 +67,37 @@ function resolveParser() {
   process.exit(1)
 }
 
+/** `core/catalog.js` beside the parser that was found, or null. */
+function resolveCatalog(parserEntry) {
+  const p = path.join(path.dirname(parserEntry), 'catalog.js')
+  if (fs.existsSync(p)) return p
+  console.warn('[build-parser] no catalog.js beside the parser — completion falls back to the built-in list')
+  return null
+}
+
 // ─── Build ────────────────────────────────────────────────────────────────────
 
 async function build() {
-  const parserEntry = resolveParser()
+  const parserEntry  = resolveParser()
+  const catalogEntry = resolveCatalog(parserEntry)
 
-  // Ensure out/litestone/ exists
-  fs.mkdirSync(path.dirname(OUTFILE), { recursive: true })
+  fs.mkdirSync(OUTDIR, { recursive: true })
+
+  // catalog.js imports nothing, and advise.js imports only the gate plugin, so
+  // one entry per bundle keeps the parser's output the size it was.
+  if (catalogEntry) {
+    const shim = path.join(OUTDIR, '.catalog-entry.mjs')
+    fs.writeFileSync(shim,
+      `export * from ${JSON.stringify(catalogEntry)}\n` +
+      `export * as advise from ${JSON.stringify(path.join(path.dirname(catalogEntry), 'advise.js'))}\n`, 'utf8')
+    await esbuild.build({
+      entryPoints: [shim], bundle: true, platform: 'node', format: 'cjs',
+      outfile: CATALOG_OUT, external: ['fs', 'path', 'os', 'crypto', 'child_process'],
+      minify: false, sourcemap: 'inline', logLevel: 'warning',
+    })
+    fs.rmSync(shim, { force: true })
+    console.log(`[build-parser] ✓  ${CATALOG_OUT} (${(fs.statSync(CATALOG_OUT).size / 1024).toFixed(1)} KB)`)
+  }
 
   const options = {
     entryPoints: [parserEntry],

@@ -22,10 +22,10 @@ import { dirname, relative, resolve } from 'path'
  * @param {string} outputPath — e.g. 'config/routes.js'
  * @param {string} [projectRoot] — for generating relative import paths
  */
-export async function generateRouteTable(tree, outputPath, projectRoot = '.') {
+export async function generateRouteTable(tree, outputPath, projectRoot = '.', opts = {}) {
   // Compute the route table's path relative to projectRoot for import path calculation
   const tableOutput = relative(resolve(projectRoot), resolve(outputPath)).replace(/\\/g, '/')
-  const code = renderRouteTable(tree, projectRoot, tableOutput)
+  const code = renderRouteTable(tree, projectRoot, tableOutput, opts)
 
   // Skip the write when nothing changed. The route table is inside the Vite root
   // and imported by virtual:sierra, so rewriting identical bytes still fires the
@@ -50,7 +50,7 @@ export async function generateRouteTable(tree, outputPath, projectRoot = '.') {
  * @param {string} projectRoot
  * @param {string} tableOutput  — path of the route table file relative to projectRoot
  */
-export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/routes.js') {
+export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/routes.js', opts = {}) {
   const allNodes = flattenTree(tree)
 
   const routeNodes = allNodes.filter(n => n.file !== null)
@@ -83,8 +83,21 @@ export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/
     })
     .join('\n')
 
-  // Build loaders map — only routes with a .meta.js companion
-  const loaderNodes = routeNodes.filter(n => n.companion)
+  // Build loaders map — only routes with a .meta.js companion.
+  //
+  // EMPTY on a static BUILD, and that is a security property rather than a size
+  // one. A companion runs at build time: the prerenderer imports it off disk
+  // (`importCompanion`), never through the bundle, and a prerendered page ships
+  // HTML plus its islands and calls no loader. Keeping the imports here made
+  // rolldown follow every `.meta.js` into the client graph — and a storefront's
+  // companion imports the app's own Litestone client, so the published
+  // directory carried `db.js`, the DDL emitter and the migration engine as
+  // fetchable files on a public origin. Nothing linked them, which is why it
+  // went unnoticed: a static host serves a file whether a page links it or not.
+  //
+  // Dev is untouched. `vite dev` on a static target IS a client-routed app and
+  // calls `load()` in the browser, so the loaders have to be there.
+  const loaderNodes = opts.omitLoaders ? [] : routeNodes.filter(n => n.companion)
   const loaderEntries = loaderNodes
     .map(n => {
       const absFile = resolve(projectRoot, n.companion)

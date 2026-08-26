@@ -32,7 +32,6 @@ import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, w
   from '../../core/resource.ts'
 import { secretRef }           from '../../core/credentials.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 // ─── Per-kind delivery shape ─────────────────────────────────────────────
 // One table, four consumers: what the credential is called, where the request
@@ -154,7 +153,7 @@ export function createChannelsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const kind     = $.query.kind as string | undefined
       // The wire carries strings and the column is a boolean; comparing them
@@ -179,11 +178,11 @@ export function createChannelsService(app: BasecampApp) {
       return { ...page, data }
     },
 
-    async get(ctx: ServiceContext) {
+    async get() {
       return withRuleCount(await getScoped('notificationChannel', 'Channel'))
     },
 
-    async create(ctx: ServiceContext) {
+    async create() {
       const data = $.data as Record<string, unknown>
       const kind = data.kind as string
       const spec = KINDS[kind]
@@ -211,7 +210,7 @@ export function createChannelsService(app: BasecampApp) {
       return withRuleCount(await db().notificationChannel.create({ data }))
     },
 
-    async patch(ctx: ServiceContext) {
+    async patch() {
       const channel = await getScoped('notificationChannel', 'Channel')
       const data    = $.data as Record<string, unknown>
 

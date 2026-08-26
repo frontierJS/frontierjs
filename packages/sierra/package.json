@@ -3,6 +3,7 @@
   "version": "0.1.3",
   "description": "Vite-native meta-framework built on Mesa",
   "type": "module",
+  "license": "MIT",
   "exports": {
     ".": "./src/index.js",
     "./scanner": "./src/scanner/index.js",
@@ -20,7 +21,8 @@
     "./presence": "./src/presence/index.js",
     "./devtools": "./src/devtools/index.js",
     "./widget": "./src/widget/index.js",
-    "./widget/serve": "./src/widget/serve.js"
+    "./widget/serve": "./src/widget/serve.js",
+    "./site/serve": "./src/site/serve.js"
   },
   "bin": {
     "sierra": "./src/tools/cli.js"
@@ -31,7 +33,7 @@
     "test:widgets": "cd tests/fixtures/widget-site && node ../../../src/tools/cli.js widgets --config config/sierra.config.js && node test/verify.mjs",
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/typecheck.mjs",
-    "example:api": "bun run example/api/app.ts",
+    "example:api": "bun run example/api/index.ts",
     "example": "vite --config example/vite.config.js"
   },
   "dependencies": {

@@ -1,0 +1,14 @@
+<script module>
+  // src/resources/HubConfig.mesa — the Resource layer.
+  //
+  // `model:` stated: the service is `hub-config` and no inflection rule turns
+  // that into `HubConfig`.
+  //
+  // A SINGLETON, so this resource is used for its schema — labels, field rules,
+  // the controls a form generates — rather than for a list. The service answers
+  // `current` and `save` and no CRUD verb at all, which is what a settings row
+  // with a constant primary key actually is.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const hubConfig = createResource('hub-config', { model: 'HubConfig' })
+</script>

@@ -105,6 +105,39 @@ describe('call lifetime', () => {
   })
 })
 
+describe('calling a method directly', () => {
+
+  // callService opens the scope for every ordinary path — HTTP, a socket frame,
+  // app.service(x).find(). What it does not cover is a hand-built context
+  // calling a method as a plain function, which this suite and several others
+  // do (tests/populate.test.ts, tests/real-litestone-client.test.ts). Those
+  // pass today because createBaseService's CRUD reads the ctx PARAMETER; a
+  // method reading `$` has no such luck, and `enterCall` is the only way in.
+
+  const method = async () => ({ saw: $.service, id: $.id })
+
+  test('without enterCall it throws, rather than answering undefined', async () => {
+    expect(method()).rejects.toThrow(/outside a service call/)
+  })
+
+  test('enterCall is the way in, and it is exported', async () => {
+    const ctx = { service: 'widgets', id: '7' } as never
+    const out = await enterCall(ctx, () => method())
+    expect(out).toEqual({ saw: 'widgets', id: '7' })
+  })
+
+  test('it nests and restores, so a direct call inside a real one is safe', async () => {
+    const outer = { service: 'outer', id: '1' } as never
+    const inner = { service: 'inner', id: '2' } as never
+    const seen = await enterCall(outer, async () => {
+      const a = $.service
+      const b = await enterCall(inner, () => method())
+      return { before: a, inner: b.saw, after: $.service }
+    })
+    expect(seen).toEqual({ before: 'outer', inner: 'inner', after: 'outer' })
+  })
+})
+
 describe('read-only', () => {
 
   test('an invented key is refused, and the message names what IS writable', () => {

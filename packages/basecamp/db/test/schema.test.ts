@@ -34,6 +34,7 @@ import { RECLAIM_TARGET_NAMES } from '../../api/src/services/cleanup/targets.ts'
 // refused by name at the API rather than by a CHECK constraint message; this
 // import is what keeps it a copy of the schema rather than a second opinion.
 import { USER_STATUSES, WORKSPACE_STATUSES } from '../../api/src/services/hub/hub.service.ts'
+import { NOTIFICATION_KIND_NAMES } from '../../api/src/services/notification-preferences/kinds.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', 'migrations')
@@ -92,12 +93,18 @@ async function client(opts: Record<string, unknown> = {}): Promise<any> {
  * A raw database with the migration replayed, for the two tests that inspect
  * what the migration BUILT rather than what a client does with it.
  */
+// Memoised: replaying the migration is 45 CREATE TABLEs and both callers only
+// READ metadata off the result, so a second replay buys nothing and cost the
+// suite a flake — bun's default per-test budget is 5s, and on a loaded machine
+// one replay is most of it. Restore the per-call build if a caller ever writes.
+let freshDbPath: string | null = null
 function freshDb(): string {
+  if (freshDbPath) return freshDbPath
   const path = join(scratchDir('ddl'), 'bc.db')
   const raw  = new Database(path)
   raw.run(readFileSync(MIGRATION, 'utf8'))
   raw.close()
-  return path
+  return (freshDbPath = path)
 }
 
 /**
@@ -171,12 +178,27 @@ describe('schema.lite', () => {
   test('parses with no errors and no warnings', () => {
     const r = parseFile(SCHEMA)
     expect(r.errors ?? []).toEqual([])
-    // One standing warning, and it is the tenancy block reporting what it did:
-    // fourteen models carry no `workspaceId` and are scoped through a parent
-    // (`FJS-282`). Asserted by shape rather than allowed by silence, so a
-    // SECOND warning — a model that is scoped by nothing — still fails here.
+    // One standing warning, about something deliberate, and matched by SHAPE
+    // rather than counted — the point of the assertion is that a warning nobody
+    // expected still fails, and a count alone would either admit any second one
+    // or have to be edited every time a third arrives.
+    //
+    //   tenancy    fourteen models carry no `workspaceId` and are scoped
+    //              through a parent (`FJS-282`). Reported rather than declared,
+    //              and `@@tenant(via: rel)` is the wrong answer for seven of
+    //              them: a model with two scoped parents gets ONE DENY PER
+    //              PARENT and they are AND'd, so naming one relation drops the
+    //              other — measured, nine rules across seven models.
+    //
+    // `WorkspaceMember: has @@deny and no @@allow` used to be the second, and
+    // was retired by declaring the policy — see the block at the foot of this
+    // file.
     const warnings = (r.warnings ?? []) as string[]
-    expect(warnings).toHaveLength(1)
+    const known = [/^tenancy: \d+ model\(s\) carry no 'workspaceId'/]
+    for (const re of known)
+      expect({ re: String(re), matched: warnings.filter(w => re.test(w)).length })
+        .toEqual({ re: String(re), matched: 1 })
+    expect(warnings.filter(w => !known.some(re => re.test(w)))).toEqual([])
     expect(warnings[0]).toMatch(/scoped through a parent/)
   })
 
@@ -260,7 +282,7 @@ describe('generated migration', () => {
     expect(onDisk).toContain(generateDDL(r.schema))
   })
 
-  test('applies to a fresh database — 38 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 45 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -279,8 +301,16 @@ describe('generated migration', () => {
     // `Recipe`, `RecipeRun`, `DiskUsage` and `CleanupRun` — the two ways this
     // app acts on a machine, one arbitrary and one declared. 38 since
     // `Invitation` — the only door into this app for a human who is not the
-    // first one, because `addMember` needs a userId and nothing made users.
-    expect(tables.length).toBe(38)
+    // first one, because `addMember` needs a userId and nothing made users. 39
+    // since `OauthFlow`, which is an authorization in flight and deliberately
+    // NOT a Verification — see the note above the model. 45 since the six the
+    // mock's last unbuilt screens need: `Blueprint` + `BlueprintParam` (a
+    // hub-curated catalogue, so `@@tenant(none)` and no workspace column),
+    // `RegistryImage` (observed, which commits to MIRRORING a registry rather
+    // than querying it live), `Backup` and `HubConfig` (the installation, which
+    // no workspace owns) and `NotificationPreference` (one row per person and
+    // kind, a column per transport).
+    expect(tables.length).toBe(45)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {
@@ -603,8 +633,11 @@ describe('the gate ladder', () => {
     await expect(sys.auditEvent.update({ where: { id: ev.id }, data: { action: 'nothing.happened' } }))
       .rejects.toThrow(/LOCKED/)
     await expect(sys.auditEvent.deleteMany({})).rejects.toThrow(/LOCKED/)
-    // An admin still reads it — that is the audit screen.
-    expect((await db.$setAuth(as('admin')).auditEvent.findMany({ limit: 1 })).length).toBe(1)
+    // An admin still reads it — that is the audit screen. The claim is stated
+    // because the trail is SCOPED now (`FJS-D141`): an admin reads their own
+    // workspace's trail, and a principal carrying no workspaceId is not a
+    // narrower caller, it is one the desugar denies outright.
+    expect((await db.$setAuth(as('admin', { workspaceId: ws.id })).auditEvent.findMany({ limit: 1 })).length).toBe(1)
     db.$close()
   })
 
@@ -648,6 +681,129 @@ describe('the gate ladder', () => {
 // `workspaceId` reaches auth() the same way `memberRole` does: applyStanding()
 // puts both on the principal, once per request, for the workspace being
 // addressed.
+
+// ─── FJS-410 — a level cannot be graded from a column its holder writes ──────
+//
+// `@@gate("1.5")` on WorkspaceMember says *an admin may update a membership*.
+// It is per MODEL, so it has no way to say *not their own* — and the standing
+// every gate in this app grades on is read off exactly this column. The service
+// hook is one door; a job, a hub screen and a `fli tinker` session at level 5
+// are others, and none of them runs it.
+//
+// Driven rather than described, and the first version of this was GREEN against
+// a policy that did nothing. `role @allow('write', userId != auth().id)` reads
+// like the rule and is not one: a field write policy is evaluated against the
+// PAYLOAD, so `userId` is undefined in a patch of `{ role }`, the comparison is
+// true and the column is permitted (`FJS-433`). The rule that works is a
+// model-level @@deny on update, which compiles into the WHERE against columns
+// the row actually holds.
+//
+// So what is asserted is the value AFTER the write, never a throw: both the
+// broken form and the working one are silent, and a test watching for an
+// exception passes against either.
+
+describe('WorkspaceMember.role — nobody grades themselves', () => {
+
+  /** A workspace with a second member, whose row this caller is admin over. */
+  async function twoMembers(sys: any) {
+    const ws = await seedWorkspace(sys)
+    // `as()` builds a principal with id 'u1', and userId is a real foreign key —
+    // so the row the caller IS has to exist before the membership pointing at it.
+    await sys.user.create({
+      data: { id: 'u1', email: `me${Math.random().toString(36).slice(2, 8)}@x.co`, accountId: ws.accountId } })
+    const other = await sys.user.create({
+      data: { email: `o${Math.random().toString(36).slice(2, 8)}@x.co`, accountId: ws.accountId } })
+    const mine  = await sys.workspaceMember.create({
+      data: { workspaceId: ws.id, userId: 'u1', role: 'admin' } })
+    const theirs = await sys.workspaceMember.create({
+      data: { workspaceId: ws.id, userId: other.id, role: 'developer' } })
+    return { ws, mine, theirs }
+  }
+
+  test('an admin cannot promote themselves — the write lands, the role does not', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { ws, mine } = await twoMembers(sys)
+
+    const caller = db.$setAuth(as('admin', { workspaceId: ws.id }))
+    // No throw. A policy FILTERS: the deny compiles into the WHERE, so the
+    // update matches no row. The finding is that this call used to succeed and
+    // move the role.
+    await caller.workspaceMember.update({ where: { id: mine.id }, data: { role: 'owner' } })
+
+    const after = await sys.workspaceMember.findUnique({ where: { id: mine.id } })
+    expect(after.role).toBe('admin')
+    db.$close()
+  })
+
+  test('…and can still set somebody else\'s', async () => {
+    // The other direction, and the reason the rule is `userId != auth().id`
+    // rather than a role check: an admin managing the team is what the gate is
+    // for, and a policy that broke it would be caught here rather than in a
+    // screen.
+    const db  = await client()
+    const sys = db.asSystem()
+    const { ws, theirs } = await twoMembers(sys)
+
+    const caller = db.$setAuth(as('admin', { workspaceId: ws.id }))
+    await caller.workspaceMember.update({ where: { id: theirs.id }, data: { role: 'admin' } })
+
+    const after = await sys.workspaceMember.findUnique({ where: { id: theirs.id } })
+    expect(after.role).toBe('admin')
+    db.$close()
+  })
+
+  test('asSystem() still moves it — every legitimate write here is one', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { mine } = await twoMembers(sys)
+
+    await sys.workspaceMember.update({ where: { id: mine.id }, data: { role: 'owner' } })
+    expect((await sys.workspaceMember.findUnique({ where: { id: mine.id } })).role).toBe('owner')
+    db.$close()
+  })
+
+  // ── the read half, which the deny never covered ──────────────────────────
+  //
+  // A model with no @@allow for an operation is OPEN. With the deny alone,
+  // update was the only operation decided, so a scoped client read every
+  // workspace's membership — measured before the policy: a caller holding no
+  // membership anywhere read another workspace's row, id, user and role.
+  //
+  // The policy was deferred rather than dismissed: FJS-410 called it right and
+  // unverifiable from there, because a policy FILTERS and a wrong one is an
+  // empty screen with a 200. These two cases are that verification — the hole
+  // shut, and the one read the app actually needs still answering. The switcher
+  // is the reason `@@tenant(none)` is on this model, so it is the case that
+  // matters.
+
+  test('a caller with no membership reads no membership', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { ws } = await twoMembers(sys)
+    await sys.user.create({ data: { id: 'u9', email: `out${Math.random().toString(36).slice(2, 8)}@x.co`, accountId: ws.accountId } })
+
+    const stranger = db.$setAuth({ id: 'u9', userId: 'u9' })
+    expect(await stranger.workspaceMember.findMany({})).toEqual([])
+    db.$close()
+  })
+
+  test('…and a member still reads their OWN rows across workspaces — the switcher', async () => {
+    const db  = await client()
+    const sys = db.asSystem()
+    const { ws } = await twoMembers(sys)
+    // A second workspace the same person belongs to. Scoping the read to the
+    // current claim would answer only the one they are already in, which is
+    // the failure `@@tenant(none)` exists to avoid.
+    const other = await seedWorkspace(sys)
+    await sys.workspaceMember.create({ data: { workspaceId: other.id, userId: 'u1', role: 'developer' } })
+
+    // No workspaceId on the principal: the switcher is asked before one is chosen.
+    const rows = await db.$setAuth({ id: 'u1', userId: 'u1' }).workspaceMember.findMany({})
+    expect(rows.map((r: any) => r.workspaceId).sort()).toEqual([ws.id, other.id].sort())
+    db.$close()
+  })
+})
 
 describe('Server — @@allow, the tenancy the gate cannot express', () => {
 
@@ -1719,6 +1875,12 @@ describe('the hub tier — suspension, and who may grant it', () => {
     // copy a copy.
     expect([...values('UserStatus')].sort()).toEqual([...USER_STATUSES].sort())
     expect([...values('WorkspaceStatus')].sort()).toEqual([...WORKSPACE_STATUSES].sort())
+
+    // The third copy, and the one with a default behind every value:
+    // `kinds.ts` says what happens for a person who has never chosen, so a kind
+    // added to the enum and forgotten there resolves to nothing rather than to
+    // a default. Both directions, so neither list can grow alone.
+    expect([...values('NotificationKind')].sort()).toEqual([...NOTIFICATION_KIND_NAMES].sort())
   })
 
   test('a status outside the vocabulary is refused by the column', async () => {
@@ -1971,6 +2133,47 @@ describe('the access and constraints this schema declares are enforced', () => {
     for (const m of graded)
       expect(m.message).toMatch(/delegates to another model's policy|which no principal can hold/)
   }, 60_000)
+
+  test('no tenant reaches another tenant, on every scoped model', async () => {
+    // The half the test above REPORTS rather than answers. `verifyRowPolicies`
+    // grades a compiled WHERE against litestone's own JS evaluator, and declines
+    // a rule holding a `check()` by name — which on this schema is the fourteen
+    // models scoped through a parent, exactly the class `FJS-382` came from.
+    //
+    // This one executes the crossing instead and needs no second implementation
+    // to compare against: seed a row for tenant A, then have tenant B and a
+    // caller holding no claim try to reach it, on read, create, update, delete
+    // and post-update. A row B can see is a finding whether the rule naming it
+    // is one comparison or six delegations deep.
+    const env  = await makeEnv()
+    const rows = (await env.verifyTenantIsolation()) as any[]
+
+    // `leaked` is the failure. `unscoped` is a model nothing scopes at all,
+    // `unparented` a delegated one whose scoping relation is optional, and
+    // `unreachable` means tenant A could not reach its OWN row — which would
+    // make every refusal above it indistinguishable from a model nothing can
+    // touch. All four are findings; `exempt`, `graded` and `uncheckable` are the
+    // report.
+    const findings = rows.filter(m => ['leaked', 'unscoped', 'unparented', 'unreachable', 'error'].includes(m.got))
+    expect(findings.map(m => m.message)).toEqual([])
+
+    // Coverage is the other half of the result, and the reason this check names
+    // every model it crossed: a model that isolates correctly is silent, and so
+    // is a model nothing ran against. Asserted as a SET rather than a count, so
+    // the suite survives the schema growing and still fails a model that quietly
+    // drops out of the check.
+    const covered = new Set(rows.filter(m => ['graded', 'exempt'].includes(m.got)).map(m => m.model))
+    const expected = env.schema.models
+      .filter((m: any) => !m.attributes?.some((a: any) => a.kind === 'external'))
+      .filter((m: any) => {
+        const dbName = m.attributes?.find((a: any) => a.kind === 'db')?.name ?? 'main'
+        const driver = env.schema.databases.find((d: any) => d.name === dbName)?.driver ?? 'sqlite'
+        return driver === 'sqlite'
+      })
+      .map((m: any) => m.name)
+
+    expect([...covered].sort()).toEqual([...expected].sort())
+  }, 180_000)
 
   test('every gated model, every level, all four operations', async () => {
     // 37 models x 4 ops x 9 levels. `skipped` rows are Server.create, whose

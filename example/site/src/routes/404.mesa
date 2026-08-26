@@ -1,0 +1,22 @@
+---
+title: Page not found — FrontierJS Supply Co.
+render: static
+---
+<!--
+  The 404 page, and it is a ROUTE like any other so it goes through the layout
+  and looks like the site.
+
+  `trailingSlash: 'always'` emits it at `404/index.html` rather than the
+  `404.html` most static hosts look for by name, so `deploy/serve.js` names the
+  path. A host that wants the conventional name gets a copy in a postbuild step;
+  what must not happen is a 404 page served with a 200, which is a dead link a
+  crawler indexes as a real page.
+-->
+<div class="container stack">
+  <h1>That page has moved on</h1>
+  <p class="text-muted">
+    The link may be old, or the product may have been retired — a retired
+    product loses its page, deliberately.
+  </p>
+  <p><a class="btn" href="/catalog/">Browse the catalogue</a></p>
+</div>

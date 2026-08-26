@@ -6,7 +6,6 @@ title: Deployment
   import { status }       from '@frontierjs/sierra/junction'
   import { session }      from '../../../session.js'
   import { deployments }  from '../../../resources/Deployment.mesa'
-  import { $onDestroy }   from '@frontierjs/mesa/runtime'
   import Button           from '@frontierjs/ui/components/forms/Button.mesa'
 
   $: page.params
@@ -41,7 +40,7 @@ title: Deployment
   const off = deployments.service.on('patched', (row) => {
     if (row.id === page.params.id) load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   async function cancel() {
     error = null

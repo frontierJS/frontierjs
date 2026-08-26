@@ -342,6 +342,18 @@ here, do something*. `IDEAS/release-transitions.md` phase 2 makes that instance 
 declared attached service, which is the right treatment for a tool you have chosen —
 but it is not an answer to whether the app can receive its own events without one.
 
+**The email leg, added 2026-08-24** from the OpenMRP audit (see
+`IDEAS/permission-sets.md` for the provenance). Inbound is not only webhooks:
+that project runs a shared inbox — an SES-backed email bridge where a customer
+replies to a thread and the reply lands as a message on the record it belongs to,
+with agent-drafted responses a human approves. FJS has every outbound half of this
+(conduit, notifications, email-kit, and a rendered template as a body) and no
+receiving half at all, which makes *reply to this order confirmation* unbuildable
+here while *send it* is a one-liner. It is the same gap as the webhook one and the
+same answer — an inbound payload maps to a Service call — with one addition: an
+inbound email has to be **threaded** onto a record, which is a correlation the seed
+could declare and a handler otherwise guesses from a subject line.
+
 What makes this FJS-shaped rather than a route with a body parser:
 
 - **An inbound payload maps to a Service call**, and a Service is already typed by the

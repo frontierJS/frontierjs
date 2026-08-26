@@ -86,7 +86,7 @@ export async function buildTree(files, routesDir, options = {}) {
   await Promise.all(
     [...layoutMap.values()].map(async (layoutFile) => {
       const absFm = resolve(cwd, layoutFile)
-      const fm = await readFrontmatter(absFm).catch(() => ({}))
+      const fm = await readFrontmatter(absFm)
       // Strip Sierra-internal fields that should not propagate to pages
       const { reset, ...publicFm } = fm
       if (Object.keys(publicFm).length > 0) {
@@ -128,7 +128,7 @@ async function parseRouteFile(
   trailingSlash, cwd
 ) {
   const absFile = resolve(cwd, file)
-  const frontmatter = await readFrontmatter(absFile).catch(() => ({}))
+  const frontmatter = await readFrontmatter(absFile)
 
   const relToRoutes = relative(routesDir, file).replace(/\\/g, '/')
   const { id, path, params } = fileToRoute(relToRoutes, trailingSlash)
@@ -358,12 +358,21 @@ function buildTreeFromEntries(entries, routesDir, layoutMap, trailingSlash) {
     children: [],
   }
 
-  // Find the root index if it exists
+  // Find the root index if it exists.
+  //
+  // The root is a SYNTHESISED node — it stands for the routes directory itself
+  // — so the entry's fields are copied onto it rather than the entry being
+  // used. `companion` was missing from that copy, which meant
+  // `src/routes/index.meta.js` was found by the scan, parsed, and then dropped:
+  // the home page's `load()` never ran, `data` was null, and the page rendered
+  // its empty state with a green build. Every other route kept its companion,
+  // so it looked like a bug in the one file somebody was writing.
   const rootIndex = entries.find(e => e.id === 'root')
   if (rootIndex) {
-    root.file = rootIndex.file
-    root.meta = rootIndex.meta
-    root.layout = rootIndex.layout
+    root.file      = rootIndex.file
+    root.meta      = rootIndex.meta
+    root.layout    = rootIndex.layout
+    root.companion = rootIndex.companion ?? null
   }
 
   // Group all non-root entries by their first ID segment

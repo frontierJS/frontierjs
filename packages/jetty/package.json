@@ -3,6 +3,7 @@
   "version": "0.0.3",
   "description": "Browser extension framework for FrontierJS. MV3, Mesa runtime.",
   "type": "module",
+  "license": "MIT",
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
@@ -10,7 +11,8 @@
     "./runtime": "./src/runtime/index.js",
     "./resources": "./src/resources/index.js",
     "./island": "./src/island/index.js",
-    "./audit": "./src/audit/index.js"
+    "./audit": "./src/audit/index.js",
+    "./junction": "./src/junction/junction-adapter.js"
   },
   "bin": {
     "jetty-build-ext": "./bin/build-ext.js",
@@ -41,7 +43,7 @@
     "test:phase5": "node test/phase5.test.js",
     "test:phase6": "node test/phase6.test.js",
     "test:phase7": "node test/phase7.test.js",
-    "test": "node test/phase0.test.js && node test/phase1.test.js && node test/phase2.test.js && node test/phase2.5.test.js && node test/phase3.test.js && node test/phase4.test.js && node test/phase5.test.js && node test/phase6.test.js && node test/phase7.test.js && node test/phase8.test.js",
+    "test": "node test/phase0.test.js && node test/phase1.test.js && node test/phase2.test.js && node test/phase2.5.test.js && node test/phase3.test.js && node test/phase4.test.js && node test/phase5.test.js && node test/phase6.test.js && node test/phase7.test.js && node test/phase8.test.js && node test/phase9.test.js",
     "test:bun:phase0": "bun test/phase0.test.js",
     "test:bun:phase1": "bun test/phase1.test.js",
     "test:bun:phase2": "bun test/phase2.test.js",
@@ -51,10 +53,12 @@
     "test:bun:phase5": "bun test/phase5.test.js",
     "test:bun:phase6": "bun test/phase6.test.js",
     "test:bun:phase7": "bun test/phase7.test.js",
-    "test:bun": "bun test/phase0.test.js && bun test/phase1.test.js && bun test/phase2.test.js && bun test/phase2.5.test.js && bun test/phase3.test.js && bun test/phase4.test.js && bun test/phase5.test.js && bun test/phase6.test.js && bun test/phase7.test.js && bun test/phase8.test.js",
+    "test:bun": "bun test/phase0.test.js && bun test/phase1.test.js && bun test/phase2.test.js && bun test/phase2.5.test.js && bun test/phase3.test.js && bun test/phase4.test.js && bun test/phase5.test.js && bun test/phase6.test.js && bun test/phase7.test.js && bun test/phase8.test.js && bun test/phase9.test.js",
     "test:phase8": "node test/phase8.test.js",
     "test:bun:phase8": "bun test/phase8.test.js",
-    "typecheck": "node ../../scripts/typecheck.mjs"
+    "typecheck": "node ../../scripts/typecheck.mjs",
+    "test:phase9": "node test/phase9.test.js",
+    "test:bun:phase9": "bun test/phase9.test.js"
   },
   "dependencies": {
     "@frontierjs/toolbelt": "workspace:*",

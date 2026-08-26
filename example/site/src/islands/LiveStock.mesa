@@ -1,0 +1,82 @@
+<!--
+  What the shop can sell RIGHT NOW — an island that talks to the API.
+
+  Two things are being proved here that CatalogList cannot prove:
+
+  1. `client:visible`. This sits below the fold, so its chunk is not fetched
+     until it is scrolled to. A page whose every island is `client:load` never
+     shows the difference.
+  2. A prerendered page can go live. The list above is a build-time snapshot;
+     availability is not something to bake into a file that a CDN will hold for
+     a week. So this asks the running API — through the Junction browser
+     client, the same seam the SPA uses, not a hand-rolled fetch.
+
+  The client is created inside $.onMount and not at module scope: an island's
+  body also runs during the static render, where there is no window and no
+  origin to talk to. `$.onMount` is a no-op on the server, which is what makes
+  that safe rather than merely lucky.
+
+  Anonymous on purpose. `Product` reads at level 0 — that is why this page is
+  allowed to be public at all — so the fallback text is the truth for a reader
+  with the API down, not an error dialog.
+-->
+<script>
+  import { createJunctionClient } from '@frontierjs/junction/client'
+  import { clientOptions }        from '../api.js'
+
+  let state    = 'loading'   // loading | ready | offline
+  let live     = []
+
+  $.onMount(async () => {
+    try {
+      // An explicit ORIGIN, because this surface is its own: the client's `url`
+      // defaults to `location.origin`, which for a storefront is the bucket and
+      // not the shop. `web/` is served by Vite and proxies /api, so nothing the
+      // SPA does has ever crossed an origin; a storefront crosses one on every
+      // call, and the API's CORS answer is load-bearing here.
+      const client = createJunctionClient(clientOptions)
+      // Two traps in one line, both paid for in this drive:
+      //   findData(), not find() — find() answers the list ENVELOPE
+      //     ({ kind, object, data, total }) and only `data` is the rows;
+      //   limit goes in the SECOND argument — the first is the filter, and
+      //     `find({ limit: 100 })` asks for products whose `limit` column is
+      //     100, which is an empty list and not an error (ISSUES FJS-109).
+      // VARIANTS, not products: "can this be ordered today" is a question
+      // about a shelf, and a product family has no stock of its own.
+      live  = await client.service('product-variants').findData({}, { limit: 500 })
+      state = 'ready'
+    } catch {
+      // A static page must survive its API being down: it is still a
+      // catalogue, it just cannot say what is in stock.
+      state = 'offline'
+    }
+  })
+
+  // Two reasons a row is not orderable and they are different facts: retired
+  // is a decision, sold out is a count. Both fail the same test here.
+  const sellable = live.filter(v => v.active && v.stock > 0)
+</script>
+
+<section class="stack" id="live-stock">
+  <h2 class="h4">Available now</h2>
+
+  {#if state === 'loading'}
+    <p class="text-muted" id="live-stock-state">Checking with the shop…</p>
+  {:else if state === 'offline'}
+    <p class="text-muted" id="live-stock-state">
+      The catalogue above is up to date as of the last build; live availability is unavailable.
+    </p>
+  {:else}
+    <p class="text-muted" id="live-stock-state">
+      <strong id="live-stock-count">{sellable.length}</strong> of {live.length} variants can be ordered today.
+    </p>
+    <ul class="list" id="live-stock-list">
+      {#each sellable as v}
+        <li class="list-row" data-sku={v.sku}>
+          <strong>{v.sku}</strong>
+          <span class="badge">{v.stock} in stock</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+</section>

@@ -11,54 +11,51 @@ import { $ } from '@frontierjs/junction'
 // run, and it throws so the queue can apply its own backoff.
 
 import { defineJob } from '@frontierjs/caravan'
-import { announce }   from '../channels.ts'
 import { outbound, outpostFor } from '../providers/outpost.ts'
 import { tail, recordServerEvent } from './outpost-run.ts'
-import { appFrom }    from './context.ts'
+import { runsAsCaller } from './context.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 
-async function runRecipe(app: BasecampApp, runId: string, workspaceId: string): Promise<void> {
-  // asSystem(): a job runs on the queue's thread, not a request's. There is
-  // no caller to scope to, and it legitimately writes any workspace's rows.
-  const db  = app.data.asSystem() as any
+async function runRecipe(app: BasecampApp, runId: string): Promise<void> {
   const log = app.logger.child('recipe-run')
 
-  const run = await db.recipeRun.findUnique({ where: { id: runId } })
-  if (!run) { log.warn('recipe run not found', { id: runId }); return }
+  // No client here, and that is the change (`FJS-384`). Caravan records the
+  // actor and the tenant at dispatch and junction re-binds both around this
+  // handler, so a service call resolves the membership for that actor in that
+  // workspace — and a run belonging to another one answers nothing rather than
+  // being written by id. The row writes themselves are still system, because
+  // `RecipeRun` is update-at-SYSTEM: the schema's statement that an outcome
+  // belongs to the machine. `recipes.startRun` is where the two meet.
+  const recipes = app.service('recipes')
 
-  const startedAt  = Date.now()
-  const startedIso = new Date(startedAt).toISOString()
-
-  await db.recipeRun.update({ where: { id: runId }, data: { status: 'running', startedAt: startedIso } })
-  announce(app, workspaceId, 'recipes patched', { id: run.recipeId })
-
-  // Read from the RUN, not from the recipe. The recipe is editable and this
-  // is the script that was queued; running the current text would mean an
-  // edit made while a fleet run was in flight reached half the machines.
-  const script  = run.script as string
-  const recipe  = await db.recipe.findUnique({ where: { id: run.recipeId } })
-  const timeout = (recipe?.timeoutSeconds as number | undefined) ?? 300
-
-  async function finish(data: Record<string, unknown>) {
-    const finishedAt = Date.now()
-    await db.recipeRun.update({
-      where: { id: runId },
-      data: {
-        ...data,
-        finishedAt: new Date(finishedAt).toISOString(),
-        durationMs: finishedAt - startedAt,
-      },
-    })
-    // Bookkeeping the list reads. Counted per SERVER, because that is what a
-    // run is here: a recipe let loose on five machines ran five times.
-    await db.recipe.update({
-      where: { id: run.recipeId },
-      data:  { lastRunAt: new Date(finishedAt).toISOString(), runCount: ((recipe?.runCount as number) ?? 0) + 1 },
-    })
-    announce(app, workspaceId, 'recipes patched', { id: run.recipeId })
+  let run: Awaited<ReturnType<typeof startRun>>
+  try {
+    run = await startRun()
+  } catch (err) {
+    // A run whose recipe or server has gone, or that this actor can no longer
+    // reach, is a no-op rather than a crash loop — the same answer the old
+    // `if (!run) return` gave, now including *you may not touch this one*.
+    log.warn('recipe run not startable', { id: runId, error: (err as Error).message })
+    return
   }
 
-  const target = await outpostFor(app, run.serverId as string)
+  async function startRun() {
+    return await recipes.call('startRun', runId) as {
+      runId: string; recipeId: string; serverId: string; script: string
+      startedAt: string; requestedBy: string | null
+      timeoutSeconds: number; recipeName: string
+    }
+  }
+
+  const script  = run.script
+  const timeout = run.timeoutSeconds
+  const recipe  = { name: run.recipeName }
+
+  async function finish(data: Record<string, unknown>) {
+    await recipes.call('finishRun', runId, data)
+  }
+
+  const target = await outpostFor(app, run.serverId)
   if (!target) {
     // Not thrown: there is nothing to retry. The machine has no outpost, and
     // the row saying so is the answer.
@@ -80,8 +77,8 @@ async function runRecipe(app: BasecampApp, runId: string, workspaceId: string): 
     // history needs to be able to tell those apart.
     const status = res.error.kind === 'timeout' ? 'timeout' : 'failed'
     await finish({ status, error: `${res.error.kind}: ${res.error.message}` })
-    await recordServerEvent(app, run.serverId as string, 'recipe_failed',
-      `Recipe '${recipe?.name ?? 'unknown'}' did not complete (${res.error.kind})`, { run_id: runId })
+    await recordServerEvent(app, run.serverId, 'recipe_failed',
+      `Recipe '${recipe.name}' did not complete (${res.error.kind})`, { run_id: runId })
     throw new Error(res.error.message)
   }
 
@@ -97,8 +94,8 @@ async function runRecipe(app: BasecampApp, runId: string, workspaceId: string): 
     error:    exitCode === 0 ? null : `exited ${exitCode}`,
   })
 
-  await recordServerEvent(app, run.serverId as string, exitCode === 0 ? 'recipe_ran' : 'recipe_failed',
-    `Recipe '${recipe?.name ?? 'unknown'}' exited ${exitCode}`,
+  await recordServerEvent(app, run.serverId, exitCode === 0 ? 'recipe_ran' : 'recipe_failed',
+    `Recipe '${recipe.name}' exited ${exitCode}`,
     { run_id: runId, requested_by: run.requestedBy })
 
   log.info('recipe run finished', { run_id: runId, exit_code: exitCode })
@@ -111,8 +108,13 @@ async function runRecipe(app: BasecampApp, runId: string, workspaceId: string): 
 // is never retried at all.
 
 export default defineJob<{ runId: string; workspaceId: string }>('recipe:run', async (ctx) => {
-  const app = appFrom(ctx, 'recipe:run')
-  await runRecipe(app, ctx.data.runId, ctx.data.workspaceId)
+  // Somebody clicked Run. The queue recorded them and the workspace; this
+  // refuses if either is missing rather than helping itself to system.
+  const { app } = runsAsCaller(ctx, 'recipe:run')
+  // `workspaceId` stays on the payload and is no longer read here: the tenant
+  // this work is for is the one caravan recorded and junction re-bound, not a
+  // value the payload could disagree with.
+  await runRecipe(app, ctx.data.runId)
 }, {
   queue:       'fleet',
   maxAttempts: 2,

@@ -14,7 +14,6 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WO
 import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 export function createProjectsService(app: BasecampApp) {
   return createService({
@@ -27,13 +26,13 @@ export function createProjectsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const status = $.query.status as string | undefined
       return findScoped('project', { where: status ? { status } : {}, limit, offset })
     },
 
-    get: (ctx: ServiceContext) => getScoped('project', 'Project'),
+    get: () => getScoped('project', 'Project'),
 
     async create() {
       const data = $.data as Record<string, unknown>

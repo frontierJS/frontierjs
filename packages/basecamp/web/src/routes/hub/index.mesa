@@ -16,6 +16,7 @@ title: Hub overview
   // here would be a second answer to one question. "Event subscribers" was the
   // other until the bus grew `stats()` (`FJS-143`).
   import { hub } from '../../resources/Hub.mesa'
+  import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
   import Card  from '@frontierjs/ui/components/layout/Card.mesa'
@@ -43,13 +44,6 @@ title: Hub overview
 
   load()
 
-  function size(bytes) {
-    const n = Number(bytes) || 0
-    if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
-    if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`
-    if (n >= 1024)      return `${Math.round(n / 1024)} KB`
-    return `${n} B`
-  }
 
   function uptime(seconds) {
     const s = Number(seconds) || 0

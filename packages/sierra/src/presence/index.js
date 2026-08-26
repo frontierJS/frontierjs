@@ -10,7 +10,7 @@
 
 import { signal } from '../router/signals.js'
 import { getClient } from '../junction/index.js'
-import { $onDestroy } from '@frontierjs/mesa/runtime'
+import { onDestroy } from '@frontierjs/mesa/runtime'
 
 // ── Normalise ─────────────────────────────────────────────────────────────────
 
@@ -145,11 +145,11 @@ export function presence(channelId, options = {}) {
     }
   }
 
-  // ── Auto-cleanup via Mesa $onDestroy ────────────────────────────────────────
-  // $onDestroy registers `leave` with the current component's cleanup list.
-  // Works when presence() is called at component init scope (same constraint as $onMount).
+  // ── Auto-cleanup via Mesa onDestroy ────────────────────────────────────────
+  // onDestroy registers `leave` with the current component's cleanup list.
+  // Works when presence() is called at component init scope (same constraint as onMount).
 
-  $onDestroy(leave)
+  onDestroy(leave)
 
   // ── Expose as enriched signal with updateMeta / leave ────────────────────
 

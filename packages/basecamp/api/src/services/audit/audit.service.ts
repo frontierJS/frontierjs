@@ -33,7 +33,6 @@ import { createService, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 export function createAuditService(app: BasecampApp) {
   return createService({
@@ -42,7 +41,7 @@ export function createAuditService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
     methods: 'readOnly',
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination({ limit: 50 })
 
       // Filters are declared here rather than passed through: `$.query` is

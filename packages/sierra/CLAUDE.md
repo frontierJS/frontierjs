@@ -24,8 +24,19 @@ src/
     generate-route-table.js  writes config/routes.js
 
   tools/                 — the `sierra` bin, never imported by app code
-    cli.js               `sierra routes` / `sierra widgets` — dispatch, --check
+    cli.js               `sierra routes` / `sierra widgets` / `sierra site` —
+                         dispatch, --check
     routes-snapshot.js   the committed routes.snapshot.md
+
+  serve/                 — what the two static servers share
+    hashed-asset.js      is this filename content-addressed? The only answer
+                         both servers give the same way — every other cache
+                         answer they give is deliberately different
+
+  site/                  — the `site/` surface's origin
+    serve.js             the static server that surface deploys with — a
+                         directory index, a cache answer per file kind, and the
+                         site's own 404.html served with a 404
 
   widget/                — the `widgets/` surface's runtime and its origin
     index.js             the embed runtime: a custom element (and a selector,
@@ -117,7 +128,18 @@ src/
 - **The URL's search string is `page.query` + `page.directives`, and `page.params`
   is path captures alone.** The same split the API boundary makes, over the same
   table (`@frontierjs/toolbelt/directives`), so `resource.load(page.query,
-  page.directives)` is a whole URL-driven list with nothing to translate. Both
+  page.directives)` is a whole URL-driven list with nothing to translate. **The
+  VALUES come from the sibling module** — `@frontierjs/toolbelt/query`, which
+  Junction's transport and its client also read (`FJS-D125`). `parseQueryParams`
+  used to have its own `coerce()` and inferred with `Number(value)`, so `?sku=007`
+  was the number 7 — the guess this package's own widget props already refuse for
+  `data-pid="007"` — while Junction's transport did not infer at all, so a filter
+  typed into the URL bar and the same filter sent by the client meant different
+  things and both answered a 200 (`FJS-450`). A string is a number only if
+  `String(Number(v)) === v`; `?code="5"` is the escape. `buildUrl` writes with the
+  same encoder, so a URL this package builds parses back as what was put in —
+  dropping an EMPTY filter stays its own decision, because a filter box nobody
+  typed in should not add a parameter. Both
   names are in `PAGE_RESERVED` — a route declaring `query:` in frontmatter is
   warned about rather than silently overwritten. They are only reassigned when
   the search actually changed, because a layout outlives a navigation and would
@@ -145,6 +167,21 @@ src/
   (`resource.formFields()`, `resource.options(fk)`) rather than importing this
   package, and `@frontierjs/ui`'s own form suite imports the real table by
   relative path instead of deciding for itself what a `Float` is.
+- **A write drops the columns the server owns, and `@version` is the one that
+  must survive it.** `stripReadOnly(fields, data, { keep })` runs FIRST in
+  `_call`'s create/patch pipeline — before coerce, blank and validate, so nothing
+  downstream judges a value that is not going to be sent. It exists because
+  `readOnly` had two readers (a generated form does not offer the control,
+  `make()` does not seed it) and neither covers an edit form: that is handed a
+  row the SERVER wrote, carrying every column the caller could read, and it
+  writes the whole record back. The Data boundary refuses `@system` **by name**,
+  so the person saw a 403 about a column that is not on their screen
+  (`FJS-526`). The keep list is not a special case bolted on — the `@version`
+  column is marked `readOnly` and is the one the server REQUIRES back, which is
+  exactly why the rule cannot be spelled *delete every readOnly key*. A key with
+  no field rule behind it is left alone; a `@transient` and a custom method's own
+  argument are both legitimate, and guessing there is how a strip becomes the
+  thing that breaks a working app.
 - **`schema-plugin.js` loads the `.lite` with `parseFile`, because a schema may
   import another one.** It read the root file and called `parse`, so a split
   schema reached the browser as a `$defs` table with the imported models missing
@@ -233,6 +270,39 @@ src/
     Same-origin is the one arrangement no customer of a widget has, and it
     hides every CORS answer the deployment depends on. Serving them from the
     module that ships is what makes those headers testable at all.
+- **A prerendered site lives in its own SURFACE, `site/`, not in `web/`.** A peer
+  of `api/` and `web/` with the same six folders and its own Vite root. Three
+  answers differ from the SPA's — the build prerenders and checks what it may
+  publish, the tests run against FILES rather than a running app, the release is
+  a bucket with no server behind it — and a fourth decides it: **one Vite root is
+  one `dist/`, and `vite build` empties `outDir`**, so a static target folded into
+  `web/` is deleted by the next SPA build with nothing said. That is how this
+  repo's own example shipped for months (`FJS-451`, `FJS-D127`). `fli make:site`
+  creates it; `core/site-surface.js` in the CLI owns its shape.
+- **`target: 'static'` is the SPA's Vite config plus a prerender pass, so `vite
+  dev` on a site surface serves an SPA.** Dev is client-routed and the build is
+  files. Everything that makes the target what it is — the publish check, one
+  chunk per island, one HTML file per route, the refusal when a route declaring
+  `render: static` produced no page — happens in `closeBundle` and nowhere else,
+  so a change to a `load()` or to frontmatter is proved by building. A page that
+  works in dev and fails in the build is the normal case, not a surprise.
+- **`site/serve.js` is what a prerendered site is served BY, and a hand-rolled
+  file server in a harness gets three things wrong.** A directory index, or every
+  URL but the root 404s under `trailingSlash: 'always'`; a cache answer per file
+  kind, or HTML is served from cache for as long as an asset should be; and the
+  site's own `404.html` with a 404 status, since a soft 404 is a page a crawler
+  indexes. It sends **no CORS**, deliberately — this origin serves documents a
+  browser navigates to, and the API is what a page's islands call. That is the
+  opposite of `widget/serve.js`, whose whole job is the cross-origin case.
+- **In a Vite plugin here, `command` off `configResolved` is what says build or
+  dev — never `this.environment.mode`.** Vite 8 reports `dev` there for a dev
+  server, so a `!== 'serve'` test is true in both and the build-only branch runs
+  on every dev boot (`FJS-473`). Two more from the same function, both worth
+  carrying: `this.error` THROWS, so a refusal raised inside a `try` is caught by
+  that try and downgraded to whatever the catch reports; and a test that
+  restates what a plugin does — scan the tree, import the companion, build the
+  message by hand — passes forever against a hook nothing calls.
+
 - **A prerendered route must prove its data is publishable.** Reads are tapped
   around `load()` and compared to `@@gate`, fail-closed; the escape is per-route
   `publishes: N` (FJS-081).
@@ -325,7 +395,7 @@ second argument to `find`/`load`/`getOptions` and the field on the hook context
 are both **`directives`** — the word `page.directives`, `ctx.directives` at the
 API boundary and `@frontierjs/toolbelt/directives` all already used, so a view
 no longer receives `page.directives` and has to pass them as `params`
-(Invariant 10). `optionsQuery` takes `{ query, directives }`.
+(Invariant 10). `optionsQuery` and `detailQuery` both take `{ query, directives }` — the picker's read and the detail view's, declared beside the model rather than at every call site (`FJS-D114`). The write is `save(data, { mode })`, the one owner of create-or-patch: `auto` reads the MODEL's id field, `upsert` is an alias of it, and `<Form>` calls it rather than picking a service method.
 
 Junction's browser client moved with it (`FJS-290`): its second argument is a
 `QueryDirectives`, declared once in `junction/src/core/directives.ts` and read

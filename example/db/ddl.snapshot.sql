@@ -8,27 +8,176 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 4 models · 2 databases
+-- 17 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
 
+-- A Product is the FAMILY, not the thing with a price on it. "FrontierJS Tee"
+-- is a product; the navy one in medium is what a person puts in a basket and
+-- what a warehouse counts down.
+-- 
+-- That split is why `sku`, `price` and `barcode` are NOT on this model. They
+-- were, while every product was one buyable thing — and the moment one design
+-- carried four colourways, a price on the family had no answer.
 CREATE TABLE IF NOT EXISTS "product" (
   "id" INTEGER NOT NULL PRIMARY KEY,
   "name" TEXT NOT NULL UNIQUE,
-  "sku" TEXT NOT NULL UNIQUE,
-  "price" REAL NOT NULL,
-  "barcode" TEXT UNIQUE,
+  "slug" TEXT NOT NULL UNIQUE,
+  "description" TEXT,
+  "brand" TEXT NOT NULL,
   "active" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  CHECK ("brand" IN ('frontierjs', 'junction', 'litestone'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_product_deletedAt" ON "product" ("deletedAt") WHERE "deletedAt" IS NULL;
+CREATE VIRTUAL TABLE IF NOT EXISTS "product_fts" USING fts5(
+  name, description,
+  content="product",
+  content_rowid="id"
+);
+
+-- Triggers to keep FTS index in sync.
+-- Dropped first: IF NOT EXISTS keeps a stale body forever, and a trigger is
+-- cheap to recreate, so re-applying the DDL repairs a wrong trigger set.
+DROP TRIGGER IF EXISTS "product_fts_insert";
+DROP TRIGGER IF EXISTS "product_fts_delete";
+DROP TRIGGER IF EXISTS "product_fts_update";
+DROP TRIGGER IF EXISTS "product_fts_soft_delete";
+DROP TRIGGER IF EXISTS "product_fts_restore";
+CREATE TRIGGER "product_fts_insert" AFTER INSERT ON "product" BEGIN
+  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.id, new.name, new.description);
+END;
+CREATE TRIGGER "product_fts_delete" AFTER DELETE ON "product" BEGIN
+  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.id, old.name, old.description);
+END;
+CREATE TRIGGER "product_fts_update" AFTER UPDATE ON "product" BEGIN
+  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.id, old.name, old.description);
+  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.id, new.name, new.description);
+END;
+
+-- The colourways this shop has run. `ProductVariant.colour` stores the NAME
+-- rather than a foreign key, because the value has to outlive the row: a
+-- colourway that is retired is still what the navy tees in the warehouse are,
+-- and a deleted row must not take that answer with it.
+CREATE TABLE IF NOT EXISTS "colour" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "name" TEXT NOT NULL UNIQUE,
+  "hex" TEXT,
+  "retired" INTEGER NOT NULL DEFAULT 0,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "customer" (
   "id" INTEGER NOT NULL PRIMARY KEY,
   "name" TEXT NOT NULL,
+  "firstName" TEXT NOT NULL,
+  "lastName" TEXT NOT NULL,
+  "fullName" TEXT GENERATED ALWAYS AS (concat_ws(' ', "firstName", "lastName")) VIRTUAL,
   "email" TEXT NOT NULL UNIQUE,
   "notes" TEXT,
-  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  "userId" TEXT UNIQUE,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  "version" INTEGER NOT NULL DEFAULT 1
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_customer_deletedAt" ON "customer" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+-- A code somebody types at the till.
+-- 
+-- ─── Why a shopper may not read this table ────────────────────────────────
+-- 
+-- `@@gate("5.5.5.5")` — staff only, read included. Every other thing a
+-- shopper interacts with here is readable at 0, because a storefront has to
+-- list it; a discount code is the exception, and the reason is that listing
+-- them IS the exploit. `GET /api/discounts` answering the table hands every
+-- unreleased code to anyone who asks, and a shop's codes are worth money.
+-- 
+-- So the shopper never reads a row: they send a string to
+-- `carts.applyDiscount`, which validates it through the SYSTEM client and
+-- answers the basket with the money recalculated — the same shape
+-- `StockReservation` uses for holds, and for the same reason. What comes back
+-- is what this code is worth to THIS basket, which is the only fact about it
+-- they are entitled to.
+CREATE TABLE IF NOT EXISTS "discount" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "code" TEXT NOT NULL UNIQUE,
+  "label" TEXT NOT NULL,
+  "kind" TEXT NOT NULL DEFAULT 'percent',
+  "value" REAL NOT NULL,
+  "minSubtotal" REAL NOT NULL DEFAULT 0,
+  "startsAt" TEXT,
+  "endsAt" TEXT,
+  "maxRedemptions" INTEGER,
+  "redemptions" INTEGER NOT NULL DEFAULT 0,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('percent', 'fixed'))
+) STRICT;
+
+-- What the shop charges to send it.
+-- 
+-- Readable at 0, unlike a discount: a storefront has to OFFER these, and the
+-- prices are printed on the shipping page anyway. That difference — one table
+-- public, its neighbour staff-only, both on the same screen — is the clearest
+-- statement in this schema that a gate answers *what kind of caller* and not
+-- *what kind of table*.
+CREATE TABLE IF NOT EXISTS "shipping_method" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "name" TEXT NOT NULL UNIQUE,
+  "description" TEXT,
+  "price" REAL NOT NULL,
+  "freeOver" REAL,
+  "position" INTEGER NOT NULL DEFAULT 0,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "version" INTEGER NOT NULL DEFAULT 1
+) STRICT;
+
+-- The rate this shop collects, and what it is called where the shop is.
+-- 
+-- A row rather than a constant because this is a FLEET: `tenancy { strategy
+-- database }` gives every shop its own file, so a shop in one jurisdiction
+-- and a shop in another disagree about both numbers — and a constant in the
+-- API would be the one fact about a shop that every shop had to share.
+-- 
+-- `label` is not decoration. A line on a receipt reading `Tax` where the law
+-- says `VAT` is a receipt a business customer cannot file.
+CREATE TABLE IF NOT EXISTS "tax_rate" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "label" TEXT NOT NULL,
+  "rate" REAL NOT NULL,
+  "isDefault" INTEGER NOT NULL DEFAULT 0,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "version" INTEGER NOT NULL DEFAULT 1
+) STRICT;
+
+-- Every event the provider has delivered, once each. Append-only.
+-- 
+-- ─── What this table is for, and what it is NOT for ──────────────────────
+-- 
+-- It is NOT what makes paying an order idempotent. That is the state machine:
+-- `pay` is `pending -> paid`, so a second one is refused at the Data boundary
+-- whatever this table says. Nor is it the signature replay check, which is a
+-- nonce inside a five-minute window and is gone the moment the window passes.
+-- 
+-- It is the answer to "what did they tell us, and when" — the row a person
+-- reads when the order and the provider's dashboard disagree. The @unique is
+-- what makes a redelivery cheap: the handler claims the id and stops, rather
+-- than re-deriving that there is nothing to do.
+-- 
+-- The claim and the effect are written in ONE transaction (`transactional:`
+-- on `payments.record`), which is the only arrangement that is correct. Claim
+-- first and commit separately, and a crash in between leaves the event
+-- claimed and the order unpaid — and the provider's retry is deduped away by
+-- the very row that recorded nothing happening.
+CREATE TABLE IF NOT EXISTS "payment_event" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "eventId" TEXT NOT NULL UNIQUE,
+  "kind" TEXT NOT NULL,
+  "paymentRef" TEXT,
+  "receivedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "notification" (
@@ -42,18 +191,265 @@ CREATE TABLE IF NOT EXISTS "notification" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
+-- The buyable thing. One row per option combination, and the row a basket
+-- line, a price and a stock count all point at.
+CREATE TABLE IF NOT EXISTS "product_variant" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "productId" INTEGER NOT NULL,
+  "sku" TEXT NOT NULL UNIQUE,
+  "colour" TEXT NOT NULL DEFAULT 'Default',
+  "size" TEXT NOT NULL DEFAULT 'one',
+  "price" REAL NOT NULL,
+  "barcode" TEXT UNIQUE,
+  "stock" INTEGER NOT NULL DEFAULT 0,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  CHECK ("size" IN ('one', 'xs', 's', 'm', 'l', 'xl', 'xxl')),
+  UNIQUE ("productId", "colour", "size"),
+  FOREIGN KEY ("productId") REFERENCES "product" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_product_variant_deletedAt" ON "product_variant" ("deletedAt") WHERE "deletedAt" IS NULL;
+
 CREATE TABLE IF NOT EXISTS "order" (
   "id" INTEGER NOT NULL PRIMARY KEY,
   "reference" TEXT NOT NULL UNIQUE,
   "status" TEXT NOT NULL DEFAULT 'pending',
+  "subtotal" REAL NOT NULL DEFAULT 0,
+  "discountCode" TEXT,
+  "discountLabel" TEXT,
+  "discount" REAL NOT NULL DEFAULT 0,
+  "shippingLabel" TEXT,
+  "shipping" REAL NOT NULL DEFAULT 0,
+  "taxLabel" TEXT,
+  "taxRate" REAL NOT NULL DEFAULT 0,
+  "tax" REAL NOT NULL DEFAULT 0,
   "total" REAL NOT NULL DEFAULT 0,
   "note" TEXT,
   "customerId" INTEGER NOT NULL,
   "trackingCode" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  "userId" TEXT,
   CHECK ("status" IN ('pending', 'paid', 'shipped', 'refunded', 'cancelled')),
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE CASCADE
 ) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_order_deletedAt" ON "order" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+-- A basket, and the one model in this app owned by NOBODY.
+-- 
+-- A shopper is a stranger — no account, no session, level 0 — and a stranger
+-- still has to be the only person who can see their own basket. That cannot
+-- be `userId == auth().id`, because there is no `auth().id` to compare, and it
+-- must not be a service reading through `asSystem()`, because access is
+-- declared in the schema and not in hooks (Invariant 6).
+-- 
+-- So the owner is a BEARER TOKEN, and `api/cart-claim.ts` turns the header
+-- carrying it into a claim on the principal before the Data boundary scopes
+-- the client. `auth().cartToken` is then a claim a stranger holds, and the
+-- policies below are ordinary row policies over it.
+-- 
+-- The token is `@guarded`: the app writes it, `asSystem()` reads it, and no
+-- caller ever gets it back in a response — the browser knows it because it
+-- was handed it once, at creation, by the service that minted it.
+CREATE TABLE IF NOT EXISTS "cart" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "token" TEXT NOT NULL UNIQUE,
+  "userId" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'open',
+  "discountId" INTEGER,
+  "shippingMethodId" INTEGER,
+  "handoffCode" TEXT UNIQUE,
+  "handoffExpires" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK ("status" IN ('open', 'ordered', 'abandoned')),
+  FOREIGN KEY ("discountId") REFERENCES "discount" ("id") ON DELETE SET NULL,
+  FOREIGN KEY ("shippingMethodId") REFERENCES "shipping_method" ("id") ON DELETE SET NULL
+) STRICT;
+-- Auto-update updatedAt on every row change
+CREATE TRIGGER IF NOT EXISTS "cart_updatedAt"
+AFTER UPDATE ON "cart"
+WHEN NEW."updatedAt" IS OLD."updatedAt"
+BEGIN
+  UPDATE "cart" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+
+-- A photograph. The bytes live in object storage and this column holds the
+-- reference — `File` is the type that means that, and `FileStorage` in
+-- api/db.ts is what turns a path or an upload into one.
+CREATE TABLE IF NOT EXISTS "product_image" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "productId" INTEGER NOT NULL,
+  "variantId" INTEGER,
+  "file" TEXT NOT NULL,
+  "alt" TEXT NOT NULL,
+  "position" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  FOREIGN KEY ("productId") REFERENCES "product" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE SET NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_product_image_deletedAt" ON "product_image" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+-- Why the shelf is at the number it is at. Append-only.
+-- 
+-- `stock` is the running total and this is the tape behind it: nothing writes
+-- that column without writing a row here in the same breath, which is what
+-- makes the two reconcilable at all. It is not the audit trail — `@@log(audit)`
+-- records that SOMEBODY changed a row and Litestone owns its format. This
+-- records what happened to the SHELF, in the shop's own words, and a customer
+-- service agent reads it.
+-- 
+-- ─── The gate is "5.5.9.9" and each digit is deliberate ──────────────────
+-- 
+-- read   5  an administrator; a movement names orders and quantities
+-- create 5  receiving stock is an administrator's act, so the Data boundary
+-- is what refuses it — `inventory.receive` contains no check of
+-- its own and needs none
+-- update 9  LOCKED — nothing passes 9, `asSystem()` included
+-- delete 9  LOCKED
+-- 
+-- 9 is what "append-only" is spelled with. A comment saying the same thing is
+-- a comment; this is enforced at the Data boundary for every caller including
+-- the application itself, which is the only version of the promise worth
+-- having.
+-- 
+-- The one movement an ADMINISTRATOR does not write is `sold`: that one is
+-- written by a shopper at level 0 checking out, so `carts.checkout` makes it
+-- through `asSystem()` — the shop recording a sale on its own behalf. Which
+-- client a `move()` is handed is therefore a real decision at every call site,
+-- and it is why `api/inventory.ts` takes one rather than reaching for a global.
+CREATE TABLE IF NOT EXISTS "inventory_movement" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "variantId" INTEGER NOT NULL,
+  "kind" TEXT NOT NULL,
+  "quantity" INTEGER NOT NULL,
+  "stockBefore" INTEGER NOT NULL,
+  "stockAfter" INTEGER NOT NULL,
+  "reference" TEXT,
+  "note" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("kind" IN ('received', 'sold', 'returned', 'adjusted', 'damaged')),
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE RESTRICT
+) STRICT;
+
+-- What was bought, at the price it was bought for.
+-- 
+-- ─── Why the columns are copies ──────────────────────────────────────────
+-- 
+-- Every column below except the two ids is a value this row already has a
+-- relation to. That is not denormalisation for speed — it is that a line is a
+-- statement about a MOMENT and its neighbours are statements about now. A
+-- variant's price is what the shop charges today; `unitPrice` is what this
+-- shopper was charged, and re-reading the first to render the second rewrites
+-- what past customers paid every time somebody edits the catalogue. Same for
+-- the wording: `description` is the sentence that was on the screen, and a
+-- colourway renamed next year does not un-sell this one.
+-- 
+-- The relation stays for the one thing a copy cannot do — link back to the
+-- product page — and it is `Restrict` for the reason `InventoryMovement`'s is:
+-- history that a DELETE somewhere else can empty is not history.
+-- 
+-- ─── This does not replace the ledger, and the two are not the same fact ──
+-- 
+-- `InventoryMovement` records what left the SHELF; these record what was
+-- SOLD. A refund still reads the movements back (`api/src/inventory.ts`
+-- `restock`), because the question there is what physically moved and the
+-- signed tape is the only thing that answers it. The question here is what
+-- the shop billed for, which the tape cannot answer: it carries no prices.
+CREATE TABLE IF NOT EXISTS "order_line" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "orderId" INTEGER NOT NULL,
+  "variantId" INTEGER NOT NULL,
+  "sku" TEXT NOT NULL,
+  "description" TEXT NOT NULL,
+  "quantity" INTEGER NOT NULL,
+  "unitPrice" REAL NOT NULL,
+  "lineTotal" REAL NOT NULL,
+  "userId" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "deletedAt" TEXT,
+  FOREIGN KEY ("orderId") REFERENCES "order" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_order_line_orderId" ON "order_line" ("orderId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_order_line_deletedAt" ON "order_line" ("deletedAt") WHERE "deletedAt" IS NULL;
+
+-- One attempt to take money for one order.
+-- 
+-- ─── Why `providerRef` is @unique and is not the id ──────────────────────
+-- 
+-- A webhook arrives naming the PROVIDER's id and nothing else — it has never
+-- heard of this database. So the column the lookup goes through has to be the
+-- provider's, and it has to be unique or a redelivery could settle a second
+-- row. It is not the primary key because a provider id is theirs to change
+-- the shape of, and a foreign key pointing at a string somebody else mints is
+-- a migration waiting to happen.
+CREATE TABLE IF NOT EXISTS "payment" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "providerRef" TEXT NOT NULL UNIQUE,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "amount" REAL NOT NULL,
+  "currency" TEXT NOT NULL DEFAULT 'USD',
+  "orderId" INTEGER NOT NULL,
+  "refundedAmount" REAL NOT NULL DEFAULT 0,
+  "failureReason" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "settledAt" TEXT,
+  CHECK ("status" IN ('pending', 'succeeded', 'failed', 'refunded')),
+  FOREIGN KEY ("orderId") REFERENCES "order" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_payment_orderId" ON "payment" ("orderId");
+
+-- One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
+-- the same fact as the variant's price today — a basket left overnight must
+-- either honour what it quoted or say out loud that it changed, and it can do
+-- neither if the number was never written down.
+CREATE TABLE IF NOT EXISTS "cart_line" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "cartId" INTEGER NOT NULL,
+  "variantId" INTEGER NOT NULL,
+  "quantity" INTEGER NOT NULL DEFAULT 1,
+  "unitPrice" REAL NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "token" TEXT NOT NULL,
+  UNIQUE ("cartId", "variantId"),
+  FOREIGN KEY ("cartId") REFERENCES "cart" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE CASCADE
+) STRICT;
+
+-- Stock set aside for one basket, until a moment.
+-- 
+-- ─── Why this is a row and not a column on CartLine ──────────────────────
+-- 
+-- It would fit there — a line already names a variant and a quantity, and an
+-- `heldUntil` column would have been three characters of schema. It is wrong
+-- for one reason and the reason is a POLICY: CartLine is scoped by the
+-- shopper's token (`@@allow('read', token == auth().cartToken)`), and
+-- availability is a sum over *everybody's* holds. Summing CartLine from a
+-- shopper's own client answers a sum over their own basket — a number that is
+-- always plausible, usually zero, and never the one asked for. It is the exact
+-- shape the house rule warns about: a wrong policy is an empty screen, not an
+-- error.
+-- 
+-- A hold is a fact about the SHELF, so it is a table about the shelf, and the
+-- gate says who may look: an administrator reads them (that is the inventory
+-- screen), and nothing below `asSystem()` writes one. There is no row policy
+-- because there is no caller-facing read — the shopper learns about their own
+-- hold from the basket the `carts` service builds for them.
+CREATE TABLE IF NOT EXISTS "stock_reservation" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "variantId" INTEGER NOT NULL,
+  "cartId" INTEGER NOT NULL,
+  "quantity" INTEGER NOT NULL,
+  "expiresAt" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE ("cartId", "variantId"),
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("cartId") REFERENCES "cart" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_stock_reservation_variantId_expiresAt" ON "stock_reservation" ("variantId", "expiresAt");
 
 -- ─── database audit · logger ─────────────────────────────────────────────
 -- No DDL — a logger database has no schema. 0 model(s)

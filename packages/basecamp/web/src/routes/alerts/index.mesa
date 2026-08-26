@@ -13,7 +13,6 @@ title: Alerts
   import { messageFor } from '../../errors.js'
   import { alerts }   from '../../resources/AlertRule.mesa'
   import { channels } from '../../resources/NotificationChannel.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -77,7 +76,7 @@ title: Alerts
     if (READS.has(method) || !row?.id) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   // Loaded on demand rather than for every rule at once: a rule that has never
   // fired is the common case, and eight requests to prove that is a waste.

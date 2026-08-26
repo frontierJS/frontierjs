@@ -1,0 +1,29 @@
+---
+title: Page not found — FrontierJS
+render: static
+---
+<!--
+  The 404. Prerendered like every other page, which is what makes it the second
+  page in this build — and the second page is what proves the flash-prevention
+  script reaches more than `index.html` (FJS-501).
+-->
+<section class="container stack">
+  <p class="eyebrow">404</p>
+  <h1>That page is not here.</h1>
+  <p class="lede">
+    It may have moved, or it may never have existed. The front page is the
+    shortest way back.
+  </p>
+  <div class="cluster" style="margin-top:1.5rem; gap:.75rem;">
+    <a class="btn primary raised" href="/">Front page</a>
+    <a class="btn outlined" href="https://github.com/frontierjs/frontierjs">GitHub</a>
+  </div>
+</section>
+
+<style>
+  section { padding: 6rem 0; }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); }
+  h1 { font-size: clamp(2rem, 5vw, 3rem); letter-spacing: -.03em; margin: .3em 0; }
+  .lede { font-size: 1.15rem; color: var(--ink-soft); max-width: 46ch; }
+  .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+</style>

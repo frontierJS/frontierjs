@@ -28,18 +28,18 @@
 // so the scope is the join, the same one `volumes` and `servers.feed` make.
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor }  from '../../core/resource.ts'
 import {
   RECLAIM_TARGETS, RECLAIM_TARGET_NAMES, RECLAIM_TARGET_BY_NAME, estimateTarget,
 } from './targets.ts'
 import type { ReclaimFigures } from './targets.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 import { applyDiskReport } from './disk-report.ts'
 import type { DiskReport } from './disk-report.ts'
 import cleanupRun from '../../jobs/cleanup-run.job.ts'
+import { announce } from '../../channels.ts'
 
 export function createCleanupService(app: BasecampApp) {
 
@@ -65,6 +65,25 @@ export function createCleanupService(app: BasecampApp) {
     await db().serverEvent.create({ data: { serverId, kind, message, metadata } })
   }
 
+
+  /**
+   * The run this call is about, read through the CALLER's client.
+   *
+   * The refusal `asSystem()` cannot make: `CleanupRun` reaches its tenant
+   * through its Server, so a run in another workspace answers nothing here and
+   * the system write below it never happens (`FJS-384`).
+   */
+  async function runInScope(runId: string) {
+    const run = await db().cleanupRun.findUnique({ where: { id: runId } })
+    if (!run) throw new NotFound(`Cleanup run '${runId}' not found`)
+    return run as Record<string, any>
+  }
+
+  // The gated half is the file's own `sys()` above: `CleanupRun` is
+  // update-at-SYSTEM, `DiskUsage` is write-at-SYSTEM and a `Volume` delete is
+  // ADMINISTRATOR — a developer may sweep a disk and none of the three is
+  // theirs to write.
+
   return createService({
     name:  'cleanup',
     model: 'CleanupRun',
@@ -79,10 +98,83 @@ export function createCleanupService(app: BasecampApp) {
     // updated by the job; `create` and `patch` from the wire would let a
     // caller record a sweep that never happened, which is the one thing this
     // model exists to rule out.
-    methods: ['find', 'get', 'usage', 'targets', 'report', 'run'],
+    methods: ['find', 'get', 'usage', 'targets', 'report', 'run', 'startRun', 'finishRun'],
+
+
+    // ── startRun / finishRun — the engine's writes ───────────────────
+    //
+    // `cleanup:run` used to open `asSystem()` and write these itself. It runs
+    // as the caller who asked for the sweep now (`FJS-384`), and what that
+    // buys is the read in `runInScope` — the confinement — because the writes
+    // themselves are above any standing a workspace grants.
+    //
+    // `internalOnly`: a person recording a sweep that never happened is the one
+    // thing this model exists to rule out, and `methods:` already says so about
+    // create and patch.
+
+    async startRun() {
+      const run = await runInScope(String($.id))
+
+      const startedAt = new Date().toISOString()
+      const updated = await sys().cleanupRun.update({
+        where: { id: run.id },
+        data:  { status: 'running', startedAt },
+      })
+      announce(app, ws(), 'cleanup patched', updated)
+
+      return {
+        runId:       run.id,
+        serverId:    run.serverId,
+        targets:     run.targets,
+        keepImages:  run.keepImages,
+        requestedBy: run.requestedBy,
+        startedAt,
+      }
+    },
+
+    async finishRun() {
+      const run   = await runInScope(String($.id))
+      const patch = ($.data ?? {}) as Record<string, unknown>
+
+      // Named, not spread wholesale: what the outpost REPORTED reaches this
+      // method as three keys, and everything else on the payload is the
+      // handler's own bookkeeping.
+      const { volumesRemoved, usage, ...runPatch } = patch as {
+        volumesRemoved?: string[]
+        usage?:          DiskReport
+      } & Record<string, unknown>
+
+      // Exactly the volumes the outpost says it removed, never the ones it was
+      // asked about: an outpost that could delete three of five leaves the
+      // fourth on disk, and forgetting the row is how that disk goes invisible.
+      if (volumesRemoved?.length)
+        await sys().volume.deleteMany({
+          where: { serverId: run.serverId, name: { in: volumesRemoved } },
+        })
+
+      // The outpost has just run `docker system df` to work out what it freed,
+      // so its answer is fresher than the last report. Same function the report
+      // endpoint uses, so the two cannot disagree about which key means what.
+      if (usage) await applyDiskReport(sys(), run.serverId as string, usage)
+
+      const finishedAt = Date.now()
+      const startedMs  = run.startedAt ? Date.parse(String(run.startedAt)) : finishedAt
+
+      const updated = await sys().cleanupRun.update({
+        where: { id: run.id },
+        data:  {
+          ...runPatch,
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs: finishedAt - startedMs,
+        },
+      })
+      announce(app, ws(), 'cleanup patched', updated)
+
+      return updated
+    },
 
     // ── find — the history ────────────────────────────────────────────
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination({ limit: 25, max: 100 })
       const serverId = $.query.serverId as string | undefined
 
@@ -104,7 +196,7 @@ export function createCleanupService(app: BasecampApp) {
       }
     },
 
-    async get(ctx: ServiceContext) {
+    async get() {
       const fleet = await fleetOf()
       const row   = await db().cleanupRun.findFirst({ where: { id: $.id as string } })
       if (!row || !fleet.has(row.serverId as string)) throw new NotFound(`Cleanup run '${$.id}' not found`)
@@ -128,7 +220,7 @@ export function createCleanupService(app: BasecampApp) {
     // being handed over for the screen to combine: the sweep and the number
     // beside the button have to come from one place, or they disagree the first
     // time a figure is renamed.
-    async usage(ctx: ServiceContext) {
+    async usage() {
       $.dispatch = false   // read-shaped
       const fleet = await fleetOf()
       if (!fleet.size) return { servers: [], reported: 0, totalReclaimableBytes: 0 }
@@ -237,7 +329,7 @@ export function createCleanupService(app: BasecampApp) {
     // Queue a sweep. `{ serverId }` names one machine, omitting it means every
     // machine an outpost has registered for; `{ targets }` is a subset of the
     // vocabulary and defaults to the ones marked on in `targets.ts`.
-    async run(ctx: ServiceContext) {
+    async run() {
       const data     = ($.data ?? {}) as { serverId?: string; targets?: string[]; keepImages?: number }
       const fleet    = await fleetOf()
       const serverId = data.serverId
@@ -281,6 +373,10 @@ export function createCleanupService(app: BasecampApp) {
         const run = await db().cleanupRun.create({
           data: { serverId: id, targets, keepImages, requestedBy: actor(), status: 'pending' },
         })
+        // The actor and the tenant are carried by the dispatch: caravan reads
+        // both off the request in scope, and the handler declares
+        // `runsAsCaller` — so this work runs as the person who asked for it,
+        // in the workspace they asked in (`FJS-384`).
         await app.jobs.dispatch(cleanupRun,
           { runId: run.id, workspaceId: ws() },
           { queue: 'fleet', priority: 5 })
@@ -301,6 +397,10 @@ export function createCleanupService(app: BasecampApp) {
         // than at the admin one `recipes.create` needs. Unused volumes are the
         // sharp edge and they are off by default.
         run:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // The engine's two. The standing that matters was graded when `run`
+        // queued the work; the queue runs as that same actor.
+        startRun:  [internalOnly()],
+        finishRun: [internalOnly()],
       },
     },
   })

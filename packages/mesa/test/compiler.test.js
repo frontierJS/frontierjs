@@ -61,7 +61,7 @@ function execCompiled(compiledJs, runtime, userImports = {}) {
   code = code.replace(/^export default\s+/m, 'const __component = ')
   code += '\nreturn __component'
   // eslint-disable-next-line no-new-func
-  return new Function('$runtime', ...importNames, code)(runtime, ...importValues)
+  return new Function('$$runtime', ...importNames, code)(runtime, ...importValues)
 }
 
 async function compileAndExec(source, runtime, userImports = {}) {
@@ -97,85 +97,85 @@ const cxDevMode = src => compile(src, { debug: false, css: false, dev: true, fil
 
 describe('rewriteExpr', () => {
   const accessors = {
-    count:  '$runtime.get($$sig_count)',
-    double: '$runtime.get(double)',
-    name:   '$runtime.get($$sig_name)',
+    count:  '$$runtime.get($$sig_count)',
+    double: '$$runtime.get(double)',
+    name:   '$$runtime.get($$sig_name)',
     user:   '$$proxy_user',
-    items:  '$runtime.get($$sig_items)',
+    items:  '$$runtime.get($$sig_items)',
     MAX:    'MAX',
   }
 
   it('shorthand property { x } expands to { x: getter() } not { getter() }', () => {
-    const accessors = { username: '$runtime.get($$sig_username)', password: '$runtime.get($$sig_password)' }
+    const accessors = { username: '$$runtime.get($$sig_username)', password: '$$runtime.get($$sig_password)' }
     const result = rewriteExpr('JSON.stringify({ username, password })', accessors)
-    expect(result).toBe('JSON.stringify({ username: $runtime.get($$sig_username), password: $runtime.get($$sig_password) })')
+    expect(result).toBe('JSON.stringify({ username: $$runtime.get($$sig_username), password: $$runtime.get($$sig_password) })')
   })
 
   it('shorthand property with non-reactive var left as-is', () => {
-    const accessors = { count: '$runtime.get($$sig_count)' }
+    const accessors = { count: '$$runtime.get($$sig_count)' }
     // `name` is not reactive — should stay as shorthand or just plain name
     const result = rewriteExpr('fn({ name, count })', accessors)
     expect(result).toContain('name')
-    expect(result).toContain('count: $runtime.get($$sig_count)')
+    expect(result).toContain('count: $$runtime.get($$sig_count)')
   })
 
   it('rewrites a simple identifier', () => {
-    expect(rewriteExpr('count', accessors)).toBe('$runtime.get($$sig_count)')
+    expect(rewriteExpr('count', accessors)).toBe('$$runtime.get($$sig_count)')
   })
   it('rewrites an identifier in a binary expression', () => {
-    expect(rewriteExpr('count * 2', accessors)).toBe('$runtime.get($$sig_count) * 2')
+    expect(rewriteExpr('count * 2', accessors)).toBe('$$runtime.get($$sig_count) * 2')
   })
   it('rewrites multiple different identifiers', () => {
     expect(rewriteExpr('count + double', accessors))
-      .toBe('$runtime.get($$sig_count) + $runtime.get(double)')
+      .toBe('$$runtime.get($$sig_count) + $$runtime.get(double)')
   })
   it('skips non-computed object property names', () => {
     expect(rewriteExpr('obj.count', accessors)).toBe('obj.count')
   })
   it('rewrites computed member keys', () => {
-    const acc = { size: '$runtime.get($$sig_size)' }
-    expect(rewriteExpr('map[size]', acc)).toBe('map[$runtime.get($$sig_size)]')
+    const acc = { size: '$$runtime.get($$sig_size)' }
+    expect(rewriteExpr('map[size]', acc)).toBe('map[$$runtime.get($$sig_size)]')
   })
   it('skips static constants (same value as key)', () => {
     expect(rewriteExpr('MAX', accessors)).toBe('MAX')
   })
   it('skips identifiers in arrow function params', () => {
     expect(rewriteExpr('items.map(count => count * 2)', accessors))
-      .toBe('$runtime.get($$sig_items).map(count => count * 2)')
+      .toBe('$$runtime.get($$sig_items).map(count => count * 2)')
   })
   it('rewrites inside template literal', () => {
     expect(rewriteExpr('`value: ${count}`', accessors))
-      .toBe('`value: ${$runtime.get($$sig_count)}`')
+      .toBe('`value: ${$$runtime.get($$sig_count)}`')
   })
   it('rewrites proxy reference', () => {
     expect(rewriteExpr('user', accessors)).toBe('$$proxy_user')
   })
   it('rewrites value in object shorthand', () => {
     // {count} shorthand expands to {count: rewritten}
-    expect(rewriteExpr('({count})', accessors)).toContain('$runtime.get($$sig_count)')
+    expect(rewriteExpr('({count})', accessors)).toContain('$$runtime.get($$sig_count)')
   })
   it('handles nested expressions', () => {
     const result = rewriteExpr('count > 0 ? count : 0', accessors)
-    expect(result).toContain('$runtime.get($$sig_count)')
+    expect(result).toContain('$$runtime.get($$sig_count)')
   })
   it('rewrites inside function call arguments', () => {
     expect(rewriteExpr('Math.max(count, 0)', accessors))
-      .toBe('Math.max($runtime.get($$sig_count), 0)')
+      .toBe('Math.max($$runtime.get($$sig_count), 0)')
   })
   it('leaves non-reactive identifiers alone', () => {
     expect(rewriteExpr('Math.PI', accessors)).toBe('Math.PI')
   })
   it('rewrites inside array literal', () => {
     expect(rewriteExpr('[count, double]', accessors))
-      .toBe('[$runtime.get($$sig_count), $runtime.get(double)]')
+      .toBe('[$$runtime.get($$sig_count), $$runtime.get(double)]')
   })
   it('skips destructuring patterns in arrow params', () => {
     expect(rewriteExpr('items.map(({name}) => name)', accessors))
-      .toBe('$runtime.get($$sig_items).map(({name}) => name)')
+      .toBe('$$runtime.get($$sig_items).map(({name}) => name)')
   })
   it('rewrites ternary all three branches', () => {
     const result = rewriteExpr('count ? name : double', accessors)
-    expect(result).toBe('$runtime.get($$sig_count) ? $runtime.get($$sig_name) : $runtime.get(double)')
+    expect(result).toBe('$$runtime.get($$sig_count) ? $$runtime.get($$sig_name) : $$runtime.get(double)')
   })
 })
 
@@ -184,8 +184,8 @@ describe('rewriteExpr', () => {
 describe('rewriteAssignments', () => {
   const setters   = { count: '$$set_count', name: '$$set_name' }
   const accessors = {
-    count: '$runtime.get($$sig_count)',
-    name:  '$runtime.get($$sig_name)',
+    count: '$$runtime.get($$sig_count)',
+    name:  '$$runtime.get($$sig_name)',
   }
   const rewrite = src => {
     const ast  = parseProgram(src)
@@ -200,28 +200,37 @@ describe('rewriteAssignments', () => {
     expect(rewrite("name = 'Alice';")).toBe("$$set_name('Alice');")
   })
   it('rewrites += operator', () => {
-    expect(rewrite('count += 2;')).toBe('$$set_count($runtime.get($$sig_count) + (2));')
+    expect(rewrite('count += 2;')).toBe('$$set_count($$runtime.get($$sig_count) + (2));')
   })
   it('rewrites -= operator', () => {
-    expect(rewrite('count -= 1;')).toBe('$$set_count($runtime.get($$sig_count) - (1));')
+    expect(rewrite('count -= 1;')).toBe('$$set_count($$runtime.get($$sig_count) - (1));')
   })
   it('rewrites *= operator', () => {
-    expect(rewrite('count *= 3;')).toBe('$$set_count($runtime.get($$sig_count) * (3));')
+    expect(rewrite('count *= 3;')).toBe('$$set_count($$runtime.get($$sig_count) * (3));')
   })
-  it('rewrites ++ postfix', () => {
-    expect(rewrite('count++;')).toBe('$$set_count($runtime.get($$sig_count) + 1);')
+  // Postfix holds the OLD value across the write, because that is what it
+  // evaluates to. It compiled to the prefix form for as long as either did, so
+  // `const b = n++` would have answered the new value — and answered `undefined`
+  // in fact, since `set` returned nothing until the same pass.
+  //
+  // A runtime CALL and not an inlined arrow: this house writes no semicolons,
+  // and a statement beginning `(` continues the line above it. Inlined, a
+  // `done++` under a `throw new Error('x')` parsed as a call on the Error and
+  // never ran — measured in @frontierjs/ui's own form fixture.
+  it('rewrites ++ postfix, keeping the value it evaluates to', () => {
+    expect(rewrite('count++;')).toBe('$$runtime.postUpdate($$sig_count, $$set_count, +1);')
   })
   it('rewrites -- postfix', () => {
-    expect(rewrite('count--;')).toBe('$$set_count($runtime.get($$sig_count) - 1);')
+    expect(rewrite('count--;')).toBe('$$runtime.postUpdate($$sig_count, $$set_count, -1);')
   })
   it('rewrites ++ prefix', () => {
-    expect(rewrite('++count;')).toBe('$$set_count($runtime.get($$sig_count) + 1);')
+    expect(rewrite('++count;')).toBe('$$set_count($$runtime.get($$sig_count) + 1);')
   })
   it('rewrites assignment inside function body', () => {
     const src = 'function inc() { count++; }'
     const ast  = parseProgram(src)
     const result = rewriteAssignments(src, ast.body[0], makeRewriteCtx(setters, accessors, src))
-    expect(result).toBe('function inc() { $$set_count($runtime.get($$sig_count) + 1); }')
+    expect(result).toBe('function inc() { $$runtime.postUpdate($$sig_count, $$set_count, +1); }')
   })
   it('rewrites assignment inside arrow function', () => {
     const src = 'const inc = () => { count = count + 1; };'
@@ -229,9 +238,25 @@ describe('rewriteAssignments', () => {
     const result = rewriteAssignments(src, ast.body[0], makeRewriteCtx(setters, accessors, src))
     expect(result).toContain('$$set_count')
   })
-  it('rewrites RHS through accessors', () => {
-    const result = rewrite('count = count + 1;')
-    expect(result).toBe('$$set_count($runtime.get($$sig_count) + 1);')
+  // `rewriteAssignments` rewrites ASSIGNMENTS and leaves identifiers alone —
+  // its callers all apply `rewriteExpr` to the whole statement afterwards, and
+  // doing it here as well meant handing `rewriteExpr` the right-hand side
+  // sliced out on its own, blind to the scope around it (`FJS-465`).
+  it('leaves RHS identifiers to rewriteExpr', () => {
+    expect(rewrite('count = count + 1;')).toBe('$$set_count(count + 1);')
+  })
+
+  // …and the composition every caller performs still lands where it did. The
+  // pair is what matters; neither half is used alone anywhere.
+  it('composes with rewriteExpr into the read the caller gets', () => {
+    expect(rewriteExpr(rewrite('count = count + 1;'), accessors))
+      .toBe('$$set_count($$runtime.get($$sig_count) + 1);')
+  })
+
+  // A compound operator builds its own read of the signal rather than going
+  // through the accessor map, which is why it was never affected.
+  it('a compound operator still emits its own read', () => {
+    expect(rewrite('count += 2;')).toBe('$$set_count($$runtime.get($$sig_count) + (2));')
   })
   it('does NOT rewrite non-reactive variable assignments', () => {
     expect(rewrite('other = 5;')).toBe('other = 5;')
@@ -252,12 +277,12 @@ describe('rewriteAssignments', () => {
 <script>
 let time = '00:00'
 let _interval = null
-$onMount(() => {
+$.onMount(() => {
   _interval = setInterval(() => {
     time = new Date().toLocaleTimeString()
   }, 1000)
 })
-$onDestroy(() => {
+$.onDestroy(() => {
   clearInterval(_interval)
 })
 </script>
@@ -276,27 +301,27 @@ $onDestroy(() => {
 
 describe('rewriteTextResult', () => {
   const accessors = {
-    count:  '$runtime.get($$sig_count)',
-    name:   '$runtime.get($$sig_name)',
-    double: '$runtime.get(double)',
+    count:  '$$runtime.get($$sig_count)',
+    name:   '$$runtime.get($$sig_name)',
+    double: '$$runtime.get(double)',
   }
 
   it('rewrites single expression binding', () => {
     const pe = parseText('{count}')
-    expect(rewriteTextResult(pe, accessors)).toBe('`${$runtime.get($$sig_count)}`')
+    expect(rewriteTextResult(pe, accessors)).toBe('`${$$runtime.get($$sig_count)}`')
   })
   it('rewrites expression mixed with text', () => {
     const pe = parseText('{count} items')
-    expect(rewriteTextResult(pe, accessors)).toBe('`${$runtime.get($$sig_count)} items`')
+    expect(rewriteTextResult(pe, accessors)).toBe('`${$$runtime.get($$sig_count)} items`')
   })
   it('rewrites multiple expressions', () => {
     const pe = parseText('{name}: {count}')
     expect(rewriteTextResult(pe, accessors))
-      .toBe('`${$runtime.get($$sig_name)}: ${$runtime.get($$sig_count)}`')
+      .toBe('`${$$runtime.get($$sig_name)}: ${$$runtime.get($$sig_count)}`')
   })
   it('rewrites derived const read', () => {
     const pe = parseText('{double}')
-    expect(rewriteTextResult(pe, accessors)).toBe('`${$runtime.get(double)}`')
+    expect(rewriteTextResult(pe, accessors)).toBe('`${$$runtime.get(double)}`')
   })
   it('leaves static text unchanged', () => {
     const pe = parseText('hello world')
@@ -310,7 +335,7 @@ describe('rewriteTextResult', () => {
   it('rewrites complex expressions', () => {
     const pe = parseText('{count > 0 ? count : 0}')
     const result = rewriteTextResult(pe, accessors)
-    expect(result).toContain('$runtime.get($$sig_count)')
+    expect(result).toContain('$$runtime.get($$sig_count)')
   })
 })
 
@@ -500,20 +525,20 @@ describe('compile() output shape', () => {
       expect(out).not.toContain('makeComponent')
       expect(out).toMatch(/export default function \w+\(/)
     })
-    it('uses append() not return $parentElement', async () => {
+    it('uses append() not return $$parentElement', async () => {
       const out = await cx(`<p>hi</p>`)
-      expect(out).toContain('$runtime.append(__anchor')
-      expect(out).not.toContain('return $parentElement')
+      expect(out).toContain('$$runtime.append(__anchor')
+      expect(out).not.toContain('return $$parentElement')
     })
     it('wraps with push_component/pop_component', async () => {
       const out = await cx(`<p>hi</p>`)
-      expect(out).toContain('$runtime.push_component()')
-      expect(out).toContain('$runtime.pop_component()')
+      expect(out).toContain('$$runtime.push_component()')
+      expect(out).toContain('$$runtime.pop_component()')
     })
     it('uses var (not const) for template declarations', async () => {
       const out = await cx(`<p>hello</p>`)
-      expect(out).toMatch(/^var \$tpl0 = /m)
-      expect(out).not.toMatch(/^const \$tpl0 = /m)
+      expect(out).toMatch(/^var \$\$tpl0 = /m)
+      expect(out).not.toMatch(/^const \$\$tpl0 = /m)
     })
     it('script module — emitted at module scope before component fn', async () => {
       const scriptMod = '<script module>\n  let instanceCount = 0\n  export function getCount() { return instanceCount }\n</' + 'script>'
@@ -536,7 +561,7 @@ describe('compile() output shape', () => {
     })
     it('uses template() factory', async () => {
       const out = await cx(`<p>hi</p>`)
-      expect(out).toContain('$runtime.template(')
+      expect(out).toContain('$$runtime.template(')
       expect(out).not.toContain('htmlToFragment')
     })
     it('delegate call at module tail outside function', async () => {
@@ -551,16 +576,16 @@ describe('compile() output shape', () => {
     it('emits track() for export let', async () => {
       const out = await cx(`<script>export let count = 0;</script><p>{count}</p>`)
       expect(out).toContain('$$sig_count')
-      expect(out).toContain('$runtime.track(')
+      expect(out).toContain('$$runtime.track(')
       expect(out).not.toContain('createSignal')
     })
     it('emits makeExternalProperty for export let', async () => {
       const out = await cx(`<script>export let count = 0;</script><p>{count}</p>`)
       expect(out).toContain("makeExternalProperty('count'")
     })
-    it('reads from $option.props with fallback', async () => {
+    it('reads from $$option.props with fallback', async () => {
       const out = await cx(`<script>export let count = 0;</script><p>{count}</p>`)
-      expect(out).toContain('$option.props?.count')
+      expect(out).toContain('$$option.props?.count')
     })
     it('does NOT emit makeExternalProperty for export const', async () => {
       const out = await cx(`<script>export const MAX = 100;</script><p>{MAX}</p>`)
@@ -568,13 +593,13 @@ describe('compile() output shape', () => {
     })
     it('export const for callback — plain const, no signal', async () => {
       const out = await cx(`<script>export const onchange = null</script><div></div>`)
-      expect(out).toContain("const onchange = $option.props?.onchange")
+      expect(out).toContain("const onchange = $$option.props?.onchange")
       expect(out).not.toContain('$$sig_onchange')
       expect(out).not.toContain('makeExternalProperty')
     })
     it('template reads use get()', async () => {
       const out = await cx(`<script>export let count = 0;</script><p>{count}</p>`)
-      expect(out).toContain('$runtime.get($$sig_count)')
+      expect(out).toContain('$$runtime.get($$sig_count)')
       expect(out).not.toMatch(/\$\$sig_count\(\)/)
     })
   })
@@ -583,7 +608,7 @@ describe('compile() output shape', () => {
     it('emits track() for plain let', async () => {
       const out = await cx(`<script>let count = 0;</script><p>{count}</p>`)
       expect(out).toContain('$$sig_count')
-      expect(out).toContain('$runtime.track(0,')
+      expect(out).toContain('$$runtime.track(0,')
       expect(out).not.toContain('createSignal')
     })
     it('does NOT emit makeExternalProperty for plain let', async () => {
@@ -592,11 +617,11 @@ describe('compile() output shape', () => {
     })
     it('template reads go through get()', async () => {
       const out = await cx(`<script>let count = 0;</script><p>{count}</p>`)
-      expect(out).toContain('$runtime.get($$sig_count)')
+      expect(out).toContain('$$runtime.get($$sig_count)')
     })
     it('assignment in function uses $$set_ setter', async () => {
       const out = await cx(`<script>let count = 0; function inc(){count++}</script><p>{count}</p>`)
-      expect(out).toContain('$$set_count($runtime.get($$sig_count) + 1)')
+      expect(out).toContain('$$runtime.postUpdate($$sig_count, $$set_count, +1)')
     })
   })
 
@@ -605,12 +630,12 @@ describe('compile() output shape', () => {
       const out = await cx(`<script>let count = 0; const double = count * 2;</script><p>{double}</p>`)
       // trackDerived, not track: the compiler states that this is a derivation
       // rather than leaving the runtime to infer it from the value's arity.
-      expect(out).toContain('$runtime.trackDerived(() => ($runtime.get($$sig_count) * 2)')
+      expect(out).toContain('$$runtime.trackDerived(() => ($$runtime.get($$sig_count) * 2)')
       expect(out).not.toContain('createMemo')
     })
     it('template reads derived const via get()', async () => {
       const out = await cx(`<script>let count = 0; const double = count * 2;</script><p>{double}</p>`)
-      expect(out).toContain('$runtime.get(double)')
+      expect(out).toContain('$$runtime.get(double)')
     })
     it('does NOT emit track(fn) for static const', async () => {
       const out = await cx(`<script>const MAX = 100;</script><p>{MAX}</p>`)
@@ -623,12 +648,12 @@ describe('compile() output shape', () => {
     it('emits untrack for var initializer', async () => {
       const out = await cx(`<script>let price = 10; var snap = price;</script><p>{price}</p>`)
       expect(out).toContain('untrack')
-      expect(out).toContain('$runtime.get($$sig_price)')
+      expect(out).toContain('$$runtime.get($$sig_price)')
     })
     it('var in template uses direct nodeValue (static)', async () => {
       const out = await cx(`<script>let x=0; var snap=x</script><p>{snap}</p>`)
       expect(out).toContain('.nodeValue =')
-      expect((out.match(/\$runtime\.render\(/g) || []).length).toBe(0)
+      expect((out.match(/\$\$runtime\.render\(/g) || []).length).toBe(0)
     })
   })
 
@@ -641,7 +666,7 @@ describe('compile() output shape', () => {
     it('one-shot async result is a signal', async () => {
       const out = await cx(`<script>const states = await getStates();</script><p>{states}</p>`)
       expect(out).toContain('$$sig_states')
-      expect(out).toContain('$runtime.get($$sig_states)')
+      expect(out).toContain('$$runtime.get($$sig_states)')
     })
     it('emits asyncDerived for reactive async const', async () => {
       const out = await cx(`<script>let q = ''; const results = await search(q);</script><p>{results}</p>`)
@@ -655,12 +680,12 @@ describe('compile() output shape', () => {
     })
     it('async derived rewrites dep inside async fn body', async () => {
       const out = await cx(`<script>let q = ''; const results = await search(q);</script><p>{results}</p>`)
-      expect(out).toContain('search($runtime.get($$sig_q))')
+      expect(out).toContain('search($$runtime.get($$sig_q))')
     })
     it('async derived result is a signal', async () => {
       const out = await cx(`<script>let q = ''; const results = await search(q);</script><p>{results}</p>`)
       expect(out).toContain('$$sig_results')
-      expect(out).toContain('$runtime.get($$sig_results)')
+      expect(out).toContain('$$runtime.get($$sig_results)')
     })
   })
 
@@ -668,7 +693,7 @@ describe('compile() output shape', () => {
     it('$: block with bare expressions emits createEffect', async () => {
       const out = await cx(`<script>let count = 0; $: { console.log(count); }</script><p>{count}</p>`)
       expect(out).toContain('createEffect')
-      expect(out).toContain('$runtime.get($$sig_count)')
+      expect(out).toContain('$$runtime.get($$sig_count)')
     })
     it('emits orderedGroup for $: block with pairs', async () => {
       const ctx = await compile(
@@ -691,17 +716,17 @@ describe('compile() output shape', () => {
     it('$: bare expression emits createEffect (auto-tracked)', async () => {
       const out = await cx(`<script>let count = 0; $: console.log(count)</script><p>{count}</p>`)
       expect(out).toContain('createEffect')
-      expect(out).toContain('$runtime.get($$sig_count)')
+      expect(out).toContain('$$runtime.get($$sig_count)')
     })
     it('emits createEffect with untrack for $: dep, handler', async () => {
       const out = await cx(`<script>let count = 0; $: count, () => save(count)</script><p>{count}</p>`)
       expect(out).toContain('createEffect')
       expect(out).toContain('untrack')
-      expect(out).toContain('$runtime.get($$sig_count)')
+      expect(out).toContain('$$runtime.get($$sig_count)')
     })
     it('dep read uses get() not raw variable', async () => {
       const out = await cx(`<script>let count = 0; $: count, () => save(count)</script><p>{count}</p>`)
-      expect(out).toMatch(/createEffect\(\(\) => \{ \$runtime\.get\(/)
+      expect(out).toMatch(/createEffect\(\(\) => \{ \$\$runtime\.get\(/)
       expect(out).not.toMatch(/createEffect\(\(\) => \{ count;/)
     })
     it('$_name: is valid and produces createEffect', async () => {
@@ -741,7 +766,7 @@ describe('compile() output shape', () => {
 
   // A local declaration that shares its name with a reactive top-level `let`
   // used to be rewritten as a read of that signal — inside its own
-  // declaration, giving `const $runtime.get($$sig_d) = new Date(ts)`. The
+  // declaration, giving `const $$runtime.get($$sig_d) = new Date(ts)`. The
   // compiler reported no error, so it shipped a module the browser refuses to
   // parse: Invariant 15 exactly, and the reason these tests parse the output
   // rather than reading it. Parameters were already handled, which is why the
@@ -759,13 +784,13 @@ describe('compile() output shape', () => {
     it('emits valid JS for a local const', async () => {
       const code = await emitted(`let d = 1; function f(ts) { const d = new Date(ts); return d.getTime() }`)
       expect(parses(code)).toBe(true)
-      expect(code).not.toMatch(/const \$runtime\.get/)
+      expect(code).not.toMatch(/const \$\$runtime\.get/)
     })
 
     it('emits valid JS for a local let', async () => {
       const code = await emitted(`let d = 1; function f(ts) { let d = ts; return d }`)
       expect(parses(code)).toBe(true)
-      expect(code).not.toMatch(/let \$runtime\.get/)
+      expect(code).not.toMatch(/let \$\$runtime\.get/)
     })
 
     it('emits valid JS for a `for (const x of …)` head', async () => {
@@ -779,7 +804,7 @@ describe('compile() output shape', () => {
       // leave a real reactive read reading a stale local binding.
       const code = await emitted(`let d = 1; function f() { const before = d; { const d = 2; return d + before } }`)
       expect(parses(code)).toBe(true)
-      expect(code).toMatch(/const before = \$runtime\.get\(\$\$sig_d\)/)
+      expect(code).toMatch(/const before = \$\$runtime\.get\(\$\$sig_d\)/)
     })
 
     it('a parameter shadow keeps working', async () => {
@@ -993,7 +1018,7 @@ function provide(n, f) { return null }
   describe('assignment rewriting', () => {
     it('rewrites count++ in function to setter', async () => {
       const out = await cx(`<script>let count = 0; function inc() { count++; }</script><p>{count}</p>`)
-      expect(out).toContain('$$set_count($runtime.get($$sig_count) + 1)')
+      expect(out).toContain('$$runtime.postUpdate($$sig_count, $$set_count, +1)')
     })
     it('rewrites count = x in function to setter', async () => {
       const out = await cx(`<script>let count = 0; function reset() { count = 0; }</script><p>{count}</p>`)
@@ -1001,37 +1026,37 @@ function provide(n, f) { return null }
     })
     it('rewrites count += n in function to setter', async () => {
       const out = await cx(`<script>let count = 0; function add(n) { count += n; }</script><p>{count}</p>`)
-      expect(out).toContain('$$set_count($runtime.get($$sig_count) + (n))')
+      expect(out).toContain('$$set_count($$runtime.get($$sig_count) + (n))')
     })
   })
 
   describe('let init from prop', () => {
     it('static prop default — inlined in track()', async () => {
       const out = await cx(`<script>export let price = 49.99</script><p>{price}</p>`)
-      expect(out).toContain('$option.props?.price !== undefined ? $option.props.price : 49.99')
+      expect(out).toContain('$$option.props?.price !== undefined ? $$option.props.price : 49.99')
     })
     it('reactive prop default — deferred init after deps exist', async () => {
       const out = await cx(
         `<script>let count = 0\nconst double = count * 2\nexport let test = double</script><p>{test}</p>`
       )
-      expect(out).toContain('$option.props?.test')
+      expect(out).toContain('$$option.props?.test')
     })
   })
 
   describe('DOM traversal', () => {
     it('uses child() not .firstChild', async () => {
       const out = await cx(`<script>let x=0</script><p>{x}</p>`)
-      expect(out).toContain('$runtime.child(')
+      expect(out).toContain('$$runtime.child(')
       expect(out).not.toContain('.firstChild')
     })
     it('uses sibling() not .nextSibling', async () => {
       const out = await cx(`<script>let x=0</script><p>a</p><p>{x}</p>`)
-      expect(out).toContain('$runtime.sibling(')
+      expect(out).toContain('$$runtime.sibling(')
       expect(out).not.toContain('.nextSibling')
     })
     it('uses render() grouping for reactive bindings', async () => {
       const out = await cx(`<script>let a=0\nlet b=0</script><p>{a}</p><p>{b}</p>`)
-      expect(out).toContain('$runtime.render(')
+      expect(out).toContain('$$runtime.render(')
       expect(out).toContain('set_text(')
     })
   })
@@ -1048,12 +1073,12 @@ function provide(n, f) { return null }
   describe('style:', () => {
     it('pure expression — style:color={expr}', async () => {
       const out = await cx(`<script>let c = 'red'</script><div style:color={c}>x</div>`)
-      expect(out).toContain("bindStyle(el0, 'color', () => ($runtime.get($$sig_c)))")
+      expect(out).toContain("bindStyle(el0, 'color', () => ($$runtime.get($$sig_c)))")
     })
     it('mixed template literal — style:font-size="{size}px"', async () => {
       const out = await cx(`<script>let size = 16</script><div style:font-size="{size}px">x</div>`)
       expect(out).toContain("bindStyle(el0, 'font-size', () => (")
-      expect(out).toContain('$runtime.get($$sig_size)')
+      expect(out).toContain('$$runtime.get($$sig_size)')
       expect(out).toContain('px')
     })
     it('shorthand — style:display (no value)', async () => {
@@ -1066,8 +1091,8 @@ function provide(n, f) { return null }
       )
       expect(out).toContain("'font-size'")
       expect(out).toContain("'color'")
-      expect(out).toContain('$runtime.get($$sig_size)')
-      expect(out).toContain('$runtime.get($$sig_color)')
+      expect(out).toContain('$$runtime.get($$sig_size)')
+      expect(out).toContain('$$runtime.get($$sig_color)')
     })
   })
 
@@ -1109,10 +1134,13 @@ function provide(n, f) { return null }
       const out = await cx(`<input {class} />`)
       expect(out).toContain('$$sig_$class')
     })
-    it('bind:class in child auto-wires $class', async () => {
-      const out = await cx(`<input bind:class />`)
-      expect(out).toContain('$$sig_$class')
-      expect(out).toContain('bindInput')
+    // Was: `bind:class` auto-wires $class, asserted by the presence of
+    // `bindInput`. That WAS the defect — `bindInput`'s generic branch is
+    // `el[name] = v` and there is no `class` DOM property, so the binding
+    // wrote a JS expando and neither direction reached the element
+    // (`FJS-478`). The test passed for as long as the feature was broken.
+    it('refuses bind:class on an element', async () => {
+      await expect(cx(`<input bind:class />`)).rejects.toThrow(/is not a DOM property/)
     })
     it('class on HTML elements is NOT remapped', async () => {
       const out = await cx(`<script>let cls='a'</script><div class={cls}>x</div>`)
@@ -1164,7 +1192,7 @@ function provide(n, f) { return null }
       // A Svelte habit gets pointed at Mesa's actual inspector.
       const dbg = await compile(
         `<script>let n = 1</script>{@debug n}<p>{n}</p>`, { debug: false, css: false })
-      expect(dbg.analysis.warnings.join(' ')).toMatch(/\$inspect/)
+      expect(dbg.analysis.warnings.join(' ')).toMatch(/\$\.inspect/)
     })
 
     it('stays silent for every tag Mesa does support', async () => {
@@ -1272,21 +1300,21 @@ function provide(n, f) { return null }
     })
     it('debounce — wraps handler', async () => {
       const out = await cx(`<input on:input|debounce(300)={fn}/>`)
-      expect(out).toContain('$runtime.debounce(fn, 300)')
+      expect(out).toContain('$$runtime.debounce(fn, 300)')
     })
     it('throttle — wraps handler', async () => {
       const out = await cx(`<div on:scroll|throttle(100)={fn}>x</div>`)
-      expect(out).toContain('$runtime.throttle(fn, 100)')
+      expect(out).toContain('$$runtime.throttle(fn, 100)')
     })
     it('debounce with reactive arg — passes getter', async () => {
       const out = await cx(`<script>let delay = 300</script><input on:input|debounce({delay})={fn}/>`)
-      expect(out).toContain('() => ($runtime.get($$sig_delay))')
-      expect(out).toContain('$runtime.debounce(fn,')
+      expect(out).toContain('() => ($$runtime.get($$sig_delay))')
+      expect(out).toContain('$$runtime.debounce(fn,')
     })
     it('multiple modifiers — guards then wrapped', async () => {
       const out = await cx(`<form on:submit|preventDefault|debounce(200)={fn}><b>x</b></form>`)
       expect(out).toContain('$$e.preventDefault()')
-      expect(out).toContain('$runtime.debounce(')
+      expect(out).toContain('$$runtime.debounce(')
     })
     it('unknown modifier — compiler error', async () => {
       const ctx = await compile(`<div on:click|magic={fn}>x</div>`, { debug: false, css: false })
@@ -1298,7 +1326,7 @@ function provide(n, f) { return null }
     })
     it('focus — uses addEvent (not delegation)', async () => {
       const out = await cx(`<script>function fn(){}</script><input on:focus={fn}/>`)
-      expect(out).toContain("$runtime.addEvent(")
+      expect(out).toContain("$$runtime.addEvent(")
       expect(out).not.toContain('__focus')
     })
     // Delegating one of these registers the handler on a root the event never
@@ -1312,53 +1340,53 @@ function provide(n, f) { return null }
       '%s does not bubble — uses addEvent, not delegation',
       async (event) => {
         const out = await cx(`<script>function fn(){}</script><dialog on:${event}={fn}>x</dialog>`)
-        expect(out).toContain('$runtime.addEvent(')
+        expect(out).toContain('$$runtime.addEvent(')
         expect(out).not.toContain(`__${event}`)
       }
     )
   })
 
-  describe('$context', () => {
-    it('provide — signal: emits $ctxProvide', async () => {
-      const out = await cx(`<script>let dark=false\n$context.theme=dark</script><div></div>`)
-      expect(out).toContain("$ctxProvide('theme',")
+  describe('$.context', () => {
+    it('provide — signal: emits $$ctxProvide', async () => {
+      const out = await cx(`<script>let dark=false\n$.context.theme=dark</script><div></div>`)
+      expect(out).toContain("$$ctxProvide('theme',")
       expect(out).toContain('$$sig_dark')
     })
     it('provide — derived expr: wraps in memo', async () => {
-      const out = await cx(`<script>let h=220\n$context.color='hsl('+h+')'</script><div></div>`)
+      const out = await cx(`<script>let h=220\n$.context.color='hsl('+h+')'</script><div></div>`)
       expect(out).toContain('$$ctxMemo_color')
-      expect(out).toContain("$ctxProvide('color', $$ctxMemo_color)")
+      expect(out).toContain("$$ctxProvide('color', $$ctxMemo_color)")
     })
     it('const consume — creates a memo from context', async () => {
-      const out = await cx(`<script>const theme=$context.theme</script><p>{theme}</p>`)
-      expect(out).toContain("$ctxRead('theme')")
+      const out = await cx(`<script>const theme=$.context.theme</script><p>{theme}</p>`)
+      expect(out).toContain("$$ctxRead('theme')")
     })
     it('let consume — creates reactive signal from context', async () => {
-      const out = await cx(`<script>let theme=$context.theme</script><p>{theme}</p>`)
-      expect(out).toContain("$ctxRead('theme')")
+      const out = await cx(`<script>let theme=$.context.theme</script><p>{theme}</p>`)
+      expect(out).toContain("$$ctxRead('theme')")
       expect(out).toContain('$$sig_theme')
     })
     it('var consume — snapshots context via untrack', async () => {
-      const out = await cx(`<script>var theme=$context.theme</script><p>{theme}</p>`)
-      expect(out).toContain("$ctxRead('theme')")
+      const out = await cx(`<script>var theme=$.context.theme</script><p>{theme}</p>`)
+      expect(out).toContain("$$ctxRead('theme')")
       expect(out).toContain('untrack')
     })
     it('const consume — no duplicate declaration (regression)', async () => {
-      const out = await cx(`<script>const theme=$context.theme</script><p>{theme}</p>`)
+      const out = await cx(`<script>const theme=$.context.theme</script><p>{theme}</p>`)
       // Should have exactly ONE declaration of theme — the generated track() version.
-      // Before the fix, the original `const theme = $context.theme` was also emitted,
+      // Before the fix, the original `const theme = $.context.theme` was also emitted,
       // overwriting the signal with undefined.
       const matches = out.match(/\bconst\s+theme\s*=/g) ?? []
       expect(matches).toHaveLength(1)
       expect(out).not.toContain('$context.theme')  // original must be stripped
     })
     // Every other test in this block asserts on emitted TEXT, and that is
-    // precisely why this survived: $context reads worked on the first render
+    // precisely why this survived: $.context reads worked on the first render
     // and returned `undefined` on every one after it. `contextRead` walks a
     // stack that only exists between push_component and pop_component, and a
     // derived recomputes later — from an effect — when that stack is empty. So
     // the lookup is hoisted out of the derived body and only the CALL stays
-    // inside it. Reactive context, the headline feature of $context, had never
+    // inside it. Reactive context, the headline feature of $.context, had never
     // actually worked end to end.
     //
     // `mount()` is used deliberately rather than the file's mount() helper:
@@ -1374,14 +1402,14 @@ function provide(n, f) { return null }
       return c
     }
 
-    it('a child re-reads $context when the provider changes', async () => {
+    it('a child re-reads $.context when the provider changes', async () => {
       const runtime = await import('../src/runtime.js')
-      const Child = await compileAndExec(`<script>const n = $context.n</script><b>{n}</b>`, runtime)
+      const Child = await compileAndExec(`<script>const n = $.context.n</script><b>{n}</b>`, runtime)
       const parent = await compile(
         `<script>
            import Child from './Child.mesa'
            let n = 0
-           $context.n = n
+           $.context.n = n
          </script><button on:click={() => n++}>+</button><Child />`,
         { debug: false, css: false })
       const c = mountLive(
@@ -1397,14 +1425,14 @@ function provide(n, f) { return null }
     it('two instances of a provider hold independent context', async () => {
       const runtime = await import('../src/runtime.js')
       const Child = await compileAndExec(
-        `<script>const n = $context.n\nconst inc = $context.inc</script>` +
+        `<script>const n = $.context.n\nconst inc = $.context.inc</script>` +
         `<i>{n}</i><button on:click={inc}>+</button>`, runtime)
       const box = await compile(
         `<script>
            import Child from './Child.mesa'
            let n = 0
-           $context.n = n
-           $context.inc = () => n++
+           $.context.n = n
+           $.context.inc = () => n++
          </script><div class="box"><Child /></div>`,
         { debug: false, css: false })
       const Box = execCompiled(box.result, runtime, { './Child.mesa': { default: Child } })
@@ -1423,18 +1451,18 @@ function provide(n, f) { return null }
       expect(vals()).toEqual(['2', '1'])
     })
 
-    it('injects $ctxProvide and $ctxRead locals', async () => {
-      const out = await cx(`<script>let x=1\n$context.x=x</script><div></div>`)
-      expect(out).toContain('const $ctxProvide = $runtime.contextProvide')
-      expect(out).toContain('const $ctxRead    = $runtime.contextRead')
+    it('injects $$ctxProvide and $$ctxRead locals', async () => {
+      const out = await cx(`<script>let x=1\n$.context.x=x</script><div></div>`)
+      expect(out).toContain('const $$ctxProvide = $$runtime.contextProvide')
+      expect(out).toContain('const $$ctxRead    = $$runtime.contextRead')
     })
     it('does not inject context locals when unused', async () => {
       const out = await cx(`<script>let count=0</script><p>{count}</p>`)
-      expect(out).not.toContain('$ctxProvide')
+      expect(out).not.toContain('$$ctxProvide')
     })
-    it('error — $context provide inside a function', async () => {
+    it('error — $.context provide inside a function', async () => {
       const ctx = await compile(
-        `<script>function init() { $context.theme = 'dark' }</script><div></div>`,
+        `<script>function init() { $.context.theme = 'dark' }</script><div></div>`,
         { debug: false, css: false }
       )
       expect(ctx.analysis.errors.some(e => e.includes('$context') && e.includes('function'))).toBe(true)
@@ -1521,7 +1549,7 @@ function provide(n, f) { return null }
     })
     it('reactive to expression', async () => {
       const out = await cx(`<script>let target = null</script><mesa:portal to={target}><div>x</div></mesa:portal><p>y</p>`)
-      expect(out).toContain('$runtime.get($$sig_target)')
+      expect(out).toContain('$$runtime.get($$sig_target)')
     })
     it('static content uses makeBlock', async () => {
       const out = await cx(`<mesa:portal to={document.body}><div>static</div></mesa:portal><p>x</p>`)
@@ -1561,8 +1589,14 @@ function provide(n, f) { return null }
       const out = await cx(
         `<script>let show = true\nfunction toggle() { $.transition(() => show = !show) }</script><button on:click={toggle}>x</button>`
       )
-      expect(out).toContain('const $ = {')
-      expect(out).toContain('transition: $runtime.transition')
+      // The five animation helpers are instance-independent, so they live on a
+      // module-scope object the per-instance `$` inherits — mounting allocates
+      // one object and copies nothing (FJS-D132).
+      expect(out).toContain('const $$shared = {')
+      expect(out).toContain('transition: $$runtime.transition')
+      expect(out).toContain('const $ = Object.create($$shared);')
+      // and the shared half is declared once, outside the component function
+      expect(out.indexOf('const $$shared = {')).toBeLessThan(out.indexOf('export default function'))
     })
     it('$ not injected when not used', async () => {
       const out = await cx(`<script>let count = 0</script><p>{count}</p>`)
@@ -1573,22 +1607,22 @@ function provide(n, f) { return null }
   describe('{@attach}', () => {
     it('DOM element — emits attach() call', async () => {
       const out = await cx(`<script>import {tooltip} from './t.js'; let c = 'hi'</script><div {@attach tooltip(c)}>x</div>`)
-      expect(out).toContain('$runtime.attach(')
-      expect(out).toContain('$runtime.get($$sig_c)')
+      expect(out).toContain('$$runtime.attach(')
+      expect(out).toContain('$$runtime.get($$sig_c)')
     })
     it('DOM element — inline arrow function', async () => {
       const out = await cx(`<div {@attach (el) => el.focus()}>x</div>`)
-      expect(out).toContain('$runtime.attach(')
+      expect(out).toContain('$$runtime.attach(')
       expect(out).toContain('(el) => el.focus()')
     })
     it('DOM element — multiple on same element', async () => {
       const out = await cx(`<div {@attach foo} {@attach bar}>x</div>`)
-      expect((out.match(/\$runtime\.attach\(/g) || []).length).toBe(2)
+      expect((out.match(/\$\$runtime\.attach\(/g) || []).length).toBe(2)
     })
     it('component — emits attachments with component call', async () => {
       const out = await cx(`<script>let c = 'hi'</script><Btn {@attach tooltip(c)} />`)
       expect(out).toMatch(/Btn\(/)
-      expect(out).not.toContain('$runtime.attach(')
+      expect(out).not.toContain('$$runtime.attach(')
     })
     it('component — multiple attachments compile without error', async () => {
       const out = await cx(`<Btn {@attach foo} {@attach bar} />`)
@@ -1603,8 +1637,8 @@ function provide(n, f) { return null }
   describe('{@html}', () => {
     it('emits setInnerHTML effect for reactive expression', async () => {
       const out = await cx(`<script>let h = '<b>hi</b>'</script>{@html h}`)
-      expect(out).toContain('$runtime.setInnerHTML(')
-      expect(out).toContain('$runtime.get($$sig_h)')
+      expect(out).toContain('$$runtime.setInnerHTML(')
+      expect(out).toContain('$$runtime.get($$sig_h)')
       expect(out).toContain('createEffect')
     })
     it('emits setInnerHTML for static string', async () => {
@@ -1642,7 +1676,7 @@ function provide(n, f) { return null }
     it('emits ifBlock with get() in condition', async () => {
       const out = await cx(`<script>let show = true;</script>{#if show}<p>yes</p>{/if}`)
       expect(out).toContain('ifBlock')
-      expect(out).toContain('$runtime.get($$sig_show)')
+      expect(out).toContain('$$runtime.get($$sig_show)')
     })
   })
 
@@ -1650,7 +1684,7 @@ function provide(n, f) { return null }
     it('emits $$eachBlock with get() for array', async () => {
       const out = await cx(`<script>let items = [];</script>{#each items as item}<li>{item}</li>{/each}`)
       expect(out).toContain('$$eachBlock')
-      expect(out).toContain('$runtime.get($$sig_items)')
+      expect(out).toContain('$$runtime.get($$sig_items)')
     })
     it('array destructure in as clause', async () => {
       const out = await cx(`{#each pairs as [k, v] (k)}<dt>{k}</dt>{/each}`)
@@ -1672,21 +1706,21 @@ function provide(n, f) { return null }
   describe('#key', () => {
     it('emits keyBlock with get() for key expression', async () => {
       const out = await cx(`<script>let id = 1</script>{#key id}<p>{id}</p>{/key}`)
-      expect(out).toContain('$runtime.keyBlock(')
-      expect(out).toContain('$runtime.get($$sig_id)')
+      expect(out).toContain('$$runtime.keyBlock(')
+      expect(out).toContain('$$runtime.get($$sig_id)')
     })
     it('key expression is tracked reactively', async () => {
       const out = await cx(`<script>let id = 1</script>{#key id}<p>hi</p>{/key}`)
-      expect(out).toContain('() => ($runtime.get($$sig_id))')
+      expect(out).toContain('() => ($$runtime.get($$sig_id))')
     })
     it('inner block uses makeBlock', async () => {
       const out = await cx(`<script>let id = 1</script>{#key id}<p>{id}</p>{/key}`)
-      expect(out).toContain('$runtime.makeBlock(')
+      expect(out).toContain('$$runtime.makeBlock(')
     })
     it('works with component inside', async () => {
       const out = await cx(`<script>let userId = 1</script>{#key userId}<UserForm id={userId} />{/key}`)
-      expect(out).toContain('$runtime.keyBlock(')
-      expect(out).toContain('$runtime.get($$sig_userId)')
+      expect(out).toContain('$$runtime.keyBlock(')
+      expect(out).toContain('$$runtime.get($$sig_userId)')
     })
   })
 
@@ -1711,12 +1745,12 @@ function provide(n, f) { return null }
     })
     it('snippet body uses makeBlock for DOM cloning', async () => {
       const out = await cx(`{#snippet row(x)}<p>{x}</p>{/snippet}{@render row('a')}`)
-      expect(out).toContain('$runtime.makeBlock(')
+      expect(out).toContain('$$runtime.makeBlock(')
       expect(out).toContain('$$frag')
     })
     it('snippet closes over outer reactive let', async () => {
       const out = await cx(`<script>let count = 0</script>{#snippet box()}<p>{count}</p>{/snippet}{@render box()}`)
-      expect(out).toContain('$runtime.get($$sig_count)')
+      expect(out).toContain('$$runtime.get($$sig_count)')
       expect(out).toContain('$$snippet_box')
     })
     it('multiple {#snippet} definitions coexist', async () => {
@@ -1734,11 +1768,11 @@ function provide(n, f) { return null }
     it('expands const {name} = letVar into a derived track(fn)', async () => {
       const out = await cx(`<script>let user = {name:'A'}; const {name} = user;</script><p>{name}</p>`)
       expect(out).toContain('track(')
-      expect(out).toContain('$runtime.get($$sig_user).name')
+      expect(out).toContain('$$runtime.get($$sig_user).name')
     })
     it('expands const {name: alias} = letVar with alias', async () => {
       const out = await cx(`<script>let user = {name:'A'}; const {name: alias} = user;</script><p>{alias}</p>`)
-      expect(out).toContain('$runtime.get($$sig_user).name')
+      expect(out).toContain('$$runtime.get($$sig_user).name')
       expect(out).toContain('alias')
     })
     it('expands const {name = "Anon"} with default', async () => {
@@ -1748,13 +1782,13 @@ function provide(n, f) { return null }
     })
     it('expands const [first, second] = letArr into derived track(fn)', async () => {
       const out = await cx(`<script>let arr = [1,2]; const [first, second] = arr;</script><p>{first}{second}</p>`)
-      expect(out).toContain('$runtime.get($$sig_arr)[0]')
-      expect(out).toContain('$runtime.get($$sig_arr)[1]')
+      expect(out).toContain('$$runtime.get($$sig_arr)[0]')
+      expect(out).toContain('$$runtime.get($$sig_arr)[1]')
     })
     it('expands let {name} = letVar into a signal', async () => {
       const out = await cx(`<script>let user = {name:'A'}; let {name} = user;</script><p>{name}</p>`)
       expect(out).toContain('track(')
-      expect(out).toContain('$runtime.get($$sig_user).name')
+      expect(out).toContain('$$runtime.get($$sig_user).name')
     })
     it('emits warning for computed destructuring key', async () => {
       const ctx = await compile(
@@ -1785,7 +1819,7 @@ function provide(n, f) { return null }
       { debug: false, css: false, externalSignals: { 'sierra/theme': ['theme'] } }
     )
     // Must be reactive — theme.get() changes, button must update
-    expect(result).toContain('$runtime.render(')
+    expect(result).toContain('$$runtime.render(')
     expect(result).toContain('theme.get()')
     // Must NOT be a one-time nodeValue assignment
     expect(result).not.toMatch(/el\d+\.nodeValue\s*=.*theme\.get/)
@@ -1796,7 +1830,7 @@ function provide(n, f) { return null }
       `<script>import { theme } from 'sierra/theme'</script><p>{theme}</p>`,
       { debug: false, css: false, externalSignals: { 'sierra/theme': ['theme'] } }
     )
-    expect(result).toContain('$runtime.render(')
+    expect(result).toContain('$$runtime.render(')
     expect(result).toContain('theme.get()')
   })
 
@@ -1905,29 +1939,29 @@ describe('end-to-end — counter', () => {
   })
 })
 
-describe('$emit', () => {
-  it('injects makeEmitter when $emit used in script', async () => {
-    const out = await cx(`<script>export let value=0\nfunction go(){$emit('change',value)}</script><button on:click={go}>go</button>`)
+describe('$.emit', () => {
+  it('injects makeEmitter when $.emit used in script', async () => {
+    const out = await cx(`<script>export let value=0\nfunction go(){$.emit('change',value)}</script><button on:click={go}>go</button>`)
     expect(out).toContain('makeEmitter')
-    expect(out).toContain("$emit('change'")
+    expect(out).toContain("$.emit('change'")
   })
 
-  it('injects makeEmitter when $emit used in template on:click (regression)', async () => {
-    // Before fix: $emit in template event handlers was not detected, makeEmitter was not injected
-    const out = await cx(`<script>export let v=0</script><button on:click={() => $emit('change', v+1)}>+</button>`)
-    expect(out).toContain('const $emit = $runtime.makeEmitter')
-    expect(out).toContain("$emit('change'")
+  it('injects makeEmitter when $.emit used in template on:click (regression)', async () => {
+    // Before fix: $.emit in template event handlers was not detected, makeEmitter was not injected
+    const out = await cx(`<script>export let v=0</script><button on:click={() => $.emit('change', v+1)}>+</button>`)
+    expect(out).toContain('const $$emit = $$runtime.makeEmitter')
+    expect(out).toContain("$.emit('change'")
   })
 
-  it('does not inject makeEmitter when $emit not used', async () => {
+  it('does not inject makeEmitter when $.emit not used', async () => {
     const out = await cx(`<script>let x=0</script><p>{x}</p>`)
     expect(out).not.toContain('makeEmitter')
   })
 
-  it('$emit calls the matching onX prop on parent', async () => {
-    const out = await cx(`<script>export let v=0</script><button on:click={() => $emit('change', v)}>x</button>`)
-    // The emitter is wired to $option.props
-    expect(out).toContain('makeEmitter($option)')
+  it('$.emit calls the matching onX prop on parent', async () => {
+    const out = await cx(`<script>export let v=0</script><button on:click={() => $.emit('change', v)}>x</button>`)
+    // The emitter is wired to $$option.props
+    expect(out).toContain('makeEmitter($$option)')
   })
 })
 
@@ -2056,7 +2090,7 @@ describe('isStatic detection', () => {
   const isStaticSrc = (src) =>
     compile(src, { debug: false, css: false }).then(ctx => {
       const out = ctx.result
-      return !out.includes('$runtime.render(') && !out.includes('bindText')
+      return !out.includes('$$runtime.render(') && !out.includes('bindText')
     })
 
   it('fully static template — no effects', async () => {
@@ -2080,7 +2114,7 @@ describe('isStatic detection', () => {
   })
   it('mixed static and reactive — only reactive gets render()', async () => {
     const out = await cx(`<script>let x=0</script><p>static</p><p>{x}</p>`)
-    expect(out).toContain('$runtime.render(')
+    expect(out).toContain('$$runtime.render(')
     // The static paragraph should not have a binding
     expect((out.match(/set_text/g) || []).length).toBe(1)
   })
@@ -2091,7 +2125,7 @@ describe('isStatic detection', () => {
   it('var sampler — template uses nodeValue directly, no render()', async () => {
     const out = await cx(`<script>let x=0; var snap=x</script><p>{snap}</p>`)
     expect(out).toContain('.nodeValue =')
-    expect(out).not.toContain('$runtime.render(')
+    expect(out).not.toContain('$$runtime.render(')
   })
   it('export const — inlined as literal, no signal', async () => {
     const out = await cx(`<script>export const MAX = 100</script><p>{MAX}</p>`)
@@ -2743,7 +2777,7 @@ const results = await search(q)
   {#snippet pending()}<p>Loading</p>{/snippet}
   <ul>{#each results as r}<li>{r}</li>{/each}</ul>
 </mesa:boundary>`)
-    expect(out).toContain('$runtime.boundaryBlock')
+    expect(out).toContain('$$runtime.boundaryBlock')
     expect(out).toContain('$$async_results')
     expect(out).toContain('$$snippet_pending')
   })
@@ -2877,34 +2911,34 @@ describe('mesa:mounted', () => {
     runtime.setRenderEnvironment(true)
   })
 
-  it('injects $mounted builtin when $mounted() used', async () => {
+  it('injects $.mounted builtin when $.mounted() used', async () => {
     const out = await cx(`
 <script>
 let user
-const mounting = $mounted(async () => { user = await getUser() })
+const mounting = $.mounted(async () => { user = await getUser() })
 </script>
 <mesa:mounted />
 <p>{user}</p>`)
-    expect(out).toContain('const $mounted   = $runtime.$onMounted')
+    expect(out).toContain('const $mounted   = $$runtime.onMounted')
   })
 
   it('mounting var is emitted as plain const (not tracked)', async () => {
     const out = await cx(`
 <script>
 let user
-const mounting = $mounted(async () => { user = await getUser() })
+const mounting = $.mounted(async () => { user = await getUser() })
 </script>
 <mesa:mounted />
 <p>{user}</p>`)
-    expect(out).not.toContain('$runtime.track(() => ($mounted')
+    expect(out).not.toContain('$$runtime.track(() => ($mounted')
     expect(out).toContain('const mounting = $mounted(')
   })
 
-  it('assignment inside $mounted fn is rewritten to setter', async () => {
+  it('assignment inside $.mounted fn is rewritten to setter', async () => {
     const out = await cx(`
 <script>
 let user
-const mounting = $mounted(async () => { user = await getUser() })
+const mounting = $.mounted(async () => { user = await getUser() })
 </script>
 <mesa:mounted />
 <p>{user}</p>`)
@@ -2915,11 +2949,11 @@ const mounting = $mounted(async () => { user = await getUser() })
     const out = await cx(`
 <script>
 let user
-const mounting = $mounted(async () => { user = await getUser() })
+const mounting = $.mounted(async () => { user = await getUser() })
 </script>
 <mesa:mounted />
 <p>{user}</p>`)
-    expect(out).toContain('$runtime.mountedBlock')
+    expect(out).toContain('$$runtime.mountedBlock')
     expect(out).toContain('() => mounting')
   })
 
@@ -2927,7 +2961,7 @@ const mounting = $mounted(async () => { user = await getUser() })
     const out = await cx(`
 <script>
 let user
-const mounting = $mounted(async () => { user = await getUser() })
+const mounting = $.mounted(async () => { user = await getUser() })
 </script>
 <mesa:mounted onerror={(err) => console.error(err)} />
 <p>{user}</p>`)
@@ -2938,7 +2972,7 @@ const mounting = $mounted(async () => { user = await getUser() })
     const out = await cx(`
 <script>
 let user
-const mounting = $mounted(async () => { user = await getUser() })
+const mounting = $.mounted(async () => { user = await getUser() })
 </script>
 <mesa:mounted />
 <p>{user}</p>
@@ -2958,22 +2992,22 @@ const mounting = $mounted(async () => { user = await getUser() })
     const out = await cx(`
 <script>
 let user
-const mounting = $mounted(async () => { user = await getUser() })
+const mounting = $.mounted(async () => { user = await getUser() })
 </script>
 <mesa:mounted>
   {#snippet pending()}<p>Loading</p>{/snippet}
 </mesa:mounted>
 <p>{user}</p>`)
-    expect(out).toContain('$runtime.mountedBlock')
+    expect(out).toContain('$$runtime.mountedBlock')
     expect(out).toContain('() => mounting')
   })
 
-  it('compiler error when $mounted called more than once', async () => {
+  it('compiler error when $.mounted called more than once', async () => {
     const ctx = await compile(`
 <script>
 let a, b
-const m1 = $mounted(async () => { a = await getA() })
-const m2 = $mounted(async () => { b = await getB() })
+const m1 = $.mounted(async () => { a = await getA() })
+const m2 = $.mounted(async () => { b = await getB() })
 </script>
 <mesa:mounted />
 <p>{a}</p>`, { css: false })
@@ -3236,7 +3270,7 @@ describe('end-to-end — external object watch ($: obj)', () => {
   function bump() { user.score += 10; user = user }
 </script><p>{user.score}</p><button on:click={bump}>go</button>`)
     // forced write, not a plain setter call that Object.is would drop
-    expect(out).toContain('$runtime.set($$sig_user, $runtime.get($$sig_user), true)')
+    expect(out).toContain('$$runtime.set($$sig_user, $$runtime.get($$sig_user), true)')
     expect(out).not.toContain('$$set_user(user)')
 
     const Comp = await compileAndExec(`<script>
@@ -3908,10 +3942,10 @@ describe('end-to-end — named slots', () => {
     app.destroy()
   })
 
-  it('$slots.sidebar is truthy when sidebar slot provided', async () => {
+  it('$.slots.sidebar is truthy when sidebar slot provided', async () => {
     const LayoutFn = await compileLayout(`
 <div>
-  {#if $slots.sidebar}
+  {#if $.slots.sidebar}
     <aside id="sidebar-wrapper"><slot name="sidebar" /></aside>
   {/if}
   <main><slot /></main>
@@ -3942,14 +3976,14 @@ describe('end-to-end — named slots', () => {
 
   it('a slot made only of comments is not content', async () => {
     // Comments are dropped from the output, so such a block renders nothing and
-    // used to make `$slots.default` true anyway — turning off every component
+    // used to make `$.slots.default` true anyway — turning off every component
     // that branches on it. `<Form>` generating its own field list when nobody
     // wrote controls is the case that found it: one HTML comment inside the
     // form and every field silently vanished.
     const LayoutFn = await compileLayout(`
 <div>
-  {#if $slots.default}<p id="had-children">children</p>{/if}
-  {#if $slots.sidebar}<p id="had-sidebar">sidebar</p>{/if}
+  {#if $.slots.default}<p id="had-children">children</p>{/if}
+  {#if $.slots.sidebar}<p id="had-sidebar">sidebar</p>{/if}
   <main id="main-area"><slot /></main>
 </div>`)
 
@@ -4225,11 +4259,11 @@ let sel = 0</script>
 })
 
 describe('{#await} — thenBlock/catchBlock value binding', () => {
-  it('thenBlock factory receives value as first param — not $parentElement', async () => {
+  it('thenBlock factory receives value as first param — not $$parentElement', async () => {
     const out = await cx(`<script>let p = Promise.resolve()</script>
 {#await p}{:then data}<p>{data}</p>{/await}`)
-    // Must NOT have $parentElement as the leading param — that was the bug
-    expect(out).not.toContain('($parentElement, data)')
+    // Must NOT have $$parentElement as the leading param — that was the bug
+    expect(out).not.toContain('($$parentElement, data)')
     // Must have just (data) =>
     expect(out).toContain('(data) =>')
   })
@@ -4237,7 +4271,7 @@ describe('{#await} — thenBlock/catchBlock value binding', () => {
   it('catchBlock factory receives error as first param', async () => {
     const out = await cx(`<script>let p = Promise.resolve()</script>
 {#await p}{:catch err}<p>{err.message}</p>{/await}`)
-    expect(out).not.toContain('($parentElement, err)')
+    expect(out).not.toContain('($$parentElement, err)')
     expect(out).toContain('(err) =>')
   })
 
@@ -4252,7 +4286,7 @@ describe('{#await} — thenBlock/catchBlock value binding', () => {
 {#await p}{:then result}<p>{result.name}</p>{/await}`)
     expect(out).toContain('result.name')
     // Ensure result is referenced inside the makeBlock callback, not as dead outer param
-    expect(out).not.toContain('($parentElement, result)')
+    expect(out).not.toContain('($$parentElement, result)')
   })
 })
 
@@ -4261,7 +4295,7 @@ describe('bind:value|mask', () => {
     const out = await cx(`<script>let d = ''</script><input bind:value|mask({"99/99/9999"})={d} />`)
     expect(out).toContain('bindMask')
     expect(out).toContain('"99/99/9999"')
-    expect(out).not.toContain('createEffect(() => { $runtime.bindMask')
+    expect(out).not.toContain('createEffect(() => { $$runtime.bindMask')
   })
 
   it('reactive const pattern — emits bindMask inside createEffect', async () => {
@@ -4270,8 +4304,8 @@ describe('bind:value|mask', () => {
       let t = 'visa'
       const cardMask = t === 'amex' ? '9999 999999 99999' : '9999 9999 9999 9999'
     </script><input bind:value|mask({cardMask})={card} />`)
-    expect(out).toContain('createEffect(() => { $runtime.bindMask')
-    expect(out).toContain('$runtime.get(cardMask)')
+    expect(out).toContain('createEffect(() => { $$runtime.bindMask')
+    expect(out).toContain('$$runtime.get(cardMask)')
   })
 
   it('phone pattern with parens and dash', async () => {
@@ -4302,7 +4336,7 @@ describe('set_attribute reactive inside {#each} — regression', () => {
       <div data-status={item.status}>{item.status}</div>
     {/each}`)
     // set_attribute must appear inside a render() call, not bare
-    const renderBlocks = out.split('$runtime.render(')
+    const renderBlocks = out.split('$$runtime.render(')
     const insideRender = renderBlocks.slice(1).some(chunk => chunk.includes('set_attribute'))
     expect(insideRender).toBe(true)
   })
@@ -4314,7 +4348,7 @@ describe('set_attribute reactive inside {#each} — regression', () => {
     {#each items as item (item.id)}
       <p>{item.name}</p>
     {/each}`)
-    const renderBlocks = out.split('$runtime.render(')
+    const renderBlocks = out.split('$$runtime.render(')
     const insideRender = renderBlocks.slice(1).some(chunk =>
       chunk.includes('set_text') || chunk.includes('nodeValue')
     )
@@ -4329,55 +4363,55 @@ describe('set_attribute reactive inside {#each} — regression', () => {
       <button data-status={item.status} disabled={item.disabled}>{item.label}</button>
     {/each}`)
     // All three bindings should be in the same render() block
-    const renderMatch = out.match(/\$runtime\.render\([\s\S]*?set_attribute[\s\S]*?set_attribute[\s\S]*?set_text[\s\S]*?\}/)
+    const renderMatch = out.match(/\$\$runtime\.render\([\s\S]*?set_attribute[\s\S]*?set_attribute[\s\S]*?set_text[\s\S]*?\}/)
     expect(renderMatch).toBeTruthy()
   })
 })
 
-describe('$inspect builtin', () => {
-  // $inspect is a dev-only builtin — must compile with debug: true (default)
+describe('$.inspect builtin', () => {
+  // $.inspect is a dev-only builtin — must compile with debug: true (default)
   const cxDev = src => compile(src, { debug: true, css: false }).then(c => c.result)
 
-  it('injects $inspect local from runtime', async () => {
-    const out = await cxDev(`<script>let x = 0\n$inspect(x)</script><p>{x}</p>`)
-    expect(out).toContain('const $inspect   = $runtime.$inspect')
+  it('injects $.inspect local from runtime', async () => {
+    const out = await cxDev(`<script>let x = 0\n$.inspect(x)</script><p>{x}</p>`)
+    expect(out).toContain('const $inspect   = $$runtime.inspect')
   })
 
-  it('transforms $inspect(signal) into structured call with getter', async () => {
-    const out = await cxDev(`<script>let count = 0\n$inspect(count)</script><p>{count}</p>`)
-    expect(out).toContain('$inspect({ label: "count", getters: [() => ($runtime.get($$sig_count))] })')
+  it('transforms $.inspect(signal) into structured call with getter', async () => {
+    const out = await cxDev(`<script>let count = 0\n$.inspect(count)</script><p>{count}</p>`)
+    expect(out).toContain('$inspect({ label: "count", getters: [() => ($$runtime.get($$sig_count))] })')
   })
 
-  it('transforms $inspect(proxy) with proxy accessor', async () => {
+  it('transforms $.inspect(proxy) with proxy accessor', async () => {
     const out = await cxDev(`<script>
       import { cart } from './store.js'
       $: cart
-      $inspect(cart)
+      $.inspect(cart)
     </script><p>{cart.total}</p>`)
     expect(out).toContain('$inspect({ label: "cart", getters: [() => ($$proxy_cart)] })')
   })
 
   it('handles multiple args with comma-joined label', async () => {
-    const out = await cxDev(`<script>let a = 0\nlet b = ''\n$inspect(a, b)</script><p>{a}</p>`)
+    const out = await cxDev(`<script>let a = 0\nlet b = ''\n$.inspect(a, b)</script><p>{a}</p>`)
     expect(out).toContain('"a, b"')
-    expect(out).toContain('$runtime.get($$sig_a)')
-    expect(out).toContain('$runtime.get($$sig_b)')
+    expect(out).toContain('$$runtime.get($$sig_a)')
+    expect(out).toContain('$$runtime.get($$sig_b)')
   })
 
-  it('transforms $inspect(x).with(fn) chaining', async () => {
-    const out = await cxDev(`<script>let x = 0\n$inspect(x).with(console.trace)</script><p>{x}</p>`)
+  it('transforms $.inspect(x).with(fn) chaining', async () => {
+    const out = await cxDev(`<script>let x = 0\n$.inspect(x).with(console.trace)</script><p>{x}</p>`)
     expect(out).toContain('.with(console.trace)')
     expect(out).toContain('"x"')
-    expect(out).toContain('$runtime.get($$sig_x)')
+    expect(out).toContain('$$runtime.get($$sig_x)')
   })
 
-  it('does not inject $inspect if not used', async () => {
+  it('does not inject $.inspect if not used', async () => {
     const out = await cx(`<script>let x = 0</script><p>{x}</p>`)
     expect(out).not.toContain('$inspect')
   })
 
-  it('strips $inspect in production (debug: false)', async () => {
-    const out = await cx(`<script>let x = 0\n$inspect(x)</script><p>{x}</p>`)
+  it('strips $.inspect in production (debug: false)', async () => {
+    const out = await cx(`<script>let x = 0\n$.inspect(x)</script><p>{x}</p>`)
     expect(out).not.toContain('$inspect')
   })
 })

@@ -33,6 +33,42 @@ const RESERVED_WORDS = new Set([
 ])
 
 /**
+ * Names the compiler injects as `const` into the component factory scope.
+ *
+ * An instance script declaring one of these emitted a SECOND declaration in the
+ * same scope — a duplicate binding, which is a SyntaxError — while the compile
+ * reported no error at all, so the failure surfaced as a parse error in
+ * generated code pointing at a line nobody wrote. Measured at 27 combinations
+ * across `const`, `var` and `function`.
+ *
+ * Every form is refused, `let` included, which survived only because a reactive
+ * `let` is renamed to `$$sig_<name>` before emit. `$$inspect` is refused even
+ * though `config.debug: false` drops its injection, because one source
+ * compiling under one config and breaking under the other is the worse failure.
+ *
+ * The last two are compiler internals rather than builtins an author calls;
+ * they are here because they land in the same scope and collide the same way.
+ */
+const BUILTIN_LOCALS = new Set([
+  '$$option', '$$slots', '$$props', '$$attributes', '$context', '$$emit',
+  '$$onMount', '$$onDestroy', '$$onCleanup', '$mounted', '$inspect',
+  '$$ctxProvide', '$$ctxRead',
+  // The sugar spellings are injected into the same scope and collide the same
+  // way, so declaring one is refused rather than silently shadowing it.
+  '$props', '$attributes', '$slots', '$async',
+  // The calling convention (`FJS-482`). `__anchor` and `__props` are the
+  // component function's own parameters and `__prev` is the render callback's,
+  // so a top-level declaration of one lands in the same scope and wins. Two of
+  // them break and neither says so: `function __anchor(){}` throws at mount
+  // with `anchor.before is not a function`, and `const __prev = 9` renders
+  // `[object Object]` because the callback's parameter shadows it. `__block`
+  // is here for the same reason even though the cases probed survived it —
+  // it is threaded into every `track()` call, and a shape that does reach it
+  // would fail the same silent way.
+  '__anchor', '__props', '__block', '__prev',
+])
+
+/**
  * The tag `<mesa:element this={…}>` is compiled under before the runtime swaps
  * it for the real one. A hyphenated custom-element name so the HTML parser gives
  * it no special treatment — a made-up plain name like `dyn` is parsed as an
@@ -336,6 +372,30 @@ export function checkRootName(name, script, warning) {
 // script-body assignments correctly route through signal getters / setters.
 
 /**
+ * `x++` / `++x` / `x--` / `--x` on a reactive `let`, as an EXPRESSION.
+ *
+ * Both rewriters used to emit `$$set_x($$runtime.get($$sig_x) + 1)` for either
+ * form, which is right as a statement and wrong twice as an expression:
+ * `$$runtime.set` answered nothing, so `const a = ++n` bound `undefined`; and
+ * prefix and postfix compiled to the same thing, so `const b = n++` would have
+ * answered the NEW value even once it answered one at all.
+ *
+ * Prefix is the setter call — `set` answers what it wrote. Postfix has to hold
+ * the old value across the write, and it goes through a runtime call rather
+ * than an inlined arrow because this house writes no semicolons: a statement
+ * beginning `(` continues the line above it, so `throw new Error('x')` followed
+ * by `(($$v) => …)(…)` parses as a call on the Error and the increment never
+ * runs. An identifier cannot start that.
+ */
+function updateExpr(node, setter, name) {
+  const sig = `$$sig_${name}`
+  const op  = node.operator === '++' ? '+' : '-'
+  return node.prefix
+    ? `${setter}($$runtime.get(${sig}) ${op} 1)`
+    : `$$runtime.postUpdate(${sig}, ${setter}, ${op}1)`
+}
+
+/**
  * Rewrite identifier references in a JS expression string.
  *
  * accessorMap: { varName: accessorExpr }
@@ -402,7 +462,7 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
   //
   // Without this a local declaration that happens to share a name with a
   // reactive top-level `let` was rewritten as a read of that signal — in its
-  // own declaration, giving `const $runtime.get($$sig_d) = new Date(ts)`. That
+  // own declaration, giving `const $$runtime.get($$sig_d) = new Date(ts)`. That
   // is not valid JavaScript, and the compiler reported no error, so it landed
   // as a module the browser refused to parse (Invariant 15). Parameters were
   // already handled, which is why a shadow only broke when it was declared.
@@ -501,7 +561,7 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
         } else {
           const base = op.slice(0, -1)
           const sigName = `$$sig_${left.name}`
-          replacement = `${setter}($runtime.get(${sigName}) ${base} (${rightRw}))`
+          replacement = `${setter}($$runtime.get(${sigName}) ${base} (${rightRw}))`
         }
         patches.push({ start: n.start, end: n.end, replacement })
         return
@@ -526,18 +586,11 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
       }
     }
 
-    // Rewrite update expressions: x++ → $$set_x($runtime.get($$sig_x) + 1)
+    // Rewrite update expressions: ++x → $$set_x($$runtime.get($$sig_x) + 1)
     if (setterMap && n.type === 'UpdateExpression') {
       const arg = n.argument
       if (arg.type === 'Identifier' && setterMap[arg.name] && !localScope.has(arg.name)) {
-        const setter = setterMap[arg.name]
-        const sigName = `$$sig_${arg.name}`
-        const op = n.operator === '++' ? '+' : '-'
-        patches.push({
-          start: n.start,
-          end: n.end,
-          replacement: `${setter}($runtime.get(${sigName}) ${op} 1)`
-        })
+        patches.push({ start: n.start, end: n.end, replacement: updateExpr(n, setterMap[arg.name], arg.name) })
         return
       }
     }
@@ -548,12 +601,38 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
     if (n.type === 'Property' && n.shorthand && n.value?.type === 'Identifier') {
       const name = n.value.name
       if (!localScope.has(name) && rewrites[name] !== undefined) {
-        // Expand shorthand: { username } → { username: $runtime.get($$sig_username) }
+        // Expand shorthand: { username } → { username: $$runtime.get($$sig_username) }
         patches.push({ start: n.start, end: n.end, replacement: `${name}: ${rewrites[name]}` })
         return  // don't walk children — we've handled this Property
       }
       // Not a reactive var — leave as shorthand, walk normally
     }
+
+    // Already rewritten — `$$runtime.get(<name>)` is this function's own output.
+    //
+    // `rewriteExpr` is applied at more than a dozen sites, and in several of
+    // them it runs over text `rewriteAssignments` has already put it through
+    // (`rewriteAssignments` rewrites an assignment's right-hand side itself, and
+    // its callers then rewrite the whole statement). For a reactive `let` that
+    // was harmless — the accessor is `$$runtime.get($$sig_x)` and `$$sig_x` is
+    // not a name in the map, so a second pass finds nothing. For a DERIVED
+    // `const` the accessor is `$$runtime.get(x)`, which still contains `x`, so
+    // the second pass wrapped it again: `$$runtime.get($$runtime.get(cellFor))`.
+    //
+    // The runtime CALLS a plain function it is handed, so a derived holding a
+    // function was invoked with no arguments and the result called — throwing
+    // `$$runtime.get(...) is not a function` at mount with nothing naming the
+    // line, and a derived holding a value silently produced the wrong one
+    // (`FJS-424`). Being idempotent is the fix rather than making every caller
+    // apply it exactly once, which is a rule nothing can check.
+    if (
+      n.type === 'CallExpression' &&
+      n.callee?.type === 'MemberExpression' &&
+      n.callee.object?.name === '$$runtime' &&
+      n.callee.property?.name === 'get' &&
+      n.arguments?.length === 1 &&
+      n.arguments[0]?.type === 'Identifier'
+    ) return
 
     if (n.type === 'Identifier') {
       // Skip non-computed property names (obj.name) but NOT computed keys (obj[name])
@@ -631,9 +710,9 @@ export function rewriteTextResult(pe, accessorMap) {
  * reactive `let` variables so they call the corresponding signal setter.
  *
  *   count = 5     →  $$set_count(5)
- *   count += 2    →  $$set_count($runtime.get($$sig_count) + (2))
- *   count++       →  $$set_count($runtime.get($$sig_count) + 1)
- *   count--       →  $$set_count($runtime.get($$sig_count) - 1)
+ *   count += 2    →  $$set_count($$runtime.get($$sig_count) + (2))
+ *   count++       →  $$set_count($$runtime.get($$sig_count) + 1)
+ *   count--       →  $$set_count($$runtime.get($$sig_count) - 1)
  *
  * Patches are relative to `srcOffset` (the node's start position in the full
  * script source), so the returned string is a self-contained rewritten snippet.
@@ -823,28 +902,37 @@ export function rewriteAssignments(src, node, ctx) {
         patches.push({
           start: n.start,
           end: n.end,
-          replacement: `$runtime.set(${sigName}, $runtime.get(${sigName}), true)`
+          replacement: `$$runtime.set(${sigName}, $$runtime.get(${sigName}), true)`
         })
         return
       }
       if (left.type === 'Identifier' && setters[left.name]) {
         const setter = setters[left.name]
         const op = n.operator
-        // Recursively rewrite the right-hand side BEFORE building our replacement.
-        // This handles nested assignments inside callbacks:
+        // Recursively rewrite ASSIGNMENTS on the right-hand side before building
+        // our replacement. This handles nested ones inside callbacks:
         //   _interval = setInterval(() => { time = ... })
-        // Without this, the outer replacement would capture the un-rewritten inner `time = ...`.
+        // Without it, the outer replacement would capture the un-rewritten
+        // inner `time = ...`.
+        //
+        // Identifiers are deliberately NOT rewritten here. Doing so meant
+        // handing `rewriteExpr` the right-hand side sliced out ON ITS OWN, so
+        // the enclosing function body — and every `let`/`const` declared in it
+        // — was absent from the text being walked, and a local shadowing a
+        // derived was rewritten as a read of the derived: valid JavaScript, no
+        // warning, wrong value (`FJS-465`). Every caller of this function
+        // applies `rewriteExpr` to the whole statement afterwards, where the
+        // scope is visible and `collectBlockDeclared` already gets it right.
         const rightRawOriginal = script.source.slice(n.right.start, n.right.end)
         // Build a fake node spanning just the right side for recursive rewriting
-        const rightRewritten = rewriteAssignments(rightRawOriginal, n.right, ctx)
-        const rightRw = rewriteExpr(rightRewritten, accessors)
+        const rightRw = rewriteAssignments(rightRawOriginal, n.right, ctx)
         let replacement
         if (op === '=') {
           replacement = `${setter}(${rightRw})`
         } else {
           const base = op.slice(0, -1) // strip trailing =
           const sigName = `$$sig_${left.name}`
-          replacement = `${setter}($runtime.get(${sigName}) ${base} (${rightRw}))`
+          replacement = `${setter}($$runtime.get(${sigName}) ${base} (${rightRw}))`
         }
         patches.push({ start: n.start, end: n.end, replacement })
         return // don't descend — right side already handled above
@@ -854,7 +942,7 @@ export function rewriteAssignments(src, node, ctx) {
       //
       // The branches above only recognise a bare Identifier on the left, so a
       // pattern fell through to the generic descent and its targets were
-      // rewritten as READS — `[$runtime.get($$sig_a), …] = …`, which does not
+      // rewritten as READS — `[$$runtime.get($$sig_a), …] = …`, which does not
       // parse. Clean compile, module dead on load; the kit's DatePicker used
       // the swap idiom and threw before it rendered anything.
       if (
@@ -880,14 +968,7 @@ export function rewriteAssignments(src, node, ctx) {
     if (n.type === 'UpdateExpression') {
       const arg = n.argument
       if (arg.type === 'Identifier' && setters[arg.name]) {
-        const setter = setters[arg.name]
-        const sigName = `$$sig_${arg.name}`
-        const op = n.operator === '++' ? '+' : '-'
-        patches.push({
-          start: n.start,
-          end: n.end,
-          replacement: `${setter}($runtime.get(${sigName}) ${op} 1)`
-        })
+        patches.push({ start: n.start, end: n.end, replacement: updateExpr(n, setters[arg.name], arg.name) })
         return
       }
     }
@@ -1228,14 +1309,14 @@ xNode.template = (data) =>
     let convert,
       cloneNode = node.cloneNode
     if (node.svg) {
-      convert = '$runtime.svgToFragment'
+      convert = '$$runtime.svgToFragment'
       cloneNode = false
     } else if (!template.match(/[<>]/) && !node.requireFragment) {
-      convert = '$runtime.createTextNode'
+      convert = '$$runtime.createTextNode'
       cloneNode = false
       if (!node.raw) template = htmlEntitiesToText(template)
     } else {
-      convert = config.hideLabel ? '$runtime.htmlToFragmentClean' : '$runtime.htmlToFragment'
+      convert = config.hideLabel ? '$$runtime.htmlToFragmentClean' : '$$runtime.htmlToFragment'
       template = template.replace(/<!---->/g, '<>')
     }
     if (node.raw) {
@@ -1930,6 +2011,385 @@ function memberPath(node) {
   return null
 }
 
+/**
+ * The twelve builtins are reachable only through `$` (FJS-D132 phase 4).
+ *
+ * Returns a message, or null. Two places have to be looked at and they are not
+ * the same problem: the instance script parses, so its bare uses are found on
+ * the AST and a name the author declared for themselves can be told apart from
+ * the builtin; a template does not, so its expressions are scanned as text with
+ * the script and style blocks cut out first.
+ */
+const DOOR_MEMBERS = [
+  'onMount', 'onDestroy', 'onCleanup', 'mounted', 'tick', 'emit', 'inspect',
+  'props', 'attributes', 'slots', 'context', 'async',
+]
+
+/**
+ * The five members an author reaches for as DATA, which carry a bare spelling
+ * as well as the door one (`FJS-D135`).
+ *
+ * `{...$attributes}` is the shape the sugar exists for — 81 of this repo's 82
+ * uses of that member are that one spread, sitting in markup where `$.` is
+ * JavaScript punctuation in the middle of HTML. The other four are here because
+ * they are read the same way: a name, then a key. `$context.form`,
+ * `$async.rows.fetching`, `$slots.default`, `$props.x`.
+ *
+ * What is NOT here is what is CALLED — `$.onMount(fn)`, `$.emit('go')`,
+ * `$.mounted(fn)`, `$.tick()`, `$.inspect(x)` and the five animation helpers.
+ * A call already reads as one, and the door in front of it says which component
+ * is doing the calling.
+ *
+ * Both spellings are legal and the bare one is canonical. They converge before
+ * anything downstream sees them: the four plain bags get a bare local aliasing
+ * the `$$` one, and `$context` is what the pre-parse rewrite already produces.
+ */
+const SUGAR_MEMBERS = ['props', 'attributes', 'slots', 'context', 'async']
+
+/**
+ * The attributes an ELEMENT writes back on, which is what `bind:` means there
+ * (`FJS-D136`). `bind:group` and `bind:this` are their own paths and never
+ * reach the generic one.
+ *
+ * Nothing else in the DOM changes by itself, so a two-way binding to it has no
+ * second direction — and for the eight attributes whose DOM property is spelled
+ * differently (`for`/`htmlFor`, `readonly`/`readOnly`, `class`/`className` and
+ * the rest) it had no FIRST direction either: `el[name] = v` wrote an expando.
+ */
+const DOM_TWO_WAY = new Set(['value', 'checked', 'files'])
+/**
+ * The source with everything that is not template cut out, so a rule scanning
+ * for a spelling cannot count one inside the script (judged elsewhere, in a
+ * place that can tell a local apart) or inside a CSS comment.
+ */
+function templateOnly(source) {
+  return String(source ?? '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+}
+
+/**
+ * Only the parts of a template that are CODE — every `{ … }` region, joined.
+ *
+ * A rule that scans template text scans the prose too, and prose about the
+ * framework is exactly what a REPL example or a documentation page is made of:
+ * `<p>It provides $.context.count</p>` is a sentence, not a use. Brace depth is
+ * counted rather than matched with a regex so a nested block or an object
+ * literal closes where it should. A brace inside a string inside an expression
+ * miscounts, which errs toward scanning LESS — the right direction, since a
+ * missed use is a bug that still reaches a test and a false refusal is a
+ * component that cannot be written at all.
+ */
+function templateExpressions(source) {
+  const t = templateOnly(source)
+  const out = []
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] !== '{') continue
+    let depth = 1
+    let j = i + 1
+    while (j < t.length && depth > 0) {
+      if (t[j] === '{') depth++
+      else if (t[j] === '}') depth--
+      j++
+    }
+    out.push(t.slice(i + 1, j - 1))
+    i = j - 1
+  }
+  return out.join('\n')
+}
+
+const REFUSED_BARE = DOOR_MEMBERS.filter((m) => !SUGAR_MEMBERS.includes(m))
+
+function refuseBareBuiltins(rawScript, source, ctx) {
+  const say = (bare, where) =>
+    `'$${bare}' is no longer injected — write '$.${bare}' instead${where}. ` +
+    `The component's builtins are reached through '$'.`
+
+  // ── the script ───────────────────────────────────────────────────────────
+  if (rawScript) {
+    let ast
+    try {
+      ast = acorn.parse(rawScript, { sourceType: 'module', ecmaVersion: 'latest' })
+    } catch { ast = null }
+    if (ast) {
+      const declared = new Set()
+      const collect = (id) => {
+        if (!id) return
+        if (id.type === 'Identifier') declared.add(id.name)
+        else if (id.type === 'ObjectPattern') id.properties.forEach((pr) => collect(pr.value ?? pr.argument))
+        else if (id.type === 'ArrayPattern') id.elements.forEach(collect)
+        else if (id.type === 'AssignmentPattern') collect(id.left)
+        else if (id.type === 'RestElement') collect(id.argument)
+      }
+      const sweep = (node) => {
+        if (!node || typeof node !== 'object') return
+        if (node.type === 'VariableDeclarator') collect(node.id)
+        if (node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') collect(node.id)
+        if (node.params) node.params.forEach(collect)
+        if (node.type === 'ImportDeclaration') node.specifiers.forEach((sp) => collect(sp.local))
+        for (const k of Object.keys(node)) {
+          const c = node[k]
+          if (Array.isArray(c)) c.forEach(sweep)
+          else if (c && typeof c === 'object' && c.type) sweep(c)
+        }
+      }
+      sweep(ast)
+
+      let found = null
+      const look = (node) => {
+        if (found || !node || typeof node !== 'object') return
+        for (const k of Object.keys(node)) {
+          if (k === 'label') continue
+          if ((k === 'key' || k === 'property') && !node.computed) continue
+          const c = node[k]
+          const visit = (n) => {
+            if (found || !n || typeof n !== 'object' || !n.type) return
+            if (n.type === 'Identifier' && n.name[0] === '$') {
+              const bare = n.name.slice(1)
+              if (REFUSED_BARE.includes(bare) && !declared.has(n.name)) found = bare
+            }
+            look(n)
+          }
+          if (Array.isArray(c)) c.forEach(visit)
+          else visit(c)
+        }
+      }
+      look(ast)
+      if (found) return say(found, '')
+    }
+  }
+
+  // ── the template ─────────────────────────────────────────────────────────
+  const template = templateExpressions(source)
+  const rx = new RegExp(String.raw`(?<![\w$])\$(${REFUSED_BARE.join('|')})\b`)
+  const hit = template.match(rx)
+  if (hit) return say(hit[1], ' in the template')
+
+  return null
+}
+
+/**
+ * `$.mounted` and `$.context` are COMPILED, not read (`FJS-477`).
+ *
+ * After the pre-parse rewrite both are ordinary identifiers — `$mounted`,
+ * `$context` — and their local is emitted only when a sniff found the one shape
+ * the compiler knows how to wire. Every other shape emitted a reference to a
+ * local nothing declared: valid JavaScript, parses, and throws ReferenceError on
+ * first render, which is Invariant 15's failure exactly.
+ *
+ * `$.mounted` is wired BY NAME — `ctx.analysis.mountedVar` is the expression the
+ * whole template is gated behind — so an unassigned call has nothing to gate and
+ * is refused rather than half-emitted. The gate used to be a regex over the
+ * script text demanding `const NAME = $mounted(`, which is why the other three
+ * spellings fell through it silently.
+ *
+ * `$.context` is two APIs on one path and only the sugar is compiled:
+ *
+ *   const v = $.context.key      consume — becomes a $$ctxRead + trackDerived
+ *   $.context.key = v            provide — becomes a $$ctxProvide
+ *   $.context.use / .provide     the runtime object, passed through untouched
+ *
+ * The first two are rewritten away and need no local. The third is left standing
+ * and does, which is what `needsContextLocal` answers.
+ */
+function refuseCompiledDoorMisuse(ast) {
+  const blessed = new Set()
+  const mountedVars = []
+  let needsContextLocal = false
+
+  // A `$context` member the context pass consumes: the left of an assignment,
+  // or the init of a declarator. Anything else is the runtime object itself.
+  const sugarObject = (n) =>
+    n?.type === 'MemberExpression' && !n.computed &&
+    n.object?.type === 'Identifier' && n.object.name === '$context'
+      ? n.object
+      : null
+
+  const find = (node) => {
+    if (!node || typeof node !== 'object') return
+    if (node.type === 'VariableDeclarator') {
+      if (
+        node.init?.type === 'CallExpression' &&
+        node.init.callee?.type === 'Identifier' &&
+        node.init.callee.name === '$mounted' &&
+        node.id?.type === 'Identifier'
+      ) {
+        blessed.add(node.init.callee)
+        mountedVars.push(node.id.name)
+      }
+      const o = sugarObject(node.init)
+      if (o) blessed.add(o)
+    }
+    if (node.type === 'AssignmentExpression') {
+      const o = sugarObject(node.left)
+      if (o) blessed.add(o)
+    }
+    for (const k of Object.keys(node)) {
+      const c = node[k]
+      if (Array.isArray(c)) c.forEach(find)
+      else if (c && typeof c === 'object' && c.type) find(c)
+    }
+  }
+  find(ast)
+
+  const MOUNTED_FIX =
+    `'$.mounted' gates the template on a promise and the compiler wires it by NAME. ` +
+    `Write 'const ready = $.mounted(fn)' and reference 'ready'. ` +
+    `For work at mount with no gate, '$.onMount(fn)'.`
+
+  const sweep = (node) => {
+    if (!node || typeof node !== 'object') return
+    for (const k of Object.keys(node)) {
+      if (k === 'label') continue
+      if ((k === 'key' || k === 'property') && !node.computed) continue
+      const c = node[k]
+      const visit = (n) => {
+        if (!n || typeof n !== 'object' || !n.type) return
+        if (n.type === 'Identifier' && !blessed.has(n)) {
+          if (n.name === '$mounted') throw new Error(MOUNTED_FIX)
+          // Every surviving `$context` is the runtime object, which is a real
+          // export and works — it just needs its local declared.
+          if (n.name === '$context') needsContextLocal = true
+        }
+        sweep(n)
+      }
+      if (Array.isArray(c)) c.forEach(visit)
+      else visit(c)
+    }
+  }
+  sweep(ast)
+
+  return { mountedVars, needsContextLocal, MOUNTED_FIX }
+}
+
+/**
+ * The template half of the same rule (`FJS-477`).
+ *
+ * The `$.x` → `$x` rewrite is script-only, so a template keeps `$.context.key`
+ * and reads it off the door object — where the key is not a context key at all
+ * but a property of `{ use, provide }`, answering `undefined` where the door
+ * member exists and throwing where it does not. The sugar is a compile step and
+ * a template expression is not compiled that way, so it is refused with the
+ * script form named.
+ *
+ * `$.context.use(…)` and `$.context.provide(…)` are the runtime object and are
+ * fine anywhere; they only need the local, which the caller requires.
+ */
+function refuseCompiledDoorInTemplate(source) {
+  const template = templateExpressions(source)
+
+  if (/(?<![\w$])\$\.?mounted\b/.test(template)) {
+    return `'$.mounted' is not readable from the template — it is the gate, not a value. ` +
+      `Write 'const ready = $.mounted(fn)' in the script and reference 'ready'.`
+  }
+
+  // Both spellings, because the sugar (`FJS-D135`) did not make the sugar-ness
+  // go away: `$context.k` in a template is the same silent `undefined` that
+  // `$.context.k` was, and the bare form is the one people will now write.
+  const hit = template.match(/(?<![\w$])\$\.?context\.(\w+)/)
+  if (hit && hit[1] !== 'use' && hit[1] !== 'provide') {
+    return `'$context.${hit[1]}' is compiled and the compile step is script-only. ` +
+      `Read it once in the script — 'const ${hit[1]} = $context.${hit[1]}' — and use that name in the template.`
+  }
+
+  return null
+}
+
+/**
+ * `$` may not be destructured, aliased or shadowed (FJS-D132).
+ *
+ * Three ways to lose the door, all of which compile:
+ *
+ *   const { props } = $   — `$.async` is assigned after the head has run, so a
+ *                           destructure at script top reads undefined; and the
+ *                           compiler tracks `$.x`, never a copy of it.
+ *   const d = $           — the four compiled members are recognised as `$.x`
+ *                           and nothing else, so `d.context.k = 1` silently
+ *                           assigns to the shared context object.
+ *   let $ = …             — the door still exists and now points elsewhere.
+ *
+ * The walk is deep rather than top-level, because a parameter named `$` shadows
+ * just as completely as a declaration does. Two things wearing the same
+ * character are deliberately NOT bindings and must survive: the reactive label
+ * `$:` / `$_name:`, which lives in JavaScript's separate label namespace, and a
+ * property that happens to be called `$`.
+ */
+function refuseDollarMisuse(ast) {
+  const refuse = (what, fix) => {
+    throw new Error(`'$' cannot be ${what}. ${fix}`)
+  }
+  const bindsDollar = (node) => {
+    if (!node) return false
+    if (node.type === 'Identifier') return node.name === '$'
+    if (node.type === 'ObjectPattern') return node.properties.some((pr) => bindsDollar(pr.value ?? pr.argument))
+    if (node.type === 'ArrayPattern') return node.elements.some(bindsDollar)
+    if (node.type === 'AssignmentPattern') return bindsDollar(node.left)
+    if (node.type === 'RestElement') return bindsDollar(node.argument)
+    return false
+  }
+
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return
+
+    if (node.type === 'VariableDeclarator') {
+      if (node.init?.type === 'Identifier' && node.init.name === '$') {
+        if (node.id.type === 'ObjectPattern' || node.id.type === 'ArrayPattern') {
+          refuse('destructured', `Reach through it — '$.props', '$.onMount' — so the compiler can see which member you used.`)
+        }
+        refuse('aliased', `Write '$.x' where you need it; a copy is not tracked.`)
+      }
+      if (bindsDollar(node.id)) refuse('declared', `It is the component's own door.`)
+    }
+    if ((node.type === 'FunctionDeclaration' || node.type === 'ClassDeclaration') && node.id?.name === '$') {
+      refuse('declared', `It is the component's own door.`)
+    }
+    if (node.params?.some(bindsDollar)) refuse('used as a parameter name', `It is the component's own door.`)
+    if (node.type === 'CatchClause' && bindsDollar(node.param)) {
+      refuse('used as a catch binding', `It is the component's own door.`)
+    }
+    if (node.type === 'ImportDeclaration' && node.specifiers?.some((sp) => sp.local?.name === '$')) {
+      refuse('imported', `It is the component's own door.`)
+    }
+    if (node.type === 'AssignmentExpression' && node.left?.type === 'Identifier' && node.left.name === '$') {
+      refuse('assigned to', `It is the component's own door.`)
+    }
+
+    // Reaching THROUGH the door is the only legal mention of it, so `$.props`
+    // is walked past without descending onto the `$` itself. Everything else
+    // that names `$` is a reference to the object — passing it, returning it,
+    // defaulting a parameter to it — and each one hands out a copy the compiler
+    // cannot follow. Catching them here rather than case by case is what closed
+    // `function f({ x } = $)`, a destructure wearing a default value.
+    const skipObject =
+      node.type === 'MemberExpression' &&
+      node.object?.type === 'Identifier' && node.object.name === '$'
+
+    for (const key of Object.keys(node)) {
+      // `$:` is a label, which JavaScript keeps in its own namespace — it is
+      // not a binding and never shadows anything.
+      if (key === 'label') continue
+      // `{ $: 1 }` and `obj.$` name a property, not a variable.
+      if (key === 'key' && !node.computed) continue
+      if (key === 'property' && !node.computed) continue
+      if (key === 'object' && skipObject) continue
+      const child = node[key]
+      // Applied through one visitor so an array child is checked too — an
+      // argument list is an array, and `f($)` walked straight past.
+      const visit = (n) => {
+        if (!n || typeof n !== 'object' || !n.type) return
+        if (n.type === 'Identifier' && n.name === '$') {
+          refuse('used as a value', `Reach through it — '$.props', '$.onMount' — so the compiler can see which member you used.`)
+        }
+        walk(n)
+      }
+      if (Array.isArray(child)) child.forEach(visit)
+      else visit(child)
+    }
+  }
+  ast.body.forEach(walk)
+}
+
 export function analyzeScript(raw, ast) {
   const vars = {}
   const watchPaths = []
@@ -2362,7 +2822,7 @@ export function analyzeScript(raw, ast) {
           // Auto-tracked block effect — re-runs when any reactive dep changes.
           // `node` is what lets the emitter run rewriteAssignments over the
           // body; without it, writes inside the block are emitted as
-          // `$runtime.get($$sig_x) = …` and throw at runtime.
+          // `$$runtime.get($$sig_x) = …` and throw at runtime.
           effects.push({
             type: 'block',
             raw: raw.slice(body.start, body.end),
@@ -2580,17 +3040,6 @@ export function analyzeScript(raw, ast) {
   // $context.key = expr and let/const/var x = $context.key are only valid at
   // the top level of the script block. Usage inside functions is a compiler
   // error — the compiler won't detect or wire it there.
-  const findContextInBody = (node) => {
-    if (!node || typeof node !== 'object') return
-    if (n?.type === 'Identifier' && n.name === '$context') return true
-    for (const key of Object.keys(node)) {
-      if (key === 'type' || key === 'start' || key === 'end') continue
-      const child = node[key]
-      if (Array.isArray(child)) { if (child.some(findContextInBody)) return true }
-      else if (child && typeof child === 'object') { if (findContextInBody(child)) return true }
-    }
-    return false
-  }
   const walkFnsForContext = (node) => {
     if (!node || typeof node !== 'object') return
     if (
@@ -2628,6 +3077,49 @@ export function analyzeScript(raw, ast) {
   ast.body.forEach(walkFnsForContext)
 
   Object.keys(vars).forEach((n) => hasCycle(n))
+
+  // `$` is one binding the author never owns (FJS-D132).
+  refuseDollarMisuse(ast)
+
+  // A top-level declaration naming something the compiler injects into the same
+  // scope used to emit a duplicate binding and report nothing — see
+  // BUILTIN_LOCALS. Walked off ast.body rather than `vars`, because `vars` does
+  // not carry function or class declarations and both collide.
+  for (const node of ast.body) {
+    const claim = (id, kind) => {
+      if (!id) return
+      if (id.type === 'Identifier') {
+        if (BUILTIN_LOCALS.has(id.name)) {
+          // Thrown rather than pushed: everything in `errors` is downgraded to a
+          // warning at the call site, and a duplicate binding is not a warning —
+          // the emitted module does not parse, so continuing produces the exact
+          // silent-invalid-JS failure this check exists to stop.
+          // The `__` names are not injected, they are the component function's
+          // own parameters and the render callback's — so the sentence about a
+          // duplicate binding is not the one that applies to them. Declaring
+          // one SHADOWS rather than redeclares, which is why they compiled and
+          // then failed at mount instead of failing to parse (`FJS-482`).
+          const isParam = id.name.startsWith('__')
+          throw new Error(isParam
+            ? `'${id.name}' is part of how Mesa calls a component and cannot be declared as a ${kind}. ` +
+              `Rename it — it is a parameter of the function your script becomes, so a declaration ` +
+              `here shadows it and the component fails at mount rather than at compile.`
+            : `'${id.name}' is a Mesa builtin and cannot be declared as a ${kind}. ` +
+              `Rename it — the compiler injects '${id.name}' into the same scope, ` +
+              `and two declarations of one name is a SyntaxError in the output.`
+          )
+        }
+        return
+      }
+      if (id.type === 'ObjectPattern') id.properties.forEach((pr) => claim(pr.value ?? pr.argument, kind))
+      else if (id.type === 'ArrayPattern')     id.elements.forEach((el) => claim(el, kind))
+      else if (id.type === 'AssignmentPattern') claim(id.left, kind)
+      else if (id.type === 'RestElement')       claim(id.argument, kind)
+    }
+    if (node.type === 'VariableDeclaration')    node.declarations.forEach((d) => claim(d.id, node.kind))
+    else if (node.type === 'FunctionDeclaration') claim(node.id, 'function')
+    else if (node.type === 'ClassDeclaration')    claim(node.id, 'class')
+  }
 
   return {
     vars,
@@ -2988,7 +3480,6 @@ export function processCSS(ctx) {
     result: null,
     _rules: [],
     _externalClasses: new Set(),
-    passingClass: false,
     active() {
       return styleNodes.length > 0
     },
@@ -3003,9 +3494,6 @@ export function processCSS(ctx) {
     },
     markAsExternal(n) {
       this._externalClasses.add(n)
-    },
-    getClassMap() {
-      return { classMap: {}, metaClass: {}, main: null }
     },
     resolveAsNode(classSet, [prefix, suffix]) {
       const id = this.id
@@ -3036,26 +3524,35 @@ export function buildRuntime() {
   ctx.module.head.push(xNode('$events-noop', () => {}))
 
   ctx.module.head.push(
-    xNode('$emit', (w) => {
-      if (ctx.inuse.$emit) w.writeLine('const $emit = $runtime.makeEmitter($option);')
+    xNode('$$emit', (w) => {
+      if (ctx.inuse.$emit) w.writeLine('const $$emit = $$runtime.makeEmitter($$option);')
     })
   )
 
   ctx.module.head.push(
     xNode('$context-decl', (w) => {
-      if (ctx.inuse.$context) w.writeLine('const $context = $runtime.$context;')
+      if (ctx.inuse.$context) w.writeLine('const $context = $$runtime.context;')
     })
   )
 
-  // ── $.transition / $.entrance — Mesa animation namespace ─────────────────
-  // $ is a thin compile-time namespace. $.transition(fn) and $.entrance(opts)
-  // resolve to $runtime.transition and $runtime.entrance at the module level,
-  // not per-component, so they're always accessible.
-  ctx.module.head.push(
-    xNode('$mesa-decl', (w) => {
-      if (ctx.inuse.$mesa) {
-        w.writeLine('const $ = { transition: $runtime.transition, entrance: $runtime.entrance, fade: $runtime.fade, slide: $runtime.slide, fly: $runtime.fly };')
-      }
+  // ── `$` — the component's own door (FJS-D132) ────────────────────────────
+  // Two halves, split by what varies per instance. The instance-independent
+  // ones are built once at module scope and reached through the prototype, so
+  // mounting a component allocates one object and copies nothing; before this,
+  // the five animation helpers were re-listed in a literal on every mount.
+  //
+  // The instance keys are assigned rather than passed in a literal because the
+  // locals they read (`$$props`, `$$emit`, …) are themselves emitted into this
+  // same block and only when in use — see the sniff that sets ctx.inuse.
+  ctx.module.top.push(
+    xNode('$$shared-decl', (w) => {
+      if (!ctx.inuse.$mesa) return
+      w.writeLine('const $$shared = {')
+      w.writeLine('  transition: $$runtime.transition, entrance: $$runtime.entrance,')
+      w.writeLine('  fade: $$runtime.fade, slide: $$runtime.slide, fly: $$runtime.fly,')
+      w.writeLine('  onMount: $$runtime.onMount, onDestroy: $$runtime.onDestroy,')
+      w.writeLine('  onCleanup: $$runtime.onCleanup, tick: $$runtime.tick,')
+      w.writeLine('};')
     })
   )
 
@@ -3065,47 +3562,78 @@ export function buildRuntime() {
   ctx.module.head.push(
     xNode('$context-fns', (w) => {
       if (ctx.inuse.$contextFns) {
-        w.writeLine('const $ctxProvide = $runtime.contextProvide;')
-        w.writeLine('const $ctxRead    = $runtime.contextRead;')
+        w.writeLine('const $$ctxProvide = $$runtime.contextProvide;')
+        w.writeLine('const $$ctxRead    = $$runtime.contextRead;')
       }
     })
   )
 
   // ── Declare Mesa builtins as local variables ─────────────────────────────
-  // Makes $onMount, $onDestroy, $onCleanup available anywhere in the factory.
+  // Makes $$onMount, $$onDestroy, $$onCleanup available anywhere in the factory.
   ctx.module.head.push(
     xNode('$builtins-decl', (w) => {
-      w.writeLine('const $onMount   = $runtime.$onMount;')
-      w.writeLine('const $onDestroy = $runtime.$onDestroy;')
-      w.writeLine('const $onCleanup = $runtime.$onCleanup;')
-      if (ctx.inuse.$mounted) w.writeLine('const $mounted   = $runtime.$onMounted;')
-      if (ctx.inuse.$inspect && ctx.config.debug !== false) w.writeLine('const $inspect   = $runtime.$inspect;')
+      w.writeLine('const $$onMount   = $$runtime.onMount;')
+      w.writeLine('const $$onDestroy = $$runtime.onDestroy;')
+      w.writeLine('const $$onCleanup = $$runtime.onCleanup;')
+      if (ctx.inuse.$mounted) w.writeLine('const $mounted   = $$runtime.onMounted;')
+      if (ctx.inuse.$inspect && ctx.config.debug !== false) w.writeLine('const $inspect   = $$runtime.inspect;')
     })
   )
 
-  // ── $props — all props passed to this component (including undeclared) ───
+  // ── $$props — all props passed to this component (including undeclared) ───
   ctx.module.head.push(
-    xNode('$props-decl', (w) => {
-      if (ctx.inuse.$props) w.writeLine('const $props = $option.props ?? {};')
+    xNode('$$props-decl', (w) => {
+      if (ctx.inuse.$props) w.writeLine('const $$props = $$option.props ?? {};')
     })
   )
 
-  // ── $attributes — what the caller passed that this component did not declare
+  // ── $$attributes — what the caller passed that this component did not declare
   //
-  // This used to be `$option.props` unfiltered, which made it identical to
-  // `$props` and useless for the thing VISION §12 says it is for: forwarding.
+  // This used to be `$$option.props` unfiltered, which made it identical to
+  // `$$props` and useless for the thing VISION §12 says it is for: forwarding.
   // Spreading it onto an element wrote every declared prop to the DOM —
   // `<button tone="danger" variant="ghost" loading="false">`.
   //
   // The declared names are known here, so the filter is applied at emit time
   // and the runtime helper only has to do the subtraction.
   ctx.module.head.push(
-    xNode('$attributes-decl', (w) => {
+    xNode('$$attributes-decl', (w) => {
       if (!ctx.inuse.$attributes) return
       const declared = Object.values(ctx.analysis?.vars ?? {})
         .filter((v) => v.isProp)
         .map((v) => v.name)
-      w.writeLine(`const $attributes = $runtime.restProps($option.props, ${JSON.stringify(declared)});`)
+      w.writeLine(`const $$attributes = $$runtime.restProps($$option.props, ${JSON.stringify(declared)});`)
+    })
+  )
+
+  // The instance half of `$`. Pushed last because it reads the locals every
+  // block above conditionally emits, and `$context`/`$$mounted`/`$$inspect` are
+  // only there when the sniff found them in use.
+  ctx.module.head.push(
+    xNode('$dollar-decl', (w) => {
+      if (!ctx.inuse.$mesa) return
+      w.writeLine('const $ = Object.create($$shared);')
+      w.writeLine('$.slots = $$slots;')
+      if (ctx.inuse.$props)      w.writeLine('$.props = $$props;')
+      if (ctx.inuse.$attributes) w.writeLine('$.attributes = $$attributes;')
+      if (ctx.inuse.$emit)       w.writeLine('$.emit = $$emit;')
+      if (ctx.inuse.$context)    w.writeLine('$.context = $context;')
+      if (ctx.inuse.$mounted)    w.writeLine('$.mounted = $mounted;')
+      if (ctx.inuse.$inspect && ctx.config.debug !== false) w.writeLine('$.inspect = $inspect;')
+    })
+  )
+
+  // ── the bare spellings (`FJS-D135`) ──────────────────────────────────────
+  // An alias, not a second value: one binding under two names, so a component
+  // mixing the spellings cannot end up with two of anything. Pushed after the
+  // door so `$` is built either way, and `$async` is not here — its container
+  // is declared in `mod.code`, after the head has run, and its alias goes
+  // beside it.
+  ctx.module.head.push(
+    xNode('$sugar-decl', (w) => {
+      if (ctx.inuse.$sugar_props)      w.writeLine('const $props = $$props;')
+      if (ctx.inuse.$sugar_attributes) w.writeLine('const $attributes = $$attributes;')
+      if (ctx.inuse.$sugar_slots)      w.writeLine('const $slots = $$slots;')
     })
   )
 
@@ -3129,7 +3657,7 @@ export function buildRuntime() {
 
     // mount={expr} — sync or async condition. If the resolved value is falsy,
     // the content block is never shown (no pending, no failed — just blank).
-    // Can be used without a $mounted(fn) call for pure sync gating:
+    // Can be used without a $.mounted(fn) call for pure sync gating:
     //   <mesa:mounted mount={hero} />  →  show template only if hero is truthy
     const mountAttr = (mountedNode.attributes || []).find(a => a.name === 'mount')
     const mountExpr = mountAttr?.value
@@ -3185,11 +3713,11 @@ export function buildRuntime() {
       ? '(__anchor, $$err) => $$snippet_failed(__anchor, () => $$err)'
       : 'null'
 
-    // mountedVar — variable name of the $mounted() call (e.g. 'mounting')
+    // mountedVar — variable name of the $.mounted() call (e.g. 'mounting')
     const mountedVar = ctx.analysis.mountedVar
 
     // Determine the promise expression:
-    //   - $mounted(fn) present → use the promise variable
+    //   - $.mounted(fn) present → use the promise variable
     //   - mount={expr} only → wrap expr in Promise.resolve() for one-shot sync gate
     //   - neither → warn and use Promise.resolve() (always shows)
     let promiseExpr
@@ -3200,7 +3728,7 @@ export function buildRuntime() {
     } else if (mountExpr) {
       promiseExpr = `Promise.resolve(${mountExpr})`         // sync-only gate
     } else {
-      ctx.warning({ message: 'Warning: <mesa:mounted> requires a $mounted(fn) call or mount={expr} attribute.' })
+      ctx.warning({ message: 'Warning: <mesa:mounted> requires a $.mounted(fn) call or mount={expr} attribute.' })
       promiseExpr = 'Promise.resolve(true)'
     }
 
@@ -3230,7 +3758,7 @@ export function buildRuntime() {
       failedRef,
       onerrorExpr
     }, (w, nd) => {
-      w.write(true, `$runtime.mountedBlock(__anchor, () => ${nd.promiseExpr}, `)
+      w.write(true, `$$runtime.mountedBlock(__anchor, () => ${nd.promiseExpr}, `)
       w.write(`${nd.pendingRef}, `)
       w.add(nd.block)
       w.write(`, ${nd.failedRef}`)
@@ -3245,7 +3773,7 @@ export function buildRuntime() {
         if (!style) return
         if (typeof ctx.config.css === 'function') ctx.config.css(style, ctx.config.path, ctx, w)
         else if (ctx.config.css)
-          w.writeLine(`$runtime.addStyles('${ctx.css.id}', \`${Q(style)}\`);`)
+          w.writeLine(`$$runtime.addStyles('${ctx.css.id}', \`${Q(style)}\`);`)
         else ctx.css.result = style
       })
     )
@@ -3255,7 +3783,7 @@ export function buildRuntime() {
   const bb = ctx.buildBlock(ctx.DOM, {
     inline: true,
     allowSingleBlock: true,
-    template: { name: '$parentElement', cloneNode: true }
+    template: { name: '$$parentElement', cloneNode: true }
   })
 
   if (bb.singleBlock) {
@@ -3263,11 +3791,11 @@ export function buildRuntime() {
       xNode('attach-single', { block: bb.singleBlock, reference: bb.reference }, (w, n) => {
         if (n.reference) {
           // Component singleBlock — reference is the instVar ($$inst_0).
-          // Emit as: const $$inst_0 = Component(...); then get $dom from it.
+          // Emit as: const $$inst_0 = Component(...); then get $$dom from it.
           w.add(n.block)
-          w.writeLine(`let $parentElement = ${n.reference}.$dom;`)
+          w.writeLine(`let $$parentElement = ${n.reference}.$dom;`)
         } else {
-          w.write(true, 'let $parentElement = ')
+          w.write(true, 'let $$parentElement = ')
           w.add(n.block)
           w.write('.$dom;')
         }
@@ -3285,14 +3813,14 @@ export function buildRuntime() {
       if (!style) return
       if (typeof ctx.config.css === 'function') ctx.config.css(style, ctx.config.path, ctx, w)
       else if (ctx.config.css)
-        w.writeLine(`$runtime.addStyles('${ctx.css.id}', \`${Q(style)}\`);`)
+        w.writeLine(`$$runtime.addStyles('${ctx.css.id}', \`${Q(style)}\`);`)
       else ctx.css.result = style
     })
   )
 
   runtime.push(
     xNode('return-dom', (w) => {
-      w.writeLine('$runtime.append(__anchor, $parentElement);')
+      w.writeLine('$$runtime.append(__anchor, $$parentElement);')
     })
   )
 }
@@ -3306,7 +3834,7 @@ export function buildBlock(data, option = {}) {
   const result = {}
   const inuseBefore = Object.assign({}, ctx.inuse)
 
-  if (!option.parentElement) option.parentElement = '$parentElement'
+  if (!option.parentElement) option.parentElement = '$$parentElement'
   if (option.each?.blockPrefix) binds.push(option.each.blockPrefix)
 
   if (option.allowSingleBlock) {
@@ -3423,7 +3951,7 @@ export function buildBlock(data, option = {}) {
             const exp = ctx.accessors ? rewriteTextResult(pe, ctx.accessors) : pe.result
             binds.push(
               xNode('bindText', { el: textNode.bindName(), exp }, (w, nd) => {
-                w.writeLine(`$runtime.bindText(${nd.el}, () => (${nd.exp}));`)
+                w.writeLine(`$$runtime.bindText(${nd.el}, () => (${nd.exp}));`)
               })
             )
           }
@@ -3496,7 +4024,7 @@ export function buildBlock(data, option = {}) {
             binds.push(xNode('boundary:bind',
               { label, statesExpr, block: contentBlock.block, pendingRef, failedRef },
               (w, nd) => {
-                w.write(true, `$runtime.boundaryBlock(${nd.label.name}, () => (${nd.statesExpr}), `)
+                w.write(true, `$$runtime.boundaryBlock(${nd.label.name}, () => (${nd.statesExpr}), `)
                 w.add(nd.block)
                 w.write(`, ${nd.pendingRef}`)
                 w.write(`, ${nd.failedRef}`)
@@ -3543,7 +4071,7 @@ export function buildBlock(data, option = {}) {
                 }
 
                 binds.push(xNode('globalEvent', { target, event, handler }, (w, nd) => {
-                  w.writeLine(`$runtime.addGlobalEvent('${nd.target}', '${nd.event}', ${nd.handler});`)
+                  w.writeLine(`$$runtime.addGlobalEvent('${nd.target}', '${nd.event}', ${nd.handler});`)
                 }))
                 return
               }
@@ -3566,7 +4094,7 @@ export function buildBlock(data, option = {}) {
                   return
                 }
                 binds.push(xNode('windowBind', { prop, setter }, (w, nd) => {
-                  w.writeLine(`$runtime.bindWindow('${nd.prop}', ${nd.setter});`)
+                  w.writeLine(`$$runtime.bindWindow('${nd.prop}', ${nd.setter});`)
                 }))
               }
             })
@@ -3583,15 +4111,15 @@ export function buildBlock(data, option = {}) {
             const portalBlock = ctx.buildBlock(n, { inline: true })
             binds.push(xNode('portal', { block: portalBlock, toExp }, (w, nd) => {
               if (nd.block.source) {
-                w.write(true, `$runtime.portal(() => (${nd.toExp}), $runtime.makeBlock(`)
+                w.write(true, `$$runtime.portal(() => (${nd.toExp}), $$runtime.makeBlock(`)
                 w.add(nd.block.template)
-                w.write(', ($parentElement) => {', true)
+                w.write(', ($$parentElement) => {', true)
                 w.indent++
                 w.add(nd.block.source)
                 w.indent--
                 w.write(true, '}));', true)
               } else {
-                w.write(true, `$runtime.portal(() => (${nd.toExp}), $runtime.makeBlock(`)
+                w.write(true, `$$runtime.portal(() => (${nd.toExp}), $$runtime.makeBlock(`)
                 w.add(nd.block.template)
                 w.write('));', true)
               }
@@ -3616,7 +4144,7 @@ export function buildBlock(data, option = {}) {
               if (cssText) {
                 binds.push(xNode('headStyle', { cssText }, (w, nd) => {
                   const escaped = nd.cssText.replace(/`/g, '\\`').replace(/\\${/g, '\\${')
-                  w.write(true, `$runtime.addToHead((() => { const s = document.createElement('style'); s.textContent = \`${escaped}\`; return s; })());`, true)
+                  w.write(true, `$$runtime.addToHead((() => { const s = document.createElement('style'); s.textContent = \`${escaped}\`; return s; })());`, true)
                 }))
               }
             }
@@ -3626,16 +4154,16 @@ export function buildBlock(data, option = {}) {
               const headBlock = ctx.buildBlock(nonStyleNode, { inline: true })
               binds.push(xNode('headBlock', { block: headBlock }, (w, nd) => {
                 if (nd.block.source) {
-                  w.write(true, '$runtime.addToHead($runtime.makeBlock(')
+                  w.write(true, '$$runtime.addToHead($$runtime.makeBlock(')
                   w.add(nd.block.template)
-                  w.write(', ($parentElement) => {', true)
+                  w.write(', ($$parentElement) => {', true)
                   w.indent++
                   w.add(nd.block.source)
                   w.indent--
                   w.write(true, '})());', true)
                 } else {
-                  // nd.block.template is a $runtime.template(...) factory — call it to get DOM
-                  w.write(true, '$runtime.addToHead(')
+                  // nd.block.template is a $$runtime.template(...) factory — call it to get DOM
+                  w.write(true, '$$runtime.addToHead(')
                   w.add(nd.block.template)
                   w.write('());', true)
                 }
@@ -3647,7 +4175,7 @@ export function buildBlock(data, option = {}) {
             // Compiled as the placeholder element `MESA_DYNAMIC_TAG` so the whole
             // ordinary element path runs over it — attributes, events, bindings,
             // children, CSS scoping — and wrapped in a keyBlock on the tag, which
-            // rebuilds when it changes. $runtime.dynamicElement then transplants
+            // rebuilds when it changes. $$runtime.dynamicElement then transplants
             // the placeholder onto an element created from the live expression.
             //
             // A tag SELECTOR in a scoped <style> cannot match it: the scoper works
@@ -3672,12 +4200,12 @@ export function buildBlock(data, option = {}) {
             const block = ctx.buildBlock({ body: [elNode] }, { inline: true })
             const label = requireLabel(true, true)
             binds.push(xNode('dynamic-element', { label, tagExp, block }, (w, nd) => {
-              w.write(true, `$runtime.keyBlock(${nd.label.name}, () => (${nd.tagExp}), `)
-              w.write(`$runtime.makeBlock($runtime.dynamicElement(() => (${nd.tagExp}), `)
+              w.write(true, `$$runtime.keyBlock(${nd.label.name}, () => (${nd.tagExp}), `)
+              w.write(`$$runtime.makeBlock($$runtime.dynamicElement(() => (${nd.tagExp}), `)
               w.add(nd.block.template)
               w.write(')')
               if (nd.block.source) {
-                w.write(', ($parentElement) => {', true)
+                w.write(', ($$parentElement) => {', true)
                 w.indent++
                 w.add(nd.block.source)
                 w.indent--
@@ -3767,8 +4295,8 @@ export function buildBlock(data, option = {}) {
               w.write(
                 true,
                 nd.label.node
-                  ? `$runtime.insertBlock(${nd.label.name}, `
-                  : `$runtime.addBlock(${nd.label.name}, `
+                  ? `$$runtime.insertBlock(${nd.label.name}, `
+                  : `$$runtime.addBlock(${nd.label.name}, `
               )
               w.add(nd.slot)
               w.write(');', true)
@@ -3791,7 +4319,7 @@ export function buildBlock(data, option = {}) {
             ctx.detectDependency(spreadExpr)
             binds.push(
               xNode('spreadAttributes', { el: el.bindName(), exp }, (w, nd) => {
-                w.writeLine(`$runtime.spreadAttributes(${nd.el}, () => (${nd.exp}));`)
+                w.writeLine(`$$runtime.spreadAttributes(${nd.el}, () => (${nd.exp}));`)
               })
             )
             return
@@ -3845,7 +4373,7 @@ export function buildBlock(data, option = {}) {
           ctx.detectDependency(rawExpr)
           const label = requireLabel(true, true)
           binds.push(xNode('html-tag', { label, exp }, (w, nd) => {
-            w.writeLine(`$runtime.createEffect(() => { $runtime.setInnerHTML(${nd.label.name}, ${nd.exp}); });`)
+            w.writeLine(`$$runtime.createEffect(() => { $$runtime.setInnerHTML(${nd.label.name}, ${nd.exp}); });`)
           }))
         } else if (n.value.startsWith('@const ')) {
           // {@const name = expr} — block-scoped derived constant.
@@ -3870,7 +4398,7 @@ export function buildBlock(data, option = {}) {
               // Register as an accessor so template reads call the memo getter
               if (ctx.accessors) ctx.accessors[constName] = `${memoName}()`
               binds.push(xNode('constTag', { constName, memoName, rewritten, isReactive }, (w, nd) => {
-                w.writeLine(`const ${nd.memoName} = $runtime.createMemo(() => ${nd.rewritten});`)
+                w.writeLine(`const ${nd.memoName} = $$runtime.createMemo(() => ${nd.rewritten});`)
                 w.writeLine(`const ${nd.constName} = ${nd.memoName}();`)
               }))
             } else {
@@ -3887,7 +4415,7 @@ export function buildBlock(data, option = {}) {
           // there. {@debug n} and {@nonsense n} produced byte-identical output.
           const tag = (n.value.match(/^@[\w-]*/) || ['@'])[0]
           const hint = tag === '@debug'
-            ? " Mesa's inspector is $inspect(expr) — top-level, dev-only, and it unwraps proxies."
+            ? " Mesa's inspector is $.inspect(expr) — top-level, dev-only, and it unwraps proxies."
             : ''
           ctx.analysis.warnings.push(
             `Unknown template tag {${tag} …} — dropped, nothing was emitted for it. ` +
@@ -4005,7 +4533,7 @@ export function buildBlock(data, option = {}) {
     innerBlock.push(binds)
     if (option.inline) result.source = innerBlock
   } else {
-    result.name = '$runtime.noop'
+    result.name = '$$runtime.noop'
     result.source = null
   }
 
@@ -4024,15 +4552,15 @@ export function buildBlock(data, option = {}) {
         parentElement: option.parentElement
       },
       (w, n) => {
-        w.write('$runtime.makeBlock(')
+        w.write('$$runtime.makeBlock(')
         w.add(n.tpl)
         if (!w.isEmpty(n.innerBlock)) {
           if (n.each) {
-            w.write(`, ($parentElement, ${n.each.itemName}`)
+            w.write(`, ($$parentElement, ${n.each.itemName}`)
             if (n.each.indexName) w.write(`, ${n.each.indexName}`)
             w.write(') => {', true)
           } else {
-            w.write(`, ($parentElement) => {`, true)
+            w.write(`, ($$parentElement) => {`, true)
           }
           w.indent++
           w.add(n.innerBlock)
@@ -4097,7 +4625,7 @@ export function makeifBlock(data, label) {
     : null
 
   return xNode('if:bind', { label, parts, elseBlock }, (w, n) => {
-    w.write(true, `$runtime.ifBlock(${n.label.name}, `)
+    w.write(true, `$$runtime.ifBlock(${n.label.name}, `)
     if (n.parts.length === 1) {
       w.write(
         n.elseBlock
@@ -4135,17 +4663,17 @@ export function makeKeyBlock(data, label) {
   const inner = this.buildBlock(data, { inline: true })
 
   return xNode('key:bind', { label, exp, block: inner }, (w, n) => {
-    w.write(true, `$runtime.keyBlock(${n.label.name}, () => (${n.exp}), `)
+    w.write(true, `$$runtime.keyBlock(${n.label.name}, () => (${n.exp}), `)
     if (n.block.source) {
-      w.write('$runtime.makeBlock(')
+      w.write('$$runtime.makeBlock(')
       w.add(n.block.template)
-      w.write(', ($parentElement) => {', true)
+      w.write(', ($$parentElement) => {', true)
       w.indent++
       w.add(n.block.source)
       w.indent--
       w.write(true, '})')
     } else {
-      w.write('$runtime.makeBlock(')
+      w.write('$$runtime.makeBlock(')
       w.add(n.block.template)
       w.write(')')
     }
@@ -4245,9 +4773,9 @@ function snippetParam(raw, index, snippetName) {
  *
  * The snippet compiles to:
  *   const $$snippet_name = (__anchor, arg1, arg2) => {
- *     const $parentElement = $tpl_N()
+ *     const $$parentElement = $tpl_N()
  *     ... bindings ...
- *     __anchor.before($parentElement)
+ *     __anchor.before($$parentElement)
  *   }
  *
  * The snippet closes over reactive variables from the outer component scope.
@@ -4526,12 +5054,12 @@ export function makeEachBlock(data, option) {
       // mode=0: anchor is a comment node (insert before it)
       // onlyChild: the each IS the only child of an element passed directly
       const mode = n.onlyChild ? 1 : !n.label.node ? 1 : 0
-      w.writeLine(`$runtime.$$eachBlock(${el}, ${mode}, () => (${n.arrayExpr}),`)
+      w.writeLine(`$$runtime.$$eachBlock(${el}, ${mode}, () => (${n.arrayExpr}),`)
       w.indent++
       w.write(true)
-      if (n.keyFunction === 'noop') w.write('$runtime.noop')
+      if (n.keyFunction === 'noop') w.write('$$runtime.noop')
       else if (n.keyFunction) w.add(n.keyFunction)
-      else w.write('$runtime.eachDefaultKey')
+      else w.write('$$runtime.eachDefaultKey')
       w.write(',')
       w.add(n.block)
       if (n.elseBlock) {
@@ -4600,7 +5128,7 @@ export function makeVirtualEachBlock(data, option) {
   return xNode('virtual-each',
     { label: option.label, arrayExpr, keyFunctionStr, optionsExpr, block: block.block },
     (w, n) => {
-      w.write(true, `$runtime.$$virtualEach(${n.label.name}, () => (${n.arrayExpr}), `)
+      w.write(true, `$$runtime.$$virtualEach(${n.label.name}, () => (${n.arrayExpr}), `)
       w.write(`${n.keyFunctionStr},`)
       w.add(n.block)
       if (n.optionsExpr) w.write(`, ${n.optionsExpr}`)
@@ -4700,13 +5228,13 @@ export function makeAwaitBlock(data, label) {
     'await:bind',
     { label, exp, pendingBlock, thenBlock, catchBlock, thenValue, catchValue },
     (w, n) => {
-      w.writeLine(`$runtime.awaitBlock(${n.label.name}, () => (${n.exp}),`)
+      w.writeLine(`$$runtime.awaitBlock(${n.label.name}, () => (${n.exp}),`)
       w.indent++
-      // pendingBlock — no value passed, keep $parentElement convention (used by makeBlock)
-      const pendingArgs = '($parentElement) => '
+      // pendingBlock — no value passed, keep $$parentElement convention (used by makeBlock)
+      const pendingArgs = '($$parentElement) => '
       // thenBlock/catchBlock — awaitBlock calls these as thenBlock(value), catchBlock(err)
-      // so the first param IS the resolved/rejected value, not $parentElement.
-      // Drop the leading $parentElement to correctly bind the value name.
+      // so the first param IS the resolved/rejected value, not $$parentElement.
+      // Drop the leading $$parentElement to correctly bind the value name.
       const thenArgs  = (val) => val ? `(${val}) => `  : '() => '
       const catchArgs = (val) => val ? `(${val}) => `  : '() => '
       w.write(true)
@@ -4732,9 +5260,9 @@ export function attachSlot(name, node) {
   return xNode('slot', { name, defaultBlock }, (w, n) => {
     // __block is the 3rd arg to the component fn — the slots object from caller.
     // { default: makeBlock(...), sidebar: makeBlock(...) }
-    w.write(`$runtime.attachNamedSlot(__block, '${n.name}', `)
+    w.write(`$$runtime.attachNamedSlot(__block, '${n.name}', `)
     if (n.defaultBlock) {
-      w.write('$runtime.makeBlock(')
+      w.write('$$runtime.makeBlock(')
       w.add(n.defaultBlock.template)
       w.write(')')
     } else w.write('null')
@@ -4746,8 +5274,8 @@ export function makeComponent(node, option = {}) {
   const ctx = this
   // If the component name is a reactive variable (derived const, let signal, etc.),
   // the call must go through its accessor to get the current component function value.
-  // e.g. `const Component = entry?.component` → accessor = '$runtime.get(Component)'
-  //       call site becomes: $runtime.get(Component)(anchor, props)
+  // e.g. `const Component = entry?.component` → accessor = '$$runtime.get(Component)'
+  //       call site becomes: $$runtime.get(Component)(anchor, props)
   const rawName = option.self ? '$$selfComponent' : node.name
   const accessor = !option.self && ctx.accessors?.[rawName]
   const componentName = (accessor && accessor !== rawName) ? accessor : rawName
@@ -4912,7 +5440,7 @@ export function makeComponent(node, option = {}) {
     // A slot made only of comments is not content.
     //
     // Comments are dropped from the output unless `preserveComments` is on, so
-    // such a block renders nothing and still makes `$slots.<name>` true — and a
+    // such a block renders nothing and still makes `$$slots.<name>` true — and a
     // component that BRANCHES on that turns itself off because somebody
     // explained themselves above the buttons. `<Form>` generating its field
     // list when the caller wrote no controls is the case that found this: one
@@ -4928,10 +5456,10 @@ export function makeComponent(node, option = {}) {
         const name = slotName
         slotBlocks.push(
           xNode('named-slot', { block, name }, (w, n) => {
-            w.write(true, `'${n.name}': $runtime.makeBlock(`)
+            w.write(true, `'${n.name}': $$runtime.makeBlock(`)
             w.add(n.block.template)
             if (n.block.source) {
-              w.write(', ($parentElement) => {')
+              w.write(', ($$parentElement) => {')
               w.indent++
               w.add(n.block.source)
               w.indent--
@@ -4949,10 +5477,10 @@ export function makeComponent(node, option = {}) {
       const block = ctx.buildBlock({ body: trimmedDefault }, { inline: true })
       slotBlocks.push(
         xNode('default-slot', { block }, (w, n) => {
-          w.write(true, 'default: $runtime.makeBlock(')
+          w.write(true, 'default: $$runtime.makeBlock(')
           w.add(n.block.template)
           if (n.block.source) {
-            w.write(', ($parentElement) => {')
+            w.write(', ($$parentElement) => {')
             w.indent++
             w.add(n.block.source)
             w.indent--
@@ -4989,7 +5517,7 @@ export function makeComponent(node, option = {}) {
   // ── client:* — island directive ───────────────────────────────────────────
   // RULE 26 stands by default: the directive is stripped and never reaches the
   // child as a prop. `{ islands: true }` opts a meta-framework into routing the
-  // call through $runtime.island(), which is what lets a *server* render wrap
+  // call through $$runtime.island(), which is what lets a *server* render wrap
   // the output in markers a client loader can find. Client output is unchanged
   // either way — island() calls the component directly there — so the flag
   // costs one indirection and no DOM.
@@ -5019,8 +5547,8 @@ export function makeComponent(node, option = {}) {
       const propsObj = buildPropsObj(n.allProps, n.hasSpreads ? n.spreadProps : [])
 
       // Call: ComponentFn(anchor, props, slotsObj | null)
-      // As an island: $runtime.island(anchor, ComponentFn, props, slots, meta)
-      const open  = n.island ? `$runtime.island(${n.anchorName}, ${n.componentName}, ` : `${n.componentName}(${n.anchorName}, `
+      // As an island: $$runtime.island(anchor, ComponentFn, props, slots, meta)
+      const open  = n.island ? `$$runtime.island(${n.anchorName}, ${n.componentName}, ` : `${n.componentName}(${n.anchorName}, `
       const close = n.island ? `, ${JSON.stringify(n.island)});` : ');'
       if (!n.hasSlots) {
         w.writeLine(`${open}${propsObj}, null${close}`)
@@ -5036,12 +5564,12 @@ export function makeComponent(node, option = {}) {
       // child's registry. bind:this needs it too — the exported interface is
       // built from the same registration.
       if (n.hasReactive || n.hasSpreads || n.twoWayProps.length || n.hasBindThis) {
-        w.writeLine(`$runtime.registerComponentAnchor(${n.anchorName});`)
+        w.writeLine(`$$runtime.registerComponentAnchor(${n.anchorName});`)
       }
 
       // bind:prop — subscribe to the child's prop signal and write back out.
       for (const b of n.twoWayProps) {
-        w.writeLine(`$runtime.bindProp(${n.anchorName}, '${b.name}', (v) => ${b.setter}(v));`)
+        w.writeLine(`$$runtime.bindProp(${n.anchorName}, '${b.name}', (v) => ${b.setter}(v));`)
       }
 
       // bind:this — the child's exported interface (props + `export function`
@@ -5049,13 +5577,13 @@ export function makeComponent(node, option = {}) {
       // is a comment: `ref.focus()` on a component was a TypeError and
       // `ref.count` was undefined, both silently (`FJS-087`).
       if (n.hasBindThis) {
-        w.writeLine(`${n.bindThisSetter}($runtime.componentApi(${n.anchorName}));`)
+        w.writeLine(`${n.bindThisSetter}($$runtime.componentApi(${n.anchorName}));`)
       }
 
       // Reactive prop sync: push new values whenever deps change
       if (n.hasReactive || n.hasSpreads) {
         const pushObj = buildPropsObj(n.reactiveProps, n.hasSpreads ? n.spreadProps : [])
-        w.writeLine(`$runtime.createEffect(() => { $runtime.pushProps(${n.anchorName}, ${pushObj}); });`)
+        w.writeLine(`$$runtime.createEffect(() => { $$runtime.pushProps(${n.anchorName}, ${pushObj}); });`)
       }
     }
   )
@@ -5083,7 +5611,7 @@ export function bindProp(prop, node, element) {
     this.detectDependency(rawExp)
     return {
       bind: xNode('attach', { el: element.bindName(), exp }, (w, n) => {
-        w.writeLine(`$runtime.attach(${n.el}, () => (${n.exp}));`)
+        w.writeLine(`$$runtime.attach(${n.el}, () => (${n.exp}));`)
       })
     }
   }
@@ -5112,7 +5640,7 @@ export function bindProp(prop, node, element) {
     const rewrittenVal = ctx.accessors ? rewriteExpr(valExp, ctx.accessors) : valExp
     return {
       bind: xNode('bindGroup', { el: element.bindName(), getter, setter, valExp: rewrittenVal }, (w, n) => {
-        w.writeLine(`$runtime.bindGroup(${n.el}, () => ${n.getter}, ${n.setter}, () => (${n.valExp}));`)
+        w.writeLine(`$$runtime.bindGroup(${n.el}, () => ${n.getter}, ${n.setter}, () => (${n.valExp}));`)
       })
     }
   }
@@ -5158,7 +5686,7 @@ export function bindProp(prop, node, element) {
     let getter, setter
 
     if (varEntry && varEntry.kind === 'let') {
-      getter = `() => $runtime.get($$sig_${varName})`
+      getter = `() => $$runtime.get($$sig_${varName})`
       setter = `$$set_${varName}`
     } else {
       const rw = ctx.accessors ? rewriteExpr(varName, ctx.accessors) : varName
@@ -5167,7 +5695,7 @@ export function bindProp(prop, node, element) {
       // The WRITE target has to be rewritten too, not just the read.
       //
       // `bind:value={draft[key]}` used to emit
-      //     getter: () => ($runtime.get($$sig_draft)[key])
+      //     getter: () => ($$runtime.get($$sig_draft)[key])
       //     setter: ($$v) => { draft[key] = $$v }
       // — the getter resolved, the setter referred to a name that no longer
       // exists once `draft` became `$$sig_draft`, so every keystroke threw
@@ -5175,9 +5703,9 @@ export function bindProp(prop, node, element) {
       // which is what a form bound to a draft record does, was broken.
       //
       // Only member expressions are rewritten. The rewritten form stays a legal
-      // assignment target (`$runtime.get($$sig_draft)[key] = $$v` is fine),
+      // assignment target (`$$runtime.get($$sig_draft)[key] = $$v` is fine),
       // whereas a bare identifier could rewrite to a call expression, and
-      // `$runtime.get($$sig_x) = $$v` is a syntax error.
+      // `$$runtime.get($$sig_x) = $$v` is a syntax error.
       const isMemberTarget = /[.[]/.test(varName)
       setter = `($$v) => { ${isMemberTarget ? rw : varName} = $$v; }`
     }
@@ -5202,20 +5730,43 @@ export function bindProp(prop, node, element) {
       if (innerIsReactive) {
         return {
           bind: xNode('bindMask-reactive', { el: element.bindName(), getter, setter, maskExpr }, (w, n) => {
-            w.writeLine(`$runtime.createEffect(() => { $runtime.bindMask(${n.el}, ${n.getter}, ${n.setter}, ${n.maskExpr}); });`)
+            w.writeLine(`$$runtime.createEffect(() => { $$runtime.bindMask(${n.el}, ${n.getter}, ${n.setter}, ${n.maskExpr}); });`)
           })
         }
       }
       return {
         bind: xNode('bindMask', { el: element.bindName(), getter, setter, maskExpr }, (w, n) => {
-          w.writeLine(`$runtime.bindMask(${n.el}, ${n.getter}, ${n.setter}, ${n.maskExpr});`)
+          w.writeLine(`$$runtime.bindMask(${n.el}, ${n.getter}, ${n.setter}, ${n.maskExpr});`)
         })
       }
     }
 
+    // On an ELEMENT, `bind:` means the DOM WRITES BACK, and the DOM writes back
+    // for form values and nothing else (`FJS-D136`). Everything else reaching
+    // this path lands in the generic branch of `bindInput`, which is
+    // `el[name] = v` with a read-back of `el[name]` — and for any attribute
+    // whose DOM property is spelled differently that writes a JS expando the
+    // DOM never reads, in both directions. `class` was the measured case
+    // (`FJS-478`); `for`, `readonly`, `maxlength`, `minlength`, `tabindex`,
+    // `colspan`, `rowspan` and `contenteditable` are the same shape. A
+    // one-way `attr={expr}` is what those want, and it already works.
+    //
+    // COMPONENTS do not come through here — `bind:x` on a component is an
+    // ordinary two-way prop, wired with `bindProp`.
+    if (!DOM_TWO_WAY.has(attr)) {
+      throw new Error(attr === 'class'
+        ? `'bind:class' on an element does not work and never has — 'class' is not a DOM property, ` +
+          `so the value is written to an expando the DOM never reads. Use '{class}', which merges ` +
+          `the parent's class into the element's own. There is no way to observe a child's class set.`
+        : `'bind:${attr}' is not a two-way binding — an element writes back only for a form value ` +
+          `(${[...DOM_TWO_WAY].join(', ')}), and nothing changes '${attr}' but you. ` +
+          `Write '${attr}={expr}' instead. On a COMPONENT, 'bind:${attr}' is a two-way prop and is unaffected.`
+      )
+    }
+
     return {
       bind: xNode('bindInput', { el: element.bindName(), getter, setter, attr }, (w, n) => {
-        w.writeLine(`$runtime.bindInput(${n.el}, '${n.attr}', ${n.getter}, ${n.setter});`)
+        w.writeLine(`$$runtime.bindInput(${n.el}, '${n.attr}', ${n.getter}, ${n.setter});`)
       })
     }
   }
@@ -5225,7 +5776,7 @@ export function bindProp(prop, node, element) {
     const { directive, modifiers } = parseModifiers(name)
     const event = directive.startsWith('on:') ? directive.slice(3) : directive.slice(1)
     const rawHand = prop.value ? unwrapExp(prop.value) : '() => {}'
-    // Scan raw handler for $emit / $props / $attributes / $context / $.transition usage.
+    // Scan raw handler for $$emit / $$props / $$attributes / $context / $.transition usage.
     ctx.detectDependency(rawHand)
     let handler = ctx.accessors ? rewriteExpr(rawHand, ctx.accessors, ctx.setters) : rawHand
 
@@ -5283,7 +5834,7 @@ export function bindProp(prop, node, element) {
       } else {
         msArg = mod.arg
       }
-      handler = `$runtime.${mod.name}(${handler}, ${msArg})`
+      handler = `$$runtime.${mod.name}(${handler}, ${msArg})`
     }
 
     const hasListenerOpts = Object.keys(listenerOpts).length > 0
@@ -5305,7 +5856,7 @@ export function bindProp(prop, node, element) {
 
     return {
       bind: xNode('bindEvent', { el: element.bindName(), event, handler, optsStr }, (w, n) => {
-        w.writeLine(`$runtime.addEvent(${n.el}, '${n.event}', ${n.handler}${n.optsStr});`)
+        w.writeLine(`$$runtime.addEvent(${n.el}, '${n.event}', ${n.handler}${n.optsStr});`)
       })
     }
   }
@@ -5318,7 +5869,7 @@ export function bindProp(prop, node, element) {
     this.detectDependency(rawExp)
     return {
       bind: xNode('bindClass', { el: element.bindName(), className, exp }, (w, n) => {
-        w.writeLine(`$runtime.bindClass(${n.el}, () => !!(${n.exp}), '${n.className}');`)
+        w.writeLine(`$$runtime.bindClass(${n.el}, () => !!(${n.exp}), '${n.className}');`)
       })
     }
   }
@@ -5350,7 +5901,7 @@ export function bindProp(prop, node, element) {
 
     return {
       bind: xNode('bindStyle', { el: element.bindName(), styleProp, exp }, (w, n) => {
-        w.writeLine(`$runtime.bindStyle(${n.el}, '${n.styleProp}', () => (${n.exp}));`)
+        w.writeLine(`$$runtime.bindStyle(${n.el}, '${n.styleProp}', () => (${n.exp}));`)
       })
     }
   }
@@ -5385,14 +5936,14 @@ export function bindProp(prop, node, element) {
     if (name === 'class') {
       return {
         bind: xNode('bindClassPassthrough', { el: element.bindName(), exp }, (w, n) => {
-          w.writeLine(`$runtime.bindClassPassthrough(${n.el}, () => (${n.exp}));`)
+          w.writeLine(`$$runtime.bindClassPassthrough(${n.el}, () => (${n.exp}));`)
         })
       }
     }
 
     return {
       bind: xNode('bindAttribute', { el: element.bindName(), name, exp }, (w, n) => {
-        w.writeLine(`$runtime.bindAttribute(${n.el}, '${n.name}', () => (${n.exp}));`)
+        w.writeLine(`$$runtime.bindAttribute(${n.el}, '${n.name}', () => (${n.exp}));`)
       })
     }
   }
@@ -5432,7 +5983,7 @@ export function inspectProp(prop) {
     // `ctx.setters` is what turns an assignment inside the expression into a
     // signal WRITE. A component prop is very often a handler —
     // `onclick={() => open = false}` — and without it the assignment target was
-    // rewritten as a READ: `() => $runtime.get($$sig_open) = false`, which does
+    // rewritten as a READ: `() => $$runtime.get($$sig_open) = false`, which does
     // not parse. Nothing reported it: the compiler was happy, the module
     // loaded, and the click threw `Invalid left-hand side in assignment`, so a
     // dialog's Cancel button did nothing. `on:click` on an ELEMENT has always
@@ -5874,7 +6425,7 @@ export function emitScript(ctx) {
   //
   // Only DOTTED deps are added from handlers. A bare identifier dep (`$: a,
   // () => f()`) is already served by reading its signal, and registering a
-  // proxy for it would change its accessor from `$runtime.get($$sig_a)` to
+  // proxy for it would change its accessor from `$$runtime.get($$sig_a)` to
   // `$$proxy_a` — which is the deep-watch opt-in that only the bare `$: a` form
   // should trigger.
   const watchedPaths = [
@@ -5890,6 +6441,56 @@ export function emitScript(ctx) {
   const localProxyRoots = new Set(
     [...proxyRoots].filter((r) => vars[r]?.kind === 'let' && !vars[r]?.isProp)
   )
+
+  // ── A deep watch on something that cannot be deep ────────────────────────
+  //
+  // The bare `$: a` form is the deep-watch opt-in — the paragraph above says
+  // so, and it is what changes `a`'s accessor from `$$runtime.get($$sig_a)` to
+  // `$$proxy_a`. On an object that is exactly right: reads go through the proxy
+  // and a mutation three levels down notifies. On a PRIMITIVE there is nothing
+  // to proxy, so `$$proxy_a` is an ordinary local holding a snapshot, every
+  // read in the component compiles to a plain variable read, and the render
+  // effect subscribes to nothing.
+  //
+  // The result is a component that stops updating for that name with no error,
+  // no warning and no console output: the value is right, the screen is stale.
+  // Measured on `example`'s discount box, where `let discountInput = ''` with
+  // `$: (discountInput)` beside it left the Apply button permanently disabled
+  // while the box filled underneath it — which reads as a broken handler
+  // (`FJS-505`).
+  //
+  // Refused rather than repaired, because the declaration is not merely broken
+  // here — it is REDUNDANT. A local `let` is already a signal, so a whole-value
+  // watch on one adds nothing a primitive can use; the only thing it can add is
+  // deep-mutation tracking, and a primitive has no depth. There is nothing to
+  // lose by refusing and a silent failure to gain by allowing.
+  //
+  // Conservative on purpose: only an initialiser that is VISIBLY a primitive
+  // refuses. `let x = fetchCount()` returning a number has the same hole and is
+  // not decidable here, and guessing would refuse `let rows = []`.
+  const primitiveInit = (v) => {
+    const n = v?.initNode
+    if (!n) return true                                    // `let x` — undefined
+    if (n.type === 'Literal')          return !n.regex && (n.value === null || typeof n.value !== 'object')
+    if (n.type === 'TemplateLiteral')  return true
+    if (n.type === 'Identifier')       return n.name === 'undefined' || n.name === 'NaN'
+    if (n.type === 'UnaryExpression')  return n.argument?.type === 'Literal' && typeof n.argument.value === 'number'
+    return false
+  }
+  for (const p of watchPaths) {
+    const root = p.path.replace(/\?\.|\./g, '.').split('.')[0]
+    if (root !== p.path.replace(/\?\./g, '.')) continue   // dotted — a real deep watch
+    if (!localProxyRoots.has(root) || !primitiveInit(vars[root])) continue
+    ctx.analysis.errors.push(
+      `'$: ${root}' watches a value that has no depth. '${root}' is a local \`let\`, which is ` +
+      `already reactive on its own — the bare form is the DEEP-watch opt-in, and on a ` +
+      `${vars[root]?.initRaw === undefined ? 'variable with no initialiser' : `value like \`${vars[root].initRaw}\``} ` +
+      `there is nothing to watch inside. Left in, it switches '${root}' off: every read of it ` +
+      `compiles to a plain variable and the component stops re-rendering when it changes. ` +
+      `Delete the line — an assignment to '${root}' already notifies. ` +
+      `To RUN something when it changes, write '$: ${root}, () => { ... }'.`
+    )
+  }
   // importProxyRoots = everything that's not a local let AND not a local const/var
   // Local const/var variables (e.g. `const c = { connected }`) must be excluded here
   // because their proxy needs to be emitted AFTER the variable is declared in mod.code,
@@ -5903,7 +6504,7 @@ export function emitScript(ctx) {
 
   // Imported store proxies — static, set up once
   importProxyRoots.forEach((root) => {
-    mod.head.push(xNode.raw(`const $$proxy_${root} = $runtime.watchProxy(${root});`))
+    mod.head.push(xNode.raw(`const $$proxy_${root} = $$runtime.watchProxy(${root});`))
     ctx.accessors[root] = `$$proxy_${root}`
   })
 
@@ -5958,11 +6559,11 @@ export function emitScript(ctx) {
       // so self-assignment `root = root` can be rewritten to force a refresh.
       if (dotPath === '') {
         const fireVar = `$$fire_${root}`
-        mod.head.push(xNode.raw(`const [${sigVar}, ${fireVar}] = $runtime.watchPath(${root}, '${dotPath}');`))
+        mod.head.push(xNode.raw(`const [${sigVar}, ${fireVar}] = $$runtime.watchPath(${root}, '${dotPath}');`))
         ctx.proxyFireFns = ctx.proxyFireFns || {}
         ctx.proxyFireFns[root] = fireVar
       } else {
-        mod.head.push(xNode.raw(`const [${sigVar}] = $runtime.watchPath(${root}, '${dotPath}');`))
+        mod.head.push(xNode.raw(`const [${sigVar}] = $$runtime.watchPath(${root}, '${dotPath}');`))
       }
       watchSigVars.push(sigVar)
     }
@@ -5973,7 +6574,7 @@ export function emitScript(ctx) {
   if (watchSigVars.length) {
     mod.head.push(
       xNode.raw(
-        `$runtime.createEffect(() => { ${watchSigVars.map((s) => `${s}();`).join(' ')} });`
+        `$$runtime.createEffect(() => { ${watchSigVars.map((s) => `${s}();`).join(' ')} });`
       )
     )
   }
@@ -6049,7 +6650,7 @@ export function emitScript(ctx) {
       const defaultExpr = v.initRaw ? rewriteExpr(v.initRaw, ctx.accessors) : 'undefined'
       mod.head.push(
         xNode.raw(
-          `const ${sigR} = $runtime.track($option.props?.${v.name} !== undefined ? $option.props.${v.name} : ${defaultExpr}, void 0, void 0, __block);\nconst ${sigW} = (v) => $runtime.set(${sigR}, v);`
+          `const ${sigR} = $$runtime.track($$option.props?.${v.name} !== undefined ? $$option.props.${v.name} : ${defaultExpr}, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
         )
       )
     } else {
@@ -6057,18 +6658,18 @@ export function emitScript(ctx) {
       // The deferred default is pushed in step 5 after all vars/memos are emitted.
       mod.head.push(
         xNode.raw(
-          `const ${sigR} = $runtime.track($option.props?.${v.name}, void 0, void 0, __block);\nconst ${sigW} = (v) => $runtime.set(${sigR}, v);`
+          `const ${sigR} = $$runtime.track($$option.props?.${v.name}, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
         )
       )
       deferredPropDefaults[v.name] = { sigW, initRaw: v.initRaw }
     }
 
     // Register with the component instance so $push/$apply work end-to-end.
-    mod.head.push(xNode.raw(`$runtime.makeExternalProperty('${v.name}', ${sigR}, ${sigW});`))
+    mod.head.push(xNode.raw(`$$runtime.makeExternalProperty('${v.name}', ${sigR}, ${sigW});`))
     if (ctx.config?.dev) {
-      mod.head.push(xNode.raw(`$runtime.__dev?.r(${sigR}, '${v.name}', 'prop');`))
+      mod.head.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'prop');`))
     }
-    ctx.accessors[v.name] = `$runtime.get(${sigR})`
+    ctx.accessors[v.name] = `$$runtime.get(${sigR})`
     ctx.setters[v.name] = sigW
   })
 
@@ -6078,7 +6679,7 @@ export function emitScript(ctx) {
     .forEach((v) => {
       mod.head.push(
         xNode.raw(
-          `const ${v.name} = $option.props?.${v.name} !== undefined ? $option.props.${
+          `const ${v.name} = $$option.props?.${v.name} !== undefined ? $$option.props.${
             v.name
           } : (${v.initRaw ?? 'undefined'});`
         )
@@ -6092,17 +6693,23 @@ export function emitScript(ctx) {
     .forEach((v) => {
       mod.head.push(
         xNode.raw(
-          `let ${v.name} = $option.props?.${v.name} !== undefined ? $option.props.${
+          `let ${v.name} = $$option.props?.${v.name} !== undefined ? $$option.props.${
             v.name
           } : (${v.initRaw ?? 'undefined'});`
         )
       )
     })
 
-  // ── 4. $async container ───────────────────────────────────────────────────
+  // ── 4. $$async container ───────────────────────────────────────────────────
   const asyncVars = Object.values(vars).filter((v) => v.isAsync)
   if (asyncVars.length) {
-    mod.code.push(xNode.raw(`const $async = {};`))
+    mod.code.push(xNode.raw(`const $$async = {};`))
+    // `$.async` is a plain property read like `$.props`, so it is reachable
+    // from a template expression, which the script-side rewrite never sees.
+    // Assigned here rather than with the rest of `$` because `$$async` is
+    // declared in this block, which the head has already run past.
+    if (ctx.inuse.$mesa) mod.code.push(xNode.raw(`$.async = $$async;`))
+    if (ctx.inuse.$sugar_async) mod.code.push(xNode.raw(`const $async = $$async;`))
   }
 
   // ── 5. Variables (topologically sorted, props already emitted) ────────────
@@ -6117,16 +6724,16 @@ export function emitScript(ctx) {
       // Special case: var name = $context.key — snapshot the context value at mount.
       if (v.isContextConsume) {
         mod.code.push(xNode.raw(
-          `let ${v.name} = $runtime.untrack(() => { const $$g = $ctxRead('${v.contextKey}'); return $$g ? $$g() : undefined; });`
+          `let ${v.name} = $$runtime.untrack(() => { const $$g = $$ctxRead('${v.contextKey}'); return $$g ? $$g() : undefined; });`
         ))
         // Not reactive — no accessor entry
       } else {
         const rewrittenInit = rewriteExpr(init, ctx.accessors)
-        mod.code.push(xNode.raw(`let ${v.name} = $runtime.untrack(() => (${rewrittenInit}));`))
+        mod.code.push(xNode.raw(`let ${v.name} = $$runtime.untrack(() => (${rewrittenInit}));`))
       }
       // var stays as a plain variable — no accessor entry needed.
     } else if (v.name === ctx.analysis.mountedVar) {
-      // $mounted(fn) return value — plain const Promise, never reactive.
+      // $$mounted(fn) return value — plain const Promise, never reactive.
       // Apply assignment rewrite so `user = x` inside the async fn becomes `$$set_user(x)`.
       const rewritten = rewriteExpr(rewriteAssignments(init, v.initNode, ctx), ctx.accessors)
       mod.code.push(xNode.raw(`const ${v.name} = ${rewritten};`))
@@ -6143,21 +6750,21 @@ export function emitScript(ctx) {
       // is unaffected: it comes from CALLING the getter inside the derived, and
       // the key a component resolves to cannot change for its lifetime.
       mod.code.push(xNode.raw(
-        `const $$ctxg_${v.name} = $ctxRead('${v.contextKey}');\n` +
-        `const ${v.name} = $runtime.trackDerived(() => ($$ctxg_${v.name} ? $$ctxg_${v.name}() : undefined), void 0, void 0, __block);`
+        `const $$ctxg_${v.name} = $$ctxRead('${v.contextKey}');\n` +
+        `const ${v.name} = $$runtime.trackDerived(() => ($$ctxg_${v.name} ? $$ctxg_${v.name}() : undefined), void 0, void 0, __block);`
       ))
-      if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${v.name}, '${v.name}', 'derived-context');`))
-      ctx.accessors[v.name] = `$runtime.get(${v.name})`
+      if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${v.name}, '${v.name}', 'derived-context');`))
+      ctx.accessors[v.name] = `$$runtime.get(${v.name})`
     } else if (v.kind === 'const' && v.isAsync && v.isDerived) {
       // Async derived const — reruns when deps change, cancels in-flight requests.
       // The result is stored as a signal so template bindings re-run when it resolves.
       const sigR = `$$sig_${v.name}`,
         sigW = `$$set_${v.name}`
-      mod.code.push(xNode.raw(`const ${sigR} = $runtime.track(undefined, void 0, void 0, __block);\nconst ${sigW} = (v) => $runtime.set(${sigR}, v);`))
-      ctx.accessors[v.name] = `$runtime.get(${sigR})`
+      mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
+      ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       const stateVar = `$$async_${v.name}`
-      mod.code.push(xNode.raw(`const ${stateVar} = $runtime.makeAsyncState();`))
-      mod.code.push(xNode.raw(`$async.${v.name} = ${stateVar};`))
+      mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState();`))
+      mod.code.push(xNode.raw(`$$async.${v.name} = ${stateVar};`))
       // Dep array: signal function references (strip trailing () to get the fn).
       const depFns = v.deps
         .map((dep) => {
@@ -6165,7 +6772,7 @@ export function emitScript(ctx) {
           if (!acc) return `() => ${dep}`
           // memo/computed: acc ends with '()' → strip to get the fn reference
           if (acc.endsWith('()')) return acc.slice(0, -2)
-          // signal getter: e.g. '$runtime.get($$sig_x)' → wrap in arrow fn
+          // signal getter: e.g. '$$runtime.get($$sig_x)' → wrap in arrow fn
           return `() => ${acc}`
         })
         .join(', ')
@@ -6177,20 +6784,20 @@ export function emitScript(ctx) {
       const rewrittenArg = rewriteExpr(argRaw, ctx.accessors)
       mod.code.push(
         xNode.raw(
-          `$runtime.asyncDerived(() => ${stateVar}, async ($$signal) => (${rewrittenArg}), [${depFns}], ${sigW});`
+          `$$runtime.asyncDerived(() => ${stateVar}, async ($$signal) => (${rewrittenArg}), [${depFns}], ${sigW});`
         )
       )
-      if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${sigR}, '${v.name}', 'async-derived');`))
+      if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'async-derived');`))
     } else if (v.kind === 'const' && v.isAsync) {
       // One-shot async const — runs once at init, no reactive deps.
       // Result is also a signal so the template updates when the fetch completes.
       const sigR = `$$sig_${v.name}`,
         sigW = `$$set_${v.name}`
-      mod.code.push(xNode.raw(`const ${sigR} = $runtime.track(undefined, void 0, void 0, __block);\nconst ${sigW} = (v) => $runtime.set(${sigR}, v);`))
-      ctx.accessors[v.name] = `$runtime.get(${sigR})`
+      mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
+      ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       const stateVar = `$$async_${v.name}`
-      mod.code.push(xNode.raw(`const ${stateVar} = $runtime.makeAsyncState();`))
-      mod.code.push(xNode.raw(`$async.${v.name} = ${stateVar};`))
+      mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState();`))
+      mod.code.push(xNode.raw(`$$async.${v.name} = ${stateVar};`))
       const argRaw =
         v.initNode?.type === 'AwaitExpression'
           ? raw.slice(v.initNode.argument.start, v.initNode.argument.end)
@@ -6201,13 +6808,13 @@ export function emitScript(ctx) {
           `(async () => { try { ${stateVar}._update('start'); ${sigW}(await (${rewrittenArg})); ${stateVar}._update('done'); } catch($$e) { ${stateVar}._update('error', $$e); } })();`
         )
       )
-      if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${sigR}, '${v.name}', 'async');`))
+      if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'async');`))
     } else if (v.kind === 'const' && v.isDerived) {
       // Derived const — createMemo so it recomputes lazily when any dep changes.
       // rewriteAssignments FIRST, for the same reason the $: emitter below does
       // it: a const holding a function that writes to a top-level `let` —
       // `const bump = () => { n = n + 1 }`, the most ordinary handler there is —
-      // otherwise compiled to `$runtime.get($$sig_n) = …`. That is not valid
+      // otherwise compiled to `$$runtime.get($$sig_n) = …`. That is not valid
       // JavaScript, so the module threw on load, and analysis.errors was empty.
       // initNode is absent for a synthesised declarator (a destructured pattern
       // expanded into flat vars), and rewriteAssignments needs a real node to
@@ -6216,9 +6823,9 @@ export function emitScript(ctx) {
         v.initNode ? rewriteAssignments(init, v.initNode, ctx) : init,
         ctx.accessors
       )
-      mod.code.push(xNode.raw(`const ${v.name} = $runtime.trackDerived(() => (${rewrittenInit}), void 0, void 0, __block);`))
-      if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${v.name}, '${v.name}', 'derived');`))
-      ctx.accessors[v.name] = `$runtime.get(${v.name})`
+      mod.code.push(xNode.raw(`const ${v.name} = $$runtime.trackDerived(() => (${rewrittenInit}), void 0, void 0, __block);`))
+      if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${v.name}, '${v.name}', 'derived');`))
+      ctx.accessors[v.name] = `$$runtime.get(${v.name})`
     } else if (v.kind === 'const') {
       // Static const — no reactive wrapper, emitted as-is.
       mod.code.push(xNode.raw(`const ${v.name} = ${init};`))
@@ -6229,18 +6836,18 @@ export function emitScript(ctx) {
       // re-proxy effect needed since const can't be reassigned.
       const varPaths = ctx.localVarProxyPaths?.[v.name]
       if (varPaths?.length) {
-        mod.code.push(xNode.raw(`const $$proxy_${v.name} = $runtime.watchProxy(${v.name});`))
+        mod.code.push(xNode.raw(`const $$proxy_${v.name} = $$runtime.watchProxy(${v.name});`))
         ctx.accessors[v.name] = `$$proxy_${v.name}`
         varPaths.forEach(({ sigVar, fireVar, dotPath }) => {
           if (fireVar) {
-            mod.code.push(xNode.raw(`const [${sigVar}, ${fireVar}] = $runtime.watchPath(${v.name}, '${dotPath}');`))
+            mod.code.push(xNode.raw(`const [${sigVar}, ${fireVar}] = $$runtime.watchPath(${v.name}, '${dotPath}');`))
           } else {
-            mod.code.push(xNode.raw(`const [${sigVar}] = $runtime.watchPath(${v.name}, '${dotPath}');`))
+            mod.code.push(xNode.raw(`const [${sigVar}] = $$runtime.watchPath(${v.name}, '${dotPath}');`))
           }
         })
         const sigVars = varPaths.map(({ sigVar }) => sigVar)
         mod.code.push(xNode.raw(
-          `$runtime.createEffect(() => { ${sigVars.map(s => `${s}();`).join(' ')} });`
+          `$$runtime.createEffect(() => { ${sigVars.map(s => `${s}();`).join(' ')} });`
         ))
       }
     } else if (v.kind === 'let') {
@@ -6252,27 +6859,27 @@ export function emitScript(ctx) {
         // Re-derives when the provider's signal changes, but can be locally
         // overridden. The lookup is hoisted for the reason in the const branch.
         mod.code.push(xNode.raw(
-          `const $$ctxg_${v.name} = $ctxRead('${v.contextKey}');\n` +
-          `const ${sigR} = $runtime.trackDerived(() => ($$ctxg_${v.name} ? $$ctxg_${v.name}() : undefined), void 0, void 0, __block);\nconst ${sigW} = (v) => $runtime.set(${sigR}, v);`
+          `const $$ctxg_${v.name} = $$ctxRead('${v.contextKey}');\n` +
+          `const ${sigR} = $$runtime.trackDerived(() => ($$ctxg_${v.name} ? $$ctxg_${v.name}() : undefined), void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`
         ))
-        if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${sigR}, '${v.name}', 'let-context');`))
+        if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'let-context');`))
       } else if (v.isWritableDerived) {
         // $: myVar = expr — writable derived signal.
         // Re-derives when deps change, but can be overridden manually.
         // Uses createWritableSignal so that set() is not a no-op.
         const rewrittenInit = rewriteExpr(init, ctx.accessors)
         mod.code.push(
-          xNode.raw(`const [${sigR}, ${sigW}] = $runtime.createWritableSignal(() => (${rewrittenInit}));`)
+          xNode.raw(`const [${sigR}, ${sigW}] = $$runtime.createWritableSignal(() => (${rewrittenInit}));`)
         )
-        if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${sigR}, '${v.name}', 'writable-derived');`))
+        if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'writable-derived');`))
       } else {
         // Plain let — snapshot at init, independent thereafter.
         const rewrittenInit = rewriteExpr(init, ctx.accessors)
-        mod.code.push(xNode.raw(`const ${sigR} = $runtime.track(${rewrittenInit}, void 0, void 0, __block);\nconst ${sigW} = (v) => $runtime.set(${sigR}, v);`))
-        if (ctx.config?.dev) mod.code.push(xNode.raw(`$runtime.__dev?.r(${sigR}, '${v.name}', 'let');`))
+        mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(${rewrittenInit}, void 0, void 0, __block);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
+        if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'let');`))
       }
 
-      ctx.accessors[v.name] = `$runtime.get(${sigR})`
+      ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       ctx.setters[v.name] = sigW
 
       // Option B — local let with $: path watches.
@@ -6285,7 +6892,7 @@ export function emitScript(ctx) {
       if (paths?.length) {
         // Standalone signal per watched path — always-notify equality
         const pathDecls = paths.map(({ sigVar, dotPath }) =>
-          `const ${sigVar} = $runtime.track(undefined, void 0, void 0, __block, true);\nconst $fire_${v.name}_${sigVar} = () => $runtime.set(${sigVar}, undefined);`
+          `const ${sigVar} = $$runtime.track(undefined, void 0, void 0, __block, true);\nconst $fire_${v.name}_${sigVar} = () => $$runtime.set(${sigVar}, undefined);`
         ).join('\n')
         mod.code.push(xNode.raw(pathDecls))
 
@@ -6296,7 +6903,7 @@ export function emitScript(ctx) {
 
         // Mutable proxy variable — re-assigned on signal replacement
         mod.code.push(xNode.raw(
-          `let $$proxy_${v.name} = $runtime.localWatchProxy($runtime.get(${sigR}), { ${signalMapEntries} });`
+          `let $$proxy_${v.name} = $$runtime.localWatchProxy($$runtime.get(${sigR}), { ${signalMapEntries} });`
         ))
         ctx.accessors[v.name] = `$$proxy_${v.name}`
 
@@ -6314,9 +6921,9 @@ export function emitScript(ctx) {
           `$fire_${v.name}_${sigVar}();`
         ).join(' ')
         mod.code.push(xNode.raw(
-          `$runtime.createEffect(() => {` +
-          ` const $$obj = $runtime.get(${sigR});` +
-          ` $$proxy_${v.name} = $runtime.localWatchProxy($$obj, { ${signalMapEntries} });` +
+          `$$runtime.createEffect(() => {` +
+          ` const $$obj = $$runtime.get(${sigR});` +
+          ` $$proxy_${v.name} = $$runtime.localWatchProxy($$obj, { ${signalMapEntries} });` +
           ` ${fireCalls}` +
           ` });`
         ))
@@ -6332,7 +6939,7 @@ export function emitScript(ctx) {
     const defaultExpr = rewriteExpr(initRaw, ctx.accessors)
     mod.code.push(
       xNode.raw(
-        `if ($option.props?.${name} === undefined) ${sigW}($runtime.untrack(() => (${defaultExpr})));`
+        `if ($$option.props?.${name} === undefined) ${sigW}($$runtime.untrack(() => (${defaultExpr})));`
       )
     )
   })
@@ -6356,12 +6963,12 @@ export function emitScript(ctx) {
     if (isSigRead) {
       // Plain signal — extract the getter function (strip the ())
       const sigFn = rewritten.trim().slice(0, -2)
-      mod.code.push(xNode.raw(`$ctxProvide('${key}', ${sigFn});`))
+      mod.code.push(xNode.raw(`$$ctxProvide('${key}', ${sigFn});`))
     } else {
       // Derived expression — wrap in a memo so descendants stay reactive
       const memo = `$$ctxMemo_${key}`
-      mod.code.push(xNode.raw(`const ${memo} = $runtime.createMemo(() => (${rewritten}));`))
-      mod.code.push(xNode.raw(`$ctxProvide('${key}', ${memo});`))
+      mod.code.push(xNode.raw(`const ${memo} = $$runtime.createMemo(() => (${rewritten}));`))
+      mod.code.push(xNode.raw(`$$ctxProvide('${key}', ${memo});`))
     }
   })
 
@@ -6372,7 +6979,7 @@ export function emitScript(ctx) {
   ctx.analysis.effects.forEach((ef) => {
     // rewriteAssignments FIRST, exactly as the script-statement and watch-handler
     // emitters do. Skipping it here meant `$: { count = count + 1 }` compiled to
-    // `$runtime.get($$sig_count) = …` — an invalid assignment target that the
+    // `$$runtime.get($$sig_count) = …` — an invalid assignment target that the
     // compiler accepted without complaint and that threw "Invalid left-hand side
     // in assignment" the moment the effect ran. Any write to a top-level `let`
     // inside a `$: { }` block was affected; member writes (`obj.n = …`) went
@@ -6380,10 +6987,10 @@ export function emitScript(ctx) {
     const src = ef.node ? rewriteAssignments(ef.raw, ef.node, ctx) : ef.raw
     const rewritten = rewriteExpr(src, ctx.accessors)
     if (ef.type === 'expression') {
-      mod.code.push(xNode.raw(`$runtime.createEffect(() => { ${rewritten}; }, { user: true });`))
+      mod.code.push(xNode.raw(`$$runtime.createEffect(() => { ${rewritten}; }, { user: true });`))
     } else {
       // block — raw already includes the { }
-      mod.code.push(xNode.raw(`$runtime.createEffect(() => ${rewritten}, { user: true });`))
+      mod.code.push(xNode.raw(`$$runtime.createEffect(() => ${rewritten}, { user: true });`))
     }
   })
 
@@ -6406,12 +7013,12 @@ export function emitScript(ctx) {
           const sigVar = dotPath
             ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}`
             : `$$watch_${root}`
-          // $runtime.get(), not `sigVar()`. A watch signal is a read FUNCTION when
+          // $$runtime.get(), not `sigVar()`. A watch signal is a read FUNCTION when
           // the root is a proxied import or a local const/var (watchPath), and a
           // TRACKED OBJECT when the root is a local `let` (track). Calling it
           // directly threw "$$watch_o_a is not a function" on mount for every
           // local-let path watch — get() already reads both shapes.
-          return { subscribe: `$runtime.get(${sigVar})`, value: rewriteExpr(dep, ctx.accessors) }
+          return { subscribe: `$$runtime.get(${sigVar})`, value: rewriteExpr(dep, ctx.accessors) }
         }
         if (acc) return { subscribe: acc, value: acc }
         return { subscribe: null, value: dep }
@@ -6444,7 +7051,7 @@ export function emitScript(ctx) {
     // "when X changes, do Y" reads as change-triggered, and firing on mount is
     // both surprising and usually wrong — `$: userId, () => { count = 0 }`
     // resetting on first render is a no-op at best. The eager case is already
-    // owned by $onMount, and the "initialise then keep in sync" shape is
+    // owned by $$onMount, and the "initialise then keep in sync" shape is
     // usually a `const` memo wearing an effect's clothes.
     //
     // Deferring is only possible because the deps are explicit: the effect
@@ -6458,11 +7065,11 @@ export function emitScript(ctx) {
     mod.code.push(xNode.raw(`let ${prevVar}; let ${firstVar} = true;`))
     mod.code.push(
       xNode.raw(
-        `${debugComment}$runtime.createEffect(() => { ${depPart}` +
+        `${debugComment}$$runtime.createEffect(() => { ${depPart}` +
         `const $$v = ${valueExpr}; ` +
         `if (${firstVar}) { ${firstVar} = false; ${prevVar} = $$v; return; } ` +
         `const $$p = ${prevVar}; ${prevVar} = $$v; ` +
-        `return $runtime.untrack(() => (${rewrittenHandler})($$v, $$p)); }, { user: true });`
+        `return $$runtime.untrack(() => (${rewrittenHandler})($$v, $$p)); }, { user: true });`
       )
     )
   })
@@ -6514,7 +7121,7 @@ export function emitScript(ctx) {
   })
 
   // ── 7b. $: { } ordered watch groups ─────────────────────────────────────────
-  // Each group emits a single $runtime.orderedGroup([...entries]) call.
+  // Each group emits a single $$runtime.orderedGroup([...entries]) call.
   // Each entry is { deps: [readFn, ...], handler: fn }.
   // The runtime runs entries in declared order, once per flush, batched.
   watchGroups.forEach((group) => {
@@ -6533,9 +7140,9 @@ export function emitScript(ctx) {
               : `$$watch_${root}`
             return `${sigVar}`
           }
-          // New accessor format: $runtime.get($$sig_x) → extract $$sig_x as fn ref
+          // New accessor format: $$runtime.get($$sig_x) → extract $$sig_x as fn ref
           if (acc) {
-            const getM = acc.match(/^\$runtime\.get\((\S+)\)$/)
+            const getM = acc.match(/^\$\$runtime\.get\((\S+)\)$/)
             if (getM) return getM[1]  // pass the signal object itself
             if (acc.endsWith('()')) return acc.slice(0, -2)  // memo fn ref
           }
@@ -6550,7 +7157,7 @@ export function emitScript(ctx) {
 
     mod.code.push(
       xNode.raw(
-        `${debugComment}$runtime.orderedGroup([${entryStrings.join(', ')}]);`
+        `${debugComment}$$runtime.orderedGroup([${entryStrings.join(', ')}]);`
       )
     )
   })
@@ -6581,7 +7188,7 @@ export function emitScript(ctx) {
     if (node.type === 'ImportDeclaration') continue // already emitted
     if (node.type === 'ExportNamedDeclaration') continue // props handled above
     if (node.type === 'LabeledStatement') continue // $: forms handled above
-    // $context.x = expr — converted to $ctxProvide() calls above, skip raw emit
+    // $context.x = expr — converted to $$ctxProvide() calls above, skip raw emit
     if (contextProvideStarts.has(node.start)) continue
 
     if (node.type === 'VariableDeclaration') {
@@ -6617,9 +7224,9 @@ export function emitScript(ctx) {
 
     const nodeSrc = raw.slice(node.start, node.end)
 
-    // $inspect(expr1, expr2, ...) or $inspect(...).with(fn) — top-level call.
+    // $$inspect(expr1, expr2, ...) or $$inspect(...).with(fn) — top-level call.
     // Transform into a reactive createEffect that reads each arg through its
-    // accessor (tracking deps) and passes label + getter array to $runtime.$inspect.
+    // accessor (tracking deps) and passes label + getter array to $$runtime.inspect.
     const _innerInspect = (n) => {
       if (!n || n.type !== 'CallExpression') return null
       if (n.callee?.type === 'Identifier' && n.callee?.name === '$inspect') return { call: n, withFn: null }
@@ -6638,7 +7245,7 @@ export function emitScript(ctx) {
     }
     const _inspectMatch = node.type === 'ExpressionStatement' ? _innerInspect(node.expression) : null
     if (_inspectMatch) {
-      // In production (debug: false), strip $inspect entirely — emit nothing
+      // In production (debug: false), strip $$inspect entirely — emit nothing
       if (ctx.config.debug === false) continue
       const { call: callNode, withFn } = _inspectMatch
       const argSrcs = callNode.arguments.map(a => raw.slice(a.start, a.end))
@@ -6684,7 +7291,7 @@ export function emitScript(ctx) {
   const exportedMembers = ctx.analysis.exportedMembers || []
   if (exportedMembers.length) {
     const entries = exportedMembers.map(m => m.name).join(', ')
-    mod.code.push(xNode.raw(`$runtime.registerExports({ ${entries} });`))
+    mod.code.push(xNode.raw(`$$runtime.registerExports({ ${entries} });`))
   }
 }
 
@@ -6756,7 +7363,7 @@ function topoSort(vars) {
 function _domTraversal(code) {
   // Transform all consecutive blocks of let-declarations that walk the DOM.
   // Matches both the outer component block (after $tplN()) and inner makeBlock
-  // callbacks (after ($parentElement) =>). The pattern is any run of lines
+  // callbacks (after ($$parentElement) =>). The pattern is any run of lines
   // of the form:  (spaces)let varName = expr.firstChild/nextSibling...;
   
   // Extract and transform a block of let traversal lines into child()/sibling()/pop()
@@ -6778,10 +7385,10 @@ function _domTraversal(code) {
       const chainM = expr.match(/^(\S+)\.firstChild\.nextSibling$/)
       if (chainM) {
         const parent = chainM[1]
-        const tmp = '$_skip' + (tmpIdx++)
-        out.push(indent + 'var ' + tmp + ' = $runtime.child(' + parent + ');')
+        const tmp = '$$_skip' + (tmpIdx++)
+        out.push(indent + 'var ' + tmp + ' = $$runtime.child(' + parent + ');')
         descended.add(parent)
-        out.push(indent + 'var ' + name + ' = $runtime.sibling(' + tmp + ');')
+        out.push(indent + 'var ' + name + ' = $$runtime.sibling(' + tmp + ');')
         continue
       }
 
@@ -6791,7 +7398,7 @@ function _domTraversal(code) {
         const parent = fcM[1]
         descended.add(parent)
         const flag = isTextNode ? ', true' : ''
-        out.push(indent + 'var ' + name + ' = $runtime.child(' + parent + flag + ');')
+        out.push(indent + 'var ' + name + ' = $$runtime.child(' + parent + flag + ');')
         continue
       }
 
@@ -6800,10 +7407,10 @@ function _domTraversal(code) {
       if (nsM) {
         const prev = nsM[1]
         if (descended.has(prev)) {
-          out.push(indent + '$runtime.pop(' + prev + ');')
+          out.push(indent + '$$runtime.pop(' + prev + ');')
           descended.delete(prev)
         }
-        out.push(indent + 'var ' + name + ' = $runtime.sibling(' + prev + ');')
+        out.push(indent + 'var ' + name + ' = $$runtime.sibling(' + prev + ');')
         continue
       }
 
@@ -6815,7 +7422,7 @@ function _domTraversal(code) {
 
   // Match ALL consecutive let-traversal blocks anywhere in the output
   return code.replace(
-    /((?:const \$parentElement = \$tpl\d+\(\)|\(\$parentElement\) =>)[^\n]*\n)((?:\s+let [^;\n]+;\n)+)/g,
+    /((?:const \$\$parentElement = \$\$tpl\d+\(\)|\(\$\$parentElement\) =>)[^\n]*\n)((?:\s+let [^;\n]+;\n)+)/g,
     (_, open, decls) => transformDecls(open, decls)
   )
 }
@@ -6823,12 +7430,12 @@ function _domTraversal(code) {
 
 // ─── render() grouping: collect bindText/bindAttribute into one render block ──
 // Converts consecutive:
-//   $runtime.bindText(el0, () => expr0);
-//   $runtime.bindText(el1, () => expr1);
+//   $$runtime.bindText(el0, () => expr0);
+//   $$runtime.bindText(el1, () => expr1);
 // Into a single:
-//   $runtime.render((__prev) => {
-//     var __a = expr0; if (__prev.a !== __a) $runtime.set_text(el0, __prev.a = __a)
-//     var __b = expr1; if (__prev.b !== __b) $runtime.set_text(el1, __prev.b = __b)
+//   $$runtime.render((__prev) => {
+//     var __a = expr0; if (__prev.a !== __a) $$runtime.set_text(el0, __prev.a = __a)
+//     var __b = expr1; if (__prev.b !== __b) $$runtime.set_text(el1, __prev.b = __b)
 //   }, { a: ' ', b: ' ' })
 //
 // bindAttribute calls similarly grouped with set_attribute.
@@ -6843,12 +7450,12 @@ function indexToKey(i) {
 
 // Detect whether a binding expression is reactive.
 // Reactive if it contains:
-//   - $runtime.get(...)       — top-level signal accessor
+//   - $$runtime.get(...)       — top-level signal accessor
 //   - $$proxy_                — watched path proxy
 //   - \bword()                — bare no-arg function call (each-block item/index getter)
 //     e.g. item().r, index()  — these are signal getters passed as makeBlock params
 function _isReactive(expr) {
-  if (expr.includes('$runtime.get') || expr.includes('$$proxy_')) return true
+  if (expr.includes('$$runtime.get') || expr.includes('$$proxy_')) return true
   // A reactive {@const} is a memo, read as `$$_const_name()`. The bare-call
   // pattern below cannot see it — its lookbehind excludes `$` on purpose — so
   // an attribute whose only dependency was a {@const} was classed static and
@@ -6864,12 +7471,12 @@ function _isReactive(expr) {
   // bug the getters exist to prevent, arriving through the fix for FJS-339.
   if (/\$\$arg\d+\(\)/.test(expr)) return true
   // Bare no-arg call: identifier immediately followed by () — signal getter pattern.
-  // Excludes method chains like Math.floor() (preceded by '.') and $runtime.x().
+  // Excludes method chains like Math.floor() (preceded by '.') and $$runtime.x().
   if (/(?<![.$])\b[a-z_][a-zA-Z0-9_]*\(\)/.test(expr)) return true
   // External signal .get() calls — the Mesa bridge patches Sierra signals so their
   // .get() becomes Mesa's reactive read function. Matches: identifier.get()
-  // but not: $runtime.anything.get() or similar false positives.
-  if (/(?<!\$runtime\b[^.]*)\.get\(\)/.test(expr)) return true
+  // but not: $$runtime.anything.get() or similar false positives.
+  if (/(?<!\$\$runtime\b[^.]*)\.get\(\)/.test(expr)) return true
   return false
 }
 
@@ -6903,14 +7510,14 @@ function _renderGroup(code) {
   // Collect consecutive runs of complete bindText / bindAttribute statements at
   // the same indent, and fold each run into one render() block.
   //
-  //   <indent>$runtime.bindText(el, () => expr);
-  //   <indent>$runtime.bindAttribute(el, 'name', () => expr);
+  //   <indent>$$runtime.bindText(el, () => expr);
+  //   <indent>$$runtime.bindAttribute(el, 'name', () => expr);
   //
   // Anything that is not a complete single-line bind statement — including a
   // bind whose expression wraps onto the next line — ends the run and is passed
   // through untouched. Grouping is an optimisation; leaving a binding alone is
   // always correct, and truncating one never is.
-  const BIND_START = /^([ \t]*)\$runtime\.(?:bindText|bindAttribute)\(/
+  const BIND_START = /^([ \t]*)\$\$runtime\.(?:bindText|bindAttribute)\(/
 
   const srcLines = code.split('\n')
   const output = []
@@ -6932,10 +7539,10 @@ function _renderGroup(code) {
     }
 
     const bindings = lines.map(line => {
-      const textM = line.match(/\$runtime\.bindText\((\S+),\s*\(\)\s*=>\s*\(?([\s\S]+?)\)?\);\s*$/)
+      const textM = line.match(/\$\$runtime\.bindText\((\S+),\s*\(\)\s*=>\s*\(?([\s\S]+?)\)?\);\s*$/)
       if (textM) return { type: 'text', el: textM[1], expr: textM[2].trim() }
 
-      const attrM = line.match(/\$runtime\.bindAttribute\((\S+),\s*'([^']+)',\s*\(\)\s*=>\s*\(?([\s\S]+?)\)?\);\s*$/)
+      const attrM = line.match(/\$\$runtime\.bindAttribute\((\S+),\s*'([^']+)',\s*\(\)\s*=>\s*\(?([\s\S]+?)\)?\);\s*$/)
       if (attrM) return { type: 'attr', el: attrM[1], name: attrM[2], expr: attrM[3].trim() }
 
       return { type: 'raw', line }
@@ -6953,7 +7560,7 @@ function _renderGroup(code) {
       if (b.type === 'text') {
         out.push(I + b.el + '.nodeValue = ' + b.expr + ';')
       } else {
-        out.push(I + '$runtime.set_attribute(' + b.el + ', \'' + b.name + '\', ' + b.expr + ');')
+        out.push(I + '$$runtime.set_attribute(' + b.el + ', \'' + b.name + '\', ' + b.expr + ');')
       }
     }
 
@@ -6968,13 +7575,13 @@ function _renderGroup(code) {
         init[k] = b.type === 'text' ? "' '" : 'null'
         body.push(I + '  var __' + k + ' = ' + b.expr + ';')
         if (b.type === 'text') {
-          body.push(I + '  if (__prev.' + k + ' !== __' + k + ') $runtime.set_text(' + b.el + ', __prev.' + k + ' = __' + k + ');')
+          body.push(I + '  if (__prev.' + k + ' !== __' + k + ') $$runtime.set_text(' + b.el + ', __prev.' + k + ' = __' + k + ');')
         } else {
-          body.push(I + '  if (__prev.' + k + ' !== __' + k + ') $runtime.set_attribute(' + b.el + ', \'' + b.name + '\', __prev.' + k + ' = __' + k + ');')
+          body.push(I + '  if (__prev.' + k + ' !== __' + k + ') $$runtime.set_attribute(' + b.el + ', \'' + b.name + '\', __prev.' + k + ' = __' + k + ');')
         }
       })
       const initStr = Object.entries(init).map(([k, v]) => k + ': ' + v).join(', ')
-      out.push(I + '$runtime.render((__prev) => {')
+      out.push(I + '$$runtime.render((__prev) => {')
       body.forEach(l => out.push(l))
       out.push(I + '}, { ' + initStr + ' });')
     }
@@ -6997,11 +7604,11 @@ function _renderGroup(code) {
 // unchanged and we do one clean string pass at the very end.
 //
 // Call site semantics:
-//   Named root:  const $parentElement = $runtime.htmlToFragment(`...`, 3);
-//                → const $parentElement = $tpl0.cloneNode(true);
+//   Named root:  const $$parentElement = $$runtime.htmlToFragment(`...`, 3);
+//                → const $$parentElement = $tpl0.cloneNode(true);
 //                (bit 1 of option = cloneNode was set for the root)
-//   Inline:      $runtime.makeBlock($runtime.htmlToFragment(`...`), fn)
-//                → $runtime.makeBlock($tpl1, fn)
+//   Inline:      $$runtime.makeBlock($$runtime.htmlToFragment(`...`), fn)
+//                → $$runtime.makeBlock($tpl1, fn)
 //                (makeBlock does its own .cloneNode(true) internally)
 
 function hoistTemplates(code) {
@@ -7012,28 +7619,28 @@ function hoistTemplates(code) {
   const getOrAdd = (tpl, flags) => {
     const key = `${tpl}|${flags}`
     if (!seen.has(key)) {
-      const name = `$tpl${idx++}`
+      const name = `$$tpl${idx++}`
       seen.set(key, name)
       // template(html, flags) returns a factory function — call it to clone
-      decls.push(`var ${name} = $runtime.template(\`${tpl}\`, ${flags});`)
+      decls.push(`var ${name} = $$runtime.template(\`${tpl}\`, ${flags});`)
     }
     return seen.get(key)
   }
 
   // Pass 1: named root — replace htmlToFragment call + cloneNode → template factory call
   code = code.replace(
-    /const \$parentElement = \$runtime\.(htmlToFragment(?:Clean)?)\(`((?:[^`\\]|\\.)*)`,?\s*(\d+)?\);/g,
+    /const \$\$parentElement = \$\$runtime\.(htmlToFragment(?:Clean)?)\(`((?:[^`\\]|\\.)*)`,?\s*(\d+)?\);/g,
     (_, fn, tpl, opt) => {
       const optNum = opt ? parseInt(opt, 10) : 0
       const flags = (optNum & 2) ? 1 : 0  // TEMPLATE_FRAGMENT flag if requireFragment
       const name = getOrAdd(tpl, flags)
-      return `const $parentElement = ${name}();`  // factory call, no cloneNode
+      return `const $$parentElement = ${name}();`  // factory call, no cloneNode
     }
   )
 
   // Pass 2: inline htmlToFragment calls (makeBlock etc.)
   code = code.replace(
-    /\$runtime\.(htmlToFragment(?:Clean)?)\(`((?:[^`\\]|\\.)*)`,?\s*(\d+)?\)/g,
+    /\$\$runtime\.(htmlToFragment(?:Clean)?)\(`((?:[^`\\]|\\.)*)`,?\s*(\d+)?\)/g,
     (_, fn, tpl, opt) => {
       const optNum = opt ? parseInt(opt, 10) : 0
       const flags = (optNum & 2) ? 1 : 0
@@ -7043,9 +7650,11 @@ function hoistTemplates(code) {
 
   if (!decls.length) return code
 
+  // A callback, not a replacement string: the declarations contain `$$tpl0` and
+  // `$$runtime`, and in a replacement string every `$$` collapses to one `$`.
   return code.replace(
     /^((?:import\s+.+?from\s+'[^']+';[ \t]*\n)+)/m,
-    `$1${decls.join('\n')}\n`
+    (_m, imports) => `${imports}${decls.join('\n')}\n`
   )
 }
 
@@ -7268,9 +7877,9 @@ export async function compile(source, config = {}) {
     detectDependency(data) {
       const check = (name) => {
         if (typeof name === 'string') {
-          if (name.includes('$props')) this.require('$props')
-          if (name.includes('$attributes')) this.require('$attributes')
-          if (name.includes('$emit')) this.require('$emit')
+          if (name.includes('$$props')) this.require('$props')
+          if (name.includes('$$attributes')) this.require('$attributes')
+          if (name.includes('$$emit')) this.require('$emit')
           if (name.includes('$context')) this.require('$context')
           if (name.includes('$.transition') || name.includes('$.entrance') ||
               name.includes('$.fade') || name.includes('$.slide') || name.includes('$.fly')) this.require('$mesa')
@@ -7332,6 +7941,14 @@ export async function compile(source, config = {}) {
 
   // eslint-disable-next-line no-inner-declarations
   function safeComponentIdent(name, ctx) {
+    // A JS identifier may not START with a digit, and the character sweep that
+    // produced `name` allows digits — every one of them is legal further along.
+    // So `404.mesa` came through untouched and emitted
+    // `export default function 404(__anchor, …)`, which the compiler reported
+    // as fine and esbuild refused with six parse errors about a file nobody
+    // wrote. That is Invariant 15's exact shape, and `404.mesa` is the ordinary
+    // name for a static site's not-found page rather than an odd one.
+    if (/^[0-9]/.test(name)) name = `_${name}`
     if (!RESERVED_WORDS.has(name) && !moduleScopeNames(ctx).has(name)) return name
     // Deterministic, and still legible in a stack trace: `new` → `new_Component`.
     let candidate = `${name}_Component`
@@ -7403,13 +8020,94 @@ export async function compile(source, config = {}) {
 
   assert(ctx.scriptNodes.length <= 1, 'Only one <script> block per component')
   assert(ctx.scriptModuleNodes.length <= 1, 'Only one <script module> block per component')
+
+  // `$` is the component instance's door and a <script module> block runs once
+  // at import, outside any instance — there is nothing there for it to open.
+  // Refused by name rather than left to fail as `$ is not defined` in a browser,
+  // which names neither the cause nor the way out (FJS-D132).
+  {
+    const moduleSrc = ctx.scriptModuleNodes[0]?.content ?? ''
+    const DOOR = [
+      'props', 'attributes', 'slots', 'option', 'emit', 'context', 'async',
+      'onMount', 'onDestroy', 'onCleanup', 'mounted', 'inspect', 'tick',
+      'transition', 'entrance', 'fade', 'slide', 'fly',
+    ]
+    const reached = DOOR.find((n) => moduleSrc.includes('$.' + n))
+    if (reached) {
+      throw new Error(
+        `'$.${reached}' is not available in <script module> — '$' is the component ` +
+        `instance's door and a module block runs once, outside any instance. ` +
+        `Import what you need from '@frontierjs/mesa/runtime.js' instead.`
+      )
+    }
+  }
   await hook('dom:after')
 
   if (config.compact) compactDOM(ctx.DOM, config.compact === 'full')
 
   // ── Parse + analyze script ────────────────────────────────────────────────
   await hook('js:before')
-  const rawScript = ctx.scriptNodes[0]?.content || ''
+  let rawScript = ctx.scriptNodes[0]?.content || ''
+
+  // ── the bare spelling is gone (FJS-D132 phase 4) ─────────────────────────
+  // `$$onMount` and its eleven siblings are reached through the door now. This
+  // runs on the ORIGINAL script, before the `$.context` → `$context` rewrite
+  // below turns the new spelling into the old one.
+  //
+  // A name the author declared themselves is left alone: `function f() { const
+  // $$props = 1; return $$props }` is an ordinary local in a nested scope, which
+  // the factory-scope collision check deliberately permits. Declared-anywhere
+  // is a coarser test than proper scope resolution and is the right side to err
+  // on — it declines to refuse rather than refusing something legal.
+  {
+    const bareUse = refuseBareBuiltins(rawScript, source, ctx)
+    if (bareUse) throw new Error(bareUse)
+    const doorUse = refuseCompiledDoorInTemplate(source)
+    if (doorUse) throw new Error(doorUse)
+  }
+
+  // ── `$.x` → `$x`, for the four that are more than a property read ─────────
+  // Most of the door is plain values on a real object, so `$.props` and
+  // `$.onMount` need nothing here. These four are compiled rather than read:
+  // `$context.k = v` becomes a $$ctxProvide call, `$$inspect` is tracked and then
+  // stripped when debug is off, `$$mounted` is counted for its one-per-component
+  // rule, and `$$async.x` is generated per awaited variable. Left as member
+  // access they would all compile and none would do its job — `$.context.k = 1`
+  // would quietly assign to the shared context object.
+  //
+  // Rewritten on the AST rather than the text so a `'$.context'` inside a
+  // string is not caught, and gated on the substring so a component that does
+  // not use the door is not reparsed or reprinted at all.
+  const COMPILED_DOOR = ['context', 'inspect', 'mounted']
+  if (COMPILED_DOOR.some((n) => rawScript.includes('$.' + n))) {
+    try {
+      const ast = acorn.parse(rawScript, { sourceType: 'module', ecmaVersion: 'latest' })
+      let changed = false
+      const walk = (node) => {
+        if (!node || typeof node !== 'object') return
+        for (const key of Object.keys(node)) {
+          const child = node[key]
+          if (Array.isArray(child)) child.forEach(walk)
+          else if (child && typeof child === 'object' && child.type) {
+            if (
+              child.type === 'MemberExpression' && !child.computed &&
+              child.object?.type === 'Identifier' && child.object.name === '$' &&
+              COMPILED_DOOR.includes(child.property?.name)
+            ) {
+              node[key] = { type: 'Identifier', name: '$' + child.property.name }
+              changed = true
+            } else walk(child)
+          }
+        }
+      }
+      walk(ast)
+      if (changed) rawScript = astring.generate(ast)
+    } catch {
+      // A script that will not parse is reported by the parse below; leaving
+      // rawScript untouched keeps that one message rather than adding a second.
+    }
+  }
+
   let scriptAST
   try {
     scriptAST = acorn.parse(rawScript, { sourceType: 'module', ecmaVersion: 'latest' })
@@ -7466,38 +8164,66 @@ export async function compile(source, config = {}) {
   }
   _warnNestedStyle(ctx.DOM.body)
 
-  // Detect $ namespace usage in script source AND template — $.transition, $.entrance, $.fade, $.slide, $.fly
-  if (rawScript.includes('$.transition') || rawScript.includes('$.entrance') ||
-      rawScript.includes('$.fade') || rawScript.includes('$.slide') || rawScript.includes('$.fly') ||
-      source.includes('$.transition') || source.includes('$.entrance') ||
-      source.includes('$.fade') || source.includes('$.slide') || source.includes('$.fly')) {
+  // One spelling now, so one rule: a member is in use when the door is reached
+  // for it. The five animation helpers used to be a hand-listed OR chain of
+  // their own and are ordinary members of the same list.
+  // Either spelling counts as a use. The bare one needs a boundary on both
+  // sides: `$props` is a substring of `$$props`, which is the compiler's own
+  // name for the same value and must not be read as the author reaching for it.
+  const bareRx = (name) => new RegExp(String.raw`(?<![\w$])\$${name}\b`)
+  const reaches = (name) => {
+    if (rawScript.includes('$.' + name) || source.includes('$.' + name)) return true
+    if (!SUGAR_MEMBERS.includes(name)) return false
+    const rx = bareRx(name)
+    return rx.test(rawScript) || rx.test(templateExpressions(source))
+  }
+
+  if ([...DOOR_MEMBERS, 'transition', 'entrance', 'fade', 'slide', 'fly'].some(reaches)) {
     ctx.require('$mesa')
   }
 
   // Detect $context usage — contextProvide/contextRead injected as locals.
-  if (rawScript.includes('$context') || source.includes('$context')) {
+  if (reaches('context')) {
     ctx.require('$contextFns')
   }
 
-  // Detect $emit / $props / $attributes in script source.
-  // detectDependency only runs during template processing, so script-block
-  // usages (e.g. inside functions) need a separate raw-source scan here.
-  if (rawScript.includes('$emit'))       ctx.require('$emit')
-  if (rawScript.includes('$props'))      ctx.require('$props')
-  if (rawScript.includes('$attributes')) ctx.require('$attributes')
-  if (rawScript.includes('$inspect') && ctx.config.debug !== false) ctx.require('$inspect')
+  // detectDependency only runs during template processing, so a use inside a
+  // script function needs this scan of the source as well.
+  if (reaches('emit'))       ctx.require('$emit')
+  if (reaches('props'))      ctx.require('$props')
+  if (reaches('attributes')) ctx.require('$attributes')
 
-  // Detect $mounted(fn) — the mount-gate builtin. Enforce single-use.
-  // Scans for: const/let/var <name> = $mounted(
-  const _mountedMatches = [...rawScript.matchAll(/(?:const|let|var)\s+(\w+)\s*=\s*\$mounted\s*\(/g)]
-  if (_mountedMatches.length > 1) {
-    ctx.analysis.errors.push(
-      `$mounted() may only be called once per component. Use Promise.all inside a single $mounted for multiple operations.`
-    )
+  // The bare aliases are emitted only where the bare spelling is the one used,
+  // so a component written entirely against the door carries no extra line.
+  for (const m of SUGAR_MEMBERS) {
+    if (bareRx(m).test(rawScript) || bareRx(m).test(templateExpressions(source))) {
+      ctx.require('$sugar_' + m)
+      if (m === 'props' || m === 'attributes') ctx.require('$' + m)
+    }
   }
-  if (_mountedMatches.length >= 1) {
-    ctx.analysis.mountedVar = _mountedMatches[0][1]
-    ctx.require('$mounted')
+  if (reaches('inspect') && ctx.config.debug !== false) ctx.require('$inspect')
+
+  // `$.mounted` and `$.context` are compiled, so their locals are emitted only
+  // where a shape the compiler wires was found — and every OTHER shape used to
+  // emit a reference to a local nothing declared (`FJS-477`). Asked of the AST
+  // the rewrite produced rather than of the text, so the refusal covers the
+  // spellings a regex demanding `const NAME = $mounted(` fell straight through.
+  {
+    const { mountedVars, needsContextLocal } = refuseCompiledDoorMisuse(scriptAST)
+    if (mountedVars.length > 1) {
+      ctx.analysis.errors.push(
+        `$.mounted() may only be called once per component. Use Promise.all inside a single $.mounted for multiple operations.`
+      )
+    }
+    if (mountedVars.length >= 1) {
+      ctx.analysis.mountedVar = mountedVars[0]
+      ctx.require('$mounted')
+    }
+    // The runtime object survives the rewrite and needs its local; the sugar
+    // does not, having been compiled into $$ctxRead/$$ctxProvide calls.
+    if (needsContextLocal || /(?<![\w$])\$\.context\.(use|provide)\b/.test(templateExpressions(source))) {
+      ctx.require('$context')
+    }
   }
 
   await hook('js:after')
@@ -7600,7 +8326,7 @@ export async function compile(source, config = {}) {
     const _compName = safeComponentIdent(_displayName, ctx)
 
     const root = xNode('root', (w) => {
-      w.write(true, `import * as $runtime from '@frontierjs/mesa/runtime.js';`)
+      w.write(true, `import * as $$runtime from '@frontierjs/mesa/runtime.js';`)
       w.add(ctx.module.top)
       // <script module> content — emitted at module scope, before component fn
       const moduleScript = ctx.scriptModuleNodes[0]?.content?.trim()
@@ -7615,9 +8341,9 @@ export async function compile(source, config = {}) {
       // In dev builds, pass component name + file so __dev can track instances.
       const _escFilename = (_filename ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
       if (config.dev) {
-        w.write(true, `$runtime.push_component('${_displayName}', '${_escFilename}');`)
+        w.write(true, `$$runtime.push_component('${_displayName}', '${_escFilename}');`)
       } else {
-        w.write(true, '$runtime.push_component();')
+        w.write(true, '$$runtime.push_component();')
       }
       // NOTE: the body is deliberately NOT wrapped in try/finally to balance
       // push/pop_component. A block would make the component's `function`
@@ -7625,21 +8351,21 @@ export async function compile(source, config = {}) {
       // async-decl-scope.test.js exists to prevent. Exception safety is handled
       // in the runtime instead — see _unwindComponents, which restores the
       // stacks from the flush loop and from mount().
-      // $option compat shim: props still passed as __props
-      w.write(true, 'const $option = { props: __props };')
-      // $slots — reactive object indicating which named slots have content.
-      // Used as: {#if $slots.sidebar} to conditionally render slot areas.
-      w.write(true, 'const $slots = $runtime.makeSlots(__block);')
+      // $$option compat shim: props still passed as __props
+      w.write(true, 'const $$option = { props: __props };')
+      // $$slots — reactive object indicating which named slots have content.
+      // Used as: {#if $$slots.sidebar} to conditionally render slot areas.
+      w.write(true, 'const $$slots = $$runtime.makeSlots(__block);')
       w.add(ctx.module.head)
       w.add(ctx.module.code)
       w.add(ctx.module.body)
-      w.write(true, '$runtime.pop_component();')
+      w.write(true, '$$runtime.pop_component();')
       w.indent--
       w.write(true, '}')
       // delegate call moves to module scope (after function)
       if (ctx.delegatedEvents.size > 0) {
         const names = [...ctx.delegatedEvents].map(e => `'${e}'`).join(', ')
-        w.write(true, `$runtime.$$delegate([${names}]);`)
+        w.write(true, `$$runtime.$$delegate([${names}]);`)
       }
     })
     for (const k in ctx.glob ?? {}) resolveDependencies(ctx.glob[k])

@@ -43,6 +43,11 @@ const _CARRIED = [
   // read by the control table below and by nothing else — a form has to know
   // that a value is not the caller's to write, and that a string is a document.
   'readOnly', 'contentMediaType',
+  // `x-litestone-file` is on the FileRef definition a `File` column $refs. It
+  // is carried because it is the one thing that tells a shape which is an
+  // object with eight properties apart from a shape somebody declared — and
+  // the control table has to answer differently for the two.
+  'x-litestone-file',
   // `writeOnly` is `@transient`: a field the caller sends and no read ever
   // answers. It gets a control like any other writable field — that is the
   // point of declaring it — and this is what lets a form say so, and what stops
@@ -84,8 +89,39 @@ export function buildFieldRules(schema, resolve = resolveRef) {
     }
 
     const rule = { type: type ?? null, required: required.has(name), nullable }
+
+    // A `$ref` nothing could resolve leaves no type behind, which is exactly
+    // what a `Json` column looks like — and the control table reads a missing
+    // type as *this is a document*. The two are different facts and only this
+    // loop can still tell them apart: it is holding the raw schema. Without
+    // the flag, a `$defs` table that was never registered turns every enum and
+    // every relation on the form into a JSON textarea, silently.
+    const ref = typeof raw.$ref === 'string' ? raw.$ref
+      : Array.isArray(raw.anyOf) ? raw.anyOf.find(d => typeof d?.$ref === 'string')?.$ref
+      : undefined
+    if (ref && !resolve?.(ref)) rule.unresolvedRef = ref
     if (Array.isArray(def.enum)) rule.enum = def.enum
+
+    // `x-labels` is what @label on an enum member emits — a partial map, only
+    // the members that stated one. It is normalised into `rule.options` HERE
+    // rather than in each control, because @frontierjs/ui peers on mesa and
+    // css alone and cannot import this module to share the rule.
+    //
+    // Built only when a label exists, so an unlabelled enum carries no
+    // `options` and every reader keeps the `rule.enum` path it already had.
+    // A member with no label falls back to its own name, which is what a
+    // control rendering a bare enum shows today.
+    const enumLabels = def['x-labels']
+    if (Array.isArray(def.enum) && enumLabels && typeof enumLabels === 'object') {
+      rule.options = def.enum.map(v => ({ value: v, label: enumLabels[v] ?? v }))
+    }
     for (const k of _CARRIED) if (k in def) rule[k] = def[k]
+
+    // `x-values` is a @values binding: which named set this column draws from,
+    // and how legal a value outside it is. Renamed onto `rule.values` for the
+    // same reason `x-labels` is normalised into `rule.options` — a control
+    // cannot import this module, so the shape it consumes is settled here.
+    if (def['x-values'] && typeof def['x-values'] === 'object') rule.values = def['x-values']
 
     // `title` is the FIELD's label (@label) and is read off the field's OWN
     // schema, never the deref'd target. Litestone titles every enum $def with
@@ -319,14 +355,14 @@ export function defaultControlFor(rule) {
 /**
  * Which control this field gets.
  *
- *   { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|'datetime'|null,
+ *   { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|'datetime'|'json'|null,
  *     type?, options?, model?, valueField?, relation?, reason? }
  *
- * `control: null` is an answer, not an omission — an array column, a `Json`
- * document and an unknown type have no control in this kit, and the caller is
- * expected to say so rather than drop the field silently. That silence is the
- * failure this table exists to prevent: a column added to `.lite` that simply
- * never appears on the form.
+ * `control: null` is an answer, not an omission — a read-only column and a type
+ * this table does not know have no control, and the caller is expected to say
+ * so rather than drop the field silently. That silence is the failure this
+ * table exists to prevent: a column added to `.lite` that simply never appears
+ * on the form.
  *
  * A registered control is asked first and `by` names the one that answered;
  * `defaultControlFor` is this same table with the registry skipped.
@@ -355,6 +391,29 @@ function _builtinControl(rule) {
   if (!rule || typeof rule !== 'object') return { control: null, reason: 'no rule' }
   if (rule.readOnly) return { control: null, reason: 'readOnly' }
 
+  // A value set is asked BEFORE the foreign key and before the array branch,
+  // because it is strictly more information about the same column: it carries
+  // the scope the list is narrowed by, the column a person reads, and how legal
+  // a value outside the list is. A bound FK answered as a plain relation picker
+  // would fetch the whole related table and offer rows the set excludes.
+  //
+  // The strength picks the control, and the two weak ones pick the same one:
+  // what separates `open` from `suggested` is what the SERVER does with a new
+  // value, not what the caller may type.
+  if (rule.values) {
+    const allowNew = rule.values.strength !== 'required'
+    const base     = {
+      set:        rule.values.set,
+      strength:   rule.values.strength,
+      model:      rule.values.model,
+      valueField: rule.values.value,
+      labelField: rule.values.label,
+      allowNew,
+    }
+    if (rule.type === 'array') return { control: 'multiselect', ...base }
+    return { control: allowNew ? 'combobox' : 'picker', ...base }
+  }
+
   // A foreign key is the one field where a picker is obviously right and a
   // number spinner obviously wrong, and `references` is already derived.
   if (rule.references) {
@@ -366,7 +425,17 @@ function _builtinControl(rule) {
     }
   }
 
-  if (Array.isArray(rule.enum)) return { control: 'select', options: rule.enum }
+  if (Array.isArray(rule.enum)) return { control: 'select', options: rule.options ?? rule.enum }
+
+  // A `File` column $refs FileRef, which derefs to an ordinary object — so the
+  // json control below would offer a textarea over a storage key, a bucket and
+  // a provider, which is not a document anybody edits by hand. It has no
+  // control here yet: `FileUpload` speaks browser `File` objects and a form
+  // holds the stored reference, and the upload between the two is a path this
+  // package does not have (`FJS-409`).
+  if (rule['x-litestone-file']) {
+    return { control: null, reason: 'file — a stored file reference needs an upload path a form does not have' }
+  }
 
   switch (rule.type) {
     case 'boolean':
@@ -393,8 +462,28 @@ function _builtinControl(rule) {
       return { control: 'input' }
     }
 
-    case 'array':  return { control: null, reason: 'array — no control in the kit yet' }
-    case 'object': return { control: null, reason: 'object — a Json column has no single control' }
+    // An array column and a declared `type T` shape stop being described by the
+    // schema at the point a form would need a field list, so the only editor
+    // that covers every value they may hold is the value's own syntax.
+    case 'array':  return { control: 'json' }
+    case 'object': return { control: 'json' }
+
+    // A `Json` column arrives here, and NOT at `case 'object'`. Litestone
+    // emits it as `{}` — the empty schema, no `type` at all, because a Json
+    // document may be any of the seven things JSON can hold — so a table that
+    // waits for `type: 'object'` never sees the one column this is most for.
+    // Measured against a real schema: `settings Json @default("{}")` yields
+    // `{ type: null }`, which used to fall to the reason below and be left off
+    // every generated form.
+    case null:
+    case undefined:
+      // …unless the type is missing because a `$ref` did not resolve, which
+      // looks identical from here and is not a document at all.
+      if (rule.unresolvedRef) {
+        return { control: null, reason: `unresolved $ref ${rule.unresolvedRef} — is the schema registry populated?` }
+      }
+      return { control: 'json' }
+
     default:       return { control: null, reason: `no control for type ${rule.type ?? 'unknown'}` }
   }
 }
@@ -444,13 +533,24 @@ export function formFieldList(fields, { only, except, model } = {}) {
 }
 
 /**
- * Which column of a related model a picker should SHOW.
+ * Which column of a related model a picker should SHOW, and how sure it is.
  *
  * A foreign key holds an id and nobody recognises an id, so something has to
- * choose the human column. Nothing in `.lite` declares one today, so this is a
- * convention and it says so: the first of a few conventional names that exists
- * as a plain string column, then the first plain string column, then the value
- * itself. Pass `labelField` to state it and this is not consulted.
+ * choose the human column. `@@label(field)` in the seed is that answer, and it
+ * arrives here as `x-label-field`; everything below it is a guess, kept because
+ * a model that declared nothing still has to render something.
+ *
+ * `source` is the half that was missing. Each step down is a worse answer and
+ * every one of them used to be silent: a `Person` with `firstName`/`lastName`
+ * labels every option *Ada, Ada, Ada* and looks like it worked, and a model
+ * whose strings are all enums or foreign keys offers `1, 2, 3`. The caller
+ * decides what to do about it — the same shape as `controlFor` reporting a
+ * field it cannot place rather than dropping it.
+ *
+ *   declared      — @@label. Authoritative
+ *   conventional  — one of the names below. Usually right
+ *   scan          — the first plain string column. A guess
+ *   fallback      — nothing readable; the id
  *
  * One owner, because the alternative is every picker in every app choosing
  * differently — and a picker that shows `4` instead of `Ada Lovelace` is the
@@ -458,13 +558,24 @@ export function formFieldList(fields, { only, except, model } = {}) {
  */
 const _LABEL_FIELDS = ['name', 'title', 'label', 'displayName', 'reference', 'email', 'slug', 'code']
 
-export function labelFieldFor(fields, fallback = 'id') {
+export function labelFieldInfo(fields, fallback = 'id', declared = null) {
   const rules = fields && typeof fields === 'object' ? fields : {}
   const plain = (r) => r?.type === 'string' && !r.enum && !r.references && !r.readOnly
 
-  for (const name of _LABEL_FIELDS) if (plain(rules[name])) return name
-  for (const [name, rule] of Object.entries(rules)) if (plain(rule)) return name
-  return fallback
+  // A declaration is NOT checked against the rules map, and must not be. The
+  // schema refused every shape a picker cannot use before this ran, and the
+  // case the attribute exists for — a `@generated` full name — reaches the
+  // client `readOnly`, which the scan below skips by design. It is also absent
+  // from a create-mode registry, and a picker reads it off a row.
+  if (typeof declared === 'string' && declared) return { field: declared, source: 'declared' }
+
+  for (const name of _LABEL_FIELDS) if (plain(rules[name])) return { field: name, source: 'conventional' }
+  for (const [name, rule] of Object.entries(rules)) if (plain(rule)) return { field: name, source: 'scan' }
+  return { field: fallback, source: 'fallback' }
+}
+
+export function labelFieldFor(fields, fallback = 'id', declared = null) {
+  return labelFieldInfo(fields, fallback, declared).field
 }
 
 // ── Gate ──────────────────────────────────────────────────────────────────────
@@ -557,7 +668,21 @@ export function buildTransitions(schema) {
  * with `allowed: false` rather than dropped — rendering it disabled is usually
  * better than making it vanish, and the caller can filter if it disagrees.
  *
- * Mirrors litestone's `db.<model>.transitions(row)` field for field.
+ * ── It is the GATE half of litestone's answer, and only that half ────────────
+ *
+ * `db.<model>.transitions(row)` grades a row POLICY too, since a move is an
+ * update and an `@@allow('update', …)` refuses one exactly as a gate does
+ * (`FJS-495`). Nothing here can: a policy is compiled to SQL or evaluated
+ * against the row by litestone's own JS evaluator, and neither exists in a
+ * browser — which is why `x-transitions` carries the gate and not the
+ * predicate. So this answers `allowed: true` for a move a policy refuses, and
+ * `refusedBy` is `'gate'` or `null` where the server may also say `'policy'`.
+ *
+ * That is the documented affordance contract rather than a gap: unknown is
+ * permissive, the Data boundary refuses regardless, and the honest failure is a
+ * button that gets refused rather than one that is missing when it would have
+ * worked. A screen that needs the true list asks the SERVER for it — the same
+ * shape comes back off a service call, with the policy graded.
  *
  * @param {object|null} spec   from buildTransitions()
  * @param {object} row         the record to evaluate
@@ -574,7 +699,7 @@ export function transitionsAt(spec, row, level) {
       if (!Array.isArray(t?.from) || !t.from.includes(current)) continue
       const gate    = t.gate ?? null
       const allowed = gate == null || typeof level !== 'number' ? true : level >= gate
-      out.push({ name, field, from: current, to: t.to, gate, allowed })
+      out.push({ name, field, from: current, to: t.to, gate, allowed, refusedBy: allowed ? null : 'gate' })
     }
   }
   return out
@@ -845,7 +970,7 @@ export function toFieldErrors(err) {
   if (isStaleWrite(err)) return { fields, message: STALE_WRITE_MESSAGE }
 
   for (const e of _errorList(err)) {
-    const field = typeof e === 'object' && e !== null ? e.field : null
+    const field = typeof e === 'object' && e !== null ? _fieldOf(e) : null
     const text  = (typeof e === 'object' && e !== null ? e.message : e) ?? ''
     if (!text) continue
 
@@ -870,6 +995,20 @@ export function toFieldErrors(err) {
   }
 
   return { fields, message }
+}
+
+// Two boundaries name the offending field differently and both reach a form.
+// Junction's validator says `field`; litestone's `ValidationError` says
+// `path: ['colour']`, and it is the one that carries every rule a browser
+// cannot pre-check — a value set, a transition, a soft-deleted unique. Reading
+// only `field` sent all of those to the form-level message, where they render
+// away from the control they are about and `<Form>` cannot mark it invalid.
+function _fieldOf(e) {
+  if (e.field) return e.field
+  // A nested path is joined rather than dropped: a form field name is flat, so
+  // a dotted name matches nothing and falls to the message — which is the same
+  // place it would have gone, said truthfully.
+  return Array.isArray(e.path) ? e.path.join('.') || null : (e.path ?? null)
 }
 
 function _errorList(err) {
@@ -991,6 +1130,58 @@ export function normalizeBlanks(fields, data) {
 
     if (out === null) out = { ...data }
     out[name] = null
+  }
+
+  return out ?? data
+}
+
+// ── The columns the SERVER owns ───────────────────────────────────────────────
+
+/**
+ * Drop the fields a caller may not write from a create or patch payload.
+ *
+ * `@system`, `@generated`, `@computed`, `@from` and a tenancy stamp all reach
+ * the client as `readOnly`, which is what stops a generated form offering them
+ * and stops `make()` seeding them. Neither of those covers the case an EDIT form
+ * is: `<Form record={row}>` is handed a row the server sent, that row carries
+ * every column the caller could READ, and the whole record is what gets written
+ * back. So a form nobody typed a server-owned value into sends one.
+ *
+ * The Data boundary then refuses BY NAME — `@system` and `@guarded` are
+ * deliberately loud rather than silently dropped, because a payload naming one
+ * is code that meant to write it — and the person is shown a 403 about a column
+ * that is not on their screen.
+ *
+ * **The `@version` column is `readOnly` and must still travel**, which is why
+ * this takes a keep list rather than dropping everything marked read-only: the
+ * revision an update carries back is the one thing the server marks read-only
+ * and requires. It is not an exception to the rule so much as the reason the
+ * rule cannot be spelled `delete every readOnly key`.
+ *
+ * Only fields the rules KNOW about are dropped. A key with no rule behind it is
+ * left alone: an app may legitimately send something the model does not
+ * describe (a `@transient`, a custom method's own argument), and guessing about
+ * those is how a strip becomes the thing that breaks a working app.
+ *
+ * Returns the same object when nothing changed.
+ *
+ * @param {Record<string, object>} fields  from buildFieldRules()
+ * @param {object|object[]} data
+ * @param {{ keep?: string[] }} [opts]
+ */
+export function stripReadOnly(fields, data, opts = {}) {
+  if (Array.isArray(data)) return data.map(row => stripReadOnly(fields, row, opts))
+  if (!data || typeof data !== 'object') return data
+
+  const keep = new Set(opts.keep ?? [])
+  let out = null
+
+  for (const [name, rule] of Object.entries(fields ?? {})) {
+    if (!rule?.readOnly || keep.has(name)) continue
+    if (!Object.prototype.hasOwnProperty.call(data, name)) continue
+
+    if (out === null) out = { ...data }
+    delete out[name]
   }
 
   return out ?? data

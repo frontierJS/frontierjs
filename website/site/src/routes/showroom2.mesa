@@ -1,0 +1,190 @@
+---
+title: "FrontierJS — the walkthrough"
+description: "One model becomes a database, an API and a UI, fifteen steps at a time — every file as it stands, and what each line bought you."
+render: static
+publishes: 0
+---
+<!--
+  The walkthrough. Fifteen steps, all of them in the file.
+
+  The hand-written version rendered one step at a time from JavaScript, so what
+  a crawler read was a page with no code on it — and the code is the entire
+  argument. Every step is prerendered now and the island moves the selection.
+-->
+<script>
+  import Walkthrough from '../islands/Walkthrough.mesa'
+
+  export let data = null
+
+  const d = data ?? { acts: [], steps: [], total: 0 }
+</script>
+
+<main class="container main">
+  <p class="eyebrow">Walkthrough</p>
+  <h1>Build it once, step by step.</h1>
+  <p class="text-muted lede">
+    One model becomes a database, an API, and a UI. Step forward and watch the files
+    grow on the left — and what each line buys you on the right.
+  </p>
+
+  <div class="stage">
+
+    <!-- Left — every step, named -->
+    <nav class="rail" data-steps aria-label="Walkthrough steps">
+      {#each d.acts as a}
+        <p class="act-head"><strong>{a.name}</strong><span class="pkg">{a.pkgShort}</span></p>
+        {#each a.steps as s}
+          <button class="stepbtn" class:now={s.n === 0} data-n={s.n}
+                  aria-label={`Step ${s.n + 1}: ${s.title}`}>
+            <span class="n">{s.n + 1}</span><span>{s.title}</span>
+          </button>
+        {/each}
+      {/each}
+    </nav>
+
+    <!-- Right — the controls, then the file, then what it bought you.
+
+         The controls lead the column rather than closing it because the steps
+         are not the same height: at the bottom, Next moves under the pointer
+         between one step and the next. Up here its position depends only on
+         the header above it, which never changes. -->
+    <div class="work">
+
+      <div class="controls">
+        <button class="btn outlined" data-prev disabled>← Back</button>
+        <button class="btn" data-next>Next →</button>
+        <span class="counter" data-counter>Step 1 of {d.total}</span>
+        <span class="hint">Use <kbd>←</kbd> <kbd>→</kbd> to move</span>
+      </div>
+
+      <div data-panels>
+        {#each d.steps as s}
+          <div class="panel" class:is-shown={s.n === 0}>
+            <div>
+              <p class="filename"><span>{s.file}</span><span class="badge {s.tone}">{s.pkg}</span></p>
+              <pre class="code">{#each s.lines as l}<span class="ln" class:fresh={l.fresh}>{@html l.html}</span>{/each}</pre>
+              {#if s.nocode}
+                <div class="nocode">{s.nocode}</div>
+              {/if}
+            </div>
+
+            <div class="card resultcard">
+              <div class="resulthead">
+                <h2>{s.title}</h2>
+                <span class="badge {s.tone}">{s.act}</span>
+              </div>
+              <p class="text-sm text-muted say">{s.say}</p>
+              <p class="filename">{s.rlabel}</p>
+              <pre class="code">{@html s.result}</pre>
+            </div>
+          </div>
+        {/each}
+      </div>
+
+    </div>
+
+  </div>
+</main>
+
+<div class="container pagenote">
+  <span>Every sample is the real API — see <code>packages/junction/example/</code>.</span>
+  <span><a class="link" href="/showroom/">Prefer to browse? &rarr; Showroom</a></span>
+</div>
+
+<Walkthrough client:load />
+
+<style>
+h1 { font-size: clamp(1.6rem, 3.6vw, 2.3rem); line-height: 1.1; letter-spacing: -.03em; margin: .2em 0 .25em; }
+h2 { font-size: 1.15rem; margin: 0; letter-spacing: -.01em; }
+.eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+
+
+/* ── Stage: vertical step list beside a stacked work column ────────── */
+/* Not .steps/.step — @frontierjs/css owns both as its stepper component, and
+   .step sets text-align:center, which inherits into the <pre> and centres
+   every line of code inside it. */
+.stage { display: grid; gap: 2rem; align-items: start; margin-top: 2rem; }
+@media (min-width: 62rem) {
+  .stage { grid-template-columns: 17.5rem 1fr; }
+  .rail { position: sticky; top: 5.25rem; }
+}
+
+.rail { display: grid; gap: .1rem; }
+.act-head {
+  display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap;
+  font-size: .72rem; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--ink-mute); margin: 1.25rem 0 .4rem; padding-left: .7rem;
+}
+.act-head:first-child { margin-top: 0; }
+.act-head .pkg {
+  font-family: ui-monospace, Menlo, monospace; font-size: .68rem;
+  text-transform: none; letter-spacing: 0;
+}
+
+/* Own class, not .btn — background and color are both set here, so the
+   chip.css auto-contrast pairing is not involved. */
+.stepbtn {
+  display: flex; gap: .65rem; align-items: baseline; width: 100%; text-align: left;
+  font: inherit; font-size: .87rem; line-height: 1.35;
+  background: transparent; color: var(--ink-soft);
+  border: 0; border-left: 2px solid var(--rule);
+  border-radius: 0 6px 6px 0; padding: .5rem .75rem; cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
+}
+.stepbtn:hover { background: var(--surface-sunken); color: var(--ink); }
+.stepbtn .n {
+  font-variant-numeric: tabular-nums; font-size: .75rem;
+  color: var(--ink-mute); min-width: 1.25rem; flex: none;
+}
+.stepbtn.done { color: var(--ink); border-left-color: var(--color-success); }
+.stepbtn.done .n { color: var(--color-success); }
+.stepbtn.now {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  border-left-color: var(--color-primary);
+  color: var(--ink); font-weight: 600;
+}
+.stepbtn.now .n { color: var(--color-primary); }
+
+/* Right column — the file on top, what it bought you underneath. */
+.work { display: grid; gap: 1.25rem; }
+
+.filename {
+  font-family: ui-monospace, Menlo, monospace; font-size: .78rem;
+  color: var(--ink-mute); margin: 0 0 .4rem; display: flex; gap: .5rem; align-items: center;
+}
+.ln { display: block; padding: 0 .35rem; margin: 0 -.35rem; border-radius: 4px; }
+.ln.fresh { background: color-mix(in srgb, var(--color-success) 15%, transparent); }
+
+.nocode {
+  border: 1px dashed var(--rule-strong); border-radius: 10px;
+  padding: .7rem .9rem; font-size: .84rem; color: var(--ink-soft);
+  background: color-mix(in srgb, var(--color-success) 7%, transparent);
+}
+
+.controls {
+  display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  padding-bottom: 1rem; border-bottom: 1px solid var(--rule);
+}
+.counter { font-size: .82rem; color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+.hint { font-size: .78rem; color: var(--ink-mute); margin-left: auto; }
+.hint kbd {
+  font-family: ui-monospace, Menlo, monospace; font-size: .72rem;
+  border: 1px solid var(--rule-strong); border-radius: 4px; padding: 0 .3rem; background: var(--surface-sunken);
+}
+
+/* Untoned .btn.outlined paints --color-primary on --surface — 3.96:1 in the
+   default theme and 1.99:1 in elite, both below AA. Take the neutral ink,
+   exactly as .btn.ghost does and for the same reason. Safe to set color
+   alone: outlined's background is --surface, not the derived --fill. */
+.btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+
+/* All fifteen steps are in the file and one is shown. */
+.panel { display: none; }
+.panel.is-shown { display: contents; }
+
+.main { padding-top: 2.5rem; }
+.lede { max-width: 56ch; margin: 0; }
+.resulthead { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.resulthead h2 { margin: 0; }
+.say { margin: .4rem 0 1rem; }
+</style>

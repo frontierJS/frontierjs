@@ -100,7 +100,16 @@ describe('transitionsAt — the button list', () => {
 
   test('carries where it came from and where it goes', () => {
     const pay = transitionsAt(spec(), { status: 'pending' }, 4).find(t => t.name === 'pay')
-    expect(pay).toEqual({ name: 'pay', field: 'status', from: 'pending', to: 'paid', gate: null, allowed: true })
+    expect(pay).toEqual({ name: 'pay', field: 'status', from: 'pending', to: 'paid', gate: null, allowed: true, refusedBy: null })
+  })
+
+  test("refusedBy is 'gate' or nothing — this half cannot see a policy", () => {
+    // The server's answer to the same question may say `'policy'`; a browser
+    // holds no policy engine, so a move an @@allow refuses reads as allowed
+    // here and is refused at the boundary (`FJS-495`). Asserted so the two
+    // shapes cannot quietly diverge again.
+    const moves = transitionsAt(spec(), { status: 'paid' }, 4)
+    expect(moves.every(t => t.refusedBy === (t.allowed ? null : 'gate'))).toBe(true)
   })
 
   test('a gated move below the level is reported disabled, not dropped', () => {

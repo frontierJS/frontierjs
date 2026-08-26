@@ -22,6 +22,7 @@ import {
 import { dirname }    from 'path'
 import { Database }   from 'bun:sqlite'
 import { buildWhere } from '../core/query.js'
+import { ID_GENERATORS } from '../core/ids.js'
 import { compactJsonl } from '../tools/retention.js'
 
 // ─── File I/O ─────────────────────────────────────────────────────────────────
@@ -152,7 +153,10 @@ function resolveDefault(field) {
   if (!def) return undefined
   const v = def.value
   if (v.kind === 'call'    && v.fn === 'now')  return new Date().toISOString()
-  if (v.kind === 'call'    && v.fn === 'uuid') return crypto.randomUUID()
+  // A jsonl table has no DDL, so every generated default is filled here — where
+  // a SQLite table gets uuid() from its column DEFAULT and the other three from
+  // the client's insert path (core/ids.js is the shared owner).
+  if (v.kind === 'call'    && ID_GENERATORS[v.fn]) return ID_GENERATORS[v.fn]()
   if (v.kind === 'string')  return v.value
   if (v.kind === 'number')  return v.value
   if (v.kind === 'boolean') return v.value
@@ -283,9 +287,18 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
     const cols = [...indexedFieldNames, '_offset']
     const vals = [...indexedFieldNames.map(c => record[c] ?? null), offset]
 
-    // With @id: INSERT OR REPLACE so re-indexing a known id updates its offset.
-    // Without @id: plain INSERT — _offset is always unique (each line has its own position).
-    const verb = idName ? 'INSERT OR REPLACE' : 'INSERT'
+    // INSERT OR REPLACE either way. With `@id` it updates a known id's offset;
+    // without one, `_offset` is the primary key and a plain INSERT throws the
+    // moment anything writes a line at a position the index already holds.
+    //
+    // That is not hypothetical and it is not a race inside one client: a jsonl
+    // or logger database is schema-GLOBAL under `tenancy { strategy database }`,
+    // so every tenant's client writes the audit trail through its own driver
+    // instance over one file, and the first second shop to be opened crashed the
+    // app with `UNIQUE constraint failed: auditLogs_idx._offset` — from inside
+    // an audit write, about a table nobody named. `refillIndex` next to this has
+    // always used OR REPLACE for the same reason.
+    const verb = 'INSERT OR REPLACE'
     // db.query() caches the compiled statement (db.prepare compiles fresh every call)
     db.query(
       `${verb} INTO "${model.name}_idx" (${cols.map(c => `"${c}"`).join(', ')}) ` +

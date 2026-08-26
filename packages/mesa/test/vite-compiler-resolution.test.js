@@ -65,7 +65,7 @@ describe('finding the compiler', () => {
     const plugin = await freshPlugin({ hmr: false })
     const { code } = await transform(plugin, '<script>\nlet a = 1\n</script><p>{a}</p>')
 
-    expect(code).toContain('$runtime.template')
+    expect(code).toContain('$$runtime.template')
   })
 
   test('compilerPath wins over the sibling', async () => {
@@ -79,7 +79,7 @@ describe('finding the compiler', () => {
     const plugin   = await freshPlugin({ compilerPath: '/nope/compiler.js', hmr: false })
     const { code } = await transform(plugin, '<script>\nlet a = 1\n</script><p>{a}</p>')
 
-    expect(code).toContain('$runtime.template')
+    expect(code).toContain('$$runtime.template')
   })
 
   // The memo is per module instance, not per plugin instance. Two plugins in one

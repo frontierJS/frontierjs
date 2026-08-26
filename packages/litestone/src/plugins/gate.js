@@ -157,6 +157,12 @@ function makeLevelCache(getLevel, auth) {
 // *describes* the gate rather than enforcing it — the generated matrix, the
 // access snapshot — asks this rather than restating the comparison, because a
 // second copy is an artefact that certifies access the plugin does not grant.
+//
+// A per-move @gate is on the same scale and asks here too: `checkTransitions`
+// enforcing one and `transitions()` describing one each spelled the comparison
+// by hand, and a hand-spelled `>=` reads 8 as a rung rather than a sentinel.
+// The independent copy is `expectedVerdict` in access.js, which is an oracle
+// and says at its own declaration why it must not call this.
 export function levelPasses(required, userLevel) {
   if (required === 9) return false               // LOCKED — asSystem() included
   if (required === 8) return userLevel === 8     // SYSTEM — SYSADMIN(7) is not it

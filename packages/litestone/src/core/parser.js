@@ -5,6 +5,7 @@
 const TK = {
   IDENT:    'IDENT',
   STRING:   'STRING',
+  TEMPLATE: 'TEMPLATE', // `…` — a template, never raw SQL
   NUMBER:   'NUMBER',
   BOOL:     'BOOL',
   AT:       'AT',       // @
@@ -42,6 +43,12 @@ const POLICY_OPERATORS = ['==', '!=', '<', '>', '<=', '>=', 'in']
 // Enough of an expression to point at in a parse error. The full printer lives
 // in core/policy.js, which the parser must not import — parsing is what
 // produces the AST that printer reads.
+// What a `@values` binding may say about a value the set does not contain.
+// `required` refuses it, `open` accepts it AND adds it to the set, `suggested`
+// accepts it and leaves the set alone. Unstated is `required`, fail-closed —
+// the other default takes typos in silence (`FJS-D120`).
+const VALUE_STRENGTHS = new Set(['required', 'open', 'suggested'])
+
 function policySourceHint(node) {
   if (!node || typeof node !== 'object') return '…'
   switch (node.type) {
@@ -160,6 +167,24 @@ function tokenize(src) {
       advance(); continue
     }
 
+    // Template literal — backticks. A separate token kind from a quoted string
+    // because the two are different LANGUAGES at the one place that takes both:
+    // `@generated("…")` is SQL and `@generated(`…`)` is a template. Accepting a
+    // backtick as an ordinary string would make every other attribute take one
+    // and mean nothing by it.
+    if (src[i] === '`') {
+      advance()
+      let str = ''
+      while (i < src.length && src[i] !== '`') {
+        if (src[i] === '\\') { advance(); str += src[i] } else { str += src[i] }
+        advance()
+      }
+      if (i >= src.length) throw new ParseError('Unterminated template literal — no closing `', { ...pos })
+      advance() // closing backtick
+      tokens.push({ type: TK.TEMPLATE, value: str, ...pos })
+      continue
+    }
+
     // String literal
     if (src[i] === '"' || src[i] === "'") {
       const quote = src[i]
@@ -257,6 +282,70 @@ const LEVEL_NAMES = {
   LOCKED:   9,  // absolute wall
 }
 
+// ─── @generated template compiler ─────────────────────────────────────────────
+//
+// `"{firstName} {lastName}"` → SQL producing that string from this row.
+// `{name}` is a column, everything else is literal text, and a NULL column
+// takes the separator beside it rather than leaving a hole.
+//
+// Two shapes come out, because SQLite has an exact answer for the common one.
+// Where every gap between fields is the SAME text and nothing sits outside the
+// fields, that is `concat_ws(sep, …)`: it drops a NULL argument and the
+// separator that would have followed it, which is precisely what the template
+// means, and it is one function call rather than a chain.
+//
+// A template with mixed or outer literals has no single separator, so each
+// field is paired with the text preceding it and the pair vanishes together —
+// `coalesce('-' || "year", '')` is empty when `year` is NULL, taking the dash
+// with it. The chain is wrapped in `trim()` because the leading literal has no
+// field to disappear with.
+
+function sqlText(s) { return `'${s.replace(/'/g, "''")}'` }
+
+export function compileFormat(tpl) {
+  // Segments: literal text and {field} references, in order.
+  const segs = []
+  const re   = /\{([^}]*)\}/g
+  let last = 0, m
+  while ((m = re.exec(tpl)) !== null) {
+    if (m.index > last) segs.push({ lit: tpl.slice(last, m.index) })
+    const name = m[1]
+    if (!/^\w+$/.test(name))
+      throw new Error(`'{${name}}' is not a field name — a template reference is {fieldName}, and everything outside the braces is literal text`)
+    segs.push({ field: name })
+    last = re.lastIndex
+  }
+  if (last < tpl.length) segs.push({ lit: tpl.slice(last) })
+
+  const fields = segs.filter(s => s.field)
+  if (!fields.length)
+    throw new Error(`the template \`${tpl}\` names no field, so it is a constant — a column that is the same for every row belongs in @default`)
+
+  // The exact shape: fields separated by one repeated literal, nothing outside.
+  const inner = segs.slice(
+    segs[0].field ? 0 : 1,
+    segs[segs.length - 1].field ? segs.length : segs.length - 1,
+  )
+  const outerLit = !segs[0].field || !segs[segs.length - 1].field
+  const gaps     = inner.filter(s => s.lit).map(s => s.lit)
+  const uniform  = gaps.length === fields.length - 1 && new Set(gaps).size <= 1
+  if (!outerLit && uniform)
+    return `concat_ws(${sqlText(gaps[0] ?? ' ')}, ${fields.map(f => `"${f.field}"`).join(', ')})`
+
+  // The general shape: every field carries the literal in front of it.
+  const parts = []
+  let pending = ''
+  for (const seg of segs) {
+    if (seg.lit) { pending += seg.lit; continue }
+    parts.push(pending
+      ? `coalesce(${sqlText(pending)} || "${seg.field}", '')`
+      : `coalesce("${seg.field}", '')`)
+    pending = ''
+  }
+  if (pending) parts.push(sqlText(pending))
+  return `trim(${parts.join(' || ')})`
+}
+
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
 class Parser {
@@ -298,7 +387,7 @@ class Parser {
   // ── Top level ───────────────────────────────────────────────────────────────
 
   parseSchema() {
-    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], tenancy: null }
+    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], valuesets: [], extends: [], tenancy: null }
 
     while (!this.isEOF()) {
       const comments = this.docComments()
@@ -315,6 +404,8 @@ class Parser {
         if (schema.tenancy)
           throw new ParseError(`tenancy is declared twice — a schema has one tenancy block`, t)
         schema.tenancy = this.parseTenancy()
+      } else if (t.type === TK.IDENT && t.value === 'extend') {
+        schema.extends.push(this.parseExtend(comments))
       } else if (t.type === TK.IDENT && t.value === 'model') {
         schema.models.push(this.parseModel(comments))
       } else if (t.type === TK.IDENT && t.value === 'view') {
@@ -327,8 +418,10 @@ class Parser {
         schema.traits.push(this.parseTrait(comments))
       } else if (t.type === TK.IDENT && t.value === 'type') {
         schema.types.push(this.parseType(comments))
+      } else if (t.type === TK.IDENT && t.value === 'valueset') {
+        schema.valuesets.push(this.parseValueSet(comments))
       } else {
-        throw new ParseError(`Unexpected token '${t.value}' — expected database, tenancy, model, view, enum, function, trait, type, or import`, t)
+        throw new ParseError(`Unexpected token '${t.value}' — expected database, tenancy, model, extend, view, enum, function, trait, type, valueset, or import`, t)
       }
     }
 
@@ -371,7 +464,7 @@ class Parser {
           break
         case 'driver': {
           const val = this.eat(TK.IDENT).value
-          if (val !== 'sqlite' && val !== 'jsonl' && val !== 'logger')
+          if (!DATABASE_DRIVERS.has(val))
             throw new ParseError(`database '${name}': driver must be 'sqlite', 'jsonl', or 'logger', got '${val}'`, this.peek())
           driver = val
           break
@@ -718,6 +811,51 @@ class Parser {
     return { name, comments, fields, attributes }
   }
 
+  // ── Extend ──────────────────────────────────────────────────────────────────
+  //
+  // `extend model Credential { ... }` — what an app has to say about a model it
+  // did not write.
+  //
+  // The case is a package that ships `.lite` (`@frontierjs/auth`, junction's
+  // outbox). The package owns the columns; the APP owns where those rows sit in
+  // its own schema — the relation back to its User, whether they are audited,
+  // and, under row tenancy, that they span tenants. None of that can go in the
+  // shipped file, because a package cannot know it.
+  //
+  // Without this the only way to say it was to paste the models in and edit
+  // them, which is what basecamp did for four models. A copy stops being the
+  // package's the first time either side moves and nothing fails: the copy had
+  // `@guarded(all)` where the package says `@secret`, so basecamp stored every
+  // OAuth token in plain text, and its own 137 tests were green throughout.
+  //
+  // The opposite direction of `@@trait`, and both exist: a trait is opted INTO
+  // by the model, which requires the model's author to have known about it.
+  parseExtend(comments = []) {
+    this.eatIdent('extend')
+    this.eatIdent('model')
+    const name = this.eat(TK.IDENT).value
+    this.eat(TK.LBRACE)
+
+    const fields     = []
+    const attributes = []
+
+    while (!this.check(TK.RBRACE)) {
+      const fieldComments = this.docComments()
+
+      if (this.check(TK.ATAT)) {
+        attributes.push(this.parseModelAttribute())
+      } else if (this.check(TK.IDENT)) {
+        fields.push(this.parseField(fieldComments))
+      } else {
+        const t = this.peek()
+        throw new ParseError(`Unexpected token '${t.value}' inside extend model '${name}'`, t)
+      }
+    }
+
+    this.eat(TK.RBRACE)
+    return { name, comments, fields, attributes }
+  }
+
   // ── Trait ───────────────────────────────────────────────────────────────────
   //
   // A trait is a reusable model fragment — fields and model-level attributes
@@ -856,6 +994,27 @@ class Parser {
       case 'scoped': return { kind: 'scoped', ...this.parseScoped() }
 
       case 'computed':   return { kind: 'computed' }
+      // @values(TaskTag)             — required, the default
+      // @values(TaskTag, open)       — a value outside the set is accepted AND joins it
+      // @values(LeadSource, suggested) — accepted, the set is offered and not enforced
+      //
+      // Beside @relation rather than instead of it: storage (a foreign key with
+      // referential integrity) and resolution (where the offered values come
+      // from, and what is legal) are two facts about one column.
+      case 'values': {
+        this.eat(TK.LPAREN)
+        const set = this.eat(TK.IDENT).value
+        let strength = 'required'
+        if (this.maybeEat(TK.COMMA)) {
+          const tok = this.peek()
+          strength  = this.eat(TK.IDENT).value
+          if (!VALUE_STRENGTHS.has(strength)) throw new ParseError(
+            `@values(${set}, ${strength}): unknown strength. One of ${[...VALUE_STRENGTHS].join(', ')}. ` +
+            `Unstated is 'required'.`, tok)
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'values', set, strength }
+      }
 
       // @transient → a field the caller WRITES that is never stored.
       //
@@ -898,6 +1057,15 @@ class Parser {
         return { kind: 'derived', expr }
       }
       case 'hardDelete': return { kind: 'hardDelete' }
+
+      // On a hasMany field of a @@softDelete parent: these children stay LIVE
+      // when the parent is soft-deleted. The third fate a child can have, and
+      // the two that already had a spelling are cascade (@@softDelete(cascade))
+      // and destruction (@hardDelete) — so *the child outlives the parent* was
+      // the one shape that could only be written by leaving the warning about
+      // it in place. A financial record outliving the person it belongs to is
+      // that shape, and it is not rare.
+      case 'keep': return { kind: 'keep' }
 
       // ── Field visibility + access control ─────────────────────────────────
       case 'omit': {
@@ -1342,15 +1510,31 @@ class Parser {
     return s
   }
 
+  // @generated takes two languages and the QUOTE says which.
+  //
+  //   @generated("{qty} * {price}")        SQL, with {field} → "field"
+  //   @generated(`{firstName} {lastName}`) a template: the string it produces
+  //
+  // `{field}` means the same thing in both — this row's column — so the only
+  // thing the delimiter changes is what the text AROUND the braces is. In SQL
+  // it is an expression; in a template it is literal text, and a NULL column
+  // takes the separator beside it (compileFormat).
   parseGenerated() {
     this.eat(TK.LPAREN)
-    const raw    = this.eat(TK.STRING).value
-    const stored = this.check(TK.COMMA) && (this.advance(), this.eat(TK.IDENT).value === 'stored')
+    const tok      = this.peek()
+    const template = this.check(TK.TEMPLATE)
+    const raw      = template ? this.eat(TK.TEMPLATE).value : this.eat(TK.STRING).value
+    const stored   = this.check(TK.COMMA) && (this.advance(), this.eat(TK.IDENT).value === 'stored')
     this.eat(TK.RPAREN)
-    // Expand {fieldName} → "fieldName" so no quote-escaping is needed in the schema.
-    // @generated("{price} * 1.08") becomes "price" * 1.08 in SQL.
-    const expr = raw.replace(/\{(\w+)\}/g, '"$1"')
-    return { expr, stored }
+    if (!template) {
+      // Expand {fieldName} → "fieldName" so no quote-escaping is needed in the schema.
+      // @generated("{price} * 1.08") becomes "price" * 1.08 in SQL.
+      return { expr: raw.replace(/\{(\w+)\}/g, '"$1"'), stored }
+    }
+    let expr
+    try { expr = compileFormat(raw) }
+    catch (e) { throw new ParseError(e.message, tok) }
+    return { expr, stored, template: raw }
   }
 
   // ── @from parser ────────────────────────────────────────────────────────────
@@ -1730,7 +1914,31 @@ class Parser {
 
     switch (name) {
       case 'index':  return { kind: 'index',       fields: this.parseFieldListParen() }
-      case 'unique': return { kind: 'uniqueIndex',  fields: this.parseFieldListParen() }
+      // @@unique([a, b])                        — the tuple identifies a row
+      // @@unique([a, b], nullsDistinct: true)   — and rows with a NULL member are
+      //                                           deliberately not constrained
+      //
+      // SQL's own word for what SQLite does: two NULLs never compare equal, so a
+      // UNIQUE index admits `(1, NULL)` twice. Declaring it is how a schema says
+      // that is the shape it wants — validate() refuses a nullable member
+      // otherwise, because the silent version is a constraint an app believes
+      // it has.
+      case 'unique': {
+        this.eat(TK.LPAREN)
+        const fields = this.parseFieldList()
+        let nullsDistinct = false
+        if (this.maybeEat(TK.COMMA)) {
+          const argName = this.eat(TK.IDENT).value
+          if (argName !== 'nullsDistinct')
+            throw new ParseError(`@@unique: unknown argument '${argName}' — expected 'nullsDistinct'`, this.peek())
+          this.eat(TK.COLON)
+          if (!this.check(TK.BOOL))
+            throw new ParseError(`@@unique(nullsDistinct: …): expected true or false`, this.peek())
+          nullsDistinct = this.eat(TK.BOOL).value === true
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'uniqueIndex', fields, nullsDistinct }
+      }
       case 'strict':   return { kind: 'strict' }    // legacy explicit opt-in
       case 'noStrict': return { kind: 'noStrict' }  // opt-out from default strict
       case 'fts': {
@@ -1744,7 +1952,6 @@ class Parser {
         // is character-overlap (fuzzy); porter applies English stemming;
         // ascii is lowercase-ASCII fold. The model picks one. Unknown values
         // throw at parse time.
-        const ALLOWED_TOKENIZERS = new Set(['unicode61', 'ascii', 'porter', 'trigram'])
         this.eat(TK.LPAREN)
         const fields = this.parseFieldList()
         let tokenize = 'unicode61'   // FTS5 default — same behavior as before this change
@@ -1766,6 +1973,20 @@ class Parser {
         return { kind: 'fts', fields, tokenize }
       }
       case 'map':    return { kind: 'map',          name: this.parseParenString() }
+      // @@label(fullName) — which column a picker SHOWS for a row of this model.
+      // A bare identifier because it names a field, like @@index and
+      // @@transitions do; a quoted one is the shape that looks like a caption.
+      case 'label': {
+        this.eat(TK.LPAREN)
+        if (this.check(TK.STRING)) throw new ParseError(
+          `@@label takes a field NAME, not a string — @@label(${JSON.stringify(this.peek().value)}) ` +
+          `should be @@label(${this.peek().value}). A caption for one field is @label("…") on that field.`,
+          this.peek(),
+        )
+        const field = this.eat(TK.IDENT).value
+        this.eat(TK.RPAREN)
+        return { kind: 'labelField', field }
+      }
       case 'external': return { kind: 'external' }  // table exists outside migrations
       case 'softDelete': {
         // @@softDelete          — soft delete, no cascade
@@ -2034,22 +2255,34 @@ class Parser {
         this.eat(TK.COLON)
       }
 
+      // A state is an enum member or a boolean literal. `true`/`false` are their
+      // own token, so an enum-only reader stopped at the tokeniser and the
+      // commonest two-state machine in any schema had no declaration at all.
+      const state = () => this.check(TK.BOOL) ? this.eat(TK.BOOL).value : this.eat(TK.IDENT).value
+
       // from — a single value or [a, b, ...]
       let from
       if (this.check(TK.LBRACKET)) {
         this.eat(TK.LBRACKET)
-        from = [this.eat(TK.IDENT).value]
-        while (this.maybeEat(TK.COMMA)) from.push(this.eat(TK.IDENT).value)
+        from = [state()]
+        while (this.maybeEat(TK.COMMA)) from.push(state())
         this.eat(TK.RBRACKET)
       } else {
-        from = [this.eat(TK.IDENT).value]
+        from = [state()]
       }
 
       const arrow = this.advance()
       if (arrow.type !== TK.ARROW)
         throw new ParseError(`@@transitions(${field}): expected '->' after '${from.join(', ')}', got '${arrow.value}'`, arrow)
 
-      const to = this.eat(TK.IDENT).value
+      const to = state()
+      // Unnamed moves are named after the target state, which reads on an enum
+      // (`-> refunded` is `refund`) and says nothing on a boolean: `true` is not
+      // the name of anything a person does. So a boolean move states its own.
+      if (name === null && typeof to === 'boolean')
+        throw new ParseError(
+          `@@transitions(${field}): a boolean move must be named — '-> ${to}' says which value it writes, ` +
+          `not what it does. Write \`promote: false -> true\`.`, this.peek())
       if (name === null) name = to   // unnamed → named after the target state
 
       // Optional @gate(N) — the minimum level allowed to make this move
@@ -2096,6 +2329,56 @@ class Parser {
 
   // ── Enum ────────────────────────────────────────────────────────────────────
 
+  // ── Value set ───────────────────────────────────────────────────────────────
+  // A NAME for a scoped list of rows, so a picker's options and a column's
+  // legality come from one declaration instead of a hand-written service, a
+  // hand-written control and a hand-written validator per list (`FJS-D120`).
+  //
+  //   valueset TaskTag {
+  //     source Tag                  // the model the rows come from
+  //     value  label                // the column a record STORES — default @id
+  //     scope  mine                 // a @@scope declared on the source
+  //     where  "archivedAt IS NULL"
+  //   }
+  //
+  // There is no `binding` here: a strength is a property of the FIELD, not of
+  // the list, because one list is legitimately enforced on one field and merely
+  // offered on another. It goes on `@values(Name, strength)`.
+  parseValueSet(comments = []) {
+    this.eatIdent('valueset')
+    const nameTok = this.peek()
+    const name    = this.eat(TK.IDENT).value
+    this.eat(TK.LBRACE)
+
+    let source = null, value = null, scope = null, where = null
+    const seen = new Set()
+
+    while (!this.check(TK.RBRACE)) {
+      const keyTok = this.peek()
+      const key    = this.eat(TK.IDENT).value
+      if (seen.has(key)) throw new ParseError(`valueset '${name}': '${key}' is declared twice`, keyTok)
+      seen.add(key)
+
+      switch (key) {
+        case 'source': source = this.eat(TK.IDENT).value;  break
+        case 'value':  value  = this.eat(TK.IDENT).value;  break
+        case 'scope':  scope  = this.eat(TK.IDENT).value;  break
+        case 'where':  where  = this.eat(TK.STRING).value; break
+        default:
+          throw new ParseError(
+            `valueset '${name}': unknown key '${key}'. A value set takes source, value, scope and where. ` +
+            `A strength is not one of them — it goes on the field, as @values(${name}, required|open|suggested), ` +
+            `because one list can be enforced on one field and only offered on another.`,
+            keyTok,
+          )
+      }
+    }
+    this.eat(TK.RBRACE)
+
+    if (!source) throw new ParseError(`valueset '${name}': no 'source' — a value set is a named list of rows from one model`, nameTok)
+    return { name, source, value, scope, where, comments }
+  }
+
   parseEnum(comments = []) {
     this.eatIdent('enum')
     const name   = this.eat(TK.IDENT).value
@@ -2130,13 +2413,47 @@ class Parser {
           if (arrow.type !== TK.ARROW)
             throw new ParseError(`Expected '->' in transition '${tName}', got '${arrow.value}'`, arrow)
           const to = this.eat(TK.IDENT).value
+          // A gate is a MODEL concern: one enum can drive a machine on two
+          // models that answer to different authority, and this block is shared
+          // by both. Caught by name because the generic parse failure here is
+          // `Expected IDENT, got '@'`, which says neither why nor where it goes.
+          if (this.check(TK.AT))
+            throw new ParseError(
+              `Enum '${name}', transition '${tName}': a gate cannot go on the enum's shared block — ` +
+              `one enum can drive the same move on two models that answer to different authority. ` +
+              `Declare @@transitions(<field>, ${tName}: ${froms.join(', ')} -> ${to} @gate(N)) on the model, ` +
+              `which overrides this block for that field.`, this.peek())
           if (tName in transitions)
             throw new ParseError(`Enum '${name}': duplicate transition name '${tName}'`, this.peek())
           transitions[tName] = { from: froms, to }
         }
         this.eat(TK.RBRACE)
       } else {
-        values.push({ name: this.eat(TK.IDENT).value, comments: enumComments })
+        const vName = this.eat(TK.IDENT).value
+
+        // A member takes attributes through the SAME parser a field's do, so
+        // there is one grammar for `@label("…")` rather than a second one that
+        // accepts a slightly different string literal. What a member may carry
+        // is narrower than what a field may, and the refusal names the member:
+        // an attribute that parses and then does nothing is the shape a reader
+        // assumes is working.
+        let label
+        while (this.check(TK.AT)) {
+          const at   = this.peek()
+          const attr = this.parseFieldAttribute()
+          if (attr.kind !== 'label') throw new ParseError(
+            `Enum '${name}', member '${vName}': @${attr.kind} is not allowed on an enum member. ` +
+            `Only @label("…") is — a member is a symbol, not a column.`,
+            at,
+          )
+          if (label !== undefined) throw new ParseError(
+            `Enum '${name}', member '${vName}': duplicate @label`,
+            at,
+          )
+          label = attr.text
+        }
+
+        values.push({ name: vName, comments: enumComments, ...(label === undefined ? {} : { label }) })
       }
     }
 
@@ -2199,8 +2516,87 @@ function normalisePolicyOps(str, token) {
 // schema.traits is preserved (for introspection / typegen / docs) but
 // not used by anything else downstream.
 
-const TRAIT_FORBIDDEN_FIELD_ATTRS = new Set(['id'])
-const TRAIT_FORBIDDEN_MODEL_ATTRS = new Set(['id', 'map', 'db', 'fts'])
+// Enumerated argument values, hoisted so they are readable as data rather than
+// as a literal inside the arm that happens to check them — `catalog.js` restates
+// them and `test/catalog.test.ts` binds the two.
+export const ALLOWED_TOKENIZERS   = new Set(['unicode61', 'ascii', 'porter', 'trigram'])
+export const ON_DELETE_ACTIONS    = new Set(['Cascade', 'SetNull', 'Restrict', 'NoAction'])
+export const DATABASE_DRIVERS     = new Set(['sqlite', 'jsonl', 'logger'])
+
+export const TRAIT_FORBIDDEN_FIELD_ATTRS = new Set(['id'])
+export const TRAIT_FORBIDDEN_MODEL_ATTRS = new Set(['id', 'map', 'db', 'fts'])
+
+// Attributes a model may legitimately carry more than one of. Everything else
+// is a single answer, so a second one is two answers and is refused rather than
+// silently won by whichever the merge put last.
+export const REPEATABLE_MODEL_ATTRS = new Set([
+  'allow', 'deny', 'index', 'unique', 'check', 'trait',
+])
+
+/**
+ * Splice every `extend model X` into the `model X` it names.
+ *
+ * Runs BEFORE traits, so an extend may bring a `@@trait(T)` with it.
+ *
+ * Three things are refused rather than resolved, and each is a real mistake
+ * wearing the look of a working schema:
+ *
+ *   · an extend naming no model — a typo does nothing at all, forever
+ *   · a field the base already declares — that is editing a package's column,
+ *     which is the copy this feature exists to remove
+ *   · a second answer to a single-valued attribute — `@@gate` twice is not a
+ *     narrowing, it is two statements about who may read the table
+ */
+function resolveExtends(schema) {
+  const errors  = []
+  const extends_ = schema.extends ?? []
+  if (!extends_.length) return errors
+
+  const byName = new Map()
+  for (const m of schema.models) byName.set(m.name, m)
+
+  for (const ext of extends_) {
+    const model = byName.get(ext.name)
+    if (!model) {
+      // Named, with what IS there: the common cause is a misspelling or an
+      // import that did not resolve, and both read as "my extend did nothing".
+      const known = schema.models.map(m => m.name).sort().join(', ')
+      errors.push(
+        `extend model '${ext.name}': no model '${ext.name}' is declared or imported. ` +
+        `Declared: ${known || '(none)'}`
+      )
+      continue
+    }
+
+    const hostFields = new Set(model.fields.map(f => f.name))
+    for (const f of ext.fields) {
+      if (hostFields.has(f.name)) {
+        errors.push(
+          `extend model '${ext.name}': field '${f.name}' is already declared by the model. ` +
+          `An extend adds; it cannot redefine a column its owner declared.`
+        )
+        continue
+      }
+      hostFields.add(f.name)
+      model.fields.push(f)
+    }
+
+    const hostAttrs = new Set(model.attributes.map(a => a.kind))
+    for (const attr of ext.attributes) {
+      if (!REPEATABLE_MODEL_ATTRS.has(attr.kind) && hostAttrs.has(attr.kind)) {
+        errors.push(
+          `extend model '${ext.name}': @@${attr.kind} is already declared by the model, ` +
+          `and it takes one answer. Change it where the model is declared, or drop it here.`
+        )
+        continue
+      }
+      hostAttrs.add(attr.kind)
+      model.attributes.push(attr)
+    }
+  }
+
+  return errors
+}
 
 function resolveTraits(schema) {
   const errors = []
@@ -2374,12 +2770,18 @@ function resolveTraits(schema) {
 //   2. Every `Json @type(T)` reference is checked: T exists, target field
 //      is a Json type, no nested cycles in `Json @type` chains.
 
-const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
+export const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   'id', 'unique', 'map', 'relation', 'generated', 'from',
   'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'allow', 'deny',
+  // Not because the SET has no table — it does — but because nothing on this
+  // path runs the check. A `type` describes a shape inside a Json column or a
+  // custom method's declared input; neither reaches litestone's write path,
+  // where `enforceValueSets` lives, so a binding here would be a declaration
+  // that silently enforces nothing.
+  'values',
 ])
-const TYPE_FORBIDDEN_FIELD_TYPES = new Set(['File', 'Bytes'])
-const TYPE_DEFAULT_FORBIDDEN_KINDS = new Set(['now', 'cuid', 'ulid', 'uuid', 'auth'])
+export const TYPE_FORBIDDEN_FIELD_TYPES = new Set(['File', 'Bytes'])
+export const TYPE_DEFAULT_FORBIDDEN_KINDS = new Set(['now', 'cuid', 'ulid', 'uuid', 'nanoid', 'auth'])
 
 function validateTypes(schema) {
   const errors = []
@@ -2967,8 +3369,11 @@ const lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1)
  * `if (!fkCol) continue  // validation catches this` — validation did not, so a
  * derived field with no relation behind it was silently absent from every row.
  *
- * Returns `{ fkCol, refCol }` — the FK column on the target table and the
- * column it references on `model` — or `null` when no relation joins them.
+ * Returns `{ fkCols, refCols }` — the FK columns on the target table and the
+ * columns they reference on `model`, index-aligned — or `null` when no relation
+ * joins them. ARRAYS, because a composite key correlated on its first column
+ * alone answers a count of every row sharing that column: plausible, real, and
+ * an answer to a question nobody asked (`FJS-377`).
  */
 export function inferFromFk(model, targetModel, via = null) {
   const idField = model.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
@@ -2983,14 +3388,13 @@ export function inferFromFk(model, targetModel, via = null) {
     if (f.type.name !== model.name) continue
     const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
     if (!rel) continue
-    candidates.push({
-      field:  f.name,
-      name:   rel.name ?? null,
-      fkCol:  Array.isArray(rel.fields) ? rel.fields[0] : rel.fields,
-      // Relations may reference a non-PK @unique column, so read it rather than
-      // assuming the primary key.
-      refCol: (Array.isArray(rel.references) ? rel.references[0] : rel.references) ?? idField,
-    })
+    const fkCols  = Array.isArray(rel.fields) ? rel.fields : [rel.fields]
+    // Relations may reference a non-PK @unique column, so read it rather than
+    // assuming the primary key.
+    const refCols = rel.references
+      ? (Array.isArray(rel.references) ? rel.references : [rel.references])
+      : [idField]
+    candidates.push({ field: f.name, name: rel.name ?? null, fkCols, refCols })
   }
 
   if (via) {
@@ -3000,19 +3404,72 @@ export function inferFromFk(model, targetModel, via = null) {
     const own     = model.fields.find(f => f.name === via && f.type.name === targetModel.name)
     const ownName = own?.attributes.find(a => a.kind === 'relation')?.name ?? null
     const hit = candidates.find(c =>
-      c.field === via || c.fkCol === via || (c.name && c.name === via) ||
+      c.field === via || c.fkCols.includes(via) || (c.name && c.name === via) ||
       (ownName && c.name === ownName))
     return hit
-      ? { fkCol: hit.fkCol, refCol: hit.refCol }
+      ? { fkCols: hit.fkCols, refCols: hit.refCols }
       : { unresolvedVia: via, candidates }
   }
 
   if (candidates.length > 1) return { ambiguous: candidates }
-  if (candidates.length === 1) return { fkCol: candidates[0].fkCol, refCol: candidates[0].refCol }
+  if (candidates.length === 1) return { fkCols: candidates[0].fkCols, refCols: candidates[0].refCols }
 
   // Fallback: a column named after the model, e.g. Account → AccountId.
   const fallback = targetModel.fields.find(f => f.name === `${model.name}Id`)
-  return fallback ? { fkCol: fallback.name, refCol: idField } : null
+  return fallback ? { fkCols: [fallback.name], refCols: [idField] } : null
+}
+
+// Why this field cannot be a model's display column, or null if it can.
+//
+// Deliberately looser than sierra's own eight-name scan in one respect and
+// tighter in another. Looser: a `readOnly` column is fine here — a `@generated`
+// full name is the CASE this attribute exists for, and the scan skips every
+// readOnly column because it cannot tell a computed caption from a server-set
+// flag. Tighter: the scan takes the first plain string it finds and this
+// refuses anything a picker would render as a lie.
+function labelFieldRefusal(field, schema) {
+  const isEnum  = schema.enums.some(e => e.name === field.type.name)
+  const isModel = schema.models.some(m => m.name === field.type.name)
+  const has     = (kind) => field.attributes?.some(a => a.kind === kind)
+
+  if (isModel)         return `'${field.name}' is a relation — a picker prints a value, and a row is not one. Name the column on the related model instead`
+  if (field.type.array) return `'${field.name}' is an array`
+  if (isEnum)          return `'${field.name}' is an enum — its members carry their own labels through @label, so a picker over this model still needs free text to show`
+  if (field.type.name !== 'String')
+    return `'${field.name}' is ${field.type.name}, and a display column is String. Compose one with @generated(\`{${field.name}}\`)`
+
+  // Not a column, or not one SQLite can order and match — the options query
+  // does both. A @computed field is a JS function over a fetched row.
+  if (has('computed'))  return `'${field.name}' is @computed — it has no column, so it can be neither sorted nor searched`
+  if (has('transient')) return `'${field.name}' is @transient — it is never read back`
+
+  // Readable by nobody, or readable as ciphertext. Either way the picker shows
+  // the id fallback for every row, per caller, with nothing saying so.
+  if (has('guarded'))   return `'${field.name}' is @guarded — only a system context can read it`
+  if (has('encrypted')) return `'${field.name}' is @encrypted — its stored text is a ciphertext, so it neither sorts nor matches as the value`
+  if (has('hashed'))    return `'${field.name}' is @hashed — it is one-way and never readable`
+  if (field.attributes?.some(a => a.kind === 'omit' && a.level === 'all'))
+    return `'${field.name}' is @omit(all) — it is stripped from every read`
+
+  return null
+}
+
+// Why this field cannot be the column a record STORES for a value set.
+// The same question `labelFieldRefusal` asks about a display column, on the
+// other axis: that one has to be readable text, this one has to be a value
+// SQLite can compare — every check the strength performs is an equality against
+// this column, and every stored record is one of these values forever.
+function valueColumnRefusal(field, schema) {
+  const has = (kind) => field.attributes?.some(a => a.kind === kind)
+
+  if (schema.models.some(m => m.name === field.type.name)) return `it is a relation, not a value`
+  if (field.type.array)  return `it is an array`
+  if (has('computed'))   return `it is @computed — no column, so nothing can be matched against it`
+  if (has('transient'))  return `it is @transient — it is never stored`
+  if (has('guarded'))    return `it is @guarded — a caller can neither read nor write it, so no caller could ever supply a legal value`
+  if (has('encrypted'))  return `it is @encrypted — its stored text is a ciphertext, so an equality against it is not an equality against the value`
+  if (has('hashed'))     return `it is @hashed — one-way, so a set built on it can never be offered`
+  return null
 }
 
 function validate(schema) {
@@ -3081,9 +3538,27 @@ function validate(schema) {
               errors.push(`Model '${model.name}': @relation fields references unknown field '${f}'`)
           }
         }
-        const validActions = new Set(['Cascade', 'SetNull', 'Restrict', 'NoAction'])
-        if (rel.onDelete && !validActions.has(rel.onDelete))
+        if (rel.onDelete && !ON_DELETE_ACTIONS.has(rel.onDelete))
           errors.push(`Model '${model.name}': unknown onDelete action '${rel.onDelete}'`)
+      }
+
+      // A relation field is not stored, so a field-level @allow/@deny over it has
+      // nothing to compile to: the write half is the WHEN of a CASE over a column,
+      // and the read half strips a key the row never carried. Both were accepted
+      // and both did nothing, one line from the spelling that works — the same
+      // predicate on the FK guards the direct write AND the `{ rel: { connect } }`
+      // form. A @derived field is NOT this case and is left alone: it rides the
+      // SELECT as an expression, so the read strip reaches it.
+      const fieldPolicy = field.attributes.find(a => a.kind === 'fieldAllow')
+      if (fieldPolicy && (field.type.kind === 'relation' || field.type.kind === 'implicitM2M')) {
+        const fk = rel?.fields?.[0]
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @allow has no column to guard — ` +
+          (fk
+            ? `a relation field is not stored. Put it on '${fk}', which guards the direct write and ` +
+              `the { ${field.name}: { connect: … } } form alike.`
+            : `an implicit many-to-many keeps its keys in a join table this model has no column for. ` +
+              `Declare the join as a model of its own to guard it.`))
       }
 
       // Array type validation — String, Int, File and a declared enum support [].
@@ -3233,6 +3708,134 @@ function validate(schema) {
           if (!fieldNames.has(f))
             errors.push(`Model '${model.name}': @@${attr.kind} references unknown field '${f}'`)
         }
+      }
+    }
+
+    // @@label(field) — every refusal below is a shape a picker cannot use, and
+    // it is refused HERE because the alternative is a screen listing `1, 2, 3`
+    // with nothing saying why. The consumer sorts by this column and searches
+    // it with `contains`, so a value that is not text the database can order
+    // and match is not a display column, however readable it looks.
+    const labelAttrs = model.attributes.filter(a => a.kind === 'labelField')
+    if (labelAttrs.length > 1)
+      errors.push(`Model '${model.name}': duplicate @@label — a model has one display column`)
+    if (labelAttrs.length) {
+      const attr  = labelAttrs[0]
+      const field = model.fields.find(f => f.name === attr.field)
+      const why   = !field ? null : labelFieldRefusal(field, schema)
+      if (!field)     errors.push(`Model '${model.name}': @@label references unknown field '${attr.field}'`)
+      else if (why)   errors.push(`Model '${model.name}': @@label(${attr.field}) — ${why}`)
+    }
+  }
+
+  // ── Value sets ───────────────────────────────────────────────────────────
+  // Everything a `@values` binding needs in order to be checkable at all: the
+  // source exists, the column a record stores exists and is one SQLite can
+  // match, the scope is a predicate the source declared. A set that cannot be
+  // resolved is a picker that silently offers nothing and a validator that
+  // silently passes everything, which is the pair this declaration exists to
+  // end (`FJS-D120`).
+  const valuesets   = schema.valuesets ?? []
+  const modelByName = new Map(schema.models.map(m => [m.name, m]))
+  const setByName   = new Map()
+
+  for (const vs of valuesets) {
+    if (setByName.has(vs.name)) { errors.push(`Duplicate valueset '${vs.name}'`); continue }
+    setByName.set(vs.name, vs)
+
+    const src = modelByName.get(vs.source)
+    if (!src) {
+      errors.push(`valueset '${vs.name}': source '${vs.source}' is not a model in this schema`)
+      continue
+    }
+
+    // The column a record stores. Defaults to the source's own id, which is the
+    // relation case; a set may name a stable CODE instead, which is what keeps
+    // a stored value meaningful when the row behind it is replaced.
+    const idField = src.fields.find(f => f.attributes?.some(a => a.kind === 'id'))
+    const valName = vs.value ?? idField?.name
+    if (!valName) {
+      errors.push(`valueset '${vs.name}': source '${vs.source}' has no @id, so name the column a record stores — value <field>`)
+      continue
+    }
+    const valField = src.fields.find(f => f.name === valName)
+    if (!valField) {
+      errors.push(`valueset '${vs.name}': value '${valName}' is not a field on '${vs.source}'`)
+      continue
+    }
+    const why = valueColumnRefusal(valField, schema)
+    if (why) errors.push(`valueset '${vs.name}': value '${valName}' — ${why}`)
+
+    if (vs.scope) {
+      const scopes = new Set((src.attributes ?? []).filter(a => a.kind === 'scope').map(a => a.name))
+      if (!scopes.has(vs.scope))
+        errors.push(
+          `valueset '${vs.name}': scope '${vs.scope}' is not declared on '${vs.source}'` +
+          (scopes.size ? `. It declares: ${[...scopes].sort().join(', ')}` : ` — add @@scope(${vs.scope}, <expr>) to it`))
+    }
+
+    vs.valueField = valName
+    vs.isIdValue  = valName === idField?.name
+    vs.labelField = (src.attributes ?? []).find(a => a.kind === 'labelField')?.field ?? null
+
+    // A `where` is SQL, and a browser may never send SQL (Invariant 8) — so a
+    // set narrowed that way used to offer the whole source in a picker and have
+    // the save refused (`FJS-430`). It becomes a `@@scope` on the source, named
+    // after the set: a NAME crosses, is looked up in this table, and compiles to
+    // the same SQL the Data boundary applies. One narrowing, one owner.
+    vs.scopes = [...(vs.scope ? [vs.scope] : [])]
+    if (vs.where) {
+      src.attributes ??= []
+      const clash = src.attributes.find(a => a.kind === 'scope' && a.name === vs.name)
+      if (clash && clash.mintedBy !== vs.name) {
+        errors.push(
+          `valueset '${vs.name}': its 'where' mints @@scope(${vs.name}, …) on '${vs.source}', which already declares one. ` +
+          `Rename the set, or move the predicate into that scope and drop the where`)
+      } else {
+        // Idempotent: the same schema object may be validated more than once.
+        if (!clash) src.attributes.push({ kind: 'scope', name: vs.name, raw: vs.where, mintedBy: vs.name })
+        vs.scopes.push(vs.name)
+      }
+    }
+  }
+
+  // ── @values bindings ─────────────────────────────────────────────────────
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const binds = field.attributes.filter(a => a.kind === 'values')
+      if (binds.length > 1) {
+        errors.push(`Model '${model.name}', field '${field.name}': duplicate @values — a column binds to one set`)
+        continue
+      }
+      if (!binds.length) continue
+      const bind = binds[0]
+      const at   = `Model '${model.name}', field '${field.name}': @values(${bind.set})`
+
+      const vs = setByName.get(bind.set)
+      if (!vs) { errors.push(`${at} — no valueset '${bind.set}' in this schema`); continue }
+
+      // An enum is already a complete set and is required by construction, so a
+      // binding could only disagree with it or restate it.
+      if (schema.enums.some(e => e.name === field.type.name)) {
+        errors.push(`${at} — '${field.name}' is an enum, which is already a value set and is always required. Drop the binding, or make the list a table`)
+        continue
+      }
+      // The relation field is an object; the FK column beside it is the value.
+      if (schema.models.some(m => m.name === field.type.name)) {
+        const fk = field.attributes.find(a => a.kind === 'relation')?.fields?.[0]
+        errors.push(`${at} — '${field.name}' is the relation, not the column that holds the value. Put it on ${fk ? `'${fk}'` : 'the foreign key column'}`)
+        continue
+      }
+
+      // `open` writes a row from what the caller typed, so it needs to know
+      // which column receives the text and it cannot be the primary key.
+      if (bind.strength === 'open') {
+        if (vs.isIdValue) errors.push(
+          `${at} — 'open' cannot create a row by naming its primary key. ` +
+          `Give the set a stable code to store: value <field> on valueset '${vs.name}'`)
+        else if (!vs.labelField) errors.push(
+          `${at} — 'open' writes a new row from what the caller typed and nothing says which column receives it. ` +
+          `Add @@label(<column>) to model '${vs.source}'`)
       }
     }
   }
@@ -3495,6 +4098,31 @@ function validate(schema) {
     }
   }
 
+  // ── @@index([deletedAt]) on a soft-delete model ─────────────────────────────
+  //
+  // @@softDelete emits its own partial index over the column, and both derive
+  // the same name — `idx_<table>_deletedAt`. The schema validates, the DDL is
+  // emitted, and the run dies inside SQLite on `index ... already exists`,
+  // naming a physical index about a declaration two attributes away (FJS-480).
+  //
+  // Refused rather than deduped at emit, because the declaration is redundant
+  // either way: a declared index on a soft-delete table is already given the
+  // `WHERE "deletedAt" IS NULL` clause, so this one compiled to exactly the
+  // index @@softDelete was going to write. Only the single-column form
+  // collides — `@@index([deletedAt, status])` derives a different name and is
+  // an ordinary composite index.
+  for (const model of schema.models) {
+    if (!model.attributes.some(a => a.kind === 'softDelete')) continue
+    for (const attr of model.attributes) {
+      if (attr.kind !== 'index') continue
+      if (attr.fields?.length !== 1 || attr.fields[0] !== 'deletedAt') continue
+      errors.push(
+        `Model '${model.name}': @@index([deletedAt]) duplicates the index @@softDelete already builds — ` +
+        `both are named idx_<table>_deletedAt, so the database cannot be created. ` +
+        `Remove the @@index: @@softDelete indexes the column over live rows only`)
+    }
+  }
+
   // ── @unique over a randomly-encrypted column ────────────────────────────────
   //
   // A UNIQUE constraint is over the STORED bytes, and plain @encrypted uses a
@@ -3524,6 +4152,38 @@ function validate(schema) {
         if (c.fields.includes(field.name))
           errors.push(`Model '${model.name}': @@unique([${c.fields.join(', ')}]) cannot be enforced — '${field.name}' is ${how}, ` +
                       `and a random IV makes every write of the same value store different ciphertext. ${fix}`)
+    }
+  }
+
+  // ── @@unique over a NULLABLE column ─────────────────────────────────────────
+  //
+  // Two NULLs never compare equal, so a UNIQUE index admits `(1, NULL, NULL)`
+  // twice. Measured — two identical creates both succeed and the model holds
+  // two rows, while the same pair with values is refused. The constraint works
+  // exactly where it was never in doubt.
+  //
+  // COMPOSITE only, and the asymmetry is the point. On one optional column
+  // `@unique` has a single reading — unique when present — and every SQL
+  // developer already holds it. On a tuple the reading is the tuple, and the
+  // shape that surfaced this was `@@unique([product, colour, size])`, where the
+  // no-colour/no-size variant is precisely the row a shop lists twice.
+  //
+  // A partial index is not the answer, for FJS-204's reason: it makes the
+  // constraint false for any read that includes the NULL rows.
+  for (const model of schema.models) {
+    for (const c of model.attributes) {
+      if (c.kind !== 'uniqueIndex' || !Array.isArray(c.fields)) continue
+      if (c.fields.length < 2 || c.nullsDistinct) continue
+      const nullable = c.fields.filter(name =>
+        model.fields.find(f => f.name === name)?.type.optional)
+      if (!nullable.length) continue
+      const many = nullable.length > 1
+      errors.push(
+        `Model '${model.name}': @@unique([${c.fields.join(', ')}]) cannot be enforced — ` +
+        `${nullable.map(n => `'${n}'`).join(', ')} ${many ? 'are' : 'is'} optional, and two NULLs never compare equal, ` +
+        `so rows that leave ${many ? 'them' : 'it'} unset are all distinct to the index. ` +
+        `Make ${many ? 'them' : 'it'} required with a @default, or declare ` +
+        `@@unique([${c.fields.join(', ')}], nullsDistinct: true) to say those rows are deliberately unconstrained`)
     }
   }
 
@@ -3672,24 +4332,32 @@ function validate(schema) {
         errors.push(`Model '${model.name}': @@transitions(${attr.field}) — no such field`)
         continue
       }
-      const enumDef = schema.enums.find(e => e.name === field.type.name)
-      if (!enumDef) {
+      // A state machine needs a CLOSED type, which is what makes a from-state
+      // decidable. An enum is one and so is Boolean — `isPrimary`, `isSuspended`
+      // and `isPublished` are the two-state machines every schema has, and the
+      // two directions are routinely different authorities, which is what the
+      // per-move @gate expresses and a single field @allow cannot.
+      const enumDef  = schema.enums.find(e => e.name === field.type.name)
+      const isBool   = field.type.name === 'Boolean'
+      if (!enumDef && !isBool) {
         errors.push(
-          `Model '${model.name}': @@transitions(${attr.field}) — '${attr.field}' is ${field.type.name}, not an enum. ` +
-          `Transition states are checked against enum values, so the field must be an enum type.`
+          `Model '${model.name}': @@transitions(${attr.field}) — '${attr.field}' is ${field.type.name}, ` +
+          `which is not a closed type. A from-state has to be decidable, so the field must be an enum or Boolean.`
         )
         continue
       }
       if (field.type.array)
         errors.push(`Model '${model.name}': @@transitions(${attr.field}) — '${attr.field}' is an array; a state machine needs a single value`)
 
-      const valueNames = new Set(enumDef.values.map(v => v.name))
+      const valueNames = enumDef ? new Set(enumDef.values.map(v => v.name)) : null
+      const known = (v) => isBool ? typeof v === 'boolean' : valueNames.has(v)
+      const wanted = isBool ? 'true or false' : `a member of enum '${enumDef.name}'`
       for (const [tName, { from, to, gate }] of Object.entries(attr.transitions)) {
         for (const f of from)
-          if (!valueNames.has(f))
-            errors.push(`Model '${model.name}' @@transitions(${attr.field}) '${tName}': unknown value '${f}' in 'from' — not a member of enum '${enumDef.name}'`)
-        if (!valueNames.has(to))
-          errors.push(`Model '${model.name}' @@transitions(${attr.field}) '${tName}': unknown value '${to}' in 'to' — not a member of enum '${enumDef.name}'`)
+          if (!known(f))
+            errors.push(`Model '${model.name}' @@transitions(${attr.field}) '${tName}': unknown value '${f}' in 'from' — expected ${wanted}`)
+        if (!known(to))
+          errors.push(`Model '${model.name}' @@transitions(${attr.field}) '${tName}': unknown value '${to}' in 'to' — expected ${wanted}`)
         if (from.includes(to))
           errors.push(`Model '${model.name}' @@transitions(${attr.field}) '${tName}': self-transition (from and to are both '${to}')`)
         if (gate != null && (!Number.isInteger(gate) || gate < 0 || gate > 9))
@@ -3711,14 +4379,22 @@ function validate(schema) {
           errors.push(`Model '${model.name}': @@${attr.kind} policies are not supported on jsonl databases`)
       }
     }
-    // Warn if @@deny exists with no @@allow — probably a mistake
+    // Warn if @@deny exists with no @@allow — probably a mistake, and the
+    // wording matters. A deny DOES restrict the operations it names: measured,
+    // a lone `@@deny('update', …)` filters an update out. What stays open is
+    // every operation it does not name, which is the thing worth saying. The
+    // old text said the deny would not restrict at all, which reads as "this
+    // declaration is inert" about a rule that is working.
     const hasAllow = model.attributes.some(a => a.kind === 'allow')
     // Generated rules are excluded: tenancy desugars into denies on every
     // scoped model, and a warning telling an app to add an @@allow it never
     // wrote fires once per model on a schema that is doing the right thing.
     const hasDeny  = model.attributes.some(a => a.kind === 'deny' && !a.generated)
     if (hasDeny && !hasAllow)
-      warnings.push(`Model '${model.name}': has @@deny but no @@allow — all operations are open by default, @@deny alone won't restrict access unless you add @@allow rules`)
+      warnings.push(
+        `Model '${model.name}': has @@deny and no @@allow. The deny restricts the operations it names; ` +
+        `every OTHER operation stays unrestricted, because a model with no @@allow for an operation is open. ` +
+        `If that is the intent this is nothing to fix — say so with an @@allow naming the level you mean.`)
   }
 
   // ── Logger database validation ────────────────────────────────────────────────
@@ -3821,10 +4497,13 @@ function validate(schema) {
         if (!softDeleteModels.has(childName)) continue
         const hasHardDelete = field.attributes.some(a => a.kind === 'hardDelete')
         if (hasHardDelete) continue  // explicit @hardDelete — intentional, no warning
+        const hasKeep = field.attributes.some(a => a.kind === 'keep')
+        if (hasKeep) continue        // explicit @keep — the children outlive the parent, said out loud
         warnings.push(
           `Model '${model.name}': has @@softDelete and a hasMany relation to '${childName}' which also uses @@softDelete. ` +
           `Soft-deleting a '${model.name}' row will NOT cascade to '${childName}' rows — they will remain live. ` +
-          `Add @@softDelete(cascade) to propagate, or @hardDelete on the '${field.name}' field to hard-delete children.`
+          `Add @@softDelete(cascade) to propagate, @hardDelete on the '${field.name}' field to hard-delete children, ` +
+          `or @keep on it to say they outlive the parent on purpose.`
         )
       }
     }
@@ -4175,6 +4854,8 @@ export function parseFile(filePath) {
     const importedViews     = []
     const importedTraits    = []
     const importedTypes     = []
+    const importedValuesets = []
+    const importedExtends   = []
     let   importedTenancy   = null
 
     for (const imp of schema.imports) {
@@ -4214,6 +4895,8 @@ export function parseFile(filePath) {
         importedViews.push(...child.views)
         importedTraits.push(...(child.traits ?? []))
         importedTypes.push(...(child.types ?? []))
+        importedValuesets.push(...(child.valuesets ?? []))
+        importedExtends.push(...(child.extends ?? []))
       }
     }
 
@@ -4231,6 +4914,15 @@ export function parseFile(filePath) {
       views:     [...importedViews,     ...schema.views],
       traits:    [...importedTraits,    ...(schema.traits ?? [])],
       types:     [...importedTypes,     ...(schema.types ?? [])],
+      // A value set is a top-level declaration like an enum, and a package that
+      // ships a list ships it the same way. Dropping it here made the binding on
+      // the field report the set as undeclared — in the ROOT file too, since the
+      // merge is what builds the schema every caller of `parseFile` validates.
+      valuesets: [...importedValuesets, ...(schema.valuesets ?? [])],
+      // Order does not matter: resolveExtends indexes the models by name after
+      // the whole tree is merged, so a file may extend a model it is imported
+      // BY as readily as one it imports.
+      extends:   [...importedExtends,   ...(schema.extends ?? [])],
     }
   }
 
@@ -4247,11 +4939,16 @@ export function parseFile(filePath) {
     functions: merged.functions,
     traits:    merged.traits ?? [],
     types:     merged.types ?? [],
+    valuesets: merged.valuesets ?? [],
+    extends:   merged.extends ?? [],
   }
 
   // Resolve traits before validation. resolveTraits mutates schema.models,
   // splicing trait fields/attributes in. The schema.traits array is left
   // populated for introspection/debugging but otherwise ignored downstream.
+  const extendErrors = resolveExtends(schema)
+  allErrors.push(...extendErrors)
+
   const traitErrors = resolveTraits(schema)
   allErrors.push(...traitErrors)
 
@@ -4292,6 +4989,11 @@ export function parse(src) {
     if (e instanceof ParseError)
       return { schema: null, valid: false, errors: [e.message], warnings: [] }
     throw e
+  }
+  // Before traits, so an extend may carry a @@trait(T) of its own.
+  const extendErrors = resolveExtends(schema)
+  if (extendErrors.length) {
+    return { schema, valid: false, errors: extendErrors, warnings: [] }
   }
   const traitErrors = resolveTraits(schema)
   if (traitErrors.length) {

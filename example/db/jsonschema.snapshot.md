@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-5 definitions · 4 models · 1 enums · 0 other
+31 definitions · 24 models · 7 enums · 0 other
 ```
 
 ## Definitions
@@ -26,17 +26,49 @@ disappears from here is a reference that resolves to nothing in a browser.
 | Name | Kind |
 | --- | --- |
 | `Product` | model |
+| `Colour` | model |
+| `ProductVariant` | model |
+| `ProductImage` | model |
 | `Customer` | model |
+| `Discount` | model |
+| `ShippingMethod` | model |
+| `TaxRate` | model |
 | `Order` | model |
+| `OrderLine` | model |
+| `Payment` | model |
+| `PaymentEvent` | model |
+| `Cart` | model |
+| `CartLine` | model |
+| `StockReservation` | model |
+| `InventoryMovement` | model |
 | `Notification` | model |
+| `Brand` | enum |
+| `Size` | enum |
+| `DiscountKind` | enum |
 | `OrderStatus` | enum |
+| `PaymentStatus` | enum |
+| `CartStatus` | enum |
+| `StockMovementKind` | enum |
+| `TrackingUpdate` | model |
+| `DiscountCode` | model |
+| `ShippingChoice` | model |
+| `CheckoutDetails` | model |
+| `StockReceipt` | model |
+| `StockAdjustment` | model |
+| `FileRef` | model |
 
 ## Enums
 
 A value removed here is a row already in the database that no longer
 validates, and a select that silently drops an option.
 
+- `Brand` — `frontierjs`, `junction`, `litestone`
+- `Size` — `one`, `xs`, `s`, `m`, `l`, `xl`, `xxl`
+- `DiscountKind` — `percent`, `fixed`
 - `OrderStatus` — `pending`, `paid`, `shipped`, `refunded`, `cancelled`
+- `PaymentStatus` — `pending`, `succeeded`, `failed`, `refunded`
+- `CartStatus` — `open`, `ordered`, `abandoned`
+- `StockMovementKind` — `received`, `sold`, `returned`, `adjusted`, `damaged`
 
 ## Models
 
@@ -46,37 +78,157 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Product`
 
-- gate `read:0 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- gate `read:0 create:4 update:4 delete:5` · version field `version` · closed (`additionalProperties: false`)
+- relation `variants` — hasMany `ProductVariant`
+- relation `images` — hasMany `ProductImage`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
+| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
+| `description` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
+| `brand` | `Brand` | yes | — | — | — |
+| `active` | `boolean` = `true` | — | — | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
+| `variantCount` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
+| `priceFrom` | `number` | — | — | `x-litestone-from` `x-litestone-kind` | — |
+| `priceTo` | `number` | — | — | `x-litestone-from` `x-litestone-kind` | — |
+| `onHand` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
+
+**On create**: required — `name`, `slug`, `brand` · not accepted — `id`, `version`, `variantCount`, `priceFrom`, `priceTo`, `onHand`
+
+### `Colour`
+
+- gate `read:0 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 30` | — |
+| `hex` | `string`? | — | — | `minLength: 4` `maxLength: 7` | — |
+| `retired` | `boolean` = `false` | — | — | — | — |
+
+**On create**: required — `name` · not accepted — `id`
+
+### `ProductVariant`
+
+- gate `read:0 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- relation `product` — belongsTo `Product` via `productId` · on delete Cascade
+- relation `images` — hasMany `ProductImage`
+- relation `reservations` — hasMany `StockReservation`
+- relation `movements` — hasMany `InventoryMovement`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `productId` | `integer` | yes | Product | — | `required` |
 | `sku` | `string` | yes | — | `minLength: 3` `maxLength: 20` | — |
+| `colour` | `string` = `"Default"` | — | — | `minLength: 1` `maxLength: 30` `x-values` | — |
+| `size` | `Size` = `"one"` | — | — | — | — |
 | `price` | `number` | yes | — | `minimum: 0` | — |
 | `barcode` | `string`? | — | — | — | — |
+| `stock` | `integer` = `0` | — | — | `minimum: 0` | — |
 | `active` | `boolean` = `true` | — | — | — | — |
 
-**On create**: required — `name`, `sku`, `price` · not accepted — `id`
+**On create**: required — `productId`, `sku`, `price` · not accepted — `id`
+
+### `ProductImage`
+
+- gate `read:0 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- relation `product` — belongsTo `Product` via `productId` · on delete Cascade
+- relation `variant` — belongsTo `ProductVariant` via `variantId` · on delete SetNull · optional
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `productId` | `integer` | yes | Product | — | — |
+| `variantId` | `integer`? | — | Variant | — | — |
+| `file` | `FileRef` | yes | — | `x-litestone-accept` | — |
+| `alt` | `string` | yes | Alt text | `minLength: 1` `maxLength: 160` | `required` |
+| `position` | `integer` = `0` | — | — | — | — |
+
+**On create**: required — `productId`, `file`, `alt` · not accepted — `id`
 
 ### `Customer`
 
-- gate `read:0 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- gate `read:1 create:4 update:4 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `orders` — hasMany `Order`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
+| `firstName` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
+| `lastName` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
+| `fullName` | `string`? | — | — | `x-litestone-kind` | — |
 | `email` | `string` | yes | — | `format: "email"` | — |
 | `notes` | `string`? | — | — | `x-litestone-read-policy` | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
+| `orderCount` | `integer` | — | — | `x-litestone-from` `x-litestone-kind` | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `name`, `email` · not accepted — `id`
+**On create**: required — `name`, `firstName`, `lastName`, `email` · not accepted — `id`, `fullName`, `orderCount`, `version`
+
+### `Discount`
+
+- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+- relation `carts` — hasMany `Cart`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `code` | `string` | yes | Code | `minLength: 3` `maxLength: 20` | `length` `maxLength` `minLength` |
+| `label` | `string` | yes | Description | `minLength: 1` `maxLength: 60` | — |
+| `kind` | `DiscountKind` = `"percent"` | — | Kind | — | — |
+| `value` | `number` | yes | Value | `minimum: 0` | — |
+| `minSubtotal` | `number` = `0` | — | Minimum spend | `minimum: 0` | — |
+| `startsAt` | `string`? | — | Starts | `format: "date-time"` | — |
+| `endsAt` | `string`? | — | Ends | `format: "date-time"` | — |
+| `maxRedemptions` | `integer`? | — | Redemption limit | `minimum: 1` | — |
+| `redemptions` | `integer` = `0` | — | Times used | `minimum: 0` `x-litestone-kind` | — |
+| `active` | `boolean` = `true` | — | Active | — | — |
+
+**On create**: required — `code`, `label`, `value` · not accepted — `id`
+
+### `ShippingMethod`
+
+- gate `read:0 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
+- relation `carts` — hasMany `Cart`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `name` | `string` | yes | Method | `minLength: 1` `maxLength: 40` | — |
+| `description` | `string`? | — | Description | `minLength: 0` `maxLength: 120` | — |
+| `price` | `number` | yes | Price | `minimum: 0` | — |
+| `freeOver` | `number`? | — | Free over | `minimum: 0` | — |
+| `position` | `integer` = `0` | — | Position | — | — |
+| `active` | `boolean` = `true` | — | Active | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `name`, `price` · not accepted — `id`, `version`
+
+### `TaxRate`
+
+- gate `read:0 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `label` | `string` | yes | Shown as | `minLength: 1` `maxLength: 30` | — |
+| `rate` | `number` | yes | Rate | `minimum: 0` `maximum: 1` | — |
+| `isDefault` | `boolean` = `false` | — | Default | — | — |
+| `active` | `boolean` = `true` | — | Active | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `label`, `rate` · not accepted — `id`, `version`
 
 ### `Order`
 
-- gate `read:0 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- gate `read:1 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
 - relation `customer` — belongsTo `Customer` via `customerId` · on delete Cascade
+- relation `lines` — hasMany `OrderLine`
 - transitions on `status` — `pay`: pending → paid · `ship`: paid → shipped · `refund`: paid → refunded @5 · `cancel`: pending|paid → cancelled
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -84,12 +236,147 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `reference` | `string` | yes | — | `minLength: 3` `maxLength: 20` | `length` `maxLength` `minLength` |
 | `status` | `OrderStatus` = `"pending"` | — | — | — | — |
+| `subtotal` | `number` = `0` | — | Subtotal | `minimum: 0` `x-litestone-kind` | — |
+| `discountCode` | `string`? | — | Code | `x-litestone-kind` | — |
+| `discountLabel` | `string`? | — | Discount | `x-litestone-kind` | — |
+| `discount` | `number` = `0` | — | Discount amount | `minimum: 0` `x-litestone-kind` | — |
+| `shippingLabel` | `string`? | — | Shipping | `x-litestone-kind` | — |
+| `shipping` | `number` = `0` | — | Shipping cost | `minimum: 0` `x-litestone-kind` | — |
+| `taxLabel` | `string`? | — | Tax | `x-litestone-kind` | — |
+| `taxRate` | `number` = `0` | — | Rate | `minimum: 0` `x-litestone-kind` | — |
+| `tax` | `number` = `0` | — | Tax amount | `minimum: 0` `x-litestone-kind` | — |
 | `total` | `number` = `0` | — | — | `minimum: 0` | — |
 | `note` | `string`? | — | — | — | — |
 | `customerId` | `integer` | yes | Customer | — | `required` |
 | `trackingCode` | `string`? | — | Tracking | `x-litestone-kind` | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `reference`, `customerId` · not accepted — `id`
+
+### `OrderLine`
+
+- gate `read:1 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `order` — belongsTo `Order` via `orderId` · on delete Cascade
+- relation `variant` — belongsTo `ProductVariant` via `variantId` · on delete Restrict
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `orderId` | `integer` | yes | Order | — | — |
+| `variantId` | `integer` | yes | Variant | — | — |
+| `sku` | `string` | yes | — | `minLength: 1` `maxLength: 40` | — |
+| `description` | `string` | yes | Item | `minLength: 1` `maxLength: 160` | — |
+| `quantity` | `integer` | yes | — | `minimum: 1` `maximum: 99` | — |
+| `unitPrice` | `number` | yes | Unit price | `minimum: 0` | — |
+| `lineTotal` | `number` | yes | Total | `minimum: 0` | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `orderId`, `variantId`, `sku`, `description`, `quantity`, `unitPrice`, `lineTotal` · not accepted — `id`
+
+### `Payment`
+
+- gate `read:5 create:8 update:8 delete:9` · closed (`additionalProperties: false`)
+- relation `order` — belongsTo `Order` via `orderId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `providerRef` | `string` | yes | Provider reference | `minLength: 3` `maxLength: 64` | — |
+| `status` | `PaymentStatus` = `"pending"` | — | — | — | — |
+| `amount` | `number` | yes | — | `minimum: 0` | — |
+| `currency` | `string` = `"USD"` | — | — | `minLength: 3` `maxLength: 3` | — |
+| `orderId` | `integer` | yes | Order | — | — |
+| `refundedAmount` | `number` = `0` | — | — | `minimum: 0` | — |
+| `failureReason` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
+| `settledAt` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `providerRef`, `amount`, `orderId` · not accepted — `id`
+
+### `PaymentEvent`
+
+- gate `read:5 create:8 update:9 delete:9` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `eventId` | `string` | yes | Event | `minLength: 3` `maxLength: 80` | — |
+| `kind` | `string` | yes | Type | `minLength: 1` `maxLength: 60` | — |
+| `paymentRef` | `string`? | — | Payment | `minLength: 0` `maxLength: 64` | — |
+| `receivedAt` | `string` | — | — | `format: "date-time"` | — |
+
+**On create**: required — `eventId`, `kind` · not accepted — `id`
+
+### `Cart`
+
+- gate `read:0 create:0 update:0 delete:5` · closed (`additionalProperties: false`)
+- relation `discount` — belongsTo `Discount` via `discountId` · on delete SetNull · optional
+- relation `shippingMethod` — belongsTo `ShippingMethod` via `shippingMethodId` · on delete SetNull · optional
+- relation `lines` — hasMany `CartLine`
+- relation `holds` — hasMany `StockReservation`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `token` | `string` | — | — | — | — |
+| `userId` | `string`? | — | — | — | — |
+| `status` | `CartStatus` = `"open"` | — | — | — | — |
+| `discountId` | `integer`? | — | Discount | `x-litestone-kind` | — |
+| `shippingMethodId` | `integer`? | — | Shipping | `x-litestone-kind` | — |
+| `handoffCode` | `string`? | — | — | — | — |
+| `handoffExpires` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — nothing · not accepted — `id`, `token`, `handoffCode`, `handoffExpires`
+
+### `CartLine`
+
+- gate `read:0 create:0 update:0 delete:0` · closed (`additionalProperties: false`)
+- relation `cart` — belongsTo `Cart` via `cartId` · on delete Cascade
+- relation `variant` — belongsTo `ProductVariant` via `variantId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `cartId` | `integer` | yes | Basket | — | — |
+| `variantId` | `integer` | yes | Variant | — | `required` |
+| `quantity` | `integer` = `1` | — | — | `minimum: 1` `maximum: 99` | — |
+| `unitPrice` | `number` | — | — | `minimum: 0` `x-litestone-kind` | — |
+| `token` | `string` | yes | — | — | — |
+
+**On create**: required — `cartId`, `variantId`, `token` · not accepted — `id`
+
+### `StockReservation`
+
+- gate `read:5 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `variant` — belongsTo `ProductVariant` via `variantId` · on delete Cascade
+- relation `cart` — belongsTo `Cart` via `cartId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `variantId` | `integer` | yes | Variant | — | — |
+| `cartId` | `integer` | yes | Basket | — | — |
+| `quantity` | `integer` | yes | — | `minimum: 1` `maximum: 99` | — |
+| `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
+
+**On create**: required — `variantId`, `cartId`, `quantity`, `expiresAt` · not accepted — `id`
+
+### `InventoryMovement`
+
+- gate `read:5 create:5 update:9 delete:9` · closed (`additionalProperties: false`)
+- relation `variant` — belongsTo `ProductVariant` via `variantId` · on delete Restrict
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `variantId` | `integer` | yes | Variant | — | — |
+| `kind` | `StockMovementKind` | yes | — | — | — |
+| `quantity` | `integer` | yes | — | — | — |
+| `stockBefore` | `integer` | yes | — | `minimum: 0` | — |
+| `stockAfter` | `integer` | yes | — | `minimum: 0` | — |
+| `reference` | `string`? | — | — | `minLength: 1` `maxLength: 40` | — |
+| `note` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
+
+**On create**: required — `variantId`, `kind`, `quantity`, `stockBefore`, `stockAfter` · not accepted — `id`
 
 ### `Notification`
 
@@ -106,3 +393,88 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `readAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `userId`, `type`, `data` · not accepted — `id`
+
+### `TrackingUpdate`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `trackingCode` | `string` | yes | Tracking | `minLength: 4` `maxLength: 40` | `length` `maxLength` `minLength` |
+
+**On create**: required — `trackingCode`
+
+### `DiscountCode`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `code` | `string` | yes | Discount code | `minLength: 3` `maxLength: 20` | `length` `maxLength` `minLength` `required` |
+
+**On create**: required — `code`
+
+### `ShippingChoice`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `shippingMethodId` | `integer`? | — | Shipping | — | — |
+
+**On create**: required — nothing
+
+### `CheckoutDetails`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `email` | `string` | yes | Email | `format: "email"` | `required` |
+| `name` | `string` | yes | Name | `minLength: 2` `maxLength: 80` | `required` |
+| `note` | `string`? | — | Order note | `minLength: 0` `maxLength: 500` | — |
+
+**On create**: required — `email`, `name`
+
+### `StockReceipt`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `variantId` | `integer` | yes | Variant | — | `required` |
+| `quantity` | `integer` | yes | How many | `minimum: 1` `maximum: 10000` | `gte` `lte` `maximum` `minimum` |
+| `reference` | `string`? | — | Delivery note | `minLength: 1` `maxLength: 40` | — |
+| `note` | `string`? | — | Note | `minLength: 0` `maxLength: 200` | — |
+
+**On create**: required — `variantId`, `quantity`
+
+### `StockAdjustment`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `variantId` | `integer` | yes | Variant | — | `required` |
+| `quantity` | `integer` | yes | Change | `minimum: -10000` `maximum: 10000` | `required` |
+| `kind` | `StockMovementKind` | yes | Reason | — | `required` |
+| `note` | `string` | yes | Note | `minLength: 3` `maxLength: 200` | `required` |
+
+**On create**: required — `variantId`, `quantity`, `kind`, `note`
+
+### `FileRef`
+
+- closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `key` | `string` | yes | — | — | — |
+| `bucket` | `string` | yes | — | — | — |
+| `provider` | `string` | yes | — | — | — |
+| `endpoint` | `string`? | — | — | — | — |
+| `publicBase` | `string`? | — | — | — | — |
+| `size` | `integer` | yes | — | `minimum: 0` | — |
+| `mime` | `string` | yes | — | — | — |
+| `uploadedAt` | `string` | yes | — | `format: "date-time"` | — |
+
+**On create**: required — `key`, `bucket`, `provider`, `size`, `mime`, `uploadedAt`

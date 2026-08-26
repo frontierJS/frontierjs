@@ -183,7 +183,8 @@ export function composeWrapper(pageFile, layoutChain) {
  * standing between HTML and first paint.
  */
 export function wrapDocument(bodyHTML, {
-  title, css, styles, lang = 'en', stylesheets = [], bodyClass = '',
+  title, description, css, styles, lang = 'en', stylesheets = [],
+  bodyClass = '', htmlClass = '',
 } = {}) {
   const esc = (v) => String(v ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -218,12 +219,29 @@ export function wrapDocument(bodyHTML, {
 
   const bodyAttr = bodyClass ? ` class="${esc(bodyClass)}"` : ''
 
+  // The theme class belongs on <html> and not on <body>, because that is where
+  // the switcher writes it — `theme/index.js` says why the element is not a
+  // knob, and a prerendered page has to agree with the script that will move it
+  // later. Baked on <body> instead, the two are different elements: the
+  // switcher sets <html class="theme-elite">, the file still says
+  // <body class="theme-default">, and every token both of them define resolves
+  // to the baked one for the whole page. The switch changes nothing a person
+  // can see and there is no error (`FJS-501`).
+  const htmlAttr = htmlClass ? ` class="${esc(htmlClass)}"` : ''
+
+  // Omitted rather than emitted empty. A `<meta name="description" content="">`
+  // is a page telling a crawler it has no description, which is worse than
+  // saying nothing and letting the crawler read the page.
+  const descTag = description
+    ? `\n  <meta name="description" content="${esc(description)}">`
+    : ''
+
   return `<!DOCTYPE html>
-<html lang="${esc(lang)}">
+<html lang="${esc(lang)}"${htmlAttr}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${esc(title ?? '')}</title>${linkTags}${styleTag}
+  <title>${esc(title ?? '')}</title>${descTag}${linkTags}${styleTag}
 </head>
 <body${bodyAttr}>
 ${bodyHTML}
@@ -241,7 +259,7 @@ export function outputFileFor(urlPath) {
 /**
  * Prerender every `render: static` route in the tree.
  *
- * @returns {Promise<{ written: string[], skipped: Array<{route:string, reason:string}> }>}
+ * @returns {Promise<{ written: string[], urls: string[], skipped: Array<{route:string, reason:string}> }>}
  */
 export async function prerenderRoutes(opts) {
   const {
@@ -250,7 +268,7 @@ export async function prerenderRoutes(opts) {
     // The document around every page this run emits: the app's own stylesheets
     // (asset URLs from the main build) and the <body> class its index.html
     // carries. Both are per-BUILD, not per-route.
-    stylesheets = [], bodyClass = '', lang = 'en',
+    stylesheets = [], bodyClass = '', htmlClass = '', lang = 'en',
     // ── Static-safety inputs (FJS-081) ────────────────────────────────
     // `schemaDefs`/`schemaModels` come from schema-plugin, which has already
     // run in this build. `db` is a Litestone client the build can tap to see
@@ -262,6 +280,12 @@ export async function prerenderRoutes(opts) {
   const routesDirAbs = resolve(root, routesDir)
   const outDirAbs    = resolve(root, outDir)
   const written = []
+  // The URLs those files answer at. A dynamic route's pages exist only because
+  // getStaticPaths() named them, so the route TABLE cannot list them — it
+  // carries `/products/:slug/` and nothing else. Anything downstream that has
+  // to enumerate the site (a sitemap, prefetch rules) needs what was actually
+  // emitted, and this is the only place that knows (`FJS-502`).
+  const urls = []
   const skipped = []
 
   const safetyOn = !!schemaDefs
@@ -370,12 +394,36 @@ export async function prerenderRoutes(opts) {
         continue
       }
 
+      // A DYNAMIC route's pages share one frontmatter, and frontmatter is
+      // static text — so thirteen product pages would carry one <title>, which
+      // is the single field a search result is built from. `head({ params,
+      // data })` is the way out: the companion answers per PATH, with the data
+      // its own load() just returned.
+      //
+      // Frontmatter is the fallback and not the loser: a route whose pages
+      // genuinely share a title says it once, and only a route that needs to
+      // vary writes the function.
+      let head = null
+      if (mod && typeof mod.head === 'function') {
+        try {
+          head = await mod.head({ params, data, url: urlPath })
+        } catch (err) {
+          // Same grade as a load() that threw: this page is not emitted. A
+          // page silently missing its title is the failure the function exists
+          // to fix, so producing one anyway would defeat it.
+          skipped.push({ route: urlPath, reason: `head() threw: ${err.message}` })
+          continue
+        }
+      }
+
       const doc = wrapDocument(rendered.html, {
-        title:  node.meta?.title ?? node.meta?.frontmatter?.title,
+        title:  head?.title ?? node.meta?.title ?? node.meta?.frontmatter?.title,
+        description: head?.description ?? node.meta?.description ?? node.meta?.frontmatter?.description,
         css:    rendered.css,
         styles: rendered.styles,
         stylesheets,
         bodyClass,
+        htmlClass,
         lang:   node.meta?.lang ?? lang,
       })
 
@@ -384,6 +432,7 @@ export async function prerenderRoutes(opts) {
       await writeFile(file, doc, 'utf8')
       const rel = relative(outDirAbs, file)
       written.push(rel)
+      urls.push(urlPath)
 
       // Record which islands this page carries. Mesa tags each entry with the
       // file the call site was written in and the import specifier it came
@@ -446,6 +495,7 @@ export async function prerenderRoutes(opts) {
   for (const s of skipped) warn(`${s.route}: ${s.reason}`)
   return {
     written,
+    urls,
     skipped,
     islands: [...islandsByName.values()],
     islandPages,

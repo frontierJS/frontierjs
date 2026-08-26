@@ -158,7 +158,26 @@ export function generateJsonSchema(schema, options = {}) {
     // per-transition @gate can exist — so x-transitions on the model def is the
     // resolved truth and the only thing a client should read. Emitting both
     // would give the UI two sources that drift the moment one model narrows.
-    enumDefs[en.name] = { type: 'string', enum: en.values.map(v => v.name), title: en.name }
+    // `x-labels` rather than switching `enum` to `oneOf: [{const, title}]`,
+    // which is the spec-compliant spelling of the same idea. The `enum` array
+    // is what three readers validate against — junction's validator, sierra's
+    // field-rules, the form generator — and changing its SHAPE to carry a
+    // label is three chances to break validation for a presentation win.
+    // Additive keeps a schema that labels nothing byte-identical to before.
+    //
+    // Only stated labels are emitted. A member with none is absent from the
+    // map rather than present with its own name, so a reader can tell "the
+    // schema says call it this" from "nobody said", and keep whatever
+    // fallback it already had.
+    const labels = {}
+    for (const v of en.values) if (v.label !== undefined) labels[v.name] = v.label
+
+    enumDefs[en.name] = {
+      type:  'string',
+      enum:  en.values.map(v => v.name),
+      title: en.name,
+      ...(Object.keys(labels).length ? { 'x-labels': labels } : {}),
+    }
   }
 
   // Build type definitions for `type T { ... }` declarations. Referenced by
@@ -171,7 +190,8 @@ export function generateJsonSchema(schema, options = {}) {
     for (const f of t.fields) {
       // Reuse fieldToJsonSchema so validators/transforms/nested @type work
       // identically inside types as on columns.
-      const fs = fieldToJsonSchema(f, schema, enumDefs, inlineEnums, audience, typeDefs)
+      const fs = applyPresentation(
+        fieldToJsonSchema(f, schema, enumDefs, inlineEnums, audience, typeDefs), f)
       props[f.name] = fs
       if (!f.type.optional) required.push(f.name)
     }
@@ -355,37 +375,7 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       fieldSchema.description = field.comments.join(' ')
     }
 
-    // @label("Customer") → JSON Schema `title`, the standard slot for a
-    // human-readable name. Every realm builds its generated messages from this
-    // rather than the column, so an error stops reading `customerId` under a
-    // form label that says "customer".
-    const label = field.attributes.find(a => a.kind === 'label')
-    if (label?.text) fieldSchema.title = label.text
-
-    // Validator messages, keyed by the rule they belong to.
-    //
-    // These were parsed and honoured by Litestone's own validator and then
-    // dropped here, so they died at the Data boundary: a message written once
-    // in the schema was invisible to Junction's autoValidate and to Sierra's
-    // client-side rules, both of which derive from this document. Emitting them
-    // is what makes one authored sentence the sentence all three realms say.
-    //
-    // Keyed BOTH by the rule name ('length', 'gte', 'required') and by the
-    // JSON Schema keyword it compiles to ('minLength', 'minimum', …). One
-    // authored string, several lookup aliases — never two sources.
-    //
-    // Keying by keyword is the point: a consumer checking `minLength` looks up
-    // `minLength`. The alternative — publish the rule name and make each
-    // consumer map keyword→rule — puts the same table in Junction AND Sierra,
-    // and this file is the one that already owns that translation (it is the
-    // mapping documented at the top of this file).
-    const messages = {}
-    for (const attr of field.attributes) {
-      if (typeof attr?.message !== 'string' || !attr.message) continue
-      messages[attr.kind] = attr.message
-      for (const kw of MESSAGE_KEYWORDS[attr.kind] ?? []) messages[kw] = attr.message
-    }
-    if (Object.keys(messages).length) fieldSchema['x-messages'] = messages
+    applyPresentation(fieldSchema, field)
 
     // @allow('read', expr) — field is conditionally visible; mark as optional + annotate
     const readAllows = field.attributes.filter(a => a.kind === 'fieldAllow' && a.operations.includes('read'))
@@ -404,10 +394,25 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     // its caller. `readOnly` is the standard keyword and the one Sierra's
     // control table already skips, so a generated form stops offering a text
     // box whose value a worker overwrites a second later.
-    const isSystemWritten = field.attributes.some(a => a.kind === 'system')
+    // A column the TENANCY declaration stamps is the same case wearing a
+    // different annotation: `tenancy { strategy row }` desugars a
+    // `@default(auth().<claim>)`, the Data boundary fills it from the
+    // principal, and a client naming its own tenant is a client choosing its
+    // own tenant — refused by the generated rule. Leaving it writable was not
+    // just untidy: `make()` seeds every writable column, blank-strip turns the
+    // seed into an explicit `null`, and a stated null is a VALUE, so the
+    // default never applied and the write came back 400 `must be a string`.
+    // Being out of `required` was not enough to save it (`FJS-387`).
+    //
+    // `@@tenant(none)` carries no generated default, so a model where the
+    // column IS a caller-supplied value is untouched.
+    const tenancyStamped = field.attributes.some(
+      a => a.kind === 'default' && a.generated === 'tenancy')
+
+    const isSystemWritten = field.attributes.some(a => a.kind === 'system') || tenancyStamped
     if (isSystemWritten) {
       fieldSchema.readOnly = true
-      fieldSchema['x-litestone-kind'] = 'system'
+      fieldSchema['x-litestone-kind'] = tenancyStamped ? 'tenancy' : 'system'
     }
 
     // @transient — accepted on the wire, stored nowhere. The write-mode-only
@@ -416,6 +421,32 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     if (isTransient) {
       fieldSchema.writeOnly = true
       fieldSchema['x-litestone-kind'] = 'transient'
+    }
+
+    // ── x-values ─────────────────────────────────────────────────────────
+    // The binding: which named list this column draws from, and how legal a
+    // value outside it is. Resolved here rather than on the client, so the
+    // browser is handed the model and the two columns and never has to read a
+    // `valueset` declaration it does not have. `strength` travels because it
+    // decides the control — `open` gets one that can add, `suggested` one that
+    // takes free text — but it is an affordance there and the check is at the
+    // Data boundary, like `x-gate` (Invariant 6).
+    const bind = field.attributes.find(a => a.kind === 'values')
+    if (bind) {
+      const vs = (schema.valuesets ?? []).find(v => v.name === bind.set)
+      if (vs) fieldSchema['x-values'] = {
+        set:      vs.name,
+        strength: bind.strength,
+        model:    vs.source,
+        value:    vs.valueField,
+        label:    vs.labelField ?? vs.valueField,
+        // Every narrowing the set applies, as NAMES. A declared `@@scope` is
+        // one; a declared `where` is SQL and mints a scope named after the set,
+        // so both cross the same way and a picker asks for the same rows the
+        // Data boundary will accept. The predicates themselves never travel —
+        // a browser may not send SQL and does not need to (Invariant 8).
+        ...(vs.scopes?.length ? { scopes: vs.scopes } : {}),
+      }
     }
 
     properties[field.name] = fieldSchema
@@ -463,6 +494,14 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // which field to round-trip without scanning properties for a readOnly Int.
   const versionField = model.fields.find(f => f.attributes.some(a => a.kind === 'version'))
   if (versionField) result['x-version'] = versionField.name
+
+  // ── x-label-field ──────────────────────────────────────────────────────────
+  // Which column a picker SHOWS for a row of this model — FHIR's `display`.
+  // A field NAME, not a caption: `x-labels` on an enum def maps value → label,
+  // and this is the other question. Emitted on every mode, because which column
+  // identifies a row does not depend on whether you are writing one.
+  const labelAttr = model.attributes.find(a => a.kind === 'labelField')
+  if (labelAttr) result['x-label-field'] = labelAttr.field
 
   // ── x-gate ─────────────────────────────────────────────────────────────────
   // Emitted when the model has @@gate — structural metadata, emitted on all modes.
@@ -537,6 +576,44 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
 
 // ─── Per-field schema ─────────────────────────────────────────────────────────
 
+/**
+ * What a field is CALLED and what it says when it refuses — onto its schema.
+ *
+ * Split out because it has two callers and used to have one. A `type T { … }`
+ * field went through fieldToJsonSchema for its structure and never through
+ * this, so `@label` and an authored validator message were emitted for a model
+ * column and silently dropped for the identical declaration inside a type —
+ * every realm then wrote the default sentence over the author's, for a nested
+ * `Json @type(T)` value and for a custom method's declared input alike.
+ *
+ * @label("Customer") → JSON Schema `title`, the standard slot for a
+ * human-readable name. Every realm builds its generated messages from this
+ * rather than the column, so an error stops reading `customerId` under a form
+ * label that says "customer".
+ *
+ * Messages are keyed BOTH by the rule name ('length', 'gte', 'required') and by
+ * the JSON Schema keyword it compiles to ('minLength', 'minimum', …). One
+ * authored string, several lookup aliases — never two sources. Keying by
+ * keyword is the point: a consumer checking `minLength` looks up `minLength`.
+ * The alternative — publish the rule name and make each consumer map
+ * keyword→rule — puts the same table in Junction AND Sierra, and this file
+ * already owns that translation.
+ */
+function applyPresentation(fieldSchema, field) {
+  const label = field.attributes.find(a => a.kind === 'label')
+  if (label?.text) fieldSchema.title = label.text
+
+  const messages = {}
+  for (const attr of field.attributes) {
+    if (typeof attr?.message !== 'string' || !attr.message) continue
+    messages[attr.kind] = attr.message
+    for (const kw of MESSAGE_KEYWORDS[attr.kind] ?? []) messages[kw] = attr.message
+  }
+  if (Object.keys(messages).length) fieldSchema['x-messages'] = messages
+
+  return fieldSchema
+}
+
 function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audience = 'client', typeDefs = null) {
   const { name, type, attributes } = field
   const result = {}
@@ -602,8 +679,16 @@ function fieldToJsonSchema(field, schema, enumDefs, inlineEnums = false, audienc
 function typeToJsonSchema(type, schema, enumDefs, inlineEnums = false) {
   if (type.kind === 'enum') {
     // inlineEnums: true → emit values directly so consumers don't need $ref resolution
+    // Inlining exists so a consumer need not resolve a $ref, so it has to
+    // carry everything the $def would have answered — a label map left behind
+    // here is a picker that reads member names under one option and human text
+    // under the other, decided by a flag it never sees.
     const item = inlineEnums && enumDefs[type.name]
-      ? { type: 'string', enum: enumDefs[type.name].enum }
+      ? {
+          type: 'string',
+          enum: enumDefs[type.name].enum,
+          ...(enumDefs[type.name]['x-labels'] ? { 'x-labels': enumDefs[type.name]['x-labels'] } : {}),
+        }
       : { '$ref': `#/$defs/${type.name}` }
     // An enum ARRAY is a set of the declared values. The $ref belongs on the
     // items, not on the field — a picker reading the field's own schema would

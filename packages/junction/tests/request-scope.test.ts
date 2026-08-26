@@ -146,6 +146,31 @@ describe('every entry point opens the request scope', () => {
     expect(seen!.user?.userId).toBe('u-sys')
   })
 
+  // ── FJS-467 ───────────────────────────────────────────────────────────
+  //
+  // `runAs(null)` above is *nobody asked*, and it works. This is *the APP
+  // asked*, which reaches the same principal by its id — and it threw.
+  //
+  // The system principal is declared by the app and is deliberately not a row
+  // anything can log in as, so `sessionFor` cannot answer for it. Every id but
+  // null went through that lookup, so work enqueued while the app's own
+  // principal was in scope — a webhook, a raw route, anything calling a
+  // service as the app — recorded an id no re-resolution could ever satisfy,
+  // and failed its whole retry ladder with a message about a deleted user.
+  //
+  // Not the fallback the code deliberately refuses: this matches the id the
+  // app ITSELF supplied, where a fallback would run a demoted user's work with
+  // authority they never held.
+  test("runAs(<the app's own principal>) — recognised, not looked up", async () => {
+    seen = undefined
+    await app.runAs(SYS.userId, async () => { await app.service('probe').find() })
+    expect(seen!.user?.userId).toBe('u-sys')
+  })
+
+  test('an id the provider cannot resolve still throws by name', async () => {
+    await expect(app.runAs('u-ghost', async () => {})).rejects.toThrow(/no such principal/)
+  })
+
   test('a call arriving with no store IS the entry point', async () => {
     seen = undefined
     await app.service('probe').find()

@@ -301,7 +301,32 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
   IMPORT_RE.lastIndex = 0
   while ((m = IMPORT_RE.exec(js)) !== null) {
     const spec = m[2]
-    if (!isMesaSpecifier(spec)) continue
+
+    // A RELATIVE import of something that is not a Mesa file — a sibling store,
+    // a formatter, a table of constants — is rewritten to an absolute path.
+    //
+    // The compiled module is written to a temp directory, so every relative
+    // specifier in it is now relative to somewhere else: `'../../money.js'`
+    // resolves against `node_modules/.sierra/render/` and is not there. A bare
+    // specifier survives (Node walks up to a node_modules) and so does an
+    // absolute one, which is why this only ever bit a component importing its
+    // own neighbour — an ordinary thing for an island to do, and it failed the
+    // render rather than the build.
+    if (!isMesaSpecifier(spec)) {
+      if (spec.startsWith('.')) {
+        rewrites.push({
+          match:  m[0],
+          prefix: m[1],
+          // An absolute PATH and not a file:// URL. Node takes either; Vite's
+          // import-analysis refuses the URL form, and one of the two callers
+          // here is a Vite SSR runner — the same rewrite the Mesa branch below
+          // does with `child.tmpPath`.
+          tmpPath: path.resolve(path.dirname(canonical), spec),
+          suffix: m[3],
+        })
+      }
+      continue
+    }
     const depPath = resolveMesaImport(spec, canonical)
     const child = await compileTree(depPath, visited, tempFiles, opts)
     css += '\n' + child.css

@@ -1,5 +1,39 @@
 # Changes — @frontierjs/auth
 
+## 2026-08-24 — a sign-in screen can ask which providers exist, and the models are imported rather than pasted
+
+247 tests, 0 fail (+3). `example`: `verify:oauth` 22/22 (+3).
+
+**`GET /auth/oauth` names the configured providers.** A sign-in page is a
+separate build from the API, so any list of buttons it draws is a second copy of
+`oauthProviders` in another codebase, with nothing to fail when the two
+disagree: a provider dropped from the server leaves a button that redirects into
+`oauth_error=unavailable`, and one added appears nowhere at all. It is
+unauthenticated, because the page that asks has no session by definition, and
+mounted whether or not `oauth` is configured — an app with none answers `[]`,
+which is an answer, where a 404 is indistinguishable from a wrong prefix.
+`client.auth.providers()` is the browser half.
+
+**The four models are uuid-keyed now.** The deciding one is `Credential.id`:
+`connections()` hands it to the browser and `removeConnection` takes it back, so
+a sequential integer there is enumerable and publishes how many credentials the
+whole installation holds. `Session` was already a uuid, and one file with two id
+strategies is a question every reader has to answer twice.
+
+**`User.accountId` is a `String?`.** It shipped as `Int?`, and every id this
+package declares is a uuid — so the column could not hold one, and the only app
+that reached for it had to change the type in its own copy. Found by `fli
+check`'s new `package-model-drift` (`FJS-483`), which is the case where the rule
+reported an app/package disagreement and the PACKAGE was the side that was wrong.
+`SessionContext.accountId` was always a string either way.
+
+**And an app stops pasting them.** Litestone gained `extend model`, so
+`db/auth.lite` is imported and the three facts a package cannot know — the
+relation back to the app's own `User`, `@@log(audit)`, `@@tenant(none)` — are
+said at the app end without owning the columns. basecamp's hand copies are
+gone; one of them had `@guarded(all)` where this package writes `@secret`.
+
+
 ## 2026-08-19 — the harness leaked every database it made (`FJS-362`)
 
 137 tests, 0 fail.

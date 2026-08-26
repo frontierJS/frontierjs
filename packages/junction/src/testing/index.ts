@@ -409,6 +409,12 @@ export function testCtx(
   return ctx
 }
 
+// Re-exported here because `testCtx` is the thing that produces the context
+// `enterCall` needs: a hand-built context calls a service method directly,
+// which is the one path `callService` does not cover, so a method reading `$`
+// throws unless the test opens the scope itself.
+export { enterCall } from '../core/context.ts'
+
 // Run fn inside a request scope, for tests asserting on requestMeta().
 // Goes through the same enterRequest() every transport does, which is the
 // point: this used to build the meta itself and forward four of its six

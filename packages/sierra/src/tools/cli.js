@@ -163,6 +163,47 @@ async function cmdWidgets() {
   }
 }
 
+// ─── site ─────────────────────────────────────────────────────────────────────
+//
+// Serving a prerendered site is a command rather than a flag on the build
+// because the two are separate questions: CI builds and never serves, and a
+// drive serves what CI already built rather than rebuilding to look at it.
+// `vite build` is the build — there is nothing for a sierra subcommand to add.
+
+async function cmdSite() {
+  if (!flag('serve')) {
+    fatal(
+      'sierra site --serve [--port N] serves the built site.\n' +
+      '     Build it with `vite build -c config/vite.config.js` — a static\n' +
+      '     target is an ordinary Vite build that prerenders afterwards.'
+    )
+  }
+
+  const configPath = getFlag('config') ?? 'config/sierra.config.js'
+  const absConfig  = resolve(configPath)
+
+  // The output directory comes from the config where there is one, so a site
+  // that moved its outDir is served from where it actually lands. `--dir` is
+  // for serving a build somebody else produced.
+  let outDir = getFlag('dir')
+  if (!outDir) {
+    if (!existsSync(absConfig))
+      fatal(`No Sierra config at ${rel(absConfig)} — name one with --config, or point at a build with --dir`)
+    const mod    = await import(`file://${absConfig}`)
+    const config = mod.default ?? mod
+    outDir = config.outDir ?? 'dist'
+  }
+
+  const dir = resolve(outDir)
+  if (!existsSync(dir))
+    fatal(`No build at ${rel(dir)} — run \`vite build -c config/vite.config.js\` first.`)
+
+  const { serveSite } = await import('../site/serve.js')
+  const port   = Number(getFlag('port') ?? 0) || 0
+  const server = await serveSite({ dir, port })
+  console.log(`\n  ·  serving ${rel(dir)} at ${server.url}\n`)
+}
+
 // ─── dispatch ─────────────────────────────────────────────────────────────────
 
 const cmd = argv.find(a => !a.startsWith('--'))
@@ -171,15 +212,20 @@ if (cmd === 'routes') {
   await cmdRoutes()
 } else if (cmd === 'widgets') {
   await cmdWidgets()
+} else if (cmd === 'site') {
+  await cmdSite()
 } else {
-  console.log('Usage: sierra <routes|widgets> [--config config/sierra.config.js] [--check] [--stdout] [--out <path>]')
+  console.log('Usage: sierra <routes|widgets|site> [--config config/sierra.config.js] [--check] [--stdout] [--out <path>]')
   console.log()
   console.log('  routes    write the route table snapshot (--check in CI)')
   console.log('  widgets   build one embeddable script per widget in src/Embeds/')
   console.log('            --serve [--port N]  serve dist/embeds with the CORS + cache headers it deploys with')
+  console.log('  site      --serve [--port N]  serve a prerendered site with the directory-index,')
+  console.log('            cache and 404 answers a static host gives (--dir to point at a build)')
   console.log()
   console.log('  Run from the SURFACE root, not the app root — web/ for routes, widgets/ for')
-  console.log('  widgets. Both are Vite roots, and every path in a sierra config is relative')
-  console.log('  to one; run this a level up and it resolves against the wrong directory.')
+  console.log('  widgets, site/ for a site. Each is a Vite root, and every path in a sierra')
+  console.log('  config is relative to one; run this a level up and it resolves against the')
+  console.log('  wrong directory.')
   process.exit(cmd ? 1 : 0)
 }

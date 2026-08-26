@@ -21,7 +21,6 @@ title: Channels
   import { session } from '../../session.js'
   import { channels } from '../../resources/NotificationChannel.mesa'
   import { messageFor } from '../../errors.js'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -98,7 +97,7 @@ title: Channels
     if (READS.has(method) || !row?.id) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   async function create(data) {
     error = null

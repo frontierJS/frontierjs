@@ -5,25 +5,36 @@
  *
  *   ENV      7=test  8=dev  9=prod
  *   CATEGORY 0=fe  1=be  2=widgetDev  3=widgetServe  4=ext  5=tooling
+ *            6=siteDev  7=siteServe
  *   PROJECT  0-9  (assigned dynamically by lock manager)
  *   SERVICE  0-9  (per-project slot within a category)
+ *
+ * A surface that is both WRITTEN against and SERVED as its own origin takes
+ * two categories rather than two service slots. `widgets/` and `site/` are
+ * both that shape: while one is being written it is a dev server, and once it
+ * is built it is a static origin a browser reaches cross-origin from the SPA.
+ * Putting the served half in the fe row would say it is the SPA's second
+ * server, which is the one thing it is not.
  *
  * Examples:
  *   8000  →  dev / fe      / project 0 / service 0
  *   8010  →  dev / fe      / project 1 / service 0
  *   8100  →  dev / be      / project 0 / service 0
- *   8500  →  dev / tooling / project 0 / service 0  (prisma studio)
  *
- * Global tooling (not project-scoped, never dynamic):
- *   5000  →  fli gui
- *   5001  →  sql studio
+ * Global tooling (not project-scoped, never dynamic) is the WHOLE of
+ * 8500–8509 — dev, tooling, project 0. A tool here is one a person runs
+ * beside whatever app they are working on, so it cannot take a number from
+ * the app's own row and cannot be handed one at runtime: the URL is typed
+ * from memory and has to be the same tomorrow. Assigned slots are in GLOBAL
+ * below; the rest of the block is held free so the next one costs a line
+ * rather than a collision with an app that already claimed project 0.
  */
 
 import net from 'net'
 import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, openSync, writeSync, closeSync, unlinkSync } from 'fs'
 import { execSync } from 'child_process'
 import { homedir } from 'os'
-import { join } from 'path'
+import { basename, join } from 'path'
 
 // ─── Schema maps ──────────────────────────────────────────────────────────────
 
@@ -40,13 +51,19 @@ export const CAT = {
   widgetServe: 3,
   ext:         4,
   tooling:     5,
+  siteDev:     6,
+  siteServe:   7,
 }
 
 export const GLOBAL = {
-  gui:    8500,   // fli web GUI — project-local dev tooling
-  pview:  8501,   // fli project:view (FJSChain) — project-local dev tooling
-  studio: 8502,   // db studio — project-local dev tooling
+  gui:      8500,   // fli web GUI
+  pview:    8501,   // fli project:view (FJSChain)
+  studio:   8502,   // litestone db studio
+  devtools: 8503,   // junction's API console — app.configure(devtools())
 }
+
+/** The whole reserved block, assigned slots and free ones alike. */
+export const GLOBAL_RANGE = { first: 8500, last: 8509 }
 
 // ─── Static project ids ───────────────────────────────────────────────────────
 //
@@ -76,10 +93,13 @@ export const PROJECTS = {
   // to the dynamic allocator because basecamp's drive starts one and needs the
   // same number tomorrow.
   outpost:            8,
+  // frontierjs.dev. Site-only — no api, no SPA — so the slots it uses are
+  // siteDev 8690 and siteServe 8790, and its drive takes 7790.
+  website:            9,
 }
 
 /** Lowest project id claimSession() may hand out. Below this is assigned above. */
-export const DYNAMIC_PROJECT_FLOOR = 9
+export const DYNAMIC_PROJECT_FLOOR = 10
 
 // ─── Formula ─────────────────────────────────────────────────────────────────
 
@@ -92,10 +112,16 @@ export function port(category, { env, projectId, serviceId = 0 }) {
   if (CAT[category] === undefined) throw new Error(`Unknown category "${category}"`)
   if (projectId < 0 || projectId > 9) throw new Error(`projectId must be 0–9`)
   if (serviceId < 0 || serviceId > 9) throw new Error(`serviceId must be 0–9`)
-  // Guard: dev tooling ports 8500–8502 are reserved for global FLI tooling
-  // (gui, pview, studio). Test (75xx) and prod (95xx) tooling ports are not reserved.
-  if (env === 'dev' && projectId === 0 && CAT[category] === CAT.tooling && serviceId <= 2) {
-    throw new Error(`Ports 8500–8502 are reserved for global tooling (gui, pview, studio)`)
+  // Guard: the whole of dev/tooling/project-0 is the global block. Reserving
+  // only the slots currently assigned would hand the next free one to an app,
+  // and the collision surfaces as a tool that has quietly moved — the failure
+  // this scheme exists to stop. Test (75xx) and prod (95xx) tooling are not
+  // reserved: nobody types those from memory.
+  if (env === 'dev' && projectId === 0 && CAT[category] === CAT.tooling) {
+    const taken = Object.entries(GLOBAL).map(([n, p]) => `${p} ${n}`).join(', ')
+    throw new Error(
+      `Ports ${GLOBAL_RANGE.first}–${GLOBAL_RANGE.last} are reserved for global tooling (${taken})`
+    )
   }
   return (ENV[env] * 1000) + (CAT[category] * 100) + (projectId * 10) + serviceId
 }
@@ -111,18 +137,123 @@ export function decode(p) {
   return { env, category, projectId: projectDigit, serviceId: serviceDigit }
 }
 
+/** An ASSIGNED global port. A free slot inside the reserved block is not one. */
 export function isGlobalPort(p) {
   return Object.values(GLOBAL).includes(p)
 }
 
+/** Inside the reserved block, assigned or not — what the guard answers. */
+export function isReservedToolingPort(p) {
+  return p >= GLOBAL_RANGE.first && p <= GLOBAL_RANGE.last
+}
+
+// ─── Which ports does THIS app use ────────────────────────────────────────────
+//
+// A dev server fails badly rather than loudly when its port is taken, and the
+// two runners fail differently: `bun --watch` prints EADDRINUSE and KEEPS
+// WATCHING, so the process stays alive and a wrapper waiting on it waits
+// forever; vite has `strictPort` and exits, but only after somebody has already
+// been confused once.
+//
+// The worst version is a stale server from an earlier run. It still owns the
+// port AND still holds the old database open — including one that has been
+// deleted, since an unlinked SQLite file lives on while a handle does — so the
+// new server never starts, every request is answered by the ghost, and
+// `db:reset` looks like it did nothing.
+//
+// This is the derivation half of saying so. It reads the SURFACES that exist
+// (Invariant 3: a surface is a directory at the app root) rather than a list
+// each app keeps, because a list is the thing that goes stale the day somebody
+// adds `widgets/`.
+
+// Two naming conventions are live and both are correct. The apps in this repo
+// call a surface's script by its own name (`api`, `web`) and `fli new` writes
+// `dev:api`/`dev:web`, because there the scripts are composed into one `dev`.
+// The refusal prints a script for the person to stop, so it has to name one
+// that exists — a message telling somebody to run `bun run api` in an app whose
+// script is `dev:api` is a message that wastes their next minute.
+const SURFACE_PORTS = [
+  { dir: 'web',       category: 'fe',        scripts: ['web', 'dev:web'],             label: 'web' },
+  { dir: 'api',       category: 'be',        scripts: ['api', 'dev:api'],             label: 'API' },
+  { dir: 'widgets',   category: 'widgetDev', scripts: ['dev:widgets', 'widgets'],     label: 'widgets' },
+  { dir: 'site',      category: 'siteDev',   scripts: ['dev:site', 'site'],           label: 'site' },
+  { dir: 'extension', category: 'ext',       scripts: ['dev:extension', 'extension'], label: 'extension' },
+]
+
+/**
+ * Resolve an app's project id.
+ *
+ * The name is asked for first because it is what the PROJECTS table is keyed
+ * by, and the directory second because an app is often called something else on
+ * disk. Anything unknown is `scaffold` (0), which is what the templates use and
+ * therefore the honest default for an app nobody has assigned a number.
+ */
+export function projectIdFor(name, dirName) {
+  if (PROJECTS[name] !== undefined) return PROJECTS[name]
+  const short = String(name ?? '').replace(/^@[^/]+\//, '')
+  if (PROJECTS[short] !== undefined) return PROJECTS[short]
+  if (PROJECTS[dirName] !== undefined) return PROJECTS[dirName]
+  return PROJECTS.scaffold
+}
+
+/**
+ * The dev ports this app's surfaces will bind.
+ *
+ * `FLI_PORT_FE` / `FLI_PORT_BE` win where the broker set them — a scaffolded
+ * app reads those and the literal in its config is only the static default, so
+ * a preflight that ignored them would probe a port nothing is about to use.
+ *
+ * @param {string} appRoot
+ * @param {{name?: string, scripts?: object, env?: 'test'|'dev'|'prod',
+ *          exists?: (p: string) => boolean}} [opts]
+ * @returns {{port: number, surface: string, label: string, script: string|null}[]}
+ */
+export function appPorts(appRoot, { name, scripts, env = 'dev', exists } = {}) {
+  const here      = exists ?? ((p) => existsSync(p))
+  const dirName   = basename(appRoot)
+  const projectId = projectIdFor(name, dirName)
+
+  const override = { fe: process.env.FLI_PORT_FE, be: process.env.FLI_PORT_BE }
+
+  const out = []
+  for (const s of SURFACE_PORTS) {
+    if (!here(join(appRoot, s.dir))) continue
+    const stated = override[s.category]
+    // The first candidate the app actually declares; `null` where it declares
+    // none, which is honest — the surface exists and nothing here starts it.
+    const script = scripts
+      ? (s.scripts.find(n => typeof scripts[n] === 'string') ?? null)
+      : s.scripts[0]
+
+    out.push({
+      port:    stated ? Number(stated) : port(s.category, { env, projectId }),
+      surface: s.dir,
+      label:   s.label,
+      script,
+    })
+  }
+  return out
+}
+
+/**
+ * Which of them are already answering.
+ *
+ * Bound to 0.0.0.0 rather than 127.0.0.1: an app binds the wildcard address and
+ * a probe has to collide with it either way round.
+ */
+export async function busyPorts(ports) {
+  const probed = await Promise.all(ports.map(async (p) => (await isPortInUse(p.port, '0.0.0.0') ? p : null)))
+  return probed.filter(Boolean)
+}
+
 // ─── Socket probe ─────────────────────────────────────────────────────────────
 
-export function isPortInUse(p) {
+export function isPortInUse(p, address = '127.0.0.1') {
   return new Promise(resolve => {
     const server = net.createServer()
     server.once('error', () => resolve(true))
     server.once('listening', () => server.close(() => resolve(false)))
-    server.listen(p, '127.0.0.1')
+    server.listen(p, address)
   })
 }
 

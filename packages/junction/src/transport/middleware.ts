@@ -88,8 +88,29 @@ export interface CorsOptions {
   origins:      OriginList
   methods?:     string[]
   headers?:     string[]
+  // The app's own per-call headers (`config.http.callHeaders`). Separate from
+  // `headers` so an app declaring one place gets both readers — the WS frame
+  // merge is the other — rather than having to remember the CORS half too.
+  callHeaders?: string[]
   credentials?: boolean
   maxAge?:      number      // seconds
+}
+
+/** What the browser client sends whether or not an app asked for it. */
+const PROTOCOL_HEADERS = ['X-Service-Method', 'X-Workspace-Id', 'Idempotency-Key']
+
+/** Case-insensitive dedupe, first spelling wins — a list is header NAMES, and
+ *  `content-type` and `Content-Type` are one header announced twice. */
+function _uniqueHeaders(names: string[]): string {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const n of names) {
+    const k = n.toLowerCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(n)
+  }
+  return out.join(', ')
 }
 
 export function cors(opts: CorsOptions) {
@@ -97,21 +118,25 @@ export function cors(opts: CorsOptions) {
   const {
     origins,
     methods    = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    // Junction's OWN protocol headers belong in the default, because the
-    // browser client sends them unasked: X-Service-Method is how a custom
-    // method is addressed over HTTP, X-Workspace-Id rides on every call once
-    // setWorkspace() is used, and Idempotency-Key is read by callService.
-    // Cross-origin, a header missing here fails the preflight and the request
-    // never arrives — and an app whose socket is up never sees it, because the
-    // HTTP path is only the fallback.
-    headers    = ['Content-Type', 'Authorization', 'X-API-Key',
-                  'X-Service-Method', 'X-Workspace-Id', 'Idempotency-Key'],
+    headers    = ['Content-Type', 'Authorization', 'X-API-Key'],
     credentials = false,
     maxAge      = 86400
   } = opts
 
   const methodStr  = methods.join(', ')
-  const headerStr  = headers.join(', ')
+  // Junction's OWN protocol headers are added to whatever the app declared,
+  // never replaced by it, because the browser client sends them unasked:
+  // X-Service-Method is how a custom method is addressed over HTTP,
+  // X-Workspace-Id rides on every call once setWorkspace() is used, and
+  // Idempotency-Key is read by callService. Cross-origin, a header missing
+  // here fails the preflight and the request never arrives — and an app whose
+  // socket is up never sees it, because the HTTP path is only the fallback.
+  //
+  // They used to be part of the DEFAULT, which is the same thing until an app
+  // states a list of its own: `config.http.cors.headers` is populated in
+  // defaultConfig, so every app that configured CORS through config replaced
+  // the default with three names and lost all three protocol headers.
+  const headerStr  = _uniqueHeaders([...headers, ...PROTOCOL_HEADERS, ...(opts.callHeaders ?? [])])
 
   function isAllowed(origin: string): boolean {
     if (origins === '*') return true
@@ -155,6 +180,18 @@ export function cors(opts: CorsOptions) {
 function patchRouterWithMiddleware(app: App, mw: MiddlewareFn): void {
   const router   = app.http.router
   const methods  = ['get', 'post', 'put', 'patch', 'delete', 'options', 'head'] as const
+
+  // Routes registered BEFORE this point get it too, which patching alone
+  // cannot do. Every raw route a plugin mounts is registered inside
+  // `configure()` → `register()`, and that is synchronous and long finished by
+  // the time the `cors` start phase runs — so `/auth/login`, caravan's `/jobs`
+  // and every `app.post` an app writes at module scope were the routes this
+  // never reached, while SERVICE routes (registered in a later start phase)
+  // were fine. Sign-in was therefore the one call in a Junction app that no
+  // browser on another origin could make: preflight 204, POST 200, session
+  // created, response discarded by the browser, `Failed to fetch` on the page
+  // (`FJS-496`).
+  router.prependMiddleware?.(mw)
 
   for (const method of methods) {
     const original = router[method].bind(router) as Function

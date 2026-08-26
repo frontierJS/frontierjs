@@ -158,7 +158,7 @@ if (process.argv.includes('--reset')) {
 // The API is given a mail provider by env, which is the whole of what
 // core/mailer.ts reads. Without MAIL_URL the app has no `app.mail` at all —
 // a supported state, and the one every other run of this drive used to be in.
-children.push(spawn('bun', ['api/src/index.ts'], { cwd: PKG, stdio: 'ignore', env: {
+children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore', env: {
   ...process.env,
   MAIL_URL:     `http://localhost:${MAIL_PORT}`,
   MAIL_API_KEY: 'dev-mail-key',
@@ -1166,6 +1166,19 @@ check('the owner is listed',
 check('and is not offered a way to remove themselves',
   await evaluate(`document.getElementById('member-rows')?.textContent ?? ''`),
   t => t.includes('you'))
+
+// FJS-410. The service refuses a caller moving their own role — nobody grades
+// themselves — so the picker on your own row is disabled rather than offering a
+// control that answers 403. An affordance check: the refusal itself is
+// `api/test/services.test.ts`, which is where a boundary belongs.
+check('nor a way to move their own role',
+  await evaluate(`
+    (() => {
+      const rows = [...document.querySelectorAll('#member-rows tbody tr')]
+      const mine = rows.find(r => r.textContent.includes(${JSON.stringify(ACCOUNT.email)}))
+      return mine?.querySelector('select')?.disabled ?? null
+    })()
+  `), true)
 
 // The trail. Everything done above should be in it.
 await goto('/admin/audit/')

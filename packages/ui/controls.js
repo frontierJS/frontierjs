@@ -87,6 +87,6 @@ export function registeredFormControls() {
  * Exported because `FormField.mesa` uses it and a `props` builder that only
  * wants to add one key should not have to restate it.
  */
-export function defaultControlProps({ field, value, onvalue, options }) {
-  return { name: field.name, field, value, onvalue, options }
+export function defaultControlProps({ field, value, onvalue, options, total }) {
+  return { name: field.name, field, value, onvalue, options, total }
 }

@@ -145,31 +145,6 @@ export function currentWorkspace() {
   return session.workspaces.find(w => w.id === session.workspaceId) ?? null
 }
 
-/**
- * Resource before/create hook: put the active workspace on the record.
- *
- * Every workspace-scoped model declares `workspaceId String` — not optional —
- * so the schema-derived client validation refuses a create without it:
- * `workspace is required`, before the request is even sent. But the column is
- * SERVER-stamped: the tenancy declaration desugars a
- * `@default(auth().workspaceId)`, so the column is filled at the Data boundary
- * from the claim the principal carries, because a client that names its own
- * workspace is a client choosing its own tenant.
- *
- * So the record has to carry it to satisfy the schema, and the value has to be
- * ignored by the server. Both are true: a write naming another tenant is
- * refused by the generated rule, so this is bookkeeping, not authority — and a
- * lying client gains nothing by it.
- *
- * It lives here, once, rather than in each form, because a form that forgot it
- * would fail with a validation error naming a field the person cannot see.
- * Resource before-hooks run BEFORE validation for exactly this case
- * (sierra src/junction/resource.js ~429).
- */
-export function stampWorkspace(ctx) {
-  if (ctx.data && !ctx.data.workspaceId) ctx.data.workspaceId = session.workspaceId
-}
-
 // ─── Transitions ──────────────────────────────────────────────────────────────
 
 /** First-run bootstrap: account + user + workspace + membership, one call. */

@@ -23,7 +23,7 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, ro
 import { db, findScoped, getScoped, narrowPatch, changesNothing, ws, actor } from '../../core/resource.ts'
 import { scopeVocabulary } from './scopes.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext, IAuth } from '@frontierjs/junction'
+import type { IAuth } from '@frontierjs/junction'
 
 // ─── Expiry ──────────────────────────────────────────────────────────────
 // Server-side, deliberately. A browser computing "90 days" means 90 days by
@@ -218,7 +218,7 @@ export function createApiKeysService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const status = $.locals.statusFilter as string | undefined
       const page = await findScoped('apiKey', {
@@ -254,7 +254,7 @@ export function createApiKeysService(app: BasecampApp) {
       }
     },
 
-    async patch(ctx: ServiceContext) {
+    async patch() {
       const existing = await getScoped('apiKey', 'API key')
 
       // Renaming is the only safe change. Scopes and expiry are baked into the

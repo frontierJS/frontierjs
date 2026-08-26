@@ -19,7 +19,7 @@ function execCompiled(compiledJs, runtime) {
     .trim()
     .replace(/^export default\s+/m, 'const __component = ') + '\nreturn __component'
   // eslint-disable-next-line no-new-func
-  return new Function('$runtime', code)(runtime)
+  return new Function('$$runtime', code)(runtime)
 }
 
 async function compileAndExec(source, runtime) {
@@ -93,8 +93,8 @@ describe('<mesa:element> — compile', () => {
     const out = await cx(`<script>let t = 'h2'</script><mesa:element this={t}>x</mesa:element>`)
     expect(out.analysis.errors).toEqual([])
     expect(out.result).toContain('mesa-dynamic-element')
-    expect(out.result).toContain('$runtime.keyBlock')
-    expect(out.result).toContain('$runtime.dynamicElement')
+    expect(out.result).toContain('$$runtime.keyBlock')
+    expect(out.result).toContain('$$runtime.dynamicElement')
   })
 })
 

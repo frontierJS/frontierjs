@@ -20,7 +20,6 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WO
 import { db, findScoped, getScoped, deriveSlug, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 export function createAlertsService(app: BasecampApp) {
 
@@ -69,7 +68,7 @@ export function createAlertsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const severity = $.query.severity as string | undefined
       // The wire carries strings; the column is a boolean. Comparing them raw
@@ -87,7 +86,7 @@ export function createAlertsService(app: BasecampApp) {
       })
     },
 
-    async get(ctx: ServiceContext) {
+    async get() {
       // The firing history is what makes a rule legible — a rule with no events
       // and a rule that fires nightly look identical without it.
       return ruleWithDelivery(await getScoped('alertRule', 'Alert rule'))
@@ -113,7 +112,7 @@ export function createAlertsService(app: BasecampApp) {
       return db().alertRule.update({ where: { id: $.id as string }, data: patch })
     },
 
-    async remove(ctx: ServiceContext) {
+    async remove() {
       const rule = await getScoped('alertRule', 'Alert rule')
       // AlertRule declares no @@softDelete, so this is a real delete — and the
       // schema cascades its events with it. That is the right shape: an event
@@ -127,7 +126,7 @@ export function createAlertsService(app: BasecampApp) {
     // Read-shaped: it changes nothing, so it opts out of the announcement the
     // after-hook makes for every other method (junction's own rule — only
     // find/get are excluded automatically).
-    async events(ctx: ServiceContext) {
+    async events() {
       const rule = await getScoped('alertRule', 'Alert rule')
       const { limit, offset } = getPagination()
       $.dispatch = false
@@ -145,7 +144,7 @@ export function createAlertsService(app: BasecampApp) {
     // custom method's return shape is load-bearing (junction FJS-020), and a
     // client assigning the answer over the record it is rendering must get
     // that record back.
-    async attachChannel(ctx: ServiceContext) {
+    async attachChannel() {
       const rule = await getScoped('alertRule', 'Alert rule')
       const { channelId } = ($.data ?? {}) as Record<string, string>
       if (!channelId) throw new BadRequest('channelId is required')
@@ -164,7 +163,7 @@ export function createAlertsService(app: BasecampApp) {
       return ruleWithDelivery(rule)
     },
 
-    async detachChannel(ctx: ServiceContext) {
+    async detachChannel() {
       const rule = await getScoped('alertRule', 'Alert rule')
       const { channelId } = ($.data ?? {}) as Record<string, string>
       if (!channelId) throw new BadRequest('channelId is required')
@@ -180,7 +179,7 @@ export function createAlertsService(app: BasecampApp) {
     // A person says "seen". The event stays firing — acknowledging is not
     // resolving, and collapsing the two would let a page-out be silenced by
     // someone who only looked at it.
-    async acknowledge(ctx: ServiceContext) {
+    async acknowledge() {
       const eventId = ($.data as Record<string, string>)?.eventId ?? $.id as string
       const event   = await eventInWorkspace(eventId)
       if (event.acknowledgedAt) throw new BadRequest('Already acknowledged')
@@ -192,7 +191,7 @@ export function createAlertsService(app: BasecampApp) {
     },
 
     // ── resolve ───────────────────────────────────────────────────────
-    async resolve(ctx: ServiceContext) {
+    async resolve() {
       const eventId = ($.data as Record<string, string>)?.eventId ?? $.id as string
       const event   = await eventInWorkspace(eventId)
       if (event.status === 'resolved') throw new BadRequest('Already resolved')

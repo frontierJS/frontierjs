@@ -1,0 +1,195 @@
+---
+title: Registry
+---
+<script>
+  // The mock's RegistryView — the container images this workspace has pushed.
+  //
+  // A MIRROR, and the screen says so in the one place it matters: the header
+  // line carries when the mirror was last seen, because an empty list here means
+  // either *no images* or *no sync* and nothing else can tell those apart.
+  //
+  // ─── Two absences, both deliberate, both stated on screen ───────────────
+  //
+  //   No sync button. There is a registry provider and it is a stub — but the
+  //   interface could not fill this table against a real registry either:
+  //   `listTags(repo)` answers `string[]`, so a digest, a size and a push time
+  //   would all be invented.
+  //
+  //   No delete button. Deleting a mirror row deletes nothing — the tag is
+  //   still in the registry and the next sync brings it back — so the control
+  //   would report a success that did not happen.
+  //
+  // The size figure is the one number on this screen with an argument behind
+  // it. A repository's total charges a shared digest ONCE: `latest` and the
+  // newest version tag are one image and the registry stores those layers once,
+  // so summing per tag overstates the disk by however many aliases there are.
+  // That is exactly the number somebody uses to decide what to delete.
+  import { session } from '../../session.js'
+  import { registry } from '../../resources/RegistryImage.mesa'
+  import { formatBytes as size } from '@frontierjs/toolbelt/units'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+
+  $: session.workspaceId
+
+  let summary  = null
+  let tags     = []
+  let opened   = null
+  let error    = null
+  let loading  = true
+  let search   = ''
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // The aggregate and the rows are two calls on purpose. The repository
+      // totals are computed on the server — there is no RegistryRepo model, and
+      // a stored total would be a second answer to a question the rows already
+      // answer — and the tag rows are only fetched for what is open.
+      summary = await registry.service.invoke('repositories', null)
+      tags    = (await registry.service.find({}, { limit: 500 })).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  $: repositories = (summary?.repositories ?? []).filter(r =>
+    !search || r.repository.toLowerCase().includes(search.toLowerCase()))
+
+  function tagsOf(repository) {
+    return tags.filter(t => t.repository === repository)
+  }
+
+  // Which tags share a digest with an earlier one in the same repository. The
+  // screen marks the alias rather than hiding it: both names are real and
+  // deleting either leaves the image, which is the thing worth knowing.
+  function aliasOf(repository, tag) {
+    const rows = tagsOf(repository)
+    const first = rows.find(t => t.digest === tag.digest)
+    return first && first.tag !== tag.tag ? first.tag : null
+  }
+
+  function when(iso) {
+    if (!iso) return 'never'
+    const mins = Math.floor((Date.now() - new Date(iso)) / 60_000)
+    if (mins < 1)  return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
+  }
+
+  const TAG_COLUMNS = [
+    { key: 'tag',    label: 'Tag' },
+    { key: 'digest', label: 'Digest' },
+    { key: 'size',   label: 'Size' },
+    { key: 'pushed', label: 'Pushed' },
+    { key: 'use',    label: 'In use' },
+  ]
+</script>
+
+<div class="section-header">
+  <h1>Registry</h1>
+  {#if summary}
+    <span class="text-sm text-muted" id="registry-freshness">
+      {summary.lastSyncedAt
+        ? `mirror last seen ${when(summary.lastSyncedAt)}`
+        : 'never synced'}
+    </span>
+  {/if}
+</div>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<Callout tone="info" title="This is a mirror, and nothing here syncs it">
+  These rows describe what a registry reported, not what it holds right now. There is no sync
+  and no delete: the adapter interface cannot answer a digest, a size or a push time, so a sync
+  would invent all three — and deleting a mirrored row deletes nothing, because the tag stays in
+  the registry and the next sync brings it back.
+</Callout>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !summary?.total}
+  <EmptyState title={summary?.lastSyncedAt ? 'No images' : 'Never synced'}>
+    {summary?.lastSyncedAt
+      ? 'The mirror is up to date and this workspace has pushed nothing.'
+      : 'Nothing has ever mirrored a registry into this workspace, so this list is empty for a reason that is not "no images".'}
+  </EmptyState>
+{:else}
+  <div class="cluster" id="registry-totals">
+    <Badge tone="muted">{summary.total} repositories</Badge>
+    <Badge tone="muted">{summary.tags} tags</Badge>
+    <!-- Charged per DIGEST. See the header — a per-tag sum overstates this by
+         however many aliases the repository has. -->
+    <Badge tone="muted">{size(summary.sizeBytes)} on disk</Badge>
+  </div>
+
+  <div class="cluster">
+    <label class="visually-hidden" for="registry-search">Search repositories</label>
+    <Input id="registry-search" placeholder="Search repositories…" value={search}
+           oninput={(e) => search = e.target.value} />
+  </div>
+
+  <div class="stack" id="registry-list">
+    {#each repositories as repo}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4"><code>{repo.repository}</code></h2>
+          <span class="cluster">
+            <Badge tone="muted">{repo.tags} tags</Badge>
+            {#if repo.inUse}<Badge tone="success">{repo.inUse} in use</Badge>{/if}
+            <Badge tone="muted">{size(repo.sizeBytes)}</Badge>
+          </span>
+        </div>
+
+        <p class="text-sm text-muted">
+          last push {when(repo.lastPushedAt)} · mirrored {when(repo.lastSeenAt)}
+        </p>
+
+        <Button variant="outlined"
+                onclick={() => opened = opened === repo.repository ? null : repo.repository}>
+          {opened === repo.repository ? 'Hide tags' : 'Tags'}
+        </Button>
+
+        {#if opened === repo.repository}
+          <Table columns={TAG_COLUMNS} rows={tagsOf(repo.repository)} striped hover={false}>
+            {#snippet row(t)}
+              <tr>
+                <td><code>{t.tag}</code></td>
+                <td class="text-sm text-muted"><code>{t.digest.slice(0, 19)}</code></td>
+                <td class="text-sm">
+                  {size(t.sizeBytes)}
+                  {#if aliasOf(repo.repository, t)}
+                    <!-- The same bytes under a second name. Marked rather than
+                         hidden: both tags are real, and neither one deleting
+                         would free this. -->
+                    <Pill tone="muted">same image as {aliasOf(repo.repository, t)}</Pill>
+                  {/if}
+                </td>
+                <td class="text-sm text-muted">{when(t.pushedAt)}{t.pushedBy ? ` by ${t.pushedBy}` : ''}</td>
+                <td>{#if t.inUse}<Pill tone="success">deployed</Pill>{:else}<span class="text-sm text-muted">—</span>{/if}</td>
+              </tr>
+            {/snippet}
+          </Table>
+        {/if}
+      </Card>
+    {/each}
+  </div>
+{/if}

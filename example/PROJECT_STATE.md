@@ -12,9 +12,9 @@ Everything below was verified by running it. Where it was not, it says so.
 | | |
 | --- | --- |
 | **Runs** | yes — `bun run api` + `bun run web`, two terminals |
-| **Verified** | **116 assertions across six drives, all passing, twice consecutively against one database**: `verify` **37/37** (dev *and* production build), `verify:ui` **27/27**, `verify:live` **14/14**, `verify:jobs` **8/8**, `verify:notify` **9/9**, `verify:public` **21/21** (the prerendered site, in the built output), 0 console errors. **Repeatable** as of 2026-08-06 — the seeder restores what the drive consumes (was single-shot, `FJS-080`) |
-| **Builds** | yes — `bun run build` → `web/dist/client/` + robots.txt + sitemap (5 URLs). The built page is now driven too; until 2026-08-04 it loaded no JavaScript at all. `bun run build:public` → `web/dist/public/`, the prerendered public site, driven by `verify:public` |
-| **Phase** | 1 (spine), **all of 2** (state machine + live updates), **deferred work** (caravan), **outbound + notifications** (conduit, notifications), **static + islands** (the public catalogue, proven interactive in the built output), the `@frontierjs/ui` re-skin, and the four screens that drive the kit's behavioural components |
+| **Verified** | **529 assertions across eighteen drives, all passing against one database**: `verify` **42/42** (dev *and* production build), `verify:ui` **35/35**, `verify:values` **14/14**, `verify:live` **17/17**, `verify:jobs` **10/10**, `verify:notify` **9/9**, `verify:pay` **22/22** (the payment provider, both directions signed, refunds included), `verify:site` **39/39** (the prerendered site, in the built output), `verify:catalogue` **20/20**, `verify:cart` **32/32** (the basket, and the itemised order it becomes), `verify:money` **79/79** (what a basket costs and why — a discount, a delivery threshold and a tax rate in one arithmetic, plus the race for the last redemption of a code), `verify:stock` **41/41**, `verify:widget` **37/37**, `verify:tenants` **21/21** (many shops, one file each), `verify:extension` **13/13** (the shop in a browser toolbar, loaded unpacked into a profile), `verify:account` **18/18** (a shopper with an account, on the static storefront), `verify:revisions` **38/38** (taking a row back, and two people editing one), 0 console errors. **Repeatable** as of 2026-08-06 — the seeder restores what the drive consumes (was single-shot, `FJS-080`), and every drive that moves a global list asserts against the SEEDED rows rather than the table |
+| **Builds** | yes — `bun run build` → `web/dist/client/` + robots.txt + sitemap (5 URLs). The built page is now driven too; until 2026-08-04 it loaded no JavaScript at all. `bun run build:site` → `site/dist/`, the prerendered public site, driven by `verify:site` |
+| **Phase** | 1 (spine), **all of 2** (state machine + live updates), **deferred work** (caravan), **outbound + notifications** (conduit, notifications), **static + islands** (the public catalogue, proven interactive in the built output), the `@frontierjs/ui` re-skin, the four screens that drive the kit's behavioural components, and the shop: a catalogue with variants and photographs, a basket a stranger owns, a currency toggle, **inventory with reservations**, **an order that records what was bought**, and a **`widgets/` surface** whose buy button runs on a page the shop does not own |
 | **Committed** | **no.** `example/` is untracked; the package changes it drove are unstaged |
 
 The app is a shop: `Product`, `Customer`, `Order`, one `db/schema.lite`, real
@@ -28,14 +28,126 @@ by design: jetty (a different container) and the VS Code extension.
 
 ## What is proven
 
-Each of these is an assertion in one of the three drives, or a line in the README's
-*Verified* section — not a claim.
+Each of these is an assertion in one of the eight drives, or a line in the
+README's *Verified* section — not a claim.
 
+- **A stranger can buy something.** `Cart` and `CartLine` are `@@gate("0.0.0.5")`
+  reached by `@@allow('read', token == auth().cartToken)`, the claim comes from
+  `createApp({ principal })` running for a caller with no session, and the token
+  rides `x-cart-token` over HTTP and over the socket alike. `verify:cart` adds
+  to a basket with the connection live, so the header is proven to have crossed
+  a WebSocket frame and not just a request.
+- **A buy button runs on a page the shop does not own.** `widgets/` is a third
+  surface beside `api/` and `web/` — its own Vite root, its own host pages, its
+  own static release. One `.mesa` becomes one self-contained IIFE mounted in a
+  shadow root by a custom element. It is the only thing here that is
+  cross-origin, so it is the only thing that needs CORS and a real preflight for
+  `x-cart-token`; and because `localStorage` is per origin, the basket it starts
+  cannot be read by the shop's own site. What crosses is a **one-time code** in
+  the URL fragment — `carts.handoff` mints it, `carts.redeem` spends it in the
+  transaction that reads it — never the token. `verify:widget` stands up four
+  origins and proves all of it in a browser, hostile host CSS included.
+- **This is a fleet of shops, and a shop is a FILE.** `tenancy { strategy
+  database }` in the seed, `resolve subdomain` as the deployment fact, and the
+  isolation is the filesystem: there is no query that reaches two shops because
+  there is no connection that holds two. **The people are per shop too** — an
+  account at one is not an account at another, which is the assertion a shared
+  identity table would quietly get wrong. `verify:tenants` proves the data, the
+  people and the session separately, over Host headers, because a browser
+  cannot set one.
+
+  A request that names no shop gets the flagship, and that fallback is the
+  APP's — `resolve subdomain` deliberately has no default, so `api/src/core/db.ts`
+  says which shop *nobody said* means, in one place. A host naming a shop nobody
+  created is a 404.
+- **The storefront's search asks the shop, and says when it could not.**
+  `Product` declares `@@fts([name, description])`; the catalogue island sends
+  `?$search=…&active=true` — a directive and a filter side by side, with no app
+  code between them — and junction routes it to Litestone's `search()`. What
+  makes it worth having rather than a demo is what an island CANNOT do: the
+  products are serialised into the page at build time and descriptions are not
+  among them, so `fleece` is findable by the shop and by nothing running here.
+  With the shop unreachable the box filters what is on the page and says so —
+  an empty list because nothing matched and an empty list because the network
+  failed are two different answers, and drawing them the same way tells a
+  shopper their shop is empty. `verify:site` asserts both, the second with the
+  network really turned off.
+- **An order says what was bought, at the price it was bought for.**
+  `OrderLine` copies the SKU, the wording and the unit price at the moment of
+  sale, and stores the line total rather than multiplying it back at read time —
+  so the itemisation adds up to what was charged, to the penny, and a price
+  edited in the catalogue tomorrow does not rewrite what a customer paid today.
+  It is `@@gate("0.8.8.8")`: readable wherever the order is, written only
+  through `asSystem()`, by `carts.checkout` and nothing else. `verify:cart`
+  asserts the copy, the arithmetic and the 405 a caller trying to add one gets;
+  `verify` reads the itemisation off the detail screen and then opens an order
+  raised by hand on that same screen, which correctly has none.
+
+  It does **not** replace the inventory ledger, and the two answer different
+  questions: `InventoryMovement` is what left the shelf and is what a refund
+  reads back, because it is signed and summable and survives anything anybody
+  does to a line afterwards. These are what the shop billed for, which the tape
+  cannot answer — it carries no prices.
+- **A basket holds stock, and the hold expires on its own.**
+  `ProductVariant.stock` is ON HAND; `StockReservation` is what an open basket
+  has set aside; AVAILABLE is the difference and is a column nowhere.
+  `api/inventory.ts` is the one module that reads any of the three or writes the
+  first, and every write to `stock` is paired with an `InventoryMovement` in the
+  same transaction. `verify:stock` asserts the three things that break silently:
+  a hold moves available and leaves on hand alone, a shopper's own hold does not
+  count against them, and the expiry is in the READ rather than in the cron —
+  so `release-holds` is housekeeping and a queue outage cannot stop the shop
+  selling. The ledger is `@@gate("5.5.9.9")`: update and delete are 9, which
+  nothing passes including `asSystem()`, and that is what append-only is spelled
+  with.
+- **Prices have a currency, and it is one function.** `money()` over
+  `@frontierjs/toolbelt/units`, read by five screens including the prerendered
+  catalogue and the API's own email bodies. The toggle in Settings converts
+  against a fixed table stated in `web/src/money.js`; `verify:ui` asserts the
+  NUMBER moved and not only the symbol, because a toggle that changed the glyph
+  alone would show one price as two different amounts.
+- **A customer can be taken off the books and their orders cannot.**
+  `Customer` is `@@softDelete` and `orders Order[] @keep` — the third fate a
+  soft-deleted parent's children can have, and the one that had no spelling
+  until this app needed it. Before, `Order.customerId` was `onDelete: Cascade`,
+  so removing a customer DESTROYED every order they had ever placed; cascading
+  the soft delete instead would only have hidden them. An order is what the
+  revenue is made of, so neither is what a shop means. `Product` and `Order` are
+  `@@softDelete(cascade)` and the ledger is not touched by either, because
+  `InventoryMovement` hangs off the shelf rather than off the order — which is
+  also the reason the catalogue had no removal story at all before: that
+  relation is `Restrict`, so a product that had ever sold could not be deleted,
+  correctly and with no way out. The `Orders` column on the customers screen is
+  a `@from` count and is what makes `@keep` VISIBLE rather than merely true: a
+  removed customer still reads 2.
+
+  `deletedAt` is **not** a second `active`. `active: false` is *we are not
+  selling this right now*; this is *it is not ours any more*. What proves they
+  are different rather than differently spelled is `@unique` — a deleted product
+  keeps its slug and a deleted customer keeps their email, deliberately, because
+  a way back that fails when a stranger has taken the value is not a way back.
+  So re-registering a removed address is a 409 naming the row that holds it.
+- **Two staff cannot silently overwrite each other.** `@version` on `Product`,
+  `Customer`, `ShippingMethod` and `TaxRate` — every one a row a FORM edits and
+  nothing else writes. The models left out are left out on purpose and the seed
+  argues each: `ProductVariant` (a person edits the price, every sale writes
+  `stock`), `Order` (`@@transitions` is already a compare-and-swap on the one
+  contended column, and the courier job writes `trackingCode`), `Discount`
+  (`redemptions` moves inside every checkout), the basket (one shopper), the
+  append-only tables. `@version` is per ROW, so where two writers touch disjoint
+  columns it reports a conflict about a change nobody made — and a 409 nobody
+  can act on teaches everyone to retry blindly.
+
+  The screen half is the one a unit test cannot reach: the drawer holds the
+  revision this screen READ, somebody else saves, and `resource.conflict(err)`
+  answers the two numbers where `fieldErrors(err)` answers the sentence — which
+  is what a *reload theirs* / *overwrite with mine* prompt needs and what a
+  status cannot express.
 - **One schema seeds three realms.** Tables, CRUD, 401/403, 400s, `make()`
   defaults, enum options, relation pickers, gate levels and the state machine
   all derive from `db/schema.lite`. No field list appears in any component.
 - **Auth + `@@gate` work together.** Ladder: signed out 0, unverified 1,
-  verified 4, verified admin 5. `api/gate.ts` is four lines and is the only
+  verified 4, verified admin 5. `api/src/core/gate.ts` is four lines and is the only
   place a role becomes a level.
 - **Field-level `@allow`** — `Customer.notes` is *absent* from the response for
   non-admins, not blanked. The column appears in the table when you sign in as
@@ -106,20 +218,26 @@ on the response.
 
 ```
 example/
-├── db/schema.lite          ← the seed. Read by api/ and by web/'s build
+├── db/
+│   ├── schema.lite         ← the seed. Read by api/ and by web/'s build
+│   └── seed.ts             ← `bun run db:seed`. 13 products, 2 customers, 3 orders,
+│                             2 demo users. A SCRIPT — nothing imports it
 ├── api/
-│   ├── db.ts               ← client + GatePlugin + autoMigrate; appends auth's
-│   │                         schema fragments rather than pasting a copy
-│   ├── gate.ts             ← the ONE place a session becomes a number
-│   ├── seed.ts             ← 4 products, 2 customers, 3 orders, 2 demo users
-│   ├── app.ts              ← createApp, auth plugin (+ its three services), caravan, channels
-│   ├── jobs/               ← book-courier, announce-payment, sweep-abandoned (its own cron) — all autoloaded
-│   ├── mailer.ts           ← IMail over app.conduit.send() — the provider is a TARGET
-│   ├── mail-sink.ts        ← the dev mail catcher on :8111, provider-shaped
-│   ├── notifications/      ← OrderPaid (staff, inApp) + OrderConfirmation (customer, email)
-│   ├── emails/             ← order-confirmation.mesa — the body, in the email
-│   │                         realm + preview.mjs (`bun run email:preview`)
-│   └── services/           ← 3 files; orders.service.ts has the 4 transitions
+│   ├── index.ts            ← the entry. start(), the dev mail sink, and nothing else
+│   ├── config/             ← junction.config.js — caravan, and where the services are
+│   └── src/
+│       ├── app.ts          ← createApp, auth plugin (+ its three services), caravan, channels.
+│       │                     Exported unstarted, so `junction surface` can import it
+│       ├── core/db.ts      ← client + GatePlugin + autoMigrate; appends auth's
+│       │                     schema fragments rather than pasting a copy
+│       ├── core/gate.ts    ← the ONE place a session becomes a number
+│       ├── jobs/           ← book-courier, announce-payment, sweep-abandoned (its own cron) — all autoloaded
+│       ├── core/mailer.ts      ← IMail over app.conduit.send() — the provider is a TARGET
+│       ├── core/mail-sink.ts   ← the dev mail catcher on :8111, provider-shaped
+│       ├── notifications/  ← OrderPaid (staff, inApp) + OrderConfirmation (customer, email)
+│       ├── emails/         ← order-confirmation.mesa — the body, in the email
+│       │                     realm + preview.mjs (`bun run email:preview`)
+│       └── services/       ← 9 files; orders.service.ts has the 4 transitions
 └── web/                    ← Vite root
     ├── config/             ← vite.config.js + sierra.config.js + routes.js
     ├── test/
@@ -128,26 +246,41 @@ example/
     │   ├── verify-live.mjs ← the REAL-TIME drive. 14 — a watcher tab that never acts
     │   ├── verify-jobs.mjs ← the DEFERRED-WORK drive. 8 — no browser at all
     │   ├── verify-notify.mjs ← the OUTBOUND drive. 9 — mail at a real server
-    │   ├── verify-public.mjs ← the PRERENDERED drive. 21 — the BUILT static
-    │   │                        site: markers, hydration, lazy chunks, no gated
-    │   │                        data in the file
     │   ├── preview.mjs     ← serves dist/ with the dev server's proxies
     │   └── verify-build.mjs
     └── src/
         ├── prefs.js              ← browser preferences; the only non-model state
-        ├── public-site/          ← the PUBLIC prerendered site (its own routesDir)
-        │   ├── catalog/           ← index.mesa + index.meta.js — load() at BUILD time
-        │   └── islands/           ← CatalogList (client:load), LiveStock (client:visible)
         ├── resources/Order.mesa  ← .mesa, invariants 18 + 19
         └── routes/               ← index, orders/{index,create,[id]}, products,
-                                    customers, settings
+                                    customers, cart, inventory, settings
+
+site/                       ← the PUBLIC storefront. Its own surface (FJS-D127),
+  config/                     never a routesDir inside web/: one Vite root is one
+    sierra.config.js          dist/, and `vite build` empties outDir — the SPA's
+    vite.config.js            build deleted it, silently, for as long as it lived
+  index.html                  there
+  src/
+    api.js                  ← the API's ORIGIN. An island crosses one; the SPA,
+                                behind Vite's proxy, never has
+    money.js                ← the shop's BASE currency. No reader, no storage
+    islands/                ← CatalogList (client:load), LiveStock (client:visible),
+                                LivePrices (client:load — corrects a stale price)
+    routes/
+      _module.mesa          ← the layout. The first this repo PRERENDERS
+      index.mesa            ← the home page, three products baked in
+      404.mesa              ← and the reason `404.mesa` used to break the build
+      catalog/              ← index.mesa + index.meta.js — load() at BUILD time
+      products/[slug].mesa  ← ONE PAGE PER PRODUCT, via getStaticPaths()
+  test/verify.mjs           ← the storefront drive. 37 assertions
+  deploy/                   ← serve.js + Dockerfile — the site origin
 ```
 
-`bun run api` (:8110) · `bun run web` (:8010) · `bun run verify` · `bun run verify:ui` ·
+`bun run api` (:8110) · `bun run web` (:8010) · `bun run dev:site` (:8610) ·
+`bun run verify` · `bun run verify:ui` ·
 `bun run verify:live` · `bun run verify:jobs` · `bun run verify:notify` ·
 `bun run email:preview` ·
-`bun run build` · `bun run verify:build` · `bun run build:public` ·
-`bun run verify:public` · `bun run reset`
+`bun run build` · `bun run verify:build` · `bun run build:site` ·
+`bun run verify:site` · `bun run reset`
 
 Sign in: `sam@shop.test` (level 4) or `alex@shop.test` (level 5), password
 `correct-horse-battery`. The header buttons do it.
@@ -191,7 +324,7 @@ components (`/orders/{id}/`, the products filter bar, `/settings/`, ⌘K):
 | **mesa** | An assignment inside a component prop compiled to a signal READ — `<Modal onclick={() => open = false}>` threw `Invalid left-hand side in assignment`, so a dialog's Cancel button did nothing |
 | **mesa** | `$: fn(), handler` spliced its output from the wrong string (`$$set_high(sa'`, taken from an import statement) — and threw `Assignment to constant variable` when the watched function was a `const`. Fixed, and the const case is now a compile error |
 | **mesa** | An attribute depending only on a `{@const}` was written once and never updated: a completed step kept `aria-current="step"` while its class said otherwise |
-| **mesa** | `<C aria-label="x">` emitted `{aria-label: 'x'}` — a syntax error in generated code. And `$attributes` was `$option.props` unfiltered, so forwarding it wrote every declared prop onto the DOM |
+| **mesa** | `<C aria-label="x">` emitted `{aria-label: 'x'}` — a syntax error in generated code. And `$attributes` was `$$option.props` unfiltered, so forwarding it wrote every declared prop onto the DOM |
 | **ui** | **All four stores were inert.** `toasts`, `commandPalette`, `alert`, `theme` wrote `this.x = …` on a plain object, which notifies no watcher: toasts queued and never rendered, ⌘K flipped a boolean nobody read |
 | **ui** | `DropdownMenu` rendered a `children` snippet its own docs never pass, so every menu opened empty; `Table`'s loading skeleton threw `array.map is not a function`; `RadioGroup` ignored its `id`; `Label` emitted `for=""` |
 | **sierra** | `mesa-plugin` read compiler *warnings* and ignored compiler *errors*, so a page with five diagnosed `bind:` errors was served and silently collected nothing |
@@ -232,7 +365,7 @@ README's *Found by building this* table.
 - **`bun run verify` signs in twice per run** against a 10-per-15-min limit, so
   and the other drives sign in once each (`verify:notify` twice, to show two
   users) — a full sweep of all five costs 7 logins. The example raises its own
-  limit to 100 in `api/app.ts` for exactly that reason, and says why. Both drives now say so plainly rather than timing out (`FJS-086`,
+  limit to 100 in `api/src/app.ts` for exactly that reason, and says why. Both drives now say so plainly rather than timing out (`FJS-086`,
   closed 2026-08-06) — the limiter is a per-IP in-process `Map`, so restarting
   the API resets it.
 - **Transition names are written twice** — in `@@transitions` and as service
@@ -290,7 +423,7 @@ in, seconds later, in a tab that has been idle since before the job was queued.
 - `api/jobs/sweep-abandoned.job.ts` — the cron (`0 3 * * *`): cancel orders
   left `pending` past the horizon. The schedule is `cron` on its own
   `defineJob`, so autoloading the file is the whole of the wiring
-- `api/gate.ts` declares `SYSTEM` and `app.ts` hands it to
+- `api/src/core/gate.ts` declares `SYSTEM` and `app.ts` hands it to
   `createApp({ system })` — the principal the shop is when it acts on its own
   behalf. **Only the cron sweep reaches it.** Work a person asked for runs as
   that person: Caravan records who dispatched a job and Junction re-resolves
@@ -324,7 +457,7 @@ TARGET: the credential is a `ref` resolved at send time (never in the registry,
 a hook, or a log line), timeouts and retries and the breaker are the target's,
 and a failure arrives as a typed `error.kind` instead of a thrown string.
 Pointing it at the real api.resend.com is a change of `address` and `ref` in
-`api/app.ts` and nothing else.
+`api/src/app.ts` and nothing else.
 
 **The provider is `api/mail-sink.ts`** — a dev mail catcher on :8111 speaking
 the shape a provider REST API speaks. A separate listener on purpose: an
@@ -353,9 +486,9 @@ service factory and ignored by the other (`FJS-099`). Details in each package's
 
 ## Static + islands — done (2026-08-06)
 
-`bun run build:public` prerenders `src/public-site/` into
-`web/dist/public/catalog/index.html`: the whole catalogue in the file, one
-module script, and nothing else. `bun run verify:public` serves that directory
+`bun run build:site` prerenders `site/src/routes/` into
+`site/dist/catalog/index.html`: the whole catalogue in the file, one
+module script, and nothing else. `bun run verify:site` serves that directory
 and drives it — **21 assertions, no sign-in, so it costs nothing against the
 login limiter.**
 
@@ -431,7 +564,7 @@ on it (`FJS-103`).
    through a declared target, and the staff bell.
 4. ~~**email previews**~~ **done 2026-08-06** (`bun run email:preview`).
    ~~**`static`/islands**~~ **done 2026-08-06** — see below. An island in the
-   BUILT output is proven interactive by `bun run verify:public`.
+   BUILT output is proven interactive by `bun run verify:site`.
 5. **The confirmation has never been opened in a real mail client.** The kit
    renders Outlook-safe markup and nobody has looked. `curl
    localhost:8111/outbox` is where to get one to forward to yourself.
@@ -445,14 +578,27 @@ Out of scope by design: jetty (a different container) and the VS Code extension.
 - **Two processes.** With the API down, Vite answers `/api`
   with an empty-bodied 502 and the app says which process is missing rather than
   rendering plausible empty tables.
-- **`bun run reset`** deletes the database; the seed runs again on next boot.
+- **`bun run reset`** deletes the database and runs `bun run db:seed`. A boot no
+  longer seeds — the seed is a script, so nothing writes to the database by
+  being imported.
   Do this if a run leaves the data changed — `verify` itself is idempotent.
+
+  **It deletes `db/jobs.db` too, and that is not tidiness.** The queue is a
+  separate SQLite file and it used to survive a reset, so a `book-courier` row
+  enqueued by an earlier run stayed `pending` with *no such principal* — the
+  staff member it recorded went with the reseeded database. Caravan's `unique`
+  is a lock on work that is still owed, so `book-courier:5` held its key against
+  every later run, and `ship` on order 5 dispatched nothing at all. What that
+  reads as is `verify:jobs` failing `job.wroteTracking` **while `job.record`
+  passes**, because the row the drive finds is the previous run's. The same
+  thing took `verify:notify`'s `announce-payment` down. Both are green from a
+  reset that includes the queue.
 - **The browser drives default to `http://localhost:8010` — check who is
   answering it.** Another app on this machine wanted the same port, and a drive
   pointed at somebody else's dev server reports `home.heading: "Sign in"` and an
   empty nav, which reads exactly like this app being broken. Every drive takes
   `UI_URL=`, so start Vite on a free port (`bun run web -- --port 5284
-  --strictPort`) and pass it. `verify:public` is unaffected — it serves the
+  --strictPort`) and pass it. `verify:site` is unaffected — it serves the
   built directory itself.
 - **The drive is the spec.** If you change a screen, `web/test/verify.mjs` is
   where the claim lives. Never return a bare `null` from a probe (CDP omits

@@ -26,12 +26,12 @@ beforeAll(async () => {
 
   await writeFile(
     join(TMP, 'src/components/UI/Card.mesa'),
-    '<div class="card">{title}</div>\n<script>\n  let { title } = $props()\n</script>',
+    '<div class="card">{title}</div>\n<script>\n  let { title } = $.props\n</script>',
     'utf8'
   )
   await writeFile(
     join(TMP, 'src/components/UI/forms/TextField.mesa'),
-    '<input value={value} />\n<script>\n  let { value } = $props()\n</script>',
+    '<input value={value} />\n<script>\n  let { value } = $.props\n</script>',
     'utf8'
   )
 

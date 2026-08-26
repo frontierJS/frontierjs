@@ -55,6 +55,21 @@
 
   const resolvedLabel    = stated(label, rule?.title, name ? nameToLabel(name) : undefined)
   const resolvedRequired = stated(required, rule?.required)
+
+  // The option list, same two sources as Select — an enum off the rule, a
+  // relation fetched by the form. The prop is `items` here rather than
+  // `options`, so the normalisation is spelled out: a schema answers codes and
+  // labels, and this control renders `{ value, label }`.
+  const _sync = rule?.options ?? rule?.enum ?? null
+
+  let _fetched = []
+  if (!items?.length && !_sync && name && form?.optionsFor)
+    form.optionsFor(name).then(r => _fetched = r?.options ?? [])
+
+  const resolvedItems = (items?.length ? items : (_sync ?? _fetched))
+    .map(o => (typeof o === 'string' || typeof o === 'number')
+      ? { value: o, label: String(o) }
+      : o)
   const displayError     = resolveError(form, name, error, errors)
 
   // `id` was declared and never used: it reached no element, so a caller could
@@ -88,7 +103,7 @@
     style:gap="0.5rem"
     {...$attributes}
   >
-    {#each items as item (item.value)}
+    {#each resolvedItems as item (item.value)}
       {@const isSelected = value === item.value}
       {@const isDisabled = resolvedDisabled || item.disabled}
       {@const descId = `${groupName}-${item.value}-desc`}

@@ -41,7 +41,12 @@ export function devtoolsPlugin(config = {}) {
 
     load(id) {
       if (id === VIRTUAL_ID) {
-        const port = devtools.port ?? 4000
+        // 8503 is junction's console in the framework's global tooling block
+        // (8500-8509, `packages/cli/core/ports.js`). Both sides restate the
+        // number — sierra cannot import junction and neither depends on the
+        // CLI — so a toolbar pointed at the wrong port is ten failed WebSocket
+        // retries the browser writes itself and no page can suppress.
+        const port = devtools.port ?? 8503
         const position = devtools.position ?? 'bottom-right'
         const n1 = devtools.n1Threshold ?? 3
         return `

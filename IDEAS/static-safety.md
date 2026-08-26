@@ -23,6 +23,14 @@ from litestone's `$tapQuery` around the companion instead, which also covers a
 `load()` that queries a Litestone client directly — the case no build-time
 analysis of the render could ever see.
 
+**Two switched-on checks were added on 2026-08-24, in `fli check` rather than
+here** — `static-publish-db` (a `target: 'static'` surface wiring no `db:`, so the
+tap has no client and every route that loads data is refused until it declares
+`publishes:`) and `static-publishes-0` (`publishes: 0` is the DEFAULT bar, so it
+raises nothing and its only effect is to turn the two fail-closed branches into
+passes — measured by calling `checkRoute` both ways). They do not grade a page;
+the build does that. They answer whether the build can.
+
 **Still unbuilt: the classifier** (§The other half, and item 5). The per-route
 table it wants is now produced as a by-product — `prerenderRoutes` returns
 `safety.rows` and the build prints it — but routes are still hand-annotated

@@ -26,7 +26,6 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WO
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 const DAY = 86_400_000
 
@@ -93,7 +92,7 @@ export function createDomainsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const appId = $.query.appId as string | undefined
 
@@ -109,7 +108,7 @@ export function createDomainsService(app: BasecampApp) {
       return decorate(await getScoped('domain', 'Domain'))
     },
 
-    async create(ctx: ServiceContext) {
+    async create() {
       const data = $.data as Record<string, unknown>
       await appInWorkspace(data.appId as string)
 
@@ -128,7 +127,7 @@ export function createDomainsService(app: BasecampApp) {
       return decorate(created)
     },
 
-    async patch(ctx: ServiceContext) {
+    async patch() {
       const domain = await getScoped('domain', 'Domain')
       // appId is immutable — moving a hostname to another app is a delete and a
       // create, and doing it as a patch would carry the certificate with it.
@@ -143,7 +142,7 @@ export function createDomainsService(app: BasecampApp) {
       return decorate(updated)
     },
 
-    async remove(ctx: ServiceContext) {
+    async remove() {
       const domain = await getScoped('domain', 'Domain')
       // Refused rather than silently repointing: which hostname is primary is a
       // routing decision, and making it by deletion is how an app ends up
@@ -193,7 +192,7 @@ export function createDomainsService(app: BasecampApp) {
     },
 
     // ── makePrimary ───────────────────────────────────────────────────
-    async makePrimary(ctx: ServiceContext) {
+    async makePrimary() {
       const domain = await getScoped('domain', 'Domain')
       if (domain.isPrimary) throw new BadRequest('Already the primary hostname')
 

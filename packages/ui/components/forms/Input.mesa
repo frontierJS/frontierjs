@@ -206,15 +206,16 @@
           go. aria-pressed carries the current state, so the name stays "Show
           password" rather than changing meaning under a screen reader mid-read.
 
-          The pressed state is written as a STRING because a `false` attribute
-          value is dropped: `aria-pressed={revealed}` left the button with no
-          such attribute at all in exactly the state that matters.
+          `aria-pressed` is one of the four ARIA states whose default is
+          `undefined` rather than false, so the runtime writes "false" rather
+          than removing the attribute — absent would announce this as not a
+          toggle at all.
         -->
         <button
           type="button"
           class="btn ghost square"
           aria-label="Show password"
-          aria-pressed={revealed ? 'true' : 'false'}
+          aria-pressed={revealed}
           aria-controls={inputId}
           disabled={resolvedDisabled}
           on:mousedown={holdFocus}

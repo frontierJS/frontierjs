@@ -25,7 +25,6 @@ title: Dashboard
   import { dashboards } from '../../../resources/Dashboard.mesa'
   import { servers } from '../../../resources/Server.mesa'
   import { apps } from '../../../resources/App.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -100,7 +99,7 @@ title: Dashboard
     if (READS.has(method) || (row?.id && row.id !== page.params.id)) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   const specFor = (kind) => kinds.find(k => k.kind === kind) ?? null
 

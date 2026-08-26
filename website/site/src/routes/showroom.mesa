@@ -1,0 +1,208 @@
+---
+title: "FrontierJS — the showroom"
+description: "One model, and everything derived from it: seventeen things the schema produces, each pointing back at the lines it came from."
+render: static
+publishes: 0
+---
+<!--
+  The showroom. The seed on the left, the seventeen derived things on the right,
+  and clicking one lights the lines of the seed it came from.
+
+  All of it is in the file. The hand-written version built the schema, the chips
+  and every panel from JavaScript on load, so the page was three empty divs to
+  anything that did not run it — and the seed, which is the whole argument, was
+  one of them. The island moves the selection and nothing else.
+-->
+<script>
+  import SchemaExplorer from '../islands/SchemaExplorer.mesa'
+
+  export let data = null
+
+  const d = data ?? { schema: [], realms: [], panels: [], first: null }
+</script>
+
+<a href="#showroom" class="visually-hidden">Skip to the showroom</a>
+
+<!-- ─── Hero diagram ───────────────────────────────────────────────────── -->
+<section class="container hero">
+  <p class="eyebrow anim" style="animation-delay:.05s">Showroom</p>
+  <h1 class="anim" style="animation-delay:.1s">One model.<br>Everything below it, derived.</h1>
+
+  <div class="dia">
+    <div class="dia-root anim" style="animation-delay:.2s">model Lead</div>
+
+    <div class="dia-wires" aria-hidden="true">
+      <i class="stem" style="animation-delay:.35s"></i>
+      <i class="rail" style="animation-delay:.45s"></i>
+      <i class="drop d1" style="animation-delay:.55s"></i>
+      <i class="drop d2" style="animation-delay:.55s"></i>
+      <i class="drop d3" style="animation-delay:.55s"></i>
+    </div>
+
+    <div class="dia-cols">
+      <div class="dia-col anim" style="animation-delay:.65s">
+        <h3>Database</h3>
+        <ul>
+          <li>Migrations</li><li>SQL &amp; indexes</li><li>Row policies</li>
+          <li>Gates</li><li>Typed client</li>
+        </ul>
+      </div>
+      <div class="dia-col anim" style="animation-delay:.75s">
+        <h3>REST API</h3>
+        <ul>
+          <li>Endpoints</li><li>Validation</li><li>Authorization</li>
+          <li>OpenAPI</li><li>WebSockets</li>
+        </ul>
+      </div>
+      <div class="dia-col anim" style="animation-delay:.85s">
+        <h3>UI Resource</h3>
+        <ul>
+          <li>Hook pipeline</li><li>Blank records</li><li>Live updates</li>
+          <li>TypeScript</li><li>JSON Schema</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="dia-foot anim" style="animation-delay:.95s">Derived automatically</p>
+  </div>
+</section>
+
+<!-- ─── Showroom ───────────────────────────────────────────────────────── -->
+<section id="showroom" class="container shopwrap">
+  <div class="shop">
+
+    <!-- Left: the seed + the chips -->
+    <div class="stack">
+      <div>
+        <h2>The seed</h2>
+        <pre class="code lite" data-schema>{#each d.schema as l}<span class="ln" data-i={l.i}>{@html l.html}</span>{/each}</pre>
+      </div>
+
+      <div>
+        <h2 class="mt">Where it is leveraged</h2>
+        <p class="text-sm text-muted lede-sm">
+          Pick one. The schema above highlights the lines responsible.
+        </p>
+        <div data-chips role="tablist" aria-label="Derived artifacts">
+          {#each d.realms as r}
+            <p class="realm-label">{r.label}</p>
+            <div class="chipset">
+              {#each r.chips as c}
+                <button class="btn outlined" class:soon={c.soon} role="tab"
+                        data-id={c.id} aria-selected={c.id === d.first}>{c.label}</button>
+              {/each}
+            </div>
+          {/each}
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: what that chip produces. Every panel is here; one is shown. -->
+    <div class="shop-right" data-panels>
+      {#each d.panels as p}
+        <div class="card panel" class:is-shown={p.id === d.first}
+             data-id={p.id} data-lines={p.lines.join(',')} role="tabpanel" tabindex="0">
+          <div class="panel-head">
+            <h2>{p.label}</h2>
+            <span class="badge {p.tone}">{p.realm}</span>
+          </div>
+          <p class="text-sm text-muted blurb">{p.blurb}</p>
+          <p class="from">Derived from <code>{@html p.from}</code></p>
+          <pre class="code">{@html p.code}</pre>
+        </div>
+      {/each}
+    </div>
+
+  </div>
+</section>
+
+<div class="container pagenote">
+  <span>Every sample here is the real API — see <code>packages/junction/example/</code>.</span>
+  <span><a class="link" href="/">&larr; Back to the overview</a></span>
+</div>
+
+<SchemaExplorer client:load />
+
+<style>
+.eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+h1 { font-size: clamp(1.9rem, 4.5vw, 2.9rem); line-height: 1.08; letter-spacing: -.03em; margin: .35em 0 .3em; }
+h2 { font-size: 1.05rem; margin: 0 0 .6rem; letter-spacing: -.01em; }
+
+
+/* ── Hero diagram ──────────────────────────────────────────────────── */
+.dia { text-align: center; padding: 1rem 0 .5rem; }
+.dia-root {
+  display: inline-block; font-family: ui-monospace, Menlo, monospace;
+  font-size: .95rem; font-weight: 600;
+  border: 1px solid var(--color-primary); border-radius: 8px;
+  padding: .5rem 1.1rem; background: var(--surface-raised);
+  color: var(--color-primary);
+}
+.dia-wires { position: relative; height: 3rem; }
+.dia-wires i { position: absolute; background: var(--rule-strong); display: block; }
+.dia-wires .stem { left: 50%; top: 0; width: 1px; height: 1.5rem; }
+.dia-wires .rail { left: 16.66%; right: 16.66%; top: 1.5rem; height: 1px; }
+.dia-wires .drop { top: 1.5rem; width: 1px; height: 1.5rem; }
+.dia-wires .d1 { left: 16.66%; }
+.dia-wires .d2 { left: 50%; }
+.dia-wires .d3 { left: 83.33%; }
+
+.dia-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.dia-col h3 {
+  font-size: .82rem; letter-spacing: .06em; text-transform: uppercase;
+  margin: 0 0 .6rem; color: var(--ink);
+}
+.dia-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+.dia-col li { font-size: .84rem; color: var(--ink-soft); }
+.dia-foot { margin-top: 1.5rem; font-size: .8rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); }
+
+/* staggered reveal */
+.anim { opacity: 0; transform: translateY(8px); animation: rise .5s ease forwards; }
+@keyframes rise { to { opacity: 1; transform: none; } }
+.dia-wires i { transform-origin: top left; animation: grow .4s ease forwards; }
+.dia-wires .rail { transform-origin: center; }
+@keyframes grow { from { opacity: 0 } to { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) {
+  .anim, .dia-wires i { animation: none; opacity: 1; transform: none; }
+}
+
+/* ── Showroom ──────────────────────────────────────────────────────── */
+.shop { display: grid; gap: 1.75rem; align-items: start; }
+@media (min-width: 64rem) { .shop { grid-template-columns: 1fr 1.15fr; } }
+@media (min-width: 64rem) { .shop-right { position: sticky; top: 5rem; } }
+
+.lite .ln { display: block; padding: 0 .35rem; margin: 0 -.35rem; border-radius: 4px; transition: background .18s ease, opacity .18s ease; }
+.lite.focused .ln { opacity: .32; }
+.lite.focused .ln.on { opacity: 1; background: color-mix(in srgb, var(--color-primary) 13%, transparent); }
+
+/* Chips are selectable controls, so they are .btn — not .pill, which is a
+   solid-fill component for counts. Only geometry is overridden here: .btn
+   derives background and text together (chip.css auto-contrast), and
+   setting one without the other is what makes text vanish on light themes. */
+.chipset { display: flex; flex-wrap: wrap; gap: .4rem; }
+.chipset .btn { font-size: .8rem; padding: .3rem .7rem; }
+.chipset .btn.soon { border-style: dashed; }
+/* Untoned .btn.outlined paints --color-primary on --surface — 3.96:1 in the
+   default theme, below AA, and worse in others (1.99:1 in elite). Take the
+   neutral ink instead, exactly as .btn.ghost does and for the same reason.
+   Safe to set color alone here: outlined's background is --surface, not the
+   derived --fill, so the auto-contrast pairing is not involved. */
+.chipset .btn.outlined { color: var(--ink); border-color: var(--rule-strong); }
+.realm-label { font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-mute); margin: 1rem 0 .45rem; }
+
+.panel-head { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; margin-bottom: .1rem; }
+.from { font-size: .78rem; color: var(--ink-mute); margin: .5rem 0 1rem; }
+.from code { color: var(--color-primary); }
+
+/* Every panel is in the file and one is shown, so the page reads with no
+   JavaScript. */
+.panel { display: none; }
+.panel.is-shown { display: block; }
+
+.hero { padding: 3.5rem 1.25rem 1rem; text-align: center; }
+.shopwrap { padding: 2.5rem 1.25rem 1rem; }
+.mt { margin-top: 1.5rem; }
+.lede-sm { margin: 0 0 .5rem; }
+.panel-head h2 { margin: 0; }
+.blurb { margin: .35rem 0 0; }
+</style>

@@ -93,7 +93,15 @@ describe('loaders map in the route table', () => {
     const loadersSection = routeTable.slice(loadersStart, loadersEnd)
     expect(loadersSection).not.toContain("'leads'")
     expect(loadersSection).not.toContain("'login'")
-    expect(loadersSection).not.toContain("'root'")
+  })
+
+  test('the ROOT route gets a loader when it has a companion', () => {
+    // The root is a synthesised node and its fields are copied from the entry
+    // one at a time, so it is the one route that can lose a companion without
+    // anything saying so — and did.
+    const loadersStart = routeTable.indexOf('export const loaders =')
+    const loadersEnd = routeTable.indexOf('\n\n', loadersStart)
+    expect(routeTable.slice(loadersStart, loadersEnd)).toContain("'root'")
   })
 
   test('tree nodes include companion field', () => {

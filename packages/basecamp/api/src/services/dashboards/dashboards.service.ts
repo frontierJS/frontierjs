@@ -32,7 +32,6 @@ import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, a
 import { WIDGET_KINDS, WIDGET_KIND_BY_NAME, STAT_SOURCES } from './kinds.ts'
 import { PORTAL_SERVICE_IDS } from '../portal/portal.service.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 interface WidgetInput {
   widgetId?: string
@@ -200,7 +199,7 @@ export function createDashboardsService(app: BasecampApp) {
     methods: ['find', 'get', 'create', 'patch', 'remove',
               'kinds', 'addWidget', 'updateWidget', 'removeWidget', 'reorder'],
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       // Pinned first, then newest — in SQL, not in JavaScript afterwards. A
       // sort applied to the page puts a pinned board at the top of page two
@@ -218,11 +217,11 @@ export function createDashboardsService(app: BasecampApp) {
       return { ...page, data: page.data.map((d: any, i: number) => ({ ...d, widget_count: counts[i] })) }
     },
 
-    async get(ctx: ServiceContext) {
+    async get() {
       return withWidgets(await getScoped('dashboard', 'Dashboard'))
     },
 
-    async create(ctx: ServiceContext) {
+    async create() {
       const data = $.data as Record<string, unknown>
       await assertSlugFree('dashboard', { workspaceId: ws(), slug: data.slug },
         `A dashboard called '${data.name}' already exists in this workspace`)
@@ -233,7 +232,7 @@ export function createDashboardsService(app: BasecampApp) {
       return withWidgets(created)
     },
 
-    async patch(ctx: ServiceContext) {
+    async patch() {
       const dashboard = await getScoped('dashboard', 'Dashboard')
       const data      = $.data as Record<string, unknown>
 
@@ -252,7 +251,7 @@ export function createDashboardsService(app: BasecampApp) {
       return withWidgets(await db().dashboard.update({ where: { id: dashboard.id }, data: patch }))
     },
 
-    async remove(ctx: ServiceContext) {
+    async remove() {
       return removeScoped('dashboard', 'Dashboard')
     },
 
@@ -281,7 +280,7 @@ export function createDashboardsService(app: BasecampApp) {
     },
 
     // ── addWidget — POST /dashboards/:id  X-Service-Method: addWidget ─
-    async addWidget(ctx: ServiceContext) {
+    async addWidget() {
       const dashboard = await getScoped('dashboard', 'Dashboard')
       const input     = ($.data ?? {}) as WidgetInput
       if (!input.kind) throw new BadRequest('kind is required')
@@ -311,7 +310,7 @@ export function createDashboardsService(app: BasecampApp) {
     },
 
     // ── updateWidget ─────────────────────────────────────────────────
-    async updateWidget(ctx: ServiceContext) {
+    async updateWidget() {
       const dashboard = await getScoped('dashboard', 'Dashboard')
       const input     = ($.data ?? {}) as WidgetInput
       const widget    = await widgetOf(dashboard.id as string, input.widgetId)
@@ -336,7 +335,7 @@ export function createDashboardsService(app: BasecampApp) {
     },
 
     // ── removeWidget ─────────────────────────────────────────────────
-    async removeWidget(ctx: ServiceContext) {
+    async removeWidget() {
       const dashboard = await getScoped('dashboard', 'Dashboard')
       const widget    = await widgetOf(dashboard.id as string, ($.data as WidgetInput)?.widgetId)
 
@@ -352,7 +351,7 @@ export function createDashboardsService(app: BasecampApp) {
     // board half-ordered when the second write fails, and two people dragging
     // at once produce an order neither chose. Sending the sequence makes the
     // last writer's intent the one on screen.
-    async reorder(ctx: ServiceContext) {
+    async reorder() {
       const dashboard = await getScoped('dashboard', 'Dashboard')
       const ids       = (($.data ?? {}) as { ids?: string[] }).ids
       if (!Array.isArray(ids) || !ids.length) throw new BadRequest('ids must be a non-empty array of widget ids')

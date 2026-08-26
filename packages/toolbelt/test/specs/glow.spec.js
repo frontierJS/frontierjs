@@ -234,3 +234,138 @@ test('glow: a multi-character token is escaped', function () {
     })
   })
 })
+
+test('glow: JSON has three keywords and they are not the strings that spell them', function () {
+  /*
+   * `getTags` withholds the COMMON_WORDS keyword pass from json, yaml and html
+   * — rightly, since in a JSON document every other bare word is inside a
+   * string. That left `true`, `false` and `null` as the only values in a
+   * highlighted document with no colour at all (FJS-405).
+   *
+   * The half that matters is the negative one: a document where the same three
+   * words appear inside strings has to come back with those strings whole.
+   * Nothing in the tag ORDER protects them — a rule added to RULES.json is
+   * unshifted to the front of the list — so this is asserting the property
+   * renderRow provides instead, that a token opening inside one already
+   * emitted is dropped.
+   */
+  const src = JSON.stringify(
+    { ok: true, off: false, none: null, null: 'is null', note: 'true story' },
+    null,
+    2
+  )
+  const out = glow(src, { language: 'json', prefix: false })
+
+  assert.ok(out.includes('<strong>true</strong>'), 'true is not marked as a keyword')
+  assert.ok(out.includes('<strong>false</strong>'), 'false is not marked as a keyword')
+  assert.ok(out.includes('<strong>null</strong>'), 'null is not marked as a keyword')
+
+  assert.ok(out.includes('<em>"is null"</em>'), 'a keyword inside a string broke the string')
+  assert.ok(out.includes('<em>"true story"</em>'), 'a keyword inside a string broke the string')
+  assert.ok(out.includes('<b>"null"</b>'), 'a key spelled like a keyword stopped being a key')
+
+  // The three are keywords in every other language already, through
+  // COMMON_WORDS. This is the language that had to be told.
+  assert.ok(glow('const a = null', { language: 'js', prefix: false }).includes('<strong>null</strong>'))
+})
+
+/* ── The languages this repo writes ────────────────────────────────── */
+
+test('glow: a .lite schema is highlighted as one', function () {
+  /*
+   * Litestone's seed language went through the generic pass, where the two
+   * things a schema is made of both came out wrong: a model-level attribute
+   * is written `@@gate` and the generic attribute rule can only take one
+   * `@`, so it matched at the second one and left the first as a stray
+   * punctuation mark; and a field's TYPE was coloured only when the common
+   * keyword list happened to contain it case-insensitively, so `Int` and
+   * `String` were lit and `DateTime` and `Json` were not.
+   */
+  const src = [
+    'model Lead {',
+    '  createdAt DateTime @default(now())',
+    '  payload   Json?',
+    '  @@gate("0.4.4.5")',
+    '}'
+  ].join('\n')
+  const out = glow(src, { language: 'lite', prefix: false })
+
+  assert.equal(textOf(out), src)
+  assert.ok(out.includes('<strong>model</strong>'), 'model is not a keyword')
+  assert.ok(out.includes('<label>@@gate</label>'), 'a model attribute lost its first @')
+  assert.ok(out.includes('<label>@default</label>'), 'a field attribute is not an attribute')
+  assert.ok(out.includes('<strong>DateTime</strong>'), 'a field type is not marked')
+  assert.ok(out.includes('<strong>Json</strong>'), 'a field type is not marked')
+})
+
+test('glow: a shell line has a command and no keywords', function () {
+  /*
+   * `my`, `use`, `end`, `local`, `next`, `get` and `set` are all in the
+   * common keyword list and all ordinary argument text, so `cd my-app` came
+   * out with `my` coloured as a keyword and `-app` as punctuation after it —
+   * the directory name the reader is meant to type, in three pieces.
+   */
+  const src = '$ npm create frontier@latest my-app && cd my-app --force'
+  const out = glow(src, { language: 'sh', prefix: false })
+
+  assert.equal(textOf(out), src)
+  assert.ok(!out.includes('<strong>my</strong>'), 'an argument word was coloured as a keyword')
+  assert.ok(out.includes('<b>my-app</b>'), 'a hyphenated argument was split')
+  assert.ok(out.includes('<strong>npm</strong>'), 'the command is not marked')
+  assert.ok(out.includes('<strong>cd</strong>'), 'the command after && is not marked')
+  assert.ok(out.includes('<label>--force</label>'), 'a flag is not marked')
+
+  // The three spellings are one language.
+  for (const language of ['bash', 'shell'])
+    assert.ok(glow('$ cd my-app', { language, prefix: false }).includes('<b>my-app</b>'),
+      language + ' does not get the shell rules')
+})
+
+test('glow: a SQL statement is highlighted by its keywords', function () {
+  /*
+   * The shape of DDL is its keywords, and they were the only part of it not
+   * marked: nothing in the common word list is SQL, so a CREATE TABLE came
+   * out as one unlit line with its string literals coloured. `--` is the
+   * line comment, which the generic `//` would have missed as well.
+   */
+  const src = [
+    '-- generated',
+    'CREATE TABLE leads (',
+    "  status TEXT NOT NULL DEFAULT 'new'",
+    ');'
+  ].join('\n')
+  const out = glow(src, { language: 'sql', prefix: false })
+
+  assert.equal(textOf(out), src)
+  assert.ok(out.includes('<sup>-- generated</sup>'), '-- is not a comment')
+  for (const kw of ['CREATE', 'TABLE', 'NOT', 'NULL', 'DEFAULT', 'TEXT'])
+    assert.ok(out.includes(`<strong>${kw}</strong>`), kw + ' is not a keyword')
+  assert.ok(out.includes("<em>'new'</em>"), 'the literal stopped being a value')
+})
+
+test('glow: a transcript may name more than one language', function () {
+  /*
+   * A command and the SQL it compiled to is one block and two languages, and
+   * given either one alone half of it goes dark: under `js` the `--` comment
+   * is two punctuation marks and SELECT is a bare word, under `sql` the `//`
+   * comment is not a comment. The first entry stays the primary one — it is
+   * what the wrapper's `language` attribute carries.
+   */
+  const src = [
+    'await db.lead.findMany()   // as user 42',
+    '-- the SQL actually executed:',
+    "SELECT * FROM leads WHERE ownerId = 42"
+  ].join('\n')
+  const out = glow(src, { language: ['js', 'sql'], prefix: false })
+
+  assert.equal(textOf(out), src)
+  assert.ok(out.includes('<code language="js">'), 'the primary language is not the attribute')
+  assert.ok(out.includes('<sup>// as user 42</sup>'), 'the js comment was lost')
+  assert.ok(out.includes('<sup>-- the SQL actually executed:</sup>'), 'the sql comment was lost')
+  assert.ok(out.includes('<strong>SELECT</strong>'), 'the sql keywords were lost')
+  assert.ok(out.includes('<strong>await</strong>'), 'the js keywords were lost')
+
+  // A lone language is the same call it always was.
+  assert.equal(glow(src, { language: 'js', prefix: false }),
+    glow(src, { language: ['js'], prefix: false }))
+})

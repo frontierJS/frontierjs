@@ -9,8 +9,7 @@
 import { createClient, parse, generateDDLForDatabase } from '@frontierjs/litestone'
 import { splitStatements } from '@frontierjs/litestone/migrate'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, readdirSync, rmSync, statSync } from 'fs'
-import { tmpdir } from 'os'
+import { tempDir } from '../../litestone/src/tmp-dirs.js'
 import { join } from 'path'
 import { authSchemaFragments } from '../schema.ts'
 import { createLitestoneAuth } from '../auth.ts'
@@ -20,43 +19,14 @@ import type { LitestoneAuthOptions } from '../types.ts'
 export const TEST_KEY =
   'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2'
 
-// Temp dirs cannot be removed when a test finishes, and cannot be removed at
-// exit either — so each run reaps the PREVIOUS runs' instead.
+// Temp dirs cannot be removed when a test finishes and cannot be removed at
+// exit either, so a run reaps the PREVIOUS runs' on the way in. The reasoning,
+// and the two measurements behind it, are in litestone's tmp-dirs.js — this
+// file is where the class was first fixed (FJS-362) and no longer holds its
+// own copy of the sweep.
 //
-// Not in afterAll(): `@@log(audit)` on User/Session flushes through the jsonl
-// driver AFTER the awaited call returns, so tearing the directory down there
-// raced it and produced `SQLITE_READONLY_DBMOVED` unhandled errors between
-// tests. (The "audit logger async flush" landmine in ../../CLAUDE.md.)
-//
-// Not at exit: `process.on('exit')` DOES NOT FIRE under `bun test` — measured,
-// the handler never runs and the directory survives. So this file leaked every
-// database it made, 23 per run, and /tmp held 2,093 of them by the time
-// anybody looked.
-//
-// Reaping on the way IN is the one point where the owner is provably gone: the
-// process that made those directories has exited, whatever way it exited. The
-// age floor is what keeps a concurrent run of this same suite safe — no suite
-// here runs for an hour, so anything older belongs to nobody.
-
-const REAP_AFTER_MS = 60 * 60 * 1000
-
-let reaped = false
-
-function reapStaleTempDirs(): void {
-  if (reaped) return
-  reaped = true
-  const cutoff = Date.now() - REAP_AFTER_MS
-  let entries: string[]
-  try { entries = readdirSync(tmpdir()) } catch { return }
-  for (const name of entries) {
-    if (!name.startsWith('fjs-auth-')) continue
-    const full = join(tmpdir(), name)
-    try {
-      if (statSync(full).mtimeMs > cutoff) continue
-      rmSync(full, { recursive: true, force: true })
-    } catch { /* another process got there first, or it is not ours to remove */ }
-  }
-}
+// Relative, not '@frontierjs/litestone/testing': bun resolves workspace:* to a
+// COPY under node_modules/.bun, so the package spec tests a stale reaper.
 
 export interface Harness {
   db:          any
@@ -71,8 +41,7 @@ export interface Harness {
 }
 
 export async function makeAuth(opts: LitestoneAuthOptions = {}): Promise<Harness> {
-  reapStaleTempDirs()
-  const dir = mkdtempSync(join(tmpdir(), 'fjs-auth-'))
+  const dir = tempDir('fjs-auth-')
   const dbPath = join(dir, 'auth.db')
 
   const source = `

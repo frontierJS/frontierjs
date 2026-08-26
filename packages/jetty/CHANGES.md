@@ -1,5 +1,75 @@
 # Changes — @frontierjs/jetty
 
+## 2026-08-25 — a real Junction, at last
+
+**`createJunctionAdapter`** (`FJS-279`), exported as `@frontierjs/jetty/junction`
+and built over `@frontierjs/junction/client` — the browser client every Sierra
+app already uses, rather than a second implementation written to the same
+protocol. `default-adapter.js` stays what it says it is.
+
+The subscription question the issue left open answers itself. There is nothing
+for a client to send: membership is the SERVER's (`app.channel(name).join(…)`),
+and what arrives is `{ type: 'event', event: 'orders pay' }`, re-emitted as
+`client.on('event', …)`. A channel is the first half of that name, so a
+subscription is a filter over it — and the whole name is carried on, because a
+subscriber given only the data cannot tell a create from a remove (`FJS-059`).
+
+Two things had to move for it to be honest:
+
+- **`url` is spelled differently by the two packages.** jetty's config field has
+  always been `wss://` and Junction's client takes an http origin and derives
+  the socket from it, so handing one straight over builds `wsss://` and a socket
+  that never opens. Both spellings are accepted.
+- **Sign-in is `adapter.auth`, not `call('auth', …)`.** Junction has no service
+  by that name — `@frontierjs/auth` registers `account`, `sessions` and
+  `api-keys`, and establishing a session is a route (`FJS-D20`) — so the
+  placeholder's pseudo-service would shadow the methods of any app that has one.
+  The contract gains an optional `auth` block and `makeAuthFlow` prefers it,
+  falling back to the old call for the placeholder.
+
+Its wire behaviour is proved by `example`'s `verify:extension`, against a real
+API. A fake Junction here is the mock that hid this for as long as it existed;
+what is asserted in node is the shape — the URL dialect, the contract, and which
+of the two sign-in spellings the auth flow reaches for.
+
+**jetty is a real app's surface now** (`FJS-280`). `example/extension/` is a
+harbor holding the only connection, a Mesa dock in the popup and a content
+script on the shop's own prerendered storefront. Building it found `FJS-493`:
+the resource store upserts every record its channel delivers, so a row that has
+LEFT the loaded filter stays in the list. Sierra fixed exactly this with
+`matchesQuery`; the pure half is not shared yet.
+
+
+## 2026-08-24 — HMR registration was silently not injected, and is now proven
+
+`FJS-481`. `injectJettyHMR` matches mesa's compiled OUTPUT with two regexes — a
+shape jetty reads and does not own — and the second one's lookahead named the
+runtime by identifier: `(?=\n\$runtime\.\$\$delegate|\s*$)`.
+
+Mesa's `FJS-470` renamed every emitted identifier to `$$`. From that day, any
+component carrying a delegated event — nearly all of them — was wrapped without
+its `__jettyMesa.register(...)` call. Step 1 still renamed the function, so the
+module looked wrapped; it mounted correctly and never registered, and the only
+symptom is an edit that does not appear. Green build, green suite.
+
+Three changes, and the second is the one that matters:
+
+The lookahead matches the delegate call by SHAPE rather than by the namespace's
+name. **The plugin throws when neither step lands**, naming the file and saying
+the shape has moved — a wrapper that mounts and never registers is worse than an
+unwrapped module, so this is a build-time answer rather than one at somebody's
+desk. And `test/phase9.test.js` drives the function with **real compiler
+output**: both branches of the lookahead, the rename, the wrapper, and the
+unrecognised-shape throw. Negative-controlled — the old lookahead turns 3 of its
+7 red.
+
+**Why ~450 green tests said nothing.** The only cover was `test/hmr-fullflow.mjs`
+and `test/hmr-integration.mjs`, which no script runs and which *could not* run:
+they import mesa by an absolute path from another machine. Moved to
+`docs/dead/` with a README — the full-flow shape through jsdom is worth
+repairing one day, and `phase9` covers only the wrapper's output. Keeping them
+in `test/` made a directory whose files are run also hold files that are not.
+
 ## 2026-08-17 — `resources/` stops being a copy, and two defects go with it (`FJS-059`)
 
 `make-from-schema.js` and `hooks.js` are gone; both are

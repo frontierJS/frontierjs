@@ -5,7 +5,7 @@
   "description": "SQLite-backed job queue for Bun \u2014 first-party Junction plugin",
   "type": "module",
   "license": "MIT",
-  "author": "Kobami",
+  "author": "FrontierJS",
   "homepage": "https://github.com/frontierjs/caravan",
   "repository": {
     "type": "git",

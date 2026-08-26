@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-59 definitions · 38 models · 21 enums · 0 other
+71 definitions · 45 models · 26 enums · 0 other
 ```
 
 ## Definitions
@@ -25,10 +25,11 @@ disappears from here is a reference that resolves to nothing in a browser.
 
 | Name | Kind |
 | --- | --- |
-| `User` | model |
 | `Credential` | model |
 | `Session` | model |
 | `Verification` | model |
+| `OauthFlow` | model |
+| `User` | model |
 | `Account` | model |
 | `Workspace` | model |
 | `WorkspaceMember` | model |
@@ -63,6 +64,13 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Dashboard` | model |
 | `DashboardWidget` | model |
 | `AuditEvent` | model |
+| `Blueprint` | model |
+| `BlueprintParam` | model |
+| `RegistryImage` | model |
+| `Backup` | model |
+| `HubConfig` | model |
+| `NotificationPreference` | model |
+| `VerificationPurpose` | enum |
 | `AccountType` | enum |
 | `WorkspaceType` | enum |
 | `WorkspaceRole` | enum |
@@ -84,12 +92,17 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ChannelKind` | enum |
 | `FlagType` | enum |
 | `WidgetKind` | enum |
+| `ParamGenerator` | enum |
+| `BackupKind` | enum |
+| `BackupDestination` | enum |
+| `NotificationKind` | enum |
 
 ## Enums
 
 A value removed here is a row already in the database that no longer
 validates, and a select that silently drops an option.
 
+- `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`
 - `AccountType` — `individual`, `organization`
 - `WorkspaceType` — `personal`, `team`, `enterprise`
 - `WorkspaceRole` — `viewer`, `billing`, `developer`, `admin`, `owner`
@@ -111,38 +124,16 @@ validates, and a select that silently drops an option.
 - `ChannelKind` — `slack`, `pagerduty`, `email`, `webhook`
 - `FlagType` — `boolean`, `variant`
 - `WidgetKind` — `server_fleet`, `server_health`, `app_status`, `deploy_feed`, `job_history`, `activity_feed`, `alert_status`, `service_health`, `stat_counter`
+- `ParamGenerator` — `random_hex_16`, `random_hex_32`, `random_hex_64`
+- `BackupKind` — `manual`, `scheduled`
+- `BackupDestination` — `local`, `s3`
+- `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `member_joined`, `job_failed`, `weekly_digest`
 
 ## Models
 
 `Required` is the full-mode requirement. `Rules` are the keywords a validator
 branches on plus any `x-` extension carried on the field; `Messages` are the
 rule names `x-messages` answers for, which is what a failure is allowed to say.
-
-### `User`
-
-- gate `read:4 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
-- relation `account` — belongsTo `Account` via `accountId` · optional
-- relation `memberships` — hasMany `WorkspaceMember`
-- relation `deployments` — hasMany `Deployment`
-- relation `apiKeys` — hasMany `ApiKey`
-
-| Field | Type | Required | Label | Rules | Messages |
-| --- | --- | --- | --- | --- | --- |
-| `id` | `string` | — | — | — | — |
-| `email` | `string` | yes | — | `format: "email"` | — |
-| `name` | `string`? | — | — | — | — |
-| `emailVerified` | `boolean` = `false` | — | — | — | — |
-| `role` | `string` = `"user"` | — | — | — | — |
-| `accountId` | `string`? | — | — | — | — |
-| `kind` | `UserKind` = `"human"` | — | — | — | — |
-| `status` | `UserStatus` = `"pending_verification"` | — | — | — | — |
-| `username` | `string`? | — | — | — | — |
-| `displayName` | `string`? | — | — | — | — |
-| `avatarUrl` | `string`? | — | — | — | — |
-| `scopes` | `json` = `[]` | — | — | — | — |
-| `isSystemAdmin` | `boolean` = `false` | — | — | — | — |
-
-**On create**: required — `email` · not accepted — `id`
 
 ### `Credential`
 
@@ -182,10 +173,52 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
+| `purpose` | `VerificationPurpose` | yes | — | — | — |
 | `identifier` | `string` | yes | — | — | — |
+| `provider` | `string`? | — | — | — | — |
+| `subject` | `string`? | — | — | — | — |
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 
-**On create**: required — `identifier`, `expiresAt` · not accepted — `id`
+**On create**: required — `purpose`, `identifier`, `expiresAt` · not accepted — `id`
+
+### `OauthFlow`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `provider` | `string` | yes | — | — | — |
+| `returnTo` | `string`? | — | — | — | — |
+| `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
+
+**On create**: required — `provider`, `expiresAt` · not accepted — `id`
+
+### `User`
+
+- gate `read:4 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- relation `account` — belongsTo `Account` via `accountId` · optional
+- relation `memberships` — hasMany `WorkspaceMember`
+- relation `deployments` — hasMany `Deployment`
+- relation `apiKeys` — hasMany `ApiKey`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `email` | `string` | yes | — | `format: "email"` | — |
+| `name` | `string`? | — | — | — | — |
+| `emailVerified` | `boolean` = `false` | — | — | — | — |
+| `role` | `string` = `"user"` | — | — | — | — |
+| `accountId` | `string`? | — | — | — | — |
+| `kind` | `UserKind` = `"human"` | — | — | — | — |
+| `status` | `UserStatus` = `"pending_verification"` | — | — | — | — |
+| `username` | `string`? | — | — | — | — |
+| `displayName` | `string`? | — | — | — | — |
+| `avatarUrl` | `string`? | — | — | — | — |
+| `scopes` | `json` = `[]` | — | — | — | — |
+| `isSystemAdmin` | `boolean` = `false` | — | — | — | — |
+
+**On create**: required — `email` · not accepted — `id`
 
 ### `Account`
 
@@ -260,7 +293,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `email` | `string` | yes | — | `format: "email"` `minLength: 6` `maxLength: 200` | — |
 | `role` | `WorkspaceRole` = `"developer"` | — | — | — | — |
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
@@ -276,7 +309,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `kind` | `SecretKind` = `"generic"` | — | — | — | — |
 | `data` | `string` = `"{}"` | — | — | — | — |
@@ -295,7 +328,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `userId` | `string` | yes | — | — | — |
 | `credentialId` | `string`? | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
@@ -319,11 +352,12 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `volumes` — hasMany `Volume`
 - relation `appServers` — hasMany `AppServer`
 - relation `serverNetworks` — hasMany `ServerNetwork`
+- transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `checkIn`: pending|installing|unreachable → online @8 · `reportRunning`: pending|provisioning|installing|ready|unreachable|stopped → online · `reportStopped`: pending|provisioning|installing|ready|online|unreachable|draining → stopped · `reportRebuilding`: pending|installing|ready|online|unreachable|draining|stopped → provisioning · `reportDestroyed`: pending|provisioning|installing|ready|online|unreachable|draining|stopped → destroyed
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `slug` | `string` | yes | — | — | — |
 | `status` | `ServerStatus` = `"pending"` | — | — | — | — |
@@ -394,7 +428,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | — | — |
 | `slug` | `string` | yes | — | — | — |
 | `type` | `string` = `"mesh"` | — | — | — | — |
@@ -430,7 +464,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `description` | `string`? | — | — | — | — |
@@ -454,7 +488,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `projectId` | `string` | yes | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
 | `tier` | `EnvironmentTier` = `"development"` | — | — | — | — |
@@ -477,7 +511,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `environmentId` | `string` | yes | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
@@ -498,7 +532,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `appId` | `string` | yes | — | — | — |
 | `hostname` | `string` | yes | — | `minLength: 1` `maxLength: 253` | — |
 | `isPrimary` | `boolean` = `false` | — | — | — | — |
@@ -565,7 +599,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `appId` | `string` | yes | — | — | — |
 | `environmentId` | `string`? | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `status` | `DeployStatus` = `"pending"` | — | — | — | — |
 | `trigger` | `string` = `"manual"` | — | — | — | — |
 | `fromImage` | `string`? | — | — | — | — |
@@ -615,7 +649,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `appId` | `string`? | — | — | — | — |
 | `environmentId` | `string`? | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
@@ -663,7 +697,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
 | `slug` | `string` | yes | — | — | — |
 | `description` | `string`? | — | — | `minLength: 0` `maxLength: 500` | — |
@@ -753,7 +787,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `key` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
 | `description` | `string`? | — | — | — | — |
 | `type` | `FlagType` = `"boolean"` | — | — | — | — |
@@ -792,7 +826,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `kind` | `ChannelKind` | yes | — | — | — |
 | `config` | `json` = `{}` | — | — | — | — |
@@ -815,7 +849,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
 | `description` | `string`? | — | — | — | — |
 | `severity` | `AlertSeverity` = `"warning"` | — | — | — | — |
@@ -871,7 +905,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 120` | — |
 | `slug` | `string` | yes | — | — | — |
 | `description` | `string`? | — | — | — | — |
@@ -910,7 +944,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
-| `workspaceId` | `string`? | — | — | — | — |
+| `workspaceId` | `string`? | — | — | `x-litestone-kind` | — |
 | `actorId` | `string`? | — | — | — | — |
 | `actorType` | `string` = `"user"` | — | — | — | — |
 | `action` | `string` | yes | — | — | — |
@@ -919,3 +953,133 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `diff` | `json`? | — | — | — | — |
 
 **On create**: required — `action`, `subjectType`, `subjectId` · not accepted — `id`
+
+### `Blueprint`
+
+- gate `read:1 create:7 update:7 delete:7` · version field `revision` · closed (`additionalProperties: false`)
+- relation `params` — hasMany `BlueprintParam`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
+| `category` | `string` | yes | — | `minLength: 1` `maxLength: 40` | — |
+| `description` | `string` | yes | — | `minLength: 1` `maxLength: 300` | — |
+| `version` | `string` | yes | — | `minLength: 1` `maxLength: 40` | — |
+| `image` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `icon` | `string`? | — | — | `minLength: 1` `maxLength: 8` | — |
+| `brandColor` | `string`? | — | — | `minLength: 4` `maxLength: 9` | — |
+| `appType` | `AppType` = `"container"` | — | — | — | — |
+| `port` | `integer`? | — | — | `minimum: 1` `maximum: 65535` | — |
+| `persistent` | `boolean` = `false` | — | — | — | — |
+| `volumePath` | `string`? | — | — | `minLength: 1` `maxLength: 255` | — |
+| `healthCheck` | `string`? | — | — | `minLength: 1` `maxLength: 255` | — |
+| `replicas` | `integer` = `1` | — | — | `minimum: 1` `maximum: 50` | — |
+| `cpuLimit` | `string`? | — | — | `minLength: 1` `maxLength: 16` | — |
+| `memLimit` | `string`? | — | — | `minLength: 1` `maxLength: 16` | — |
+| `notes` | `string`? | — | — | `minLength: 0` `maxLength: 1000` | — |
+| `links` | `json` = `[]` | — | — | — | — |
+| `deprecatedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `revision` | `integer` | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `slug`, `name`, `category`, `description`, `version`, `image` · not accepted — `id`, `revision`
+
+### `BlueprintParam`
+
+- gate `read:1 create:7 update:7 delete:7` · closed (`additionalProperties: false`)
+- relation `blueprint` — belongsTo `Blueprint` via `blueprintId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `blueprintId` | `string` | yes | — | — | — |
+| `key` | `string` | yes | — | `minLength: 1` `maxLength: 100` | — |
+| `label` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
+| `hint` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
+| `defaultValue` | `string`? | — | — | `minLength: 0` `maxLength: 500` | — |
+| `required` | `boolean` = `false` | — | — | — | — |
+| `secret` | `boolean` = `false` | — | — | — | — |
+| `generate` | `ParamGenerator`? | — | — | — | — |
+| `position` | `integer` = `0` | — | — | — | — |
+
+**On create**: required — `blueprintId`, `key`, `label` · not accepted — `id`
+
+### `RegistryImage`
+
+- gate `read:2 create:8 update:8 delete:5` · closed (`additionalProperties: false`)
+- relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
+| `repository` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `tag` | `string` | yes | — | `minLength: 1` `maxLength: 128` | — |
+| `digest` | `string` | yes | — | `minLength: 1` `maxLength: 100` | — |
+| `sizeBytes` | `integer` = `0` | — | — | — | — |
+| `inUse` | `boolean` = `false` | — | — | — | — |
+| `pushedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `pushedBy` | `string`? | — | — | `minLength: 0` `maxLength: 120` | — |
+| `observedAt` | `string` | — | — | `format: "date-time"` | — |
+
+**On create**: required — `repository`, `tag`, `digest` · not accepted — `id`
+
+### `Backup`
+
+- gate `read:7 create:7 update:8 delete:7` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `kind` | `BackupKind` = `"manual"` | — | — | — | — |
+| `status` | `RunStatus` = `"pending"` | — | — | — | — |
+| `destination` | `BackupDestination` = `"local"` | — | — | — | — |
+| `sizeBytes` | `integer`? | — | — | — | — |
+| `location` | `string`? | — | — | `minLength: 0` `maxLength: 500` | — |
+| `error` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
+| `requestedBy` | `string`? | — | — | — | — |
+| `startedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `finishedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `durationMs` | `integer`? | — | — | — | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `HubConfig`
+
+- gate `read:7 create:7 update:7 delete:7` · version field `version` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` = `"hub"` | — | — | — | — |
+| `name` | `string` = `"Basecamp"` | — | — | `minLength: 1` `maxLength: 80` | — |
+| `baseUrl` | `string` | yes | — | `format: "uri"` | — |
+| `adminEmail` | `string` | yes | — | `format: "email"` | — |
+| `heartbeatTimeoutSeconds` | `integer` = `120` | — | — | `minimum: 30` `maximum: 3600` | — |
+| `sessionTtlHours` | `integer` = `168` | — | — | `minimum: 1` `maximum: 8760` | — |
+| `requireTwoFactorForOwners` | `boolean` = `false` | — | — | — | — |
+| `allowApiKeyAuth` | `boolean` = `true` | — | — | — | — |
+| `allowBotUsers` | `boolean` = `true` | — | — | — | — |
+| `backupEnabled` | `boolean` = `false` | — | — | — | — |
+| `backupCron` | `string` = `"0 2 * * *"` | — | — | `minLength: 1` `maxLength: 100` | — |
+| `backupDestination` | `BackupDestination` = `"local"` | — | — | — | — |
+| `mailFromAddress` | `string`? | — | — | `format: "email"` | — |
+| `mailFromName` | `string`? | — | — | `minLength: 0` `maxLength: 80` | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `baseUrl`, `adminEmail` · not accepted — `id`, `version`
+
+### `NotificationPreference`
+
+- gate `read:1 create:1 update:1 delete:1` · closed (`additionalProperties: false`)
+- relation `user` — belongsTo `User` via `userId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `userId` | `string` | yes | — | — | — |
+| `kind` | `NotificationKind` | yes | — | — | — |
+| `email` | `boolean` = `false` | — | — | — | — |
+| `inApp` | `boolean` = `true` | — | — | — | — |
+
+**On create**: required — `userId`, `kind` · not accepted — `id`

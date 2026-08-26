@@ -295,6 +295,11 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
     async closeBundle() {
       if (!isBuild) return  // skip in dev server
 
+      // What the prerenderer actually emitted, for the post-build steps that
+      // have to enumerate the site. Stays null on an SPA, where the route
+      // table is the whole answer (`FJS-502`).
+      let prerenderedUrls = null
+
       // Build a minimal route table from the tree Sierra already has
       const tree = sierraContext.tree
       if (!tree) return
@@ -310,6 +315,15 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           .filter(n => n.meta?.status !== 'draft')
           .filter(n => n.meta?.robots !== 'noindex')
           .filter(n => !n.meta?.dynamic)
+          .map(n => n.path),
+        // The same list with the DYNAMIC exclusion left off. `indexed` drops
+        // `/products/:slug/` because an SPA cannot know what it stands for; a
+        // static build emitted those pages and has to be able to ask whether
+        // the route they came from wanted indexing (`FJS-502`). Draft and
+        // noindex still apply — those are the actual decisions.
+        indexable: routeNodes
+          .filter(n => n.meta?.status !== 'draft')
+          .filter(n => n.meta?.robots !== 'noindex')
           .map(n => n.path),
         redirects: routeNodes
           .filter(n => n.meta?.redirect)
@@ -333,6 +347,23 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         // build/static-safety.js.
         const safetyDb = await resolveBuildDb(config, root)
 
+        // The trap this target sets, named rather than left to be discovered:
+        // a theme class on <body> shadows the one the switcher puts on <html>
+        // for every token both of them define, so the page renders one theme
+        // forever and nothing errors (`FJS-501`). Warned rather than rewritten
+        // — the app wrote it, and an app with no switcher is entitled to it.
+        const bakedOnBody = String(config.document?.bodyClass ?? '')
+          .split(/\s+/).filter((c) => /^theme-/.test(c))
+        if (config.theme && bakedOnBody.length) {
+          console.warn(
+            `\n  [Sierra] document.bodyClass carries ${bakedOnBody.join(', ')}, and this app ` +
+            `configures a theme switcher.\n` +
+            `    The switcher writes <html>, so a theme class on <body> wins for every token ` +
+            `both define\n    and the switch changes nothing a visitor can see. Drop it — the ` +
+            `theme block already\n    puts '${config.theme.default ?? 'system'}' on <html>.\n`
+          )
+        }
+
         const pre = await prerenderRoutes({
           tree, root,
           routesDir: config.routesDir ?? 'src/routes',
@@ -351,6 +382,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           stylesheets: (sierraContext.cssAssets ?? [])
             .map((f) => (config.base ?? '/').replace(/\/$/, '') + '/' + f),
           bodyClass: config.document?.bodyClass,
+          htmlClass: resolveHtmlClass(config),
           lang:      config.document?.lang,
           // Compile temp modules inside the app so a layout's bare imports
           // resolve from the app's node_modules, not Mesa's (Mesa SSR_SPEC W1).
@@ -381,6 +413,10 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
               root, outDir, base: config.base ?? '/',
               plugins: islandPlugins(),
               viteBuild,
+              // A prerendered page never loads `virtual:sierra`, so this entry
+              // is the only thing that can tell the browser what the app's
+              // theme block says (`FJS-501`).
+              theme: config.theme ?? null,
             })
             if (bundle) {
               const touched = await injectIntoPages(outDir, pre.islandPages, bundle.src)
@@ -399,8 +435,24 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
             )
           }
         }
+        // A page that TRIED and threw is a broken build, not a page that opted
+        // out. Both landed in `skipped`, so a render failure printed one warning
+        // line among the bundler's own and the build exited 0 — and, when it was
+        // the only static route, went on to blame the frontmatter for a page
+        // that plainly declares `render: static`. What ships from that is a
+        // deploy with a missing page and a green log.
+        const broke = pre.skipped.filter(s => /^(render failed|load\(\) threw|getStaticPaths\(\) threw|head\(\) threw)/.test(s.reason))
+        if (broke.length) {
+          throw new Error(
+            `[Sierra] ${broke.length} static route(s) failed to render:\n` +
+            broke.map(s => `    ${s.route} — ${s.reason}`).join('\n')
+          )
+        }
+
         // Silence is how the static target failed before — it emitted nothing
         // and said nothing. If a static build produced no pages, say so.
+        prerenderedUrls = pre.urls
+
         if (pre.written.length === 0) {
           console.warn(
             `\n  [Sierra] target:'static' produced no pages — no route declares ` +
@@ -409,7 +461,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
         }
       }
 
-      const results = await runPostBuild(config, routeTable, outDir, root)
+      const results = await runPostBuild(config, routeTable, outDir, root, prerenderedUrls)
 
       if (results.length > 0) {
         console.log('\n  [Sierra] Post-build:')
@@ -462,6 +514,34 @@ async function resolveBuildDb(config, root) {
     console.warn(`  [Sierra] static safety: could not load '${config.db}': ${err.message}`)
     return null
   }
+}
+
+/**
+ * The class a prerendered page carries on <html>.
+ *
+ * `document.htmlClass` if the app stated one, and otherwise the theme it
+ * declared — because on this target the theme class has to be in the FILE. A
+ * prerendered page's first paint happens with no JavaScript at all, and the
+ * element is <html> because that is where the switcher and the injected
+ * flash-prevention script both write (theme/index.js § why the element is not
+ * a knob).
+ *
+ * Derived rather than asked for: an author who had to write the theme class
+ * into their own document block would write it onto <body>, which is the one
+ * place it silently does not work — see `wrapDocument`, and `FJS-501`.
+ *
+ * `default: 'system'` resolves to nothing here on purpose. Which of the pair a
+ * visitor gets is a question only their browser can answer, and the injected
+ * <head> script answers it before paint; baking either one would be a guess
+ * that is wrong half the time and cached by a CDN.
+ */
+function resolveHtmlClass(config) {
+  const stated = config.document?.htmlClass
+  if (stated) return stated
+
+  const dflt = config.theme?.default
+  if (!dflt || dflt === 'system') return ''
+  return dflt
 }
 
 function flattenTree(node) {

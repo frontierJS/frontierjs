@@ -34,7 +34,7 @@ function execCompiled(compiledJs, runtime, userImports = {}) {
     .replace(/^export default\s+/m, 'const __component = ')
   code += '\nreturn __component'
   // eslint-disable-next-line no-new-func
-  return new Function('$runtime', ...importNames, code)(runtime, ...importValues)
+  return new Function('$$runtime', ...importNames, code)(runtime, ...importValues)
 }
 
 async function compileAndExec(source, runtime, userImports = {}) {
@@ -74,12 +74,14 @@ describe('export function — emission', () => {
 
   it('rewrites assignments in the body through the signal setter', async () => {
     const out = await cx(`<script>let n = 0\nexport function bump() { n++ }</script><p>{n}</p>`)
-    expect(out.result).toContain('$$set_n(')
+    // Postfix goes through the runtime, which is handed the setter — the write
+    // is still the setter's, it is just not spelled at the call site.
+    expect(out.result).toContain('$$runtime.postUpdate($$sig_n, $$set_n, +1)')
   })
 
   it('registers the method for bind:this', async () => {
     const out = await cx(`<script>let n = 0\nexport function reset() { n = 0 }</script><p>{n}</p>`)
-    expect(out.result).toContain('$runtime.registerExports({ reset });')
+    expect(out.result).toContain('$$runtime.registerExports({ reset });')
   })
 
   it('emits no registration when the component exports no method', async () => {

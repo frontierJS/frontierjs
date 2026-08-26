@@ -80,6 +80,17 @@ src/
 test/
   litestone.test.ts  — 1191 tests (plus cli-smoke, elegance-fixes,
                        migrations-fixes, nullable-optional: 1289 total)
+  scale.test.ts      — the fixture below, parsed and built. Two assertions
+  fixtures/scale/    — openmrp.lite: 188 models, ~1,900 columns, ~300 relations,
+                       derived from the MySQL schema of a real manufacturing ERP.
+                       The apps in this repo top out near 40 models, so a rule
+                       quadratic in model count, or two features deriving one
+                       index name, is invisible without it
+
+bench/
+  scale-schema.mjs   — the same fixture, timed: parse, DDL, JSON Schema,
+                       autoMigrate, a second boot, and the diff proving the
+                       second boot changed nothing. Asserts nothing on purpose
 ```
 
 ---
@@ -170,7 +181,8 @@ Type?      — optional (nullable)
 @default(auth().field)           stamp from ctx.auth at write time (runtime-only)
 @default(fieldName)              copy sibling field value on create
 @map("col_name")                 custom DB column name
-@updatedAt                       auto-set to now() on every UPDATE
+@updatedAt                       auto-set to now() on every UPDATE — any field
+                                 name, however many; see SQLite gotchas
 @updatedBy                       stamp ctx.auth.id on every UPDATE
 @updatedBy(auth().field)         stamp custom auth field on every UPDATE
 @createdBy                       stamp ctx.auth.id on CREATE — a stamp, not a
@@ -197,8 +209,9 @@ Type?      — optional (nullable)
                                  and lifts it onto ctx.transients; a value reaching this
                                  client is refused by name. Emitted `writeOnly` into the
                                  create/update JSON Schema and absent from the read modes
-@guarded                         system-context column — stripped from every read AND
-                                 refused on every write, unless asSystem()
+@guarded                         system-context column — stripped from every read, refused
+                                 on every write, and refused in a where/orderBy/distinct/
+                                 cursor, unless asSystem()
 @guarded(all)                    the same; an explicit select cannot unlock the read
 @encrypted                       AES-256-GCM at rest — hidden from a non-system read,
                                  and writable by a non-system caller
@@ -207,7 +220,13 @@ Type?      — optional (nullable)
 @secret                          @encrypted + @guarded(all) + @log(audit) + $rotateKey support
 @secret(rotate: false)           same but excluded from key rotation — and therefore
                                  unreadable after one; $rotateKey refuses while one exists
-@allow('read'|'write'|'all', expr)  field-level access policy
+@allow('read'|'write'|'all', expr)  field-level access policy — a PREDICATE, compiled
+                                 into SQL both ways (FJS-D129). A read predicate is AND-ed
+                                 outside the caller's own where, so a column they may not
+                                 read cannot be filtered or sorted on; a write predicate is
+                                 the WHEN of a CASE in the SET, so it reads the STORED row.
+                                 Refused through a relation. On CREATE the payload IS the
+                                 row, so that half stays a JS evaluation of it
 @log(dbName)                     log reads/writes to a logger database
 @keepVersions                    on File? fields: skip old S3 object cleanup on update
 @computed                        derived field — implement in computed.js, not stored in DB
@@ -220,7 +239,21 @@ Type?      — optional (nullable)
                                  a FLAG, never the expression. The declared type is checked
                                  against the branches at startup
 @generated("sql expr")           SQL-generated column
+@generated(`{a} {b}`)            the SAME attribute in its other language, and the QUOTE says
+                                 which: double quotes are SQL, BACKTICKS are a template — the
+                                 string the column produces. `{name}` is a column in both; the
+                                 delimiter only changes what the text around the braces is.
+                                 **A NULL column takes the separator beside it** — uniform gaps
+                                 compile to concat_ws, mixed or outer literals to a coalesce
+                                 chain each field vanishes with. The hand-spelled coalesce
+                                 version leaves a DOUBLE SPACE where a middle name is missing,
+                                 which is why the second language exists. A backtick is its own
+                                 token, so one anywhere that wants a plain string is refused
 @hardDelete                      on a relation field: hard-delete children during @@softDelete(cascade)
+@keep                            on a relation field: these children stay LIVE when the parent is
+                                 soft-deleted, and so does everything below them. The third fate,
+                                 beside cascade and @hardDelete — a receipt outliving the customer
+                                 record it names. Also what silences the footgun warning below
 @markdown                        semantic annotation — String field contains Markdown (no validation)
 @label("Customer")               human-readable field name → JSON Schema `title`
 @required("msg")                 wording for the required rule (does NOT make the field
@@ -234,6 +267,16 @@ Type?      — optional (nullable)
 @regex("pattern")                regex validator
 @minItems @maxItems @uniqueItems array validators (also: the value must be an array,
                                  and Int[]/String[] elements must be of that type)
+@values(SetName)                 the column's legal values come from a declared `valueset`.
+@values(SetName, open)           A second declaration BESIDE @relation, never instead of it —
+@values(SetName, suggested)      storage is a foreign key, this is resolution. Strength is on
+                                 the BINDING because one list is legitimately enforced on one
+                                 column and merely offered on another: `required` (unstated)
+                                 refuses a value outside the set, `open` accepts it AND creates
+                                 the row, `suggested` enforces nothing. Checked at the Data
+                                 boundary through the CALLER'S OWN accessor, so a caller may
+                                 only pick what they can read and the source model's own
+                                 @@gate/@@allow decide who may grow an `open` set
 @from(Model, count: true)        derived count from relation — first arg is the MODEL, not the
 @from(Model, sum: field)         relation field. sum/max/min take a field; count needs Int,
 @from(Model, last: true)         exists needs Boolean, first/last are typed Model? (whole row)
@@ -258,7 +301,13 @@ declared. One authored string, all three realms.
 @@softDelete(cascade)            soft delete + cascade to FK children that also have @@softDelete
 @@fts([field1, field2])          FTS5 full-text search virtual table
 @@index([col1, col2])            composite index
-@@unique([col1, col2])           composite unique constraint
+@@unique([col1, col2])           composite unique constraint. A nullable member is a PARSE
+                                 ERROR — two NULLs never compare equal, so the rows that
+                                 leave it unset are all distinct to the index
+@@unique([a, b], nullsDistinct: true)
+                                 …and this is how a schema says it meant that. SQL's own
+                                 word for SQLite's behaviour; emits identical DDL. Single
+                                 @unique over an optional column is untouched
 @@strict                         SQLite STRICT mode (on by default)
 @@noStrict                       disable STRICT mode
 @@gate("R.C.U.D")                level-based access control (see GatePlugin)
@@ -269,6 +318,15 @@ declared. One authored string, all three realms.
 @@updatedBy                      sugar: adds updatedById @updatedBy + an updatedBy relation
 @@createdBy(owner)               same pair, renamed → ownerId + owner
 @@map("table_name")              custom DB table name
+@@label(fullName)                which column identifies a row to a person — what a
+                                 picker SHOWS for a foreign key. FHIR calls it `display`.
+                                 A field NAME, not a caption (that is @label on the field).
+                                 Must be a String column the database can order and match:
+                                 a relation, an array, an enum, a non-String, @computed,
+                                 @transient, @guarded, @encrypted, @hashed and @omit(all)
+                                 are each refused BY NAME at parse. A @generated one is the
+                                 case it exists for. Undeclared, the client guesses from
+                                 eight conventional column names and says that it guessed
 @@hasTemplates                   categorical definition-vs-instance: adds isTemplate
                                  Boolean @default(false); every read AND write excludes
                                  templates unless given withTemplates/onlyTemplates
@@ -306,6 +364,13 @@ model Account {
 ```
 
 `restore()` skips `@hardDelete` children — they're gone permanently.
+
+`@keep` is the third answer to the same warning, and the one that used to have no
+spelling: the children stay live on purpose. Without it, the only way to stop the
+parser warning about children left live was to stop leaving them live — and *the
+customer goes, the receipts stay* is a shape any app holding financial records
+has. It covers the whole subtree beneath that child, and says nothing about
+removing the child directly.
 
 ---
 
@@ -883,6 +948,10 @@ litestone seed [SeederClass]
 litestone seed run [name] [--db=main] [--force]
 litestone introspect <db> [--out schema.lite] [--no-camel]
 litestone transform config.js [--preview] [--dry-run]
+litestone explain [@word] [--visibility] [--json]        # the language, no schema needed
+litestone catalog --snapshot [--check]                   # the language surface, committed
+litestone catalog --reference [--check]                  # docs/reference.snapshot.md, the A-Z page
+litestone advise [--json]                                # legal-and-wrong, plus legal-and-MISSING
 litestone jsonschema [--out=./schemas/] [--format=flat]
 litestone jsonschema --snapshot [--check] [--stdout] [--out=<path>]
 litestone access [--check] [--json] [--stdout] [--out=<path>]
@@ -1022,6 +1091,7 @@ await env.verifyReadLadder()        // the read column alone — no fixtures nee
 await env.verifyConstraints()       // every declared rule, against a real write
 await env.verifyFieldProtection()   // @guarded/@encrypted/@secret, actually read
 await env.verifyRowPolicies()       // @@allow/@@deny, rows on BOTH sides
+await env.verifyTenantIsolation()   // tenancy { }, actually crossed — one tenant reaching into another
 
 // Mutate the schema, run the ORIGINAL's checks against the mutant's database.
 // A mutant nothing notices is a hole in the SUITE, and it names itself.
@@ -1104,6 +1174,16 @@ want opposite answers about an absent value — `checkCreatePolicy` runs before
 the `@default(auth().<claim>)` stamp, so an omitted column on create is
 legitimate and a row holding no tenant on read belongs to nobody.
 
+**A stamped column is `readOnly` in the generated JSON Schema**, with
+`x-litestone-kind: 'tenancy'` — `@system`'s treatment for `@system`'s reason:
+the application writes it and the caller does not. Being out of create-mode
+`required` was NOT enough on its own, and the way that failed is worth keeping
+in mind for any server-written column. `make()` seeds every WRITABLE column,
+sierra's `normalizeBlanks` rewrites a blank to `null`, and a stated null is a
+VALUE rather than an absence — so the `@default(auth().<claim>)` never applied
+and the write came back `400 must be a string` (`FJS-387`). A column nothing may
+send has to stop being OFFERED, not just stop being demanded.
+
 `@@tenant(none)` marks a model that spans tenants; `@@tenant(column: "x")` names
 a different column. Models declaring neither are reported by name, once, at
 parse. `jsonl`/`logger` models are never scoped — no policy engine there — and
@@ -1114,6 +1194,35 @@ those databases stay schema-global under `strategy database` too.
 carrying a second reading of it.
 
 ---
+
+## A field predicate is not a strip
+
+`@guarded` is decided once per model; `@allow('read'|'write', …)` on a field is a
+predicate, and a predicate has to be answered where the ROW is. Both halves were
+not, and both were live holes (`FJS-D129`).
+
+**A read predicate does not merely hide the answer.** Stripping the column and
+leaving it filterable recovers the value by binary search — measured, a salary
+in seventeen requests — and an `orderBy` leaks the ordering of every row in one.
+The predicate is now AND-ed into the caller's arguments as a **sibling** of
+their `where`, which is what stops their own `NOT` from complementing it. Two
+things follow and both are deliberate: naming the column narrows the read to the
+rows the caller may read it on (a row-dependent predicate therefore still works
+over their own rows, which is the case the feature exists for), and an `OR`
+branch naming it narrows the WHOLE read, including branches that do not — safe,
+blunt, and the way out is two reads.
+
+**A write predicate must not be graded against the payload.** It was:
+`@allow('write', auth().id == ownerId)` on an update compared against whatever
+the caller sent, so omitting `ownerId` dropped a column its owner was entitled to
+write and STATING `ownerId: me` wrote the column on somebody else's row. It is
+the WHEN of `SET col = CASE WHEN <pred> THEN ? ELSE col END` now, so it reads the
+stored row and a bulk update grades every row separately. **CREATE keeps the JS
+evaluation** — there is no stored row and the payload IS the row being made,
+which is what `checkCreatePolicy` grades one layer up.
+
+Through a RELATION both are refused by name: the predicate decides rows of the
+other model and a filter one hop away has no row of it to decide against.
 
 ## Key design decisions
 
@@ -1162,6 +1271,12 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 **No ILIKE** — use `WHERE LOWER(name) LIKE '%term%'`
 
 **A plain object in `bun:sqlite`'s parameter list voids every positional binding in that statement.** It is read as a named-parameter bag, and a statement built with `?` matches none of its keys — so nothing is bound, including the WHERE, and no error is raised. `SELECT ? IS NULL` passed `{x:1}` answers 1; `UPDATE t SET a = ? WHERE id = ?` passed `({x:1}, 1)` changes no rows, because the id was voided along with the value. Every symptom of FJS-199 is this one fact wearing different clothes. Anything that reaches `run`/`query`/`prepare` with a caller-supplied value has to know the value is a bindable primitive first.
+
+**There are THREE schemas and most migration confusion is a comparison between the wrong two** — declared (`schema.lite`), shadow (the migration files replayed into an empty database) and live. `migrate create` and `migrate check` compare declared ↔ shadow: *what migration is missing*. `migrate dev` and `migrate baseline` also compare shadow ↔ live: *has somebody changed this database without writing a file*. It was ONE comparison, declared ↔ live, doing both jobs — which is why a `db push` database, matching the declaration by construction, made `migrate create` answer *already in sync* at the exact moment a migration was needed, while the deploy refused for want of one (`FJS-388`, ruled `FJS-D123`). `buildShadow` and `historyGap` in `core/migrations.js` are the owners; `migrate check` is the repo-only question with no database opened, and `fli deploy:doctor` asks it before an image is built while `migrate apply` asks the same function at container start. **`db push` is prototyping only** — it reaches no deploy — and `migrate baseline` is the way back for a database that is already correct and has no history to say so, refusing when the database does not actually hold what the files build.
+
+**A protection that only STRIPS is not a protection.** `@guarded` hid its value from every read and let the same caller name the column in a `where`, which recovers it one `startsWith` at a time, and in an `orderBy`, which leaks the ordering of every row at once (`FJS-393`). The refusal is `collectGuardedArgs` in `client.js`, at the read where `ctx.isSystem` is known — NOT in `filterableKeysFor`, which answers whether a column CAN be compared and is therefore the same answer on every flavour of client, which is what lets junction ask `$checkWhere` of a caller's own. **It walks the relation graph**, because the filter grammar does: `where: { author: { is: { … } } }`, a relation `orderBy` and a nested `include` all ask about a model the table is not. `ctx.guardedMap.reaches` is the gate — a model from which no guarded column is reachable at any depth costs one boolean — and the walk descends only into a relation key or a logical/relation operator, since a nested object under an ordinary column is a typed-Json path where a key sharing a guarded column's name means something else. The sibling hole through a field-level `@allow('read', …)` is open and measured (`FJS-442`): a predicate is not a set, and refusing it needs a ruling first. **A credential lookup is now a system read by construction** — a `Session`/`Invitation`/`ApiKey` token is `@guarded(all)` and found BY its value, so `where: { token }` on a caller's client is refused; auth and basecamp already went through `asSystem()` for it, and the comment in `invitations.service.ts` says why. Allowing bare equality instead would have kept them working and left the hole open for anything low-entropy, which is what a probe enumerates.
+
+**A trigger's `RETURNING` is evaluated before the trigger fires**, and `@updatedAt` is a trigger. So a write that leans on it hands the caller the OLD timestamp while the row already holds the new one (`FJS-396`). Two halves now: the client names every stamp column in its own `SET` clause — `stampSets` in `client.js`, over `updatedAtFields` exported from `ddl.js`, so which columns and which timestamp expression have one owner each — and the trigger is the floor beneath it, for raw SQL and migrations, standing down for a statement that already named the column. A path that issues an `UPDATE` and hands back a row must call `stampSets`; `test/updated-at.test.ts` asserts the returned row equals a re-read for every write verb, so a new path that forgets goes red. `@@external` answers no stamp columns at all — no DDL means no trigger, and a client stamp with nothing behind it is a silent write into somebody else's table.
 
 **`json_extract` returns native types** — `json_extract(data, '$.id')` returns integer; comparing to string silently fails. Cast: `CAST(json_extract(data, '$.id') AS TEXT)`
 
@@ -1219,6 +1334,15 @@ from belief asserts a wish.
 
 **Traps that cost time here, all verified by running:**
 
+- **A `@from` correlates on EVERY column of its relation's key, and that is
+  three places rather than one.** The subquery's WHERE, the `first`/`last`
+  repick (`IN` over row values, `PARTITION BY` over all of it, a JSON tuple as
+  the lookup key), and `parseSelectArg`'s injection of the correlation columns
+  for a `select` that named only the derived field. Correlating on the first
+  column alone answered a count of every row sharing it — 8, 8, 7 where the
+  truth was 3, 5, 7 — and nothing could raise it, because that is a count of
+  real rows (`FJS-377`). `inferFromFk` answers `{fkCols, refCols}`, aligned
+  arrays; a single-column relation is a one-element case of the same code.
 - **A `@from(first/last)` field is an id in SQL and a ROW after `read()`.** The
   subquery resolves the target's primary key; `resolveFromRowRefs` fetches the
   rows in one batched query and swaps them in, before `applyComputed` so a
@@ -1314,6 +1438,17 @@ from belief asserts a wish.
   of declarations is how two answers to one question drift apart. The finding a
   field-level `@allow` was missing from the surface entirely came out of building
   the second grading, which is the argument.
+- **A `@values` binding is on the deploy axis and not the access one.** It
+  narrows by VALUE, identically for every caller, so `classifyAccess` says
+  nothing about it — but a column gaining `@values(X)` starts refusing writes
+  N-1 has been making all along, with no column, no type and no constraint
+  moving, which nothing else in the surface can see. The three strengths are not
+  a ladder: only `required` refuses, so `suggested` → `open` is an expand and
+  anything → `required` is the pivot. The SET is carried separately from the
+  binding because narrowing one narrows every column bound to it, and that is
+  unreadable from any single field's row — and a set narrowed where nothing
+  binds it as `required` is an expand, since a picker offering less refuses
+  nothing.
 - **A snapshot that carries a verdict cannot be rechecked.** `release.snapshot.md`
   holds the release surface and never the classification, because a verdict is a
   fact about two schemas while the file describes one — write it in and the file
@@ -1575,6 +1710,32 @@ from belief asserts a wish.
   what made `@@softDelete` + `@@fts` unusable: FTS5 answers a repeated `'delete'`
   for one docid with `database disk image is malformed`, and only when the extra
   delete empties the structure — above one row it corrupts in silence.
+- **A generated column is not in `PRAGMA table_info`, and a diff built on it is
+  blind in both directions.** `introspect()` reads `table_xinfo` for that reason
+  — `hidden` 2 = VIRTUAL, 3 = STORED — and the expression comes off the table's
+  own `CREATE` statement, the only place SQLite keeps it. The pragma decides
+  WHETHER a column is generated and the text parse only supplies the expression,
+  so a parse miss cannot invent one. Three shapes follow from SQLite and none of
+  them is a choice: a STORED add is a rebuild (`cannot add a STORED column` on a
+  populated table), a VIRTUAL add is an `ADD COLUMN` **that has to carry its
+  `GENERATED ALWAYS AS` clause** — without it the ALTER applies cleanly and
+  leaves a plain writable column of the same name — and a rebuild must leave the
+  column out of its `INSERT … SELECT` entirely (`cannot INSERT into generated
+  column`), which loses nothing because the new table computes it.
+
+- **A `@values` binding is checked through the CALLER'S accessor, and that is the
+  whole of its permission story.** `enforceValueSets` reads the source model off
+  `ctx.tables[accessor]` — the sibling at this client's own flavour — so the set
+  a caller sees is the set their own `@@allow` shows them, and `open` creates
+  through that same accessor, which means the source model's `@@gate` and
+  `@@allow` answer who may extend it. Written against `asSystem()` it would
+  offer every row to everybody and let any caller grow a shared list, and it
+  would pass every test that uses one principal. **`suggested` issues no query
+  at all** — enforcing nothing has to cost nothing, or nobody uses the strength
+  that keeps the list travelling. **Six write paths carry a payload and all six
+  call it**; `test/valuesets.test.ts` § every write path derives that list from
+  `client.js` itself rather than restating it, because a seventh added later
+  would be silent.
 - **A migration only drops what litestone named.** Triggers: `*_fts_*`,
   `*_updatedAt`. Indexes: `idx_<table>_<fields>`. Anything the app created
   survives an ordinary migration — `introspect()` reads triggers into

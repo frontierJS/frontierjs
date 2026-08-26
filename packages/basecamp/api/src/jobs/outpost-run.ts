@@ -23,8 +23,16 @@ export function tail(text: unknown): string | null {
   return `… ${s.length - OUTPUT_LIMIT} earlier characters dropped …\n` + s.slice(-OUTPUT_LIMIT)
 }
 
-/** A line in one machine's history. Written as the app, because a job runs on
- *  the queue's thread and has no caller to scope to. */
+/**
+ * A line in one machine's history.
+ *
+ * Through the servers service rather than `asSystem()` (`FJS-384`): both
+ * handlers that call this run as whoever asked for the work, `ServerEvent` is
+ * create-at-USER, and going through the caller's own client is what refuses a
+ * line against a machine in another workspace. It never throws — a run that
+ * finished is not a run to fail over a history line, and the row itself is
+ * already written.
+ */
 export async function recordServerEvent(
   app: BasecampApp,
   serverId: string,
@@ -32,6 +40,11 @@ export async function recordServerEvent(
   message: string,
   metadata: Record<string, unknown> = {},
 ): Promise<void> {
-  const db = app.data.asSystem() as any
-  await db.serverEvent.create({ data: { serverId, kind, message, metadata } })
+  try {
+    await app.service('servers').call('logEvent', serverId, { kind, message, metadata })
+  } catch (err) {
+    app.logger.child('outpost-run').warn('server event not recorded', {
+      server_id: serverId, kind, error: (err as Error).message,
+    })
+  }
 }

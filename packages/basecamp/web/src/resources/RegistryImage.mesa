@@ -1,0 +1,12 @@
+<script module>
+  // src/resources/RegistryImage.mesa — the Resource layer.
+  //
+  // Named for the MODEL and exporting the service noun (invariant 19), which is
+  // the case that invariant exists for: the service is `registry` and the model
+  // is `RegistryImage`, so `modelNameFor('registry')` resolves `Registry` and
+  // finds nothing. Stated rather than guessed — a miss warns once and degrades
+  // to a bare `make()`, which is a form with no fields and no explanation.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const registry = createResource('registry', { model: 'RegistryImage' })
+</script>

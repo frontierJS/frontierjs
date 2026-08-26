@@ -7,6 +7,7 @@
 
 const path = require('path')
 const fs   = require('fs')
+const os   = require('os')
 const { LspClient, labels, hoverText } = require('./lsp-client')
 
 const ROOT = path.resolve(__dirname, '..')
@@ -47,6 +48,30 @@ function completion(name, list, { has = [], hasNot = [] }) {
 // completion list when the whole document parses. A half-typed field anywhere
 // means schema:null and scalar types only — which is the null guard working,
 // not a bug. BROKEN below is the deliberate exception.
+
+// A model using words that had no hover before the catalog was wired in.
+// @@tenant needs a tenancy block or the document does not parse, and hover on a
+// document with a parse error is a different code path — which is what the first
+// version of this fixture accidentally tested.
+const NEW_WORDS = [
+  'tenancy {',
+  '  strategy row',
+  '  column   workspaceId',
+  '}',
+  '',
+  'model Thing {',
+  '  id      Int      @id',
+  '  code    String   @system',
+  '  overdue Boolean  @derived(id > 0)',
+  '  @@gate("2.4.4.5")',
+  '  @@tenant(none)',
+  '}',
+].join('\n')
+
+/** Column of `needle` on `lineNo` of a multi-line fixture. */
+function col2(text, lineNo, needle) {
+  return text.split('\n')[lineNo].indexOf(needle)
+}
 
 const VALID = [
   'database audit {',                                                 // 0
@@ -181,6 +206,76 @@ async function main() {
     labels(await c.completion(u('valid'), 25, col(25, '@@gate') + 2)),
     { has: ['@@gate', '@@index'], hasNot: ['@id'] })
 
+  // ── The catalog is what the language contains ──────────────────────────────
+  //
+  // These lists used to be written out in server.ts, and were wrong: 50 field
+  // attributes against 55, 15 model attributes against 22, and four top-level
+  // declarations never offered at all. A hand-written inventory has no way to be
+  // wrong out loud, so the assertion is against the catalog itself rather than
+  // against a count copied into this file.
+  section('catalog-derived completion')
+  {
+    const catalog = require(path.join(ROOT, 'out', 'litestone', 'catalog-bundle.js'))
+    const at = (level, prefix) =>
+      catalog.CATALOG.filter(r => r.level === level && !r.removed).map(r => prefix + r.word)
+
+    // Caret on an ATTRIBUTE, not on the type — a type position answers types,
+    // which is why the first version of this reported all 55 missing.
+    const fieldOffered = labels(await c.completion(u('valid'), 22, col(22, '@default') + 8))
+    const missingField = at('field', '@').filter(w => !fieldOffered.includes(w))
+    ok(`every field attribute is offered (${at('field', '@').length})`,
+      missingField.length === 0, `missing: ${missingField.join(' ')}`)
+
+    const modelOffered = labels(await c.completion(u('valid'), 25, col(25, '@@gate') + 2))
+    const missingModel = at('model', '@@').filter(w => !modelOffered.includes(w))
+    ok(`every model attribute is offered (${at('model', '@@').length})`,
+      missingModel.length === 0, `missing: ${missingModel.join(' ')}`)
+
+    // A word the parser keeps only to refuse must not be suggested.
+    const removed = catalog.CATALOG.filter(r => r.removed).map(r => '@@' + r.word)
+    ok('a removed word is not offered',
+      removed.every(w => !modelOffered.includes(w)), `offered: ${removed.join(' ')}`)
+  }
+
+  // ── Hover for the words that never had one ─────────────────────────────────
+  //
+  // ATTR_DOCS covers 57 spellings and wins where it has an entry. Everything
+  // else hovered as nothing at all — @system, @transient, @@tenant among them —
+  // which reads in an editor exactly like a word that does not exist.
+  section('catalog-derived hover')
+  {
+    await c.openDoc(u('newwords'), NEW_WORDS)
+    const h1 = hoverText(await c.hover(u('newwords'), 7, col2(NEW_WORDS, 7, '@system') + 2))
+    ok('@system hovers', /readOnly|application|caller/i.test(h1 || ''), JSON.stringify(h1))
+
+    const h2 = hoverText(await c.hover(u('newwords'), 10, col2(NEW_WORDS, 10, '@@tenant') + 3))
+    ok('@@tenant hovers', /tenant/i.test(h2 || ''), JSON.stringify(h2))
+
+    // The catalog contributes the two facts prose keeps getting wrong.
+    const h3 = hoverText(await c.hover(u('newwords'), 8, col2(NEW_WORDS, 8, '@derived') + 3))
+    ok('a catalog hover carries a worked example', /```lite/.test(h3 || ''), JSON.stringify(h3))
+
+    // The example is `probeFor`, the catalog's own assembler and the same text
+    // its suite parses — not a second assembly here, which is how a hover ends
+    // up showing a snippet that does not compile.
+    const catalog = require(path.join(ROOT, 'out', 'litestone', 'catalog-bundle.js'))
+    const derived = catalog.CATALOG.find(r => r.level === 'field' && r.word === 'derived')
+    ok('the example is the catalog probe verbatim',
+       (h3 || '').includes(catalog.probeFor(derived)), JSON.stringify(h3))
+
+    // And the one line that leads OUT of the catalog. Named, never linked: the
+    // docs ship inside the package, not beside the file being edited.
+    ok('a word with a docs page says which',
+       /📖 `docs\/modelling\.md`/.test(h3 || ''), JSON.stringify(h3))
+
+    // Every word either has a page or is named as having none, so a new word
+    // arriving undocumented is a decision rather than an omission.
+    const orphans = catalog.CATALOG
+      .filter(r => !r.removed && !catalog.docFor(r) && !catalog.UNDOCUMENTED[r.level + ':' + r.word])
+      .map(r => r.word)
+    ok('every word has a page or a stated reason it has none', orphans.length === 0, orphans.join(' '))
+  }
+
   completion('inside @relation(...)',
     labels(await c.completion(u('valid'), 24, col(24, '@relation(') + 10)),
     { has: ['Owner', 'Lead'], hasNot: ['@id', 'Int'] })
@@ -219,6 +314,62 @@ async function main() {
   ok('returns edits for a valid document', Array.isArray(edits) && edits.length > 0,
     JSON.stringify(edits)?.slice(0, 120))
 
+  // ── Imports ────────────────────────────────────────────────────────────────
+  //
+  // `parse()` resolves nothing, so until the server spliced imports itself, a
+  // schema that imports a package's models was parsed as if those models did not
+  // exist — and every reference to one was an error the author could not remove.
+  // It went unseen for as long as it existed because the only real schema this
+  // suite checked with imports is basecamp's, and basecamp had hand copies
+  // instead of imports.
+  section('imports')
+  {
+    const dir  = fs.mkdtempSync(path.join(os.tmpdir(), 'lsp-import-'))
+    const frag = path.join(dir, 'fragment.lite')
+    const root = path.join(dir, 'schema.lite')
+    fs.writeFileSync(frag, 'model Session {\n  id     String @id @default(uuid())\n  userId String\n}\n')
+
+    const rootText = [
+      'database main { path "./a.db" }',
+      '',
+      'import "./fragment.lite"',
+      '',
+      'model User {',
+      '  id String @id @default(uuid())',
+      '}',
+      '',
+      'extend model Session {',
+      '  user User @relation(fields: [userId], references: [id])',
+      '}',
+    ].join('\n')
+    fs.writeFileSync(root, rootText)
+
+    const diags  = await c.openDoc(`file://${root}`, rootText)
+    const errors = diags.filter(d => d.severity === 1)
+    ok('a model reached through an import is not reported as missing',
+       errors.length === 0, errors.map(d => d.message).join(' | '))
+
+    // The other half: the splice must not swallow a real error. Without this the
+    // rule above is satisfied by a server that reports nothing at all.
+    const bustedText = rootText + '\n\nextend model Sesion {\n  x String?\n}\n'
+    fs.writeFileSync(root, bustedText)
+    const busted = (await c.openDoc(`file://${root}`, bustedText)).filter(d => d.severity === 1)
+    ok('and a genuine error in the same file still is',
+       busted.length > 0 && /Sesion/.test(busted.map(d => d.message).join(' ')),
+       busted.map(d => d.message).join(' | '))
+
+    // An unresolvable import is NOT reported: the package may simply not be
+    // installed in this checkout, and a squiggle on a line the author cannot act
+    // on is worse than a schema that describes less.
+    const absentText = 'database main { path "./a.db" }\n\nimport "@nobody/nothing.lite"\n\nmodel Thing { id String @id }\n'
+    fs.writeFileSync(root, absentText)
+    const absent = (await c.openDoc(`file://${root}`, absentText)).filter(d => d.severity === 1)
+    ok('an import that resolves to nothing is not an error squiggle',
+       absent.length === 0, absent.map(d => d.message).join(' | '))
+
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+
   // ── The repo's own schemas ─────────────────────────────────────────────────
   section('real schemas')
   const real = [
@@ -232,8 +383,17 @@ async function main() {
     const text  = fs.readFileSync(file, 'utf8')
     const uri   = `file://${file}`
     const diags = await c.openDoc(uri, text)
-    ok(`${name} parses clean`, diags.length === 0,
-      diags.slice(0, 2).map(d => d.message).join(' | '))
+    // A warning the author cannot remove without making the schema WORSE is not
+    // a broken parse. basecamp's tenancy infers a scope through a parent for the
+    // models carrying no column of their own and says so; declaring it narrows to
+    // one relation and drops rules. So grade the errors, and print the warnings
+    // rather than counting them — a standing warning that stops being reported is
+    // the thing worth noticing here.
+    const errors   = diags.filter(d => d.severity === 1)
+    const warnings = diags.filter(d => d.severity !== 1)
+    ok(`${name} parses with no errors`, errors.length === 0,
+      errors.slice(0, 2).map(d => d.message).join(' | '))
+    for (const w of warnings) console.log(`  note  ${name}: ${w.message}`)
 
     // A bare field line INSIDE a model — `driver logger` in a database block
     // matches the same shape, so track which block we are in rather than

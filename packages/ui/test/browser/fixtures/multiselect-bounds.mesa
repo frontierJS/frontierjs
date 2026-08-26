@@ -1,0 +1,33 @@
+<script>
+  // multiselect-bounds.mesa — the selection bounds, and single-mode replacement.
+  //
+  // Three controls because the rule is directional and one control cannot show
+  // that. `min` is a floor on the FINISHED selection, not on every intermediate
+  // state, so a control declared `min={2}` has to be fillable from empty — the
+  // guard that refuses every state below the floor refuses the first add and
+  // the field can never be completed at all. `#at-floor` starts satisfied and
+  // `#below-floor` starts empty, and the same bound has to behave differently
+  // in each.
+  import MultiSelect from '../../../components/forms/MultiSelect.mesa'
+
+  const CHANNELS = ['email', 'sms', 'push', 'webhook']
+
+  let atFloor    = ['email', 'sms']   // min is satisfied; removals must be refused
+  let belowFloor = []                 // min is not; adds must still be allowed
+  let single     = 'email'
+</script>
+
+<div id="at-floor">
+  <MultiSelect name="atFloor" bind:value={atFloor} options={CHANNELS} multiple min={2} max={3} />
+</div>
+
+<div id="below-floor">
+  <MultiSelect name="belowFloor" bind:value={belowFloor} options={CHANNELS} multiple min={2} />
+</div>
+
+<div id="single">
+  <MultiSelect name="single" bind:value={single} options={CHANNELS} />
+</div>
+
+<!-- Read back by the spec: the committed props, not the component's internals. -->
+<output id="state">{JSON.stringify({ atFloor, belowFloor, single })}</output>

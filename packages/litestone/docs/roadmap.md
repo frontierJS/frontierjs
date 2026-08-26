@@ -20,18 +20,33 @@ Package is written and working. The unscoped name `litestone` is blocked by npm'
 
 ## High priority
 
-### Money type
+### Exact numbers — `@scale(n)`, then `@money`
 
-A first-class monetary value type that eliminates float precision bugs.
+There is no fixed-point numeric type: `TYPE_MAP` offers `Int`, `Float` and
+nothing between them, so an exact quantity is modelled as a float and hoped for.
 
 ```prisma
 model Order {
-  total   Money
-  refund  Money?
+  qty    Int @scale(6)      // stored 1_500_000; the point sits six places in
+  total  Int @money(USD)    // scale 2, derived from the currency
 }
 ```
 
-Stored as JSON TEXT: `{ "amount": 1299, "currency": "USD", "scale": 2 }`. Read back as `{ amount: 12.99, currency: 'USD', formatted: '$12.99' }`. Arithmetic (`add`, `subtract`, `multiply`) via the Money helper. Locale-aware formatting.
+`Int` and not a `Decimal` scalar, because SQLite has no column widths — the
+precision half of `decimal(p, s)` emits an identical column and is `@lte`
+spelled differently, so only the scale is load-bearing. Stored as an integer, it
+sorts and `SUM`s exactly; it reads back in major units, which puts one rounding
+at the end of an aggregate rather than one per row.
+
+**This entry previously proposed storing a Money as JSON TEXT,
+`{ "amount": 1299, "currency": "USD", "scale": 2 }`, and that is wrong rather
+than merely superseded.** `opaqueSortKind` classifies a `Json` column as opaque,
+so `$checkOrderBy` throws on it — the column could not be sorted, grouped or
+summed, which is every question anyone asks of a money column.
+
+Design record, with the evidence from a 188-model fixture and the two open
+questions (a per-row currency, and rescaling on a scale change):
+`IDEAS/declared-semantics.md` § 2.
 
 ### Embedding(n) — vector search
 

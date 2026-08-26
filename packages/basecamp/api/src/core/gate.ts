@@ -106,3 +106,27 @@ export function basecampGateLevel(user?: BasecampPrincipal | null): number {
   // finds the workspaces it may then act in — and nothing else.
   return LEVELS.VISITOR
 }
+
+/**
+ * The ladder read backwards: which role does a caller need to reach level N.
+ *
+ * One caller — the error mapper in app.ts, turning a `TransitionGateError` into
+ * a sentence an operator can act on. Litestone owns the SCALE and says so:
+ * "Transition 'drain' on Server.status requires level 5, user has level 4" is
+ * exactly right and names nothing this app's screens use. A gate declared in
+ * the schema is still this app's rule, so the translation back is this app's
+ * job, and it reads the same table `basecampGateLevel` grades with rather than
+ * a second list of role names.
+ *
+ * The LOWEST role that reaches the level, because a gate is a floor. A level no
+ * role reaches — 7 is `isSystemAdmin`, 8 is the machine tier — has no role to
+ * name and answers null, so the caller renders litestone's own sentence.
+ */
+export function roleForLevel(level: number): string | null {
+  let best: string | null = null
+  let bestLevel = Infinity
+  for (const [role, roleLevel] of Object.entries(WORKSPACE_ROLE_LEVEL)) {
+    if (roleLevel >= level && roleLevel < bestLevel) { best = role; bestLevel = roleLevel }
+  }
+  return best
+}

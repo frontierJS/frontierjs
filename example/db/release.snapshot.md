@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-4 model(s) · 1 enum(s) · 2 database(s)
+17 model(s) · 7 enum(s) · 2 database(s) · 1 value set(s)
 audit → logger · main → sqlite
 ```
 
@@ -20,22 +20,148 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 
 | Enum | Members |
 | --- | --- |
+| `Brand` | `frontierjs` · `junction` · `litestone` |
+| `CartStatus` | `abandoned` · `open` · `ordered` |
+| `DiscountKind` | `fixed` · `percent` |
 | `OrderStatus` | `cancelled` · `paid` · `pending` · `refunded` · `shipped` |
+| `PaymentStatus` | `failed` · `pending` · `refunded` · `succeeded` |
+| `Size` | `l` · `m` · `one` · `s` · `xl` · `xs` · `xxl` |
+| `StockMovementKind` | `adjusted` · `damaged` · `received` · `returned` · `sold` |
+
+## Value sets
+
+The list a `@values` binding resolves against. Narrowing one narrows every
+column bound to it, so it is a fact about the set rather than about a field.
+
+| Set | Source | Value | Scope | Where |
+| --- | --- | --- | --- | --- |
+| `ProductColour` | `Colour` | `name` | `current` | — |
 
 ## Models
 
-### `Customer`
+### `Cart`
 
-table `customer` · db `main` · gate `0.4.4.5`
+table `cart` · db `main` · gate `0.0.0.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `email` | `String` | no | — | unique · **required on write** |
+| `discount` | `Discount` | — | — | relation |
+| `discountId` | `Int` | yes | — | @system |
+| `handoffCode` | `String` | yes | — | unique · @guarded |
+| `handoffExpires` | `DateTime` | yes | — | @guarded |
+| `holds` | `StockReservation[]` | — | — | relation |
 | `id` | `Int` | no | — | id |
+| `lines` | `CartLine[]` | — | — | relation |
+| `shippingMethod` | `ShippingMethod` | — | — | relation |
+| `shippingMethodId` | `Int` | yes | — | @system |
+| `status` | `CartStatus` | no | `'open'` | — |
+| `token` | `String` | no | — | unique · @guarded · **required on write** |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
+| `userId` | `String` | yes | — | — |
+
+```
+@@allow('read', token == auth().cartToken)
+@@allow('update', token == auth().cartToken)
+```
+
+### `CartLine`
+
+table `cart_line` · db `main` · gate `0.0.0.0`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `cart` | `Cart` | — | — | relation |
+| `cartId` | `Int` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `Int` | no | — | id |
+| `quantity` | `Int` | no | `1` | — |
+| `token` | `String` | no | — | **required on write** |
+| `unitPrice` | `Float` | no | — | @system · **required on write** |
+| `variant` | `ProductVariant` | — | — | relation |
+| `variantId` | `Int` | no | — | **required on write** |
+
+```
+@@unique(cartId, variantId)
+@@allow('create', token == auth().cartToken)
+@@allow('delete', token == auth().cartToken)
+@@allow('read', token == auth().cartToken)
+@@allow('update', token == auth().cartToken)
+```
+
+### `Colour`
+
+table `colour` · db `main` · gate `0.4.4.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `hex` | `String` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `name` | `String` | no | — | unique · **required on write** |
+| `retired` | `Boolean` | no | `0` | — |
+
+### `Customer`
+
+table `customer` · db `main` · gate `1.4.4.5` · @@softDelete
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deletedAt` | `DateTime` | yes | — | — |
+| `email` | `String` | no | — | unique · **required on write** |
+| `firstName` | `String` | no | — | **required on write** |
+| `fullName` | `String` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `lastName` | `String` | no | — | **required on write** |
 | `name` | `String` | no | — | **required on write** |
 | `notes` | `String` | yes | — | `@allow(read: auth().role == 'admin')` |
+| `orderCount` | `Int` | — | — | from |
 | `orders` | `Order[]` | — | — | relation |
+| `userId` | `String` | yes | — | unique · @system |
+| `version` | `Int` | no | `1` | — |
+
+```
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
+```
+
+### `Discount`
+
+table `discount` · db `main` · gate `5.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `active` | `Boolean` | no | `1` | — |
+| `carts` | `Cart[]` | — | — | relation |
+| `code` | `String` | no | — | unique · **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `endsAt` | `DateTime` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `kind` | `DiscountKind` | no | `'percent'` | — |
+| `label` | `String` | no | — | **required on write** |
+| `maxRedemptions` | `Int` | yes | — | — |
+| `minSubtotal` | `Float` | no | `0` | — |
+| `redemptions` | `Int` | no | `0` | @system |
+| `startsAt` | `DateTime` | yes | — | — |
+| `value` | `Float` | no | — | **required on write** |
+
+### `InventoryMovement`
+
+table `inventory_movement` · db `main` · gate `5.5.9.9`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `Int` | no | — | id |
+| `kind` | `StockMovementKind` | no | — | **required on write** |
+| `note` | `String` | yes | — | — |
+| `quantity` | `Int` | no | — | **required on write** |
+| `reference` | `String` | yes | — | — |
+| `stockAfter` | `Int` | no | — | **required on write** |
+| `stockBefore` | `Int` | no | — | **required on write** |
+| `variant` | `ProductVariant` | — | — | relation |
+| `variantId` | `Int` | no | — | **required on write** |
 
 ### `Notification`
 
@@ -59,37 +185,211 @@ table `notification` · db `main` · gate `0.8.4.8`
 
 ### `Order`
 
-table `order` · db `main` · gate `0.4.4.5`
+table `order` · db `main` · gate `1.4.4.5` · @@softDelete(cascade)
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `customer` | `Customer` | — | — | relation |
 | `customerId` | `Int` | no | — | **required on write** |
+| `deletedAt` | `DateTime` | yes | — | — |
+| `discount` | `Float` | no | `0` | @system |
+| `discountCode` | `String` | yes | — | @system |
+| `discountLabel` | `String` | yes | — | @system |
 | `id` | `Int` | no | — | id |
+| `lines` | `OrderLine[]` | — | — | relation |
 | `note` | `String` | yes | — | — |
 | `reference` | `String` | no | — | unique · **required on write** |
+| `shipping` | `Float` | no | `0` | @system |
+| `shippingLabel` | `String` | yes | — | @system |
 | `status` | `OrderStatus` | no | `'pending'` | — |
+| `subtotal` | `Float` | no | `0` | @system |
+| `tax` | `Float` | no | `0` | @system |
+| `taxLabel` | `String` | yes | — | @system |
+| `taxRate` | `Float` | no | `0` | @system |
 | `total` | `Float` | no | `0` | — |
 | `trackingCode` | `String` | yes | — | @system |
+| `userId` | `String` | yes | — | @system |
 
 ```
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
 transition status.cancel: paid, pending → cancelled
 transition status.pay: pending → paid
 transition status.refund: paid → refunded @gate(5)
 transition status.ship: paid → shipped
 ```
 
+### `OrderLine`
+
+table `order_line` · db `main` · gate `1.8.8.8` · @@softDelete
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deletedAt` | `DateTime` | yes | — | — |
+| `description` | `String` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+| `lineTotal` | `Float` | no | — | **required on write** |
+| `order` | `Order` | — | — | relation |
+| `orderId` | `Int` | no | — | **required on write** |
+| `quantity` | `Int` | no | — | **required on write** |
+| `sku` | `String` | no | — | **required on write** |
+| `unitPrice` | `Float` | no | — | **required on write** |
+| `userId` | `String` | yes | — | @system |
+| `variant` | `ProductVariant` | — | — | relation |
+| `variantId` | `Int` | no | — | **required on write** |
+
+```
+@@index(orderId)
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
+```
+
+### `Payment`
+
+table `payment` · db `main` · gate `5.8.8.9`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `amount` | `Float` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `currency` | `String` | no | `'USD'` | — |
+| `failureReason` | `String` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `order` | `Order` | — | — | relation |
+| `orderId` | `Int` | no | — | **required on write** |
+| `providerRef` | `String` | no | — | unique · **required on write** |
+| `refundedAmount` | `Float` | no | `0` | — |
+| `settledAt` | `DateTime` | yes | — | — |
+| `status` | `PaymentStatus` | no | `'pending'` | — |
+
+```
+@@index(orderId)
+```
+
+### `PaymentEvent`
+
+table `payment_event` · db `main` · gate `5.8.9.9`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `eventId` | `String` | no | — | unique · **required on write** |
+| `id` | `Int` | no | — | id |
+| `kind` | `String` | no | — | **required on write** |
+| `paymentRef` | `String` | yes | — | — |
+| `receivedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+
 ### `Product`
 
-table `product` · db `main` · gate `0.4.4.5`
+table `product` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `active` | `Boolean` | no | `1` | — |
+| `brand` | `Brand` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deletedAt` | `DateTime` | yes | — | — |
+| `description` | `String` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `images` | `ProductImage[]` | — | — | relation |
+| `name` | `String` | no | — | unique · **required on write** |
+| `onHand` | `Int` | — | — | from |
+| `priceFrom` | `Float` | — | — | from |
+| `priceTo` | `Float` | — | — | from |
+| `slug` | `String` | no | — | unique · **required on write** |
+| `variantCount` | `Int` | — | — | from |
+| `variants` | `ProductVariant[]` | — | — | relation |
+| `version` | `Int` | no | `1` | — |
+
+### `ProductImage`
+
+table `product_image` · db `main` · gate `0.4.4.5` · @@softDelete
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `alt` | `String` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deletedAt` | `DateTime` | yes | — | — |
+| `file` | `File` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+| `position` | `Int` | no | `0` | — |
+| `product` | `Product` | — | — | relation |
+| `productId` | `Int` | no | — | **required on write** |
+| `variant` | `ProductVariant` | — | — | relation |
+| `variantId` | `Int` | yes | — | — |
+
+### `ProductVariant`
+
+table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `active` | `Boolean` | no | `1` | — |
 | `barcode` | `String` | yes | — | unique |
+| `colour` | `String` | no | `'Default'` | `@values(ProductColour, open)` |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deletedAt` | `DateTime` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `images` | `ProductImage[]` | — | — | relation |
+| `movements` | `InventoryMovement[]` | — | — | relation |
+| `price` | `Float` | no | — | **required on write** |
+| `product` | `Product` | — | — | relation |
+| `productId` | `Int` | no | — | **required on write** |
+| `reservations` | `StockReservation[]` | — | — | relation |
+| `size` | `Size` | no | `'one'` | — |
+| `sku` | `String` | no | — | unique · **required on write** |
+| `stock` | `Int` | no | `0` | — |
+
+```
+@@unique(colour, productId, size)
+```
+
+### `ShippingMethod`
+
+table `shipping_method` · db `main` · gate `0.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `active` | `Boolean` | no | `1` | — |
+| `carts` | `Cart[]` | — | — | relation |
+| `description` | `String` | yes | — | — |
+| `freeOver` | `Float` | yes | — | — |
 | `id` | `Int` | no | — | id |
 | `name` | `String` | no | — | unique · **required on write** |
+| `position` | `Int` | no | `0` | — |
 | `price` | `Float` | no | — | **required on write** |
-| `sku` | `String` | no | — | unique · **required on write** |
+| `version` | `Int` | no | `1` | — |
+
+### `StockReservation`
+
+table `stock_reservation` · db `main` · gate `5.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `cart` | `Cart` | — | — | relation |
+| `cartId` | `Int` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `expiresAt` | `DateTime` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+| `quantity` | `Int` | no | — | **required on write** |
+| `variant` | `ProductVariant` | — | — | relation |
+| `variantId` | `Int` | no | — | **required on write** |
+
+```
+@@unique(cartId, variantId)
+@@index(variantId, expiresAt)
+```
+
+### `TaxRate`
+
+table `tax_rate` · db `main` · gate `0.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `active` | `Boolean` | no | `1` | — |
+| `id` | `Int` | no | — | id |
+| `isDefault` | `Boolean` | no | `0` | — |
+| `label` | `String` | no | — | **required on write** |
+| `rate` | `Float` | no | — | **required on write** |
+| `version` | `Int` | no | `1` | — |

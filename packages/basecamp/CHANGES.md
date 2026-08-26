@@ -1,5 +1,763 @@
 # Changes — Basecamp
 
+## 2026-08-26 — the audit trail is scoped by the schema, and a null means nobody
+
+`AuditEvent` said `@@tenant(none)` and declared no policy, so the only thing
+keeping one workspace's trail out of another's was `audit.service.ts` putting
+`workspaceId: ws()` in its own `where`. One door, where a gate is every door —
+a job, a hub screen or a `fli tinker` session at ADMINISTRATOR(5) inherited
+nothing from that hook (`FJS-432`).
+
+The model's header argued the other way: a null column never equals a claim, so
+scoping it would hide the rows with no workspace rather than sharing them. True,
+and it is the intended reading rather than the cost of it — the framework had
+already ruled that a row holding no tenant belongs to nobody and stays invisible
+(`FJS-D05`, restated as `FJS-D141`). So the fix is a DELETED line: `@@tenant(none)`
+goes, the declared `tenancy { }` applies, and the scoping shows up in
+`db/access.snapshot.md` where a hook never could.
+
+**The database is what settled it.** 19 null-workspace rows: 6 hub actions, and
+**12 `jobs.startRun`/`finishRun` that lost their stamp** — those methods are
+`internalOnly()` and therefore exempt from `sessionScope`, so
+`ctx.locals.workspaceId` was absent and a workspace's own `Job` runs filed under
+nobody, invisible to the one feed that wants them. Under *null means global*
+that is a feature; under the ruling it is the defect it is.
+
+Fixed first, and separately: the audit hook already re-reads the subject row to
+build its diff, so the subject's own `workspaceId` answers second and a
+`Workspace` is its own workspace. Sealing the meaning in over a mis-stamped
+column would have hidden those rows permanently behind a policy that looks
+correct.
+
+Three tests, each red without its half — the boundary read across two
+workspaces, the null row reachable by `asSystem()` alone, and a `startRun` that
+files under the job's workspace.
+
+## 2026-08-25 — the tenant crossing is asserted, not assumed
+
+`db/test/schema.test.ts` runs a fifth executed check beside the four it already
+had: `verifyTenantIsolation()`.
+
+It answers the half the row-policy test **reports** rather than grades. That test
+compares a compiled WHERE against litestone's own JS evaluator and declines a rule
+holding a `check()` by name — which on this schema is the fourteen models scoped
+through a parent, and its own comment says skipped rows are the normal state.
+`FJS-382` is what that costs: two implementations of `check()` disagreed about a
+null foreign key, four dashboard widgets went empty with a 200, and the checker
+called the policy correct throughout.
+
+The new one executes the crossing instead — seed a row for tenant A, then have
+tenant B and a caller holding no claim try to reach it, on read, create, update,
+delete and post-update. No second implementation is involved, so a delegation is
+graded by being run.
+
+**31 graded (17 by column, 14 by delegation), 14 exempt, 18 uncheckable behind a
+gate above 7, no leak.** The fourteen had never been graded by anything.
+
+Coverage is asserted as a SET rather than a count — every model the schema
+declares that is not `@@external` and not on a jsonl/logger driver must appear as
+graded or exempt — so the suite survives the schema growing and still fails a
+model that quietly drops out of the check. Proved to fire by appending a model
+with no tenant column and no scoped parent to a copy of this schema: it reports
+`unscoped` by name.
+
+## 2026-08-25 — Server.status is a declared machine
+
+`@@transitions(status, …)` on `model Server` (`FJS-507`). Eight moves in three
+tiers, and the tier is the gate: no gate is a person at the model's own update
+level, `@gate(5)` is a person one level up, `@gate(8)` is the machine's own
+report and nothing below `asSystem()` reaches it.
+
+**The bug it closes is the read-then-write.** `getScoped()` read the row and
+`db().server.update()` wrote it in a second statement, so two concurrent drains
+both read `online`, both passed the from-check and both wrote — a lost update
+with no error, and a server recorded online while it was draining. The
+declaration narrows the UPDATE's own WHERE to the from-state, so exactly one row
+matches and the loser gets a retryable `TransitionConflictError`. Two drains in
+flight is the assertion, because a sequential test cannot see it.
+
+**Three role hooks are gone rather than joined.** `drain`/`undrain` are
+`@gate(5)` and `reboot` takes the model's update level, which is what
+`requireWorkspaceRole` was saying in a service file where `db/access.snapshot.md`
+could not see it. 11 gated transitions in this schema became 19.
+
+The cost is that litestone refuses in litestone's vocabulary — *requires level 5,
+user has level 4* — and an operator has never seen a level. One app-level
+`registerErrorMapper` turns it back into a role, reading the ladder
+`basecampGateLevel` already grades with; `Deployment.rollback` gets it free.
+
+**`sync` asks the machine instead of writing a mapped value.** `transitions(row)`
+answers what is legal from where the row IS, so a provider reporting `running`
+for a machine basecamp is DRAINING is simply not in the list — where the old
+status map wrote it and silently undid the drain. A report that cannot be acted
+on is recorded as an event rather than swallowed.
+
+`heartbeat` keeps its single write: the status is one column of one update, and
+splitting it out would write the row twice and announce it twice for one
+check-in. Its from-set is declared as `checkIn @gate(8)` — `FJS-506`'s marker for
+a move the engine makes — and a system client bypasses enforcement, so the two
+have to agree by hand and the comment says so.
+
+**The browser's copy went too**, and that is where `FJS-512` came from: the
+screen asks `resource.transitions(row)` now, and the obvious shape for consuming
+it — one Set, `{#if moves.has('drain')}` — does not update. The Set re-derives
+and the blocks testing it keep the branch they had. One `$:` per button, each
+reading `server` directly, is what works; the mesa fixture that rules out every
+suspected cause passes 7/7.
+
+## 2026-08-25 — five screens, and a drive of their own
+
+`/blueprints/`, `/registry/`, `/hub/backups/`, `/hub/settings/` and `/settings/`
+— the last of the mock's model-blocked views (`FJS-153`). 35 of 41 now exist.
+
+**`bun run verify:screens`** is the new drive: 26 checks in a real browser,
+seeding a database of its own in a temp directory and starting and stopping both
+servers, so it touches nothing local and never asks anybody to reset a dev fleet.
+Separate from `verify`, which asserts the first-run wizard owns an EMPTY app —
+three of these screens are about rendering a populated catalogue, and an empty
+grid looks exactly like a broken query.
+
+**It found three things the build did not.**
+
+*`Switch` hands `onchange` a boolean; `Input` hands `oninput` an event.* Both new
+forms had been written with `e.target.checked` on a Switch, which reads a
+property of `undefined`, throws inside the handler, and leaves the control
+looking dead. The build was green and the screens rendered.
+
+*A row that stays `pending` on screen while the job has already finished it.* The
+backup job completes in ~80ms and writes a real archive. Every other list here
+learns about a change from the socket and this one cannot: `announceDataWrites`
+broadcasts through the app's channels, the only channel this app has is the
+WORKSPACE's, and `Backup` is `@@tenant(none)`. The screen polls while an archive
+is in flight and says why.
+
+*And a drive that passed for the wrong reason.* The first version of that check
+polled the history table's TEXT for `success` and a size — which the SEEDED
+archive already matched, so it passed before the new row existed and would have
+passed with the button disconnected. Rewritten to poll the row count first and
+the new row second; the same class as an overlay assertion that only asks
+`querySelector`.
+
+**What the screens refuse to pretend.** Deploying from a blueprint is not wired
+and the page says so — it needs a `blueprintId` on `App` and a path from params
+to an app's environment, and inventing either would make a button that loses the
+record of what something was built from. The registry offers neither sync nor
+delete, with the reason on the page rather than a disabled control. Restore is
+absent from backups, because restoring is replacing the database this process is
+reading from while it serves. The hub settings screen has none of the mock's four
+credentials. And three of its switches say out loud that they are stored and read
+by nothing yet.
+
+| | |
+| --- | --- |
+| Screens | 5 new · 35 of the mock's 41 views |
+| `verify:screens` | 26/26 in a real browser |
+| Tests | 168 pass, 0 fail |
+| `fli check` | 21 rules, nothing to report |
+| Typecheck | 14, at baseline |
+| Snapshots | routes regenerated |
+
+
+## 2026-08-25 — the seed learned the six new models
+
+`db/seed.js` wrote nothing for anything added this session, so every new screen
+would have been built against an empty list — which is the state that looks
+exactly like a broken query.
+
+**The catalogue is `db/blueprints.js`**, eight applications read out of the
+mock's own `BLUEPRINTS` constant rather than invented, converted column for
+column: the nested `app` block flattened (those columns are `App`'s where they
+overlap) and `params` written as `BlueprintParam` rows, because that list is an
+ordered form rather than a document. 31 params across the eight, and all three
+`ParamGenerator` values are exercised.
+
+**`brandColor` is set on one of the eight.** Four took their colour from the
+mock's own theme object (`T.blue`, `T.red`) — a design-system token, not a
+vendor's brand. Copying those would put this app's palette in a data column and
+call it somebody's identity, so they are null and the card falls back to its own
+surface.
+
+**Ghost is seeded withdrawn**, because *deprecated* is a state the list has to
+hide and the detail page has to still resolve, and a catalogue where every row is
+live cannot show either. Measured: 7 offered of 8, and the CMS category correctly
+absent from the filter list.
+
+**The registry mirror seeds a SHARED DIGEST on purpose.** `latest` and the newest
+version tag are one image, and a registry stores those layers once. On
+`acme/dashboard` that is 922MB summed per tag against 738MB per digest — a 25%
+overstatement of the number somebody uses to decide what to delete, which is the
+case `registry.repositories` was written for and now has data behind it.
+
+**Two notification preferences, not fourteen.** A preference row exists only
+where somebody has chosen, and `find` merges stored over default — seeding
+everybody would erase the *chosen* against *default* distinction the screen
+renders, which is the half that would go unnoticed.
+
+`--force` had to learn them too: none of the four installation models carries a
+workspaceId, so nothing in the existing clear list takes them with it. A re-seed
+would have failed on the first blueprint's `@unique` slug and on `HubConfig`'s
+constant primary key, both reading as a broken seeder rather than an incomplete
+clear. Verified by running `--force` twice.
+
+**And `db/test/seed.test.ts` was carrying the same defect it exists to catch.**
+Its header describes a `--force` list that had drifted eleven models behind the
+schema — and the tables it CHECKED were a hand-written list of sixteen, which
+knew about none of the six added this session. The question is asked the other
+way round now: every table in the database must have rows unless it is named in
+`NOT_SEEDED` with a reason, so adding a model is a choice between seeding it and
+saying why not, and neither one is silence. The exemptions are asserted EMPTY
+too, so a table that starts being seeded cannot keep an exemption whose reason
+has quietly become false. Proved by removing one entry and watching it go red.
+
+| | |
+| --- | --- |
+| Seeded | 8 blueprints · 31 params · 15 registry images · 1 backup · 1 hubConfig · 2 preferences |
+| Tests | 168 pass, 0 fail |
+| `fli check` | 21 rules, nothing to report |
+| Typecheck | 14, at baseline |
+
+
+## 2026-08-25 — services over the six new models
+
+Five services and one job, over the models the previous entry added. `blueprints`,
+`registry`, `backups`, `hub-config`, `notification-preferences` — 27 services now,
+and 5 job files.
+
+**Four of the five take no workspace, and the SCHEMA is what makes that work.**
+`tenantClaimGuard` runs app-wide, ahead of anything a service writes, and refuses
+a signed-in caller with no tenant claim; it exempts a service whose model is
+`@@tenant(none)`. So declaring the tenancy in the seed is what makes these
+reachable, and a hook could not have done it. The exemption lives in junction,
+keyed off this app's schema, and neither file names the other — the test that
+would catch it moving is a sysadmin with no workspace on the session reading the
+catalogue.
+
+**What it found.**
+
+*A closed create schema strips a relation in silence.* `blueprints.create` was
+written to take its params inline, the way the mock's export format holds them.
+It cannot: the derived create schema is `additionalProperties: false` and
+`params` is a relation, so `autoValidate` removes the key before the method runs
+— a blueprint with no form and no error. `@transient` is the declared answer and
+is unavailable because the relation already owns the name, so the payload is
+refused by name in a hook running AHEAD of the validator, which is the only place
+the key is still visible.
+
+*`@version` binds a state change, not just a form.* Withdrawing a blueprint
+stamps `deprecatedAt`, and litestone refused it — `revision` is `@version`, so
+every update carries the revision it read. `asSystem()` would have dropped the
+gate, the audit actor and the announcement to withdraw one row.
+
+*A shared digest was charged twice.* Two tags of one digest is the ordinary case
+(`v2.14.1` and `latest`) and a registry stores those layers once, so a per-tag
+sum reported double what the disk holds — the number an operator uses to decide
+what to delete.
+
+**Two deliberate absences.** `registry` offers no sync and no delete: the
+`IRegistry` interface answers `listTags(repo): string[]`, so a sync would invent
+`digest`, `sizeBytes` and `pushedAt`, and deleting a mirror row deletes nothing.
+`backups` writes `local` only and refuses `s3` at create rather than queueing a
+row that will fail for a reason already known. The job itself is real —
+`VACUUM INTO`, SQLite's own consistent online backup, because a file copy of a
+live WAL database silently omits whatever is still in the `-wal`.
+
+**And the FJS-375 change earned itself the same day.** Five new services mounted,
+and the proxy-path test went red because `surface.snapshot.md` was stale.
+Regenerating the snapshot updated the dev proxy and the deploy's Caddy config
+with no edit to either — which is the whole of what that change was for.
+
+| | |
+| --- | --- |
+| Services | 27 (+5) · 5 job files (+1) |
+| Tests | 162 pass, 0 fail (65 API-tier + 97 schema) |
+| `fli check` | 21 rules, nothing to report |
+| Typecheck | 14, at baseline |
+| Snapshots | surface · jobs regenerated; the proxy list followed |
+
+
+## 2026-08-25 — the models the last screens needed
+
+`docs/SCREENS.md` said ten of the mock's 41 views were unbuilt and that most of
+them were blocked on the Data realm. Recounting it off the mock made that eleven,
+and this pass took the model-blocked group: **six models, four enums, and one
+case decided the other way** (`FJS-153`).
+
+| Model | Tenancy | Gate | The decision in it |
+| --- | --- | --- | --- |
+| `Blueprint` | `@@tenant(none)` | `1.7` | A curated catalogue, not a per-workspace one |
+| `BlueprintParam` | `@@tenant(none)` | `1.7` | A child model, not a Json array |
+| `RegistryImage` | `workspaceId` | `2.8.8.5` | Mirror a registry, do not query it live |
+| `Backup` | `@@tenant(none)` | `7.7.8.7` | The outcome is the machine's, like every *Run |
+| `HubConfig` | `@@tenant(none)` | `7` | One typed row, and no credentials in it |
+| `NotificationPreference` | `@@tenant(none)` | `1`, own row | Per person, not per membership |
+
+**A marketplace is not a tenant's.** Every entry in the mock is third-party
+software, so a workspace-scoped `Blueprint` gives each tenant a private copy of
+the same nine rows — and the other option, a nullable `workspaceId` meaning
+*shared*, is the shape `FJS-432` is still an open question about: a null never
+equals a claim, so row tenancy hides exactly the rows meant to be global.
+
+**`HubConfig` holds no credentials, and the mock's screen showed four.** The auth
+secret, agent secret, Resend key and Infisical token are read at BOOT, before any
+database — a row would never reach the running process — rotating one is a deploy
+rather than a form, and `Secret` already models credential material with
+`@encrypted` data. What is left is configuration a person can genuinely change
+while the app runs.
+
+**Onboarding got no model.** All six steps the mock shows are questions the
+database already answers; a stored `done` is a second answer that goes stale the
+moment somebody deletes what it recorded. The mock stores them because a mock has
+no database.
+
+**What it found.** `baseUrl` was written `@trim @url @length(1, 300)`, and
+`verifyConstraints` refused it by name: every string long enough to exercise the
+length is refused by `@url` first, so the boundary was never checked and a pass
+would have been a pass on the wrong refusal (`FJS-351`). The `@length` came off.
+Separately, four documents disagreed about how many models this app has — 37, 38
+and 39, plus 38 in the root map — and the `@@tenant(none)` count said *seven* and
+had been nine for some time. Both corrected everywhere.
+
+**Nothing sits on top of these yet** — no services, no resources, no screens, and
+the seed writes none of the rows. Deliberate: a service written against a model
+nobody has opened a screen onto is two guesses stacked.
+
+| | |
+| --- | --- |
+| Schema | 45 models, 26 enums · 45 gated · 34 policied · 14 `@@tenant(none)` |
+| Tests | 151 pass, 0 fail (48 API-tier + 103 schema) |
+| `fli check` | 21 rules, nothing to report |
+| Typecheck | 14, at baseline |
+| Release | every new model classified **expand**; the six contract findings are pre-existing |
+| Snapshots | ddl · access · jsonschema · release · `schema.d.ts` all regenerated |
+
+
+## 2026-08-25 — the proxy list is read off the app, not remembered
+
+`web/config/api-paths.js` told the dev proxy and the deploy's Caddy config which
+paths belong to the API, because this app mounts services at `/{service}` with no
+prefix — `GET /projects` is the service AND the page, and only `Accept` tells them
+apart. It was a hand-kept copy of the service registry and it went stale six
+times (`FJS-375`).
+
+**Three of the six were never this app's to remember.** `/connections` is
+junction's channels plugin, `/account` and `/sessions` are auth's,
+`/conduit-targets` is conduit's — services that answer on this origin and are
+named nowhere in this app's source. `/connections` was still missing when this
+was written.
+
+The file now parses `surface.snapshot.md`, which `junction surface` writes off
+the built app and which CI's `snapshots` phase already reruns with `--check`. A
+service added to the API reaches both proxies by regenerating a file CI forces
+you to regenerate anyway.
+
+**The parse is graded against the running app rather than the file it read.** A
+change to junction's output shape would otherwise leave it finding fewer paths
+and saying nothing, which is the same silence one layer along — so the test walks
+`app.services.list()` and `buildRoutes(app)` and asserts every mounted service
+and every raw route is proxied, that `/` is not (the shell, mounted by
+`staticRoutes`), and that `/ws` is stated rather than derived, the channels
+plugin having upgraded in the transport and mounted no route.
+
+It broke the image on the way past, which is the part worth keeping: the
+Dockerfile copies `api db web tsconfig*` and not the snapshot, while
+`bun run build:web` runs INSIDE the image and loads `vite.config.js`. The SPA
+build stopped before a line of it ran. One `COPY surface.snapshot.md ./`.
+
+The durable fix `FJS-375` named — give the API an `apiPrefix` — is untouched and
+now free: with a prefix the derivation answers that one path and retires itself,
+which is asserted so adopting it stays a config change.
+
+| | |
+| --- | --- |
+| Tests | 151 pass, 0 fail |
+| `fli check` | 21 rules, nothing to report |
+| Typecheck | 14, at baseline |
+| Image | `docker build` exit 0, SPA built inside it |
+| Proxy | 7 probes through a real dev server: JSON reaches the API, a document gets the shell, an unmounted path falls to Vite |
+
+
+## 2026-08-25 — a job runs as whoever asked for it, and the dispatch says so
+
+Five handlers opened `app.data.asSystem()` behind a comment saying a job has no
+caller to scope to. It has had one since 2026-08-23: caravan records the actor
+and the tenant at dispatch, junction re-binds both through `app.runAs`, and the
+membership is READ AGAIN when the job runs — so an actor who lost access between
+asking and running is refused rather than replayed (`FJS-384`).
+
+**What adopting it means is not what the register assumed.** Measured against
+this app's own schema: every row these handlers write is gated at SYSTEM for
+update — `RecipeRun`, `DeploymentStep` and `CleanupRun` at `@@gate("2.4.8.8")`,
+`JobRun` at `2.8` — and the highest standing a workspace grants is `owner`, 6.
+That is the schema saying a run's outcome belongs to the machine and not to
+whoever asked for it, and a gate refuses regardless of standing. `asSystem()`
+there is the declared design; the comment above it was what was wrong.
+
+**What was missing is confinement.** Nothing stopped a handler writing another
+workspace's rows: an id off a payload was written wherever it pointed. Each
+handler now goes through an `internalOnly()` method on the service that owns the
+row, which reads the PARENT through the caller's own client first — a release,
+run or job in another workspace answers nothing — and only then does the gated
+write as system. The audit actor and the announcement come back with it.
+
+**The rule is: the dispatch declares, the handler asserts** —
+`api/src/jobs/context.ts`.
+
+| | |
+| --- | --- |
+| `runsAsCaller` | refuses unless the queue recorded an actor AND a tenant |
+| `runsAsApp` | refuses when it recorded one — running somebody's request as the app is the escalation pointed the other way |
+| `runsEitherWay` | `job:run`, the one job dispatched by a person AND fired by a cron |
+
+The cron fire in `job-schedule.ts` states `actor: null` explicitly. Caravan would
+have defaulted to nobody there anyway — which is what makes stating it worth
+doing: the default is right by accident, and the handler's refusal only means
+something if the other side said what it meant.
+
+`job:run` keeps ONE write path for both modes. Its service methods are exempt
+from `sessionScope` (a cron fire has no session and names no workspace, the same
+shape `invitations.preview` has) and `jobInScope` reads through the caller's
+client where there is one and the system client where there is not — a cron fire
+is the app acting on its own behalf and legitimately spans workspaces.
+
+Nine methods across four services, every one `internalOnly` and every one in
+`surface.snapshot.md`: junction answers 405 to a name `methods:` leaves out,
+in-process included, so an engine method has to be declared surface and the hook
+is what keeps it off the wire. `ctx.transport` is `'internal'` for an in-process
+call — measured, not assumed.
+
+Two things fell out on the way. `deployment:run` pushed the row to open screens
+by hand after every step and `job:run` pushed nothing at all, so a job that ran
+left every screen showing the previous history until it was reloaded; both are
+the service's job now and cannot be forgotten. And `failDeploy`'s four writes —
+the release, the steps it left behind, the app's status and the event — are one
+call, where they used to be able to half-happen.
+
+5 tests, including the one that matters: an `owner` of one workspace cannot open
+a run in another, the owner of that workspace can, and the same principal moved
+to a wire transport is refused by the hook rather than by the session.
+
+## 2026-08-24 — an admin could still promote themselves, through the one door a person uses
+
+`FJS-410` had two halves declared in the schema — `@@deny('update', userId ==
+auth().id)`, then four `@@allow`s once the read turned out to be undecided — and
+the register recorded what was left as *the sentence a person needs*. It was not
+a sentence. Driven through `@frontierjs/testing` against the real app, an admin
+naming their own `userId` with `role: 'owner'` got no throw, a 200, and OWNER(6).
+
+**No policy can reach that path.** `members()` is `app.data.asSystem()`, because
+membership is what decides access and cannot be read through the caller it is
+deciding about — and `asSystem()` is the context every policy is bypassed in. The
+boundary was holding a job, a hub screen and a `fli tinker` session, and the one
+door with a person behind it was open.
+
+Three refusals in the service tier, because the escalation has three shapes and
+*not your own row* is only the first:
+
+- a **self-check** in `setMemberRole` — your own role, in either direction;
+- **`refuseRoleAboveOwn()`** on `workspaces.addMember`, `workspaces.setMemberRole`
+  and `invitations.create`, because an admin who cannot promote themselves can
+  invite an address they own AS owner and sign in as it. Registered per method
+  and not on `all`: `role` is a word two other models use, and a hook grading
+  every payload carrying the key would refuse a fleet write for holding the
+  wrong kind of role;
+- an **outrank check**, because `Cannot demote the last owner` only catches an
+  admin demoting an owner where there happens to be exactly one.
+
+Equal is allowed. An admin appointing an admin is what the role is for; it is
+the step UP nobody may take on their own authority.
+
+The members screen narrows both pickers to the roles the caller may hand out —
+a slice of `WorkspaceRole`, which is declared in ascending authority, rather than
+a fourth copy of the ladder `core/gate.ts` grades on — and disables the row that
+is your own. An affordance; the refusal is the service's.
+
+6 tests in `api/test/services.test.ts`, mutation-checked in three directions:
+neuter the hook and two go red, the self-check one, the outrank check one. 143
+tests, typecheck at baseline, `fli check` clean, `surface.snapshot.md`
+regenerated (two hooks where there was one).
+
+## 2026-08-24 — the four auth models are imported, not copied
+
+`db/schema.lite` declared `Credential`, `Session`, `Verification` and
+`OauthFlow` by hand. It had to: each needs a relation back to *this* app's
+`User`, `@@log(audit)` and `@@tenant(none)` — identity spans workspaces, and row
+tenancy otherwise reports a model with no tenant column — and none of that can
+be in a file `@frontierjs/auth` ships.
+
+Litestone's new `extend model` is where those three now live, so the schema
+imports `@frontierjs/auth/schema.lite` and owns none of the columns. 39 models
+still.
+
+**What the copies had already cost:** `@guarded(all)` on
+`Credential.accessToken` and `refreshToken` where the package writes `@secret`.
+The comment above them argued the deviation on grounds that were true of
+`Session.token` — looked up by value, so a random IV cannot answer — and are not
+true of these two, which are read back and used. Turning OAuth on here would
+have stored every provider access and refresh token unencrypted. 137 tests were
+green either side of the divergence, because nothing anywhere compares a copy to
+its original. Importing fixed it without anyone deciding to.
+
+`model User` stays declared here, and that is the split auth already draws:
+`user.lite` is appended into an app's schema to be extended and edited,
+`auth.lite` is imported.
+
+
+## 2026-08-23 — a required secret nothing read
+
+`AUTH_SECRET` is gone from `core/env.ts`, `deploy/build.mjs`, the README and this
+package's own notes (`FJS-360`). It was `required: true` with a public
+placeholder default, and `NODE_ENV=production` refused to boot over a value no
+code path here would have used — the README said as much, as though it were a
+safety property. Nothing read it: a session is a row found by a random token.
+`ENCRYPTION_KEY` is the credential this app actually has, and losing it still
+loses every `@encrypted` column in the volume.
+
+## 2026-08-23 — the entry moved out of `src/`, and four file-relative paths moved with it
+
+`FJS-D128`: `api/index.ts` is the entry and starts the app, `api/src/app.ts`
+builds one and never starts it. Basecamp had `api/src/index.ts` +
+`api/src/core/app.ts` — recorded in `PROJECT_STATE.md` as a deliberate departure
+from the layout the root README calls canonical, which is what a departure
+nobody re-argues looks like after a while.
+
+**What the move actually cost was four `new URL(…, import.meta.url)` paths**,
+every one of them computed from `src/core/` and every one of them silent when
+wrong. `../config` fell back to `defaultConfig` through a `.catch()` — the same
+shape as `FJS-430`, where this app read a config directory that did not exist for
+its whole life and ran with CORS `*` for everyone; the surface snapshot is what
+caught it, because `corsPlugin` simply stopped appearing in the plugin list.
+`../services` cost 23 tests with `Service 'projects' not found`, which is
+`FJS-458` arriving from the other direction. The migrations directory and the
+SPA's `index.html` were the two nobody would have noticed until a deploy: a
+missing migrations path and a 404 on `/`.
+
+They resolve off the file rather than the CWD for a good reason — a deploy starts
+the app from the image root and a drive starts it from the package — and that is
+exactly what makes them survive a move by pointing somewhere plausible and wrong.
+
+Also moved with it: `bun run stop`'s pkill pattern and the two browser drives,
+each of which spawned `api/src/index.ts` by literal path.
+
+## 2026-08-23 — nothing in the browser names the workspace any more
+
+Sixteen resources hooked `stampWorkspace` before create — a client putting the
+active workspace on a record the server was going to overwrite — each with a
+comment saying the browser would otherwise refuse the create because the column
+is required. It has not been required for a while: the tenancy declaration
+desugars a `@default(auth().workspaceId)` and litestone leaves an `auth()`
+default out of create-mode `required`.
+
+**Deleting the hook is what found the defect it was covering.** The column was
+still WRITABLE, so `make()` seeded it, sierra's blank-strip turned the seed into
+an explicit `null`, and a stated null is a value — the default never applied and
+`/projects/create/` answered 400. Fixed in litestone: a tenancy-stamped column
+is `readOnly`, which is `@system`'s treatment for `@system`'s reason
+(`FJS-387`).
+
+**And one service really was relying on the browser for its tenant.**
+`invitations.create` writes through `sys()`, and a system client carries no
+principal for the Data boundary to read a default from — so the only thing
+putting `workspaceId` on that row was the hook. It stamps `ws()` in its own
+before/create now, which is what `channels.createSecret` beside it already did.
+Everything else here writes through the scoped client and is stamped at the
+boundary.
+
+
+## 2026-08-23 — the eight appliances are providers, and three names got an owner
+
+`infra/` is gone. Its eight adapters — Infisical, Unleash, Typesense, Zot,
+Forgejo, Grafana, NetBird, Nango — now live in `providers/` beside `executor.ts`
+and `outpost.ts`, because that is what `FJS-D06` rules the word to mean: a party
+outside the app that a capability speaks to. Infisical is one in exactly the
+sense Hetzner is, so two folders were naming one concept. `BasecampInfra` →
+`BasecampProviders`, `buildInfra` → `buildProviders`, `app.infra` →
+`app.providers`, and the portal's `config_key` strings read `providers.*`. That
+last rename is free: nothing had ever set `infra.*` in a config file — the keys
+exist to tell an operator where a value would go, and the portal UI is the only
+thing that reads them.
+
+**Three names on the app object were being assigned rather than claimed**, under
+a comment saying `app.claim()` is the guarded namespace claim. Only `data` went
+through it. The other three each turned out to be a different problem.
+`providers` was simply a missing claim and is one now. `logger` was junction
+building a throwaway (`opts.logger ?? createLogger(…)`) and this app discarding
+it a few lines later — `createApp({ logger })` is an option that already existed,
+so it is passed in and the overwrite is gone.
+
+`db` was the one worth arguing about. This app must pass the Litestone client to
+`createApp` — that is what installs `withLitestoneDb` — so junction puts it at
+`app.db`, and the next statement replaced it with the raw handle. One name, two
+meanings, twelve lines apart. Now nothing is replaced: `app.db` stays what
+createApp was given, `app.data` is the name this app uses for it, and the raw
+`bun:sqlite` handle is claimed as **`app.sqlite`**. The single reader was
+`hub.overview`, which reached it as
+`(app.db as { db: { query: … } }).db` — and removing that cast turned the next
+line red, because it had been declaring `get()` returns `any`. `sqliteVersion`
+now reads through `raw.query<{ v: string }, []>(…)`. The cast was buying silence,
+not safety.
+
+**`AuditEvent.mesa` was not resolving its model.** It said
+`createResource('audit')`, and `audit` is already singular — so the registry
+looked for `Audit`, found nothing, warned, and degraded to a bare `make()` with
+no field rules, no coercion and no validation behind it. Every other irregular
+here states its model; this one had been missed. Proven rather than reasoned:
+loading `db/schema.lite` through the parser, `generateJsonSchema` and sierra's
+registry, `modelNameFor('audit')` answers `null` and
+`modelNameFor('AuditEvent', 'audit')` answers `AuditEvent`. `jobs` and `recipes`
+were checked the same way and correctly need nothing.
+
+135 tests, 0 fail. `fli check` clean, typecheck at baseline, all seven snapshots
+current.
+
+
+## 2026-08-22 — the console is on by default here
+
+`DEVTOOLS=1` is in `.env`, so `bun run api` brings the console up on 8503 with
+no flag. The banner says which it did, either way.
+
+Putting it there found two things in junction (`FJS-419`): describing this app
+bound a real port, because the console's server started in `register()`; and the
+toggle reached `surface.snapshot.md`, because bun auto-loads `.env` from the cwd
+and every snapshot generator runs from the app root. CI has no `.env` — it is
+gitignored — so the committed file would have failed for a plugin CI could not
+see. Both fixed there; the snapshot is now identical with the toggle on or off.
+
+The one real diff left in `surface.snapshot.md` is `corsPlugin` moving from
+third to last: it is installed by junction's `cors` start phase from the config
+block now, rather than by hand at module scope.
+
+
+## 2026-08-22 — the schema half of three findings a rule made
+
+132 tests, 0 fail. `db:check` in sync, `access` / `ddl` / `release` snapshots
+regenerated, `db/schema.d.ts` current.
+
+All three came out of `litestone advise`, which reads this schema and reports
+two things nothing else can: shapes that parse and fail later, and words the
+schema never reached for.
+
+**A caller can no longer update their own membership** (`FJS-410`). A `@@gate` is
+per MODEL, so `@@gate("1.5")` says *an admin may update a membership* and has no
+way to say *not their own* — while `role` is the column every gate in this app is
+graded from. `setMemberRole` is hooked `requireWorkspaceRole('admin', 'owner')`
+with one guard on it, *cannot demote the last owner*, so an admin naming their
+own `userId` with `role: 'owner'` was granting themselves level 6. The model now
+declares `@@deny('update', userId == auth().id)`.
+
+**The first attempt was a field policy and it did nothing.**
+`role @allow('write', userId != auth().id)` reads like exactly the rule. A field
+write predicate is evaluated against the PAYLOAD rather than the stored row, so
+`userId` is `undefined` in a patch of `{ role }`, `!=` is true, and the column is
+permitted — and the test asserting it was GREEN, because both the broken form and
+the working one are silent and it was watching for a throw. Isolated to a two-line
+schema and filed as `FJS-433`: `==` drops the column for the row's own owner and
+`!=` permits everybody, from one cause. The form that works is a model-level deny,
+which compiles into the WHERE against columns the row actually holds.
+
+**A hook is one door and this is every door** — a job, a hub screen, a
+`fli tinker` session at level 5. Nothing legitimately updates a caller's own
+membership: the invitation accept CREATES the row with `acceptedAt` on it,
+leaving is a delete, and `asSystem()` bypasses this for the hub and setup. The
+sentence a person needs is still the service's to say and that half is open.
+**`litestone release` grades it `contract`** — it takes a write away from a
+release still serving, so this deploy is the pivot. Worth knowing before the
+deploy rather than during it.
+
+Two things deliberately NOT done. No `@@allow('update', …)` on the model — it
+would be right and it is unverifiable from here, since a policy FILTERS and a
+wrong one is an empty screen with a 200, on the model `@@tenant(none)` exists for
+(the workspace switcher reads memberships across workspaces). And nothing on
+`AuditEvent`, because this schema's own header already argues the other way:
+a null `workspaceId` compared to a caller's claim hides exactly the rows the
+trail exists for. That is now `FJS-432`, filed as a decision owed rather than a
+fix owed.
+
+**Ten foreign keys got an index** (`FJS-413`). SQLite indexes a PRIMARY KEY and a
+UNIQUE and nothing else, and litestone emits `CREATE INDEX` only for `@@index` —
+so the pattern was a composite leading with the other side. `WorkspaceMember`
+declared `@@unique([workspaceId, userId])` and `@@index([workspaceId, userId])`
+and got one index, which left *which workspaces is this person in* — the question
+every session asks — with nothing to use. Four are on `ON DELETE CASCADE` join
+tables, where SQLite scans the child once per deleted parent. Two of the ten are
+partial (`WHERE deletedAt IS NULL`), because every `@@index` on a `@@softDelete`
+model is, and `Job` is one. All ten grade `expand`. **Never measured**: no query
+plan was taken, and at today's row counts none of it is visible — the evidence
+was the emitted DDL saying which indexes exist.
+
+One thing worth keeping: **a `///` doc comment lands in `db/schema.d.ts`**. The
+first version of the role rationale was seventeen `///` lines and appeared twice
+in the generated types, as JSDoc on a column. `///` is what a hover shows;
+everything else is a `//` comment.
+
+## 2026-08-22 — frontier.config.js, the deploy half
+
+`api/config/junction.config.js` is what the app reads about itself. This is what
+the tooling reads about where the app goes — `fli deploy`, through
+`loadFrontierConfig`. Two files, two audiences, which is why they are not one.
+
+Every value in it is the one basecamp's own container already uses: port 8120
+from the port scheme, `/health` at the bare path because this app declares no
+`apiPrefix`, `deploy/Dockerfile`, and `/data/basecamp.db` — the volume, because
+a database inside the image is lost on the next swap and the loss is silent.
+Nothing here restates a number the Dockerfile could have been asked for.
+
+`server` and `domain` are left as placeholders on purpose: they are facts about
+a deployment and this repo has none. `bun run image` / `image:up` do not read
+this file — `deploy/build.mjs` drives compose directly — this is the remote path.
+
+Writing it ran `fli deploy:doctor` here for the first time, whose single
+reported failure turned out to be wrong (`FJS-417`).
+
+
+## 2026-08-22 — the app has a config file, and its CORS was open to everyone
+
+132 tests, 0 fail. Typecheck within baseline.
+
+`api/config/` did not exist. `core/app.ts` had read it since the app was written
+and junction could not tell an absent directory from an absent file, so every
+boot took the defaults and nothing said so (`FJS-415`).
+
+What that cost was CORS. The app installed it by hand off `config.cors` — a
+top-level key no config shape defines; a declared `middleware.cors` lands at
+`config.http.cors` — so the read could never produce a value and every boot took
+the `['*']` fallback. **The API answered any origin.** It now answers the SPA and
+refuses a stranger, which was checked by asking it both ways.
+
+`api/config/junction.config.js` holds what this app DECLARES: the CORS origins
+and the five queue concurrencies. What it DERIVES stays in code — the jobs
+database is computed from the resolved main one, so a test that redirects the
+database takes the queue with it.
+
+The hand call to `cors()` is gone entirely: junction installs it from the config
+block, and configuring it as well is a second `OPTIONS /*` and a refusal at boot.
+`CORS_ORIGINS` is how a deployment names its own, since the origin an app is
+served from is a fact about the deployment and not about the app.
+
+
+## 2026-08-22 — the queue has a screen
+
+132 tests, 0 fail. Typecheck within baseline.
+
+`DEVTOOLS=1 bun run api` puts junction's console on 8503 beside the app. Until
+now nothing here could see the job queue: `/jobs` in the SPA is basecamp's own
+`Job` model — a fleet noun, the thing being run rather than the thing running it
+— and the five caravan queues under it had no reader at all outside `/metrics`.
+
+Two things were needed for it to be worth wiring and both are junction's
+(`FJS-414`): the console read a metrics object it built itself, so conduit's and
+caravan's contributed sections had never reached it, and readiness took its
+checks from a plugin option, so this app's own `db` probe was graded at `/health`
+and silently missing from the console. Both surfaces answer the same set now,
+which is what the wiring here was checked against.
+
+Off by default rather than on in development, because 8503 is a global tooling
+port: one console at a time, so basecamp's and `example`'s cannot both claim it.
+`DEVTOOLS_PORT` moves it for the case where somebody wants both.
+
+The API's startup banner carries it either way — `devtools=http://localhost:8503`
+or `devtools=disabled` — so *is it on, and where* is answered where every other
+surface this app serves is already listed.
+
 ## 2026-08-22 — tenancy is declared, not written out
 
 132 tests, 0 fail. `bun run verify` 301/301. Typecheck at baseline.

@@ -55,7 +55,7 @@ renders perfectly and responds to no event.
 
 ### Styles
 
-`css: false` means the compiler does **not** emit `$runtime.addStyles(...)` — it
+`css: false` means the compiler does **not** emit `$$runtime.addStyles(...)` — it
 hands the scoped CSS back on `ctx.css.result` and the caller must inject it.
 `previewStyles` in `index.html` owns those `<style>` tags and drops them on
 teardown, which is why one example's `:global(...)` rules cannot leak into the

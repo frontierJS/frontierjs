@@ -1,0 +1,20 @@
+<script module>
+  // web/src/resources/OrderLine.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor, `model:` stated for the reason
+  // the service states it: `order-lines` singularises correctly, and a two-word
+  // model is where a resolver disagreement would be silent (Invariant 2).
+  //
+  // ─── Why this file has no markup half ─────────────────────────────────────
+  //
+  // A resource file carries its model's default form, and this model has none
+  // to carry. `OrderLine` is `@@gate("0.8.8.8")` — anyone who may read the
+  // order may read its lines, and only `asSystem()` writes one — and the
+  // `order-lines` service declares `methods: ['find', 'get']`. A generated form
+  // here would offer to edit what a customer was charged, on a table whose
+  // whole point is that nobody does that.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const orderLines = createResource('order-lines', { model: 'OrderLine' })
+</script>

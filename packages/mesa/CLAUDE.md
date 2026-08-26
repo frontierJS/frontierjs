@@ -74,6 +74,56 @@ Mesa, not Markdown — `compiler-md.js` is only for `.md` (FJS-106).
 
 ## What bites here
 
+**`$` is the door, and it is emitted in two halves.** The instance-independent
+members — the five animation helpers and the four lifecycle functions — are a
+module-scope `$$shared`; the per-instance `$` is `Object.create($$shared)` with
+only `option`, `slots`, `props`, `attributes`, `emit`, `context`, `mounted`,
+`inspect` and `async` assigned on top, and each of those only when the sniff
+found it in use. So a component that reaches for nothing emits neither.
+
+**Most of the door needs no compiler support and four members do.** `$props`
+is a property read and compiles to one — `$$props`, the emitted local the bare
+spelling aliases. `$context`, `$.inspect` and `$.mounted`
+are rewritten to their bare spelling BEFORE the script is parsed — on the AST,
+so a `'$context'` inside a string is not caught — because each is compiled
+rather than read and would otherwise be a member access that quietly does
+nothing. `$async` is the fourth and is NOT in that rewrite: it is the only one
+reachable from a template, which no script-side pass sees, so it is assigned as
+an ordinary property instead — beside its own declaration in `module.code`,
+because `module.head` has already run by then.
+
+**Three names are refused and they are not the same refusal.** A declaration
+colliding with an injected local (`BUILTIN_LOCALS`) throws because the output
+would not parse; a bare `$onMount` throws because that spelling is retired (the five data members are not — `FJS-D135`); `$`
+used as anything but a member object throws because a copy is not what the
+compiler follows. All three THROW rather than pushing to `analysis.errors`,
+which the call site downgrades to warnings — a module that does not parse is not
+a warning.
+
+**An ARIA `false` is written, not removed — for exactly four states.**
+`aria-expanded`, `aria-selected`, `aria-checked` and `aria-pressed` default to
+**undefined** rather than false, so absent says *not expandable / not
+selectable / not checkable / not a toggle* while `"false"` says *it is, and it
+currently is not*. Removing it announces a different KIND of control in the one
+state that matters. Only those four: the rest either default to false already
+(absent and `"false"` agree) or take a string, where `aria-label={false}` must
+remove the label rather than name the element "false". `null` always removes,
+which is what the `x || null` idiom through `@frontierjs/ui` is for.
+
+**An attribute has ONE owner and turning a control OFF is a property, not an
+attribute.** `set_attribute` is that owner; `bindAttribute` is it inside an
+effect and nothing more. They were two implementations that agreed on
+everything but what a falsy value means — and the compiler picks between them
+per attribute, so a component was correct or broken depending on whether the
+value was static, with nothing in the component able to see either. The rule
+they now share: `el.checked` and `el.value` stop reflecting their attribute the
+moment anything writes the property (the DOM's dirty flag), so `null`/`false`
+must reset the property as well as remove the attribute. Otherwise a control
+goes on and never off — `<Switch bind:checked>` and `<Checkbox>` both were
+one-way for their whole lives. **happy-dom keeps no dirty flag**, so no vitest
+suite here can reach it; `test/browser/runtime/dirty-props` is the assertion,
+and it flips twice because a one-shot recovery passes a single round trip.
+
 **A dev build stamps `data-fjs-loc` on every template element.** It is what
 click-to-source reads (`mesa-vite/inspect-client.js`), it is dev-only, and it is
 in the TEMPLATE — so an assertion comparing a compiled template string against a
@@ -104,7 +154,7 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   not a function`, naming no block and no expression. That component had
   therefore never rendered at all while compiling perfectly (`FJS-147`).
 - **`{@attach}` does not run on the server.** No mount, no attachment — the
-  same rule that already keeps `$onMount` and `watchProxy` off the SSR path.
+  same rule that already keeps `$.onMount` and `watchProxy` off the SSR path.
   Running it handed the function a happy-dom element, which has no
   `el.animate`, so one animating attachment threw and took the whole render
   down (`FJS-146`). Guard is `!_isClient` in `attach()`/`applyAttachments()`.
@@ -114,7 +164,7 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   — so every kit overlay painted at keyframe 0 and the command palette was an
   invisible full-screen backdrop that ate every click. An already-connected
   element still attaches synchronously; a detached one is deferred one
-  microtask, the same queue `$onMount` uses.
+  microtask, the same queue `$.onMount` uses.
 - **The flush settles derivations OUTSIDE-IN, and that ordering is load-bearing.**
   One DOM-depth at a time, shallowest first, skipping anything whose owning
   block is already queued. Draining the whole derived layer to quiescence first
@@ -185,7 +235,7 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   else) and `vite-server`, which starts a real dev server in middleware mode —
   the only one that can see a hook that is never REACHED.
 - **`css` on the compiler is a DESTINATION, not a switch.** Truthy inlines the
-  scoped rules as `$runtime.addStyles(id, …)`; falsy extracts them onto
+  scoped rules as `$$runtime.addStyles(id, …)`; falsy extracts them onto
   `ctx.css.result` and emits nothing, so a caller that does not place them has
   silently dropped every style. Both Vite plugins inline. The Vite plugin's own
   `css: false` therefore means *drop the block*, and says so (`FJS-291`).
@@ -244,6 +294,10 @@ drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
   each one with *no test suite found*.
 - **A fixture is a component**, because a slot cannot be expressed as a props
   object. Props reach it as JSON.
+- **A spec that PASSES can still be the point.** `chained-derived` is a shape
+  that misbehaved in a real screen (`FJS-512`) and does not here, so what it
+  pins is the list of causes ruled out. Say so in the header — a green spec
+  read as a repro is worse than no spec, because the next person stops looking.
 - **Input goes through the pipeline** (`t.press`, `t.type`, `t.clickAt`). A
   dispatched `KeyboardEvent` moves no focus, types no character and dismisses
   no `[popover]`.

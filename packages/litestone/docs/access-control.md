@@ -236,6 +236,14 @@ model User {
 
 `asSystem()` always sees and writes all fields.
 
+**It has to name a column.** A field `@allow` on a RELATION field is refused at
+parse, naming the foreign key that would have worked — a relation is not stored,
+so the write half has no `col` to put in its `CASE WHEN` and the read half strips
+a key the row never carried. Both were once accepted and both did nothing. Put it
+on the FK, which guards the direct write *and* the `{ team: { connect: … } }`
+spelling with one declaration. An implicit many-to-many keeps its keys in a join
+table this model has no column for at all; declare the join as a model to guard it.
+
 **Conflicts with `@guarded` and `@secret`, and the conflict is the point.**
 `@guarded` answers both halves at once — a system-context column, stripped from
 every read and refused on every write — so a field cannot carry both a lock that
@@ -418,9 +426,11 @@ Because a policy filters rather than throws, **the refused write returns
 normally**. Test it by reading the row back through `asSystem()`; the return
 value cannot tell you.
 
-## Combining both systems
+## Combining them — what refuses, what goes quiet, and why
 
-GatePlugin checks run before row-level policies. If a user's level is below the `@@gate` threshold, the request is rejected before any SQL runs. If level passes, row-level policies are then applied as WHERE injections.
+GatePlugin runs before row-level policies. A caller below the `@@gate` threshold is
+rejected before any SQL runs; a caller who clears it then meets the policies as
+`WHERE` injections.
 
 ```prisma
 model Post {
@@ -430,6 +440,55 @@ model Post {
   @@allow('update', ownerId == auth().id)     // row check second
 }
 ```
+
+**The layers disagree about how they fail, and the disagreement is deliberate.**
+Measured, on one model carrying all of them:
+
+| Declaration | Scope | Read | Create | Update | Delete |
+| --- | --- | --- | --- | --- | --- |
+| `@@gate` | model | throws | throws | throws | throws |
+| `@@allow` / `@@deny` | row | filters — empty list, 200 | **throws** | filters — returns `null` | filters — 0 deleted |
+| field `@allow` | column | strips silently | drops silently | drops silently | — |
+| `@guarded` · `@system` | column | strips / readable | throws | throws | — |
+| `@@transitions` | move | — | — | throws | — |
+
+### Rule one — a refusal must never confirm a row exists
+
+This is the whole of why a policy filters. *You may not update document 42* tells the
+caller document 42 is there, which is exactly what a row policy is keeping from them.
+So read, update and delete narrow the `WHERE` and answer nothing, and a wrong policy
+is an empty screen rather than an error.
+
+**Create is the exception and it proves the rule.** There is no stored row to protect:
+the payload IS the row and the caller wrote it, so a refusal leaks nothing they did not
+already know. It throws.
+
+### Rule two — whose mistake is it?
+
+If the payload is wrong for **everybody**, refuse. If it is right and this caller is
+merely narrower, drop the key and let the rest land.
+
+- `@guarded` and `@system` throw, because no caller was ever meant to send that column.
+- A field `@allow('write', …)` drops, because the same form body is legitimate for the
+  caller one level up, and failing the whole write would punish a form rather than a
+  request.
+
+That second one is an ergonomics decision rather than a secrecy one, and it is the cell
+that bites: a person toggles a control they may not write, gets a 200, and watches it
+spring back. `reportInvalid` on the UI side exists for this class.
+
+### Reading order
+
+```
+1. @@gate        model    ─ throws ─┐  answered from the session alone, no query
+2. @@allow       row      ─ filters ─┤  costs the query; refusing here would leak
+3. field @allow  column   ─ strips  ─┘
+```
+
+Each layer only narrows what the one above it allowed, and nothing below re-opens
+anything. **The line worth holding is between 1 and 2**: above it a refusal is safe and
+loud, because it discloses only the shape of the schema; below it a refusal would
+disclose the contents of the database, so it has to be silent.
 
 ## @default(auth().id)
 

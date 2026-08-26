@@ -17,8 +17,11 @@
   // the value comes back.
 
   import Checkbox      from './Checkbox.mesa'
+  import Combobox      from './Combobox.mesa'
   import DateTimeInput from './DateTimeInput.mesa'
+  import MultiSelect   from './MultiSelect.mesa'
   import Input         from './Input.mesa'
+  import JsonInput     from './JsonInput.mesa'
   import Select        from './Select.mesa'
   import Textarea      from './Textarea.mesa'
   import { formControl, defaultControlProps } from '../../controls.js'
@@ -29,6 +32,10 @@
   export let value   = undefined
   export let write   = undefined      // (v) => void
   export let options = undefined      // a foreign key's rows, once they arrive
+  // How many rows the SERVER has, where it said. A control that shows a page
+  // of a big relation and one that shows all of it are the same screen once
+  // the count is dropped (`FJS-391`), so the three list controls take it.
+  export let total   = undefined
 
   // The kit's own controls, in the registry's shape. `props` receives the same
   // object a contributed control's builder does.
@@ -36,19 +43,57 @@
     select: {
       component: Select,
       // A `<select>` renders the enum members the schema declared…
-      props: ({ field: f, value: v, onvalue }) => ({
-        name: f.name, placeholder: '—', options: f.options ?? [],
+      props: ({ field: f, value: v, onvalue, total: n }) => ({
+        name: f.name, placeholder: '—', options: f.options ?? [], total: n,
         value: v, oninput: (e) => onvalue(e.target.value),
       }),
     },
+    // A relation, and a `@values` binding whose strength is `required`. Both
+    // mean *choose one existing row*, and both are SEARCHABLE — a `Combobox`
+    // with `allowNew` off is a select you can type into (`FJS-459`).
+    //
+    // It used to be a native `<select>`, which cannot reach past the page the
+    // server sent: `resource.options()` caps at 100, so a relation with four
+    // hundred rows offered an alphabetical prefix and the row somebody wanted
+    // was unreachable by any interaction the control had. Saying *showing 100
+    // of 400* made that honest and no more usable. Every admin platform with a
+    // reference field — Salesforce's lookup, ServiceNow's, Frappe's Link —
+    // resolved it the same way, at every list size rather than past a
+    // threshold, which is also what keeps this one control instead of two that
+    // swap after the count arrives.
+    //
+    // The cost is real and is a native select's two advantages: the OS picker
+    // on a phone, and a value that submits with the form on its own. The second
+    // does not apply under `<Form>`, which writes through the resource.
     picker: {
-      component: Select,
-      // …and a picker the same control over rows that arrive from the related
-      // service after mount. Until they do it is an empty select showing its
-      // placeholder, which is what it should be.
-      props: ({ field: f, value: v, onvalue, options: rows }) => ({
-        name: f.name, placeholder: '—', options: rows ?? [],
-        value: v, oninput: (e) => onvalue(e.target.value),
+      component: Combobox,
+      props: ({ field: f, value: v, onvalue, options: rows, total: n }) => ({
+        name: f.name, options: rows ?? [], allowNew: false, total: n,
+        value: v, onchange: (next) => onvalue(next),
+      }),
+    },
+    // A column bound to a value set whose strength is not `required`. The two
+    // weak strengths render the same control: what separates `open` from
+    // `suggested` is what the SERVER does with a value the set does not hold,
+    // not what the caller may type. `allowNew` is off for `required`, which is
+    // why that strength answers `picker` instead and never arrives here.
+    combobox: {
+      component: Combobox,
+      props: ({ field: f, value: v, onvalue, options: rows, total: n }) => ({
+        name: f.name, options: rows ?? [], allowNew: f.allowNew === true, total: n,
+        value: v, onchange: (next) => onvalue(next),
+      }),
+    },
+    // The array form of the same thing. An unbound array is still `json` — the
+    // schema stops describing it — but a bound one has a list behind it, which
+    // is the whole difference.
+    multiselect: {
+      component: MultiSelect,
+      props: ({ field: f, value: v, onvalue, options: rows, total: n }) => ({
+        name: f.name, options: rows ?? [], multiple: true, total: n,
+        allowNew: f.allowNew === true,
+        value: Array.isArray(v) ? v : (v == null ? [] : [v]),
+        onchange: (next) => onvalue(next),
       }),
     },
     checkbox: {
@@ -68,6 +113,15 @@
       props: ({ field: f, value: v, onvalue }) => ({
         name: f.name, type: f.type, step: f.step, value: v,
         oninput: (e) => onvalue(e.target.value),
+      }),
+    },
+    json: {
+      component: JsonInput,
+      // `onvalue` for the same reason `datetime` uses it: what the element
+      // holds is text and what the column holds is a document, so
+      // `e.target.value` is the one value that must not reach the write.
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, value: v, onvalue: (doc) => onvalue(doc),
       }),
     },
     datetime: {
@@ -102,7 +156,7 @@
 
   const props = entry
     ? (entry.props ?? defaultControlProps)({
-        field, value, options, onvalue: (v) => write?.(v),
+        field, value, options, total, onvalue: (v) => write?.(v),
       })
     : {}
 </script>

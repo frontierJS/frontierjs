@@ -135,6 +135,35 @@ export class HttpTransport {
   private _ddosGc:      ReturnType<typeof setInterval> | null = null
   private _wsRoutes: Array<{ segments: RouteSegment[]; handlers: WsHandlerSet }> = []
 
+  /**
+   * Every socket this server currently holds open.
+   *
+   * Bun does not enumerate them and `server.stop()` without `force` waits for
+   * open connections — and a WebSocket does not end on its own, so a graceful
+   * stop with one attached can never resolve. `app.stop()` raced it against a
+   * timeout, which meant every shutdown with a live client took the whole
+   * `drainTimeout` and then reported success with the socket still open
+   * (`FJS-460`).
+   *
+   * So the transport keeps the set itself. It is here rather than in the
+   * channels plugin because a socket is the TRANSPORT's, not one plugin's: an
+   * app that registers its own `app.http.ws(...)` route holds connections the
+   * plugin has never heard of, and those stall a shutdown exactly the same way.
+   */
+  private _sockets = new Set<Bun.ServerWebSocket<WsData>>()
+
+  /**
+   * HTTP requests currently being answered.
+   *
+   * The only thing a graceful stop is actually waiting for, and the only thing
+   * this transport can decide for itself. Bun's own graceful `server.stop()` is
+   * not usable as that signal: measured against a bare `Bun.serve`, once a
+   * WebSocket has been upgraded the promise never resolves — not after the
+   * socket is closed, not after the close handler has run and the client reads
+   * `readyState 3`. So the wait is over this number instead.
+   */
+  private _inFlight = 0
+
   // Request-independent response helpers, built ONCE per transport.
   // _buildContext used to allocate all of these as fresh closures on every
   // request; they only touch `this.stats`, so one shared set suffices.
@@ -270,7 +299,38 @@ export class HttpTransport {
     this._opts.authCookie = name
   }
 
-  stop(): Promise<void> {
+  /**
+   * Stop listening, and actually let go of the socket.
+   *
+   * Three steps, and the order is the whole of it:
+   *
+   *   1. Say goodbye to every live WebSocket, so a client learns the server is
+   *      going rather than seeing its connection vanish.
+   *   2. Wait — bounded by `drainTimeout` — for anything still outstanding.
+   *   3. Stop by force.
+   *
+   * **The close code is 1012 Service Restart and not 1001 Going Away, which is
+   * the one that means this.** Measured against a bare `Bun.serve`: a close sent
+   * as 1001 reaches the peer as **1000**, while 1012 and a private 4001 arrive
+   * unchanged. So the code that says *the server is going away* is the one code
+   * this transport cannot deliver, and 1012 is the nearest registered thing that
+   * survives. `@frontierjs/junction/client` reconnects on both; a proxy or a
+   * client that told them apart would be misinformed by 1000.
+   *
+   * Both waits are junction's own, and neither is Bun's graceful stop. That is
+   * a measurement too: once a WebSocket has been upgraded, `server.stop()`
+   * never resolves — not after the socket is closed, not after the close
+   * handler has run and the client reads `readyState 3`.
+   *
+   * Waiting on it cost the full drain timeout on every shutdown that had ever
+   * held a client, and then reported *Shutdown complete* with that client's
+   * socket still open at `readyState 1` — nobody told, nothing closed. A suite
+   * whose `afterAll` is that call outlived bun's 5s hook limit four runs in
+   * five, which is how it was found (`FJS-460`). The port itself was released
+   * promptly even then: a graceful stop stops accepting at once and only its
+   * PROMISE is the part that hangs.
+   */
+  async stop(drainMs = 5_000): Promise<void> {
     // Clear the DDoS GC timer and counters regardless of server state.
     if (this._ddosGc) {
       clearInterval(this._ddosGc)
@@ -278,11 +338,39 @@ export class HttpTransport {
     }
     this._ddos.clear()
 
-    if (!this._server) return Promise.resolve()
-    // Bun's stop() without force:true drains open connections gracefully.
-    const p = this._server.stop()
+    if (!this._server) return
+    const server = this._server
     this._server = null
-    return Promise.resolve(p)
+
+    for (const ws of this._sockets) {
+      // A socket already closing throws on a second close, and one client
+      // cannot be allowed to stop the shutdown of the rest.
+      try { ws.close(1012, 'Server shutting down') } catch {}
+    }
+
+    // Wait for what is actually outstanding — the close handshakes and any
+    // request still being answered — then take the server down by FORCE.
+    //
+    // Not `server.stop()` and a race against it. Measured against a bare
+    // `Bun.serve`: once a WebSocket has been upgraded, a graceful stop never
+    // resolves — the socket closes, the close handler runs, the client reads
+    // `readyState 3`, and the promise still does not settle. Waiting on it cost
+    // the full drain timeout on every shutdown that had ever held a client, and
+    // then reported success with the port still bound (`FJS-460`).
+    //
+    // The set is not cleared before the wait: `_wsClose` removes each socket as
+    // Bun reports it closed, so the size going to zero is a real signal rather
+    // than a sleep. It usually costs one tick — the frame is already on the
+    // wire by then, which is measured rather than assumed: a client attached to
+    // this shutdown reports `{ code: 1012, reason: 'Server shutting down' }`
+    // about 2ms after `stop()` returns.
+    const deadline = Date.now() + drainMs
+    while ((this._sockets.size > 0 || this._inFlight > 0) && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 5))
+    }
+    this._sockets.clear()
+
+    server.stop(true)
   }
 
   // ─── WebSocket route registration ──────────────────────────────────
@@ -314,6 +402,15 @@ export class HttpTransport {
   }
 
   private async _handle(req: Request, server: ReturnType<typeof Bun.serve>): Promise<Response> {
+    this._inFlight++
+    try {
+      return await this._handleRequest(req, server)
+    } finally {
+      this._inFlight--
+    }
+  }
+
+  private async _handleRequest(req: Request, server: ReturnType<typeof Bun.serve>): Promise<Response> {
 
     this.stats.request.total++
 
@@ -422,7 +519,19 @@ export class HttpTransport {
     if (this._opts.auth) {
       const token = extractToken(headers, this._opts.authCookie ?? null)
       if (token) {
-        try { user = await this._opts.auth.verifySession(token) } catch {}
+        // The headers come with it. A provider that binds one database ignores
+        // the second argument; one whose people live per tenant needs it,
+        // because this runs before any hook and therefore before a tenant has
+        // been resolved (`CredentialOrigin`).
+        // `headers.host ?? url.host`: a request built in-process — a test, an
+        // internal call, `app.http.fetch(new Request(...))` — carries no Host
+        // header at all, because Host is a forbidden header name for a Request
+        // the platform did not put on a socket. The URL still names it.
+        try {
+          user = await this._opts.auth.verifySession(token, {
+            host: (headers.host ?? url.host) || null, headers,
+          })
+        } catch {}
       }
     }
 
@@ -591,7 +700,7 @@ export class HttpTransport {
   private _buildContext(
     req:     Request,
     url:     URL,
-    query:   Record<string, string>,
+    query:   Record<string, unknown>,
     headers: Record<string, string>,
     parsed:  Awaited<ReturnType<typeof parseBody>>,
     params:  Record<string, string>,
@@ -850,20 +959,28 @@ export class HttpTransport {
 
   private async _wsOpen(ws: Bun.ServerWebSocket<WsData>): Promise<void> {
     this.stats.performance.online++
+    this._sockets.add(ws)
 
     // Resolve auth from token in headers or query — same logic as HTTP.
     // We do this here rather than at upgrade time because verifySession is async
     // and Bun's upgrade() call is synchronous.
     if (this._opts.auth) {
       const token =
-        ws.data.query?.token ??
+        (ws.data.query?.token === undefined ? undefined : String(ws.data.query.token)) ??
         // The upgrade request is an ordinary browser request and carries the
         // cookie, so cookie mode has to work for the socket too — otherwise a
         // cookie-authenticated app connects as anonymous and every channel
         // scoped to the user stays silent.
         extractToken(ws.data.headers, this._opts.authCookie ?? null)
       if (token) {
-        try { ws.data.user = await this._opts.auth.verifySession(token) } catch {}
+        // The UPGRADE request's headers — the only ones a socket ever has, and
+        // the same ones `withTenantDb` reads off a frame's context.
+        try {
+          ws.data.user = await this._opts.auth.verifySession(token, {
+            host:    ws.data.headers?.host ?? null,
+            headers: ws.data.headers ?? null,
+          })
+        } catch {}
       }
     }
 
@@ -883,6 +1000,7 @@ export class HttpTransport {
 
   private async _wsClose(ws: Bun.ServerWebSocket<WsData>, code: number, reason: string): Promise<void> {
     this.stats.performance.online--
+    this._sockets.delete(ws)
     dropSendQueue(ws)
     const ctx = this._buildWsContext(ws)
     try { await ws.data.handlers.close?.(ctx, code, reason) } catch {}

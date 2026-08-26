@@ -45,7 +45,7 @@
 // behaviour rather than emitting broken code — which is what a bare pair of
 // `.replace()` calls does, since a pattern that matches nothing is silent.
 const RE_DEFAULT_FN = /export default function (\w+)\(__anchor,\s*__props,\s*__block\)/
-const RE_POP        = /(\.pop_component\(\);)([\s\S]*?\n\})(?=\n\$runtime\.\$\$delegate|\s*$)/
+const RE_POP        = /(\.pop_component\(\);)([\s\S]*?\n\})(?=\n\$\$runtime\.\$\$delegate|\s*$)/
 
 /** Can this compiled output be wrapped? Ask before calling injectHMR. */
 export function canInject(js) {

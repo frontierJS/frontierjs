@@ -93,6 +93,20 @@ framework can be pointed at.
 
 ## 3. The reference is generated, and the drift is a test failure
 
+**Update 2026-08-24 — the drift half shipped; the generated reference did not.**
+`packages/cli/core/doc-commands.js` and `tests/docs.test.js` resolve every
+`` `fli <command>` `` named in a reference doc against the registry. Scope is the
+decision this section did not have to make: **`IDEAS/` is exempt**, because an
+idea paper names commands that deliberately do not exist, and so are the
+registers and CHANGES — argument and history. What is graded is what tells you
+to run something.
+
+Four real finds on the first run, and the sharpest was not in a doc: the message
+an EMPTY WORKSPACE prints named `fli ws-init` and `fli ws-add`, where the aliases
+are `ws:init` and `ws:add`. `fli docs` — rendering the reference from the
+registry — is still unbuilt.
+
+
 **The observation.** The CLI's own `CLAUDE.md` says it plainly: *the edges are
 aspirational — several documented commands do not do what the prose says, and three
 packages' docs advertise `fli` commands that do not exist.* That is a documentation

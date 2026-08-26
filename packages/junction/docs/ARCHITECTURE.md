@@ -97,11 +97,13 @@ never matches.
 
 ### `query` vs `directives`
 
-Settled 2026-08-02 (DECISIONS.md). `$` is **transport syntax only**.
+Settled 2026-08-02 (DECISIONS.md, `FJS-D77`). A **`$`-prefixed key** is
+transport syntax only. The rule is about the prefix on a parameter name; the
+ambient `$` below is a different thing sharing a character.
 
 - On the wire: `?status=open&$limit=10`
 - `parseDirectives` in `src/transport/bridge.ts` splits them — and is the only
-  place that reads a `$`
+  place that reads a `$`-prefixed key
 - Past the bridge: `ctx.query = { status: 'open' }`,
   `ctx.directives = { limit: 10 }`
 - Internal callers set directives directly, under the `directives` key:

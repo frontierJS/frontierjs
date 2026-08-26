@@ -34,6 +34,20 @@ export function sql(strings, ...values) {
   return { _litestoneRaw: true, sql: expandNowTokens(sqlStr).trim(), params }
 }
 
+/**
+ * A raw clause built from SCHEMA text — a declaration, never a caller's input.
+ *
+ * The same trust `@from(where:)` and an `@@allow` expression already have:
+ * the string was written by whoever wrote the schema, so it may reach the
+ * pattern (Invariant 8 is about CALLER-supplied names). It still gets the clock
+ * check a hand-written fragment gets, because `datetime('now')` is wrong here
+ * for exactly the reason it is wrong there (`FJS-226`).
+ */
+export function schemaRaw(text) {
+  assertNoBareClock(text)
+  return { _litestoneRaw: true, sql: expandNowTokens(text).trim(), params: [] }
+}
+
 // Check if a value is a RawClause produced by the sql tag
 export function isRawClause(val) {
   return val !== null && typeof val === 'object' && val._litestoneRaw === true
@@ -387,7 +401,22 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
   // throws "Binding expected ..." — a useless error that doesn't say which
   // field caused it. We catch that case here and re-throw with the field name
   // so the user can find their bug in five seconds instead of five minutes.
-  const coerce = (v) => v instanceof Date ? v.toISOString() : v
+  //
+  // A Boolean column filtered by TEXT is the third case, and it is the one that
+  // fails silently. SQLite stores a Boolean as 0/1, a JS `true` binds as 1, and
+  // the string `'true'` binds as the text `'true'` — which matches no row and
+  // answers an empty list with a 200. `fieldKinds` already knows which columns
+  // are Boolean, so the conversion is available exactly where the guess would
+  // otherwise be one. Only the two spellings SQLite could never have stored;
+  // anything else is left alone and compares as itself.
+  const coerce = (v, fieldName) => {
+    if (v instanceof Date) return v.toISOString()
+    if (typeof v === 'string' && fieldKinds?.get(fieldName) === 'boolean') {
+      if (v === 'true')  return 1
+      if (v === 'false') return 0
+    }
+    return v
+  }
   const checkBindable = (v, fieldName) => {
     if (v === undefined) {
       throw new Error(`where clause: field "${fieldName}" was given undefined — did you mean null?`)
@@ -414,7 +443,7 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
   // both coerces and bind-checks `v` against field name `k`. The factory keeps
   // hot-path overhead minimal — the closure is created once per top-level key
   // and reused for all operands at that key.
-  const pushFor = (fieldName) => (v) => params.push(checkBindable(coerce(v), fieldName))
+  const pushFor = (fieldName) => (v) => params.push(checkBindable(coerce(v, fieldName), fieldName))
 
   for (const [key, val] of Object.entries(where)) {
     if (key === 'AND') {
@@ -1108,10 +1137,13 @@ export function parseSelectArg(select, modelName, relationMap, computedSets, inc
   // the pick made before the policy was known.
   if (!needsAllDbCols) {
     for (const name of requestedFrom) {
-      const refCol = tableFrom.get?.(name)?.rowRef?.refCol
-      if (!refCol || dbFields[refCol]) continue
-      dbFields[refCol] = true
-      if (!requestedFields.has(refCol)) injectedFKs.add(refCol)
+      // Every column of the correlation — a composite key is only a correlation
+      // when all of it is in the row.
+      for (const refCol of tableFrom.get?.(name)?.rowRef?.refCols ?? []) {
+        if (dbFields[refCol]) continue
+        dbFields[refCol] = true
+        if (!requestedFields.has(refCol)) injectedFKs.add(refCol)
+      }
     }
   }
 

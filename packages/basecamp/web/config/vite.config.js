@@ -26,8 +26,10 @@ const sierra = createSierraViteConfig(sierraConfig)
 //
 // The list is `./api-paths.js` and not an array here, because the deploy needs
 // the same one: the container is served behind a reverse proxy that has to make
-// this identical decision, and a second copy of a list that has already gone
-// stale four times would be the same bug one layer down.
+// this identical decision, and a second copy would be the same bug one layer
+// down. That file no longer holds a list — it derives one from
+// `surface.snapshot.md`, so a service added to the API reaches this proxy
+// without anybody remembering to come here.
 const proxy = Object.fromEntries(API_PATHS.map(path => [path, {
   target:       API,
   changeOrigin: true,

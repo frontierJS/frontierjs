@@ -36,7 +36,19 @@ export function scheduleJob(
     async () => {
       await app.jobs.dispatch('job:run',
         { id: job.id, workspace_id: job.workspaceId, trigger: 'scheduled' },
-        { queue: 'jobs' })
+        {
+          queue: 'jobs',
+          // STATED, not inherited. Nobody asked for this fire — a cron is the
+          // app acting on its own behalf — and `job:run`'s handler branches on
+          // exactly this: with an actor it confines its reads to that person's
+          // workspace, without one it is the app and legitimately spans them
+          // (`FJS-384`). Caravan defaults `actor` to whoever is in scope at
+          // dispatch, and this callback runs on a timer where that is nobody,
+          // so the default would be right by accident. Saying it is what makes
+          // the handler's refusal meaningful.
+          actor:  null,
+          tenant: job.workspaceId,
+        })
     },
     { queue: 'jobs' },
   )

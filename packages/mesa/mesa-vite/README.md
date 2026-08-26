@@ -7,7 +7,7 @@ HMR, error overlay, and DevTools.
 
 - **Transform** — `.mesa` and `.md` → ES module JavaScript
 - **Scoped CSS** — a `<style>` block is inlined into the module as
-  `$runtime.addStyles(id, css)`, keyed by a content hash. Same route Sierra's
+  `$$runtime.addStyles(id, css)`, keyed by a content hash. Same route Sierra's
   plugin takes, which is what lets a prerendered page and the client agree
   about which styles are already there
 - **HMR** — re-renders live instances in place across module reloads,

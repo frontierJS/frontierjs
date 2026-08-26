@@ -1,0 +1,22 @@
+<script>
+  // resource-default-form.mesa — a generated Resource used as a page would use
+  // it: `<Order />` to create, `<Order record={row} />` to edit, and children
+  // when the page wants a different form.
+  //
+  // The trap being pinned: the wrapper always hands <Form> a slot, so <Form>'s
+  // own `auto ?? !$slots.default` would answer about the RESOURCE FILE and
+  // generation would be off in every app that ran the generator.
+  import Order from './OrderResource.mesa'
+
+  const EXISTING = { id: 'o-7', reference: 'ORD-7', status: 'sent' }
+</script>
+
+<div id="create"><Order /></div>
+
+<div id="edit"><Order record={EXISTING} /></div>
+
+<div id="custom">
+  <Order>
+    <input id="mine" name="reference" />
+  </Order>
+</div>

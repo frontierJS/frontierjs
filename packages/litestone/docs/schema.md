@@ -131,8 +131,9 @@ open editor correctly stale after one lands.
 ```
 @omit                            excluded from findMany/findFirst (still in findUnique)
 @omit(all)                       excluded from all reads
-@guarded                         system-context column: stripped from every read AND refused
-                                 on every write, unless asSystem()
+@guarded                         system-context column: stripped from every read, refused on
+                                 every write, and refused in a where/orderBy/distinct/cursor
+                                 — naming it recovers it — unless asSystem()
 @guarded(all)                    the same, and an explicit select cannot unlock the read
 @encrypted                       AES-256-GCM at rest — hidden from a non-system read, and
                                  writable by a non-system caller
@@ -154,6 +155,18 @@ See [access-control.md](./access-control.md).
 ```
 @computed                        app-layer derived field (implement in computed.js)
 @generated("sql expr")           SQL GENERATED ALWAYS AS column (STORED)
+@generated(`{a} {b}`)            BACKTICKS: a template — the string it produces, rather
+                                 than SQL. A NULL column takes the separator beside it
+@values(SetName)                 the column's legal values come from a declared `valueset`.
+@values(SetName, open)           A second declaration BESIDE @relation, never instead of it —
+@values(SetName, suggested)      storage is a foreign key, this is resolution. Strength is on
+                                 the BINDING because one list is legitimately enforced on one
+                                 column and merely offered on another: `required` (unstated)
+                                 refuses a value outside the set, `open` accepts it AND creates
+                                 the row, `suggested` enforces nothing. Checked at the Data
+                                 boundary through the CALLER'S OWN accessor, so a caller may
+                                 only pick what they can read and the source model's own
+                                 @@gate/@@allow decide who may grow an `open` set
 @from(Model, count: true)        derived count from relation (not stored) — field must be Int
 @from(Model, sum: field)         derived sum/max/min — take a field name
 @from(Model, first|last: true)   the whole related ROW — field must be typed Model?
@@ -334,8 +347,25 @@ model Person {
 ### Table structure
 ```
 @@index([col1, col2])            composite index (partial on soft-delete tables automatically)
-@@unique([col1, col2])           composite unique constraint
+@@unique([col1, col2])           composite unique constraint. A NULLABLE member is
+                                 refused at parse: two NULLs never compare equal, so rows
+                                 that leave it unset are all distinct to the index and the
+                                 constraint holds only where it was never in doubt. Give
+                                 the column a @default, or say the shape is deliberate —
+@@unique([a, b], nullsDistinct: true)
+                                 SQL's own word for what SQLite does, and it changes no
+                                 emitted SQL. Single-column @unique over an optional column
+                                 is untouched: unique-when-present has one reading
 @@map("table_name")              custom DB table name
+@@label(fullName)                which column identifies a row to a person — what a
+                                 picker SHOWS for a foreign key. FHIR calls it `display`.
+                                 A field NAME, not a caption (that is @label on the field).
+                                 Must be a String column the database can order and match:
+                                 a relation, an array, an enum, a non-String, @computed,
+                                 @transient, @guarded, @encrypted, @hashed and @omit(all)
+                                 are each refused BY NAME at parse. A @generated one is the
+                                 case it exists for. Undeclared, the client guesses from
+                                 eight conventional column names and says that it guessed
 @@strict                         SQLite STRICT mode (default)
 @@noStrict                       opt out of STRICT mode
 ```
@@ -346,6 +376,14 @@ model Person {
 @@softDelete(cascade)            cascade remove/restore through FK children
 ```
 See [soft-delete.md](./soft-delete.md).
+
+**It indexes the column itself**, partially, over live rows — so
+`@@index([deletedAt])` beside it is refused at parse rather than emitted: both
+derive `idx_<table>_deletedAt` and the second `CREATE INDEX` fails inside
+SQLite, on a schema nothing objected to (`FJS-480`). A composite leading with
+the column (`@@index([deletedAt, status])`) derives a different name and is an
+ordinary index. Every index on a soft-delete table gets the same
+`WHERE "deletedAt" IS NULL` clause.
 
 ### Templates
 ```
@@ -480,6 +518,40 @@ model User {
 }
 ```
 
+### Labelling a member
+
+A member's own name is what a picker shows, which is fine while the code reads
+as the words and useless the moment it does not. `@label` — the same attribute
+a field takes — gives one member its human text:
+
+```prisma
+enum Plan {
+  starter     @label("Starter")
+  pro         @label("Professional")
+  enterprise  @label("Enterprise")
+}
+```
+
+It is the only attribute a member may carry, and anything else is refused by
+name. Labelling is per member and partial is normal: label the codes whose
+spelling is not already the words and leave the rest, since a member with no
+label falls back to its own name.
+
+**A label is not a doc comment.** A doc comment above a member is its
+*definition* — what the code means, for someone reading the schema — and travels
+as documentation. A label is the short string a person sees in a picker. Both
+can sit on one member:
+
+```prisma
+enum Plan {
+  /// Five seats, no SSO, monthly billing only.
+  starter  @label("Starter")
+}
+```
+
+The label reaches the browser as `x-labels` on the enum definition, keyed by
+code, holding only the members that stated one — see `jsonschema.md`.
+
 ### A set of enum values
 
 A field can hold *several* of the declared values. It is one declaration, and it
@@ -535,9 +607,11 @@ model Order {
 }
 ```
 
-- **The name is optional** — `pending -> paid` names itself after the target state. Name it when you want to call it: `db.order.transition(id, 'pay')`.
+- **The name is optional on an enum** — `pending -> paid` names itself after the target state. Name it when you want to call it: `db.order.transition(id, 'pay')`.
+- **A `Boolean` column is a state machine too**, and it is the one every schema has. `@@transitions(isPrimary, promote: false -> true, demote: true -> false @gate(5))` — the two directions are routinely different authorities (suspend and unsuspend, publish and unpublish), which a single field `@allow('write', …)` answers with one predicate and this answers with two. A boolean move **must be named**: `-> true` says which value is written, not what a person did.
 - **`from` takes a list** — `[pending, paid] -> cancelled`.
 - **`@gate(N)`** is the minimum level allowed to make that particular move, on Litestone's 0–9 scale (a number or a name: `@gate(ADMINISTRATOR)`). It is a floor *on top of* `@@gate`'s update level, which had to pass to reach the write at all — shipping an order and refunding one are not the same authority.
+- **`@gate(8)` on a move means the engine makes it and a person never does**, which is the distinction most state machines end up guarding in a service hook instead. `getLevel` is clamped to 7, so SYSADMIN is refused by name — `TransitionGateError: 'build' … requires level 8, user has 7` — and `asSystem()` passes because a system context bypasses the check entirely. `transitions(row)` reports `allowed: false` for one, so a screen offers the right buttons with nothing written. Two consequences worth stating: the pipeline half of a machine belongs in the schema beside the rest of it rather than in an `internalOnly()` hook, and **every move *not* at 8 is one a person can make** — the one mechanical filter that separates the two halves of a machine (`IDEAS/permission-sets.md`). `@gate(9)` refuses everything, `asSystem()` included, which is a move declared for its from-state and never made.
 
 Any move that isn't declared throws `TransitionViolationError`; a declared one the caller can't make throws `TransitionGateError` (which carries `status: 403`). The `WHERE` clause is narrowed to the from-state, so two concurrent writers can't both win — the loser gets a retryable `TransitionConflictError`.
 
@@ -549,13 +623,19 @@ Any move that isn't declared throws `TransitionViolationError`; a declared one t
 
 ```js
 await db.order.transitions(row)   // or transitions(id)
-// → [{ name: 'ship',   field: 'status', from: 'paid', to: 'shipped',  gate: null, allowed: true  },
-//    { name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5,    allowed: false }]
+// → [{ name: 'ship',   field: 'status', from: 'paid', to: 'shipped',  gate: null, allowed: true,  refusedBy: null },
+//    { name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5,    allowed: false, refusedBy: 'gate' }]
 ```
 
-The legal next states for *this* record at *this* user's level. A gated move the caller can't make is returned with `allowed: false` rather than dropped — a disabled button is usually better UI than a missing one.
+The legal next states for *this* record, for *this* caller. A move the caller can't make is returned with `allowed: false` rather than dropped — a disabled button is usually better UI than a missing one.
 
-The same list reaches the browser: `generateJsonSchema` emits `x-transitions` on the model, and Sierra's `resource.transitions(row, level)` returns the identical shape. That's a UI affordance only — the server enforces regardless.
+**Both halves of *may I* are graded, and `refusedBy` says which said no.** A move is an update, so a row policy refuses one exactly as a gate does: `@@allow('update', ownerId == auth().id)` on the model means somebody else's order offers no moves at all, and `refusedBy` is `'policy'` rather than `'gate'`. The two are different sentences on a screen — *you are not senior enough* and *not this record* — and a status code cannot carry the difference.
+
+The `update` policy is graded against the row as it is, so it is one evaluation per call. A `post-update` policy is graded against the row as it *would be* — the current row with that one column moved — so it is one per distinct target state, and it is the half that genuinely varies between moves.
+
+> A policy this cannot evaluate in JS — a `check()` over a relation that isn't to-one — is treated as permissive, like every other affordance. The Data boundary refuses regardless.
+
+The same list reaches the browser: `generateJsonSchema` emits `x-transitions` on the model, and Sierra's `resource.transitions(row, level)` returns the same shape — but it is the **gate half only**. `x-transitions` carries a gate and not a predicate, and a browser has no policy engine, so a move a policy refuses reads `allowed: true` there and 403s when pressed. That's a UI affordance either way — the server enforces regardless, and a screen that needs the graded list asks the server for it.
 
 #### Declaring it on the enum instead
 
@@ -572,7 +652,9 @@ enum OrderStatus {
 }
 ```
 
-This is shorthand: it desugars into a `@@transitions` on each model using the enum, so everything above applies unchanged. A model that declares its own `@@transitions` for that field overrides the enum's outright rather than merging. Gates need the model form — the same enum on two models would otherwise be forced to share one authority level.
+This is shorthand: it desugars into a `@@transitions` on each model using the enum, so everything above applies unchanged. A model that declares its own `@@transitions` for that field overrides the enum's outright rather than merging.
+
+**The two spellings differ in exactly one thing: a gate needs the model form**, because the same enum on two models would otherwise force them to share one authority level. Writing `@gate` inside the enum block is refused at parse and the message names the model form to write instead. Everything else — a from-list, an optional name, the compare-and-swap — is the same feature.
 
 ## Schema functions
 
@@ -625,6 +707,75 @@ model User {
   role  Role    /// Access level — affects what the user can see and do.
 }
 ```
+
+## ``@generated(`{a} {b}`)`` — a template, not SQL
+
+`@generated` takes two languages, and **the quote says which**: double quotes
+are SQL, backticks are a template — the string the column produces. `{field}`
+means this row's column in both, so the delimiter changes only what the text
+*around* the braces is.
+
+The commonest `@generated` by a distance is a string joined out of two or three
+columns, and the reason that shape earns a second language is not length. It is
+the null rule:
+
+```
+model Person {
+  firstName String
+  middle    String?
+  lastName  String?
+
+  fullName  String? @format("{firstName} {middle} {lastName}")
+}
+```
+
+`{field}` is a column and everything outside the braces is literal text. **A
+NULL column takes the separator beside it**, so a person with no middle name
+reads `Ada Lovelace` and one with only a first name reads `Cher`.
+
+The hand-spelled version is what makes the point:
+
+```
+fullName String? @generated("trim(coalesce({firstName},'') || ' ' || coalesce({middle},'') || ' ' || coalesce({lastName},''))")
+```
+
+That is longer, and it is also **wrong** — a missing middle name leaves
+`Ada  Lovelace` with two spaces, a plausible string with nothing to say it
+happened. The template compiles to `concat_ws`, which drops a NULL
+argument and its separator together.
+
+### What it compiles to
+
+Two shapes, both visible in `db/ddl.snapshot.sql`:
+
+| template | SQL |
+| --- | --- |
+| `"{firstName} {lastName}"` | `concat_ws(' ', "firstName", "lastName")` |
+| `"{code}-{year}"` | `concat_ws('-', "code", "year")` |
+| `"[{code}-{year}]"` | `trim(coalesce('[' \|\| "code", '') \|\| coalesce('-' \|\| "year", '') \|\| ']')` |
+
+Where every gap between fields is the same text and nothing sits outside them,
+that is exactly `concat_ws`. A template with mixed or outer literals has no
+single separator, so each field carries the text in front of it and the pair
+vanishes together — `coalesce('-' || "year", '')` is empty when `year` is NULL,
+taking the dash with it.
+
+### It is a generated column, because it is one
+
+The template compiles at parse and nothing below that point knows it happened:
+a `GENERATED ALWAYS AS` column, `VIRTUAL` by default and
+``@generated(`…`, stored)`` to materialise it, filterable and sortable and
+indexable, refused on write, `readOnly` at the client. The unknown-field,
+self-reference and cycle checks are the ones `@generated` already ran.
+
+**One attribute rather than two**, so the field reads as what it is. A write
+refused on one says which language it was in — *its value comes from its
+template* against *from its expression*.
+
+**When backticks are not the answer:** a derivation that is not a joined string.
+The double-quoted form takes arbitrary SQL and is still how to write
+`@generated("{qty} * {price}")` or a `lower(replace(…))` slug.
+
 
 ## `@derived(expr)` — computed in SQL, so it can be queried
 

@@ -85,6 +85,32 @@ model Account {
 }
 ```
 
+## @keep on a relation field — the children outlive the parent
+
+The third fate, and the one that used to have no spelling. `@hardDelete`
+destroys the children; cascade stamps them; `@keep` says they stay live and that
+this was the intention:
+
+```prisma
+model Customer {
+  id        Int @id
+  orders    Order[] @keep   // a receipt outlives the customer record it names
+  notes     Note[]          // cascaded with the parent
+  deletedAt DateTime?
+  @@softDelete(cascade)
+}
+```
+
+`@keep` covers the whole subtree beneath that child — if the order survives, its
+lines survive with it, or the receipt is half a receipt. It says nothing about
+removing the child directly: `db.order.remove()` still works and still cascades
+into the order's own children.
+
+It is also what silences the warning below, which is why it exists. Without it
+the only way to stop a schema warning about children left live is to stop
+leaving them live — and *the customer goes, the orders stay* is a shape any app
+holding financial records has.
+
 ## Footgun warning
 
 The parser emits a warning when a `@@softDelete` model has `hasMany` relations to other `@@softDelete` models but uses plain `@@softDelete` (not cascade):
@@ -93,6 +119,9 @@ The parser emits a warning when a `@@softDelete` model has `hasMany` relations t
 Warning: model 'accounts' has @@softDelete but its 'users' relation also has @@softDelete.
 Consider using @@softDelete(cascade) to avoid leaving orphaned deleted children.
 ```
+
+Three ways to answer it: `@@softDelete(cascade)` on the parent, `@hardDelete` on
+the field, or `@keep` on the field.
 
 ## exists() and count() with soft delete
 

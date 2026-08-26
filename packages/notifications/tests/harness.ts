@@ -11,8 +11,9 @@ import { createClient, parse, generateDDLForDatabase } from '@frontierjs/litesto
 import { splitStatements } from '@frontierjs/litestone/migrate'
 import { createTestApp, channels } from '@frontierjs/junction'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
+// Relative, not '@frontierjs/litestone/testing': bun resolves workspace:* to a
+// COPY under node_modules/.bun, so the package spec tests a stale reaper.
+import { tempDir } from '../../litestone/src/tmp-dirs.js'
 import { join } from 'path'
 import { notificationsPlugin } from '../plugin.ts'
 import type { NotificationRecord, OutgoingMail } from '../types.ts'
@@ -34,18 +35,6 @@ model Notification {
 }
 `
 
-const tempDirs: string[] = []
-let exitHookInstalled = false
-function removeAtExit(dir: string): void {
-  tempDirs.push(dir)
-  if (exitHookInstalled) return
-  exitHookInstalled = true
-  process.on('exit', () => {
-    for (const d of tempDirs) {
-      try { rmSync(d, { recursive: true, force: true }) } catch { /* best effort */ }
-    }
-  })
-}
 
 export interface Harness {
   app:      any
@@ -65,8 +54,7 @@ export async function makeApp(opts: {
   /** Omit the mailer entirely, to exercise the missing-mailer path. */
   noMailer?: boolean
 } = {}): Promise<Harness> {
-  const dir = mkdtempSync(join(tmpdir(), 'fjs-notif-'))
-  removeAtExit(dir)
+  const dir = tempDir('fjs-notif-')
   const dbPath = join(dir, 'n.db')
 
   const parsed = parse(`database main { path "${dbPath}" }\n${MODEL}`)
@@ -113,6 +101,6 @@ export async function makeApp(opts: {
       app.channel(`notifications:user:${userId}`).join(conn)
       return frames
     },
-    cleanup: () => { /* dir is reaped at process exit */ },
+    cleanup: () => { /* dir is reaped by the NEXT run — see tmp-dirs.js */ },
   }
 }

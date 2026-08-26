@@ -153,6 +153,18 @@ class TenantRegistry {
     this.#migrationsDir = migrationsDir ?? null
     this.#inMemory      = inMemory ?? false
     this.#clientOptions = clientOptions ?? {}
+
+    // `databases: ':memory:'` is the single-client shorthand for *move them
+    // all*, and a registry decides where a tenant's sqlite files go — so here
+    // it can only mean the shared jsonl/logger ones, which is not what it says.
+    // Refused by name: spreading a string yields one key per character, and the
+    // per-tenant merge below would have taken it silently.
+    if (typeof this.#clientOptions.databases === 'string')
+      throw new Error(
+        `createTenantRegistry: clientOptions.databases must be an object here — ` +
+        `pass { inMemory: true } for an in-memory fleet, or name a database: ` +
+        `{ databases: { audit: { path } } }`
+      )
   }
   // Called by createTenantRegistry after construction
   async _init(parseResult) {
@@ -232,11 +244,19 @@ class TenantRegistry {
       }
     }
 
+    // A caller's own `databases` still applies, and it reaches exactly the ones
+    // this registry does not decide: the shared jsonl/logger files. Merging
+    // rather than replacing, because a declared `path` on one of those is
+    // relative to the process CWD and an app that assembles its schema in
+    // memory has no other way to pin it. The tenant file wins for every sqlite
+    // database — that is the isolation, and it is not negotiable from options.
+    const databases = { ...this.#clientOptions.databases, ...sqliteOverrides }
+
     const db  = await createClient({
       ...this.#clientOptions,
       parsed:        this.#parseResult,
       db:            path,
-      ...(Object.keys(sqliteOverrides).length ? { databases: sqliteOverrides } : {}),
+      ...(Object.keys(databases).length ? { databases } : {}),
       encryptionKey: encKey ?? this.#clientOptions.encryptionKey,
     })
 

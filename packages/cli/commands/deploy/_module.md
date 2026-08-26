@@ -4,7 +4,7 @@ description: Deploy FrontierJS apps to a server via SSH + Docker + nginx
 ---
 
 <script>
-const { loadFrontierConfig }        = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
+const { loadFrontierConfig, dockerfileScripts } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
 
 // ─── vendorApp ────────────────────────────────────────────────────────────────
