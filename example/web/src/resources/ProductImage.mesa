@@ -1,0 +1,10 @@
+<script module>
+  // web/src/resources/ProductImage.mesa — the Resource layer.
+  //
+  // Same stated `model:` as ProductVariant.mesa, for the same reason: the
+  // service is named for its URL and the hyphen does not survive inflection.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const productImages = createResource('product-images', { model: 'ProductImage' })
+</script>

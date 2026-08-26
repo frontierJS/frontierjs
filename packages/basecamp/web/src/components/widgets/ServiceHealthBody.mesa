@@ -1,5 +1,5 @@
 <script>
-  // service_health — one shared infrastructure adapter, pinged live.
+  // service_health — one shared provider, pinged live.
   //
   // `portal.get` pings the adapter, so the status is real and current. What the
   // mock draws beside it — a latency figure and a sparkline — needs readings
@@ -10,7 +10,6 @@
   // the widget was placed. It can still 404 later — an adapter removed from the
   // registry — which is a state, not an error.
   import { portal } from '../../resources/Portal.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { onWrite } from './live.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
@@ -38,7 +37,7 @@
   }
 
   load()
-  $onDestroy(onWrite(portal.service, load))
+  $.onDestroy(onWrite(portal.service, load))
 </script>
 
 {#if loading}

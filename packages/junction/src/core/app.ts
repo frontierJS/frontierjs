@@ -5,10 +5,12 @@
 
 import { HttpTransport }            from '../transport/http.ts'
 import { bridge } from '../transport/bridge.ts'
-import { freezeUser, enterRequest, requestMeta, resolvePrincipal, inheritedClient, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions } from './context.ts'
+import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedClient, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites } from './litestone.ts'
+import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, PRINCIPAL_RESOLVER, TENANT_REGISTRY } from './litestone.ts'
+import { configFor, createTenantConfigStore } from './config-scope.ts'
+import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
 import { createMemoryCache }        from '../cache/index.ts'
 import { createScheduler }          from '../scheduler/index.ts'
@@ -129,6 +131,18 @@ export interface AppJobs {}
  */
 export interface AppNotify {}
 
+/** What `app.runAs` may be told beyond the principal. */
+export interface RunAsOptions {
+  /**
+   * WHICH TENANT this work is for.
+   *
+   * Absent inherits the tenant in scope; `null` states that the work belongs
+   * to no tenant, which is the app's own work — the same absent-is-not-null
+   * rule `auth` follows one field over.
+   */
+  tenant?: string | null
+}
+
 export interface App {
   // Config
   config:    AppConfig
@@ -247,6 +261,53 @@ export interface App {
   principal: () => import('../auth/types.ts').SessionContext | null
 
   /**
+   * WHICH TENANT is in scope right now, or null.
+   *
+   * The sibling of `principal()` and asked in the same place: the code that
+   * enqueues a job records both, because work that outlives the request has to
+   * be told both when it runs. Null where the app declares no tenancy.
+   */
+  tenant: () => string | null
+
+  /**
+   * What this app is configured with, for a tenant.
+   *
+   * The no-call half of `$.config`: a job, a boot task, a raw route or a script
+   * holds no service call, and `$` refuses outside one by design. Defaults to
+   * the tenant in scope.
+   *
+   * **Read-only, deep.** A write throws by name rather than landing, because a
+   * value written into a shared config is visible to the next caller — who may
+   * be a different tenant. That is the one rule the whole arrangement rests on,
+   * and it is the rule the per-request-rebind implementations of this cannot
+   * have (`core/config-scope.ts` has the argument).
+   *
+   * Today it answers `app.config` for every tenant, identically — where the
+   * value comes from is `FJS-D126` and unruled. Adopting it is a statement about
+   * WHEN a value is read and none about what it is.
+   */
+  /** The tenant-config store, or null where the app declared none. Read by
+   *  `configFor` and by `junction principal`. */
+  tenantConfig: TenantConfigStore | null
+
+  configFor: (tenantId?: string | null) => AppConfig
+
+  /**
+   * Resolve and memoise a tenant's configuration.
+   *
+   * The async half of `configFor`, which is a property read and cannot await.
+   * Called for you by the hook that establishes the tenant and by `runAs`, so an
+   * ordinary request and an ordinary job both find it warm; call it by hand from
+   * anything that reaches a tenant another way.
+   */
+  loadTenantConfig: (tenantId: string) => Promise<AppConfig>
+
+  /** Forget a tenant's memoised config, or every tenant's. The explicit
+   *  invalidation, because a memo with no way out is a config change that needs
+   *  a restart. */
+  invalidateTenantConfig: (tenantId?: string) => void
+
+  /**
    * Run `fn` on behalf of a principal, RESOLVED NOW.
    *
    * The seam deferred work runs through. A job, a retry or a scheduled sweep
@@ -264,10 +325,21 @@ export interface App {
    *
    * Inside, `auth` propagates as it does anywhere else, so a service call made
    * by `fn` names no principal and inherits this one.
+   *
+   * **`{ tenant }` is the other half of the same question**, and it is a
+   * separate argument because it is a separate fact: WHO is re-resolved and
+   * WHERE is stated. Under `strategy database` it selects the client every
+   * call inside `fn` runs through; under `strategy row` it is what the
+   * principal resolver reads when a job has no header to read one from. A
+   * tenant is a pointer to a set of rows and never an authority — the standing
+   * that decides what may be done with them is still re-derived from the
+   * principal, which is why storing one alongside a job is not the captured
+   * privilege a stored session would be.
    */
   runAs: <T>(
     userId: string | null,
-    fn: (user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>,
+    optsOrFn: RunAsOptions | ((user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>),
+    fn?: (user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>,
   ) => Promise<T>
 
   // App-level hooks — applied to every service call
@@ -307,6 +379,19 @@ export interface App {
    */
   registerMetricsSource: (name: string, fn: () => unknown) => void
 
+  /**
+   * Contribute a readiness check to `GET /health`, keyed by plugin name.
+   *
+   * The sibling of `registerMetricsSource`, and it did not exist: `checks` was
+   * an option on `healthPlugin()` alone, so the only thing that could declare a
+   * check was the app author — a plugin owning the resource that fails (a job
+   * queue's own database, an outbox relay that has stopped passing) had no way
+   * to say so, and every app hand-wrote the probe or went without.
+   *
+   * `false` or a throw is a failing check; a throw's message is reported.
+   */
+  registerHealthCheck: (name: string, fn: () => boolean | Promise<boolean>) => void
+
   // Route shortcuts (delegate to http.router)
   get:     (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
   post:    (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
@@ -337,9 +422,51 @@ export interface App {
    *  object merged into GET /metrics. Write through `registerMetricsSource`;
    *  this is the store, not the seam. */
   _metricsSources: Map<string, () => unknown>
+  /** Plugin-registered readiness checks — keyed by plugin name. Write through
+   *  `registerHealthCheck`; this is the store, not the seam. */
+  _healthChecks: Map<string, () => boolean | Promise<boolean>>
+  /** The checks the APP declared, through `healthPlugin({ checks })`. Kept
+   *  apart from the plugin registry rather than merged into it, because the
+   *  precedence between them is by OWNER and not by who configured first: an
+   *  app naming `db` means its own probe, whether it configured the health
+   *  plugin before or after the plugin that registered one. Held on the app so
+   *  every reader sees the same set — the devtools console answers readiness on
+   *  its own port, and an option living in a plugin closure made it answer a
+   *  smaller one than `/health` did. */
+  _healthChecksApp: Map<string, () => boolean | Promise<boolean>>
+  /** Whether the devtools console is up, and where.
+   *
+   *  The startup banner is derived from MOUNTED ROUTES, and the console has
+   *  none — it runs its own server on its own port — so it was absent from the
+   *  one place an app says what it is serving, and an app with it switched off
+   *  was indistinguishable from an app whose console had quietly refused to
+   *  bind. `off` and `refused` are separate for that reason.
+   *
+   *  Junction's own plugin, so the banner may name it unprompted; a third-party
+   *  sidecar announces itself. */
+  _devtools: { status: 'off' | 'on' | 'refused', url?: string, reason?: string }
   /** Test-only: runs plugin register(), registerServiceRoutes, and setAppHooks
    *  without binding a port. Call once before the first request() in tests. */
   _startForTest: () => Promise<void>
+
+  /**
+   * Read `junction.config.js` and merge it under `opts.config`.
+   *
+   * This IS the `load-config` start phase, exposed because the phase is
+   * `needsHost` and `_startForTest()` therefore skips it — so anything a plugin
+   * reads out of that file is absent for every caller that boots an app without
+   * a port. The snapshot tools are exactly that caller, and `example` declares
+   * its `jobsDir` in the file: `junction jobs` reported **no handlers
+   * registered** for an app with three (`FJS-418`).
+   *
+   * Same shape as the autoload workaround beside it in `tools/app-module.ts` —
+   * a phase named explicitly and run in the position production runs it, which
+   * is BEFORE `_startForTest()`, or a plugin's `boot()` reads the config as it
+   * was without the file.
+   *
+   * Idempotent in effect: the merge is over the same two inputs every time.
+   */
+  applyConfigFile: () => Promise<void>
 }
 
 // ─── createApp ────────────────────────────────────────────────────────────
@@ -409,6 +536,25 @@ export interface AppOptions {
    * did not verify.
    */
   principal?:   import('./litestone.ts').PrincipalResolver
+
+  /**
+   * This tenant's configuration, resolved per tenant and memoised (`FJS-D126`).
+   *
+   * A resolver rather than a declaration, on `FJS-D113`'s ground: the source is
+   * a row for one app, a file for another and a control plane for a third.
+   *
+   *   createApp({
+   *     tenantConfig:     id => db.asSystem().tenantSettings.findUnique({ where: { id } }),
+   *     tenantConfigKeys: ['name', 'mail.from', 'branding.logo'],
+   *   })
+   *
+   * `tenantConfigKeys` is required with it and is the half that makes it safe:
+   * only the paths it names apply, a resolver answering anything else is refused
+   * by name, and `RESERVED_CONFIG_PATHS` is refused at boot.
+   */
+  tenantConfig?:     TenantConfigOptions['resolve']
+  /** The dotted config paths a tenant may override. Required with `tenantConfig`. */
+  tenantConfigKeys?: string[]
   /**
    * The tenant registry, for a schema declaring `tenancy { strategy database }`
    * — one SQLite file per tenant, so the CLIENT changes per request.
@@ -503,10 +649,54 @@ export function createApp(opts: AppOptions = {}): App {
     : { ...defaultConfig } as AppConfig
   const _configPath = opts.configPath ?? './api/config'
 
+  // Built here rather than in a start phase, because `assertOverridable` is a
+  // BOOT-time refusal by design — a reserved path caught per request is a
+  // production incident and one caught at construction is a failed start.
+  //
+  // The floor is passed as a thunk: `junction.config.js` is deep-merged into
+  // `config` during the `load-config` phase, long after this runs, so a captured
+  // reference would resolve every tenant over the pre-file defaults.
+  if (opts.tenantConfig && !opts.tenantConfigKeys?.length)
+    throw new Error(
+      '[Junction] createApp({ tenantConfig }) needs tenantConfigKeys — the dotted ' +
+      'config paths a tenant may override. Without it the resolver could reach any ' +
+      'key at all, and which keys a tenant may set is the half that makes per-tenant ' +
+      'configuration safe rather than the half that makes it work.'
+    )
+
+  const tenantConfigStore: TenantConfigStore | null = opts.tenantConfig
+    ? createTenantConfigStore(() => config, { resolve: opts.tenantConfig, keys: opts.tenantConfigKeys ?? [] })
+    : null
+
   // Every route registered through app.get/post/put/patch/delete is mounted
   // under this. Normalised once — an app may write 'api', '/api' or '/api/'.
   const _apiPrefix = normalizePrefix(config.apiPrefix)
   const prefixPath = (path: string): string => `${_apiPrefix}${path}`
+
+  /**
+   * A raw route handler, run inside the request scope.
+   *
+   * `enterRequest` is the one owner of that store and the service dispatch has
+   * opened one for years; a route registered with `app.get`/`app.post` never
+   * did, so `requestMeta()` answered `undefined` inside `/auth/login`, inside a
+   * webhook, inside any callback URL a plugin mounts — and every reader that
+   * has no `ctx` in hand was blind exactly there.
+   *
+   * The principal is deliberately absent: a raw route is below the service
+   * pipeline and `ctx.user` is the transport's own answer, which the route can
+   * read directly. What this puts in reach is the REQUEST — its headers, its
+   * correlation id, its client — which is what a tenant is resolved from.
+   */
+  const scoped = <H extends (ctx: any, ...rest: any[]) => unknown>(handler: H): H =>
+    (async function scopedRoute(ctx: any, ...rest: any[]) {
+      return enterRequest({
+        origin:        'http',
+        headers:       ctx?.headers ?? {},
+        correlationId: ctx?.headers?.['x-request-id'] ?? ctx?.requestId,
+        user:          ctx?.user ?? null,
+        client:        { ip: ctx?.ip, userAgent: ctx?.headers?.['user-agent'], headers: ctx?.headers ?? {} },
+      }, () => handler(ctx, ...rest))
+    }) as unknown as H
 
   // ── Subsystems ───────────────────────────────────────────────────────
   const logger    = opts.logger ?? createLogger({ level: opts.logLevel })
@@ -797,13 +987,75 @@ export function createApp(opts: AppOptions = {}): App {
       return requestMeta()?.user ?? null
     },
 
+    tenant(): string | null {
+      // The CALL first, then the request. Under `strategy row` the tenant is
+      // resolved per call — a claim on the principal, which a service may
+      // legitimately re-resolve mid-request against a second tenant — so a
+      // request-wide answer would be the wrong one for exactly the caller that
+      // has two. Under `strategy database` and for work `runAs` opened, the
+      // request-wide answer is the only one there is.
+      return currentCall()?.locals?.tenantId ?? requestMeta()?.tenant ?? null
+    },
+
+    loadTenantConfig(tenantId: string): Promise<AppConfig> {
+      return tenantConfigStore
+        ? tenantConfigStore.load(tenantId)
+        : Promise.resolve(configFor(app, null))
+    },
+
+    invalidateTenantConfig(tenantId?: string): void {
+      tenantConfigStore?.invalidate(tenantId)
+    },
+
+    // Read by `configFor` through its structural `ConfigHost`, and by
+    // `junction principal`, which commits the allow-list.
+    tenantConfig: tenantConfigStore,
+
+    configFor(tenantId?: string | null): AppConfig {
+      // Defaults to the tenant in scope, so the common call is `app.configFor()`
+      // and naming one is the deliberate act. Same shape as `tenant()` above and
+      // for the same reason: a caller who has to pass what the runtime already
+      // knows will eventually pass the wrong one.
+      return configFor(app, tenantId === undefined ? app.tenant() : tenantId)
+    },
+
     async runAs<T>(
       userId: string | null,
-      fn: (user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>,
+      optsOrFn: RunAsOptions | ((user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>),
+      maybeFn?: (user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>,
     ): Promise<T> {
+      // Two arities rather than an options bag on every call: naming a tenant
+      // is the uncommon half, and `runAs(id, fn)` is what every existing caller
+      // and every job that has no tenancy writes.
+      const runOpts = typeof optsOrFn === 'function' ? {} : optsOrFn
+      const fn      = typeof optsOrFn === 'function' ? optsOrFn : maybeFn
+      if (!fn) throw new Error('[Junction] app.runAs — no function to run')
+
       let user: import('../auth/types.ts').SessionContext | null = null
 
       if (userId !== null) {
+        // ── The app's own principal is not a user and must not be looked up ──
+        //
+        // `createApp({ system })` declares who the app is when it acts on its
+        // own behalf, and that principal is deliberately not a row anything can
+        // log in as — `example`'s says so in as many words. So work enqueued
+        // while it is in scope records its id, and `sessionFor` cannot answer:
+        // every such job failed its full retry ladder with *no such principal*,
+        // which reads as a deleted user and is the app saying its own name
+        // (`FJS-467`).
+        //
+        // This is an identity check against a value the app itself supplied,
+        // not the fallback the comment below refuses. The difference is the
+        // whole point: falling back to `system` for an id that failed to
+        // resolve would run a demoted user's work with authority they never
+        // had, while matching the declared id runs the app's own work as the
+        // app — which is what "no enqueuer resolves to createApp({ system })"
+        // already promises for the case where nobody asked at all.
+        const declared = opts.system as { userId?: string } | undefined
+        if (declared && declared.userId !== undefined && String(declared.userId) === String(userId)) {
+          user = opts.system as import('../auth/types.ts').SessionContext
+        } else {
+
         // Re-resolved, never restored from a snapshot — see the doc on App.runAs.
         // A provider that cannot answer says so by name rather than falling back:
         // falling back to the system principal would run a demoted user's work
@@ -821,13 +1073,26 @@ export function createApp(opts: AppOptions = {}): App {
           `resolvable when this work was enqueued and is not now (deleted, or ` +
           `disabled). Deferred work outlives the caller; handle the absence.`
         )
+        }
       } else {
         user = opts.system ?? null
       }
 
       const frozen = user ? freezeUser(user) : null
+      const tenant = 'tenant' in runOpts ? runOpts.tenant : requestMeta()?.tenant
+
+      // Warmed here for the same reason the request hooks warm it: `$.config`
+      // and `configFor` are property reads, so a job that names a tenant must
+      // find the answer already resolved. A job is the caller most likely to
+      // need one — a nightly mail run reads the from-address — and the least
+      // likely to have a request behind it.
+      if (tenant != null && tenantConfigStore) await tenantConfigStore.load(String(tenant))
+
       return enterRequest(
-        { origin: 'internal', user: frozen },
+        // An absent tenant INHERITS the one in scope, on the same rule `auth`
+        // follows: saying nothing means say nothing, and `{ tenant: null }`
+        // means this work belongs to no tenant deliberately.
+        { origin: 'internal', user: frozen, tenant },
         () => Promise.resolve(fn(frozen)),
       )
     },
@@ -836,9 +1101,37 @@ export function createApp(opts: AppOptions = {}): App {
     _plugins:  [],
 
     _metricsSources: new Map<string, () => unknown>(),
+    _healthChecks:    new Map<string, () => boolean | Promise<boolean>>(),
+    _healthChecksApp: new Map<string, () => boolean | Promise<boolean>>(),
+    _devtools:        { status: 'off' as const },
 
     registerMetricsSource(name: string, fn: () => unknown): void {
       app._metricsSources.set(name, fn)
+    },
+
+    registerHealthCheck(name: string, fn: () => boolean | Promise<boolean>): void {
+      app._healthChecks.set(name, fn)
+    },
+
+    async applyConfigFile(): Promise<void> {
+      try {
+        const junctionCfg = await loadConfig(_configPath)
+        const merged = deepMerge(
+          junctionCfg as Partial<AppConfig>,
+          (opts.config ?? {}) as Partial<AppConfig>,
+        ) as AppConfig & Record<string, unknown>
+
+        // Mutate `config` in place — preserve the object identity other
+        // subsystems already captured at createApp time.
+        for (const key of Object.keys(merged)) {
+          (config as Record<string, unknown>)[key] = merged[key]
+        }
+      } catch (err) {
+        // loadConfig treats "file not found" as a normal miss. Reaching this
+        // catch means a config file EXISTS but is broken — abort startup
+        // rather than silently booting on defaults.
+        throw new Error(`[Junction] Failed to load configuration: ${err instanceof Error ? err.message : err}`)
+      }
     },
 
     claim(name: string, value: unknown): void {
@@ -928,11 +1221,20 @@ export function createApp(opts: AppOptions = {}): App {
     // (FJS-012). A route that must sit at the root — a fixed callback URL, a
     // probe path an orchestrator owns — goes through app.http.router directly,
     // which is the layer beneath this one and applies nothing.
-    get(path, handler, mw)    { http.router.get(prefixPath(path), handler, mw);    return app },
-    post(path, handler, mw)   { http.router.post(prefixPath(path), handler, mw);   return app },
-    put(path, handler, mw)    { http.router.put(prefixPath(path), handler, mw);    return app },
-    patch(path, handler, mw)  { http.router.patch(prefixPath(path), handler, mw);  return app },
-    delete(path, handler, mw) { http.router.delete(prefixPath(path), handler, mw); return app },
+    //
+    // The handler also runs inside the REQUEST SCOPE. A service call has opened
+    // one since `enterRequest` got an owner; a raw route never did, so
+    // `requestMeta()` was undefined inside every route an app or a plugin
+    // registers — `/auth/login`, a webhook, a callback URL — and everything
+    // that reads the request without holding a `ctx` was blind there. Under
+    // `tenancy { strategy database }` that is the difference between a sign-in
+    // reaching the caller's own shop and reaching whichever one the provider
+    // was built against.
+    get(path, handler, mw)    { http.router.get(prefixPath(path), scoped(handler), mw);    return app },
+    post(path, handler, mw)   { http.router.post(prefixPath(path), scoped(handler), mw);   return app },
+    put(path, handler, mw)    { http.router.put(prefixPath(path), scoped(handler), mw);    return app },
+    patch(path, handler, mw)  { http.router.patch(prefixPath(path), scoped(handler), mw);  return app },
+    delete(path, handler, mw) { http.router.delete(prefixPath(path), scoped(handler), mw); return app },
 
     // ── WebSocket shortcut ────────────────────────────────────────
     ws(path, handlers)        { http.ws(path, handlers);               return app },
@@ -965,15 +1267,17 @@ export function createApp(opts: AppOptions = {}): App {
 
       events.emit('app:shutdown')
 
-      // Stop accepting new connections immediately, then give in-flight
-      // requests a grace period to complete before tearing down subsystems.
-      // Bun's server.stop() without force:true waits for open connections —
-      // we couple that with a timeout so a hung connection can't stall shutdown.
-      const drainMs = config.http?.drainTimeout ?? 5_000
-      await Promise.race([
-        http.stop(),
-        new Promise<void>(resolve => setTimeout(resolve, drainMs))
-      ])
+      // Stop accepting new connections, close the live ones, and give an
+      // in-flight request a grace period to finish.
+      //
+      // The timeout is the TRANSPORT's now rather than a race out here, and the
+      // difference is that losing it does something. The race resolved on the
+      // timer and closed nothing: `stop()` reported *Shutdown complete* with a
+      // client's socket still open, after waiting the full drain every time,
+      // because Bun's graceful stop never resolves once a socket has been
+      // upgraded. `http.stop(drainMs)` says goodbye to each socket, waits for
+      // what is genuinely outstanding, and forces the server down (`FJS-460`).
+      await http.stop(config.http?.drainTimeout ?? 5_000)
 
       // Shutdown plugins in reverse order
       for (const plugin of [...plugins].reverse()) {
@@ -1033,8 +1337,15 @@ export function createApp(opts: AppOptions = {}): App {
   // `ctx.locals.db`. Installing both would leave the assignment to hook order.
   if (opts.tenants) {
     app.hooks({ around: { all: [withTenantDb(opts.tenants, opts.principal)] } })
+    Object.defineProperty(app, TENANT_REGISTRY, { value: opts.tenants })
+    // Parked where `junction principal` can read it back. A resolver is wired
+    // in application code, so nothing about a file tree can answer which one an
+    // app ended up with — and that is the input every tenancy predicate in the
+    // committed access snapshot compares against (`FJS-514`).
+    if (opts.principal) Object.defineProperty(app, PRINCIPAL_RESOLVER, { value: opts.principal })
   } else if (db && typeof (db as { $setAuth?: unknown }).$setAuth === 'function') {
     app.hooks({ around: { all: [withLitestoneDb(db as never, opts.principal)] } })
+    if (opts.principal) Object.defineProperty(app, PRINCIPAL_RESOLVER, { value: opts.principal })
     // Row tenancy scopes with policies rather than with a second database, so
     // there is nothing to swap — the failure mode is the opposite one, a
     // principal with no claim seeing an empty version of every screen.
@@ -1110,26 +1421,7 @@ export function createApp(opts: AppOptions = {}): App {
 
       // Load junction.config.js and deep-merge into the live config.
       // Final priority: defaultConfig < junction.config.js < opts.config.
-      { name: 'load-config', needsHost: true, run: async () => {
-        try {
-          const junctionCfg = await loadConfig(_configPath)
-          const merged = deepMerge(
-            junctionCfg as Partial<AppConfig>,
-            (opts.config ?? {}) as Partial<AppConfig>,
-          ) as AppConfig & Record<string, unknown>
-
-          // Mutate `config` in place — preserve the object identity other
-          // subsystems already captured at createApp time.
-          for (const key of Object.keys(merged)) {
-            (config as Record<string, unknown>)[key] = merged[key]
-          }
-        } catch (err) {
-          // loadConfig treats "file not found" as a normal miss. Reaching this
-          // catch means a config file EXISTS but is broken — abort startup
-          // rather than silently booting on defaults.
-          throw new Error(`[Junction] Failed to load configuration: ${err instanceof Error ? err.message : err}`)
-        }
-      }},
+      { name: 'load-config', needsHost: true, run: () => app.applyConfigFile() },
 
       // Security headers — opt out via config.http.helmet = false.
       { name: 'security-headers', run: () => {
@@ -1283,6 +1575,13 @@ export function createApp(opts: AppOptions = {}): App {
           prefix:   _prefix || undefined,
           health:   _healthPath ? `${_base}${_healthPath}` : undefined,
           docs:     _docsPath   ? `${_base}${_docsPath}`   : undefined,
+          // Always stated, including when it is off. The field is here so the
+          // answer to *where is the console* is on screen at boot rather than
+          // in whichever file configured it — and `disabled` is worth a word
+          // because it is the answer people are surprised by.
+          devtools: app._devtools.status === 'on'      ? app._devtools.url
+                  : app._devtools.status === 'refused' ? `refused — ${app._devtools.reason}`
+                  : 'disabled',
           mode:     config.debug ? 'debug' : 'production',
         })
 
@@ -1333,10 +1632,16 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
   const isEmpty = !origins || (Array.isArray(origins) && origins.length === 0)
   if (isEmpty) return
 
+  const callHeaders = (config.http as Record<string, unknown>)?.callHeaders as string[] | undefined
+
   app.configure(cors({
     origins,
     ...(c.methods     ? { methods:     c.methods }     : {}),
     ...(c.headers     ? { headers:     c.headers }     : {}),
+    // Declared once under http.callHeaders and read by both halves — see the
+    // note on the field. Without this an app's own header is allowed on the
+    // socket and refused at a cross-origin preflight.
+    ...(callHeaders   ? { callHeaders }                : {}),
     ...(c.credentials ? { credentials: c.credentials } : {}),
     ...(c.maxAge      ? { maxAge:      c.maxAge }      : {}),
   }))
@@ -1376,9 +1681,16 @@ export function registerServiceRoutes(app: App): void {
     //   'false'     → unwrap the list to a bare array (Feathers' paginate:false)
     // It used to be read as `=== 'true'`, so $wrap=false on a list was silently
     // ignored — the only way to get a bare array out of find() was not to ask.
+    //
+    // Both spellings of false: the transport parses types now (`FJS-D125`) so
+    // `?$wrap=false` arrives as the boolean, and a hand-built context still
+    // passes the string. Reading only one of them is how this was broken the
+    // first time.
     const rawWrapParam = (ctx.query as Record<string, unknown>)?.['$wrap']
     const wrap: boolean | undefined =
-      rawWrapParam === undefined ? undefined : rawWrapParam !== 'false'
+      rawWrapParam === undefined
+        ? undefined
+        : rawWrapParam !== false && rawWrapParam !== 'false'
     const svcCtx = bridge.toContext(ctx, serviceName, model, 'http', app)
 
     // Open the request scope once, around the whole pipeline run, so

@@ -75,7 +75,7 @@ try {
   const user = await signIn('sam@shop.test')
 
   // Its own reference, and its own slice of the outbox.
-  const stale = await (await fetch(`${API}/api/orders?reference=${REF}`)).json()
+  const stale = await (await fetch(`${API}/api/orders?reference=${REF}`, { headers: admin })).json()
   for (const row of stale.data ?? [])
     await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: admin })
   await fetch(`${SINK}/outbox`, { method: 'DELETE' })
@@ -154,7 +154,7 @@ try {
   // The sink 401s without `Authorization: Bearer <key>`, so a captured message
   // is proof the credential REF resolved and conduit attached it. Nothing in
   // the app ever holds that value — it is `auth: { ref: 'SHOP_MAIL_KEY' }` in
-  // api/app.ts and `process.env` at send time.
+  // api/src/app.ts and `process.env` at send time.
   t('mail.credentialWasResolved', { captured: !!mail })
 
   // ── 3. the staff's row, and only their own ─────────────────────────────

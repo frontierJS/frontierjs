@@ -43,12 +43,25 @@ const server = createServer(async (req, res) => {
   if (/^\/api\b/.test(url.pathname)) {
     const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await readBody(req)
     try {
+      // `accept-encoding` is dropped rather than forwarded. Junction compresses
+      // a response past a size threshold; `upstream.arrayBuffer()` hands back
+      // the DECODED bytes, so copying the headers through re-labels plain bytes
+      // as gzip and the browser answers ERR_CONTENT_DECODING_FAILED. It fires
+      // for whichever response happens to cross the threshold, so it arrives
+      // looking like a regression in whatever grew a payload last.
+      const { 'accept-encoding': _drop, ...forward } = req.headers
       const upstream = await fetch(API + url.pathname + url.search, {
         method: req.method,
-        headers: { ...req.headers, host: new URL(API).host },
+        headers: { ...forward, host: new URL(API).host },
         body,
       })
-      res.writeHead(upstream.status, Object.fromEntries(upstream.headers))
+      // Belt and braces, for an upstream that compresses unasked: the length
+      // and the encoding both describe bytes this proxy no longer has.
+      const headers = Object.fromEntries(upstream.headers)
+      delete headers['content-encoding']
+      delete headers['content-length']
+      delete headers['transfer-encoding']
+      res.writeHead(upstream.status, headers)
       res.end(Buffer.from(await upstream.arrayBuffer()))
     } catch (e) {
       // Same contract as the dev proxy: say which process is missing rather

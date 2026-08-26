@@ -15,6 +15,8 @@
 //              DEL  /sessions/{id}         end one of them
 //              POST /sessions              X-Service-Method: revokeOthers
 //   api-keys   GET/POST /api-keys · DEL /api-keys/{id}
+//   connections GET /connections      which providers are attached
+//               DEL /connections/{id} detach one
 //
 // Three nouns rather than one grab-bag service, and each one is the caller's
 // OWN: every method here scopes to `ctx.auth.user.userId` and nothing takes a
@@ -28,15 +30,23 @@
 import { createService, BadRequest, Unauthorized, NotFound } from '@frontierjs/junction'
 import type { IAuth, SessionContext, ServiceContext, Service } from '@frontierjs/junction'
 import type { AuthServicesOptions } from './types.ts'
+import type { AuthOAuth }           from './oauth.ts'
+
+// The OAuth half is not on IAuth and must not be — junction knows nothing about
+// a redirect flow (`FJS-D10`). It is Partial here for the same reason every
+// optional IAuth method is: a third-party provider has none of it, and the
+// service says so by name rather than by 500.
+type AuthSurface = IAuth & Partial<AuthOAuth>
 
 /** Defaults, in one place — the plugin and the browser client both name them. */
 export const DEFAULT_SERVICE_NAMES = {
   account:  'account',
   sessions: 'sessions',
   apiKeys:  'api-keys',
+  connections: 'connections',
 } as const
 
-export function createAuthServices(auth: IAuth, opts: AuthServicesOptions = {}): Service[] {
+export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): Service[] {
 
   const level = opts.level
 
@@ -44,6 +54,7 @@ export function createAuthServices(auth: IAuth, opts: AuthServicesOptions = {}):
     account:  opts.account  ?? DEFAULT_SERVICE_NAMES.account,
     sessions: opts.sessions ?? DEFAULT_SERVICE_NAMES.sessions,
     apiKeys:  opts.apiKeys  ?? DEFAULT_SERVICE_NAMES.apiKeys,
+    connections: opts.connections ?? DEFAULT_SERVICE_NAMES.connections,
   }
 
   for (const [key, name] of Object.entries(names)) {
@@ -67,12 +78,12 @@ export function createAuthServices(auth: IAuth, opts: AuthServicesOptions = {}):
   }
 
   /** A provider that does not implement this one says so by name, not by 500. */
-  function need<K extends keyof IAuth>(method: K): NonNullable<IAuth[K]> {
+  function need<K extends keyof AuthSurface>(method: K): NonNullable<AuthSurface[K]> {
     const fn = auth[method]
     if (typeof fn !== 'function') {
       throw new BadRequest(`${String(method)} is not supported by this auth provider`)
     }
-    return fn.bind(auth) as NonNullable<IAuth[K]>
+    return fn.bind(auth) as NonNullable<AuthSurface[K]>
   }
 
   const services: Service[] = []
@@ -192,6 +203,29 @@ export function createAuthServices(auth: IAuth, opts: AuthServicesOptions = {}):
       // in the system whose id can be guessed.
       await auth.revokeApiKey(id, { userId: user.userId })
       return { id }
+    },
+  }))
+
+  // ─── connections ──────────────────────────────────────────────────────────
+  //
+  // The providers attached to this account. A SERVICE and not a route, and the
+  // line is `FJS-D20`'s: `/auth/oauth/*` establishes a session, and nothing
+  // here does — a caller managing what can sign them in is already signed in.
+
+  if (names.connections !== false) services.push(createService({
+    name: names.connections as string,
+    methods: ['find', 'remove'],
+
+    async find(ctx: ServiceContext) {
+      const user = caller(ctx)
+      return need('listConnections')(user.userId)
+    },
+
+    async remove(ctx: ServiceContext) {
+      const user = caller(ctx)
+      // The caller's own id, never one from the payload — the same rule the
+      // three services above hold to.
+      return need('removeConnection')(user.userId, String(ctx.id))
     },
   }))
 

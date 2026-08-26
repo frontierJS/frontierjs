@@ -136,7 +136,7 @@
     next?.focus()
   }
 
-  $onDestroy(() => {
+  $.onDestroy(() => {
     document.removeEventListener('click', onClickAway, { capture: true })
   })
 

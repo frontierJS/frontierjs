@@ -62,7 +62,7 @@ export function createEnvironmentsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const projectId = ($.query.projectId ?? $.query.project_id) as string | undefined
       return findScoped('environment', {
@@ -72,9 +72,9 @@ export function createEnvironmentsService(app: BasecampApp) {
       })
     },
 
-    get: (ctx: ServiceContext) => getScoped('environment', 'Environment'),
+    get: () => getScoped('environment', 'Environment'),
 
-    async create(ctx: ServiceContext) {
+    async create() {
       const data = $.data as Record<string, unknown>
       await assertProjectInWorkspace(data.projectId as string)
       await assertSlugFree('environment', { projectId: data.projectId, slug: data.slug },
@@ -101,7 +101,7 @@ export function createEnvironmentsService(app: BasecampApp) {
       return db().environment.update({ where: { id: $.id as string }, data: patch })
     },
 
-    async remove(ctx: ServiceContext) {
+    async remove() {
       const env = await getScoped('environment', 'Environment')
       if (env.isProtected)
         throw new Forbidden('Cannot delete a protected environment — unprotect it first')
@@ -115,7 +115,7 @@ export function createEnvironmentsService(app: BasecampApp) {
     // ── setVariable ───────────────────────────────────────────────────
     // `variables` is a Json column, so it arrives as an array and is written
     // back as one — no JSON.parse/stringify at this layer.
-    async setVariable(ctx: ServiceContext) {
+    async setVariable() {
       const { key, value, secret } = ($.data ?? {}) as Partial<EnvVariable>
       if (!key?.trim())        throw new BadRequest('key is required')
       if (value === undefined) throw new BadRequest('value is required')
@@ -131,7 +131,7 @@ export function createEnvironmentsService(app: BasecampApp) {
       return saveVariables(env, variables)
     },
 
-    async deleteVariable(ctx: ServiceContext) {
+    async deleteVariable() {
       const { key } = ($.data ?? {}) as { key?: string }
       if (!key) throw new BadRequest('key is required')
 

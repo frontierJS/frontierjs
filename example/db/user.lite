@@ -1,0 +1,38 @@
+// db/user.lite — what this shop says about a model it did not write.
+//
+// ─── Why this is a second file ────────────────────────────────────────────
+//
+// `db/schema.lite` is read by TWO things and they see different documents. The
+// API assembles it in memory with auth's fragments appended (api/src/core/db.ts,
+// `authSchemaFragments`), so `User` is there. The BROWSER build reads the file
+// alone — sierra's schema plugin, off disk — and `User` is not.
+//
+// So `extend model User` cannot live in that file. Put there it parses for the
+// API and refuses for the browser, by name: *no model 'User' is declared or
+// imported*. The schema registry then ships EMPTY, every `createResource` falls
+// back to a bare `make()`, and the first symptom is a product page that renders
+// no buy button. The refusal is correct; the file was the wrong one.
+//
+// It is not `import`ed by schema.lite either, for the same reason — an import
+// is resolved by both readers. api/src/core/db.ts reads it beside auth's own
+// fragments, which is the one place where both halves exist.
+
+// ─── Who is staff ─────────────────────────────────────────────────────────
+//
+// A verified shopper and a member of staff both grade USER(4). They must: the
+// ladder answers *what kind of caller* — a stranger, a half-registered one, a
+// real one, an administrator — and *is this person one of ours* is not on that
+// axis at all. Saying it with a level means either giving staff level 5, which
+// is the delete-and-refund tier, or leaving shoppers at 1 for ever, which makes
+// their own order history unreadable to them.
+//
+// It cannot be `role` either, and that is the sharp bit: auth's `role` defaults
+// to `"user"`, so **every account the storefront registers arrives with the
+// same role the shop's own staff have**. A policy reading `auth().role ==
+// 'user'` as *staff* would hand every shopper the whole order book.
+//
+// It reaches `auth()` through `sessionFields` in api/src/app.ts — the one route
+// an app's own User columns take onto the SessionContext.
+extend model User {
+  isStaff Boolean @default(false) @allow('write', auth().isAdmin)
+}

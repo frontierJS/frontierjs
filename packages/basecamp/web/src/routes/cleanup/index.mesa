@@ -17,8 +17,8 @@ title: Disk cleanup
   // which. Where a machine has never reported, this says so rather than
   // rendering zeroes that read as "nothing to reclaim".
   import { session } from '../../session.js'
+  import { formatBytes as size } from '@frontierjs/toolbelt/units'
   import { cleanup } from '../../resources/CleanupRun.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -79,7 +79,7 @@ title: Disk cleanup
     if (READS.has(method)) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   function toggle(name, on) {
     picked = on ? [...new Set([...picked, name])] : picked.filter(p => p !== name)
@@ -121,17 +121,6 @@ title: Disk cleanup
     } finally {
       busy = null
     }
-  }
-
-  // Bytes in, a sentence out — the same decision `/volumes/` makes, for the
-  // same reason: a number rounded on the way into the database cannot be
-  // un-rounded on the way out, so nothing stores gigabytes.
-  function size(bytes) {
-    const n = Number(bytes) || 0
-    if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`
-    if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`
-    if (n >= 1024)      return `${Math.round(n / 1024)} KB`
-    return `${n} B`
   }
 
   function when(iso) {

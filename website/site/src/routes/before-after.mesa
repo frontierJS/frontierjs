@@ -1,0 +1,585 @@
+---
+title: "FrontierJS — before & after"
+description: "Twelve jobs that normally cost you three implementations across the database, the API and the browser — and what each one looks like when the schema is the source of truth."
+render: static
+---
+
+<script>
+  export let data = null
+
+  // Marked up at build time by `before-after.meta.js`; HTML by the time it is here.
+  const sample = data?.samples ?? {}
+</script>
+
+<!-- The page's own sections. The site nav is the layout's. -->
+<nav class="subnav" aria-label="Sections">
+  <div class="container">
+      <a href="#rules">Rules</a>
+      <a href="#wire">The wire</a>
+      <a href="#change">Change</a>
+      <a href="#parts">The parts</a>
+  </div>
+</nav>
+
+<!-- ─── Hero ────────────────────────────────────────────────────────── -->
+<section id="top" style="padding:4.5rem 0 1rem">
+  <div class="container">
+    <p class="eyebrow">Before &amp; after</p>
+    <h1>Twelve jobs you currently do <span class="quiet">three times.</span></h1>
+    <p class="lede">
+      None of these are hard. That is the problem — each one is easy enough that you
+      just write it again in the database, again in the API, and again in the browser,
+      and then keep three copies in agreement forever. Nothing fails when they drift.
+      A user finds out.
+    </p>
+    <p class="lede" style="margin-top:1rem">
+      The left column is a real stack, written the way you would actually write it.
+      The right column is the same job when the schema is the thing everyone reads.
+    </p>
+    <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+      <a class="btn primary raised" href="/#start">Get started</a>
+      <a class="btn outlined" href="/#code">See a whole app</a>
+      <span class="badge warning" title="Working, but APIs may still move">Alpha</span>
+    </div>
+  </div>
+</section>
+
+<!-- ╔═══ BAND 1 ═══════════════════════════════════════════════════════╗ -->
+<div class="band" id="rules">
+  <div class="container">
+    <span class="n">Band 01</span>
+    <span class="t">Rules that end up in three languages</span>
+    <span class="s">The database, the handler, and the component all have an opinion.</span>
+  </div>
+</div>
+
+<!-- ── 1. ownership ─────────────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Ownership visibility</h2>
+      <p>“Only the owner can read a lead.” One sentence in the standup, three
+         implementations in the repo.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">3 places · 3 languages</span></div>
+        <div><span class="k">After</span><span class="after">1 line, on the Model</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before <span class="count">— and nothing errors when they disagree</span></p>
+      <div class="snips">
+        <div class="snip"><p class="where">Database</p><pre class="code">{@html sample.S0}</pre></div>
+        <div class="snip"><p class="where">API</p><pre class="code">{@html sample.S1}</pre></div>
+        <div class="snip"><p class="where">UI</p><pre class="code">{@html sample.S2}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">db/schema.lite</p><pre class="code">{@html sample.S3}</pre></div>
+      </div>
+      <p class="derived">
+        The policy <strong>compiles into the query</strong>, so a route added next year
+        is filtered too. The API returns <code>403</code> without a guard clause, and
+        <code>leads.can('update', lead)</code> answers the same question in the browser —
+        as an affordance, never a boundary.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 2. validation ────────────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Field validation</h2>
+      <p>An email is an email in all three realms. You still declare it in all three,
+         and the browser's copy is always the one that goes stale.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">3 declarations · kept in sync by hand</span></div>
+        <div><span class="k">After</span><span class="after">1 declaration, read by all three</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">Database</p><pre class="code">{@html sample.S4}</pre></div>
+        <div class="snip"><p class="where">API</p><pre class="code">{@html sample.S5}</pre></div>
+        <div class="snip"><p class="where">UI</p><pre class="code">{@html sample.S6}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">db/schema.lite</p><pre class="code">{@html sample.S7}</pre></div>
+      </div>
+      <p class="derived">
+        The migration takes the constraints. The API's <code>400</code>s are derived from
+        the same rules. <code>leads.fields.email</code> is <strong>that rule in the
+        browser</strong> — not a copy of it — and <code>leads.make()</code> renders an
+        input the schema already describes.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 3. permissions ───────────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Who may do what</h2>
+      <p>Read is public, create needs a member, delete needs an admin. Now say that on
+         every route, and again on every button.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">n routes × 4 verbs, plus the UI</span></div>
+        <div><span class="k">After</span><span class="after">4 digits on the Model</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">API</p><pre class="code">{@html sample.S8}</pre></div>
+        <div class="snip"><p class="where">UI</p><pre class="code">{@html sample.S9}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">db/schema.lite</p><pre class="code">{@html sample.S10}</pre></div>
+      </div>
+      <p class="derived">
+        Every service on that Model answers <code>401</code>/<code>403</code> at the right
+        level without a guard, because the gate is <strong>under the data, not in front of
+        the route</strong>. <code>leads.can('delete')</code> hides the button using the same
+        four digits.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ╔═══ BAND 2 ═══════════════════════════════════════════════════════╗ -->
+<div class="band" id="wire">
+  <div class="container">
+    <span class="n">Band 02</span>
+    <span class="t">The wire between them</span>
+    <span class="s">Shapes that are nobody's job until they are wrong.</span>
+  </div>
+</div>
+
+<!-- ── 4. forms send strings ────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Forms send strings</h2>
+      <p>Every input value is a string, including <code>&lt;select&gt;</code> and
+         <code>type="number"</code>. And an empty box is <code>''</code>, which your
+         nullable column does not consider empty.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">per-field coercion, per form</span></div>
+        <div><span class="k">After</span><span class="after">two options, once</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">UI</p><pre class="code">{@html sample.S11}</pre></div>
+        <div class="snip"><p class="where">Database</p><pre class="code">{@html sample.S12}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">web/src/routes/leads</p><pre class="code">{@html sample.S13}</pre></div>
+      </div>
+      <p class="derived">
+        Runs <strong>coerce → blankToNull → validate</strong>, so validation judges what
+        is actually sent. <code>''</code> is never coerced to <code>0</code>, and a string
+        that is not cleanly the target type is left alone for the server to reject.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 5. pagination & envelope ─────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Pagination and the response shape</h2>
+      <p>Every endpoint invents its own — a bare array here, <code>&#123; data, total &#125;</code>
+         there — and every caller unwraps it differently.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">per-endpoint convention</span></div>
+        <div><span class="k">After</span><span class="after">one envelope, one owner</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">API</p><pre class="code">{@html sample.S14}</pre></div>
+        <div class="snip"><p class="where">UI</p><pre class="code">{@html sample.S15}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">Any service, no code</p><pre class="code">{@html sample.S16}</pre></div>
+      </div>
+      <p class="derived">
+        One envelope with <code>kind: 'single' | 'list'</code> as the discriminant — a list
+        keeps it, a single unwraps. <strong>One module owns wrapping and unwrapping</strong>,
+        so the browser never guesses.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 6. errors → status ───────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Errors becoming status codes</h2>
+      <p>Four libraries throw four shapes. Your error middleware grows an
+         <code>instanceof</code> ladder, and anything it does not recognise is a 500 —
+         including the 404 you meant.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">1 ladder, edited per library</span></div>
+        <div><span class="k">After</span><span class="after">a numeric <code>status</code> on your error</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">API</p><pre class="code">{@html sample.S17}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">Your package, anywhere</p><pre class="code">{@html sample.S18}</pre></div>
+      </div>
+      <p class="derived">
+        One boundary turns a thrown value into a status, and it recognises a numeric
+        <code>status</code> without registration. <strong>Your errors need no dependency on
+        the framework</strong> — and for a third-party error you cannot modify, register a
+        mapper instead.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ╔═══ BAND 3 ═══════════════════════════════════════════════════════╗ -->
+<div class="band" id="change">
+  <div class="container">
+    <span class="n">Band 03</span>
+    <span class="t">What one change costs</span>
+    <span class="s">The real measure of a stack is what happens when a field moves.</span>
+  </div>
+</div>
+
+<!-- ── 7. add a field ───────────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Adding one field</h2>
+      <p>A product manager adds “deal value”. Count the files.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">6 edits · 4 of them silent if missed</span></div>
+        <div><span class="k">After</span><span class="after">1 edit · <code>fli db:migrate</code></span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before <span class="count">— in order, and you must remember the order</span></p>
+      <div class="snips">
+        <div class="snip"><p class="where">Six files</p><pre class="code">{@html sample.S19}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">db/schema.lite</p><pre class="code">{@html sample.S20}</pre></div>
+        <div class="snip"><p class="where">Then</p><pre class="code">{@html sample.S21}</pre></div>
+      </div>
+      <p class="derived">
+        The migration, the <code>400</code>, the JSON Schema at <code>/manifest</code>, the
+        TypeScript type, <code>leads.fields.value</code> and the input <code>make()</code>
+        renders all move together — because <strong>none of them was ever a copy</strong>.
+        There is no <code>generated/</code> directory to review or re-apply edits to.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ╔═══ BAND 4 ═══════════════════════════════════════════════════════╗ -->
+<div class="band" id="parts">
+  <div class="container">
+    <span class="n">Band 04</span>
+    <span class="t">The parts you would otherwise go and install</span>
+    <span class="s">Each one is a vendor, a config file and a new vocabulary. Here they are the framework.</span>
+  </div>
+</div>
+
+<!-- ── 8. realtime ──────────────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Live updates after a mutation</h2>
+      <p>Every handler that writes must also remember to announce. The one that forgets
+         is the bug you cannot reproduce.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">an emit per handler · rooms by hand</span></div>
+        <div><span class="k">After</span><span class="after">one declared channel</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">API</p><pre class="code">{@html sample.S22}</pre></div>
+        <div class="snip"><p class="where">UI</p><pre class="code">{@html sample.S23}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">api/src/services/leads.service.ts</p><pre class="code">{@html sample.S24}</pre></div>
+      </div>
+      <p class="derived">
+        A mutation is announced in <strong>one place</strong> — the same call that fans out
+        to the event bus and to the channel. A handler cannot forget to publish, because
+        publishing is not something a handler does.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 9. jobs ──────────────────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Background jobs and cron</h2>
+      <p>A queue usually arrives with a Redis to run, a worker process to deploy, and a
+         second place your app config lives.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">+1 service · +1 process · +1 config</span></div>
+        <div><span class="k">After</span><span class="after">a table in the SQLite you already have</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">Infra</p><pre class="code">{@html sample.S25}</pre></div>
+        <div class="snip"><p class="where">API</p><pre class="code">{@html sample.S26}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">jobs/send-email.job.ts</p><pre class="code">{@html sample.S27}</pre></div>
+        <div class="snip"><p class="where">Anywhere in the app</p><pre class="code">{@html sample.S28}</pre></div>
+      </div>
+      <p class="derived">
+        Same process, same file, same deploy. Retries, attempts and cron state are rows
+        you can query — and job stats show up on <code>/metrics</code> because the queue is
+        <strong>a plugin, not a neighbour</strong>.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 10. notifications ────────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Notifying a user</h2>
+      <p>“Tell them in the app, and email them, and push it live.” Three code paths, and
+         the copy is written three times so they drift immediately.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">3 paths · 3 copies of the wording</span></div>
+        <div><span class="k">After</span><span class="after">1 class · 1 call</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">API</p><pre class="code">{@html sample.S29}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">api/src/notifications/PaymentReceived.ts</p><pre class="code">{@html sample.S30}</pre></div>
+        <div class="snip"><p class="where">Anywhere</p><pre class="code">{@html sample.S31}</pre></div>
+      </div>
+      <p class="derived">
+        One class holds the message, and <code>via()</code> decides the channels
+        per user. The in-app record, the live event and the email
+        <strong>fan out from the same object</strong>.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 11. email ────────────────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Transactional email</h2>
+      <p>Your app is components. Your email is a different templating language, a
+         different component set, and a plain-text version nobody maintains.</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">a second UI stack for email</span></div>
+        <div><span class="k">After</span><span class="after">the same components, target <code>email</code></span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">Email</p><pre class="code">{@html sample.S32}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">emails/Welcome.mesa</p><pre class="code">{@html sample.S33}</pre></div>
+        <div class="snip"><p class="where">Sending</p><pre class="code">{@html sample.S34}</pre></div>
+      </div>
+      <p class="derived">
+        Table-based markup and inlined CSS come out the other side, with the Outlook
+        fallback handled and a <strong>real plain-text alternative</strong> derived from the
+        same render — not a stripped copy of the HTML.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ── 12. outbound ─────────────────────────────────────────────────── -->
+<div class="row">
+  <div class="container">
+    <div class="job">
+      <h2>Calling someone else's API</h2>
+      <p>Outbound <code>fetch</code> spreads until no one can answer “what does this
+         service talk to, and with which credentials?”</p>
+      <div class="cost">
+        <div><span class="k">Before</span><span class="before">n call sites · n retry policies</span></div>
+        <div><span class="k">After</span><span class="after">declared targets · one boundary</span></div>
+      </div>
+    </div>
+
+    <div>
+      <p class="colhead">Before</p>
+      <div class="snips">
+        <div class="snip"><p class="where">API, scattered</p><pre class="code">{@html sample.S35}</pre></div>
+      </div>
+    </div>
+
+    <div class="after-col">
+      <p class="colhead">After</p>
+      <div class="snips">
+        <div class="snip"><p class="where">Declared once</p><pre class="code">{@html sample.S36}</pre></div>
+        <div class="snip"><p class="where">Anywhere</p><pre class="code">{@html sample.S37}</pre></div>
+      </div>
+      <p class="derived">
+        Everything the app can reach is <strong>enumerable</strong>, credentials are
+        references resolved at send time, and the result is
+        <code>&#123; data &#125; | &#123; error &#125;</code> rather than a thrown fetch.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Close ───────────────────────────────────────────────────────── -->
+<section style="padding:4rem 0 1rem">
+  <div class="container">
+    <h1 style="max-width:24ch">None of this was hard. <span class="but">That was the problem.</span></h1>
+    <p class="lede">
+      Every line in the left column is code a good developer writes correctly. The cost
+      was never difficulty — it was that the same fact lived in three places, and
+      keeping them in agreement is work that never finishes and never appears on a
+      roadmap.
+    </p>
+    <div class="cluster" style="margin-top:1.75rem; gap:.75rem;">
+      <a class="btn primary raised" href="/#start">Get started</a>
+      <a class="btn outlined" href="/#packages">See every package</a>
+      <a class="btn ghost" href="/#idea">One seed, three realms</a>
+      <span class="badge warning">Alpha</span>
+    </div>
+  </div>
+</section>
+
+<!-- The page's own closing note. The site footer is the layout's. -->
+<div class="container pagenote">
+<span>Before columns are illustrative of a typical modern stack, written the way you'd actually write it.</span>
+    <span>Styled entirely by <code>@frontierjs/css</code>. <a href="/">Home →</a></span>
+</div>
+
+<style>
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.06; letter-spacing: -.03em; margin: .35em 0 .3em; max-width: 20ch; }
+  h1 .but { color: var(--color-primary); }
+  h1 .quiet { color: var(--ink-mute); }
+  .eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+  .lede { font-size: 1.06rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+
+  /* ── band headings ─────────────────────────────────────────────────── */
+  .band { border-top: 1px solid var(--rule-strong); background: var(--surface-sunken); padding: 1.1rem 0; margin-top: 3rem; }
+  .band .container { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+  .band .n { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); }
+  .band .t { font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
+  .band .s { font-size: .86rem; color: var(--ink-mute); }
+
+  /* ── the three-column row ──────────────────────────────────────────── */
+  .row { border-top: 1px solid var(--rule); padding: 2.25rem 0; }
+  .row:first-of-type { border-top: 0; }
+  .row .container { display: grid; gap: 1.5rem; grid-template-columns: minmax(0,1fr); align-items: start; }
+  @media (min-width: 68rem) {
+    .row .container { grid-template-columns: 15rem minmax(0,1fr) minmax(0,1fr); gap: 2rem; }
+  }
+
+  .job h2 { font-size: 1.08rem; letter-spacing: -.01em; margin: 0 0 .45rem; }
+  .job p { font-size: .87rem; color: var(--ink-mute); margin: 0; line-height: 1.55; }
+  .cost { margin-top: .9rem; display: grid; gap: .3rem; font-size: .76rem; }
+  .cost div { display: flex; gap: .5rem; align-items: baseline; }
+  .cost .k { color: var(--ink-mute); min-width: 3.4rem; }
+  .cost .before { color: var(--ink-soft); }
+  .cost .after { color: var(--color-success); font-weight: 600; }
+
+  .colhead { font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-mute); margin: 0 0 .55rem; display: flex; gap: .5rem; align-items: baseline; }
+  .colhead .count { color: var(--ink-soft); letter-spacing: 0; text-transform: none; font-size: .74rem; }
+
+  .snips { display: grid; gap: .55rem; }
+  .snip { border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--surface-sunken); }
+  .snip .where { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); padding: .38rem .8rem; border-bottom: 1px solid var(--rule); background: var(--surface-raised); }
+  .after-col .snip { border-color: var(--color-primary); }
+  .after-col .snip .where { color: var(--color-primary); }
+
+  /* No code palette and no block rules here. A sample is the design
+     system's code block wrapping glow's own code element, and
+     @frontierjs/css styles both — a rule here would be a second
+     answer to what code looks like. */
+  /* The one thing the design system cannot know: these sit in a dense
+     grid, so they take the rung below the block default. */
+  .code { font-size: var(--text-xs); padding: var(--space-md) var(--space-lg); }
+
+  .derived { margin: .6rem 0 0; font-size: .8rem; color: var(--ink-mute); line-height: 1.55; }
+  .derived strong { color: var(--ink); font-weight: 600; }
+</style>

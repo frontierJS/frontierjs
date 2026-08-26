@@ -1,7 +1,12 @@
 <script>
   // fileupload.mesa — the dropzone, with the selection reported back so a
   // spec can tell "the list rendered" from "the component accepted the file".
-  import FileUpload from '../../../components/forms/FileUpload.mesa'
+  // The named import is the point of the second half of this fixture: a
+  // component's own verbs are importable by its callers (`FJS-D116`), and the
+  // only way to know that survives the compiler and the bundler is to import
+  // one here and render what it answers.
+  import FileUpload, { isImage } from '../../../components/forms/FileUpload.mesa'
+  import { formatBytes } from '@frontierjs/toolbelt/units'
 
   export let multiple  = true
   export let maxSizeMB = 0
@@ -21,3 +26,5 @@
 
 <output id="changes">{changes}</output>
 <output id="names">{files.map(f => f.name).join(',')}</output>
+<output id="sizes">{[900, 2048, 5 * 1024 * 1024].map(formatBytes).join('|')}</output>
+<output id="kinds">{[{ type: 'image/png' }, { type: 'application/pdf' }].map(isImage).join('|')}</output>

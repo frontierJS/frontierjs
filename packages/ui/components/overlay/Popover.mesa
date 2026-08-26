@@ -96,7 +96,7 @@
     closePopover()
   }
 
-  $onDestroy(() => {
+  $.onDestroy(() => {
     document.removeEventListener('click', onClickAway, { capture: true })
   })
 </script>

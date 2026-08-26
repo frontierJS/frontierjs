@@ -8,11 +8,13 @@
 //      partial state, bookkeeping committed atomically, FK pragma restored.
 import { describe, it, expect } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs'
+import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs'
+import { tempDir } from '../src/tmp-dirs.js'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { parse } from '../src/core/parser.js'
-import { splitStatements } from '../src/core/migrate.js'
+import { splitStatements, parseChecks } from '../src/core/migrate.js'
+import { createClient } from '../src/index.js'
 import { create, apply, status, autoMigrate, appliedMigrations,
          listMigrationFiles, nextMigrationName } from '../src/core/migrations.js'
 
@@ -25,7 +27,7 @@ model Post {
 `
 
 const freshLab = () => {
-  const dir = mkdtempSync(join(tmpdir(), 'litestone-mig-'))
+  const dir = tempDir('litestone-mig-')
   const db  = new Database(join(dir, 'lab.db'))
   return { dir: join(dir, 'migrations'), db }
 }
@@ -383,5 +385,99 @@ describe('unmatched migration files are named, never silently skipped', () => {
 
     expect(res.skipped).toEqual([])
     expect(res.message).toBe('no migration files found')
+  })
+})
+
+// ─── FJS-466 ────────────────────────────────────────────────────────────────
+//
+// A CHECK constraint was never compared. The diff read columns, indexes,
+// foreign keys and STRICT; this file's own header has listed *change CHECK* as
+// a full-rebuild trigger since it was written, and nothing implemented it.
+//
+// The case is an enum gaining a member, which is the commonest schema change
+// there is: SQLite has no ENUM type, so litestone enforces one with
+// `CHECK (col IN (...))`, and that text is frozen at CREATE TABLE. The new
+// member reached the DDL, the snapshot, and every generated form — and every
+// write of it was refused at runtime with SQLite's words about a constraint.
+//
+// The narrowing direction is deliberately asserted too. It is NOT the
+// fail-open twin it looks like: litestone's own validator refuses a value the
+// enum no longer declares before any SQL is built, so a removed member stops
+// being writable whether the constraint migrated or not.
+
+describe('a CHECK constraint migrates (FJS-466)', () => {
+
+  const MOOD_V1 = `
+    enum Mood { happy sad }
+    model Note { id Int @id  mood Mood @default(happy)  body String }
+  `
+  const MOOD_V2 = `
+    enum Mood { happy sad furious }
+    model Note { id Int @id  mood Mood @default(happy)  body String }
+  `
+
+  /** Open at v1, write a row, migrate to v2, hand back the live client. */
+  const grown = async (from: string, to: string) => {
+    const dir = tempDir('litestone-check-')
+    const path = join(dir, 'check.db')
+    const a = await createClient({ db: path, schema: from })
+    autoMigrate(a)
+    await a.note.create({ data: { mood: 'sad', body: 'before' } })
+    await a.$close()
+
+    const b = await createClient({ db: path, schema: to })
+    autoMigrate(b)
+    return b
+  }
+
+  it('a new enum member is writable after the migration', async () => {
+    const db = await grown(MOOD_V1, MOOD_V2)
+    const row = await db.note.create({ data: { mood: 'furious', body: 'after' } })
+    expect(row.mood).toBe('furious')
+    await db.$close()
+  })
+
+  it('the rebuild keeps the rows that were already there', async () => {
+    const db = await grown(MOOD_V1, MOOD_V2)
+    const rows = await db.note.findMany({}) as Array<{ mood: string; body: string }>
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ mood: 'sad', body: 'before' })
+    await db.$close()
+  })
+
+  it('a removed enum member stops being writable — the validator, not the CHECK', async () => {
+    const db = await grown(MOOD_V2, MOOD_V1)
+    await expect(db.note.create({ data: { mood: 'furious', body: 'x' } })).rejects.toThrow(/furious/)
+    await db.$close()
+  })
+
+  it('an unchanged enum migrates nothing — no rebuild on every boot', async () => {
+    const dir  = tempDir('litestone-check-')
+    const path = join(dir, 'stable.db')
+    const a = await createClient({ db: path, schema: MOOD_V2 })
+    autoMigrate(a)
+    await a.$close()
+
+    // The second open must find the schema in sync. A CHECK compared by text
+    // is exactly the shape that rebuilds forever if the two sides spell it
+    // differently, and a rebuild nobody asked for is worse than a diff that
+    // says nothing.
+    const b = await createClient({ db: path, schema: MOOD_V2 })
+    const result = autoMigrate(b)
+    expect(result?.applied ?? 0).toBe(0)
+    await b.$close()
+  })
+
+  it('parseChecks reads a column-level and a table-level constraint alike', () => {
+    const sql = `CREATE TABLE "n" (
+      "id" INTEGER PRIMARY KEY,
+      "mood" TEXT NOT NULL CHECK ("mood" IN ('happy', 'sad')),
+      "tags" TEXT,
+      CHECK (json_valid("tags") AND json_type("tags") = 'array')
+    )`
+    expect(parseChecks(sql)).toEqual([
+      `"mood" IN ('happy', 'sad')`,
+      `json_valid("tags") AND json_type("tags") = 'array'`,
+    ].sort())
   })
 })

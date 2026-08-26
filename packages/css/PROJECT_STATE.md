@@ -9,7 +9,7 @@
 ## What this is
 
 **FrontierJS CSS** (npm: `@frontierjs/css`, under the **FrontierJS** umbrella) is
-a design system Kobami is building primarily for **SaaS apps and internal
+a design system FrontierJS is building primarily for **SaaS apps and internal
 tooling** — Maid.Tech, Clean Affinity admin/ops, and other Svelte projects.
 The ~68 client marketing sites (cleaning services, landscaping, pools) and the
 `ksite` static-site generator are **downstream consumers of a subset** of the

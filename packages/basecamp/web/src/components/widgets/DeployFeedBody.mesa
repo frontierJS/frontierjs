@@ -6,7 +6,6 @@
   // actually has, and inventing a project filter in the browser would mean
   // fetching every app first to decide which deployments to keep.
   import { deployments } from '../../resources/Deployment.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { onWrite } from './live.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
@@ -34,7 +33,7 @@
   }
 
   load()
-  $onDestroy(onWrite(deployments.service, load))
+  $.onDestroy(onWrite(deployments.service, load))
 
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 </script>

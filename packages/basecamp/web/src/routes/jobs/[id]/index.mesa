@@ -5,7 +5,6 @@ title: Job
   import { page }       from '@frontierjs/sierra/router'
   import { session }    from '../../../session.js'
   import { jobs }       from '../../../resources/Job.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
 
   $: page.params
@@ -37,7 +36,7 @@ title: Job
     if (READS.has(method) || row?.id !== page.params.id) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   async function act(method) {
     error = null; busy = method

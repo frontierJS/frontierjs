@@ -1,0 +1,218 @@
+---
+render: static
+publishes: 0
+---
+<!--
+  One package, prerendered. Eight of these come out of the build, from
+  `[pkg].meta.js` reading `website/packages.js`.
+
+  ── Why `publishes: 0` is here ────────────────────────────────────────────
+
+  The route has a `load()`, so Sierra will not emit it until it can say what
+  data went in. There is no Litestone client wired into this site's config —
+  there is no database behind a marketing site — so no read can be observed and
+  the build refuses rather than assuming the page is safe. Declaring 0 is the
+  author saying *what this publishes is public data*, which is true and
+  checkable: the source is `packages.js`, a file committed in the open.
+
+  ── Why the fields arrive as HTML ─────────────────────────────────────────
+
+  `v`, the code samples and the feature labels are markup — `v` may carry inline
+  <code>, and the samples come out of `hl()` already marked up. They are
+  highlighted in the companion and rendered with {@html} so this page ships no
+  highlighter and no data.
+-->
+<script>
+  import TocSpy from '../islands/TocSpy.mesa'
+
+  export let data = null
+
+  const d = data ?? { groups: [], nav: [], others: [], chips: [] }
+</script>
+
+<nav class="subnav" aria-label="Packages">
+  <div class="container">
+    {#each d.nav as p}
+      {#if p.current}
+        <a href={`/${p.slug}/`} aria-current="page">{p.label}</a>
+      {:else}
+        <a href={`/${p.slug}/`}>{p.label}</a>
+      {/if}
+    {/each}
+  </div>
+</nav>
+
+<div class="container phero">
+  <div class="id">
+    <h1>{d.name}</h1>
+    <span class="badge {d.tone}">{d.realm}</span>
+    <span class="who">{d.who}</span>
+  </div>
+  <p class="pitch">{d.pitch}</p>
+  <div class="install"><pre>$ {d.install}</pre></div>
+</div>
+
+<div class="container pbody">
+  <nav class="ptoc" aria-label="Features">
+    <p class="lbl">{d.count} features</p>
+    {#each d.groups as g}
+      {#if g.title}
+        <p class="lbl" style="margin-top:1rem">{g.title}</p>
+      {/if}
+      {#each g.rows as r}
+        <a href={`#${r.id}`}>{r.k}</a>
+      {/each}
+    {/each}
+  </nav>
+
+  <div>
+    {#each d.groups as g}
+      {#each g.rows as r}
+        <article class="feat" id={r.id}>
+          <h2>{r.k}</h2>
+          <p class="one">{@html r.v}</p>
+          <p class="why">{r.why}</p>
+          {#if r.code}
+            <pre class="code">{@html r.code}</pre>
+          {/if}
+          <div class="rep">
+            <h4>Replaces</h4>
+            {#if r.replaces.length}
+              <div class="list">
+                {#each r.replaces as t}<span>{t}</span>{/each}
+              </div>
+            {:else}
+              <p class="none">Nothing — there is no common equivalent to swap out.</p>
+            {/if}
+          </div>
+        </article>
+      {/each}
+    {/each}
+
+    {#if d.chips.length}
+      <div class="chips pblock">
+        {#each d.chips as c}
+          <h3>{c.heading}</h3>
+          <div class="chipline">
+            {#each c.terms as t}<code>{t}</code>{/each}
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="pblock">
+      <p class="lbl">The rest of the stack</p>
+      <div class="pnext">
+        {#each d.others as p}
+          <a href={`/${p.slug}/`}><b>{p.name}</b><span>{p.realm}</span></a>
+        {/each}
+      </div>
+    </div>
+
+    <!--
+      The scroll-spy is the page's only script. It needs no package data — it
+      reads the anchors already in the markup — so it costs one small chunk
+      rather than shipping the feature table twice.
+    -->
+    <TocSpy client:load />
+  </div>
+</div>
+
+<style>
+  .subnav {
+    position: sticky; top: 3.05rem; z-index: 45;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
+  }
+  .subnav .container { display: flex; gap: .15rem; overflow-x: auto; padding: .45rem 1.25rem; }
+  .subnav a {
+    white-space: nowrap; font-size: .78rem; text-decoration: none; color: var(--ink-mute);
+    padding: .28rem .55rem; border-radius: 6px; font-family: ui-monospace, Menlo, monospace;
+  }
+  .subnav a:hover { background: var(--surface-sunken); color: var(--ink); }
+  .subnav a[aria-current] { background: var(--surface-sunken); color: var(--ink); }
+
+  .phero { padding: 3rem 0 2rem; }
+  .phero .id { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; }
+  .phero h1 { margin: 0; font-size: clamp(2rem, 5vw, 2.9rem); letter-spacing: -.03em; }
+  .phero .who { font-family: ui-monospace, Menlo, monospace; font-size: .8rem; color: var(--ink-mute); }
+  .phero .pitch { font-size: 1.1rem; color: var(--ink-soft); max-width: 60ch; margin: .55rem 0 0; }
+  .phero .install { margin-top: 1.5rem; max-width: 34rem; }
+
+  .pbody { display: grid; gap: 2.5rem; align-items: start; padding-bottom: 3rem; }
+  @media (min-width: 62rem) {
+    .pbody { grid-template-columns: 13.5rem 1fr; }
+    .ptoc { position: sticky; top: 5rem; }
+  }
+
+  .ptoc { display: grid; gap: .05rem; align-content: start; }
+  .lbl {
+    font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-mute); margin: 0 0 .5rem .6rem;
+  }
+  .ptoc a {
+    font-size: .82rem; text-decoration: none; color: var(--ink-soft);
+    padding: .32rem .6rem; border-radius: 0 6px 6px 0;
+    border-left: 2px solid var(--rule);
+  }
+  .ptoc a:hover { background: var(--surface-sunken); color: var(--ink); }
+  /* Written by TocSpy at runtime, so the subject carries no scope class and a
+     scoped rule would match nothing — the same boundary :global() sits on for
+     {@html} content. */
+  .ptoc a:global([aria-current]) {
+    border-left-color: var(--color-primary); color: var(--ink); font-weight: 600;
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  }
+
+  .feat { padding: 1.75rem 0; border-top: 1px solid var(--rule); scroll-margin-top: 5.5rem; }
+  .feat:first-child { border-top: 0; padding-top: 0; }
+  .feat h2 { font-size: 1.2rem; letter-spacing: -.01em; margin: 0 0 .25rem; }
+  .feat .one { font-size: .85rem; color: var(--ink-mute); margin: 0 0 .75rem; }
+  .feat .one :global(code) { font-size: .78rem; }
+  .feat .why { font-size: .92rem; color: var(--ink-soft); line-height: 1.65; margin: 0; max-width: 62ch; }
+  .feat pre { margin-top: 1rem; }
+  .feat .rep { max-width: 62ch; }
+
+  /* No code palette and no block rules here. A sample is the design
+     system's code block wrapping glow's own code element, and
+     @frontierjs/css styles both — a rule here would be a second
+     answer to what code looks like. */
+  /* The one thing the design system cannot know: these sit in a dense
+     grid, so they take the rung below the block default. */
+  .code { font-size: var(--text-xs); padding: var(--space-md) var(--space-lg); }
+
+  .rep { margin-top: 1.1rem; padding-top: .9rem; border-top: 1px solid var(--rule); }
+  .rep h4 {
+    margin: 0 0 .4rem; font-size: .68rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-mute);
+  }
+  .rep .list { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .rep .list span {
+    font-size: .74rem; padding: .14rem .5rem; border-radius: 999px;
+    border: 1px solid var(--rule-strong); color: var(--ink-soft);
+  }
+  .rep .none { font-size: .8rem; color: var(--ink-mute); margin: 0; }
+
+  .chips h3 {
+    font-size: .7rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--ink-mute); margin: 1rem 0 .4rem;
+  }
+  .chips h3:first-child { margin-top: 0; }
+  .chipline { display: flex; flex-wrap: wrap; gap: .28rem; }
+  .chipline code {
+    font-size: .73rem; padding: .12rem .42rem; border-radius: 4px;
+    background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-soft);
+  }
+
+  .pblock { margin-top: 2.5rem; padding-top: 1.75rem; border-top: 1px solid var(--rule); }
+
+  .pnext { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); margin-top: 1rem; }
+  .pnext a {
+    text-decoration: none; border: 1px solid var(--rule); border-radius: 9px;
+    padding: .7rem .85rem; background: var(--surface-raised); display: block;
+    border-left: 3px solid var(--rule-strong);
+  }
+  .pnext a:hover { border-color: var(--rule-strong); }
+  .pnext b { display: block; font-size: .9rem; color: var(--ink); }
+  .pnext span { display: block; font-size: .74rem; color: var(--ink-mute); margin-top: .12rem; }
+</style>

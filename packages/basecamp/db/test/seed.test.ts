@@ -46,20 +46,56 @@ async function runSeed(dir: string, args: string[] = []): Promise<{ code: number
   return { code: await proc.exited, out: out + err }
 }
 
+/**
+ * Tables the seeder legitimately leaves empty, each with the reason.
+ *
+ * This list is the whole point of the shape below. `counts()` used to hold a
+ * hand-written list of tables to CHECK, which is the same drift the header of
+ * this file describes — a model added to the schema and forgotten there is a
+ * model nothing asks about, and six of them accumulated in one afternoon. The
+ * question is asked the other way round now: every table in the database must
+ * have rows, unless it is named here.
+ *
+ * So adding a model is a choice between seeding it and saying why not. Neither
+ * one is silence.
+ */
+const NOT_SEEDED: Record<string, string> = {
+  // Framework bookkeeping, not models.
+  _litestone_migrations: 'the migration ledger',
+  _litestone_seeds:      'the seed history — written by the run, empty before it',
+  sqlite_stat1:          "SQLite's own query planner statistics",
+
+  // Credential machinery. A seeded SESSION would be somebody signed in with no
+  // browser, and a VERIFICATION is a token in flight — both are states, not data.
+  session:      'a live sign-in, which nothing here has done',
+  verification: 'a token in flight',
+  oauth_flow:   'an authorization in flight',
+
+  // Empty because they describe something that has not happened.
+  alert_event:  'nothing evaluates an alert rule (FJS-123)',
+  invitation:   'an offer nobody has made — accepting one is the flow, not a row to look at',
+  server_event: 'written by the outpost, which is not running in a seeded fleet',
+
+  // Empty and worth a screen having something: candidates for a later seeder.
+  domain:        'no app in the seeded fleet has a hostname yet',
+  network:       'the mesh is unconfigured, so ServerNetwork and AppNetwork are too',
+  server_network: 'see network',
+  app_network:    'see network',
+  feature_flag:   'no flag in the seeded fleet',
+  flag_override:  'see feature_flag',
+}
+
+/** Every table in the database, with its row count. Asked of the database
+ *  rather than through a client on purpose: this test's subject is a process
+ *  that already exited. */
 function counts(dir: string): Record<string, number> {
   const db  = new Database(join(dir, 'db', 'basecamp.db'), { readonly: true })
   const out: Record<string, number> = {}
-  // TABLE names, which are snake_case of the model — `api_key`, not the
-  // `db.apiKey` accessor. Asked of the database rather than through a client on
-  // purpose: this test's subject is a process that already exited.
-  for (const t of ['user', 'workspace', 'project', 'environment', 'app', 'server',
-                   'deployment', 'job', 'secret', 'api_key', 'alert_rule', 'recipe',
-                   'dashboard', 'disk_usage',
-                   // The delivery chain. Both were models the seeder never
-                   // wrote, so /channels/ read as broken in a seeded fleet and
-                   // the join Phase 5 introduced had no example anywhere.
-                   'notification_channel', 'alert_rule_channel'])
-    out[t] = (db.query(`SELECT count(*) c FROM "${t}"`).get() as { c: number }).c
+  const tables = db.query(
+    `SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`
+  ).all() as { name: string }[]
+  for (const { name } of tables)
+    out[name] = (db.query(`SELECT count(*) c FROM "${name}"`).get() as { c: number }).c
   db.close()
   return out
 }
@@ -76,9 +112,23 @@ describe('db/seed.js', () => {
 
     // Every table asserted non-empty rather than a total: a seeder that stops
     // three models in still writes hundreds of rows, and a total cannot tell
-    // the difference. These are the tables the app's own screens read.
-    for (const [table, n] of Object.entries(counts(dir)))
+    // the difference. EVERY table, discovered from the database rather than
+    // listed — a list of tables to check is the same thing as the `--force`
+    // list that rotted, and six models were added in one afternoon without it
+    // noticing.
+    const rows = counts(dir)
+    for (const [table, n] of Object.entries(rows)) {
+      if (table in NOT_SEEDED) continue
       expect({ table, seeded: n > 0 }).toEqual({ table, seeded: true })
+    }
+
+    // And the other direction, so the exemption list cannot go stale either: a
+    // table that starts being seeded would otherwise keep its exemption forever
+    // with the reason beside it quietly false.
+    for (const table of Object.keys(NOT_SEEDED)) {
+      if (table.startsWith('_') || table === 'sqlite_stat1') continue
+      expect({ table, rows: rows[table] ?? 0 }).toEqual({ table, rows: 0 })
+    }
   }, 120_000)
 
   test('…and --force re-seeds the same database', async () => {

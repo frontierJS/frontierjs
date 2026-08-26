@@ -3,6 +3,7 @@
 // All work is done once per request, results cached on raw request.
 // Compiled constants at module level — never recreated per request.
 
+import { parseQueryString } from '@frontierjs/toolbelt/query'
 import type { UploadedFile } from './types.ts'
 
 // ─── Module-level constants ────────────────────────────────────────────────
@@ -199,10 +200,22 @@ function parsePairs(
   return result
 }
 
-export function parseQuery(search: string): Record<string, string> {
-  if (!search) return {}
-  const qs = search.startsWith('?') ? search.slice(1) : search
-  return parsePairs(qs, false) as Record<string, string>
+/**
+ * A URL's search string → what the caller meant.
+ *
+ * `@frontierjs/toolbelt/query` is the one definition (`FJS-D125`) — the number
+ * rule, `true`/`false`/`null`, bracket structure, the quoting escape — because
+ * Sierra's router reads the same syntax off a URL and the two answered
+ * differently: this side answered strings, and a browser sending `{ live: true }`
+ * reached the Data boundary as `"true"` and matched no rows, silently.
+ *
+ * **Only the query STRING is parsed, never a WS frame.** A frame is JSON and
+ * already carries its types, so running this over it would turn a filter that
+ * genuinely says the string `'5'` into the number 5 — the one direction the
+ * socket has always got right.
+ */
+export function parseQuery(search: string): Record<string, unknown> {
+  return parseQueryString(search)
 }
 
 // ─── Cookie parser ────────────────────────────────────────────────────────

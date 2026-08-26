@@ -22,7 +22,7 @@ import { createTestEnv, session } from '@frontierjs/testing'
 import { signRequest } from '@frontierjs/toolbelt/signature'
 import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
-import { buildBasecampApp }  from '../src/core/app.ts'
+import { buildBasecampApp }  from '../src/app.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -30,6 +30,9 @@ const ENC_KEY    = '0'.repeat(64)
 
 let env: any
 let ws: any, owner: any, developer: any, viewer: any, outsider: any
+// The hub tier. Not a member of any workspace — `isSystemAdmin` sits ABOVE
+// membership, which is what the four `@@tenant(none)` services are reached at.
+let sysadmin: any
 // A machine of its own, so the signature tests do not move a server another
 // test is asserting the status of.
 let machine: any
@@ -67,6 +70,14 @@ beforeAll(async () => {
   owner = at(o); developer = at(d); viewer = at(v)
   // A real account with no membership anywhere in this workspace — VISITOR(1).
   outsider = at(x)
+
+  // A sysadmin, and deliberately WITHOUT a workspace on the session: the hub
+  // tier is not a membership, and every service that takes no workspace has to
+  // be reachable without naming one. If `tenantClaimGuard` ever stopped
+  // exempting a `@@tenant(none)` service, this is what would go red.
+  const a = await mk(`sys-${uniq()}@x.co`)
+  await sys.user.update({ where: { id: a.id }, data: { isSystemAdmin: true } })
+  sysadmin = session({ userId: a.id, isSystemAdmin: true })
 
   // The machine the outpost-signature tests check in as. Its own row, so those
   // tests never move a server another test is asserting the status of.
@@ -343,9 +354,10 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
     // app-level, ahead of any service hook, for exactly this case — a signed-in
     // caller whose principal carries no claim, whose every read would otherwise
     // be an empty list with a 200. The app's own sentence still covers the
-    // services that are not row-scoped.
+    // services that are not row-scoped — and it is not lost here either: the
+    // two ways to name a workspace reach the refusal through `namedBy`.
     await expect(env.as(bare).service('projects').find())
-      .rejects.toThrow(/do not belong to the 'workspaceId'/)
+      .rejects.toThrow(/names no 'workspaceId'.*X-Workspace-Id header or \?workspace_id=/)
   })
 
   test('a filter the service honours still filters beside it', async () => {
@@ -491,5 +503,717 @@ describe('an outpost endpoint takes a signature or nothing', () => {
     for (const [k, v] of Object.entries(await signed(`/servers/${machine.id}`, honest))) req.set(k, v)
 
     expect((await req.send({ ...honest, outpost_url: 'http://attacker.invalid' })).status).toBe(401)
+  })
+})
+
+// ─── Nobody grades themselves, and nobody grants above their own standing ────
+// `WorkspaceMember.role` is the column core/gate.ts reads every level from, so
+// the three methods that write it are the three methods that write standing.
+//
+// The schema denies a self-update at the Data boundary (`FJS-410`), and that is
+// what covers a job, a hub screen and a `fli tinker` session — but not these:
+// membership is what decides access, so it cannot be read through the caller it
+// is deciding about, and all three writers go through `asSystem()`, the one
+// context every policy is bypassed in. Measured before the fix, through this
+// harness: an admin naming their own userId with `role: 'owner'` got no throw,
+// a 200, and OWNER(6).
+//
+// So the assertions are the answer AND the row after it, never a throw alone:
+// the version of this that fails is silent.
+describe('a workspace role is not a thing you may hand yourself', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+
+  /** An administrator of `ws`, plus a developer for them to act on. */
+  async function team() {
+    const sys = env.system as any
+    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
+    const mk = async (role: string) => {
+      const u = await sys.user.create({ data: { email: `${role}-${uniq()}@x.co`, accountId: wsRow.accountId } })
+      await sys.workspaceMember.create({
+        data: { workspaceId: ws.id, userId: u.id, role, acceptedAt: new Date().toISOString() } })
+      return u
+    }
+    const admin = await mk('admin')
+    const pat   = await mk('developer')
+    return { admin, adminS: session({ userId: admin.id, workspaceId: ws.id }), pat }
+  }
+
+  const roleOfMember = async (userId: string) =>
+    (await (env.system as any).workspaceMember.findFirst({ where: { workspaceId: ws.id, userId } })).role
+
+  test('an admin cannot move their own role', async () => {
+    const { admin, adminS } = await team()
+
+    // Lateral, not up: the grant-above rule below would refuse `owner` first,
+    // and then this case would be proving that rule twice instead of this one.
+    await expect(env.as(adminS).service('workspaces')
+      .call('setMemberRole', ws.id, { userId: admin.id, role: 'admin' }))
+      .rejects.toThrow(/your own role/)
+
+    expect(await roleOfMember(admin.id)).toBe('admin')
+  })
+
+  test('…nor hand somebody else a role above their own', async () => {
+    // The second door. An admin who cannot promote themselves can promote a
+    // puppet and sign in as it, so *not your own row* is not the whole rule.
+    const { adminS, pat } = await team()
+
+    await expect(env.as(adminS).service('workspaces')
+      .call('setMemberRole', ws.id, { userId: pat.id, role: 'owner' }))
+      .rejects.toThrow(/cannot grant the owner role/)
+
+    expect(await roleOfMember(pat.id)).toBe('developer')
+  })
+
+  test('…nor invite one, which is the same grant with no account yet', async () => {
+    // The third door, and the one with no membership row to deny: an invitation
+    // carries a role across the gap where there is no user to hang it on.
+    const { adminS } = await team()
+
+    await expect(env.as(adminS).service('invitations')
+      .create({ email: `owner-${uniq()}@x.co`, role: 'owner' }))
+      .rejects.toThrow(/cannot grant the owner role/)
+  })
+
+  test('an admin still manages the team at their own level', async () => {
+    // The direction that must keep working — a rule that refused this would be
+    // caught in a screen rather than here.
+    const { adminS, pat } = await team()
+
+    await env.as(adminS).service('workspaces').call('setMemberRole', ws.id, { userId: pat.id, role: 'admin' })
+    expect(await roleOfMember(pat.id)).toBe('admin')
+
+    await env.as(adminS).service('invitations').create({ email: `dev-${uniq()}@x.co`, role: 'developer' })
+  })
+
+  test('…nor demote a member who outranks them', async () => {
+    // The inversion pointed the other way. `Cannot demote the last owner` only
+    // catches this where there happens to be exactly one, so a workspace with
+    // two owners had an admin able to remove either from the tier above them.
+    const { adminS } = await team()
+    const sys   = env.system as any
+    const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
+    const second = await sys.user.create({ data: { email: `own2-${uniq()}@x.co`, accountId: wsRow.accountId } })
+    await sys.workspaceMember.create({
+      data: { workspaceId: ws.id, userId: second.id, role: 'owner', acceptedAt: new Date().toISOString() } })
+
+    await expect(env.as(adminS).service('workspaces')
+      .call('setMemberRole', ws.id, { userId: second.id, role: 'developer' }))
+      .rejects.toThrow(/role of an owner/)
+
+    expect(await roleOfMember(second.id)).toBe('owner')
+  })
+
+  test('and the collection-level call reaches no row at all', async () => {
+    // A custom method may address the COLLECTION (`invoke(name, null, data)` —
+    // `FJS-122`), which is the shape that runs no `$.id` through
+    // `stampSelfAsWorkspace`. Measured rather than reasoned about, because the
+    // question is what litestone does with `where: { workspaceId: undefined }`:
+    // dropped, it would match a membership in ANY workspace through a system
+    // client. It matches nothing.
+    const { adminS } = await team()
+    const o = await (env.system as any).workspaceMember.findFirst({ where: { workspaceId: ws.id, role: 'owner' } })
+
+    await expect(env.as(adminS).service('workspaces')
+      .call('setMemberRole', undefined, { userId: o.userId, role: 'viewer' }))
+      .rejects.toThrow(/Member not found|role of an owner/)
+
+    expect(await roleOfMember(o.userId)).toBe('owner')
+  })
+
+  test('an owner still grants owner', async () => {
+    const { pat } = await team()
+
+    await env.as(owner).service('workspaces').call('setMemberRole', ws.id, { userId: pat.id, role: 'owner' })
+    expect(await roleOfMember(pat.id)).toBe('owner')
+  })
+})
+
+// ─── What a job runs as, and what it may touch ───────────────────────────────
+// `FJS-384`. Five handlers opened `app.data.asSystem()` behind a comment saying
+// a job has no caller to scope to. It has one: caravan records the actor and
+// the tenant at dispatch, junction re-binds both through `app.runAs`, and the
+// membership is re-read when the job runs.
+//
+// What that CANNOT change is which rows may be written — `RecipeRun`,
+// `DeploymentStep`, `CleanupRun` and `JobRun` are gated at SYSTEM for update,
+// the schema saying an outcome belongs to the machine, and no standing a
+// workspace grants reaches them (`owner` is 6). So what the conversion buys is
+// the CONFINEMENT, and that is what these cases are about: the engine methods
+// read their parent through the caller's own client, so a row in another
+// workspace answers nothing where an id off a payload used to be written
+// wherever it pointed.
+describe('a job runs as whoever asked for it', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+
+  /** A second workspace, with a machine and a recipe run of its own. */
+  async function elsewhere() {
+    const sys = env.system as any
+    const acct = await sys.account.create({ data: { slug: `other-${uniq()}`, displayName: 'Other' } })
+    const u    = await sys.user.create({ data: { email: `o-${uniq()}@x.co`, accountId: acct.id } })
+    const w    = await sys.workspace.create({
+      data: { accountId: acct.id, name: 'Elsewhere', slug: `else-${uniq()}`, ownerId: u.id } })
+    await sys.workspaceMember.create({
+      data: { workspaceId: w.id, userId: u.id, role: 'owner', acceptedAt: new Date().toISOString() } })
+    const server = await sys.server.create({
+      data: { workspaceId: w.id, name: 'far-01', slug: `far-${uniq()}`, status: 'online' } })
+    const recipe = await sys.recipe.create({
+      data: { workspaceId: w.id, name: 'Far', slug: `far-${uniq()}`, script: 'echo far' } })
+    const run = await sys.recipeRun.create({
+      data: { recipeId: recipe.id, serverId: server.id, script: 'echo far', status: 'pending' } })
+    return { workspace: w, run }
+  }
+
+  test('a handler cannot open a run in another workspace', async () => {
+    // The confinement, executed. `owner` in `ws` is the highest standing this
+    // app grants and it is still nothing here: `RecipeRun` reaches its tenant
+    // through Recipe and Server, so the scoped read answers no row and the
+    // system write below it never happens.
+    const far = await elsewhere()
+
+    const mine = await (env.system as any).workspaceMember.findFirst({
+      where: { workspaceId: ws.id, role: 'owner' } })
+
+    await expect(env.app.runAs(mine.userId, { tenant: ws.id }, () =>
+      env.app.service('recipes').call('startRun', far.run.id)))
+      .rejects.toThrow(/not found/i)
+
+    // Still pending: nothing was written by an id that pointed elsewhere.
+    const after = await (env.system as any).recipeRun.findUnique({ where: { id: far.run.id } })
+    expect(after.status).toBe('pending')
+  })
+
+  test('…and the owner of THAT workspace can', async () => {
+    // The other direction, so the case above is proving a boundary rather than
+    // a broken method.
+    const far = await elsewhere()
+    const member = await (env.system as any).workspaceMember.findFirst({
+      where: { workspaceId: far.workspace.id } })
+
+    const opened = await env.app.runAs(member.userId, { tenant: far.workspace.id }, () =>
+      env.app.service('recipes').call('startRun', far.run.id)) as { runId: string; script: string }
+
+    expect(opened.runId).toBe(far.run.id)
+    expect((await (env.system as any).recipeRun.findUnique({ where: { id: far.run.id } })).status)
+      .toBe('running')
+  })
+
+  test('an engine method is not reachable over the wire', async () => {
+    // `internalOnly`, and the case has to hold the principal STILL while moving
+    // the transport — a 401 from an anonymous fetch would prove the session
+    // hook and nothing about this one. The method is declared surface (junction
+    // answers 405 to a name `methods:` leaves out, in-process included), so
+    // what keeps a person from writing their own run history is this hook
+    // rather than an absence.
+    const far = await elsewhere()
+    const member = await (env.system as any).workspaceMember.findFirst({
+      where: { workspaceId: far.workspace.id } })
+
+    const overWire = env.app.runAs(member.userId, { tenant: far.workspace.id }, () =>
+      env.app.service('recipes').call('startRun', far.run.id, {}, { transport: 'http' }))
+
+    await expect(overWire).rejects.toThrow(/not found/i)
+    expect((await (env.system as any).recipeRun.findUnique({ where: { id: far.run.id } })).status)
+      .toBe('pending')
+  })
+})
+
+// ─── The declaration itself ──────────────────────────────────────────────────
+// The dispatch site declares and the handler asserts. These two cases are the
+// assert half: they are what stops a handler that wanted a caller, found none,
+// and helped itself to system — which is exactly how the old shape was built.
+describe('a handler declares who it runs as', () => {
+  test('runsAsCaller refuses when the queue recorded no actor', async () => {
+    const { runsAsCaller } = await import('../src/jobs/context.ts')
+
+    // No `runAs` around it: this is a dispatch made outside a request that
+    // forgot to state an actor, which is the shape that used to run at SYSTEM
+    // against rows nobody had checked it may touch.
+    expect(() => runsAsCaller({ app: env.app } as any, 'recipe:run'))
+      .toThrow(/no actor/)
+  })
+
+  test('runsAsApp refuses when it recorded one', async () => {
+    const { runsAsApp } = await import('../src/jobs/context.ts')
+    const mine = await (env.system as any).workspaceMember.findFirst({
+      where: { workspaceId: ws.id, role: 'owner' } })
+
+    // The other direction, and it is not symmetry for its own sake: somebody
+    // asked for this work, and running their request as the app is the
+    // escalation the first case prevents, pointed the other way.
+    await env.app.runAs(mine.userId, { tenant: ws.id }, () => {
+      expect(() => runsAsApp({ app: env.app } as any, 'job:run'))
+        .toThrow(/recorded actor/)
+    })
+  })
+})
+
+// ─── The proxy in front of it ────────────────────────────────────────────────
+// `web/config/api-paths.js` decides what the dev proxy and the deploy's Caddy
+// config send to the API. It used to be a hand-kept list and went stale six
+// times; it now parses `surface.snapshot.md`. That moves the failure rather
+// than removing it — a change to junction's output shape would leave the parse
+// finding fewer paths and saying nothing, which is the same silence one layer
+// along (`FJS-375`).
+//
+// So the derivation is graded against the RUNNING app rather than against the
+// file it read. The snapshot itself is CI's job (the `snapshots` phase reruns
+// `junction surface --check`); what this asks is whether the parse of it still
+// answers what the router actually mounted.
+describe('the proxy path list is what the app mounts', () => {
+  test('every mounted service and raw route is proxied, and the shell is not', async () => {
+    const { API_PATHS, WS_PATH } = await import('../../web/config/api-paths.js')
+    const { buildRoutes }        = await import('@frontierjs/junction/manifest')
+
+    const derived = new Set(API_PATHS)
+
+    // Every service, including the ones a PLUGIN registered. Three of the six
+    // stalenesses were these — `connections` is junction's channels plugin,
+    // `account`/`sessions` are auth's, `conduit-targets` is conduit's — and
+    // nothing in this app's source names any of them.
+    for (const name of env.app.services.list())
+      expect(derived).toContain(`/${name}`)
+
+    // Every hand-registered route, by the one segment it is proxied under.
+    for (const r of buildRoutes(env.app)) {
+      if (r.kind !== 'raw') continue
+      if (r.path === '/' || r.path.includes('*') || r.path.includes('{')) continue
+      expect(derived).toContain('/' + r.path.split('/')[1])
+    }
+
+    // `/` is mounted (staticRoutes serves the built SPA) and must never be
+    // proxied — the shell request would be answered by the API.
+    expect(derived).not.toContain('/')
+    expect(derived).not.toContain('/*')
+
+    // The socket is not in any router — the channels plugin upgrades in the
+    // transport — so it is stated rather than derived, and nothing can find it
+    // missing except this.
+    expect(WS_PATH).toBe('/ws')
+  })
+
+  test('a prefix would retire the list rather than break it', async () => {
+    // The durable fix `FJS-375` names is an apiPrefix, at which point one rule
+    // covers everything and there is no ambiguity to resolve. Asserted here so
+    // adopting it is a config change and not also a proxy rewrite.
+    expect(env.app.config.apiPrefix ?? '').toBe('')
+  })
+})
+
+// ─── The catalogue, and the four services that take no workspace ─────────────
+// `Blueprint`, `HubConfig`, `Backup` and `NotificationPreference` are all
+// `@@tenant(none)`, which means junction's `tenantClaimGuard` exempts them —
+// `isRowScoped(db, service)` is false, so a caller with no workspace claim is
+// not refused. That exemption is load-bearing and invisible: it lives in
+// junction, keyed off this app's schema, and nothing in either file names the
+// other. These tests are what would catch it moving.
+
+describe('the catalogue takes no workspace', () => {
+  test('a caller with no membership anywhere can read it', async () => {
+    // `outsider` is authenticated and belongs to nothing — VISITOR(1), which is
+    // exactly what `@@gate("1.7")` admits. Through a workspace-scoped service
+    // the same principal is refused by name ("not a member of this workspace"),
+    // so this is the tenancy exemption and not a weak gate.
+    const list = await env.as(outsider).service('blueprints').find()
+    expect(Array.isArray(list.data)).toBe(true)
+  })
+
+  test('and writing it is the hub tier, not a workspace role', async () => {
+    // An OWNER of a workspace — the highest standing a workspace grants — is
+    // still refused, because the catalogue belongs to the installation.
+    await expect(env.as(owner).service('blueprints').create({
+      name: 'Nope', slug: 'nope', category: 'Database',
+      description: 'x', version: '1', image: 'nope:1',
+    })).rejects.toThrow()
+  })
+
+  test('a sysadmin creates one, and its params come back in the order they were sent', async () => {
+    const made = await env.as(sysadmin).service('blueprints').create({
+      name: 'Redis', slug: `redis-${Math.random().toString(36).slice(2, 8)}`,
+      category: 'Cache', description: 'In-memory store', version: '7.2',
+      image: 'redis:7.2-alpine', appType: 'container', port: 6379,
+    })
+    expect(made.port).toBe(6379)
+    expect(made.params).toEqual([])
+
+    const bp = await env.as(sysadmin).service('blueprints').call('setParams', made.id, {
+      params: [
+        { key: 'REDIS_PASSWORD', label: 'Password', secret: true },
+        { key: 'MAXMEMORY',      label: 'Max memory', defaultValue: '256mb' },
+      ],
+    })
+    expect(bp.params.map((p: any) => p.key)).toEqual(['REDIS_PASSWORD', 'MAXMEMORY'])
+    expect(bp.params.map((p: any) => p.position)).toEqual([0, 1])
+    expect(bp.params[0].secret).toBe(true)
+
+    // Replaced whole and REORDERED — the case a per-row patch cannot do without
+    // racing every other row's position.
+    const after = await env.as(sysadmin).service('blueprints').call('setParams', bp.id, {
+      params: [
+        { key: 'MAXMEMORY',      label: 'Max memory' },
+        { key: 'REDIS_PASSWORD', label: 'Password', secret: true },
+      ],
+    })
+    expect(after.params.map((p: any) => p.key)).toEqual(['MAXMEMORY', 'REDIS_PASSWORD'])
+  })
+
+  test('params inline are refused by name rather than silently dropped', async () => {
+    // The create schema litestone derives is CLOSED and `params` is a relation,
+    // so `autoValidate` strips the key before any method sees it — a caller
+    // sending a blueprint with its form inline would get a blueprint with no
+    // form and no error. The refusal runs in a hook AHEAD of the validator,
+    // which is the only place the key is still there to see.
+    await expect(env.as(sysadmin).service('blueprints').create({
+      name: 'Inline', slug: `inline-${Math.random().toString(36).slice(2, 8)}`,
+      category: 'Cache', description: 'x', version: '1', image: 'x:1',
+      params: [{ key: 'A', label: 'A' }],
+    })).rejects.toThrow(/set with `setParams`/)
+  })
+
+  test('remove withdraws rather than deletes, so what was built from it still resolves', async () => {
+    const slug = `withdrawn-${Math.random().toString(36).slice(2, 8)}`
+    const bp = await env.as(sysadmin).service('blueprints').create({
+      name: 'Old', slug, category: 'Database', description: 'x', version: '1', image: 'old:1',
+    })
+    await env.as(sysadmin).service('blueprints').remove(bp.id)
+
+    // Off the list…
+    const listed = await env.as(sysadmin).service('blueprints').find()
+    expect(listed.data.some((b: any) => b.id === bp.id)).toBe(false)
+    // …and still there by id, which is what an App pointing at it needs.
+    expect((await env.as(sysadmin).service('blueprints').get(bp.id)).deprecatedAt).toBeTruthy()
+  })
+})
+
+describe('the registry mirror is a tenant service, unlike the catalogue beside it', () => {
+  test('one workspace cannot see another workspace images', async () => {
+    const sys = env.system as any
+    const other = await sys.workspace.findFirst({ where: { name: 'Other' } })
+
+    await sys.registryImage.create({ data: {
+      workspaceId: ws.id, repository: 'acme/dashboard', tag: 'v1',
+      digest: 'sha256:aaa', sizeBytes: 100, inUse: true } })
+    await sys.registryImage.create({ data: {
+      workspaceId: other.id, repository: 'other/secret', tag: 'v1',
+      digest: 'sha256:bbb', sizeBytes: 100 } })
+
+    const rows = await env.as(developer).service('registry').find()
+    expect(rows.data.length).toBeGreaterThan(0)
+    expect(rows.data.every((r: any) => r.workspaceId === ws.id)).toBe(true)
+    expect(rows.data.some((r: any) => r.repository === 'other/secret')).toBe(false)
+  })
+
+  test('a repository total charges a shared digest once', async () => {
+    const sys = env.system as any
+    const repo = `acme/shared-${Math.random().toString(36).slice(2, 8)}`
+
+    // `latest` and `v2.14.1` are the SAME image. A registry stores those layers
+    // once, so summing per tag reports double what the disk holds — which is the
+    // number an operator would use to decide what to delete.
+    await sys.registryImage.create({ data: {
+      workspaceId: ws.id, repository: repo, tag: 'v2.14.1',
+      digest: 'sha256:shared', sizeBytes: 1000, inUse: true } })
+    await sys.registryImage.create({ data: {
+      workspaceId: ws.id, repository: repo, tag: 'latest',
+      digest: 'sha256:shared', sizeBytes: 1000 } })
+
+    const out  = await env.as(developer).service('registry').call('repositories')
+    const mine = out.repositories.find((r: any) => r.repository === repo)
+    expect(mine.tags).toBe(2)
+    expect(mine.inUse).toBe(1)
+    expect(mine.sizeBytes).toBe(1000)
+  })
+})
+
+describe('the installation settings are one row, behind the hub tier', () => {
+  test('unconfigured answers a sentence, not an invented row of defaults', async () => {
+    await expect(env.as(sysadmin).service('hub-config').call('current'))
+      .rejects.toThrow(/no settings yet/)
+  })
+
+  test('save creates it, then updates it', async () => {
+    const made = await env.as(sysadmin).service('hub-config').call('save', null, {
+      name: 'Acme Fleet', baseUrl: 'https://hub.acme.test', adminEmail: 'ops@acme.test',
+    })
+    expect(made.id).toBe('hub')
+    expect(made.name).toBe('Acme Fleet')
+
+    // The version is required on an update — `@version` on a settings row is
+    // exactly the two-administrators case, and litestone refuses a write that
+    // does not carry the revision it read.
+    await expect(env.as(sysadmin).service('hub-config').call('save', null, { sessionTtlHours: 24 }))
+      .rejects.toThrow(/Send `version`/)
+
+    await env.as(sysadmin).service('hub-config')
+      .call('save', null, { sessionTtlHours: 24, version: made.version })
+    const now = await env.as(sysadmin).service('hub-config').call('current')
+    expect(now.sessionTtlHours).toBe(24)
+    // Still one row — the failure a singleton has is a second one.
+    expect(now.name).toBe('Acme Fleet')
+    expect(await (env.system as any).hubConfig.count()).toBe(1)
+  })
+
+  test('an owner of a workspace is not a sysadmin', async () => {
+    await expect(env.as(owner).service('hub-config').call('current')).rejects.toThrow()
+  })
+})
+
+describe('a person notification preferences are their own', () => {
+  test('every kind answers, defaulted, before anybody has chosen', async () => {
+    const out = await env.as(developer).service('notification-preferences').find()
+    expect(out.data.length).toBe(7)
+    expect(out.data.every((r: any) => r.source === 'default')).toBe(true)
+    // The defaults are a judgement, not a shrug: a failure is emailed, a success
+    // is not. Asserting one of each keeps that from being quietly inverted.
+    expect(out.data.find((r: any) => r.kind === 'deploy_failed').email).toBe(true)
+    expect(out.data.find((r: any) => r.kind === 'deploy_success').email).toBe(false)
+  })
+
+  test('choosing one transport does not silently reset the other', async () => {
+    // `deploy_success` defaults to email:false, inApp:true. Turning email ON
+    // writes the row for the first time — and the OTHER column must come from
+    // the kind's default rather than the column's, which is `true` for `inApp`
+    // by coincidence here and would not be for a kind whose default is off.
+    await env.as(developer).service('notification-preferences')
+      .call('save', null, { kind: 'deploy_success', email: true })
+
+    const out = await env.as(developer).service('notification-preferences').find()
+    const row = out.data.find((r: any) => r.kind === 'deploy_success')
+    expect(row.email).toBe(true)
+    expect(row.inApp).toBe(true)
+    expect(row.source).toBe('chosen')
+
+    // And it is still the default for somebody else — the policy, not a filter
+    // this service wrote.
+    const theirs = await env.as(viewer).service('notification-preferences').find()
+    expect(theirs.data.find((r: any) => r.kind === 'deploy_success').source).toBe('default')
+  })
+
+  test('reset forgets the choice rather than storing the opposite', async () => {
+    await env.as(developer).service('notification-preferences')
+      .call('reset', null, { kind: 'deploy_success' })
+    const out = await env.as(developer).service('notification-preferences').find()
+    expect(out.data.find((r: any) => r.kind === 'deploy_success').source).toBe('default')
+  })
+
+  test('an unknown kind is a sentence naming the seven', async () => {
+    await expect(env.as(developer).service('notification-preferences')
+      .call('save', null, { kind: 'deploy_fail', email: true }))
+      .rejects.toThrow(/Unknown notification kind/)
+  })
+})
+
+describe('a backup is asked for by a person and run by the app', () => {
+  test('create writes a pending row and refuses a second one beside it', async () => {
+    const made = await env.as(sysadmin).service('backups').create({})
+    expect(made.status).toBe('pending')
+    expect(made.kind).toBe('manual')
+    // Who asked is a COLUMN, because the job runs as the app: a hub action has
+    // no tenant, so there is no membership for `runsAsCaller` to re-resolve.
+    expect(made.requestedBy).toBeTruthy()
+
+    await expect(env.as(sysadmin).service('backups').create({}))
+      .rejects.toThrow(/already pending/)
+  })
+
+  test('a destination with nothing behind it is refused by name, not queued to fail', async () => {
+    await (env.system as any).backup.deleteMany({ where: {} })
+    await expect(env.as(sysadmin).service('backups').create({ destination: 's3' }))
+      .rejects.toThrow(/Only 'local' backups are implemented/)
+  })
+
+  test('and the handler refuses to run as somebody', async () => {
+    const { runsAsApp } = await import('../src/jobs/context.ts')
+    const mine = await (env.system as any).workspaceMember.findFirst({
+      where: { workspaceId: ws.id, role: 'owner' } })
+
+    // The mirror of the dispatch's `actor: null`. If somebody ever removed that
+    // option, the queue would record the sysadmin who clicked and this refusal
+    // is what turns it into an error instead of a silent mode switch.
+    await env.app.runAs(mine.userId, { tenant: ws.id }, () => {
+      expect(() => runsAsApp({ app: env.app } as any, 'backup:run'))
+        .toThrow(/recorded actor/)
+    })
+  })
+})
+
+// ─── The state machine ───────────────────────────────────────────────────────
+// `Server.status` used to be a machine written out in servers.service.ts: a
+// from-list per verb, a second from-set inside heartbeat, a provider status map
+// inside sync, and a fourth copy in the browser deciding which buttons to draw.
+// It is `@@transitions(status, …)` on the model now (FJS-507).
+//
+// These four cases are the properties the declaration buys and the hand-rolled
+// version could not have. Nothing here asserts that drain works — the audit
+// test above already does — because a machine that only moves is a machine
+// nobody needed.
+describe('Server.status is a declared machine', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+
+  const makeServer = async (status: string) => {
+    const sys = env.system as any
+    return sys.server.create({
+      data: { workspaceId: ws.id, name: `sm-${uniq()}`, slug: `sm-${uniq()}`, status },
+    })
+  }
+
+  test('an illegal move is refused by name, as a conflict rather than a 400', async () => {
+    const server = await makeServer('pending')
+
+    // The old code raised `BadRequest('Cannot drain a server with status …')`.
+    // A request that is well-formed and disagrees with the row's current state
+    // is a 409, and the message names what IS legal from here.
+    await expect(env.as(owner).service('servers').call('drain', server.id))
+      .rejects.toThrow(/from 'pending'/)
+  })
+
+  test('the level for a move is the schema and not a hook', async () => {
+    const server = await makeServer('online')
+
+    // `reboot` declares no gate, so it takes the model's own update level —
+    // USER(4), which a developer holds.
+    const rebooted = await env.as(developer).service('servers').call('reboot', server.id)
+    expect(rebooted.status).toBe('pending')
+
+    // `drain` declares @gate(5). The hook that used to say so is gone, and the
+    // refusal now comes from the Data boundary — through the app's own error
+    // mapper, so it names a ROLE and not a level. A level is litestone's
+    // vocabulary and an operator has never seen one.
+    const online = await makeServer('online')
+    await expect(env.as(developer).service('servers').call('drain', online.id))
+      .rejects.toThrow(/admin role/)
+  })
+
+  test('two drains of one server: one wins, the other is told to re-read', async () => {
+    // The bug the declaration closes. `getScoped()` read the row and
+    // `update()` wrote it in a second statement, so both callers read `online`,
+    // both passed the from-check and both wrote — a lost update with no error,
+    // and a server recorded online while it was draining. The UPDATE's WHERE is
+    // narrowed to the from-state now, so exactly one row matches.
+    const server = await makeServer('online')
+
+    const results = await Promise.allSettled([
+      env.as(owner).service('servers').call('drain', server.id),
+      env.as(owner).service('servers').call('drain', server.id),
+    ])
+
+    const won  = results.filter(r => r.status === 'fulfilled')
+    const lost = results.filter(r => r.status === 'rejected')
+    expect(won.length).toBe(1)
+    expect(lost.length).toBe(1)
+
+    // Whichever way the loser is refused, it must not read as "try something
+    // else": the row moved, and both of litestone's two answers here are 409.
+    const err = (lost[0] as PromiseRejectedResult).reason
+    expect(err.code ?? err.status).toBe(409)
+
+    const sys = env.system as any
+    const after = await sys.server.findUnique({ where: { id: server.id } })
+    expect(after.status).toBe('draining')
+  })
+
+  test('a caller cannot drive status through patch', async () => {
+    // narrowPatch has always dropped `status`, and that is still where the
+    // closed-machine property is enforced for the CRUD door — a declared
+    // machine does not make an undeclared write illegal, it makes an illegal
+    // MOVE illegal, and `online -> draining` is a legal move.
+    const server = await makeServer('online')
+
+    await env.as(owner).service('servers').patch(server.id, { status: 'draining' })
+
+    const sys = env.system as any
+    const after = await sys.server.findUnique({ where: { id: server.id } })
+    expect(after.status).toBe('online')
+  })
+})
+
+// ─── the audit trail, at the Data boundary ───────────────────────────────
+// `AuditEvent` was `@@tenant(none)` and unpolicied, so the only thing keeping
+// one workspace's trail out of another's was `audit.service.ts` putting
+// `workspaceId: ws()` in its own where — one door, where a gate is every door
+// (`FJS-432`). It takes the declared tenancy now, and these read through the
+// scoped CLIENT rather than the service, because a service test cannot tell a
+// policy from a hook.
+describe('the audit trail is scoped by the schema, not by one service', () => {
+  // The principal the app builds, minus the request: `memberRole` is what
+  // basecampGateLevel grades and `workspaceId` is the claim the desugar
+  // compares. Anything less reads as VISITOR(1) and is refused by the gate
+  // instead of filtered by the policy, which would pass this test for the
+  // wrong reason.
+  const asAdminOf = (userId: string, workspaceId: string) =>
+    (env.actingAs as any)({ id: userId, workspaceId, memberRole: 'admin' })
+
+  let mine: any, theirs: any, nobodys: any, otherWs: any, adminId: string
+
+  beforeAll(async () => {
+    const sys  = env.system as any
+    const uniq = () => Math.random().toString(36).slice(2, 8)
+
+    adminId = (await sys.user.findFirst({ where: { id: (await sys.workspaceMember.findFirst({ where: { workspaceId: ws.id, role: 'owner' } })).userId } })).id
+
+    otherWs = await sys.workspace.create({
+      data: { accountId: ws.accountId, name: 'Rival', slug: `rival-${uniq()}`, ownerId: adminId },
+    })
+
+    const row = (workspaceId: string | null, action: string) =>
+      sys.auditEvent.create({
+        data: { workspaceId, action, subjectType: 'test', subjectId: `s-${uniq()}` },
+      })
+
+    mine    = await row(ws.id,     'trail.mine')
+    theirs  = await row(otherWs.id, 'trail.theirs')
+    nobodys = await row(null,       'trail.hub')
+  })
+
+  test('an admin reads their own workspace and not the one next door', async () => {
+    const db   = asAdminOf(adminId, ws.id)
+    const rows = await db.auditEvent.findMany({ where: { subjectType: 'test' } })
+    const ids  = rows.map((r: any) => r.id)
+
+    expect(ids).toContain(mine.id)
+    expect(ids).not.toContain(theirs.id)
+  })
+
+  test('a null workspaceId belongs to NOBODY, so no tenant reads it', async () => {
+    // The decision this pins (`FJS-D141`). A null is not a shared row: it is a
+    // row no workspace owns, and the hub reaches it through asSystem() alone.
+    // If null ever came to mean *global* it would be indistinguishable from a
+    // stamp that failed to land, which is the shape that cost twelve job runs.
+    for (const wsId of [ws.id, otherWs.id]) {
+      const rows = await asAdminOf(adminId, wsId).auditEvent.findMany({ where: { subjectType: 'test' } })
+      expect(rows.map((r: any) => r.id)).not.toContain(nobodys.id)
+    }
+
+    const all = await (env.system as any).auditEvent.findMany({ where: { subjectType: 'test' } })
+    expect(all.map((r: any) => r.id)).toContain(nobodys.id)
+  })
+})
+
+describe('an audited action files under the workspace that owns its subject', () => {
+  test('a method exempt from sessionScope is still stamped', async () => {
+    // `jobs.startRun` is internalOnly() and therefore outside the scope hook,
+    // so `ctx.locals.workspaceId` is absent and the trail row used to land with
+    // a null — twelve of them in the dev database, on a `Job` whose own
+    // workspaceId is required and present. Under `FJS-D141` a null means the
+    // row belongs to no workspace, so those runs were invisible to the very
+    // workspace whose feed exists to show them.
+    const sys = env.system as any
+    const job = await sys.job.create({
+      data: { workspaceId: ws.id, name: 'nightly', kind: 'one_shot', command: 'true' },
+    })
+
+    await env.as(owner).service('jobs').call('startRun', job.id, { trigger: 'manual' })
+
+    // The audit write is fire-and-forget behind a swallowed catch, so yield
+    // once rather than waiting on it — same reason litestone's own logger
+    // needs a tick (CLAUDE.md § Data).
+    await new Promise(r => setImmediate(r))
+
+    const row = await sys.auditEvent.findFirst({
+      where:   { action: 'jobs.startRun', subjectId: job.id },
+      orderBy: { createdAt: 'desc' },
+    })
+    expect(row).toBeTruthy()
+    expect(row.workspaceId).toBe(ws.id)
   })
 })

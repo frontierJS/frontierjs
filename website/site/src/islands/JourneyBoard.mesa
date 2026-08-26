@@ -1,0 +1,140 @@
+<!--
+  The journey's stepping, and its connectors.
+
+  The board and all seventeen explanations are prerendered, so the page reads
+  with no JavaScript. Two things here cannot be:
+
+  The CONNECTORS are measured. They leave the bottom of one box, drop to a
+  midpoint, run across and drop into the top of the next — which needs the boxes
+  to have been laid out, so they are drawn at mount and again on resize rather
+  than written into the file at a size nobody has.
+
+  And PLAYBACK, which is a timer.
+-->
+<script>
+  $.onMount(() => {
+    const grid   = document.querySelector('[data-grid]')
+    const wires  = document.querySelector('[data-wires]')
+    const panels = document.querySelector('[data-explain]')
+    if (!grid || !wires || !panels) return
+
+    const steps = [...grid.querySelectorAll('.stepbtn')]
+    const nodes = [...grid.querySelectorAll('.node')]
+    const total = steps.length
+    const bar   = document.querySelector('[data-bar]')
+    const barBox = document.querySelector('.bar')
+    const count = document.querySelector('[data-count]')
+    const prev  = document.querySelector('[data-prev]')
+    const next  = document.querySelector('[data-next]')
+    const play  = document.querySelector('[data-play]')
+
+    let i = 0
+    let timer = null
+
+    const paintWires = () => {
+      for (const p of wires.querySelectorAll('path[data-seg]'))
+        p.classList.toggle('lit', +p.dataset.seg < i)
+      wires.querySelector('[data-extra="db"]')?.classList.toggle('lit', i >= 11)
+      wires.querySelector('[data-extra="ch"]')?.classList.toggle('lit', i >= 14)
+    }
+
+    const drawWires = () => {
+      const box = grid.getBoundingClientRect()
+      const at = (el) => {
+        const r = el.getBoundingClientRect()
+        return {
+          l: r.left - box.left, r: r.right - box.left,
+          t: r.top - box.top, b: r.bottom - box.top,
+          cx: r.left + r.width / 2 - box.left,
+          cy: r.top + r.height / 2 - box.top,
+        }
+      }
+
+      let d = ''
+      for (let n = 0; n < steps.length - 1; n++) {
+        const a = at(steps[n]), b = at(steps[n + 1])
+        const mid = a.b + Math.max(10, (b.t - a.b) / 2)
+        const path = a.cx === b.cx
+          ? `M ${a.cx} ${a.b} L ${b.cx} ${b.t}`
+          : `M ${a.cx} ${a.b} L ${a.cx} ${mid} L ${b.cx} ${mid} L ${b.cx} ${b.t}`
+        d += `<path data-seg="${n}" stroke="${steps[n + 1].dataset.tint}" d="${path}"/>`
+      }
+
+      // Step 12 reaches the database node and step 15 the channels node —
+      // the two places the request leaves the straight line.
+      if (nodes[0] && steps[11]) {
+        const sql = at(steps[11]), db = at(nodes[0])
+        d += `<path data-extra="db" stroke="${steps[11].dataset.tint}" d="M ${sql.r} ${sql.cy} L ${db.l} ${db.cy}"/>`
+      }
+      if (nodes[1] && steps[14]) {
+        const pub = at(steps[14]), ch = at(nodes[1])
+        d += `<path data-extra="ch" stroke="${steps[14].dataset.tint}" stroke-dasharray="4 4" d="M ${pub.r} ${pub.cy} L ${ch.l} ${ch.cy}"/>`
+      }
+
+      wires.setAttribute('viewBox', `0 0 ${box.width} ${box.height}`)
+      wires.innerHTML = d
+      paintWires()
+    }
+
+    const render = () => {
+      const tint = steps[i].dataset.tint
+      for (const el of steps) {
+        const n = +el.dataset.i
+        el.classList.toggle('now', n === i)
+        el.classList.toggle('done', n < i)
+      }
+      paintWires()
+
+      for (const p of panels.children) p.classList.toggle('is-shown', +p.dataset.i === i)
+      panels.style.setProperty('--tint', tint)
+
+      if (bar) bar.style.width = `${((i + 1) / total) * 100}%`
+      barBox?.style.setProperty('--tint', tint)
+      if (count) count.textContent = `Step ${i + 1} of ${total}`
+      if (prev) prev.disabled = i === 0
+      if (next) next.disabled = i === total - 1
+      history.replaceState(null, '', '#' + (i + 1))
+    }
+
+    const go = (n) => { i = Math.max(0, Math.min(total - 1, n)); render() }
+    const stop = () => { clearInterval(timer); timer = null; if (play) play.textContent = '▶ Play' }
+
+    const onPrev = () => { stop(); go(i - 1) }
+    const onNext = () => { stop(); go(i + 1) }
+    const onPlay = () => {
+      if (timer) return stop()
+      if (play) play.textContent = '❚❚ Pause'
+      if (i === total - 1) go(0)
+      timer = setInterval(() => (i === total - 1 ? stop() : go(i + 1)), 2600)
+    }
+    const onGrid = (e) => {
+      const b = e.target.closest('.stepbtn')
+      if (b) { stop(); go(+b.dataset.i) }
+    }
+    const onKey = (e) => {
+      if (e.key === 'ArrowRight') { e.preventDefault(); stop(); go(i + 1) }
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); stop(); go(i - 1) }
+    }
+
+    prev?.addEventListener('click', onPrev)
+    next?.addEventListener('click', onNext)
+    play?.addEventListener('click', onPlay)
+    grid.addEventListener('click', onGrid)
+    addEventListener('keydown', onKey)
+    addEventListener('resize', drawWires)
+
+    drawWires()
+    const start = parseInt(location.hash.slice(1), 10)
+    go(Number.isFinite(start) ? start - 1 : 0)
+
+    return () => {
+      stop()
+      prev?.removeEventListener('click', onPrev)
+      next?.removeEventListener('click', onNext)
+      play?.removeEventListener('click', onPlay)
+      grid.removeEventListener('click', onGrid)
+      removeEventListener('keydown', onKey)
+      removeEventListener('resize', drawWires)
+    }
+  })
+</script>

@@ -65,6 +65,7 @@
     "typecheck": "node ../../scripts/typecheck.mjs",
     "test:example": "bun test ./example/test.ts",
     "test:all": "bun test tests/ ./example/test.ts",
+    "test:browser": "node tests/browser/verify-devtools.mjs",
     "repl": "bun run tools/repl.ts",
     "build:app": "bun run tools/build-app.ts",
     "setup": "bun run tools/setup.ts",

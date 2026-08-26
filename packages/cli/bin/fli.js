@@ -8,6 +8,24 @@ if (major < 20 || (major === 20 && minor < 6)) {
   process.exit(1)
 }
 
+// ─── A reader that quit first ────────────────────────────────────────────────
+// `fli list | head -3` closes the pipe while we are still writing to it, and
+// node raises EPIPE on the stream with no `error` listener anywhere — so the
+// process dies printing thirty lines of `Unhandled 'error' event` over whatever
+// the person was actually reading. Every read-only listing has the same shape,
+// and piping one to `head`, `grep` or `less` is the first thing anybody does
+// with a 174-command listing. Handled once here rather than guarded per write.
+// Invisible when stderr is merged into the same pipe, which is why it survived.
+for (const stream of [process.stdout, process.stderr]) {
+  stream.on('error', err => {
+    if (err?.code === 'EPIPE') process.exit(0)
+    // Nothing can be printed about a broken stderr, so leave without pretending.
+    if (stream === process.stderr) process.exit(1)
+    console.error(`\x1b[31m✗\x1b[0m stdout: ${err?.message || err}`)
+    process.exit(1)
+  })
+}
+
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'

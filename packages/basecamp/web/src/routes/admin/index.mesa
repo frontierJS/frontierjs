@@ -41,7 +41,18 @@ title: Members
 
   // The roles come from the schema's WorkspaceRole enum, so neither picker can
   // offer a role the CHECK constraint would refuse.
-  $: roles = workspaces.fields?.role?.enum ?? ['viewer', 'developer', 'admin', 'owner']
+  $: roles = workspaces.fields?.role?.enum ?? ['viewer', 'billing', 'developer', 'admin', 'owner']
+
+  // What this caller holds here, read off the members list they are already
+  // looking at rather than asked for a second time.
+  $: myRole = members.find((m) => m.userId === session.user?.userId)?.role
+
+  // The server refuses a role above your own on all three doors that hand one
+  // out (`FJS-410`), so the pickers offer what it will accept. An affordance
+  // only — the boundary is what decides — and the enum is declared in ascending
+  // authority, so *at or below mine* is a slice rather than a second copy of
+  // the ladder core/gate.ts grades on.
+  $: grantable = myRole ? roles.slice(0, roles.indexOf(myRole) + 1) : roles
 
   const rowsOf = (result) => Array.isArray(result) ? result : result?.data ?? []
 
@@ -191,7 +202,7 @@ title: Members
            placeholder="ada@example.com" bind:value={inviteEmail} />
     <label class="visually-hidden" for="invite-role">Role</label>
     <Select id="invite-role" style="--field-inline-size: auto" placeholder=""
-            options={roles} value={inviteRole}
+            options={grantable} value={inviteRole}
             onchange={(e) => inviteRole = e.target.value} />
     <Button id="invite-send" variant="primary" disabled={inviting || !inviteEmail}
             onclick={invite}>Send invitation</Button>
@@ -238,8 +249,10 @@ title: Members
           <td>
             <label class="visually-hidden" for={`role-${member.id}`}>Role</label>
             <Select id={`role-${member.id}`} style="--field-inline-size: auto"
-                    placeholder="" options={roles} value={member.role}
-                    disabled={busy === member.id}
+                    placeholder=""
+                    value={member.role}
+                    options={grantable.includes(member.role) ? grantable : [...grantable, member.role]}
+                    disabled={busy === member.id || member.userId === session.user?.userId}
                     onchange={(e) => setRole(member, e.target.value)} />
           </td>
           <td class="text-sm text-muted">{when(member.acceptedAt ?? member.createdAt)}</td>

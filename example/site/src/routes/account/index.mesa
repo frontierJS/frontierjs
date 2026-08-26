@@ -1,0 +1,32 @@
+---
+title: Your account — FrontierJS Supply Co.
+description: Sign in to see what you have ordered.
+render: static
+---
+<!--
+  The account page, and there is no `index.meta.js` beside it — deliberately.
+
+  Every other route here has a `load()` that reads the catalogue at build time,
+  and the build proves what it published. This one reads NOTHING at build time
+  and could not: whose account it is is not known until a browser opens it, and
+  `Order` is `@@gate("1.4.4.5")` now, so a `load()` that asked would be refused
+  by the publish check rather than by anything at runtime — which is the check
+  working, on the one page where it would have mattered most.
+
+  So the file that ships is a heading and a mount point. Everything else is the
+  island, which signs in on this origin and asks the API as that person.
+-->
+<script>
+  import Account from '../../islands/Account.mesa'
+</script>
+
+<div class="container stack">
+  <header class="stack-sm">
+    <h1>Your account</h1>
+    <p class="text-muted">
+      Orders you have placed with us, and what was in them.
+    </p>
+  </header>
+
+  <Account client:load />
+</div>

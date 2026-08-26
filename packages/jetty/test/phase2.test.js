@@ -504,6 +504,73 @@ group('defineHarbor boot')
   }
 }
 
+// --- the real Junction adapter ---
+//
+// Its wire behaviour is proved end to end by `example`'s `verify:extension`,
+// against a real API — a fake Junction here would be the mock that hid FJS-279
+// for as long as it existed. What IS decidable in node is the shape: the URL
+// dialect the two packages spell differently, and which of the two sign-in
+// spellings the auth flow reaches for.
+
+group('junction adapter — shape')
+{
+  const { httpOrigin, createJunctionAdapter } = await import('../src/junction/junction-adapter.js')
+  const { validateAdapter } = await import('../src/junction/adapter.js')
+
+  // jetty's config field has always been written `wss://`; Junction's client
+  // takes an HTTP origin and derives the socket from it. Handed `wss://` it
+  // builds `wsss://` and the socket never opens.
+  if (httpOrigin('wss://api.test/x') === 'https://api.test/x') ok('wss:// → https://')
+  if (httpOrigin('ws://localhost:8110') === 'http://localhost:8110') ok('ws:// → http://')
+  if (httpOrigin('http://localhost:8110') === 'http://localhost:8110') ok('an http origin is left alone')
+
+  const adapter = createJunctionAdapter({ url: 'ws://localhost:1/none' })
+  try { validateAdapter(adapter, 'junctionAdapter'); ok('satisfies the adapter contract') }
+  catch (e) { bad('adapter contract', e.message) }
+
+  // Every method needs a client, and there is no connect() here. The failure
+  // that replaces is a call that hangs or reads `undefined.service`.
+  try { await adapter.call('orders', 'find', {}); bad('call before connect should throw') }
+  catch (e) {
+    if (/connect\(\) first/.test(e.message)) ok('a call before connect() refuses by name')
+    else bad('wrong refusal', e.message)
+  }
+}
+
+group('auth flow — which sign-in spelling')
+{
+  const { makeAuthFlow } = await import('../src/junction/auth.js')
+
+  const calls = []
+  const adapter = {
+    connect: async () => {}, disconnect: async () => {}, isConnected: () => true,
+    call: async (service, method) => { calls.push(`call:${service}.${method}`); return { token: 'X', user: {} } },
+    setToken: async () => {},
+    auth: {
+      login:  async () => { calls.push('auth.login');  return { token: 'T', user: { id: 1 } } },
+      logout: async () => { calls.push('auth.logout'); return { ok: true } },
+      verify: async () => { calls.push('auth.verify'); return { user: { id: 1 } } },
+    },
+  }
+  const storage = mockStorage()
+  const flow = makeAuthFlow({ adapter, storage, pages: { broadcast: () => true }, tokenKey: 'tk' })
+
+  await flow.login({ email: 'a@b', password: 'p' })
+  await flow.logout()
+  if (calls.join(',') === 'auth.login,auth.logout') ok('an adapter declaring auth owns sign-in')
+  else bad('auth block not preferred', calls.join(','))
+
+  // …and the placeholder, which has no block, keeps the pseudo-service.
+  const legacy = { ...adapter, auth: undefined }
+  const legacyCalls = []
+  legacy.call = async (service, method) => { legacyCalls.push(`${service}.${method}`); return { token: 'X', user: {} } }
+  const flow2 = makeAuthFlow({ adapter: legacy, storage: mockStorage(), pages: { broadcast: () => true }, tokenKey: 'tk' })
+  await flow2.login({ email: 'a@b' })
+  await flow2.logout()
+  if (legacyCalls.join(',') === 'auth.login,auth.logout') ok('an adapter without one falls back to call(\'auth\', …)')
+  else bad('fallback broken', legacyCalls.join(','))
+}
+
 // --- summary ---
 
 console.log('')

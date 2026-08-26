@@ -44,6 +44,12 @@ COPY api ./api
 COPY db  ./db
 COPY web ./web
 
+# `web/config/api-paths.js` derives the proxy path list from this file rather
+# than holding one, and `vite.config.js` imports it at config load — so the SPA
+# build below cannot start without it. It is committed and CI-gated, so this is
+# a copy of a checked artefact and not a second source of truth.
+COPY surface.snapshot.md ./
+
 # The SPA. Built here rather than on the host so the image does not depend on
 # what the builder's node_modules happened to hold — the failure that made
 # `03-build-web` untrustworthy in the shipped pipeline.

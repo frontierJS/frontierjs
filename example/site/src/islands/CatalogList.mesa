@@ -1,0 +1,165 @@
+<!--
+  The catalogue list — prerendered, then live, then asked.
+
+  This is an ISLAND. The build renders it to plain HTML inside comment markers
+  (so a crawler and a reader with no JavaScript see every product), and
+  `client:load` on the call site makes Sierra ship one chunk that mounts it for
+  real. Mounting REPLACES the prerendered markup with a live render, which is
+  why the search box only does something after the chunk has run — and why the
+  drive asserts a click and not a snapshot.
+
+  `products` arrives as a PROP, serialised into the marker at build time. The
+  data was read once, at build, through the app's own Litestone client, and
+  checked against the @@gate of every model it read before this page was
+  allowed to exist.
+
+  A row here is FLATTENED — a price range and a list of SKUs, not the variant
+  rows they came from — because the prop is serialised into the HTML and the
+  browser has no reason to hold the variant table to render thirteen lines.
+
+  ─── Why the SEARCH asks the shop ─────────────────────────────────────────
+
+  Everything above is what was baked, and what an island can filter is what was
+  baked into it. In a shop this size that is the whole catalogue; in a shop that
+  is not, it is a page of it, and a search box that quietly means *of the ones
+  on this page* is the kind of wrong that looks right until the shop grows.
+
+  So the box asks the API. `Product` declares `@@fts([name, description])` and
+  the request is `?$search=…&active=true` — a directive and a filter, side by
+  side, with no app code between them: junction routes `$search` to Litestone's
+  `search()` and answers the ordinary list envelope. It also searches the
+  DESCRIPTION, which nothing baked into this page could do.
+
+  The baked rows stay, and they are the fallback rather than a first draft: if
+  the shop cannot be reached, the box filters what is here and the page says
+  which answer it is showing. An empty list because the network failed and an
+  empty list because nothing matched are two different things, and a storefront
+  that draws them the same way tells a shopper their shop is empty.
+-->
+<script>
+  import { createJunctionClient } from '@frontierjs/junction/client'
+  import { clientOptions }        from '../api.js'
+  import { priceRange }           from '../money.js'
+
+  export let products = []
+
+  let q      = ''
+  /** Slugs the shop answered with, in its own ranked order — or null whenever
+   *  the shop has not been asked (an empty box, or a request in flight that has
+   *  not landed yet). Null is not the empty array: one means *not asked*, the
+   *  other means *asked, nothing matched*. */
+  let hits   = null
+  let source = 'baked'   // baked | shop | offline
+
+  let client  = null
+  let timer   = null
+  /** Which request is the current one. A slower answer to an older query must
+   *  not overwrite a newer one — the shape that makes a search box show results
+   *  for what somebody typed two letters ago. */
+  let inflight = 0
+
+  $.onMount(() => {
+    // Built here and not at module scope: an island's body also runs during the
+    // static render, where there is no window and no origin to call. `$.onMount`
+    // is a no-op on the server, which is what makes that safe rather than lucky.
+    client = createJunctionClient(clientOptions)
+  })
+
+  /** The rows this page holds, filtered here — the fallback and nothing else.
+   *
+   *  It is deliberately NOT the same search. Descriptions are not baked into
+   *  this page (thirteen of them is real weight in a file a CDN serves), so a
+   *  fallback cannot match on one and the shop can; SKUs are baked and live on
+   *  `ProductVariant`, so this can match one and an index on `product` cannot.
+   *  That the two disagree is why the page says which of them answered. */
+  function local(needle) {
+    return products.filter(p =>
+      `${p.name} ${p.brand} ${p.skus.join(' ')}`.toLowerCase().includes(needle))
+  }
+
+  const bySlug = new Map(products.map(p => [p.slug, p]))
+
+  async function ask(term) {
+    const mine = ++inflight
+    try {
+      const body = await client.service('products').find(
+        { active: true },
+        { search: term, limit: 50 },
+      )
+      if (mine !== inflight) return          // a newer keystroke won
+      hits   = (body?.data ?? []).map(p => p.slug)
+      source = 'shop'
+    } catch {
+      if (mine !== inflight) return
+      hits   = null
+      source = 'offline'
+    }
+  }
+
+  function onSearch() {
+    clearTimeout(timer)
+    const term = q.trim()
+    if (!term) { inflight++; hits = null; source = 'baked'; return }
+    // One request per pause, not per keystroke.
+    timer = setTimeout(() => ask(term), 150)
+  }
+
+  const needle = q.trim().toLowerCase()
+
+  // The shop's answer where there is one, this page's own where there is not.
+  // A slug the shop matched that this page was built before is rendered with no
+  // price rather than dropped: it is a real product and the link resolves.
+  const matches = !needle
+    ? products
+    : hits === null
+      ? local(needle)
+      : hits.map(slug => bySlug.get(slug) ?? { slug, name: slug, skus: [] })
+
+  // The shop's BASE currency, always. `web/src/money.js` converts against a
+  // reader's saved preference; a prerendered page has no reader and no storage,
+  // and what belongs in a file a CDN serves to a stranger is the currency the
+  // shop keeps its books in.
+  const price = (p) => (p.from == null ? null : priceRange(p.from, p.to))
+</script>
+
+<div class="stack">
+  <div class="field-group">
+    <label class="label" for="catalog-search">Search the catalogue</label>
+    <input
+      id="catalog-search"
+      class="input"
+      type="search"
+      autocomplete="off"
+      placeholder="name or description"
+      bind:value={q}
+      on:input={onSearch}
+    />
+  </div>
+
+  <p id="catalog-count" class="text-sm text-muted" data-source={source}>
+    {matches.length} of {products.length} products
+  </p>
+
+  {#if source === 'offline'}
+    <!-- Said out loud. The list below is this page's own rows filtered here,
+         which is a narrower answer than the shop would have given — and a
+         shopper who is not told that reads a short list as a small shop. -->
+    <p id="catalog-offline" class="text-sm text-warning">
+      The shop could not be reached, so this is a search of the products on
+      this page rather than of the whole catalogue.
+    </p>
+  {/if}
+
+  <ul class="list" id="catalog-list">
+    {#each matches as p (p.slug)}
+      <li class="list-row" data-slug={p.slug}>
+        <a href={`/products/${p.slug}/`}>{p.name}</a>
+        {#if price(p)}<span class="badge">{price(p)}</span>{/if}
+      </li>
+    {/each}
+  </ul>
+
+  {#if matches.length === 0}
+    <p id="catalog-empty" class="text-muted">Nothing here matches “{q}”.</p>
+  {/if}
+</div>

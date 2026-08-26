@@ -1,0 +1,36 @@
+<!--
+  Highlights the table-of-contents entry for whatever feature is on screen.
+
+  The whole of the package page's interactivity, and it carries no data: the
+  anchors and the sections are already in the prerendered HTML, so this reads
+  the document rather than being handed a copy of the feature table.
+
+  It renders nothing. An island has to have a marker to mount at, so it emits
+  one empty comment-anchored node and does its work in $.onMount.
+-->
+<script>
+  $.onMount(() => {
+    const links = new Map(
+      [...document.querySelectorAll('.ptoc a')].map((a) => [a.hash.slice(1), a]),
+    )
+    const feats = [...document.querySelectorAll('.feat')]
+    if (!links.size || !feats.length) return
+
+    // Which sections are in the band, and then the FIRST of them in document
+    // order — an observer reports entries in whatever order they crossed, so
+    // taking the newest gives a marker that jumps backwards when you scroll up
+    // through two headings at once.
+    const seen = new Set()
+    const spy = new IntersectionObserver((entries) => {
+      for (const e of entries) e.isIntersecting ? seen.add(e.target.id) : seen.delete(e.target.id)
+      const first = feats.find((f) => seen.has(f.id))
+      for (const [id, a] of links) {
+        if (first && id === first.id) a.setAttribute('aria-current', 'true')
+        else a.removeAttribute('aria-current')
+      }
+    }, { rootMargin: '-88px 0px -60% 0px' })
+
+    for (const f of feats) spy.observe(f)
+    return () => spy.disconnect()
+  })
+</script>

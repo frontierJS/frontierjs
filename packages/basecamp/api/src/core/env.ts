@@ -17,13 +17,43 @@ export const env = defineEnv({
   PORT:         { type: 'port',   default: 8120 },
   HOST:         { default: '0.0.0.0' },
 
+  // ── CORS ──────────────────────────────────────────────────
+  // Comma-separated origins the API answers to. Unset means the origins
+  // declared in api/config/junction.config.js, which are the dev SPA's — a
+  // deployment is served from somewhere this repo cannot know.
+  //
+  // A plain string rather than a parsed list: defineEnv has no list type, and
+  // adding one for a single caller is a keyword the whole framework then has to
+  // mean something by. Split at the use site.
+  CORS_ORIGINS:  {},
+
+  // ── Devtools ──────────────────────────────────────────────
+  // Junction's API console — the live call feed, /metrics with every plugin's
+  // section, readiness, and the job queue with retry/cancel/run-now.
+  //
+  // Opt-in rather than on in development, because it binds a port: 8503 is the
+  // one slot in the framework's global tooling block (packages/cli/core/ports.js)
+  // and it is GLOBAL, so a second app running its console at the same time is
+  // the collision the port scheme exists to stop. One at a time, deliberately.
+  //
+  //   DEVTOOLS=1 bun run api      →  http://localhost:8503
+  //
+  // Safe to leave declared: the plugin refuses to bind under
+  // NODE_ENV=production with no auth gate rather than serving request params
+  // and a retry button to anyone who finds the port.
+  DEVTOOLS:     { type: 'boolean', default: false },
+  DEVTOOLS_PORT:{ type: 'port',    default: 8503 },
+
   // ── Database ──────────────────────────────────────────────
   DATABASE_URL: { default: './db/basecamp.db' },
   DB_LOG:       { type: 'boolean', default: false },
 
   // ── Auth ──────────────────────────────────────────────────
-  AUTH_SECRET:  { required: true, minLength: 32,
-                  default: 'dev-secret-change-me-in-production-must-be-32-chars' },
+  // No AUTH_SECRET. A session here is a ROW — @frontierjs/auth stores a random
+  // token on `Session` and verifies it by lookup — so nothing is signed and
+  // nothing read this (`FJS-360`). It was required, defaulted to a public
+  // placeholder, and refused a production boot over a value no code path would
+  // have used. ENCRYPTION_KEY below is the credential this app actually has.
 
   // ── Encryption ────────────────────────────────────────────
   // Secret.data is @encrypted — Litestone's createClient() throws without a
@@ -62,7 +92,7 @@ export const env = defineEnv({
   // from a request's Host header — that is a value the caller chooses.
   APP_URL:        { default: 'http://localhost:8020' },
 
-  // ── Infra adapters ────────────────────────────────────────
+  // ── Providers ─────────────────────────────────────────────
   // Each one activates the real adapter when set; stubs otherwise.
   INFISICAL_URL:   {},
   UNLEASH_URL:     {},

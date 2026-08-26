@@ -16,7 +16,9 @@ Three proposals that only pay off together:
    is an assertion the tooling can disprove.
 2. **`frontier.config.js` + `frontier.lock`** — declared intent versus observed fact,
    at the app level.
-3. **Reconcile between them** — the third leg `fli doctor` is currently missing:
+3. **Reconcile between them** — the third leg is currently missing. It is written `fli doctor`
+   throughout this file and that name is taken (`FJS-D133`): the reconcile belongs to `fli
+   check`, or to a command of its own, and never to fli's own setup check:
    *boot the app and compare what it claims against what it mounted.*
 
 ---

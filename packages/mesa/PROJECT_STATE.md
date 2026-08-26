@@ -92,23 +92,23 @@ Re-run it after any change to `runtime.js`.
 - `{#if}`, `{#each}` (with destructuring), `{#await}`, `{#key}`, `{#snippet}`, `{@render}`, `{@html}`, `{@attach}`
 - `{#virtual each}` — fixed-height virtualized lists, `height=` / `viewport=` optional; SSR renders the first window
 - `<mesa:boundary>`, `<mesa:mounted>`, `<mesa:portal>`, `<mesa:window>`, `<mesa:document>`, `<mesa:body>`, `<mesa:head>`
-- `$mounted(fn)` builtin — imperative mount gate, one per component
+- `$.mounted(fn)` builtin — imperative mount gate, one per component
 - `$context` — provide/consume with `const` (tracks) / `let` (init at mount) / `var` (snapshot)
 - `$class` system — `bind:class`, `{class}` shorthand, auto-rename on components
 - `bind:prop` on a component — two-way; `pushProps` carries parent→child, `bindProp` child→parent
 - CSS tokenizer — nested CSS, `@layer`, `@container`, `@keyframes`, `:global()`, `@apply`
 - `<script module>` — shared across instances, real ES module exports
 - Static component detection (`ctx.isStatic`)
-- `config.dev: true` — emits `$runtime.__dev?.r(sig, name, kind)` registration calls
+- `config.dev: true` — emits `$$runtime.__dev?.r(sig, name, kind)` registration calls
 
 ### Compiled output shape
 ```js
 export default function Counter(__anchor, __props, __block) {
-  $runtime.push_component('Counter', 'Counter.mesa')
+  $$runtime.push_component('Counter', 'Counter.mesa')
   // ... signals, effects, DOM ...
-  $runtime.pop_component()
+  $$runtime.pop_component()
 }
-$runtime.$$delegate(['click'])
+$$runtime.$$delegate(['click'])
 ```
 No `makeComponent` wrapper — direct named function export.
 
@@ -240,7 +240,7 @@ not exist).
 Restyling it onto `@frontierjs/css` surfaced three compiler bugs here, all of
 which reported success from `analysis.errors`:
 
-- `const fn = () => { reactiveLet = x }` emitted `$runtime.get(sig) = …`, an
+- `const fn = () => { reactiveLet = x }` emitted `$$runtime.get(sig) = …`, an
   invalid assignment target — so the module threw on load. Same for a mutator
   provided through `$context`. Both fixed, pinned in `emission.test.js`.
 - **`{class}` replaced an element's own classes instead of merging them**, so

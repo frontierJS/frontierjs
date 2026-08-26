@@ -9,7 +9,7 @@ const build = async (src, name, Child) => {
   const code = ctx.result.replace(/^import\s+.+?from\s+'[^']+';$/gm, '')
     .replace(/^export default\s+/m, 'const __c = ')
     .replace(/^(\s*)export (function|class|const|let|var) /gm, '$1$2 ')
-  return new Function('$runtime', 'Child', code + '\nreturn __c')($rt, Child)
+  return new Function('$$runtime', 'Child', code + '\nreturn __c')($rt, Child)
 }
 const mount = (Comp) => {
   const c = document.createElement('div')

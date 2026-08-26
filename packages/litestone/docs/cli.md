@@ -61,6 +61,61 @@ Generate TypeScript declarations from your schema. Outputs `<model>Where`, `<mod
 ## Schema tools
 
 ```bash
+litestone explain [@word] [--visibility] [--json]
+```
+What a `.lite` word is, what it accepts, where it is legal. No schema, no
+database, no server — it reads the language's own catalog, so it answers in a
+directory with nothing in it.
+
+A bare word that exists at two levels shows both: `@unique` constrains a column
+and `@@unique` constrains a tuple, and answering the wrong one is worse than
+answering neither. `--visibility` asks the question that runs the other way —
+*I need a column the caller may not read, which word is that?* — as three yes/no
+answers. An unknown word suggests the near ones and exits 1.
+
+```bash
+litestone advise [--json]
+```
+The one command that reads YOUR schema and says something no generated artefact
+can. Two lists, and they are two questions.
+
+**Legal and worth a look** — the schema says something and a layer above the
+parser refuses it: a required `@guarded` column nothing below level 8 can
+create, an `@@fts` over an `@encrypted` column where the search can never match,
+a foreign key with no index. `parse()` is more permissive than everything above
+it, so these stay green through every migration and every test.
+
+**Declared by nobody** — the schema says nothing, everything works, and a word
+would have said it better: a `deletedAt` with no `@@softDelete` behind it, a
+token column stored as text, an enum lifecycle any write may set to any value,
+the same columns written out in five models. Nothing else can produce this list,
+because every other artefact is derived from the seed and a word absent from the
+seed is absent from all of them.
+
+Each suggestion names the word it is about and prints the next thing to type —
+`litestone explain @@fts`, and the docs page beside it. A rule carries a
+`severity` because it is a defect; a suggestion carries a `confidence` because
+the schema is not wrong and you may have meant it. **Neither list is a gate**:
+`litestone access --strict` and `litestone release --strict` are the two that
+fail a branch.
+
+```bash
+litestone catalog --snapshot  [--check] [--stdout] [--out=<path>]
+litestone catalog --reference [--check] [--stdout] [--out=<path>]
+```
+Two renderings of the same table, and the difference is who reads them.
+
+`--snapshot` writes `catalog.snapshot.md` at the package root: facts in columns,
+no prose, so a diff is *what changed about the language* rather than a reshuffle
+on an edited sentence. `--reference` writes `docs/reference.snapshot.md`: every
+word with its blurb, a worked example and cross-links — the page you read when
+you do not already know the word to look up.
+
+Both are gated by CI, and every example on the reference page is the same text
+`test/catalog.test.ts` parses. Neither takes a `--schema`: the language is a
+property of this package, not of your seed.
+
+```bash
 litestone introspect <db> [--out schema.lite] [--no-camel]
 ```
 Reverse-engineer a live SQLite database into a `.lite` schema. Reconstructs column types, FK relations, indexes, `@@softDelete`, enum CHECK constraints.

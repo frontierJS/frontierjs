@@ -3,10 +3,10 @@ title: workspace:add
 description: Add an existing package repo into the workspace
 alias: ws:add
 examples:
-  - fli ws-add ~/projects/fli
-  - fli ws-add ~/projects/frontier-core --scope @frontierjs
-  - fli ws-add ~/projects/ksite --copy
-  - fli ws-add ~/projects/fli --dry
+  - fli ws:add ~/projects/fli
+  - fli ws:add ~/projects/frontier-core --scope @frontierjs
+  - fli ws:add ~/projects/ksite --copy
+  - fli ws:add ~/projects/fli --dry
 args:
   -
     name: path
@@ -55,7 +55,7 @@ const destPath = resolve(wsRoot, 'packages', pkgName)
 // ─── Validate ────────────────────────────────────────────────────────────────
 if (!existsSync(wsRoot)) {
   log.error(`Workspace not found at ${wsRoot}`)
-  log.info('Run `fli ws-init` first')
+  log.info('Run `fli ws:init` first')
   return
 }
 if (!existsSync(srcPath)) {

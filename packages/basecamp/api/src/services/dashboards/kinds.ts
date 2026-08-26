@@ -131,7 +131,7 @@ export const WIDGET_KINDS: WidgetKindSpec[] = [
   {
     kind:        'service_health',
     label:       'Service health',
-    description: 'One shared infrastructure adapter, pinged live.',
+    description: 'One shared provider, pinged live.',
     subject:     null,
     required:    false,
     // Not a relation: a portal entry is an adapter this app configures, not a

@@ -2,11 +2,26 @@
 title: Products
 ---
 <script>
-  import { products } from '../../resources/Product.mesa'
+  // The catalogue, one row per PRODUCT — the family, not the buyable thing.
+  //
+  // Which means every number in this table is an aggregate over a second
+  // table: a price is a range because four colourways may not agree, and stock
+  // is a sum because the family does not have any. They are `@from` columns on
+  // `Product`, so SQLite answers them on the row and this page reads them like
+  // any other field.
+  //
+  // It used to load every variant of every product and reduce them here, which
+  // is honest at 43 rows and the wrong shape at 43,000 — a second full read to
+  // render three columns. A `@from` is a correlated subquery: no extra round
+  // trip, no column to go stale, and no summary method to keep in step with
+  // the screen that reads it.
+  import { products }      from '../../resources/Product.mesa'
+  import { productImages } from '../../resources/ProductImage.mesa'
   import { session } from '../../session.js'
-  import { prefs } from '../../prefs.js'
+  import { prefs }   from '../../prefs.js'
+  import { money }   from '../../money.js'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
+  import { goto }     from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -19,69 +34,82 @@ title: Products
   import Slider        from '@frontierjs/ui/components/forms/Slider.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
-  const { get: rows, unsubscribe } = useStore(products.store)
-  $onDestroy(unsubscribe)
+  const { get: rows,   unsubscribe: offP } = useStore(products.store)
+  const { get: images, unsubscribe: offI } = useStore(productImages.store)
+  $.onDestroy(() => { offP(); offI() })
 
-  $: (session.level, prefs.perPage, prefs.dense)
+  $: (session.level, prefs.perPage, prefs.dense, prefs.currency)
 
   let error   = null
   let loading = true
-  products.load()
-    .then(() => {
-      // The slider cannot know the catalogue's price range before the
-      // catalogue arrives, and a range of 0–0 filters everything out. Widened
-      // once, here, rather than by watching the store: a `$: rows(), handler`
-      // hook would try to replace `rows`, which is a const.
-      high    = ceiling
-      widened = true
-    })
+
+  // The image store is loaded with a limit above the seeded row count on
+  // purpose: a default page of 20 would leave later products with no
+  // thumbnail, which looks like a catalogue problem rather than a paging one.
+  // The price and stock columns no longer have that hazard at all — they
+  // arrive on the product row.
+  Promise.all([
+    products.load(),
+    productImages.load({}, { limit: 500 }),
+  ])
+    .then(() => { high = ceiling; widened = true })
     .catch(e => { error = e.message })
     .finally(() => { loading = false })
 
   const columns = [
-    { key: 'name',    label: 'Name' },
-    { key: 'sku',     label: 'SKU' },
+    { key: 'name',    label: 'Product' },
+    { key: 'brand',   label: 'Brand' },
+    { key: 'variants',label: 'Variants' },
     { key: 'price',   label: 'Price' },
-    { key: 'barcode', label: 'Barcode' },
+    { key: 'stock',   label: 'Stock' },
     { key: 'active',  label: 'Active' },
   ]
 
+  // ── Derived, per product ─────────────────────────────────────────────────
+  const thumbOf = (id) => images().filter(i => i.productId === id)
+                                  .sort((a, b) => a.position - b.position)[0]
+
+  // `priceFrom` / `priceTo` are equal when there is nothing to choose between,
+  // and both are null for a product with no variants — which is a family
+  // nobody can buy yet, not a price of zero.
+  const priceRange = (p) =>
+    p.variantCount ? { lo: p.priceFrom, hi: p.priceTo, one: p.priceFrom === p.priceTo } : null
+
   // ── Filters ──────────────────────────────────────────────────────────────
   //
-  // Client-side on purpose: this is a catalogue of four, and the point here is
-  // the controls, not a query builder. The options each control offers are
-  // read off the rows that arrived — a filter that offers a value no record
-  // has is a filter that lies.
-  let pick     = undefined   // Combobox — one product by name
-  let statuses = []          // MultiSelect — active / retired
-  let low      = 0           // Slider — price floor
-  let high     = 0           // Slider — price ceiling
+  // Client-side, over what arrived — the point here is the controls. The
+  // options each one offers are read off the rows, so a filter never offers a
+  // value no record has.
+  let pick     = undefined
+  let brands   = []
+  let statuses = []
+  let low      = 0
+  let high     = 0
   let pageNo   = 1
-  // Page size is a preference, set on /settings/ and read here — the setting
-  // has to change something or it is decoration.
   const PER_PAGE = prefs.perPage
 
-  const names   = rows().map(p => p.name)
-  const ceiling = Math.max(10, ...rows().map(p => Math.ceil(p.price)))
+  const names      = rows().map(p => p.name)
+  const brandNames = [...new Set(rows().map(p => p.brand))]
 
-  // Until the catalogue lands there is no range to filter on, so the price
-  // filter stays off rather than sitting at 0–0, which would hide everything.
+  // The ceiling is the dearest variant in the catalogue, which is what
+  // `priceTo` already is per product. Read a price off the product itself and
+  // it would be 10 — the floor — and the slider would filter everything out.
+  const ceiling = Math.max(10, ...rows().map(p => Math.ceil(p.priceTo ?? 0)))
   let widened = false
 
-  const filtered = rows().filter(p =>
-    (!pick || p.name === pick) &&
-    (!statuses.length || statuses.includes(p.active ? 'active' : 'retired')) &&
-    (!widened || (p.price >= low && p.price <= high))
-  )
+  const filtered = rows().filter(p => {
+    const r = priceRange(p)
+    return (!pick || p.name === pick)
+        && (!brands.length   || brands.includes(p.brand))
+        && (!statuses.length || statuses.includes(p.active ? 'active' : 'retired'))
+        && (!widened || !r || (r.hi >= low && r.lo <= high))
+  })
 
   const paged = filtered.slice((pageNo - 1) * PER_PAGE, pageNo * PER_PAGE)
 
   function clearFilters() {
-    pick     = undefined
-    statuses = []
-    low      = 0
-    high     = ceiling
-    pageNo   = 1
+    pick = undefined; brands = []; statuses = []
+    low = 0; high = ceiling; pageNo = 1
   }
 </script>
 
@@ -91,12 +119,6 @@ title: Products
   <Alert tone="danger">{error}</Alert>
 {/if}
 
-<!--
-  A filter bar is where a component kit stops being decoration: a combobox, a
-  multi-select and a range slider are all keyboard, focus and ARIA problems
-  that a stylesheet cannot solve. None of them talks to the API — they narrow
-  what arrived.
--->
 <div class="card cluster" style="align-items: flex-end; gap: 1rem; flex-wrap: wrap">
   <Combobox
     id="f-name"
@@ -105,6 +127,16 @@ title: Products
     options={names}
     bind:value={pick}
     hint="one name, or clear it"
+  />
+
+  <MultiSelect
+    id="f-brand"
+    label="Brand"
+    multiple
+    placeholder="Any brand"
+    options={brandNames}
+    bind:value={brands}
+    hint="Product.brand, an enum"
   />
 
   <MultiSelect
@@ -133,23 +165,45 @@ title: Products
 
 <Table {columns} rows={paged} {loading} striped hover compact={prefs.dense}>
   {#snippet row(p)}
-    <tr>
-      <td>{p.name}</td>
-      <td><code>{p.sku}</code></td>
-      <td>{p.price}</td>
-      <td class="text-muted">{p.barcode === null ? 'null' : p.barcode}</td>
+    <tr class="product-row" onclick={() => goto(`/products/${p.id}/`)}>
+      <td>
+        <span class="cluster" style="align-items: center; gap: .6rem">
+          {#if thumbOf(p.id)}
+            <img class="thumb" src={thumbOf(p.id).file} alt={thumbOf(p.id).alt} width="40" height="40" loading="lazy" />
+          {:else}
+            <span class="thumb thumb-empty" aria-hidden="true"></span>
+          {/if}
+          <a href={`/products/${p.id}/`}>{p.name}</a>
+        </span>
+      </td>
+      <td><Pill tone="info">{p.brand}</Pill></td>
+      <td>{p.variantCount}</td>
+      <td>
+        {#if priceRange(p) === null}
+          <span class="text-muted">—</span>
+        {:else if priceRange(p).one}
+          {money(priceRange(p).lo)}
+        {:else}
+          {money(priceRange(p).lo)}–{money(priceRange(p).hi)}
+        {/if}
+      </td>
+      <td>
+        {#if p.onHand === 0}
+          <Pill tone="danger">out of stock</Pill>
+        {:else}
+          {p.onHand}
+        {/if}
+      </td>
       <td><Pill tone={p.active ? 'success' : 'muted'}>{p.active ? 'active' : 'retired'}</Pill></td>
     </tr>
   {/snippet}
 
-  <!-- An empty catalogue and an over-narrow filter are different situations
-       and deserve different words. -->
   {#snippet empty()}
     <tr>
       <td colspan={columns.length}>
         <EmptyState
           title={rows().length ? 'No product matches those filters' : 'No products yet'}
-          description={rows().length ? 'Widen the price range or clear the product name.' : 'Seed the database and reload.'}
+          description={rows().length ? 'Widen the price range or clear the brand.' : 'Seed the database and reload.'}
         >
           {#snippet action()}
             <Button variant="outlined" onclick={clearFilters}>Clear filters</Button>
@@ -168,5 +222,17 @@ title: Products
 />
 
 <p class="text-sm text-muted">
-  The <code>Barcode</code> column prints <code>null</code>, not an empty cell. <code>barcode String? @unique</code> plus <code>blankToNull</code> is what keeps a second blank-barcode product from failing a constraint nobody wrote.
+  A price here is a RANGE and a stock a SUM, because neither belongs to the family — <code>ProductVariant</code> carries them, one row per <code>(colour, size)</code>. The thumbnail is a <code>File</code> column: the row holds a reference and the bytes come from the API's own storage.
 </p>
+
+<style>
+  .product-row { cursor: pointer }
+  .thumb {
+    width: 40px; height: 40px;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunken);
+    flex: none;
+  }
+  .thumb-empty { display: inline-block }
+</style>

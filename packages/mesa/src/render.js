@@ -24,7 +24,7 @@
  * `import()`, not merely before the render.
  *
  * SSR semantics:
- *   - $onMount, watchProxy and path watches are inert (RULE 19). Effects, memos
+ *   - $.onMount, watchProxy and path watches are inert (RULE 19). Effects, memos
  *     and block directives run, then are disposed when the render returns.
  *   - {#await} renders its {:pending} branch — nothing settles mid-render.
  *   - {#virtual each} renders its first window plus spacers — no viewport can be
@@ -90,9 +90,9 @@ export function initRenderer(options = {}) {
 
   // Tell the Mesa runtime the DOM is now available — but that this is NOT a
   // client runtime. RULE 19 hangs off the second flag: no reactive graph is
-  // built, $onMount is a no-op, path watches stay inert. Passing a single
+  // built, $.onMount is a no-op, path watches stay inert. Passing a single
   // `true` here used to enable client behaviour too, so every server render ran
-  // $onMount callbacks and built proxies and signals that nothing disposed.
+  // $.onMount callbacks and built proxies and signals that nothing disposed.
   setRenderEnvironment(true, false)
 }
 
@@ -155,7 +155,7 @@ export function escapeHTML(str) {
  * modules.
  *
  * What does NOT happen during a server render (RULE 19, via
- * `setRenderEnvironment(true, false)` in `initRenderer`): `$onMount` callbacks,
+ * `setRenderEnvironment(true, false)` in `initRenderer`): `$.onMount` callbacks,
  * `watchProxy`/`watchPath` proxies, and path watches. Effects, memos and block
  * directives DO run — that is how the markup gets built — they are simply
  * disposed before this returns. `{#await}` renders its `{:pending}` branch: a

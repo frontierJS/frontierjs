@@ -260,7 +260,9 @@ README assumes it, and Sierra's schema auto-detection (`../db/schema.lite`) only
 schema because the UI sits one level down in `web/`.
 
 Three directories at the app root, one per realm, all orbiting the shared schema —
-and a fourth, `widgets/`, wherever an app ships embeddable scripts:
+and beside them a surface for each of the other shapes a UI takes: `site/` for a
+public prerendered site, `widgets/` for embeddable scripts, `extension/` for a
+browser extension:
 
 ```
 my-app/
@@ -297,6 +299,22 @@ my-app/
     test/
     dist/                    ← build output
 
+  site/                      ← UI realm — the public, prerendered site (optional)
+    index.html               ← the DEV shell; a built page never uses it
+    config/
+      vite.config.js         ← the Vite root is site/, port 8600
+      sierra.config.js       ← target: 'static' — plus `db` (what may be
+                               published) and `document` (the page wrapper)
+    public/
+    src/
+      main.js                ← the dev entry — routes served as an app
+      routes/                ← file-tree routes, the same convention as web/
+      islands/               ← the only JavaScript a prerendered page runs
+      components/
+    test/                    ← what proves the BUILD: files, not a running app
+    deploy/                  ← serve.js + Dockerfile — the site origin
+    dist/                    ← one index.html per route, plus island chunks
+
   widgets/                   ← UI realm — embeddable scripts (optional)
     index.html               ← the dev harness
     config/
@@ -329,33 +347,46 @@ my-app/
 ```
 
 **The database lives at the root** — shared by all sub-projects, owned by none of them.
-`api/`, `web/`, `widgets/` and `extension/` are peers; none contains another, and none
-contains `db/`.
+`api/`, `web/`, `site/`, `widgets/` and `extension/` are peers; none contains another,
+and none contains `db/`.
 
 **Which surfaces an app has is the app's business.** `fli new --template api-only`
-leaves out `web/`; `--template widgets-only` and `--template extension-only` leave out
-both `api/` and `web/`, because a project whose whole product is embeddable widgets —
-or a browser extension — is a normal FrontierJS project. `fli check`'s `app-layout`
-rule asks only that the schema is at the root and that no surface is hiding inside
-another: folded into `web/`, a surface inherits the SPA's build, its port and its
-release, and the first symptom is it shipping when the app does.
+leaves out `web/`; `--template site-only`, `--template widgets-only` and `--template
+extension-only` leave out both `api/` and `web/`, because a project whose whole product
+is a public site — or embeddable widgets, or a browser extension — is a normal
+FrontierJS project. `fli check`'s `app-layout` rule asks only that the schema is at the
+root and that no surface is hiding inside another: folded into `web/`, a surface
+inherits the SPA's build, its port and its release, and the first symptom is it
+shipping when the app does.
 
 A surface is its own sub-project when its **config**, its **tests** and its **release**
-are a different set of answers from the SPA's. Both optional ones are:
+are a different set of answers from the SPA's. The three optional ones are:
 
-| | `widgets/` | `extension/` |
-| --- | --- | --- |
-| Config | `target: 'widget'` — N self-contained IIFEs, not one app | `jetty.config.js` — emits a *manifest*; one source, two browsers |
-| Tests | a host page it does not own, with hostile CSS | loaded unpacked into a browser profile; no URL to point at |
-| Release | static files on an origin a stranger's page links to | signed upload to two web stores, review in days |
-| Ports | 8200 dev · 8300 served | 8400 dev (the reload channel; nothing is served) |
-| Create it | `fli make:widget <Name>` | `fli make:extension` |
+| | `site/` | `widgets/` | `extension/` |
+| --- | --- | --- | --- |
+| Config | `target: 'static'` — the bundle, then one prerendered file per route | `target: 'widget'` — N self-contained IIFEs, not one app | `jetty.config.js` — emits a *manifest*; one source, two browsers |
+| Tests | the BUILD's files, and the islands that come alive in them | a host page it does not own, with hostile CSS | loaded unpacked into a browser profile; no URL to point at |
+| Release | a bucket and a CDN, with no application server behind it | static files on an origin a stranger's page links to | signed upload to two web stores, review in days |
+| Ports | 8600 dev · 8700 served | 8200 dev · 8300 served | 8400 dev (the reload channel; nothing is served) |
+| Create it | `fli make:site` | `fli make:widget <Name>` | `fli make:extension` |
 
-Both generators create the surface the first time and top it up after, so the app a
+Each generator creates the surface the first time and tops it up after, so the app a
 scaffold wrote is the app the next command extends.
 
-**Every sub-project has the same six folders**, `widgets/` and `extension/` included,
-so knowing one means knowing all of them:
+**`site/` has a fourth answer, and it is what makes folding it into `web/` a defect
+rather than a preference: output.** Sharing a Vite root shares a `dist/`, so the site's
+build output lands inside the SPA's — and Vite empties `outDir` by default, so building
+the SPA deletes the site with nothing said. `fli check` reports a `target: 'static'`
+config found inside another surface for exactly this reason.
+
+**Dev is an SPA and the build is files.** `target: 'static'` uses the SPA's Vite config
+and prerenders afterwards, so `fli site:dev` serves the routes as a client-routed app —
+that is the writing loop. The publish check, the island chunks and the one-file-per-route
+output exist only in the build, so anything touching a `load()` or a page's frontmatter
+is proved with `fli site:build`.
+
+**Every sub-project has the same six folders**, `site/`, `widgets/` and `extension/`
+included, so knowing one means knowing all of them:
 
 | Folder | Holds |
 | --- | --- |

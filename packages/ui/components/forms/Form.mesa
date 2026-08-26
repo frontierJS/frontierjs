@@ -149,6 +149,14 @@
   const seed = record === undefined ? (resource?.make?.() ?? {}) : record
   if (record === undefined) record = seed
 
+  // A parent that re-pushes its props sends `record: undefined` a second time —
+  // which is *not stated*, not *cleared* (the same distinction Invariant 9 makes
+  // about a patch). Without this the seed is dropped on that push and every
+  // control reads a field off `undefined`, which is how a wrapper component that
+  // declares `export let record` — every generated Resource file — took its own
+  // form down.
+  $: { if (record === undefined) record = seed }
+
   // The baseline reset() returns to. Snapshotted at mount (`var`, outside the
   // reactive graph) because a form that reset to the CURRENT record would be a
   // no-op. Shallow on purpose — a row is flat, and a deep clone would copy
@@ -163,12 +171,28 @@
   // A button does not: Cancel has to stay live while a slow save runs, or the
   // save traps the person in the form, and only the SUBMIT button follows
   // `submitting`. Reporting one merged flag is what made that undecidable.
+  // `optionsFor` is how a control asks what a field's options are without
+  // knowing where they come from. This package peers on mesa and css alone, so
+  // it cannot reach the resource itself, and a relation's options need a
+  // request that only the resource can make — the form is the one thing under
+  // here holding both. Always a promise, including for an enum the rule
+  // already answers, so a control has one code path rather than two.
+  //
+  // It answers `{ options, total, truncated }` rather than the rows, because a
+  // list capped at the server's limit and a list that is genuinely complete
+  // look identical once the count is dropped — which is the whole of `FJS-391`.
+  // `opts` carries `search`, so a control can send what was typed to the
+  // SERVER instead of filtering the page it already has.
   $context.form = {
     errors,
     submitting,
     disabled,
     fields: resource?.fields ?? {},
     submitted,
+    optionsFor: (name, opts) =>
+      resource?.options?.(name, opts) ??
+      Promise.resolve({ options: [], total: 0, truncated: false }),
+    reportInvalid,
   }
 
   // ── The generated fields ─────────────────────────────────────────────
@@ -198,9 +222,10 @@
 
   // A picker's rows come from the related service, so they arrive after the
   // form does. Keyed by field, replaced rather than mutated — that is what
-  // makes the <Select> repopulate. $onMount, so a prerendered form fetches
+  // makes the <Select> repopulate. $.onMount, so a prerendered form fetches
   // nothing at build time.
   let pickers = {}
+  let totals  = {}
 
   // Controls hand back an event; the record is REPLACED rather than mutated,
   // because a member expression is not a bindable target and mutation would
@@ -239,6 +264,45 @@
   let _revealed = []     // fields allowed to show a message
   let _server   = {}     // per-field messages from the last failed submit
 
+  // ── The fourth error source: a control that cannot convert what it shows ──
+  //
+  // The three above all judge the RECORD. This one judges the box, and nothing
+  // else here can: a control whose element cannot hold every value the field
+  // may take — `JsonInput`, where `{"a":` is a state every valid document
+  // passes through while it is being typed — writes only what it could convert,
+  // so the record keeps the last good value and every check on it passes while
+  // the screen shows something else. Submitting then saves a value the person
+  // can see is not the one in front of them.
+  //
+  // So a control reports it, through `$context.form.reportInvalid(name, msg)`,
+  // and a `null` message retracts it. The control is on screen by construction
+  // — it is the thing that raised this — which is what lets the refusal below
+  // cover a hand-written form as well, where `FJS-316` deliberately stops the
+  // record-level checks from refusing.
+  let _control = {}
+
+  /**
+   * A control saying the value it is showing is not one it can hand over.
+   * `message` null or '' retracts it.
+   *
+   * Guarded on no-change because a control calls this from its input handler
+   * and the reassignment below rebuilds `$context.form`, which re-derives that
+   * control — an unguarded write would be a render loop on every keystroke of
+   * an already-invalid box.
+   */
+  function reportInvalid(name, message) {
+    if (!name) return
+    const next = message || ''
+    if ((_control[name] ?? '') === next) return
+
+    const map = { ..._control }
+    if (next) map[name] = next
+    else delete map[name]
+
+    _control = map
+    _recompute()
+  }
+
   const _mode = () =>
     method === 'patch' || (method === 'auto' && record?.[idField] != null)
       ? 'patch' : 'create'
@@ -257,7 +321,11 @@
   }
 
   function _recompute() {
-    errors = { ..._server, ..._live() }
+    // `_control` last: it is the only one of the three describing what is on
+    // screen NOW. A server message is about the value that was sent and a live
+    // message is about the last value the control could convert, so both are
+    // talking about a record the box no longer agrees with.
+    errors = { ..._server, ..._live(), ..._control }
   }
 
   function _map(err) {
@@ -271,12 +339,15 @@
     if (!resource) {
       throw new Error('<Form> needs either a `resource` or an `onsubmit` handler')
     }
-    // `auto` is answered here rather than left to the service's own upsert.
-    // The two do not agree: `_mode()` asks about THIS model's id field, which
-    // the schema names, and the client's `upsert` is hardcoded to `id` — so on
-    // a model keyed by anything else, editing an existing row created a
-    // duplicate. Deciding it here also means a service with no `upsert` still
-    // works, which is every service that did not ask for one.
+    // The resource owns the write (`FJS-D114`). It answers `auto` off the
+    // model's OWN id field, which is the question this component used to
+    // answer for itself — and the one the client's `upsert` gets wrong, since
+    // that is hardcoded to `id` and creates a duplicate when a model is keyed
+    // by anything else (`FJS-316`).
+    if (resource.save) return resource.save(data, { mode: method })
+
+    // A resource object from before save() existed — a hand-made one, or an
+    // older @frontierjs/sierra. Same decision, made here.
     const how = method === 'auto' ? _mode() : method
 
     if (how === 'create') return resource.service.create(data)
@@ -323,6 +394,10 @@
     // control is refused because its message is on screen next to it. A
     // hand-written form still validates where it always did — in the resource,
     // on the way to the service.
+    // A control's own refusal is not subject to that rule: it came from a
+    // control that is on screen, which is the only thing `rendered` was
+    // standing in for. So a hand-written form refuses over it too.
+    if (Object.keys(_control).length) return undefined
     if (rendered.some(f => errors[f.name])) return undefined
 
     submitting = true
@@ -356,13 +431,23 @@
     clearErrors()
   }
 
-  /** Drop the messages without touching the record. */
+  /**
+   * Drop the messages without touching the record.
+   *
+   * `_control` is deliberately NOT among them. Every other message here is
+   * about a value — clear it and the worst case is that the next submit says
+   * the same thing again. A control error is about TEXT that is still in the
+   * box: clearing it would leave the form submittable over something the
+   * person can see is wrong, and nothing would put the message back until they
+   * typed. It is retracted by the control that raised it, and by nothing else.
+   */
   export function clearErrors() {
     errors    = {}
     formError = ''
     _server   = {}
     _revealed = []
     _touched  = []
+    _recompute()
   }
 
   // `input` and `change` both bubble, so one pair of listeners on the <form>
@@ -404,19 +489,30 @@
   // on the <form> sees a `blur` that by definition does not bubble. `focusout`
   // would work for real focus loss and miss a synthetic `blur` dispatched
   // straight at an element, which is how a test drives it.
-  // Hand the imperative API out once the component is alive. $onMount is a
+  // Hand the imperative API out once the component is alive. $.onMount is a
   // no-op server-side, so a prerendered form simply never offers it — which is
   // correct: there is nothing to submit.
-  $onMount(() => {
+  $.onMount(() => {
     onready?.({ submit, reset, clearErrors })
 
-    // Rows are fetched for a FOREIGN KEY, not for the control named `picker`.
-    // The relation is the schema fact and the control is a choice made over it,
-    // so a contributed combobox over `customerId` gets its rows without having
-    // to claim the built-in name to do it.
+    // Rows are fetched for a SCHEMA FACT — a foreign key, or a declared value
+    // set — not for the control named `picker`. The relation is the fact and
+    // the control is a choice made over it, so a contributed combobox over
+    // `customerId` gets its rows without having to claim the built-in name to
+    // do it, and a `@values` column gets them with no relation at all.
+    //
+    // `.options` off the envelope, not the envelope: every control below takes
+    // a plain array, and passing the envelope through handed `<Select>` an
+    // object to iterate. The COUNT is kept beside it rather than dropped —
+    // `resource.options()` answers `{ options, total, truncated }`, and a list
+    // capped at the server's limit reads identically to a complete one once
+    // the number is gone, which is the whole of `FJS-391`.
     for (const f of rendered) {
-      if (!f.rule?.references) continue
-      resource?.options?.(f.name)?.then?.(rows => { pickers = { ...pickers, [f.name]: rows } })
+      if (!f.rule?.references && !f.rule?.values) continue
+      resource?.options?.(f.name)?.then?.(r => {
+        pickers = { ...pickers, [f.name]: Array.isArray(r) ? r : (r?.options ?? []) }
+        totals  = { ...totals,  [f.name]: Array.isArray(r) ? null : (r?.total ?? null) }
+      })
     }
   })
 
@@ -457,8 +553,9 @@
   {#each rendered as f (f.name)}
     <FormField
       field={f}
-      value={record[f.name]}
+      value={record?.[f.name]}
       options={pickers[f.name]}
+      total={totals[f.name]}
       write={(v) => writeField(f.name, v)}
     />
   {/each}

@@ -5,7 +5,6 @@ title: Servers
   import { page, goto } from '@frontierjs/sierra/router'
   import { session }    from '../../session.js'
   import { servers }    from '../../resources/Server.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
   import Input          from '@frontierjs/ui/components/forms/Input.mesa'
   import Pagination     from '@frontierjs/ui/components/display/Pagination.mesa'
@@ -138,7 +137,7 @@ title: Servers
     const i = rows.findIndex(r => r.id === row.id)
     if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   // A tone per status, decided once. Only the states that are actually good or
   // bad news get one — 'pending' and 'provisioning' are neither.

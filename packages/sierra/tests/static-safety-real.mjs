@@ -28,13 +28,13 @@
 
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
+import { mkdirSync, writeFileSync } from 'fs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
 import { prerenderRoutes } from '../src/build/prerender.js'
 import { createClient, autoMigrate, parse, generateJsonSchema } from '@frontierjs/litestone'
+import { tmpDir } from './tmp.js'
 
 let passed = 0
 const failures = []
@@ -64,7 +64,7 @@ model Invoice {
 
 /** A throwaway app whose load() reads through a real client. */
 async function realApp(accessor, frontmatter = 'render: static') {
-  const root = mkdtempSync(resolve(tmpdir(), 'sierra-real-'))
+  const root = tmpDir('sierra-real-')
   mkdirSync(resolve(root, 'db'), { recursive: true })
   const schemaPath = resolve(root, 'db/schema.lite')
   writeFileSync(schemaPath, SCHEMA)
@@ -96,7 +96,7 @@ async function run({ root, db, json }) {
   const tree = await scan('src/routes', { cwd: root })
   return prerenderRoutes({
     tree, root,
-    outDir: mkdtempSync(resolve(tmpdir(), 'sierra-real-out-')),
+    outDir: tmpDir('sierra-real-out-'),
     renderComponent,
     schemaDefs:   json.$defs,
     schemaModels: Object.keys(json.$defs).filter(k => json.$defs[k].properties),

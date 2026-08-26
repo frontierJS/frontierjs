@@ -36,6 +36,7 @@
   //   {/if}
 
   import { uid } from '../../utils.js'
+  import { rank, segments } from '@frontierjs/toolbelt/search'
 
   export let items        = []      // Item[]
   export let placeholder  = 'Search commands…'
@@ -61,22 +62,26 @@
   const rowId  = (item) => `${listId}-${item.id}`
 
   // Focus search input immediately on mount
-  $onMount(() => inputEl?.focus())
+  $.onMount(() => inputEl?.focus())
 
   // ── Derived chain ────────────────────────────────────────────────────────
   // Each const auto-derives when its dependencies change (Rule 2).
   // query → filtered → groupMap → groupNames → flat — all reactive.
 
-  const filtered = query.trim()
-    ? items.filter(c => {
-        const q = query.toLowerCase()
-        return (
-          c.label.toLowerCase().includes(q) ||
-          c.group.toLowerCase().includes(q)  ||
-          (c.sub || '').toLowerCase().includes(q)
-        )
-      })
-    : items
+  // Ranked across all three fields. This was `includes()` with no ordering at
+  // all, so every command that contained the query came back in registration
+  // order — typing the exact name of a command could leave it below six others
+  // that merely mention the word.
+  const ranked = query.trim()
+    ? rank(items, query, { keys: ['label', 'group', 'sub'] })
+    : null
+
+  const filtered = ranked ? ranked.map(r => r.item) : items
+
+  // Per-FIELD ranges, so the label is marked with the label's match and the sub
+  // line with its own. One flat range list would mark whichever field happened
+  // to score best at offsets belonging to the other.
+  const marksOf = new Map((ranked ?? []).map(r => [r.item, r.byKey ?? {}]))
 
   const groupMap = filtered.reduce((acc, c) => {
     if (!acc[c.group]) acc[c.group] = []
@@ -291,14 +296,13 @@
 
                 <!-- Label + sub. item-text/-title/-sub ship in lists.css. -->
                 <span class="item-text">
-                  <span class="item-title fjs-cp-rowlabel {isActive ? 'fjs-cp-rowlabel--active' : ''}">
-                    {item.label}
-                  </span>
+                  <!-- One line: a break here renders whitespace inside the word. -->
+                  <span class="item-title fjs-cp-rowlabel {isActive ? 'fjs-cp-rowlabel--active' : ''}">{#each segments(item.label, marksOf.get(item)?.label ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
                   {#if item.sub}
                     <span
                       class="item-sub"
                       style:color={item.color || undefined}
-                    >{item.sub}</span>
+                    >{#each segments(item.sub, marksOf.get(item)?.sub ?? []) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}</span>
                   {/if}
                 </span>
 
@@ -482,6 +486,14 @@
    * house decision, not a per-component one, so a theme that stops shouting
    * stops shouting here too.
    */
+  /* The matched run. Weight rather than a colour — a row is already toned by
+     being active, and a second colour here competes with it. */
+  .fjs-cp-row mark {
+    background: transparent;
+    color: inherit;
+    font-weight: 700;
+  }
+
   .fjs-cp-grouplabel {
     font-size:      var(--text-2xs);
     font-weight:    var(--label-font-weight);

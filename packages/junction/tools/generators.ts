@@ -91,10 +91,11 @@ export default {
   port:    ${a.port},
   debug:   true,
 ${apiPrefixLine}
-  auth: {
-    secret:        process.env.AUTH_SECRET ?? 'change-me-in-production',
-    sessionExpiry: '7d',
-  },
+  // No auth block. Junction's AppConfig declares no \`auth.secret\`, and a
+  // session issued by @frontierjs/auth is a row found by a random token rather
+  // than anything signed — so this wrote a key nothing read, into the one file
+  // people copy from (\`FJS-360\`). The credential this stack does have is
+  // ENCRYPTION_KEY, and it is passed to createClient, not declared here.
 ${dbBlock}
   http: {
     maxBodySize: 256 * 1024,
@@ -171,7 +172,9 @@ export function genDotEnv(o: GenInput): string {
 
   return `# ${a.projectName} environment variables
 # Never commit this file to source control.
-AUTH_SECRET="${secret}"
+# ENCRYPTION_KEY is read as HEX — 64 characters is 32 bytes, which is what
+# litestone requires for an @encrypted / @secret / @hashed column.
+ENCRYPTION_KEY="${secret}"
 ${dbLine}${betterAuthLine}${apiKeyLine}
 NODE_ENV=development
 `
@@ -246,7 +249,7 @@ import { createBetterAuthAdapter }  from '@frontierjs/junction'
 // See https://www.better-auth.com/docs/installation
 
 export const betterAuthInstance = betterAuth({
-  secret:   process.env.BETTER_AUTH_SECRET ?? process.env.AUTH_SECRET,
+  secret:   process.env.BETTER_AUTH_SECRET,
   database: {
     // Example with SQLite via Bun:
     // db: new Database('./auth.db'),

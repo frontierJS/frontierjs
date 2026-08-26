@@ -20,6 +20,10 @@ const DEFAULTS = {
   // Read by /orders/: on, the reference opens the quick-view drawer; off, it
   // navigates to the order's own page.
   quickView:     false,
+  // Which currency prices are SHOWN in. The shop keeps its books in one
+  // (`money.js` § BASE) and this is a display choice on top of it — see the
+  // note there about the rate being fixed.
+  currency:      'USD',
 }
 
 /** Live preferences. Mutated in place so `$:` path watches see the change. */

@@ -103,6 +103,28 @@ export class Router {
     return this
   }
 
+  /**
+   * Put a middleware in front of every route registered SO FAR.
+   *
+   * The companion to patching the registration methods, and it exists because
+   * patching alone is a rule about ORDER that nothing states and nothing
+   * checks: a middleware installed at startup reaches the routes registered
+   * after it and silently misses every route a plugin registered during
+   * `configure()`. For CORS that is the difference between an app whose service
+   * calls work cross-origin and whose SIGN-IN does not — the preflight passes,
+   * the POST succeeds, the browser discards the response, and what reaches the
+   * page is `Failed to fetch` (`FJS-496`).
+   *
+   * Prepended, because the middleware being retro-fitted is a wrapper: it has
+   * to run before whatever the route was registered with.
+   */
+  prependMiddleware(mw: MiddlewareFn): this {
+    if (this._built)
+      throw new Error('Cannot add middleware after the router is built')
+    for (const route of this._routes) route.middleware = [mw, ...route.middleware]
+    return this
+  }
+
   get(path: string, handler: RouteHandler, mw?: MiddlewareFn[])    { return this.add('GET',     path, handler, mw) }
   post(path: string, handler: RouteHandler, mw?: MiddlewareFn[])   { return this.add('POST',    path, handler, mw) }
   put(path: string, handler: RouteHandler, mw?: MiddlewareFn[])    { return this.add('PUT',     path, handler, mw) }

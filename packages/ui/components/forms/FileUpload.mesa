@@ -1,3 +1,21 @@
+<script module>
+  // `isImage` is this component's own verb and its callers need it too — a file
+  // list rendered somewhere else asks the same question (`FJS-D116`):
+  //
+  //   import FileUpload, { isImage } from '@frontierjs/ui/components/forms/FileUpload.mesa'
+  //
+  // `formatBytes` used to live here and does not any more. Three screens in
+  // basecamp were formatting DISKS with their own copy of it, and the server
+  // reports those same sizes — a `.mesa` import needs the Mesa build plugin, so
+  // it cannot cross that line. It is `@frontierjs/toolbelt/units` now
+  // (`FJS-408`), which is the boundary the same ruling names.
+
+  /** Is this File one the browser can show rather than only name? */
+  export function isImage(file) {
+    return file.type.startsWith('image/')
+  }
+</script>
+
 <script>
   // FileUpload.mesa
   // Drag-and-drop file input with click-to-browse, file preview list,
@@ -18,6 +36,7 @@
   //   <FileUpload {files} progressMap={uploadProgress} multiple />
 
   import Field from './Field.mesa'
+  import { formatBytes } from '@frontierjs/toolbelt/units'
   import { uid, resolveError, resolveRule, stated } from '../../utils.js'
 
   export let accept       = '*/*'     // MIME types e.g. 'image/*' or '.pdf,.doc'
@@ -43,16 +62,6 @@
   let dragging     = false
   let inputEl
   let localError   = ''
-
-  function formatBytes(bytes) {
-    if (bytes < 1024)         return `${bytes} B`
-    if (bytes < 1024 ** 2)   return `${(bytes / 1024).toFixed(1)} KB`
-    return `${(bytes / 1024 ** 2).toFixed(1)} MB`
-  }
-
-  function isImage(file) {
-    return file.type.startsWith('image/')
-  }
 
   function validate(fileList) {
     if (maxSizeMB <= 0) return ''

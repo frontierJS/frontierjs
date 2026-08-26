@@ -1,0 +1,222 @@
+<!--
+  The shopper's own account, on a page that is a FILE.
+
+  Everything a signed-in person sees is in here, and it has to be: the page
+  around it is prerendered at build time and served from a bucket, so there is
+  no server to know who is asking. A layout cannot show a name, a route cannot
+  guard itself, and there is no session for the build to bake in — which is the
+  right answer for a public storefront and the reason this is one island rather
+  than three pages.
+
+  ── The token lives on THIS origin ──────────────────────────────────────────
+
+  `web/` is the operations app and signs staff in on :8010. This is :8710, a
+  different origin, and `localStorage` is per origin — so a shopper signed in
+  here is not signed in there and must not be. The client is given a
+  `tokenStorage` rather than being left to its default, because the default is
+  no persistence at all: without it a shopper is signed out by the reload that
+  a link to another page of this site causes.
+
+  ── What the API does, and what this does not ───────────────────────────────
+
+  Nothing here filters. `orders` and `order-lines` answer the shopper's OWN rows
+  because Order and OrderLine each declare `@@allow('read', userId ==
+  auth().id)`, and a screen that also filtered would be a second copy of that
+  rule in the place where it cannot be enforced. The proof is that this asks for
+  everything and gets a page.
+-->
+<script>
+  import { createJunctionClient } from '@frontierjs/junction/client'
+  import { clientOptions }        from '../api.js'
+  import { money }                from '../money.js'
+
+  const KEY = 'shop_account_token'
+
+  let state    = 'loading'    // loading | out | in | working
+  let me       = null
+  let orders   = []
+  let lines    = new Map()
+  let open     = null
+  let error    = ''
+  let mode     = 'in'         // in | up
+  let email    = ''
+  let password = ''
+  let name     = ''
+
+  let client = null
+
+  $.onMount(async () => {
+    // Created here rather than at module scope: an island's body also runs
+    // during the static render, where there is no window and no localStorage.
+    // `$.onMount` is a no-op on the server, which is what makes that safe
+    // rather than merely lucky.
+    client = createJunctionClient({
+      ...clientOptions,
+      tokenStorage: {
+        get:   () => localStorage.getItem(KEY),
+        set:   v  => localStorage.setItem(KEY, v),
+        clear: () => localStorage.removeItem(KEY),
+      },
+    })
+
+    if (!client.token) { state = 'out'; return }
+    try { await load() }
+    catch { // A stored token the shop no longer honours is not an error to
+            // show a shopper — it is being signed out.
+            client.setToken(null); state = 'out' }
+  })
+
+  async function load() {
+    me = await client.auth.me()
+    // Everything, sorted. What comes back is what the boundary allows.
+    const list = await client.service('orders').find({}, { orderBy: '-createdAt', limit: 50 })
+    orders = list?.data ?? []
+    state  = 'in'
+  }
+
+  async function show(order) {
+    open = open === order.id ? null : order.id
+    if (open === null || lines.has(order.id)) return
+    const got = await client.service('order-lines').find({ orderId: order.id }, { orderBy: 'id' })
+    lines = new Map(lines).set(order.id, got?.data ?? [])
+  }
+
+  async function submit() {
+    error = ''
+    state = 'working'
+    try {
+      if (mode === 'up') await client.auth.signUp({ email, password, name })
+      else               await client.auth.signIn(email, password)
+      password = ''
+      await load()
+    } catch (e) {
+      // A shop tells a shopper what to do next, and "Invalid credentials" is
+      // not that — but ONLY a 401 is that failure. Every other one (the shop is
+      // unreachable, the address is taken, too many attempts) has to say what it
+      // is: rewriting them all as *wrong password* is how a CORS failure spends
+      // an afternoon being debugged as a bad password.
+      error = e?.code === 401 || e?.data?.status === 401
+        ? 'That email and password do not match an account here.'
+        : (e?.message ?? 'That did not work')
+      state = 'out'
+    }
+  }
+
+  function signOut() {
+    client.setToken(null)
+    me = null; orders = []; lines = new Map(); open = null
+    state = 'out'
+  }
+
+  const when = iso => new Date(iso).toLocaleDateString(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric' })
+</script>
+
+<section class="account" data-account>
+  {#if state === 'loading'}
+    <p class="text-muted" data-state="loading">Looking you up…</p>
+
+  {:else if state === 'in'}
+    <div class="who">
+      <div>
+        <h2>{me?.name ?? me?.email}</h2>
+        <p class="text-sm text-muted" data-email>{me?.email}</p>
+      </div>
+      <button class="button subtle" onclick={signOut} data-signout>Sign out</button>
+    </div>
+
+    <h3>Your orders</h3>
+    {#if orders.length === 0}
+      <p class="text-muted" data-empty>Nothing yet. When you buy something it will be here.</p>
+    {:else}
+      <ul class="orders" data-orders>
+        {#each orders as order (order.id)}
+          <li data-order={order.reference}>
+            <button class="row" onclick={() => show(order)} data-open={order.reference}>
+              <span class="ref">{order.reference}</span>
+              <span class="when text-muted">{when(order.createdAt)}</span>
+              <span class="status" data-status={order.status}>{order.status}</span>
+              <span class="total">{money(order.total)}</span>
+            </button>
+
+            {#if open === order.id}
+              <table class="lines" data-lines={order.reference}>
+                <tbody>
+                  {#each (lines.get(order.id) ?? []) as line (line.id)}
+                    <tr>
+                      <td>{line.description}</td>
+                      <td class="num">×{line.quantity}</td>
+                      <td class="num">{money(line.lineTotal)}</td>
+                    </tr>
+                  {:else}
+                    <tr><td colspan="3" class="text-muted">Loading…</td></tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+  {:else}
+    <form class="signin" onsubmit={e => { e.preventDefault(); submit() }}>
+      <h2>{mode === 'up' ? 'Create an account' : 'Sign in'}</h2>
+
+      {#if mode === 'up'}
+        <label>Name<input bind:value={name} data-name required /></label>
+      {/if}
+      <label>Email<input type="email" bind:value={email} data-email-input required /></label>
+      <label>Password<input type="password" bind:value={password} data-password required /></label>
+
+      <button class="button primary" type="submit" data-submit
+              disabled={state === 'working'}>
+        {mode === 'up' ? 'Create account' : 'Sign in'}
+      </button>
+
+      {#if error}<p class="error" data-error>{error}</p>{/if}
+
+      <p class="text-sm text-muted">
+        {#if mode === 'up'}
+          Already have one?
+          <button type="button" class="link" onclick={() => { mode = 'in'; error = '' }} data-to-signin>Sign in</button>
+        {:else}
+          New here?
+          <button type="button" class="link" onclick={() => { mode = 'up'; error = '' }} data-to-signup>Create an account</button>
+        {/if}
+      </p>
+    </form>
+  {/if}
+</section>
+
+<style>
+  .account { max-width: 44rem; }
+  .who     { display: flex; align-items: start; justify-content: space-between;
+             gap: var(--space-4); margin-bottom: var(--space-5); }
+  .who h2  { margin: 0; }
+
+  .orders  { list-style: none; margin: 0; padding: 0;
+             border: 1px solid var(--border); border-radius: var(--radius); }
+  .orders li { border-bottom: 1px solid var(--border); }
+  .orders li:last-child { border-bottom: 0; }
+
+  .row     { display: grid; grid-template-columns: 8rem 1fr auto 6rem;
+             gap: var(--space-3); align-items: center; width: 100%;
+             padding: var(--space-3); background: none; border: 0;
+             text-align: left; cursor: pointer; font: inherit; color: inherit; }
+  .row:hover { background: var(--surface-2, var(--surface)); }
+  .ref     { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .total   { text-align: right; font-variant-numeric: tabular-nums; }
+  .status  { font-size: 0.8rem; }
+
+  .lines   { width: 100%; border-collapse: collapse;
+             padding: 0 var(--space-3) var(--space-3); }
+  .lines td { padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); }
+  .num     { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .signin  { display: grid; gap: var(--space-3); max-width: 22rem; }
+  .signin label { display: grid; gap: var(--space-1); }
+  .link    { background: none; border: 0; padding: 0; font: inherit;
+             color: var(--link, inherit); text-decoration: underline; cursor: pointer; }
+  .error   { color: var(--danger-fg, #b3261e); }
+</style>

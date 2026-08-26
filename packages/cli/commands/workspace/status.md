@@ -24,7 +24,7 @@ const { wsRoot, packages } = await context.wsPackages()
 if (!wsRoot) { log.error('No workspace path provided'); return }
 
 if (!packages.length) {
-  log.warn('No packages found — run `fli ws-init` and `fli ws-add`')
+  log.warn('No packages found — run `fli ws:init` and `fli ws:add`')
   return
 }
 

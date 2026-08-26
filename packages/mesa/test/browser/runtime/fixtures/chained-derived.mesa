@@ -1,0 +1,57 @@
+<script>
+  // chained-derived.mesa — a `{#if}` whose test reads a DERIVED value.
+  //
+  // Written from a screen where this did NOT work (`FJS-512`, basecamp's
+  // server detail): the page derived the set of legal moves from the row and
+  // drew one button per member, and after a transition the set re-derived
+  // while the buttons did not. It passes here, which is the useful half — it
+  // is what rules the plain shape out. Everything this fixture combines was
+  // suspected and is now measured as fine:
+  //
+  //   a `{#if}` testing a `$:` derived rather than a plain `let`;
+  //   testing it with a METHOD CALL (`moves.has(…)`) rather than the value,
+  //   which is what a Set of names forces, and which reads as a member path;
+  //   a sibling ATTRIBUTE reading the same derived — the thing that made the
+  //   real failure legible, because it stayed current while the blocks beside
+  //   it did not;
+  //   an outer branch chain whose selected branch does not change;
+  //   an OBJECT replaced whole, by an async handler after an await.
+  //
+  // So the fixture is coverage rather than a reproduction. Whatever is left in
+  // the real screen is not on this list.
+  // The `let` is what changes. Everything below is downstream of it.
+  let loading = false
+  // An OBJECT, replaced whole by an async handler after an await — a screen
+  // re-reading its record from a service, which is where this was found. A
+  // string reassigned synchronously is a different code path and it works.
+  let row = { status: 'online' }
+
+  const LEGAL = {
+    online:   ['drain', 'reboot'],
+    draining: ['undrain'],
+  }
+
+  $: moves = new Set(LEGAL[row?.status] ?? [])
+</script>
+
+<!--
+  The OUTER chain is part of the case. Its test reads the same `let`, and the
+  branch it selects does not change — which is the shape a screen has: a
+  loading branch, an error branch, and the record. A row being replaced by a
+  newer version of itself stays in the same branch.
+-->
+{#if loading}
+  <p id="loading">Loading…</p>
+{:else if row}
+  <div id="actions" data-moves={[...moves].join(',')}>
+    {#if moves.has('drain')}<button type="button" id="drain">Drain</button>{/if}
+    {#if moves.has('undrain')}<button type="button" id="undrain">Cancel drain</button>{/if}
+    {#if moves.has('reboot')}<button type="button" id="reboot">Reboot</button>{/if}
+  </div>
+{/if}
+
+<output id="state">{row?.status}</output>
+<button type="button" id="go" on:click={async () => {
+  await Promise.resolve()
+  row = { status: 'draining' }
+}}>go</button>

@@ -1,0 +1,178 @@
+<script>
+  // json.mesa — the fixture for Json (the viewer) and JsonInput (the control).
+  //
+  // The document is written to make the two shapes that are easy to get wrong
+  // reachable: a key that CONTAINS a dot beside a nested path that would join to
+  // the same string, and a `null` beside the string "null".
+  import Json      from '../../../components/display/Json.mesa'
+  import JsonInput from '../../../components/forms/JsonInput.mesa'
+  import Form      from '../../../components/forms/Form.mesa'
+  import Button    from '../../../components/forms/Button.mesa'
+
+  let tlast      = undefined
+  let ulast      = undefined
+  let uannounced = 0
+  let ndoc       = { a: 1 }
+
+  const doc = {
+    'a.b':   'flat key with a dot',
+    a:       { b: 'nested, and not the same node' },
+    count:   3,
+    live:    true,
+    missing: null,
+    literal: 'null',
+    tags:    ['x', 'y'],
+    blank:   {},
+  }
+
+  let written = undefined
+  let writes  = 0
+  let refused = 0
+
+  // The editable tree. `pristine` is the SAME object handed to the component,
+  // read back after every operation — every write in the kit answers a copy, so
+  // an operation that mutated this would be the one bug the whole design is
+  // built to prevent, and nothing on screen would show it.
+  const pristine = { name: 'Ada', count: 3, live: true, missing: null, tags: ['x', 'y'], nested: { deep: 1 } }
+  let edited = undefined
+  let edits  = 0
+
+  // The controlled shape: what this holds IS what the tree shows, so an edit
+  // and a change from anywhere else on the page arrive by the same door.
+  let cdoc = { a: 1 }
+
+  // Read by the spec through the live object, NOT through an <output> holding
+  // `JSON.stringify(pristine)`. Mutating an object in place changes no binding,
+  // so that output would still be showing the string it rendered at mount — and
+  // the assertion would pass against exactly the bug it exists to catch.
+  // Measured: a deliberately mutating removeRow left it green.
+  if (typeof window !== 'undefined') window.__jsonPristine = pristine
+
+  // A form around one Json column, to reach the half a standalone control
+  // cannot: whether a submit is REFUSED while the box holds text the control
+  // could not convert (FJS-404). The resource is the smallest thing <Form>
+  // accepts — it validates the record and finds nothing wrong, which is the
+  // point: the record holds the last document that parsed.
+  const FIELDS = { payload: { type: 'object', title: 'Payload' } }
+
+  const RESOURCE = {
+    context:    { model: 'Config', service: 'configs', idField: 'id' },
+    fields:     FIELDS,
+    formFields: () => [{ name: 'payload', rule: FIELDS.payload, control: 'json' }],
+    options:    () => Promise.resolve({ options: [], total: 0, truncated: false }),
+    make:       () => ({ payload: { keep: 1 } }),
+    validate:   () => [],
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service:    {},
+  }
+
+  let saves = 0
+  let sent  = undefined
+
+  // The same again, HAND-WRITTEN. `rendered` is empty for a form with children,
+  // so the record-level refusal deliberately does not fire here (`FJS-316`) —
+  // this is the form that only the control's own report can stop.
+  let handSaves = 0
+  let handDoc   = { keep: 1 }
+</script>
+
+<h2>viewer — everything closed, so a toggle is the only thing that opens one</h2>
+<Json id="viewer" value={doc} expand={0} />
+
+<h2>viewer — the default depth</h2>
+<Json id="deep" value={doc} />
+
+<h2>editable</h2>
+<Json id="editor-tree" value={pristine} expand={2} editable
+      onchange={(next) => { edited = next; edits++ }} />
+
+<output id="edited">{JSON.stringify(edited)}</output>
+<output id="edits">{edits}</output>
+
+<h2>editable, controlled — the caller binds onchange back into value</h2>
+<Json id="controlled" value={cdoc} expand={1} editable onchange={(next) => { cdoc = next }} />
+<button type="button" id="replace-doc" on:click={() => { cdoc = { swapped: true } }}>replace from outside</button>
+
+<h2>copy — a value, and where it is</h2>
+<!-- The keys are chosen to break a naive path: one that is not a valid
+     identifier, one that looks like an index, and one holding a slash. -->
+<Json id="copyable" expand={2} copy
+  value={{ headers: { 'content-type': 'application/json' },
+           items: [{ sku: 'A-1' }],
+           odd: { '0': 'looks like an index', 'a/b': 'holds a slash' } }} />
+
+<h2>copy — the same document, addressed as JSON Pointers</h2>
+<Json id="pointered" expand={2} copy pathStyle="pointer"
+  value={{ headers: { 'content-type': 'application/json' }, odd: { 'a/b': 1 } }} />
+
+<h2>search — find something in a document</h2>
+<Json id="searchable" expand={0} search
+  value={{ shallow: 'nothing here', deep: { a: { b: { needle: 'found it' } } },
+           tags: ['x', 'y'], repeats: 'aXbXc', count: 1234, nothing: null }} />
+
+<h2>type — a leaf that can become a container</h2>
+<Json id="typed" value={{ a: 1, b: 2 }} expand={1} editable
+  onchange={(next) => { tlast = next }} />
+<output id="t-last">{JSON.stringify(tlast)}</output>
+
+<h2>undo — uncontrolled, so the draft is the document</h2>
+<Json id="undoable" value={{ a: 1, b: 2 }} expand={1} editable
+  onchange={(next) => { ulast = next; uannounced++ }} />
+<output id="u-last">{JSON.stringify(ulast)}</output>
+<output id="u-count">{uannounced}</output>
+
+<h2>undo — a caller that adopts a write and REBUILDS its own object</h2>
+<!-- The shape example's /settings/ has: what comes back is equal and not
+     identical, so an identity test would read every edit as a second, foreign
+     change and cost two presses to undo. -->
+<Json id="normalising" value={ndoc} expand={1} editable
+  onchange={(next) => { ndoc = { ...next } }} />
+<output id="n-doc">{JSON.stringify(ndoc)}</output>
+
+<h2>diff — the old document against the new one</h2>
+<Json id="diffed" expand={0}
+  against={{ keep: 1, gone: 'x', n: { deep: 1, same: 's' }, tags: ['a', 'b'] }}
+  value={{ keep: 1, n: { deep: 9, same: 's' }, tags: ['a', 'b', 'c'], fresh: true }} />
+
+<h2>diff — two documents that agree</h2>
+<Json id="undiffed" expand={0}
+  against={{ a: 1, b: { c: 2 } }}
+  value={{ a: 1, b: { c: 2 } }} />
+
+<h2>raw</h2>
+<Json id="raw" value={{ n: -1, s: 'text' }} mode="raw" />
+
+<h2>empty</h2>
+<Json id="blank" value={undefined} empty="Nothing here" />
+
+<h2>control</h2>
+<JsonInput
+  id="editor"
+  name="payload"
+  value={{ keep: 1 }}
+  onvalue={(v) => { written = v; writes++ }}
+  oninvalid={() => refused++} />
+
+<h2>the same control inside a form</h2>
+<Form id="guarded" resource={RESOURCE} onsubmit={(r) => { saves++; sent = r.payload }}>
+  {#snippet actions()}
+    <Button type="submit" id="save">Save</Button>
+  {/snippet}
+</Form>
+
+<h2>the same control, hand-written</h2>
+<Form id="handwritten" resource={RESOURCE} onsubmit={() => { handSaves++ }}>
+  <JsonInput name="payload" value={handDoc} onvalue={(v) => { handDoc = v }} />
+  {#snippet actions()}
+    <Button type="submit" id="hand-save">Save</Button>
+  {/snippet}
+</Form>
+
+<output id="hand-saves">{handSaves}</output>
+
+<output id="saves">{saves}</output>
+<output id="sent">{JSON.stringify(sent)}</output>
+
+<output id="written">{JSON.stringify(written)}</output>
+<output id="writes">{writes}</output>
+<output id="refused">{refused}</output>

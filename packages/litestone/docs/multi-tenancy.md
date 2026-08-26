@@ -156,6 +156,24 @@ Consequences worth stating:
 - **Raw SQL enforces none of it** — `db.sql` requires `asSystem()` once a schema
   declares access rules, and a raw statement is outside every policy.
 
+**A nullable claim column means the row belongs to no tenant — never *every*
+tenant.** `workspaceId String?` is legal and scoped like any other, and a row
+holding null is reachable through `asSystem()` alone. It is worth stating
+because the other reading is the tempting one: a column where null meant
+*shared* could not tell a shared row from a stamp that failed to land, so a
+leak and a feature would look identical. Sharing is a property of a MODEL and
+is declared — `@@tenant(none)`, checked at parse — and a table holding both
+kinds is two models wearing one name (`FJS-D141`).
+
+**The DELEGATED form answers the opposite, deliberately.** `@@tenant(via: rel)`
+over an OPTIONAL relation compiles to `check(rel)`, which is
+`FK IS NULL OR EXISTS (…)` — so a child with no parent is visible to every
+tenant rather than to none (`FJS-382`). The two are defensible apart: a column
+is the row's own claim, where a null relation is a row nobody has filed yet.
+They have not been reconciled, and `verifyTenantIsolation` reports the
+delegated case as `unparented` rather than grading it, which is the honest
+position for something nobody has settled (`FJS-528`).
+
 ### Models that carry no column
 
 They are **not** scoped, and that is sometimes exactly right — a plan table, a

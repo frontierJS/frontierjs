@@ -1,0 +1,27 @@
+<script module>
+  // web/src/resources/Payment.mesa — the Resource layer.
+  //
+  // Named for the model, exporting the accessor. `model:` is not stated because
+  // it does not need to be: `payments` singularises to `payment`, which is what
+  // `model Payment` resolves to through the one inflection table every other
+  // resolver reads (Invariant 2).
+  //
+  // ─── Why this file has no markup half ─────────────────────────────────────
+  //
+  // The same answer `InventoryMovement.mesa` gives, for the same reason. A
+  // resource file carries its model's default form, and this model has none to
+  // carry: `Payment` is `@@gate("5.8.8.9")` — an administrator reads, only
+  // `asSystem()` writes, and delete is LOCKED at 9. The `payments` service
+  // declares `methods: ['find', 'get', 'start', 'refund', 'record']` and no
+  // `create` or `patch` at all, so a generated form would offer to file a
+  // payment that no money is behind, which is the exact drift the gates exist
+  // to make impossible.
+  //
+  // A payment is written when a PROVIDER says something happened. What the
+  // screen offers instead is the two verbs — `start` and `refund` — and both
+  // are actions on the money rather than edits to the row.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const payments = createResource('payments')
+</script>

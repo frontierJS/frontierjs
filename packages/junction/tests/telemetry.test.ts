@@ -231,7 +231,7 @@ describe('junction.hook events', () => {
       hooks: {
         before: {
           find: [
-            async function validateInput() {},
+            async function checkPayload() {},
             async function stampTimestamp() {},
           ]
         }
@@ -250,7 +250,7 @@ describe('junction.hook events', () => {
     const hooks = hookEvents(captured).filter(e => e.data.phase === 'before')
     const userHooks = hooks.filter(e => !DERIVED_HOOKS.has(e.data.hookName as string))
     expect(userHooks).toHaveLength(2)
-    expect(userHooks[0].data.hookName).toBe('validateInput')
+    expect(userHooks[0].data.hookName).toBe('checkPayload')
     expect(userHooks[1].data.hookName).toBe('stampTimestamp')
   })
 
@@ -338,7 +338,10 @@ describe('junction.hook events', () => {
     const ctx = bridge.internal('items', 'find', null)
     await callService(svc, ctx, undefined, undefined, emitter)
 
-    const aroundHooks = hookEvents(captured).filter(e => e.data.phase === 'around')
+    // The derived `gateAuth` is an around hook too (FJS-403) and wraps this
+    // one; what is asserted is that the app's own emits ONCE, at exit.
+    const aroundHooks = hookEvents(captured)
+      .filter(e => e.data.phase === 'around' && !DERIVED_HOOKS.has(e.data.hookName as string))
     expect(aroundHooks).toHaveLength(1)
     expect(aroundHooks[0].data.hookName).toBe('withTiming')
     expect(aroundHooks[0].data.durationMs).toBeGreaterThanOrEqual(0)

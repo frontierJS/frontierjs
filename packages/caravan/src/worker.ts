@@ -155,6 +155,12 @@ export class QueueWorker {
     // session, so a caller demoted in between is graded at what they hold now.
     // `null` (cron, boot, standalone) is the app's own system principal.
     //
+    // The TENANT recorded beside it is re-bound for the length of the handler,
+    // so a service call inside it reaches the same rows the request that asked
+    // for the work could. Storing it is not the captured privilege storing a
+    // session would be: it names which rows, and the standing that decides
+    // what may be done with them is the re-resolved principal above.
+    //
     // Junction's runAs opens an AsyncLocalStorage scope, so a service call
     // inside the handler that names no auth inherits this principal without
     // being handed anything. Standalone, there is no runAs and no principal;
@@ -168,6 +174,7 @@ export class QueueWorker {
         data,
         attempts: record.attempts,
         actorId:  record.actor_id ?? null,
+        tenantId: record.tenant_id ?? null,
         auth:     { user: user as JobContext['auth']['user'] },
         // undefined rather than null when there is no app: a handler tests
         // `ctx.app?` and an optional property that is present-but-null reads
@@ -179,7 +186,7 @@ export class QueueWorker {
 
     try {
       const invoke = runAs
-        ? () => runAs.call(this._app, record.actor_id ?? null, run) as Promise<void>
+        ? () => runAs.call(this._app, record.actor_id ?? null, { tenant: record.tenant_id ?? null }, run) as Promise<void>
         : () => run(null)
       await this._bounded(invoke(), handler.timeout, record)
       const doneMs = Date.now()

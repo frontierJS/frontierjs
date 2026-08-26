@@ -6,6 +6,7 @@ export { createClient, ValidationError,
          VersionRequiredError, VersionConflictError,
          LockNotAcquiredError, LockReleasedByOtherError,
          LockExpiredError, SoftDeletedUniqueError,
+         UniqueConflictError,
          CapabilityNotDeclaredError }             from './core/client.js'
 export { sql, now, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
 export { Plugin, PluginRunner, AccessDeniedError } from './core/plugin.js'
@@ -32,6 +33,7 @@ export { parseDuration, parseSize,
          runSqliteRetention, compactJsonl }       from './tools/retention.js'
 export { Factory, defineFactory, Seeder, runSeeder,
          loadFixture, parseCsv }                from './seeder.js'
+export { ValueSetExtendError }                   from './core/valuesets.js'
 export { generateLiteSchema }                    from './tools/introspect.js'
 export { replicate }                             from './tools/replicate.js'
 export { ExternalRefPlugin }                       from './plugins/external-ref.js'

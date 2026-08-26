@@ -749,6 +749,45 @@ td:hover .copy-btn { opacity: 1 }
 .stats-wide { grid-column: 1 / -1 }
 .stats-db-section .tiles { margin-block-start: var(--space-lg) }
 
+/* ── Explore ──────────────────────────────────────────────────────────────
+   A box is a button because it navigates, and it is dimmed rather than
+   disabled when nothing is declared: `disabled` would take it off the tab order
+   and out of the accessibility tree, which is the exact opposite of a panel
+   whose subject is the words you have not found yet. */
+.ex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--space-md);
+}
+.ex-box {
+  display: flex; flex-direction: column; gap: var(--space-2xs);
+  padding: var(--space-md);
+  text-align: start;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-md);
+  cursor: pointer; font: inherit; color: inherit;
+}
+.ex-box:hover  { border-color: var(--rule-strong) }
+.ex-box:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px }
+.ex-box[data-empty="true"] { opacity: .55 }
+.ex-box[data-empty="true"]:hover { opacity: 1 }
+.ex-word  { font-family: var(--font-mono); font-weight: 600 }
+.ex-count { font-variant-numeric: tabular-nums }
+.ex-blurb { font-size: var(--text-sm); color: var(--color-muted); line-height: 1.4 }
+.ex-clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden }
+
+/* The word's own card. The example is the widest thing on it and the only part
+   that must not wrap, so it scrolls itself rather than the page. */
+.ex-card { padding: var(--space-lg); background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-md) }
+.ex-arity { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--color-muted); word-break: break-word }
+.ex-example { overflow-x: auto; margin-block: var(--space-md) 0 }
+.ex-chips { display: flex; flex-wrap: wrap; gap: var(--space-2xs) }
+
+/* A diff half is tinted by what it means, and also labelled `gone` / `new` —
+   colour is not a label. */
+.ex-diff-out { border-inline-start: 3px solid var(--color-danger) }
+.ex-diff-in  { border-inline-start: 3px solid var(--color-success) }
+#exPreview:not(:empty) { margin-block-start: var(--space-md); display: grid; gap: var(--space-sm) }
+
 /* A checkbox column is as wide as the checkbox. */
 .sel-cell { inline-size: 1.75rem }
 
@@ -878,6 +917,10 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
       <li><a class="navlink" id="navSchema" href="#schema">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
         Schema
+      </a></li>
+      <li><a class="navlink" id="navExplore" href="#explore">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Explore
       </a></li>
       <li><a class="navlink" id="navAccess" href="#access">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -1011,6 +1054,25 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
       <button class="btn outlined" onclick="erFitAll()">⊡ Fit all</button>
       <button class="btn outlined" onclick="erExport('svg')" title="Download the diagram as SVG">⬇ SVG</button>
       <button class="btn outlined" onclick="erExport('png')" title="Download the diagram as PNG">⬇ PNG</button>
+    </div>
+  </article>
+
+  <!-- ── Explore ────────────────────────────────────────────────────────── -->
+  <!-- Every other panel answers "what did you declare". This one answers "what
+       is this language, and what of it am I using" — so a word with nothing
+       behind it is dimmed and still opens its card, and only the count is
+       allowed to say zero. -->
+  <article class="view" id="panelExplore" hidden>
+    <div class="bar">
+      <strong>Explore</strong>
+      <nav class="cluster" id="exCrumb" aria-label="Breadcrumb"></nav>
+      <div class="spacer"></div>
+      <input class="field" type="search" id="exSearch" aria-label="Search the language"
+             placeholder="Search the language…" oninput="exRender()">
+      <span class="text-muted" id="exCounts">—</span>
+    </div>
+    <div class="data-grid-wrap stack" id="exBody">
+      <div class="empty"><span class="spinner"></span></div>
     </div>
   </article>
 
@@ -3043,9 +3105,905 @@ async function loadStats() {
   if (data.tables) grid.innerHTML += rowCountsCard(data.tables, data.totalRows || 0)
 }
 
+// ── Explore ───────────────────────────────────────────────────────────────────
+//
+// The .lite language as a surface you can walk, rather than the schema as a
+// thing you already wrote. Every other panel is derived from the seed, so a word
+// absent from the seed is absent from all of them — and nobody gets an error for
+// a feature they never heard of.
+//
+// The inventory is asked for (`GET /api/catalog`, one row per word) and never
+// built here, because a list written in this file would go stale the first time
+// somebody adds an attribute and the panel would be quietly wrong about the one
+// thing it offers, which is completeness.
+
+let _catalog   = null   // rows, as served
+let _exGroups  = {}     // group key → title
+let _exPositionNames = {}   // position key → human phrase
+let _exSource  = ''     // raw schema.lite, for the two words the parse erases
+let _exView    = { kind: 'home' }
+
+async function exInit() {
+  if (_catalog) { exRender(); return }
+  const body = document.getElementById('exBody')
+  try {
+    const [cat, src] = await Promise.all([api('/catalog'), api('/schema-source'), exAdvise()])
+    if (cat.error) throw new Error(cat.error)
+    _catalog  = cat.catalog
+    _exGroups = cat.groups || {}
+    _exPositionNames = cat.positions || {}
+    _exSource = src?.source ?? src?.content ?? ''
+    exRender()
+  } catch (e) {
+    body.innerHTML = `<div class="alert danger"><div class="alert-content">${esc(e.message)}</div></div>`
+  }
+}
+
+// ── What is declared ──────────────────────────────────────────────────────────
+//
+// Counted off the parse, which means IN EFFECT rather than as typed: @secret
+// expands into @encrypted @guarded @log, so a schema using it reports all four.
+// That is the honest number for "does this schema do this" and the panel says
+// which it is.
+//
+// `trait` and `import` are the exception and they are not a nuance: both are
+// erased at parse — spliced and inlined — so both count zero against the parsed
+// schema however many the file holds. They are counted off the source text, or
+// the index lies about the two features that are specifically about not
+// repeating yourself.
+
+const EX_KIND_TO_WORD = { uniqueIndex: 'unique', fieldAllow: 'allow', funcCall: 'slug' }
+
+/**
+ * The models Litestone wrote, not the app. `db.$schema` is the AUGMENTED parse —
+ * it carries a log model per logger database and a stub per view, which is what
+ * lets Browse list those tables — and counting them here reports a `model` and
+ * two `@@index` nobody typed, in the one panel whose subject is what you did and
+ * did not write.
+ *
+ * A logger database that declares its own `model` is the app's, so the test is
+ * the absence of that key rather than the driver alone.
+ */
+function exGenerated() {
+  const s   = schema || {}
+  const out = new Set()
+  for (const db of s.databases || [])
+    if (db.driver === 'logger' && !db.logModel)
+      for (const m of s.models || [])
+        if ((m.attributes || []).some(a => a.kind === 'db' && a.name === db.name)) out.add(m.name)
+  for (const v of s.views || []) out.add(v.name)
+  return out
+}
+
+function exUsage() {
+  const use = new Map()
+  const key = (level, word) => level + ':' + word
+  const bump = (level, word) => {
+    const w = EX_KIND_TO_WORD[word] ?? word
+    use.set(key(level, w), (use.get(key(level, w)) || 0) + 1)
+  }
+  const s   = schema || {}
+  const gen = exGenerated()
+  const own = (s.models || []).filter(m => !gen.has(m.name))
+
+  for (const [word, n] of [
+    ['database', (s.databases || []).length],
+    ['model',    own.length],
+    ['view',     (s.views     || []).length],
+    ['enum',     (s.enums     || []).length],
+    ['function', (s.functions || []).length],
+    ['type',     (s.types     || []).length],
+    ['tenancy',  s.tenancy ? 1 : 0],
+    ['trait',    exCountInSource(/^[ \t]*trait[ \t]+[A-Za-z_]/gm)],
+    ['import',   exCountInSource(/^[ \t]*import[ \t]+["']/gm)],
+  ]) use.set(key('schema', word), n)
+
+  // Model attributes live on models, views and types alike; field attributes on
+  // anything that declares fields.
+  for (const owner of [...own, ...(s.views || []), ...(s.types || [])]) {
+    for (const a of owner.attributes || []) bump('model', a.kind)
+    for (const f of owner.fields || [])
+      for (const a of f.attributes || []) bump('field', a.kind)
+  }
+  return use
+}
+
+function exCountInSource(re) {
+  if (!_exSource) return 0
+  // Line comments only — a `//` inside a string is not a case this language
+  // produces, and stripping block comments would need a real lexer.
+  const bare = _exSource.replace(/^[ \t]*\/\/.*$/gm, '')
+  return (bare.match(re) || []).length
+}
+
+/** The instances behind a top-level word, for the cards a click opens. */
+function exInstances(word) {
+  const s = schema || {}
+  switch (word) {
+    case 'model': {
+      const gen = exGenerated()
+      return (s.models || []).map(m => ({ name: m.name, model: m, generated: gen.has(m.name) }))
+    }
+    case 'view':     return (s.views     || []).map(v => ({ name: v.name, view: v }))
+    case 'enum':     return (s.enums     || []).map(e => ({ name: e.name, enum: e }))
+    case 'type':     return (s.types     || []).map(t => ({ name: t.name, type: t }))
+    case 'function': return (s.functions || []).map(f => ({ name: f.name, fn: f }))
+    case 'database': return (s.databases || []).map(d => ({ name: d.name, db: d }))
+    case 'tenancy':  return s.tenancy ? [{ name: 'tenancy', tenancy: s.tenancy }] : []
+    default:         return []   // trait and import are erased at parse — the file has them, the schema does not
+  }
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
+function exGo(view) {
+  _exView    = view
+  _exPreview = null
+  document.getElementById('exSearch').value = ''
+  exRender()
+}
+
+function exRender() {
+  if (!_catalog) return
+  const body  = document.getElementById('exBody')
+  const use   = exUsage()
+  const q     = document.getElementById('exSearch').value.trim().toLowerCase()
+
+  const rows  = _catalog
+  const used  = rows.filter(r => (use.get(r.level + ':' + r.word) || 0) > 0).length
+  document.getElementById('exCounts').textContent =
+    `${used} of ${rows.length} words in use`
+
+  exCrumbs()
+  body.innerHTML =
+      q                        ? exSearch(q, use)
+    : _exView.kind === 'word'  ? exWordCard(_exView.word, _exView.level, use)
+    : _exView.kind === 'top'   ? exTopDetail(_exView.word, use)
+    : _exView.kind === 'group' ? exGroupDetail(_exView.level, _exView.group, use)
+    : _exView.kind === 'interview' ? exInterview()
+    : _exView.kind === 'rules'     ? exRulesSection(_advise?.findings ?? []) +
+                                     exMissingSection(_advise?.missing ?? [])
+    :                            exHome(use)
+
+  // The field picker depends on the model picker, so it is filled after the
+  // card is in the DOM rather than rendered with a guess at the first model.
+  exFieldOptions()
+}
+
+function exCrumbs() {
+  const el = document.getElementById('exCrumb')
+  const home = `<button class="btn ghost compact" onclick="exGo({kind:'home'})">All words</button>`
+  if (_exView.kind === 'home') { el.innerHTML = ''; return }
+  const here =
+      _exView.kind === 'top'       ? _exView.word
+    : _exView.kind === 'group'     ? (_exGroups[_exView.group] || _exView.group)
+    : _exView.kind === 'interview' ? 'Which word do I want?'
+    : _exView.kind === 'rules'     ? 'Legal and worth a look'
+    :                                exTyped(_exView.level, _exView.word)
+  el.innerHTML = `${home}<span class="text-muted">›</span><span>${esc(here)}</span>`
+}
+
+// ── Views ─────────────────────────────────────────────────────────────────────
+
+function exHome(use) {
+  const top = _catalog.filter(r => r.level === 'schema')
+  const boxes = top.map(r => {
+    const n = use.get('schema:' + r.word) || 0
+    return exBox({
+      word:  r.word,
+      count: n,
+      blurb: r.blurb,
+      empty: n === 0,
+      go:    `exGo({kind:'top',word:'${r.word}'})`,
+    })
+  }).join('')
+
+  return `
+    <section class="stack">
+      <div class="section-header"><h2>Declarations</h2>
+        <span class="text-muted">the nine words a .lite file can begin a block with</span></div>
+      <div class="ex-grid">${boxes}</div>
+    </section>
+    ${exGroupSection(use, 'field', 'Field attributes', 'what a column can be told to do')}
+    ${exGroupSection(use, 'model', 'Model attributes', 'what a table can be told to do')}
+    <section class="stack">
+      <div class="section-header"><h2>Coming the other way</h2>
+        <span class="text-muted">a question rather than an index</span></div>
+      <div class="ex-grid">
+        ${exBox({ word: 'Which word do I want?', count: '3 questions', mono: false, empty: false,
+                  blurb: 'Can a caller read it? write it? is it stored? — the three answers that separate @computed, @transient, @system, @guarded and @encrypted.',
+                  go: "exGo({kind:'interview'})" })}
+        ${exBox({ word: 'Legal and worth a look', count: (_advise?.findings ?? []).length, mono: false,
+                  empty: !(_advise?.findings ?? []).length,
+                  blurb: 'Shapes this schema declares that parse clean and something later refuses.',
+                  go: "exGo({kind:'rules'})" })}
+      </div>
+    </section>
+  `
+}
+
+function exGroupSection(use, level, title, sub) {
+  const groups = []
+  for (const key of Object.keys(_exGroups)) {
+    const rows = _catalog.filter(r => r.level === level && r.group === key)
+    if (rows.length) groups.push({ key, rows })
+  }
+  const boxes = groups.map(g => {
+    const used = g.rows.filter(r => (use.get(level + ':' + r.word) || 0) > 0).length
+    return exBox({
+      word:  _exGroups[g.key],
+      count: `${used}/${g.rows.length}`,
+      blurb: g.rows.map(r => exTyped(level, r.word)).join('  '),
+      empty: used === 0,
+      mono:  false,
+      go:    `exGo({kind:'group',level:'${level}',group:'${g.key}'})`,
+    })
+  }).join('')
+  return `
+    <section class="stack">
+      <div class="section-header"><h2>${esc(title)}</h2><span class="text-muted">${esc(sub)}</span></div>
+      <div class="ex-grid">${boxes}</div>
+    </section>`
+}
+
+function exBox({ word, count, blurb, empty, go, mono = true }) {
+  return `<button type="button" class="ex-box" data-empty="${empty}" onclick="${go}">
+    <span class="cluster">
+      <span class="${mono ? 'ex-word' : ''}">${esc(String(word))}</span>
+      <span class="spacer"></span>
+      <span class="badge ${empty ? 'muted' : 'info'} ex-count">${esc(String(count))}</span>
+    </span>
+    <span class="ex-blurb ex-clamp">${esc(blurb)}</span>
+  </button>`
+}
+
+/** A top-level word: its instances if it has any, its card if it has none. */
+function exTopDetail(word, use) {
+  const row  = _catalog.find(r => r.level === 'schema' && r.word === word)
+  const list = exInstances(word)
+
+  if (!list.length) {
+    const erased = word === 'trait' || word === 'import'
+    const n = use.get('schema:' + word) || 0
+    const note = erased && n > 0
+      ? `<div class="alert info"><div class="alert-content">The file declares <b>${n}</b>, and
+           ${word === 'trait' ? 'a trait is spliced into its models' : 'an import is inlined'}
+           at parse — so there is nothing left to list here.</div></div>`
+      : ''
+    return note + exCard(row, 0)
+  }
+
+  const cards = list.map(i => exInstanceCard(word, i)).join('')
+  return `<div class="ex-grid">${cards}</div>` + exCard(row, list.length)
+}
+
+function exInstanceCard(word, i) {
+  const kv = (label, value) => value == null || value === '' ? ''
+    : `<div class="list-row"><span class="text-muted">${esc(label)}</span><span class="spacer"></span><span>${esc(String(value))}</span></div>`
+
+  let rows = ''
+  if (i.model) {
+    const m     = i.model
+    const attr  = k => m.attributes?.find(a => a.kind === k)
+    const gate  = attr('gate')?.value
+    const cols  = m.fields.filter(f => f.type.kind !== 'relation').length
+    const rels  = m.fields.filter(f => f.type.kind === 'relation').length
+    const pol   = (m.attributes || []).filter(a => a.kind === 'allow' || a.kind === 'deny').length
+    const prot  = m.fields.filter(f => (f.attributes || []).some(a => ['guarded','encrypted','hashed','secret'].includes(a.kind))).length
+    rows = kv('gate', gate || '—') + kv('columns', cols) + kv('relations', rels)
+         + kv('row policies', pol) + kv('protected fields', prot)
+         + kv('database', attr('db')?.name)
+         + (attr('softDelete') ? kv('soft delete', attr('softDelete').cascade ? 'cascade' : 'yes') : '')
+         + (attr('fts') ? kv('full-text', attr('fts').tokenize) : '')
+  } else if (i.enum) {
+    rows = `<div class="ex-chips">${i.enum.values.map(v => `<span class="badge muted">${esc(v.name ?? v)}</span>`).join('')}</div>`
+  } else if (i.type) {
+    rows = kv('fields', i.type.fields.length)
+  } else if (i.view) {
+    rows = kv('columns', i.view.fields.length) + kv('materialized', i.view.materialized ? 'yes' : 'no') + kv('database', i.view.db)
+  } else if (i.fn) {
+    rows = `<pre class="code wrap">${esc(i.fn.params.map(p => p.name + ': ' + p.type).join(', '))} → ${esc(i.fn.returnType)}\n${esc(i.fn.expr)}</pre>`
+  } else if (i.db) {
+    rows = kv('driver', i.db.driver) + kv('path', i.db.path?.name ? `env(${i.db.path.name})` : i.db.path)
+         + kv('retention', i.db.retention) + kv('replication', i.db.replication ? 'yes' : '')
+  } else if (i.tenancy) {
+    rows = Object.entries(i.tenancy).filter(([, v]) => v != null && v !== false).map(([k, v]) => kv(k, v)).join('')
+  }
+
+  const open = (word === 'model' || word === 'view')
+    ? `<button class="btn ghost compact" onclick="event.stopPropagation();selectTable('${esc(i.name)}')">Browse rows</button>` : ''
+
+  const gen = i.generated
+    ? '<span class="badge muted" title="Written by Litestone for a logger database, not declared in the schema">generated</span>' : ''
+
+  return `<article class="ex-card stack">
+    <div class="cluster"><b class="ex-word">${esc(i.name)}</b>${gen}<span class="spacer"></span>${open}</div>
+    <div class="rows divided">${rows}</div>
+  </article>`
+}
+
+function exGroupDetail(level, group, use) {
+  const rows = _catalog.filter(r => r.level === level && r.group === group)
+  const boxes = rows.map(r => {
+    const n = use.get(level + ':' + r.word) || 0
+    return exBox({
+      word:  exTyped(level, r.word),
+      count: n,
+      blurb: r.blurb,
+      empty: n === 0,
+      go:    `exGo({kind:'word',word:'${r.word}',level:'${level}'})`,
+    })
+  }).join('')
+  return `<div class="ex-grid">${boxes}</div>`
+}
+
+function exWordCard(word, level, use) {
+  const row = _catalog.find(r => r.level === level && r.word === word)
+  if (!row) return `<div class="empty"><span class="empty-text">No such word.</span></div>`
+  return exCard(row, use.get(level + ':' + word) || 0)
+}
+
+function exCard(row, count) {
+  if (!row) return ''
+  const chips = (label, list, level) => !list?.length ? '' : `
+    <div class="cluster"><span class="text-muted">${esc(label)}</span>
+      ${list.map(w => {
+        const target = _catalog.find(r => r.word === w && r.level === level) ?? _catalog.find(r => r.word === w)
+        return target
+          ? `<button class="btn ghost compact ex-word" onclick="exGo({kind:'${target.level === 'schema' ? 'top' : 'word'}',word:'${target.word}',level:'${target.level}'})">${esc(exTyped(target.level, target.word))}</button>`
+          : `<span class="badge muted">${esc(w)}</span>`
+      }).join('')}
+    </div>`
+
+  const example = (row.context ? row.context + '\n\n' : '') + row.example
+
+  return `<article class="ex-card stack">
+    <div class="cluster">
+      <b class="ex-word">${esc(exTyped(row.level, row.word))}</b>
+      <span class="ex-arity">${esc(row.arity || '')}</span>
+      ${exPositions(row)}
+      <span class="spacer"></span>
+      <span class="badge ${count ? 'info' : 'muted'}">${count ? `${count} in effect` : 'not used here'}</span>
+      ${row.removed ? '<span class="badge danger">removed</span>' : ''}
+    </div>
+    <p>${esc(row.blurb)}</p>
+    ${row.note ? `<p class="text-muted">${esc(row.note)}</p>` : ''}
+    ${chips('cannot sit with', row.excludes, row.level)}
+    ${chips('see also', row.seeAlso, row.level)}
+    ${row.doc ? `<p class="text-muted ex-doc">read more · <code>${esc(row.doc)}</code> in <code>@frontierjs/litestone</code></p>` : ''}
+    <pre class="code ex-example">${esc(example)}</pre>
+    ${exPlacer(row)}
+  </article>`
+}
+
+function exSearch(q, use) {
+  const hit = _catalog.filter(r =>
+    r.word.toLowerCase().includes(q) || r.blurb.toLowerCase().includes(q) || (r.arity || '').toLowerCase().includes(q))
+  const names = []
+  for (const w of ['model', 'view', 'enum', 'type', 'function', 'database'])
+    for (const i of exInstances(w))
+      if (i.name.toLowerCase().includes(q)) names.push({ w, i })
+
+  if (!hit.length && !names.length)
+    return `<div class="empty"><span class="empty-text">Nothing in the language or the schema matches “${esc(q)}”.</span></div>`
+
+  const wordBoxes = hit.map(r => exBox({
+    word:  exTyped(r.level, r.word),
+    count: use.get(r.level + ':' + r.word) || 0,
+    blurb: r.blurb,
+    empty: !(use.get(r.level + ':' + r.word) || 0),
+    go:    `exGo({kind:'${r.level === 'schema' ? 'top' : 'word'}',word:'${r.word}',level:'${r.level}'})`,
+  })).join('')
+
+  return `
+    ${hit.length ? `<section class="stack"><div class="section-header"><h2>Words</h2></div>
+      <div class="ex-grid">${wordBoxes}</div></section>` : ''}
+    ${names.length ? `<section class="stack"><div class="section-header"><h2>Declared here</h2></div>
+      <div class="ex-grid">${names.map(n => exInstanceCard(n.w, n.i)).join('')}</div></section>` : ''}`
+}
+
+// ── Explore → schema.lite ─────────────────────────────────────────────────────
+//
+// Discovery that ends at a description has moved the problem, and a blind append
+// is barely better: appending @@fts writes a second model called Example, when
+// what was wanted was @@fts on Order. So the card asks WHERE, and the insert is
+// text surgery on the editor's current value.
+//
+// Nothing here saves and nothing here emits DDL. The editor's own input handler
+// already runs validate and queues the diff, and Save and *create migration* are
+// still a person's decision — which is the rail: the wizard writes text, and the
+// schema change goes through the same door as any other.
+
+/**
+ * The end of a `model X { … }` block in raw source.
+ *
+ * Brace-counting alone is wrong here: `@generated("{qty} * {price}")` and
+ * `@@sql("…{…}…")` both put braces inside strings, so a naive scan closes the
+ * model early and the insert lands in the middle of a field. This walks the
+ * text tracking string, template and line-comment state, which is the smallest
+ * correct thing — getting it wrong corrupts the file it is editing.
+ */
+function exFindBlock(src, keyword, name) {
+  const head = new RegExp(`^[ \\t]*${keyword}[ \\t]+${name}\\b[^\\n{]*\\{`, 'm')
+  const m = head.exec(src)
+  if (!m) return null
+  const open = m.index + m[0].length - 1
+
+  let depth = 0, quote = null, comment = false
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]
+    if (comment) { if (c === '\n') comment = false; continue }
+    if (quote)   { if (c === '\\') i++; else if (c === quote) quote = null; continue }
+    if (c === '/' && src[i + 1] === '/') { comment = true; i++; continue }
+    if (c === '"' || c === "'" || c === '`') { quote = c; continue }
+    if (c === '{') depth++
+    else if (c === '}') { depth--; if (depth === 0) return { start: m.index, open, close: i } }
+  }
+  return null
+}
+
+/** A field's line inside an already-located block. */
+function exFindFieldLine(src, block, field) {
+  const body = src.slice(block.open, block.close)
+  const re   = new RegExp(`^[ \\t]*${field}\\b`, 'm')
+  const m    = re.exec(body)
+  if (!m) return null
+  const from = block.open + m.index
+  const nl   = src.indexOf('\n', from)
+  return { from, to: nl === -1 || nl > block.close ? block.close : nl }
+}
+
+/** The attribute alone, lifted off the row's worked example. */
+function exAttrText(row) {
+  const marker = (row.level === 'field' ? '@' : '@@') + row.word
+  const i = row.example.indexOf(marker)
+  return i < 0 ? row.example : row.example.slice(i)
+}
+
+/** Re-indent a multi-line example to sit inside a block. */
+function exIndent(text, pad) {
+  return text.split('\n').map((l, i) => i === 0 ? pad + l : pad + l.replace(/^ {0,4}/, '')).join('\n')
+}
+
+/**
+ * Where an insert lands, as {text, from, to} against the editor's value — never
+ * applied here, so the caller can show the range it selected.
+ */
+function exPlan(src, row, target) {
+  const pad = '  '
+
+  if (row.level === 'schema' || target?.where === 'end') {
+    const body = (row.context ? row.context + '\n\n' : '') + row.example
+    const sep  = src.endsWith('\n\n') ? '' : src.endsWith('\n') ? '\n' : '\n\n'
+    return { src: src + sep + body + '\n', from: src.length + sep.length, to: src.length + sep.length + body.length }
+  }
+
+  const block = exFindBlock(src, 'model', target.model)
+  if (!block) return { error: `No model ${target.model} in the file — it may be in an import, which this cannot edit.` }
+
+  if (row.level === 'model' || target.where === 'newField') {
+    const text = row.level === 'model' ? exAttrText(row) : row.example
+    // Before the closing brace, on its own line, keeping whatever indentation
+    // the brace sits at.
+    const lineStart = src.lastIndexOf('\n', block.close) + 1
+    const insert    = exIndent(text, pad) + '\n'
+    return { src: src.slice(0, lineStart) + insert + src.slice(lineStart), from: lineStart, to: lineStart + insert.length - 1 }
+  }
+
+  const line = exFindFieldLine(src, block, target.field)
+  if (!line) return { error: `No field ${target.field} on ${target.model}.` }
+  const attr = ' ' + exAttrText(row).replace(/\n\s*/g, ' ')
+  return { src: src.slice(0, line.to) + attr + src.slice(line.to), from: line.to, to: line.to + attr.length }
+}
+
+/**
+ * Put the plan in the editor and stop. The `input` event is what makes the rest
+ * happen — the editor's own handler runs live validation and queues the schema
+ * diff — so dispatching it is the whole handoff, and the Save button stays a
+ * person's decision.
+ */
+async function exApply(word, level, target) {
+  const row = _catalog.find(r => r.word === word && r.level === level)
+  if (!row) return
+
+  await liteInit()
+  const ta   = document.getElementById('liteEditor')
+  const plan = exPlan(ta.value, row, target)
+  if (plan.error) { toast(plan.error, 'err'); return }
+
+  showTool('lite')
+  ta.value = plan.src
+  ta.dispatchEvent(new Event('input', { bubbles: true }))
+  ta.focus()
+  ta.setSelectionRange(plan.from, plan.to)
+  // A textarea will not scroll to a selection on its own.
+  const before = ta.value.slice(0, plan.from).split('\n').length
+  ta.scrollTop = Math.max(0, (before - 6) * (parseFloat(getComputedStyle(ta).lineHeight) || 18))
+  toast(`${exTyped(level, word)} inserted — not saved`, 'ok')
+}
+
+/** The `Add to…` control on a word's card. */
+function exPlacer(row) {
+  const models = (schema?.models || []).filter(m => !exGenerated().has(m.name))
+
+  if (row.level === 'schema')
+    return `<div class="cluster">
+      <button class="btn outlined" onclick="exApply('${row.word}','schema',{where:'end'})">Append to schema.lite</button>
+      <span class="text-muted">the editor, where it can be validated and turned into a migration</span>
+    </div>`
+
+  if (!models.length)
+    return `<div class="text-muted">No model to add it to yet.</div>`
+
+  const opts = models.map(m => `<option value="${esc(m.name)}">${esc(m.name)}</option>`).join('')
+
+  if (row.level === 'model')
+    return `<div class="cluster">
+      <label class="text-muted" for="exTargetModel">Add to</label>
+      <select class="field" id="exTargetModel">${opts}</select>
+      <button class="btn ghost"
+        onclick="exPreviewPlan('${row.word}','model',{model:document.getElementById('exTargetModel').value})">Preview</button>
+      <button class="btn outlined"
+        onclick="exApply('${row.word}','model',{model:document.getElementById('exTargetModel').value})">Insert</button>
+      <span class="text-muted">not saved — the editor validates it</span>
+    </div>
+    <div id="exPreview"></div>`
+
+  return `<div class="cluster">
+      <label class="text-muted" for="exTargetModel">Add to</label>
+      <select class="field" id="exTargetModel" onchange="exFieldOptions()">${opts}</select>
+      <select class="field" id="exTargetField"></select>
+      <button class="btn ghost" onclick="exApplyField('${row.word}', true)">Preview</button>
+      <button class="btn outlined" onclick="exApplyField('${row.word}')">Insert</button>
+      <span class="text-muted">not saved — the editor validates it</span>
+    </div>
+    <div id="exPreview"></div>`
+}
+
+function exApplyField(word, previewOnly = false) {
+  const model  = document.getElementById('exTargetModel').value
+  const field  = document.getElementById('exTargetField').value
+  const target = field === '' ? { model, where: 'newField' } : { model, field }
+  return previewOnly ? exPreviewPlan(word, 'field', target) : exApply(word, 'field', target)
+}
+
+/**
+ * The fields of the chosen model, plus the option that matters most: a word can
+ * be an attribute on a column that exists, or the reason to write a new one.
+ */
+function exFieldOptions() {
+  const sel = document.getElementById('exTargetField')
+  if (!sel) return
+  const m = (schema?.models || []).find(x => x.name === document.getElementById('exTargetModel').value)
+  const fields = (m?.fields || []).filter(f => f.type.kind !== 'relation')
+  sel.innerHTML = `<option value="">as a new field</option>`
+    + fields.map(f => `<option value="${esc(f.name)}">on ${esc(f.name)}</option>`).join('')
+}
+
+// ── Consequence preview ───────────────────────────────────────────────────────
+//
+// The seed fans out into DDL, an access surface, a JSON Schema and a deploy
+// verdict, and those four are computed in four places and read in four others —
+// so nobody has ever seen a word's consequences together. This asks the server
+// for all four against the PROPOSED text, before anything is written.
+//
+// The UI realm is deliberately not here: which control a form renders is
+// sierra's `field-rules.js`, and litestone may not import sierra. A table in
+// this file would be a second answer to a question that already has an owner.
+
+let _exPreview = null
+
+async function exPreviewPlan(word, level, target) {
+  const row = _catalog.find(r => r.word === word && r.level === level)
+  if (!row) return
+
+  await liteInit()
+  const plan = exPlan(document.getElementById('liteEditor').value, row, target)
+  const out  = document.getElementById('exPreview')
+  if (!out) return
+  if (plan.error) { out.innerHTML = `<div class="alert danger"><div class="alert-content">${esc(plan.error)}</div></div>`; return }
+
+  out.innerHTML = `<div class="empty"><span class="spinner"></span></div>`
+  _exPreview = await api('/preview', { source: plan.src, model: target.model ?? null })
+  exRenderPreview()
+}
+
+function exRenderPreview() {
+  const out = document.getElementById('exPreview')
+  const p   = _exPreview
+  if (!out || !p) return
+
+  if (p.error || p.valid === false) {
+    out.innerHTML = `<div class="alert danger"><div class="alert-content">
+      <b>The proposed schema does not parse.</b>
+      <ul>${(p.errors ?? [p.error]).map(e => `<li>${esc(e)}</li>`).join('')}</ul>
+    </div></div>`
+    return
+  }
+
+  const panes = [
+    exPane('Data — DDL',      p.ddl.before,  p.ddl.after,  'the SQL this model emits', p.rejected, 'ddl'),
+    exPane('Data — access',   p.access.before, p.access.after, 'gate, row policies, protected fields', p.rejected, 'access'),
+    exPane('API — JSON Schema', p.json.before, p.json.after, 'what validation and a generated form read', p.rejected, 'schema'),
+  ]
+  const quiet = panes.every(x => !x.changed)
+
+  out.innerHTML = `
+    <div class="cluster">
+      ${exVerdictBadge('Deploy', p.release?.verdict)}
+      ${exVerdictBadge('Access', p.reach?.verdict)}
+      <span class="text-muted">against the schema on disk</span>
+    </div>
+    ${exFindings(p.release?.findings, 'What the deploy sees')}
+    ${exFindings(p.reach?.findings,   'What it does to who may do what')}
+    ${quiet ? `<div class="alert info"><div class="alert-content">
+        This word changes none of the three derived surfaces. What it does is in its
+        description above — visibility, a transform, or something the application
+        reads rather than the database.</div></div>` : ''}
+    ${panes.map(x => x.html).join('')}
+    ${exRulesSection(p.rules)}
+    ${exMissingSection(p.missing)}
+    ${(p.warnings || []).length ? `<div class="alert warning"><div class="alert-content">
+      ${p.warnings.map(w => esc(w)).join('<br>')}</div></div>` : ''}`
+}
+
+const EX_VERDICT_TONE = {
+  expand: 'success', unchanged: 'muted', contract: 'danger', unknown: 'warning',
+  widens: 'warning', narrows: 'info',
+}
+
+function exVerdictBadge(label, verdict) {
+  if (!verdict) return `<span class="badge muted">${esc(label)}: not decidable</span>`
+  return `<span class="badge ${EX_VERDICT_TONE[verdict] ?? 'muted'}">${esc(label)}: ${esc(verdict)}</span>`
+}
+
+function exFindings(findings, title) {
+  if (!findings?.length) return ''
+  return `<details class="ex-card"><summary><b>${esc(title)}</b> — ${findings.length}</summary>
+    <ul>${findings.map(f => `<li><code class="code-inline">${esc(f.subject ?? '')}</code> ${esc(f.detail ?? f.reason ?? f.kind ?? '')}</li>`).join('')}</ul>
+  </details>`
+}
+
+/**
+ * One realm, before against after.
+ *
+ * A pane the server could not compute shows the reason rather than a diff: with
+ * `after` null, a removed value and a refused derivation look identical, and the
+ * second one is the more likely of the two while a schema is being written.
+ */
+function exPane(title, before, after, sub, rejected, key) {
+  const failed = (rejected || []).filter(r => r.pane.startsWith(key))
+  if (failed.length)
+    return { changed: false, html: `<details class="ex-card" open><summary><b>${esc(title)}</b></summary>
+      <div class="alert danger"><div class="alert-content">
+        Not computed — ${failed.map(f => esc(f.message)).join('; ')}</div></div></details>` }
+
+  const a = exText(before), b = exText(after)
+  if (a === b)
+    return { changed: false, html: `<details class="ex-card"><summary><b>${esc(title)}</b> <span class="text-muted">— no change</span></summary>
+      <pre class="code ex-example">${esc(b || '—')}</pre></details>` }
+
+  return { changed: true, html: `<details class="ex-card" open>
+    <summary><b>${esc(title)}</b> <span class="text-muted">— ${esc(sub)}</span></summary>
+    ${exLineDiff(a, b)}
+  </details>` }
+}
+
+function exText(v) {
+  if (v == null) return ''
+  return typeof v === 'string' ? v : JSON.stringify(v, null, 2)
+}
+
+/**
+ * Lines present on one side only, marked.
+ *
+ * Not an LCS: a moved line reads as removed-and-added, which is honest for what
+ * this shows and is why the two halves are labelled rather than interleaved.
+ */
+function exLineDiff(a, b) {
+  const before = a.split('\n'), after = b.split('\n')
+  const inA = new Set(before), inB = new Set(after)
+  const added   = after.filter(l => l.trim() && !inA.has(l))
+  const removed = before.filter(l => l.trim() && !inB.has(l))
+  return `
+    ${removed.length ? `<div class="text-muted">gone</div><pre class="code ex-example ex-diff-out">${esc(removed.join('\n'))}</pre>` : ''}
+    ${added.length   ? `<div class="text-muted">new</div><pre class="code ex-example ex-diff-in">${esc(added.join('\n'))}</pre>` : ''}
+    <details><summary class="text-muted">the whole thing, after</summary>
+      <pre class="code ex-example">${esc(b || '—')}</pre></details>`
+}
+
+// ── The interview ─────────────────────────────────────────────────────────────
+//
+// The index answers "what is this word". This answers the question people
+// actually arrive with, which runs the other way: *I need a column nobody may
+// read — what do I write?*
+//
+// Three yes/no answers select a row of `@frontierjs/litestone`'s own visibility
+// table. It is a lookup and not a decision tree on purpose: the table is the one
+// the parser carries in prose above @transient, and a tree drawn beside it would
+// be free to disagree with it.
+
+let _advise  = null
+let _ivAnswer = { stored: null, callerWrites: null, callerReads: null, perCaller: false }
+
+async function exAdvise() {
+  if (_advise) return _advise
+  _advise = await api('/advise')
+  return _advise
+}
+
+const IV_QUESTIONS = [
+  { key: 'callerReads',  q: 'Does a request get this value back?',
+    yes: 'Yes — it comes out in a read', no: 'No — a caller never sees it' },
+  { key: 'callerWrites', q: 'May a request put a value in it?',
+    yes: 'Yes — a caller sends it', no: 'No — only the application writes it' },
+  { key: 'stored',       q: 'Is there a column for it?',
+    yes: 'Yes — it is stored', no: 'No — nothing is written down' },
+]
+
+function exInterview() {
+  const a = _ivAnswer
+  const asked = IV_QUESTIONS.filter(q => a[q.key] !== null).length
+
+  const questions = IV_QUESTIONS.map(({ key, q, yes, no }) => `
+    <div class="ex-card stack">
+      <b>${esc(q)}</b>
+      <div class="cluster">
+        <button class="btn ${a[key] === true  ? 'primary' : 'outlined'}" onclick="exAnswer('${key}', true)">${esc(yes)}</button>
+        <button class="btn ${a[key] === false ? 'primary' : 'outlined'}" onclick="exAnswer('${key}', false)">${esc(no)}</button>
+      </div>
+    </div>`).join('')
+
+  const perCaller = `
+    <div class="ex-card stack">
+      <b>Does the answer depend on WHO is asking?</b>
+      <div class="cluster">
+        <button class="btn ${a.perCaller ? 'primary' : 'outlined'}" onclick="exAnswer('perCaller', true)">Yes — some callers, not others</button>
+        <button class="btn ${a.perCaller ? 'outlined' : 'primary'}" onclick="exAnswer('perCaller', false)">No — the same for everyone</button>
+      </div>
+    </div>`
+
+  return `
+    <section class="stack">
+      <div class="section-header"><h2>Which word do I want?</h2>
+        <span class="text-muted">three answers, one row of the visibility table</span></div>
+      <div class="ex-grid">${questions}${perCaller}</div>
+    </section>
+    ${asked < 3 ? `<div class="alert info"><div class="alert-content">
+        ${3 - asked} more to answer.</div></div>` : exInterviewAnswer()}`
+}
+
+function exAnswer(key, value) {
+  _ivAnswer = { ..._ivAnswer, [key]: value }
+  exRender()
+}
+
+function exInterviewAnswer() {
+  const a   = _ivAnswer
+  const row = (_advise?.visibility ?? []).find(r =>
+    r.stored === a.stored && r.callerWrites === a.callerWrites && r.callerReads === a.callerReads)
+  if (!row) return ''
+
+  // The per-caller answer is not a fourth axis — it multiplies with every row
+  // rather than partitioning them, so it is shown BESIDE the answer instead of
+  // replacing it.
+  const also = a.perCaller && _advise?.perCaller ? `
+    <div class="ex-card stack">
+      <div class="cluster"><b class="ex-word">${esc(_advise.perCaller.answer)}</b>
+        <span class="badge info">and this too</span></div>
+      <p>${esc(_advise.perCaller.note)}</p>
+    </div>` : ''
+
+  const card = row.word
+    ? exCard(_catalog.find(r => r.level === 'field' && r.word === row.word), exUsage().get('field:' + row.word) || 0)
+    : `<div class="ex-card stack"><b>${esc(row.answer)}</b><p>${esc(row.note)}</p></div>`
+
+  return `<section class="stack">
+    <div class="section-header"><h2>${esc(row.word ? '@' + row.word : row.answer)}</h2></div>
+    <p>${esc(row.note)}</p>
+    ${card}
+    ${also}
+  </section>`
+}
+
+// ── Rules over the schema as it stands ────────────────────────────────────────
+//
+// Legal and wrong is a class the parser cannot report — every case measured to
+// parse clean — so it is the one thing this panel says about a schema nobody is
+// currently editing.
+
+// The half no generated artefact can produce. Every other panel here answers
+// *what did you declare*; this one answers what you could have and did not, and
+// each row ends in the word — clicking it opens that word's card, which is the
+// whole reason a finding carries one.
+
+function exMissingSection(missing) {
+  if (!missing) return ''
+  if (!missing.length)
+    return `<div class="alert success"><div class="alert-content">This schema reaches for every word that applies to it.</div></div>`
+
+  const tone = { likely: 'warning', possible: 'muted' }
+  return `<section class="stack">
+    <div class="section-header"><h2>Declared by nobody</h2>
+      <span class="text-muted">words this schema never used, and a shape that suggests each</span></div>
+    ${missing.map(f => `
+      <div class="alert ${tone[f.confidence] ?? 'muted'}">
+        <div class="alert-content">
+          <b>${esc(f.title)}</b>
+          <span class="badge ${f.confidence === 'likely' ? 'warning' : 'muted'}">${esc(f.confidence)}</span>
+          ${f.preexisting ? ' <span class="badge muted">already true before this edit</span>' : ''}
+          <br>${esc(f.message)}
+          <br><button class="btn ghost compact ex-missing-word"
+                      onclick="exGoWord('${esc(f.word)}')">${esc(f.word)}</button>
+          <span class="text-muted code-inline">${esc(f.id)}</span>
+        </div>
+      </div>`).join('')}
+  </section>`
+}
+
+/** A word as TYPED — the prefix picks the level, the same rule `lookup` uses. */
+function exGoWord(typed) {
+  const level = typed.startsWith('@@') ? 'model' : typed.startsWith('@') ? 'field' : 'schema'
+  exGo({ kind: 'word', level, word: typed.replace(/^@@?/, '') })
+}
+
+function exRulesSection(findings) {
+  if (!findings) return ''
+  if (!findings.length)
+    return `<div class="alert success"><div class="alert-content">Nothing in the rule set fires on this schema.</div></div>`
+
+  const tone = { error: 'danger', warn: 'warning', info: 'info' }
+  return `<section class="stack">
+    <div class="section-header"><h2>Legal and worth a look</h2>
+      <span class="text-muted">shapes the parser accepts and something later refuses</span></div>
+    ${findings.map(f => `
+      <div class="alert ${tone[f.severity] ?? 'info'}">
+        <div class="alert-content">
+          <b>${esc(f.title)}</b>${f.preexisting ? ' <span class="badge muted">already true before this edit</span>' : ''}
+          <br>${esc(f.message)}
+          <br><span class="text-muted code-inline">${esc(f.id)}</span>
+        </div>
+      </div>`).join('')}
+  </section>`
+}
+
+/**
+ * Where a word is legal, when that is not the ordinary answer for its level.
+ *
+ * Ordinary for a field attribute is a model's field, a type's field and a
+ * trait's field; for a model attribute, a model and a trait. Anything narrower
+ * is worth saying (@id is a model's field and nothing else) and so is anything
+ * wider (@label reaches an enum member) — and a word that is exactly ordinary
+ * renders nothing, or every card carries a badge nobody reads.
+ */
+const EX_ORDINARY = {
+  field: ['field', 'typeField', 'traitField'],
+  model: ['model', 'traitBlock'],
+}
+
+function exPositions(row) {
+  const all      = row.positions ?? []
+  const ordinary = EX_ORDINARY[row.level]
+  if (!ordinary || !all.length) return ''
+
+  const same = all.length === ordinary.length && ordinary.every(p => all.includes(p))
+  if (same) return ''
+
+  const name  = p => _exPositionNames?.[p] ?? p
+  const extra = all.filter(p => !ordinary.includes(p))
+  const text  = extra.length
+    ? `also ${extra.map(name).join(' · ')}`
+    : `only ${all.map(name).join(' · ')}`
+  return `<span class="badge muted" title="${esc(all.map(name).join(' · '))}">${esc(text)}</span>`
+}
+
+function exTyped(level, word) {
+  return level === 'schema' ? word : level === 'field' ? '@' + word : '@@' + word
+}
+
 // ── Tool navigation ───────────────────────────────────────────────────────────
 
-const TOOLS = ['browse','query','schema','access','migrations','stats','repl','qlog','tenants','transform','perf','lite']
+const TOOLS = ['browse','query','schema','explore','access','migrations','stats','repl','qlog','tenants','transform','perf','lite']
 
 // The tool is in the location hash, so back/forward work and a Studio link can
 // name the panel it opens. The nav is anchors for the same reason: a <div
@@ -3060,6 +4018,7 @@ function showTool(tool) {
     if (t === tool) link.setAttribute('aria-current', 'page')
     else            link.removeAttribute('aria-current')
   }
+  if (tool === 'explore')    exInit()
   if (tool === 'access')     acInit()
   if (tool === 'migrations') loadMigrations()
   if (tool === 'stats')      { loadStats(); loadDiskUsage(); renderRotateKey() }

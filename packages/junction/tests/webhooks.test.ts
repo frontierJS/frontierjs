@@ -11,6 +11,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { webhooks } from '../src/plugins/webhooks/index.ts'
+import { verifyRequest } from '@frontierjs/toolbelt/signature'
 
 // ─── A real receiver ──────────────────────────────────────────────────────
 
@@ -108,8 +109,19 @@ describe('event matching is exact', () => {
 // ─── signing ──────────────────────────────────────────────────────────────
 
 describe('signing', () => {
-  it('sends the documented headers and a signature that verifies', async () => {
-    const app = await makeApp()
+  // The plugin signed `${timestamp}.${body}`, which binds neither the method nor
+  // the path — a captured signature replayed against any other endpoint on the
+  // same receiver trusting the same secret — and carried no nonce, so a repeat
+  // inside the freshness window was indistinguishable from a first delivery.
+  // Both are things a subscriber cannot fix from its side.
+  //
+  // It signs `@frontierjs/toolbelt/signature`'s canonical string now, and these
+  // assertions VERIFY rather than recompute: a receiver that reimplements the
+  // signer is the shape `FJS-349` was, where three signers existed and nothing
+  // ever checked one.
+
+  it('sends the documented headers, and a real receiver verifies it', async () => {
+    const app  = await makeApp()
     const hook = await app.webhooks.register(url(), ['orders:created'])
     hits.length = 0
 
@@ -119,18 +131,13 @@ describe('signing', () => {
     expect(hit.headers['x-webhook-id']).toBeTruthy()
     expect(hit.headers['x-webhook-event']).toBe('orders:created')
     expect(hit.headers['x-webhook-timestamp']).toMatch(/^\d+$/)
+    expect(hit.headers['x-webhook-nonce']).toBeTruthy()
 
-    // Recompute exactly as the docs tell a receiver to: sha256(`${ts}.${rawBody}`)
-    const ts  = hit.headers['x-webhook-timestamp']
-    const key = await crypto.subtle.importKey(
-      'raw', new TextEncoder().encode(hook.secret),
-      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
-    )
-    const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${ts}.${hit.body}`))
-    const expected = 'sha256=' + Array.from(new Uint8Array(sig))
-      .map(b => b.toString(16).padStart(2, '0')).join('')
-
-    expect(hit.headers['x-webhook-signature']).toBe(expected)
+    const check = await verifyRequest({
+      secret: hook.secret, method: 'POST', path: '/hook', body: hit.body,
+      headers: hit.headers, prefix: 'X-Webhook', now: Math.floor(Date.now() / 1000),
+    })
+    expect(check).toEqual({ ok: true })
   })
 
   it('a wrong secret does not verify — the signature is really keyed', async () => {
@@ -139,17 +146,72 @@ describe('signing', () => {
     hits.length = 0
     await app.webhooks.deliver('e', {})
 
-    const hit = hits[0]
-    const key = await crypto.subtle.importKey(
-      'raw', new TextEncoder().encode('not-the-secret'),
-      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
-    )
-    const sig = await crypto.subtle.sign('HMAC', key,
-      new TextEncoder().encode(`${hit.headers['x-webhook-timestamp']}.${hit.body}`))
-    const wrong = 'sha256=' + Array.from(new Uint8Array(sig))
-      .map(b => b.toString(16).padStart(2, '0')).join('')
+    const check = await verifyRequest({
+      secret: 'not-the-secret', method: 'POST', path: '/hook', body: hits[0].body,
+      headers: hits[0].headers, prefix: 'X-Webhook', now: Math.floor(Date.now() / 1000),
+    })
+    expect(check.ok).toBe(false)
+  })
 
-    expect(hit.headers['x-webhook-signature']).not.toBe(wrong)
+  it('the PATH is bound, so a signature does not replay against another endpoint', async () => {
+    // The half `${timestamp}.${body}` could not express, and the reason this
+    // moved onto the shared canonical string rather than being left alone.
+    const app  = await makeApp()
+    const hook = await app.webhooks.register(url(), ['e'])
+    hits.length = 0
+    await app.webhooks.deliver('e', {})
+
+    const elsewhere = await verifyRequest({
+      secret: hook.secret, method: 'POST', path: '/admin/hook', body: hits[0].body,
+      headers: hits[0].headers, prefix: 'X-Webhook', now: Math.floor(Date.now() / 1000),
+    })
+    expect(elsewhere.ok).toBe(false)
+  })
+
+  it('a body swapped under a real signature does not verify', async () => {
+    const app  = await makeApp()
+    const hook = await app.webhooks.register(url(), ['e'])
+    hits.length = 0
+    await app.webhooks.deliver('e', { amount: 1 })
+
+    const swapped = await verifyRequest({
+      secret: hook.secret, method: 'POST', path: '/hook',
+      body: JSON.stringify({ amount: 1000 }),
+      headers: hits[0].headers, prefix: 'X-Webhook', now: Math.floor(Date.now() / 1000),
+    })
+    expect(swapped.ok).toBe(false)
+  })
+
+  it('a retry carries a NEW nonce, so a receiver keeping a nonce store still takes it', async () => {
+    // The event's identity is `x-webhook-id` and it is stable across attempts;
+    // the nonce is per attempt. Reusing it would dead-letter every retry against
+    // exactly the receivers that implemented replay protection properly.
+    const app  = await makeApp()
+    const hook = await app.webhooks.register(url(), ['e'])
+    hits.length = 0
+
+    respondWith = 500
+    try { await app.webhooks.deliver('e', {}) } finally { respondWith = 200 }
+    const [failed] = await app.webhooks.deliveries(hook.id)
+    await app.webhooks.retry(failed.id)
+
+    expect(hits.length).toBeGreaterThan(1)
+    expect(hits[0].headers['x-webhook-id']).toBe(hits[1].headers['x-webhook-id'])
+    expect(hits[0].headers['x-webhook-nonce']).not.toBe(hits[1].headers['x-webhook-nonce'])
+  })
+
+  it('a receiver outside its freshness window refuses it', async () => {
+    const app  = await makeApp()
+    const hook = await app.webhooks.register(url(), ['e'])
+    hits.length = 0
+    await app.webhooks.deliver('e', {})
+
+    const stale = await verifyRequest({
+      secret: hook.secret, method: 'POST', path: '/hook', body: hits[0].body,
+      headers: hits[0].headers, prefix: 'X-Webhook',
+      now: Math.floor(Date.now() / 1000) + 3_600,
+    })
+    expect(stale.ok).toBe(false)
   })
 })
 

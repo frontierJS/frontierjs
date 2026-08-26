@@ -897,6 +897,22 @@ export declare class SoftDeletedUniqueError extends Error {
 }
 
 /**
+ * An ordinary `@unique` conflict — a LIVE row already holds the value. A 409:
+ * nothing broke, and the identical write fails identically until the caller
+ * sends a different value. `errors` is the channel a form reads, so the message
+ * lands under the control that caused it rather than as "the server broke".
+ */
+export declare class UniqueConflictError extends Error {
+  model:     string
+  fields:    string[]
+  /** Redacted where the column is `@encrypted`/`@guarded`. */
+  values:    unknown[]
+  errors:    Array<{ path: string[], message: string }>
+  status:    409
+  retryable: false
+}
+
+/**
  * The caller asked this model for something its `.lite` never declared —
  * `search()` below `@@fts`, `restore()` below `@@softDelete`, `transition()`
  * below `@@transitions`, or an `onlyDeleted`/`onlyTemplates` flag on a model

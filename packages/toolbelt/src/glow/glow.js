@@ -25,8 +25,8 @@
  * marker; the combinators are not, so a CSS caller wants `prefix: false`.
  */
 
-const MIXED_HTML = ['html', 'jsx', 'php', 'astro', 'dhtml', 'vue', 'svelte', 'hb']
-const LINE_COMMENT = { clojure: ';;', lua: '--', python: '#' }
+const MIXED_HTML = ['html', 'jsx', 'php', 'astro', 'dhtml', 'vue', 'svelte', 'hb', 'mesa']
+const LINE_COMMENT = { clojure: ';;', lua: '--', python: '#', sql: '--' }
 const PREFIXES = { '+': 'ins', '-': 'del', '>': 'dfn' }
 const MARK = /(••?)([^•]+)\1/g // ALT + q
 const NL = '\n'
@@ -42,8 +42,37 @@ const COMMON_WORDS =
 const SPECIAL_WORDS = {
   cpp: 'cout|cin|using|namespace',
   python: 'None|nonlocal|lambda',
-  go: 'chan|fallthrough'
+  go: 'chan|fallthrough',
+  /* Litestone's seed language. The declaration keywords are all it needs
+     beyond the common set — a field line is `name Type @attr`, which the
+     type rule and the attribute rule below already cover. */
+  lite: 'model|extend|valueset|tenancy|database|generator|strategy|column|claim|resolve|source|scope|where',
+  /* Nothing in the common list is SQL, so a statement came out as one long
+     unlit line with its string literals coloured — the shape of DDL is its
+     keywords, and they were the only part not marked. Uppercase by
+     convention, matched case-insensitively like every other language here. */
+  sql: 'select|insert|into|values|update|set|delete|create|alter|drop|table|view|index|unique|primary|foreign|key|references|autoincrement|constraint|check|integer|text|real|blob|numeric|boolean|timestamp|from|where|join|left|inner|outer|on|group|order|by|having|limit|offset|distinct|as|and|or|not|in|is|exists|case|when|then|else|end|asc|desc|with|union|all'
 }
+
+/*
+ * A shell line is a command and its arguments. It has no keywords, and the
+ * common word list is full of things that are ordinary argument text —
+ * `my`, `use`, `end`, `local`, `next`, `get`, `set` — so `cd my-app` came out
+ * with `my` coloured as a keyword and the rest of the directory name plain.
+ * getTags withholds the keyword pass from these languages; what is left is
+ * the command itself, which is the token a reader is actually looking for.
+ */
+const SHELL = [
+  // the command, after a prompt, a pipe or a &&
+  { tag: 'strong', re: /(?:^|[|&;]\s*)\$?\s*([a-z][\w.\/-]*)/g, shift: true },
+
+  // a flag
+  { tag: 'label', re: /(?:^|\s)(-{1,2}[\w][\w-]*)/g, shift: true },
+
+  /* A hyphenated word is one word. Without this the punctuation rule cuts
+     `my-app` in three and the argument stops reading as a name. */
+  { tag: 'b', re: /\b[a-z][\w.]*(?:-[\w.]+)+/gi }
+]
 
 // special rules (growing list)
 const RULES = {
@@ -53,8 +82,43 @@ const RULES = {
     { tag: 'em', re: /--[\w\d\-]+/gi }
   ],
 
-  json: [{ tag: 'b', re: /(".+"):/gi }],
-  yaml: [{ tag: 'b', re: /([\w ]+):/gi }]
+  /* `true`, `false` and `null` are the only bare words JSON has, and getTags
+     below withholds the COMMON_WORDS keyword pass from this language — rightly,
+     since everything else in a document is a string, a number or punctuation.
+     Without a rule of their own the three literals were the only values in a
+     highlighted document with no colour, so a `null` and a key spelled "null"
+     rendered identically (FJS-405). Inside a string they are safe by position
+     rather than by order: the string token starts at the quote, which is
+     earlier, and renderRow drops a token that opens inside one already
+     emitted. */
+  json: [
+    { tag: 'b', re: /(".+"):/gi },
+    { tag: 'strong', re: /\b(?:true|false|null)\b/g }
+  ],
+  yaml: [{ tag: 'b', re: /([\w ]+):/gi }],
+
+  /* A `.lite` field line is `name Type @attr(arg)`, and two of those three
+     have no rule that reaches them.
+
+     A model-level attribute is written with TWO ats, and the generic
+     `\B@[\w\-]+` below can only take one — it matched at the second `@`,
+     so every `@@gate` in a schema rendered as a stray punctuation mark
+     followed by an attribute. Both forms are one rule here.
+
+     The type is capitalised and the common keyword pass is case-insensitive,
+     so `Int`, `String` and `Float` were already coloured as keywords while
+     `DateTime`, `Boolean`, `Json` and a `model`'s own name were not — the
+     column that says what a field IS, half-lit down the page. Matched by
+     shape rather than by a list, so a relation to another model gets the
+     same treatment as a scalar and a new scalar type needs no edit here. */
+  lite: [
+    { tag: 'label', re: /@@?[\w\-]+/g },
+    { tag: 'strong', re: /\b[A-Z]\w*/g }
+  ],
+
+  sh: SHELL,
+  bash: SHELL,
+  shell: SHELL
 }
 
 const HTML_TAGS = [
@@ -95,20 +159,43 @@ const HTML_TAGS = [
   { tag: 'b', re: /([\w]+)\./g, lang: ['js'] }
 ]
 
+/*
+ * `language` may be a LIST, and the first entry is the primary one — it is
+ * what the `<code language>` attribute carries, and what decides the block
+ * comment syntax and whether this is markdown.
+ *
+ * A transcript is why. A command and the SQL it compiled to, a request and
+ * its JSON response, a query beside the WHERE clause a policy appended to it
+ * — these are the samples worth showing, and they are two languages in one
+ * block. Given one, half the sample loses its comments and its keywords:
+ * under `js` a `--` comment is two punctuation marks, and under `sql` a `//`
+ * comment is not a comment at all.
+ */
+function asLangs(lang) {
+  return (Array.isArray(lang) ? lang : [lang]).filter(Boolean)
+}
+
+const primaryLang = (lang) => asLangs(lang)[0]
+
+/* Languages whose vocabulary the common keyword pass does not describe:
+   two data formats, a markup language, and the shell. */
+const NO_KEYWORDS = ['yaml', 'html', 'json', 'sh', 'bash', 'shell']
+
 function getTags(lang) {
-  const tags = HTML_TAGS.filter((el) => !el.lang || el.lang.includes(lang))
+  const langs = asLangs(lang)
+  const tags = HTML_TAGS.filter((el) => !el.lang || langs.some((l) => el.lang.includes(l)))
 
   // custom keywords
-  if (!['yaml', 'html', 'json'].includes(lang)) {
-    const w = SPECIAL_WORDS[lang]
+  if (!langs.every((l) => NO_KEYWORDS.includes(l))) {
+    const w = langs.map((l) => SPECIAL_WORDS[l]).filter(Boolean).join('|')
     const words = (w ? w + '|' : '') + COMMON_WORDS
     const re = new RegExp(`\\b(${words})\\b`, 'gi')
     tags.splice(4, 0, { tag: 'strong', re })
   }
 
   // custom rules
-  const rules = RULES[lang]
-  if (rules) tags.unshift(...rules)
+  const rules = langs.flatMap((l) => RULES[l] ?? [])
+  if (rules.length) tags.unshift(...rules)
 
   return tags
 }
@@ -186,12 +273,14 @@ function getMDTags(str) {
 }
 
 export function parseRow(row, lang) {
-  const tags = isMD(lang) ? getMDTags(row) : getTags(lang)
+  const tags = isMD(primaryLang(lang)) ? getMDTags(row) : getTags(lang)
   const tokens = []
 
-  // line comment (language specific)
-  const re = new RegExp(`${LINE_COMMENT[lang] || '//'} .+`)
-  tags.unshift({ tag: 'sup', re })
+  /* Line comments, one syntax per language in the list. A language with no
+     entry gets `//`, so `['js', 'sql']` recognises both spellings and a
+     transcript keeps its commentary on either side of the seam. */
+  for (const mark of new Set(asLangs(lang).map((l) => LINE_COMMENT[l] || '//')))
+    tags.unshift({ tag: 'sup', re: new RegExp(`${mark.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} .+`) })
 
   /* A block comment that opens and closes on one line, after code.
      parseSyntax leaves these to be highlighted rather than swallowing the
@@ -317,7 +406,7 @@ export function parseSyntax(lines, lang, prefix = true) {
         if (comm_end.test(line) && line?.trim() != "'''") endComment()
       } else {
         // highlighted line
-        const is_md = isMD(lang)
+        const is_md = isMD(primaryLang(lang))
         const c = line[0]
         let wrap = prefix && (is_md ? c == '|' && 'dfn' : PREFIXES[c])
         if (wrap && is_md && line == '---') wrap = null
@@ -354,6 +443,7 @@ export function glow(str, opts = { prefix: true, mark: true }) {
   // language
   let lang = opts.language
   if (!lang && lines[0][0] == '<') lang = 'html'
+  const attr = primaryLang(lang)
   const html = []
 
   function push(line) {
@@ -374,5 +464,5 @@ export function glow(str, opts = { prefix: true, mark: true }) {
     push(line)
   })
 
-  return `<code language="${lang || '*'}">${html.join(NL)}</code>`
+  return `<code language="${attr || '*'}">${html.join(NL)}</code>`
 }

@@ -60,7 +60,7 @@ describe('the vite plugin fails on compiler errors', () => {
     for (const command of ['build', 'serve']) {
       const r = await transform(command, CLEAN)
       expect(r.reported).toHaveLength(0)
-      expect(r.code).toContain('$runtime.template')
+      expect(r.code).toContain('$$runtime.template')
     }
   })
 })

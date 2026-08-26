@@ -336,6 +336,10 @@ export function buildScopeMap(schema, relationMap) {
       map[model.name] ??= {}
       if (attr.name in map[model.name])
         throw new Error(`${model.name}: @@scope(${attr.name}, …) is declared twice — a name means one predicate`)
+      // A scope minted from a `valueset`'s `where` holds SQL rather than an
+      // expression, so there is no AST to check and nothing for `evalJs` to
+      // read. It exists to give that narrowing a NAME a browser can send.
+      if (attr.raw) { map[model.name][attr.name] = { __raw: attr.raw, mintedBy: attr.mintedBy }; continue }
       // Same startup check @@allow gets: a scope compiles into a WHERE, so a
       // wrong one is an empty screen with a 200.
       checkExpr(model, attr.expr, relationMap, `@@scope(${attr.name}, …)`)
@@ -361,6 +365,11 @@ export function compileScope(modelName, name, ctx, scopeMap, policyMap, schema, 
       `Unknown scope '${name}' on ${modelName}.` +
       (known.length ? ` Declared: ${known.sort().join(', ')}` : ` This model declares no @@scope.`) }])
   }
+  // Minted from a `valueset`'s `where`. The SQL comes from the schema and the
+  // NAME is what a caller sent — which is Invariant 8 exactly: the name is a key
+  // looked up in this table and is never interpolated into anything.
+  if (expr.__raw) return { _litestoneRaw: true, sql: expr.__raw, params: [] }
+
   const params = []
   const at     = atOneInstant(ctx)
   const sql    = compileSql(expr, params, at, modelName, 'read', policyMap ?? {}, schema, relationMap, new Set())
@@ -410,6 +419,37 @@ export function atOneInstant(ctx) {
   return view
 }
 
+// ─── A FIELD's predicate, as SQL ──────────────────────────────────────────────
+//
+// `@allow('read'|'write', …)` on a FIELD is a predicate, and `FJS-D129` rules
+// that it is answered where the row is — the database — rather than in JS
+// against whatever the caller sent. Two callers and two positions:
+//
+//   read   AND-ed into the query's top-level WHERE, so a row whose column this
+//          caller may not read cannot be distinguished by filtering or sorting
+//          on it (`FJS-442`)
+//   write  the WHEN of a `CASE WHEN <pred> THEN ? ELSE col END` in a SET, so
+//          the predicate reads the STORED row and a bulk update grades every
+//          row separately (`FJS-433`)
+//
+// Several `@allow`s on one field are OR-ed, which is how allows compose
+// everywhere else. Returns null when there is nothing to apply — no predicate,
+// or a system context, which bypasses field policy exactly as it bypasses a
+// row one.
+export function compileFieldPredicate(modelName, exprs, op, ctx, policyMap, schema, relationMap) {
+  if (!exprs?.length) return null
+  ctx = atOneInstant(ctx)
+  if (ctx.isSystem) return null
+
+  const params = []
+  const parts  = exprs.map(expr =>
+    compileSql(expr, params, ctx, modelName, op, policyMap ?? {}, schema, relationMap, new Set()))
+    .filter(Boolean)
+
+  if (!parts.length) return null
+  return { sql: parts.length === 1 ? parts[0] : `(${parts.join(' OR ')})`, params }
+}
+
 export function buildPolicyFilter(modelName, op, ctx, policyMap, schema, relationMap) {
   ctx = atOneInstant(ctx)
   if (ctx.isSystem) {
@@ -437,71 +477,76 @@ export function buildPolicyFilter(modelName, op, ctx, policyMap, schema, relatio
   return { sql, params }
 }
 
-// Throws AccessDeniedError if the create policy denies the operation.
-// Evaluates purely in JS against the data being created (no SQL — INSERT has no WHERE).
-export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relationMap) {
+/**
+ * Does this policy admit this row, evaluated in JS — `{ ok }`, plus the
+ * refusing rule's own message where it has one.
+ *
+ * **The one answer to that question**, because there are now three callers and
+ * two of them are the boundary. `create` and `post-update` are checks — they
+ * throw, and the row is refused or the write rolled back. `transitions()` is an
+ * AFFORDANCE — it needs the same verdict and must not throw, because it is
+ * answering *which buttons should this screen draw* (`FJS-495`). Written as two
+ * copies they agreed for a while and then would not: deny-before-allow, an
+ * empty `allows` meaning *no opinion* rather than *nobody*, and `asSystem()`
+ * skipping outright are three rules, and a screen getting any of them wrong
+ * offers a move the boundary refuses or hides one it allows.
+ *
+ * **It does not catch.** `evalJs` throws on a `check()` over a relation that is
+ * not to-one, and at the boundary an undecidable policy must refuse rather than
+ * pass — so the throw belongs to the caller. The affordance catches it and
+ * answers permissively, which is what every other `x-*` affordance does and is
+ * exactly the decision this function must not make on anyone's behalf.
+ */
+export function policyVerdict(modelName, row, ctx, policyMap, relationMap, op) {
   ctx = atOneInstant(ctx)
   if (ctx.isSystem) {
-    if (ctx.policyDebug === 'verbose') plog(ctx, 'create', modelName, '[2mskipped (asSystem)[0m')
-    return
+    if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[2mskipped (asSystem)[0m')
+    return { ok: true }
   }
-  const rules = policyMap[modelName]?.['create']
+
+  const rules = policyMap?.[modelName]?.[op]
   if (!rules) {
-    if (ctx.policyDebug === 'verbose') plog(ctx, 'create', modelName, '[2mno policy[0m')
-    return
+    if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[2mno policy[0m')
+    return { ok: true }
   }
 
   const { allows, denies } = rules
 
-  // Check denies first — explicit deny wins
+  // Deny first — an explicit deny wins over every allow beside it.
   for (const { expr, message } of denies) {
-    if (evalJs(expr, ctx, data, modelName, policyMap, relationMap, 'create')) {
-      plog(ctx, 'create', modelName, '[31mDENIED[0m (@@deny fired)')
-      throw new AccessDeniedError(message ?? `Create denied by @@deny policy on "${modelName}"`, { model: modelName, operation: 'create' })
-    }
+    if (evalJs(expr, ctx, row, modelName, policyMap, relationMap, op))
+      return { ok: false, message, rule: 'deny' }
   }
 
-  // If any @@allow exists, at least one must pass
-  if (allows.length) {
-    const permitted = allows.some(({ expr }) => evalJs(expr, ctx, data, modelName, policyMap, relationMap, 'create'))
-    if (!permitted) {
-      plog(ctx, 'create', modelName, '[31mDENIED[0m (no @@allow passed)')
-      const msg = allows.find(({ message }) => message)?.message
-      throw new AccessDeniedError(msg ?? `Create denied by @@allow policy on "${modelName}"`, { model: modelName, operation: 'create' })
-    }
-    if (ctx.policyDebug === 'verbose') plog(ctx, 'create', modelName, '[32mallowed[0m')
-  }
+  // An allow list is a whitelist ONLY once it is non-empty. A model with denies
+  // and no allows admits everything the denies did not name.
+  if (allows.length && !allows.some(({ expr }) => evalJs(expr, ctx, row, modelName, policyMap, relationMap, op)))
+    return { ok: false, message: allows.find(({ message }) => message)?.message, rule: 'allow' }
+
+  if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[32mallowed[0m')
+  return { ok: true }
+}
+
+// Throws AccessDeniedError if the create policy denies the operation.
+// Evaluates purely in JS against the data being created (no SQL — INSERT has no WHERE).
+export function checkCreatePolicy(modelName, data, ctx, policyMap, schema, relationMap) {
+  const v = policyVerdict(modelName, data, ctx, policyMap, relationMap, 'create')
+  if (v.ok) return
+  plog(ctx, 'create', modelName, `[31mDENIED[0m (${v.rule === 'deny' ? '@@deny fired' : 'no @@allow passed'})`)
+  throw new AccessDeniedError(
+    v.message ?? `Create denied by @@${v.rule} policy on "${modelName}"`,
+    { model: modelName, operation: 'create' })
 }
 
 // Evaluates a post-update policy against a row object in JS.
 // Call after the write, inside a transaction — throw to trigger rollback.
 export function checkPostUpdatePolicy(modelName, row, ctx, policyMap, schema, relationMap) {
-  ctx = atOneInstant(ctx)
-  if (ctx.isSystem) {
-    if (ctx.policyDebug === 'verbose') plog(ctx, 'post-update', modelName, '[2mskipped (asSystem)[0m')
-    return
-  }
-  const rules = policyMap[modelName]?.['post-update']
-  if (!rules) return
-
-  const { allows, denies } = rules
-
-  for (const { expr, message } of denies) {
-    if (evalJs(expr, ctx, row, modelName, policyMap, relationMap, 'post-update')) {
-      plog(ctx, 'post-update', modelName, '[31mDENIED[0m (@@deny fired) — rolling back')
-      throw new AccessDeniedError(message ?? `Update denied by @@deny post-update policy on "${modelName}"`, { model: modelName, operation: 'post-update' })
-    }
-  }
-
-  if (allows.length) {
-    const permitted = allows.some(({ expr }) => evalJs(expr, ctx, row, modelName, policyMap, relationMap, 'post-update'))
-    if (!permitted) {
-      plog(ctx, 'post-update', modelName, '[31mDENIED[0m (no @@allow passed) — rolling back')
-      const msg = allows.find(({ message }) => message)?.message
-      throw new AccessDeniedError(msg ?? `Update denied by @@allow post-update policy on "${modelName}"`, { model: modelName, operation: 'post-update' })
-    }
-    if (ctx.policyDebug === 'verbose') plog(ctx, 'post-update', modelName, '[32mallowed[0m')
-  }
+  const v = policyVerdict(modelName, row, ctx, policyMap, relationMap, 'post-update')
+  if (v.ok) return
+  plog(ctx, 'post-update', modelName, `[31mDENIED[0m (${v.rule === 'deny' ? '@@deny fired' : 'no @@allow passed'}) — rolling back`)
+  throw new AccessDeniedError(
+    v.message ?? `Update denied by @@${v.rule} post-update policy on "${modelName}"`,
+    { model: modelName, operation: 'post-update' })
 }
 
 // ─── SQL compiler ─────────────────────────────────────────────────────────────

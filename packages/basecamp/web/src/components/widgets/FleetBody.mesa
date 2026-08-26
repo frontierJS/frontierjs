@@ -6,7 +6,6 @@
   // opened for themselves, and a refusal arrives as a refusal rather than as an
   // empty grid.
   import { servers } from '../../resources/Server.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { onWrite } from './live.js'
   import Dot from '@frontierjs/ui/components/display/Dot.mesa'
 
@@ -31,7 +30,7 @@
   }
 
   load()
-  $onDestroy(onWrite(servers.service, load))
+  $.onDestroy(onWrite(servers.service, load))
 
   $: online = rows.filter(s => s.status === 'online').length
 </script>

@@ -26,7 +26,7 @@ import { wrapResult, isServiceResult, resultData } from './envelope.ts'
 import { createSchema } from './schema.ts'
 import { isPublishHook } from '../transport/channels.ts'
 import {
-  createLitestoneBase, autoValidate, gateAuth, autoFilter, autoSort, liftReservedQuery,
+  createLitestoneBase, autoValidate, validateInput, gateAuthAround, autoFilter, autoSort, liftReservedQuery,
   markDerived, isDerivedHook,
   jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload,
 } from './litestone.ts'
@@ -37,7 +37,27 @@ import {
 
 export type CacheDeclaration =
   | true
-  | { ttl?: string; keyBy?: (ctx: ServiceContext) => string }
+  | {
+      ttl?:   string
+      keyBy?: (ctx: ServiceContext) => string
+      /**
+       * This service's answers do not depend on the tenant, so one entry may
+       * serve all of them.
+       *
+       * Off by default, and the default is the safe direction: the cache lives
+       * on the APP and not on the client, so one process serving two tenants
+       * shares one cache under both strategies, and the first caller to warm an
+       * entry decided what every other tenant read. Nothing downstream could
+       * see it — the query that produced the value was correctly scoped and the
+       * rows are real, they just belong to somebody else.
+       *
+       * Declare it for a service over a model no tenant owns — a `@@tenant(none)`
+       * lookup table, a public catalogue. It is a statement about the DATA, so
+       * it is the app's to make: the framework can see that a tenant is in
+       * scope and cannot see whether the answer depended on it.
+       */
+      shared?: boolean
+    }
 
 // Service cache resolution, in precedence order:
 //   1. setServiceCache() override — process-global, back-compat API for
@@ -93,6 +113,11 @@ export function setServiceCache(cache: ICache): void {
  * Query params are key-sorted so param order never produces phantom misses.
  * User ID is appended when present — naturally scopes auth'd routes without
  * needing to inspect the hook pipeline.
+ *
+ * The TENANT is not appended here; `buildCacheHooks` does it, outside a custom
+ * `keyBy`. The `uid` segment is what made the gap invisible: a cached list is
+ * keyed by the caller, so two callers in one tenant share correctly and two
+ * callers in two tenants shared too.
  */
 function buildCacheKey(ctx: ServiceContext): string {
   const userSeg = ctx.auth.user?.userId != null ? `:uid=${ctx.auth.user.userId}` : ''
@@ -119,9 +144,17 @@ function buildCacheHooks(
   const opts      = decl === true ? {} : decl
   const customKey = opts.keyBy
   const ttl       = (opts as { ttl?: string }).ttl
+  const shared    = (opts as { shared?: boolean }).shared === true
 
-  const getKey = (ctx: ServiceContext) =>
-    customKey ? customKey(ctx) : buildCacheKey(ctx)
+  // The tenant segment is appended OUTSIDE the custom key, so `keyBy` cannot
+  // opt out of correctness. A key function says what makes two calls the same
+  // call within a tenant; it was never asked about the tenant, and an app that
+  // wrote one before tenancy existed would silently lose the partition.
+  const getKey = (ctx: ServiceContext) => {
+    const base   = customKey ? customKey(ctx) : buildCacheKey(ctx)
+    const tenant = shared ? null : ctx.locals?.tenantId
+    return tenant ? `${base}:t=${tenant}` : base
+  }
 
   // Results are cloned on BOTH store and read. The cache must never hand out
   // a live reference: after-hooks (protect(), custom shapers) mutate ctx.result
@@ -192,6 +225,13 @@ export interface ServiceDescription {
   idField:    string
   /** Methods that run inside a transaction spanning the whole pipeline. */
   transactional: string[]
+  /**
+   * The `type` in the seed each method's payload must satisfy, keyed by method.
+   *
+   * Reported because a declared input is a fact about the WIRE, and the one
+   * place it is written is a service file nobody calling the API can read.
+   */
+  inputs:     Record<string, string>
   /** The merged hook declaration — what ran, not how it was resolved. */
   hooks:      HookMap
   /**
@@ -264,6 +304,14 @@ export interface Service {
    * directly — those are what callService and the three advertisers agree on.
    */
   _methods?: Set<string> | null
+
+  /**
+   * The declared input type per method, resolved from `methods:`.
+   *
+   * The hook that enforces it is already in the pipeline; this is the readable
+   * form, for `describe()` and everything that reads it.
+   */
+  _inputs?: Record<string, string>
 
   find:     (ctx: ServiceContext) => Promise<unknown>
   get:      (ctx: ServiceContext) => Promise<unknown>
@@ -551,7 +599,7 @@ async function _callService(
   // Litestone scoping and every other app-level hook.
   const resolvedPipeline = pipelineSource[method as string]
     ?? pipelineSource['*']
-    ?? { around: [], before: [], after: [], error: [] }
+    ?? { around: [], before: [], validated: [], after: [], error: [] }
 
   const methodFn = (isCustom
     ? customMethodFn(service, method as string)
@@ -998,7 +1046,8 @@ export function collectCustomMethods(
   const out: CustomMethodMap = {}
 
   if (Array.isArray(declared)) {
-    for (const name of declared) {
+    for (const entry of declared) {
+      const name = methodEntryName(entry, serviceName)
       if (CRUD_METHODS.has(name)) continue
       const fn = src[name]
       if (typeof fn !== 'function') {
@@ -1169,7 +1218,83 @@ function describeChannel(decl: PublishDeclaration | undefined): string | boolean
 export const READ_ONLY_METHODS: readonly string[] = ['find', 'get']
 
 /** A service's declared method policy: an allow-list, or the one preset. */
-export type MethodPolicy = string[] | 'readOnly'
+/**
+ * One entry of a `methods:` list, where the method needs more said about it
+ * than its name.
+ *
+ * `input` names a `type T { … }` declared in the app's own seed — the payload
+ * this method accepts. The seed stays the one owner of what a shape is: the
+ * declaration reaches JSON Schema through `generateJsonSchema` exactly as a
+ * model does, so `@trim`, `@length` and the author's `x-messages` all apply and
+ * the 400 a custom method throws renders in `<Form>` like a CRUD one.
+ *
+ * Without it a custom method has NO declared input at all — `ctx.data` is
+ * whatever arrived, which is the one thing `autoValidate` never covered.
+ */
+export interface MethodDeclaration {
+  method: string
+  input?: string
+}
+
+export type MethodEntry  = string | MethodDeclaration
+export type MethodPolicy = MethodEntry[] | 'readOnly'
+
+/**
+ * The method name an entry declares.
+ *
+ * Both forms mean the same to the POLICY — `{ method: 'pay' }` narrows a service
+ * exactly as `'pay'` does, and that is the sharp edge: a service declaring no
+ * `methods:` answers every verb, so adding one object entry to turn validation
+ * on narrows it to that entry alone. Name the whole surface. The failure is not
+ * left to production — `surface.snapshot.md` carries the policy-applied method
+ * list per service and the `snapshots` CI phase fails a stale one, so the
+ * verbs that stopped being answered are a diff.
+ */
+export function methodEntryName(entry: MethodEntry, serviceName: string): string {
+  if (typeof entry === 'string') return entry
+  if (entry && typeof entry === 'object' && typeof entry.method === 'string' && entry.method.trim())
+    return entry.method
+  throw new TypeError(
+    `[Junction] service '${serviceName}': every methods entry must be a method name ` +
+    `or { method, input }, got ${JSON.stringify(entry)}`
+  )
+}
+
+/**
+ * The `input:` declarations in a `methods:` list, keyed by method name.
+ *
+ * A CRUD name may carry one, and it REPLACES the model-derived validator —
+ * the only way a create accepts a payload the model does not describe. A name
+ * appearing twice is refused rather than last-wins: two declarations of one
+ * method's input is a merge conflict, not an intention.
+ */
+export function collectMethodInputs(
+  declared:    MethodPolicy | undefined,
+  serviceName: string,
+): Record<string, string> {
+  if (!Array.isArray(declared)) return {}
+
+  const out:  Record<string, string> = {}
+  const seen: Set<string> = new Set()
+
+  for (const entry of declared) {
+    const name = methodEntryName(entry, serviceName)
+    if (seen.has(name)) throw new TypeError(
+      `[Junction] service '${serviceName}': methods names '${name}' twice — ` +
+      `a method has one declaration.`
+    )
+    seen.add(name)
+
+    if (typeof entry === 'string' || entry.input === undefined) continue
+    if (typeof entry.input !== 'string' || !entry.input.trim()) throw new TypeError(
+      `[Junction] service '${serviceName}': methods['${name}'].input must name a ` +
+      `\`type\` declared in the schema, got ${JSON.stringify(entry.input)}`
+    )
+    out[name] = entry.input
+  }
+
+  return out
+}
 
 /**
  * Normalise a declared policy to the set of callable method names.
@@ -1200,8 +1325,9 @@ export function resolveMethodPolicy(
     )
   }
 
+  const names   = policy.map(entry => methodEntryName(entry, serviceName))
   const known   = new Set(available)
-  const unknown = policy.filter(m => !known.has(m))
+  const unknown = names.filter(m => !known.has(m))
   if (unknown.length) {
     throw new TypeError(
       `[Junction] service '${serviceName}': methods lists ${unknown.map(m => `'${m}'`).join(', ')}, ` +
@@ -1209,7 +1335,7 @@ export function resolveMethodPolicy(
     )
   }
 
-  return new Set(policy)
+  return new Set(names)
 }
 
 /**
@@ -1345,6 +1471,26 @@ export function createBaseService(
   // not. One parse step; everything downstream reads the table.
   const customMethods = collectCustomMethods(opts, name ?? model ?? 'service', methods)
 
+  // A CRUD method the definition WROTE wins over the generated one.
+  //
+  // `collectCustomMethods` collects the non-CRUD names by construction, so an
+  // `async get(ctx)` written beside `model:` used to be dropped on the floor:
+  // the generated row-by-id answered instead, the author's implementation was
+  // never called, and nothing anywhere said so. The failure is a service that
+  // returns a plausible wrong shape — the raw row rather than the basket the
+  // author assembled — which is the worst possible way for it to go.
+  //
+  // Wrapped in `withDb` like the generated ones, and the derived hooks are
+  // untouched: `gateAuth` wraps every method and `autoFilter` is attached by
+  // METHOD NAME, so an override keeps the model's `@@gate` and the filter check
+  // it would have had.
+  const CRUD_METHODS = ['find', 'get', 'create', 'update', 'patch', 'remove', 'restore'] as const
+  const overrides: Record<string, Method> = {}
+  for (const verb of CRUD_METHODS) {
+    const fn = (opts as unknown as Record<string, unknown>)[verb]
+    if (typeof fn === 'function') overrides[verb] = withDb(fn as Method)
+  }
+
   // Schema validation, derived rather than declared.
   //
   // When the resolved client is a Litestone client it carries its own parsed
@@ -1354,32 +1500,54 @@ export function createBaseService(
   // error. A non-Litestone client resolves to no schema and they no-op.
   //
   // Everything is lazy because the client is not known when this service module
-  // is imported. User hooks run first, so a before/create hook can still shape
-  // ctx.data before it is validated.
-  // Auth is derived from the model's @@gate, per operation — so a model
-  // declaring `@@gate("0.4")` has public reads and authenticated writes with no
-  // service-level declaration at all. Runs before validation: rejecting an
-  // anonymous request costs less than parsing its body.
+  // is imported.
   //
-  // Marked as they are built, so BOTH branches of the merge below emit marked
+  // The derived layer is in two phases and the split is the ordering rule
+  // (`FJS-403`):
+  //
+  //   gateAuth (around)  →  the app's before hooks  →  autoValidate/Filter/Sort
+  //
+  // `gateAuth` is an AROUND hook because that is the only position that leads
+  // everything. It used to be a per-method before hook appended after the app's,
+  // so the run order was `<app hooks> → gateAuth → autoValidate` and an app rule
+  // that read the database read it for strangers: on `example`, an
+  // unauthenticated POST naming a customer that does not exist answered 400
+  // `That customer is no longer on file` and the same request naming a real one
+  // answered 401 — an existence oracle over a gated table, spelled out. Leading
+  // the per-method list is not enough either: `resolvePipelines` runs
+  // `before.all` ahead of `before.<method>`, so a service declaring
+  // `before: { all: [...] }` would keep the hole. An around hook wraps every
+  // before hook there is, and a service-level one sits inside the app-level
+  // `withLitestoneDb` that scopes the client the gate reads.
+  //
+  // The validators still trail, and for the reason the whole layer used to: a
+  // before/create hook shapes `ctx.data`, and it is the SHAPED payload that must
+  // satisfy the validator. An app rule that needs the coerced payload — or a
+  // caller the gate has already graded — belongs in `validated:`, which runs
+  // after this half.
+  //
+  // Auth is derived from the model's @@gate, per operation, so a model
+  // declaring `@@gate("0.4")` has public reads and authenticated writes with no
+  // service-level declaration at all.
+  //
+  // Marked as they are built, so EVERY branch of the merge below emits marked
   // hooks — an unmarked one is invisible to the dedupe and installs itself a
   // second time.
   const derived = (...fns: Hook[]): Hook[] => fns.map(markDerived)
 
+  const gateHook = markDerived(gateAuthAround(model))
+
   const derivedHooks: HookMap = {
+    around: { all: [gateHook] },
     before: {
-      find:   derived(gateAuth(model, 'read'),   autoFilter(model), autoSort(model)),
-      get:    derived(gateAuth(model, 'read'),   autoFilter(model)),
-      create: derived(gateAuth(model, 'create'), autoValidate(model, 'create')),
-      patch:  derived(gateAuth(model, 'update'), autoValidate(model, 'patch')),
-      update: derived(gateAuth(model, 'update'), autoValidate(model, 'create')),
-      remove: derived(gateAuth(model, 'delete')),
+      find:   derived(autoFilter(model), autoSort(model)),
+      get:    derived(autoFilter(model)),
+      create: derived(autoValidate(model, 'create')),
+      patch:  derived(autoValidate(model, 'patch')),
+      update: derived(autoValidate(model, 'create')),
     },
   }
 
-  // User hooks run first, so a before/create hook can still shape ctx.data
-  // before it is validated, and an app can add its own checks ahead of these.
-  //
   // A hook map reaching here may ALREADY carry this layer: the autoloader
   // spreads a built base back through createService, and a base returns the
   // merged map, not the caller's. Appending unconditionally then ran the gate
@@ -1387,20 +1555,27 @@ export function createBaseService(
   // (`FJS-231`). Skip a derived hook whose name is already present among the
   // MARKED hooks — a user hook of the same name is not one of ours and does not
   // suppress it.
+  const alreadyDerived = (list: unknown[] | undefined, name: string) =>
+    (list ?? []).some(h => isDerivedHook(h) && (h as Function).name === name)
+
   const mergedHooks: HookMap = hooks
     ? {
         ...hooks,
+        around: (() => {
+          const out: Record<string, unknown[]> = { ...(hooks.around as Record<string, unknown[]> ?? {}) }
+          // Prepended, not appended: an app's own around hook may open a
+          // resource, and the gate has to refuse before it does.
+          out.all = alreadyDerived(out.all, 'gateAuth')
+            ? out.all!
+            : [gateHook, ...(out.all ?? [])]
+          return out
+        })() as HookMap['around'],
         before: (() => {
           const out: Record<string, unknown[]> = { ...(hooks.before as Record<string, unknown[]> ?? {}) }
-          for (const [method, derivedForMethod] of Object.entries(derivedHooks.before!)) {
-            const present = new Set(
-              (out[method] ?? [])
-                .filter(isDerivedHook)
-                .map(h => (h as Function).name)
-            )
+          for (const [method, fns] of Object.entries(derivedHooks.before!)) {
             out[method] = [
               ...(out[method] ?? []),
-              ...(derivedForMethod as unknown[]).filter(h => !present.has((h as Function).name)),
+              ...(fns as Hook[]).filter(h => !alreadyDerived(out[method], h.name)),
             ]
           }
           return out
@@ -1455,6 +1630,7 @@ export function createBaseService(
     patch:   withDb(base.patch),
     remove:  withDb(base.remove),
     restore: withDb(base.restore as Method),
+    ...overrides,
     // They land twice on purpose: as own keys, which is how a spread carries
     // them and how a caller reaches `svc.reboot`, and as the table, which is
     // what createService reads instead of re-scanning a shape that by then
@@ -1463,6 +1639,35 @@ export function createBaseService(
     _customMethods: customMethods,
     ...(name    !== undefined ? { name }    : {}),
     ...(channel !== undefined ? { channel } : {}),
+    // The last five of SERVICE_OPTION_KEYS this literal used to drop, and they
+    // drop for the reason `name` and `hooks` did: the loader spreads this
+    // object into createService(), so a key that is not on it was never
+    // declared as far as that call is concerned.
+    //
+    // `model` is the one with a silent consequence rather than a loud one.
+    // createService substitutes `def.model ?? def.name`, so a service that
+    // declared `model: 'Payment'` in its own file reported `model: 'payments'`
+    // on the way out — and CRUD still worked, because the accessor is resolved
+    // per call from the service name through accessorCandidates(). What broke
+    // is everything that reads `svc.model` expecting an answer about the
+    // MODEL: `announceDataWrites` builds its model → service index from it,
+    // and never matched (FJS-464). The four beside it are the same
+    // silence with smaller consequences (FJS-462).
+    //
+    // `idField` and `softDelete` reach `_meta` below, which is read by the
+    // devtools and manifest plugins — so they were reported correctly and
+    // ENFORCED as undefined, which is the worst of both.
+    //
+    // `db` is the one option deliberately NOT carried, and the reason is a
+    // rule rather than an oversight: it is a FUNCTION, and no config key may
+    // land on this object as a callable own key. `db` is reserved in
+    // SERVICE_OPTION_KEYS so the custom-method scan skips it, and that is
+    // exactly one check away from serving an app's database handle over HTTP.
+    // `tests/base-service-options.test.ts` pins it.
+    ...(model      !== undefined ? { model }      : {}),
+    ...(paginate   !== undefined ? { paginate }   : {}),
+    ...(idField    !== undefined ? { idField }    : {}),
+    ...(softDelete !== undefined ? { softDelete } : {}),
     // Carried through, not resolved here: the loader spreads this object into
     // createService(), which is where the allow-list is validated against the
     // custom methods that exist. Dropping it was a SECURITY-shaped silence — the same
@@ -1662,9 +1867,10 @@ export interface ServiceDefinition {
    * Writes (create, patch, remove) automatically bust all keys for this service.
    *
    * @example
-   * cache: true                           // 30s TTL, auto auth-scoped
+   * cache: true                           // 30s TTL, auto auth- and tenant-scoped
    * cache: { ttl: '2 minutes' }           // custom TTL (uses parseTtl format)
-   * cache: { keyBy: (ctx) => ctx.id }     // fully custom key function
+   * cache: { keyBy: (ctx) => ctx.id }     // custom key; still tenant-scoped
+   * cache: { shared: true }               // one entry for every tenant
    */
   cache?: CacheDeclaration
 
@@ -1718,7 +1924,12 @@ function makeBypass(
 // Exported because two tests asserted on the total length of a compiled
 // `before` list and broke the day a second derived hook appeared — the count is
 // a framework detail a test about USER hooks does not own. Filter by this.
-export const DERIVED_HOOKS = new Set(['gateAuth', 'autoValidate', 'autoFilter', 'autoSort'])
+// The framework's own before-hooks, BY NAME — for tests filtering them out of a
+// telemetry waterfall, which carries a hook's name and not the function. Name
+// matching is what it can do and it is not sound: an app hook called
+// `autoFilter` reads as derived here. `isDerivedHook(fn)` is the identity-based
+// answer and is what anything holding the function should ask.
+export const DERIVED_HOOKS = new Set(['gateAuth', 'autoValidate', 'validateInput', 'autoFilter', 'autoSort'])
 
 // Stamped on a service createService has already built. Non-enumerable, so a
 // spread does NOT carry it — which is the correct answer: `{...svc}` is a copy
@@ -1863,6 +2074,21 @@ export function createService(def: ServiceDefinition): Service {
   const effectiveHooks = baseHooks ?? def.hooks
   if (effectiveHooks) hookMaps.push(effectiveHooks)
 
+  // The declared inputs, one derived before-hook each. Pushed AFTER the user's
+  // layer for the same reason the model-derived hooks are: a before hook may
+  // still shape ctx.data, and it is the shaped payload that must satisfy the
+  // declaration. On a CRUD name this runs after autoValidate and is therefore
+  // the one that decides — which is what "an input replaces the model-derived
+  // validator" has to mean.
+  const methodInputs = collectMethodInputs(def.methods, defName ?? '(unnamed)')
+  const inputEntries = Object.entries(methodInputs)
+  if (inputEntries.length) {
+    hookMaps.push({
+      before: Object.fromEntries(inputEntries.map(([method, type]) =>
+        [method, [markDerived(validateInput(type, defName ?? '(unnamed)', method))]])),
+    })
+  }
+
   // Pushed LAST of the service's own layers so it is the innermost service-level
   // around hook — outside every before/after hook it must cover, inside the
   // app-level withLitestoneDb that scopes the client it opens the transaction on.
@@ -1978,6 +2204,7 @@ export function createService(def: ServiceDefinition): Service {
         cache:      !!meta.cache,
         idField:    (meta.idField as string) ?? 'id',
         transactional: [...(service._transactional ?? [])],
+        inputs:        { ...(service._inputs ?? {}) },
         channel:    describeChannel(service.channel as PublishDeclaration | undefined),
         hooks:      service._hookMap,
         ...(schemas ? { schemas } : {}),
@@ -2014,6 +2241,7 @@ export function createService(def: ServiceDefinition): Service {
     (service as unknown as Record<string, unknown>)[key] = fn
   }
   ;(service as Service)._customMethods = custom
+  ;(service as Service)._inputs = methodInputs
 
   // Resolve the method policy AFTER the custom methods are on, because an allow-list
   // may name one and the unknown-name check has to be able to see it.

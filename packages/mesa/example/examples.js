@@ -1124,7 +1124,7 @@ export const EXAMPLES = {
     file: 'CleanupOnRerun.mesa',
     group: 'Reactivity',
     src: `<script>
-  // $onCleanup registers a function that runs BEFORE the handler re-runs
+  // $.onCleanup registers a function that runs BEFORE the handler re-runs
   // and when the component is destroyed.
   // Must be called before the first await in an async handler.
   // Use it to: cancel timers, abort fetches, clear intervals.
@@ -1154,8 +1154,8 @@ export const EXAMPLES = {
       status = 'done'
     }, 400)
 
-    // $onCleanup runs before next execution — cancels in-flight timer
-    $onCleanup(() => {
+    // $.onCleanup runs before next execution — cancels in-flight timer
+    $.onCleanup(() => {
       clearTimeout(id)
       status = 'cancelled'
     })
@@ -1164,7 +1164,7 @@ export const EXAMPLES = {
   }
 </script>
 
-<h2>$onCleanup — cancel on rerun</h2>
+<h2>$.onCleanup — cancel on rerun</h2>
 <p>Status: <strong>{status}</strong> — completed searches: {runCount}</p>
 
 <input bind:value={query} placeholder="Type to search (debounced 400ms)…" />
@@ -1196,7 +1196,7 @@ export const EXAMPLES = {
       ]
       searching = false
     }, 400)
-    $onCleanup(() => { clearTimeout(id); searching = false })
+    $.onCleanup(() => { clearTimeout(id); searching = false })
   }
 </script>
 
@@ -1243,7 +1243,7 @@ export const EXAMPLES = {
     const t = setTimeout(() => {
       console.log('[nameSettled] name settled:', name)
     }, 200)
-    $onCleanup(() => clearTimeout(t))
+    $.onCleanup(() => clearTimeout(t))
   }
 </script>
 
@@ -1378,14 +1378,14 @@ export const EXAMPLES = {
     if (!query) return
     const t = setTimeout(() =>
       console.log('[search] settled:', query), 300)
-    $onCleanup(() => clearTimeout(t))
+    $.onCleanup(() => clearTimeout(t))
   }
 
   // ── Auto-tracked side effect ───────────────────────────────────────────────
   $: document.title = 'KitchenSink — ' + cartCount + ' items'
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
-  $onMount(() => console.log('[mount] region:', region, 'currency:', currency))
+  $.onMount(() => console.log('[mount] region:', region, 'currency:', currency))
 
   // ── Functions ─────────────────────────────────────────────────────────────
   function addToCart(product) {
@@ -1677,13 +1677,13 @@ export const EXAMPLES = {
     group: 'DOM',
     src: `<script>
   // bind:this={var} — capture the raw DOM node into a reactive variable.
-  // Set immediately after element mounts. Use in $onMount or handlers.
+  // Set immediately after element mounts. Use in $.onMount or handlers.
 
   let canvas
   let inputEl
   let focused = false
 
-  $onMount(() => {
+  $.onMount(() => {
     const ctx = canvas.getContext('2d')
     drawShapes(ctx, '#6366f1', '#f59e0b')
   })
@@ -2921,7 +2921,7 @@ anything that changes at runtime.`,
     file: 'MesaMounted.mesa',
     group: 'Async',
     src: `<script>
-  // $mounted(fn) — wraps an async function that runs after the component mounts.
+  // $.mounted(fn) — wraps an async function that runs after the component mounts.
   // <mesa:mounted /> gates the entire template: nothing renders until the
   // Promise resolves. The pending/failed snippets show in the meantime.
   //
@@ -2931,8 +2931,8 @@ anything that changes at runtime.`,
   let user  = null
   let error = null
 
-  // $mounted() returns a Promise — only one per component (compiler error if used twice)
-  const mounting = $mounted(async () => {
+  // $.mounted() returns a Promise — only one per component (compiler error if used twice)
+  const mounting = $.mounted(async () => {
     // Simulate auth check + profile fetch after mount
     await new Promise(r => setTimeout(r, 1200))
 
@@ -3047,8 +3047,8 @@ anything that changes at runtime.`,
     file: 'Lifecycle.mesa',
     group: 'Lifecycle',
     src: `<script>
-  // $onMount — runs after the component is inserted into the DOM.
-  // $onDestroy — runs when the component is removed.
+  // $.onMount — runs after the component is inserted into the DOM.
+  // $.onDestroy — runs when the component is removed.
   // Neither runs on the server (SSR).
 
   let elapsed = 0
@@ -3059,17 +3059,17 @@ anything that changes at runtime.`,
     log = [...log, msg]
   }
 
-  $onMount(() => {
+  $.onMount(() => {
     mounted = true
-    addLog('$onMount fired — component is in the DOM')
+    addLog('$.onMount fired — component is in the DOM')
     const id = setInterval(() => {
       elapsed++
     }, 1000)
 
-    // Store cleanup in $onDestroy — called when component unmounts
-    $onDestroy(() => {
+    // Store cleanup in $.onDestroy — called when component unmounts
+    $.onDestroy(() => {
       clearInterval(id)
-      addLog('$onDestroy fired — interval cleared')
+      addLog('$.onDestroy fired — interval cleared')
     })
   })
 </script>
@@ -3117,7 +3117,7 @@ anything that changes at runtime.`,
     totalClicks++
   }
 
-  $onDestroy(() => {
+  $.onDestroy(() => {
     totalInstances--
   })
 </script>
@@ -3141,13 +3141,13 @@ anything that changes at runtime.`,
     group: 'SVG',
     src: `<script>
   // SVG works natively in Mesa — no special handling needed.
-  // $onMount starts the tick, $onDestroy clears it.
+  // $.onMount starts the tick, $.onDestroy clears it.
 
   let now = new Date()
 
-  $onMount(() => {
+  $.onMount(() => {
     const id = setInterval(() => { now = new Date() }, 1000)
-    $onDestroy(() => clearInterval(id))
+    $.onDestroy(() => clearInterval(id))
   })
 
   const sec = now.getSeconds()
@@ -3336,11 +3336,11 @@ anything that changes at runtime.`,
   const progress = Math.min(elapsed / duration, 1)
   const done     = elapsed >= duration
 
-  $onMount(() => {
+  $.onMount(() => {
     const id = setInterval(() => {
       if (elapsed < duration) elapsed = +(elapsed + 0.1).toFixed(1)
     }, 100)
-    $onDestroy(() => clearInterval(id))
+    $.onDestroy(() => clearInterval(id))
   })
 
   function reset() { elapsed = 0 }
@@ -3896,7 +3896,7 @@ anything that changes at runtime.`,
 
   function closeDropdown() { dropdownOpen = false }
 
-  $onMount(() => {
+  $.onMount(() => {
     const el = document.getElementById('focus-demo')
     if (el) el.addEventListener('focus', () => focusCount++)
   })
@@ -4301,15 +4301,15 @@ export const user = { name: 'Alice', role: 'admin' }`,
     ],
     group: 'Mesa-specific',
     src: `<script>
-  // $inspect — reactive dev-mode inspector
+  // $.inspect — reactive dev-mode inspector
   //
   // Logs values on every change, unwrapping Mesa proxies
   // so you see the real object instead of Proxy {}.
   //
   // Forms:
-  //   $inspect(value)             single value, labelled
-  //   $inspect(a, b)              multiple values
-  //   $inspect(value).with(fn)    custom inspector
+  //   $.inspect(value)             single value, labelled
+  //   $.inspect(a, b)              multiple values
+  //   $.inspect(value).with(fn)    custom inspector
   //
   // Stripped in production builds (debug: false). Never needs an import.
 
@@ -4321,13 +4321,13 @@ export const user = { name: 'Alice', role: 'admin' }`,
   let tab = 'A'
 
   // These all auto-track and re-log on every change:
-  $inspect(count)
-  $inspect(cart)
-  $inspect(user.name)
-  $inspect(count, tab)
+  $.inspect(count)
+  $.inspect(cart)
+  $.inspect(user.name)
+  $.inspect(count, tab)
 
   const myHandler = (label, values) => console.log('[custom]', label, ...values)
-  $inspect(count).with(myHandler)
+  $.inspect(count).with(myHandler)
 
   const cartSummary = 'total=' + cart.total
 </script>
@@ -4348,16 +4348,16 @@ export const user = { name: 'Alice', role: 'admin' }`,
   </div>
 
   <div style="background:#1a1a2e;border-radius:8px;padding:14px;font-family:monospace;font-size:12px;line-height:2;color:#888">
-    <div><span style="color:#EE380D;font-weight:600">[Mesa $inspect]</span> count → <strong style="color:#f0d8c0">{count}</strong></div>
-    <div><span style="color:#EE380D;font-weight:600">[Mesa $inspect]</span> cart → <strong style="color:#f0d8c0">{cartSummary}</strong></div>
-    <div><span style="color:#EE380D;font-weight:600">[Mesa $inspect]</span> user.name → <strong style="color:#f0d8c0">{user.name}</strong></div>
+    <div><span style="color:#EE380D;font-weight:600">[Mesa $.inspect]</span> count → <strong style="color:#f0d8c0">{count}</strong></div>
+    <div><span style="color:#EE380D;font-weight:600">[Mesa $.inspect]</span> cart → <strong style="color:#f0d8c0">{cartSummary}</strong></div>
+    <div><span style="color:#EE380D;font-weight:600">[Mesa $.inspect]</span> user.name → <strong style="color:#f0d8c0">{user.name}</strong></div>
     <div style="color:#444;margin-top:6px;font-size:11px">
       ↑ mirrors console — real output has full object tree in devtools
     </div>
   </div>
 
   <p style="font-size:11px;color:#6b7280;margin-top:12px">
-    Unlike $: console.log(cart), $inspect unwraps the Proxy so you see
+    Unlike $: console.log(cart), $.inspect unwraps the Proxy so you see
     the actual object. Stripped with debug: false in production builds.
   </p>
 </div>`,

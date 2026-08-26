@@ -6,7 +6,6 @@
   // memory figure — is per-container telemetry nothing here collects; the app's
   // own `status` column is real and is what this card shows.
   import { apps } from '../../resources/App.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { onWrite } from './live.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
@@ -34,7 +33,7 @@
   }
 
   load()
-  $onDestroy(onWrite(apps.service, load))
+  $.onDestroy(onWrite(apps.service, load))
 
   $: last = app?.recent_deployments?.[0] ?? null
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'

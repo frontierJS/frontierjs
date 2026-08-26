@@ -33,6 +33,11 @@ const SCHEMA = {
         note:         { anyOf: [{ type: 'string' }, { type: 'null' }] },
         trackingCode: { anyOf: [{ type: 'string' }, { type: 'null' }] },
         customerId:   { type: 'integer' },
+        // The two Litestone marks `readOnly` — a column the caller may not
+        // write. Both carry a default, which is the combination that made a
+        // model uncreatable through a service (`FJS-504`).
+        redemptions:  { type: 'integer', default: 0, readOnly: true, 'x-litestone-kind': 'system' },
+        version:      { type: 'integer', default: 1, readOnly: true, 'x-litestone-kind': 'version' },
       },
     },
   },
@@ -80,6 +85,31 @@ describe('a patch does not apply model defaults', () => {
     expect(out.status).toBe('pending')
     expect(out.total).toBe(0)
     expect(out.active).toBe(true)
+  })
+
+  it('CREATE does not apply a readOnly default either', () => {
+    // The narrower rule, and the one that is not about patches at all.
+    // `validate()` fills a default in for any absent key, so a
+    // `redemptions Int @default(0) @system` arrived at the Data boundary as a
+    // key the caller never sent — and `@system` is refused BY NAME rather than
+    // dropped, so the create came back 403 quoting a column the request did not
+    // contain. Nothing is lost: Litestone applies the same default at the
+    // write, which is where a default a caller may not override belongs.
+    const out = compiled('create').parse({ reference: 'ORD-1', customerId: 1 }) as Record<string, unknown>
+
+    expect('redemptions' in out).toBe(false)
+    expect('version'     in out).toBe(false)
+    // …and the writable ones are untouched, which is the half that must not
+    // regress: this is a rule about readOnly, not about create.
+    expect(out.status).toBe('pending')
+  })
+
+  it('a readOnly column a caller DOES send still travels', () => {
+    // Junction drops the default, not the value. `@version` is readOnly in the
+    // update schema and a patch is REQUIRED to carry it back, so a validator
+    // that stripped the key would break optimistic locking outright.
+    const out = compiled('update').parse({ version: 7 }) as Record<string, unknown>
+    expect(out).toEqual({ version: 7 })
   })
 
   it('CREATE still refuses a missing required field', () => {

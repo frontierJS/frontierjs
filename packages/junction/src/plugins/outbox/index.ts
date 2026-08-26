@@ -16,8 +16,8 @@
 // without one would collect rows forever with nothing to deliver them to.
 
 import type { App, Plugin }  from '../../core/app.ts'
-import { deliverOutbox, sweepOutbox, hasOutboxModel,
-         OUTBOX_MODEL, OUTBOX_ACCESSOR } from '../../core/outbox.ts'
+import { deliverOutbox, sweepOutbox, pendingOutbox, assertOutboxShape, hasOutboxModel,
+         OUTBOX_MODEL } from '../../core/outbox.ts'
 import type { OutboxApi, DeliverOptions, DeliverResult } from '../../core/outbox.ts'
 
 export interface OutboxPluginOptions {
@@ -86,14 +86,10 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
         sweep: (ms = retentionMs): Promise<number> =>
           ms > 0 ? sweepOutbox(app, ms) : Promise.resolve(0),
 
-        async pending(): Promise<number> {
-          const db = app.db as { asSystem(): Record<string, unknown> } | undefined
-          if (!db || !hasOutboxModel(db)) return 0
-          const table = db.asSystem()[OUTBOX_ACCESSOR] as {
-            count(args: Record<string, unknown>): Promise<number>
-          }
-          return table.count({ where: { deliveredAt: null } })
-        },
+        // Every database the relay sweeps, summed — under
+        // `strategy database` the rows are one file per tenant, and a count of
+        // the app's own would have answered 0 for all of them.
+        pending: (): Promise<number> => pendingOutbox(app),
       }
 
       // claim() refuses to overwrite, which is what stops two relays over one
@@ -110,6 +106,16 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
       // the body, so a promise would serialise as `{}`.
       if (typeof app.registerMetricsSource === 'function')
         app.registerMetricsSource('outbox', () => ({ pending, delivered, failed, lastPassAt }))
+
+      // A relay that has stopped passing is an app that still answers every
+      // request and quietly owes an unbounded number of effects, which is
+      // exactly what a readiness probe is for. Graded against the interval the
+      // app configured rather than a number chosen here — three missed passes,
+      // so a slow pass is not an outage. Silent until the first pass runs,
+      // because *not started yet* is not *stuck*.
+      if (typeof app.registerHealthCheck === 'function')
+        app.registerHealthCheck('outbox', () =>
+          lastPassAt === null || Date.now() - Date.parse(lastPassAt) < intervalMs * 3)
     },
 
     async boot(app: App): Promise<void> {
@@ -117,11 +123,22 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
       // configured the relay and never ran the install has a schema that can
       // hold no rows, and the first sign of it would otherwise be a service
       // call failing in production.
-      if (!hasOutboxModel(app.db))
+      //
+      // A tenanted app is asked of its tenants instead: `createApp({ tenants })`
+      // sets no `app.db` at all, so grading the app-level client would refuse
+      // every database-per-tenant app that has the model in every file it
+      // matters in.
+      const tenanted = !!(app as { tenants?: unknown }).tenants
+      if (!tenanted && !hasOutboxModel(app.db))
         throw new Error(
           `[Junction] outbox(): this schema declares no ${OUTBOX_MODEL}. ` +
           `Run 'fli outbox:install' to import db/outbox.lite, or drop app.configure(outbox()).`
         )
+
+      // Which databases hold rows, asked where the answer can still refuse:
+      // `pass()` logs and continues, so an app built with both a db and a
+      // tenant registry would drain half its rows behind one log line.
+      await assertOutboxShape(app)
 
       // One pass before the first tick: whatever the last process left behind
       // is owed now, not in intervalMs.

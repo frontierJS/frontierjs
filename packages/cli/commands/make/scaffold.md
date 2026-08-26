@@ -169,45 +169,14 @@ export function create${pascalPlural}Service() {
 }
 
 // ─── Template: the Resource ───────────────────────────────────────────────────
-// A plain module, not a component. The Resource is the UI's half of the API
-// boundary; forms are built FROM it and are not it.
-
-function makeResourceFile(model, plural) {
-  return `<script module>
-// src/resources/${model}.mesa — the Resource layer.
+// The model's whole client-side surface (`FJS-D114`) — the data half in
+// <script module>, and the model's default form below it.
 //
-// A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18):
-// the data half in <script module>, and markup below it — optional — is the
-// model's default form.
-//
-// Read this next to db/schema.lite. Nothing here restates anything there: no
-// field list, no types, no enum values, no required list, no relations. A
-// resource names a service and turns three flags on.
-
-import { createResource } from '@frontierjs/sierra/junction'
-
-export const ${plural} = createResource('${plural}', {
-  // Stated rather than inferred, so an irregular plural cannot quietly resolve
-  // to nothing.
-  model: '${model}',
-
-  // Every DOM control hands back a string — \`<input type="number">\` and
-  // \`<select>\` included. The schema is the only thing that knows the column is
-  // an Int, so it does the casting.
-  coerce: true,
-
-  // An empty text box submits '', which SQLite does not agree is NULL: a
-  // \`String? @unique\` column takes any number of NULLs and rejects the second
-  // ''. Rewrite blanks on nullable fields on the way out.
-  blankToNull: true,
-
-  // Check the record against the schema before the request rather than
-  // round-tripping to be told the same thing. The server validates regardless.
-  validate: true,
-})
-</script>
-`
-}
+// What a generated Resource IS lives in `core/resource-template.js`, shared with
+// `fli make:resource` and `fli web:resource` — three commands wrote the same
+// file three times and had already drifted (Invariant 4).
+const { resourceFile } =
+  await import(resolve(global.fliRoot, 'core/resource-template.js'))
 
 // ─── Templates: routes ────────────────────────────────────────────────────────
 // The pages themselves are `core/crud-templates.js`, shared with
@@ -368,7 +337,7 @@ if (!flag['no-resource']) {
   // filename, where it is visible.
   write(
     resolve(context.paths.webResources, `${modelName}.mesa`),
-    makeResourceFile(modelName, plural),
+    resourceFile(modelName, plural),
     'resource'
   )
 }

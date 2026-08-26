@@ -44,8 +44,14 @@ export function createAuthCleanupJobs(db: LitestoneClient): AuthCleanupHandle {
         })
       })
 
+      // Both ephemeral tables, on one timer. An OAuthFlow lives minutes rather
+      // than hours, so most of what this sweeps is already dead — but a flow
+      // nobody came back from is a row nothing else ever deletes.
       verificationJob = scheduler.every('1 hour', async () => {
         await sys.verification.deleteMany({
+          where: { expiresAt: { lt: new Date() } }
+        })
+        await sys.oauthFlow.deleteMany({
           where: { expiresAt: { lt: new Date() } }
         })
       })

@@ -7,7 +7,7 @@ result to a server.
 
 ```bash
 fli new my-app          # the whole application — db/ api/ web/, deploy, CI
-fli check               # the arch tests: eleven rules over the file tree
+fli check               # the arch tests: twelve rules over the file tree
 fli dev                 # both servers, after a port preflight
 fli deploy              # to a machine you own
 ```
@@ -354,7 +354,7 @@ outside it: `fli project:view --project packages/basecamp`.
 5 tooling.
 
 A scaffolded app is project 0 — web on `8000`, API on `8100`. Global fli tooling
-is reserved: **8500 the GUI, 8501 `project:view`, 8502 db studio**, and the
+is reserved — the whole of **8500–8509**, of which **8500 is the GUI, 8501 `project:view`, 8502 db studio and 8503 junction's devtools console** — and the
 broker refuses to hand those out to anything else. `fli ports:claim` takes a
 session's ports out of the scheme and exports them, rather than every app
 hard-coding a guess.

@@ -1,0 +1,333 @@
+---
+title: Inventory
+---
+<script>
+  // The warehouse's screen: what is on each shelf, what is being held, and
+  // every reason a number ever moved.
+  //
+  // ─── The three numbers ───────────────────────────────────────────────────
+  //
+  //   On hand    ProductVariant.stock — what could be picked right now
+  //   Held       Σ unexpired StockReservation — set aside for open baskets
+  //   Available  on hand − held, computed on every read and stored nowhere
+  //
+  // Only the first is a column. The third is what every buy button in the shop
+  // is graded against, and it cannot be a column: it is a sum over another
+  // table that changes with the clock, so a stored copy would be a cached
+  // answer with nothing to invalidate it.
+  //
+  // ─── There is no authorisation code on this screen ───────────────────────
+  //
+  // `InventoryMovement` is `@@gate("5.5.9.9")` and `StockReservation` is
+  // `@@gate("5.8.8.8")`, so a caller below ADMINISTRATOR(5) is refused at the
+  // Data boundary — for the ledger, for the levels and for both writes. What
+  // the level check below does is decide what to RENDER: a screen that offers
+  // a form the server will refuse is a worse experience than one that says so,
+  // and that is all it is. The server refuses regardless (Invariant 6).
+  import { movements }       from '../../resources/InventoryMovement.mesa'
+  import { productVariants } from '../../resources/ProductVariant.mesa'
+  import { session } from '../../session.js'
+  import { toFieldErrors, useStore, getClient } from '@frontierjs/sierra/junction'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
+  import Divider       from '@frontierjs/ui/components/display/Divider.mesa'
+  import EmptyState    from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import NumberInput   from '@frontierjs/ui/components/forms/NumberInput.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+  import Skeleton      from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (session.user, session.level)
+
+  const inventory = () => getClient().service('inventory')
+
+  // The ledger goes through the resource's STORE — `find` over the model, live
+  // like every other list in this app. The LEVELS do not and cannot: they are
+  // not rows of any table, so there is nothing for a store to hold or for a
+  // channel to push. They are re-asked after every write on this screen.
+  const { get: ledger, unsubscribe: offLedger } = useStore(movements.store)
+  $.onDestroy(offLedger)
+
+  let levels      = []
+  let holdMinutes = 0
+  let loading     = true
+  let error       = null
+
+  async function load() {
+    if (session.level < 5) { loading = false; return }
+    error = null
+    try {
+      const r = await inventory().invoke('levels', null, {})
+      levels      = r?.rows ?? []
+      holdMinutes = r?.holdMinutes ?? 0
+      await movements.load({}, { limit: 40, orderBy: '-id' })
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  // Re-run when the session arrives. Sierra resolves `session` asynchronously,
+  // so the first pass through this component is usually signed OUT even for an
+  // administrator — loading on import alone would leave the screen saying
+  // "administrators only" to an administrator until they navigated away.
+  $: { if (session.level >= 5) load() }
+
+  // ── What the tables show ────────────────────────────────────────────────
+
+  const levelColumns = [
+    { key: 'sku',       label: 'SKU' },
+    { key: 'product',   label: 'Product' },
+    { key: 'variant',   label: 'Variant' },
+    { key: 'onHand',    label: 'On hand',   align: 'right' },
+    { key: 'held',      label: 'Held',      align: 'right' },
+    { key: 'available', label: 'Available', align: 'right' },
+  ]
+
+  const ledgerColumns = [
+    { key: 'createdAt', label: 'When' },
+    { key: 'sku',       label: 'SKU' },
+    { key: 'kind',      label: 'Why' },
+    { key: 'quantity',  label: 'Change', align: 'right' },
+    { key: 'shelf',     label: 'Shelf',  align: 'right' },
+    { key: 'reference', label: 'Reference' },
+  ]
+
+  // A movement carries `variantId` and nothing a person recognises, so the SKU
+  // is resolved from the variants this screen already loaded. Not an `include`
+  // on the service: the ledger is a plain `find`, and adding a join to it would
+  // be inventing a shape for one screen.
+  $: skuOf = (id) => levels.find(l => l.variantId === id)?.sku ?? `#${id}`
+
+  const TONE = {
+    received: 'success', returned: 'success',
+    sold:     'info',
+    adjusted: 'warning', damaged: 'danger',
+  }
+
+  $: totalOnHand = levels.reduce((n, l) => n + l.onHand, 0)
+  $: totalHeld   = levels.reduce((n, l) => n + l.held, 0)
+  $: heldShelves = levels.filter(l => l.held > 0).length
+
+  // ── The two forms ───────────────────────────────────────────────────────
+  //
+  // Hand-written rather than <Form {resource} />, for the reason the checkout
+  // form is: a Form is generated from a MODEL, and these payloads are
+  // `type StockReceipt` and `type StockAdjustment` in db/schema.lite. Naming
+  // them in the service's `methods:` is what makes the 400 come back keyed by
+  // field and worded by the seed, so every sentence under a box below is
+  // written once, in the schema, and this file does not know the rule exists.
+
+  const { get: variantRows, unsubscribe: offVariants } = useStore(productVariants.store)
+  $.onDestroy(offVariants)
+  productVariants.load({}, { limit: 500, orderBy: 'sku' }).catch(() => {})
+
+  $: variantOptions = variantRows().map(v => ({ value: v.id, label: v.sku }))
+
+  let rcVariant   = null
+  let rcQuantity  = 1
+  let rcReference = ''
+  let rcNote      = ''
+  let rcFields    = {}
+  let rcBusy      = false
+
+  async function receive(e) {
+    e?.preventDefault?.()
+    rcFields = {}; rcBusy = true
+    try {
+      const r = await inventory().invoke('receive', null, {
+        variantId: Number(rcVariant),
+        quantity:  Number(rcQuantity),
+        reference: rcReference || undefined,
+        note:      rcNote || undefined,
+      })
+      toasts.success(`${skuOf(r.variantId)} — ${r.before} → ${r.after} on hand`)
+      rcQuantity = 1; rcReference = ''; rcNote = ''
+      await load()
+    } catch (err) {
+      rcFields = toFieldErrors(err).fields ?? {}
+      if (!Object.keys(rcFields).length) error = err.message
+    } finally {
+      rcBusy = false
+    }
+  }
+
+  // The three an adjustment may name. `received` has its own form above and
+  // `sold` belongs to the checkout that made it — the service refuses both by
+  // name, and offering them here would be offering a refusal.
+  const REASONS = [
+    { value: 'adjusted', label: 'Stocktake correction' },
+    { value: 'damaged',  label: 'Damaged or written off' },
+    { value: 'returned',  label: 'Returned to the shelf' },
+  ]
+
+  let ajVariant  = null
+  let ajQuantity = -1
+  let ajKind     = 'adjusted'
+  let ajNote     = ''
+  let ajFields   = {}
+  let ajBusy     = false
+
+  async function adjust(e) {
+    e?.preventDefault?.()
+    ajFields = {}; ajBusy = true
+    try {
+      const r = await inventory().invoke('adjust', null, {
+        variantId: Number(ajVariant),
+        quantity:  Number(ajQuantity),
+        kind:      ajKind,
+        note:      ajNote,
+      })
+      toasts.success(`${skuOf(r.variantId)} — ${r.before} → ${r.after} on hand`)
+      ajNote = ''
+      await load()
+    } catch (err) {
+      ajFields = toFieldErrors(err).fields ?? {}
+      if (!Object.keys(ajFields).length) error = err.message
+    } finally {
+      ajBusy = false
+    }
+  }
+</script>
+
+<SectionHeader title="Inventory" level={1} sub="on hand, held, and every reason a number moved" />
+
+{#if session.level < 5}
+  <EmptyState
+    id="inventory-denied"
+    title="Administrators only"
+    description="Inventory reads at level 5. The screen is hidden here as an affordance; the Data boundary is what refuses the request, so nothing below is reachable by asking for it directly."
+  />
+{:else}
+  <Callout>
+    <strong>Available</strong> is not a column. It is on hand less every unexpired hold an open basket is carrying, computed on each read — a stored copy would be a cached answer with nothing to invalidate it. A hold lasts {holdMinutes} minutes and expires on its own, which is why an abandoned basket costs the shop nothing.
+  </Callout>
+
+  {#if error}
+    <Alert tone="danger" id="inventory-error">{error}</Alert>
+  {/if}
+
+  <div class="tiles" style="--tile-min: 12rem">
+    <StatCard label="On hand" value={String(totalOnHand)} sub={levels.length + ' shelves'} />
+    <StatCard id="stat-held" label="Held right now" value={String(totalHeld)}
+              sub={heldShelves + (heldShelves === 1 ? ' shelf' : ' shelves')}
+              tone={totalHeld ? 'warning' : undefined} />
+    <StatCard label="Available" value={String(totalOnHand - totalHeld)} />
+  </div>
+
+  <!-- ── Levels ────────────────────────────────────────────────────────── -->
+  <SectionHeader title="Shelves" level={2} sub="ProductVariant.stock, minus the holds against it" />
+
+  {#if loading}
+    <Skeleton lines={8} />
+  {:else}
+    <Table columns={levelColumns} rows={levels} striped compact>
+      {#snippet row(r)}
+        <tr class="level-row" data-sku={r.sku} data-held={String(r.held)}>
+          <td><Mono>{r.sku}</Mono></td>
+          <td>{r.product}</td>
+          <td class="text-sm text-muted">{r.colour} · {r.size}</td>
+          <td class="num" data-onhand={r.sku}>{r.onHand}</td>
+          <td class="num">
+            {#if r.held}<Pill tone="warning">{r.held}</Pill>{:else}<span class="text-muted">—</span>{/if}
+          </td>
+          <td class="num" data-available={r.sku}>
+            <strong>{r.available}</strong>
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
+  {/if}
+
+  <Divider label="moving stock" spacing="lg" />
+
+  <div class="forms">
+    <!-- ── Receive ─────────────────────────────────────────────────────── -->
+    <form class="card stack" id="receive-form" onsubmit={receive} novalidate>
+      <h2 class="h4">Receive a delivery</h2>
+      <p class="text-sm text-muted">
+        Writes an <code>InventoryMovement</code> and moves the shelf, in one transaction, through the one module that owns both.
+      </p>
+
+      <Select id="rc-variant" name="variantId" label="Variant"
+              options={variantOptions} bind:value={rcVariant}
+              error={rcFields.variantId} />
+      <NumberInput id="rc-quantity" name="quantity" label="How many" min={1}
+                   bind:value={rcQuantity} error={rcFields.quantity} />
+      <Input id="rc-reference" name="reference" label="Delivery note"
+             bind:value={rcReference} error={rcFields.reference} />
+      <Input id="rc-note" name="note" label="Note"
+             bind:value={rcNote} error={rcFields.note} />
+
+      <Button id="rc-submit" type="submit" variant="primary" disabled={rcBusy || !rcVariant} loading={rcBusy}>
+        Receive
+      </Button>
+    </form>
+
+    <!-- ── Adjust ──────────────────────────────────────────────────────── -->
+    <form class="card stack" id="adjust-form" onsubmit={adjust} novalidate>
+      <h2 class="h4">Correct a shelf</h2>
+      <p class="text-sm text-muted">
+        The change is <strong>signed</strong> — negative takes stock off the shelf. One control and not two, because a separate up/down would let a breakage add stock.
+      </p>
+
+      <Select id="aj-variant" name="variantId" label="Variant"
+              options={variantOptions} bind:value={ajVariant}
+              error={ajFields.variantId} />
+      <NumberInput id="aj-quantity" name="quantity" label="Change"
+                   bind:value={ajQuantity} error={ajFields.quantity} />
+      <Select id="aj-kind" name="kind" label="Reason" placeholder=""
+              options={REASONS} bind:value={ajKind} error={ajFields.kind} />
+      <Textarea id="aj-note" name="note" label="Note" rows={2}
+                bind:value={ajNote} error={ajFields.note} />
+
+      <Button id="aj-submit" type="submit" variant="outlined" disabled={ajBusy || !ajVariant} loading={ajBusy}>
+        Adjust
+      </Button>
+    </form>
+  </div>
+
+  <!-- ── The ledger ────────────────────────────────────────────────────── -->
+  <SectionHeader title="Movements" level={2}
+                 sub="append-only — update and delete are gated at 9, which nothing passes" />
+
+  <Table columns={ledgerColumns} rows={ledger()} striped compact emptyText="Nothing has moved yet">
+    {#snippet row(m)}
+      <tr class="movement" data-kind={m.kind}>
+        <td class="text-sm text-muted">{new Date(m.createdAt).toLocaleString()}</td>
+        <td><Mono>{skuOf(m.variantId)}</Mono></td>
+        <td><Pill tone={TONE[m.kind] ?? 'muted'}>{m.kind}</Pill></td>
+        <td class="num" data-change>
+          <strong class={m.quantity < 0 ? 'down' : 'up'}>{m.quantity > 0 ? '+' : ''}{m.quantity}</strong>
+        </td>
+        <td class="num text-sm text-muted">{m.stockBefore} → {m.stockAfter}</td>
+        <td class="text-sm text-muted">{m.reference ?? m.note ?? ''}</td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  <p class="text-sm text-muted">
+    Every row here was written in the same transaction as the shelf movement beside it, by <code>api/inventory.ts</code> — the one place <code>ProductVariant.stock</code> is written. A <code>sold</code> row comes from a checkout and is written as the shop; the rest are written as the administrator who filed them, and the model's own create gate is what grades them.
+  </p>
+{/if}
+
+<style>
+  .num   { text-align: right; font-variant-numeric: tabular-nums }
+  .up    { color: var(--success-fg, inherit) }
+  .down  { color: var(--danger-fg, inherit) }
+
+  /* Two forms side by side above ~52rem and stacked below it — `auto-fit`
+     rather than a media query, because what decides is how much room the pair
+     has and not how wide the window is. */
+  .forms { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); margin-bottom: 1.5rem }
+</style>

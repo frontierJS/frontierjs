@@ -11,7 +11,6 @@
   // inches wide should not — this is the catch-up glance, and the screen is the
   // narrative.
   import { audit } from '../../resources/AuditEvent.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { onWrite } from './live.js'
   import Pill from '@frontierjs/ui/components/display/Pill.mesa'
 
@@ -36,7 +35,7 @@
   }
 
   load()
-  $onDestroy(onWrite(audit.service, load))
+  $.onDestroy(onWrite(audit.service, load))
 
   const when = (iso) => iso ? new Date(iso).toLocaleTimeString() : '—'
 </script>

@@ -9,16 +9,16 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
+import { mkdirSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 
 import { resolveSierraConfigPath, virtualSierraPlugin } from '../src/virtual/virtual-sierra.js'
+import { tmpDir } from './tmp.js'
 
 let root
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'sierra-cfg-'))
+  root = tmpDir('sierra-cfg-')
   mkdirSync(join(root, 'config'))
 })
 

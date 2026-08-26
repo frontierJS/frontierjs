@@ -114,9 +114,12 @@ function defaultExpr(attr) {
     switch (v.fn) {
       case 'now':   return `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`
       case 'uuid':  return `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))`
-      case 'cuid':  return null  // no native SQLite equivalent — client generates at insert time
-      case 'ulid':  return null  // no native SQLite equivalent — client generates at insert time
-      default:      return null
+      // No native SQLite equivalent for these three — the client generates them
+      // at insert time, from core/ids.js (FJS-423).
+      case 'cuid':   return null
+      case 'ulid':   return null
+      case 'nanoid': return null
+      default:       return null
     }
   }
   return null
@@ -385,28 +388,69 @@ function createFts(model, tableName) {
 
 
 // ─── updatedAt trigger ────────────────────────────────────────────────────────
-// If a model has an `updatedAt DateTime` field (without @hardDelete or any
-// special flag — just the field name), generate an AFTER UPDATE trigger that
-// sets it to the current UTC timestamp automatically.
+// A field carrying `@updatedAt` is stamped with the current UTC timestamp by an
+// AFTER UPDATE trigger whenever a write left it alone.
+//
+// The ATTRIBUTE decides, and the name `updatedAt` is a fallback for a schema
+// relying on it. Binding to the name alone made the attribute decorative
+// wherever the two agreed and a silent no-op wherever they did not: a second
+// stamp column compiled, read as though it worked and never moved, while the
+// DEFAULT on insert left every row carrying a plausible timestamp that had
+// simply stopped advancing (FJS-394).
+//
+// **One trigger per table, not one per column.** SQLite blocks a trigger from
+// firing itself, but not from firing a SIBLING: with a trigger each, the first
+// one's UPDATE re-entered the second, which saw its own column unchanged BY
+// THAT INNER STATEMENT and overwrote the value the caller had just named.
+// Measured — a write setting one stamp column by hand had it replaced by now().
+// Inside one trigger the re-entry cannot happen, so each column carries its own
+// guard in the WHERE and no statement can speak for another's column.
 //
 // This fires at the SQLite level, so it works correctly for:
 //   - client writes (update, updateMany)
 //   - direct SQL writes
 //   - migrations that modify rows
 
-function createUpdatedAtTrigger(model, tableName) {
-  const hasUpdatedAt = model.fields.find(
-    f => f.name === 'updatedAt' && f.type.name === 'DateTime'
+// The timestamp litestone writes. Exported because the client names these
+// columns in its own UPDATE statements (FJS-396) and a second spelling would
+// sort differently from a row the trigger stamped. `defaultExpr`'s `now()` is
+// the same value in a third spelling and is left alone — changing its text
+// changes a column DEFAULT, which is a table rebuild on every existing app.
+export const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`
+
+// Which fields this model stamps. One owner, because the client names the same
+// columns in its own statements and a rule read twice is a rule that disagrees.
+//
+// `@@external` answers none: generateDDL emits nothing for that table, so there
+// is no trigger to install and the client must not stamp a column litestone
+// does not own. `@updatedAt` on an external model has never done anything, and
+// making it work here would be a silent write into somebody else's table.
+export function updatedAtFields(model) {
+  if ((model.attributes ?? []).some(a => a.kind === 'external')) return []
+  return (model.fields ?? []).filter(f =>
+    (f.attributes ?? []).some(a => a.kind === 'updatedAt') ||
+    (f.name === 'updatedAt' && f.type.name === 'DateTime')
   )
-  if (!hasUpdatedAt) return null
+}
+
+function createUpdatedAtTrigger(model, tableName) {
+  const fields = updatedAtFields(model)
+  if (!fields.length) return null
+
+  const untouched = f => `NEW."${f.name}" IS OLD."${f.name}"`
+  // One column needs no per-statement guard — the WHEN clause already IS it,
+  // and emitting it anyway would change the body every existing database
+  // carries, so every app would migrate a trigger that does the same thing.
+  const guard = fields.length > 1 ? f => ` AND ${untouched(f)}` : () => ''
 
   return [
-    `-- Auto-update updatedAt on every row change`,
+    `-- Auto-update ${fields.map(f => f.name).join(', ')} on every row change`,
     `CREATE TRIGGER IF NOT EXISTS "${tableName}_updatedAt"`,
     `AFTER UPDATE ON "${tableName}"`,
-    `WHEN NEW."updatedAt" IS OLD."updatedAt"`,
+    `WHEN ${fields.map(untouched).join(' OR ')}`,
     `BEGIN`,
-    `  UPDATE "${tableName}" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;`,
+    ...fields.map(f =>
+      `  UPDATE "${tableName}" SET "${f.name}" = ${NOW_SQL} WHERE rowid = NEW.rowid${guard(f)};`),
     `END;`,
   ].join('\n')
 }
@@ -795,16 +839,7 @@ export function generateDDL(schema, { foreignKeys = true, pluralize = false } = 
       parts.push(model.comments.map(c => `-- ${c}`).join('\n'))
     }
 
-    parts.push(createTable(model, schema, tableName, pluralize))
-
-    const indexes = createIndexes(model, isSoftDelete(model), tableName)
-    if (indexes.length) parts.push(indexes.join('\n'))
-
-    const fts = createFts(model, tableName)
-    if (fts) parts.push(fts)
-
-    const updatedAt = createUpdatedAtTrigger(model, tableName)
-    if (updatedAt) parts.push(updatedAt)
+    parts.push(generateModelDDL(model, schema, { pluralize }))
 
     sections.push(parts.join('\n'))
   }
@@ -879,4 +914,30 @@ export function generateTableDDL(model, schema, { pluralize = false } = {}) {
  */
 export function generateIndexDDL(model, softDelete = false, { pluralize = false } = {}) {
   return createIndexes(model, softDelete ?? isSoftDelete(model), modelToTableName(model, pluralize))
+}
+
+/**
+ * Everything one model emits — the table, its indexes, its FTS index and its
+ * updatedAt trigger.
+ *
+ * generateDDL calls this rather than repeating the four, because a caller
+ * assembling them by hand gets whichever ones it knew about when it was
+ * written: asking for a model's DDL and receiving the table and the indexes
+ * alone is a silently partial answer, and the two it drops are exactly the ones
+ * an attribute adds.
+ */
+export function generateModelDDL(model, schema, { pluralize = false } = {}) {
+  const tableName = modelToTableName(model, pluralize)
+  const parts     = [createTable(model, schema, tableName, pluralize)]
+
+  const indexes = createIndexes(model, isSoftDelete(model), tableName)
+  if (indexes.length) parts.push(indexes.join('\n'))
+
+  const fts = createFts(model, tableName)
+  if (fts) parts.push(fts)
+
+  const updatedAt = createUpdatedAtTrigger(model, tableName)
+  if (updatedAt) parts.push(updatedAt)
+
+  return parts.join('\n')
 }

@@ -13,7 +13,7 @@
 //   Full rebuild:  drop col, change type, change NOT NULL, change DEFAULT,
 //                  change PK, change FK, change CHECK, add @@strict
 
-import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
+import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
 import { createHash } from 'crypto'
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
@@ -23,6 +23,111 @@ import { createHash } from 'crypto'
 // Underscore prefix = machinery tables: _litestone_*, implicit-m2m join tables
 // (_task_user, _members, _TagToTag), matching Prisma's convention.
 const INTERNAL = /^(_|sqlite_|.*_fts$|.*_fts_data$|.*_fts_idx$|.*_fts_content$|.*_fts_docsize$|.*_fts_config$)/
+
+// Every column's generation expression, read off the table's own CREATE
+// statement — the only place SQLite keeps it. Neither `table_info` nor
+// `table_xinfo` carries it, so without this a changed expression is invisible
+// and the two schemas compare equal.
+//
+// Splitting at depth-0 commas rather than matching a column pattern is what
+// makes an expression holding a comma or a paren safe. A miss here is safe by
+// construction: the caller only asks about columns the pragma has already said
+// are generated, and answers `null` for an expression it could not read, which
+// the diff treats as "cannot judge" rather than as "changed".
+
+// Walks `sql` from `i`, returning the index one past the first depth-0
+// character in `stop` — respecting nesting and every quote SQLite accepts,
+// which is the whole reason this is a walk and not a regex.
+function scanTo(sql, i, stop) {
+  let depth = 0, quote = null
+  for (; i < sql.length; i++) {
+    const ch = sql[i]
+    if (quote) {
+      if (ch !== quote) continue
+      if (quote !== ']' && sql[i + 1] === quote) i++   // '' and "" escape themselves
+      else quote = null
+      continue
+    }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch;  continue }
+    if (ch === '[')                             { quote = ']'; continue }
+    if (ch === '(') { depth++; continue }
+    if (ch === ')' && depth > 0) { depth--; continue }
+    if (depth === 0 && stop.includes(ch)) return i
+  }
+  return sql.length
+}
+
+export function parseGeneratedColumns(sql) {
+  const out  = new Map()
+  const open = sql ? sql.indexOf('(') : -1
+  if (open === -1) return out
+
+  // The column list, one top-level entry at a time. Table constraints land in
+  // here too and simply never match the generated form.
+  const parts = []
+  for (let i = open + 1; i < sql.length; ) {
+    const end = scanTo(sql, i, ',)')
+    parts.push(sql.slice(i, end))
+    if (sql[end] !== ',') break
+    i = end + 1
+  }
+
+  for (const part of parts) {
+    const name = part.trim().match(/^(?:"([^"]+)"|`([^`]+)`|\[([^\]]+)\]|(\w+))/)
+    if (!name) continue
+    // `GENERATED ALWAYS` is optional in SQLite — `x AS (expr)` is the same column.
+    const at = /\b(?:GENERATED\s+ALWAYS\s+)?AS\s*\(/i.exec(part)
+    if (!at) continue
+    const from = at.index + at[0].length
+    const to   = scanTo(part, from, ')')
+    if (to < part.length)
+      out.set(name[1] ?? name[2] ?? name[3] ?? name[4], part.slice(from, to).trim())
+  }
+
+  return out
+}
+
+/**
+ * Every CHECK constraint in a CREATE TABLE, normalised for comparison.
+ *
+ * SQLite stores the CREATE statement verbatim and offers no pragma for
+ * constraints, so the text is the only place they exist. Both sides of the
+ * diff come through here — `buildPristine` executes today's DDL into a scratch
+ * database and introspects that — so what is compared is one emitter's output
+ * against another's, which is why a normalised string is enough and an
+ * expression parser is not.
+ *
+ * Column-level and table-level alike: a `CHECK` inside a column's definition
+ * and one standing on its own are the same constraint to SQLite, and litestone
+ * emits an enum's as the first and an array's as the second.
+ *
+ * Sorted, because a constraint moving position is not a constraint changing.
+ */
+export function parseChecks(sql) {
+  const out  = []
+  const open = sql ? sql.indexOf('(') : -1
+  if (open === -1) return out
+
+  // The same top-level walk `parseGeneratedColumns` does — one column or table
+  // constraint at a time, with quotes and nesting respected.
+  const parts = []
+  for (let i = open + 1; i < sql.length; ) {
+    const end = scanTo(sql, i, ',)')
+    parts.push(sql.slice(i, end))
+    if (sql[end] !== ',') break
+    i = end + 1
+  }
+
+  for (const part of parts) {
+    const at = /\bCHECK\s*\(/i.exec(part)
+    if (!at) continue
+    const from = at.index + at[0].length
+    const to   = scanTo(part, from, ')')
+    out.push(part.slice(from, to).replace(/\s+/g, ' ').trim())
+  }
+
+  return out.sort()
+}
 
 export function introspect(db) {
   const schema = {}
@@ -34,13 +139,34 @@ export function introspect(db) {
     .filter(n => !INTERNAL.test(n))
 
   for (const t of tables) {
-    const columns = db.prepare(`PRAGMA table_info("${t}")`).all().map(r => ({
-      name:    r.name,
-      type:    (r.type || 'TEXT').toUpperCase(),
-      notnull: !!r.notnull,
-      pk:      !!r.pk,
-      default: r.dflt_value ?? null,
-    }))
+    const { sql: tblSql } = db.prepare(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name=?`
+    ).get(t) ?? { sql: '' }
+
+    // `PRAGMA table_info` OMITS generated columns, so a diff built on it is
+    // blind to them in both directions: the schema declares one, the live
+    // database has one, and neither side can see the other's. Adding, dropping
+    // or changing the expression of a generated column emitted an empty
+    // migration (FJS-407). `table_xinfo` is the same pragma that lists them —
+    // `hidden` 2 = VIRTUAL, 3 = STORED — and 1 is a virtual table's own hidden
+    // column, which is not a column any schema declares.
+    const generated = parseGeneratedColumns(tblSql)
+
+    const columns = db.prepare(`PRAGMA table_xinfo("${t}")`).all()
+      .filter(r => r.hidden !== 1)
+      .map(r => ({
+        name:    r.name,
+        type:    (r.type || 'TEXT').toUpperCase(),
+        notnull: !!r.notnull,
+        pk:      !!r.pk,
+        default: r.dflt_value ?? null,
+        // The pragma says WHETHER a column is generated; only the CREATE
+        // statement says from what. The pragma is the authority — a column is
+        // never treated as generated because the text parse thought so.
+        generated: r.hidden === 2 || r.hidden === 3
+          ? { mode: r.hidden === 3 ? 'stored' : 'virtual', expr: generated.get(r.name) ?? null }
+          : null,
+      }))
 
     const indexes = db.prepare(
       `SELECT name, sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL`
@@ -67,13 +193,10 @@ export function introspect(db) {
         : { from: fk.from,    table: fk.table, to: fk.to,    onDelete: fk.onDelete, onUpdate: fk.onUpdate }
     )
 
-    const { sql: tblSql } = db.prepare(
-      `SELECT sql FROM sqlite_master WHERE type='table' AND name=?`
-    ).get(t) ?? { sql: '' }
-
     const strict = /\)\s*STRICT\s*;?\s*$/i.test(tblSql)
+    const checks = parseChecks(tblSql)
 
-    schema[t] = { columns, indexes, foreignKeys, strict }
+    schema[t] = { columns, indexes, foreignKeys, strict, checks }
   }
 
   // Views — stored separately under __views (filtered out of table comparisons)
@@ -258,6 +381,24 @@ export function buildPristineForDatabase(db, parseResult, dbName) {
 
 // ─── Column diff ──────────────────────────────────────────────────────────────
 
+// A column becoming generated, stopping being generated, changing storage or
+// changing its expression are all one thing to SQLite: no ALTER reaches any of
+// them, so each is a rebuild. An expression neither side could read compares
+// equal — a rebuild nobody asked for is worse than a diff that says nothing,
+// and the pragma has already settled the part that matters.
+const sameExpr = (a, b) => a.replace(/\s+/g, ' ').trim() === b.replace(/\s+/g, ' ').trim()
+
+function generatedChange(live, target) {
+  if (!live && !target) return null
+  if (!live || !target)
+    return { field: 'generated', from: live?.mode ?? null, to: target?.mode ?? null }
+  if (live.mode !== target.mode)
+    return { field: 'generated', from: live.mode, to: target.mode }
+  if (live.expr && target.expr && !sameExpr(live.expr, target.expr))
+    return { field: 'generated', from: live.expr, to: target.expr }
+  return null
+}
+
 function diffColumns(pristineCols, liveCols) {
   const pm = new Map(pristineCols.map(c => [c.name, c]))
   const lm = new Map(liveCols.map(c => [c.name, c]))
@@ -278,6 +419,8 @@ function diffColumns(pristineCols, liveCols) {
       const ld = live.default?.trim() ?? null
       const pd = col.default?.trim()  ?? null
       if (ld !== pd) changes.push({ field: 'default', from: ld, to: pd })
+      const g = generatedChange(live.generated, col.generated)
+      if (g) changes.push(g)
       if (changes.length) modified.push({ name: col.name, changes })
     }
   }
@@ -290,6 +433,11 @@ function diffColumns(pristineCols, liveCols) {
 }
 
 // ─── Index diff ───────────────────────────────────────────────────────────────
+
+/** Two sorted string lists, compared. */
+function arraysEqual(a, b) {
+  return a.length === b.length && a.every((v, i) => v === b[i])
+}
 
 function indexKey(idx) { return `${idx.unique ? 'u' : ''}:${[...idx.cols].sort().join(',')}` }
 
@@ -406,16 +554,50 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     const fkChanged    = !fksEqual(p.foreignKeys, l.foreignKeys)
     const strictChanged = p.strict !== l.strict
 
+    // ── A CHECK constraint that moved ────────────────────────────────────
+    //
+    // This file's own header has listed *change CHECK* as a full rebuild since
+    // it was written, and nothing compared one: the diff read columns, indexes,
+    // foreign keys and STRICT, and a CHECK is on none of those. So every CHECK
+    // litestone emits was frozen at CREATE TABLE and never migrated.
+    //
+    // **An enum gaining a member is the case, and it is the commonest schema
+    // change there is.** The new member is emitted into the DDL, the snapshot
+    // regenerates, the app boots, and every write of that value is refused at
+    // runtime with SQLite's words about a constraint (`FJS-466`).
+    //
+    // Narrowing is not a fail-open twin, which is worth knowing rather than
+    // assuming: litestone's own validator refuses a value the enum no longer
+    // declares before any SQL is built, so a removed member stops being
+    // writable immediately. Only the widening direction is stuck.
+    //
+    // Both sides are litestone-generated text read back out of `sqlite_master`,
+    // so a string comparison is exact here in a way it would not be for an
+    // expression somebody typed. The cost is that a database created by an
+    // emitter that spelled a CHECK differently rebuilds once on upgrade, which
+    // is the right outcome anyway — it is the rebuild that brings it up to date.
+    const checksChanged = !arraysEqual(p.checks ?? [], l.checks ?? [])
+
+    // A generated column ALTERs in only one shape. SQLite refuses `ADD COLUMN`
+    // for a STORED one outright — `cannot add a STORED column` — and a VIRTUAL
+    // one is fine, but only when the expression could be read: emitting the
+    // ALTER without it would add a plain, writable column of the same name.
+    const rebuildAdds = cols.added.filter(c => c.generated && (c.generated.mode === 'stored' || !c.generated.expr))
+
     const needsRebuild =
       cols.dropped.length  > 0 ||
       cols.modified.length > 0 ||
+      rebuildAdds.length   > 0 ||
       fkChanged            ||
-      strictChanged
+      strictChanged        ||
+      checksChanged
 
-    // Cols we can safely ADD COLUMN — nullable, or has a default, not PK
-    const simpleAdds  = needsRebuild ? [] : cols.added.filter(c => !c.pk && (!c.notnull || c.default !== null))
+    // Cols we can safely ADD COLUMN — nullable, or has a default, not PK.
+    // A generated column is neither: it has no default and nothing writes it,
+    // so NOT NULL on one is not the trap it is on a plain column.
+    const simpleAdds  = needsRebuild ? [] : cols.added.filter(c => !c.pk && (c.generated || !c.notnull || c.default !== null))
     // Cols we can't add automatically — NOT NULL, no default
-    const blockedAdds = needsRebuild ? [] : cols.added.filter(c => !c.pk && c.notnull && c.default === null)
+    const blockedAdds = needsRebuild ? [] : cols.added.filter(c => !c.pk && !c.generated && c.notnull && c.default === null)
 
     const hasChanges =
       needsRebuild           ||
@@ -425,7 +607,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
       indexes.dropped.length > 0
 
     if (hasChanges) {
-      tableDiffs.push({ name, needsRebuild, simpleAdds, blockedAdds, cols, indexes, fkChanged, strictChanged })
+      tableDiffs.push({ name, needsRebuild, simpleAdds, blockedAdds, cols, indexes, fkChanged, strictChanged, checksChanged })
     }
   }
 
@@ -550,7 +732,24 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
   // whole copy when the target column's type rejects TEXT). Omitting added
   // columns lets their DEFAULT (or NULL) fill them.
   const addedNames = new Set((diff?.cols?.added ?? []).map(c => c.name))
-  const copyNames  = targetColNames.filter(n => !addedNames.has(n))
+
+  // A GENERATED column is computed, never copied. SQLite refuses an INSERT
+  // naming one — `cannot INSERT into generated column` — so listing it fails
+  // the whole rebuild, and the rebuild is the only path available: ADD COLUMN
+  // cannot add a STORED generated column to a table that has rows.
+  //
+  // Excluded by KIND rather than by being newly added, because the failure is
+  // a property of the column and not of this diff: a table that has carried a
+  // generated column for a year hits it the moment anything else about that
+  // table forces a rebuild. Dropping it from the copy is not a loss — the new
+  // table computes it from the columns that were copied.
+  const generatedNames = new Set(
+    targetFields
+      .filter(f => f.attributes?.some(a => a.kind === 'generated' || a.kind === 'funcCall'))
+      .map(f => f.name),
+  )
+
+  const copyNames = targetColNames.filter(n => !addedNames.has(n) && !generatedNames.has(n))
   const copyCols   = copyNames.map(n => `"${n}"`).join(', ')
 
   const fullDDL   = generateTableDDL(model, parseResult.schema, { pluralize })
@@ -604,9 +803,20 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     for (const model of newTables) {
       if (model.comments?.length)
         lines.push(model.comments.map(c => `-- ${c}`).join('\n'))
-      lines.push(generateTableDDL(model, parseResult.schema, { pluralize }))
-      const idxSQL = generateIndexDDL(model, false, { pluralize })
-      if (idxSQL.length) lines.push(idxSQL.join('\n'))
+      // Everything the model emits, not the table and a partial index list.
+      // This was `generateTableDDL` + `generateIndexDDL(model, false, …)`, and
+      // the explicit `false` defeated that function's own
+      // `softDelete ?? isSoftDelete(model)` — so a migration built a
+      // `@@softDelete` model with neither its `deletedAt` index nor the
+      // `WHERE "deletedAt" IS NULL` clause its other indexes carry, and no
+      // `@@fts` table, no FTS triggers and no `@updatedAt` trigger at all.
+      // A deployed app therefore had a DIFFERENT database from the one
+      // `db push` builds in development: search over a table that does not
+      // exist, and a stamp that never moves. `generateModelDDL` is the one
+      // owner of *everything one model emits* and its comment names this
+      // exact failure — a caller assembling the pieces by hand gets whichever
+      // ones it knew about when it was written.
+      lines.push(generateModelDDL(model, parseResult.schema, { pluralize }))
       lines.push(``)
     }
   }
@@ -717,6 +927,12 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
       if (d.simpleAdds.length) {
         lines.push(`-- "${d.name}": add columns`)
         for (const col of d.simpleAdds) {
+          if (col.generated) {
+            // Only VIRTUAL reaches here; a STORED one forced the rebuild above.
+            const nn = col.notnull ? ` NOT NULL` : ``
+            lines.push(`ALTER TABLE "${d.name}" ADD COLUMN "${col.name}" ${col.type}${nn} GENERATED ALWAYS AS (${col.generated.expr}) VIRTUAL;`)
+            continue
+          }
           const notNull = col.notnull && col.default !== null ? ` NOT NULL` : ``
           const def     = col.default !== null ? ` DEFAULT ${col.default}` : ``
           lines.push(`ALTER TABLE "${d.name}" ADD COLUMN "${col.name}" ${col.type}${notNull}${def};`)
@@ -811,6 +1027,10 @@ export function summariseDiff(diffResult) {
         lines.push(`      ~ col  ${c.name}  ${ch.field}: ${JSON.stringify(ch.from)} → ${JSON.stringify(ch.to)}`)
     if (d.fkChanged)     lines.push(`      ~ foreign keys changed`)
     if (d.strictChanged) lines.push(`      ~ strict mode changed`)
+    // Named, because the commonest cause is an enum gaining a member and the
+    // rebuild that follows is the whole table — worth seeing in a plan rather
+    // than discovering in the row count.
+    if (d.checksChanged) lines.push(`      ~ CHECK constraints changed (an enum's members, or an @check)`)
     for (const i of d.indexes.added)
       lines.push(`      + idx  (${i.cols.join(', ')})`)
     for (const i of d.indexes.dropped)

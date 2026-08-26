@@ -114,6 +114,180 @@ Interactive ER diagram:
 - Auto-generated models (FTS5 tables, audit models) badged distinctly
 - Click any model to jump to its Browse view
 
+### Explore
+
+Every other panel answers *what did you declare*. This one answers *what is this
+language, and what of it am I using* — every word a `.lite` file can hold, across
+top-level declarations, field attributes and model attributes. The committed list
+is `catalog.snapshot.md`; a number written here would be wrong by the next
+attribute, which is what that file exists to make visible.
+
+- Boxes for the nine declarations, then one per attribute group, each carrying
+  how many of its words this schema uses
+- **A word with nothing behind it is dimmed, never hidden.** Its card still
+  opens — blurb, argument form, a worked example — because a grey box is the
+  only way somebody finds a feature they have not heard of
+- Clicking a declaration gives a card per instance: a model's gate, columns,
+  relations, row policies and protected fields; an enum's values; a database's
+  driver and path. Models Litestone generated for a logger database are listed
+  and badged `generated`, and are left out of every count
+- Search reaches both halves at once — the language, and what this schema
+  declares
+- **Add to…** asks where it goes, then does the surgery: a model attribute
+  before the chosen model's closing brace, a field attribute onto the column you
+  picked, or the whole example line as a new field. A blind append would write a
+  second model called `Example`, which is not what anybody meant by *add
+  full-text search*. The text lands in the editor **unsaved** — its own input
+  handler runs validation and queues the diff, and Save and *create migration*
+  stay a person's decision. A model the file does not hold (an imported one) is
+  refused by name
+
+**Preview** answers the question no panel could: what does this word do to my
+app. The seed fans out into four things computed in four places, and the preview
+asks all of them against the *proposed* text, before anything is written —
+
+| Realm | Pane |
+| --- | --- |
+| Data | the DDL this model emits — table, indexes, FTS index, `updatedAt` trigger |
+| Data | the access surface — gate, row policies, protected fields |
+| API | the JSON Schema a validator and a generated form read |
+| Release | `expand` / `contract` from `classifyPivot`, and `widens` / `narrows` from `classifyAccess` |
+
+Raising a `@@gate` previews as **contract** *and* **narrows**, which is the pair
+that disagrees by construction and the reason both are shown. A word that changes
+none of the derived surfaces says so rather than showing empty panes. A pane the
+server could not compute shows the reason: `parse()` is more permissive than the
+layers above it, and a gate string it accepts and `deriveAccess` refuses used to
+come back as a bare 500.
+
+**The UI realm is deliberately absent.** Which control a form renders is sierra's
+`field-rules.js`, and litestone may not import sierra — a table here would be a
+second answer to a question that already has an owner.
+
+**Which word do I want?** comes the other way round. Three yes/no answers —
+*does a request get it back? may a request write it? is there a column?* — select
+one row of litestone's own visibility table, which is the table the parser
+carries in prose above `@transient`:
+
+| | column | caller writes | caller reads |
+| --- | --- | --- | --- |
+| `@computed` | no | no | yes |
+| `@transient` | no | yes | no |
+| `@system` | yes | no | yes |
+| `@guarded` | yes | no | no |
+| `@encrypted` | yes | yes | no |
+
+It is a lookup, not a decision tree drawn beside the table — a tree would be free
+to disagree with it. All eight combinations are named, including the three that
+are not a word, so the answer is never silence. *Does it depend who is asking?*
+is shown **beside** the answer rather than as a fourth question, because a field
+`@allow('read', …)` multiplies with every row instead of partitioning them.
+
+**Legal and worth a look** is the other half. Every rule fires on a schema the
+parser accepts — measured, each case parses clean and is still wrong:
+
+| Rule | What it costs |
+| --- | --- |
+| `required-guarded-uncreatable` | a required `@guarded` column: nothing below level 8 can create the row |
+| `gate-over-own-standing` | a gate is per MODEL, so `@@gate` on the table `getLevel` reads from lets any caller at that level rewrite anyone else's standing |
+| `required-system-unfilled` | `@system` is out of create-mode `required`, so no form asks for it and the application must name it on the write |
+| `guarded-and-encrypted-is-secret` | the pair by hand is `@secret` spelled out |
+| `fts-over-a-column-search-cannot-read` | `@@fts` over `@encrypted`/`@hashed`: the index holds ciphertext, so search returns nothing and says nothing. Over `@guarded` it matches and is then stripped, and `snippet()` renders the text |
+| `foreign-key-without-index` | SQLite indexes a PK and a UNIQUE and nothing else, so an unindexed FK scans — including every `ON DELETE CASCADE` walk |
+| `transition-to-a-state-nothing-reaches` | an enum value no `@@transitions` move ends at, and not the default: a state nothing can put a row in |
+| `label-column-that-may-be-null` | `@@label` on an optional column: a blank row in every picker, sorted together and matching no search |
+| `unique-on-an-optional-column` | SQLite counts NULLs as distinct, so the constraint applies only to rows that have a value |
+| `index-another-index-already-covers` | a prefix of a longer index, or a duplicate of what `@unique` built. A `@@softDelete` model is exempt: there every `@@index` is partial and every UNIQUE is not |
+| `declared-and-unreferenced` | an enum or type nothing uses |
+
+The rules live in `src/core/advise.js` and run on the **proposed** schema in the
+preview, with anything already true of the file marked as such — a warning that
+was there before this edit is not this edit's fault. `GET /api/advise` answers
+them for the schema as it stands.
+
+**Declared by nobody** is the section beside it, and it is the other question
+entirely. A rule is *legal and wrong*; an opportunity is *legal and missing* —
+the schema says nothing, everything works, and a word would have said it better.
+
+| Check | The word nobody reached for |
+| --- | --- |
+| `credential-column-in-plain-text` | a password, token or key column stored as text. `@guarded` grades it DOWN rather than clearing it: that decides who may ask, and the value is still plaintext at rest |
+| `column-declared-and-inert` | a `deletedAt` with no `@@softDelete`, an `isTemplate` with no `@@hasTemplates` — the column somebody wrote and the feature they did not |
+| `model-outside-the-gate-ladder` | a model with no `@@gate` where its neighbours are graded |
+| `gate-with-nothing-saying-whose-row` | a `@@gate` with no `@@allow`. A gate is per MODEL and never says which rows |
+| `format-column-with-no-validator` | an `email`, `url` or `phone` column nothing checks |
+| `enum-column-with-no-state-machine` | a lifecycle enum with no `@@transitions`, so any write sets any value from any other |
+| `json-column-with-no-shape` | a `Json` column with no `@type` — the one place the schema stops |
+| `field-group-repeated-across-models` | the same columns in three models and no `trait` |
+| `text-model-with-no-search` | two prose columns and no `@@fts` |
+
+Every finding names the WORD it is about and the word is a button: clicking it
+opens that word's card, which is what makes this a route rather than a lint.
+`litestone advise` prints the same two lists in a terminal, each row ending in
+the `explain` command and the docs page. A rule carries a **severity** because it
+is a defect; a suggestion carries a **confidence** — `likely` where litestone can
+SEE the thing it is asserting, `possible` where it is asking.
+
+A rule is only as good as the schemas it has met. Each of these was run against
+`example` and `basecamp` before it shipped, and one was wrong: the redundant-index
+rule told basecamp to delete nine indexes that are the better ones, because on a
+`@@softDelete` model `ddl.js` emits every `@@index` `WHERE deletedAt IS NULL` and
+every UNIQUE in full — so the short one is a smaller partial index rather than a
+duplicate. The exemption is in the rule and pinned by a test. The suggestions cost four
+more: a `@guarded` credential is not plaintext to a caller, a `@transient` one
+has no column at all, a catalogue legitimately lets every caller read every row,
+and a `@@trait` use is ERASED at parse — so the check for repeated columns had
+to compare against the trait DECLARATIONS, which survive.
+
+**The surface is committed too.** `litestone catalog --snapshot` writes
+`catalog.snapshot.md` — every word with its arity, where it is legal and what its
+arguments accept — and the `snapshots` CI phase byte-compares it. The suite
+proves the table is COMPLETE; the snapshot is the other question, *what changed*,
+which no suite can ask: a word whose arity gains an argument or an attribute that
+stops being legal inside a type keeps every test green, because the table and the
+parser move together in one commit. Blurbs are deliberately absent from it —
+prose churns on wording, and a snapshot that reshuffles on an edited sentence is
+one nobody reads.
+
+**The same rows answer in a terminal**: `litestone explain @guarded` needs no
+server, no schema and no database, and `litestone explain --visibility` prints
+the interview as a table. That is the reason the catalog is a module rather than
+part of this panel — and the same rows are a page, too:
+`litestone catalog --reference` writes
+[reference.snapshot.md](reference.snapshot.md), every word with a worked example,
+for looking one up when you do not already know its name.
+
+The inventory is served from `GET /api/catalog`, which reads
+`src/core/catalog.js`. That file is held against the parser's own `case` arms in
+both directions by `test/catalog.test.ts`, so an attribute added to the language
+and not to the table fails the suite: the panel's whole offer is that nothing is
+missing from it.
+
+**Which switch parses a word is not the same question as where the word is
+legal.** There are six positions and only two are a switch: a model's field, a
+type's field, a trait's field, an enum member, a model, a trait. The parser
+reaches the other four by calling `parseFieldAttribute`/`parseModelAttribute` and
+refusing afterwards — so the arms a source scan reads are the HOME arms, and no
+amount of reading can see the rest.
+
+`POSITION_RULES` states them once, in the shape the parser states them (four
+named Sets), rather than as a key on the fifteen rows they constrain. The test
+binds each list to the parser's own Set, and drives the parser for the one
+position that is a throw rather than a Set — every field attribute tried on an
+enum member, where exactly `@label` is accepted.
+
+**`arity` is prose, and nothing checks prose.** A `values` entry states an
+argument's closed set as data with a probe beside it, and the check drives the
+parser twice: every declared value must parse, and an invented one must be
+refused — the second half is what catches a set that has GROWN. Where a value
+constrains its own context it carries its own probe, because `@from(last:)`
+demands the field be typed as the target model while `@from(count:)` demands an
+`Int`, and `tenancy strategy database` refuses the `column` key that `strategy
+row` requires.
+
+Proven by `bun run verify:studio:explore` — 46 assertions, real Chrome against a
+real server.
+
 ### Migrations
 
 - Applied/pending status per database

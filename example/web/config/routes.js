@@ -13,12 +13,32 @@ export const tree = {
   params: [],
   children: [
   {
+      id: "cart",
+      path: "/cart/",
+      file: "src/routes/cart/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Basket","isIndex":true},
+      params: [],
+      children: [],
+    },
+  {
       id: "customers",
       path: "/customers/",
       file: "src/routes/customers/index.mesa",
       companion: null,
       layout: "src/routes/_module.mesa",
       meta: {"siteName":"Kitchen sink","title":"Customers","isIndex":true},
+      params: [],
+      children: [],
+    },
+  {
+      id: "inventory",
+      path: "/inventory/",
+      file: "src/routes/inventory/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"siteName":"Kitchen sink","title":"Inventory","isIndex":true},
       params: [],
       children: [],
     },
@@ -61,7 +81,18 @@ export const tree = {
       layout: "src/routes/_module.mesa",
       meta: {"siteName":"Kitchen sink","title":"Products","isIndex":true},
       params: [],
-      children: [],
+      children: [
+      {
+          id: "products.[id]",
+          path: "/products/:id/",
+          file: "src/routes/products/[id].mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"Product","dynamic":true},
+          params: ["id"],
+          children: [],
+        }
+      ],
     },
   {
       id: "settings",
@@ -79,11 +110,14 @@ export const tree = {
 // Component factory map — resolved lazily by the router on navigation
 export const components = {
   'root': () => import('../src/routes/index.mesa'),
+  'cart': () => import('../src/routes/cart/index.mesa'),
   'customers': () => import('../src/routes/customers/index.mesa'),
+  'inventory': () => import('../src/routes/inventory/index.mesa'),
   'orders': () => import('../src/routes/orders/index.mesa'),
   'orders.create': () => import('../src/routes/orders/create.mesa'),
   'orders.[id]': () => import('../src/routes/orders/[id].mesa'),
   'products': () => import('../src/routes/products/index.mesa'),
+  'products.[id]': () => import('../src/routes/products/[id].mesa'),
   'settings': () => import('../src/routes/settings/index.mesa'),
 }
 
@@ -103,27 +137,35 @@ export const layouts = {
 // Flat URL arrays for route table consumers (sitemap, llms.txt, deploys)
 export const all = [
   "/",
+  "/cart/",
   "/customers/",
+  "/inventory/",
   "/orders/",
   "/orders/create/",
   "/orders/:id/",
   "/products/",
+  "/products/:id/",
   "/settings/"
 ]
 
 export const published = [
   "/",
+  "/cart/",
   "/customers/",
+  "/inventory/",
   "/orders/",
   "/orders/create/",
   "/orders/:id/",
   "/products/",
+  "/products/:id/",
   "/settings/"
 ]
 
 export const indexed = [
   "/",
+  "/cart/",
   "/customers/",
+  "/inventory/",
   "/orders/",
   "/orders/create/",
   "/products/",

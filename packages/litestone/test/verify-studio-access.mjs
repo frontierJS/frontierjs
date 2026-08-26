@@ -20,8 +20,8 @@
  */
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, readFileSync, writeFileSync } from 'node:fs'
+import { tempDir } from '../src/tmp-dirs.js'
 import { join, resolve as pathResolve } from 'node:path'
 
 const PORT   = process.env.STUDIO_PORT ?? '5099'
@@ -44,12 +44,36 @@ studio.stderr.on('data', d => { studioOut += d })
 
 const ORIGINAL_SCHEMA = readFileSync(SCHEMA, 'utf8')
 
+// Everything this run started or altered, undone from one place. Chrome joins
+// the set once it is spawned, below — before this, cleanup() restored the
+// schema and killed the studio server and left the browser, which does not
+// notice its launcher has gone: it is reparented to init and stays up forever,
+// holding a profile that keeps growing. Four of them were found alive here,
+// and 52 profiles in one day (FJS-361). Synchronous — an exit handler cannot
+// await, and this one also has a schema file to put back.
+let chromeProc = null
+let chromeProfile = null
 function cleanup() {
   writeFileSync(SCHEMA, ORIGINAL_SCHEMA, 'utf8')
   try { process.kill(-studio.pid) } catch {}
+  if (chromeProc) { try { chromeProc.kill('SIGKILL') } catch {} ; chromeProc = null }
+  if (chromeProfile) {
+    // The wait is not optional. Removing the profile straight after the kill
+    // does not fail, it SUCCEEDS, and Chrome writes the directory back while
+    // it shuts down — measured in mesa's drive.mjs, where 0ms left 16MB back
+    // on disk and 200ms did not. An exit handler cannot await, so block.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300)
+    try { rmSync(chromeProfile, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch {}
+    chromeProfile = null
+  }
 }
 process.on('exit', cleanup)
-process.on('SIGINT', () => { cleanup(); process.exit(130) })
+process.on('SIGINT',  () => { cleanup(); process.exit(130) })
+process.on('SIGTERM', () => { cleanup(); process.exit(143) })
+// The default handler for either of these exits without an ordinary exit path,
+// which would leave the schema file rewritten as well as Chrome running.
+process.on('uncaughtException',  (e) => { cleanup(); console.error(e); process.exit(1) })
+process.on('unhandledRejection', (e) => { cleanup(); console.error(e); process.exit(1) })
 
 for (let i = 0; i < 60; i++) {
   try { if ((await fetch(`${UI}/api/access`)).ok) break } catch {}
@@ -59,12 +83,15 @@ for (let i = 0; i < 60; i++) {
 
 // ─── CDP ──────────────────────────────────────────────────────────────────
 
-const profile = mkdtempSync(join(tmpdir(), 'fjs-studio-'))
+const profile = tempDir('fjs-studio-')
 const chrome  = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--no-sandbox',
   '--remote-debugging-port=0', `--user-data-dir=${profile}`,
   'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] })
+
+chromeProc = chrome
+chromeProfile = profile
 
 chrome.on('error', (e) => { console.error(`Could not launch ${CHROME}: ${e.message}`); process.exit(1) })
 
@@ -246,11 +273,5 @@ for (const { name, actual, expected } of results) {
 console.log(failed ? `\n${failed} assertion(s) failed` : `\nall ${results.length} assertions passed`)
 
 try { browser.close() } catch {}
-chrome.kill()
-// Chrome is still flushing its profile when kill() returns, so this races it
-// and throws ENOTEMPTY on a run that otherwise passed — `maxRetries` does not
-// cover it, because each retry finds a NEW file written since the last. A temp
-// directory left in /tmp must never turn a green drive red.
-try { rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }) } catch {}
 cleanup()
 process.exit(failed ? 1 : 0)

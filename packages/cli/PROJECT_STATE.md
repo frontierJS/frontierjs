@@ -129,12 +129,12 @@ These provide functions and constants that prepend to every command in the names
 
 - **Nested-app support for `project:*` (2026-08-05)** — `project:map` / `project:view` could not run inside `example/` or `packages/basecamp`: `findProjectRoot` walked past both to the repo's `.git` root, so `paths.db` held no `schema.lite`. Root resolution now recognises `db/schema.lite` as an app marker (below `.fli.json`, above `.git`), and a global `--project <dir>` / `FLI_PROJECT` pins it explicitly from anywhere. Three defects surfaced underneath: the compiler deleted every line after a `<script>` tag *mentioned* in a comment, which is why `project:view` built its map and exited without starting the server; `scanFiles` was not recursive, so basecamp's `services/<name>/<name>.service.ts` layout reported 0 services; and `--no-open` was declared as flag `no-open`, which minimist never binds. All four fixed, with regression tests for root resolution and for the compiler truncation (a truncated file still parses, so the shipped-command parse sweep could not see it).
 
-- **`site:setup`** — first-time setup walkthrough for fresh ksite clones. Per-action confirmation, `--force` to bypass `config_ranSetup` guard, `--skip` for category, `--yes` to auto-accept. Cross-platform JS file edits (no `sed -i` hacks).
-- **`site:update`** (alias `site-update`) — pulls KSITE_DIR canonical, mirrors framework dirs to local site. `--force` to skip version-gate and dirty-checkout warning, `--no-install` to skip final npm install. Major-version compatibility check between local and canonical site/package.json.
+- **`ksite:setup`** — first-time setup walkthrough for fresh ksite clones. Per-action confirmation, `--force` to bypass `config_ranSetup` guard, `--skip` for category, `--yes` to auto-accept. Cross-platform JS file edits (no `sed -i` hacks).
+- **`ksite:update`** (alias `ksite-update`) — pulls KSITE_DIR canonical, mirrors framework dirs to local site. `--force` to skip version-gate and dirty-checkout warning, `--no-install` to skip final npm install. Major-version compatibility check between local and canonical site/package.json.
 - **`deploy:doctor`** — read-only deploy readiness checker. Local checks (config, Dockerfile, /health route, env reference, git state), Junction-aware checks (`@frontierjs/junction` detection, `/ws` route, proxy_read_timeout reminder), and `--remote` for server-side probes (SSH, required tools, deploy dir, .env.production, container state, lock).
 - **`make:fetch-config`** (alias `mkfetchconfig`) — scaffolds a `fetch.config.js` template with all options shown commented-out.
 - **`fli:update`** (alias `update`) — monorepo-aware self-update via `git pull` + `bun install` in the fli source tree. `--branch`, `--no-install`, `--no-link` flags.
-- **`site:fetch`** (alias `site-fetch`) — sitemap/URL→markdown converter using turndown + linkedom. Validates config (errors abort, warnings continue), prints destination upfront, sitemap-index recursion, namespace-loc filtering, HTTP timeout/retry. Uses `context.paths.siteContent` and `context.paths.siteMedia`.
+- **`ksite:fetch`** (alias `fetch`) — sitemap/URL→markdown converter using turndown + linkedom. Validates config (errors abort, warnings continue), prints destination upfront, sitemap-index recursion, namespace-loc filtering, HTTP timeout/retry. Uses `context.paths.siteContent` and `context.paths.siteMedia`.
 
 ### Existing namespace breakdown (147 commands)
 
@@ -148,7 +148,7 @@ Three modes coexist:
 
 1. **Modern Docker/SSH/nginx** — triggered by `frontier.config.js` having a `deploy` block. Used for new FJS apps, especially Junction.
 2. **Legacy CapRover** — fallback when no `deploy` block. Uses `DEV_SERVER`/`STAGE_SERVER`/`PROD_SERVER` env vars.
-3. **ksite-specific** — `site:deploy` for static-site projects, separate code path.
+3. **ksite-specific** — `ksite:deploy` for static-site projects, separate code path.
 
 ### Modern deploy pipeline (10 steps)
 
@@ -305,7 +305,7 @@ API: `GET /api/commands`, `GET /api/commands/:name` (with segments), `POST /api/
 FLI_PORT=8500              # Web GUI port
 FLI_DEBUG=1                # Enable full stack traces (or pass --debug)
 WORKSPACE_DIR=~/outlaw     # Workspace root (all ws-* commands)
-KSITE_DIR=~/.../ksite      # Local clone of canonical ksite (for site:update)
+KSITE_DIR=~/.../ksite      # Local clone of canonical ksite (for ksite:update)
 ANTHROPIC_API_KEY=sk-...
 
 # Project directories (override defaults)
@@ -326,7 +326,7 @@ DEV_CAPTAIN, CAPROVER_URL, CAPROVER_TOKEN
 
 ### Port schema
 
-`[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod. Global tooling on `8500` (gui), `8501` (pview), `8502` (studio). Dynamic project ports assigned at runtime via `~/.fli/sessions.lock` with O_EXCL file lock for atomicity.
+`[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod. Global tooling reserves `8500`–`8509` whole: `8500` (gui), `8501` (pview), `8502` (studio), `8503` (junction devtools). Dynamic project ports assigned at runtime via `~/.fli/sessions.lock` with O_EXCL file lock for atomicity.
 
 ### Startup cost
 

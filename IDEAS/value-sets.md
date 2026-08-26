@@ -1,16 +1,49 @@
 ---
 id: value-sets
-status: idea
+status: partial
 dated: 2026-08-21
 ---
 
 # Idea — Value sets: where the options in a picker come from
 
-**Status: IDEA. Nothing here is built.** Dated 2026-08-21. There is no `valueset`
-declaration in the `.lite` grammar and no binding-strength axis anywhere in the
-tree. The *What exists today* section is read off shipped code and cited; every
-other section is a proposal. Do not cite this file as describing behaviour — see
-`VERIFYING.md`.
+**Status: PARTIAL.** The shape is settled — `FJS-D120` — and both halves are
+built and running in `example`: `valueset` and `@values` parse, `x-values` is
+emitted, a strength is enforced at the Data boundary through the caller's own
+accessor, and `controlFor` answers a picker or a combobox from the binding. The
+crossing is proven end to end by `example`'s `verify:values`, in a real browser
+against a real API — the declared `@@scope` travels as a filter, so the list a
+picker offers is the list the boundary accepts. Dated 2026-08-21, ruled and
+built 2026-08-22, proven in an app 2026-08-23.
+
+Both narrowings now cross: a declared `@@scope` by name, and a declared `where`
+by minting a scope of its own (`FJS-430`, closed 2026-08-23). A capped list says
+how many rows it is not showing and the two searchable controls send what was
+typed to the server (`FJS-391`, closed the same day).
+
+What is still open: `FJS-D121` (ordering) and `FJS-D122` (dependent sets). **No
+screen in `example` mounts the picker yet** — there is no variant edit form, so
+the control is proven by `@frontierjs/ui`'s own browser drive and by the
+resource, not by a rendered app screen.
+
+**Three pieces shipped 2026-08-22 and are behaviour, not proposal**, each
+buildable without the declaration and each useful without it: `@label` on an
+enum member (a caption per value of a literal set), `@@label(field)` on a model
+(which column a picker SHOWS for a row — FHIR's `display`), and one resolution
+seam, `resource.options()` / `$context.form.optionsFor()`, answering
+`{ options, total, truncated }` for a literal set and a table-backed one alike.
+That is axis 1 working for the two provenances that already existed, behind one
+interface.
+
+**What the ruling changed about the sketch below.** Two of the four provenances
+turned out to need no new syntax: an `enum` with `@label` is already a complete
+literal set and is `required` by construction, and an account-editable list in a
+row-tenant app is already scoped by `tenancy { strategy row }`. And **strength
+moved off the set onto the binding** — one list is legitimately enforced on one
+field and merely offered on another, which a strength on the set cannot express.
+The `Sketch` section below is superseded by `DECISIONS.md` § `FJS-D120`; it is
+kept because the reasoning that produced it is the reasoning behind the ruling.
+
+Do not cite the rest of this file as describing behaviour — see `VERIFYING.md`.
 
 ---
 
@@ -158,25 +191,42 @@ What each realm would derive, with no app code:
 
 ## Open questions
 
-- **Labels.** JSON Schema's own answer is `oneOf: [{const, title}]`; RJSF's
-  `enumNames` is non-standard and deprecated. A value set needs a label per value
-  and litestone currently emits a bare `enum` array, so this is a real emitter
-  change with three readers (`packages/litestone/docs/jsonschema.md`).
-  Interacts with `FJS-D12` — a label is a default string, never a key.
-- **Who may extend an `extensible` set**, and by which mechanism. It is a write
-  to a different model performed as a side effect of a write to this one, which
-  is exactly the shape `ctx.transients` and `@transient` already handle for
-  payload keys that are not columns.
-- **Whether `order` belongs in the schema at all.** It is per-caller and lives in
-  the UI realm; the argument for declaring it here is that a hand-written picker
-  and a generated one must not disagree, which is the same argument that put the
-  control table in one module.
-- **Dependent sets** — a set whose members depend on another field's value
-  (Salesforce's controlling field, Frappe's Dynamic Link). Probably a second
-  wave; it is the feature Salesforce could not compose with global value sets.
-- **How a set reaches the browser.** A literal set travels whole. A table-backed
-  set of four thousand rows cannot, so `resource.options()` and its
-  `optionsQuery` narrowing are the existing seam to extend rather than replace.
+Two remain and both are FLAGGED rather than parked — they are wanted, and each
+has a row in `ISSUES.md`.
+
+- **Order — axis 3. `FJS-D121`.** Which of the allowed values appear first, and
+  whether the schema says it at all. It is the case this whole line of work
+  started from: a person assigns the same three people over and over and an
+  alphabetical list makes them search every time. Held out of `FJS-D120` because
+  fusing it with strength is the failure this shape exists to avoid, and open
+  rather than built because it needs somewhere to KEEP the recency — per-caller
+  state, which is not obviously a fact about the data the way membership and
+  strength are.
+- **Dependent sets — `FJS-D122`.** A set whose members depend on another field's
+  value. Salesforce's controlling field, Frappe's Dynamic Link. The prior art is
+  a warning rather than a model: it is the one feature Salesforce could not
+  compose with global value sets, which is the shape just adopted.
+
+Answered by building:
+
+- ~~**Labels.**~~ **Both halves, and they were two questions.** A caption per
+  member of a literal set is `@label` on the member, emitted as `x-labels`
+  BESIDE the `enum` array rather than as `oneOf: [{const, title}]`, because that
+  array is what three readers validate against. A label for a ROW of a
+  table-backed set is *which column*, not *what text*, and that is
+  `@@label(field)` → `x-label-field` (`FJS-392`). Fusing them was available and
+  would have been wrong.
+- ~~**How a set reaches the browser.**~~ `resource.options()` and
+  `$context.form.optionsFor()` are the seam, answering
+  `{ options, total, truncated }` with `search` reaching the server as
+  `contains` on the display column. A literal set travels whole and reports
+  `truncated: false`; a table-backed one is a page and says so.
+
+Answered by ruling (`FJS-D120`):
+
+- ~~**Who may extend an `extensible` set.**~~ Nobody new decides. The create runs
+  through the caller's own scoped client, so the target model's `@@gate` and
+  `@@allow` answer it. No permission concept, no hook tier.
 
 ## What this is not
 

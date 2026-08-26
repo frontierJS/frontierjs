@@ -129,11 +129,12 @@ strict off-the-shelf draft-07 validator will not follow `#/$defs/…`.
 | `additionalProperties` | model, type def | always `false` — strict by default |
 | `default` | field | literal `@default`; `now()`/`uuid()` and friends are runtime-only and emit nothing |
 | `enum` | enum def, field | `inlineEnums: true` puts the values on the field |
+| `x-labels` | enum def, field | `@label("…")` on a member — code → human text, only the members that stated one. Beside `enum`, never instead of it: the array is what validation reads. Carried onto the field under `inlineEnums: true`, and onto `items` for an enum array |
 | `anyOf` | field | how a nullable `$ref` or a nullable constrained field is expressed |
 | `readOnly` | field | `@version`, `@computed`, `@generated`, `@from`, `@system` |
 | `writeOnly` | field | `@transient` — the mirror, and the reason the pair is used rather than an `x-` key |
 | `items` | field | array types (`String[]` → `{type:'string'}`, `Int[]` → integer) |
-| `format` | field | `@email`→`email`, `@url`→`uri`, `@phone`→`phone`, `@date`→`date`, `DateTime`/`@datetime`→`date-time` |
+| `format` | field | `@email`→`email`, `@url`→`uri`, `@phone`→`phone`, `@date`→`date`, `DateTime`/`@datetime`→`date-time`. **`@time` emits nothing** — the third rung of the same ladder has no case in the emitter, so the rule is enforced at the boundary and invisible to every consumer of this document (`FJS-522`) |
 | `contentMediaType` | field | `@markdown` → `text/markdown` |
 | `contentEncoding` | field | `Bytes` → `base64` |
 | `pattern` | field | `@regex`, and `@startsWith`/`@endsWith`/`@contains` (anchored, regex-escaped) |
@@ -157,6 +158,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-gate` | model | `{read, create, update, delete}` — the `@@gate` levels, 0–9 | sierra `field-rules.js` (affordance), static-safety |
 | `x-transitions` | model | `{ field: { name: {from: [], to, gate: N\|null} } }` | sierra `field-rules.js`, `example`'s orders screen |
 | `x-version` | model | the `@version` column's name, so a client knows what to round-trip | sierra `field-rules.js` |
+| `x-label-field` | model | the `@@label(field)` column's name — which column identifies a row to a person | sierra `field-rules.js`, `resource.js` |
 | `x-litestone-file` | `FileRef` def | `true` — marks the def as a file ref, not a user `type` | junction (maps it to `any`), `fli` |
 | `x-litestone-kind` | field | `'version'` \| `'computed'` \| `'generated'` \| `'from'` \| `'system'` \| `'transient'` | junction (`liftTransient`), tests |
 | `x-litestone-from` | field | `{target, op}` from `@from(Model, count: true)` | nothing yet |
@@ -256,6 +258,15 @@ into a picker instead of a number spinner.
   model narrowed the machine.
 - **`x-version` is emitted in `create` mode too**, even though the column is not —
   it is structural metadata about the model, not a field listing.
+- **So is `x-label-field`, and it routinely names a column no mode lists.** Which
+  column identifies a row does not depend on whether you are writing one, and the
+  case it exists for is a `@generated` full name, which is `full`-mode only. A
+  consumer reads it off a fetched ROW; checking the name against the mode's own
+  `properties` is what would break it.
+- **`x-label-field` and `x-labels` are different questions.** One names a column,
+  the other maps an enum member to its caption. They sit at the same level of
+  `$defs` — one on a model def, one on an enum def — and the near-identical names
+  are worth reading twice.
 - **`$defs` keys are model names, service names are not.** `model Article` is
   `$defs.Article` while the service is `articles`; sierra's `modelNameFor()`
   handles regular English plurals only.

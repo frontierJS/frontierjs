@@ -1,0 +1,40 @@
+<!--
+  Which schema edit the ripple is showing.
+
+  All five edits, their diffs and everything each one moved are already in the
+  prerendered file. This swaps which is visible and keeps the chips and the URL
+  agreeing with it.
+-->
+<script>
+  $.onMount(() => {
+    const chips  = document.querySelector('[data-changes]')
+    const panels = document.querySelector('[data-ripple]')
+    if (!chips || !panels) return
+
+    const btns = [...chips.querySelectorAll('.btn')]
+
+    const pick = (id) => {
+      if (!panels.querySelector(`[data-id="${id}"]`)) return
+      for (const b of btns) {
+        const on = b.dataset.id === id
+        b.setAttribute('aria-selected', String(on))
+        // Dropping .outlined gives the chip .btn's filled skin, which carries
+        // its own readable text colour. Never set one without the other.
+        b.classList.toggle('outlined', !on)
+      }
+      for (const p of panels.children) p.classList.toggle('is-shown', p.dataset.id === id)
+      history.replaceState(null, '', '#' + id)
+    }
+
+    const onClick = (e) => {
+      const b = e.target.closest('.btn')
+      if (b) pick(b.dataset.id)
+    }
+    chips.addEventListener('click', onClick)
+
+    const wanted = location.hash.slice(1)
+    if (btns.some((b) => b.dataset.id === wanted)) pick(wanted)
+
+    return () => chips.removeEventListener('click', onClick)
+  })
+</script>

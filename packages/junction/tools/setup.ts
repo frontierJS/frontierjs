@@ -168,34 +168,14 @@ async function runAllChecks(): Promise<CheckResult[]> {
 
   const configSrc = read('config/default.ts')
 
-  // auth.secret — check it's not the demo value and not hardcoded
-  const hasAuthSecret = configSrc.includes('auth') && configSrc.includes('secret')
-  if (!hasAuthSecret) {
-    add({ id: 'config.auth_secret', label: 'auth.secret configured',
-      status: 'fail',
-      detail: 'auth.secret not found in config/default.ts',
-      fix: 'Add: auth: { secret: process.env.AUTH_SECRET ?? "change-me", sessionExpiry: "7d" }' })
-  } else {
-    const weakPatterns = ['demo-secret', 'change-in-prod', 'change-me', 'secret123', 'password']
-    const isHardcoded  = !configSrc.includes('process.env.AUTH_SECRET')
-    const isWeak       = weakPatterns.some(p => configSrc.includes(p))
-
-    if (isProd && (isHardcoded || isWeak)) {
-      add({ id: 'config.auth_secret', label: 'auth.secret configured',
-        status: 'fail',
-        detail: isHardcoded ? 'Secret is hardcoded — use process.env.AUTH_SECRET in production'
-                            : 'Weak/demo secret detected in production',
-        fix: 'export AUTH_SECRET="$(openssl rand -hex 32)"  and reference it in config' })
-    } else if (isWeak) {
-      add({ id: 'config.auth_secret', label: 'auth.secret configured',
-        status: 'warn',
-        detail: 'Default/demo secret detected — fine for dev, must change before production',
-        fix: 'Set AUTH_SECRET env var to a random 32+ byte value' })
-    } else {
-      add({ id: 'config.auth_secret', label: 'auth.secret configured', status: 'ok',
-        detail: isHardcoded ? 'Set (hardcoded)' : 'Set via process.env.AUTH_SECRET' })
-    }
-  }
+  // No auth.secret check. There is no such config key — `AppConfig` declares
+  // none — and a session issued by `@frontierjs/auth` is a ROW, found by a random
+  // token, so nothing is signed and there is nothing for a secret to sign. This
+  // check read `config/default.ts` for the word `secret`, failed apps that do not
+  // have one, and told them to add a key junction would ignore (`FJS-360`). An
+  // encryption key is the credential this stack does have, and litestone refuses
+  // to open without one where a schema needs it — which is a better check than
+  // any grep for a word.
 
   // database.url
   const dbInConfig   = configSrc.includes('database') && configSrc.includes('url')
@@ -222,7 +202,7 @@ async function runAllChecks(): Promise<CheckResult[]> {
     status: hasEnvFile ? 'ok' : 'warn',
     detail: hasEnvFile ? (exists('.env') ? '.env' : '.env.local')
           : 'No .env file — environment variables must be set another way',
-    fix: 'Create .env with AUTH_SECRET and DATABASE_URL' })
+    fix: 'Create .env with ENCRYPTION_KEY and DATABASE_URL' })
 
   // .gitignore covers .env
   if (hasEnvFile) {
@@ -234,11 +214,16 @@ async function runAllChecks(): Promise<CheckResult[]> {
       fix: 'Add .env to .gitignore' })
   }
 
-  // AUTH_SECRET env var
-  add({ id: 'env.auth_secret', label: 'AUTH_SECRET env var',
-    status: process.env.AUTH_SECRET ? 'ok' : (isProd ? 'fail' : 'warn'),
-    detail: process.env.AUTH_SECRET ? 'Set' : `Not set${isProd ? ' — required in production' : ''}`,
-    fix: 'export AUTH_SECRET="$(openssl rand -hex 32)"' })
+  // ENCRYPTION_KEY env var — the credential this stack actually has.
+  //
+  // Absent is NOT graded, in production or out of it: an app with no @encrypted,
+  // @secret or @hashed column legitimately has none, and litestone refuses to
+  // open where one is needed, which is a better answer than a doctor guessing.
+  // A rule that over-fires costs more than a rule that is missing.
+  if (process.env.ENCRYPTION_KEY) {
+    add({ id: 'env.encryption_key', label: 'ENCRYPTION_KEY env var',
+      status: 'ok', detail: 'Set' })
+  }
 
   // NODE_ENV
   add({ id: 'env.node_env', label: 'NODE_ENV',
@@ -333,14 +318,20 @@ async function runAllChecks(): Promise<CheckResult[]> {
           : isProd ? 'Not configured — recommended for production' : 'Not configured',
     fix: "app.configure(rateLimit({ max: 100, window: '1 minute' }))" })
 
-  // Auth secret strength (only if AUTH_SECRET is set)
-  if (process.env.AUTH_SECRET) {
-    const secret = process.env.AUTH_SECRET
-    const isStrong = secret.length >= 32
-    add({ id: 'security.secret_strength', label: 'AUTH_SECRET strength',
-      status: isStrong ? 'ok' : 'fail',
-      detail: isStrong ? `${secret.length} characters (good)` : `Only ${secret.length} characters — use at least 32`,
-      fix: 'export AUTH_SECRET="$(openssl rand -hex 32)"' })
+  // ENCRYPTION_KEY strength, and the trap is that it is counted in BYTES.
+  // Litestone parses the value as HEX, so 64 characters is not necessarily 32
+  // bytes — non-hex padding decodes short and is rejected with `must be 32 bytes
+  // (got 1)`, which reads like a bug in litestone rather than a bad key.
+  if (process.env.ENCRYPTION_KEY) {
+    const key    = process.env.ENCRYPTION_KEY
+    const isHex  = /^[0-9a-fA-F]+$/.test(key)
+    const bytes  = isHex ? key.length / 2 : 0
+    add({ id: 'security.encryption_key_strength', label: 'ENCRYPTION_KEY strength',
+      status: bytes === 32 ? 'ok' : 'fail',
+      detail: !isHex     ? `Not hex — litestone parses this value as hex, so it decodes short`
+            : bytes === 32 ? '64 hex characters (32 bytes)'
+            : `${key.length} hex characters (${bytes} bytes) — needs 64 (32 bytes)`,
+      fix: 'export ENCRYPTION_KEY="$(openssl rand -hex 32)"' })
   }
 
   // ── 9. Production readiness ─────────────────────────────────────────
@@ -597,20 +588,19 @@ async function runWizard(): Promise<void> {
         break
       }
 
-      case 'config.auth_secret': {
-        console.log(note('Generate a strong secret and add to your environment:'))
-        console.log(dim('    export AUTH_SECRET="$(openssl rand -hex 32)"'))
+      case 'security.encryption_key_strength':
+      case 'env.encryption_key': {
+        console.log(note('Litestone parses this as HEX, so it is 64 characters for 32 bytes:'))
+        console.log(dim('    export ENCRYPTION_KEY="$(openssl rand -hex 32)"'))
         console.log()
-        console.log(note('Then reference it in config/default.ts:'))
-        console.log(dim('    auth: { secret: process.env.AUTH_SECRET ?? "fallback-dev-only" }'))
-        console.log()
-        const addEnv = await confirm('Append AUTH_SECRET placeholder to .env?')
+        const addEnv = await confirm('Append a generated ENCRYPTION_KEY to .env?')
         if (addEnv) {
-          const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+          const key = Array.from(crypto.getRandomValues(new Uint8Array(32)))
             .map(b => b.toString(16).padStart(2, '0')).join('')
-          appendEnv('AUTH_SECRET', secret)
-          console.log(ok('.env updated with generated AUTH_SECRET'))
+          appendEnv('ENCRYPTION_KEY', key)
+          console.log(ok('.env updated with generated ENCRYPTION_KEY'))
           console.log(paint(c.byellow, `  ⚠ Treat this as a secret — keep it out of source control`))
+          console.log(paint(c.byellow, `  ⚠ Rotating it makes every @encrypted value unreadable; $rotateKey is the way`))
         }
         break
       }
@@ -650,19 +640,6 @@ async function runWizard(): Promise<void> {
           const existing      = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf8') : ''
           fs.writeFileSync(gitignorePath, existing + '\n.env\n.env.local\n')
           console.log(ok('.gitignore updated'))
-        }
-        break
-      }
-
-      case 'env.auth_secret': {
-        const secret = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-          .map(b => b.toString(16).padStart(2, '0')).join('')
-        const addEnv = await confirm('Generate AUTH_SECRET and add to .env?', true)
-        if (addEnv) {
-          appendEnv('AUTH_SECRET', secret)
-          console.log(ok('.env updated'))
-        } else {
-          console.log(note(`Run: export AUTH_SECRET="${secret}"`))
         }
         break
       }
@@ -729,13 +706,6 @@ async function runWizard(): Promise<void> {
         console.log(dim("    import { rateLimit } from '@frontierjs/junction'"))
         console.log(dim("    app.configure(rateLimit({ max: 100, window: '1 minute' }))"))
         console.log()
-        await ask('Press enter when done')
-        break
-      }
-
-      case 'security.secret_strength': {
-        console.log(note('Generate a stronger secret:'))
-        console.log(dim('    export AUTH_SECRET="$(openssl rand -hex 32)"'))
         await ask('Press enter when done')
         break
       }
@@ -887,7 +857,7 @@ async function scaffoldNewProject(): Promise<void> {
   console.log(ok('config/production.ts'))
   console.log(ok('app.ts'))
   console.log(ok('tests/app.test.ts'))
-  console.log(ok('.env (with generated AUTH_SECRET)'))
+  console.log(ok('.env (with generated ENCRYPTION_KEY)'))
   console.log(ok('.gitignore'))
 }
 

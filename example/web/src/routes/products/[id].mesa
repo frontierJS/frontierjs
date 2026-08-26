@@ -1,0 +1,444 @@
+---
+title: Product
+---
+<script>
+  // One product family: its photographs, and the grid of buyable rows beneath
+  // it. This is the screen the variant split exists for — four colourways and
+  // three sizes is twelve rows that no flat product table can show at all.
+  //
+  // Nothing here lists a colour or a size. The option axes are read off the
+  // variants that arrived, in the order the schema declares for `size` and in
+  // seeded order for `colour`, so a fifth colourway appears here by being
+  // created and not by anyone editing this file.
+  import { products }        from '../../resources/Product.mesa'
+  import { productVariants } from '../../resources/ProductVariant.mesa'
+  import { productImages }   from '../../resources/ProductImage.mesa'
+  import { session } from '../../session.js'
+  import { cart, add } from '../../cart.js'
+  import { money }     from '../../money.js'
+  import { prefs }     from '../../prefs.js'
+  import { page }    from '@frontierjs/sierra/router'
+  import { useStore } from '@frontierjs/sierra/junction'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import EmptyState    from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Skeleton      from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+  import NumberInput   from '@frontierjs/ui/components/forms/NumberInput.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  // The two lists go through the resource's STORE rather than a one-shot
+  // fetch. `resource.service` has no `findData` — that is the junction client
+  // one layer down — and the store is the better answer anyway: both services
+  // declare a channel, so a variant repriced in another tab arrives here.
+  const { get: variants, unsubscribe: offV } = useStore(productVariants.store)
+  const { get: images,   unsubscribe: offI } = useStore(productImages.store)
+  $.onDestroy(() => { offV(); offI() })
+
+  $: (page.params, session.level)
+  $: (cart.busy, cart.count, cart.error)
+  $: (prefs.currency)
+
+  let product = null
+  let error   = null
+  let loading = true
+
+  // ── What may actually be sold ────────────────────────────────────────────
+  //
+  // `stock` on a variant is ON HAND — what the warehouse could pick. What this
+  // page has to offer is AVAILABLE: on hand less every unexpired hold somebody
+  // else's basket is carrying. That is a sum over a table a shopper may not
+  // read (`StockReservation` is `@@gate("5.8.8.8")`), so it arrives as a NUMBER
+  // from a method that computes it as the shop — `product-variants.availability`.
+  //
+  // Keyed by variant id, reloaded after anything this shopper does that could
+  // move it. It does NOT move when another shopper takes a hold, and that is a
+  // decision rather than an omission: a hold would have to travel on a channel
+  // to get here, and a broadcast does not re-check the gate, so publishing them
+  // would hand every open browser rows the Data boundary refuses. The buy box
+  // can therefore be one hold out of date; the server refuses regardless and
+  // says so, which is the same contract `x-gate` has.
+  let levels = {}
+
+  async function loadLevels() {
+    try {
+      const r = await productVariants.service.invoke('availability', null, {
+        productId: Number(page.params.id),
+      })
+      const next = {}
+      for (const v of r?.variants ?? []) next[v.variantId] = v
+      levels = next
+    } catch { /* the grid falls back to on hand — see availOf */ }
+  }
+
+  async function load() {
+    error = null; loading = true
+    try {
+      const id = Number(page.params.id)
+      product = await products.service.get(id)
+      // Filtered server-side — `productId` is a real column, so this is a
+      // WHERE and not a page of everything narrowed in the browser.
+      await Promise.all([
+        productVariants.load({ productId: id }, { limit: 200, orderBy: 'sku' }),
+        productImages.load({ productId: id },   { limit: 50,  orderBy: 'position' }),
+        loadLevels(),
+      ])
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  /**
+   * What this page may offer for a variant.
+   *
+   * Falls back to ON HAND for a variant availability has not answered for —
+   * a row that arrived on the store after the load, say. That over-offers by
+   * whatever is held, and it is still the right fallback: the alternative is
+   * showing `0` for a shelf that is full, and the Data boundary refuses an
+   * over-add either way with the sentence this screen renders.
+   */
+  const availOf = (v) => (v && levels[v.id]) ? levels[v.id].available : (v?.stock ?? 0)
+
+  // ── The option axes, read off the rows ───────────────────────────────────
+  //
+  // Sizes sort by the ENUM's declaration order, which is the order they are
+  // worn in; sorting them alphabetically would read l, m, one, s, xl.
+  const sizeOrder = productVariants.fields.size.enum
+  $: colours = [...new Set(variants().map(v => v.colour))]
+  $: sizes   = [...new Set(variants().map(v => v.size))]
+                 .sort((a, b) => sizeOrder.indexOf(a) - sizeOrder.indexOf(b))
+
+  const cellFor = (c, sz) =>
+    variants().find(v => v.colour === c && v.size === sz) ?? null
+
+  // A photograph is of a COLOUR, so it hangs off one variant of that colour
+  // and is found here by matching the colour rather than the variant id —
+  // which is what lets one picture stand for every size it is cut in.
+  function imageFor(c) {
+    const ids = new Set(variants().filter(v => v.colour === c).map(v => v.id))
+    return images().find(i => ids.has(i.variantId)) ?? null
+  }
+
+  // ── The buy box ──────────────────────────────────────────────────────────
+  //
+  // Choosing a colour is choosing a colourway, so it moves the photograph too
+  // — one piece of state and not two. The size list is narrowed to the sizes
+  // the chosen colour is actually cut in, because offering a combination the
+  // grid below shows as blank is offering something that cannot be bought.
+  let pickColour = null
+  let pickSize   = null
+  let qty        = 1
+
+  $: hero = (pickColour && imageFor(pickColour)) || images()[0] || null
+
+  // The first thing that can actually be bought, chosen once the rows arrive.
+  // Reactive rather than set in `load()`: the variants come from a STORE, so a
+  // repricing or a restock in another tab arrives after the load resolved.
+  $: {
+    const rows = variants()
+    if (rows.length && (pickColour === null || !colours.includes(pickColour))) {
+      pickColour = (rows.find(v => availOf(v) > 0) ?? rows[0]).colour
+    }
+  }
+
+  const sizesFor = (c) => variants().filter(v => v.colour === c)
+                                    .map(v => v.size)
+                                    .sort((a, b) => sizeOrder.indexOf(a) - sizeOrder.indexOf(b))
+
+  $: {
+    const offered = pickColour ? sizesFor(pickColour) : []
+    if (offered.length && (pickSize === null || !offered.includes(pickSize))) {
+      pickSize = offered.find(sz => availOf(cellFor(pickColour, sz)) > 0) ?? offered[0]
+    }
+  }
+
+  $: chosen = pickColour && pickSize ? cellFor(pickColour, pickSize) : null
+
+  // Everything the button needs to say, in one place. A disabled control with
+  // no reason beside it is the shape people click twice and then reload.
+  $: available = chosen ? availOf(chosen) : 0
+
+  $: reason =
+      !chosen           ? 'That size is not cut in this colour'
+    : !chosen.active    ? 'No longer on sale'
+    // Sold out vs held. Both mean "you cannot have one", and they are different
+    // sentences because one of them comes back on its own in twenty minutes and
+    // the other does not — telling a shopper "sold out" about stock that is
+    // sitting in somebody's basket is a customer the shop did not need to lose.
+    : available === 0   ? (chosen.stock > 0 ? 'In other baskets right now' : 'Sold out')
+    : qty > available   ? `Only ${available} left`
+    : null
+
+  async function addToBasket() {
+    try {
+      await add(chosen.id, qty)
+      toasts.success(`${qty} × ${chosen.sku} held for you — ${cart.holdMinutes} minutes`)
+    } catch {
+      // `cart.error` carries the server's own sentence and is rendered below;
+      // a toast as well would say the same thing twice.
+    } finally {
+      // Both paths, and the failure path is the one that matters: a refusal
+      // means the numbers this page is showing are stale, so re-asking is how
+      // the shopper stops being told no about something they can see is `3
+      // left`. A success moves it too — their own hold comes off what everyone
+      // else may buy, and this page is one of the everyone.
+      await loadLevels()
+    }
+  }
+
+  $: totalStock = variants().reduce((n, v) => n + v.stock, 0)
+  $: totalAvail = variants().reduce((n, v) => n + availOf(v), 0)
+  $: priceLo    = variants().length ? Math.min(...variants().map(v => v.price)) : 0
+  $: priceHi    = variants().length ? Math.max(...variants().map(v => v.price)) : 0
+</script>
+
+<Breadcrumbs items={[
+  { label: 'Products', href: '/products/' },
+  { label: product?.name ?? '…' },
+]} />
+
+{#if error}
+  <Alert tone="danger">{error}</Alert>
+{/if}
+
+{#if loading}
+  <Skeleton lines={6} />
+{:else if !product}
+  <EmptyState title="No such product" description="It may have been removed." />
+{:else}
+  <SectionHeader title={product.name} level={1} sub={product.description ?? ''} />
+
+  <div class="cluster" style="gap: .5rem; margin-bottom: 1rem">
+    <Pill tone="info">{product.brand}</Pill>
+    <Pill tone={product.active ? 'success' : 'muted'}>{product.active ? 'active' : 'retired'}</Pill>
+    <Mono>{product.slug}</Mono>
+  </div>
+
+  <div class="detail">
+    <!-- ── Gallery ────────────────────────────────────────────────────── -->
+    <div class="gallery">
+      {#if hero}
+        <img class="hero" src={hero.file} alt={hero.alt} />
+      {:else}
+        <div class="hero hero-empty">
+          <span class="text-muted text-sm">No photograph</span>
+        </div>
+      {/if}
+
+      {#if images().length > 1}
+        <div class="strip">
+          {#each colours as c (c)}
+            {#if imageFor(c)}
+              <button
+                class="swatch"
+                type="button"
+                aria-pressed={pickColour === c}
+                aria-label={`Choose ${c}`}
+                onclick={() => pickColour = c}
+              >
+                <img src={imageFor(c).file} alt={imageFor(c).alt} loading="lazy" />
+                <span class="text-xs">{c}</span>
+              </button>
+            {/if}
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <div class="right">
+      <!-- ── Numbers ──────────────────────────────────────────────────── -->
+      <div class="stats">
+        <StatCard label="Price" value={priceLo === priceHi ? money(priceLo) : `${money(priceLo)}–${money(priceHi)}`} />
+        <!-- Two numbers and not one, because they are two facts and the shop
+             acts on the second. `On hand` is the warehouse; `Available` is on
+             hand less what other baskets are holding, and it is the one every
+             button on this page is graded against. -->
+        <StatCard id="stat-onhand" label="On hand" value={String(totalStock)} tone={totalStock === 0 ? 'danger' : undefined} />
+        <StatCard id="stat-available" label="Available" value={String(totalAvail)} tone={totalAvail === 0 ? 'danger' : totalAvail < totalStock ? 'warning' : undefined} />
+      </div>
+
+      <!-- ── Buy ──────────────────────────────────────────────────────────
+           The two selects resolve to ONE variant, and the price shown is that
+           variant's — not the family's range, which is what the header says
+           and is the wrong number to put next to a button.
+
+           There is no sign-in here and there is not supposed to be: `Cart` is
+           `@@gate("0.0.0.5")` and its rows are reached by a token, so a
+           stranger at level 0 can fill a basket and buy. -->
+      <div class="card buy">
+        <div class="buy-row">
+          <Select
+            id="buy-colour"
+            label="Colour"
+            options={colours}
+            placeholder=""
+            bind:value={pickColour}
+          />
+          <Select
+            id="buy-size"
+            label="Size"
+            options={pickColour ? sizesFor(pickColour) : []}
+            placeholder=""
+            bind:value={pickSize}
+          />
+          <NumberInput
+            id="buy-qty"
+            label="Qty"
+            min={1}
+            max={available || 1}
+            bind:value={qty}
+          />
+        </div>
+
+        <div class="buy-line">
+          {#if chosen}
+            <span class="buy-price">{money(chosen.price * qty)}</span>
+            <Mono>{chosen.sku}</Mono>
+          {:else}
+            <span class="text-muted">Pick a colour and size</span>
+          {/if}
+        </div>
+
+        <Button
+          id="buy-add"
+          variant="primary"
+          disabled={!!reason || cart.busy}
+          loading={cart.busy}
+          onclick={addToBasket}
+        >
+          {reason ?? 'Add to basket'}
+        </Button>
+
+        {#if cart.error}
+          <Alert tone="danger" id="buy-error">{cart.error}</Alert>
+        {/if}
+
+        {#if cart.count}
+          <p class="text-sm">
+            <a href="/cart/" id="buy-basket-link">Basket — {cart.count} item{cart.count === 1 ? '' : 's'}</a>
+          </p>
+        {/if}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── The variant grid ─────────────────────────────────────────────────
+       Colour down, size across. A cell that no variant fills is a
+       combination the shop does not cut, which is a different thing from one
+       it cut and sold out of — the first is blank, the second says 0. -->
+  <SectionHeader title="Variants" level={2} sub="one row per (colour, size) — the composite @@unique in db/schema.lite" />
+
+  <div class="table-scroll">
+    <table class="grid">
+      <thead>
+        <tr>
+          <th scope="col">Colour</th>
+          {#each sizes as s (s)}<th scope="col">{s}</th>{/each}
+        </tr>
+      </thead>
+      <tbody>
+        {#each colours as c (c)}
+          <tr>
+            <th scope="row">{c}</th>
+            {#each sizes as s (s)}
+              <td>
+                {#if cellFor(c, s) === null}
+                  <span class="text-muted" aria-label="not cut">·</span>
+                {:else}
+                  <Mono>{cellFor(c, s).sku}</Mono>
+                  <span class="cell-price">{money(cellFor(c, s).price)}</span>
+                  {#if availOf(cellFor(c, s)) === 0}
+                    <Pill tone={cellFor(c, s).stock > 0 ? 'warning' : 'danger'}>
+                      {cellFor(c, s).stock > 0 ? 'all held' : 'sold out'}
+                    </Pill>
+                  {:else}
+                    <span class="text-sm text-muted cell-avail">{availOf(cellFor(c, s))} available</span>
+                    {#if cellFor(c, s).stock > availOf(cellFor(c, s))}
+                      <span class="text-xs text-muted">{cellFor(c, s).stock - availOf(cellFor(c, s))} held</span>
+                    {/if}
+                  {/if}
+                {/if}
+              </td>
+            {/each}
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-sm text-muted">
+    The photographs are <code>File</code> columns — the row stores a reference and the bytes are served by the API out of its own object storage, not bundled into this app.
+  </p>
+{/if}
+
+<style>
+  /* The gallery is CAPPED rather than given a fraction of the row. A square
+     aspect on a 2fr column is ~800px tall on a desktop, which pushes the
+     swatches and the whole variant grid — the two things this screen exists
+     for — below the fold. The track is a FIXED 22rem and not
+     `minmax(0, 22rem)`: an <img> at `width: 100%` contributes no intrinsic
+     width, so a max-only track collapses to nothing and the photograph
+     renders at thumbnail size inside a square hole the aspect-ratio reserved. */
+  .detail  { display: grid; grid-template-columns: 22rem minmax(0, 1fr); gap: 1.5rem; align-items: start }
+  .gallery { display: grid; gap: .75rem }
+  .right   { display: grid; gap: 1rem; align-content: start }
+  /* Three across, so the numbers sit beside the photograph rather than
+     stacking into a column as tall as it. */
+  .stats   { display: grid; gap: .75rem; grid-template-columns: repeat(3, minmax(0, 1fr)) }
+
+  .hero {
+    width: 100%; aspect-ratio: 1; max-height: 22rem;
+    object-fit: contain;
+    background: var(--surface-sunken);
+    border-radius: var(--radius-md);
+  }
+  .hero-empty { display: grid; place-items: center }
+
+  .strip  { display: flex; gap: .5rem; flex-wrap: wrap }
+  .swatch {
+    display: grid; gap: .25rem; justify-items: center;
+    padding: .35rem; width: 5rem;
+    background: var(--surface-sunken);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    color: inherit;
+  }
+  .swatch[aria-pressed="true"] { border-color: var(--accent) }
+  .swatch img { width: 100%; aspect-ratio: 1; object-fit: contain }
+
+  /* The three controls sit on one line at desktop width and wrap on their own
+     below it — `auto-fit` rather than a media query, because what decides is
+     how much room the buy box has and not how wide the window is. */
+  .buy      { display: grid; gap: .75rem }
+  .buy-row  { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)) }
+  .buy-line { display: flex; align-items: baseline; gap: .6rem }
+  .buy-price { font-size: var(--text-xl); font-weight: 700 }
+
+  .table-scroll { overflow-x: auto }
+  .grid { width: 100%; border-collapse: collapse }
+  .grid th, .grid td {
+    padding: .6rem;
+    border-bottom: 1px solid var(--hairline);
+    text-align: left;
+    vertical-align: top;
+  }
+  .grid td { display: table-cell }
+  .cell-price { display: block; font-weight: 600 }
+
+  @media (max-width: 48rem) {
+    .detail { grid-template-columns: 1fr }
+    .stats  { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+  }
+</style>

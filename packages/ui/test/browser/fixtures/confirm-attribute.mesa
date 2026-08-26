@@ -1,0 +1,34 @@
+<script>
+  // confirm-attribute.mesa — `data-confirm` on three shapes of element, with
+  // one <ConfirmProvider /> mounted the way an app mounts it.
+  //
+  // The three are not decoration: a delegated handler, a form submit and an
+  // anchor are the only ways an action starts from a click, and the provider
+  // re-fires with `el.click()` on the claim that one re-fire covers all of
+  // them.
+  import ConfirmProvider from '../../../components/overlay/ConfirmProvider.mesa'
+
+  let ran      = []          // what actually happened
+  let submits  = 0
+
+  const did = (what) => { ran = [...ran, what] }
+</script>
+
+<ConfirmProvider />
+
+<button id="guarded" class="btn danger" data-confirm="Delete this order?"
+        on:click={() => did('delete')}>Delete</button>
+
+<button id="plain" class="btn" on:click={() => did('plain')}>No confirmation</button>
+
+<button id="worded" class="btn" data-confirm
+        data-confirm-title="Leave the workspace?"
+        data-confirm-label="Leave"
+        on:click={() => did('leave')}>Leave</button>
+
+<form id="form" on:submit|preventDefault={() => { submits++; did('submit') }}>
+  <button id="submit" type="submit" data-confirm="Send it?">Send</button>
+</form>
+
+<output id="ran">{ran.join('|')}</output>
+<output id="submits">{submits}</output>

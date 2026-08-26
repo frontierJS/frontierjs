@@ -140,8 +140,8 @@ import {
 import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
-  validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, matchesQuery,
+  validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery,
   registerControl, unregisterControl, registeredControls,
 } from './field-rules.js'
 import { singularize } from '@frontierjs/toolbelt/inflect'
@@ -152,8 +152,8 @@ import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jso
 export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
-  validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, matchesQuery,
+  validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo, matchesQuery,
   registerControl, unregisterControl, registeredControls,
 }
 
@@ -260,6 +260,10 @@ export function createStore(service, opts = {}) {
   return store
 }
 
+// The two `labelFieldInfo` tiers that are guesses rather than conventions. A
+// model whose display column came from either has not said which one it is.
+const WEAK_LABEL = new Set(['scan', 'fallback'])
+
 // ── createResource ────────────────────────────────────────────────────────────
 
 /**
@@ -271,7 +275,7 @@ export function createStore(service, opts = {}) {
  *   createResource('leads', { hooks, schema, idField })       — no schema arg
  *   createResource({ model, service, optionsQuery, hooks })   — object form
  *
- * Returns { service, store, make, load, fields, relations, gate, can,
+ * Returns { service, store, make, load, save, fields, relations, gate, can,
  *           transitions, validate, normalize, coerce, fieldErrors, context,
  *           hooks }
  *   service  — pass-through of the Junction client: find() gives the list
@@ -280,6 +284,9 @@ export function createStore(service, opts = {}) {
  *   store    — holds ROWS, never an envelope. Subscribe for renders.
  *   load     — populates store and resolves to the rows.
  *   make     — schema-seeded factory for a blank record.
+ *   save     — write a record: create when the model's id field is absent,
+ *              patch when it is present. The one owner of that decision — see
+ *              save() below. `<Form>` calls exactly this.
  *   fields   — per-field rules from the schema: { type, required, nullable,
  *              enum?, format?, minLength?, … }. Render a select from
  *              `fields.plan.enum`; mark a label from `fields.plan.required`.
@@ -289,6 +296,20 @@ export function createStore(service, opts = {}) {
  *   coerce   — coerce(data) → the record with DOM strings cast to the schema's
  *              declared types. See opts.coerce.
  *   hooks()  — add hooks after creation.
+ *
+ * ── opts.detailQuery / opts.optionsQuery ───────────────────────────────────
+ * The two reads a resource answers for its own callers, declared once beside
+ * the model rather than restated per call site. Both are `{ query, directives }`
+ * — filters, and how much of the answer in what order (Invariant 10).
+ *
+ *   detailQuery  — what `get(id)` asks for when the caller states no
+ *                  directives: the include/select shape a detail view needs.
+ *   optionsQuery — what `getOptions()` asks for: the thin list a picker wants,
+ *                  usually `{ directives: { orderBy: 'name', limit: 500 } }`.
+ *
+ * Named `detailQuery` rather than the plain `query` the shape was read from,
+ * because `query` means FILTERS everywhere else in this repo and a key that
+ * means two things at one boundary is the trap Invariant 10 exists to close.
  *
  * ── opts.model ─────────────────────────────────────────────────────────────
  * Which Litestone model this resource is backed by. Defaults to the service
@@ -353,7 +374,7 @@ export function createStore(service, opts = {}) {
  * "no schema found" warning above is the one that matters, not these.
  */
 export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
-  let serviceName, model, optionsQuery, initialHooks, schema, idField, opts
+  let serviceName, model, optionsQuery, detailQuery, initialHooks, schema, idField, opts
 
   if (typeof nameOrSpec === 'string') {
     serviceName = nameOrSpec
@@ -371,12 +392,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     idField      = opts.idField  ?? 'id'
     model        = opts.model    ?? serviceName
     optionsQuery = opts.optionsQuery
+    detailQuery  = opts.detailQuery
   } else {
     // object form
     opts         = nameOrSpec
     serviceName  = opts.service
     model        = opts.model        ?? serviceName
     optionsQuery = opts.optionsQuery
+    detailQuery  = opts.detailQuery
     initialHooks = opts.hooks        ?? {}
     schema       = opts.schema
     idField      = opts.idField      ?? 'id'
@@ -479,6 +502,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const stateSpec = schema ? buildTransitions(modelDef) : null
   const versionOf = schema ? buildVersion(modelDef)     : null
 
+  // Which column identifies a row of THIS model to a person — `@@label(field)`
+  // in the seed, a guess otherwise. Resolved once here rather than per picker,
+  // so a hand-written one and a generated one cannot disagree, and carried with
+  // its `source` so a caller can say the answer was guessed.
+  const labelInfo = labelFieldInfo(fields, idField, modelDef?.['x-label-field'])
+
   // Junction resource — wires WS push events → store automatically, scoped to
   // the query the store's last load() ran with. `fields` is what turns a wire
   // operand back into the value the column holds, so the matcher is built here
@@ -486,6 +515,10 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // that reason; nothing can push before the first load in any case.
   const junctionResource = client.resource(serviceName, idField, {
     match: (record, query) => matchesQuery(fields, record, query),
+    // Which MODEL these rows are. Junction holds no schema and cannot derive it
+    // from the service name, so two services over one model would otherwise be
+    // two rows — the thing nodes exist to stop (`FJS-D138`).
+    model,
   })
   const { store, stale } = junctionResource
 
@@ -624,6 +657,19 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       //
       // Normalisation runs first so validation judges what will actually be
       // sent, not an intermediate form of it.
+      // The server's own columns go first, so nothing below coerces, blanks or
+      // validates a value that is not going to be sent. An edit form is handed
+      // a row the server wrote, and that row carries every column the caller
+      // could READ — `@system`, `@generated`, `@from`, a tenancy stamp — which
+      // the Data boundary refuses by name. The person then sees a 403 about a
+      // column that is not on their screen.
+      //
+      // The version column is `readOnly` and is the one that must travel; the
+      // block below is what puts it back on when the caller did not state one.
+      if (method === 'create' || method === 'patch') {
+        ctx.data = stripReadOnly(fields, ctx.data, { keep: versionOf ? [versionOf] : [] })
+      }
+
       // Coercion first: '' must still look blank to normalize() below, and
       // Number('') is 0 — so this deliberately leaves empty strings alone.
       if (autoCoerce && (method === 'create' || method === 'patch')) {
@@ -708,7 +754,15 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // ordered list through a resource silently returned the server's default page.
   const service = {
     find:    (query, directives) => _call('find',    null,      null,  query ?? {}, directives ?? {}),
-    get:     (id, directives)    => _call('get',     id,        null,  {},          directives ?? {}),
+
+    /**
+     * One record. With no directives stated, the resource's own `detailQuery`
+     * answers — the include/select shape a detail view needs, declared once
+     * beside the model instead of at every call site.
+     */
+    get:     (id, directives)    => _call('get',     id,        null,
+                                          detailQuery?.query      ?? {},
+                                          directives ?? detailQuery?.directives ?? {}),
     create:  (data)          => _call('create',  null,          data,  {}),
     patch:   (id, data)      => _call('patch',   id,            data,  {}),
     remove:  (id)            => _call('remove',  id,            null,  {}),
@@ -790,6 +844,32 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   }
 
   /**
+   * One row, live — the same nodes the list is a view over, filtered to one.
+   *
+   * `service.get(id)` answers a plain object no announcement can reach, which
+   * is why every detail screen went stale the moment somebody else wrote the
+   * row (`FJS-518`). This subscribes to the row instead:
+   *
+   *   const row = orders.record(page.params.id)
+   *   $: order  = useStore(row)          // moves on a push, with no reload
+   *   await row.ready                    // if the first read must be awaited
+   *
+   * The first read goes through this resource's own `_call('get')`, so its
+   * hooks run, its coercion applies and the `@version` it returns is
+   * remembered — Junction keeps only the rule about WHEN to read, which is
+   * *when nothing has read this row yet*.
+   *
+   * **A push does not move the remembered version**, and that is the whole of
+   * why the node and the view are separate things. `FJS-341` was a live store
+   * answering with a revision nobody on the screen had read, which won the race
+   * `@version` exists to lose. The value on screen moves; what this screen has
+   * READ does not.
+   */
+  function record(id) {
+    return junctionResource.record(id, { load: () => _call('get', id) })
+  }
+
+  /**
    * The version this resource last READ for a record — the value a patch will
    * carry. `null` when the model declares no `@version`, or when nothing has
    * been read yet.
@@ -849,67 +929,285 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // not ask again, which is what a component looping over fields would do.
   const _options = new Map()
 
+  // One report per field, not per call — `options()` runs on every render of a
+  // form and the message is about the schema, which does not change between two
+  // of them.
+  const _labelWarned = new Set()
+
   /**
-   * The rows a foreign key's picker offers — `[{ value, label }]`.
+   * What a field's picker offers, and whether that is all of it.
    *
    * The relation already says which model answers (`x-relations` → `references`),
    * the registry says which service that model is served under, and the related
    * model's own fields say which column a person recognises. So a picker over
    * `customerId` needs no name written anywhere:
    *
-   *   const rows = await orders.options('customerId')
+   *   const { options, total, truncated } = await orders.options('customerId')
    *
-   * `labelField` states the shown column, `query`/`directives` are passed to the
-   * related service's `getOptions`, and `reload: true` bypasses the cache.
+   * ─── Why an envelope and not the rows ──────────────────────────────────────
    *
-   * A field with no relation answers `[]` and says why — it is a question with
-   * no meaning, not an empty list.
+   * This answered a bare array and capped it at 100, so a picker over a model
+   * with more rows offered an alphabetical prefix and said nothing — the row a
+   * person wanted was absent, and the screen was indistinguishable from one
+   * where it had never been created (`FJS-391`). The count that settles it is
+   * already on the wire, in the list envelope the service returns, and was
+   * being dropped here. Returning it costs one property access at every call
+   * site and makes the silence unrepresentable. Same split `find()` and
+   * `findData()` already make one layer down.
+   *
+   * ─── search vs query ───────────────────────────────────────────────────────
+   *
+   * `query` is a FILTER — the standing narrowing a caller wants on this picker
+   * (`{ active: true }`). `search` is what a person typed, applied as `contains`
+   * on the label column, and it is a separate name because they compose: a
+   * picker restricted to active customers still has to be searchable within
+   * them. Sending `search` is what lets a relation larger than the cap be
+   * reached at all, since the term goes to the SERVER rather than filtering the
+   * hundred rows that already arrived.
+   *
+   * @param {string} fieldName
+   * @param {object} [opts]
+   * @param {string} [opts.labelField]  Column to show; defaults to the derived one.
+   * @param {object} [opts.query]       Filter passed to the related service.
+   * @param {string} [opts.search]      Free text, matched against the label column.
+   * @param {object} [opts.directives]  Overrides limit/orderBy wholesale.
+   * @param {number} [opts.limit=100]
+   * @param {boolean} [opts.reload]     Bypass the cache.
+   * @returns {Promise<{ options: Array<{value: unknown, label: unknown}>, total: number|null, truncated: boolean|null }>}
+   *   `total` is null when the service reported none, and `truncated` is null
+   *   with it — *unknown*, not *no*. A caller rendering "showing 12 of 400"
+   *   has to be able to tell those apart.
    */
-  function options(fieldName, { labelField, query, directives, limit = 100, reload = false } = {}) {
-    const ref = fields?.[fieldName]?.references
-    if (!ref) {
-      console.warn(
-        `[${serviceName}] options('${fieldName}') — that field is not a foreign key, so there is ` +
-        'nothing to offer. A picker comes from a relation; check the name against the model.',
-      )
-      return Promise.resolve([])
+  function options(fieldName, { labelField, query, search, directives, limit = 100, reload = false } = {}) {
+    const rule = fields?.[fieldName]
+
+    // An enum's members are already on the rule, so this answers without a
+    // request — but it answers a PROMISE, like the relation branch below.
+    // One call shape for both is the whole point: a caller asking "what are
+    // this field's options" cannot know which kind of field it has without
+    // re-deriving the thing this function exists to decide, and a seam that
+    // returns a value sometimes and a promise other times is one every caller
+    // has to special-case.
+    //
+    // `rule.options` is the labelled list (@label on a member); `rule.enum` is
+    // the bare codes. Falling back to the code as its own label is what a
+    // control rendering a bare enum already shows.
+    if (rule?.options || Array.isArray(rule?.enum)) {
+      const all = rule.options ?? rule.enum.map(v => ({ value: v, label: v }))
+
+      // A declared set is small and entirely in hand, so `search` is applied
+      // here rather than sent anywhere — and `total` is the whole set, never a
+      // page of it, so `truncated` is false rather than unknown.
+      const opts = search
+        ? all.filter(o => String(o.label ?? '').toLowerCase().includes(String(search).toLowerCase()))
+        : all
+
+      return Promise.resolve({ options: opts, total: all.length, truncated: false })
     }
 
-    const key = `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}`
-    if (!reload && _options.has(key)) return _options.get(key)
+    // ── a declared value set ─────────────────────────────────────────────
+    // Asked before the foreign key, because a bound FK is both and the set is
+    // the narrower, better-described answer: it names the column a person reads
+    // and the scope the list is narrowed by.
+    //
+    // Every narrowing the set applies travels as a NAME — `$checkWhere`
+    // validates a `$scope`, so it survives junction's autoFilter and litestone
+    // compiles it — which is what makes the offered list the SAME list the Data
+    // boundary will accept. A declared `where` is SQL and a browser may never
+    // send SQL, so it mints a scope of its own at parse and arrives here as one
+    // more name (`FJS-430`).
+    const vs = rule?.values
+    if (vs) {
+      const shown = labelField ?? vs.label ?? vs.value
+      const key   = search ? null : `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}`
+      if (key && !reload && _options.has(key)) return _options.get(key)
+
+      const setService = createResource(serviceNameFor(vs.model) ?? vs.model, { model: vs.model })
+      const pending = setService.service
+        .getOptions(
+          {
+            ...(query ?? {}),
+            ...(vs.scopes?.length ? { $scope: vs.scopes } : {}),
+            ...(search ? { [shown]: { contains: String(search) } } : {}),
+          },
+          directives ?? { limit, orderBy: shown },
+        )
+        .then(res => {
+          const rows  = Array.isArray(res) ? res : (res?.data ?? [])
+          const opts  = rows.map(row => ({ value: row?.[vs.value], label: row?.[shown] ?? row?.[vs.value] }))
+          const total = typeof res?.total === 'number' ? res.total : null
+          return { options: opts, total, truncated: total == null ? null : total > opts.length }
+        })
+        .catch(err => {
+          console.warn(`[${serviceName}] options('${fieldName}') — ${vs.set} failed to load: ${err?.message ?? err}`)
+          if (key) _options.delete(key)
+          return { options: [], total: null, truncated: null }
+        })
+
+      if (key) _options.set(key, pending)
+      return pending
+    }
+
+    const ref = rule?.references
+    if (!ref) {
+      console.warn(
+        `[${serviceName}] options('${fieldName}') — that field is neither an enum nor a foreign ` +
+        'key, so there is nothing to offer. A picker comes from a relation or a declared set; ' +
+        'check the name against the model.',
+      )
+      return Promise.resolve({ options: [], total: 0, truncated: false })
+    }
 
     const relatedService = serviceNameFor(ref.model) ?? ref.model
     const related        = createResource(relatedService, { model: ref.model })
-    const shown          = labelField ?? labelFieldFor(related.fields, ref.field)
+    const shown          = labelField ?? related.labelField
+
+    // A guessed display column is the failure this cannot fix and can stop
+    // hiding: *Ada, Ada, Ada* down a list of people, or `1, 2, 3`, both of
+    // which look like a working picker. Only the two guessing tiers are said —
+    // `name` and `title` are right often enough that warning about them would
+    // teach everyone to skip the message. Once per field, not per call.
+    if (!labelField && !_labelWarned.has(fieldName) && WEAK_LABEL.has(related.labelSource)) {
+      _labelWarned.add(fieldName)
+      console.warn(
+        `[${serviceName}] options('${fieldName}') — ${related.labelSource === 'fallback'
+          ? `${ref.model} has no readable string column, so every option is labelled with its id`
+          : `showing ${ref.model}.${shown}, the first plain string column, which is a guess`}. ` +
+        `Declare it: @@label(<column>) on model ${ref.model}.`,
+      )
+    }
+
+    // `search` narrows on the column a person is reading, which is the same
+    // column the list is ordered by — anything else would rank by one string
+    // and match against another.
+    const filter = {
+      ...(query ?? {}),
+      ...(search ? { [shown]: { contains: String(search) } } : {}),
+    }
+
+    // A searched result is NOT cached. The key would carry the term, so every
+    // keystroke would leave an entry behind for the life of the resource, and
+    // the answer is the one thing here guaranteed to be superseded a moment
+    // later. The unsearched list is the one worth holding.
+    const key    = search ? null : `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}`
+    if (key && !reload && _options.has(key)) return _options.get(key)
 
     const pending = related.service
-      .getOptions(query ?? {}, directives ?? { limit, orderBy: shown })
+      .getOptions(filter, directives ?? { limit, orderBy: shown })
       .then(res => {
         const rows = Array.isArray(res) ? res : (res?.data ?? [])
-        return rows.map(row => ({
+        const opts = rows.map(row => ({
           value: row?.[ref.field],
           // The id is the honest fallback: a blank option is unpickable and a
           // guessed label is worse than a number.
           label: row?.[shown] ?? row?.[ref.field],
         }))
+
+        // An array answer carries no envelope, so there is no total to read —
+        // reported as null rather than as the row count, which would claim the
+        // list is complete every time it is capped.
+        const total = typeof res?.total === 'number' ? res.total : null
+
+        return { options: opts, total, truncated: total == null ? null : total > opts.length }
       })
       .catch(err => {
         // A picker whose rows fail to load must not take the form down with it.
         // The field still renders, empty, and the failure is said out loud.
         console.warn(`[${serviceName}] options('${fieldName}') failed — ${err?.message ?? err}`)
-        _options.delete(key)
-        return []
+        if (key) _options.delete(key)
+        return { options: [], total: null, truncated: null }
       })
 
-    _options.set(key, pending)
+    if (key) _options.set(key, pending)
     return pending
   }
 
+
+  // ── save — the one owner of "write this record" ────────────────────────────
+
+  /**
+   * Write a record and answer the row the server returned.
+   *
+   * `mode` decides which call it is: `auto` (the default) creates when the
+   * model's OWN id field is absent and patches when it is present, and naming
+   * `create` or `patch` forces one. `upsert` is an alias of `auto` — the two
+   * asked the same question, and keeping a second word for it is how a caller
+   * ends up believing the server has an upsert method it does not have.
+   *
+   * The id field is the schema's, never the literal `id`. That is the whole
+   * reason this is a resource verb: `<Form>` and every hand-written save had to
+   * answer the same question, and a caller answering it with `id` on a model
+   * keyed by something else CREATES a duplicate row while looking like an edit
+   * (`FJS-316`). One owner, per Invariant 4.
+   *
+   * Everything else is already the pipeline's: `_call` coerces, blank-strips
+   * and validates a create/patch payload, stamps the `@version` this screen
+   * read, and runs the resource's own hooks. So a caller writes
+   * `resource.save(record)` and inherits all of it.
+   */
+  async function save(data, { mode = 'auto', optimistic = false } = {}) {
+    const how = (mode === 'auto' || mode === 'upsert')
+      ? (data?.[idField] != null ? 'patch' : 'create')
+      : mode
+
+    if (how === 'create') {
+      // A create cannot be optimistic here and saying so is better than
+      // quietly not being one: there is no id, so there is no row to overlay,
+      // and inventing a temporary one is a different feature with its own
+      // question — what every view holding that id does when the real one
+      // arrives.
+      if (optimistic) throw new Error(
+        `[${serviceName}] save({ optimistic }) needs an existing record — a create has no ` +
+        `${idField} to show the change against. Save it, then edit it optimistically.`
+      )
+      return _call('create', null, data, {})
+    }
+
+    const id = data?.[idField]
+    return optimistic
+      ? mutate(id, data, () => _call('patch', id, data, {}))
+      : _call('patch', id, data, {})
+  }
+
+  // ── mutate — the write that shows before it lands ───────────────────────────
+
+  /**
+   * Apply `intent` to the row now, run the write, and take it back if the
+   * write fails.
+   *
+   *   await orders.mutate(id, { status: 'paid' },
+   *     () => orders.service.invoke('pay', id))
+   *
+   * The overlay sits on the row's NODE, so every view of that row moves at
+   * once — this list, a second list with another filter, a detail screen open
+   * on it — and an intent that moves a sort key re-places the row in an
+   * ordered list. What is stored is the intent and never the value it
+   * produced (`FJS-D138`).
+   *
+   * It is settled against the MUTATION rather than the row, which is what
+   * makes it safe while somebody else is writing: their change moves the truth
+   * underneath and this stays on top of it, and a rollback reveals what THEY
+   * did rather than what was on screen when this started.
+   *
+   * `intent` is a partial over the row, or `null` to say the row is going.
+   * `run` defaults to a patch of the intent through this resource's own
+   * pipeline, so `mutate(id, { note })` is an optimistic patch and the second
+   * argument is for a transition or a custom method, where the call is not a
+   * patch and the intent is what the caller knows it will do.
+   */
+  function mutate(id, intent, run) {
+    return junctionResource.mutate(
+      id, intent,
+      run ?? (() => _call('patch', id, intent, {}))
+    )
+  }
+
   return {
-    service, store, stale, make, load,
+    service, store, stale, make, load, save, record, mutate,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
     version, versionField: versionOf, conflict,
     formFields, options,
+    labelField: labelInfo.field, labelSource: labelInfo.source,
     fieldErrors, context, hooks: addHooks,
   }
 }
@@ -928,10 +1226,24 @@ function _emptyResource(name) {
     stale:   { get: () => 0, subscribe: fn => { fn(0); return () => {} }, bump: () => {}, reset: () => {} },
     make:    (spec) => Object.assign({}, spec),
     load:    async () => [],
+    mutate:  (_id, _intent, run) => (run ? run() : noop()),
+    record:  () => ({
+      id: null,
+      ready: Promise.resolve(null),
+      get: () => null,
+      subscribe: fn => { fn(null); return () => {} },
+      refresh: async () => null,
+      release: () => {},
+    }),
+    save:    noop,
     fields:    {},
     relations: {},
     formFields: () => [],
-    options:    () => Promise.resolve([]),
+    // The envelope every caller destructures. A bare array here read back as
+    // `r.options === undefined` and threw inside the render.
+    options:    () => Promise.resolve({ options: [], total: 0, truncated: false }),
+    labelField:  'id',
+    labelSource: 'fallback',
     gate:        null,
     can:         () => true,
     transitions: () => [],

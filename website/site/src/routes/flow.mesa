@@ -1,0 +1,696 @@
+---
+title: "FrontierJS — one field, all the way down"
+render: static
+---
+
+<script>
+  export let data = null
+
+  // Marked up at build time by `flow.meta.js`; HTML by the time it is here.
+  const sample = data?.samples ?? {}
+
+
+
+
+
+
+
+
+</script>
+
+<!-- The page's own sections. The site nav is the layout's. -->
+<nav class="subnav" aria-label="Sections">
+  <div class="container">
+      <a href="#data">Model</a>
+      <a href="#service">Service</a>
+      <a href="#context">Context</a>
+      <a href="#hooks">Hooks</a>
+      <a href="#plugins">Plugins</a>
+      <a href="#events">Events</a>
+      <a href="#resource">Resource</a>
+      <a href="#form">The field</a>
+  </div>
+</nav>
+
+<a href="#start" class="visually-hidden">Skip to content</a>
+
+    
+
+    <!-- ─── Intro ───────────────────────────────────────────────────────── -->
+    <section id="start">
+      <div class="container">
+        <p class="eyebrow">The flow</p>
+        <h1>One field, all the way down.</h1>
+        <p class="lede">
+          This page follows <code>email</code> — a single field on a single Model — from the
+          line that declares it to the input a user types into. Every stop names the concept
+          doing the work, and every <strong>Boundary</strong> it crosses is marked, because
+          the Boundaries are where the interesting things happen.
+        </p>
+        <p class="lede" style="margin-top: 0.9rem">
+          Three realms, in order: <strong>Data</strong> holds the Model,
+          <strong>API</strong> exposes the Service, <strong>UI</strong> binds a Resource.
+          Nothing here is a restatement of anything before it.
+        </p>
+
+        <div class="note">
+          <b>On the schema.</b> Treat <code>.lite</code> as Prisma with two extra ideas — a
+          <b>Gate</b> and <b>policies</b>. Everything else on this page is unaffected by how
+          deep the Data realm goes.
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── The flow ────────────────────────────────────────────────────── -->
+    <section>
+      <div class="container flow">
+        <!-- 1 · Model -->
+        <div class="stop" id="data">
+          <div class="rail">
+            <span class="badge-realm">Realm 01 · Data</span>
+            <span class="noun">Model</span>
+            <span class="where">db/schema.lite</span>
+          </div>
+          <div class="body">
+            <p>
+              The Model is the seed. It states what exists, what rules govern it, and who may
+              touch it — and it is the only place any of that is written.
+            </p>
+            <pre class="code">{@html sample.S0}</pre>
+          </div>
+        </div>
+
+        <!-- Boundary 1 -->
+        <div class="boundary">
+          <span class="tag">Boundary · Data ⇄ API</span>
+          <div class="seam">db.$setAuth(user) &nbsp;·&nbsp; db.asSystem()</div>
+          <p>
+            A Service never holds the root client. Every call gets a client scoped to the
+            caller, and that scoping is what makes the Gate and the policies real: the level
+            check runs, and <code>@@allow</code> is compiled into the
+            <code>WHERE</code> clause before the query is executed. <code>asSystem()</code> is
+            the declared bypass for background work — and it does not pass
+            <code>LOCKED</code>.
+          </p>
+          <div class="crosses">
+            <span>ctx.locals.db</span><span>Gate → 401/403</span><span>policy → WHERE</span
+            ><span>field rules → 400</span>
+          </div>
+        </div>
+
+        <!-- 2 · Service -->
+        <div class="stop" id="service">
+          <div class="rail">
+            <span class="badge-realm">Realm 02 · API</span>
+            <span class="noun">Service</span>
+            <span class="where">api/src/services/<br />leads.service.ts</span>
+          </div>
+          <div class="body">
+            <p>
+              The Service is what the outside world can ask for. Here is the whole file — it
+              is empty because everything in it would be a restatement of the Model.
+            </p>
+            <pre class="code">{@html sample.S1}</pre>
+            <p>
+              That gives <code>find get create update patch remove</code> at
+              <code>/api/leads</code>, a <code>400</code> when <code>email</code> is not an
+              email, a <code>401</code> below <code>READER</code>, and a list filtered by the
+              policy — none of it written, all of it read from the Model at call time.
+            </p>
+          </div>
+        </div>
+
+        <!-- 3 · Context -->
+        <div class="stop" id="context">
+          <div class="rail">
+            <span class="badge-realm">Realm 02 · API</span>
+            <span class="noun">Context</span>
+            <span class="where">ctx</span>
+          </div>
+          <div class="body">
+            <p>
+              One call, one <strong>Context</strong>. It is the single argument every Hook and
+              every Service method receives, and its parts have different rules — which is the
+              part worth learning early.
+            </p>
+            <div class="table-wrap">
+              <table class="k">
+                <thead>
+                  <tr>
+                    <th>On the Context</th>
+                    <th>Is</th>
+                    <th>Propagates to an internal call?</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>ctx.auth.user</code></td>
+                    <td>Who is calling. Frozen.</td>
+                    <td>Yes — identity must stay consistent</td>
+                  </tr>
+                  <tr>
+                    <td><code>ctx.client</code></td>
+                    <td>ip, user-agent, headers. Read-only.</td>
+                    <td>Yes — <code>&#123;&#125;</code> when there is no real caller</td>
+                  </tr>
+                  <tr>
+                    <td><code>ctx.query</code></td>
+                    <td><strong>Filters only.</strong> Becomes the <code>WHERE</code>.</td>
+                    <td>Per call</td>
+                  </tr>
+                  <tr>
+                    <td><code>ctx.directives</code></td>
+                    <td><strong>Shaping only</strong> — limit, offset, orderBy, select.</td>
+                    <td>Per call</td>
+                  </tr>
+                  <tr>
+                    <td><code>ctx.locals</code></td>
+                    <td>Scratch space for this call. Fresh <code>&#123;&#125;</code>.</td>
+                    <td class="no">No — a sub-call cannot reach its caller</td>
+                  </tr>
+                  <tr>
+                    <td><code>ctx.result</code> / <code>ctx.error</code></td>
+                    <td>Null before, populated after.</td>
+                    <td>Per call</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="note">
+              <b><code>$</code> is wire syntax and stops at the Boundary.</b>
+              <code>?$limit=20</code> arrives as <code>ctx.directives.limit</code>; nothing
+              inside the framework ever reads a <code>$</code>. Conflating the two is what
+              made <code>?limit=1</code> a filter on a column named "limit" — zero rows, no
+              error.
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 · Hooks -->
+        <div class="stop" id="hooks">
+          <div class="rail">
+            <span class="badge-realm">Realm 02 · API</span>
+            <span class="noun">Hook</span>
+            <span class="where">Chain of<br />Responsibility</span>
+          </div>
+          <div class="body">
+            <p>
+              A <strong>Hook</strong> is how you step into a call without owning it. Four
+              phases, declared per method or for <code>all</code>, and they are the same four
+              phases you will meet again in the UI realm.
+            </p>
+            <pre class="code">{@html sample.S2}</pre>
+            <p>
+              Your Hooks run <strong>first</strong>, then the ones derived from the Model — so
+              <code>stampOwner</code> can complete the record before the Gate check and the
+              field rules judge it. Setting <code>ctx.result</code> in a
+              <code>before</code> Hook ends the chain early; throwing sends it to
+              <code>error</code>.
+            </p>
+          </div>
+        </div>
+
+        <!-- 5 · Plugins -->
+        <div class="stop" id="plugins">
+          <div class="rail">
+            <span class="badge-realm">Realm 02 · API</span>
+            <span class="noun">Plugin</span>
+            <span class="where">api/src/app.ts</span>
+          </div>
+          <div class="body">
+            <p>
+              A <strong>Plugin</strong> attaches a capability to the application and claims a
+              name on it. Everything a Hook can then reach for — the queue, the mailer, the
+              outbound boundary — arrived this way.
+            </p>
+            <pre class="code">{@html sample.S3}</pre>
+            <div class="table-wrap">
+              <table class="k">
+                <thead>
+                  <tr>
+                    <th>The contract</th>
+                    <th>When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>register(app)</code></td>
+                    <td>
+                      Immediately, and <strong>synchronously</strong> — claim your name with
+                      <code>app.provide()</code>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td><code>boot(app)</code></td>
+                    <td>At startup, async — connections, migrations, workers</td>
+                  </tr>
+                  <tr>
+                    <td><code>ready(app)</code> / <code>shutdown(app)</code></td>
+                    <td>After listening / on the way down</td>
+                  </tr>
+                  <tr>
+                    <td><code>requires: ['mailer']</code></td>
+                    <td>Checked once before any <code>boot</code> — ordering, declared</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6 · Events & Channels -->
+        <div class="stop" id="events">
+          <div class="rail">
+            <span class="badge-realm">Realm 02 · API</span>
+            <span class="noun">Event · Channel</span>
+            <span class="where">channel: 'leads'</span>
+          </div>
+          <div class="body">
+            <p>
+              An <strong>Event</strong> is what happened. A <strong>Channel</strong> is who
+              hears about it. A mutation is announced in exactly one place — the call itself —
+              so no Hook and no method can forget to publish.
+            </p>
+            <pre class="code">{@html sample.S4}</pre>
+            <div class="note">
+              <b>Omitting <code>channel:</code> means no broadcast at all</b> — there is no
+              default. And a Channel named as a plain string reaches every connection on it:
+              policies are enforced on <em>read</em>, not on broadcast. Scope it with the
+              function form before shipping anything per-tenant.
+            </div>
+          </div>
+        </div>
+
+        <!-- Boundary 2 -->
+        <div class="boundary">
+          <span class="tag">Boundary · API ⇄ UI</span>
+          <div class="seam">
+            bridge.toContext() &nbsp;·&nbsp; toResponse() &nbsp;·&nbsp; the envelope
+          </div>
+          <p>
+            Going out, this is where a Context becomes an HTTP response and where the result
+            gets its envelope — <code>kind: 'single' | 'list'</code>, with a list keeping the
+            envelope and a single unwrapping. Coming in, it is where <code>$limit</code>
+            becomes a directive and a thrown value becomes a status. The UI realm never
+            guesses a shape, because one module owns both ends of it.
+          </p>
+          <div class="crosses">
+            <span>envelope</span><span>$ → directives</span><span>toFrameworkError()</span
+            ><span>JSON Schema</span><span>Channel events</span>
+          </div>
+        </div>
+
+        <!-- 7 · Resource -->
+        <div class="stop" id="resource">
+          <div class="rail">
+            <span class="badge-realm">Realm 03 · UI</span>
+            <span class="noun">Resource</span>
+            <span class="where">web/src/routes/<br />leads/index.mesa</span>
+          </div>
+          <div class="body">
+            <p>
+              A <strong>Resource</strong> is how the UI binds to a Service. It carries the
+              data — and, because the Model's rules crossed the Boundary with it, it carries
+              the rules too.
+            </p>
+            <pre class="code">{@html sample.S5}</pre>
+          </div>
+        </div>
+
+        <!-- 8 · Resource hooks + events -->
+        <div class="stop">
+          <div class="rail">
+            <span class="badge-realm">Realm 03 · UI</span>
+            <span class="noun">Hook · Event</span>
+            <span class="where">the same four phases</span>
+          </div>
+          <div class="body">
+            <p>
+              The UI realm's Hooks are the API realm's Hooks. Same names, same order, same
+              Context idea — learned once.
+            </p>
+            <pre class="code">{@html sample.S6}</pre>
+          </div>
+        </div>
+
+        <!-- 9 · The field -->
+        <div class="stop" id="form">
+          <div class="rail">
+            <span class="badge-realm">Realm 03 · UI</span>
+            <span class="noun">The field</span>
+            <span class="where">&lt;Input /&gt;</span>
+          </div>
+          <div class="body">
+            <p>
+              The end of the journey. The input knows it is an email, knows it is required,
+              knows its maximum length, and knows when it is wrong — and none of that is
+              written here.
+            </p>
+            <pre class="code">{@html sample.S7}</pre>
+            <p>
+              <code>coerce</code> turns the string every control produces into the type the
+              Model declared. <code>validate</code> checks it against the same rules the
+              Service will apply. If both are switched off, nothing breaks — the server still
+              says no. They only change <strong>where</strong> the answer arrives.
+            </p>
+          </div>
+        </div>
+
+        <!-- Boundary 3 -->
+        <div class="boundary">
+          <span class="tag">Boundary · back the way it came</span>
+          <div class="seam">create → Service → Gate → policy → row</div>
+          <p>
+            Pressing Save sends the record back through every stop in reverse, and every check
+            runs again on the server side of the Boundary. The browser's copy of the rules
+            never had authority — it had a preview.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── What was written ────────────────────────────────────────────── -->
+    <section id="tally">
+      <div class="container">
+        <h2>What was written, and what was read</h2>
+        <p class="lede">
+          The whole path above, tallied. Everything in the right column exists because of a
+          line in the left one.
+        </p>
+
+        <div class="two" style="margin-top: 1.5rem">
+          <article class="card stack">
+            <h3>Written by you</h3>
+            <pre class="code">{@html sample.S8}</pre>
+          </article>
+
+          <article class="card stack">
+            <h3>Read from the Model</h3>
+            <div class="table-wrap">
+              <table class="k">
+                <tbody>
+                  <tr>
+                    <td>The migration</td>
+                    <td>column, type, <code>UNIQUE</code></td>
+                  </tr>
+                  <tr>
+                    <td>The Service</td>
+                    <td>six operations at <code>/api/leads</code></td>
+                  </tr>
+                  <tr>
+                    <td>The <code>400</code></td>
+                    <td>from <code>@email</code>, <code>@length</code></td>
+                  </tr>
+                  <tr>
+                    <td>The <code>401</code>/<code>403</code></td>
+                    <td>from the Gate</td>
+                  </tr>
+                  <tr>
+                    <td>The <code>WHERE</code></td>
+                    <td>from the policy</td>
+                  </tr>
+                  <tr>
+                    <td>The types</td>
+                    <td>server and browser</td>
+                  </tr>
+                  <tr>
+                    <td><code>leads.fields.email</code></td>
+                    <td>the browser's copy of the rule</td>
+                  </tr>
+                  <tr>
+                    <td>The input</td>
+                    <td>type, required, maxlength</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <div class="cluster" style="margin-top: 1.75rem; gap: 0.75rem">
+          <a class="btn primary raised" href="/#start">Get started</a>
+          <a class="btn outlined" href="/#extend">The four ways to extend it</a>
+          <a class="btn ghost" href="/landscape/">Where it came from</a>
+          <span class="badge warning" title="Working, but APIs may still move">Alpha</span>
+        </div>
+      </div>
+    </section>
+
+<!-- The page's own closing note. The site footer is the layout's. -->
+<div class="container pagenote">
+<span
+          >Vocabulary per <code>ARCHITECT.md</code> §2 — mandatory, not stylistic. Code read
+          from source 2026-08-04.</span
+        >
+        <span
+          >Styled entirely by <code>@frontierjs/css</code>.
+          <a href="/">Home →</a></span
+        >
+</div>
+
+<style>
+h1 {
+        font-size: clamp(2rem, 5vw, 3.1rem);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+        margin: 0.35em 0 0.3em;
+      }
+      h2 {
+        font-size: clamp(1.35rem, 2.8vw, 1.75rem);
+        letter-spacing: -0.02em;
+        margin: 0 0 0.3em;
+      }
+      h3 {
+        font-size: 0.95rem;
+        margin: 0 0 0.45rem;
+      }
+      .eyebrow {
+        font-size: 0.78rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-mute);
+        margin: 0;
+      }
+      .lede {
+        font-size: 1.05rem;
+        color: var(--ink-soft);
+        max-width: 62ch;
+        line-height: 1.6;
+      }
+
+      /* No code palette and no block rules here. A sample is the design
+         system's code block wrapping glow's own code element, and
+         @frontierjs/css styles both — a rule here would be a second
+         answer to what code looks like. */
+      /* The one thing the design system cannot know: these sit in a dense
+         grid, so they take the rung below the block default. */
+      .code { font-size: var(--text-xs); padding: var(--space-md) var(--space-lg); }
+
+      /* ── the spine ──────────────────────────────────────────────────────── */
+      .flow {
+        position: relative;
+      }
+      /* The spine sits in the middle of the grid gap. .flow IS the .container, so
+     its own padding-inline (1.25rem) has to be in the sum: 1.25 padding +
+     7.5 rail + half of the 2.5rem gap = 10rem. Positioning it at the bare
+     column width put it inside the rail and left the dots out over the text. */
+      @media (min-width: 60rem) {
+        .flow::before {
+          content: '';
+          position: absolute;
+          left: 10rem;
+          top: 0;
+          bottom: 0;
+          width: 2px;
+          background: var(--rule);
+          z-index: 0;
+        }
+      }
+
+      .stop {
+        position: relative;
+        display: grid;
+        gap: 1rem;
+        padding: 1.5rem 0;
+      }
+      @media (min-width: 60rem) {
+        .stop {
+          grid-template-columns: 7.5rem minmax(0, 1fr);
+          gap: 2.5rem;
+          align-items: start;
+        }
+      }
+      .stop .rail {
+        position: relative;
+        z-index: 1;
+      }
+      .stop .badge-realm {
+        display: inline-block;
+        font-size: 0.68rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding: 0.2rem 0.5rem;
+        border-radius: 5px;
+        background: var(--surface-sunken);
+        color: var(--ink-mute);
+        border: 1px solid var(--rule);
+      }
+      .stop .noun {
+        display: block;
+        margin-top: 0.45rem;
+        font-weight: 700;
+        font-size: 1rem;
+        letter-spacing: -0.01em;
+      }
+      .stop .where {
+        display: block;
+        margin-top: 0.2rem;
+        font-size: 0.72rem;
+        color: var(--ink-mute);
+        font-family: ui-monospace, Menlo, monospace;
+      }
+      @media (min-width: 60rem) {
+        .stop .rail::after {
+          /* centred on the spine: rail right edge → half the gap. */
+          content: '';
+          position: absolute;
+          right: -1.6rem;
+          top: 0.35rem;
+          width: 0.7rem;
+          height: 0.7rem;
+          border-radius: 50%;
+          background: var(--surface);
+          border: 2px solid var(--color-primary);
+        }
+      }
+      .stop .body > p {
+        font-size: 0.93rem;
+        color: var(--ink-soft);
+        line-height: 1.6;
+        margin: 0 0 0.9rem;
+        max-width: 72ch;
+      }
+      .stop .body > p:last-child {
+        margin-bottom: 0;
+      }
+      .stop .body strong {
+        color: var(--ink);
+      }
+
+      /* ── a Boundary crossing ────────────────────────────────────────────── */
+      .boundary {
+        position: relative;
+        z-index: 1;
+        border: 1px dashed var(--rule-strong);
+        border-radius: 12px;
+        background: var(--surface-raised);
+        padding: 0.95rem 1.1rem;
+        margin: 0.5rem 0;
+      }
+      /* Aligned with the body column, not the spine. */
+      @media (min-width: 60rem) {
+        .boundary {
+          margin-left: 10rem;
+        }
+      }
+      .boundary .tag {
+        font-size: 0.68rem;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--color-primary);
+        font-weight: 700;
+      }
+      .boundary .seam {
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 0.8rem;
+        color: var(--ink);
+      }
+      .boundary p {
+        margin: 0.4rem 0 0;
+        font-size: 0.87rem;
+        color: var(--ink-soft);
+        line-height: 1.55;
+        max-width: 72ch;
+      }
+      .boundary .crosses {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+        margin-top: 0.6rem;
+      }
+      .boundary .crosses span {
+        font-size: 0.74rem;
+        font-family: ui-monospace, Menlo, monospace;
+        border: 1px solid var(--rule);
+        border-radius: 999px;
+        padding: 0.15rem 0.55rem;
+        background: var(--surface);
+        color: var(--ink-soft);
+      }
+
+      /* ── small tables ───────────────────────────────────────────────────── */
+      .table-wrap {
+        overflow-x: auto;
+      }
+      table.k {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        margin-top: 0.3rem;
+      }
+      table.k th,
+      table.k td {
+        text-align: left;
+        padding: 0.42rem 0.6rem;
+        border-bottom: 1px solid var(--rule);
+        vertical-align: top;
+      }
+      table.k th {
+        font-size: 0.68rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-mute);
+        white-space: nowrap;
+      }
+      table.k td code {
+        font-size: 0.78rem;
+      }
+      table.k td.no {
+        color: var(--ink-mute);
+      }
+
+      .note {
+        border-left: 3px solid var(--color-primary);
+        background: var(--surface-raised);
+        border-radius: 0 8px 8px 0;
+        padding: 0.7rem 0.95rem;
+        margin: 0.9rem 0 0;
+        font-size: 0.87rem;
+        color: var(--ink-soft);
+        line-height: 1.55;
+        max-width: 72ch;
+      }
+      .note b {
+        color: var(--ink);
+      }
+
+      .two {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      @media (min-width: 54rem) {
+        .two {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      section {
+        padding: 3rem 0;
+        border-top: 1px solid var(--rule);
+        scroll-margin-top: 4rem;
+      }
+      section:first-of-type {
+        border-top: 0;
+      }
+</style>

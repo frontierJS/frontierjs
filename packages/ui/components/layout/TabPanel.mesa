@@ -9,7 +9,7 @@
   // Default: the `hidden` attribute — the panel stays mounted, and hidden
   // content is not reachable by assistive tech either way.
   // unmount=true: DOM removal — use when panels have expensive setup
-  // ($onMount, async, etc.)
+  // ($.onMount, async, etc.)
   //
   // tabindex="0" is deliberate: panel content is often not focusable, and
   // without it a keyboard user tabs off the strip straight past the content

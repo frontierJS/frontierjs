@@ -25,6 +25,8 @@
 // it is precisely how the two ends drifted before. `orderBy` is the same story
 // one field along: the client places a pushed row in a list it cannot re-query,
 // so it must read the caller's `-createdAt` the way the server compiles it.
+import { NodeRegistry, nodeKey, type NodeView } from './nodes.ts'
+import { encodeQueryString } from '@frontierjs/toolbelt/query'
 import { isListResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
 import type { QueryDirectives } from '../core/directives.ts'
 import { comparatorFor } from '../core/sort.ts'
@@ -76,6 +78,17 @@ export interface JunctionClientOptions {
   url?: string // base URL, default = window.location.origin
   token?: string // pre-set token (e.g. from localStorage)
   workspaceId?: string // pre-set workspace
+  // Caller-varied headers this client puts on EVERY call, over either
+  // transport. `setCallHeader` is the same thing after construction.
+  //
+  // The workspace was the only value that had ever needed this, so it was
+  // built as one hardcoded name on both sides; a guest basket needs the same
+  // shape and there was no second way in. Over HTTP these are real headers;
+  // over the socket they ride the frame and the server merges them into
+  // `ctx.client.headers`, but ONLY the names the app declared in
+  // `http.callHeaders` — a frame that could name its own header could name
+  // Authorization, and the identity belongs to the upgrade.
+  callHeaders?: Record<string, string>
   timeout?: number // request timeout ms, default 30_000
   reconnectDelay?: number // initial WS reconnect delay ms, default 1_000
   reconnectMax?: number // max reconnect delay ms, default 30_000
@@ -100,6 +113,20 @@ export interface JunctionClientOptions {
   // The names the auth plugin registered its three services under. Only needed
   // when the server renamed them — see AuthPluginOptions.services.
   authServices?: AuthServiceNames
+  // MUST match `createAuthPlugin(auth, { cookieAuth: true })` on the server.
+  //
+  // In cookie mode the session lives in an httpOnly cookie the browser will not
+  // let this object read, so `token` is empty BY DESIGN and its emptiness stops
+  // meaning "nobody is signed in". Anything deciding whether to ask the server
+  // who the caller is has to read this instead — see `hasCredential`.
+  cookieAuth?: boolean
+  // How long a row's node lingers after the last view lets go of it, ms.
+  // Default 30_000; `0` drops it the moment nothing holds it.
+  //
+  // A TTL rather than a reference count the application maintains: Apollo and
+  // Relay both ship retain/release and it is the most-complained-about part of
+  // either. It is also what makes list -> detail -> back warm (`FJS-D138`).
+  nodeTtlMs?: number
 }
 
 /**
@@ -130,6 +157,7 @@ export interface AuthServiceNames {
   account?:  string
   sessions?: string
   apiKeys?:  string
+  connections?: string
 }
 
 /**
@@ -309,7 +337,7 @@ export class ServiceProxy<
   ): Promise<T> {
     if (typeof idOrQuery === 'object') {
       // findFirst — pass $first=true
-      const qs = buildQueryString(idOrQuery, params, { $first: 'true' })
+      const qs = buildQueryString(idOrQuery, params, { $first: true })
       return this._client._request('GET', `${this._base}${qs}`) as Promise<T>
     }
     // params travels on a by-id get too. It used to be accepted and dropped on
@@ -520,6 +548,62 @@ export class AuthClient {
     )
   }
 
+  // ── OAuth — a navigation, not a request ───────────────────────────
+  //
+  // Every other method here is a `fetch()`. These are not, and cannot be: the
+  // provider answers by redirecting the BROWSER, so the flow has to own the
+  // page. An XHR to the start route would follow the redirect to Google and
+  // hand back Google's HTML, which is not a sign-in and not an error either.
+  //
+  // The session arrives as a cookie the callback sets. Nothing is returned here
+  // and nothing needs to be — after the round trip the app boots again and the
+  // ordinary session restore answers who the caller is.
+
+  /**
+   * Where a sign-in with this provider begins. Build it, then navigate to it.
+   *
+   * `returnTo` is checked against the app's allow-list ON THE SERVER when the
+   * flow starts, and dropped if it does not pass — so a value here is a request
+   * rather than an instruction.
+   */
+  /**
+   * Which providers this app is configured for, in the order it declared them.
+   *
+   * What a sign-in screen has to ask before it can draw anything. Without it
+   * the buttons are a second copy of the server's `oauthProviders` list, in a
+   * different codebase, with nothing to fail when the two disagree — a dropped
+   * provider leaves a button that redirects into `oauth_error=unavailable`, and
+   * an added one appears nowhere.
+   *
+   * `[]` for an app with no OAuth, which is an answer rather than a failure.
+   * Unauthenticated: the page that asks has no session yet.
+   */
+  async providers(): Promise<string[]> {
+    const res = await this._c._request(
+      'GET', `${this._prefix}/oauth`, undefined, { skipAuth: true }
+    ) as { providers?: string[] } | null
+    return res?.providers ?? []
+  }
+
+  oauthUrl(provider: string, opts: { returnTo?: string } = {}): string {
+    const base  = `${this._c.origin}${this._prefix}/oauth/${encodeURIComponent(provider)}`
+    const query = opts.returnTo ? `?returnTo=${encodeURIComponent(opts.returnTo)}` : ''
+    return `${base}${query}`
+  }
+
+  /**
+   * Start one. Leaves the page — nothing after this call runs.
+   *
+   * Throws outside a browser rather than doing nothing, because the failure it
+   * replaces is a button that silently does not work.
+   */
+  signInWith(provider: string, opts: { returnTo?: string } = {}): void {
+    if (typeof location === 'undefined') {
+      throw new Error('signInWith needs a browser — it navigates the page. Use oauthUrl() to build the link.')
+    }
+    location.assign(this.oauthUrl(provider, opts))
+  }
+
   /** Register and sign in — the plugin's /register does both in one call. */
   async signUp(data: { email: string; password: string; name?: string }): Promise<AuthResult> {
     return this._adopt(
@@ -611,6 +695,25 @@ export class AuthClient {
     await this._c.service(this._names.apiKeys).remove(id)
   }
 
+  // ── Which providers are attached ──────────────────────────────────
+
+  /** The OAuth identities on this account. Never the provider's subject. */
+  async connections(): Promise<OAuthConnection[]> {
+    const list = await this._c.service(this._names.connections).find()
+    return (list.data ?? []) as unknown as OAuthConnection[]
+  }
+
+  /**
+   * Detach one.
+   *
+   * Answers 409 when it is the last way in — there is no way back from
+   * unlinking to zero, because a password reset updates a password credential
+   * and does not create one.
+   */
+  async removeConnection(id: string): Promise<void> {
+    await this._c.service(this._names.connections).remove(id)
+  }
+
   // ── Internal ───────────────────────────────────────────────────────
 
   private _adopt(raw: unknown): AuthResult {
@@ -635,6 +738,13 @@ export interface AuthResult {
 // BROWSER bundle and that module is the server's IAuth contract, which pulls
 // in ServiceContext and the transport types behind it. The two shapes are
 // pinned against each other in tests/client-auth.test.ts.
+export interface OAuthConnection {
+  id:        string
+  /** The name the app configured the provider under — `google`, `okta`. */
+  provider:  string
+  createdAt: string
+}
+
 export interface AuthSessionInfo {
   id:         string
   createdAt?: string | null
@@ -656,6 +766,38 @@ export class JunctionClient extends EventEmitter {
   // Public state
   token: string | null = null
   workspaceId: string | null = null
+
+  /**
+   * Might this client be carrying a session — by any mechanism?
+   *
+   * `token` answers that only in Bearer mode. In cookie mode the credential is
+   * an httpOnly cookie no script can read, so `token` is null for a signed-in
+   * caller and null for a stranger alike, and code that branches on it treats
+   * every cookie-mode visitor as anonymous. Sierra's boot restore did exactly
+   * that, so a cookie-mode app rendered signed out on every cold load with a
+   * valid session in the jar (FJS-474).
+   *
+   * False here means *there is definitely no credential*, which is the only
+   * safe reason to skip asking the server. True means *ask* — it is not a claim
+   * that the session is valid, and only the server can answer that.
+   */
+  get hasCredential(): boolean {
+    return this._cookieAuth || !!this.token
+  }
+
+  /**
+   * The API origin this client talks to, normalised to http(s).
+   *
+   * Public because a browser sometimes has to NAVIGATE to the API rather than
+   * fetch it — an OAuth sign-in is a full-page redirect, so the URL has to be
+   * built rather than requested.
+   */
+  get origin(): string {
+    return this._url
+  }
+  /** Lowercased, because HTTP header names are case-insensitive and the WS
+   *  side merges into a map that is keyed lowercase. */
+  private _callHeaders: Record<string, string> = {}
   connected: boolean = false
 
   private _url: string
@@ -668,8 +810,19 @@ export class JunctionClient extends EventEmitter {
   private _tokens: TokenStore | null
   private _auth: AuthClient | null = null
   private _authNames: Required<AuthServiceNames>
+  private _cookieAuth: boolean
 
   private _services: Map<string, ServiceProxy<Record<string, unknown>>> = new Map()
+
+  /**
+   * One node per row, keyed by model — the synced truth every view points at.
+   *
+   * Public because it is the answer to *is this the same row*: two resources
+   * over one model share these, a record view is a subscription to one, and
+   * the devtools panel counts them. Views write through it; nothing else does.
+   */
+  readonly nodes: NodeRegistry
+
   private _ws: WebSocket | null = null
   _wsReady: boolean = false
   private _wsCallMap: Map<string, { resolve: Function; reject: Function }> = new Map()
@@ -687,6 +840,7 @@ export class JunctionClient extends EventEmitter {
     // Normalize to http(s):// so HTTP requests always work.
     // Callers may pass ws:// or wss:// — convert those too.
     this._url = raw.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://')
+    this.nodes = new NodeRegistry({ ttlMs: opts.nodeTtlMs })
     this._timeout = opts.timeout ?? 30_000
     this._reconnectDelay = opts.reconnectDelay ?? 1_000
     this._reconnectMax = opts.reconnectMax ?? 30_000
@@ -700,12 +854,15 @@ export class JunctionClient extends EventEmitter {
       account:  opts.authServices?.account  ?? 'account',
       sessions: opts.authServices?.sessions ?? 'sessions',
       apiKeys:  opts.authServices?.apiKeys  ?? 'api-keys',
+      connections: opts.authServices?.connections ?? 'connections',
     }
+    this._cookieAuth = opts.cookieAuth ?? false
     // A stated token wins over a stored one: a caller passing `token` is saying
     // who this client is, and reading storage over the top would answer with
     // whoever used this browser last.
     this.token = opts.token ?? this._tokens?.get() ?? null
     this.workspaceId = opts.workspaceId ?? null
+    for (const [k, v] of Object.entries(opts.callHeaders ?? {})) this.setCallHeader(k, v)
   }
 
   // ── Auth ────────────────────────────────────────────────────────────
@@ -743,6 +900,32 @@ export class JunctionClient extends EventEmitter {
   setWorkspace(id: string): void {
     this.workspaceId = id
     this.emit('workspace', id)
+  }
+
+  /**
+   * Set (or clear, with null) a header that rides every call.
+   *
+   * For a value that identifies the CALL rather than the caller — a guest
+   * basket's token, a tenant, an experiment arm. The session token is not one
+   * of these: it belongs to `setToken`, which also cycles the socket, because
+   * the identity is established at upgrade and cannot be restated per frame.
+   */
+  setCallHeader(name: string, value: string | null): void {
+    const key = name.toLowerCase()
+    if (value == null) delete this._callHeaders[key]
+    else               this._callHeaders[key] = value
+    this.emit('call-header', { name: key, value })
+  }
+
+  /**
+   * The per-call headers as they go on the wire — the app's own, plus the
+   * workspace, which is one of these and was only ever spelled separately
+   * because it was the first.
+   */
+  private _extraHeaders(): Record<string, string> {
+    return this.workspaceId
+      ? { ...this._callHeaders, 'x-workspace-id': this.workspaceId }
+      : { ...this._callHeaders }
   }
 
   // ── Service proxy ────────────────────────────────────────────────────
@@ -795,6 +978,13 @@ export class JunctionClient extends EventEmitter {
   ): ResourceResult<T> {
     const svc = this.service<T>(name)
     const store = new Store<T>()
+
+    // Which rows these are. Two services over one model are one row, so the
+    // model is what the nodes are keyed by — the service name only when the
+    // caller did not say, which is junction used on its own (`FJS-D138`).
+    const model    = opts.model ?? name
+    const registry = this.nodes
+    store.bind({ registry, model, idField })
 
     // Open the socket. Everything below wires push events into the store, and
     // none of it fires unless the socket exists — resource() promised "the
@@ -939,6 +1129,14 @@ export class JunctionClient extends EventEmitter {
 
     const apply = (raw: unknown): void => {
       const record = unwrap(raw)
+
+      // The node first, and the list afterwards. A row this list has never
+      // held is still a row somebody else is looking at — a detail screen, a
+      // second list with a different filter — and the announcement is the only
+      // thing that will ever tell them. Doing this inside the membership
+      // branches below would update exactly the views that already knew.
+      registry.write(model, record, idField)
+
       const answer = verdict(record)
       if (answer === false) {
         // Out of the filter: not "do not add it" but "take it out" — a patch is
@@ -1026,7 +1224,104 @@ export class JunctionClient extends EventEmitter {
       return rows
     }
 
-    return { service: svc, store, load, stale }
+    // ── One row, live ──────────────────────────────────────────────────────
+    // A view of ONE, over the same nodes the list is a view of. It is sugar
+    // rather than a second mechanism, which is the shape Meteor's cursors,
+    // Convex and Zero all arrived at — and it is what makes a detail screen
+    // live at all (`FJS-518`).
+    //
+    // The fetch happens when the node is cold and only then, so a caller
+    // coming from a list it has already loaded pays nothing. `ready` is the
+    // first read for anyone who has to wait for it — a form reading the
+    // `@version` it is about to send back, above all.
+    const record = (id: unknown, ropts: RecordOptions<T> = {}): RecordResult<T> => {
+      const node = registry.node<T>(model, id)
+
+      // *Gone* is this view's own state and never the node's. Clearing the
+      // shared node would shorten every list holding the row before that list
+      // ran its own removal accounting — and two resources over one service
+      // share a proxy, so the handlers run in registration order and whichever
+      // is second reads a list the first has already changed. A list owns its
+      // membership; this owns whether the row it is showing still exists.
+      let gone = false
+      const subs = new Set<(v: T | null) => void>()
+      const emit = (v: T | null): void => { for (const fn of subs) fn(v) }
+
+      const offNode = node.watch((v) => { if (!gone) emit(v) })
+      const offGone = svc.on('removed', (raw: unknown) => {
+        // The same key the node is filed under: this view may have been asked
+        // for by a URL, where the id is a string, about a row whose id is a
+        // number.
+        if (nodeKey(unwrap(raw)?.[idField]) !== nodeKey(id)) return
+        gone = true
+        emit(null)
+      })
+
+      const value = (): T | null => (gone ? null : node.get())
+
+      const fetch = async (): Promise<T | null> => {
+        try {
+          const row = ropts.load
+            ? await ropts.load()
+            : await svc.get(id as string | number)
+          if (row != null) registry.write(model, row, idField)
+          return row ?? null
+        } catch {
+          // A refused or missing row is not a crash here: the view answers
+          // whatever it last knew, and the caller awaiting `ready` sees null.
+          return null
+        }
+      }
+
+      return {
+        id,
+        ready:     node.get() != null ? Promise.resolve(node.get()) : fetch(),
+        get:       value,
+        subscribe: (fn) => {
+          subs.add(fn)
+          fn(value())
+          return () => { subs.delete(fn) }
+        },
+        refresh:   fetch,
+        // `watch` is itself the hold, so letting it go is what starts the TTL.
+        release:   () => { offNode(); offGone(); subs.clear() },
+      }
+    }
+
+    // ── A write that shows before it lands ─────────────────────────────────
+    // The overlay sits on the row's node, so every view of that row moves at
+    // once — a list, a detail screen, a second list with a different filter —
+    // and an intent that changes a sort key re-places the row in an ordered
+    // list with nothing taught about it.
+    //
+    // What is stored is the INTENT and never the value it produced. It costs
+    // nothing today and it is what a rebase would need: Replicache and Zero
+    // replay pending mutations on top of each new server state, and a replay
+    // needs something to replay.
+    //
+    // Settled against the MUTATION, not the row. A second writer patching the
+    // same row while this is in flight moves the truth underneath — correctly,
+    // the overlay still applies on top — and must not clear an intent nobody
+    // has answered for yet.
+    const mutate = async (
+      id: unknown,
+      intent: Partial<T> | null,
+      run: () => Promise<T | null>
+    ): Promise<T | null> => {
+      const handle = registry.node<T>(model, id).overlay(intent)
+      try {
+        const row = await run()
+        handle.settle(row ?? null)
+        return row ?? null
+      } catch (err) {
+        // Nothing to put back: the truth never moved, so dropping the intent
+        // IS the rollback.
+        handle.settle()
+        throw err
+      }
+    }
+
+    return { service: svc, store, load, stale, record, mutate }
   }
 
   // ── HTTP request ─────────────────────────────────────────────────────
@@ -1049,9 +1344,7 @@ export class JunctionClient extends EventEmitter {
     if (this.token && !opts.skipAuth) {
       headers['Authorization'] = `Bearer ${this.token}`
     }
-    if (this.workspaceId) {
-      headers['X-Workspace-Id'] = this.workspaceId
-    }
+    Object.assign(headers, this._extraHeaders())
     if (opts.header) {
       Object.assign(headers, opts.header)
     }
@@ -1324,20 +1617,22 @@ export class JunctionClient extends EventEmitter {
       if (id != null)                                meta.id    = id
       if (query && Object.keys(query).length > 0)    meta.query = query
 
-      // The workspace travels per CALL, not per connection.
+      // Per-call headers travel per CALL, not per connection.
       //
-      // Over HTTP it is the X-Workspace-Id header on every request. Over the
-      // socket there is no per-call header — the server sees only the headers
-      // of the upgrade request — so without this the workspace silently
-      // disappears the moment the socket connects, and setWorkspace() stops
-      // having any effect on anything. An app that scopes by header then works
-      // until it goes live and breaks with 'workspace_id required', which
-      // points at the app rather than at the transport that dropped it.
+      // Over HTTP they are ordinary headers. Over the socket there is no
+      // per-call header — the server sees only the headers of the UPGRADE
+      // request — so without this anything the app varies per call silently
+      // disappears the moment the socket connects. An app that scopes by
+      // header then works until the connection comes up and breaks with a
+      // refusal that points at the app rather than at the transport that
+      // dropped the value.
       //
-      // Only the workspace rides here. The caller's identity stays with the
-      // connection (authenticated at upgrade), because a client that could put
-      // arbitrary headers on a frame could put Authorization on one.
-      if (this.workspaceId)                          meta.workspaceId = this.workspaceId
+      // The identity is NOT among these: it stays with the connection,
+      // authenticated at upgrade. The server merges only the names the app
+      // declared in `http.callHeaders`, so a frame naming Authorization
+      // changes nothing.
+      const extraHeaders = this._extraHeaders()
+      if (Object.keys(extraHeaders).length > 0)      meta.headers = extraHeaders
 
       this._ws!.send(
         JSON.stringify({
@@ -1474,47 +1769,41 @@ function buildWsQuery(
   return q
 }
 
-/** A filter map → `?a=1&b=2`, or '' when there is nothing to say. Values that
- *  are null/undefined are dropped rather than sent as the strings "null" and
- *  "undefined", which is what an unset optional filter would otherwise become. */
+/** A filter map → `?a=1&b=2`, or '' when there is nothing to say. Same encoder
+ *  as `buildQueryString`, so a filter means the same thing on every path out. */
 function _plainQuery(query?: Record<string, unknown> | null): string {
-  if (!query) return ''
-  const p = new URLSearchParams()
-  for (const [k, v] of Object.entries(query)) {
-    if (v == null) continue
-    p.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v))
-  }
-  const qs = p.toString()
-  return qs ? `?${qs}` : ''
+  return encodeQueryString(query ?? {})
 }
 
+/**
+ * A filter map + directives → the search string.
+ *
+ * **The socket was always the correct half and HTTP was the broken one.**
+ * `buildWsQuery` spreads the filters into a JSON frame, so `{ live: true }`
+ * arrives as a boolean and `{ id: { in: [1,2] } }` as an object. This side used
+ * to `String()` every scalar and `JSON.stringify` every container, and nothing
+ * on the far side turned either back — so the same call answered rows over the
+ * socket and nothing over HTTP, which is what an app sees the moment a
+ * connection drops and the client falls back. `null` was dropped outright, so
+ * *where the column is null* asked for every row instead.
+ *
+ * `@frontierjs/toolbelt/query` is the encoder and Junction's own transport is
+ * the decoder, so the two are inverses by construction (`FJS-D125`).
+ */
 function buildQueryString(
   query?: Record<string, unknown> | null,
   d?: QueryDirectives | null,
-  extra?: Record<string, string>,
+  extra?: Record<string, unknown>,
 ): string {
-  const p: Record<string, string> = {}
-
-  for (const [key, value] of Object.entries(directiveParams(d))) p[key] = String(value)
-
-  if (query) {
-    for (const [key, val] of Object.entries(query)) {
-      if (val == null) continue
-      p[key] = typeof val === 'object' ? JSON.stringify(val) : String(val)
-    }
+  // Directives are already scalars with a known parse on the other side, and
+  // `extra` is transport-only text ($first, $wrap) — neither is a filter, so
+  // neither goes through the quoting rule.
+  const merged: Record<string, unknown> = {
+    ...(query ?? {}),
+    ...directiveParams(d),
+    ...(extra ?? {}),
   }
-
-  // Transport-only, with no structured form — $first, $wrap. Stated by the
-  // call site rather than living on QueryDirectives, which is the set that HAS
-  // a structured form on the other side.
-  if (extra) for (const [key, value] of Object.entries(extra)) p[key] = value
-
-  // URLSearchParams encodes '$' as '%24'. Junction uses $-prefixed params as a
-  // documented convention, and '$' is a valid query character (RFC 3986
-  // sub-delim). Decode it back — servers decode %24 to $ anyway, so this is
-  // cosmetic, but it keeps URLs matching the documented syntax.
-  const qs = new URLSearchParams(p).toString().replace(/%24/g, '$')
-  return qs ? `?${qs}` : ''
+  return encodeQueryString(merged)
 }
 
 // ─── Store<T> ─────────────────────────────────────────────────────────────
@@ -1525,30 +1814,82 @@ function buildQueryString(
 //   Svelte:  leadsStore.subscribe(v => leads = v)  /  useStore(leadsStore)
 //   Plain:   leadsStore.subscribe(list => render(list))
 
+export interface StoreBinding {
+  registry: NodeRegistry
+  model:    string
+  idField:  string
+}
+
+/**
+ * An ordered list, and — once bound — a VIEW over nodes rather than a copy of
+ * rows (`FJS-D138`).
+ *
+ * Bound, the list holds ids and the values come from the registry, so a row
+ * this list has never heard about being patched somewhere else still reaches
+ * it, and two views of one row cannot disagree. `get()` still answers
+ * materialised rows, which is why no screen changed when this landed:
+ * `useStore` is the one bridge from here to a Mesa signal.
+ *
+ * UNBOUND it is what it always was — rows, held here, no registry — and that
+ * is not a compatibility shim: a `Store` is constructible on its own and the
+ * standalone behaviour is what the membership and placement rules were written
+ * and tested against.
+ */
 export class Store<T extends Record<string, unknown> = Record<string, unknown>> {
-  private _data: T[]
+  private _rows: T[]
+  private _ids:  unknown[] = []
+  private _bind: StoreBinding | null = null
   private _subs: Set<(data: T[]) => void> = new Set()
 
+  // Held so a node written by ANOTHER view refreshes this list. Released as
+  // soon as an id leaves, which is what lets the node's TTL start running.
+  private _watches: Map<unknown, () => void> = new Map()
+  // Materialised rows, rebuilt on demand. Cached so repeated get() calls answer
+  // the same array — a Mesa signal compares what it is handed.
+  private _cache: T[] | null = null
+  // A node write during _replace would otherwise re-enter notify while the list
+  // is still being assembled.
+  private _syncing = false
+
   constructor(initial: T[] = []) {
-    this._data = initial
+    this._rows = initial
+  }
+
+  /**
+   * Point this list at a registry. Everything it already holds is written
+   * through, so binding after a load is not a data loss.
+   */
+  bind(binding: StoreBinding): void {
+    if (this._bind) return
+    this._bind = binding
+    const rows = this._rows
+    this._rows = []
+    this._replace(rows, false)
   }
 
   /** Current snapshot — safe to call outside a reactive context. */
   get(): T[] {
-    return this._data
+    if (!this._bind) return this._rows
+    if (this._cache) return this._cache
+    const out: T[] = []
+    for (const id of this._ids) {
+      const v = this._bind.registry.peek(this._bind.model, id)?.get() as T | null | undefined
+      if (v != null) out.push(v)
+    }
+    this._cache = out
+    return out
   }
 
   /** Subscribe to changes. Emits current value immediately. Returns unsubscribe fn. */
   subscribe(fn: (data: T[]) => void): () => void {
     this._subs.add(fn)
-    fn(this._data)
+    fn(this.get())
     return () => this._subs.delete(fn)
   }
 
   /** Replace the entire list. */
   set(data: T[]): void {
-    this._data = data
-    this._notify()
+    this._replace(data)
   }
 
   /**
@@ -1562,20 +1903,14 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
    * never passed through that check at all.
    */
   upsert(record: T, idField = 'id'): void {
-    if (record == null || (record as Record<string, unknown>)[idField] == null) {
-      console.warn(
-        `[Junction] ignored an update with no ${idField} — it cannot be matched to a row. ` +
-        `An announcement carries the record it is about.`
-      )
-      return
-    }
-    const idx = this._data.findIndex((r) => r[idField] === record[idField])
-    if (idx === -1) {
-      this._data = [...this._data, record]
-    } else {
-      this._data = [...this._data.slice(0, idx), record, ...this._data.slice(idx + 1)]
-    }
-    this._notify()
+    if (!_hasId(record, idField)) return _warnNoId(idField)
+    const rows = this.get()
+    const idx  = rows.findIndex((r) => r[idField] === record[idField])
+    this._replace(
+      idx === -1
+        ? [...rows, record]
+        : [...rows.slice(0, idx), record, ...rows.slice(idx + 1)]
+    )
   }
 
   /**
@@ -1593,30 +1928,85 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
     cmp: (a: T, b: T) => number,
     max?: number
   ): void {
-    if (record == null || (record as Record<string, unknown>)[idField] == null) {
-      console.warn(
-        `[Junction] ignored an update with no ${idField} — it cannot be matched to a row. ` +
-        `An announcement carries the record it is about.`
-      )
-      return
-    }
-    const rest = this._data.filter((r) => r[idField] !== record[idField])
+    if (!_hasId(record, idField)) return _warnNoId(idField)
+    const rest = this.get().filter((r) => r[idField] !== record[idField])
     let at = rest.findIndex((r) => cmp(record, r) < 0)
     if (at === -1) at = rest.length
     rest.splice(at, 0, record)
-    this._data = max !== undefined && rest.length > max ? rest.slice(0, max) : rest
-    this._notify()
+    this._replace(max !== undefined && rest.length > max ? rest.slice(0, max) : rest)
   }
 
   /** Remove a record by its id value. */
   remove(id: unknown, idField = 'id'): void {
-    this._data = this._data.filter((r) => r[idField] !== id)
+    this._replace(this.get().filter((r) => r[idField] !== id))
+  }
+
+  // ── The one write ──────────────────────────────────────────────────────────
+  // Every mutator above works on a materialised array and hands the result
+  // here, so the membership and placement rules are the same lines they were
+  // before nodes existed and only the ends changed.
+  private _replace(rows: T[], notify = true): void {
+    if (!this._bind) {
+      this._rows = rows
+      if (notify) this._notify()
+      return
+    }
+    const { registry, model, idField } = this._bind
+    this._syncing = true
+    try {
+      const ids: unknown[] = []
+      const keep = new Set<unknown>()
+      for (const row of rows) {
+        if (!_hasId(row, idField)) continue
+        // Only rows that came from OUTSIDE become truth. Every mutator here
+        // works on a materialised array, so most of what arrives is this
+        // store's own view of a node — and once a node carries an unconfirmed
+        // mutation, writing that view back would commit the optimistic value as
+        // if the server had sent it. Reference is the test: a node answers the
+        // same folded object until something changes it.
+        const node = registry.node(model, row[idField])
+        if (node.get() !== row) node._write(row)
+        ids.push(row[idField])
+        keep.add(row[idField])
+      }
+      for (const [id, release] of [...this._watches]) {
+        if (keep.has(id)) continue
+        release()
+        this._watches.delete(id)
+      }
+      for (const id of keep) {
+        if (this._watches.has(id)) continue
+        this._watches.set(id, registry.node(model, id).watch(() => this._nodeMoved()))
+      }
+      this._ids  = ids
+      this._cache = null
+    } finally {
+      this._syncing = false
+    }
+    if (notify) this._notify()
+  }
+
+  private _nodeMoved(): void {
+    this._cache = null
+    if (this._syncing) return
     this._notify()
   }
 
   private _notify(): void {
-    for (const fn of this._subs) fn(this._data)
+    const data = this.get()
+    for (const fn of this._subs) fn(data)
   }
+}
+
+function _hasId(record: unknown, idField: string): boolean {
+  return record != null && (record as Record<string, unknown>)[idField] != null
+}
+
+function _warnNoId(idField: string): void {
+  console.warn(
+    `[Junction] ignored an update with no ${idField} — it cannot be matched to a row. ` +
+    `An announcement carries the record it is about.`
+  )
 }
 
 // ─── Stale ───────────────────────────────────────────────────────────────────
@@ -1679,6 +2069,16 @@ export interface ResourceOptions<T extends Record<string, unknown> = Record<stri
     query: Record<string, unknown>,
     params: QueryDirectives
   ) => boolean | null
+
+  /**
+   * Which MODEL these rows are, so two services over one model share nodes.
+   *
+   * Junction holds no schema, so it cannot derive this — the same reason
+   * `match` is passed in. Absent, the service name is used, which keeps a
+   * junction-only caller working and is wrong only in the case sierra covers
+   * (`FJS-D138`).
+   */
+  model?: string
 }
 
 export interface ResourceResult<T extends Record<string, unknown> = Record<string, unknown>> {
@@ -1694,6 +2094,60 @@ export interface ResourceResult<T extends Record<string, unknown> = Record<strin
    * `0` means the list is as current as a push can make it. Cleared by `load()`.
    */
   stale: Stale
+  /**
+   * One row, live — a VIEW of one, running the same path a list does.
+   *
+   * `service.get(id)` answers a plain object no announcement can reach, which
+   * is why every detail screen in this repo went stale the moment somebody
+   * else wrote the row (`FJS-518`). This subscribes to the row's node instead,
+   * fetching it if nothing has read it yet, so a push moves the screen.
+   *
+   *   const row = orders.record(id)
+   *   row.subscribe(o => render(o))
+   *   await row.ready          // the first read, if you need to wait for it
+   *
+   * `service.get(id)` stays raw and stays dead, exactly as `service.find()`
+   * stays raw and does not touch the store.
+   */
+  record: (id: unknown, opts?: RecordOptions<T>) => RecordResult<T>
+  /**
+   * Show a write before it lands, and take it back if it does not.
+   *
+   *   await orders.mutate(id, { status: 'paid' }, () => orders.service.invoke('pay', id))
+   *
+   * `intent` is a partial applied over the row, or `null` to say the row is
+   * going. Every view of that row moves at once, and a throw puts it back —
+   * the truth never moved, so dropping the intent IS the rollback.
+   */
+  mutate: (
+    id: unknown,
+    intent: Partial<T> | null,
+    run: () => Promise<T | null>
+  ) => Promise<T | null>
+}
+
+export interface RecordOptions<T extends Record<string, unknown> = Record<string, unknown>> {
+  /**
+   * How to read the row when nothing has read it yet. Default `service.get`.
+   *
+   * Sierra passes its own `_call('get', id)` so the resource's hooks, its
+   * coercion and the `@version` it must hand back on the next patch all come
+   * from the same place a `load()` gets them. Junction keeps the rule about
+   * WHEN to read — a row a list already put in the node is not read again.
+   */
+  load?: () => Promise<T | null>
+}
+
+export interface RecordResult<T extends Record<string, unknown> = Record<string, unknown>>
+  extends NodeView<T> {
+  /** The id this view is of. */
+  id: unknown
+  /** The first read — resolves with the row, or `null` if it could not be had. */
+  ready: Promise<T | null>
+  /** Ask the server again. */
+  refresh: () => Promise<T | null>
+  /** Stop watching. The node lingers for the client's TTL, then goes. */
+  release: () => void
 }
 
 // ─── File upload helpers ──────────────────────────────────────────────────────

@@ -18,7 +18,6 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WO
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, assertSlugFree, ws }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 // A /8 through /30. Deliberately shape-only: whether the range overlaps another
 // network is the provider's judgement, not ours, and guessing it here would be
@@ -54,13 +53,13 @@ export function createNetworksService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const type = $.query.type as string | undefined
       return findScoped('network', { where: { ...(type ? { type } : {}) }, limit, offset })
     },
 
-    async get(ctx: ServiceContext) {
+    async get() {
       // Counts, not the rows: this is the summary read, and `members` is the
       // one that pays for the join.
       return withCounts(await getScoped('network', 'Network'))
@@ -92,7 +91,7 @@ export function createNetworksService(app: BasecampApp) {
       return db().network.update({ where: { id: $.id as string }, data: patch })
     },
 
-    async remove(ctx: ServiceContext) {
+    async remove() {
       const network = await getScoped('network', 'Network')
       // Refused rather than cascaded. The schema WOULD cascade the join rows,
       // which is right for referential integrity and wrong as a default here:
@@ -120,7 +119,7 @@ export function createNetworksService(app: BasecampApp) {
     },
 
     // ── attach ────────────────────────────────────────────────────────
-    async attach(ctx: ServiceContext) {
+    async attach() {
       const network  = await getScoped('network', 'Network')
       const { serverId, ipAddress } = ($.data ?? {}) as Record<string, string>
       if (!serverId) throw new BadRequest('serverId is required')
@@ -142,7 +141,7 @@ export function createNetworksService(app: BasecampApp) {
     },
 
     // ── detach ────────────────────────────────────────────────────────
-    async detach(ctx: ServiceContext) {
+    async detach() {
       const network   = await getScoped('network', 'Network')
       const { serverId } = ($.data ?? {}) as Record<string, string>
       if (!serverId) throw new BadRequest('serverId is required')

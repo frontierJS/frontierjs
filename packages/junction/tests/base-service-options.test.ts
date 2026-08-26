@@ -44,14 +44,15 @@ describe('createBaseService — option pass-through', () => {
       model: 'lead',
       hooks: { before: { create: [authenticate] } },
     })
-    // The user's hook survives AND runs first. createBaseService appends the
-    // hooks derived from the model — gateAuth(@@gate) + autoValidate(field
-    // rules) — after it, so a before/create hook can still shape ctx.data
-    // before validation sees it. (See CHANGES.md "Authentication is derived
-    // from @@gate".) This asserted length 1 back when no derived layer existed.
+    // The user's hook survives and still leads the before chain, with
+    // autoValidate behind it — a before/create hook shapes ctx.data before
+    // validation sees it. The gate is an around hook now and is not in this
+    // list at all (FJS-403). This asserted length 1 back when no derived layer
+    // existed.
     const create = svc.hooks?.before?.create
     expect(create?.[0]).toBe(authenticate)
     expect(create!.length).toBeGreaterThan(1)
+    expect((svc.hooks?.around?.all ?? []).map(h => h.name)).toEqual(['gateAuth'])
   })
 
   test('still returns every CRUD method', () => {

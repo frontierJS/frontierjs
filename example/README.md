@@ -11,33 +11,70 @@ notes, so there is field-level access; refunds need authority, so there is a
 gate ladder.
 
 ```bash
+fli dev         # both, after checking the ports and the database
+```
+
+Open <http://localhost:8010> and sign in from the header. `bun run stop` when
+you are done; `bun run dev` is the same pair without the preflights, and the two
+halves still run on their own:
+
+```bash
 bun run api     # terminal 1 — Junction + Litestone on :8110
+                # DEVTOOLS=1 bun run api  adds the console on :8503
 bun run web     # terminal 2 — Sierra + Vite on :8010
 ```
 
-Open <http://localhost:8010> and sign in from the header.
+**Two processes — both are required.** Vite serves the UI and proxies `/api` and
+`/ws` to the API; with the API down every one of those is a 502 and the app says
+so rather than rendering plausible empty tables.
 
-**Two processes, two terminals — both are required.** Vite serves the UI and
-proxies `/api` and `/ws` to the API; with the API down every
-one of those is a 502 and the app says so rather than rendering plausible empty
-tables.
+**Start them through `fli dev` when you can.** A port that is already answering
+is the failure worth catching: `bun --watch` prints EADDRINUSE and keeps
+watching, so the process stays alive and nothing that waits on it ever returns,
+and a stale API still holds the old database open — including one `bun run
+reset` has already deleted, so the reset appears to do nothing while every
+request is answered by the ghost.
 
 | | |
 | --- | --- |
+| `fli dev` | both realms, after the port and database preflights |
+| `bun run dev` | both realms, no preflight |
+| `bun run stop` | stop whichever of them is running |
 | `bun run api` | the API realm |
 | `bun run web` | the UI realm |
 | `bun run verify` | drive the app in headless Chrome and assert what happened (both servers must be up) |
-| `bun run verify:ui` | drive the kit's behavioural components — tabs, menus, a dialog, a palette — 27 assertions |
+| `bun run verify:ui` | drive the kit's behavioural components — tabs, menus, a dialog, a palette — the preferences that change what every other screen shows, and a refund a person performs by clicking — 35 assertions |
 | `bun run verify:live` | open a watcher tab that never acts, change rows from outside it, and assert what crossed the socket — 14 assertions |
 | `bun run verify:jobs` | the deferred-work realm over HTTP, no browser — 10 assertions |
 | `bun run verify:notify` | the outbound boundary: mail at a real server, and who can see what — 9 assertions |
-| `bun run build:public` | the PUBLIC site: prerender `src/public-site/` to `web/dist/public/` |
-| `bun run verify:public` | serve that build and prove its two islands come alive in a real browser — 21 assertions |
+| `bun run verify:pay` | money: an HMAC-signed conduit target the provider VERIFIES, and a signed webhook that drives the order state machine with no session anywhere — plus the four separate ways a webhook is refused, and the fifth that is a redelivery. Then refunds: the only @gate(5) move in the app, a partial that must not move the order, an idempotency key on the one call where a retry costs real money, and the shelf coming back out of the ledger — 22 assertions |
+| `bun run verify:catalogue` | the catalogue end to end — a `File` column's bytes reaching an `<img>` that decoded, the variant grid, an aggregated price range — 20 assertions. Starts and stops both servers itself |
+| `bun run verify:money` | **what a basket costs, and why**: `subtotal − discount + shipping + tax = total`, with one owner for the arithmetic and every screen rendering it rather than re-deriving it. Its two headline assertions exist nowhere else — a code that takes a basket back under the free-delivery threshold, so applying a discount puts the shipping charge back; and two checkouts of a one-redemption code in flight at once — 79 assertions. Starts and stops both servers itself |
+| `bun run verify:cart` | a **stranger** fills a basket and buys: a token-scoped row policy, a claim on a caller with no session, a per-call header crossing a WebSocket frame, and the itemised order the basket becomes — 32 assertions. Starts and stops both servers itself |
+| `bun run dev:widgets` | the widgets surface live, on :8210 — how a widget is WRITTEN |
+| `bun run build:widgets` | → `widgets/dist/embeds/BuyButton.js`, one self-contained script |
+| `bun run serve:widgets` | the widget ORIGIN on :8310, with the CORS and cache headers it deploys with |
+| `bun run verify:widget` | the buy button on a page the shop does not own: four origins, a real preflight, shadow isolation against hostile CSS, the one-time code that hands a basket between them, and what a shopper is told when they arrive with a spent one — 37 assertions. Starts and stops everything itself |
+| `bun run verify:account` | a SHOPPER, not staff: the ledger answering 401 to a stranger and one order to the person who asks for all of them, a sign-in island on the static storefront, a session on the storefront's own origin, and a brand-new account that can see none of the shop — 18 assertions. Needs `build:site` |
+| `bun run build:extension` | → `extension/dist/chrome/` — a manifest, a service worker, a popup and a content script |
+| `bun run verify:extension` | the shop in a browser toolbar: an extension loaded into a throwaway profile, a harbor holding the only connection, a Mesa popup signing in through `/auth/login`, an order paid elsewhere arriving with nothing refreshing, a transition run from the toolbar, and a content script on the shop's own prerendered storefront — 13 assertions. Needs `build:site`; starts everything else itself |
+| `bun run verify:tenants` | many shops: a second one created for the run, its own catalogue, its own staff, and a token from one that is not a session at the other — 21 assertions. The API must be up |
+| `bun run verify:stock` | the shelf: a hold moving AVAILABLE and not ON HAND, a second shopper refused by name, a shopper's own hold not counting against them, an expiry that is in the read rather than in a cron, and the ledger every stock write is paired with — 41 assertions. Starts and stops both servers itself |
+| `bun run build:site` | the PUBLIC site: prerender `site/src/routes/` to `site/dist/` |
+| `bun run verify:site` | serve that build and prove its islands come alive in a real browser, including a price MOVED in the database after the build and a search that asks the shop — 39 assertions |
 | `bun run email:preview` | render the transactional emails to files you can open |
 | `bun run build` | production build to `web/dist/client/` |
 | `bun run verify:build` | build, then drive **the built app** with the same 37 assertions (needs `bun run api`) |
 | `bun run preview` | serve `web/dist/client/` on :8011 with `/api` `/ws` proxied — `vite preview` carries no proxy |
-| `bun run reset` | delete the database and start the seed over |
+| `bun run db:seed` | put the demo catalogue, customers, orders and users in. **Run this first** |
+| `bun run reset` | delete the database and seed it again |
+
+**Seeding is a step, not something a boot does for you.** It used to be awaited
+at module scope in `app.ts`, which meant every import of the app wrote to the
+database — including `junction surface`, whose job is to describe the app
+without acting on it. A second run adds only what is missing, so repeating it is
+safe, and an API started against an empty database says so rather than serving
+empty lists that read as a broken query.
 
 Sign in as **`sam@shop.test`** (level 4) or **`alex@shop.test`** (level 5), both
 with password `correct-horse-battery`. The buttons in the header do it for you.
@@ -51,14 +88,23 @@ schema above both of its consumers, configuration in `config/`:
 
 ```
 example/
-├── db/
-│   └── schema.lite             ← the seed. Read by api/ and by web/'s build
+├── db/                         ← Data realm — Litestone
+│   ├── schema.lite             ← the seed. Read by api/ and by web/'s build
+│   └── seed.ts                 ← `bun run db:seed`. A script; nothing imports it
 ├── api/                        ← API realm — Junction + auth
-│   ├── db.ts                   ← the client, the gate plugin, autoMigrate
-│   ├── gate.ts                 ← the ONE place a session becomes a number
-│   ├── seed.ts
-│   ├── app.ts
-│   └── services/
+│   ├── index.ts                ← the entry. Starts the app and assembles nothing
+│   ├── config/                 ← junction.config.js, incl. where the services are
+│   └── src/
+│       ├── app.ts              ← the construction site. Exported unstarted
+│       ├── inventory.ts        ← the ONE owner of the shelf: holds, availability, the ledger
+│       ├── core/
+│       │   ├── db.ts           ← the client, the gate plugin, autoMigrate
+│       │   ├── gate.ts         ← the ONE place a session becomes a number
+│       │   ├── cart-claim.ts   ← a header → a claim a stranger holds
+│       │   ├── settle.ts       ← the ONE owner of "this order has been paid for"
+│       │   ├── psp.ts          ← the payment provider: the target out, the verifier in
+│       │   └── psp-sink.ts     ← that provider, standing in for a real one. :8112
+│       └── services/
 └── web/                        ← UI realm — Sierra + Mesa. The Vite root
     ├── index.html
     ├── config/                 ← vite.config.js lives HERE, not at the root
@@ -67,22 +113,37 @@ example/
     │   └── verify.mjs          ← drives a real browser; see "Verified" below
     └── src/
         ├── main.js  App.mesa  session.js
-        ├── resources/           ← .mesa files (invariant 18): data in <script module>, markup is the default form
+            ├── resources/           ← .mesa files (invariant 18): data in <script module>, markup is the default form
         └── routes/
+├── widgets/                    ← a THIRD surface — embeddable scripts. Its own
+│   ├── config/                   Vite root, its own host pages, its own release
+│   ├── src/Embeds/BuyButton.mesa  one .mesa → one self-contained IIFE
+│   ├── test/                     a host page per widget, with hostile CSS
+│   └── deploy/                   serve.js + Dockerfile — the widget origin
+└── extension/                  ← a FIFTH surface — a browser extension. Not a
+    ├── config/jetty.config.js    Vite config at all: the build emits a MANIFEST,
+    │                             and `--browser=both` makes one source two builds
+    ├── src/harbor/index.js       the service worker — the only connection here
+    ├── src/dock/App.mesa         the popup
+    ├── src/islands/              content scripts, FLAT — a subfolder throws
+    ├── test/verify.mjs           loads it into a browser profile
+    └── deploy/                   two web stores, two review queues
 ```
 
 Nothing points the UI at the schema: `web/`'s Vite root is one level below the
 app root, so Sierra's auto-detection finds `../db/schema.lite` — the same file
-`api/db.ts` reads. The build prints which one it found.
+`api/src/core/db.ts` reads. The build prints which one it found.
 
 ## Read in this order
 
 | file | what it seeds |
 | --- | --- |
 | [`db/schema.lite`](db/schema.lite) | everything below |
-| [`api/gate.ts`](api/gate.ts) | the role → level mapping, and why it cannot be skipped |
-| [`api/db.ts`](api/db.ts) | how auth's models join the schema without a second copy |
-| [`api/services/orders.service.ts`](api/services/orders.service.ts) | 3 lines. CRUD, 401s, 403s and 400s are all derived |
+| [`api/src/core/gate.ts`](api/src/core/gate.ts) | the role → level mapping, and why it cannot be skipped |
+| [`api/src/core/db.ts`](api/src/core/db.ts) | how auth's models join the schema without a second copy |
+| [`api/src/services/orders.service.ts`](api/src/services/orders.service.ts) | 3 lines. CRUD, 401s, 403s and 400s are all derived |
+| [`api/src/core/psp.ts`](api/src/core/psp.ts) | both directions of one third party, and why they are two credentials |
+| [`api/src/services/payments.service.ts`](api/src/services/payments.service.ts) | what a webhook may act on, and why the claim and the effect are one transaction |
 | [`web/src/resources/Order.mesa`](web/src/resources/Order.mesa) | names one model, and nothing else — one Resource per file, named for its noun (Invariant 19) |
 | [`web/src/routes/orders/create.mesa`](web/src/routes/orders/create.mesa) | a form with no field list in it |
 
@@ -107,6 +168,19 @@ The status `<select>` is the interesting one: Litestone emits an enum field as
 resolves that reference against the same definition table the build shipped. The
 customer `<select>` is the other one — `customerId` is a plain integer on the
 wire, and the only reason the UI knows it is a reference is `x-relations`.
+
+**The preferences on /settings/ are edited twice, over one object.**
+[`settings/index.mesa`](web/src/routes/settings/index.mesa) is the only screen
+here with nothing in `db/schema.lite` behind it — a preference is a fact about
+this browser — which is exactly the shape `<Json editable>` is for: no schema
+means no field list to generate controls from, so the editor is the document's
+own structure. The tree and the form controls above it are two editors of ONE
+object. Change *rows per page* with the spinner and the tree follows; change it
+in the tree and the spinner follows, because `onchange` writes back through the
+same `adopt()` the file restore uses. Add a key the screen does not own and it
+is dropped **out loud** — the document is rebuilt from five fields on the next
+render, so an unowned key would otherwise vanish between two frames with nothing
+to distinguish it from a control that did not work. `verify:ui` asserts both.
 
 **A column appears when you sign in as admin.** [`/customers/`](web/src/routes/customers/index.mesa)
 renders a `Notes` header only when the field is present in the response, and
@@ -156,7 +230,7 @@ and the model wants level 4 for that.
 
 Each button is a custom service method: `POST /api/orders/{id}` with an
 `X-Service-Method: pay` header. Nothing in the app registers that route, and
-[orders.service.ts](api/services/orders.service.ts) reduces every move to
+[orders.service.ts](api/src/services/orders.service.ts) reduces every move to
 `db.order.transition(id, name)` — which states a move is legal from, what it
 moves to and what level it needs all live in the schema.
 
@@ -195,7 +269,7 @@ curl localhost:8111/outbox
 
 The mailer is [`api/mailer.ts`](api/mailer.ts): Junction's `IMail`, implemented
 over `app.conduit.send()`. Pointing it at the real api.resend.com is a change of
-`address` and `ref` in [`api/app.ts`](api/app.ts) and nothing else — a target
+`address` and `ref` in [`api/src/app.ts`](api/src/app.ts) and nothing else — a target
 holds a credential *reference*, resolved at send time, never a key in a closure.
 
 **The email body is a `.mesa` file.** [`api/emails/order-confirmation.mesa`](api/emails/order-confirmation.mesa)
@@ -214,9 +288,94 @@ bun run email:preview     # writes the HTML and the text where you can open them
 a count. Those rows come back through the model's own
 `@@allow('read', userId == auth().id)` — sign in as `sam` and you see sam's
 copy, not alex's, and neither the service nor the component contains a line
-saying so. A background job has no session, so `api/gate.ts` declares `SYSTEM`:
+saying so. A background job has no session, so `api/src/core/gate.ts` declares `SYSTEM`:
 work with no caller still has a principal, graded in the one place every
 principal is graded.
+
+**A basket holds stock, and the hold expires on its own.** Add something to a
+basket and `/inventory/` shows the shelf split into three:
+`ProductVariant.stock` is ON HAND, the holds against it are HELD, and AVAILABLE
+is the difference. Only the first is a column, and the third is what every buy
+button in the shop is graded against.
+
+The two obvious designs are both wrong, in opposite directions. Decrementing
+`stock` on add is unrecoverable — the thing that would put it back is a person
+who has closed the tab. Leaving it until checkout oversells the last one: two
+shoppers both see `1 left`, both add it, and the second finds out at the till.
+A hold is the third answer, and it is a row with a clock on it so nothing has to
+come back and undo it.
+
+Three things fall out of that, and each is a way to break this silently:
+
+- **A hold is a row about the SHELF, not a column on the line.** `CartLine`
+  already names a variant and a quantity, and an `heldUntil` column there would
+  have been three characters of schema. It is wrong because the line is scoped
+  by the shopper's own token, so summing holds from their client answers a sum
+  over their own basket — always plausible, usually zero, never the number
+  asked for.
+- **A shopper's own hold must not count against them.** Holding 2 of the last 5
+  and raising the line to 3 is a legal request, and summing every hold refuses
+  it — which looks exactly like a stock shortage and is not one.
+- **The expiry is in the READ.** Every availability sum filters on
+  `expiresAt > now`, so a hold is dead the moment it passes. `release-holds`
+  deletes the rows and is housekeeping: the queue can be down for a week and
+  every price and every button is still right, where a sweep that "releases"
+  stock by putting a number back means a queue outage quietly stops the shop
+  selling.
+
+`api/inventory.ts` is the one module that reads any of the three or writes the
+first, and every write to `stock` is paired with an `InventoryMovement` in the
+same transaction — signed, with both ends of the shelf on the row. The ledger is
+`@@gate("5.5.9.9")`: an administrator reads it and files a receipt, and update
+and delete are **9**, which nothing passes including `asSystem()`. That is what
+append-only is spelled with; a comment saying the same thing is a comment.
+
+There is no authorisation code in `inventory.service.ts`. `receive` and `adjust`
+write the movement through the caller's own client, so the model's create gate
+is what grades them — and the one movement written any other way is `sold`,
+which a shopper at level 0 causes and the shop records for itself through
+`asSystem()`.
+
+**A buy button on somebody else's blog.** `widgets/` is a third surface beside
+`api/` and `web/`, and it earns one because every answer differs from the SPA's:
+its own Vite root, its own host pages, its own static release on the cadence of
+the pages that embed it. One `.mesa` becomes one self-contained IIFE with its
+runtime and its CSS inside it, mounted in a shadow root by a custom element. A
+host page writes one tag and one script:
+
+```html
+<fjs-buy-button data-sku="FJS-TEE-NVY-M"></fjs-buy-button>
+<script defer src="https://widgets.example.test/BuyButton.js"></script>
+```
+
+Three things here are not true anywhere else in this app:
+
+- **CORS is real.** The SPA is served by Vite, which proxies `/api`, so every
+  call it makes is same-origin and no preflight ever happens. A widget is a
+  guest: it needs `x-cart-token` past a preflight, which works because the app
+  declares that header once under `http.callHeaders` and both the CORS
+  allow-list and the WebSocket frame merge read it. And `origins: ['*']` is the
+  right answer, because **CORS is not an access control** — it stops a page
+  reading a response the browser attached credentials to, and this app attaches
+  none.
+- **One call, not three.** An embed's budget is round trips on a page it does
+  not own, so `product-variants.embed` answers the product, the price, the
+  photograph and what may be SOLD (available, not on hand) in one request,
+  addressed by the SKU a merchant pastes.
+- **The basket cannot be shared, so it is handed over.** `localStorage` is per
+  origin: a basket started on somebody's blog is invisible to the shop's own
+  site and no amount of wanting changes that. Sending the shopper to checkout is
+  handing a capability across an origin — and the token must not be what
+  travels, because a URL goes into history, into `Referer` and into every log on
+  the way. So `carts.handoff` mints a **one-time code**, the link carries it in
+  the FRAGMENT (never sent to a server), and `carts.redeem` exchanges it for the
+  token and clears it in the same transaction that read it. Worth one basket,
+  for two minutes, once.
+
+`bun run verify:widget` stands up four origins — the API, the shop, the widget
+origin and a host page — and proves all of it in a real browser, including that
+the host page's `button { background: red !important }` does not reach in and
+that the widget's own font does not come from the host's `<body>`.
 
 **The nightly sweep is run rather than waited for.** `sweep-abandoned` cancels
 orders left `pending` past a horizon, at 03:00. A cron you can only observe
@@ -235,22 +394,36 @@ That route did not exist until this app needed it.
 Nothing in this file is asserted from reading the source. `bun run verify`
 drives the app in headless Chrome — navigating, signing in, typing into fields
 and leaving them, filling the form, submitting, deleting, signing out — and
-asserts 37 facts about what a real browser ended up showing. Five sibling drives
-add 79 more — the kit's behavioural components, real-time from a second client,
-deferred work, the outbound boundary, and the prerendered public site. Last run:
+asserts 38 facts about what a real browser ended up showing. Sixteen sibling drives
+add 445 more — the kit's behavioural components, declared value sets, real-time
+from a second client, deferred work, the outbound boundary, the prerendered
+public site, the catalogue's photographs, a stranger buying something, the shelf
+that stranger bought it off, and a buy button on a page the shop does not own.
+Last run:
 
 ```
-all 37 assertions passed        (dev AND the production build, 0 console errors)
-all 27 assertions passed        bun run verify:ui
-all 14 assertions passed        bun run verify:live
+all 42 assertions passed        (dev AND the production build, 0 console errors)
+all 35 assertions passed        bun run verify:ui
+all 14 assertions passed        bun run verify:values
+all 17 assertions passed        bun run verify:live
 all 10 assertions passed        bun run verify:jobs
 all  9 assertions passed        bun run verify:notify
-all 21 assertions passed        bun run verify:public   (the built static site)
+all 22 assertions passed        bun run verify:pay
+all 39 assertions passed        bun run verify:site      (the built static site)
+    20 passed, 0 failed         bun run verify:catalogue
+    32 passed, 0 failed         bun run verify:cart
+    79 passed, 0 failed         bun run verify:money    (the discount, the delivery and the tax)
+    41 passed, 0 failed         bun run verify:stock
+    37 passed, 0 failed         bun run verify:widget
+    21 passed, 0 failed         bun run verify:tenants   (a second shop, its own file)
+    13 passed, 0 failed         bun run verify:extension (loaded into a browser profile)
+    18 passed, 0 failed         bun run verify:account   (a shopper, on the static site)
+    38 passed, 0 failed         bun run verify:revisions (taking a row back, and two people editing one)
 
-116 assertions, six drives, twice consecutively against one database.
+487 assertions, seventeen drives, against one FLEET — sixteen of them against the flagship shop, and one that makes a second.
 ```
 
-`verify:public` is the one with no application in it. `web/dist/public/catalog/
+`verify:site` is the one with no application in it. `site/dist/catalog/
 index.html` is a file with the whole catalogue already in it and one module
 script; the drive asserts that a crawler sees every product, that nothing gated
 is in the file, that typing in the search box filters rows **after** the island
@@ -339,16 +512,61 @@ five more the day its markup moved onto `@frontierjs/ui`, eight more from the
 screens built to use the components a render test cannot reach, four the day
 its order form was rewritten onto `<Form>`, three the day its public page
 grew an island, one the day somebody clicked ⌘K, and one the day a job was
-asked who had sent it:
+asked who had sent it, one the day a custom method was asked what it
+accepts, three the day one column grew a declared list, eight the day it grew
+a shop — a catalogue with photographs, a basket a stranger can buy from, and a
+currency toggle — three the day the shop grew a warehouse, four the day one
+of its buttons moved onto somebody else's page, two the day its orders
+learned to say what was in them and its storefront learned to ask, three
+the day the shop moved into a browser toolbar, three the day its
+customers got accounts, two the day its orders learned to carry a discount,
+a delivery charge and a tax, and three the day a row could be taken back:
 
 | | |
 | --- | --- |
+| **A soft-deleted parent's children had two fates and needed three.** | `@@softDelete(cascade)` stamps them, `@hardDelete` on the relation field destroys them, and *the child stays live on purpose* could be produced but not SAID — it is what a plain `@@softDelete` already does, and the parser warns about it, because forgetting the cascade and meaning it look identical from the outside. `Order.customerId` is `onDelete: Cascade`, so removing a customer DESTROYED every order they had ever placed; cascading the soft delete instead would only have hidden them. An order is what the revenue is made of, so neither is what a shop means, and the only way to stop the warning was to stop being right. `orders Order[] @keep` says it now, the warning names all three ways out, and it covers the whole subtree beneath that child — if the order survives, its lines survive with it. |
+| **`<Form record={row}>` was a 403 about a column that is not on the screen.** | `@system`, `@generated`, `@from` and `@version` reach the browser as `readOnly`, and two things read that already: a generated form does not offer the control, and `make()` does not seed the value. Neither covers an EDIT form — it is handed a row the SERVER wrote, carrying every column the caller could read, and writes the whole record back. The Data boundary then refuses `@system` **by name**, correctly, so the customers screen showed *`Customer.userId` is @system…* under a form whose every visible control had been filled in legitimately. Unreachable from the create path, which is why nothing here had seen it: a create starts from `make()`, and `make()` skips exactly these columns. `stripReadOnly` runs first in the resource's write pipeline now — with a KEEP list rather than a blanket drop, because `@version` is marked read-only and is the one the server requires back. `FJS-526`. |
+| **`bun run reset` reseeded the shop and left the job queue.** | The queue is a separate SQLite file, so a `book-courier` row enqueued by an earlier run survived the reseed that deleted the staff member it recorded, and retried forever with *no such principal*. Caravan's `unique` is a lock on work still owed and a `pending` row holds it, so the key was held against every later `ship` of that order and the dispatch became a silent no-op. What that reads as is the reason it is worth writing down: `verify:jobs` fails `job.wroteTracking` while `job.record` **passes**, because the row the drive finds is the previous run's — evidence for a framework bug that is not there. `FJS-527`. |
+| **A `readOnly` column with a default made its model uncreatable through any service.** | Junction's validator fills a default in for any absent key, and it carried one for every property — including the ones Litestone marks `readOnly` because the caller may not write them. So `POST /api/discounts` with a perfectly ordinary body reached the Data boundary carrying `redemptions`, which is `@system` and therefore refused BY NAME: **403 quoting a column the request did not contain**, with nothing the caller could do about it — naming it in `system: [...]` is the opposite of what was meant, and there was nothing to omit. The sibling rule had been fixed and stopped one line short: `mode === 'update'` already dropped every default, for the same reason a patch must not invent values. Found by declaring one column on one new model. `FJS-504`. |
+| **A `$:` watch on a value with no depth switched that variable's reactivity off, silently — twice, in this app.** | The discount box's Apply button is disabled while the code box is empty. It stayed disabled: the box filled, `bind:value` wrote through, and nothing re-rendered. The bare `$: a` form is the DEEP-watch opt-in — it changes the variable's accessor from a signal read to a proxy read — and a primitive cannot be proxied, so every read compiled to a plain local and the render effect subscribed to nothing. Value right, screen stale, no error and nothing in the console. A sweep of all 313 components found the second one in this same app and it was live: `$: (handoffError)` on the basket screen meant a spent or expired checkout link showed a shopper **nothing at all** — the API refusal had a drive and the screen had none. Refused at compile now, because the declaration is redundant rather than merely broken: a local `let` is already a signal. `FJS-505`. |
+| **The shop's customers and orders were public.** | `GET /api/orders` with no token answered every order; `GET /api/customers` answered every name and email. Six models carried `@@gate("0.4.4.5")` and four of them are catalogue, where read-at-0 is correct and load-bearing — the prerendered storefront reads them with no session. `Customer`, `Order` and `OrderLine` are not catalogue. `api/src/core/gate.ts` documented the opposite in its own ladder. Found looking for somewhere to put a buyer's identity, which is the thing that makes *whose order is this* answerable at all. `FJS-498`. |
+| **No browser on another origin could sign in to a Junction app.** | `cors()` patches the router's registration methods, so it reaches routes registered after it — and every raw route a plugin mounts is registered during `configure()`, long before the `cors` start phase. Services were fine; `/auth/login` was not. The preflight answers 204, the POST answers 200 and creates the session, and the browser discards the response: what the page sees is `Failed to fetch`. It could only be found by putting a sign-in on an origin that is not the API's, which is what a static storefront is. `FJS-496`. |
+| **A row policy cannot reach through a relation.** | `@@allow('read', order.userId == auth().id)` is a parse error at the dot. There is no other form — a policy compares columns on its own model, and `@from` crosses a relation only to aggregate. So *the lines of my own orders* is a denormalised column, and this shop now carries the same id in three places, written in one transaction because nothing in the schema can keep them together. Stated in `OrderLine`'s own header rather than hidden. `FJS-499`. |
+| **jetty could not talk to a real Junction, and had not been able to since it was written.** | `default-adapter.js` says *placeholder*, and the gap is wider than that word: its envelope is `{ kind: 'call' }` and Junction's is `service_call`. So every jetty app in existence spoke to a mock. Writing `extension/` is what made that a blocker rather than a note — the harbor here holds the only connection in the surface, and there was nothing for it to hold. The adapter is over `@frontierjs/junction/client`, which is the client Sierra already uses, so the transport, the token and the reconnect have one implementation. Two spellings had to be settled: jetty's `url` field is written `wss://` and the client wants an http origin (handed one over unchanged it builds `wsss://` and a socket that never opens), and SIGN-IN is not a service — Junction has no service called `auth`, so the pseudo-service the placeholder invented would shadow the methods of an app that has one. `FJS-279`. |
+| **A row that has left the list stays in it.** | The dock loads `{ status: 'paid' }` and ships one; the order comes back on the channel as `orders ship` and jetty's store upserts whatever arrives, so the despatch queue keeps showing an order that has gone. Sierra had exactly this and answered it with `matchesQuery` — `true` upsert, `false` REMOVE, `null` *undecidable, reload*, because there is no other event for a row leaving a filter — and that function is pure but lives where jetty may not import it. Same shape as `FJS-059`, whose answer was to move the pure halves into `@frontierjs/toolbelt`. The dock filters on render and says so. `FJS-493`. |
+| **`fli make:extension` gave every app port 8400.** | Which is dev/ext/project-0 — right for a fresh scaffold and wrong for every app that has a number, so two apps' extensions could not have their dev servers up at once and jetty's reload push would reach whichever bound first. `make:widget` beside it already derived the port; this one had the literal. Found because `example` is project 1 and its extension should be 8410. |
+| **`++n` on a reactive variable evaluated to `undefined`, and `n++` compiled to `++n`.** | The storefront's search box guards against an out-of-order answer the ordinary way: `const mine = ++inflight`, and drop the response if a newer keystroke has taken a newer ticket. `mine` was `undefined`, so `mine !== inflight` was true for every response and **every answer the shop gave was discarded** — an empty list, no error, and a box that reads as a server that is not replying. Two defects in one emit: `$$runtime.set` returned nothing, so the whole expression was undefined (`n += 1` and `--n` too), and prefix and postfix compiled to the same string, so `n++` would have answered the new value once it answered one at all. It survived because all five tests on the pair asserted the emitted TEXT, and both things wrong with it are only visible in a value. `FJS-485`. |
+| **A Vite hash with a hyphen in it was not recognised as a hash.** | `site/serve.js` decides which files may be cached forever with a pattern over the name. The hash is base64url and may contain `-`, and one that does — `island-CatalogList-C_TQPJ-f.js`, which this site's own build emitted — was read as unhashed and served `must-revalidate`. Quiet, and on the files a site is mostly made of. It only surfaced because `verify:site` grades the FIRST `.js` in the assets directory and directory order changes when the files do, so which asset it checked was luck. The same pattern was written twice, in the site server and the widget server, and both copies had it. `FJS-484`. |
+| **A caller with no session could not hold a claim, so a guest basket had nowhere to live.** | `Cart` says who owns it in the schema — `@@allow('read', token == auth().cartToken)` — and `createApp({ principal })` was the only seam that could put `cartToken` on a principal, and it ran only for a caller who already had one. Extending it was easy; the part worth knowing is what it must NOT do. `sessionGateLevel` grades any object handed to it, and a claims-only principal sets no standing flag while leaving `verifiedAt`/`activatedAt` **undefined — silence, not null** — so promoting the claim to a session would have graded every anonymous shopper USER(4), in every app that adopted a resolver. `ctx.auth.user` stays null and the claims reach the Data client alone. |
+| **An app could not send a caller-varied header over the socket at all.** | The workspace had needed one since it was written, so it was built as one hardcoded name on each side, with a comment explaining that merging a client-supplied header map wholesale would let a frame carry its own `Authorization`. Right reasoning, one name too narrow: it is an allow-list. A basket token is the second case and it is the harder one, because it comes into existence *after* the socket is already up. Undeclared, the shop worked until the WebSocket connected and then every basket call answered 404 — with nothing anywhere reporting it, because a policy filters rather than refuses. `FJS-428`. |
+| **A CRUD method written on a base service was dropped on the floor.** | `carts` writes its own `get`, which assembles a basket with its lines, its count and its total. `createBaseService` spread the generated row-by-id over it and never called the author's, so the basket screen rendered empty against a 200. Not an error at any layer — a plausible wrong SHAPE, which is the worst way for it to fail. `FJS-426`. |
+| **A minified widget lost every stylesheet it imported.** | `widgetCssPlugin` deletes Vite's emitted `style.css` and swaps its text into the entry at a placeholder, so a widget ships as one file. The matcher knew `"` and `'` — its own comment names the class — and **esbuild writes backticks when it minifies**, which is the default and what every app ships. The asset was deleted, the swap missed, and the widget carried the literal `@sierra-widget-css` into its shadow root as its stylesheet. Only IMPORTED css was hit, because a widget's own scoped `<style>` goes through Mesa's shadow-aware runtime — so it looked styled and nothing said otherwise. It survived because the fixture builds with `minify: false`, for a good reason: the one working case was the only one under test. `FJS-448`. |
+| **A deep link lost its anchor on every direct load.** | The router's boot navigation passed `pathname + search` and rewrote the address bar with `replace: true`, so the fragment was erased: `/docs/#install` became `/docs/`, did not scroll, and left the reader with a URL that no longer says where they were. Clicking the same link inside the app carried it, so it failed only for the person who pasted one. Found because the handoff code arrives in `#h=` and was gone before the basket screen could read it — with no error anywhere, just an empty basket. `FJS-447`, and fixing it uncovered `FJS-446`: a URL with a query AND a fragment wrote the fragment twice and glued it onto the query value. |
+| **`fli make:widget` wrote project 0's ports into every app.** | 8200 and 8300 — the Vite port, the host page's `<script src>`, `deploy/serve.js` and the Dockerfile's `EXPOSE`. Right for a fresh scaffold and wrong for every app with a number, and `packages/cli/core/ports.js` is explicit that the numbers are derived rather than chosen. `strictPort` turns the collision into a refusal rather than a silent hop, so it surfaces as a second widget server that will not start, naming a port nobody picked. `FJS-445`. |
+| **A redeemed basket came back empty, with a 200.** | `carts.redeem` answers the basket it hands over, and it built that view through the CALLER's client like every other method here — where `@@allow('read', token == auth().cartToken)` is what makes a basket private. The caller redeeming a code holds no claim yet: the claim rides a header on the NEXT request. So the lines were filtered out and the shopper landed on the shop's own site looking at an empty basket. The one place in this service where reading as the shop is correct, because the code IS the proof. |
+| **A guest could not take a line out of their own basket.** | `CartLine` was `@@gate("0.0.0.5")` — read, create and update at 0, delete at 5 — with `@@allow('delete', token == auth().cartToken)` written underneath it saying what was meant. So `removeLine` and `setQuantity(0)` answered 403 to every shopper in the shop, for as long as the basket had existed, and nothing noticed: the two drives that fill a basket only ever added to it. A gate answers *what kind of caller* and a policy answers *which rows*, and taking a line out of a basket is an ordinary thing a stranger does. Found by the first drive that removed one. |
+| **Two of these drives could not run in a row.** | The self-hosting ones start `npx vite`, which is a launcher: SIGTERM to the process the drive is holding kills the launcher and leaves vite itself on 8010. The next drive then refuses the port and reports that a dev server is running from an earlier run — which it is, and nothing said which run or that the previous drive was supposed to have stopped it. `detached: true` and signalling the process GROUP. Worth having because running them in sequence is what anybody proving a change does. |
+| **The preview proxy re-labelled decoded bytes as gzip.** | `bun run preview` forwards `accept-encoding` upstream, Junction compresses a response past a size threshold, and `upstream.arrayBuffer()` hands back the DECODED bytes — which the proxy then answered with the original `content-encoding: gzip` header. The browser says `ERR_CONTENT_DECODING_FAILED`, for whichever response happens to cross the threshold, so it surfaces as `verify:build` failing at sign-in with *Failed to fetch* and reads as a regression in whatever grew a payload last. |
+| **A `File` column read through an `include:` was raw JSON.** | The same column answered a public URL when read directly. A basket line joins line → variant → product → images, so the thumbnail's `src` was `{"key":"storage/…"}`. Both are strings; nothing reports the difference and it fails only where the value is finally used. `FJS-425`. |
+| **`toFieldErrors` was unreachable, and a checkout is exactly the case it exists for.** | Sierra re-exports it from `resource.js` with a comment saying `sierra/junction` is the one import for resource work — and the index dropped it. `resource.fieldErrors(err)` hid the gap, because it only shows for a form with no resource behind it: a form over a custom method, which is what `validateInput`'s `input:` was built to make possible. `FJS-429`. |
+| **A conditional block stopped tracking the variable its condition reads.** | The payments panel lists each payment's event ledger, filtered from a separately-fetched list. After a refund the payment's status and amount updated and the ledger block never appeared — while the count beside it, reading the same variable in the same row, said 2. Isolated in mesa's own harness: of three readers in one row, only the `{#if}` stops. `FJS-468`. The panel renders the list unconditionally now, which is better markup anyway — an empty list renders no rows on its own. |
+| **Adding one member to an enum broke every write of it, and everything upstream said it was fine.** | `PaymentStatus` grew `refunded`. The DDL snapshot regenerated with the new member, `fli check` was clean, the app booted, and the first webhook to write it died on `CHECK constraint failed: status` — inside a transactional method, so the ledger row and the payment update rolled back together and the symptom was *the order did not move*. SQLite has no ENUM type, litestone enforces one with a CHECK, and the migration engine had never compared one, despite its own header listing *change CHECK* as a rebuild trigger. `FJS-466`. |
+| **A write that never went through a service announced nothing — in every app, since the day the feature shipped.** | `announceDataWrites` finds the service for a model through one index, and that index was keyed by the SERVICE name while the lookup used the MODEL name. Every service in every app is named in the plural, so it missed for all of them: `FJS-010` (a job's `asSystem()` write reaching an open tab) and `FJS-307` (a bulk write announcing `changed`) were both dead on arrival. The unit tests could not see it because they all declare `model: 'Order'` by hand, which is the one shape no real service file has. Two more fell out of the same pull: `createBaseService` was dropping four of the options it accepts, so a declared `idField` was REPORTED to the devtools and ENFORCED as undefined (`FJS-464`, `FJS-462`). |
+| **A state transition made from another service moved the row and told nobody — and then told everybody twice.** | `payments.record` settles an order from a webhook, so the move happens through a Litestone client rather than through the orders service. The write tap dropped `transition` events outright, so the seller's open tab stayed on `pending` with a 200 and nothing logged. Announcing it then produced TWO frames for one write — `update` and `transition` both fire — which is the double broadcast the framework refuses on the service path. Litestone now stamps the update with the move's name, and only when the move is really going to be announced (`FJS-463`). |
+| **A prerendered page could not import its own neighbour, and the build stayed green about it.** | Giving the shop a currency toggle put `import { money } from '../../money.js'` in an island. `renderComponent` writes the compiled module to a temp directory, so the relative path resolved against the temp directory and the page stopped being built — reported as one warning among the bundler's own, after which the build exited 0 and said *no route declares `render: static`* about a page that declares exactly that. Two fixes, one each side: mesa rewrites a relative non-Mesa import to an absolute path (`FJS-438`), and sierra fails a build whose prerender threw instead of warning about it (`FJS-439`). `verify:site` is what caught it. |
+| **Money was written five ways here and with no currency at all in two emails.** | `` `£${n.toFixed(2)}` `` in the products list, the product page, the basket, the Banked tile and the prerendered catalogue — and `order.total.toFixed(2)` in two notification bodies, an amount with no currency in the one place a reader is being told what they were charged. Same shape as `FJS-408` and the same answer: one owner in `@frontierjs/toolbelt/units`, which is where it has to live because the API formats the same amounts and cannot import anything under `web/`. `FJS-440`. |
+| **The compiler emitted `$$runtime.get($$runtime.get(fn))` and said nothing.** | A derived `const` called inside a nested callback, on the right-hand side of an assignment to a reactive `let`, comes out wrapped twice — the component throws at mount, half-built, with the message naming neither the file nor the identifier. Two lines above, in the same block, the same kind of call compiles correctly. Worked around here with a plain `for` loop; open as `FJS-424`, un-reduced, because four attempts at a minimal fixture compiled the block away instead. |
+| **The same compiler defect, worked around four times in one file, was never the shape it was written down as.** | A derived `const` on the right of an assignment to a reactive `let` came out `$$runtime.get($$runtime.get(cellFor))(…)`, and the runtime CALLS a function it is handed — so the derived was invoked with no arguments and the result called, throwing at mount with the page half-built and nothing naming the line. This page hit it on the size picker, then again when it grew stock availability, and the workarounds record a shape that is wrong in three ways: not a nested callback, not `$:`, not `find` versus `reduce`. A bare `pick = derived(1)` in a plain function does it. What made it look narrow is that a derived holding a VALUE double-wraps harmlessly, so only the ones holding functions ever spoke. All four workarounds are gone and the page reads as it was written. `FJS-424`. |
+| **A declared value set was invisible to every CLI tool, and the app was fine.** | `valueset ProductColour { source Colour  value name  scope current }` parsed, enforced and worked in the browser — and `litestone ddl`, `jsonschema`, `access` and `release` each refused this schema with *no valueset 'ProductColour' in this schema*, about a declaration forty lines above the binding. `parseFile` rebuilds the schema key by key to resolve `import "…"` and had no line for value sets, so they were dropped from imported files **and from the root one**. `createClient` parses the text it is handed, which is why the running app never saw it and no unit test could. `FJS-435`. |
+| **A colourway the shop had retired came back as `UNIQUE constraint failed`.** | `@values(ProductColour, open)` means a merchant may type a colourway that is not on the list and it joins it. `Ochre` is on the list and out of the set's `@@scope`, which is a different thing — and `open` treated both as missing, created a row, and hit `Colour`'s own `@unique`. The caller got SQLite's sentence about a table they had not named, saying the opposite of what happened. The `open` path asks one unnarrowed read first now and refuses with *Ochre is in Colour but is not offered by ProductColour*, creating nothing: growing a shared list as a side effect of a write that never landed is worse than the refusal. `FJS-434`. |
+| **Every litestone refusal reached a form as a banner, never under its control.** | Two boundaries write a per-field error and they spell the field differently — junction's validator says `field`, litestone's `ValidationError` says `path: ['colour']` — and `toFieldErrors` read only the first. Litestone is the half carrying every rule a browser cannot pre-check, because the check needs a query or a stored row: a value set, a `@@transitions` move, a soft-deleted `@unique`. All of them rendered away from the box they name, with `<Form>` unable to mark it invalid. Found by refusing one save in a real browser. `FJS-436`. |
+| **The one column a job writes had no shape, and a `type` in the seed lost its own wording.** | `recordTracking` read `$.data as { trackingCode?: string }` — a cast that asserts three things and checks none, which is what every CUSTOM METHOD in every FJS app was doing, because `autoValidate` derives from a model and covers only CRUD. Declaring `type TrackingUpdate { … }` here and naming it with `methods: [{ method, input }]` closed that. Wiring it found the second half: a `type` field emitted its structure and none of its presentation, so `@label("Tracking")` and an authored `@length` message were carried for a model column and silently dropped for the identical declaration inside a type — the 400 said `trackingCode is required` where the schema had written `Tracking`. Litestone had one presentation block reachable only from the model path (`FJS-401` is what it still does not cover). |
 | **A watcher tab proved a rename nobody meant to make.** | The `@system` work moved the courier job off `patch` and onto a `recordTracking` action, and a custom action **announces under its own name** — so the live event stream said `orders recordTracking` where `verify:live` expected `orders patched`. Nothing else could see it: junction's suite, `verify` and `verify:jobs` were all green, because a broadcast's NAME is only observable from a second tab. The expectation was updated rather than the code — the new name is the correct one, and it is now the drive's record of a design decision rather than of a mechanism. |
 | **Every overlay in the kit was invisible, and the palette froze the app.** | `{@attach}` ran when an element was BUILT rather than when it mounted, so the attachment saw a detached node — and `el.animate(…, { fill: 'forwards' })` on a disconnected element returns an animation that never starts, even once it is connected. Every kit overlay painted at keyframe 0. CommandPalette is `position: fixed; inset: 0; z-index: 9000`, so clicking **Search ⌘K** put an invisible sheet over the page that swallowed every click: "nothing happens and the app is unresponsive". Reported by the owner, not by a drive — `verify:ui` was 26/26 green against it, because every assertion asked whether the DOM was there. It now opens the palette by clicking the button and asserts opacity, hit-testing and size. `FJS-114`. |
 | **A `.mesa` route was compiled as MARKDOWN — but only by the prerenderer.** | Mesa routed any source beginning with `---` to its Markdown compiler, and a `---` block is how every Sierra route states its title. Markdown escapes what it does not recognise, so `<CatalogList client:load products={…} />` came out as a paragraph of ESCAPED TEXT with the props stringified into it, while `<LiveStock />` beside it compiled as a component and mounted correctly. Sierra's Vite path strips frontmatter first, so dev and the SPA build were right and the static build was wrong **for the same file**. The extension decides the language now. `FJS-106`. |
 | **Every prerendered `<input>` carried `formaction="http://localhost/"`.** | happy-dom's `cloneNode` re-derives an input's attributes from default properties, so each instance of a template gained the build machine's own URL. `formaction` overrides its form's action — a prerendered form would post to whoever built the site. Mesa parses per instance on the server now. `FJS-107`. |
 | **A prerendered page linked no stylesheet and had no theme.** | It shipped every `@frontierjs/css` class name in the app and not one rule behind them, because a static document is assembled by Sierra and Vite's HTML transform never runs on it. The SPA built from the same source looked right, which is why nobody had seen it. `document: { bodyClass }` plus automatic linking of the build's CSS assets. `FJS-108`. |
-| **A prerendered page could publish gated data, and nothing checked.** | Adding one `render: static` route to this app found a fail-OPEN hole in the check being built to stop exactly that. `importCompanion` swallows an import error and returns null, so a `.meta.js` that *throws on import* was indistinguishable from a route with no companion and was waved through as "reads nothing" — which is what happened on the first `bun run build:public`, run under Node, where the companion's db import died on `bun:sqlite`. The page was emitted anyway. A companion that exists but could not be read is now UNKNOWN, which is the one case the check exists to refuse. `ISSUES.md` FJS-081; `web/src/public-site/catalog/` is the route. |
+| **A prerendered page could publish gated data, and nothing checked.** | Adding one `render: static` route to this app found a fail-OPEN hole in the check being built to stop exactly that. `importCompanion` swallows an import error and returns null, so a `.meta.js` that *throws on import* was indistinguishable from a route with no companion and was waved through as "reads nothing" — which is what happened on the first `bun run build:site`, run under Node, where the companion's db import died on `bun:sqlite`. The page was emitted anyway. A companion that exists but could not be read is now UNKNOWN, which is the one case the check exists to refuse. `ISSUES.md` FJS-081; `site/src/routes/catalog/` is the route. |
 | **Signing out never told the server, in this app and in basecamp.** | Sierra's `logout()` dropped the local token and closed the socket; nothing anywhere in the repo called `POST /auth/logout`, so the `Session` row stayed valid for its full 30 days and a token that had leaked was still a session. The route existed, `onLogout` existed, the audit event existed — and none of it had ever run outside a test. It was invisible because the UI behaves identically either way: you are signed out on this machine, which is what a person checks. The cause was that there was no developer-facing auth API in the browser at all, so both apps hand-rolled one and each stopped where it looked finished. `FJS-D20`. |
 | **Every row policy in the framework matched nothing.** | `@@allow('read', userId == auth().id)` is the shape `@frontierjs/notifications`' own README ships. It returned an empty list for every signed-in caller, and the rows were plainly there under `asSystem()`. Junction's `SessionContext` names the caller `userId`; Litestone's policy language reads `auth().id` — its documented spelling — and nothing bridged the two, so the predicate compared a column to `undefined`. **Gates were fine**, because `sessionGateLevel()` was written against Junction's shape; the half that was translated worked and the half that was not failed in silence, which is why an app with `@@gate` and no `@@allow` would never notice. `FJS-097`. |
 | **Fixing that broke the audit log, which is how it was found twice.** | With a real `id` on the principal, the audit trail finally had an actor to record — and its `actorId` column was declared `Int` while `@frontierjs/auth` issues uuids. The first audited write after signing in threw `cannot store TEXT value in INTEGER column auditLogs_idx.actorId` and took the request with it. It had been unreachable for exactly as long as the bug above existed: no id meant a null actor, and NULL fits an INTEGER column. Two defects, one masking the other, both in one afternoon. `FJS-098`. |
@@ -360,13 +578,13 @@ asked who had sent it:
 | **A cron could be scheduled and never run.** | Caravan's admin routes could retry a job and cancel a job, but not *start* one — so the only way to reach a nightly sweep was to wait until 03:00. Every cron handler in every app was untestable, and unrunnable during an incident. `POST /jobs/run/{name}` exists now, and the body becomes the job's data. |
 | **A generated form offered a human a box the system owns.** | Adding `trackingCode` to the schema put a *Tracking* control in the order form — correct behaviour for a form derived from the model, and wrong for the domain: whatever you typed would be overwritten by a worker a second later. Nothing in FJS could say "the system writes this column", so the create page carried the only hard-coded field name in the app, marked as the workaround it was. **Fixed 2026-08-15**: `@system` on the column says it in the schema, the control table has no control for a `readOnly` field, and the page carries no field name at all. The courier job writes it through a `recordTracking` action naming the column — `system: ['trackingCode']` — which keeps the gate and the audit actor that `asSystem()` would have dropped. `FJS-D22`. |
 | **A custom action told nobody it had changed anything.** | Every live-update observation this app had ever made was the tab that made the change, so none of them could tell a broadcast from an echo. A watcher tab that never acts settles it: `orders created` and `orders removed` do cross to a stranger and the store applies them — and the `pay` between them was never published at all. `callService` announced only the five CRUD writes; the browser client had been listening for action events since the day it was written. **What hid it was this app**: it re-issued `find()` after every action, so the acting tab looked right and every other tab went quietly stale. Fixed in junction, ruled as `FJS-D21`, and the refetch is gone — the table re-grades from the broadcast now. `bun run verify:live`, 14 assertions, 4 of which fail if the fix is reverted. |
-| **A Mesa component cannot expose a method.** | `export function submit()` in an instance script is dropped from the compiled output entirely, so `<Form>`'s own `on:submit={submit}` threw `ReferenceError` on the first click — and VISION §10.2 documents `counterRef.reset()` as a supported API. The obvious workaround, `export let submit = async () => {…}`, emits `$runtime.get(sig) = true` for each assignment in the body and does not parse. **No render test could catch either half**: SSR never dispatches an event. `ISSUES.md` FJS-087. |
+| **A Mesa component cannot expose a method.** | `export function submit()` in an instance script is dropped from the compiled output entirely, so `<Form>`'s own `on:submit={submit}` threw `ReferenceError` on the first click — and VISION §10.2 documents `counterRef.reset()` as a supported API. The obvious workaround, `export let submit = async () => {…}`, emits `$$runtime.get(sig) = true` for each assignment in the body and does not parse. **No render test could catch either half**: SSR never dispatches an event. `ISSUES.md` FJS-087. |
 | **An unpicked relation picker silently selected the first row.** | The kit's placeholder `<option>` was `disabled`, and a disabled option cannot hold the selection. A select whose options arrive late — which is every relation picker — lost the placeholder the moment the list repopulated and landed on the first real customer. The form then filed the order against them with nothing on screen having said so. Had been failing this drive's `form.customerStartsEmpty` for days. |
 | **A control shadowed the schema's `@label`.** | `Select` and `Textarea` computed `nameToLabel(name)` and passed it down as an explicit label, so a rule's `title` could never win: `@label("Customer")` rendered as "Customer Id" and the annotation was unreachable through the kit. |
 | **This drive could only be run once per database.** | It deletes an order, and `seed()` guarded everything on `product.count() > 0` — so the orders ran out, no restart brought them back, and the second run failed in ways that read as a regression in whatever you had just changed. A verification that only works once is not one; the seeder now guards per table and restores the seeded orders by reference. |
 | **A click inside a portal never reached its handler.** | Mesa delegates events from the target up to a registered root, and only the app's container is one. `<mesa:portal>` appends to `document.body`, outside it — so every dropdown item, command-palette row and toast dismiss button in the kit was inert. Correct markup, correct ARIA, no error, nothing happens. **Fixed** in mesa: a portal registers its target as a delegation root, reference-counted so two open portals cannot tear each other's listener down. |
 | **Every store in `@frontierjs/ui` was inert.** | `toasts.add()` queued correctly and the Toaster never rendered; ⌘K flipped a boolean nothing was listening to. A plain object is watched through `watchProxy`, and only a write through that proxy notifies — the rule this app's own `session.js` documents. All four kit stores now write through a handle. |
-| **`<Modal onclick={() => open = false}>` threw on click.** | An assignment inside a COMPONENT prop was rewritten as a signal read: `$runtime.get($$sig_open) = false`. `on:click` on an element had always been handled; the component path had not. |
+| **`<Modal onclick={() => open = false}>` threw on click.** | An assignment inside a COMPONENT prop was rewritten as a signal read: `$$runtime.get($$sig_open) = false`. `on:click` on an element had always been handled; the component path had not. |
 | **`$: fn(), handler` emitted spliced garbage** — and threw on a `const`. | The post-call hook mixed two coordinate systems and produced `$$set_high(sa'`, sliced out of an import statement; Vite said only "contains invalid JS syntax". Separately, the hook replaces the function binding, so a `const` (`const { get: rows } = useStore(…)`) threw `Assignment to constant variable` at mount. Both fixed; the second is now a compile error that says what to do instead. |
 | **A completed step kept announcing itself as the current one.** | An attribute whose only dependency was a `{@const}` was classed static and written once, while the class binding beside it stayed reactive. |
 | **Compiler errors were being ignored.** | Sierra's mesa-plugin forwarded `analysis.warnings` and dropped `analysis.errors`, so a settings screen with five correctly-diagnosed `bind:` errors rendered anyway and silently collected nothing. |
@@ -388,9 +606,9 @@ And the original eight:
 | | |
 | --- | --- |
 | **`@@gate` + `@frontierjs/auth` works.** | The repo's `CLAUDE.md` said it could not — "the shipped resolver rejects every Junction/auth session … a verified user, and even `role: 'admin'`, both grade 1". Out of date: `FrontierGateGetLevel` was fixed on 2026-08-04 to stop reading an *absent* `verifiedAt` as "unverified", so the auto-installed default now grades a verified auth session `USER(4)` with no `getLevel` supplied at all. Verified by running it. |
-| **The default still cannot reach ADMIN(5).** | It grades standing from `isAdmin` / `isOwner` / `isSystemAdmin` — booleans auth's `toContext()` does not emit — and reads `role` only as a presence check, never interpreting the string. Deliberate: `'admin'` means whatever an app decides, and guessing would hand out level 5 on a string match. So an app that grades by role says so in one place, and that place is [`api/gate.ts`](api/gate.ts). Without it, `role: 'admin'` creates fine and is refused DELETE at level 4. |
+| **The default still cannot reach ADMIN(5).** | It grades standing from `isAdmin` / `isOwner` / `isSystemAdmin` — booleans auth's `toContext()` does not emit — and reads `role` only as a presence check, never interpreting the string. Deliberate: `'admin'` means whatever an app decides, and guessing would hand out level 5 on a string match. So an app that grades by role says so in one place, and that place is [`api/src/core/gate.ts`](api/src/core/gate.ts). Without it, `role: 'admin'` creates fine and is refused DELETE at level 4. |
 | **`sessionGateLevel()` is a hand copy of `FrontierGateGetLevel`.** | Litestone cannot import Junction (dependency direction), so the same function exists on both sides of the boundary. Change one, change both — a fix applied to only one of them is a gate that grades differently depending on which side asked. |
-| **An unverified email cannot write anything.** | `emailVerified` defaults to `false` → `verifiedAt: null` → VISITOR(1) → every create 403s. Correct by the documented rule ("null means the app models this stage and this user has not reached it"), but it reads as a broken app. [`api/seed.ts`](api/seed.ts) marks the demo users verified and says why. |
+| **An unverified email cannot write anything.** | `emailVerified` defaults to `false` → `verifiedAt: null` → VISITOR(1) → every create 403s. Correct by the documented rule ("null means the app models this stage and this user has not reached it"), but it reads as a broken app. [`api/src/seed.ts`](api/src/seed.ts) marks the demo users verified and says why. |
 | **`createClient({ db })` is silently ignored** when the schema declares `database main`. The declaration wins. Passing `db: ':memory:'` does not give you an in-memory database — it writes the declared file path and tells you nothing, so an "in-memory" probe accumulated state across runs and failed with `EmailTakenError` on the second. |
 | **`$setAuth(user)` returns a scoped client; it does not mutate.** `db.$setAuth(u)` followed by `db.customer.create(…)` grades as *anonymous* — `getLevel` receives `null` — with no warning. It is `const userDb = db.$setAuth(u)`. |
 | **`@guarded` is not a level.** `@guarded(5)` does not parse: `@guarded` is a system-context lock taking only `(all)`. Per-role read access to a column is field-level `@allow('read', auth().role == 'admin')`, which is what `Customer.notes` uses. |
@@ -424,7 +642,8 @@ gates, end to end, verified. Deliberately absent:
 | | |
 | --- | --- |
 | **A real mail client** | The confirmation email is rendered by `@frontierjs/email-kit` now and asserted to be a table document — but nobody has opened one in Outlook, Gmail or Apple Mail. `bun run email:preview` writes it to a file; `curl localhost:8111/outbox` gets the delivered copy to forward to yourself. |
-| **`static` / islands** | `web/src/public-site/` prerenders a catalogue. What is unproven is an island rehydrating in the built output. |
+| **`static` / islands** | `site/src/routes/` prerenders a catalogue. What is unproven is an island rehydrating in the built output. |
+| **Live availability across shoppers** | A hold another shopper takes does not move the number on your product page until you act; the page re-asks after each of your own actions. It is a decision, not an omission: a hold would have to travel on a channel to get there, a broadcast does not re-check the gate, and `StockReservation` is `@@gate("5.…")` for reads — so publishing them would hand every open browser exactly the rows the Data boundary refuses it. The buy box can be one hold stale; the server refuses regardless and says which of *sold out* and *in other baskets* it is. |
 | **`@frontierjs/ui`'s remaining 35 components** | 29 of 64 are now driven in a browser. `DatePicker` (1200 lines), `Drawer`, `Popover`, `ConfirmationPopover` and `FileUpload` are compile-only. The way in is a screen that genuinely needs one, not a gallery. |
 | **`static` / islands target, email previews** | Build-mode wings off this same app rather than separate projects. |
 | **jetty, the VS Code extension** | Different containers. Out of scope for a single app, by design. |

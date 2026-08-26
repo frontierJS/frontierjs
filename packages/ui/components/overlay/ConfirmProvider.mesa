@@ -1,0 +1,110 @@
+<script>
+  // ConfirmProvider.mesa
+  // `data-confirm` — a destructive action confirms itself, declaratively.
+  //
+  // Mount once near the root, beside <Toaster /> and <AlertProvider />. After
+  // that any element in the app can ask for a confirmation by writing an
+  // attribute, and no component wires anything:
+  //
+  //   <button class="btn danger" data-confirm="Delete this order?"
+  //           on:click={() => remove(order)}>Delete</button>
+  //
+  //   <a href="/leave/" data-confirm data-confirm-title="Leave the workspace?">Leave</a>
+  //
+  // ── Why an attribute rather than a component ──────────────────────────────
+  // The kit already ships `ConfirmationPopover`, and it is wired per call site:
+  // a trigger snippet and an `onconfirm`, about ten lines each. Measured across
+  // this repo's own apps, basecamp had 16 destructive one-click buttons and not
+  // one confirmation of any kind — the component was not rejected, it was
+  // out-competed by not doing it. An attribute costs one word, degrades to a
+  // plain button when nothing is mounted, and works on an element no component
+  // owns (`FJS-D115`).
+  //
+  // ── How the click gets its second life ────────────────────────────────────
+  // One listener, at the document, in CAPTURE phase — so it runs before the
+  // delegation root Mesa mounts, and stopping propagation there is what makes
+  // the original handler not run. On confirm the element is marked and clicked
+  // again; the mark is what lets that second click through. `el.click()` is the
+  // one re-fire that covers all three shapes: a delegated handler sees a
+  // bubbling click, a submit button submits its form, an anchor navigates.
+  //
+  // Invariant 11 is why it is one listener and not one per element.
+  import ConfirmPanel from './ConfirmPanel.mesa'
+
+  export let title        = 'Are you sure?'          // defaults for the whole app
+  export let message      = 'This action cannot be undone.'
+  export let confirmLabel = 'Confirm'
+  export let cancelLabel  = 'Cancel'
+  export let tone         = 'danger'
+
+  let pending  = null        // { el, title, message, confirmLabel, tone } while asking
+
+  // The element whose NEXT click is the confirmed one. Deliberately a plain
+  // object property rather than a reactive `let`: it is written and read inside
+  // one synchronous event dispatch, and a signal read there answers the value
+  // from before the write — so the re-fired click was caught by this listener
+  // and the confirmed action never ran.
+  const refire = { el: null }
+
+  function onDocumentClick(e) {
+    const el = e.target?.closest?.('[data-confirm]')
+    if (!el) return
+
+    // The re-fire. Clear first: a handler that throws must not leave the
+    // element permanently exempt from its own confirmation.
+    if (refire.el === el) { refire.el = null; return }
+
+    e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation()
+
+    const stated = el.getAttribute('data-confirm')
+
+    pending = {
+      el,
+      // `data-confirm` with no value is legitimate: it asks for the app's
+      // default wording rather than for a blank panel.
+      message:      stated || message,
+      title:        el.getAttribute('data-confirm-title') || title,
+      confirmLabel: el.getAttribute('data-confirm-label') || confirmLabel,
+      tone:         el.getAttribute('data-confirm-tone')  || tone,
+    }
+  }
+
+  function confirm() {
+    const el = pending?.el
+    pending  = null
+    if (!el) return
+    refire.el = el
+    el.click()
+  }
+
+  function cancel() {
+    const el = pending?.el
+    pending  = null
+    // Back where they were. A keyboard user who cancels and finds themselves at
+    // the top of the document has been punished for saying no.
+    el?.focus?.()
+  }
+
+  $.onMount(() => {
+    document.addEventListener('click', onDocumentClick, { capture: true })
+  })
+
+  $.onDestroy(() => {
+    document.removeEventListener('click', onDocumentClick, { capture: true })
+  })
+</script>
+
+{#if pending}
+  <ConfirmPanel
+    anchor={pending.el}
+    title={pending.title}
+    message={pending.message}
+    confirmLabel={pending.confirmLabel}
+    {cancelLabel}
+    tone={pending.tone}
+    onconfirm={confirm}
+    oncancel={cancel}
+  />
+{/if}

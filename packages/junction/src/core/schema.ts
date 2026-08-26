@@ -19,6 +19,7 @@
 import type { ServiceContext } from './context.ts'
 import { partitionBulk }       from './envelope.ts'
 import { BadRequest }          from './errors.ts'
+import { fieldError }          from './field-errors.ts'
 
 // ─── Field definition ─────────────────────────────────────────────────────
 
@@ -249,13 +250,10 @@ function buildCompiledSchema(schema: Schema, opts: SchemaOptions = {}): Compiled
 
     parse(raw: unknown): Record<string, unknown> {
       const result = compiled.validate(raw)
-      if (!result.valid) {
-        const err = new BadRequest(
-          result.errors.map(e => `${e.field}: ${e.message}`).join(', ')
-        )
-        err.data = result.errors
-        throw err
-      }
+      // Through fieldError() rather than building the throwable here: an app's
+      // own business rules produce the same shape through the same function, so
+      // a declared rule and a hand-written one cannot report differently.
+      if (!result.valid) throw fieldError(result.errors)
       return result.data
     },
 

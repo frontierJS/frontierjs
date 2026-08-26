@@ -217,6 +217,14 @@ export function defineEnv<S extends EnvSpec>(spec: S): EnvOutput<S> {
     }
 
     // ── Soft warnings (non-fatal) ─────────────────────────────────
+    //
+    // These are graded BY NAME and only when the app declares them. Junction
+    // reads none of them — a session issued by @frontierjs/auth is a row found
+    // by a random token, and there is no `auth.secret` in AppConfig — so this is
+    // a courtesy to an app holding its own signing key (better-auth, a JWT of
+    // its own), never a sign that the framework is using the value. Reading it
+    // the other way is how `AUTH_SECRET` came to be generated, declared and
+    // required across three packages with no reader anywhere (`FJS-360`).
     if (key === 'AUTH_SECRET' || key === 'JWT_SECRET' || key === 'SESSION_SECRET') {
       if (typeof value === 'string' && value.length < 32) {
         warnings.push(`  ${key} is only ${value.length} chars — use at least 32 for security`)

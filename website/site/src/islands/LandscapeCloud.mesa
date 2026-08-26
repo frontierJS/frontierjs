@@ -1,0 +1,254 @@
+<!--
+  The landscape explorer: the word cloud, the filter, and the sort.
+
+  What is already in the prerendered file: every project's register entry, every
+  detail card, the filter chips and the factor buttons. So the page is readable
+  and indexable with no JavaScript, which it was not before — the whole thing
+  arrived from a fetch.
+
+  What has to happen here:
+
+  The CLOUD is packed by measurement — an Archimedean spiral with bounding-box
+  collision, shrinking the whole set together until it fits — so it cannot exist
+  in a file written at a size nobody has. It is built from `data-*` on the
+  register entries rather than from a second copy of the data.
+
+  The REGISTER is reordered and hidden, never rebuilt. Re-rendering it here
+  would be a second implementation of markup the page already has, and the two
+  would drift.
+-->
+<script>
+  const MIN_PX = 13
+  const MAX_PX = 78
+  // Convex: t² pushes the top of the range up and collapses the bottom, so the
+  // cloud reads as a hierarchy rather than a paragraph of similar-sized words.
+  const CURVE  = 2.1
+  const FLOOR_PX = 9
+  const PAD = 9
+
+  $.onMount(() => {
+    const cloud  = document.querySelector('[data-cloud]')
+    const rows   = document.querySelector('[data-rows]')
+    const detail = document.querySelector('[data-detail]')
+    const filters = document.querySelector('[data-filters]')
+    const seg     = document.querySelector('[data-factors]')
+    if (!cloud || !rows || !detail) return
+
+    const root = document.documentElement
+    const entries = [...rows.querySelectorAll('.entry')]
+    const cards   = [...detail.children]
+
+    // The data the cloud needs, read off the markup the page already carries.
+    const items = entries.map((el) => ({
+      rank:  el.dataset.rank,
+      name:  el.dataset.name,
+      url:   el.dataset.url,
+      tier:  el.dataset.tier,
+      stance: el.dataset.stance,
+      v: {
+        closeness:   +el.dataset.closeness,
+        inspiration: +el.dataset.inspiration,
+        proximity:   +el.dataset.proximity,
+      },
+      el,
+    }))
+
+    const params = new URLSearchParams(location.search)
+    let factor = ['closeness', 'inspiration', 'proximity'].includes(params.get('factor'))
+      ? params.get('factor') : 'closeness'
+    let stance = params.get('stance') ?? 'all'
+    if (stance !== 'all' && !items.some((i) => i.stance === stance)) stance = 'all'
+
+    const tierColor = (tier) =>
+      getComputedStyle(root).getPropertyValue('--tier-' + tier).trim()
+
+    const shown = () => items.filter((i) => stance === 'all' || i.stance === stance)
+
+    // ── the cloud ─────────────────────────────────────────────────────────
+    const buildCloud = () => {
+      cloud.querySelectorAll('a').forEach((el) => el.remove())
+      const list = shown()
+      if (!list.length) return null
+
+      const vals = list.map((i) => i.v[factor])
+      const lo = Math.min(...vals), hi = Math.max(...vals)
+
+      // Biggest first — the packer places what it cannot shrink around.
+      const words = list
+        .slice()
+        .sort((a, b) => b.v[factor] - a.v[factor])
+        .map((it) => {
+          const t  = hi === lo ? 1 : (it.v[factor] - lo) / (hi - lo)
+          const px = MIN_PX + Math.pow(t, CURVE) * (MAX_PX - MIN_PX)
+          const el = document.createElement('a')
+          el.href = it.url
+          el.target = '_blank'
+          el.rel = 'noopener'
+          el.textContent = it.name
+          el.style.fontSize = px.toFixed(1) + 'px'
+          el.style.color = tierColor(it.tier)
+          el.dataset.rank = it.rank
+          el.setAttribute('aria-label',
+            `${it.name} — tier ${it.tier}, closeness ${it.v.closeness}, influence ${it.v.inspiration}`)
+          el.addEventListener('mouseenter', () => showDetail(it.rank))
+          el.addEventListener('focus', () => showDetail(it.rank))
+          cloud.appendChild(el)
+          return { el, px }
+        })
+
+      place(words)
+      return list.slice().sort((a, b) => b.v[factor] - a.v[factor])[0]
+    }
+
+    const place = (words) => {
+      const W = cloud.clientWidth, H = cloud.clientHeight
+      if (!W || !H) return
+      for (const it of words) { it.w = it.el.offsetWidth; it.h = it.el.offsetHeight }
+
+      // Shrink everything together until the whole set fits, rather than
+      // dropping the words that lost the race.
+      for (let attempt = 0; attempt < 14; attempt++) {
+        const scale = Math.pow(0.93, attempt)
+        if (attempt > 0) {
+          for (const it of words) {
+            it.el.style.fontSize = Math.max(FLOOR_PX, it.px * scale).toFixed(1) + 'px'
+            it.w = it.el.offsetWidth
+            it.h = it.el.offsetHeight
+          }
+        }
+        if (spiral(words, W, H)) return
+      }
+      // Nothing fits (a very short viewport) — fall back to a plain flow.
+      for (const it of words) {
+        it.el.style.position = 'static'
+        it.el.style.display = 'inline-block'
+      }
+    }
+
+    const hits = (x, y, w, h, placed) => placed.some((b) =>
+      x < b.x + b.w + PAD && x + w + PAD > b.x &&
+      y < b.y + b.h + PAD && y + h + PAD > b.y)
+
+    const spiral = (words, W, H) => {
+      const placed = []
+      const cx = W / 2, cy = H / 2
+      for (const it of words) {
+        let ok = false
+        for (let s = 0; s < 5000; s++) {
+          const t = 0.20 * s
+          const r = 2.4 * t
+          // 1.45 stretches the spiral into an ellipse wider than it is tall,
+          // which is the shape of the box.
+          const x = cx + r * Math.cos(t) * 1.45 - it.w / 2
+          const y = cy + r * Math.sin(t) - it.h / 2
+          if (x < 2 || y < 2 || x + it.w > W - 2 || y + it.h > H - 2) {
+            if (r > Math.max(W, H)) break
+            continue
+          }
+          if (!hits(x, y, it.w, it.h, placed)) {
+            it.el.style.left = x.toFixed(1) + 'px'
+            it.el.style.top = y.toFixed(1) + 'px'
+            placed.push({ x, y, w: it.w, h: it.h })
+            ok = true
+            break
+          }
+        }
+        if (!ok) return false
+      }
+      return true
+    }
+
+    // ── the register and the detail card ──────────────────────────────────
+    const showDetail = (rank) => {
+      const it = items.find((i) => i.rank === String(rank))
+      if (!it) return
+      detail.style.borderLeftColor = tierColor(it.tier)
+      for (const c of cards) c.classList.toggle('is-shown', c.dataset.rank === String(rank))
+      for (const e of entries) e.classList.toggle('on', e.dataset.rank === String(rank))
+    }
+
+    const buildRegister = () => {
+      const list = shown()
+        .slice()
+        .sort((a, b) => b.v[factor] - a.v[factor] || +a.rank - +b.rank)
+      // Reordered, not rebuilt: appendChild moves a node that is already there.
+      for (const it of list) rows.appendChild(it.el)
+      for (const it of items) it.el.hidden = !list.includes(it)
+      rows.dataset.empty = String(!list.length)
+    }
+
+    const render = () => {
+      const lead = buildCloud()
+      buildRegister()
+      if (lead) showDetail(lead.rank)
+    }
+
+    // ── controls ──────────────────────────────────────────────────────────
+    const syncFactor = () => {
+      for (const b of seg?.querySelectorAll('button') ?? [])
+        b.setAttribute('aria-pressed', String(b.dataset.factor === factor))
+      const chosen = seg?.querySelector(`[data-factor="${factor}"]`)
+      const label = document.querySelector('[data-factor-label]')
+      const help  = document.querySelector('[data-factor-help]')
+      if (label && chosen) label.textContent = chosen.dataset.label
+      if (help && chosen)  help.textContent  = chosen.dataset.help
+    }
+
+    const onFactor = (e) => {
+      const b = e.target.closest('button[data-factor]')
+      if (!b) return
+      factor = b.dataset.factor
+      syncFactor()
+      const url = new URL(location.href)
+      url.searchParams.set('factor', factor)
+      history.replaceState(null, '', url)
+      render()
+    }
+
+    const onStance = (e) => {
+      const b = e.target.closest('.chip')
+      if (!b) return
+      stance = stance === b.dataset.key ? 'all' : b.dataset.key   // click again to clear
+      for (const o of filters.querySelectorAll('.chip'))
+        o.setAttribute('aria-pressed', String(o.dataset.key === stance))
+      const url = new URL(location.href)
+      if (stance === 'all') url.searchParams.delete('stance')
+      else url.searchParams.set('stance', stance)
+      history.replaceState(null, '', url)
+      render()
+    }
+
+    const onRows = (e) => {
+      const el = e.target.closest('.entry')
+      if (el) showDetail(el.dataset.rank)
+    }
+
+    seg?.addEventListener('click', onFactor)
+    filters?.addEventListener('click', onStance)
+    rows.addEventListener('mouseover', onRows)
+
+    // Re-pack on resize — the spiral is measured against the live box.
+    let t = null
+    const onResize = () => { clearTimeout(t); t = setTimeout(render, 160) }
+    addEventListener('resize', onResize)
+
+    // The ramp colours differ per theme, so a switch has to re-read them.
+    const onTheme = () => render()
+    addEventListener('fjs:theme', onTheme)
+
+    syncFactor()
+    for (const o of filters?.querySelectorAll('.chip') ?? [])
+      o.setAttribute('aria-pressed', String(o.dataset.key === stance))
+    cloud.dataset.state = 'ready'
+    render()
+
+    return () => {
+      clearTimeout(t)
+      seg?.removeEventListener('click', onFactor)
+      filters?.removeEventListener('click', onStance)
+      rows.removeEventListener('mouseover', onRows)
+      removeEventListener('resize', onResize)
+      removeEventListener('fjs:theme', onTheme)
+    }
+  })
+</script>

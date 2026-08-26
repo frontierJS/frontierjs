@@ -1,5 +1,862 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-25 — a block test reading a derived, covered
+
+`test/browser/runtime/{fixtures,specs}/chained-derived` — a `{#if}` whose test
+reads a `$:` derived rather than a plain `let`, with a sibling attribute reading
+the same value. It PASSES, and that is what it is for: `FJS-512` is a screen
+where this shape did not update, and the fixture is the list of what has been
+ruled out — a derived rather than a let, a method call rather than the value, a
+sibling attribute on the same element, an outer branch chain that does not
+change branch, and an object replaced whole by an async handler after an await.
+
+The attribute is asserted before the blocks on purpose. It separates *the
+derived did not recompute* from *the blocks did not re-run*, which are different
+bugs with different fixes, and in the real screen it was the second.
+
+## 2026-08-25 — `$:` on a value with no depth is refused
+
+`FJS-505`. 1324 vitest + 82 runtime-browser + 47 vite-browser, 0 fail.
+
+The bare `$: a` form is the DEEP-watch opt-in. It is what changes `a`'s accessor
+from `$$runtime.get($$sig_a)` to `$$proxy_a`, so that a mutation three levels
+down notifies — and the comment above the registration already said so.
+
+On a PRIMITIVE there is nothing to proxy. `localWatchProxy` hands the value
+straight back, `$$proxy_a` is an ordinary local holding a snapshot, and every
+read of `a` in the component compiles to a plain variable read:
+
+    let n = 0                      var __a = $$runtime.get($$sig_n) > 2
+    let n = 0 ; $: (n)             var __a = $$proxy_n > 2
+
+The second subscribes to nothing. **The value is right, the screen is stale, and
+there is no error, no warning and no console output anywhere** — which is the
+most expensive way for anything to be wrong.
+
+Narrowed to exactly one form. `$: a, () => { }` (a watch with a body) and
+`$: d = a` (a derivation) both emit the signal read and were never affected,
+which is why `@frontierjs/ui`'s Combobox and DatePicker — both of which watch a
+local `let` — work.
+
+**It is refused, not repaired, because the declaration is redundant.** A local
+`let` is already a signal, so a whole-value watch on one can only add
+deep-mutation tracking, and a primitive has no depth. There is nothing to lose
+by refusing and a silent failure to gain by allowing. The tracking fix was the
+alternative and is not free: `ctx.accessors[root]` would become a sequence
+expression, and two call sites compare that string by equality.
+
+Conservative on purpose — only an initialiser that is VISIBLY a primitive
+refuses (`0`, `''`, `false`, `null`, a template literal, no initialiser at all).
+`let x = count()` has the same hole and is not decidable here, and a rule that
+guessed would refuse `let rows = []`.
+
+**A sweep of all 313 components in the repo found one other instance and it was
+live**: `$: (handoffError)` in `example`'s basket screen compiled the alert's
+`{#if}` to `() => ($$proxy_handoffError) ? 0 : null`, so a spent or expired
+checkout link showed a shopper nothing at all. The API refusal had a drive and
+the screen had none; `verify:widget` covers it now.
+
+19 tests in `test/watch-no-depth.test.js`: the refusal matrix in both
+directions, the message naming the variable and both ways out, and three
+behavioural cases that mount real components — a plain `let` re-rendering on its
+own, and the deep watch still tracking a mutation on an object and on a named
+path, which is the half that must not regress.
+
+## 2026-08-25 — the SSR serialiser escapes, and there are tests that say so
+
+`FJS-500`, `FJS-475`. 1305 vitest + 82 runtime-browser + 47 vite-browser, 0 fail.
+
+`<p>{text}</p>` sets `textContent` at runtime and is the safest expression in
+the language. At BUILD time it renders into happy-dom and serialises with
+`container.innerHTML`, and 14.12.3 did not re-escape a text node on the way out
+— so `renderComponent` over that component with
+`text = '<img src=x onerror=alert(1)>'` emitted the tag live, and every
+prerendered page in every Sierra static build was publishing unescaped strings.
+
+**Nothing in this package's code was wrong, which is why nothing here could see
+it.** The client path is correct; only the round trip through the DOM was not,
+so the runtime suite and both browser drives agreed the escaping worked. The
+bare serialiser is one line: `div.textContent = '<script>alert(1)<\/script>'`
+reads back as live markup.
+
+`happy-dom` is `^20.11.6`, which was already `FJS-475`'s stated fix and had been
+deferred as six majors needing the suite behind it. The suite needed no change
+for the API rewrite. Three advisories, two critical, go with it.
+
+**Four tests pin the behaviour, and they were run against 14.12.3 first to
+confirm they fail.** An assertion about a dependency belongs in the suite and
+not in a version range: a downgrade, a second resolved copy or a serialiser
+regression is red now, rather than an injected script on a page a CDN holds.
+They cover the four things a naive fix gets wrong — markup in an interpolation,
+a closing tag breaking out of its element, an ampersand that must not be
+double-escaped, and an entity written inside a `<script>` block, which is raw
+text in HTML and must survive untouched.
+
+**Five more cover the ATTRIBUTE half, which was the wider hole and was not in
+the original report.** Text nodes are where this was found; an attribute value
+that escapes its own quotes is worse, because a text node can only inject an
+element and this injects an EVENT HANDLER onto an element the page already
+trusts. Measured on 14.12.3, through the same round trip:
+
+    setAttribute('title', '" onmouseover=alert(1) autofocus x="')
+    → <a href="/x" title="" onmouseover=alert(1) autofocus x=""></a>
+
+which re-parses to an `<a>` carrying `onmouseover`, `autofocus`, `x` and a stray
+`1`. `<img alt={…}>` and `<a href={…}>` are database strings on every
+prerendered catalogue page.
+
+They assert by RE-PARSING the output and counting the element's attributes
+rather than by matching text, and the difference is not stylistic:
+`title="&quot; onmouseover=alert(1)"` contains the characters `onmouseover=`
+and is completely safe, so a string test grades the encoding while the question
+is whether an attribute was added. The payload is asserted to survive intact as
+a VALUE — escaping is not sanitising, and a product called `5" pipe` has to come
+back as `5" pipe`. The fifth is the agreement test this suite is built on: the
+client sets the attribute through the DOM and never serialises, SSR sets the
+same one and does, and the two outputs must be equal.
+
+## 2026-08-24 — `++` answers a value, and postfix answers the right one
+
+`FJS-485`. 1295 vitest + 82 runtime-browser + 47 vite-browser, 0 fail.
+
+`x++` on a reactive `let` compiled to `$$set_x($$runtime.get($$sig_x) + 1)` in
+both rewriters. That is right as a statement and wrong twice as an expression:
+`$$runtime.set` returned nothing, so `const a = ++n` bound `undefined` — true of
+`n += 1` and `--n` as well — and prefix and postfix compiled to the same string,
+so `n++` would have answered the NEW value once it answered one at all.
+
+`set` answers what it wrote now, which is the whole fix for the prefix and
+compound forms. Postfix emits `$$runtime.postUpdate($$sig_x, $$set_x, +1)`,
+which holds the old value across the write.
+
+**A runtime call and not an inlined arrow, and the first attempt proves why.**
+`(($$v) => ($$set_x($$v + 1), $$v))(get)` is correct JavaScript and starts with
+`(` — and this house writes no semicolons, so a statement beginning `(`
+continues the line above it. `@frontierjs/ui`'s form fixture has `done++` under
+a `throw new Error('rejected')`; inlined, that parsed as a CALL on the Error
+object, and the counter never moved on either path. One failing assertion in a
+857-case browser drive, on a form that submits. An identifier cannot start
+that.
+
+Found in `example`'s storefront. `const mine = ++inflight` is the ordinary guard
+against an out-of-order search response: `mine` was `undefined`, so
+`mine !== inflight` was true every time and every answer the shop gave was
+thrown away — an empty list, no error, and a box that reads as a server not
+answering.
+
+**Five tests pinned the wrong output**, and that is why it survived: every one
+of them asserted the emitted TEXT, and both things wrong here are only visible
+in a value. `test/emission.test.js` builds a component, clicks it and reads
+`1,1,12,12` off the page now; the text assertions are updated beside it.
+
+## 2026-08-24 — `bind:` on an element is form values, and `__` is ruled a tier
+
+Two rulings, both closing something that had been open since `FJS-470`.
+
+**`FJS-D136`** — on an ELEMENT, `bind:` means the DOM writes back, and it does
+that for `value`, `checked` and `files`, plus `group` and `this` which have
+their own paths. Everything else is now a compile error naming `x={expr}`.
+
+The second direction was never there: nothing in the DOM changes `readonly` or
+`colspan` by itself, so the read-back handler can never fire. What made it a
+defect rather than a redundancy is that the FIRST direction was usually missing
+too — the generic branch is `el[name] = v`, and for the eight attributes whose
+DOM property is spelled differently that writes a JS expando the DOM never
+reads. `bind:class` was the measured case (`FJS-478`); `for`, `readonly`,
+`maxlength`, `minlength`, `tabindex`, `colspan`, `rowspan` and
+`contenteditable` are the same shape.
+
+**Exposure sized before ruling: zero.** Every `bind:` in the repo is a form
+value or a COMPONENT prop, and a component prop goes through `bindProp`.
+`bind:open`, `bind:sort`, `bind:record` are all components and all unaffected.
+The alternative — an alias table mapping the nine spellings — was rejected: it
+buys a binding that writes correctly and still never reads back, which is the
+shape being removed.
+
+**`FJS-D137`** — `__` is the fourth tier and it is the CALLING CONVENTION:
+`__anchor`, `__props`, `__block` are the component function's parameters and
+`__prev` is the render callback's. It does not converge on `$$`, because
+**jetty's build plugin matches three of them by name** out of compiled output,
+which is `FJS-D134`'s class.
+
+The convergence framing had the population wrong, which is why it kept looking
+unfinishable: `__` holds parameters (four names, in scope, three protocol),
+runtime PROPERTIES (`$$runtime.__dev`, `n.__resolving` — unshadowable), and
+generated locals inside emitted callbacks. Only the first group is a name any
+rule can touch.
+
+What decided it was watching the same move fail today: `FJS-470` renamed
+`$runtime` for a naming rule and silently broke jetty's HMR for weeks
+(`FJS-481`). The rule is four lines now, each true, rather than three with a
+silent exception — and `$class` and `$dom` are stated as the two protocol names
+that correctly wear a single `$`.
+
+## 2026-08-24 — the calling convention is reserved
+
+`FJS-482`. `__anchor` and `__props` are the component function's own parameters,
+`__block` is threaded into every `track()` call, and `__prev` is the render
+callback's. None was in `BUILTIN_LOCALS`, so an author could declare one at the
+top level of a script — where it lands in the same scope and wins.
+
+**A shadow, not a redeclaration**, which is why this is not `FJS-471`: the output
+is valid JavaScript and the failure moves to runtime, or nowhere.
+
+```
+function __anchor(){}   → throws at mount, `anchor.before is not a function`
+const __prev = 9        → renders `[object Object]`, silently
+```
+
+`function __block()`, `function __props()` and `class __dev {}` survived the
+cases probed — `__dev` is `$$runtime.__dev`, a property rather than a scope name,
+so it cannot be shadowed at all. `__block` is reserved anyway: it reaches every
+`track()` call, and a shape that does get to it would fail the same silent way.
+
+Reserved rather than renamed. Three of the four are protocol — jetty's build
+plugin matches `__anchor, __props, __block` as text — so moving them is
+`FJS-D134`'s decision and not this one. The message is split by kind: the
+existing one says *the compiler injects it into the same scope, and two
+declarations is a SyntaxError*, and neither half of that is true here.
+
+A nested scope is deliberately untouched: a parameter of the author's own
+function shadows nothing of the compiler's.
+
+## 2026-08-24 — the docs are swept to what the compiler actually does
+
+Two drifts, found together because they live in the same sentences.
+
+**The one that was expected**: `FJS-D135` made the bare spelling canonical and
+moved this repo's 79 components, and the docs went on teaching `$.props` /
+`{...$.attributes}`. **88 sites across 20 live files**, VISION alone holding 49.
+
+**The one that was not**: `FJS-470` renamed every emitted identifier to `$$` and
+swept no documentation at all. **127 more sites** still showed `$runtime`,
+`$option`, `$tpl0`, `$sig_x`, `$parentElement`. VISION's own *how it compiles*
+illustration — the block a reader goes to first — carried
+
+```js
+const $.slots  = $runtime.makeSlots(__block);
+```
+
+which is not merely stale, it is not JavaScript. `$dom` and `$class` are left on
+a single dollar because they are protocol, not internals (`FJS-D134`).
+
+**The REPL examples are code, not prose, and moved with the components**: 45
+sites in `example/examples.js`, plus the coverage matcher in `repl.test.js`,
+whose feature keys were the door spellings and whose lookbehinds now exclude
+`$$` so a compiler-internal name cannot satisfy a check for an author-facing
+one.
+
+**A blanket pass is what got this wrong the first time.** The second sweep
+rewrote `$props` to `$$props` in 68 places — the four data bags are legitimate
+emitted names AND the canonical author spelling, and only the surrounding
+sentence says which. Reverted and repaired by hand: a compiled-output listing
+keeps `$$`, author-facing prose takes the bare name, and RULE 18a's example is a
+door-only member again, because `$props` mentions no `$` and the rule is about
+mentioning `$`.
+
+History is untouched — `CHANGES.md`, `DECISIONS.md`, `ISSUES.md` and the handoff
+archive say what was true when they were written.
+
+`emission.test.js`'s § 17 scraper accepts either spelling now, and was
+negative-controlled: removing `$.tick`'s row still fails it by name.
+
+## 2026-08-24 — `bind:class` on an element is refused
+
+`FJS-478`. It was documented as the two-way half of class passthrough and it
+has never worked.
+
+`bind:class` and `:class` parse into `bind:class={$class}` and then take the
+**form-value path**, whose generic branch is `el[name] = v` with a read-back of
+`el[name]`. With `name === 'class'` that is `el['class']` — and there is no such
+DOM property; it is `className`. Measured against a real DOM:
+
+```
+after el.class = "raised":
+  getAttribute(class) = "own hash"      unchanged
+  className           = "own hash"      unchanged
+  el.class            = "raised"        a JS expando nothing renders
+```
+
+The write reached nothing and the read-back read its own write.
+
+**Nothing caught it because nothing used it** — zero `.mesa` files, across
+`packages/ui`'s 69 components and every app in the repo. And `compiler.test.js`
+had a case that PINNED it: *bind:class in child auto-wires $class*, asserting
+`bindInput` was emitted, which is exactly the broken output. It passed for as
+long as the feature was broken.
+
+**Refused rather than fixed.** The observe direction — a child mutating its own
+class set with the parent watching — needs a `MutationObserver` nobody wrote,
+for a use case with no user, and no comparable framework offers a two-way class
+binding at all. Where one observes element state it makes the binding readonly,
+which is what Svelte's `bind:clientWidth` is. If that is ever wanted it is a
+readonly binding with a new name, not a repair of this one.
+
+`bind:class` on a COMPONENT is untouched — that is an ordinary two-way prop
+through `bindProp`, and the refusal sits on the element path alone.
+
+VISION § 10.8 loses the claim and gains `RULE 31b`. The accepted surface is now
+covered by tests rather than described: `{class}`, `class={$class}`, and
+`{class}` alongside a dynamic `class={expr}` all merge; the three `bind:class`
+spellings refuse; `class:name={expr}` is a different feature and is untouched.
+
+## 2026-08-24 — the five data members get their bare spelling back, canonically
+
+`FJS-D135`. `{...$attributes}`, not `{...$.attributes}`. Also `$props.x`,
+`$slots.default`, `$context.form`, `$async.rows.fetching`. The door still
+answers all five — one binding under two names, aliased at emit — and the bare
+one is what the docs and this repo's own components use.
+
+**The measurement decided it and it is lopsided.** `$.attributes` appears 82
+times in this repo's `.mesa` files and **81 of those are the one spread**,
+sitting in markup where `$.` is JavaScript punctuation in the middle of HTML.
+`$.context` is 51, `$.slots` 10, and `$.props` and `$.async` are zero. The
+complaint was never about twelve members; it was about one shape in a template.
+
+**The line is how the author reads it, not what it compiles to.** A bag is a
+name and then a key; a call is a call. `$.context` and `$.async` are on the
+sugar side despite neither being a plain object underneath — sorting by
+implementation would have put the two most-used members on opposite sides of a
+line nobody writing a component can see.
+
+**Nothing `FJS-D132` bought is given back.** The five names were already refused
+by name, so the sugar costs no namespace at all — it turns *refused, pointing at
+`$.x`* into *an alias for `$.x`*. They stay reserved: a top-level `let $props`
+is refused rather than silently shadowing the injected one.
+
+**The sugar did not make the sugar-ness go away**, and that was measured:
+`{$context.k}` in a template is the same silent `undefined` that `{$.context.k}`
+was, because the rewrite is script-only. `FJS-477`'s template refusal covers
+both spellings now — the bare form is the one people will write.
+
+143 sites across 79 `.mesa` files moved in the same pass, plus the CLI's
+resource template. **Its test now reads the refused list off the compiler**
+(`DOOR_MEMBERS` minus `SUGAR_MEMBERS`) rather than restating it — a hand-kept
+copy would have failed for four names the compiler happily accepts.
+
+**And a fourth drift found by pinning it**: VISION's rules index is a second
+copy of its own rules, and row 18 still read *`$builtins` are auto-injected —
+never manually imported*, the exact thing `FJS-D132` retired, with 18a and 18b
+never added. A test now asserts every inline `**RULE n**` has an index row. It
+found **eleven more** on its first run — 43 through 53, the whole reactivity
+block, indexed nowhere.
+
+## 2026-08-24 — a shadow is respected on the right of an assignment too
+
+`FJS-465`, the defect found beside `FJS-424` and left open a day. A local `const`
+shadowing a derived was rewritten as a read of the derived — valid JavaScript,
+no warning, and the wrong function called.
+
+`rewriteAssignments` rewrote an assignment's right-hand side by slicing that
+expression alone out of the source and handing it to `rewriteExpr`. The
+enclosing function body, and every `let`/`const` declared in it, were therefore
+not in the text being walked. `rewriteExpr` gets this right when it is given the
+whole statement — `collectBlockDeclared` has done that since `FJS-319` — so it
+was only ever the RHS-only call that was blind.
+
+The call is gone. `rewriteAssignments` rewrites assignments and leaves
+identifiers alone, which is what its name says; all seven call sites already
+apply `rewriteExpr` to the whole statement or fragment afterwards, where the
+scope is visible.
+
+**The reason this was filed as needing thought rather than fixed was a bad
+grep.** The issue said six callers skip `rewriteExpr`; that came from matching
+the word in nearby context lines rather than actual calls. There are seven call
+sites and every one of them composes the pair. Nor was a ruling needed: FJS-319
+had already settled that a shadow is respected rather than refused.
+
+One unit test pinned the old contract by calling `rewriteAssignments` on its own.
+It now asserts the composition every caller performs, alongside the
+compound-operator case — which builds its own signal read rather than going
+through the accessor map, and so was never affected either way.
+
+
+## 2026-08-24 — a compiled door member declares the local it emits
+
+`FJS-477`. Three door members are compiled rather than read — a pre-parse pass
+rewrites `$.mounted`, `$.context` and `$.inspect` to `$mounted`, `$context`,
+`$inspect` — and the DECLARATION of those locals was gated on a sniff that
+recognised one shape each. Every other shape emitted a reference to a binding
+nothing declared: clean compile, valid JavaScript, `ReferenceError` on first
+render.
+
+`$.mounted` worked in one spelling out of four. The gate was a regex over the
+script text demanding `const NAME = $mounted(`, which `$.mounted(fn)` on its own
+line, `const m = $.mounted` and `{$.mounted}` all fell straight through.
+
+`$.context` was wider, because it carries two APIs on one path. The compiler
+consumes the SUGAR — `const v = $.context.k` becomes a `$$ctxRead`, and
+`$.context.k = v` a `$$ctxProvide` — and passes the runtime object through
+untouched. So `$.context.use('k')` and `$.context.provide('k', fn)`, which are a
+real export, emitted `$context.use(…)` against a local that was never declared.
+**Every imperative use of context was broken**, and nothing in the repo used it,
+which is why nothing said so.
+
+The gate reads the AST the rewrite produced now. `$mounted` is refused in every
+shape the compiler cannot wire, with the working spelling stated; a surviving
+`$context` reference is what requires the local, so both imperative forms work
+anywhere. In a template, `$.mounted` and the `$.context.<key>` sugar are refused
+naming the script form — the rewrite is script-only, so a template read of the
+sugar was reaching `.k` on `{ use, provide }`.
+
+**The first cut of the template rule refused a REPL example**, whose markup
+contains the sentence *It provides `$.context.count`*. A rule that scans template
+text scans the prose, and prose about the framework is what an example page is
+made of. Both template scans read `templateExpressions()` now — every `{ … }`
+region by brace depth — which closed the same latent trap in the bare-builtin
+refusal beside it.
+
+Also removed: `findContextInBody`, a dead validator in pass 5 carrying a live
+`ReferenceError` on an out-of-scope `n`. Unreachable, so it had never fired.
+
+12 cases in `emission.test.js`, negative-controlled.
+
+## 2026-08-24 — `makeClassResolver` and `$$main` are deleted
+
+They were parked machinery for a feature that was never wired: a parent styling
+NAMED PARTS of a child (`<Card class:header="tight" />`), where overrides live in
+a `$option.$class` map and `'$$main'` is the reserved key for the unnamed root.
+
+Nothing reached it. The compiler's only `getClassMap()` returned
+`{ classMap: {}, metaClass: {}, main: null }` and had no caller, so `metaClass[name]`
+was always falsy and the `$$main` branch was unreachable twice over. The sibling
+`passingClass: false` flag had no reader either, and `runtime.test.js` imported the
+function without calling it.
+
+**It was cited as live protocol, which is why this is a change and not a tidy.**
+`FJS-D134` listed `$$main` beside `class`, `$class` and `children` as a key two
+compiled components pass each other. The other three are read by `runtime.js` on
+every render; this one was read by nothing. The ruling is corrected to the three
+that are real.
+
+Class passthrough is untouched: `{class}` / `bind:class` marks one element, the
+parent's `class=` lands on it, and `bindClassPassthrough` merges. That path never
+went near the resolver.
+
+**The feature is still wanted** — `IDEAS/child-part-styling.md`, and it does not
+want this shape. Addressing the root by plain `class=` and named parts by their own
+channel leaves no unnamed case for a reserved key to stand in for, which is the
+more useful half of the finding.
+
+## 2026-08-24 — the compiler emits no single-`$` name
+
+`FJS-470`. Every identifier the compiler writes into a component module now
+wears two dollars — `$$runtime`, `$$tpl0`, `$$option`, `$$props`, `$$slots`,
+`$$parentElement` and the rest — so `$` means the door, `$:` means a watch,
+`$$` means ours, and `$foo` is an ordinary name an author may take.
+
+**The first attempt failed and the record of why is what made the second one
+work.** Four encodings share the spelling of an emitted identifier and only one
+is a plain identifier: a regex literal escapes it (`\$parentElement`), the
+`inuse` registry keys it as a string paired with a property read, `$class` is a
+protocol key `runtime.js` reads by name, and the runtime's exports sat in the
+same file as names that should move.
+
+Two of those were removed rather than worked around. The exports went bare
+first, so `$$runtime.onMount` has one namespace where `$runtime.$onMount` had
+two. `$class` is ruled out by `FJS-D134`.
+
+**A fifth was found only this time**: `$$` inside a `.replace()` REPLACEMENT
+STRING collapses to a single `$`, so `hoistTemplates` was emitting
+`var $tpl0 = $runtime.template(…)` from declarations that read `$$tpl0 =
+$$runtime.template(…)`. A callback now.
+
+**And two names turned out to be protocol rather than internal**, in exactly the
+sense `FJS-D134` had just ruled. `$dom` is what a block factory answers with and
+`runtime.js` reads it 59 times. The three COMPILED door members — `$context`,
+`$inspect`, `$mounted` — are AUTHOR-space names after the pre-parse rewrite
+turns `$.context` into `$context`, so their injected locals must keep the bare
+spelling or the author's own reference resolves to nothing.
+
+What did NOT converge is `__anchor`, `__block`, `__props` and their neighbours,
+so the four-line rule is still three lines and a footnote. That half stays open.
+
+## 2026-08-24 — the runtime's exports drop their `$`
+
+`import { onMount } from '@frontierjs/mesa/runtime.js'` in a plain `.js`
+module; `$.onMount` in a component. One name for the feature, and the prefix
+now means exactly one thing.
+
+Seven exports moved — `onMount`, `onDestroy`, `onCleanup`, `onMounted`, `tick`,
+`context`, `inspect` — and mesa exports no single-`$` name at all any more. The
+change was half-made already: `onCleanup` had been exported bare for as long as
+`$onCleanup` existed beside it as an alias, which is now deleted rather than
+renamed.
+
+**It is also the first move of `FJS-470`, not just tidying.** That work stalled
+because a rename of the compiler's emitted locals could not be told apart from
+the runtime properties beside them — `const $onMount = $runtime.$onMount` is two
+different namespaces sharing a spelling, and a guard that protects the second
+silently renames only the first. Written `$runtime.onMount`, the ambiguity is
+gone and one of the four encodings that defeated the earlier attempt no longer
+exists.
+
+Two call sites outside this package had it: `@frontierjs/sierra`'s presence
+module imported `$onDestroy`, and its junction module documented it. A repo-wide
+sweep found nothing else — the CRUD generator that would have been the third was
+already fixed in phase 5.
+
+**One collision, worth naming**: `runtime.test.js` has its own module-scope
+`const tick = () => new Promise(…)` helper, which silently shadows a bare import
+of the runtime's `tick`. Imported as `mesaTick` there. A test that reads
+plausibly either way is exactly what a shadow produces.
+
+## 2026-08-24 — `$.option` comes off the door
+
+It was never a design choice. `$option` is an internal wrapper —
+`{ props: __props }` — and it exists because a few runtime helpers take it whole
+rather than taking the props: `makeEmitter` and `attachNamedSlotLegacy`, plus
+`makeClassResolver`, which was deleted later the same day as machinery nothing
+reached (see the entry above). Every other use of it is `$option.props`, which
+is what the component was handed in the first place.
+
+Putting it on `$` was mechanical: it was in the list of injected locals when
+`FJS-D132` phase 1 built the door, and it went on with the rest without anyone
+asking whether a component should reach for it. Three things said it did not
+belong — it was the one member absent from `DOOR_MEMBERS`, so the bare spelling
+was never refused; no `.mesa` file in this repo mentions it; and it was in no
+documentation.
+
+The door is 17 members now: five lifecycle, five animation, seven per-instance.
+
+**The audit that found it also found a documentation gap**: `$.tick`, `$.fade`,
+`$.slide` and `$.fly` are all reachable and none was in `VISION.md` § 17's
+table, which listed thirteen of eighteen. Phase 5 renamed that table without
+grading it against `DOOR_MEMBERS`. All four added, with a note on which half of
+`$` each member lives on and why.
+
+## 2026-08-24 — the docs say what the compiler does
+
+`FJS-D132` phase 5. 132 mentions across twelve live documents moved to the door,
+and `VISION.md` § 17 was rewritten rather than renamed: `$` is introduced as the
+component instance, and three rules state the contract the compiler now enforces
+— RULE 18 (the builtins are reached through `$`), RULE 18a (it may not be
+destructured, aliased or shadowed, and is legal only as the object of a member
+expression), RULE 18b (it does not exist in `<script module>`).
+
+**History was deliberately left alone.** Every `CHANGES.md`, the issue and
+handoff archives, and the registers' own past entries record what was true when
+they were written; rewriting them would make the record lie about a spelling
+that really was the spelling. The split is live documentation against history,
+not markdown against code.
+
+**Three mentions of the bare spelling survive on purpose** and each says why it
+is there: `$onMount` and `$onDestroy` are module exports of the runtime, for a
+composable helper written where there is no instance and therefore no door.
+
+The root `CLAUDE.md` gained a Live-hazards entry, since it is the file a session
+reads first, and this package's `CLAUDE.md` gained the inside view — the two
+halves `$` is emitted in, the four members that are compiled rather than read
+and why `$.async` is not one of them, and why all three refusals throw instead
+of being recorded.
+
+**A generator was found still writing the old spelling**, which no suite would
+have caught until a scaffolded app failed to build: `fli`'s CRUD templates
+emitted `import { $onDestroy } from '@frontierjs/mesa/runtime'` and
+`$onDestroy(unsubscribe)`, and the resource template emitted
+`auto={!$slots.default}`. Both fixed. The `.mesa` codemod could not see them
+because they are strings inside `.js`.
+
+## 2026-08-24 — the bare spelling is retired
+
+`FJS-D132` phase 4, and the breaking half. `$onMount`, `$props`, `$context` and
+their nine siblings are refused with a message naming the replacement. The door
+is the only way in.
+
+**Two places had to be looked at, and they are not the same problem.** The
+instance script parses, so its bare uses are found on the AST — which is what
+lets a name the author declared for themselves be told apart from the builtin,
+so `function f(){ const $props = 1; return $props }` stays legal, as the
+factory-scope collision check already allowed. A template does not parse as
+JavaScript, so its expressions are scanned as text with the script, style and
+comment blocks cut out first.
+
+The check runs on the ORIGINAL script, before phase 1's `$.context` → `$context`
+rewrite turns the new spelling into the old one on its way to the analyser.
+
+**The sniff that decided whether to emit `$` is one rule now.** It was a
+hand-listed OR chain over five animation helper names plus a separate scan per
+builtin, each having to know two spellings; it is one list of members asked one
+question. The five animation helpers are ordinary members of it.
+
+**What this cost inside this package** is the honest measure of what it costs an
+app: the 73 REPL examples, nine test files and two browser fixtures all had to
+move, 39 failures at the start. Two things fell out of that which are worth
+naming. Mesa's `runtime.test.js` imports `$tick` and `$onMount` from the runtime
+and calls them directly — those are module exports, not the component door, and
+they stay bare; the same is true of every `import { $onDestroy }` specifier. And
+a sierra fixture was generating components that called `$props()` as a function,
+which is Svelte's rune syntax and has never been Mesa's; it compiled for as long
+as `$props` was an injected object and the test only graded the build.
+
+Green: mesa 1264 vitest + 82 runtime-browser + 47 vite-browser, `@frontierjs/ui`
+857 with 69/69 components, sierra 1088, email-kit 34, jetty 46, clean production
+builds of basecamp and `example`, typecheck clean.
+
+**Not yet released.** This is a breaking change and the version is still 0.1.3;
+per `FJS-D132` it ships as a 0.1.x patch, which a `^0.1.3` range resolves.
+
+## 2026-08-24 — every component in the repo reaches through the door
+
+`FJS-D132` phase 3. 249 sites across 120 `.mesa` files rewritten from
+`$onDestroy` to `$.onDestroy` and its eleven siblings. Both spellings still
+compile — the old one is retired in phase 4 — so this is the tree catching up
+with the door rather than a change of behaviour.
+
+**39 dead imports went with it.** Thirty-nine components carried
+`import { $onDestroy } from '@frontierjs/mesa/runtime'`, which has never done
+anything in a component: the import binds at module scope and the compiler
+injects a `const $onDestroy` at factory scope, which shadows it. Rewriting the
+specifier would have emitted `import { $.onDestroy }`, which does not parse, so
+the line is removed instead — `$.onDestroy` needs no import.
+
+**The codemod graded itself.** Every file was compiled before and after the
+rewrite and the two results compared, so a file that changed how it compiles was
+reported and not written. That check earned its place twice. It caught the dead
+imports above, and it caught the regex: the first guard excluded a dot before
+the `$`, which also excludes `{...$attributes}` — the spread, which is how this
+kit passes attributes down — so 66 of the 120 files were being silently skipped.
+The dot guard was never needed for idempotency either, since `$.props` has a dot
+where the pattern wants a letter and cannot match twice. Running the codemod a
+second time finds nothing.
+
+`packages/mesa/test/` is deliberately untouched: those fixtures exercise the old
+spelling on purpose, and phase 4 is what decides their fate.
+
+Green after: mesa 1261 vitest + 82 runtime-browser + 47 vite-browser,
+`@frontierjs/ui` 857 with 69/69 components opened, sierra 1088, email-kit 34,
+and a clean production build of both basecamp and `example` — the latter across
+its `web` and `site` surfaces.
+
+## 2026-08-23 — `$` is not the author's to take
+
+`FJS-D132` phase 2. `$` may not be destructured, aliased or shadowed, and each
+is refused by name at compile time.
+
+All three compiled before this, and each lost the door differently. A
+destructure at script top reads `$.async` before it is assigned, because that
+one member is assigned beside its own declaration and the head has already run.
+A copy is not what the compiler tracks when it rewrites `$.context`, so
+`d.context.k = 1` would assign to the shared context object and provide nothing.
+A shadow leaves the name in place and pointing elsewhere.
+
+**One rule covers all of them: `$` is legal only as the OBJECT of a member
+expression.** Reaching through the door is the only thing that mentions it
+legitimately; every other appearance hands out a reference nothing can follow.
+That general rule is what caught `function f({ x } = $)` — a destructure wearing
+a default value, which each of the three named checks walked straight past — and
+then `f($)`, which walked past the general rule too, because an argument list is
+an array child and the check was only applied to single ones.
+
+The specific cases keep their own messages, since *cannot be destructured* and
+*cannot be used as a parameter name* point at different fixes.
+
+**Two things wearing the same character had to survive, and both are asserted.**
+The reactive label `$:` and its named form `$_name:` are not bindings at all —
+JavaScript keeps labels in a namespace of their own — and 77 files in this repo
+use one, so over-refusing there breaks most of the tree. A property called `$`
+(`{ $: 1 }`, `o.$`) names no variable either.
+
+Twenty cases in `test/emission.test.js`. Green: 1242 vitest, 82
+runtime-browser, 47 vite-browser; `@frontierjs/ui` 857 with 69/69 components,
+sierra 1088, jetty 6.
+
+## 2026-08-23 — `$` is the component's door
+
+`FJS-D132` phase 1. The twelve builtins are reachable as `$.onMount`,
+`$.props`, `$.context` and so on. The injected `$onMount` and `$props` still
+work — they are retired in phase 4, not here — so nothing in this repo or any
+app had to change with this.
+
+**`$` is split by what varies per instance.** The five animation helpers and the
+four lifecycle functions are instance-independent and live on a module-scope
+`$shared`; the per-instance `$` is `Object.create($shared)` with only the keys
+that genuinely differ — `option`, `slots`, `props`, `attributes`, `emit`,
+`context`, `mounted`, `inspect`, `async` — assigned on top. Mounting a component
+now allocates one object and copies nothing. Before this, `$` was already
+per-instance and re-listed all five animation helpers in a literal on every
+mount, so the shared half is a saving rather than a new cost.
+
+**Most of the door needs no compiler support**, which is the point of `$` being
+a real object: `$.props.x` is a property read and compiles to one. Four members
+are compiled rather than read, and each would have failed silently as a member
+access — `$context.k = v` becomes a `$ctxProvide` call and left alone would have
+assigned to the shared context object and provided nothing; `$inspect` is
+tracked and then stripped when `debug` is off; `$mounted` is counted for its
+one-per-component rule; `$async.x` is generated per awaited variable. The first
+three are rewritten to their bare spelling before the script is parsed — on the
+AST, so a `'$.context'` inside a string is not caught, and gated on the
+substring so a component not using the door is neither reparsed nor reprinted.
+
+`$async` is the one of the four reachable from a TEMPLATE, which no script-side
+rewrite can see, so it is an ordinary property instead — assigned beside its own
+declaration rather than with the rest of `$`, which the emitted head has already
+run past by then.
+
+**`$` in a `<script module>` block is refused by name.** That block runs once at
+import, outside any instance, so there is nothing there for the door to open;
+the alternative was `$ is not defined` in a browser, naming neither the cause
+nor the way out.
+
+Nine cases in `test/emission.test.js`. Green: 1233 vitest, 82 runtime-browser,
+47 vite-browser; `@frontierjs/ui` 857 with 69/69 components opened, sierra 1085,
+jetty 6 including its classic-script audit, since `$shared` is the first thing
+this compiler has emitted at module scope in a while and that is the shape
+`FJS-030` broke on.
+
+## 2026-08-23 — a builtin name declared by the author is refused
+
+`FJS-471`, and the first phase of `FJS-D132`. The compiler injects thirteen
+names as `const` into the component factory scope — `$props`, `$onMount`,
+`$option`, `$slots` and their neighbours. An instance script declaring one
+emitted a SECOND declaration of that name in the same scope, which is a
+duplicate binding and therefore a `SyntaxError`, while the compile reported
+nothing at all.
+
+That is this repo's Invariant 15 in its exact shape: a clean compile is not
+proof of valid JS. The failure surfaced in the browser, as a parse error inside
+generated code, pointing at a line the author never wrote.
+
+Measured before the fix by compiling each case and parsing the output: 27
+silently-invalid combinations, across `const`, `var` and `function` on nine
+names, plus `$inspect` under `debug` and `$ctxProvide`/`$ctxRead` wherever
+`$context` was in use. `let` came through clean, and only by accident — a
+reactive `let` is renamed to `$$sig_<name>` before emit, so the collision never
+formed. Negative control: a plain identifier and `$zzz` compile and parse in
+every form, and the compiler's own `$runtime`, `$dom`, `$class` and
+`$parentElement` never collided at all, so the surface was exactly the builtins.
+
+All four declaration forms are now refused by name, `let` included, because a
+name that works only through an unrelated renaming pass is not one to build on.
+The refusal THROWS rather than being recorded: everything `analyzeScript` puts
+in its `errors` array is downgraded to a warning at the call site, and a module
+that does not parse is not a warning. It is scoped to the factory, so a nested
+function may still declare the name — over-refusing there would break ordinary
+code that never collided.
+
+Seven cases in `test/emission.test.js`, whose premise this already was.
+
+## 2026-08-23 — a derived is wrapped once
+
+`FJS-424`. `rewriteExpr` was not idempotent, and it is applied at more than a
+dozen sites — in several of them over text `rewriteAssignments` has already put
+it through, since that function rewrites an assignment's right-hand side itself
+and its callers then rewrite the whole statement.
+
+For a reactive `let` the second pass was harmless: the accessor is
+`$runtime.get($$sig_x)`, and `$$sig_x` is not a name in the map. For a DERIVED
+the accessor is `$runtime.get(x)` — still containing `x` — so it wrapped again.
+
+The consequence is not cosmetic, because `runtime.get` CALLS a plain function it
+is handed. A derived holding a function was invoked with no arguments and the
+result called: `$runtime.get(...) is not a function`, thrown at mount with the
+component half-built and the message naming neither file nor line. A derived
+holding a value silently produced a different one, which is the half nobody had
+noticed while the other was worked around twice in one file.
+
+`rewriteExpr` now returns without descending into a `$runtime.get(<Identifier>)`
+call, which is its own output. Idempotence rather than making every caller apply
+it exactly once: six of `rewriteAssignments`' callers do not apply it afterwards,
+and *apply this exactly once* is a rule nothing can check.
+
+**The reported shape was wrong, and the correction is worth more than the fix.**
+It is not a nested callback, not `$:`, and not `find` versus `reduce` — a bare
+`pick = derived(1)` inside a plain function does it. What is required is that the
+target be a reactive `let` and the source be a derived; a plain local target is
+clean, and a reactive `let` read is clean. That is a much wider shape than the
+issue described, and it is why `example` hit it twice in one file.
+
+Found beside it and deliberately not fixed: `FJS-465`, a local `const` shadowing
+a derived, which is rewritten as a read of the derived — valid JavaScript, no
+warning, wrong value. `rewriteAssignments` slices the right-hand side out on its
+own before handing it to `rewriteExpr`, so the enclosing function body and
+everything it declares are not in the text being walked. Asserted still broken in
+`test/derived-double-wrap.test.js`, so fixing it turns that test red.
+
+
+## 2026-08-22 — an ARIA `false` is a statement, not an absence
+
+`aria-expanded={false}` used to remove the attribute. For four ARIA states that
+is a different statement from writing `"false"`, because their default is
+**undefined** rather than false:
+
+| | absent says | `"false"` says |
+|---|---|---|
+| `aria-expanded` | not expandable | expandable, closed |
+| `aria-selected` | not selectable | selectable, not selected |
+| `aria-checked` | not checkable | checkable, unchecked |
+| `aria-pressed` | not a toggle | a toggle, not pressed |
+
+So removing it announces the control as a **different kind of thing**, in
+exactly the state that matters, silently, on a page that looks correct.
+
+Measured in shipped components: `Combobox`'s `aria-expanded={open}` vanished
+whenever it was closed, and `aria-selected={isSelected}` vanished on every
+option that was not chosen — in the Combobox and in the CommandPalette alike.
+`@frontierjs/ui` had a hand-written `revealed ? 'true' : 'false'` on the
+password toggle working around it, with a comment explaining the trap; that is
+one line now and the comment says what the runtime does.
+
+**Only those four.** Every other `aria-*` either defaults to false already —
+`aria-hidden`, `aria-disabled`, `aria-required`, where absent and `"false"`
+agree — or takes a string, where writing `"false"` would be a lie:
+`aria-label={false}` must remove the label, not name the element "false". An
+existing test asserted exactly that and is what caught the first, broader
+version of this fix.
+
+`null` still removes in every case, which is what the `x || null` idiom through
+the components is for.
+
+## 2026-08-23 — a component may import its own neighbour
+
+1216 tests, 0 fail. Browser drives 47/47.
+
+`renderComponent` writes the compiled module to a temp directory, so every
+relative specifier in it points somewhere else. `.mesa` and `.md` imports were
+rewritten to the dependency's own temp path and everything else was left alone
+— which was fine for a bare specifier (Node walks up to a `node_modules`) and
+for an absolute one, and broken for `'./money.js'`. A sibling store, formatter
+or table of constants is an ordinary thing for a page or an island to import,
+and it could not be rendered at all (`FJS-438`).
+
+Rewritten to the absolute path resolved against the ORIGINAL file. A path and
+not a `file://` URL: Node takes either, and Vite's import-analysis refuses the
+URL form — one of the two callers here is a Vite SSR runner.
+
+Found on `example`'s prerendered catalogue, where the page silently stopped
+being built.
+
+
+## 2026-08-22 — a control could be switched on and never off
+
+`set_attribute` and `bindAttribute` are one implementation now, and the bug
+that fell between them is the reason.
+
+**A bound checkbox was one-way.** Removing an attribute does not turn a control
+off: `el.checked` and `el.value` stop reflecting their attribute the moment
+anything writes the property — the DOM's own dirty flag — so once a value had
+been true, every later `false` removed an attribute nobody was reading. The
+reactive path knew this and reset the property; the static path only removed the
+attribute. Which path a component gets is the compiler's choice per attribute,
+so the same component was correct or broken depending on whether the value was
+static, and nothing in a component could see either.
+
+Measured on `example`'s /settings/, where it was reported as the JSON editor
+losing its connection: flipping `dense` in the tree moved the switch once and
+never again. The parent read `false`, the input read `true`, and neither the app
+nor the framework said the two disagreed — `<Switch bind:checked>` had been
+one-way for as long as it existed, and so had `<Checkbox>`.
+
+**Nothing but a real browser can see it.** happy-dom keeps no dirty flag, so the
+whole class is invisible to the vitest suites — `test/browser/runtime/`'s
+`dirty-props` is the assertion, and it covers the second flip as well as the
+first, because a one-shot recovery passes a single round trip.
+
+One behaviour came with the merge: the reactive path now keeps `__value` beside
+a dynamic `<option value={obj}>`, which only the static path did. An object
+attribute stringifies to `[object Object]`, so a bound `<option>` over objects
+could not hand its value back.
+
 ## 2026-08-19 — click an element, open the line that wrote it
 
 `data-fjs-loc="src/pages/Home.mesa:12:3"` on every template element in a dev

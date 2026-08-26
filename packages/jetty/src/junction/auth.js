@@ -14,6 +14,22 @@ import { safeSetToken } from './adapter.js'
 export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token' }) {
   let session = { user: null, authenticated: false, expiresAt: null }
 
+  // Sign-in is `adapter.auth` where the adapter has one, and `call('auth', …)`
+  // where it does not. A pseudo-service named `auth` was the only spelling for
+  // as long as the placeholder was the only adapter, and it cannot be the real
+  // one: Junction has no service by that name — `@frontierjs/auth` registers
+  // `account`, `sessions` and `api-keys`, and establishing a session is a ROUTE
+  // (`FJS-D20`) — so an app that DOES have a service called `auth` would find
+  // its own methods shadowed by three the framework invented.
+  const authApi = {
+    login:  (credentials) => adapter.auth?.login  ? adapter.auth.login(credentials)
+                                                  : adapter.call('auth', 'login',  credentials),
+    logout: ()            => adapter.auth?.logout ? adapter.auth.logout()
+                                                  : adapter.call('auth', 'logout', {}),
+    verify: (token)       => adapter.auth?.verify ? adapter.auth.verify(token)
+                                                  : adapter.call('auth', 'verify', { token }),
+  }
+
   async function loadStoredToken() {
     if (!storage?.local) return null
     try {
@@ -40,7 +56,7 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
       if (!token) return
       // Best-effort verify with server. If verify fails, treat as logged out.
       try {
-        const result = await adapter.call('auth', 'verify', { token })
+        const result = await authApi.verify(token)
         if (result?.user) {
           session = {
             user:          result.user,
@@ -61,7 +77,7 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
      * Phase 2 login: credentials → Junction call → store → upgrade → broadcast.
      */
     async login(credentials) {
-      const result = await adapter.call('auth', 'login', credentials)
+      const result = await authApi.login(credentials)
       // Expected shape (default adapter convention; real Junction may differ):
       //   { token, user, expiresAt }
       if (!result?.token) {
@@ -80,7 +96,7 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
     },
 
     async logout() {
-      try { await adapter.call('auth', 'logout', {}) } catch {/* still log out locally */}
+      try { await authApi.logout() } catch {/* still log out locally */}
       await persistToken(null)
       await safeSetToken(adapter, null)
       session = { user: null, authenticated: false, expiresAt: null }

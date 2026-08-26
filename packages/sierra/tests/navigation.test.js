@@ -147,8 +147,14 @@ function installWindowMock(initialPath = '/') {
       forward() {},
     },
     location: {
-      get pathname() { return _currentPath.split('?')[0] },
-      get search()   { return _currentPath.includes('?') ? '?' + _currentPath.split('?')[1] : '' },
+      // Split on BOTH, in order. `pathname` splitting only on '?' answers
+      // `/docs/#install` for a URL with a fragment, which no browser does.
+      get pathname() { return _currentPath.split('#')[0].split('?')[0] },
+      get search()   {
+        const beforeHash = _currentPath.split('#')[0]
+        return beforeHash.includes('?') ? '?' + beforeHash.split('?')[1] : ''
+      },
+      get hash()     { return _currentPath.includes('#') ? '#' + _currentPath.split('#')[1] : '' },
     },
     scrollY: 0,
     scrollTo() {},
@@ -259,6 +265,48 @@ describe('initRouter', () => {
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
     await waitForNav()
     expect(page.meta.title).toBe('Login')
+  })
+
+  // The boot navigation rewrites the address bar with `replace: true`, so
+  // anything it does not carry is ERASED from the URL the reader arrived at.
+  // The fragment was not carried: `/docs/#install` lost its anchor on every
+  // direct load and every refresh, did not scroll, and left behind a URL that
+  // no longer says where the reader was. Clicking the same link INSIDE the app
+  // worked — that path carries the hash — so it failed only for the person who
+  // pasted a link, which is the person a deep link is for.
+  test('a fragment survives the boot navigation', async () => {
+    installWindowMock('/leads/#pipeline')
+    const tree = makeTree()
+    initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
+    await waitForNav()
+    expect(page.route?.id).toBe('leads')
+    expect(_currentPath).toBe('/leads/#pipeline')
+  })
+
+  // Both at once is the shape that finds the parse. `_navigate` split on '?'
+  // against the WHOLE url, so the fragment landed inside `search` and was
+  // written twice — `?status=open#pipeline#pipeline` — with `page.query.status`
+  // coming out as `open#pipeline`. Unreachable while boot dropped the hash.
+  test('a fragment and a search string survive together, and the query is clean', async () => {
+    installWindowMock('/leads/?status=open#pipeline')
+    const tree = makeTree()
+    initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
+    await waitForNav()
+    expect(_currentPath).toBe('/leads/?status=open#pipeline')
+    expect(page.query.status).toBe('open')
+  })
+
+  // A window with no `hash` at all is a test double, and there are several in
+  // this suite. Concatenating `undefined` onto the boot URL is a 404 on a route
+  // that plainly exists — the first version of the fix above did exactly that.
+  test('a window without a hash property still boots', async () => {
+    installWindowMock('/leads/')
+    delete globalThis.window.location.hash
+    const tree = makeTree()
+    initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' })
+    await waitForNav()
+    expect(page.route?.id).toBe('leads')
+    expect(_currentPath).toBe('/leads/')
   })
 })
 

@@ -1,0 +1,75 @@
+---
+title: FrontierJS Supply Co.
+render: static
+---
+<!--
+  The front page. Prerendered — every byte below is in the file a visitor gets,
+  and there is no JavaScript on this page at all.
+
+  That is the claim `verify:site` checks by reading the built HTML rather than a
+  rendered DOM: a page whose product names arrive from a fetch is a page a
+  crawler sees empty, and it looks identical in a browser.
+-->
+<script>
+  import { priceRange } from '../money.js'
+
+  export let data = null
+
+  const products = data?.products ?? []
+</script>
+
+<div class="container stack">
+  <section class="stack-sm">
+    <h1>Kit for people who ship</h1>
+    <p class="text-muted">
+      Tees, mugs and stickers for the three realms. Everything below was written
+      into this page when the site was built.
+    </p>
+  </section>
+
+  <section class="stack-sm">
+    <h2 class="h4">Latest</h2>
+    <ul class="cards" id="home-featured">
+      {#each products as p}
+        <li class="card" data-slug={p.slug}>
+          <a class="card-link" href={`/products/${p.slug}/`}>
+            {#if p.image}
+              <img class="card-shot" src={p.image.src} alt={p.image.alt} loading="lazy" />
+            {/if}
+            <strong>{p.name}</strong>
+            <span class="badge">{priceRange(p.from, p.to)}</span>
+            {#if p.blurb}<p class="text-sm text-muted">{p.blurb}</p>{/if}
+          </a>
+        </li>
+      {/each}
+    </ul>
+  </section>
+
+  <p><a class="btn" href="/catalog/">Browse the whole catalogue</a></p>
+</div>
+
+<style>
+  .cards {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: var(--space-4);
+    /* `minmax(0, …)` and not `auto`: an <img> at width:100% contributes no
+       intrinsic minimum, and a track sized from content collapses the card. */
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+  }
+  .card-link {
+    display: grid;
+    gap: var(--space-2);
+    text-decoration: none;
+    color: inherit;
+  }
+  .card-shot {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: contain;
+    background: var(--surface-sunken, var(--surface));
+    border-radius: var(--radius);
+  }
+</style>

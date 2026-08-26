@@ -3,10 +3,8 @@
   // Inline confirmation before a destructive action, anchored to the trigger.
   // Portaled to body so it works inside overflow:hidden containers.
   //
-  // `.popover` is a surface; the buttons are `.btn` with a tone. Not a modal
-  // — it is `aria-modal="false"` and does not trap focus, which is right for
-  // a two-button confirmation but means Escape and click-away have to be
-  // wired here.
+  // The panel itself is `ConfirmPanel.mesa`, shared with `ConfirmProvider` —
+  // this file is the trigger and the open/closed state, and nothing else.
   //
   // Usage:
   //   <ConfirmationPopover onconfirm={deleteItem}>
@@ -24,7 +22,7 @@
   //     {#snippet trigger()}<Button>Remove</Button>{/snippet}
   //   </ConfirmationPopover>
 
-  import { tone as toTone, cx, uid } from '../../utils.js'
+  import ConfirmPanel from './ConfirmPanel.mesa'
 
   export let title        = 'Are you sure?'
   export let message      = 'This action cannot be undone.'
@@ -36,123 +34,27 @@
   export let oncancel     = undefined
   export let trigger      = null       // snippet
 
-  let open   = false
-  let x      = 0
-  let y      = 0
-  let placed = false                     // has THIS open been positioned yet
+  let open      = false
   let triggerEl
-  let panelEl
-  let confirmEl
 
-  const titleId = uid('confirm-title')
-  const t = toTone(variant || tone) || 'danger'
+  function handleConfirm() { open = false; restoreFocus(); onconfirm?.() }
+  function handleCancel()  { open = false; restoreFocus(); oncancel?.() }
 
-  const panelAnim = $.entrance({
-    in:  el => el.animate(
-      [{ opacity: 0, transform: 'scale(0.95) translateY(-4px)' },
-       { opacity: 1, transform: 'scale(1) translateY(0)' }],
-      { duration: 140, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
-    ),
-    out: el => el.animate(
-      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.95)' }],
-      { duration: 100, fill: 'forwards' }
-    ).finished,
-  })
-
-  function openPopover() {
-    if (open) return
-    // Hidden until placed: x and y still hold the last open's coordinates, so
-    // a panel painted before its frame callback appears where the trigger used
-    // to be (FJS-331).
-    placed = false
-    open   = true
-    requestAnimationFrame(() => {
-      position()
-      placed = true
-      // Move focus into the panel, or a keyboard user is left on the trigger
-      // with a dialog open that they cannot reach. After the flush, not
-      // before it: focus is refused on a `visibility: hidden` element, and
-      // `placed` only reaches the DOM on mesa's microtask.
-      queueMicrotask(() => confirmEl?.focus())
-    })
-    document.addEventListener('click', onClickAway, { capture: true })
-  }
-
-  function position() {
-    if (!triggerEl || !panelEl) return
-    const tr   = triggerEl.getBoundingClientRect()
-    const pr   = panelEl.getBoundingClientRect()
-    const winW = window.innerWidth
-    const winH = window.innerHeight
-
-    // Prefer below the trigger, flip above if clipped
-    y = tr.bottom + pr.height + 8 > winH ? tr.top - pr.height - 8 : tr.bottom + 8
-
-    // Prefer left-aligned, flip if clipped
-    x = tr.left + pr.width > winW - 8 ? tr.right - pr.width : tr.left
-  }
-
-  function close() {
-    open = false
-    document.removeEventListener('click', onClickAway, { capture: true })
+  function restoreFocus() {
     triggerEl?.querySelector('button, a, [tabindex]')?.focus()
   }
-
-  function onClickAway(e) {
-    if (triggerEl?.contains(e.target) || panelEl?.contains(e.target)) return
-    close()
-  }
-
-  function handleConfirm() {
-    close()
-    onconfirm?.()
-  }
-
-  function handleCancel() {
-    close()
-    oncancel?.()
-  }
-
-  $onDestroy(() => {
-    document.removeEventListener('click', onClickAway, { capture: true })
-  })
 </script>
 
-<mesa:window on:keydown={(e) => { if (e.key === 'Escape' && open) close() }} />
-
-<span bind:this={triggerEl} style:display="inline-block" {class} {...$attributes} on:click|stopPropagation={openPopover}>
+<span bind:this={triggerEl} style:display="inline-block" {class} {...$attributes} on:click|stopPropagation={() => open = true}>
   {@render trigger?.()}
 </span>
 
 {#if open}
-  <mesa:portal to={document.body}>
-    <div
-      bind:this={panelEl}
-      class="popover stack"
-      style:position="fixed"
-      style:gap="0.5rem"
-      style:inline-size="16rem"
-      style:max-width="16rem"
-      style:left="{x}px"
-      style:top="{y}px"
-      style:visibility="{placed ? 'visible' : 'hidden'}"
-      {@attach panelAnim}
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby={titleId}
-    >
-      <strong id={titleId}>{title}</strong>
-      {#if message}
-        <p class="text-sm text-muted" style:margin="0">{message}</p>
-      {/if}
-      <div class="cluster" style:justify-content="flex-end">
-        <button type="button" class="btn ghost" on:click={handleCancel}>
-          {cancelLabel}
-        </button>
-        <button bind:this={confirmEl} type="button" class={cx('btn', t)} on:click={handleConfirm}>
-          {confirmLabel}
-        </button>
-      </div>
-    </div>
-  </mesa:portal>
+  <ConfirmPanel
+    anchor={triggerEl}
+    {title} {message} {confirmLabel} {cancelLabel}
+    tone={variant || tone}
+    onconfirm={handleConfirm}
+    oncancel={handleCancel}
+  />
 {/if}

@@ -80,6 +80,11 @@ export async function loadApp(modulePath: string, exportName: string | null, ser
   const abs = resolve(modulePath)
   if (!existsSync(abs)) fatal(`No such module: ${rel(abs)}`)
 
+  // Before the import, not inside build(): an app reads its environment through
+  // `defineEnv`, which evaluates at module load, so a toggle cleared afterwards
+  // has already been captured.
+  clearLocalToggles()
+
   const mod = await quietly(() => import(`file://${abs}`)) as Record<string, unknown>
 
   if (exportName) {
@@ -104,7 +109,24 @@ export async function loadApp(modulePath: string, exportName: string | null, ser
   return build(candidates[0][1], candidates[0][0], servicesDir)
 }
 
+// A committed artefact may not vary with a developer's local switches, and one
+// of them reaches this tool without anyone passing it: bun auto-loads `.env`
+// from the cwd, and every snapshot generator is rerun from its own file's
+// directory — which is the app root, where that file lives. `DEVTOOLS=1` there
+// put the console in `basecamp`'s committed plugin list, and CI (which has no
+// `.env`, it is gitignored) would then fail the file for not listing it
+// (`FJS-419`).
+//
+// Cleared rather than accommodated: the console is a per-machine, per-session
+// choice about looking at an app, and nothing about what the app SERVES depends
+// on it. Junction naming its own toggle here is not a general escape hatch —
+// anything that changes the surface belongs in the surface.
+function clearLocalToggles(): void {
+  delete process.env.DEVTOOLS
+}
+
 async function build(value: unknown, label: string, servicesDir: string | null): Promise<App> {
+
   const app = typeof value === 'function'
     ? await quietly(() => Promise.resolve((value as () => App | Promise<App>)()))
     : value
@@ -121,6 +143,17 @@ async function build(value: unknown, label: string, servicesDir: string | null):
     const { autoloadServices } = await import('../src/core/loader.ts')
     await quietly(() => autoloadServices({ dir: abs, app, registry: app.services }))
   }
+
+  // `load-config` is a `needsHost` phase too, and skipping it means every
+  // section of junction.config.js is absent from the app this tool describes.
+  // Run BEFORE the boot below, in the position production runs it, or a
+  // plugin's boot() reads the config as it was without the file: `example`
+  // declares its caravan `jobsDir` there, and this reported **no handlers
+  // registered** for an app with three (`FJS-418`).
+  //
+  // cwd is the app root — every snapshot generator is rerun from its own
+  // file's directory — so the default `./api/config` resolves to the right one.
+  await quietly(() => app.applyConfigFile())
 
   // Plugins boot, hooks compile, service routes mount — everything except the
   // phases needing a port. Without it there are no routes to read and no

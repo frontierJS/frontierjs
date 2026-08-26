@@ -14,13 +14,13 @@
 import { describe, test, expect, beforeEach } from 'vitest'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { writeFileSync, mkdtempSync, mkdirSync, symlinkSync } from 'fs'
-import { tmpdir } from 'os'
+import { writeFileSync, mkdirSync, symlinkSync } from 'fs'
 
 import { resolveSchemaPath, generateSchemas } from '../src/build/schema-plugin.js'
 import {
   registerSchemas, schemaFor, allSchemas, allDefs, hasSchemas, resolveRef,
 } from '../src/junction/schema-registry.js'
+import { tmpDir } from './tmp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -73,7 +73,7 @@ model Tag {
 const LITESTONE = resolve(__dirname, '../../litestone')
 
 function fixture(contents = SCHEMA, filename = 'schema.lite') {
-  const dir = mkdtempSync(resolve(tmpdir(), 'sierra-schema-'))
+  const dir = tmpDir('sierra-schema-')
   mkdirSync(resolve(dir, 'db'), { recursive: true })
   const p = resolve(dir, 'db', filename)
   writeFileSync(p, contents)
@@ -102,7 +102,7 @@ describe('resolveSchemaPath', () => {
   })
 
   test('returns null when there is no schema', () => {
-    const dir = mkdtempSync(resolve(tmpdir(), 'sierra-noschema-'))
+    const dir = tmpDir('sierra-noschema-')
     expect(resolveSchemaPath({}, dir)).toBeNull()
   })
 })

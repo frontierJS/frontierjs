@@ -1,5 +1,5 @@
 {
-  "$comment": "FrontierJS — related projects register. tier = thesis proximity (1 nearest). closeness = literal code/API-shape similarity to FJS, 0-100. inspiration = how much Kobami actually learned from it, 0-100 (guessed, edit manually). stance + fjsWay = what FJS actually DID with what it took — the reflection, not the source. Keep fjsWay honest: 'not yet' is a legitimate answer and appears here several times.",
+  "$comment": "FrontierJS — related projects register. tier = thesis proximity (1 nearest). closeness = literal code/API-shape similarity to FJS, 0-100. inspiration = how much FrontierJS actually learned from it, 0-100 (guessed, edit manually). stance + fjsWay = what FJS actually DID with what it took — the reflection, not the source. Keep fjsWay honest: 'not yet' is a legitimate answer and appears here several times.",
   "generated": "2026-08-03",
   "scales": {
     "tier": {

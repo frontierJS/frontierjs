@@ -34,15 +34,18 @@
 // nothing recording which half.
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, slugify, findScoped, getScoped, assertSlugFree, removeScoped, narrowPatch, changesNothing } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 import recipeRun from '../../jobs/recipe-run.job.ts'
+import { announce } from '../../channels.ts'
 
 /** How many runs a screen is handed at once. A fleet run writes one row per
  *  machine, so a recipe on fifty servers is fifty rows from a single click. */
 const RUN_PAGE = 50
+
+/** What a recipe run is given when its own recipe names no bound. */
+const DEFAULT_TIMEOUT_S = 300
 
 export function createRecipesService(app: BasecampApp) {
 
@@ -69,6 +72,29 @@ export function createRecipesService(app: BasecampApp) {
     }))
   }
 
+
+  /**
+   * The run this call is about, read through the CALLER's client.
+   *
+   * This is the refusal `asSystem()` cannot make. `RecipeRun` reaches its
+   * tenant through Recipe and Server, so a run belonging to another workspace
+   * answers nothing here — and a system write below it would have written
+   * whatever id it was handed.
+   */
+  async function runInScope(runId: string) {
+    const run = await db().recipeRun.findUnique({
+      where:   { id: runId },
+      include: { recipe: true },
+    })
+    if (!run) throw new NotFound(`Recipe run '${runId}' not found`)
+    return { run, recipe: run.recipe as Record<string, unknown> | null }
+  }
+
+  /** The gated half. `RecipeRun` update and `Recipe` update are both above any
+   *  standing a workspace grants, which is the schema's statement that an
+   *  outcome is the machine's to write. */
+  const sys = () => app.data.asSystem() as any
+
   return createService({
     name:  'recipes',
     model: 'Recipe',
@@ -83,10 +109,10 @@ export function createRecipesService(app: BasecampApp) {
     // which answers every CRUD verb this service leaves out — PUT included,
     // which would replace a whole row from the wire and take `workspaceId`
     // with it.
-    methods: ['find', 'get', 'create', 'patch', 'remove', 'run', 'runs'],
+    methods: ['find', 'get', 'create', 'patch', 'remove', 'run', 'runs', 'startRun', 'finishRun'],
 
     // ── find ──────────────────────────────────────────────────────────
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const search = $.query.search as string | undefined
 
@@ -98,7 +124,7 @@ export function createRecipesService(app: BasecampApp) {
     },
 
     // ── get ───────────────────────────────────────────────────────────
-    async get(ctx: ServiceContext) {
+    async get() {
       const recipe = await getScoped('recipe', 'Recipe')
       return { ...recipe, runs: await runsFor(recipe.id as string) }
     },
@@ -119,7 +145,7 @@ export function createRecipesService(app: BasecampApp) {
     },
 
     // ── patch ─────────────────────────────────────────────────────────
-    async patch(ctx: ServiceContext) {
+    async patch() {
       const recipe = await getScoped('recipe', 'Recipe')
       const data   = $.data as Record<string, unknown>
 
@@ -155,7 +181,7 @@ export function createRecipesService(app: BasecampApp) {
     // Nothing is executed here. The rows are written `pending` and the job
     // picks them up, so the answer to the click is *what was queued and where*
     // — which is also what the screen renders while it waits.
-    async run(ctx: ServiceContext) {
+    async run() {
       const recipe   = await getScoped('recipe', 'Recipe')
       const serverId = ($.data as { serverId?: string } | null)?.serverId
       const fleet    = await fleetOf()
@@ -193,6 +219,10 @@ export function createRecipesService(app: BasecampApp) {
         const run = await db().recipeRun.create({
           data: { recipeId: recipe.id, serverId: id, script, requestedBy: actor(), status: 'pending' },
         })
+        // The actor and the tenant are carried by the dispatch: caravan reads
+        // both off the request in scope, and the handler declares
+        // `runsAsCaller` — so this work runs as the person who asked for it,
+        // in the workspace they asked in (`FJS-384`).
         await app.jobs.dispatch(recipeRun,
           { runId: run.id, workspaceId: ws() },
           { queue: 'fleet', priority: 5 })
@@ -206,8 +236,88 @@ export function createRecipesService(app: BasecampApp) {
       return { ...recipe, runs, queued: runs.length, unreachable }
     },
 
+
+    // ── startRun / finishRun — the engine's two writes ────────────────
+    //
+    // `recipe:run` used to open `app.data.asSystem()` and write the run row
+    // itself, behind a comment saying a job has no caller to scope to. It has
+    // one: caravan records the actor and the tenant at dispatch and junction
+    // re-binds both through `app.runAs`, so a handler's service call resolves
+    // the membership for that actor and that workspace (`FJS-384`).
+    //
+    // What it cannot do is write the run at the actor's standing —
+    // `RecipeRun` is `@@gate("2.4.8.8")`, update at SYSTEM, which is the schema
+    // saying an outcome is written by the machine and not by whoever asked. So
+    // the write is still `asSystem()` and the CONFINEMENT is the read above it:
+    // the run is fetched through the caller's own client, which reaches its
+    // tenant through Recipe and Server, so a run in another workspace answers
+    // nothing and the write never happens. Under the old shape a wrong id wrote
+    // whatever it named.
+    //
+    // Both are `internalOnly` — declared, because junction answers 405 to a
+    // method `methods:` leaves out on every transport including in-process, and
+    // refused off the wire, because a person fabricating a run's history is not
+    // something a role should buy.
+
+    async startRun() {
+      const { run, recipe } = await runInScope(String($.id))
+
+      const startedAt = new Date().toISOString()
+      await sys().recipeRun.update({
+        where: { id: run.id },
+        data:  { status: 'running', startedAt },
+      })
+      announce(app, ws(), 'recipes patched', { id: run.recipeId })
+
+      // Everything the handler needs, in the call it already had to make: the
+      // script AS QUEUED (the recipe is editable and a fleet run in flight must
+      // not pick up an edit), the timeout, and the name an event line reads.
+      return {
+        runId:     run.id,
+        recipeId:  run.recipeId,
+        serverId:  run.serverId,
+        script:    run.script,
+        startedAt,
+        requestedBy: run.requestedBy,
+        timeoutSeconds: recipe?.timeoutSeconds ?? DEFAULT_TIMEOUT_S,
+        recipeName:     recipe?.name ?? 'unknown',
+      }
+    },
+
+    async finishRun() {
+      const { run, recipe } = await runInScope(String($.id))
+      const patch = ($.data ?? {}) as Record<string, unknown>
+
+      const finishedAt = Date.now()
+      const startedMs  = run.startedAt ? Date.parse(String(run.startedAt)) : finishedAt
+
+      await sys().recipeRun.update({
+        where: { id: run.id },
+        data:  {
+          ...patch,
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs: finishedAt - startedMs,
+        },
+      })
+
+      // Bookkeeping the list reads, counted per SERVER — a recipe let loose on
+      // five machines ran five times. `Recipe` is update-at-ADMINISTRATOR and a
+      // developer may run one, so this is system too, and confined by the same
+      // read.
+      await sys().recipe.update({
+        where: { id: run.recipeId },
+        data:  {
+          lastRunAt: new Date(finishedAt).toISOString(),
+          runCount:  ((recipe?.runCount as number) ?? 0) + 1,
+        },
+      })
+      announce(app, ws(), 'recipes patched', { id: run.recipeId })
+
+      return { runId: run.id, status: patch.status ?? null }
+    },
+
     // ── runs — POST /recipes/:id  X-Service-Method: runs ──────────────
-    async runs(ctx: ServiceContext) {
+    async runs() {
       $.dispatch = false   // read-shaped
       const recipe = await getScoped('recipe', 'Recipe')
       const { limit } = getPagination({ limit: RUN_PAGE, max: 200 })
@@ -229,6 +339,11 @@ export function createRecipesService(app: BasecampApp) {
         // Running is the ordinary act, and the separation is the point: a
         // developer runs a script an admin vetted, and the run says who.
         run:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        // The engine's two. No role hook: the standing that matters was graded
+        // when `run` queued the work, and the caller here is the queue running
+        // as that same actor.
+        startRun:  [internalOnly()],
+        finishRun: [internalOnly()],
       },
     },
   })

@@ -6,7 +6,6 @@
   // is one read rather than a run query per job — the same pair the jobs screen
   // renders in its table.
   import { jobs } from '../../resources/Job.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { onWrite } from './live.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
@@ -28,7 +27,7 @@
   }
 
   load()
-  $onDestroy(onWrite(jobs.service, load))
+  $.onDestroy(onWrite(jobs.service, load))
 
   const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never run'
 </script>

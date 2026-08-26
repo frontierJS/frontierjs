@@ -732,6 +732,76 @@ describe('a schema that imports another file', () => {
     expect(dropped.verdict).toBe('contract')
     expect(dropped.counts.contract).toBe(2)
   })
+
+  // A baseline is parsed by TODAY's validator, and every rule this parser learns
+  // is retroactive. The moment `@@unique` over a nullable column became an error
+  // (`FJS-437`), every ref written before that commit stopped being a baseline:
+  // both commands answered *no baseline* and `--strict`, which fails on no
+  // baseline by design, failed every branch. Measured on basecamp against a real
+  // ref the day the rule landed.
+  //
+  // The schema at that ref shipped. Refusing to compare against it because it
+  // breaks a rule invented afterwards grades the past by today's law.
+  test('a baseline that breaks a rule invented after it is compared anyway', async () => {
+    const dir = makeFixtureDir('release-old-rule')
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })
+
+    // Valid before FJS-437, an error now: a composite unique over two optional
+    // columns, saying nothing about the NULL rows it cannot constrain.
+    const OLD = `
+model Variant {
+  id        Int     @id
+  productId Int
+  colour    String?
+  size      String?
+  @@unique([productId, colour, size])
+}
+`
+    writeFileSync(join(dir, 'schema.lite'), OLD, 'utf8')
+    git('init', '-q')
+    git('add', '-A')
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base')
+
+    // Today's schema says it meant it, and adds a model.
+    writeFileSync(join(dir, 'schema.lite'),
+      OLD.replace('@@unique([productId, colour, size])',
+                  '@@unique([productId, colour, size], nullsDistinct: true)') +
+      `
+model Note { id Int @id  @@gate("2.4.4.5") }
+`, 'utf8')
+
+    const out = JSON.parse((await runCli(dir, ['release', '--from', 'HEAD', '--json'])).stdout)
+    expect(out.baseline.resolved).toBe(true)
+    expect(out.verdict).toBe('expand')
+
+    const access = JSON.parse((await runCli(dir, ['access', '--from', 'HEAD', '--json'])).stdout)
+    expect(access.baseline.resolved).toBe(true)
+    expect(access.baseline.note).toContain('shipped before they existed')
+    expect(access.verdict).toBe('new')
+  })
+
+  // The line the leniency does NOT cross: validation rejects a schema the parser
+  // understood, and there is nothing to compare when it did not.
+  test('a baseline that does not PARSE is still no baseline', async () => {
+    const dir = makeFixtureDir('release-unparseable')
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })
+
+    writeFileSync(join(dir, 'schema.lite'), 'model Broken { id Int @id', 'utf8')
+    git('init', '-q')
+    git('add', '-A')
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'base')
+
+    writeFileSync(join(dir, 'schema.lite'), 'model Fine { id Int @id }', 'utf8')
+
+    const out = JSON.parse((await runCli(dir, ['access', '--from', 'HEAD', '--json'])).stdout)
+    expect(out.baseline.resolved).toBe(false)
+    // A syntax error yields no schema at all — `loadFile` collects it and
+    // returns null — so this lands on the same branch a genuinely unusable
+    // baseline does, and never on the lenient one.
+    expect(out.baseline.note).toMatch(/the schema there has errors/)
+  })
 })
 
 // ─── createTestEnv over a split schema ────────────────────────────────────────

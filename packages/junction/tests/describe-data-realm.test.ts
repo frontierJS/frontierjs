@@ -38,6 +38,11 @@ describe('describeDataRealm', () => {
       enums:     1,
       gated:     '2/3',
       databases: 'main → ./db/shop.db (sqlite), audit → ./db/audit (logger)',
+      // The paths above are shortened against the CWD, so the CWD is what makes
+      // them mean anything — without it the correct run and the one that opened
+      // a database it had just created in the wrong directory print the same
+      // string (`FJS-449`).
+      cwd:       process.cwd(),
     })
   })
 

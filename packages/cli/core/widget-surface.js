@@ -104,9 +104,9 @@ export default defineConfig({
   root: ROOT,
   server: {
     ...base.server,
-    // 8200 = dev / widgetDev / project 0. The SPA is 8000 and the API is 8100;
-    // a widget surface is a third server and needs a slot of its own. See
-    // packages/cli/core/ports.js.
+    // dev / widgetDev / this app's project id — derived, never chosen. A widget
+    // surface is a THIRD server while one is being written and a fourth origin
+    // once it is served, and neither is the SPA's. See packages/cli/core/ports.js.
     port:       parseInt(process.env.WIDGET_PORT ?? process.env.FLI_PORT_WIDGET ?? '${port}', 10),
     // Vite hops to the next free port without a word, and the drive pointed at
     // the port it hopped from then tests whatever else is listening.
@@ -184,7 +184,7 @@ export function widgetStarter({ name, prefix = '' }) {
 `
 }
 
-export function widgetHostPage({ name, prefix = '', appName = 'app' }) {
+export function widgetHostPage({ name, prefix = '', appName = 'app', servePort = 8300 }) {
   const tag = widgetTag(name, prefix)
   return `<!DOCTYPE html>
 <html lang="en">
@@ -205,7 +205,7 @@ export function widgetHostPage({ name, prefix = '', appName = 'app' }) {
     <!-- Point this at wherever the widgets are served from. \`fli widgets:serve\`
          serves dist/embeds with the CORS and cache headers it deploys with, so
          a local check and the real thing answer the same. -->
-    <script defer src="http://localhost:8300/${name}.js"></script>
+    <script defer src="http://localhost:${servePort}/${name}.js"></script>
   </body>
 </html>
 `
@@ -213,7 +213,7 @@ export function widgetHostPage({ name, prefix = '', appName = 'app' }) {
 
 // ─── deployment ───────────────────────────────────────────────────────────────
 
-export function widgetServeEntry() {
+export function widgetServeEntry({ servePort = 8300 } = {}) {
   return `// widgets/deploy/serve.js — the widget origin.
 //
 // Static files and nothing else, with the two headers an embed depends on: CORS
@@ -227,14 +227,14 @@ import { serveWidgets } from '@frontierjs/sierra/widget/serve'
 
 const { url } = await serveWidgets({
   dir:  new URL('../dist/embeds', import.meta.url).pathname,
-  port: Number(process.env.PORT ?? 8300),
+  port: Number(process.env.PORT ?? ${servePort}),
 })
 
 console.log(\`widgets serving at \${url}\`)
 `
 }
 
-export function widgetDockerfile() {
+export function widgetDockerfile({ servePort = 8300 } = {}) {
   return `# widgets/deploy/Dockerfile — the widget surface ships on its own.
 #
 # It is not in the API's image: a widget is released when the pages embedding it
@@ -253,8 +253,8 @@ WORKDIR /app
 COPY --from=build /app/widgets/dist/embeds ./widgets/dist/embeds
 COPY --from=build /app/widgets/deploy ./widgets/deploy
 COPY --from=build /app/node_modules ./node_modules
-ENV PORT=8300
-EXPOSE 8300
+ENV PORT=${servePort}
+EXPOSE ${servePort}
 CMD ["bun", "run", "widgets/deploy/serve.js"]
 `
 }
@@ -271,7 +271,8 @@ CMD ["bun", "run", "widgets/deploy/serve.js"]
  * @returns {{ written: string[], skipped: string[] }} paths relative to `root`
  */
 export function scaffoldWidgetSurface({
-  root, dir = 'widgets', name = 'Hello', prefix = '', appName = 'app', devPort = 8200,
+  root, dir = 'widgets', name = 'Hello', prefix = '', appName = 'app',
+  devPort = 8200, servePort = 8300,
 } = {}) {
   if (!isWidgetName(name)) {
     throw new Error(
@@ -289,9 +290,9 @@ export function scaffoldWidgetSurface({
     ['index.html',                    widgetIndexHtml({ appName, name, tag: widgetTag(name, prefix) })],
     ['src/dev.js',                    widgetDevEntry({ name })],
     [`src/Embeds/${name}.mesa`,       widgetStarter({ name, prefix })],
-    [`test/${widgetTag(name, prefix)}.html`, widgetHostPage({ name, prefix, appName })],
-    ['deploy/serve.js',               widgetServeEntry()],
-    ['deploy/Dockerfile',             widgetDockerfile()],
+    [`test/${widgetTag(name, prefix)}.html`, widgetHostPage({ name, prefix, appName, servePort })],
+    ['deploy/serve.js',               widgetServeEntry({ servePort })],
+    ['deploy/Dockerfile',             widgetDockerfile({ servePort })],
   ]
 
   const written = []
@@ -311,10 +312,10 @@ export function scaffoldWidgetSurface({
  * caller, because `fli new` writes that file once and `make:widget` edits one
  * that exists.
  */
-export function widgetScripts({ dir = 'widgets' } = {}) {
+export function widgetScripts({ dir = 'widgets', servePort = 8300 } = {}) {
   return {
     'dev:widgets':   `cd ${dir} && vite -c config/vite.config.js`,
     'build:widgets': `cd ${dir} && bunx sierra widgets --config config/sierra.config.js`,
-    'serve:widgets': `cd ${dir} && bunx sierra widgets --config config/sierra.config.js --serve --port 8300`,
+    'serve:widgets': `cd ${dir} && bunx sierra widgets --config config/sierra.config.js --serve --port ${servePort}`,
   }
 }

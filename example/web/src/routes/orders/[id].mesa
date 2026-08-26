@@ -12,6 +12,9 @@ title: Order
   // orders.transitions(row, level) — both read out of db/schema.lite.
   import { orders }    from '../../resources/Order.mesa'
   import { customers } from '../../resources/Customer.mesa'
+  import { orderLines }    from '../../resources/OrderLine.mesa'
+  import { payments }      from '../../resources/Payment.mesa'
+  import { paymentEvents } from '../../resources/PaymentEvent.mesa'
   import { session } from '../../session.js'
   import { page, goto } from '@frontierjs/sierra/router'
 
@@ -19,6 +22,7 @@ title: Order
   import Breadcrumbs    from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
   import CopyButton     from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Json           from '@frontierjs/ui/components/display/Json.mesa'
   import Divider        from '@frontierjs/ui/components/display/Divider.mesa'
   import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import DropdownLabel     from '@frontierjs/ui/components/overlay/DropdownLabel.mesa'
@@ -26,25 +30,59 @@ title: Order
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import Mono           from '@frontierjs/ui/components/display/Mono.mesa'
   import Modal          from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import NumberInput    from '@frontierjs/ui/components/forms/NumberInput.mesa'
   import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
   import SectionHeader  from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Skeleton       from '@frontierjs/ui/components/feedback/Skeleton.mesa'
   import StatCard       from '@frontierjs/ui/components/display/StatCard.mesa'
   import Steps          from '@frontierjs/ui/components/display/Steps.mesa'
+  import Table          from '@frontierjs/ui/components/display/Table.mesa'
   import Tab            from '@frontierjs/ui/components/layout/Tab.mesa'
   import TabList        from '@frontierjs/ui/components/layout/TabList.mesa'
   import TabPanel       from '@frontierjs/ui/components/layout/TabPanel.mesa'
   import Tabs           from '@frontierjs/ui/components/layout/Tabs.mesa'
   import Tooltip        from '@frontierjs/ui/components/overlay/Tooltip.mesa'
   import { toasts }     from '@frontierjs/ui/stores/toastStore.js'
+  // One owner of what a currency's decimals are — JPY has none, and every
+  // hand-rolled toFixed(2) invents one (`FJS-440`).
+  import { formatMoney } from '@frontierjs/toolbelt/units'
 
   $: (page.params, session.level)
 
   let order    = null
+  let row      = null      // the record view the order is watched through
+  let unwatch  = null
   let customer = null
+  let items    = []        // OrderLine rows — what was bought
+  let itemsError = null    // why the itemisation is empty, when it is empty for a reason
   let error    = null
   let busy     = null
   let confirm  = null      // the move awaiting confirmation, or null
+
+  // The money. Read separately from the order because it IS separate: a
+  // payment is written when a provider says something happened, and an order
+  // can have more than one behind it (a declined card, then a good one).
+  let taken   = []         // Payment rows for this order
+  let told    = []         // what the provider has told us, per payment
+  let refund  = null       // the payment awaiting a refund, or null
+  let moneyError = null    // why the panel is empty, when it is empty for a reason
+  let amount  = null       // how much of it — blank means all of it
+
+  // `Payment` reads at ADMINISTRATOR(5). The tab is an affordance and the
+  // server regrades regardless, but rendering a panel that can only 401 is
+  // noise rather than permissiveness — so the question is asked of the
+  // schema's own gate rather than of a number written here.
+  $: maySeeMoney = payments.can('read', session.level)
+
+  // What an itemisation shows. A UI decision, like the orders list's own
+  // columns — but every value under it is a column `OrderLine` declares.
+  const columns = [
+    { key: 'description', label: 'Item' },
+    { key: 'sku',         label: 'SKU' },
+    { key: 'quantity',    label: 'Qty',   align: 'right' },
+    { key: 'unitPrice',   label: 'Unit',  align: 'right' },
+    { key: 'lineTotal',   label: 'Total', align: 'right' },
+  ]
 
   // The lifecycle, as the schema states it. `Steps` wants {id,label}; the enum
   // is the list, in declaration order, which is also the order it happens in.
@@ -56,15 +94,137 @@ title: Order
   // either — it is any move whose target is not further along the lifecycle.
   const isTerminal = (move) => !lifecycle.some(s => s.id === move.to)
 
+  /** The order itself, watched rather than read.
+   *
+   *  `service.get(id)` answers a plain object no announcement can reach, so
+   *  this screen used to re-read the whole page after every action and still
+   *  went stale whenever somebody ELSE moved the order (`FJS-518`). A record
+   *  view is a subscription to the row, so a `pay` made from anywhere — another
+   *  tab, a webhook, a job — moves the status here with nothing refreshing. */
+  function watchOrder() {
+    row?.release()
+    row = orders.record(page.params.id)
+    unwatch = row.subscribe(v => { order = v })
+    return row.ready
+  }
+
+  $.onDestroy(() => { unwatch?.(); row?.release() })
+
+  /** What hangs off the order and does NOT move with it — the customer, the
+   *  itemisation, the money. Each is its own read for its own reason (see
+   *  loadItems and loadMoney), and none of them changes when the status does. */
+  async function loadDetails() {
+    customer = order?.customerId
+      ? await customers.service.get(order.customerId).catch(() => null)
+      : null
+    await loadItems()
+    await loadMoney()
+  }
+
   async function load() {
     error = null
     try {
-      order = await orders.service.get(page.params.id)
-      customer = order?.customerId
-        ? await customers.service.get(order.customerId).catch(() => null)
-        : null
+      await watchOrder()
+      await loadDetails()
     } catch (e) {
       error = e.message
+    }
+  }
+
+  /** What was bought — the `OrderLine` rows, in the order they were written.
+   *
+   *  A separate read rather than an `include` on the order, for the reason the
+   *  payments read is separate: the two answer different questions and one of
+   *  them is gated differently. It is also what makes the empty case legible —
+   *  an order with no itemisation and an order whose itemisation could not be
+   *  read are two states, and joining would collapse them into a shorter list.
+   *
+   *  The second argument is the DIRECTIVES themselves, not a bag holding them.
+   *  See `loadMoney` below for what passing `{ directives: … }` does here. */
+  async function loadItems() {
+    itemsError = null
+    if (!order) { items = []; return }
+    try {
+      items = (await orderLines.service.find({ orderId: order.id }, { orderBy: 'id' }))?.data ?? []
+    } catch (e) {
+      items = []
+      itemsError = e.message
+    }
+  }
+
+  /** The payments for this order, and the provider's own account of each.
+   *
+   *  ─── The second argument is the DIRECTIVES, not a bag holding them ──────
+   *
+   *  `client.service(x).find(query, directives)` on the browser client takes
+   *  `{ orderBy, limit }` directly. `{ directives: { … } }` is the SERVER-side
+   *  caller's shape — `app.service(x).find(q, { directives })` — and passing it
+   *  here sends `directives` as a filter key, which `autoFilter` refuses by
+   *  name. The trap the house rules already record is the FIRST argument
+   *  (`find({ limit: 100 })` filters on a column called limit); this is the
+   *  same seam one argument along.
+   *
+   *  ─── And it was invisible, because the failure was swallowed ────────────
+   *
+   *  This read `.catch(() => null)` on both calls, so a 400 became an empty
+   *  ledger and the panel drew as though the provider had told us nothing. A
+   *  failure is recorded now and the panel says so: *no events* and *we could
+   *  not ask* are two states, and a screen that draws them the same way is a
+   *  screen nobody can debug from. */
+  async function loadMoney() {
+    moneyError = null
+    if (!order || !maySeeMoney) { taken = []; told = []; return }
+    try {
+      taken = (await payments.service.find({ orderId: order.id }))?.data ?? []
+      told  = taken.length
+        ? (await paymentEvents.service.find(
+            { paymentRef: { $in: taken.map(p => p.providerRef) } },
+            { orderBy: '-receivedAt', limit: 50 },
+          ))?.data ?? []
+        : []
+    } catch (e) {
+      moneyError = e.message
+      told = []
+    }
+  }
+
+  const eventsFor = (payment) => told.filter(e => e.paymentRef === payment.providerRef)
+
+  /** What is still refundable on a payment — the schema's two columns, not a
+   *  flag. `refundedAmount` is a running total precisely so this is arithmetic
+   *  rather than a state to keep in step. */
+  const leftOn = (p) => Number((p.amount - p.refundedAmount).toFixed(2))
+
+  const money = (n) => formatMoney(n ?? 0, 'USD')
+
+  /** Give money back. The amount is optional and blank means all of what is
+   *  left, which is what the service means by omitting it — so the box is
+   *  empty by default rather than pre-filled with the remainder. A number
+   *  typed to mean "everything" is the shape that goes wrong when the number
+   *  is stale. */
+  async function giveBack() {
+    const target = refund
+    refund = null
+    busy = `refund:${target.id}`
+    const said = toasts.loading('refunding…')
+    try {
+      const body = amount === null || amount === '' ? {} : { amount: Number(amount) }
+      const out = await payments.service.invoke('refund', target.id, body)
+      // The provider's webhook is what moves the rows, and it has already
+      // arrived by the time this resolves — the shop's own listener is
+      // synchronous with the provider's delivery. The ORDER is watched and
+      // needs no re-read; what does is everything beside it, since a refund
+      // moves the payment, the money and the shelf.
+      await loadDetails()
+      said.update('success', `${money(out.refunded)} back — ${money(out.refundedTotal)} of ${money(target.amount)}`)
+    } catch (e) {
+      // 403 from the seed's own @gate(5) on the transition, asked through
+      // transitions(row); 502 when the provider could not be reached, carrying
+      // `retryable` so a shop knows whether to try again.
+      said.update('error', e.message)
+    } finally {
+      busy = null
+      amount = null
     }
   }
 
@@ -78,9 +238,20 @@ title: Order
     // that crosses the network looking like a click that did nothing.
     const said = toasts.loading(`${move.name}…`)
     try {
-      await orders.service.invoke(move.name, order.id)
-      await load()
-      said.update('success', `${move.name} → ${order.status}`)
+      // Optimistic: the move's target is stated by the SCHEMA, so what the row
+      // will look like is known before the call is made, and the screen says so
+      // at once. A refusal — a per-move `@gate`, or a move that is not legal
+      // from here — puts it straight back (`FJS-D138`).
+      //
+      // The row still arrives on the socket afterwards, so nothing here
+      // re-reads it; the message reads the ANSWER rather than the screen,
+      // because a push is asynchronous and a toast is not going to wait.
+      const moved = await orders.mutate(
+        order.id,
+        { status: move.to },
+        () => orders.service.invoke(move.name, order.id),
+      )
+      said.update('success', `${move.name} → ${moved?.status ?? move.to}`)
     } catch (e) {
       // 403 from a per-move @gate, 409 from a move that is not legal from here.
       said.update('error', e.message)
@@ -168,14 +339,16 @@ title: Order
 
   <div class="tiles" style="--tile-min: 12rem">
     <StatCard label="Status" value={order.status} tone={order.status === 'cancelled' ? 'danger' : ''} />
-    <StatCard label="Total"  value={String(order.total)} />
+    <StatCard label="Total"  value={money(order.total)} />
     <StatCard label="Customer" value={customer ? customer.name : '#' + order.customerId} />
   </div>
 
   <Tabs activeId="summary">
     <TabList label="Order detail">
       <Tab id="summary">Summary</Tab>
+      <Tab id="items">Items</Tab>
       <Tab id="moves">Moves</Tab>
+      <Tab id="payments">Payments</Tab>
       <Tab id="raw">Raw record</Tab>
     </TabList>
 
@@ -198,6 +371,81 @@ title: Order
         Every value above came from one <Mono>GET /api/orders/{order.id}</Mono>.
         Nothing on this page asks the schema a second time.
       </p>
+    </TabPanel>
+
+    <TabPanel id="items">
+      {#if itemsError}
+        <Alert tone="danger" id="items-error">{itemsError}</Alert>
+      {:else if !items.length}
+        <p class="text-sm text-muted" id="no-items">
+          This order has no itemisation. Lines are written by
+          <Mono>carts.checkout</Mono> at the moment of sale, so an order raised
+          by hand on this screen has none — and nothing writes them afterwards,
+          which is the point.
+        </p>
+      {:else}
+        <Table {columns} rows={items} id="items-table" compact>
+          {#snippet row(line)}
+            <tr data-line={line.id}>
+              <td>{line.description}</td>
+              <td><Mono>{line.sku}</Mono></td>
+              <td class="num" data-qty>{line.quantity}</td>
+              <td class="num">{money(line.unitPrice)}</td>
+              <td class="num" data-line-total>{money(line.lineTotal)}</td>
+            </tr>
+          {/snippet}
+        </Table>
+
+        <!-- ── The receipt ────────────────────────────────────────────────
+             Every figure is the ORDER'S OWN column, not a sum of the rows
+             above. If the two ever disagree this page should show it, and a
+             footer that re-adds the lines it has just printed can never
+             disagree with them.
+             `Order` stores nine numbers and no references — a rate the
+             merchant edits next month must not reprice a sale from last one —
+             so all of this is a read. -->
+        <div class="receipt">
+          <p class="cluster space-between">
+            <span class="text-sm text-muted">Subtotal</span>
+            <strong id="items-subtotal">{money(order.subtotal)}</strong>
+          </p>
+
+          {#if order.discount > 0}
+            <p class="cluster space-between" data-receipt="discount">
+              <span class="text-sm text-muted">
+                {order.discountLabel} <Mono>{order.discountCode}</Mono>
+              </span>
+              <strong id="items-discount">−{money(order.discount)}</strong>
+            </p>
+          {/if}
+
+          {#if order.shippingLabel}
+            <p class="cluster space-between" data-receipt="shipping">
+              <span class="text-sm text-muted">{order.shippingLabel}</span>
+              <strong id="items-shipping">{order.shipping > 0 ? money(order.shipping) : 'Free'}</strong>
+            </p>
+          {/if}
+
+          {#if order.tax > 0}
+            <p class="cluster space-between" data-receipt="tax">
+              <span class="text-sm text-muted">{order.taxLabel} at {Math.round(order.taxRate * 100)}%</span>
+              <strong id="items-tax">{money(order.tax)}</strong>
+            </p>
+          {/if}
+
+          <p class="cluster space-between grand">
+            <span class="text-sm text-muted">Order total</span>
+            <strong id="items-order-total">{money(order.total)}</strong>
+          </p>
+        </div>
+
+        <p class="text-sm text-muted">
+          Every column here is a copy taken at the moment of sale — the price,
+          the SKU and the wording. Editing the catalogue does not move them,
+          which is what makes this a record of what was bought rather than a
+          view of what is on sale.
+        </p>
+      {/if}
     </TabPanel>
 
     <TabPanel id="moves">
@@ -230,11 +478,108 @@ title: Order
       {/if}
     </TabPanel>
 
+    <TabPanel id="payments">
+      {#if !maySeeMoney}
+        <p class="text-sm text-muted">
+          Payments read at <Mono>ADMINISTRATOR</Mono>; this session is level
+          {session.level}. That is <Mono>@@gate("5.8.8.9")</Mono> in
+          <Mono>db/schema.lite</Mono>, and the server would refuse the request
+          whatever this page drew.
+        </p>
+      {:else if moneyError}
+        <Alert tone="danger" id="payments-error">{moneyError}</Alert>
+      {:else if !taken.length}
+        <p class="text-sm text-muted" id="no-payments">
+          Nothing has been taken for this order. A payment appears here when
+          the provider says one happened — never because this screen asked.
+        </p>
+      {:else}
+        <ul class="stack" id="payments-list">
+          {#each taken as p}
+            <li class="card stack" data-payment={p.id}>
+              <div class="cluster space-between">
+                <div class="cluster">
+                  <Pill tone={p.status === 'succeeded' ? 'success'
+                            : p.status === 'refunded'  ? 'warning'
+                            : p.status === 'failed'    ? 'danger' : ''}>{p.status}</Pill>
+                  <Mono>{p.providerRef}</Mono>
+                  <CopyButton text={p.providerRef} />
+                </div>
+                <strong data-amount>{money(p.amount)}</strong>
+              </div>
+
+              <dl class="facts">
+                <dt>Taken</dt><dd>{p.createdAt}</dd>
+                {#if p.settledAt}<dt>Settled</dt><dd>{p.settledAt}</dd>{/if}
+                {#if p.refundedAmount > 0}
+                  <dt>Refunded</dt>
+                  <dd data-refunded>{money(p.refundedAmount)} of {money(p.amount)}</dd>
+                {/if}
+                {#if p.failureReason}
+                  <!-- The provider's words, verbatim. Nothing branches on them:
+                       inventing a taxonomy over somebody else's failure strings
+                       is a mapping that goes stale without ever failing. -->
+                  <dt>Why</dt><dd>{p.failureReason}</dd>
+                {/if}
+              </dl>
+
+              <!--
+                NO {#if} AROUND THIS, deliberately.
+                An empty list renders no rows on its own, so the conditional
+                bought nothing — and it cost the panel its ledger: wrapped in
+                `{#if eventsFor(p).length}` the block never appeared on the
+                render that completes a refund, while the count beside it and
+                the nested {#each} both updated correctly. `FJS-468` has the
+                isolated repro. Rendering unconditionally is the better markup
+                either way, which is why this is a fix rather than a
+                workaround.
+              -->
+              <div>
+                <p class="text-sm text-muted">
+                  What the provider told us ({eventsFor(p).length})
+                </p>
+                <ul class="stack" data-events={p.id}>
+                  {#each eventsFor(p) as e}
+                    <li class="cluster text-sm">
+                      <Mono>{e.kind}</Mono>
+                      <span class="text-muted">{e.receivedAt}</span>
+                      <Mono class="text-muted">{e.eventId}</Mono>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+
+              {#if leftOn(p) > 0 && p.status === 'succeeded'}
+                <div class="cluster">
+                  <Button
+                    tone="danger"
+                    variant="outlined"
+                    data-refund={p.id}
+                    disabled={busy !== null}
+                    loading={busy === 'refund:' + p.id}
+                    onclick={() => { refund = p; amount = null }}
+                  >Refund…</Button>
+                  <span class="text-sm text-muted">{money(leftOn(p))} still refundable</span>
+                </div>
+              {/if}
+
+            </li>
+          {/each}
+        </ul>
+
+        <Divider spacing="lg" />
+
+        <p class="text-sm text-muted">
+          Every row here was written by a signed webhook, and the ledger below
+          each payment is the provider's own account of what it sent — kept
+          because when the shop and the dashboard disagree, that is the only
+          record of who said what.
+        </p>
+      {/if}
+    </TabPanel>
+
     <TabPanel id="raw">
-      <div class="cluster">
-        <CopyButton text={JSON.stringify(order, null, 2)} label="Copy the record" variant="outlined" />
-      </div>
-      <pre class="code-block" id="raw-record">{JSON.stringify(order, null, 2)}</pre>
+      <Json id="raw-record" value={order} expand={2} copy />
     </TabPanel>
   </Tabs>
 {/if}
@@ -264,5 +609,81 @@ title: Order
       to <Mono>{confirm.to}</Mono>, and <Mono>@@transitions</Mono> declares no
       way back.
     </p>
+
+    <!--
+      The one place two paths to the same word have to be told apart.
+
+      `orders.refund` is the move and the shelf and NOT the money — it is for a
+      sale settled some other way, exactly as the manual `pay` is. The card is
+      given back from the Payments tab, which goes out through the provider and
+      comes back as a webhook.
+
+      Said here rather than by hiding the move: the move is legitimate, and a
+      button that quietly does three quarters of what its label says is the
+      trap. Only shown when there IS money to be confused about.
+    -->
+    {#if confirm.name === 'refund' && taken.some(p => p.status === 'succeeded')}
+      <Alert tone="warning" id="refund-not-money">
+        This does not give the card back. It moves the order and returns the
+        stock; the money is refunded from the <strong>Payments</strong> tab,
+        through the provider.
+      </Alert>
+    {/if}
   {/if}
 </Modal>
+
+<!--
+  Refunding money is its own dialog because it takes a VALUE, which the
+  transition confirmations do not. Blank means all of what is left — the
+  service reads an omitted amount that way, and pre-filling the remainder would
+  put a number on screen that goes stale while somebody reads it.
+-->
+<Modal
+  open={refund !== null}
+  title="Refund"
+  tone="danger"
+  onclose={() => { refund = null; amount = null }}
+>
+  {#snippet footer()}
+    <div class="cluster">
+      <Button variant="ghost" onclick={() => { refund = null; amount = null }}>Keep it</Button>
+      <Button tone="danger" id="refund-confirm" onclick={giveBack}>
+        Refund {refund ? (amount === null || amount === '' ? money(leftOn(refund)) : money(Number(amount))) : ''}
+      </Button>
+    </div>
+  {/snippet}
+
+  {#if refund}
+    <p>
+      <Mono>{refund.providerRef}</Mono> took {money(refund.amount)}
+      {#if refund.refundedAmount > 0}, of which {money(refund.refundedAmount)} has already gone back{/if}.
+    </p>
+    <NumberInput
+      id="refund-amount"
+      label="How much"
+      hint={'Blank refunds all ' + money(leftOn(refund)) + ' that is left. A part refund leaves the order paid.'}
+      min={0.01}
+      max={leftOn(refund)}
+      step={0.01}
+      bind:value={amount}
+    />
+  {/if}
+</Modal>
+
+<style>
+  /* Right-aligned and tabular: a receipt whose digits do not line up cannot
+     be checked by eye, which is the only thing anybody does with one. */
+  .receipt { font-variant-numeric: tabular-nums; display: grid; gap: .25rem }
+  .receipt p { margin: 0 }
+  .receipt .grand {
+    border-top: 1px solid var(--hairline);
+    padding-top: .4rem;
+    margin-top: .25rem;
+  }
+
+  /* The header cells get their alignment from the column's own `align:` —
+     Table sets it on the <th>. The body cells are this page's snippet, so
+     they are this page's to align, and three inline styles saying the same
+     thing is what a class is for. */
+  .num { text-align: right; font-variant-numeric: tabular-nums }
+</style>

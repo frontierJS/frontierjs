@@ -156,6 +156,62 @@ export async function enqueueOutbox(
 
 // ─── The relay ────────────────────────────────────────────────────────────────
 
+// ─── Which databases hold rows ────────────────────────────────────────────────
+//
+// `ctx.enqueue` writes through `ctx.locals.db`, which under
+// `tenancy { strategy database }` is THIS TENANT's client. The relay used to
+// read `app.db` and nothing else, so the row was written to one file and looked
+// for in another — and every guard on the path passed: the tenant file carries
+// the same schema so the enqueue was accepted, and `createApp({ tenants })`
+// sets no `db`, so the relay's own empty-check reported a clean pass over an
+// empty queue forever (`FJS-365`).
+//
+// So the relay resolves the same set of databases the request path can write
+// to. Two shapes are legal — the outbox is per tenant, or it is schema-global
+// in a `database` block that is not — and the AMBIGUOUS one refuses, on
+// `ctx.enqueue`'s own stated ground that a row nothing delivers is worse than
+// a refusal.
+
+interface TenantRegistryLike {
+  list(): string[]
+  get(id: string): Promise<unknown>
+}
+
+interface OutboxSource { db: OutboxClient; tenant: string | null }
+
+/**
+ * Every database this app's outbox rows can be in, with the tenant each one is.
+ *
+ * An app with no tenancy is one entry and `null`. An app with a tenant registry
+ * is one entry per tenant, and the sweep cost is one query per tenant per pass
+ * — which is the honest cost of having put the rows there.
+ */
+async function outboxDatabases(app: App): Promise<OutboxSource[]> {
+  const db       = app.db as OutboxClient | undefined
+  const registry = (app as { tenants?: TenantRegistryLike }).tenants
+
+  if (!registry) return db && hasOutboxModel(db) ? [{ db, tenant: null }] : []
+
+  // Both, which is the shape that cannot be resolved: rows are written to the
+  // tenant's file by every request, and `app.db` is a real database that is
+  // nobody's. Refused rather than half-swept.
+  if (db && hasOutboxModel(db)) throw new Error(
+    `[Junction] outbox: this app was built with BOTH createApp({ db }) and ` +
+    `createApp({ tenants }), and ${OUTBOX_MODEL} is declared in the app-level ` +
+    `database as well as in the tenants'. A row is written to whichever client ` +
+    `the call ran through, so half of them would never be delivered. Declare ` +
+    `the outbox in one place: drop the app-level db, or move ${OUTBOX_MODEL} ` +
+    `into a database block that is not per-tenant.`
+  )
+
+  const out: OutboxSource[] = []
+  for (const id of registry.list()) {
+    const client = await registry.get(id) as OutboxClient
+    if (hasOutboxModel(client)) out.push({ db: client, tenant: id })
+  }
+  return out
+}
+
 export interface DeliverOptions {
   /** How many rows one pass may take. */
   batch?:          number
@@ -192,13 +248,27 @@ export async function deliverOutbox(
   app:  App,
   opts: DeliverOptions = {}
 ): Promise<DeliverResult> {
+  const jobs = app.jobs as unknown as JobDispatcher | undefined
+  if (typeof jobs?.dispatch !== 'function') return { delivered: 0, failed: 0 }
+
+  const total: DeliverResult = { delivered: 0, failed: 0 }
+  for (const { db, tenant } of await outboxDatabases(app)) {
+    const one = await deliverFrom(db, jobs, tenant, opts)
+    total.delivered += one.delivered
+    total.failed    += one.failed
+  }
+  return total
+}
+
+/** One pass over one database. */
+async function deliverFrom(
+  db:     OutboxClient,
+  jobs:   JobDispatcher,
+  tenant: string | null,
+  opts:   DeliverOptions,
+): Promise<DeliverResult> {
   const batch   = opts.batch          ?? 50
   const timeout = opts.claimTimeoutMs ?? 30_000
-  const db      = app.db as OutboxClient | undefined
-  const jobs    = app.jobs as unknown as JobDispatcher | undefined
-
-  if (!db || !hasOutboxModel(db) || typeof jobs?.dispatch !== 'function')
-    return { delivered: 0, failed: 0 }
 
   const table  = outboxTable(db)
   const now    = new Date()
@@ -224,7 +294,15 @@ export async function deliverOutbox(
     if (claimed.count !== 1) continue
 
     try {
-      await jobs.dispatch(row.job, row.payload, { id: occurrenceKey('outbox', row.id), actor: row.actorId })
+      // The tenant travels with the work, because the handler's own writes go
+      // back to the database this row came out of. Under `strategy database`
+      // that is a different FILE, so a dispatch that named no tenant would run
+      // the effect against the app's own — which is nobody's.
+      await jobs.dispatch(row.job, row.payload, {
+        id:    occurrenceKey('outbox', row.id),
+        actor: row.actorId,
+        ...(tenant !== null ? { tenant } : {}),
+      })
       await table.update({ where: { id: row.id }, data: { deliveredAt: new Date() } })
       delivered++
     } catch (err) {
@@ -243,14 +321,36 @@ export async function deliverOutbox(
 
 /** Drop delivered rows past their retention. They are kept for inspection. */
 export async function sweepOutbox(app: App, retentionMs: number): Promise<number> {
-  const db = app.db as OutboxClient | undefined
-  if (!db || !hasOutboxModel(db)) return 0
-
   const before = new Date(Date.now() - retentionMs)
-  const gone   = await outboxTable(db).removeMany({
-    where: { deliveredAt: { lt: before, not: null } },
-  })
-  return gone.count
+
+  let gone = 0
+  for (const { db } of await outboxDatabases(app)) {
+    const removed = await outboxTable(db).removeMany({
+      where: { deliveredAt: { lt: before, not: null } },
+    })
+    gone += removed.count
+  }
+  return gone
+}
+
+/**
+ * Refuse a shape the relay cannot resolve, at boot.
+ *
+ * The relay's own pass logs and continues — an intermittent database error is
+ * not a reason to take the process down — so a misconfiguration discovered
+ * there would be one line in a log and a queue that never drains. This is the
+ * same question asked where it can still be a refusal.
+ */
+export async function assertOutboxShape(app: App): Promise<void> {
+  await outboxDatabases(app)
+}
+
+/** Rows owed, across every database this app writes them to. */
+export async function pendingOutbox(app: App): Promise<number> {
+  let pending = 0
+  for (const { db } of await outboxDatabases(app))
+    pending += await outboxTable(db).count({ where: { deliveredAt: null } })
+  return pending
 }
 
 // ─── What the plugin claims ───────────────────────────────────────────────────

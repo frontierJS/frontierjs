@@ -77,13 +77,17 @@ at all (`slices.md`, `framework-shape.md`).
 | --- | --- | --- | --- |
 | ~~**`stow`**~~ | API | **Retired as a package name 2026-08-12.** It was reserved for object-storage drivers on the belief that none existed; litestone has shipped an S3/R2/B2/MinIO provider over hand-written sigv4 signing for some time, with `File` columns and presigned URLs. What is left is not a package — it is that Junction's separate local-disk `IFileStorage` is a **second** abstraction for the same job (Invariant 4), to be delegated or retired. | `ecosystem-gaps.md` item 3 |
 | **`ledger`** | Slice | Billing — models + service + webhooks + portal route. The canonical first slice and the proof the format works. | `ecosystem-gaps.md` tier-1 item 2 |
-| **`warden`** | API | **The answer to the linear ladder.** Named permissions and roles layered over the 0–9 scale, so `@@gate("4")` stays the default and orthogonal permissions stop forcing a retreat into hooks. | `PROS_AND_CONS.md` con 2 |
+| **`warden`** | API | **The answer to the linear ladder.** Named permissions and roles layered over the 0–9 scale, so `@@gate("4")` stays the default and orthogonal permissions stop forcing a retreat into hooks. **The design now has a record of its own and this row is the reservation, not the argument** — `IDEAS/permission-sets.md` (2026-08-24), where it is measured rather than proposed. Two findings move it: the enforcement predicate already compiles (`'billing_write' in auth().perms` filters reads and refuses writes today), so what is missing is a vocabulary, a refusal shape, a snapshot section and an affordance rather than an engine; and *you may only grant what you hold* is refused at parse, which is the one piece that is mandatory. **Probably not a package, and the name is ruled against** — see the open question below. | `PROS_AND_CONS.md` con 2 · `permission-sets.md` |
 | **`lantern`** | API | Observability — real spans (there is a `correlationId` and a seam list, not a tree), request-correlated logs, metrics, and the local dev dashboard unifying `project:view` + devtools + traces + an API explorer. | `operational-edge.md` item 3, `framework-shape.md` item 4 |
 | OAuth → **`auth`** | API | Not a new package. The `Credential` model already carries `type` / `accessToken` / `refreshToken` / `scope`. Plus TOTP and passkeys. | `ecosystem-gaps.md` tier-1 item 1 |
 
 **`warden` is the one with a ceiling behind it.** Without it, the framework's best
 feature caps out the moment an app needs two permissions that are not comparable —
-which is most apps, fairly early.
+which is most apps, fairly early. **The ceiling is not hypothetical and this repo is
+already against it**: `packages/basecamp/api/src/core/gate.ts` grades the `billing`
+role to READER(2) beside `viewer`, under a comment saying *reads everything, writes
+only billing* — which the ladder cannot express and nothing enforces — and the role
+ladder beside it is written out four separate times across `core/` and two services.
 
 ### Tier 2 — the differentiators
 
@@ -119,14 +123,23 @@ which is most apps, fairly early.
    both cheap, because the decisions that make them possible are already made.
 
 `warden` interleaves: it is not urgent until an app hits the ladder's ceiling, and
-it is very urgent the moment one does.
+it is very urgent the moment one does. Its cost estimate has moved down since this
+list was written — most of what it needs is already compiled — so it is cheaper to
+interleave than the `L` beside it suggests.
 
 ## Open questions
 
 - **Does everything need to be a package?** `warden`, `quarry` and `flags` are all
   arguably features of `auth`, `litestone` and a slice respectively. The register
   errs toward naming things separately so they can be *discussed* separately; the
-  packaging decision is downstream.
+  packaging decision is downstream. **`warden` now has an answer leaning against**:
+  row tenancy and value sets each shipped as a seed declaration plus a battery with
+  no package at all, and `FJS-D113` refused a declaration for membership because the
+  resolver varies per application — which applies unchanged to role → permission
+  expansion. The name has a second problem regardless. `DECISIONS.md` § Outpost rules
+  that infrastructure takes place nouns and AI takes personified nouns, and lists
+  `warden` among the words rejected on exactly that ground; this row's claim predates
+  that ruling. Seed syntax rather than a package retires both questions at once.
 - **What is `orion` for?**
 - **Which of these are slices rather than packages?** `ledger` and `flags` clearly.
   `marshal` probably is a package with a slice-shaped install. The distinction
@@ -138,6 +151,8 @@ it is very urgent the moment one does.
 
 ## See also
 
+- `IDEAS/permission-sets.md` — **`warden`'s own record**, and the reason this row is
+  now a reservation rather than the argument
 - `IDEAS/framework-shape.md` — the realm-by-realm gap assessment this indexes
 - `IDEAS/ecosystem-gaps.md` — the Laravel comparison; most of tier 1 originates there
 - `IDEAS/slices.md` — several entries above are slices, not packages
@@ -170,7 +185,7 @@ it is very urgent the moment one does.
   browser-only (Mesa rule 30) and Invariant 18 makes it a Resource's home, so
   splitting it is the real work in either
 - `IDEAS/declared-semantics.md` — **litestone, no new package.** Four attributes
-  (`@version`, `Money`, `@eventTime`/`@recordTime`) plus one genuinely unnamed
+  (`@version`, `@scale`/`@money`, `@eventTime`/`@recordTime`) plus one genuinely unnamed
   noun: a resumable multi-step process, which is neither a Job (Caravan) nor a
   field machine (`@@transitions`) and would be built from both. If anything here
   earns a package name it is that one, and it should not be named until it has a

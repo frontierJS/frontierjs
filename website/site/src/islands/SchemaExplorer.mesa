@@ -1,0 +1,73 @@
+<!--
+  The showroom's selection, and only its selection.
+
+  Every chip, every panel and every line of the seed is already in the
+  prerendered HTML — so the page reads with no JavaScript and a crawler sees all
+  seventeen derived things. This moves which panel is shown, which chip is
+  pressed, and which lines of the schema are lit.
+
+  The line highlighting is why the panels carry `data-lines`: the connection the
+  page is about is *this derived thing came from those lines of the seed*, and
+  that mapping is data, not markup.
+-->
+<script>
+  $.onMount(() => {
+    const chipBox = document.querySelector('[data-chips]')
+    const panels  = document.querySelector('[data-panels]')
+    const lite    = document.querySelector('[data-schema]')
+    if (!chipBox || !panels || !lite) return
+
+    const chips = [...chipBox.querySelectorAll('.btn')]
+    const ids   = chips.map((b) => b.dataset.id)
+
+    const select = (id, focus) => {
+      const panel = panels.querySelector(`[data-id="${id}"]`)
+      if (!panel) return
+
+      // A selected chip drops `.outlined` so it takes .btn's filled skin, which
+      // carries its own readable text colour. Never set one without the other.
+      for (const b of chips) {
+        const on = b.dataset.id === id
+        b.setAttribute('aria-selected', String(on))
+        b.classList.toggle('outlined', !on)
+      }
+
+      for (const p of panels.children) p.classList.toggle('is-shown', p.dataset.id === id)
+
+      const lines = (panel.dataset.lines ?? '').split(',').filter(Boolean)
+      lite.classList.add('focused')
+      for (const ln of lite.querySelectorAll('.ln'))
+        ln.classList.toggle('on', lines.includes(ln.dataset.i))
+
+      if (focus) chipBox.querySelector(`[data-id="${id}"]`)?.focus()
+      history.replaceState(null, '', '#' + id)
+    }
+
+    const onClick = (e) => {
+      const b = e.target.closest('.btn')
+      if (b) select(b.dataset.id)
+    }
+    const onKey = (e) => {
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key]
+      if (!step) return
+      e.preventDefault()
+      const i = ids.indexOf(document.activeElement.dataset.id)
+      if (i < 0) return
+      select(ids[(i + step + ids.length) % ids.length], true)
+    }
+
+    chipBox.addEventListener('click', onClick)
+    chipBox.addEventListener('keydown', onKey)
+
+    // A link into the page names a panel. Otherwise the one the file already
+    // shows stays shown, so this only runs when the URL asks for something else.
+    const wanted = location.hash.slice(1)
+    if (ids.includes(wanted)) select(wanted)
+    else select(panels.querySelector('.is-shown')?.dataset.id ?? ids[0])
+
+    return () => {
+      chipBox.removeEventListener('click', onClick)
+      chipBox.removeEventListener('keydown', onKey)
+    }
+  })
+</script>

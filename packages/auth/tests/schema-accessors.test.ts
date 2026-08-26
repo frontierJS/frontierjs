@@ -55,9 +55,9 @@ describe('authSchemaFragments', () => {
     }
   })
 
-  test('declares the four auth models, PascalCase singular', () => {
+  test('declares the five auth models, PascalCase singular', () => {
     const names = parsed().schema.models.map(m => m.name).sort()
-    expect(names).toEqual(['Credential', 'Session', 'User', 'Verification'])
+    expect(names).toEqual(['Credential', 'OauthFlow', 'Session', 'User', 'Verification'])
   })
 })
 
@@ -156,12 +156,12 @@ describe('the two shipped .lite files', () => {
   test('each half parses standalone against a host schema', () => {
     expect(modelsIn(authUserModel('main')).map(m => m.name)).toEqual(['User'])
     expect(modelsIn(authMachineryModels('main')).map(m => m.name).sort())
-      .toEqual(['Credential', 'Session', 'Verification'])
+      .toEqual(['Credential', 'OauthFlow', 'Session', 'Verification'])
   })
 
   test('the halves are exactly the composed fragment', () => {
     expect(modelsIn(authSchemaFragments('main')).map(m => m.name).sort())
-      .toEqual(['Credential', 'Session', 'User', 'Verification'])
+      .toEqual(['Credential', 'OauthFlow', 'Session', 'User', 'Verification'])
   })
 
   // The line the split is drawn on. Asserted rather than described, because a
@@ -180,7 +180,7 @@ describe('retargetDb', () => {
         .map(m => `${m.name}→${m.attributes.find((a: any) => a.kind === 'db')?.name}`)
 
     expect(dbOf(authSchemaFragments('other')).sort())
-      .toEqual(['Credential→other', 'Session→other', 'User→other', 'Verification→other'])
+      .toEqual(['Credential→other', 'OauthFlow→other', 'Session→other', 'User→other', 'Verification→other'])
     expect(authSchemaFragments('main')).toBe(retargetDb(authSchemaFragments('main'), 'main'))
   })
 
@@ -188,8 +188,8 @@ describe('retargetDb', () => {
   // literal exists solely so this substitution has something to match. Tidy it
   // out of the .lite files and --db silently stops working.
   test('every shipped model spells @@db(main) for the substitution to find', () => {
-    expect(modelsIn(authSchemaFragments('main')).length).toBe(4)
-    expect([...authSchemaFragments('main').matchAll(/^[ \t]*@@db\(main\)/gm)]).toHaveLength(4)
+    expect(modelsIn(authSchemaFragments('main')).length).toBe(5)
+    expect([...authSchemaFragments('main').matchAll(/^[ \t]*@@db\(main\)/gm)]).toHaveLength(5)
   })
 
   // Both .lite headers describe the substitution, so they contain the literal in

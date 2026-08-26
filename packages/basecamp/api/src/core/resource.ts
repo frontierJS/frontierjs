@@ -27,7 +27,7 @@ import type { ServiceContext } from '@frontierjs/junction'
 /**
  * The caller-scoped Litestone client — `$.db`, typed for THIS app.
  *
- * `any`, exactly as `dbOf()` was. Junction's `LitestoneClient` is a deliberate
+ * `any` on purpose. Junction's `LitestoneClient` is a deliberate
  * minimal stand-in: it declares the surface junction's own adapter uses so the
  * adapter compiles without Litestone installed, not this schema's accessors.
  * So `$.db` alone does not know `exists()` or what a row of `App` looks like.

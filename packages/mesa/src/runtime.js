@@ -13,10 +13,10 @@ let _isBrowser = typeof document !== 'undefined'
  *  renderToHTML installs happy-dom and must set _isBrowser so compiled
  *  components can call htmlToFragment() and document.createElement() — but a
  *  server render is emphatically not a client, and RULE 19 says so: no reactive
- *  graph, $onMount a no-op, path watches inert.
+ *  graph, onMount a no-op, path watches inert.
  *
  *  One flag could not express both, so turning the DOM on turned client
- *  behaviour on with it and every RULE 19 guard became dead code. $onMount then
+ *  behaviour on with it and every RULE 19 guard became dead code. onMount then
  *  ran once per render on the server — with a happy-dom `window` available, so
  *  addEventListener and friends silently succeeded against a global that
  *  outlived the request — and watchProxy built real proxies and signals that
@@ -436,7 +436,7 @@ function _makeNode(fn) {
         // as a cleanup that runs before the next execution or on destroy.
         // If it returns a Promise (async handler), wait for resolution — if the
         // resolved value is a function, register it then.
-        // Note: for async handlers, cancel-in-flight still requires $onCleanup
+        // Note: for async handlers, cancel-in-flight still requires onCleanup
         // before the first await, since that cleanup must register synchronously.
         if (typeof result === 'function') {
           this._cleanups.push(result)
@@ -620,7 +620,7 @@ export function batch(fn) {
   }
 }
 
-export function $tick(fn) {
+export function tick(fn) {
   fn && _resolved.then(fn)
   return _resolved
 }
@@ -639,7 +639,7 @@ export function onCleanup(fn) {
   if (_owner) { _owner._cleanups.push(fn); return }
 
   // No owner — the callback is dropped. This happens when onCleanup (or
-  // $onDestroy, which forwards here) is called outside component setup and
+  // onDestroy, which forwards here) is called outside component setup and
   // outside any effect: at module scope, after an `await`, or inside a
   // callback that ran later. Silently discarding teardown is how subscriptions
   // and timers leak for the lifetime of the page, so say so.
@@ -655,18 +655,17 @@ export function onCleanup(fn) {
     )
   }
 }
-let _mountList = null // $onMount callbacks collected during component init
+let _mountList = null // onMount callbacks collected during component init
 let _propRegistry = null // prop signal map collected during component init
 let _exportRegistry = null // `export function` methods collected during component init
-export function $onMount(fn) {
-  if (!_isClient) return // Rule 19: $onMount is a no-op on server
+export function onMount(fn) {
+  if (!_isClient) return // Rule 19: onMount is a no-op on server
   if (_mountList) _mountList.push(fn)
   else _resolved.then(fn)
 }
-export function $onDestroy(fn) {
+export function onDestroy(fn) {
   onCleanup(fn)
 }
-export const $onCleanup = onCleanup
 
 export function createContext(defaultValue) {
   return { id: Symbol('mesa.ctx'), defaultValue }
@@ -684,7 +683,7 @@ export function useContext(ctx) {
 }
 
 /**
- * $context.key = expr  — provide a reactive getter for `key` in this component's
+ * context.key = expr  — provide a reactive getter for `key` in this component's
  * context slot. Descendants can read it via contextRead('key').
  *
  * The getter is a function () => currentValue, typically a signal getter so that
@@ -699,7 +698,7 @@ export function contextProvide(key, getter) {
 }
 
 /**
- * $context.key read — walk the context stack (from nearest ancestor outward)
+ * context.key read — walk the context stack (from nearest ancestor outward)
  * and return the getter registered for `key`, or null if none found.
  *
  * The returned getter is a reactive function — calling it inside an effect or
@@ -720,7 +719,7 @@ export function contextRead(key) {
   return null
 }
 
-export const $context = { use: useContext, provide: provideContext }
+export const context = { use: useContext, provide: provideContext }
 
 /**
  * Capture the context stack as it stands NOW, for reinstating later.
@@ -731,7 +730,7 @@ export const $context = { use: useContext, provide: provideContext }
  * `{#if}` that flips, an `{#each}` row that arrives, an `{#await}` that
  * resolves, a portal: each instantiates its content from inside a reactive
  * effect, by which time the stack has unwound to the flush's depth, so a
- * `$context` read in there walks a stack the provider is no longer on and
+ * `context` read in there walks a stack the provider is no longer on and
  * finds nothing.
  *
  * What that cost, measured: every compound component whose parts live behind a
@@ -1043,21 +1042,12 @@ const _BOOL_DOM_PROPS = new Set([
   'loop', 'autoplay', 'controls', 'open',
 ])
 
+/* The reactive path. It is `set_attribute` in an effect and nothing else —
+   the two used to be separate implementations that disagreed about what a
+   falsy value means, and the compiler chooses between them per attribute, so
+   the disagreement was invisible from any component. */
 export function bindAttribute(el, name, fn) {
-  createEffect(() => {
-    const v = fn()
-    if (v == null || v === false) {
-      if (_BOOL_DOM_PROPS.has(name)) el[name] = false
-      else if (_TEXT_DOM_PROPS.has(name)) el[name] = ''
-      el.removeAttribute(name)
-    } else if (_DOM_PROPS.has(name)) {
-      el[name] = v
-    } else if (_BOOL_ATTRS.has(name)) {
-      el.setAttribute(name, '')
-    } else {
-      el.setAttribute(name, '' + v)
-    }
-  })
+  createEffect(() => set_attribute(el, name, fn()))
 }
 export function bindClass(el, fn, className) {
   createEffect(
@@ -1648,7 +1638,7 @@ export function throttle(fn, ms) {
  */
 export function attach(el, getFn) {
   // An attachment runs when the element MOUNTS, and a server render has no
-  // mount — the same rule that already keeps $onMount off the SSR path
+  // mount — the same rule that already keeps onMount off the SSR path
   // (render.js, RULE 19). Running it there hands the function a happy-dom
   // element, which implements no Web Animations API: an attachment that
   // animates threw `el.animate is not a function` and took the WHOLE render
@@ -1706,8 +1696,8 @@ export function attach(el, getFn) {
     // a `position: fixed; inset: 0; z-index: 9000` backdrop, fully invisible,
     // swallowing every click on the page. ⌘K "did nothing" and froze the app.
     //
-    // Deferred on a microtask, which is the same queue `$onMount` uses, so an
-    // attachment now sees exactly what `$onMount` sees. An element that is
+    // Deferred on a microtask, which is the same queue `onMount` uses, so an
+    // attachment now sees exactly what `onMount` sees. An element that is
     // already connected keeps running synchronously, so nothing that was
     // ordered correctly before is reordered now — and a detached element that
     // never gets inserted still runs, one tick later, rather than silently
@@ -2448,7 +2438,7 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
     }
   })
 
-  // Cleanup on component destroy via $onCleanup / owner
+  // Cleanup on component destroy via onCleanup / owner
   const cleanup = () => {
     disposeEffect()
     detachScroll?.()
@@ -3231,13 +3221,13 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
 // ─── MOUNTED / BOUNDARY BLOCKS ────────────────────────────────────────────────
 
 /**
- * $onMounted(fn) — wraps an async function in a Promise that resolves after the
+ * onMounted(fn) — wraps an async function in a Promise that resolves after the
  * component mounts to the DOM. Used with <mesa:mounted> to gate the template.
  * Only one call per component is allowed — compiler error if used twice.
  */
-export function $onMounted(fn) {
+export function onMounted(fn) {
   return new Promise((resolve, reject) => {
-    $onMount(() => {
+    onMount(() => {
       try {
         Promise.resolve(fn?.()).then(resolve, reject)
       } catch (err) {
@@ -3998,21 +3988,21 @@ export function unproxy(value) {
 }
 
 /**
- * $inspect — reactive dev-mode inspector.
+ * inspect — reactive dev-mode inspector.
  *
  * Auto-tracks its arguments and logs them whenever they change.
  * Unwraps Mesa proxies so the actual object is shown, not `Proxy {}`.
  * Stripped entirely in production builds (config.dev === false).
  *
  * Usage (compiler-injected, never manually called):
- *   $inspect(cart)
- *   $inspect(cart, count)
- *   $inspect(cart).with(console.trace)
+ *   inspect(cart)
+ *   inspect(cart, count)
+ *   inspect(cart).with(console.trace)
  *
  * @param  {...any} args  Values to inspect (labels extracted from source by compiler)
  * @returns {{ with: (fn) => void }}
  */
-export function $inspect(...args) {
+export function inspect(...args) {
   // args format from compiler: [label, ...getters]
   // label is the source expression string(s) joined, getters are () => value
   const last = args[args.length - 1]
@@ -4047,7 +4037,7 @@ export function $inspect(...args) {
 }
 
 function _defaultInspect(label, values, prev) {
-  const tag = `%c[Mesa $inspect]%c ${label}`
+  const tag = `%c[Mesa inspect]%c ${label}`
   const style1 = 'color:#EE380D;font-weight:bold'
   const style2 = 'color:inherit;font-weight:normal'
   if (values.length === 1) {
@@ -4204,40 +4194,6 @@ export function asyncDerived(getAsyncState, fn, deps, setValue) {
 
 export const noop = (x) => x
 export const addClass = (el, cls) => el.classList.add(cls)
-
-export function makeClassResolver($option, classMap, metaClass, mainName) {
-  if (!$option.$class) $option.$class = {}
-  if (!mainName && metaClass.main) mainName = 'main'
-  return (line, defaults) => {
-    const result = {}
-    if (defaults) result[defaults] = 1
-    line
-      .trim()
-      .split(/\s+/)
-      .forEach((name) => {
-        let meta
-        if (name[0] === '$') {
-          name = name.slice(1)
-          meta = true
-        }
-        const h = metaClass[name] || meta
-        if (h) {
-          const override = ($option.$class[name === mainName ? '$$main' : name] || '').trim()
-          if (override) result[override] = 1
-          else if (h !== true) {
-            result[name] = 1
-            result[h] = 1
-          }
-        }
-        const h2 = classMap[name]
-        if (h2) {
-          result[name] = 1
-          result[h2] = 1
-        } else if (!h) result[name] = 1
-      })
-    return Object.keys(result).join(' ')
-  }
-}
 
 /**
  * Register an `export let` prop signal with the current component.
@@ -4746,8 +4702,17 @@ export function get(tracked) {
   return tracked
 }
 
+/**
+ * Write a signal, and ANSWER what was written.
+ *
+ * The return value is what makes `++n` and `n += 1` worth the value they
+ * evaluate to: the compiler emits both as `$$set_n($$runtime.get($$sig_n) + 1)`,
+ * so whatever this answers is what `const a = ++n` binds. Answering nothing
+ * made that `undefined` — valid JavaScript, no warning, and the whole
+ * expression silently wrong.
+ */
 export function set(tracked, value, force) {
-  if (!tracked || tracked._isMemo) return
+  if (!tracked || tracked._isMemo) return value
   if (tracked._write) {
     // Direct write — the compiler now emits the full expression for compound ops
     // (count++ → set(sig, get(sig) + 1)) so the value passed here is always the
@@ -4758,6 +4723,22 @@ export function set(tracked, value, force) {
     if (__dev._signals.size) __dev._onUpdate(tracked, value)
   }
   // tracked is a raw setter fn (e.g. from createWritableSignal)
+  return value
+}
+
+/**
+ * `x++` / `x--` as an expression: write the new value, answer the OLD one.
+ *
+ * A runtime call rather than the arrow the compiler could inline, because the
+ * emitted form is usually a STATEMENT and this house writes no semicolons: a
+ * line beginning `(` continues the previous line, so `throw new Error('x')`
+ * followed by an inlined `(($$v) => …)(…)` parses as a CALL on the Error and
+ * the increment never runs at all. Starting with an identifier cannot do that.
+ */
+export function postUpdate(tracked, setter, delta) {
+  const v = get(tracked)
+  setter(v + delta)
+  return v
 }
 
 // ── DOM traversal ─────────────────────────────────────────────────────────────
@@ -4881,6 +4862,12 @@ export function setInnerHTML(anchor, html) {
   nodes.forEach(n => anchor.before(n))
 }
 
+// The ARIA states whose default is `undefined` rather than `false`, so that
+// removing the attribute says something different from writing "false".
+const _ARIA_UNDEFINED_DEFAULT = new Set([
+  'aria-expanded', 'aria-selected', 'aria-checked', 'aria-pressed',
+])
+
 // HTML boolean attributes: presence = true, absence = false.
 // Setting disabled="false" still disables the element — must removeAttribute instead.
 const _BOOL_ATTRS = new Set([
@@ -4890,13 +4877,50 @@ const _BOOL_ATTRS = new Set([
   'novalidate', 'playsinline', 'reversed', 'scoped',
 ])
 
+/*
+ * Apply one attribute to one element — the ONE owner of that translation, for
+ * the static path and the reactive one alike.
+ *
+ * Removing the attribute is not enough to turn a control off. `el.checked` and
+ * `el.value` stop tracking their attribute the moment either is written to —
+ * the DOM's own dirty flag — so once something has set `checked` to true,
+ * `removeAttribute('checked')` leaves the box ticked for the life of the
+ * component. Measured: `<Switch bind:checked={x}>` could be switched ON by the
+ * app and never OFF again; the parent read `false`, the input read `true`, and
+ * nothing anywhere reported the disagreement. The reactive path had the reset
+ * and this one did not, and which path a component gets is the compiler's
+ * choice per attribute — so the same component was correct or broken depending
+ * on whether the value was static.
+ */
 export function set_attribute(el, name, value) {
   // `<option value={obj}>` — keep the real value beside the attribute.
   // An attribute is a string, so an object became "[object Object]" and the
   // binding could never hand it back. bindInput() reads __value first.
   if (name === 'value' && el.tagName === 'OPTION') el.__value = value
 
+  // `aria-expanded={false}` must WRITE "false" rather than remove the attribute.
+  // These four are the ARIA states whose default is **undefined**, not false,
+  // so absent and "false" are different statements: absent says *this is not
+  // expandable / not selectable / not checkable / not a toggle*, and "false"
+  // says *it is, and it currently is not*. Removing it announces the control as
+  // a different KIND of thing in exactly the state that matters, silently, on a
+  // page that looks correct.
+  //
+  // Only those four. Every other aria-* either defaults to false already
+  // (aria-hidden, aria-disabled, aria-required — absent and "false" agree) or
+  // takes a string, where writing "false" would be a lie: `aria-label={false}`
+  // must remove the label, not name the element "false".
+  //
+  // `null` still removes in every case, which is what the `x || null` idiom
+  // through the components is for.
+  if (value === false && _ARIA_UNDEFINED_DEFAULT.has(name)) {
+    el.setAttribute(name, 'false')
+    return
+  }
+
   if (value == null || value === false) {
+    if (_BOOL_DOM_PROPS.has(name)) el[name] = false
+    else if (_TEXT_DOM_PROPS.has(name)) el[name] = ''
     el.removeAttribute(name)
   } else if (_DOM_PROPS.has(name)) {
     el[name] = value

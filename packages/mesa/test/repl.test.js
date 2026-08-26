@@ -59,7 +59,7 @@ function execCompiled(compiledJs, userImports = {}) {
   code = code.replace(/^export default\s+/m, 'const __component = ')
   // <script module> named exports — new Function() rejects an export declaration.
   code = code.replace(/^(\s*)export (function|class|const|let|var) /gm, '$1$2 ')
-  return new Function('$runtime', ...names, code + '\nreturn __component')($rt, ...vals)
+  return new Function('$$runtime', ...names, code + '\nreturn __component')($rt, ...vals)
 }
 
 /** index.html's evalExtraFile, transcribed. */
@@ -177,7 +177,7 @@ describe('REPL examples compile', () => {
           .replace(/^import\s+.+?from\s+'[^']+';$/gm, '')
           .replace(/^export default\s+/m, 'const __component = ')
           .replace(/^(\s*)export (function|class|const|let|var) /gm, '$1$2 ')
-        try { new Function('$runtime', code) } catch (e) { bad.push(`${key}/${f.name}: ${e.message}`) }
+        try { new Function('$$runtime', code) } catch (e) { bad.push(`${key}/${f.name}: ${e.message}`) }
       }
     }
     expect(bad).toEqual([])
@@ -288,8 +288,8 @@ describe('REPL examples cover the language', () => {
     '<mesa:body>': /<mesa:body/,
     '$: auto-effect': /\$:\s*\{/,     '$: multi-path watch': /\$:\s*\([\w.]+\s*,/,
     '$: watch+handler': /\$:\s*[\w.]+\s*,\s*(\(|async|\w)/,
-    '$mounted()': /\$mounted\s*\(/,   '$context': /\$context\b/,
-    '$onMount': /\$onMount\s*\(/,
+    '$.mounted()': /\$\.mounted\s*\(/, '$context': /(?<![\w$])\$context\b/,
+    '$.onMount': /\$\.onMount\s*\(/,
     '{class} shorthand': /\{class\}/,
     'export let prop': /export\s+let\s/, 'export const prop': /export\s+const\s/,
     'export var prop': /export\s+var\s/,
@@ -301,8 +301,8 @@ describe('REPL examples cover the language', () => {
     // Added 2026-08-05. Each of these was fully implemented and entirely
     // undemonstrated; three of them were also broken, which is the same fact
     // seen from the other side.
-    '$attributes': /\$attributes\b/,  '$props': /\$props\b/,
-    '$slots': /\$slots\b/,
+    '$attributes': /(?<![\w$])\$attributes\b/, '$props': /(?<![\w$])\$props\b/,
+    '$slots': /(?<![\w$])\$slots\b/,
     'spread attributes': /\{\.\.\.\w/,
     'bind:value|mask': /bind:value\|mask/,
     '$: { dep, handler }': /\$:\s*\{[^}]*=>\s*\{/,

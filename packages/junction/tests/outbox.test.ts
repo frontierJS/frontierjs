@@ -234,3 +234,85 @@ describe('ctx.enqueue — the relay kick', () => {
     expect(await rows(db)).toHaveLength(1)
   })
 })
+
+// ─── the relay under database-per-tenant ─────────────────────────────────────
+//
+// `FJS-365`: the row is written through `ctx.locals.db`, which is THIS TENANT's
+// client, and the relay read `app.db`. Every guard passed — the tenant file
+// carries the same schema so the enqueue was accepted, and `createApp({
+// tenants })` sets no `db`, so the relay reported a clean pass over an empty
+// queue forever. A durable effect was enqueued and never delivered, silently.
+
+import { deliverOutbox, pendingOutbox } from '../src/core/outbox.ts'
+import type { App } from '../src/core/app.ts'
+
+/** Two tenants, each its own in-memory client with the outbox model. */
+async function tenantRegistry() {
+  const dbs = new Map<string, any>()
+  for (const id of ['acme', 'globex'])
+    dbs.set(id, await createClient({ databases: ':memory:', schema: SCHEMA }) as any)
+
+  return {
+    dbs,
+    registry: {
+      list: () => [...dbs.keys()],
+      get:  async (id: string) => dbs.get(id),
+    },
+  }
+}
+
+/** Records what the queue was handed. */
+function fakeQueue() {
+  const sent: Array<{ job: string; opts: Record<string, unknown> }> = []
+  return {
+    sent,
+    dispatch: async (job: string, _data: unknown, opts: Record<string, unknown>) => {
+      sent.push({ job, opts }); return 'id'
+    },
+  }
+}
+
+describe('the relay under tenancy { strategy database }', () => {
+
+  test('delivers rows written to a TENANT file — the pass app.db could not see', async () => {
+    const { dbs, registry } = await tenantRegistry()
+    const jobs = fakeQueue()
+
+    await dbs.get('acme').asSystem().outboxMessage.create({ data: { job: 'welcome', payload: {} } })
+    await dbs.get('globex').asSystem().outboxMessage.create({ data: { job: 'invoice', payload: {} } })
+
+    const app = { db: undefined, tenants: registry, jobs } as unknown as App
+    const out = await deliverOutbox(app)
+
+    expect(out).toEqual({ delivered: 2, failed: 0 })
+    expect(jobs.sent.map(s => s.job).sort()).toEqual(['invoice', 'welcome'])
+  })
+
+  test('the dispatch names the tenant, so the handler writes back to the right file', async () => {
+    const { dbs, registry } = await tenantRegistry()
+    const jobs = fakeQueue()
+
+    await dbs.get('acme').asSystem().outboxMessage.create({ data: { job: 'welcome', payload: {} } })
+
+    await deliverOutbox({ db: undefined, tenants: registry, jobs } as unknown as App)
+    expect(jobs.sent[0].opts.tenant).toBe('acme')
+  })
+
+  test('pending counts every tenant, where a count of app.db answered 0 for all of them', async () => {
+    const { dbs, registry } = await tenantRegistry()
+    await dbs.get('acme').asSystem().outboxMessage.create({ data: { job: 'a', payload: {} } })
+    await dbs.get('globex').asSystem().outboxMessage.create({ data: { job: 'b', payload: {} } })
+
+    const pending = await pendingOutbox({ db: undefined, tenants: registry } as unknown as App)
+    expect(pending).toBe(2)
+  })
+
+  test('both an app db AND a registry is refused by name — half the rows would never be delivered', async () => {
+    const { registry } = await tenantRegistry()
+    const db = await mkDb()
+
+    await expect(deliverOutbox({
+      db, tenants: registry, jobs: fakeQueue(),
+    } as unknown as App)).rejects.toThrow(/BOTH createApp\({ db }\)/)
+  })
+})

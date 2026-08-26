@@ -14,7 +14,8 @@ plugin.ts    createAuthPlugin() — mounts /auth/*, declares the cookie mode,
              and registers the three services at boot()
 services.ts  account / sessions / api-keys — the half that is NOT a route
 db/user.lite      model User — the app's. Appended into its schema.lite
-db/auth.lite      Credential / Session / Verification — imported, not pasted
+db/auth.lite      Credential / Session / Verification / OauthFlow — imported,
+                  and adjusted at the app end with `extend model`, never pasted
 schema.ts    reads those two: authUserModel / authMachineryModels /
              authSchemaFragments (both) / retargetDb
 crypto.ts    hashing / token generation
@@ -50,6 +51,17 @@ index.ts     public API
   role→level mapping — whatever it passed to `GatePlugin({ getLevel })` — and a
   default answer on `account.me` would be a SECOND mapping that disagrees with
   the one every request is graded by, silently, and only near a gate boundary.
+- **An app IMPORTS `db/auth.lite` and says the rest with `extend model`.** Three
+  things it needs are ones this package cannot know: a relation back to the
+  app's own `User`, `@@log(audit)`, and `@@tenant(none)` under row tenancy. Until
+  litestone had `extend model` the only way to say them was to paste the models
+  in and edit them, which basecamp did for four models — and one of them ended up
+  with `@guarded(all)` where this file writes `@secret`, so a basecamp that
+  turned OAuth on would have stored every provider access and refresh token
+  unencrypted, with 137 green tests either side of the divergence. Nothing
+  anywhere compares a copy to its original. `User` is the exception and always
+  was: it is APPENDED, to be extended and edited, which is the split the gate
+  already states.
 - **The two `.lite` files are the source; `schema.ts` reads them and the CLI
   reads them.** `fli auth:install` carried a hand copy of these models and it
   drifted three times, because two walls held it up: `fli` is global so the
@@ -57,7 +69,7 @@ index.ts     public API
   TypeScript, so even resolved it could not be imported. Bytes get past both
   (`FJS-038`). The split is by owner, and the gate already states it — `User` is
   `@@gate("4.4.4.5")` with policies an app changes, so it is APPENDED into the
-  app's own `schema.lite`; the other three are `8`, so they are a file the app
+  app's own `schema.lite`; the other four are `8`, so they are a file the app
   imports and an upgrade reaches without a re-inject.
 - **A shipped `.lite` spells `@@db(main)` although an absent `@@db` already means
   main.** The literal is redundant to the parser and load-bearing to
@@ -75,7 +87,8 @@ index.ts     public API
   `@@allow('update', id == auth().id || auth().isAdmin)` for whose row, and
   `@allow('write', auth().isAdmin)` on `role` and `emailVerified` for the columns
   a resolver grades on — a column the caller can write is not a column a level
-  can be graded from. `8` stays on `Credential` / `Session` / `Verification`,
+  can be graded from. `8` stays on `Credential` / `Session` / `Verification` /
+  `OauthFlow`,
   which is what 8 is for: a model nothing outside `asSystem()` has anything to
   say to. Ruled in `DECISIONS.md` § Access control (2026-08-14).
 - **An app says what `'admin'` means once, in `sessionFields`.** The policies
@@ -152,8 +165,12 @@ index.ts     public API
   a `SessionContext` into Litestone's 0–7 scale, and `toDataPrincipal()` turns it
   into the principal `auth()` reads. Absent ≠ null: an app with no verification
   flow must not grade down.
-- **Ids are uuids, not ints.** The audit log's `actorId` is `Any` for exactly
-  this reason; a STRICT INTEGER column throws on the first audited write.
+- **Ids are uuids, not ints, and that now includes the machinery's own.** The
+  audit log's `actorId` is `Any` for exactly this reason; a STRICT INTEGER column
+  throws on the first audited write. The deciding one inside `auth.lite` is
+  `Credential.id`: `connections()` hands it to the browser and `removeConnection`
+  takes it back, so a sequential integer is enumerable and publishes how many
+  credentials the whole installation holds.
 - **Junction is imported by SPECIFIER — `@frontierjs/junction`, never a relative
   path.** `../junction/index.ts` resolves inside the workspace and nowhere else,
   so the tarball imported nothing and said so only on install. `files` in

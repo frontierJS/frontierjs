@@ -28,7 +28,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createApp } from '../src/core/app.ts'
-import { createService } from '../src/core/service.ts'
+import { createService, createBaseService } from '../src/core/service.ts'
 import { channels } from '../src/transport/channels.ts'
 
 const SCHEMA = `
@@ -265,5 +265,153 @@ describe('the socket half', () => {
 
     expect(seen).toEqual(['orders:created#1'])
     expect(frames).toEqual([])
+  })
+})
+
+// ─── FJS-464 ────────────────────────────────────────────────────────────────
+//
+// Everything above declares `model: 'Order'` by hand, and that is the whole
+// reason the mechanism could be dead for two months without a red test.
+//
+// No real service file writes that. `createBaseService({})` in orders.service.ts
+// is the canonical shape — the accessor is resolved per call from the service
+// NAME through accessorCandidates — and the model → service index this file
+// exercises was built from `svc.model ?? singularize(name)`, where `svc.model`
+// is filled with the service name when a file declares none. So it indexed
+// `orders` and looked up `Order`, and missed, for every conventionally named
+// service in every app.
+//
+// Two spellings are legal and both have to resolve: the accessor may be the
+// singular or the plural (`createBaseService({ model: 'posts' })` is
+// documented), and Litestone announces the model name.
+
+describe('the model → service index (FJS-464)', () => {
+
+  const sys = (d: unknown) =>
+    (d as { asSystem(): Record<string, Record<string, (a: unknown) => Promise<unknown>>> }).asSystem()
+
+  /** An app whose orders service declares `model:` however the caller says —
+   *  including not at all, which is what an autoloaded file does. */
+  async function appWith(model?: string) {
+    const db = await createClient({ db: ':memory:', schema: SCHEMA })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({
+      name: 'orders', db: db as never,
+      ...(model !== undefined ? { model } : {}),
+    }))
+    await app._startForTest()
+    const seen: string[] = []
+    app.events.on('orders:created', (row: { id: number }) => { seen.push(`created#${row.id}`) })
+    return { db, seen }
+  }
+
+  test('a service that declares no model at all still announces', async () => {
+    const { db, seen } = await appWith()
+    await sys(db).order.create({ data: { status: 'from-job' } })
+    await tick()
+    expect(seen).toEqual(['created#1'])
+  })
+
+  test('a service declaring the PLURAL accessor still announces', async () => {
+    const { db, seen } = await appWith('orders')
+    await sys(db).order.create({ data: { status: 'from-job' } })
+    await tick()
+    expect(seen).toEqual(['created#1'])
+  })
+
+  test('a service declaring the singular accessor still announces', async () => {
+    const { db, seen } = await appWith('order')
+    await sys(db).order.create({ data: { status: 'from-job' } })
+    await tick()
+    expect(seen).toEqual(['created#1'])
+  })
+
+  // The option-drop half of the same defect: `createBaseService` returned an
+  // object with no `model` key, so the loader's `createService({ name, ...base })`
+  // saw none and substituted the file name. A service declaring which model it
+  // is reported a different one.
+  test('createBaseService carries its declared model through createService', async () => {
+    const base = createBaseService({ model: 'Order' }) as unknown as Record<string, unknown>
+    expect(base.model).toBe('Order')
+    expect((createService({ name: 'orders', ...base }) as { model?: string }).model).toBe('Order')
+  })
+})
+
+// ─── A state move made somewhere else ───────────────────────────────────────
+//
+// `db.x.transition()` fires its own event kind, which this tap dropped on the
+// floor: a webhook settling an order, or a job advancing a state, moved the row
+// and told nobody. The write succeeded, every open tab stayed on the old value,
+// and nothing logged.
+//
+// It announces under the MOVE's name, which is what `callService` announces
+// when the same transition goes through the owning service — one event name
+// however the move was made, and the browser store's custom-method branch
+// already merges it as a patch.
+
+describe('a transition announces (FJS-463)', () => {
+
+  const TRANSITIONS = `
+    enum OrderStatus { pending paid shipped }
+    model Order {
+      id     Int         @id
+      status OrderStatus @default(pending)
+      @@transitions(status, pay: pending -> paid, ship: paid -> shipped)
+    }
+    model Audit { id Int @id  note String }
+  `
+
+  async function mk() {
+    const db = await createClient({ db: ':memory:', schema: TRANSITIONS })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({ name: 'orders', db: db as never, channel: 'orders' }))
+    app.configure(channels(() => {}))
+    await app._startForTest()
+
+    const frames: Array<{ event: string; data: Record<string, unknown> }> = []
+    app.channels!.channel('orders').join({
+      socket: { readyState: 1, send: (f: string) => { frames.push(JSON.parse(f)); return 1 } },
+    } as never)
+
+    const bus: string[] = []
+    app.events.on('orders:pay', (row: { id: number; status: string }) => { bus.push(`${row.id}:${row.status}`) })
+    return { db, app, frames, bus }
+  }
+
+  test('a move made outside its own service reaches the bus and the channel', async () => {
+    const { db, frames, bus } = await mk()
+    const client = db as never as Record<string, { create(a: unknown): Promise<{ id: number }>; transition(id: number, name: string): Promise<unknown> }>
+    const row = await client.order.create({ data: {} })
+    await client.order.transition(row.id, 'pay')
+    await tick()
+
+    expect(bus).toEqual(['1:paid'])
+    // `created` from the create, then the move under its own name — and NOT an
+    // `orders updated` beside it. A transition fires both event kinds and they
+    // are one write.
+    expect(frames.map(f => f.event)).toEqual(['orders created', 'orders pay'])
+    // The ROW, so a store can merge it — not a summary a subscriber has to
+    // re-read the server to act on.
+    expect(frames[1]!.data).toMatchObject({ id: 1, status: 'paid' })
+  })
+
+  test('a move through the owning service announces once, not twice', async () => {
+    const { db, app, frames } = await mk()
+    const client = db as never as Record<string, { create(a: unknown): Promise<{ id: number }> }>
+    await client.order.create({ data: {} })
+    // The tap defers a tick, so the create's own frame has not arrived yet and
+    // clearing before it does would leave it in the list to be counted below.
+    await tick()
+    frames.length = 0
+
+    // `patch` to the target state IS the transition — Litestone enforces the
+    // machine however the write arrives — so this is the service-call path.
+    await app.service('orders').patch(1, { status: 'paid' })
+    await tick()
+
+    // One frame. The tap sees both an `update` and a `transition` for this
+    // write, and callService is already announcing for this service, so
+    // suppression has to cover the second kind as well as the first.
+    expect(frames.map(f => f.event)).toEqual(['orders patched'])
   })
 })

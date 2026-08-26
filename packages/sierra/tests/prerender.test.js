@@ -14,13 +14,13 @@
 import { describe, test, expect } from 'vitest'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs'
-import { tmpdir } from 'os'
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs'
 
 import {
   fillPath, outputFileFor, composeWrapper, layoutChainFor,
   pathsForRoute, wrapDocument, prerenderRoutes,
 } from '../src/build/prerender.js'
+import { tmpDir } from './tmp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -107,7 +107,7 @@ describe('composeWrapper', () => {
 
 describe('layoutChainFor', () => {
   function fixture() {
-    const dir = mkdtempSync(resolve(tmpdir(), 'sierra-layouts-'))
+    const dir = tmpDir('sierra-layouts-')
     const routes = resolve(dir, 'src/routes')
     mkdirSync(resolve(routes, 'leads'), { recursive: true })
     writeFileSync(resolve(routes, '_module.mesa'), '<slot />')
@@ -133,7 +133,7 @@ describe('layoutChainFor', () => {
   })
 
   test('returns an empty chain when there are no layouts', () => {
-    const dir = mkdtempSync(resolve(tmpdir(), 'sierra-nolayout-'))
+    const dir = tmpDir('sierra-nolayout-')
     const routes = resolve(dir, 'src/routes')
     mkdirSync(routes, { recursive: true })
     writeFileSync(resolve(routes, 'index.mesa'), '<h1>x</h1>')
@@ -155,6 +155,36 @@ describe('wrapDocument', () => {
 
   test('omits the style block when there is no CSS', () => {
     expect(wrapDocument('<p></p>', {})).not.toContain('<style>')
+  })
+
+  test('a description is emitted as a meta tag, escaped', () => {
+    const out = wrapDocument('', { description: 'Tees & mugs for "shippers"' })
+    expect(out).toContain('<meta name="description" content="Tees &amp; mugs for &quot;shippers&quot;">')
+  })
+
+  test('no description means no tag at all', () => {
+    // Not an empty one. `content=""` is a page telling a crawler it has no
+    // description, which is worse than saying nothing and letting it read the
+    // page.
+    expect(wrapDocument('<p></p>', { title: 'x' })).not.toContain('name="description"')
+  })
+
+  test('a class goes on <html>, which is where the theme switcher writes (FJS-501)', () => {
+    const out = wrapDocument('<p></p>', { htmlClass: 'theme-elite', lang: 'en' })
+    expect(out).toContain('<html lang="en" class="theme-elite">')
+  })
+
+  test('<html> carries no class attribute when none was asked for', () => {
+    expect(wrapDocument('<p></p>', {})).toContain('<html lang="en">')
+  })
+
+  test('the two classes are independent — <body> keeps its own', () => {
+    // They are not alternatives. An app class belongs on <body>; the THEME has
+    // to be on <html> or the switcher, which writes <html>, is shadowed for
+    // every token both of them define.
+    const out = wrapDocument('<p></p>', { htmlClass: 'theme-dark', bodyClass: 'app' })
+    expect(out).toContain('class="theme-dark"')
+    expect(out).toContain('<body class="app">')
   })
 
   test('escapes the title', () => {
@@ -238,8 +268,35 @@ describe('prerenderRoutes', () => {
     return prerenderRoutes({ tree, root: ROOT, outDir, renderComponent })
   }
 
+  test('head() gives each emitted path its own title and description', async () => {
+    // The reason it exists: frontmatter is static text, so without this every
+    // page of a dynamic route shares one <title> — the single field a search
+    // result is built from.
+    const out = tmpDir('sierra-head-')
+    await run(out)
+
+    const first  = readFileSync(resolve(out, 'blog/hello-world/index.html'), 'utf8')
+    const second = readFileSync(resolve(out, 'blog/second-post/index.html'), 'utf8')
+
+    expect(first).toContain('<title>Read hello-world — the blog</title>')
+    expect(second).toContain('<title>Read second-post — the blog</title>')
+    expect(first).toContain('<meta name="description" content="Everything about hello-world.">')
+    expect(first).not.toBe(second)
+  }, REAL_RENDER_TIMEOUT)
+
+  test('a route with no head() keeps its frontmatter title', async () => {
+    // The fallback is not the loser: a route whose pages genuinely share a
+    // title says it once, and only a route that needs to vary writes the
+    // function.
+    const out = tmpDir('sierra-head-fm-')
+    await run(out)
+    // /about/ declares `title: About us` and has no companion at all.
+    expect(readFileSync(resolve(out, 'about/index.html'), 'utf8'))
+      .toContain('<title>About us</title>')
+  }, REAL_RENDER_TIMEOUT)
+
   test('writes one file per enumerated path', async () => {
-    const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
+    const out = tmpDir('sierra-pre-')
     const res = await run(out)
 
     expect(res.written).toContain('blog/hello-world/index.html')
@@ -248,7 +305,7 @@ describe('prerenderRoutes', () => {
   }, REAL_RENDER_TIMEOUT)
 
   test('the emitted page carries data from load()', async () => {
-    const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
+    const out = tmpDir('sierra-pre-')
     await run(out)
     const html = readFileSync(resolve(out, 'blog/hello-world/index.html'), 'utf8')
 
@@ -257,7 +314,7 @@ describe('prerenderRoutes', () => {
   }, REAL_RENDER_TIMEOUT)
 
   test('routes without render:static are not emitted', async () => {
-    const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
+    const out = tmpDir('sierra-pre-')
     const res = await run(out)
     // The fixture's '/' route declares no render mode.
     expect(res.written).not.toContain('index.html')
@@ -269,7 +326,7 @@ describe('prerenderRoutes', () => {
     // slot — the chrome appeared, the page vanished, and nothing errored. The
     // string assertions on composeWrapper could not see it, and this fixture
     // had no layout at all, so nothing did.
-    const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
+    const out = tmpDir('sierra-pre-')
     await run(out)
     const html = readFileSync(resolve(out, 'blog/hello-world/index.html'), 'utf8')
 
@@ -283,14 +340,14 @@ describe('prerenderRoutes', () => {
   }, REAL_RENDER_TIMEOUT)
 
   test('renders the page exactly once when both protocols are supplied', async () => {
-    const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
+    const out = tmpDir('sierra-pre-')
     await run(out)
     const html = readFileSync(resolve(out, 'blog/hello-world/index.html'), 'utf8')
     expect(html.match(/Post: hello-world/g)).toHaveLength(1)
   }, REAL_RENDER_TIMEOUT)
 
   test('reports what it skipped instead of failing silently', async () => {
-    const out = mkdtempSync(resolve(tmpdir(), 'sierra-pre-'))
+    const out = tmpDir('sierra-pre-')
     const res = await run(out)
     expect(res.skipped.some(s => /no paths to emit/.test(s.reason))).toBe(true)
   }, REAL_RENDER_TIMEOUT)

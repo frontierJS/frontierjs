@@ -18,20 +18,30 @@ import { splitStatements, introspect,
          generateMigrationSQL,
          summariseDiff }              from '../src/core/migrate.js'
 import { createClient, ValidationError } from '../src/core/client.js'
+import { AccessDeniedError }              from '../src/core/plugin.js'
 import { buildWhere, buildOrderBy, sql, now,
          encodeCursor, decodeCursor,
          normaliseOrderBy, buildCursorWhere,
          isNamedAgg, buildNamedAggExpr } from '../src/core/query.js'
 import { create, apply, status,
          verify, autoMigrate }        from '../src/core/migrations.js'
+import { tempDir }                    from '../src/tmp-dirs.js'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const TMP = join(tmpdir(), `litestone-test-${Date.now()}`)
-mkdirSync(TMP, { recursive: true })
+// Everything this suite writes lives under ONE directory, and tempDir() reaps
+// the previous runs' on the way in — a test here can delete neither its own
+// (the audit logger flushes after the awaited call) nor at exit (that handler
+// does not fire under `bun test`). One root means one prefix to sweep, so a
+// test added later cannot leak a prefix nobody listed: use tmpSub(), never
+// mkdtempSync(tmpdir()). See ../src/tmp-dirs.js.
+const TMP = tempDir('litestone-test-')
 
 function tmpDb(name: string) { return join(TMP, `${name}.db`) }
 function tmpDir(name: string) { const d = join(TMP, name); mkdirSync(d, { recursive: true }); return d }
+/** A uniquely-named directory inside TMP. The mkdtempSync a test would have
+ *  reached for, one level down so the sweep still finds it. */
+function tmpSub(prefix: string) { return mkdtempSync(join(TMP, prefix)) }
 
 // Create a schema, apply DDL to a fresh db, return a createClient instance
 async function makeDb(schemaText: string, name = 'test', opts: Record<string, any> = {}) {
@@ -1761,7 +1771,7 @@ describe('status() — sql field', () => {
     const { mkdirSync, writeFileSync } = await import('fs')
     const { status } = await import('../src/core/migrations.js')
 
-    const dir = join(tmpdir(), `mig-test-${Date.now()}`)
+    const dir = tmpSub('mig-test-')
     mkdirSync(dir, { recursive: true })
     const sql = 'CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY);'
     writeFileSync(join(dir, '20240101000000_test.sql'), sql)
@@ -1780,7 +1790,7 @@ describe('status() — sql field', () => {
     const { mkdirSync, writeFileSync, unlinkSync } = await import('fs')
     const { status, apply } = await import('../src/core/migrations.js')
 
-    const dir = join(tmpdir(), `mig-orphan-${Date.now()}`)
+    const dir = tmpSub('mig-orphan-')
     mkdirSync(dir, { recursive: true })
     const filePath = join(dir, '20240101000000_orphan.sql')
     writeFileSync(filePath, 'SELECT 1;')
@@ -3893,12 +3903,19 @@ describe('a soft-deleted row keeps its @unique slot, and every write says so', (
     ])
   })
 
-  test('an ordinary conflict is untouched — only a DELETED holder is reinterpreted', async () => {
+  test('a LIVE holder is the other conflict, and it says so in its own words (FJS-441)', async () => {
+    // The two are separate answers because the ways out are different: a
+    // deleted holder is restore-or-release, a live one is send another value.
     const db = await makeDb(S, 'sdu-live')
     await db.doc.create({ data: { code: 'live', team: 'a', slot: 1 } })
     const err = await db.doc.create({ data: { code: 'live', team: 'b', slot: 2 } }).catch((e: any) => e)
-    expect(err.name).not.toBe('SoftDeletedUniqueError')
-    expect(err.message).toMatch(/UNIQUE constraint failed/)
+    expect(err.name).toBe('UniqueConflictError')
+    expect(err.status).toBe(409)
+    expect(err.fields).toEqual(['code'])
+    // The physical table name is what a browser used to be told. It is neither
+    // the name the caller used nor any of its business.
+    expect(err.message).not.toMatch(/UNIQUE constraint failed/)
+    expect(err.message).not.toContain('doc.code')
   })
 
   test('a race between two LIVE writers still resolves to an update, as upsert promises', async () => {
@@ -6001,7 +6018,7 @@ describe('raw SQL and the access rules it cannot enforce', () => {
     const { tmpdir } = await import('os')
     const { resolve: rp } = await import('path')
 
-    const d = mkdtempSync(rp(tmpdir(), 'lite-mig-gate-'))
+    const d = tmpSub('lite-mig-gate-')
     const sp = rp(d, 's.lite')
     writeFileSync(sp, `model Inv { id Int @id  ownerId Int  ssn String @guarded  @@gate("4") }`)
     const c = await createClient({ schema: sp, db: rp(d, 'a.db') })
@@ -6511,7 +6528,7 @@ describe('onLog callback', () => {
   async function makeLogDb(onLog?: (...args: any[]) => any) {
     const r = parse(LOG_SCHEMA)
     if (!r.valid) throw new Error(r.errors.join('\n'))
-    const dir  = join(tmpdir(), `ls-onlog-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    const dir  = tmpSub('ls-onlog-')
     mkdirSync(dir, { recursive: true })
     const mainPath  = join(dir, 'main.db')
     const auditPath = join(dir, 'audit')
@@ -6750,7 +6767,7 @@ describe('onLog callback', () => {
   test('an index built with the old column type is rebuilt, history and all', async () => {
     const { makeJsonlTable } = await import('../src/drivers/jsonl.js')
 
-    const dir  = join(tmpdir(), `ls-idx-drift-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    const dir  = tmpSub('ls-idx-drift-')
     mkdirSync(dir, { recursive: true })
     const file = join(dir, 'auditLogs.jsonl')
 
@@ -6823,7 +6840,7 @@ describe('onLog callback', () => {
       model Note { id Int @id; text String @@db(main) }
     `
     const r = parse(PLAIN_SCHEMA)
-    const dir = join(tmpdir(), `ls-onlog-plain-${Date.now()}`)
+    const dir = tmpSub('ls-onlog-plain-')
     mkdirSync(dir, { recursive: true })
     const path = join(dir, 'main.db')
     const raw = new Database(path)
@@ -6887,7 +6904,7 @@ describe('audit log redaction', () => {
   async function makeRedactDb(onLog?: (...args: any[]) => any) {
     const r = parse(REDACT_SCHEMA)
     if (!r.valid) throw new Error(r.errors.join('\n'))
-    const dir = join(tmpdir(), `ls-redact-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    const dir = tmpSub('ls-redact-')
     mkdirSync(dir, { recursive: true })
     const mainPath  = join(dir, 'main.db')
     const auditPath = join(dir, 'audit')
@@ -7030,7 +7047,7 @@ describe('audit log redaction', () => {
       }
     `)
     if (!r.valid) throw new Error(r.errors.join('\n'))
-    const dir = join(tmpdir(), `ls-redact-plain-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    const dir = tmpSub('ls-redact-plain-')
     mkdirSync(dir, { recursive: true })
     const mainPath  = join(dir, 'main.db')
     const auditPath = join(dir, 'audit')
@@ -7093,7 +7110,7 @@ describe('audit trail covers bulk writes', () => {
   async function makeBulkDb(schemaText = BULK_SCHEMA) {
     const r = parse(schemaText)
     if (!r.valid) throw new Error(r.errors.join('\n'))
-    const dir = join(tmpdir(), `ls-bulklog-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    const dir = tmpSub('ls-bulklog-')
     mkdirSync(dir, { recursive: true })
     const mainPath  = join(dir, 'main.db')
     const auditPath = join(dir, 'audit')
@@ -10165,7 +10182,7 @@ model M { id Int @id  s S  @@transitions(s, go: a -> b @gate(ADMINISTRATOR)) }`)
 
   test.each([
     ['unknown field',      `@@transitions(nope, a -> b)`,        'no such field'],
-    ['non-enum field',     `@@transitions(n, a -> b)`,           'not an enum'],
+    ['non-enum field',     `@@transitions(n, a -> b)`,           'not a closed type'],
     ['unknown to-value',   `@@transitions(s, a -> zzz)`,         "unknown value 'zzz'"],
     ['unknown from-value', `@@transitions(s, zzz -> b)`,         "unknown value 'zzz'"],
     ['self-transition',    `@@transitions(s, a -> a)`,           'self-transition'],
@@ -10338,7 +10355,7 @@ describe('@@transitions — transitions() listing', () => {
   test('a gated move is reported with allowed:false, not hidden', async () => {
     const user   = db.$setAuth({ id: 1, role: 'member' })
     const refund = (await user.order.transitions(2)).find((t: any) => t.name === 'refund')
-    expect(refund).toEqual({ name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5, allowed: false })
+    expect(refund).toEqual({ name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5, allowed: false, refusedBy: 'gate' })
   })
 
   test('the same record reads differently for a higher level', async () => {
@@ -10358,6 +10375,126 @@ describe('@@transitions — transitions() listing', () => {
     const admin = db.$setAuth({ id: 2, role: 'admin' })
     await admin.order.transition(2, 'refund')
     expect(await admin.order.transitions(2)).toEqual([])
+  })
+
+  // ── the policy half (FJS-495) ────────────────────────────────────────────
+  //
+  // A move is an update, so a row policy refuses one exactly as a gate does.
+  // Until this, `transitions()` consulted the gate alone: a caller holding the
+  // level and failing the policy was shown a button that answered 403 the
+  // moment they pressed it. `FJS-494` fixed the press; this is the half before.
+  const POLICIED = `
+    enum OrderStatus { pending  paid  shipped  refunded  cancelled }
+
+    model Order {
+      id      Int @id
+      ownerId Int
+      status  OrderStatus @default(pending)
+
+      @@allow('read', true)
+      @@allow('update', ownerId == auth().id)
+      @@transitions(status,
+        pay:  pending -> paid,
+        ship: paid    -> shipped @gate(5))
+    }
+  `
+
+  const policied = async () => {
+    const { db: d } = await makeTestClient(POLICIED, {
+      plugins: [new GatePlugin({
+        getLevel: (u: any) => u?.role === 'admin' ? LEVELS.ADMINISTRATOR : LEVELS.USER,
+      })],
+    })
+    await d.asSystem().order.create({ data: { id: 1, ownerId: 1, status: 'pending' } })
+    return d
+  }
+
+  test('a move the update policy refuses is reported, not offered', async () => {
+    const d = await policied()
+    // Reads the row (read is open) and cannot update it — which is the case
+    // that used to answer `allowed: true` for a button that 403s.
+    const pay = (await d.$setAuth({ id: 2 }).order.transitions(1)).find((t: any) => t.name === 'pay')
+    expect(pay.allowed).toBe(false)
+    expect(pay.refusedBy).toBe('policy')
+    d.$close()
+  })
+
+  test('and the owner of the same row is offered it', async () => {
+    const d = await policied()
+    const pay = (await d.$setAuth({ id: 1 }).order.transitions(1)).find((t: any) => t.name === 'pay')
+    expect(pay.allowed).toBe(true)
+    expect(pay.refusedBy).toBeNull()
+    d.$close()
+  })
+
+  test('the affordance agrees with the boundary, which is the whole point', async () => {
+    // The assertion the issue is actually about: what the list SAYS and what
+    // the write DOES, for one caller on one row. A test of either half alone
+    // passes with the two disagreeing.
+    const d    = await policied()
+    const them = d.$setAuth({ id: 2 })
+    const pay  = (await them.order.transitions(1)).find((t: any) => t.name === 'pay')
+    const err  = await them.order.transition(1, 'pay').catch((e: any) => e)
+
+    expect(pay.allowed).toBe(false)
+    expect(err).toBeInstanceOf(AccessDeniedError)
+    expect((await d.asSystem().order.findUnique({ where: { id: 1 } })).status).toBe('pending')
+    d.$close()
+  })
+
+  test('the gate is reported ahead of the policy, and says which refused', async () => {
+    // Both halves refuse `ship` for this caller. A screen has two different
+    // things to render — *not senior enough* and *not this record* — so the
+    // one that is reported has to be stable rather than incidental.
+    const d    = await policied()
+    await d.asSystem().order.update({ where: { id: 1 }, data: { status: 'paid' } })
+    const ship = (await d.$setAuth({ id: 2 }).order.transitions(1)).find((t: any) => t.name === 'ship')
+    expect(ship.allowed).toBe(false)
+    expect(ship.refusedBy).toBe('gate')
+    d.$close()
+  })
+
+  test('asSystem() is offered every move, policies included', async () => {
+    const d = await policied()
+    const moves = await d.asSystem().order.transitions(1)
+    expect(moves.map((t: any) => t.name)).toEqual(['pay'])
+    expect(moves[0].allowed).toBe(true)
+    d.$close()
+  })
+
+  test('a post-update policy is graded against the row the move would LEAVE', async () => {
+    // The half that genuinely varies per move: `update` is about the row as it
+    // is and answers once for the call, `post-update` is about the row as it
+    // would be and is a different question for every target.
+    const { db: d } = await makeTestClient(`
+      enum S { draft  live  archived }
+
+      model Doc {
+        id     Int @id
+        status S @default(draft)
+
+        @@allow('read', true)
+        @@allow('update', true)
+        @@deny('post-update', status == 'archived')
+        @@transitions(status,
+          publish: draft -> live,
+          archive: draft -> archived)
+      }
+    `)
+    await d.asSystem().doc.create({ data: { id: 1, status: 'draft' } })
+
+    const moves = await d.$setAuth({ id: 1 }).doc.transitions(1)
+    const by    = Object.fromEntries(moves.map((t: any) => [t.name, t]))
+
+    expect(by.publish.allowed).toBe(true)
+    expect(by.archive.allowed).toBe(false)
+    expect(by.archive.refusedBy).toBe('policy')
+
+    // And the boundary agrees: the write rolls back rather than being refused
+    // up front, which is what a post-update policy is.
+    await expect(d.$setAuth({ id: 1 }).doc.transition(1, 'archive')).rejects.toThrow(AccessDeniedError)
+    expect((await d.asSystem().doc.findUnique({ where: { id: 1 } })).status).toBe('draft')
+    d.$close()
   })
 
   test('a missing record and a model with no machine both return []', async () => {
@@ -10533,7 +10670,7 @@ describe('enum transitions — enforcement', () => {
       const { join } = await import('path')
       const { tmpdir } = await import('os')
       const { mkdirSync } = await import('fs')
-      const dir = join(tmpdir(), `tx-event-${Date.now()}`)
+      const dir = tmpSub('tx-event-')
       mkdirSync(dir, { recursive: true })
       const path = join(dir, 'test.db')
       const result = p(TRANSITION_SCHEMA)
@@ -10550,7 +10687,10 @@ describe('enum transitions — enforcement', () => {
     expect(events[0].transition).toBe('pay')
     expect(events[0].from).toBe('pending')
     expect(events[0].to).toBe('paid')
-    expect(events[0].model).toBe('order')  // carries the table name
+    // The MODEL name, like every other event this client fires. It carried the
+    // table name until a consumer keyed a lookup by `model` and got `Order`
+    // from the update and `order` from the transition that caused it.
+    expect(events[0].model).toBe('Order')
     evDb.$close(); evDb2.$close()
   })
 })
@@ -10637,6 +10777,210 @@ describe('enum transitions — conflict and upsert', () => {
     const err = new TransitionConflictError('Order', 'status', 'paid', 'shipped')
     expect(err.retryable).toBe(true)
     expect(err).toBeInstanceOf(Error)
+  })
+
+  // ── FJS-511: a Boolean is a closed type, so it is a state machine ────────
+  //
+  // isPrimary / isSuspended / isPublished are the two-state machines every
+  // schema has, and the two directions are routinely different authorities.
+  // `true`/`false` are their own token, so an enum-only reader stopped at the
+  // tokeniser and the declaration did not exist.
+
+  test('@@transitions names a Boolean column, with a per-move gate', async () => {
+    const { db: bdb } = await makeTestClient(`
+      model Domain {
+        id        String  @id @default(cuid())
+        name      String
+        isPrimary Boolean @default(false)
+        @@transitions(isPrimary,
+          promote: false -> true,
+          demote:  true  -> false @gate(5))
+      }
+    `)
+    const d = await bdb.domain.create({ data: { name: 'a.com' } })
+
+    expect((await bdb.domain.transition(d.id, 'promote')).isPrimary).toBe(true)
+
+    // The declared states survive as real booleans, not 1/0 — and the per-move
+    // gate is read: this client is unauthenticated, so `demote` is reported and
+    // not offered, which is what a greyed-out button needs.
+    const moves = await bdb.domain.transitions(await bdb.domain.findUnique({ where: { id: d.id } }))
+    expect(moves).toEqual([{ name: 'demote', field: 'isPrimary', from: true, to: false, gate: 5, allowed: false, refusedBy: 'gate' }])
+
+    // The gate is a floor on the MOVE, not on the model: the same caller may
+    // promote and may not demote.
+    await expect(bdb.domain.transition(d.id, 'demote')).rejects.toThrow(/requires level 5/)
+    const admin = bdb.$setAuth({ id: 'a1', isAdmin: true })   // ADMINISTRATOR(5)
+    expect((await admin.domain.transition(d.id, 'demote')).isPrimary).toBe(false)
+
+    bdb.$close()
+  })
+
+  test('an undeclared reverse is refused, and an unnamed boolean move does not parse', async () => {
+    const { db: bdb } = await makeTestClient(`
+      model Post {
+        id        String  @id @default(cuid())
+        title     String
+        published Boolean @default(false)
+        @@transitions(published, publish: false -> true)
+      }
+    `)
+    const post = await bdb.post.create({ data: { title: 'x' } })
+    await bdb.post.transition(post.id, 'publish')
+
+    // Closed machine: only a declared move writes the column, through any path.
+    await expect(
+      bdb.post.update({ where: { id: post.id }, data: { published: false } })
+    ).rejects.toBeInstanceOf(TransitionViolationError)
+    bdb.$close()
+
+    // `-> true` names the value written, not what a person did.
+    await expect(makeTestClient(
+      `model P { id String @id  f Boolean @default(false)  @@transitions(f, false -> true) }`
+    )).rejects.toThrow(/boolean move must be named/)
+  })
+
+  // ── FJS-510: a field @allow needs a column ───────────────────────────────
+  //
+  // A relation field is not stored, so the predicate has nothing to compile to.
+  // Both halves were accepted and both did nothing, one line from the spelling
+  // that works.
+
+  test('@allow on a relation field is refused, naming the FK that would work', async () => {
+    const rel = (attr: string) => `
+      model Team   { id String @id @default(cuid())  name String  members Member[] }
+      model Member {
+        id     String @id @default(cuid())
+        name   String
+        teamId String
+        team   Team   @relation(fields: [teamId], references: [id]) ${attr}
+      }`
+
+    await expect(makeTestClient(rel(`@allow('write', 'Member.reassign' in auth().perms)`)))
+      .rejects.toThrow(/no column to guard[\s\S]*Put it on 'teamId'/)
+    // The read half is just as ineffective, so it is refused too.
+    await expect(makeTestClient(rel(`@allow('read', 'Member.seeTeam' in auth().perms)`)))
+      .rejects.toThrow(/no column to guard/)
+
+    // An implicit many-to-many has no column on this model at all.
+    await expect(makeTestClient(`
+      model Tag  { id String @id @default(cuid())  name String  posts Post[] }
+      model Post { id String @id @default(cuid())  title String  tags Tag[] @allow('write', 'Post.tag' in auth().perms) }
+    `)).rejects.toThrow(/implicit many-to-many/)
+  })
+
+  // ── FJS-506: @gate(8) on a move is *the engine makes this one* ───────────
+  //
+  // getLevel is clamped to 7, so no caller passes and asSystem() bypasses the
+  // check entirely. That is the only mechanical line between the moves a person
+  // makes and the moves a pipeline makes, and it used to live in a service hook.
+
+  test('@gate(8) on a move refuses every caller and admits asSystem()', async () => {
+    const { db: gdb } = await makeTestClient(`
+      enum RunState { queued  building  done  cancelled }
+      model Run {
+        id     String   @id @default(cuid())
+        state  RunState @default(queued)
+        @@transitions(state,
+          build:  queued   -> building @gate(8),
+          finish: building -> done     @gate(8),
+          cancel: queued   -> cancelled)
+      }
+    `)
+    const sys = gdb.asSystem()
+    const r   = await sys.run.create({ data: {} })
+
+    // SYSADMIN(7) is the highest a resolver can return and it is not enough.
+    const admin = gdb.$setAuth({ id: 'u1', isSystemAdmin: true })
+    await expect(admin.run.transition(r.id, 'build')).rejects.toThrow(/requires level 8/)
+
+    // The ungated move on the same field is unaffected — this is per-move.
+    const list = await admin.run.transitions(r.id)
+    expect(list.find(t => t.name === 'build')).toMatchObject({ gate: 8, allowed: false, refusedBy: 'gate' })
+    expect(list.find(t => t.name === 'cancel')).toMatchObject({ gate: null, allowed: true })
+
+    // And the engine makes it.
+    expect((await sys.run.transition(r.id, 'build')).state).toBe('building')
+    gdb.$close()
+  })
+
+  test('a gate on the enum block is refused, naming the model form', async () => {
+    await expect(makeTestClient(`
+      enum Status {
+        pending  paid
+        transitions { pay: pending -> paid @gate(5) }
+      }
+      model Order { id Int @id @default(autoincrement())  status Status @default(pending) }
+    `)).rejects.toThrow(/a gate cannot go on the enum's shared block[\s\S]*@@transitions/)
+  })
+
+  test('the same predicate on the FK guards the direct write and connect alike', async () => {
+    const { db: fdb } = await makeTestClient(`
+      model Team   { id String @id @default(cuid())  name String  members Member[] }
+      model Member {
+        id     String @id @default(cuid())
+        name   String
+        teamId String @allow('write', 'Member.reassign' in auth().perms)
+        team   Team   @relation(fields: [teamId], references: [id])
+      }`)
+    const sys = fdb.asSystem()
+    const t1 = await sys.team.create({ data: { name: 'A' } })
+    const t2 = await sys.team.create({ data: { name: 'B' } })
+    const m  = await sys.member.create({ data: { name: 'Ada', teamId: t1.id } })
+    const no = fdb.$setAuth({ id: 'u1', perms: [] })
+
+    // The rest of the payload still lands — a field @allow drops one key.
+    const direct = await no.member.update({ where: { id: m.id }, data: { name: 'Ada L', teamId: t2.id } })
+    expect(direct.name).toBe('Ada L')
+    expect(direct.teamId).toBe(t1.id)
+
+    const viaConnect = await no.member.update({ where: { id: m.id }, data: { team: { connect: { id: t2.id } } } })
+    expect(viaConnect.teamId).toBe(t1.id)
+
+    // And a holder moves it.
+    const yes = fdb.$setAuth({ id: 'u2', perms: ['Member.reassign'] })
+    expect((await yes.member.update({ where: { id: m.id }, data: { teamId: t2.id } })).teamId).toBe(t2.id)
+    fdb.$close()
+  })
+
+  // ── FJS-494: a policy refusal is not a race ──────────────────────────────
+  //
+  // Both arrive as zero rows changed — the update policy narrows the WHERE and
+  // so does the compare half of the swap — and both used to throw
+  // TransitionConflictError, which is retryable: true. A caller refused by
+  // @@allow was therefore told the row had moved and re-applied forever.
+
+  test('a transition refused by @@allow throws AccessDenied, not a conflict', async () => {
+    const { db: pdb } = await makeTestClient(`
+      enum Status {
+        pending
+        paid
+        transitions { pay: pending -> paid }
+      }
+      model Ticket {
+        id     Int    @id
+        status Status @default(pending)
+        @@allow('read',   'tickets_read' in auth().perms)
+        @@allow('update', 'tickets_edit' in auth().perms)
+      }
+    `)
+    await pdb.asSystem().ticket.create({ data: { id: 1 } })
+
+    const refused = pdb.$setAuth({ id: 'u1', perms: ['tickets_read'] })   // no tickets_edit
+    let caught: any = null
+    try { await refused.ticket.transition(1, 'pay') } catch (e) { caught = e }
+
+    expect(caught?.name).toBe('AccessDeniedError')
+    expect(caught?.code).toBe('ACCESS_DENIED')
+    // The half that mattered: nothing here may be retried.
+    expect(caught?.retryable).toBeFalsy()
+    expect(caught?.message).toContain('pay')
+    expect((await pdb.asSystem().ticket.findUnique({ where: { id: 1 } })).status).toBe('pending')
+
+    // The same move, by a caller the policy admits.
+    const allowed = pdb.$setAuth({ id: 'u2', perms: ['tickets_read', 'tickets_edit'] })
+    expect((await allowed.ticket.transition(1, 'pay')).status).toBe('paid')
+    pdb.$close()
   })
 
   // ── upsert() transition enforcement ─────────────────────────────────────
@@ -12231,7 +12575,7 @@ describe('loadFixture / parseCsv', () => {
 
   test('reads .json and .csv from disk', async () => {
     const { db } = await makeTestClient(PLAN)
-    const dir = join(tmpdir(), `fixture-${Date.now()}`)
+    const dir = tmpSub('fixture-')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'plans.json'), JSON.stringify([{ code: 'j1', price: 1, active: true }]))
     writeFileSync(join(dir, 'plans.csv'),  'code,price,active\nc1,5,true\nc2,6,false\n')
@@ -13156,7 +13500,7 @@ describe("the policy language's `in`", () => {
     // The real oracle: verifyRowPolicies runs the compiled WHERE against
     // litestone's own JS evaluator. Inverting either half makes this fail —
     // checked by hand, which is the only way to know an oracle is looking.
-    const dir  = mkdtempSync(join(tmpdir(), 'in-policy-'))
+    const dir  = tmpSub('in-policy-')
     const path = join(dir, 'schema.lite')
     writeFileSync(path, S)
     const env = await createTestEnv({ schema: path })
@@ -13401,7 +13745,7 @@ describe('a ternary in the policy expression language', () => {
 
   test('the two compilers are graded against each other over a ternary', async () => {
     // Swapping the branches in either half makes this fail — checked by hand.
-    const dir  = mkdtempSync(join(tmpdir(), 'tern-policy-'))
+    const dir  = tmpSub('tern-policy-')
     const path = join(dir, 'schema.lite')
     writeFileSync(path, `model Doc {
       id      Int @id @default(autoincrement())
@@ -13419,7 +13763,7 @@ describe('a ternary in the policy expression language', () => {
     // only admitted rows were whatever the factory happened to generate — a
     // policy graded by luck, which reports "all on one side" the day the
     // factory changes. Nothing about ternaries; the ternary is what surfaced it.
-    const dir  = mkdtempSync(join(tmpdir(), 'ord-policy-'))
+    const dir  = tmpSub('ord-policy-')
     const path = join(dir, 'schema.lite')
     writeFileSync(path, `model N {
       id    Int @id @default(autoincrement())
@@ -13900,7 +14244,7 @@ describe('createTestEnv', () => {
     // Skipping it silently is the failure: a JS migration that creates a table
     // would leave the template missing it, and every test would report a
     // missing table instead of a missing migration.
-    const dir = mkdtempSync(join(tmpdir(), 'litestone-jsmig-'))
+    const dir = tmpSub('litestone-jsmig-')
     writeFileSync(join(dir, '001_init.sql'), 'CREATE TABLE "account" ("id" INTEGER PRIMARY KEY, "name" TEXT NOT NULL) STRICT;')
     writeFileSync(join(dir, '002_backfill.js'), 'export async function up() {}')
 
@@ -14010,6 +14354,40 @@ describe('createTestEnv', () => {
     expect(await env.verifyGateLadder()).toEqual([])
     const ops = new Set(env.gateMatrix().map((r: any) => r.op))
     expect([...ops].sort()).toEqual(['create', 'delete', 'read', 'update'])
+    env.close()
+  })
+
+  test('a fixture never invents a foreign key — a nullable tenant FK is left null', async () => {
+    // Row tenancy stamps its claim column `@default(auth().<claim>)`, and the
+    // factory deliberately does not skip an `auth` default — it supplies a
+    // value because a system-context create would not fire the stamp. On a
+    // REQUIRED foreign key that value is overwritten by `_freshParents`, which
+    // seeds a real parent. On a NULLABLE one nothing seeds a parent, so the
+    // generated string reached SQLite and came back
+    // `FOREIGN KEY constraint failed` — reported by the ladder as *the call
+    // threw something that is not a refusal*, at every level of the model.
+    // Found on basecamp's `AuditEvent` the day it stopped being
+    // `@@tenant(none)` (`FJS-432`).
+    const env = await createTestEnv({ schema: `
+      tenancy { strategy row  column workspaceId  claim workspaceId }
+
+      model Workspace {
+        id    Int    @id @default(autoincrement())
+        name  String
+        @@gate("8")
+        @@tenant(none)
+      }
+
+      model Trail {
+        id          Int        @id @default(autoincrement())
+        workspaceId Int?
+        workspace   Workspace? @relation(fields: [workspaceId], references: [id])
+        action      String
+        @@gate("5.8.9.9")
+      }
+    ` })
+
+    expect(await env.verifyGateLadder()).toEqual([])
     env.close()
   })
 
@@ -15800,12 +16178,15 @@ describe('@from — derived relation fields', () => {
     db.$close()
   })
 
-  test('@from: @from fields not writable — create ignores them', async () => {
+  test('@from: @from fields not writable — a create naming one is refused by name', async () => {
     const { db } = await makeTestClient(FROM_SCHEMA)
-    // Should not throw — @from fields are silently ignored on write
+    // This asserted the silence for as long as the silence existed. A @from
+    // field is a subquery over the target, so a value written to it has
+    // nowhere to land and the next read answers the aggregate — the caller
+    // believed they set it (FJS-395). The other five virtual kinds all refuse.
     await expect(
       db.account.create({ data: { id: 1, name: 'Test', orderCount: 99 } as any })
-    ).resolves.toBeDefined()
+    ).rejects.toThrow(/orderCount is @from\(Order, count\)/)
     db.$close()
   })
 
@@ -23006,7 +23387,7 @@ model Task {
 describe('@edge — incremental autoMigrate', () => {
   test('adds decorate column + side table to an existing DB, preserving data', async () => {
     const { autoMigrate } = await import('../src/core/migrations.js')
-    const path = join(tmpdir(), `edge_mig_${Date.now()}.db`)
+    const path = join(tmpSub('edge-mig-'), 'edge.db')
     const v1 = `model Project { id Int @id; name String; tasks Task[] }
 model Task { id Int @id; title String; projects Project[] }`
     let db: any = await createClient({ schema: v1, db: path })
@@ -23073,7 +23454,7 @@ model Task { id Int @id; myFlag Boolean @scoped @default(false); myNote String? 
   test('full round-trip — eject preserves data and the ejected model is queryable', async () => {
     const { ejectEdge, applyEject } = await import('../src/tools/eject.js')
     const { autoMigrate } = await import('../src/core/migrations.js')
-    const path = join(tmpdir(), `eject_${Date.now()}.db`)
+    const path = join(tmpSub('eject-'), 'eject.db')
     const v1 = `
 model Project { id Int @id; name String; tasks Task[] }
 model Task { id Int @id; title String; projects Project[]; isImportant Boolean @edge(ref: Project) @default(false) }`
@@ -25282,7 +25663,14 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
     const db = await makeDb(`model U { id Int @id @default(autoincrement())  tok String @unique @encrypted(deterministic: true) }`, 'enc-unique', K)
     const sys = db.asSystem()
     await sys.u.create({ data: { tok: 'same' } })
-    await expect(sys.u.create({ data: { tok: 'same' } })).rejects.toThrow(/UNIQUE constraint failed/)
+    const err = await sys.u.create({ data: { tok: 'same' } }).catch((e: any) => e)
+    expect(err.name).toBe('UniqueConflictError')
+    expect(err.fields).toEqual(['tok'])
+    // The stored value is CIPHERTEXT, so it belongs in an error message even
+    // less than a plaintext would — the conflict names the column and redacts
+    // what collided, the way the audit trail does.
+    expect(err.message).not.toContain('same')
+    expect(err.values[0]).toBe('[redacted]')
   })
 
   test('a digest is never handed to any caller, by any path', async () => {
@@ -25533,5 +25921,143 @@ describe('a plugin has a name, and every client flavour will say it', () => {
     expect(db.asSystem().$plugins).toEqual(db.$plugins)
     expect(db.$setAuth({ id: 1 }).$plugins).toEqual(db.$plugins)
     db.$close()
+  })
+})
+
+// ─── FJS-449 — where a relative `database { path }` is anchored ──────────────
+//
+// The declaration is written against the APP ROOT: `db/schema.lite` says
+// `./db/shop.db`, naming a sibling of itself from one level up. Anchoring it to
+// the process CWD made the same schema mean a different file per directory the
+// command was typed in — `litestone studio` from `db/` opened an empty
+// `db/db/shop.db` it had just created and served it for nineteen hours.
+describe('database path anchoring', () => {
+  const SCHEMA = `
+database main { path "./db/app.db" }
+model Thing { id Int @id  name String }
+`
+
+  /** An app tree: <root>/db/schema.lite, with the schema in it. */
+  function appTree() {
+    const root = mkdtempSync(join(tmpdir(), 'litestone-anchor-'))
+    mkdirSync(join(root, 'db'), { recursive: true })
+    const schemaPath = join(root, 'db', 'schema.lite')
+    writeFileSync(schemaPath, SCHEMA)
+    return { root, schemaPath }
+  }
+
+  test('a schema FILE anchors to the app root, whatever the CWD', async () => {
+    const { root, schemaPath } = appTree()
+    const cwd = process.cwd()
+    try {
+      // The directory that produced the defect: the schema's own, one level
+      // below the root the declaration is written against.
+      process.chdir(join(root, 'db'))
+      const db = await createClient({ path: schemaPath, resolveFrom: 'schema' })
+      // Not <root>/db/db/app.db, which is what resolving against the CWD gives.
+      expect(existsSync(join(root, 'db', 'app.db'))).toBe(true)
+      expect(existsSync(join(root, 'db', 'db', 'app.db'))).toBe(false)
+      db.$close()
+    } finally {
+      process.chdir(cwd)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('and the app root is the same file from the app root itself', async () => {
+    // The case that already worked. It has to keep working, because it is what
+    // every app does and the anchor must not move it.
+    const { root, schemaPath } = appTree()
+    const cwd = process.cwd()
+    try {
+      process.chdir(root)
+      const db = await createClient({ path: schemaPath, resolveFrom: 'schema' })
+      expect(existsSync(join(root, 'db', 'app.db'))).toBe(true)
+      db.$close()
+    } finally {
+      process.chdir(cwd)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('a schema NOT in a db/ directory anchors to its own directory', async () => {
+    // The flat single-file example: there is no db/, so the schema's directory
+    // IS the app root and `./example.db` sits beside it.
+    const root = mkdtempSync(join(tmpdir(), 'litestone-anchor-flat-'))
+    const schemaPath = join(root, 'schema.lite')
+    writeFileSync(schemaPath, `
+database main { path "./example.db" }
+model Thing { id Int @id  name String }
+`)
+    const cwd = process.cwd()
+    try {
+      process.chdir(tmpdir())
+      const db = await createClient({ path: schemaPath, resolveFrom: 'schema' })
+      expect(existsSync(join(root, 'example.db'))).toBe(true)
+      db.$close()
+    } finally {
+      process.chdir(cwd)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('an inline schema still anchors to the CWD — there is nowhere else', async () => {
+    // The half FJS-449 does NOT fix, asserted so it is a stated limit rather
+    // than an assumption: an app that assembles its schema in memory (appending
+    // auth's fragments, which is the documented shape) hands over a string with
+    // no location in it.
+    const root = mkdtempSync(join(tmpdir(), 'litestone-anchor-inline-'))
+    const cwd = process.cwd()
+    try {
+      process.chdir(root)
+      const db = await createClient({ schema: `
+database main { path "./here.db" }
+model Thing { id Int @id  name String }
+` })
+      expect(existsSync(join(root, 'here.db'))).toBe(true)
+      db.$close()
+    } finally {
+      process.chdir(cwd)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('the DEFAULT is still the CWD, even for a schema file — isolation depends on it', async () => {
+    // The compat guarantee, asserted rather than assumed. basecamp's seed test
+    // runs the seeder in a scratch directory with `cwd: dir`: `database main` is
+    // redirected by env var and `database audit` — which has no env var — by the
+    // CWD alone. Anchoring unconditionally sent that audit log back to the real
+    // shared db/audit/ and the suite failed with SQLITE_BUSY. So opting in is
+    // the caller's decision and this is what they get when they do not.
+    const { root, schemaPath } = appTree()
+    const elsewhere = mkdtempSync(join(tmpdir(), 'litestone-anchor-cwd-'))
+    const cwd = process.cwd()
+    try {
+      process.chdir(elsewhere)
+      const db = await createClient({ path: schemaPath })
+      expect(existsSync(join(elsewhere, 'db', 'app.db'))).toBe(true)
+      expect(existsSync(join(root, 'db', 'app.db'))).toBe(false)
+      db.$close()
+    } finally {
+      process.chdir(cwd)
+      rmSync(root, { recursive: true, force: true })
+      rmSync(elsewhere, { recursive: true, force: true })
+    }
+  })
+
+  test('createClient({ db }) overrides and stays process-relative', async () => {
+    // An override comes from code, and code is written against the process.
+    const { root, schemaPath } = appTree()
+    const cwd = process.cwd()
+    try {
+      process.chdir(root)
+      const db = await createClient({ path: schemaPath, db: './chosen.db', resolveFrom: 'schema' })
+      expect(existsSync(join(root, 'chosen.db'))).toBe(true)
+      expect(existsSync(join(root, 'db', 'app.db'))).toBe(false)
+      db.$close()
+    } finally {
+      process.chdir(cwd)
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

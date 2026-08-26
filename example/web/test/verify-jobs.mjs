@@ -63,7 +63,7 @@ try {
 
   // `reference` is @unique, so a run that threw before its cleanup would make
   // the next one fail for a reason that has nothing to do with jobs.
-  const stale = await (await fetch(`${API}/api/orders?reference=${REF}`)).json()
+  const stale = await (await fetch(`${API}/api/orders?reference=${REF}`, { headers: auth })).json()
   for (const row of stale.data ?? [])
     await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
 
@@ -78,11 +78,17 @@ try {
   t('admin.list', { status: listRes.status, isArray: Array.isArray(await listRes.json()) })
 
   const schedules = await (await fetch(`${API}/api/jobs/schedules`)).json()
+  // Sorted, because two `*.job.ts` files declare a `cron` and the autoloader's
+  // order is the file system's. Both are asserted by name: a schedule that
+  // stops being registered is NOTHING HAPPENING, which is the failure mode
+  // this file exists for (FJS-327, FJS-328).
+  const cronOf = (name) => schedules.find(s => s.name === name)?.cron ?? null
   t('cron.registered', {
-    names: schedules.map(s => s.name),
-    cron:  schedules.find(s => s.name === 'sweep-abandoned')?.cron ?? null,
+    names: schedules.map(s => s.name).sort(),
+    cron:  cronOf('sweep-abandoned'),
+    holds: cronOf('release-holds'),
     // A cron with no next fire time is a parse failure that reports as silence.
-    hasNextRun: !!schedules.find(s => s.name === 'sweep-abandoned')?.nextRun,
+    hasNextRun: schedules.every(s => !!s.nextRun),
   })
 
   // ── 2. ship answers WITHOUT waiting for the courier ────────────────────
@@ -121,7 +127,7 @@ try {
 
   // ── 3. …and the work happens afterwards ────────────────────────────────
   const tracked = await until(async () => {
-    const o = await (await fetch(`${API}/api/orders/${orderId}`)).json()
+    const o = await (await fetch(`${API}/api/orders/${orderId}`, { headers: auth })).json()
     return o.trackingCode ? o : null
   })
   t('job.wroteTracking', {
@@ -190,10 +196,13 @@ try {
   })
   t('outbox.announcementQueued', {
     count: announced ? announced.length - announcementsBefore : 0,
-    // A uuid, because the outbox row's id IS the job id. A `unique` key would
-    // still be here if this had gone out as a plain dispatch.
+    // The outbox row's id IS the job id, namespaced. `occurrenceKey('outbox', id)`
+    // is the one definition of it (FJS-342) — the jobs table is shared with every
+    // id a caller states, so the relay's ids live under a prefix rather than
+    // competing with them. A `unique` key would still be here if this had gone
+    // out as a plain dispatch.
     // The newest row is this run's — /api/jobs answers newest first.
-    idIsRowId: !!announced && /^[0-9a-f-]{36}$/.test(announced[0].id),
+    idIsRowId: !!announced && /^outbox:[0-9a-f-]{36}$/.test(announced[0].id),
     uniqueKey: announced ? announced[0].unique_key : 'no job',
   })
 
@@ -220,7 +229,7 @@ try {
   // The run route did not exist before 2026-08-06 — Caravan could retry and
   // cancel a job but not start one, which made every cron handler in every app
   // unreachable from a test. Added while writing this drive.
-  const before = await (await fetch(`${API}/api/orders`)).json()
+  const before = await (await fetch(`${API}/api/orders`, { headers: auth })).json()
   const pendingBefore = before.data.filter(o => o.status === 'pending').map(o => o.reference)
 
   const run = await fetch(`${API}/api/jobs/run/sweep-abandoned`, {
@@ -233,7 +242,7 @@ try {
     return j.status === 'done' || j.status === 'failed' ? j : null
   })
 
-  const after = await (await fetch(`${API}/api/orders`)).json()
+  const after = await (await fetch(`${API}/api/orders`, { headers: auth })).json()
   t('sweep.ranOnDemand', { accepted: run.status, finished: sweepJob ? sweepJob.status : null })
 
   // Put the shop back. A 0-day sweep cancels every pending order, including the
@@ -287,7 +296,12 @@ if (process.exitCode) process.exit(1)
 // fixed list. Everything else is a fixed value.
 const expected = {
   'admin.list': { status: 200, isArray: true },
-  'cron.registered': { names: ['sweep-abandoned'], cron: '0 3 * * *', hasNextRun: true },
+  'cron.registered': {
+    names: ['release-holds', 'sweep-abandoned'],
+    cron:  '0 3 * * *',
+    holds: '*/5 * * * *',
+    hasNextRun: true,
+  },
 
   'ship.answersImmediately': { status: 'shipped', trackingCode: null },
   // Deterministic from the reference, so this is a value and not just "truthy" —
@@ -339,5 +353,5 @@ const total = Object.keys(expected).length + 1
 console.log(failed ? `\n${failed} assertion(s) failed` : `\nall ${total} assertions passed`)
 if (!failed) console.log(
   `\nNote: this drive cancels every pending order (that is what a 0-day sweep\n` +
-  `means). \`bun run reset\` or a restart re-seeds them.`)
+  `means). \`bun run reset\` re-seeds them — a restart no longer does.`)
 process.exit(failed ? 1 : 0)

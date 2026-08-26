@@ -233,3 +233,65 @@ describe('resolveDeployConf', () => {
   })
 
 })
+
+// ─── dockerfileScripts ────────────────────────────────────────────────────────
+//
+// `deploy:doctor` requires every script the image's entrypoint runs. It used to
+// assert the TEMPLATE's pair — `db:migrate` then `start` — which refuses an app
+// whose Dockerfile is correct and different: basecamp migrates at boot inside
+// app.ts on purpose, has no `db:migrate`, and was blocked from a deploy that
+// works (FJS-417).
+
+describe('dockerfileScripts', () => {
+  const parse = async (src) => {
+    const { dockerfileScripts } = await import('../core/utils.js')
+    return dockerfileScripts(src)
+  }
+
+  test('reads the exec form', async () => {
+    expect(await parse('CMD ["bun", "run", "start"]')).toEqual(['start'])
+  })
+
+  test('reads the shell form, including a chain', async () => {
+    expect((await parse('CMD bun run db:migrate && bun run start')).sort())
+      .toEqual(['db:migrate', 'start'])
+  })
+
+  test('reads the generated template — both scripts, exec form', async () => {
+    expect((await parse('CMD ["sh", "-c", "bun run db:migrate && bun run start"]')).sort())
+      .toEqual(['db:migrate', 'start'])
+  })
+
+  test('a script name with a colon or a dot survives', async () => {
+    expect(await parse('ENTRYPOINT ["bun", "run", "db:migrate.prod"]')).toEqual(['db:migrate.prod'])
+  })
+
+  test('ENTRYPOINT counts too', async () => {
+    expect(await parse('ENTRYPOINT ["bun", "run", "serve"]')).toEqual(['serve'])
+  })
+
+  test('a RUN line is not an entrypoint', async () => {
+    // A build step has already succeeded by the time an image exists; requiring
+    // its script at deploy time fails an image that is sitting there working.
+    expect(await parse('RUN bun run build\nCMD ["bun", "run", "start"]')).toEqual(['start'])
+  })
+
+  test('a non-bun entrypoint yields nothing rather than guessing', async () => {
+    expect(await parse('CMD ["node", "server.js"]')).toEqual([])
+  })
+
+  test('duplicates collapse', async () => {
+    expect(await parse('CMD bun run start && bun run start')).toEqual(['start'])
+  })
+
+  test('an empty or absent Dockerfile is not an error', async () => {
+    expect(await parse('')).toEqual([])
+    expect(await parse(undefined)).toEqual([])
+  })
+
+  test('basecamp\'s real Dockerfile asks for exactly one script', async () => {
+    const { readFileSync } = await import('fs')
+    const src = readFileSync(resolve(ROOT, '../basecamp/deploy/Dockerfile'), 'utf8')
+    expect(await parse(src)).toEqual(['start'])
+  })
+})

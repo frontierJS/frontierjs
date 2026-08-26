@@ -56,8 +56,44 @@ import { tmpdir }                                      from 'node:os'
 import { randomBytes }                                 from 'node:crypto'
 
 import { vendorWorkspacePackages }                     from '../packages/cli/core/vendor.js'
+import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+
+// ─── the work directory, on the paths a `finally` does not cover ──────
+//
+// Both phases below scaffold a whole app — ~300MB — and remove it in a
+// `finally`. A `finally` does not run on a Ctrl-C, and `bun run ci` is a
+// three-minute command people interrupt: 1.6GB of scaffolds and deploy
+// contexts had accumulated by the time anyone measured (FJS-361). The signal
+// handler covers that; the reap covers the SIGKILL it cannot see, past an age
+// floor so a concurrent run is never touched.
+
+const WORK_PREFIXES = ['fjs-scaffold-', 'fjs-deploy-']
+const active = new Set()
+let trapped = false
+
+function trapSignals() {
+  if (trapped) return
+  trapped = true
+  const sweep = () => { for (const d of active) { try { rmSync(d, { recursive: true, force: true }) } catch {} } active.clear() }
+  process.on('exit', sweep)
+  for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]])
+    process.on(sig, () => { sweep(); process.exit(code) })
+}
+
+/** A scaffold/deploy work directory: previous runs' swept, this one registered
+ *  so an interrupt takes it with it. `base` is honoured for the reason
+ *  $FJS_CI_WORKDIR exists — the Docker daemon must be able to read it. */
+function workDir(prefix, base) {
+  trapSignals()
+  reapTempDirs(WORK_PREFIXES, { root: base })
+  const d = mkdtempSync(join(base, prefix))
+  active.add(d)
+  return d
+}
+
+
 const ROOT = resolve(HERE, '..')
 
 const MAX_BUFFER = 64 * 1024 * 1024
@@ -79,7 +115,7 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
   // with a private /tmp gets `unable to prepare context` about a path that is
   // plainly there.
   const base = process.env.FJS_CI_WORKDIR || tmpdir()
-  const work = mkdtempSync(join(base, 'fjs-scaffold-'))
+  const work = workDir('fjs-scaffold-', base)
 
   try {
     // ── 1 · scaffold ─────────────────────────────────────────
@@ -140,6 +176,22 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     const installed = join(app, 'node_modules', '@frontierjs', 'sierra')
     if (!existsSync(installed)) return fail(`installed no ${installed}`, i.output)
     log('  ✓ installed from tarballs')
+
+    // ── 3b · the initial migration ───────────────────────────
+    // `fli new` writes it itself, but only when it installed: `migrate create`
+    // is `bunx litestone`, which needs node_modules. This phase scaffolds with
+    // `--no-install` and installs itself, so the step `fli new` would have run
+    // has to run here — which is also exactly what its own warning tells a user
+    // who declined the install to do.
+    //
+    // Without it the app has a Dockerfile whose entrypoint replays migrations
+    // and no migration to replay: it builds, deploys, answers /health and 500s
+    // on the first write (`FJS-345`). `fli check`'s `migration-history` rule
+    // catches that now, which is how this gap was found — the `check` below
+    // went red on a freshly scaffolded app.
+    const mig = run('bunx', ['litestone', 'migrate', 'create', 'initial', '--schema', 'db/schema.lite'], { cwd: app })
+    if (mig.status !== 0) return fail('could not write the initial migration for the scaffolded app', mig.output)
+    log('  ✓ initial migration written')
 
     // ── 4 · build ────────────────────────────────────────────
     const b = run('bun', ['run', 'build'], { cwd: app })
@@ -206,6 +258,7 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     return findings
 
   } finally {
+    active.delete(work)
     if (keep) log(`  · kept: ${work}`)
     else rmSync(work, { recursive: true, force: true })
   }
@@ -264,7 +317,7 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
   // gets `unable to prepare context: path not found` for a directory that is
   // plainly there. On an ordinary machine and on a CI runner, tmpdir is right.
   const base = process.env.FJS_CI_WORKDIR || tmpdir()
-  const work = mkdtempSync(join(base, 'fjs-deploy-'))
+  const work = workDir('fjs-deploy-', base)
   const app  = join(work, appName)
 
   try {
@@ -342,6 +395,7 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
     // container bound to 7100 breaks its own next run.
     exec('docker', ['rm', '-f', container], { verbose: false })
     exec('docker', ['rmi', '-f', tag],      { verbose: false })
+    active.delete(work)
     if (keep) log(`  · kept: ${work}`)
     else rmSync(work, { recursive: true, force: true })
   }

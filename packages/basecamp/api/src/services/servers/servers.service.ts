@@ -42,11 +42,10 @@
 
 import { createService, NotFound, BadRequest, normalizeOrderBy, $ } from '@frontierjs/junction'
 import type { SortParam } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws, actor, findScoped, getScoped, assertSlugFree, deriveSlug, narrowPatch, changesNothing } from '../../core/resource.ts'
 import { envRef }                from '../../core/credentials.ts'
 import type { BasecampApp }      from '../../basecamp.types.ts'
-import type { ServiceContext }   from '@frontierjs/junction'
 import type { TargetDescriptor } from '@frontierjs/conduit'
 
 // ─── Types ───────────────────────────────────────────────────────────────
@@ -57,6 +56,32 @@ export interface HeartbeatData {
   specs?:        Record<string, unknown>
   docker?:       Record<string, unknown>
   outpost_url?:    string
+}
+
+// What a provider's own word for a state means here, as a NAMED MOVE rather
+// than a target value. The move is what `@@transitions` declares, so the
+// from-list that decides whether the report may be acted on lives in the
+// schema with every other one — this table only translates vocabulary.
+//
+// Two provider words share a move on purpose: `starting` and `rebuilding` are
+// both `provisioning` here, and `stopping` lands on `stopped` because a machine
+// on its way down is not one basecamp should route work to.
+const PROVIDER_MOVES: Record<string, string> = {
+  running:    'reportRunning',
+  off:        'reportStopped',
+  stopping:   'reportStopped',
+  rebuilding: 'reportRebuilding',
+  starting:   'reportRebuilding',
+  deleting:   'reportDestroyed',
+}
+
+// Where each of those moves lands. Only for the sentence in the event and for
+// the already-there check — the write reads the target out of the schema.
+const PROVIDER_TARGET: Record<string, string> = {
+  reportRunning:    'online',
+  reportStopped:    'stopped',
+  reportRebuilding: 'provisioning',
+  reportDestroyed:  'destroyed',
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────
@@ -72,20 +97,30 @@ export function createServersService(app: BasecampApp) {
     await db().serverEvent.create({ data: { serverId, kind, message, metadata } })
   }
 
-  /** Set status + record an event, the shape reboot/drain/undrain all share. */
-  async function transition(
-    opts: { from: string[]; to: string; kind: string; message: string; verb: string }
-  ) {
-    const id     = $.id as string
-    const server = await getScoped('server', 'Server')
+  /**
+   * Make a named move, then record it — the shape reboot/drain/undrain share.
+   *
+   * The from-list and the level both live in `@@transitions(status, …)` on
+   * `model Server`, so this function decides neither. What it used to do was
+   * read the row, compare the status against a list written here, and write in
+   * a second statement — three properties hand-rolled, and the last one wrong:
+   * two concurrent drains both read `online`, both passed and both wrote.
+   * `transition()` narrows the UPDATE's own WHERE to the from-state, so the
+   * loser gets a retryable `TransitionConflictError` instead of nothing.
+   *
+   * `getScoped` still leads, and it is not a duplicate of the from-check: it is
+   * the ownership check. Without it a caller naming a server in another
+   * workspace would get a transition error rather than a 404 — a state oracle
+   * over a row they may not read.
+   */
+  async function transition(opts: { name: string; kind: string; message: string }) {
+    const id = $.id as string
+    await getScoped('server', 'Server')   // 404s outside the caller's workspace
 
-    if (!opts.from.includes(server.status))
-      throw new BadRequest(`Cannot ${opts.verb} a server with status '${server.status}'`)
-
-    await db().server.update({ where: { id }, data: { status: opts.to } })
+    const moved = await db().server.transition(id, opts.name)
     await recordEvent(id, opts.kind, opts.message, { requested_by: actor() })
 
-    return getScoped('server', 'Server')
+    return moved
   }
 
   return createService({
@@ -99,7 +134,7 @@ export function createServersService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
     // ── find ──────────────────────────────────────────────────────────
-    async find(ctx: ServiceContext) {
+    async find() {
       const status = $.query.status as string | undefined
       const role   = $.query.role   as string | undefined
       const search = $.query.search as string | undefined
@@ -132,7 +167,7 @@ export function createServersService(app: BasecampApp) {
     },
 
     // ── create ────────────────────────────────────────────────────────
-    async create(ctx: ServiceContext) {
+    async create() {
       const data = $.data as Record<string, unknown>
       if (!data?.name?.toString().trim()) throw new BadRequest('name is required')
 
@@ -179,7 +214,7 @@ export function createServersService(app: BasecampApp) {
     },
 
     // ── remove ────────────────────────────────────────────────────────
-    async remove(ctx: ServiceContext) {
+    async remove() {
       const id     = $.id as string
       const server = await getScoped('server', 'Server')
 
@@ -194,7 +229,7 @@ export function createServersService(app: BasecampApp) {
     },
 
     // ── events — POST /servers/:id  X-Service-Method: events ──────────
-    async events(ctx: ServiceContext) {
+    async events() {
       const id = $.id as string
       await getScoped('server', 'Server')   // ownership check
 
@@ -223,7 +258,7 @@ export function createServersService(app: BasecampApp) {
     // would be a second owner of the tenancy fact. So the scope is a join —
     // the server ids in this workspace, then the events on them. Two queries,
     // both indexed, instead of N+1 over the network.
-    async feed(ctx: ServiceContext) {
+    async feed() {
       $.dispatch = false   // read-shaped
       const { limit, offset } = getPagination({ limit: 50, max: 200 })
       const kind = $.query.kind as string | undefined
@@ -252,23 +287,27 @@ export function createServersService(app: BasecampApp) {
     },
 
     // ── reboot / drain / undrain ──────────────────────────────────────
-    reboot: (ctx: ServiceContext) => transition({
-      from: ['online', 'unreachable'], to: 'pending',
-      kind: 'reboot_requested', message: 'Reboot requested', verb: 'reboot',
+    // Each names a move the schema declares. What is legal from where, and who
+    // may make it, is `@@transitions` on `model Server` — there is no from-list
+    // and no role hook here, because two statements of one rule is how the
+    // browser's copy of these lists went stale.
+    reboot: () => transition({
+      name: 'reboot',
+      kind: 'reboot_requested', message: 'Reboot requested',
     }),
 
-    drain: (ctx: ServiceContext) => transition({
-      from: ['online'], to: 'draining',
-      kind: 'drain_started', message: 'Server drain initiated', verb: 'drain',
+    drain: () => transition({
+      name: 'drain',
+      kind: 'drain_started', message: 'Server drain initiated',
     }),
 
-    undrain: (ctx: ServiceContext) => transition({
-      from: ['draining'], to: 'online',
-      kind: 'drain_cancelled', message: 'Server drain cancelled', verb: 'undrain',
+    undrain: () => transition({
+      name: 'undrain',
+      kind: 'drain_cancelled', message: 'Server drain cancelled',
     }),
 
     // ── sync — POST /servers/:id  X-Service-Method: sync ─────────────
-    async sync(ctx: ServiceContext) {
+    async sync() {
       const id     = $.id as string
       const server = await getScoped('server', 'Server')
 
@@ -291,16 +330,29 @@ export function createServersService(app: BasecampApp) {
           }
         } else {
           const providerData = result.data as Record<string, unknown> | null
-          if (providerData?.status) {
-            const statusMap: Record<string, string> = {
-              running: 'online', off: 'stopped', rebuilding: 'provisioning',
-              starting: 'provisioning', stopping: 'stopped', deleting: 'destroyed',
-            }
-            const newStatus = statusMap[providerData.status as string] ?? server.status
-            if (newStatus !== server.status) {
-              await db().server.update({ where: { id }, data: { status: newStatus } })
-              await recordEvent(id, 'status_synced', `Status synced from provider: ${newStatus}`,
-                { provider_status: providerData.status })
+          const reported     = providerData?.status as string | undefined
+          const move         = reported ? PROVIDER_MOVES[reported] : undefined
+
+          if (reported && move && PROVIDER_TARGET[move] !== server.status) {
+            // Ask the machine rather than write the value. `transitions(row)`
+            // returns exactly the moves legal from where this row IS, so a
+            // provider reporting `running` for a machine we are DRAINING is
+            // simply not in the list — where the old status map wrote it and
+            // silently undid the drain. A report we cannot act on is recorded
+            // rather than swallowed: an operator looking at a row that
+            // disagrees with the provider needs to see why.
+            const legal = (await db().server.transitions(server))
+              .some((t: { name: string }) => t.name === move)
+
+            if (legal) {
+              await db().server.transition(id, move)
+              await recordEvent(id, 'status_synced',
+                `Status synced from provider: ${PROVIDER_TARGET[move]}`,
+                { provider_status: reported })
+            } else {
+              await recordEvent(id, 'status_sync_ignored',
+                `Provider reports '${reported}' — a server at '${server.status}' does not move to '${PROVIDER_TARGET[move]}'`,
+                { provider_status: reported, server_status: server.status })
             }
           }
         }
@@ -340,8 +392,17 @@ export function createServersService(app: BasecampApp) {
       $.locals.workspaceId = server.workspaceId
 
       const now = new Date().toISOString()
-      const transitionStates = new Set(['pending', 'installing', 'unreachable'])
-      const newStatus = transitionStates.has(server.status) ? 'online' : server.status
+
+      // `checkIn` in `@@transitions` — declared @gate(8), which is the schema's
+      // way of saying the move is the machine's and not a person's. It is
+      // written here rather than through `transition()` because the status is
+      // one column of ONE update: splitting it out would write the row twice
+      // and announce it twice for a single check-in. A system client bypasses
+      // enforcement, so this from-set and the declared one have to agree —
+      // there is no compare-and-swap protecting the pair, and no second writer
+      // to need one: an outpost only ever reports about its own machine.
+      const CHECK_IN_FROM = new Set(['pending', 'installing', 'unreachable'])
+      const newStatus = CHECK_IN_FROM.has(server.status) ? 'online' : server.status
 
       // Capture the updated row: it is both this method's answer and the
       // payload the channel publishes. Answering `{ ok, server_id, status }`
@@ -407,6 +468,26 @@ export function createServersService(app: BasecampApp) {
       return updated
     },
 
+
+    // ── logEvent — a line in one machine's history, written by a job ──
+    //
+    // `recipe:run` and `cleanup:run` used to write this straight through
+    // `asSystem()` (`FJS-384`). They run as whoever asked for the work now, and
+    // `ServerEvent` is create-at-USER — so the create goes through the CALLER's
+    // client, which is both the standing and the confinement: an event against
+    // a machine in another workspace is refused rather than written.
+    //
+    // `internalOnly`: the event trail is what an operator reads to find out
+    // what actually happened, and a caller writing their own lines into it is
+    // the one thing it must not allow.
+    async logEvent() {
+      const { kind, message, metadata } = ($.data ?? {}) as {
+        kind: string; message: string; metadata?: Record<string, unknown>
+      }
+      await recordEvent(String($.id), kind, message, metadata ?? {})
+      return { serverId: String($.id), kind }
+    },
+
     hooks: {
       before: {
         // heartbeat is the outpost's endpoint — no session, HMAC at the
@@ -416,10 +497,13 @@ export function createServersService(app: BasecampApp) {
         create:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
         patch:     [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove:    [requireWorkspaceRole(app, 'admin', 'owner')],
-        reboot:    [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
-        drain:     [requireWorkspaceRole(app, 'admin', 'owner')],
-        undrain:   [requireWorkspaceRole(app, 'admin', 'owner')],
+        // reboot / drain / undrain carry NO role hook. Each is one named move
+        // and the authority for it is `@gate(N)` on that move in the schema —
+        // drain and undrain at ADMINISTRATOR(5), reboot at the model's own
+        // update level. A hook here would be the same sentence twice, and the
+        // one in the seed is the one `db/access.snapshot.md` can see.
         sync:      [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        logEvent:  [internalOnly()],
         // heartbeat: HMAC auth at Conduit transport level — no session hook
       },
     },

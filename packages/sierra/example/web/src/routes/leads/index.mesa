@@ -5,10 +5,9 @@ title: Leads
   import { leads } from '../../resources/Lead.mesa'
   import { session } from '../../session.js'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   const { get: rows, unsubscribe } = useStore(leads.store)
-  $onDestroy(unsubscribe)
+  $.onDestroy(unsubscribe)
 
   $: session.level
 

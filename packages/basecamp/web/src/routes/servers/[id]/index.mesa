@@ -4,7 +4,6 @@ title: Server
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
   import { servers } from '../../../resources/Server.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
@@ -45,7 +44,7 @@ title: Server
     if (READS.has(method) || row?.id !== page.params.id) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   // Every action is the same shape: a custom method that transitions status
   // and writes a ServerEvent. The service decides whether the transition is
@@ -105,12 +104,34 @@ title: Server
   // JSON.parse'ing a string, which is what the old raw-SQL services had to do.
   const entries = (obj) => Object.entries(obj ?? {})
 
-  // Which actions the current status permits. This mirrors the service's own
-  // `from` lists so the page offers what will work — but it is an affordance,
-  // not a boundary: the service checks again and refuses regardless.
-  $: canDrain   = server?.status === 'online'
-  $: canUndrain = server?.status === 'draining'
-  $: canReboot  = server && ['online', 'unreachable'].includes(server.status)
+  // Which actions the current status permits — ASKED, not restated. The three
+  // from-lists that used to be written out here were a copy of the service's,
+  // which were a copy of nothing: the machine now lives in `@@transitions` on
+  // `model Server` and reaches the browser as `x-transitions` on the JSON
+  // Schema, the same path `fields` and `gate` already take.
+  //
+  // An affordance and not a boundary — the Data boundary refuses regardless.
+  // No level is passed, so a gated move reads `allowed: true` here and the
+  // server answers 403 with the role it wants: this app grades a caller on
+  // their WorkspaceMember role, which sierra's `session.level` does not know,
+  // and inventing a second ladder in the browser is the copy this change is
+  // removing. `transitionsAt` treats an unknown level as permissive, which is
+  // the documented contract for every x-* affordance.
+  // One derived per button, each reading `server` DIRECTLY. The obvious shape
+  // is a single `moves` Set with `moves.has('drain')` in each `{#if}`, and it
+  // does not work: the Set re-derives (an attribute bound to it updates) while
+  // the block tests reading it do not re-run, so after a drain the page kept
+  // the button set it had before — `FJS-512`. Reading a plain `let` is the
+  // shape every other derived in this app uses.
+  // `server` is named in each expression rather than closed over inside `can`.
+  // Mesa decides what an expression depends on from the expression's own text,
+  // so `can('drain')` mentions no reactive value — it happens to work, and the
+  // hub layout's nav carries the same note for the same reason.
+  const can = (row, name) => !!row && servers.transitions(row).some(t => t.name === name)
+
+  $: canDrain   = can(server, 'drain')
+  $: canUndrain = can(server, 'undrain')
+  $: canReboot  = can(server, 'reboot')
 </script>
 
 {#if loading}

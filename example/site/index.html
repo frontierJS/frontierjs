@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<title>FrontierJS Supply Co.</title>
+<!--
+  The DEV shell, and only the dev shell.
+
+  A built page never uses this file. `target: 'static'` prerenders every route
+  declaring `render: static` into its own HTML, wrapped in the `document` block
+  from config/sierra.config.js — including the home page, which overwrites
+  whatever Vite emits here. So the body class must match `document.bodyClass`,
+  or the dev server and the built site are two different themes.
+
+  Do not write a literal body tag in this comment. Vite injects the built script
+  and stylesheet at the first textual match for it and does not skip comments,
+  so the tags land INSIDE the comment: the build succeeds, the file looks
+  plausible, and the page loads no JavaScript at all.
+-->
+<body class="app theme-default">
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>

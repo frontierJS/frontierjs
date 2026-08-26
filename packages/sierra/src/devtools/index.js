@@ -11,7 +11,7 @@ const BACKOFF = [1000, 2000, 4000, 8000, 16000, 30000]
 const MAX_ATTEMPTS = 10
 
 export function initToolbar(config = {}) {
-  const { port = 4000 } = config
+  const { port = 8503 } = config   // junction's devtools console — see the build plugin
   const buffer = createBuffer()
 
   let _paused       = false

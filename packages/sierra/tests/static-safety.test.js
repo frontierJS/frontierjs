@@ -25,14 +25,14 @@
 import { describe, test, expect, beforeEach } from 'vitest'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'fs'
-import { tmpdir } from 'os'
+import { mkdirSync, writeFileSync } from 'fs'
 
 import {
   installSchemas, gateReadLevel, createReadRecorder,
   declaredPublishLevel, checkRoute, formatReport,
 } from '../src/build/static-safety.js'
 import { prerenderRoutes } from '../src/build/prerender.js'
+import { tmpDir } from './tmp.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -43,8 +43,12 @@ const DEFS = {
   Secret:   { properties: { id: {} }, 'x-gate': { read: 8, create: 8, update: 8, delete: 8 } },
   Note:     { properties: { id: {} } },                      // no gate at all
   Status:   { enum: ['a', 'b'] },                             // an enum, not a model
+  // A MULTI-WORD model. Every other entry here is one word, whose table name
+  // is its accessor, so all of them resolved whatever the rule was.
+  ProductVariant: { properties: { id: {} }, 'x-gate': { read: 0, create: 4, update: 4, delete: 5 } },
+  InvoiceLine:    { properties: { id: {} }, 'x-gate': { read: 4, create: 4, update: 4, delete: 5 } },
 }
-const MODELS = ['Product', 'Invoice', 'Secret', 'Note']
+const MODELS = ['Product', 'Invoice', 'Secret', 'Note', 'ProductVariant', 'InvoiceLine']
 
 beforeEach(() => installSchemas(DEFS, MODELS))
 
@@ -60,6 +64,22 @@ describe('gateReadLevel', () => {
 
   test('accepts the model name too', () => {
     expect(gateReadLevel('Invoice').level).toBe(4)
+  })
+
+  test('resolves a MULTI-WORD model from its snake_case table', () => {
+    // The case every other fixture here hides. A one-word model's table is its
+    // own accessor, so `product` resolved whatever the rule was; `ProductVariant`
+    // is stored as `product_variant`, which the registry did not index at all.
+    // The read came back unknown, and unknown fails closed — so a static route
+    // touching any multi-word model could not be published, and said the schema
+    // did not describe a model the schema declares.
+    expect(gateReadLevel('product_variant')).toEqual({ model: 'ProductVariant', level: 0 })
+    expect(gateReadLevel('invoice_line')).toEqual({ model: 'InvoiceLine', level: 4 })
+  })
+
+  test('a gated multi-word model is still caught', () => {
+    // The half that matters: resolving the name must not turn the gate off.
+    expect(gateReadLevel('invoice_line').level).toBe(4)
   })
 
   test('an ungated model is level 0, not unknown', () => {
@@ -274,7 +294,7 @@ describe('prerenderRoutes — the read set comes from load()', () => {
    * prerenderer collects and acts on the read set, not about Litestone.
    */
   function scaffold(modelRead, frontmatter = 'render: static') {
-    const root = mkdtempSync(resolve(tmpdir(), 'sierra-safety-'))
+    const root = tmpDir('sierra-safety-')
     mkdirSync(resolve(root, 'src/routes/report'), { recursive: true })
     writeFileSync(resolve(root, 'src/routes/report/index.mesa'),
       `---\n${frontmatter}\n---\n<script>export let data = null</script>\n<h1>{data?.n ?? 0}</h1>\n`)
@@ -295,7 +315,7 @@ describe('prerenderRoutes — the read set comes from load()', () => {
     const tree = await scan('src/routes', { cwd: root })
     return prerenderRoutes({
       tree, root,
-      outDir: mkdtempSync(resolve(tmpdir(), 'sierra-safety-out-')),
+      outDir: tmpDir('sierra-safety-out-'),
       renderComponent,
       schemaDefs: DEFS, schemaModels: MODELS, db,
     })
@@ -340,7 +360,7 @@ describe('prerenderRoutes — the read set comes from load()', () => {
     const tree = await scan('src/routes', { cwd: root })
     const res = await prerenderRoutes({
       tree, root,
-      outDir: mkdtempSync(resolve(tmpdir(), 'sierra-safety-out-')),
+      outDir: tmpDir('sierra-safety-out-'),
       renderComponent,
       schemaDefs: null,
     })
@@ -369,7 +389,7 @@ describe('prerenderRoutes — a companion that will not import', () => {
     const { renderComponent } = await import('@frontierjs/mesa/render-component.js')
     const { scan } = await import('../src/scanner/index.js')
 
-    const root = mkdtempSync(resolve(tmpdir(), 'sierra-broken-'))
+    const root = tmpDir('sierra-broken-')
     mkdirSync(resolve(root, 'src/routes/report'), { recursive: true })
     writeFileSync(resolve(root, 'src/routes/report/index.mesa'),
       `---\nrender: static\n---\n<h1>hi</h1>\n`)
@@ -381,7 +401,7 @@ describe('prerenderRoutes — a companion that will not import', () => {
     const tree = await scan('src/routes', { cwd: root })
     await expect(prerenderRoutes({
       tree, root,
-      outDir: mkdtempSync(resolve(tmpdir(), 'sierra-broken-out-')),
+      outDir: tmpDir('sierra-broken-out-'),
       renderComponent,
       schemaDefs: DEFS, schemaModels: MODELS,
       db: null,

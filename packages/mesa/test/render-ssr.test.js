@@ -23,7 +23,7 @@ import {
 } from '../src/render.js'
 import { renderFile } from '../src/render-component.js'
 import {
-  createSignal, createEffect, flushSync, mount, $onMount, setRenderEnvironment,
+  createSignal, createEffect, flushSync, mount, onMount, setRenderEnvironment,
 } from '../src/runtime.js'
 
 let n = 0
@@ -79,6 +79,167 @@ function renderOnClient(Comp, props = {}) {
 
 beforeAll(() => { initRenderer() })
 afterAll(() => { document.body.innerHTML = '' })
+
+describe('renderToHTML — the serialiser escapes (FJS-500)', () => {
+  // A prerendered page is a FILE: public, CDN-cached, unrecallable. `{text}`
+  // sets `textContent` at runtime and is the safest expression in the language,
+  // but SSR renders into happy-dom and serialises with `container.innerHTML` —
+  // and happy-dom 14.12.3 did not re-escape a text node on the way out, so
+  // every string a static build baked in came out as live markup. Nothing in
+  // Mesa's own code was wrong, which is why nothing here could see it: the
+  // client path is correct and only the round trip through the DOM was not.
+  //
+  // These are assertions about a DEPENDENCY, so they belong in this repo's
+  // suite rather than in a version range nobody reads. A downgrade, a second
+  // resolved copy, or a serialiser regression is a red test instead of a page
+  // that ships an injected script.
+
+  it('escapes markup arriving through a text interpolation', async () => {
+    const Comp = await build(`<script>
+  export let text = ''
+</script>
+<p>{text}</p>`)
+    const html = await renderToHTML(Comp, { text: '<img src=x onerror=alert(1)>' })
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;')
+    expect(html).not.toContain('<img')
+  })
+
+  it('escapes a closing tag that would break out of the element it is in', async () => {
+    const Comp = await build(`<script>
+  export let text = ''
+</script>
+<p>{text}</p>`)
+    const html = await renderToHTML(Comp, { text: '</p><script>alert(1)<\/script>' })
+    expect(html).not.toMatch(/<script/)
+    expect(html).toContain('&lt;/p&gt;')
+  })
+
+  it('escapes an ampersand without double-escaping one already written', async () => {
+    // The other direction, and the one a naive fix breaks: `a &amp; b` written
+    // in the markup must stay one ampersand, not become `&amp;amp;`.
+    const Comp = await build(`<script>
+  export let text = ''
+</script>
+<p>{text}</p>
+<i>a &amp; b</i>`)
+    const html = await renderToHTML(Comp, { text: 'x & y' })
+    expect(html).toContain('x &amp; y')
+    expect(html).toContain('a &amp; b')
+    expect(html).not.toContain('&amp;amp;')
+  })
+
+  // ── The other half: an ATTRIBUTE value ──────────────────────────────────
+  //
+  // Text nodes are where this was found and attributes are the wider hole, for
+  // a reason worth stating: a text node can only inject an element, and an
+  // attribute value that escapes its own quotes injects an EVENT HANDLER onto
+  // an element the page already trusts. `<img alt={product.alt}>` and
+  // `<a href={product.slug}>` are both database strings on every prerendered
+  // catalogue page in `example/site`.
+  //
+  // These assert by RE-PARSING the output rather than by matching text, and
+  // that is the whole difference between a real test and a spelling test:
+  // `title="&quot; onmouseover=alert(1)"` contains the characters
+  // `onmouseover=` and is completely safe. What must be true is that the
+  // attacker could not add an ATTRIBUTE — so the question to ask the output is
+  // how many attributes the element has, which is the property, not the
+  // encoding.
+
+  /** Parse serialised HTML back and answer the first matching element. */
+  const reparse = (html, sel) => {
+    const host = document.createElement('div')
+    host.innerHTML = html
+    return host.querySelector(sel)
+  }
+
+  it('a dynamic attribute value cannot break out of its own quotes', async () => {
+    const Comp = await build(`<script>
+  export let label = ''
+</script>
+<a href="/x" title={label}>go</a>`)
+    const html = await renderToHTML(Comp, { label: '" onmouseover=alert(1) autofocus x="' })
+
+    const a = reparse(html, 'a')
+    // The payload survives as a VALUE — intact, which is the correct outcome:
+    // escaping is not sanitising, and a product genuinely called `5" pipe`
+    // must come back as `5" pipe`.
+    expect(a.getAttribute('title')).toBe('" onmouseover=alert(1) autofocus x="')
+    // …and it added nothing. Asked as a count so a payload shaped differently
+    // from this one still fails the test.
+    expect(a.getAttributeNames().sort()).toEqual(['href', 'title'])
+    expect(a.hasAttribute('onmouseover')).toBe(false)
+  })
+
+  it('a URL from the database cannot add a handler to the link carrying it', async () => {
+    // The shape a prerendered catalogue actually has: one `<a>` per product,
+    // its href a column. A slug is the least-reviewed string in a shop.
+    const Comp = await build(`<script>
+  export let slug = ''
+</script>
+<a href={slug}>buy</a>`)
+    const html = await renderToHTML(Comp, { slug: 'x" onclick="alert(1)' })
+
+    const a = reparse(html, 'a')
+    expect(a.getAttribute('href')).toBe('x" onclick="alert(1)')
+    expect(a.getAttributeNames()).toEqual(['href'])
+  })
+
+  it('an image alt is the same hole and is the one FJS-500 named', async () => {
+    const Comp = await build(`<script>
+  export let alt = ''
+</script>
+<img src="/p.png" alt={alt}>`)
+    const html = await renderToHTML(Comp, { alt: '" onerror="alert(1)' })
+
+    const img = reparse(html, 'img')
+    expect(img.getAttributeNames().sort()).toEqual(['alt', 'src'])
+    expect(img.hasAttribute('onerror')).toBe(false)
+  })
+
+  it('an entity written in the markup stays one character', async () => {
+    // The direction a naive escaper breaks, in an attribute this time. The
+    // PARSER decodes `&amp;` in the source to one ampersand, so the value is
+    // `Tea & Co` and serialising it must give back one entity — not
+    // `&amp;amp;`, which renders as visible mojibake in a tooltip.
+    const Comp = await build(`<a href="/x" title="Tea &amp; Co">go</a>`)
+    const html = await renderToHTML(Comp, {})
+
+    expect(reparse(html, 'a').getAttribute('title')).toBe('Tea & Co')
+    expect(html).toContain('Tea &amp; Co')
+    expect(html).not.toContain('&amp;amp;')
+  })
+
+  it('the two renderers agree about a hostile attribute', async () => {
+    // The oracle this suite is built on: a renderer has no self-evident correct
+    // output, but Mesa has two of them. The client sets the attribute through
+    // the DOM and never serialises; SSR sets the same attribute and then
+    // serialises. Comparing the two is what says the round trip added nothing
+    // and lost nothing.
+    const Comp = await build(`<script>
+  export let label = ''
+</script>
+<a href="/x" title={label}>go</a>`)
+    const props = { label: '" onmouseover=alert(1) x="' }
+
+    const server = strip(await renderToHTML(Comp, props))
+    const client = renderOnClient(Comp, props)
+
+    expect(unscope(server)).toBe(unscope(client))
+  })
+
+  it('leaves an entity written INSIDE a script block alone', async () => {
+    // Script content is raw text in HTML, so `&lt;` there is four characters
+    // and not a `<`. This is the shape that surfaced the defect: a code sample
+    // holding an escaped `<script>` came out of a static build as a real one.
+    const Comp = await build(`<script module>
+  const sample = \`<b>&lt;script&gt;</b>\`
+</script>
+<pre>{@html sample}</pre>`)
+    const html = await renderToHTML(Comp, {})
+    expect(html).toContain('&lt;script&gt;')
+    expect(html).not.toMatch(/<script/)
+  })
+})
 
 describe('renderToHTML — basics', () => {
   it('renders text, attributes and props', async () => {
@@ -136,11 +297,11 @@ describe('renderToHTML — basics', () => {
 })
 
 describe('renderToHTML — server semantics (RULE 19)', () => {
-  it('does not run $onMount', async () => {
+  it('does not run $.onMount', async () => {
     let mounted = 0
     globalThis.__ssrMounted = () => { mounted++ }
     const Comp = await build(`<script>
-  $onMount(() => { globalThis.__ssrMounted() })
+  $.onMount(() => { globalThis.__ssrMounted() })
 </script>
 <p>hi</p>`)
     expect(await renderToHTML(Comp)).toBe('<p>hi</p>')
@@ -149,7 +310,7 @@ describe('renderToHTML — server semantics (RULE 19)', () => {
   })
 
   // An attachment runs when the element MOUNTS, and there is no mount here —
-  // the same reason $onMount is skipped above. Running it handed the function
+  // the same reason $.onMount is skipped above. Running it handed the function
   // a happy-dom element, which implements no Web Animations API, so a
   // component whose attachment animates threw `el.animate is not a function`
   // and took the WHOLE render with it. `@frontierjs/ui`'s Toast was one, and

@@ -4,13 +4,13 @@ State as of **2026-08-06**.
 
 ## What this is
 
-65 Mesa components over `@frontierjs/css`. Promoted out of
+69 Mesa components over `@frontierjs/css`. Promoted out of
 `packages/mesa/ui-v2/` on 2026-08-03 and restyled; the older 4-component
 `packages/mesa/ui/` was deleted in the same move.
 
 ## What works
 
-- **65/65 components compile and emit parseable JavaScript** —
+- **69/69 components compile and emit parseable JavaScript** —
   `node test/compile-all.mjs`.
 - **27/27 render cases carry the css vocabulary** — `node test/render.mjs`,
   which renders through `renderComponent` and asserts both that the expected
@@ -126,7 +126,7 @@ a component is otherwise invisible to the app testing it.
 
 All three were invisible to `analysis.errors` — the compiler reported success.
 
-1. **`const fn = () => { reactiveLet = x }` emitted `$runtime.get(sig) = …`** —
+1. **`const fn = () => { reactiveLet = x }` emitted `$$runtime.get(sig) = …`** —
    invalid JS, module threw on load. The derived-const emitter called
    `rewriteExpr` without `rewriteAssignments` first. Killed `Accordion` and
    `Tabs` outright. Fixed in `compiler.js`; pinned in `emission.test.js`.

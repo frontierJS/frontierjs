@@ -8,7 +8,7 @@
   // modelNameFor() resolves.
   //
   // No create hook, because there is no create: a volume is OBSERVED. The
-  // service answers 405 and stampWorkspace would have nothing to stamp — the
+  // service answers 405 and there would be nothing to send — the
   // model carries no workspaceId, its scope is the join through its server.
   import { createResource } from '@frontierjs/sierra/junction'
 

@@ -2,12 +2,24 @@
   "name": "@frontierjs/website",
   "version": "0.1.0",
   "private": true,
-  "description": "frontierjs.dev — the public site. One page, no build step for authoring; build only vendors the design system.",
+  "description": "frontierjs.dev — the public site. A Sierra `site/` surface: one HTML file per route, prerendered.",
   "type": "module",
   "scripts": {
-    "dev": "bun serve.js",
-    "build": "bun build.js",
-    "preview": "bun serve.js --dist",
-    "clean": "rm -rf dist"
+    "dev": "cd site && vite -c config/vite.config.js",
+    "build": "cd site && bun --bun vite build -c config/vite.config.js",
+    "preview": "cd site && bunx sierra site --serve --port 8790",
+    "verify": "node site/test/verify.mjs",
+    "clean": "rm -rf site/dist",
+    "test": "bun run build",
+    "typecheck": "node ../scripts/typecheck.mjs"
+  },
+  "dependencies": {
+    "@frontierjs/css": "workspace:*",
+    "@frontierjs/mesa": "workspace:*",
+    "@frontierjs/sierra": "workspace:*",
+    "@frontierjs/toolbelt": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^8.0.3"
   }
 }

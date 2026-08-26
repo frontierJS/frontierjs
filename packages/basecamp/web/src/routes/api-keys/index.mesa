@@ -18,7 +18,6 @@ title: API keys
   // scope the guard does not recognise.
   import { session } from '../../session.js'
   import { apiKeys } from '../../resources/ApiKey.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -94,7 +93,7 @@ title: API keys
     if (READS.has(method) || !row?.id) return
     load()
   })
-  $onDestroy(off)
+  $.onDestroy(off)
 
   function toggleScope(id, on) {
     picked = on ? [...new Set([...picked, id])] : picked.filter(s => s !== id)

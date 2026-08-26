@@ -9,7 +9,7 @@
  *
  * Features:
  *   - Transform .mesa and .md files to JavaScript modules
- *   - Scoped CSS, inlined into the module as $runtime.addStyles(id, css)
+ *   - Scoped CSS, inlined into the module as $$runtime.addStyles(id, css)
  *   - HMR — hot-reloads components in place, preserving DOM position
  *   - Error overlay — compiler errors and warnings surfaced in the browser
  *
@@ -346,7 +346,7 @@ export function __mesa_hot_update() {}
         ctx = await compileSource(code, {
           filename: id,
           // The compiler's `css` is not a switch, it is a DESTINATION: truthy
-          // inlines the scoped rules as `$runtime.addStyles(id, …)`, falsy
+          // inlines the scoped rules as `$$runtime.addStyles(id, …)`, falsy
           // extracts them onto `ctx.css.result` for the caller to place. This
           // plugin inlines, which is what Sierra's does too — the ids are
           // content-addressed, so a prerendered page and the client agree about

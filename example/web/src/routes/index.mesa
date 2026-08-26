@@ -3,10 +3,11 @@ title: Home
 ---
 <script>
   import { session } from '../session.js'
+  import { money }   from '../money.js'
+  import { prefs }   from '../prefs.js'
   import { orders }    from '../resources/Order.mesa'
   import { customers } from '../resources/Customer.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import AvatarGroup   from '@frontierjs/ui/components/display/AvatarGroup.mesa'
@@ -21,7 +22,7 @@ title: Home
   import Stat          from '@frontierjs/ui/components/display/Stat.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
-  $: (session.user, session.level)
+  $: (session.user, session.level, prefs.currency)
 
   // ── The shop, summarised ─────────────────────────────────────────────────
   //
@@ -30,8 +31,8 @@ title: Home
   // paying an order on /orders/ moves these numbers in an untouched tab.
   const { get: orderRows,    unsubscribe: unsubOrders }    = useStore(orders.store)
   const { get: customerRows, unsubscribe: unsubCustomers } = useStore(customers.store)
-  $onDestroy(unsubOrders)
-  $onDestroy(unsubCustomers)
+  $.onDestroy(unsubOrders)
+  $.onDestroy(unsubCustomers)
 
   orders.load().catch(() => {})
   customers.load().catch(() => {})
@@ -114,7 +115,7 @@ title: Home
   </Card>
 
   <Card class="stack">
-    <Stat label="Banked" value={'£' + revenue.toFixed(2)} sub="paid and shipped" tone="success" />
+    <Stat label="Banked" value={money(revenue)} sub="paid and shipped" tone="success" />
   </Card>
 
   <Card class="stack">

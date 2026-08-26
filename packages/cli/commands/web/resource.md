@@ -27,55 +27,11 @@ flags:
 import { mkdirSync, writeFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 
-// Model → service name. Regular English plurals only — the same three rules
-// Sierra's schema registry applies in the other direction. Irregulars are not
-// guessed anywhere in this framework; pass --service for those.
-const servicePlural = (model) => {
-  const a = model.charAt(0).toLowerCase() + model.slice(1)
-  if (/[^aeiou]y$/.test(a))     return a.slice(0, -1) + 'ies'
-  if (/(s|x|z|ch|sh)$/.test(a)) return a + 'es'
-  return a + 's'
-}
-
-const makeResource = (model, service) => `<script module>
-// src/resources/${model}.mesa — the Resource layer.
-//
-// A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
-// The data half lives in <script module>, which runs once at import and whose
-// named exports any other module can import. Markup below it is the model's
-// default form — optional, and the reason a create page can be <Model /> and
-// nothing else.
-//
-// Read this next to db/schema.lite. Nothing here restates anything there: no
-// field list, no types, no enum values, no required list, no relations. A
-// resource names a service and turns three flags on; everything a form needs is
-// read back off it at runtime as \`fields\`, \`relations\` and \`gate\`.
-
-import { createResource } from '@frontierjs/sierra/junction'
-
-export const ${service} = createResource('${service}', {
-  // Stated rather than inferred, so an irregular plural cannot quietly resolve
-  // to nothing.
-  model: '${model}',
-
-  // Every DOM control hands back a string — \`<input type="number">\` and
-  // \`<select>\` included. The schema is the only thing that knows the column is
-  // an Int, so it does the casting. Without this a form bound to make() sends
-  // "42" for a Float and is told it is not a number.
-  coerce: true,
-
-  // An empty text box submits '', which SQLite does not agree is NULL: a
-  // \`String? @unique\` column takes any number of NULLs and rejects the second
-  // ''. Rewrite blanks on nullable fields on the way out.
-  blankToNull: true,
-
-  // Check the record against the schema before the request rather than
-  // round-tripping to be told the same thing. The server validates regardless —
-  // this only moves the first "no" closer to the user.
-  validate: true,
-})
-</script>
-`
+// One owner for what a generated Resource IS — `core/resource-template.js`,
+// shared with `fli make:resource` and `fli make:scaffold`. Three commands wrote
+// the same file three times and had already drifted (Invariant 4).
+const { resourceFile, servicePlural } =
+  await import(resolve(global.fliRoot, 'core/resource-template.js'))
 </script>
 
 Creates the Resource for one model — a `.mesa` file whose data half is `<script module>`. It is the
@@ -114,7 +70,7 @@ if (existsSync(filePath)) {
 }
 
 mkdirSync(context.paths.webResources, { recursive: true })
-writeFileSync(filePath, makeResource(model, service), 'utf8')
+writeFileSync(filePath, resourceFile(model, service), 'utf8')
 log.success(`Created ${filePath}`)
 
 echo('')

@@ -30,7 +30,10 @@ const UNIQUE_RETRIES = 5
 
 function _isUniqueViolation(e) {
   const msg = String(e?.message ?? '')
-  return /UNIQUE constraint failed/i.test(msg) || e?.code === 'SQLITE_CONSTRAINT_UNIQUE'
+  // The client translates a live conflict before it gets here and the new
+  // message does not carry SQLite's wording, which is the point of it.
+  return e?.name === 'UniqueConflictError'
+    || /UNIQUE constraint failed/i.test(msg) || e?.code === 'SQLITE_CONSTRAINT_UNIQUE'
 }
 
 

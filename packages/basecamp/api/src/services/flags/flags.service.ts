@@ -26,7 +26,6 @@ import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WO
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws, actor }
   from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 /**
  * What a flag is set to in one environment.
@@ -115,7 +114,7 @@ export function createFlagsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const type = $.query.type as string | undefined
       const tag  = $.query.tag  as string | undefined
@@ -144,11 +143,11 @@ export function createFlagsService(app: BasecampApp) {
       return { ...page, data, total: tag ? data.length : page.total }
     },
 
-    async get(ctx: ServiceContext) {
+    async get() {
       return flagWithOverrides(await getScoped('featureFlag', 'Flag'))
     },
 
-    async create(ctx: ServiceContext) {
+    async create() {
       const data = $.data as Record<string, unknown>
       assertVariants((data.type as string) ?? 'boolean', data.variants)
 
@@ -160,7 +159,7 @@ export function createFlagsService(app: BasecampApp) {
       return flagWithOverrides(await db().featureFlag.create({ data }))
     },
 
-    async patch(ctx: ServiceContext) {
+    async patch() {
       const flag = await getScoped('featureFlag', 'Flag')
       const data = $.data as Record<string, unknown>
 
@@ -178,7 +177,7 @@ export function createFlagsService(app: BasecampApp) {
       }))
     },
 
-    async remove(ctx: ServiceContext) {
+    async remove() {
       // No refusal on attached overrides, unlike networks and channels. An
       // override is not an independent thing an operator arranged — it is part
       // of this flag's configuration, and the schema cascades it. What the two
@@ -191,7 +190,7 @@ export function createFlagsService(app: BasecampApp) {
     // Upsert, deliberately: a screen toggling a flag in an environment should
     // not have to know whether an override already exists there, and the
     // @@unique means a blind create is a 409 half the time.
-    async setOverride(ctx: ServiceContext) {
+    async setOverride() {
       const flag = await getScoped('featureFlag', 'Flag')
       const { environmentId, isEnabled, rollout, variantKey } =
         ($.data ?? {}) as Record<string, unknown>
@@ -226,7 +225,7 @@ export function createFlagsService(app: BasecampApp) {
     // setting the override to off — that is a decision this environment made,
     // and clearing it means "follow whatever the flag says", including later
     // changes to the flag.
-    async clearOverride(ctx: ServiceContext) {
+    async clearOverride() {
       const flag = await getScoped('featureFlag', 'Flag')
       const { environmentId } = ($.data ?? {}) as Record<string, string>
       if (!environmentId) throw new BadRequest('environmentId is required')
@@ -246,7 +245,7 @@ export function createFlagsService(app: BasecampApp) {
     // Collection-level — there is no subject row, so it is `POST /flags` with
     // the header rather than `POST /flags/{id}`. Read-shaped, so it opts out
     // of the announcement the after-hook makes for every other method.
-    async resolve(ctx: ServiceContext) {
+    async resolve() {
       $.dispatch = false
       const environmentId = ($.query.environmentId ?? ($.data as Record<string, string>)?.environmentId) as string
       if (!environmentId) throw new BadRequest('environmentId is required')

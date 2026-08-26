@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-4 models · 4 gated · 0 unrestricted
-1 with row policies · 2 with protected fields · 4 gated transitions
+17 models · 17 gated · 0 unrestricted
+6 with row policies · 6 with protected fields · 4 gated transitions
 ```
 
 ## Gates
@@ -21,10 +21,23 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 
 | Model | Read | Create | Update | Delete |
 | --- | --- | --- | --- | --- |
-| `Customer` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Cart` | 0 STRANGER | 0 STRANGER | 0 STRANGER | 5 ADMINISTRATOR |
+| `CartLine` | 0 STRANGER | 0 STRANGER | 0 STRANGER | 0 STRANGER |
+| `Colour` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Customer` | 1 VISITOR | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Discount` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `InventoryMovement` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED | 9 LOCKED |
 | `Notification` | 0 STRANGER | 8 SYSTEM | 4 USER | 8 SYSTEM |
-| `Order` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `Order` | 1 VISITOR | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `OrderLine` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Payment` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 9 LOCKED |
+| `PaymentEvent` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
 | `Product` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `ProductImage` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `ProductVariant` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `ShippingMethod` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `StockReservation` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `TaxRate` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 
 ## Row policies
 
@@ -32,10 +45,37 @@ A policy compiles into the WHERE clause. It never raises — a wrong one is an
 empty result with a 200, so read these as "which rows", not "which callers".
 An operation with no `@@allow` is unrestricted at this layer.
 
+### `Cart`
+
+- allow **read** — `token == auth().cartToken`
+- allow **update** — `token == auth().cartToken`
+
+### `CartLine`
+
+- allow **read** — `token == auth().cartToken`
+- allow **create** — `token == auth().cartToken`
+- allow **update** — `token == auth().cartToken`
+- allow **delete** — `token == auth().cartToken`
+
+### `Customer`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
+
 ### `Notification`
 
 - allow **read** — `userId == auth().id`
 - allow **update** — `userId == auth().id`
+
+### `Order`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
+
+### `OrderLine`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
 
 ## Protected fields
 
@@ -45,8 +85,27 @@ rather than refusing the row.
 
 | Model | Field | Rule |
 | --- | --- | --- |
+| `Cart` | `token` | `@guarded` |
+| `Cart` | `discountId` | `@system` |
+| `Cart` | `shippingMethodId` | `@system` |
+| `Cart` | `handoffCode` | `@guarded` |
+| `Cart` | `handoffExpires` | `@guarded` |
+| `CartLine` | `unitPrice` | `@system` |
 | `Customer` | `notes` | `@allow('read', auth().role == 'admin')` |
+| `Customer` | `userId` | `@system` |
+| `Discount` | `redemptions` | `@system` |
+| `Order` | `subtotal` | `@system` |
+| `Order` | `discountCode` | `@system` |
+| `Order` | `discountLabel` | `@system` |
+| `Order` | `discount` | `@system` |
+| `Order` | `shippingLabel` | `@system` |
+| `Order` | `shipping` | `@system` |
+| `Order` | `taxLabel` | `@system` |
+| `Order` | `taxRate` | `@system` |
+| `Order` | `tax` | `@system` |
 | `Order` | `trackingCode` | `@system` |
+| `Order` | `userId` | `@system` |
+| `OrderLine` | `userId` | `@system` |
 
 ## State transitions
 

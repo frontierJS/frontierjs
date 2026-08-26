@@ -19,24 +19,46 @@ specification. Sizes are the mock's own line counts — a rough cost, no more.
 
 ## The headline
 
-**31 of 41 views exist. 10 do not.** (12 at the first count on 2026-08-06;
+**35 of 41 views exist. 6 do not.** (12 at the first count on 2026-08-06;
 Portal and Activity landed the same day — § Phase 2 — then Networking, Alerts
 and Secrets — § Phase 3 — then AppDetail — § Phase 4 — then Channels and Flags
 — § Phase 5 — then API keys — § Phase 6 — then Volumes — § Phase 7 — then
 Dashboards — § Phase 8 — then Recipes and Disk cleanup — § Phase 9 — then the
-four sysadmin screens — § Phase 10.) And the 10 are not blocked on UI work:
+four sysadmin screens — § Phase 10, then five more in § Phase 13.) And the 6 left are not blocked on UI work:
 
 | Blocked on | Views |
 | --- | --- |
 | Nothing — models and services existed | 2 ✅ built |
 | A **service** over models that already exist | 6 → **5 built, 1 left** |
-| **New models** in `db/schema.lite` | 15 → **11 built, 4 left** |
-| An **outbound adapter** (a real third party) | 6 |
+| **New models** in `db/schema.lite` | 16 → **15 built, 1 left** |
+| An **outbound adapter** (a real third party) | 6 → **5 left** |
+
+**Phases 11–13 took the whole model-blocked group** — six models, five services,
+seed rows and five screens, in that order. What is left is one derived read
+(`InfraGraphView`), one screen with no model by decision (`OnboardingView`) and
+four that need a real third party. `RegistryView` moved out of the adapter row:
+it is built against a MIRROR, which is a decision Phase 12 records.
+
+Eleven distinct views, not twelve: `RegistryView` is in both of the last two
+rows, because whether it needs a model or an adapter depends on whether we
+mirror a registry or query it. Recounted 2026-08-25 by parsing the mock for
+top-level `*View` declarations and checking each unbuilt one against
+`web/src/routes/` — none of the eleven has a route. The counts above had drifted
+by one view and by one table row.
 
 **No screen is blocked on an API any more.** Phase 10 built the last group whose
 blocker was a service; the one row left under *needs a service* is
 `InfraGraphView`, which is a derived read across five accessors rather than a
 missing endpoint. Everything else needs a model or a real third party.
+
+**And as of 2026-08-25 no screen is blocked on a MODEL either.** Six went into
+`db/schema.lite` in one pass — `Blueprint`, `BlueprintParam`, `RegistryImage`,
+`Backup`, `HubConfig` and `NotificationPreference` — and the seventh case was
+decided the other way: `OnboardingView` gets no model, because every step it
+shows is a question the database already answers and a stored `done` is a second
+answer that goes stale. So the five model-blocked views now need a service and a
+screen, the four adapter views need a real third party, and `InfraGraphView`
+needs a derived read. See § Phase 11.
 
 So a rebuild is **mostly Data-realm and API-realm work**. Roughly half the
 remaining screens have nothing behind them: when this was written the schema
@@ -101,7 +123,7 @@ API. The three left are the cross-workspace and derived reads.
 | `WorkspacesView` (sys) | 62 | `Workspace`, `Account` | **Built** — `/hub/workspaces/`. A cross-workspace read through a NEW service that takes no workspace at all: the alternative was `?scope=hub` on nineteen session-scoped services. Suspension is real and bites in `scopeToWorkspace`. See § Phase 10 |
 | `UsersView` (sys) | 68 | `User`, `WorkspaceMember`, `Credential` | **Built** — `/hub/users/`, written against `asSystem()` from the start because `User` was `@@gate("8")` then; it reads at USER(4) since `FJS-170` and the screen still goes through `asSystem()`, which is what keeps the hub a hub. Suspend/restore, grant/revoke the hub tier, and bot accounts — all three are `asSystem()` writes, because `isSystemAdmin`, `status` and `kind` are `@allow('write', auth().isSystemAdmin)` at the Data boundary. The mock's Invite button is deliberately absent here — inviting a HUMAN belongs to a workspace and lives on the Members screen (`FJS-032`, closed); Impersonate is `FJS-142`. See § Phase 10 |
 
-### C. Needs new models (15)
+### C. Needs new models (16)
 
 None of these exists in `db/schema.lite`.
 
@@ -113,16 +135,16 @@ None of these exists in `db/schema.lite`.
 | `DashboardsView` / `DashboardDetailView` / `AddWidgetModal` | 97 + 91 + 141 | **Built** — `/dashboards/` + `/dashboards/[id]/`, over `Dashboard` + `DashboardWidget`. A widget names a KIND from a declared vocabulary and never carries a query; every card reads through the service that owns its data, with the reader's own session. See § Phase 8 |
 | `WorkspaceFlagsView` + 2 modals | 505 + 152 + 71 | **Built** — `/flags/`, over `FeatureFlag` + `FlagOverride`. The mock keyed per-environment state by TIER NAME; an override points at a real `Environment` row. See § Phase 5 |
 | `FlagsView` (sys) | 59 | **Built** — `/hub/flags/`, the same models read across every tenant and grouped by the prefix convention in the key. Toggling changes the flag's own default, never an override — a hub screen has no environment in hand. See § Phase 10 |
-| `RegistryView` | 112 | `RegistryImage` — or an adapter read, if the registry is the source of truth |
+| `RegistryView` | 112 | **Model built 2026-08-25** — `RegistryImage`, one row per TAG, OBSERVED like `Volume`. That commits to MIRRORING a registry rather than querying it live, which is what makes `inUse` answerable at all: it is a join against this workspace's deployments and a registry API knows nothing about who deployed what. `observedAt` is what keeps the staleness visible. No `RegistryRepo` — a repository is `distinct(repository)` plus a `SUM`, and a stored total is a second answer. Needs a service and a sync |
 | `VolumesView` | 120 | **Built** — `/volumes/`, over `Volume`. The first OBSERVED model here: no `create`, a row appears because an outpost reported it, and deleting one asks that outpost to delete the disk before the record is forgotten. See § Phase 7 |
 | `DiskCleanupView` | 431 | **Built** — `/cleanup/`, over `DiskUsage` (observed, one row per server) + `CleanupRun` (what a sweep actually freed). A sweep names targets from a list the service owns and never carries a command. See § Phase 9 |
-| `BlueprintMarketplaceView` + `BlueprintDeployModal` | 216 + 147 | `Blueprint` |
+| `BlueprintMarketplaceView` + `BlueprintDeployModal` | 216 + 147 | **Models built 2026-08-25** — `Blueprint` + `BlueprintParam`. Hub-curated, so `@@tenant(none)` and no workspace column: every entry in the mock is third-party software, and a per-workspace copy of the same nine rows is not a marketplace. Params are a CHILD model, not a Json array, because the deploy form is generated from them and they are ordered. Needs a service and the two screens |
 | `RecipesView` | 191 | **Built** — `/recipes/`, over `Recipe` + `RecipeRun`. Arbitrary code on a machine, so authoring is admin and every run keeps the script it ran, one row per server. See § Phase 9 |
-| `HubBackupView` | 179 | `Backup` |
-| `HubSettingsView` | 115 | Hub-level settings store |
+| `HubBackupView` | 179 | **Model built 2026-08-25** — `Backup`, `@@tenant(none)`, reusing `RunStatus` rather than restating five words. Outcome columns are SYSTEM-write, like every other *Run here. The schedule lives on `HubConfig`, not here: a cron describes the schedule and a `Backup` row is one thing that already happened. Needs a service, a job and the screen |
+| `HubSettingsView` | 115 | **Model built 2026-08-25** — `HubConfig`, ONE row keyed by a constant, typed columns rather than key/value (a key/value table is a schema this seed does not describe). The mock's four CREDENTIALS are deliberately absent: they are read at boot before any database, rotating one is a deploy, and `Secret` already models credential material. Needs a service and the screen |
 | `SysOverviewView` | 77 | **Built** — `/hub/`, read at request time from the thing that owns each number (Caravan, Conduit, the channel manager, SQLite). One of the mock's tiles does not survive contact with the runtime and says so instead: CPU, which nothing here samples. The event-subscriber count was the other until the bus grew `stats()` (`FJS-143`). See § Phase 10 |
-| `OnboardingView` | 427 | Onboarding progress. Derivable from what exists, if it is checks rather than rows |
-| `UserSettingsView` | 318 | Mostly `User` + `Session` (both exist) — but preferences, MFA and the API-token half do not |
+| `OnboardingView` | 427 | **No model, decided 2026-08-25.** Every one of the mock's six steps is a question the database already answers — does this workspace have a server, an SSH-kind `Secret`, a project, a `Deployment`, a second `WorkspaceMember`. A `done` column would be a second answer that goes stale the moment somebody deletes the thing it recorded. Needs a service method returning the six checks |
+| `UserSettingsView` | 318 | **Preferences built 2026-08-25** — `NotificationPreference`, one row per (person, kind) with a column per transport, `@@tenant(none)` and `@@allow('all', userId == auth().id)`. Profile is `User` (`username`, `displayName`, `avatarUrl` all exist), sessions are auth's `Session`, password is `account.changePassword`. **MFA is still nothing** and is `@frontierjs/auth`'s to model, not this app's. Needs a service and the screen |
 
 ### D. Needs an outbound adapter (6)
 
@@ -948,6 +970,278 @@ model that does not exist.
 so the service registry and every action name is world-readable. Not exploited
 by anything here and not changed in this phase, because the drives and any
 external probe read it; worth a decision rather than a quiet edit.
+
+---
+
+## Phase 11 — the models the last screens needed ✅ done 2026-08-25
+
+Every unbuilt view was blocked on a model, an adapter, or a derived read. This
+pass took the first group: **six models, four enums, one deliberate refusal.**
+
+Nothing was invented. Each shape was read out of `docs/mock/BasecampUI.jsx` —
+the view AND the data constant behind it — because a model derived from a screen
+that was never opened is a guess about what somebody will want.
+
+### What went in
+
+| Model | Tenancy | Gate (R.C.U.D) | The decision in it |
+| --- | --- | --- | --- |
+| `Blueprint` | `@@tenant(none)` | 1 · 7 · 7 · 7 | A curated catalogue, not a per-workspace one |
+| `BlueprintParam` | `@@tenant(none)` | 1 · 7 · 7 · 7 | A child model, not a Json array |
+| `RegistryImage` | `workspaceId` | 2 · 8 · 8 · 5 | Mirror a registry, do not query it live |
+| `Backup` | `@@tenant(none)` | 7 · 7 · 8 · 7 | The outcome is the machine's, like every *Run |
+| `HubConfig` | `@@tenant(none)` | 7 · 7 · 7 · 7 | One typed row, and no credentials in it |
+| `NotificationPreference` | `@@tenant(none)` | 1, own row | Per person, not per membership |
+
+### The five arguments worth keeping
+
+**A marketplace is not a tenant's.** Every entry in the mock is third-party
+software — n8n, Postgres, Redis, Meilisearch, Plausible. A workspace-scoped
+`Blueprint` gives each tenant a private copy of the same nine rows, and the other
+option — a nullable `workspaceId` meaning *shared* — is exactly the shape
+`FJS-432` is an open question about: a null never equals a claim, so row tenancy
+hides precisely the rows meant to be global. `@@tenant(none)` says it plainly. A
+workspace authoring its own is a later model or a decided nullable column.
+
+**A blueprint's parameters are a form, so they are rows.** Ordered, individually
+validated, and the deploy modal is generated from them. A Json array would put
+the shape of a form in a column nothing describes — which is what `AlertRule.channels`
+was before it became a real join.
+
+**`RegistryImage` commits to mirroring.** `SCREENS.md` left that open, and the
+decision is forced by one column: `inUse` is a join against this workspace's
+deployments, and a registry API knows nothing about who deployed what. The cost
+is staleness, so `observedAt` is a column rather than an assumption — the screen
+can tell *no images* from *no sync*, which is `Volume.lastSeenAt`'s distinction.
+
+**`HubConfig` holds no credentials, and the mock's Settings screen showed four.**
+Its auth secret, agent secret, Resend key and Infisical token are all absent, for
+three reasons each sufficient on its own: they are read at BOOT, before any
+database, so a row would not reach the running process; rotating one is a deploy
+rather than a form; and this app already models credential material as `Secret`,
+whose `data` is `@encrypted` and unreadable at every level.
+
+**Onboarding gets no model.** All six of the mock's steps are questions the
+database already answers — does this workspace have a server, an SSH-kind
+`Secret`, a project, a `Deployment`, a second member. A stored `done` is a second
+answer to each, and it goes stale the moment somebody deletes what it recorded.
+The mock stores them because a mock has no database.
+
+### What it found
+
+**A rule that cannot be isolated is a rule nobody has tested.** `baseUrl` was
+written `@trim @url @length(1, 300)` and `verifyConstraints` refused it by name:
+every 301-character string that would exercise the length is refused by `@url`
+first, so the boundary was never checked and a pass would have been a pass on the
+wrong refusal (`FJS-351`). The `@length` came off.
+
+**Four documents disagreed about how many models there are** — 37, 38, 39 in
+three of them and 38 in the root map. Corrected to 45 everywhere, along with the
+`@@tenant(none)` count, which said *seven* and had been nine since before this
+pass.
+
+### Still open
+
+Every one of these is a model with nothing on top of it. **No services, no
+resources, no screens, and the seed writes none of these rows** — a `HubConfig`
+row does not exist until something creates one, and the catalogue is empty. That
+is the next phase and it is deliberately not this one: a service written against
+a model nobody has opened a screen onto is two guesses stacked.
+
+`Blueprint` also has no relation to `App`. The mock's deploy modal builds an App
+out of a blueprint and forgets which one it came from; a `blueprintId` on `App`
+is the honest version and is a schema change nobody has asked for yet.
+
+---
+
+## Phase 12 — services over those models ✅ done 2026-08-25
+
+Five services and one job. Every model from § Phase 11 now has an API; the sixth
+case (`OnboardingView`) still has no model by decision, and still has no service,
+because the six checks it needs are a read across five accessors and belong with
+`InfraGraphView`'s derived read rather than on its own.
+
+| Service | Model | Methods | Takes a workspace? |
+| --- | --- | --- | --- |
+| `blueprints` | `Blueprint` | find · get · create · patch · remove · categories · setParams | no |
+| `registry` | `RegistryImage` | find · get · repositories | **yes** |
+| `backups` | `Backup` | find · get · create · remove | no |
+| `hub-config` | `HubConfig` | current · save | no |
+| `notification-preferences` | `NotificationPreference` | find · save · reset | no |
+
+### Four of the five take no workspace, and the schema is what says so
+
+`tenantClaimGuard` runs app-wide, ahead of anything a service writes, and refuses
+a signed-in caller carrying no tenant claim. It exempts a service whose model is
+`@@tenant(none)` — `isRowScoped(db, ctx.service)` — so declaring the tenancy in
+the seed is what makes these reachable. **A hook could not have done it**, which
+is worth stating because the obvious instinct is to reach for one.
+
+That exemption lives in junction, is keyed off this app's schema, and neither
+file names the other. The test that would catch it moving is a sysadmin with
+**no workspace on the session** reading `/blueprints`.
+
+### What it found
+
+**A closed create schema strips a relation in silence.** `blueprints.create` was
+written to take its params inline, the way the mock's export format holds them.
+It cannot: litestone's derived create schema is `additionalProperties: false` and
+`params` is a relation, so `autoValidate` removes the key before the method runs
+— a blueprint with no form and no error. `@transient` is the declared answer and
+is unavailable here for one flat reason: the relation already owns the name. So
+the payload is refused by name, in a hook that runs AHEAD of the validator, which
+is the only place the key is still visible.
+
+**`@version` binds a state change, not just a form.** `blueprints.remove`
+withdraws by stamping `deprecatedAt`, and litestone refused it: `revision` is
+`@version`, so every update carries the revision it read. Reaching for
+`asSystem()` would have dropped the gate, the audit actor and the announcement to
+withdraw one row. It reads the row and passes the revision.
+
+**`hub-config.save` requires the version too**, and that is the case `@version`
+exists for — two administrators with the settings form open. Refused here by name
+rather than by the column, because litestone's sentence explains the column and
+this one explains the call.
+
+**A shared digest was being charged twice.** `registry.repositories` sums bytes
+per repository, and two tags of one digest is the ordinary case (`v2.14.1` and
+`latest`) — the registry stores those layers once. A per-tag sum reports double
+what the disk holds, which is exactly the number an operator would use to decide
+what to delete.
+
+### Two deliberate absences
+
+**`registry` offers no sync and no delete.** There IS a provider —
+`app.providers.registry`, an `IRegistry` — and it is a stub. But the interface
+could not fill this table against a real registry either: `listTags(repo)`
+answers `string[]`, so `digest`, `sizeBytes` and `pushedAt` would all be
+invented. And deleting a mirror row deletes nothing — the tag is still there and
+the next sync brings it back — so the button would report a success that did not
+happen. Closing both means widening `IRegistry` first.
+
+**`backups` writes `local` only.** `s3` is a declared value with nothing behind
+it, and it is refused at `create` rather than queued to fail, because a row that
+is going to fail for a reason already known makes the person come back to find
+out. The job itself is real: `VACUUM INTO`, which is SQLite's own consistent
+online backup — a file copy of a live WAL database silently omits whatever is
+still in the `-wal`.
+
+### Seed rows followed the same day
+
+`db/blueprints.js` carries eight applications read out of the mock's own
+`BLUEPRINTS` constant — 31 params, all three `ParamGenerator` values — plus a
+`HubConfig`, one completed `Backup`, 15 `RegistryImage` rows across the two
+workspaces and two `NotificationPreference` rows. Three of those are shaped by
+what a screen has to be able to show:
+
+- **Ghost is seeded withdrawn**, so the list has a row to hide and the detail
+  page has one to still resolve. 7 offered of 8.
+- **The registry mirror seeds a shared digest.** `latest` and the newest version
+  tag are one image: 922MB summed per tag against 738MB per digest, which is the
+  25% overstatement `repositories` exists to avoid.
+- **Two preferences, not fourteen.** A row exists only where somebody has chosen,
+  and seeding everybody would erase the *chosen* against *default* distinction
+  the screen renders.
+
+`brandColor` is set on one of the eight. The other four the mock coloured took it
+from its own theme object, which is a design-system token rather than a vendor's
+brand.
+
+### Still open
+
+No screens. `HubConfig.backupCron` is stored and nothing registers a schedule
+from it — a schedule that comes from a ROW needs re-registering at boot and
+`unschedule` when the row stops being true, which is `job-schedule.ts`'s pattern
+and a separate piece of work.
+
+---
+
+## Phase 13 — the five screens ✅ done 2026-08-25
+
+| Route | View | Reads |
+| --- | --- | --- |
+| `/blueprints/` | `BlueprintMarketplaceView` | `blueprints` — the catalogue, no workspace |
+| `/registry/` | `RegistryView` | `registry` — the mirror, workspace-scoped |
+| `/hub/backups/` | `HubBackupView` | `backups` + `hub-config` |
+| `/hub/settings/` | `HubSettingsView` | `hub-config` — the singleton |
+| `/settings/` | `UserSettingsView` | `client.auth.*` + `notification-preferences` |
+
+Plus a drive: **`bun run verify:screens`**, 26 checks in a real browser. It
+seeds a database of its own in a temp directory and starts and stops both
+servers, so it touches nothing local and never asks anybody to reset a dev
+fleet. That is also why it is separate from `verify`, which asserts the
+first-run wizard owns an EMPTY app — three of these screens are about rendering
+a populated catalogue, and an empty grid looks exactly like a broken query.
+
+### What the drive found, which the build did not
+
+**`Switch` hands `onchange` a boolean; `Input` hands `oninput` an event.** Both
+new forms had been written with `e.target.checked` on a Switch, which reads a
+property of `undefined`, throws inside the handler and leaves the control
+looking dead. The build was green and the screens rendered.
+
+**A row that stays `pending` on screen while the job has already finished it.**
+The backup job completes in ~80ms and writes a real archive; the screen showed
+`pending` indefinitely. Every other list in this app learns about a change from
+the socket, and this one cannot: `announceDataWrites` broadcasts through the
+app's channels, the only channel this app has is the WORKSPACE's, and `Backup`
+is `@@tenant(none)`. So this screen polls while an archive is in flight, and
+says why in the file.
+
+**And a drive that passed for the wrong reason.** The first version of the
+backup check polled the history table's TEXT for `success` and a size — which
+the SEEDED archive already matched, so it passed before the new row existed and
+would have passed with the button disconnected. Rewritten to poll the row COUNT
+first and the new row second. It is the same class as the assertion that only
+asks `querySelector` for an overlay.
+
+### The arguments each screen carries
+
+**Deploying from a blueprint is not wired, and the screen says so.** The mock's
+Deploy button builds an App and forgets which blueprint it came from. Doing it
+properly needs a `blueprintId` on `App` and a path that turns the params into an
+app's environment; neither is invented. What the detail pane shows instead is
+the whole of what such a step would send.
+
+**The registry screen marks aliased tags rather than hiding them.** `latest` and
+the newest version tag share a digest, and the repository total charges it once
+— so a tag row says *same image as v2.14.1* where the naive screen would show
+two sizes that add up to more than the disk holds.
+
+**Neither sync nor delete is offered there**, and the callout gives the reason
+rather than leaving a disabled button: `IRegistry.listTags` answers `string[]`,
+so a sync would invent a digest, a size and a push time, and deleting a mirror
+row deletes nothing.
+
+**Restore is absent from the backups screen.** Restoring means replacing the
+database this process is reading from, in place, while it serves — an operator's
+job with the process stopped, and the most dangerous control this app could
+have. There is no download either: the archive is a path on the machine and
+nothing serves it.
+
+**The hub settings screen has none of the mock's four credentials**, and the
+copy on the page explains why rather than leaving somebody hunting: they are
+read at boot before any database, rotating one is a deploy, and `Secret` already
+models credential material.
+
+**Three switches say they are stored and read by nothing yet** — the two-factor
+requirement, API-key auth and bot accounts. A switch that changes a column and
+no behaviour is worth saying out loud rather than leaving to be discovered.
+
+**The notification screen renders *chosen* against *default*.** A row exists
+only where somebody has said something, so *defaulted to on* and *turned on* are
+different facts, and a reset control only makes sense once the screen can show
+the difference.
+
+### Still open
+
+`OnboardingView` — six checks across five accessors, which belongs with
+`InfraGraphView`'s derived read rather than on its own.
+`HubConfig.backupCron` is still registered by nothing, and both screens that
+mention it say so.
+The notification rows are stored and **no delivery path consults them**.
+
+---
 
 ## Related
 

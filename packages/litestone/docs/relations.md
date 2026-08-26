@@ -194,7 +194,17 @@ pick happens in SQL before the policy is known, a row the caller may not read ma
 field `null` rather than falling through to the next visible one (`FJS-224`).
 
 `@from` fields appear automatically in query results — no extra `include` needed. They are
-read-only, are not stored in SQLite, and disable the `findUnique` fast path (see `performance.md`).
+not stored in SQLite and they disable the `findUnique` fast path (see `performance.md`).
+**Read-only means a write naming one is refused**, by name and with the reason, like every
+other virtual field kind — the value has nowhere to land and the next read answers the
+aggregate, so a caller who seeded a count would otherwise read back the real one and
+believe they had set it.
+
+**A composite key correlates on all of it.** A relation declaring
+`@relation(fields: [workspaceId, userId], references: [workspaceId, userId])` joins on both
+columns, in the aggregate, in a `first`/`last` repick under a row policy, and in a `select`
+that names only the derived field. Nothing about a wrong answer here would look wrong: a
+join on the first column alone is still a count of real rows.
 
 The declared relation is what `@from` joins on, and a schema without one is a parse error:
 

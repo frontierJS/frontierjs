@@ -1,0 +1,40 @@
+<script>
+  // multiselect-parity.mesa — the collapse chip and the granular events.
+  //
+  // Two controls because the two features have nothing to do with each other
+  // and sharing one would make every assertion depend on unrelated state.
+  import MultiSelect from '../../../components/forms/MultiSelect.mesa'
+
+  const CHANNELS = ['email', 'sms', 'push', 'webhook', 'slack', 'teams']
+
+  // Five selected against collapseAfter={4}: over the line, so it starts
+  // collapsed rather than needing an interaction to get there.
+  let many = ['email', 'sms', 'push', 'webhook', 'slack']
+
+  // The event log. Recorded as a joined string because a spec reads text.
+  let picked = []
+  let events = []
+
+  const log = (s) => { events = [...events, s] }
+</script>
+
+<div id="collapse">
+  <MultiSelect name="many" bind:value={many} options={CHANNELS} multiple collapseAfter={4} />
+</div>
+
+<div id="events">
+  <MultiSelect
+    name="picked"
+    bind:value={picked}
+    options={CHANNELS}
+    multiple
+    allowNew
+    onadd={(v) => log(`add:${v}`)}
+    onremove={(v) => log(`remove:${v}`)}
+    oncreate={(o) => log(`create:${o.value}`)}
+    onchange={(v) => log(`change:${(v ?? []).length}`)}
+  />
+</div>
+
+<output id="events-log">{events.join(' ')}</output>
+<output id="many-count">{many.length}</output>

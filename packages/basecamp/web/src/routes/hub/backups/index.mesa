@@ -1,0 +1,205 @@
+---
+title: Hub backups
+---
+<script>
+  // The mock's HubBackupView — archives of the application database.
+  //
+  // The mock simulated this: a two-second timer, a fabricated size, and a
+  // download of a JSON file with `{hub_backup:true}` in it. This one asks the
+  // server, which writes a row and dispatches a job, and the job runs SQLite's
+  // own `VACUUM INTO` — the only way to take a consistent copy of a live WAL
+  // database, since a file copy silently omits whatever is still in the -wal.
+  //
+  // ─── Three of the mock's controls are absent, each for its own reason ───
+  //
+  //   RESTORE. Restoring is replacing the database this process is reading
+  //   from, in place, while it serves. That is an operator's job with the
+  //   process stopped, and a button that appears to do it from inside the
+  //   running app is the most dangerous control this app could have.
+  //   DOWNLOAD. The archive is a path on the machine, not a route — nothing
+  //   serves it, and a link that 404s is worse than no link.
+  //   S3 CREDENTIALS. The destination is refused at create until there is an
+  //   adapter, so a form for its keys would collect them for nothing.
+  //
+  // What IS here is the schedule, read from the settings row — and it is shown
+  // with the caveat that nothing registers it yet, because a cron on screen
+  // that no timer honours is the failure this app has already had twice
+  // (`FJS-327`, `FJS-328`).
+  import { backups }   from '../../../resources/Backup.mesa'
+  import { hubConfig } from '../../../resources/HubConfig.mesa'
+  import { formatBytes as size } from '@frontierjs/toolbelt/units'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  let rows     = []
+  let config   = null
+  let error    = null
+  let loading  = true
+  let asking   = false
+
+  async function load() {
+    error = null; loading = true
+    try {
+      rows = (await backups.service.find({}, { limit: 50 })).data
+      try {
+        config = await hubConfig.service.invoke('current', null)
+      } catch {
+        // A 404 here is *nobody has saved settings yet*, which is a real state
+        // on a fresh installation and not an error on this screen.
+        config = null
+      }
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  // ─── This screen POLLS, and it is the only one here that does ──────────
+  //
+  // Every other list in this app learns about a change from the socket. This
+  // one cannot: `announceDataWrites` broadcasts through the app's channels, and
+  // the only channel this app has is the WORKSPACE's — `workspaceChannel`
+  // answers null without one. `Backup` is `@@tenant(none)`, so there is no
+  // workspace to broadcast into, and a hub-tier channel would need a
+  // membership rule that does not exist.
+  //
+  // So while an archive is in flight the screen asks again. Measured rather
+  // than assumed: `verify:screens` watched a row sit at `pending` on screen
+  // while the job had already finished it in 80ms.
+  let poll = null
+  function watch() {
+    clearTimeout(poll)
+    if (!inFlight) return
+    poll = setTimeout(async () => { await load(); watch() }, 1500)
+  }
+  $: inFlight, () => watch()
+  $.onDestroy(() => clearTimeout(poll))
+
+  async function takeOne() {
+    error = null; asking = true
+    try {
+      await backups.service.create({})
+      toasts.success('Backup queued', 'The row fills in as the job runs.')
+      await load()
+      // `inFlight` is derived from the rows `load()` just fetched, so the watch
+      // starts from a row that really is pending rather than from an assumption
+      // that one will be.
+      watch()
+    } catch (e) {
+      // 'A backup is already running' arrives here. The button is not
+      // pre-emptively disabled on `inFlight` below — whether one is in flight is
+      // the server's answer, and two administrators clicking at once is exactly
+      // the case the refusal exists for.
+      error = e.message
+    } finally {
+      asking = false
+    }
+  }
+
+  $: inFlight = rows.find(b => !['success', 'failed', 'timeout'].includes(b.status)) ?? null
+
+  function tone(status) {
+    if (status === 'success') return 'success'
+    if (status === 'failed')  return 'danger'
+    if (status === 'timeout') return 'warning'
+    return 'info'
+  }
+
+  function when(iso) {
+    if (!iso) return '—'
+    const mins = Math.floor((Date.now() - new Date(iso)) / 60_000)
+    if (mins < 1)  return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
+  }
+
+  const COLUMNS = [
+    { key: 'when',   label: 'Taken' },
+    { key: 'kind',   label: 'Kind' },
+    { key: 'status', label: 'Status' },
+    { key: 'size',   label: 'Size' },
+    { key: 'where',  label: 'Where' },
+  ]
+</script>
+
+<div class="section-header">
+  <h2 class="h3">Backups</h2>
+  <Button variant="primary" id="take-backup" disabled={asking} onclick={takeOne}>
+    {asking ? 'Asking…' : 'Back up now'}
+  </Button>
+</div>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<Callout tone="warning" title="Taking one is here. Restoring one is not.">
+  A backup is <code>VACUUM INTO</code> — SQLite's own consistent copy of a live database, taken
+  without locking out writers. Restoring means replacing the file this process is reading from
+  while it serves, which is an operator's job with the process stopped. There is no download
+  either: the archive is a path on the machine and nothing serves it.
+</Callout>
+
+{#if config}
+  <Card id="backup-schedule">
+    <div class="section-header">
+      <h3 class="h5">Schedule</h3>
+      <span class="cluster">
+        <Pill tone={config.backupEnabled ? 'success' : 'muted'}>
+          {config.backupEnabled ? 'enabled' : 'off'}
+        </Pill>
+        <Badge tone="muted"><code>{config.backupCron}</code></Badge>
+        <Badge tone="muted">{config.backupDestination}</Badge>
+      </span>
+    </div>
+    <p class="text-sm text-muted">
+      Stored on the settings row, and <strong>nothing registers it yet</strong> — a schedule that
+      comes from a database row has to be re-registered at every boot and unregistered when the
+      row stops being true. Until that exists, every archive below is one somebody asked for.
+      Edit it in <a href="/hub/settings/">settings</a>.
+    </p>
+  </Card>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !rows.length}
+  <EmptyState title="No backups">
+    Nothing has been archived yet. <em>Back up now</em> writes one to the machine this process
+    runs on.
+  </EmptyState>
+{:else}
+  <Table id="backup-history" columns={COLUMNS} rows={rows} striped hover={false}>
+    {#snippet row(b)}
+      <tr>
+        <td class="text-sm">{when(b.finishedAt ?? b.startedAt ?? b.createdAt)}</td>
+        <td><Pill tone="muted">{b.kind}</Pill></td>
+        <td>
+          <Pill tone={tone(b.status)}>{b.status}</Pill>
+          {#if b.durationMs}<span class="text-sm text-muted"> {(b.durationMs / 1000).toFixed(1)}s</span>{/if}
+        </td>
+        <!-- Absent until it finishes, rather than 0 B — the size is what the
+             machine reported and there is nothing to report while it runs. -->
+        <td class="text-sm">{b.sizeBytes ? size(b.sizeBytes) : '—'}</td>
+        <td class="text-sm text-muted"><code>{b.location ?? '—'}</code></td>
+      </tr>
+      {#if b.error}
+        <tr><td colspan="5"><pre class="code"><code>{b.error}</code></pre></td></tr>
+      {/if}
+    {/snippet}
+  </Table>
+{/if}

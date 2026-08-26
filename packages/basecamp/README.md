@@ -66,7 +66,8 @@ Seeding is idempotent — a second run does nothing; `--force` starts over.
 
 | | |
 |---|---|
-| `bun run dev` | both servers, after a port preflight |
+| `fli dev` | both servers, after the port and database preflights |
+| `bun run dev` | both servers, no preflight |
 | `bun run api` | API with `--watch`, :8120 |
 | `bun run web` | UI dev server, :8020 — proxies the API paths to :8120 |
 | `bun run stop` | kill whatever the last run left behind |
@@ -91,18 +92,17 @@ Everything is environment variables, declared and validated in
 |---|---|---|
 | `PORT` | `8120` | |
 | `DATABASE_URL` | `./db/basecamp.db` | CWD-relative — start from the package root. The path is declared in `db/schema.lite` as `database main { path env("DATABASE_URL", …) }`, so the schema is what decides it and this variable steers that declaration |
-| `AUTH_SECRET` | dev placeholder | 32+ chars |
 | `ENCRYPTION_KEY` | dev placeholder | 64 hex chars — `Secret.data` is encrypted at rest |
 
 ```bash
-openssl rand -hex 32     # both
+openssl rand -hex 32
 ```
 
-**Both dev defaults are public — they are in this repo.** `NODE_ENV=production`
-refuses to boot on either: Junction rejects the placeholder `AUTH_SECRET`, and
-`core/db.ts` rejects the placeholder `ENCRYPTION_KEY`. That second one matters
-because encrypting SSH private keys with a published key is *worse* than not
-encrypting them — the column reads as protected while being trivially readable.
+**The dev default is public — it is in this repo.** `NODE_ENV=production`
+refuses to boot on it: `core/db.ts` rejects the placeholder `ENCRYPTION_KEY`.
+That matters because encrypting SSH private keys with a published key is *worse*
+than not encrypting them — the column reads as protected while being trivially
+readable.
 A malformed key (not 64 hex chars) is rejected in any environment.
 
 ---
@@ -123,8 +123,8 @@ basecamp/
       core/                  ← app, db client, env, hooks, resource helpers
       services/              ← one directory per service
       jobs/                  ← one *.job.ts per job — autoloaded by Caravan
-      providers/             ← who the app speaks to: executor, outpost
-      infra/                 ← adapters for the 8 self-hosted appliances
+      providers/             ← who the app speaks to: the 8 self-hosted
+                               appliances, plus executor and outpost
   web/                       ← UI realm — Sierra + Mesa
     config/                  ← sierra.config.js + vite.config.js
     src/
@@ -142,8 +142,8 @@ is generated from it; editing that SQL by hand is how the two drift apart, and
 
 | Realm | | |
 |---|---|---|
-| **Data** | ✅ Done | 38 models, 21 enums, `database main` declared. **Every model declares a `@@gate`**, and tenancy is one declared block — `tenancy { strategy row  column workspaceId  claim workspaceId }`, with eight `@@tenant(none)` and fourteen `@@tenant(via: parent)`, so **31 models carry a row policy**. Migration generated and verified against a fresh database. |
-| **API** | ✅ Done | 21 services + 4 job files on Litestone accessors, zero raw SQL. Auth via `@frontierjs/auth`. `/hub/` is the cross-workspace tier — a separate service behind one `requireSystemAdmin` hook. Verified over HTTP end to end. |
+| **Data** | ✅ Done | 45 models, 26 enums, `database main` declared. **Every model declares a `@@gate`**, and tenancy is one declared block — `tenancy { strategy row  column workspaceId  claim workspaceId }`, with fourteen `@@tenant(none)` declared and fourteen scoped through a parent by inference, so **34 models carry a row policy**. Migration generated and verified against a fresh database. |
+| **API** | ✅ Done | 27 services + 5 job files on Litestone accessors, zero raw SQL. Auth via `@frontierjs/auth`. `/hub/` is the cross-workspace tier — a separate service behind one `requireSystemAdmin` hook. Verified over HTTP end to end. |
 | **UI** | ✅ Built | Sierra SPA covering every service: setup, login, guard, workspace switcher, Projects → Environments → Apps, deployments with a live step timeline, the server fleet (drain/reboot/sync, event trail, outpost heartbeats), jobs with run history, and an admin zone (members, audit trail, adapters). `bun run verify` drives all of it in a real browser — **90 checks**, including an accessibility pass on every screen. `docs/UI_PLAN.md` has what building it found. |
 
 What works today, checked by running it: first-run setup, password login,
@@ -154,7 +154,7 @@ step by step.
 
 ### Access control
 
-**Declared in the schema, per Invariant 6** — all 37 models carry a `@@gate`, and
+**Declared in the schema, per Invariant 6** — all 45 models carry a `@@gate`, and
 the ladder is per WORKSPACE rather than per app. `api/src/core/gate.ts` maps
 `WorkspaceMember.role` onto the gate ladder:
 
@@ -174,16 +174,20 @@ An unknown role grades VISITOR rather than defaulting upward: an enum value
 added to the schema and forgotten here must lose access, not gain it.
 
 The same read answers *which tenant*, which is why it is one seam and not two.
-The fourteen models with no `workspaceId` of their own declare
-`@@tenant(via: parent)`; `Workspace`, `WorkspaceMember` (standing is read from
-it), `AuditEvent` (nullable workspace) and the five auth models declare
+The fourteen models with no `workspaceId` of their own are scoped through a
+parent, and that is INFERRED rather than declared — litestone walks the
+belongs-to relations and reports the fourteen by name in a standing warning.
+`@@tenant(via: rel)` exists and is the wrong answer for seven of them: a model
+with two scoped parents gets one deny per parent and they are AND'd, so naming
+one relation drops the other. `Workspace`, `WorkspaceMember` (standing is read
+from it), `AuditEvent` (nullable workspace) and the five auth models declare
 `@@tenant(none)` by name.
 
 ### Known gaps
 
 - **Auth is password-only.** No OAuth. Bearer tokens; `cookieAuth` exists in
   `@frontierjs/auth` and this app has not turned it on.
-- **The infra adapters are stubs** until their env vars are set — Infisical,
+- **The appliance providers are stubs** until their env vars are set — Infisical,
   Unleash, Typesense, Zot, Forgejo, Grafana/Loki, NetBird, Nango.
 
 ---

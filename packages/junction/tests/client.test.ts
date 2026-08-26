@@ -969,11 +969,11 @@ describe('authPrefix', () => {
 
 describe('config.http.cors', () => {
 
-  async function appWith(cors?: unknown) {
+  async function appWith(cors?: unknown, http: Record<string, unknown> = {}) {
     const { createTestApp } = await import('../src/testing/index.ts')
     const { createService } = await import('../src/core/service.ts')
     return createTestApp({
-      config: cors ? { http: { cors } } : {},
+      config: cors || Object.keys(http).length ? { http: { ...http, ...(cors ? { cors } : {}) } } : {},
       services: [() => createService({ name: 'items', find: async () => [] })],
     } as never)
   }
@@ -1001,7 +1001,32 @@ describe('config.http.cors', () => {
     const app = await appWith({ origins: ['https://app.test'], methods: ['GET'], headers: ['X-Custom'] })
     const res = await hdr(app as never, 'options')
     expect(res.headers['access-control-allow-methods']).toBe('GET')
-    expect(res.headers['access-control-allow-headers']).toBe('X-Custom')
+    expect(res.headers['access-control-allow-headers']).toContain('X-Custom')
+  })
+
+  it("an app's own header list does not disable junction's own", async () => {
+    // These three the browser client sends unasked — X-Service-Method is how
+    // a custom method is addressed over HTTP, X-Workspace-Id rides every call
+    // once setWorkspace() is used, Idempotency-Key is read by callService.
+    // They were a DEFAULT, which is the same thing until an app states a list
+    // of its own: defaultConfig populates http.cors.headers, so every app that
+    // configured CORS through config replaced the default with three names and
+    // lost all three, and cross-origin every custom method failed its
+    // preflight with nothing saying why.
+    const app = await appWith({ origins: ['https://app.test'], headers: ['X-Custom'] })
+    const allowed = String((await hdr(app as never, 'options')).headers['access-control-allow-headers'])
+    expect(allowed).toContain('X-Service-Method')
+    expect(allowed).toContain('X-Workspace-Id')
+    expect(allowed).toContain('Idempotency-Key')
+  })
+
+  it('a declared call header is allowed cross-origin too', async () => {
+    // One declaration, two readers — the socket's merge allow-list is the
+    // other. An app that had to remember both would work until it was served
+    // from a second origin.
+    const app = await appWith({ origins: ['https://app.test'] }, { callHeaders: ['X-Cart-Token'] })
+    const allowed = String((await hdr(app as never, 'options')).headers['access-control-allow-headers'])
+    expect(allowed).toContain('X-Cart-Token')
   })
 
   it('installs nothing when cors is absent — the secure default', async () => {

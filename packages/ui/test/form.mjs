@@ -68,6 +68,11 @@ const ORDER = {
                   references: { model: 'Customer', field: 'id', relation: 'customer' } },
     computed:   { type: 'string',  required: false, readOnly: true },
     tags:       { type: 'array',   required: false },
+    // A type the control table has never heard of — the case the warning below
+    // exists for. `array` and `object` used to be it, and both have a control
+    // now, so without a column like this the warning has nothing to fire on and
+    // stops being tested at all.
+    shape:      { type: 'geography', required: false },
   },
   make: () => ({}),
   fieldErrors: () => ({ fields: {}, message: '' }),
@@ -319,10 +324,14 @@ await check(
     'markdown became a textarea':       has(/<textarea[^>]*name="body"/),
     'a date became type="date"':        has(/name="dueOn"[^>]*type="date"|type="date"[^>]*name="dueOn"/),
     'a number became type="number"':    has(/name="total"[^>]*type="number"|type="number"[^>]*name="total"/),
-    // The one field where a spinner is obviously wrong: the rows arrive from
-    // the related service after mount, so server-side it is an empty select.
-    'a foreign key became a select, not a number input':
-      has(/<select[^>]*name="customerId"/),
+    // The one field where a spinner is obviously wrong. It is a SEARCHABLE
+    // select rather than a native one (`FJS-459`): the rows arrive from the
+    // related service after mount and the server caps them, so a control with
+    // no way to type cannot reach past the page it was handed.
+    'a foreign key became a searchable select, not a number input':
+      has(/role="combobox"[^>]*|<input[^>]*name="customerId"/),
+    'and it announces itself as one to assistive tech':
+      has(/name="customerId"[\s\S]{0,400}?role="combobox"|role="combobox"[\s\S]{0,400}?name="customerId"/),
     'and it is not a number input':
       hasNot(/name="customerId"[^>]*type="number"/),
   },
@@ -345,12 +354,15 @@ await check(
   GEN,
   { resource: ORDER },
   {
-    'an array column is not rendered':    hasNot(/name="tags"/),
+    'a column of an unknown type is not rendered': hasNot(/name="shape"/),
     'a readOnly column is not rendered':  hasNot(/name="computed"/),
     // The silence is the bug this row exists to end: a column added to .lite
     // that never appears, in the one place a person would look for it.
-    'the array column was named out loud': () =>
-      warnings.some(w => w.includes('Order.tags') && w.includes('array')),
+    'the unrenderable column was named out loud': () =>
+      warnings.some(w => w.includes('Order.shape') && w.includes('geography')),
+    // …and an array is no longer one of them. It has no field list under it, so
+    // it is edited as its own syntax rather than dropped.
+    'an array column renders as the json control': has(/name="tags"/),
     // …but a readOnly column is the SCHEMA saying it is not the caller's to
     // write — @system, @computed, @generated, @from. The form leaving it out is
     // the annotation working, not a gap in the kit, so it says nothing.

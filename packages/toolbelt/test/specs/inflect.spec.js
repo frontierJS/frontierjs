@@ -95,6 +95,44 @@ test('inflect: a singular ending in a bare s is NOT reachable', function () {
   assert.equal(singularize('lens'), 'len')
 })
 
+test('inflect: -ses splits by a list, because no ending can split it', function () {
+  /*
+   * `statuses` is `status` and `cases` is `case`, and the two differ only by
+   * whether the stem before `es` is itself a word — `status` and `cas` both
+   * end in a vowel plus `s`. Stripping `es` for both was the wrong way round:
+   * a singular ending in a bare `s` is a closed list, a singular ending in
+   * `-se` is thousands of ordinary nouns, and every one of them resolved to a
+   * word that is not one.
+   *
+   * The stakes are what make this a correctness case rather than a spelling
+   * one. Junction derives a model name from a service name with this function,
+   * and a service resolving to no model has NO @@gate and NO validation — so a
+   * service named `purchases` over `model Purchase` served anonymous reads of
+   * a gated model, silently, for as long as the rule stood.
+   */
+  ;[['cases', 'case'], ['purchases', 'purchase'], ['releases', 'release'],
+    ['licenses', 'license'], ['expenses', 'expense'], ['responses', 'response'],
+    ['databases', 'database'], ['warehouses', 'warehouse'], ['leases', 'lease'],
+    ['houses', 'house'], ['phases', 'phase'], ['courses', 'course'],
+  ].forEach(function (pair) {
+    assert.equal(singularize(pair[0]), pair[1])
+    assert.equal(pluralize(pair[1]), pair[0], pair[1] + ' did not survive the round trip')
+  })
+
+  ;[['statuses', 'status'], ['buses', 'bus'], ['gases', 'gas'], ['lenses', 'lens'],
+    ['biases', 'bias'], ['atlases', 'atlas'], ['viruses', 'virus'],
+    ['classes', 'class'], ['addresses', 'address'], ['processes', 'process'],
+  ].forEach(function (pair) {
+    assert.equal(singularize(pair[0]), pair[1])
+    assert.equal(pluralize(pair[1]), pair[0], pair[1] + ' did not survive the round trip')
+  })
+
+  // The irregular table is consulted first and still wins.
+  assert.equal(singularize('bases'), 'basis')
+  assert.equal(singularize('crises'), 'crisis')
+  assert.equal(singularize('analyses'), 'analysis')
+})
+
 test('inflect: the plural of a word ending in s comes back to it', function () {
   ;['status', 'bus', 'address'].forEach(function (w) {
     assert.equal(singularize(pluralize(w)), w, w + ' did not survive the round trip')

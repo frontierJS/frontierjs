@@ -199,7 +199,7 @@ describe('password reset', () => {
     await h.auth.requestPasswordReset!(u.email)
     const token = h.resetToken()
 
-    const row = await h.sys.verification.findFirst({ where: { identifier: `reset:${u.email}` } })
+    const row = await h.sys.verification.findFirst({ where: { purpose: 'passwordReset', identifier: u.email } })
     await h.sys.verification.update({
       where: { id: row.id },
       data:  { expiresAt: new Date(Date.now() - 1_000).toISOString() },
@@ -259,16 +259,20 @@ describe('email verification', () => {
 // ─── cross-protocol token confusion ───────────────────────────────────────
 
 describe('tokens do not cross protocols', () => {
-  // Both lookups match on `value` alone, so nothing structurally stops a
-  // verification token being spent as a password reset. Today they fail
-  // because the identifier prefix makes the follow-up email lookup miss.
-  // These pin the BEHAVIOUR so a refactor of either lookup can't quietly
-  // open the door.
+  // These two used to expect UserNotFoundError, which is what the door being
+  // open looks like from outside: both lookups matched on `value` alone, so a
+  // token DID cross, and what refused it was the follow-up address lookup
+  // missing on a prefix two steps later. The test name was right and the
+  // assertion pinned the coincidence (FJS-476).
+  //
+  // `purpose` is now in both queries, so the refusal is the query's and the
+  // error says what actually happened. Asserting the error IS the assertion
+  // here — UserNotFoundError passing would mean the token had been accepted.
 
   test('a password-reset token cannot verify an email', async () => {
     const u = await freshUser('x-reset')
     await h.auth.requestPasswordReset!(u.email)
-    await rejectsWith(() => h.auth.verifyEmail!(h.resetToken()), UserNotFoundError)
+    await rejectsWith(() => h.auth.verifyEmail!(h.resetToken()), InvalidTokenError)
   })
 
   test('an email-verification token cannot reset a password', async () => {
@@ -278,7 +282,7 @@ describe('tokens do not cross protocols', () => {
 
     await rejectsWith(
       () => h.auth.confirmPasswordReset!(h.verifyToken(), 'pw-hijack-5'),
-      UserNotFoundError,
+      InvalidTokenError,
     )
     // and the real password still works
     expect((await h.auth.login(u.email, u.password)).token).toBeTruthy()
@@ -471,7 +475,7 @@ describe('deleteUser', () => {
     expect(await h.sys.user.findUnique({ where: { id: user.id } })).toBeNull()
     expect((await h.sys.session.findMany({ where: { userId: user.id } })).length).toBe(0)
     expect((await h.sys.credential.findMany({ where: { userId: user.id } })).length).toBe(0)
-    expect((await h.sys.verification.findMany({ where: { identifier: `reset:${u.email}` } })).length).toBe(0)
+    expect((await h.sys.verification.findMany({ where: { purpose: 'passwordReset', identifier: u.email } })).length).toBe(0)
   })
 })
 

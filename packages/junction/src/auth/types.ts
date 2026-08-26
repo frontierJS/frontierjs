@@ -58,9 +58,32 @@ export interface SessionContext {
 
 // ─── Full auth interface ──────────────────────────────────────────────────
 
+/**
+ * WHERE the credential arrived, for a provider that needs it to know which
+ * database to check it against.
+ *
+ * One case, and it is the whole reason this exists: `tenancy { strategy
+ * database }`, where the tenant IS a file and a session row lives in exactly
+ * one of them. Junction resolves the session at the transport, before any hook
+ * has run and therefore before `withTenantDb` has resolved a tenant — so a
+ * provider handed a bare token has no way to know which shop's users it is
+ * being asked about, and an app with per-tenant people could not authenticate
+ * anyone at all.
+ *
+ * Optional, and every existing provider ignores it: `@frontierjs/auth` binds
+ * one client at construction and is correct for a single-database app, which
+ * is almost every app.
+ */
+export interface CredentialOrigin {
+  /** The request's `Host`, which is what `resolve subdomain` reads. */
+  host?:    string | null
+  /** Every inbound header, for `resolve header("X-Tenant-Id")`. */
+  headers?: Record<string, unknown> | null
+}
+
 export interface IAuth {
   // Session
-  verifySession(token: string):              Promise<SessionContext | null>
+  verifySession(token: string, from?: CredentialOrigin): Promise<SessionContext | null>
   login(email: string, password: string):    Promise<{ token: string; user: SessionContext }>
   logout(token: string):                     Promise<void>
 

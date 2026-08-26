@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FrontierJS — the schema is the app</title>
+<!--
+  The DEV shell, and only the dev shell. A built page never uses this file:
+  target 'static' prerenders every route into its own HTML wrapped in the
+  `document` block from config/sierra.config.js, home page included.
+
+  Do not write a literal body tag in this comment. Vite injects the built script
+  and stylesheet at the first textual match for it and does not skip comments.
+-->
+<body class="theme-default">
+  <div id="app"></div>
+  <script type="module" src="/src/main.js"></script>
+</body>

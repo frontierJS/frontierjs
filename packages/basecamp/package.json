@@ -5,13 +5,13 @@
   "description": "Basecamp \u2014 developer command central for the FJS World. An FJS application, not a library.",
   "type": "module",
   "license": "MIT",
-  "author": "Kobami",
+  "author": "FrontierJS",
   "scripts": {
-    "dev": "bun scripts/preflight.mjs && (bun run api & bun run web & wait)",
-    "api": "bun --watch api/src/index.ts",
+    "dev": "bun run api & bun run web & wait",
+    "api": "bun --watch api/index.ts",
     "web": "vite -c web/config/vite.config.js",
-    "stop": "pkill -f 'bun.*api/src/inde[x].ts'; pkill -f 'vite.*web/config/vite.confi[g].js'; true",
-    "start": "bun api/src/index.ts",
+    "stop": "pkill -f 'bun.*api/inde[x].ts'; pkill -f 'vite.*web/config/vite.confi[g].js'; true",
+    "start": "bun api/index.ts",
     "preview": "vite preview -c web/config/vite.config.js",
     "build": "bun run build:db && bun run build:web",
     "build:db": "bun db/generate.js --check",
@@ -28,7 +28,8 @@
     "db:types": "bunx litestone types --schema db/schema.lite --audience=system --out db/schema.d.ts",
     "db:seed": "bun db/seed.js",
     "db:tables": "sqlite3 db/basecamp.db '.schema'",
-    "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit"
+    "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit",
+    "verify:screens": "bun web/test/verify-screens.mjs"
   },
   "dependencies": {
     "@frontierjs/auth": "workspace:*",

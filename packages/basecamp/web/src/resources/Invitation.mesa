@@ -5,19 +5,16 @@
   // named for the model and exporting the accessor (invariant 19). No markup:
   // everything is module scope, which is what <script module> means.
   //
-  // Two columns are stamped here and NEITHER value is authority — both are
-  // overwritten by the service's own before/create, and a client that lied
-  // about either gains nothing. They are here because browser-side validation
-  // runs first: `workspaceId` and `expiresAt` are both required on the create
-  // schema, so without this the invite form is refused before a request is made
-  // with *workspace is required, expiresAt is required* — two fields the form
-  // does not show and must not show. Measured, not assumed: that is exactly
-  // what the first version did, and the browser drive caught it.
+  // `expiresAt` is stamped here and the value is not authority — the service
+  // overwrites it with now + 7 days, and a client that lied about it gains
+  // nothing. It is here because browser-side validation runs first and the
+  // column is required on the create schema, so without it the invite form is
+  // refused before a request is made, naming a field the form does not show and
+  // must not show: how long a link lives is the service's answer.
   //
-  //   workspaceId — server-stamped from X-Workspace-Id, because a client that
-  //                 names its own workspace is a client choosing its own tenant.
-  //   expiresAt   — how long a link lives is the service's answer, not a value
-  //                 a browser may name. Sent as now, replaced with now + 7 days.
+  // `workspaceId` needed the same treatment and no longer does — the tenancy
+  // declaration defaults it from the principal, so it is out of create-mode
+  // `required` and the server is its only writer (`FJS-387`).
   //
   // The hook runs on `service.create` as well as on `save()` — sierra's `_call`
   // runs before-hooks, then coercion, then validation — which is why the invite
@@ -25,10 +22,9 @@
   // directly because the reply carries the token and the accept link, which are
   // not columns and are on no later read.
   import { createResource } from '@frontierjs/sierra/junction'
-  import { stampWorkspace } from '../session.js'
 
   export const invitations = createResource('invitations', {
-    hooks: { before: { create: [stampWorkspace, stampExpiry] } },
+    hooks: { before: { create: [stampExpiry] } },
   })
 
   function stampExpiry(ctx) {

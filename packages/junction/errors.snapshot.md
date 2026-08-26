@@ -114,6 +114,8 @@ something that will never work, or not to retry something that would.
 | `TransitionGateError` | status 403 · retryable false | `Forbidden` | 403 | false | — |
 | `TransitionNotFoundError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
 | `TransitionViolationError` | status 409 · retryable false | `Conflict` | 409 | false | — |
+| `UniqueConflictError` | status 409 · retryable false | `Conflict` | 409 | false | list(0) |
 | `ValidationError` | nothing | `BadRequest` | 400 | — | list(1) |
+| `ValueSetExtendError` | status 400 · retryable false | `BadRequest` | 400 | false | `set`, `model`, `field`, `value` |
 | `VersionConflictError` | status 409 · retryable true | `Conflict` | 409 | true | `model`, `field`, `expected`, `actual` |
 | `VersionRequiredError` | status 400 · retryable false | `BadRequest` | 400 | false | — |

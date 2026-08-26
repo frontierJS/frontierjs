@@ -102,7 +102,7 @@ check('the body tag is not written inside a comment — the trap itself',
   /<!--[\s\S]*?<body[\s\S]*?-->/i.test(html), false)
 
 // ─── 2. The page ──────────────────────────────────────────────────────────
-children.push(spawn('bun', ['api/src/index.ts'], { cwd: PKG, stdio: 'ignore' }))
+children.push(spawn('bun', ['api/index.ts'], { cwd: PKG, stdio: 'ignore' }))
 children.push(spawn(process.execPath, [join(HERE, 'preview.mjs')], {
   stdio: 'ignore',
   env: { ...process.env, PREVIEW_PORT: String(PORT), API_URL: `http://localhost:${API_PORT}` },

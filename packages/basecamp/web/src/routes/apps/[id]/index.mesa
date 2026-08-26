@@ -19,7 +19,6 @@ title: App
   import { apps } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -28,6 +27,7 @@ title: App
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Form       from '@frontierjs/ui/components/forms/Form.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Json       from '@frontierjs/ui/components/display/Json.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
@@ -83,7 +83,7 @@ title: App
     if (READS.has(method) || row?.appId !== page.params.id) return
     load()
   })
-  $onDestroy(() => { offApps(); offDomains() })
+  $.onDestroy(() => { offApps(); offDomains() })
 
   async function addDomain() {
     error = null; busy = 'domain'
@@ -378,12 +378,12 @@ title: App
     <Card>
       <h2 class="h4">Source</h2>
       <p class="text-sm text-muted">What gets built and run. Written by whatever triggers the release.</p>
-      <pre class="code" id="app-source">{JSON.stringify(app.source ?? {}, null, 2)}</pre>
+      <Json id="app-source" value={app.source} empty="No source recorded yet." copy />
     </Card>
 
     <Card>
       <h2 class="h4">Config</h2>
-      <pre class="code" id="app-config">{JSON.stringify(app.config ?? {}, null, 2)}</pre>
+      <Json id="app-config" value={app.config} empty="No config set." copy />
     </Card>
 
     <Callout tone="info" title="Environment variables live on the Environment">

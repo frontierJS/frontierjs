@@ -116,7 +116,7 @@ export function apiKeyGuard(app: BasecampApp): Hook {
 // is the same signal read from the other end.
 
 export function apiKeyUsage(app: BasecampApp): Hook {
-  return async (ctx: ServiceContext): Promise<void> => {
+  return async (): Promise<void> => {
     const id = $.locals.apiKeyId as string | undefined
     if (!id) return
 

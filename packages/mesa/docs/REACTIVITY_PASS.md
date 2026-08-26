@@ -143,7 +143,7 @@ function is exactly what a user writes for a callback:
 <Child handler={bump} />          named fn, length 0
 ```
 
-and the child's `export let ondone` compiles to `track($option.props.ondone)`.
+and the child's `export let ondone` compiles to `track($$option.props.ondone)`.
 Both were memoised and **invoked during setup**, so `on:click={ondone}` bound
 the callback's return value. `let f = () => …` had it too.
 
@@ -188,7 +188,7 @@ restored *after* the try.
 `initRenderer()` must set a DOM flag, because compiled components call
 `htmlToFragment()` at module load. But it used one flag for both meanings, so
 enabling the DOM enabled client behaviour and every RULE 19 guard became dead
-code. Measured: `$onMount` fired once per server render (against a happy-dom
+code. Measured: `$.onMount` fired once per server render (against a happy-dom
 `window` that outlives the request), `watchProxy` built real proxies, and
 effects against module-scope stores accumulated — after 5 renders one write ran
 5 effects.
@@ -196,7 +196,7 @@ effects against module-scope stores accumulated — after 5 renders one write ra
 `setRenderEnvironment(isBrowser, isClient = isBrowser)` — the default keeps every
 existing caller identical, including Sierra's tests, which call it to simulate a
 browser. `initRenderer()` passes `(true, false)`. Exactly four guards were RULE
-19 semantics (`$onMount`, `watchProxy`, `watchPath`, `localWatchProxy`); the
+19 semantics (`$.onMount`, `watchProxy`, `watchPath`, `localWatchProxy`); the
 other twenty are genuine DOM checks and stayed on `_isBrowser`.
 
 Sierra's router already assumed this — it resolves its write handle per call

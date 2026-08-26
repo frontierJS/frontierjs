@@ -1,0 +1,308 @@
+---
+title: Your settings
+---
+<script>
+  // The mock's UserSettingsView — the caller's own account.
+  //
+  // Four of its five tabs are real here and the fifth is honestly absent:
+  //
+  //   Profile        `client.auth.me()` — the SessionContext the server built,
+  //                  not a User row, which is why the fields are read-only.
+  //   Password       `client.auth.changePassword` — the current one is required
+  //                  by the server, which is the whole point of the control.
+  //   Notifications  the new `notification-preferences` service.
+  //   Sessions       `client.auth.sessions()` — every live sign-in, revocable.
+  //   MFA            NOT here. Nothing in @frontierjs/auth issues or verifies a
+  //                  second factor, and a switch that stored a boolean nothing
+  //                  checks would be a security control that is decorative.
+  //
+  // ─── Why this reaches client.auth and not a resource ────────────────────
+  //
+  // `account` and `sessions` are auth's own services, and the client already
+  // holds the half that knows both prefixes and the token. A resource over
+  // `account` would also have to state `model: 'User'` — because
+  // `modelNameFor('account')` resolves this app's ORGANISATION model, which is
+  // a different table entirely and would generate a form for the wrong thing.
+  //
+  // ─── Why the preference rows are not `find`'s rows ──────────────────────
+  //
+  // The service answers seven kinds and stores fewer: a row exists only where
+  // somebody has chosen, and what comes back is stored merged over the kind's
+  // default. `source` is what separates *defaulted to on* from *turned on*, and
+  // this screen renders that distinction rather than flattening it — a person
+  // resetting a kind has to be able to see that it went back to a default
+  // rather than to off.
+  import { getClient } from '@frontierjs/sierra/junction'
+  import { session }   from '../../session.js'
+  import { notificationPreferences as prefs } from '../../resources/NotificationPreference.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Switch     from '@frontierjs/ui/components/forms/Switch.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.user
+
+  let me        = null
+  let kinds     = []
+  let sessions  = []
+  let error     = null
+  let loading   = true
+  let busy      = null
+
+  let current   = ''
+  let next      = ''
+  let confirm   = ''
+  let pwError   = null
+  let changing  = false
+
+  async function load() {
+    error = null; loading = true
+    try {
+      const client = getClient()
+      me       = await client.auth.me()
+      sessions = await client.auth.sessions()
+      kinds    = (await prefs.service.find()).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  async function toggle(kind, transport, value) {
+    error = null; busy = `${kind.kind}:${transport}`
+    try {
+      // Only the transport that moved is sent. The service fills the OTHER one
+      // from the kind's default when it writes the row for the first time —
+      // not from the column's, which would silently reset a transport the
+      // person was looking at.
+      await prefs.service.invoke('save', null, { kind: kind.kind, [transport]: value })
+      kinds = (await prefs.service.find()).data
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function reset(kind) {
+    error = null; busy = kind.kind
+    try {
+      await prefs.service.invoke('reset', null, { kind: kind.kind })
+      kinds = (await prefs.service.find()).data
+      toasts.success(`${kind.label} back to its default`)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function changePassword() {
+    pwError = null
+    if (next !== confirm) { pwError = 'The two new passwords do not match'; return }
+    changing = true
+    try {
+      await getClient().auth.changePassword(current, next)
+      current = ''; next = ''; confirm = ''
+      toasts.success('Password changed', 'Your other sessions stay signed in.')
+    } catch (e) {
+      // 'Current password is incorrect' arrives here. Never checked in the
+      // browser: the only copy of the password is the server's hash.
+      pwError = e.message
+    } finally {
+      changing = false
+    }
+  }
+
+  async function revoke(s) {
+    error = null; busy = s.id
+    try {
+      await getClient().auth.revokeSession(s.id)
+      sessions = await getClient().auth.sessions()
+      toasts.success('Session revoked')
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  async function revokeOthers() {
+    error = null; busy = 'others'
+    try {
+      const { revoked } = await getClient().auth.revokeOtherSessions()
+      sessions = await getClient().auth.sessions()
+      toasts.success(`Signed out of ${revoked} other session(s)`)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  function when(iso) {
+    if (!iso) return '—'
+    const mins = Math.floor((Date.now() - new Date(iso)) / 60_000)
+    if (mins < 1)  return 'just now'
+    if (mins < 60) return `${mins}m ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
+  }
+
+  const SESSION_COLUMNS = [
+    { key: 'where', label: 'Where' },
+    { key: 'seen',  label: 'Last seen' },
+    { key: 'act',   label: '' },
+  ]
+</script>
+
+<div class="section-header">
+  <h1>Your settings</h1>
+  {#if me}<span class="text-sm text-muted">{me.email}</span>{/if}
+</div>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else}
+
+  <Card id="settings-profile">
+    <h2 class="h5">Profile</h2>
+    <!-- Read-only, and that is not an oversight. `me()` answers the
+         SessionContext the server built for this token, which is a projection
+         of a User row rather than the row — so a form here would be editing
+         something nothing writes back. Editing a person is the hub's screen. -->
+    <dl class="datalist">
+      <div><dt>Name</dt><dd>{me?.name ?? me?.displayName ?? '—'}</dd></div>
+      <div><dt>Email</dt><dd>{me?.email}</dd></div>
+      <div><dt>Standing</dt><dd>
+        <span class="cluster">
+          {#if session.user?.isSystemAdmin}<Pill tone="warning">system admin</Pill>{/if}
+          <Pill tone="muted">{session.workspaces?.find(w => w.workspaceId === session.workspaceId)?.role ?? 'no membership'} here</Pill>
+        </span>
+      </dd></div>
+    </dl>
+  </Card>
+
+  <Card id="settings-password">
+    <h2 class="h5">Password</h2>
+    {#if pwError}
+      <article class="alert danger" id="password-error">
+        <div class="alert-content">{pwError}</div>
+      </article>
+    {/if}
+    <Input id="pw-current" name="currentPassword" type="password" label="Current password"
+           autocomplete="current-password" value={current}
+           oninput={(e) => current = e.target.value} />
+    <Input id="pw-new" name="newPassword" type="password" label="New password"
+           autocomplete="new-password" value={next}
+           hint="At least 8 characters"
+           oninput={(e) => next = e.target.value} />
+    <Input id="pw-confirm" name="confirmPassword" type="password" label="Confirm new password"
+           autocomplete="new-password" value={confirm}
+           oninput={(e) => confirm = e.target.value} />
+    <Button variant="primary" id="change-password" disabled={changing || !current || !next}
+            onclick={changePassword}>
+      {changing ? 'Changing…' : 'Change password'}
+    </Button>
+  </Card>
+
+  <Card id="settings-notifications">
+    <div class="section-header">
+      <h2 class="h5">Notifications</h2>
+      <span class="text-sm text-muted">{kinds.filter(k => k.source === 'chosen').length} of {kinds.length} chosen</span>
+    </div>
+
+    <p class="text-sm text-muted">
+      A kind you have never touched follows its default. <em>Default</em> below means exactly
+      that — nobody has chosen — which is not the same as having chosen these values, and it is
+      why resetting one is its own control rather than switching both off.
+    </p>
+
+    <div class="stack" id="notification-kinds">
+      {#each kinds as k}
+        <div class="section-header">
+          <div>
+            <strong>{k.label}</strong>
+            <Badge tone={k.source === 'chosen' ? 'info' : 'muted'}>{k.source}</Badge>
+            <p class="text-sm text-muted">{k.description}</p>
+          </div>
+          <span class="cluster">
+            <!-- `Switch` hands `onchange` a BOOLEAN, not an event — `Input`
+                 hands `oninput` an event, and mixing the two reads a property
+                 of `undefined` and leaves the control looking dead. -->
+            <Switch id={`notify-${k.kind}-email`} label="Email" checked={k.email}
+                    disabled={busy === `${k.kind}:email`}
+                    onchange={(checked) => toggle(k, 'email', checked)} />
+            <Switch id={`notify-${k.kind}-inapp`} label="In app" checked={k.inApp}
+                    disabled={busy === `${k.kind}:inApp`}
+                    onchange={(checked) => toggle(k, 'inApp', checked)} />
+            {#if k.source === 'chosen'}
+              <Button variant="ghost" disabled={busy === k.kind}
+                      aria-label={`Reset ${k.label} to its default`}
+                      onclick={() => reset(k)}>Reset</Button>
+            {/if}
+          </span>
+        </div>
+      {/each}
+    </div>
+
+    <p class="text-sm text-muted">
+      Stored, and <strong>nothing delivers on them yet</strong> — the notifications service does
+      not consult these rows, so a kind switched on here changes what the server would send once
+      that path reads them, and nothing before. Said rather than left to be discovered.
+    </p>
+  </Card>
+
+  <Card id="settings-sessions">
+    <div class="section-header">
+      <h2 class="h5">Where you are signed in</h2>
+      {#if sessions.length > 1}
+        <Button variant="outlined" id="revoke-others" disabled={busy === 'others'}
+                onclick={revokeOthers}>Sign out everywhere else</Button>
+      {/if}
+    </div>
+
+    <Table columns={SESSION_COLUMNS} rows={sessions} striped hover={false}>
+      {#snippet row(s)}
+        <tr>
+          <td class="text-sm">
+            {s.userAgent ?? 'unknown device'}
+            {#if s.current}<Pill tone="success">this one</Pill>{/if}
+            <div class="text-sm text-muted">{s.ip ?? ''}</div>
+          </td>
+          <td class="text-sm text-muted">{when(s.lastSeenAt ?? s.createdAt)}</td>
+          <td>
+            {#if !s.current}
+              <Button variant="ghost" disabled={busy === s.id}
+                      aria-label="Revoke this session"
+                      onclick={() => revoke(s)}>Revoke</Button>
+            {/if}
+          </td>
+        </tr>
+      {/snippet}
+    </Table>
+  </Card>
+
+  <Callout tone="info" title="Two-factor authentication is not built">
+    Nothing in this stack issues or verifies a second factor, so there is no switch here. One
+    that stored a boolean nothing checks would be a security control that only looks like one —
+    and the hub's <em>Require 2FA for owners</em> setting is stored on the same terms and says
+    so in the same words.
+  </Callout>
+{/if}

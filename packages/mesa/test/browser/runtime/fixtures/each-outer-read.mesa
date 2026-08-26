@@ -1,0 +1,66 @@
+<script>
+  // each-outer-read.mesa — a block inside {#each} whose condition reads an
+  // OUTER reactive `let`.
+  //
+  // The shape is ordinary and not contrived: a list of rows, and a second list
+  // fetched separately that each row filters for its own share of. A payments
+  // panel filtering an event ledger per payment is where it was found — the
+  // rows updated and the per-row detail block never appeared.
+  //
+  // Three readers of `notes` inside one row, so a failure says WHICH kind of
+  // read stopped tracking rather than just that the row is wrong:
+  //   · a text interpolation
+  //   · an {#if} condition
+  //   · a nested {#each} over a derived slice
+  let rows  = [{ id: 1, open: true }]
+  let notes = []
+
+  const forRow = (row) => notes.filter(n => n.rowId === row.id)
+</script>
+
+<ul id="rows">
+  {#each rows as row}
+    <li data-row={row.id}>
+      <span class="text">{notes.length}</span>
+
+      <!-- A sibling that goes TRUE → FALSE in the same flush the block below
+           goes FALSE → TRUE. This is the shape the payments panel had: a
+           "Refund" button that disappears when nothing is left to refund,
+           sitting immediately above the detail block that should appear. -->
+      {#if row.open}
+        <span class="if-before">still open</span>
+      {/if}
+
+      {#if notes.filter(n => n.rowId === row.id).length}
+        <span class="if-inline">yes</span>
+      {/if}
+
+      {#if forRow(row).length}
+        <span class="if-fn">yes</span>
+      {/if}
+
+      <ul class="nested">
+        {#each forRow(row) as n}<li class="note">{n.text}</li>{/each}
+      </ul>
+    </li>
+  {/each}
+</ul>
+
+<!-- Reassigning BOTH, which is what a reload does: the rows come back first
+     and the second list a moment later. -->
+<button type="button" id="load" on:click={() => {
+  rows  = [{ id: 1, open: false }]
+  notes = [{ rowId: 1, text: 'one' }, { rowId: 1, text: 'two' }]
+}}>load</button>
+
+<!-- The same two assignments, one flush apart — which is what any async
+     reload does: the rows come back from one request and the second list from
+     the next, with an await between them. -->
+<button type="button" id="load-async" on:click={async () => {
+  rows = [{ id: 1, open: false }]
+  await Promise.resolve()
+  notes = [{ rowId: 1, text: 'one' }, { rowId: 1, text: 'two' }]
+}}>load async</button>
+
+<!-- And the outer list alone, unchanged in content but a new array. -->
+<button type="button" id="rows-only" on:click={() => { rows = [{ id: 1, open: true }] }}>rows only</button>

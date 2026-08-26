@@ -1,5 +1,945 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-26 — a write may name a soft-deleted row, so a held `@unique` value can be released (`FJS-523`)
+
+`SoftDeletedUniqueError` is a 409 telling a caller their value is held by a row
+they cannot see, and litestone's documented way out is to move the value aside:
+`update({ …, withDeleted: true })`. Every READ passed `$withDeleted` through and
+no WRITE did, so the escape hatch the refusal points AT was unreachable through
+a service — there was no request an app could make that freed the reference.
+
+`update` and `patch` **by id** read it now, through `writeWhere(q)`, which is the
+one place the filter is lifted. The default stays fail-closed: the same request
+without the directive is still a 404. It lifts on both paths — litestone's own
+filter and the `softDelete:` service override — or the directive would work on
+one kind of service and not the other.
+
+A **bulk** patch deliberately does not. `bulkByRow` counts and selects its
+targets through `table.count`/`findMany`, which apply litestone's filter, so
+widening the WHERE alone would match nothing and read as the directive being
+ignored. **`remove` does not either**, and that half stays open: against an
+already-deleted row the only remaining action is to stop keeping it, which is a
+hard delete, and giving `DELETE ?$withDeleted=true` that meaning is a decision
+rather than a passthrough. It is asserted as still refused, so making it work is
+deliberate.
+
+Found by `example` declaring `@@softDelete` on `Order`: its drive's
+stale-reference sweep stopped working, so it passed once per seed and then
+reported *the create page is broken*.
+
+## 2026-08-25 — a tenant carries configuration (`FJS-D126`, ruled and built)
+
+The source half. `createApp({ tenantConfig, tenantConfigKeys })` — a resolver
+answering a plain object per tenant id, memoised, over `app.config` as the floor.
+
+```js
+createApp({
+  tenantConfig:     id => db.asSystem().tenantSettings.findUnique({ where: { id } }),
+  tenantConfigKeys: ['name', 'mail.from', 'branding.logo'],
+})
+```
+
+A resolver rather than a declaration, on `FJS-D113`'s ground: the source is a row
+for one app, a file for another and a control plane for a third.
+
+**The resolve happens where the tenant is already resolved.** `$.config` is a
+property read and a resolver that reads a row is async; they cannot meet at the
+point of use without making every reader `await`, which throws away the read shape
+shipped last change. So the around hook that establishes `ctx.locals.tenantId`
+warms the store before anything downstream runs — the same place `applyClaims`
+resolves the principal rather than at the point some policy needs it — and
+`runAs` warms it too, because a job is the caller most likely to need a tenant's
+from-address and least likely to have a request behind it.
+
+A resolver that throws **fails the call**. Serving the floor instead is one
+tenant's mail going out under another tenant's name, silently.
+
+**`tenantConfigKeys` is required, and the reserved set is refused at boot.**
+`port`, `host`, `database`, `http`, `auth`, `apiPrefix`, `logging` — a database
+path handed to a tenant is every other tenant's rows one typo away, and the rest
+are read at boot with no tenant in scope, so a per-tenant answer would be written
+and never read. Boot-time, because a per-request refusal is a production incident
+and a boot-time one is a failed start.
+
+A key the resolver answers that the list does not name is **refused by name, not
+dropped**: a dropped key is a tenant whose configuration silently does not apply,
+which arrives as a support ticket reading *the feature is broken*.
+
+Memoised per tenant, holding the **promise** rather than the value, so two
+requests for one tenant arriving together resolve once. `invalidateTenantConfig(id?)`
+is the explicit way out — a memo with none is a config change that needs a
+restart. A **failed** resolve is deliberately not memoised: the row it reads may
+be a second from existing.
+
+The floor is never mutated. Every tenant's config is a fresh object with the
+allowed paths written over a structural copy, so `app.config` still answers what
+the process was started with and the next tenant is not the previous one.
+
+**The allow-list is committed.** `principal.snapshot.md` § Per-tenant
+configuration renders it path by path — the section phase two reserved, now
+filled. Laravel's `storage_to_config_map` is the shape and the field
+confirmation; what is added here is that the list is a reviewable diff rather
+than a line in a config file nothing compares. It is the half that makes the
+feature safe rather than the half that makes it work, which is exactly why it is
+the half worth diffing.
+
+An app that installs no resolver is unchanged in every respect, and the snapshot
+says so in words rather than with an empty table.
+
+31 tests, junction typecheck clean at its 0 baseline.
+
+## 2026-08-25 — configuration read at CALL scope (`FJS-D126`, the read half)
+
+Everything an app is configured with resolves once, at boot, and is the same for
+every caller for the life of the process. Correct for a port and a database path;
+wrong for the half of *theirs* a tenant sees — a from-address, a bucket, a
+timezone, a locale, a branding value, a rate limit (`FJS-385`).
+
+**The read moves now and the source does not.** `$.config` off the ambient call,
+`app.configFor(tenant)` where there is no call, both through one owner
+(`core/config-scope.ts`) that answers `app.config` for every tenant, identically.
+Nothing an app does today changes. Adopting it is a statement about WHEN a value
+is read and none at all about what it is.
+
+Doing it in this order is the whole point. A boundary move under a live feature
+means finding every reader again; the same move under no feature costs nothing.
+
+**Never a rebind, and that is the one rule.** Every mature implementation reached
+for the container instead — Laravel's tenancy bootstrappers rebind `config()` per
+request and pay for it with a standing rule that every singleton must capture the
+central value in its constructor, because after `bootstrap()` the original is
+unreachable; Django states the same lesson as a prohibition; NestJS documents that
+a request-scoped provider silently makes every dependent one request-scoped, and
+its own docs point at AsyncLocalStorage. Junction already has the ALS, so what
+all three pay for is free here — provided the view cannot be written, since a
+writable view is that rebind wearing a different word. So the view is read-only
+**deep**: the shallow version refuses `$.config.name = x` and admits
+`$.config.http.cors.origin = x`, which is the same defect one level down and the
+one somebody actually writes. `app.config` itself stays writable, because
+`loadConfig` merges into it at boot.
+
+The refusal names the ways in — `junction.config.js`, `createApp({ config })`,
+and the tenant's own config once `FJS-D126` is ruled — because a read-only error
+with no next step is a dead end.
+
+`$.config` joins `$.db` and `$.me` as a derived accessor: absent from `ownKeys`,
+so `{ ...$ }` does not evaluate it, present in `in`. Refused outside a call like
+the rest of `$`; `app.configFor()` is the answer for a job, a raw route or a
+script.
+
+Migrated: `collectHealth` and `collectMetrics`, which build a body per request and
+read the app's own NAME — exactly the shape a tenant varies. `configFor` rather
+than `$.config` there because a health route is a raw route and holds no service
+call.
+
+**What the survey found, and it is better news than the plan assumed.** Of the 25
+`AppConfig` reads inside this package, almost all are boot-scope and correctly so
+— ports, `database.url`, helmet, CORS, `maxBodySize`, `drainTimeout`,
+`http.callHeaders` — and every one of them is on the deny half of the allow-list a
+ruling will need. The expensive re-plumb is not in junction. It is in the
+closures an app and a provider capture: `createResendMailer(opts)` destructures
+its default from-address at construction, which stays boot-scope until there is a
+config key for it to read, and that key is `FJS-D126`'s business rather than this
+change's.
+
+14 tests. Junction's suite is currently flaky in `tests/heartbeat.test.ts` under
+concurrent edits to `transport/channels.ts` — untouched here, and it passes run
+alone.
+
+## 2026-08-25 — one node per row: a list is a VIEW, and a detail screen is live (`FJS-518`, `FJS-D138`)
+
+**A row read with `service.get(id)` was a plain object no announcement could
+reach**, so every detail screen in this repo went stale the moment somebody
+else wrote the row. The store was also per-`resource()` call and held whole
+rows, so two `createResource('orders')` in two route files were two copies kept
+in step only because both happened to subscribe to the same service.
+
+`src/client/nodes.ts` is the registry. One node per row, keyed by MODEL — two
+services over one model are one row, and the name is passed in because this
+package holds no schema, the same reason `match` is. **The id is normalised
+into the key**: a list holds `{ id: 5 }` and a detail screen is reached by a URL
+carrying `'5'`, and two nodes there means a push moves exactly one of them.
+Identity rather than filtering, which is what makes `String(id)` right here and
+wrong in a query string (`FJS-D125`).
+
+**`Store` is a view.** Bound, it holds ids and materialises through the
+registry; `get()` still answers rows, so no screen changed — `useStore` is the
+one bridge to a Mesa signal and nothing in either app calls `subscribe` or
+`get` directly. Every mutator still works on a materialised array, so the
+membership and placement rules are the same lines they were and
+`live-order.test.ts` is the negative control for them. **Unbound it is exactly
+what it was**, which is not a shim: a `Store` is constructible alone and the
+fifteen cases in `client.test.ts` are what those rules were written against.
+
+**Lifetime is a TTL** — `createJunctionClient({ nodeTtlMs })`, default 30s, `0`
+drops at once. Apollo and Relay both ship `retain`/`release` and it is the
+most-complained-about part of either; a lifetime the application has to
+remember is a leak with extra steps. It also makes list → detail → back warm
+for free. The sweeper is armed on the first release and cleared the moment the
+registry empties, because a live interval is a test run that never exits.
+
+**`resource.record(id)`** is a view of one over the same nodes — sugar rather
+than a second mechanism, which is the shape Meteor's cursors, Convex and Zero
+all arrived at. It reads only when nothing has read the row yet, and
+`RecordOptions.load` is how Sierra puts its own `_call('get')` there so the
+resource's hooks and the `@version` it must hand back come from one place.
+
+Two rules that are less obvious than they look. **A node write is skipped when
+the value is the same object** — a push writes the node on arrival so a view
+holding no list still hears it, and the list it lands in writes it back through
+while assembling itself; without this a watcher heard every push twice.
+**"Gone" is the record view's own state and never the node's** — clearing the
+shared node would shorten every list holding the row *before* that list ran its
+own removal accounting, and two resources over one service share a proxy, so
+whichever handler runs second reads a list the first has already changed.
+
+**The overlay is the fourth thing the ruling names, and it landed with the
+rest.** `resource.mutate(id, intent, run)` applies a submitted mutation on top
+of the truth, runs the write and takes it back if the write fails — the truth
+never moved, so dropping the intent IS the rollback. It lives on the node, so
+every view of the row moves at once and an intent that changes a sort key
+re-places the row in an ordered list with nothing taught about it. What is
+stored is the INTENT — a partial, or `null` for a removal — and never the value
+it produced; that costs nothing now and is what a rebase would replay.
+
+**Settled against the MUTATION, not the row.** A second writer patching the
+same row while this is in flight moves the truth underneath and the intent
+stays on top of it, so a rollback reveals what THEY did rather than what was on
+screen when this started. Both are asserted.
+
+One consequence worth knowing: `Store._replace` now writes a row back as truth
+only when it did not come from the node itself. Every mutator here works on a
+materialised array, so most of what it hands back is this store's own view —
+and once a node carries an unconfirmed mutation, writing that view back would
+commit the optimistic value as if the server had sent it.
+
+28 cases in `tests/nodes.test.ts`. Green: 1490 tests, typecheck clean.
+
+## 2026-08-25 — the principal, committed (`FJS-514`)
+
+**`db/access.snapshot.md` commits the tenancy predicate and the `snapshots` CI
+phase fails a stale one. Nothing committed the predicate's INPUT.** Who emits
+`auth().workspaceId`, off which part of the request, verified against which model
+and column — none of it was in any committed file, so a resolver emitting the
+WRONG tenant left every artefact byte-identical, CI green, and every read
+answering somebody else's rows.
+
+`junction principal --app <module>` writes `principal.snapshot.md` at the app
+root, read off a BUILT app for the same reason `junction surface` is: a resolver
+is wired in application code and no file tree can answer which one an app ended
+up with. It names its own generator in its header, so the `snapshots` phase reruns
+it with no CI edit.
+
+Seven sections — tenancy · resolver · claims · standing · what the rules reach ·
+refusals · **per-tenant configuration, which is empty because `FJS-D126` is
+unruled**. That last section exists before the feature does on purpose: *which
+keys a tenant may override* is the fact that decides whether the arrangement is
+safe, and it should land as a diff in a file people already read rather than as a
+new face.
+
+`membershipClaim()` now describes itself — `{ kind, model, subject, tenant,
+standing, claims, include, namedBy }` — and the return type says so, so a caller
+reads it without a cast. A resolver is a function, and *the app has one called
+membershipClaim* is not the fact worth committing; which model proves membership
+and what the claims are called is. A hand-written resolver may carry a `describe`
+of its own and is otherwise reported by name, honestly.
+
+**Names, never values.** A claim's name is a fact about the application; a claim's
+value is a caller. `tenantFrom` is excluded for being a function; `namedBy` is
+included for being a constant, and once a resolver is installed it is the only
+static answer to *how does a request name its tenant*.
+
+Two things it got wrong before it was run against a real app, both about saying
+something false rather than saying nothing. It asked `app.db` for the declaration,
+which under `createApp({ tenants })` does not exist — a client is per request —
+so it reported *no tenancy* about an app that is nothing but; the registry is
+parked under a symbol beside the resolver and answers instead. And it rendered a
+`bearer` resolver as a membership one with five blank cells and its claim as a
+standing, which reads as a resolver that forgot to verify rather than one that has
+nothing to verify.
+
+Deliberately absent: the **value→level mapping**. `getLevel` is a function an app
+hands to `GatePlugin` and a client answers plugin names rather than instances. The
+standing column and its declared enum values are here because a diff can grade
+those — a value added to the ladder and not to `getLevel` is a caller silently
+graded at the default — and the mapping itself is executed by litestone's
+`verifyGateLadder`. A second guessed answer to a question that already has an
+executed one is worse than a gap.
+
+Committed for both apps: `example` (`strategy database`, a `bearer` resolver) and
+`packages/basecamp` (`strategy row`, `membershipClaim` — 17 scoped by column, 14
+by delegation, 14 exempt, which is the same split litestone's
+`verifyTenantIsolation` reaches independently).
+
+11 tests. Junction's own suite is currently flaky in `tests/heartbeat.test.ts`
+under concurrent edits to `transport/channels.ts`; that file is untouched here and
+the failure does not reproduce running the file alone.
+
+## 2026-08-26 — the server lets go of its sockets, and stops in 2ms
+
+`FJS-460`. 1418 tests (`FJS-516` is one red and predates this).
+
+`stop()` raced Bun's graceful `server.stop()` against `drainTimeout` and closed
+nothing. **Bun's graceful stop never resolves once a WebSocket has been
+upgraded** — measured against a bare `Bun.serve`, not inferred: not after the
+socket is closed, not after the server's own close handler has run and the
+client reads `readyState 3`.
+
+So the race always ended on the timer. Every shutdown that had ever held a
+client cost the full five seconds, and then logged *Shutdown complete* with that
+client still at `readyState 1`, told nothing. A suite whose `afterAll` is that
+call outlived bun's 5s hook limit four runs in five; an app meets the same thing
+as a container that will not stop and is SIGKILLed.
+
+The waits are junction's own now, and neither is Bun's promise. `HttpTransport`
+keeps the set of sockets it has open — **at the transport**, because a socket
+belongs to it rather than to the channels plugin, so an app's own
+`app.http.ws(...)` route is covered by the same code — and `stop(drainMs)` says
+goodbye to each, waits for the close handshakes and any in-flight request
+bounded by the drain, then stops by force. **5002ms → 2ms**, with the client
+reading a clean close.
+
+**The close code is 1012 Service Restart, not 1001 Going Away.** 1001 is the
+code that means this, and it is the one code that does not survive: sent as
+1001 it reaches the peer as **1000**, while 1012 and a private 4001 arrive
+unchanged. Pinned, so a Bun release that fixes it turns the test red and says
+so.
+
+The drain still does its job in both directions — an in-flight request finishes,
+and one that never finishes is given `drainTimeout` and no more. Both are
+assertions rather than notes, because a shutdown that closed sockets promptly
+and cut a request off mid-answer would trade one defect for a worse one.
+
+One claim in the report did not survive contact: the port was released promptly
+even before the fix. A graceful stop stops ACCEPTING at once, and only its
+promise is the part that hangs.
+
+7 tests in `tests/shutdown.test.ts`, timings included — a test that only
+asserted `stop()` resolves passed before the fix as well.
+
+## 2026-08-25 — a `readOnly` column with a default made its model uncreatable
+
+**A create was refused by name for a key the caller never sent** (`FJS-504`).
+`validate()` fills a default in for any absent key, and
+`jsonSchemaToJunctionSchema` carried every property's `default` in create mode.
+Litestone marks `readOnly` on exactly the columns a caller may not write —
+`@system`, a tenancy-stamped column, `@version`, `@from`, `@derived` — and
+several of those carry a `@default` as well.
+
+So the payload reaching the Data boundary named a `@system` column, and
+`@system` is refused BY NAME rather than dropped:
+
+    POST /api/discounts {"code":"WELCOME10","label":"…","kind":"percent","value":10}
+    → 403  Discount: "redemptions" is @system …
+
+quoting a column the request did not contain. **There was no way out at the call
+site**: naming it in `system: [...]` is the opposite of what was meant, and there
+was nothing to omit. Measured on both sides — the identical create through a
+Litestone client directly succeeded and stamped `redemptions = 0`.
+
+**The sibling had been fixed and the rule stopped one line short.** `mode ===
+'update'` already deleted every default, for the same reason a patch must not
+invent a value for an absent key; the create half needed the narrower version:
+drop the default where the column is `readOnly`, on either mode. Nothing is
+lost, which is what makes it safe — the default is declared in the seed and
+Litestone applies it at the write, which is where a default a caller may not
+override belongs anyway. A value the caller DOES send still travels, which
+`@version` requires.
+
+Found declaring `redemptions Int @default(0) @system` on `example`'s new
+`Discount`; the shape has been reachable since `@system` existed. Two cases in
+`tests/patch-defaults.test.ts`, beside the patch ones. Green: 1412.
+
+## 2026-08-25 — sign-in worked for everyone except a browser on another origin
+
+**CORS never reached a route registered before it** (`FJS-496`). `cors()` patches
+the router's registration methods, so it covers every route registered AFTER it.
+Nothing said what happens to the ones registered before — and every raw route a
+plugin mounts is one of those, because `configure()` runs `register()`
+synchronously and the `cors` start phase is much later. Service routes are
+registered in a later start phase and were fine.
+
+`/auth/login` was not. Neither was caravan's `/jobs`, nor any `app.post` an app
+writes at module scope. **So establishing a session was the one call in a
+Junction app that no cross-origin browser could make** — and it does not present
+as a CORS problem from either end: the preflight answers 204, the POST answers
+200 and creates the session, and the browser throws the response away. What
+reaches the page is `Failed to fetch`.
+
+`Router.prependMiddleware(mw)` puts it in front of what is already registered;
+patching still handles what is still to come. Two tests: a route registered
+before `cors()` gets the header, and one registered after is not double-wrapped.
+
+Found building a storefront account in `example`, where the sign-in island is
+served from a different origin than the API — which is the ordinary shape of a
+marketing site, a separate front-end deployment, or any app whose UI and API do
+not share a host.
+## 2026-08-24 — four things `strategy database` needed and none of them existed
+
+1408 tests, 0 fail, typecheck clean. `example` became a fleet of shops — one
+SQLite file each, `resolve subdomain`, people per shop — and adopting it found
+four gaps in a row. Every one is a seam that worked under `strategy row` and
+under one database, and did nothing under this one.
+
+**`verifySession` is resolved before any hook.** So is the tenant, in the sense
+that it is not: `withTenantDb` is a hook and the transport authenticates ahead
+of it. A provider handed a bare token cannot know which tenant's people it is
+being asked about, and under this strategy `User`, `Credential` and `Session`
+are rows in the tenant's file. `verifySession(token, from?: CredentialOrigin)`
+carries the request's host and headers now — the two things `resolve subdomain`
+and `resolve header(…)` read. Optional; every existing provider ignores it
+(`FJS-487`).
+
+**A raw route ran outside the request scope.** `enterRequest` has one owner and
+five entry points, and the HTTP one is the SERVICE dispatch handler — so
+`requestMeta()` was `undefined` inside `/auth/login`, inside a webhook, inside
+every route an app or a plugin mounts. Everything that reads the request without
+holding a `ctx` was blind exactly there. The `app.get`/`app.post` shortcuts wrap
+their handler now (`FJS-488`).
+
+**`announceDataWrites` was not installed for a tenant registry**, which the code
+said out loud and which is `FJS-010` all over again: a job writing with
+`asSystem()`, a signed webhook moving a row, a bulk write — none of them reached
+an open tab. The tap goes on each tenant's client the first time `withTenantDb`
+opens it, once per client (`FJS-489`).
+
+**The principal resolver skipped anonymous callers.** `withLitestoneDb` runs it
+for a guest and explains why — a cart token is a claim and the population that
+needs one has no `auth().id`. `withTenantDb` kept `if (principal && ctx.auth?.user)`.
+Two hooks, one seam, one of them fixed: every basket call in `example` answered
+404 to every shopper the hour it adopted tenancy (`FJS-490`).
+
+## 2026-08-24 — `client.auth.providers()`
+
+1407 tests, 0 fail (+4). The browser half of `@frontierjs/auth`'s new
+`GET /auth/oauth`: which providers this app is configured for, in declaration
+order.
+
+A sign-in screen is a separate build from the API, so any list of buttons it
+draws is a second copy of the server's own configuration with nothing to fail
+when the two disagree. Sent with `skipAuth` — the page that asks has no session
+yet, and a stale token in storage must not turn a public list into a 401. `[]`
+for an app with no OAuth, which is an answer rather than a failure.
+
+
+## 2026-08-23 — the webhook signer joins the one definition, and a secret with no reader goes
+
+1399 tests, 0 fail. Two things that had drifted apart from what the repo already
+decided.
+
+**The webhooks plugin signed `${timestamp}.${body}`** (`FJS-472`), where
+`@frontierjs/toolbelt/signature`'s own header names this delivery path as one of
+the three signers it exists to unify. The drift was not cosmetic: that string
+binds neither the METHOD nor the PATH, so a captured signature replays against
+any other endpoint on a receiver trusting the same secret, and it carries no
+NONCE, so a repeat inside the freshness window is indistinguishable from a first
+delivery. A subscriber can add neither from its side. It signs the canonical
+string now, under its own `X-Webhook` prefix — which is what the prefix
+parameter is for: the string is shared, the spelling on the wire stays the
+product's.
+
+**The nonce is per ATTEMPT and that is the substance.** This plugin retries a
+delivery up to six times, so a nonce reused across attempts would make every
+legitimate retry look like a replay and dead-letter it against exactly the
+receivers that implemented replay protection properly. The event's identity is
+`x-webhook-id`, stable across attempts, and is what a receiver deduplicates on.
+Two mechanisms, two lifetimes — the separation `verify:pay` already had to make.
+The tests VERIFY now rather than recomputing the HMAC, which is the whole point
+of one definition: a path swapped under a real signature, a body swapped under
+one, a clock an hour out, and a retry proving its nonce moved while its id did
+not.
+
+**`AUTH_SECRET` is gone from what junction generates and grades** (`FJS-360`).
+The generated `config/default.ts` wrote an `auth: { secret }` block `AppConfig`
+does not declare, into the one file people copy from; the doctor failed apps
+that did not have one and told them to add the key junction ignores. It grades
+`ENCRYPTION_KEY` now — the credential this stack does have — including the trap
+that litestone parses it as HEX, so 64 characters is 32 bytes and non-hex
+padding decodes short with an error that reads like a litestone bug. Absent is
+NOT graded: an app with no encrypted column legitimately has none, and a rule
+that over-fires costs more than one that is missing. The name-based soft warning
+in `defineEnv` stays and now says why it is there.
+
+**A taken `@unique` value is a 409 with a field on it**, from litestone's side of
+the boundary (`FJS-441`) — `tests/unique-conflict.test.ts` measures what reaches
+a browser through a real client, including that no response body contains
+`UNIQUE constraint failed` or the physical table name.
+
+## 2026-08-23 — the app could not run its own deferred work
+
+`runAs(null, …)` is *nobody asked* and resolves to `createApp({ system })`.
+*The app asked* reaches the same principal by id, and every non-null id went
+through `IAuth.sessionFor` — which for that principal can never answer, because
+it is deliberately not a row anything can log in as (`FJS-467`).
+
+So anything enqueued while the app's own principal was in scope recorded an id
+no re-resolution could satisfy. Measured on `example`'s payment webhook: every
+`announce-payment` the settlement queued burned its full retry ladder on *no
+such principal… deleted, or disabled* — the app saying its own name and being
+told it had been deleted. The drive was green throughout, because it asserted
+the outbox row existed and never that the job ran.
+
+Matched before the lookup, against the id the app itself supplied. That is not
+the fallback the surrounding code refuses: falling back to `system` for an id
+that failed to resolve would run a demoted user's work with authority they never
+held.
+
+## 2026-08-23 — the announcement that never happened
+
+1392 tests, 0 fail. Typecheck clean.
+
+`announceDataWrites` taps every Litestone write and routes what it sees into the
+same bus and channel fan-out `callService` uses, which is the whole of how a
+write outside a service reaches an open tab. **It has never announced anything
+in a real app** (`FJS-464`).
+
+The tap finds the service for a model through one index, built as
+`svc.model ?? singularize(name)`. `createService` fills `model` with the SERVICE
+NAME when a file declares none — so the `??` never took its right-hand side, the
+index was `orders → orders`, and the lookup was `Order`. Every service in every
+app is named in the plural (Invariant 2), so it missed for all of them, and
+`FJS-010` and `FJS-307` were both dead the day they shipped. Measured on
+`example` by printing the index: fourteen services, fourteen plural keys, zero
+hits, while a webhook settled an order and no tab moved.
+
+**The tests could not see it because every one of them declares `model: 'Order'`
+by hand**, which is the one shape no real service file has. The three added
+cover what an autoloaded file actually writes: no `model:` at all, the plural
+accessor, the singular. The index is built through `accessorCandidates` now —
+the same table `getTable` and `_gateLevels` walk — with a declared `model:`
+beating the one derived from the URL.
+
+`createBaseService` was the reason `svc.model` held the wrong thing, and it was
+dropping four options besides (`FJS-462`). The loader spreads what a factory
+returns into `createService`, so a key that object does not carry was never
+declared: `model`, `paginate`, `idField` and `softDelete` all fell through to
+defaults. `idField` and `softDelete` are the quiet ones — both reach `_meta`,
+which the devtools and manifest plugins read, so they were reported correctly and
+enforced as undefined. `db` is still deliberately not carried: it is a function,
+and no config key may land on that object as a callable own key.
+
+**A state transition made outside its own service announced nothing either**
+(`FJS-463`) — the tap mapped create/update/remove and let `transition` fall
+through. A webhook settling an order, or a job advancing a state, moved the row
+and told nobody. It announces under the MOVE's name now (`orders pay`), which is
+what `callService` announces for the same move through the owning service, so a
+subscriber has one event either way. Fixing that exposed the other half: a
+transition fires BOTH event kinds for one write, so the first version broadcast
+twice. Litestone stamps the update with the move's name — and only when the
+transition event is really coming, since it is suppressed for `asSystem()` — so
+the consumer skips one without ever skipping both.
+
+Found by building `example`'s payment provider, where the seller's socket saw
+nothing after a webhook settled an order.
+
+## 2026-08-23 — which tenant is this call for, asked once
+
+1386 tests, 0 fail. Typecheck clean.
+
+Three subsystems needed the answer and none of them could get it. `withTenantDb`
+resolves the tenant for a REQUEST under `strategy database`; under
+`strategy row` nothing was assigned anywhere, because the tenant is a value
+inside the principal — unreachable for a cache key built from a service and a
+query, for a relay sweeping a table, and for a job running an hour later. Each
+of the three answered it itself and each answered it wrong.
+
+**`ctx.locals.tenantId` is the answer under both strategies now, assigned in two
+places and no third.** `withTenantDb` keeps its assignment; `liftRowTenant`
+takes the claim the schema NAMES — `tenancy { claim }`, so a cart token or an
+invitation claim sets nothing — off the principal, from `sessionFields` before
+the resolver runs and off `applyClaims` after one has. `tenantOf(ctx)` is the
+accessor and `app.tenant()` is the same question asked from somewhere holding no
+ctx: the call first, then the request, because a service whose subject IS the
+tenant may re-resolve mid-request and a request-wide answer would be the wrong
+one for exactly the caller who has two.
+
+**The cache was serving one tenant another tenant's rows, under both strategies**
+(`FJS-386`). The row filed it against `strategy row` on the ground that the
+client is per tenant otherwise — but the cache is on the APP, not the client. A
+`:t=` segment now lands OUTSIDE a custom `keyBy`, so a key function written
+before tenancy existed cannot silently lose the partition, and
+`cache: { shared: true }` is the declared opt-out. The `uid` segment is what hid
+it: a cached list IS keyed by the caller, so the leak needed the same person in
+two workspaces, which is the shape every B2B app has.
+
+**The outbox relay read a file nothing had written to** (`FJS-365`). It resolves
+the same set of databases the request path can write to — one per tenant off the
+registry — dispatches with the tenant so the handler writes back to the file the
+row came from, and counts `pending` across all of them. An app carrying both an
+app-level db and a registry is refused at BOOT rather than in the pass, because
+the pass logs and continues and the whole failure is a queue that quietly never
+drains.
+
+**`app.runAs(actor, { tenant }, fn)`** is the seam deferred work rides. WHO was
+already re-resolved across the boundary and WHERE was not, so a job that had to
+touch tenant rows had no legal way to be in a tenant. `membershipClaim` falls
+back to the ambient tenant when `tenantFrom` finds no header — and still READS
+the membership row for that actor and that tenant, so a caller who lost it
+between asking and running is refused rather than replayed. Storing a tenant is
+not storing a session: an id names which rows, and the standing is still derived
+from the re-resolved principal.
+
+`tests/tenant-scope.test.ts` (11) and four cases in `tests/outbox.test.ts`, all
+against a real Litestone client — the failure here is a caller being served
+somebody else's rows, which looks exactly like success from anywhere not holding
+both.
+
+## 2026-08-23 — a filter means the same thing on both transports
+
+1371 tests, 0 fail. Typecheck clean.
+
+The socket was always the correct half: `buildWsQuery` spreads filters into a
+JSON frame, so a boolean stayed a boolean and `{ id: { in: [1,2] } }` stayed an
+object. The HTTP leg `String()`d every scalar, `JSON.stringify`d every container
+and dropped `null` outright, and nothing on the far side turned any of it back —
+so an app worked until its socket dropped and then silently filtered on text
+(`FJS-450`, ruled as `FJS-D125`).
+
+`@frontierjs/toolbelt/query` is the encoder and the transport is the decoder, so
+the two are inverses by construction. `ctx.query` on a `TransportContext` is now
+the PARSED query — `?qty=5&live=true&qty[gte]=3` is structure, not text — with
+the `$` keys still present, because splitting those off is the service
+boundary's job. A raw route reads the same thing, and the three readers in this
+package that assumed a string say so now.
+
+**A WS frame is not parsed and must not be.** It is JSON and already carries its
+types; running the parser over it would turn a filter that genuinely says the
+string `'5'` into 5.
+
+`tests/query-parity.test.ts` puts one call down both transports and compares —
+13 cases, which no unit test on either side can see. Two things it caught:
+`$wrap=false` arrives as a boolean now, and reading only the string spelling
+made the tri-state collapse; and `$first` was being sent as the string `'true'`,
+which the encoder correctly quoted as text.
+
+
+## 2026-08-23 — the gate leads the chain, and `validated:` is the phase after the derived layer
+
+1358 tests, 0 fail. Typecheck clean.
+
+An app's own before hook used to run ahead of `gateAuth`, so a rule that reads
+the database read it for strangers. Measured on `example` — two unauthenticated
+POSTs to `/api/orders`, one naming a customer that does not exist and one naming
+a real one, answering 400 `That customer is no longer on file` and 401: an
+existence oracle over a gated table (`FJS-403`, ruled as `FJS-D124`).
+
+**`gateAuth` is an around hook now.** Leading the per-method before list would
+not have been enough — `resolvePipelines` runs `before.all` ahead of
+`before.<method>`, so a service or an app declaring `before: { all: [...] }`
+would have kept the defect intact. A service-level around hook wraps every before
+hook at either scope, and still sits inside the app-level `withLitestoneDb` that
+scopes the client the gate reads. One hook rather than six, since the operation
+is a property of the method.
+
+`autoValidate`/`autoFilter`/`autoSort` still trail the app's hooks, for the
+reason the whole layer used to: a before hook shapes `ctx.data`, and it is the
+shaped payload that must satisfy the validator.
+
+**`validated:` is a fifth phase**, between `before` and the method — the slot for
+a rule that needs a graded caller and a coerced payload, which had nowhere to
+live. It short-circuits like `before`, and it is skipped when a before hook has
+already answered the call. `HOOK_STAGES` is now one list, because a stage
+`resolvePipelines` walks and `mergeHookMaps` does not is a hook somebody declared
+that never runs.
+
+Both `surface.snapshot.md` in this repo carry the move as a diff.
+
+
+## 2026-08-22 — the console page is not cacheable
+
+Browser drive 25/25.
+
+It is served by the socket's own server, which makes a cached copy the one that
+misleads: with the API stopped the page still loaded, the socket could not
+connect, and the only symptom was a badge reading `disconnected` — which reads
+as a broken console rather than an app that is not running (`FJS-421`).
+
+`Cache-Control: no-store`, and the badge names the retry. The drive asserts the
+header and that the socket reaches `live`; it had been asserting the panels
+rendered without ever asserting the connection behind them.
+
+
+## 2026-08-23 — a header the caller varies, over either transport
+
+1348 tests, 0 fail. Typecheck clean.
+
+Over HTTP a per-call value is a header and there was never a question. Over the
+socket there are none: the server sees the UPGRADE request's headers, one set
+for the life of the connection. The workspace had needed this since it was
+written, so it was built as one name — `meta.workspaceId` on the frame, lifted
+onto `ctx.client.headers` on the server — with a comment saying "ONE key,
+deliberately", because merging a client-supplied header map wholesale would let
+a frame carry its own `Authorization`.
+
+That reasoning is right and the conclusion was one name too narrow. The answer
+is an allow-list: `config.http.callHeaders` declares which names this app
+reads, `client.setCallHeader(name, value)` sets one, and it rides real headers
+over HTTP and `meta.headers` over the socket. The declaration has **two
+readers** — the CORS middleware and the frame merge — because a header missing
+from one is dropped by the other, and an app that had to remember both would
+work until the socket came up or until it was served from a second origin. The
+identity is still not among them (`FJS-428`).
+
+`setWorkspace` is one of these now rather than its own spelling on each side.
+An older client's `meta.workspaceId` is still accepted, so the two cannot
+disagree.
+
+Two things fell out of it:
+
+**CORS lost junction's own protocol headers to any app that configured it.**
+`X-Service-Method`, `X-Workspace-Id` and `Idempotency-Key` were in the DEFAULT
+for `cors()`'s `headers` option, which is the same as always until an app
+states a list — and `defaultConfig` states one. So every app configuring CORS
+through config kept none of them, and cross-origin the preflight refused the
+header and the request never arrived. They are added rather than defaulted now
+(`FJS-427`).
+
+**A CRUD method written on a `createBaseService` definition was dropped.**
+`collectCustomMethods` collects the non-CRUD names by construction, so an
+`async get(ctx)` beside `model:` was never called and the generated row-by-id
+answered instead — a plausible wrong shape rather than an error. It overrides
+now, wrapped in the same `withDb`, with the derived hooks untouched since they
+attach by method name (`FJS-426`).
+
+## 2026-08-22 — the console stopped compiling its own socket frames
+
+1345 tests, 0 fail. Browser drive 23/23.
+
+`(h[m.type]||Function)(m.data)`. `Function` was there as a no-op fallback; as a
+value it is the constructor, so an unknown frame compiled its payload as source
+— `String({})` is `"[object Object]"`, which parses as an array literal and
+throws `missing ] after element list`, with the `[` blamed on line 3 of a
+function body nobody wrote (`FJS-420`).
+
+The server sends eight frame types and the map handled six: `call_start`,
+`hook` and `query` go to Sierra's toolbar, not to this page. So on any app doing
+real work the console filled with parse errors — one per service call, one per
+query.
+
+**The drive could not have caught it**, and that is the more useful half: it
+drove the console's REST API and never called the app, so the only frame the
+page ever saw was the `state` snapshot on connect. It makes real service calls
+now and asserts that nothing was compiled as source.
+
+That run turned up a third thing. A leftover console held 8503; `ready()` errors
+are caught and logged by the start phase, so the app came up reporting
+`devtools=disabled` — which it was not, it was asked for and failed — while the
+drive silently graded the *previous* run's queue. The plugin reports
+`refused — port 8503 already in use` now, and the drive refuses a port that
+already answers instead of testing whatever is on it.
+
+
+## 2026-08-22 — what a snapshot describes, and what it must not depend on
+
+1345 tests, 0 fail. Typecheck clean. Browser drive 20/20.
+
+Three fixes, all found by wiring the devtools console into two real apps.
+
+**A port-less boot skipped `load-config`.** It is a `needsHost` phase and
+`_startForTest()` skips those — which is what the snapshot tools boot through.
+So anything a plugin reads out of `junction.config.js` was absent for exactly
+the callers whose job is to write down what the app is. `junction jobs` wrote
+*"a queue is installed and no handlers are registered"* for an app with three
+handlers and a nightly cron (`FJS-418`). The phase body is `app.applyConfigFile()`
+now, and `tools/app-module.ts` calls it before `_startForTest()`, in the position
+production runs it — the same shape as the `autoloadServices` workaround already
+beside it.
+
+**The console bound its server in `register()`**, which `configure()` runs
+synchronously — so describing an app opened a listener on 8503, and would have
+thrown had anything held the port. It binds in `ready()` now: a `needsHost`
+phase, skipped by a boot without a port, which is what a host-bound sidecar
+should be (`FJS-419`).
+
+**And a gitignored env var was changing a committed file.** Bun auto-loads
+`.env` from the cwd; every snapshot generator is rerun from its own file's
+directory; that directory is the app root. `DEVTOOLS=1` in `basecamp/.env` put
+the console in its committed plugin list, and CI — which has no `.env` — would
+have failed the file for not listing it. `clearLocalToggles()` runs before the
+module import rather than inside `build()`, because `defineEnv` evaluates at
+module load and a variable cleared afterwards has already been captured. Proven
+by generating with the toggle on and off and diffing: identical.
+
+
+## 2026-08-22 — a config directory that is not there says so
+
+1332 tests, 0 fail. Typecheck clean.
+
+`loadConfig` treated a missing config DIRECTORY exactly like a missing config
+file. The second is an optional miss and should stay silent — an app may declare
+nothing. The first is a path the app named, and nothing will ever be read from
+it (`FJS-415`).
+
+Measured in `basecamp`, which read `api/config` for its whole life without that
+directory existing: it booted on framework defaults looking configured, and its
+`.catch(() => defaultConfig)` had never once run. What that cost was its CORS —
+the app installed it by hand off `config.cors`, a top-level key no config shape
+defines, so the read could never produce a value and every boot took the `['*']`
+fallback. The API answered any origin.
+
+The env-var overrides moved into one function while doing it, because an early
+return that skipped them would have silently dropped `PORT` as well.
+
+The static half of the same problem is `fli check`'s new `surface-config` rule,
+and the plugin-facing half is `FJS-416`: a plugin reads `junction.config.js` in
+`boot()`, never in `register()`, because `configure()` runs `register()` before
+the file is loaded.
+
+
+## 2026-08-22 — one owner for what an app says about itself
+
+1328 tests, 10 of them new, 0 fail. Typecheck clean.
+
+**The devtools console had a second copy of `/metrics` and it never read the
+plugin registry.** `registerMetricsSource` is the seam a plugin contributes
+through; `/metrics` merged those sections and the console — which runs on its
+own port and had assembled its own object since it was written — did not. Its
+renderer has a loop for plugin-injected sections and had never had one to draw,
+so Caravan's queue stats and the outbox's pending count were visible at an
+endpoint people curl and absent from the surface they open (`FJS-414`).
+
+The fix is that the answer is a function and a route is a caller:
+
+```ts
+collectMetrics(app, startedAt)                    // the /metrics body
+collectHealth(app, startedAt, opts.checks)        // the /health body
+```
+
+Both exported from `transport/health.ts`; `/metrics`, `/health`, `/api/state`
+and the console's `/api/health` are the four callers. What holds them together
+is a test comparing the two surfaces field by field, rather than one that
+restates either.
+
+**Readiness gained the seam metrics already had.**
+
+```ts
+app.registerHealthCheck('outbox', () => lastPassAt === null || fresh())
+```
+
+`checks` was an option on `healthPlugin()`, so the only thing that could declare
+a check was the app author — a plugin owning the resource that fails had no way
+to say so, and every app hand-wrote the probe or went without. App-declared
+checks are applied **last**, so a name the app states wins: the plugin
+registered its probe without knowing what the app knows about the same resource.
+
+The outbox is the first caller here, and it grades against the interval the app
+configured rather than a number chosen in the plugin — three missed passes, and
+silent until the first one runs, because *not started yet* is not *stuck*.
+
+`collectHealth` takes no `checks` argument, and that is the same repair as the
+metrics one: the app's declared probes go onto the APP, so every reader answers
+one set. Held in `healthPlugin`'s closure they were invisible to the console —
+basecamp's own `db` check was graded at `/health` and silently missing from the
+screen someone opens to ask whether the app is healthy.
+
+**The console has a Jobs panel.** It reads `app.jobs` directly rather than
+proxying Caravan's own admin routes: those are opt-in (`admin: true`), live
+behind the app's `apiPrefix`, and are a second origin from the console's port.
+Queue depth, the stall age (`oldestRunningMs`, the number that separates a
+stalled queue from a busy one), every handler's declaration with its cron and
+next fire, the job list with its payload and error, and retry / cancel / run-now.
+
+Acting on a job is POST-only — a retry reachable by GET is a retry a link
+preview can fire — and the run-now picker is filled from `registrations()`, so a
+name cannot be typed into a dispatch no worker will ever pick up. The write
+verbs are safe to ship because the console already refuses to bind in
+production without an `auth` gate.
+
+**The startup banner says where the console is, including when it is off.**
+
+```
+🚀 app v1.0.0 url=… health=…/health devtools=http://localhost:8503 mode=production
+🚀 app v1.0.0 url=… health=…/health devtools=disabled              mode=production
+```
+
+The banner is derived from MOUNTED ROUTES and the console has none — it is a
+second server on a second port — so the one place an app says what it is serving
+had never mentioned it. `off` and `refused` are separate values: an app that
+switched the console off read identically to one whose console had declined to
+bind in production without an auth gate, and those want different next actions.
+
+The URL is the port the server actually BOUND rather than the one it was asked
+for, because `port: 0` is how a parallel suite avoids a collision and a banner
+echoing the request would advertise `:0`.
+
+**The console moved to 8503.** It defaulted to 4000, which is outside the
+framework's port scheme entirely — and the scheme exists because a server that
+silently takes somebody else's number is a drive testing the wrong app. 8503 is
+its slot in the global tooling block (`packages/cli/core/ports.js`), which is
+now reserved **whole** — 8500–8509, refused by the formula for every slot rather
+than for the three that happened to be assigned, since handing out the next free
+one surfaces as a tool that has quietly moved.
+
+Three packages restate the number by hand — junction's plugin, sierra's toolbar,
+the CLI's table — because none of them may import the others. What checks it is
+that the browser drive opens the console on its **default** port and states none.
+
+## 2026-08-22 — a custom method declares the payload it accepts
+
+1306 tests, 0 fail. Typecheck clean.
+
+**`autoValidate` covered CRUD on a model service and nothing else.** Every other
+method a service answers — `pay`, `ship`, `recordTracking`, `prune` — took
+`ctx.data` on trust: no shape, no required keys, no types. That is the largest
+unguarded surface junction had, because the operations an app is actually
+interesting for are exactly the ones that are not CRUD. `example`'s own
+`recordTracking` read `$.data as { trackingCode?: string }`, and a cast asserted
+three things and checked none of them.
+
+**The declaration goes where the surface is already declared.** A `methods:`
+entry may be an object:
+
+```ts
+methods: [
+  'find', 'get', 'create', 'update', 'patch', 'remove',
+  'pay', 'ship', 'refund', 'cancel',
+  { method: 'recordTracking', input: 'TrackingUpdate' },
+]
+```
+
+`TrackingUpdate` is a `type T { … }` in the app's OWN seed. It reaches `$defs`
+beside the models, and `validateInput` compiles it through the same
+`jsonSchemaToJunctionSchema` → `createSchema` pair `autoValidate` uses — so the
+seed stays the one owner of what a shape is (Invariant 4), and the 400 carries
+`x-messages` and renders in `<Form>` exactly like a CRUD one. A CRUD name may
+carry an input too, replacing the model-derived validator, which is the only way
+a create accepts a payload the model does not describe.
+
+**A named type that is not there throws, where a missing model warns.** A model
+definition that does not resolve is a config that used to work; an `input:` is a
+statement the author made this morning, and failing open on it hands back the
+assurance it was written to provide. The message names the type and lists the
+object types the schema does have.
+
+**Declaring an input is also declaring the surface** — the one sharp edge.
+`{ method: 'pay', … }` narrows exactly as `'pay'` does, so a service with no
+`methods:` that gains one to turn validation on answers 405 to every verb it did
+not name. That is caught before production rather than in it: `surface.snapshot.md`
+carries the policy-applied method list and now the declared inputs too, and the
+`snapshots` CI phase fails a stale one.
+
+**What it does not buy is a transform, and that is recorded rather than
+half-wired** (`FJS-401`). `@trim`/`@lower`/`@upper`/`@slug` are Data-boundary
+rules, emitted into JSON Schema nowhere, and a custom method's payload never
+becomes a model write. Wiring them naively would make the two boundaries
+disagree about what is VALID, not merely about output: litestone transforms
+before validating, junction's `def.transform` runs after, so `@trim @length(3,12)`
+on `'  ab  '` fails at one boundary and passes at the other.
+
+**A litestone defect found on the way** — a `type T { … }` field emitted its
+structure and none of its presentation, so `@label` and an authored validator
+message were carried for a model column and silently dropped for the identical
+declaration inside a type. Every realm then wrote the default sentence over the
+author's, for a nested `Json @type(T)` value as much as for a declared input.
+`applyPresentation` is now one function with two callers.
+
+Also: `DERIVED_HOOKS` matches by NAME and cannot be sound — an app hook called
+`autoFilter` reads as derived. Said so at the definition, and `isDerivedHook(fn)`
+is the identity-based answer for anything holding the function. One test fixture
+was named `validateInput` and started reading as framework-derived the moment a
+real hook took that name.
+
+
 ## 2026-08-22 — claims on the principal, and a refusal that stops signing people out
 
 1283 tests, 0 fail. Typecheck clean.
@@ -27,16 +967,34 @@ the claim anyway and every read answers 200 over somebody else's rows. The
 membership row is parked at `ctx.locals.membership`, so the standing costs no
 second query.
 
-**`tenantClaimGuard` now answers 403 rather than 401** (`FJS-383`). It refuses a
-signed-in caller holding no tenant claim on a row-scoped service, which is right;
-the status was not. 401 means *you have not proved who you are*, and the caller
-has — so every client treats it as a dead token, and a member of A following a
-link into B was not refused but logged out of A. The two refusals are also two
-sentences, and `applyClaims` marks that a resolver ran so the guard can tell them
-apart: *nothing in this app emits this claim* is a developer's, *you do not belong
-to the tenant this request names* is the caller's.
+**`tenantClaimGuard` now answers 403 rather than 401, in three sentences rather
+than one** (`FJS-383`). It refuses a signed-in caller holding no tenant claim on
+a row-scoped service, which is right; the status was not. 401 means *you have not
+proved who you are*, and the caller has — so every client treats it as a dead
+token, and a member of A following a link into B was not refused but logged out
+of A.
+
+Three refusals wear the same empty principal and they are three different
+answers. *Nothing in this app emits this claim* is a developer's problem, and the
+only one where no resolver has run. *This request names no tenant* is a **400** —
+an incomplete request rather than a refused one. *This caller does not belong to
+the tenant it names* is a 403. The first cut collapsed the last two, which
+produced a refusal that named nothing: *you do not belong to the workspaceId this
+request names*, to a request that named none. Only the resolver can tell them
+apart, so it says so, and `membershipClaim({ namedBy })` carries the app's own
+actionable sentence — *pass X-Workspace-Id or ?workspace_id=* — into a framework
+refusal that could not otherwise know it.
 
 ## 2026-08-22 — `$`, the service call you are inside
+
+**`enterCall(ctx, fn)` is exported** (added after the first cut). `callService`
+opens the scope for every ordinary path, so the one it does not cover is a
+hand-built context calling a method as a plain function — which this suite does
+in `populate`, `real-litestone-client` and `accessor-resolution`. Those pass
+because `createBaseService`'s CRUD reads the ctx PARAMETER; a method reading
+`$` had no way in at all, and nothing outside the package could open one. It
+nests and restores, and it sits on `@frontierjs/junction/testing` beside
+`testCtx`, which is the thing that produces the context it needs.
 
 1283 tests, 17 new, 0 fail. Workspace typecheck clean. `example`: `verify` 37/37,
 `verify:live` 14/14, `verify:jobs` 9/10 (the tenth is a pre-existing mismatch between

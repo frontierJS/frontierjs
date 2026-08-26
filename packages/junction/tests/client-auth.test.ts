@@ -283,3 +283,55 @@ describe('a 401 keeps the server\'s own sentence', () => {
     expect(fired).toBe(true)
   })
 })
+
+// ─── What a sign-in screen can find out ───────────────────────────────────
+//
+// A sign-in page is a separate build from the API, so any list of providers it
+// draws buttons from is a second copy of the server's own configuration with
+// nothing to fail when the two disagree — a provider dropped from the server
+// leaves a button that redirects into `oauth_error=unavailable`, one added
+// appears nowhere. So it is asked.
+
+describe('client.auth — OAuth', () => {
+
+  it('providers() asks the auth prefix and sends no credential', async () => {
+    const { calls, restore } = mockFetch([{ providers: ['google', 'okta'] }])
+    cleanup = restore
+    const client = createJunctionClient({ url: 'http://api.test', tokenStorage: memoryStore('tok') })
+
+    expect(await client.auth.providers()).toEqual(['google', 'okta'])
+    expect(calls[0].url).toBe('http://api.test/auth/oauth')
+    expect(calls[0].method).toBe('GET')
+    // skipAuth: the page that asks has no session yet, and a stale token in
+    // storage must not turn a public list into a 401.
+    expect(calls[0].headers.Authorization).toBeUndefined()
+  })
+
+  it('an app with no OAuth answers a list, not a failure', async () => {
+    const { restore } = mockFetch([{ providers: [] }])
+    cleanup = restore
+    const client = createJunctionClient({ url: 'http://api.test' })
+    expect(await client.auth.providers()).toEqual([])
+  })
+
+  it('oauthUrl is absolute and carries returnTo — the flow leaves the SPA', async () => {
+    const client = createJunctionClient({ url: 'http://api.test' })
+    // Absolute because it is a browser navigation to the API's own origin, not
+    // a fetch the client routes; a relative path would leave the web origin.
+    expect(client.auth.oauthUrl('google')).toBe('http://api.test/auth/oauth/google')
+    expect(client.auth.oauthUrl('google', { returnTo: '/orders?a=1' }))
+      .toBe('http://api.test/auth/oauth/google?returnTo=%2Forders%3Fa%3D1')
+  })
+
+  it('signInWith refuses outside a browser rather than doing nothing', () => {
+    // The failure it replaces is a button that silently does not work.
+    const client = createJunctionClient({ url: 'http://api.test' })
+    const location = (globalThis as { location?: unknown }).location
+    delete (globalThis as { location?: unknown }).location
+    try {
+      expect(() => client.auth.signInWith('google')).toThrow(/browser/)
+    } finally {
+      if (location !== undefined) (globalThis as { location?: unknown }).location = location
+    }
+  })
+})

@@ -164,6 +164,27 @@ export function dockApp({ appName = 'app' } = {}) {
 `
 }
 
+/**
+ * Two generated directories, and neither is source.
+ *
+ * `dist/` is the loaded-unpacked artefact, one per browser. `.jetty-cache/` is
+ * where the build writes the entries it generates from what it discovered —
+ * a dock's `main.js`, a popup's HTML — and it is regenerated on every build.
+ * Written as the surface's OWN ignore file rather than merged into the app's:
+ * a merge has to decide what to do with a rule that is already there, and this
+ * cannot be wrong.
+ */
+export function extensionGitignore() {
+  return `# Built by \`fli extension:build\` — one directory per browser, loaded
+# unpacked from there. Never committed.
+dist/
+
+# The entries the build generates from what it discovered. Regenerated every
+# time; committing it is committing a compiler's scratch directory.
+.jetty-cache/
+`
+}
+
 export function extensionTestReadme({ appName = 'app' } = {}) {
   return `# Testing ${appName}
 
@@ -228,6 +249,7 @@ export function scaffoldExtensionSurface({
   for (const d of EXTENSION_SURFACE_DIRS) mkdirSync(resolve(base, d), { recursive: true })
 
   const files = [
+    ['.gitignore',             extensionGitignore()],
     ['config/jetty.config.js', jettyConfig({ appName, tokenKey: `${appName}_token`, port: devPort })],
     ['src/harbor/index.js',    harborEntry()],
     ['src/dock/App.mesa',      dockApp({ appName })],

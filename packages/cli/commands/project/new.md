@@ -9,7 +9,9 @@ examples:
   - fli new my-app --auth --yes
   - fli new my-app --template api-only
   - fli new my-app --widgets
+  - fli new my-app --site
   - fli new my-app --template widgets-only
+  - fli new my-app --template site-only
   - fli new my-app --extension
   - fli new my-app --template extension-only
   - fli new my-app --workspace --server prod.example.com --domain myapp.com
@@ -30,7 +32,7 @@ flags:
     defaultValue: false
   template:
     type: string
-    description: full-stack (default) | api-only
+    description: full-stack (default) | api-only | widgets-only | site-only | extension-only
     defaultValue: full-stack
   with:
     type: string
@@ -67,6 +69,10 @@ flags:
   widgets:
     type: boolean
     description: Also scaffold the widgets/ surface — embeddable scripts for pages this app does not own
+    defaultValue: false
+  site:
+    type: boolean
+    description: Also scaffold the site/ surface — the public, prerendered site
     defaultValue: false
   extension:
     type: boolean
@@ -128,6 +134,12 @@ const { EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, appTsconfig, appBiomeJson, app
 const { scaffoldWidgetSurface, widgetScripts } =
   await import(resolve(global.fliRoot, 'core/widget-surface.js'))
 
+// The site/ surface, same rule: one owner, shared with `fli make:site`. It is a
+// peer of web/ and never a routesDir inside it — sharing a Vite root shares a
+// dist/, and `vite build` empties outDir, so building the SPA deletes the site.
+const { scaffoldSiteSurface, siteScripts } =
+  await import(resolve(global.fliRoot, 'core/site-surface.js'))
+
 // The extension surface, same rule: one owner, shared with `fli make:extension`.
 const { scaffoldExtensionSurface, extensionScripts } =
   await import(resolve(global.fliRoot, 'core/extension-surface.js'))
@@ -149,13 +161,14 @@ const VITE_VERSION = '^8.0.0'
 
 function makePackageJson(spec) {
   const {
-    name, scope, useAuth, useWeb, useApi = true, useWidgets = false, useExtension = false,
-    withPkgs, source,
+    name, scope, useAuth, useWeb, useApi = true, useWidgets = false, useSite = false,
+    useExtension = false, withPkgs, source,
   } = spec
   const pkgName = scope ? `${scope}/${name}` : name
-  // Sierra and Mesa are the UI realm, and a widget is UI: a widgets-only
-  // project has no SPA and still compiles .mesa with the same compiler.
-  const useUI   = useWeb || useWidgets
+  // Sierra and Mesa are the UI realm, and a widget and a prerendered page are
+  // both UI: a widgets-only or site-only project has no SPA and still compiles
+  // .mesa with the same compiler.
+  const useUI   = useWeb || useWidgets || useSite
 
   // local source → `link:@frontierjs/x` (resolves to a live symlink via bun link);
   // npm source → the version FJS_PACKAGES pins, which is `latest` while pre-alpha.
@@ -230,6 +243,13 @@ function makePackageJson(spec) {
     Object.assign(scripts, widgetScripts())
     devs.push('dev:widgets')
     builds.push('build:widgets')
+  }
+  if (useSite) {
+    // An ordinary Vite build that prerenders afterwards, so this IS `vite
+    // build` — the difference is what closeBundle does with it.
+    Object.assign(scripts, siteScripts())
+    devs.push('dev:site')
+    builds.push('build:site')
   }
 
   scripts['dev'] = devs.length > 1 ? `bun run --parallel ${devs.join(' ')}` : (scripts[devs[0]] ?? '')
@@ -320,8 +340,8 @@ function makeFliJson(name) {
 }
 
 function makeReadme(spec) {
-  const { name, useAuth, useWeb, useApi = true, useWidgets = false, useExtension = false, withPkgs } = spec
-  const surface = [useApi && 'api/', useWeb && 'web/', useWidgets && 'widgets/', useExtension && 'extension/'].filter(Boolean)
+  const { name, useAuth, useWeb, useApi = true, useWidgets = false, useSite = false, useExtension = false, withPkgs } = spec
+  const surface = [useApi && 'api/', useWeb && 'web/', useWidgets && 'widgets/', useSite && 'site/', useExtension && 'extension/'].filter(Boolean)
   const features = [
     `- ${useAuth ? 'Auth (sessions, password reset, email verify) via `@frontierjs/auth`' : 'No auth (add later with `fli auth:install`)'}`,
     `- Litestone client with gate plugin for level-based authorization`,
@@ -329,6 +349,8 @@ function makeReadme(spec) {
   ]
   if (useWidgets) features.push(
     `- Embeddable widgets in \`widgets/\` — one self-contained script per component, for pages this app does not own`)
+  if (useSite) features.push(
+    `- A public, prerendered site in \`site/\` — one HTML file per route, islands for what has to be current`)
   if (useExtension) features.push(
     `- A browser extension in \`extension/\` — MV3, Chrome and Firefox, built by \`@frontierjs/jetty\``)
   if (withPkgs.length) features.push(`- Additional packages: ${withPkgs.map(p => `\`@frontierjs/${p}\``).join(', ')}`)
@@ -658,7 +680,6 @@ export const env = defineEnv({
   // — and NOT required, because no code in @frontierjs/auth or junction reads it:
   // auth signs with encryptionKey. A required refusal over a value nothing uses
   // is a container that will not boot for no reason (FJS-360).
-  AUTH_SECRET: { type: 'string', required: false },
 
   // App
   PORT:     { type: 'port',   default: 8100 },
@@ -1175,9 +1196,10 @@ Creates a brand-new FrontierJS project from scratch — Junction API, optional a
 The default install set is just `@frontierjs/junction`. Auth is asked about during execution unless `--auth` or `--no-auth` is passed. Use `--minimal` (junction only) or `--full` (all tier-1 packages) to skip prompts entirely. `--yes` accepts every prompt.
 
 Templates: `full-stack` (default — api + web), `api-only` (no web/ folder),
-`widgets-only` and `extension-only` (no api/, no web/ — the product is that one
-surface, and what it talks to is somebody else's API). Add `--widgets` or
-`--extension` to any of them for that surface alongside.
+`widgets-only`, `site-only` and `extension-only` (no api/, no web/ — the product
+is that one surface, and what it talks to is somebody else's API). Add
+`--widgets`, `--site` or `--extension` to any of them for that surface
+alongside.
 
 ```js
 // ─── 1. Validate inputs ───────────────────────────────────────────────────────
@@ -1221,10 +1243,11 @@ const template  = flag.template
 // --no- flags because that is the shape somebody asks for by name.
 // A SURFACE-ONLY template is a project whose whole product is that one surface:
 // no API of its own and no SPA, because what it talks to is somebody else's.
-const surfaceOnly  = template === 'widgets-only' || template === 'extension-only'
+const surfaceOnly  = template === 'widgets-only' || template === 'extension-only' || template === 'site-only'
 const useApi       = !surfaceOnly
 const useWeb       = !surfaceOnly && (template === 'full-stack' || template === undefined) && flag.web !== false
 const useWidgets   = template === 'widgets-only'   || flag.widgets === true
+const useSite      = template === 'site-only'      || flag.site === true
 const useExtension = template === 'extension-only' || flag.extension === true
 const useDeploy = flag.deploy !== false
 const useFli    = flag.fli !== false
@@ -1336,7 +1359,7 @@ if (fjsSource !== 'local' && fjsSource !== 'npm') {
 
 // What this project will be given, decided once. `makePackageJson` is the one
 // answer to that question and the manifest is written from it later.
-const spec = { name: appName, scope: flag.scope, useAuth, useWeb, useApi, useWidgets, useExtension, withPkgs, source: fjsSource }
+const spec = { name: appName, scope: flag.scope, useAuth, useWeb, useApi, useWidgets, useSite, useExtension, withPkgs, source: fjsSource }
 
 // The @frontierjs packages this project will actually depend on — READ OFF the
 // manifest rather than listed again beside it. A `link:` spec for a package
@@ -1497,6 +1520,20 @@ if (useWidgets) {
   log.success(`Wrote ${widgetFiles.length} files in widgets/`)
 }
 
+// ─── 9c. The site/ surface ────────────────────────────────────────────────────
+//
+// Written by the same function `fli make:site` calls. `hasApi` decides whether
+// its config declares a `db` to tap: with no API there is nothing to tap, and a
+// `db:` pointing at a file that is not there is a build that fails before it
+// says anything useful.
+
+if (useSite) {
+  const { written: siteFiles } = scaffoldSiteSurface({
+    root: finalTarget, appName, hasApi: useApi,
+  })
+  log.success(`Wrote ${siteFiles.length} files in site/`)
+}
+
 if (useExtension) {
   const { written: extFiles } = scaffoldExtensionSurface({ root: finalTarget, appName })
   log.success(`Wrote ${extFiles.length} files in extension/`)
@@ -1521,9 +1558,10 @@ if (useFli) {
 }
 
 // auth:install — injects schema models, generates ENCRYPTION_KEY, scaffolds auth.ts
-// NOTE: existing auth:install writes to api/src/auth.ts (older path).
-//       The api/src/core/auth.ts that project:new writes will be the canonical
-//       one until auth:install is migrated.
+// It scaffolds `api/src/auth.ts`, which is NOT where this command puts it. The
+// files above are written first, so auth:install finds the `api/src/core/auth.ts`
+// this wrote and skips its own scaffold rather than laying a second
+// createLitestoneAuth over a second client on the same file.
 if (useAuth) {
   try {
     log.info('→ auth:install')
@@ -1612,6 +1650,38 @@ if (useInstall) {
     context.exec({ command: 'bun install', cwd: finalTarget, stdio: 'inherit' })
   } catch (e) {
     log.warn(`bun install failed: ${e.message} — run it manually before fli dev`)
+  }
+}
+
+// ─── 12b. The initial migration ───────────────────────────────────────────────
+//
+// The container's entrypoint is `bun run db:migrate && bun run start`, and
+// `migrate apply` applies migration FILES. A scaffold that ships none applies
+// nothing, exits ZERO, and starts a server over a database holding only
+// litestone's own bookkeeping table — so the deploy is declared healthy and the
+// first write answers `no such table: user`. Measured on both deploy sources.
+//
+// So the scaffold writes the first migration itself. `migrate create` needs no
+// database (it diffs the schema against the applied set, which is empty here),
+// which is why this can run at scaffold time at all.
+//
+// This does NOT close the gap for the SECOND deploy: every generator here tells
+// a developer to run `fli db:push`, which writes tables and no migration file,
+// so a model added after this point is missing from the image again. That is a
+// framework question rather than a scaffold one — see ISSUES.md.
+
+if (useInstall) {
+  try {
+    log.info('→ initial migration')
+    context.exec({
+      command: 'bunx litestone migrate create initial --schema db/schema.lite',
+      cwd: finalTarget, stdio: 'pipe',
+    })
+  } catch (e) {
+    // Not fatal: the app runs from `db push` in development either way, and a
+    // scaffold that stops here over a deploy-time concern is the worse trade.
+    log.warn(`could not write the initial migration: ${e.message}`)
+    log.warn('run `bunx litestone migrate create initial --schema db/schema.lite` before deploying')
   }
 }
 

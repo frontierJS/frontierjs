@@ -76,3 +76,21 @@ export class UserNotFoundError extends AuthError {
  * Inherits status 500 deliberately: this one is genuinely the server's fault.
  */
 export class AuthConfigError extends AuthError {}
+
+/**
+ * Removing this credential would leave the account with no way in.
+ *
+ * 409 rather than 400: nothing about the request is malformed, the account is
+ * in a state where this cannot be done — and it is recoverable by the caller,
+ * which is what separates it from a refusal. Add another way in first.
+ */
+export class LastCredentialError extends AuthError {
+  readonly name = 'LastCredentialError'
+  readonly status = 409
+}
+
+/** Nothing here by that id — or nothing the caller may see, which reads the same. */
+export class NotFoundError extends AuthError {
+  readonly name = 'NotFoundError'
+  readonly status = 404
+}

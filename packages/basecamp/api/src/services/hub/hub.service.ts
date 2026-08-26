@@ -47,7 +47,6 @@ import { createService, BadRequest, Conflict, Forbidden, NotFound, $ } from '@fr
 import { requireSystemAdmin, getPagination } from '../../core/hooks.ts'
 import { db, slugify } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 
 // ─── Vocabularies ─────────────────────────────────────────────────────────
 // The words are declared in db/schema.lite, where the column gets its CHECK.
@@ -140,7 +139,7 @@ export function createHubService(app: BasecampApp) {
     // Named keys and no `data`, so it wraps as a `single` and unwraps whole.
     async overview() {
       $.dispatch = false
-      const raw     = (app.db as { db: { query: (s: string) => { get: () => any } } }).db
+      const raw     = app.sqlite
       const dbPath  = (app.config as { database?: { url?: string } }).database?.url
         || process.env.DATABASE_URL || './db/basecamp.db'
       const mem     = process.memoryUsage()
@@ -156,7 +155,7 @@ export function createHubService(app: BasecampApp) {
           pid:           process.pid,
           nodeEnv:       process.env.NODE_ENV ?? 'development',
           bunVersion:    (globalThis as { Bun?: { version: string } }).Bun?.version ?? null,
-          sqliteVersion: raw.query('select sqlite_version() as v').get()?.v ?? null,
+          sqliteVersion: raw.query<{ v: string }, []>('select sqlite_version() as v').get()?.v ?? null,
           dbPath,
           // The main file PLUS the write-ahead log. In WAL mode a database
           // that has never checkpointed reports 4096 bytes for the same tree
@@ -193,7 +192,7 @@ export function createHubService(app: BasecampApp) {
 
     // ── workspaces — every tenant ─────────────────────────────────────
     // A pure list envelope: total/limit/offset/data and nothing beside it.
-    async workspaces(ctx: ServiceContext) {
+    async workspaces() {
       $.dispatch = false                     // a read, not an announcement
       const { limit, offset } = getPagination({ limit: 50, max: 200 })
       const q = ($.query.q as string | undefined)?.trim().toLowerCase()
@@ -227,7 +226,7 @@ export function createHubService(app: BasecampApp) {
     },
 
     // ── users — every actor ───────────────────────────────────────────
-    async users(ctx: ServiceContext) {
+    async users() {
       $.dispatch = false
       const { limit, offset } = getPagination({ limit: 50, max: 200 })
       const kind = $.query.kind as string | undefined
@@ -262,7 +261,7 @@ export function createHubService(app: BasecampApp) {
     // The hub view of a workspace-scoped model. It exists because a killswitch
     // is the one flag whose audience is the operator of the platform rather
     // than the team that shipped the feature.
-    async flags(ctx: ServiceContext) {
+    async flags() {
       $.dispatch = false
       const { limit, offset } = getPagination({ limit: 100, max: 300 })
 
@@ -293,7 +292,7 @@ export function createHubService(app: BasecampApp) {
     },
 
     // ── setUserStatus ─────────────────────────────────────────────────
-    async setUserStatus(ctx: ServiceContext) {
+    async setUserStatus() {
       const { userId, status } = ($.data ?? {}) as Record<string, unknown>
       if (!USER_STATUSES.includes(status as string))
         throw new BadRequest(`status must be one of ${USER_STATUSES.join(', ')}`)
@@ -322,7 +321,7 @@ export function createHubService(app: BasecampApp) {
     },
 
     // ── setSystemAdmin ────────────────────────────────────────────────
-    async setSystemAdmin(ctx: ServiceContext) {
+    async setSystemAdmin() {
       const { userId, isSystemAdmin } = ($.data ?? {}) as Record<string, unknown>
       if (typeof isSystemAdmin !== 'boolean')
         throw new BadRequest('isSystemAdmin must be true or false')
@@ -352,7 +351,7 @@ export function createHubService(app: BasecampApp) {
     // was always minted for the caller, because this app could not create
     // anything else to own one. So CI's key was somebody's key, and revoking
     // it when they left broke the pipeline.
-    async createBot(ctx: ServiceContext) {
+    async createBot() {
       const { workspaceId, name, role } = ($.data ?? {}) as Record<string, unknown>
       const label = typeof name === 'string' ? name.trim() : ''
       if (!label) throw new BadRequest('name is required')

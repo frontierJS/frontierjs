@@ -244,9 +244,13 @@ describe('buildUrl', () => {
     expect(result).toBe('/leads/')
   })
 
-  test('serializes arrays with [] notation', () => {
+  test('serializes arrays with [] notation, and it reads back', () => {
+    // Brackets are left readable rather than percent-encoded — what every
+    // bracket-notation parser emits, and what `parseQueryParams` is the exact
+    // inverse of (`FJS-D125`).
     const result = buildUrl('/leads', { ids: [1, 2, 3] }, 'always')
-    expect(result).toContain('ids%5B%5D=1')
+    expect(result).toContain('ids[]=1')
+    expect(parseQueryParams(result.slice(result.indexOf('?')))).toEqual({ ids: [1, 2, 3] })
   })
 })
 

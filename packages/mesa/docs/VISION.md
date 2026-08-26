@@ -32,48 +32,48 @@ Mesa is built on five foundational principles:
 Mesa's compiler targets `@mesa/runtime` and emits a named function per component:
 
 ```js
-import * as $runtime from '@mesa/runtime';
+import * as $$runtime from '@mesa/runtime';
 
 // Template factory — cloned once per mount via cloneNode(true)
-var $tpl0 = $runtime.template(`<p> </p>`, 0);
+var $$tpl0 = $$runtime.template(`<p> </p>`, 0);
 
 export default function Counter(__anchor, __props, __block) {
-  // In dev builds: $runtime.push_component('Counter', 'Counter.mesa')
-  // In prod: $runtime.push_component()
-  $runtime.push_component();
-  const $option = { props: __props };
-  const $slots  = $runtime.makeSlots(__block);
+  // In dev builds: $$runtime.push_component('Counter', 'Counter.mesa')
+  // In prod: $$runtime.push_component()
+  $$runtime.push_component();
+  const $$option = { props: __props };
+  const $$slots  = $$runtime.makeSlots(__block);
 
   // Reactive signals (let → track, const → createMemo, export let → makeExternalProperty)
-  const $$sig_count = $runtime.track(0, void 0, void 0, __block);
-  const $$set_count = (v) => $runtime.set($$sig_count, ...);
+  const $$sig_count = $$runtime.track(0, void 0, void 0, __block);
+  const $$set_count = (v) => $$runtime.set($$sig_count, ...);
 
   {
     // Sequential DOM traversal — computed at compile time, runs once per mount
-    const $parentElement = $tpl0();
-    var el0 = $runtime.child($parentElement, true);
+    const $$parentElement = $$tpl0();
+    var el0 = $$runtime.child($$parentElement, true);
 
     // Auto-tracking reactive binding — reruns only when count changes
-    $runtime.render((__prev) => {
-      var __a = `${$runtime.get($$sig_count)}`;
-      if (__prev.a !== __a) $runtime.set_text(el0, __prev.a = __a);
+    $$runtime.render((__prev) => {
+      var __a = `${$$runtime.get($$sig_count)}`;
+      if (__prev.a !== __a) $$runtime.set_text(el0, __prev.a = __a);
     }, { a: ' ' });
 
     // Mount before the anchor comment
-    $runtime.append(__anchor, $parentElement);
+    $$runtime.append(__anchor, $$parentElement);
   }
-  $runtime.pop_component();
+  $$runtime.pop_component();
 }
-$runtime.$$delegate(['click']);  // event delegation at module scope
+$$runtime.$$delegate(['click']);  // event delegation at module scope
 ```
 
 Key properties of the output:
-- **`var` for templates** — `var $tpl0 = $runtime.template(...)` avoids TDZ checks on every mount
+- **`var` for templates** — `var $$tpl0 = $$runtime.template(...)` avoids TDZ checks on every mount
 - **Named function export** — `export default function Counter(anchor, props, block)` — the same `(anchor, props, block)` signature used everywhere: `mount()`, `keyBlock()`, `{#if}` branches, child components
 - **`push_component()` in prod, `push_component(name, file)` in dev** — dev mode passes the component name and source filename for DevTools instance tracking. The compiler emits the dev form when `config.dev: true`.
 - **Sequential traversal** — `child()`/`sibling()`/`pop()` replace path strings; calculated at compile time, O(1) per node at runtime
 - **`render()` dirty-checking** — groups multiple text/attr bindings into one `createEffect`, compares with a `__prev` object, only updates changed nodes
-- **`$slots`** — compiler-injected local from `$runtime.makeSlots(__block)`; reactive object indicating which named slots have content (used as `{#if $slots.sidebar}`)
+- **`$slots`** — reads the compiler-injected `$$slots`, built from `$$runtime.makeSlots(__block)`; a reactive object indicating which named slots have content (used as `{#if $slots.sidebar}`)
 
 ### Static Component Detection
 
@@ -377,7 +377,7 @@ $: userId, () => { localCount = 0 }   // does NOT reset on first render
 ```
 
 "When X changes, do Y" reads as change-triggered, and firing on mount is usually wrong.
-The eager case is `$onMount`. The "initialise, then keep in sync" case is almost always a
+The eager case is `$.onMount`. The "initialise, then keep in sync" case is almost always a
 `const` memo in disguise — if you find yourself writing an effect whose whole body assigns
 a value derived from its own dependency, you wanted `const`.
 
@@ -407,7 +407,7 @@ $: selectedId, () => {
 
 $: selectedId, async () => {
     const c = new AbortController()
-    $onCleanup(() => c.abort())                // before the first await
+    $.onCleanup(() => c.abort())                // before the first await
     result = await (await fetch(`/api/${selectedId}`, { signal: c.signal })).json()
 }
 ```
@@ -546,11 +546,11 @@ is the "before update" window, and it is the whole remainder of the handler:
 function addMessage(m) {
     messages = [...messages, m]
     const wasAtBottom = atBottom(el)             // still the OLD DOM
-    $tick(() => { if (wasAtBottom) scrollToBottom(el) })
+    $.tick(() => { if (wasAtBottom) scrollToBottom(el) })
 }
 ```
 
-**`$tick()` resolves after the DOM has updated.** Use it to read the result of a change
+**`$.tick()` resolves after the DOM has updated.** Use it to read the result of a change
 you just made.
 
 > **RULE 49** — The *initial* run of an auto-tracked effect happens during component
@@ -854,6 +854,12 @@ var   theme = $context.theme    // snapshot at mount — non-reactive
 > initialize from context at mount and are independent thereafter. `var` consumers snapshot
 > at mount only.
 
+> **RULE 25b** — `$context.<key>` is a COMPILE STEP, so it is script-only: a read in a
+> template expression is not rewritten and lands on the runtime object instead of the
+> context. Read it once in the script and use that name in the template. The imperative
+> pair `$context.use(key)` / `$context.provide(key, getter)` is the runtime object
+> itself and works anywhere (`FJS-477`).
+
 ---
 
 ## 8. Events
@@ -888,7 +894,7 @@ var   theme = $context.theme    // snapshot at mount — non-reactive
 ```js
 // MyButton.mesa
 function handleClick(e) {
-    $emit('click', e)   // calls parent's onclick / onClick prop
+    $.emit('click', e)   // calls parent's onclick / onClick prop
 }
 ```
 
@@ -897,7 +903,7 @@ function handleClick(e) {
 <MyButton onclick={handleClick} />
 ```
 
-`$emit(name, data)` looks for `on{name}` and `on{Name}` in `$option.props` and calls it
+`$.emit(name, data)` looks for `on{name}` and `on{Name}` in `$$option.props` and calls it
 if present.
 
 > **RULE 23** — `on:event` on a component is always a compiler error. Use `onclick={fn}` prop.
@@ -982,7 +988,7 @@ rendered block.
 ### 9.4 Key Block — `{#key expr}`
 
 Destroys and recreates its content whenever `expr` changes. Use to reset internal
-component state, replay CSS enter animations, or force `$onMount` to re-run.
+component state, replay CSS enter animations, or force `$.onMount` to re-run.
 
 ```html
 {#key selectedUserId}
@@ -1110,8 +1116,7 @@ fallback rendered when the parent provides nothing for that slot.
 </slot:header>
 ```
 
-**`$slots` — checking for slot content** — `$slots` is a compiler-injected
-local. `$slots.name` is true when the parent provided content for that slot,
+**`$slots` — checking for slot content** — `$slots` is the door's slot record. `$slots.name` is true when the parent provided content for that slot,
 false otherwise. Use it to conditionally render slot wrappers:
 
 ```html
@@ -1346,9 +1351,10 @@ expression changes. Previous nodes are removed before the new HTML is inserted.
 ### 10.8 Class Prop Passthrough
 
 `class` is a JavaScript reserved word and cannot be used as an identifier.
-The compiler handles class-prop passthrough automatically through an internal
-`$class` rename — but `$class` is a compiler implementation detail and is
-never authored directly.
+The compiler handles class-prop passthrough automatically through a `$class`
+rename. It is never authored directly — and it is a name on the protocol
+between two compiled components rather than a private one, which is why it does
+not move when the compiler's internal names do (`FJS-D134`).
 
 **Parent side** — `class="..."` or `class={expr}` on a component is forwarded
 to the child's class prop with no special syntax required:
@@ -1358,25 +1364,46 @@ to the child's class prop with no special syntax required:
 <Btn class={isPrimary ? 'btn-primary' : 'btn-secondary'} />
 ```
 
-**Child side** — use one of two shorthand forms on the element that should
-receive the parent's class. Both auto-declare the prop and wire the value
-through; no script-side declaration is needed.
+**Child side** — mark the element that should receive the parent's class. It
+auto-declares the prop and wires the value through; no script-side declaration
+is needed.
 
 ```html
-<!-- {class} — one-way passthrough, parent pushes the value down -->
-<button {class}>Click</button>
-
-<!-- bind:class — two-way, value flows in and out -->
-<button bind:class>Click</button>
+<!-- the parent's class, MERGED into this element's own -->
+<button class="btn" {class}>Click</button>
 ```
 
-`{class}` is the common case. `bind:class` is for components that mutate
-their own class set and want the parent to observe the change.
+`class={$class}` is the same thing written out. The merge is what makes it
+composable: `bindClassPassthrough` removes only the tokens it previously added,
+so the element's own classes, its scope hash, and anything another binding put
+there all survive. The element is chosen by where the marker sits — it is not
+required to be the root, and several elements may carry it.
 
-> **RULE 31a** — `$class` is a compiler-internal name. Components never declare
-> `export let $class` directly — use the `{class}` or `bind:class` element
-> shorthand on the child side. Parents pass class with the regular `class=`
-> attribute.
+> **RULE 22a** — on an ELEMENT, `bind:` means the DOM WRITES BACK, which it does
+> for a form value and nothing else: `value`, `checked`, `files`, plus `group`
+> and `this`. Every other `bind:x` there is a compile error naming `x={expr}`.
+> Nothing changes `readonly` or `colspan` but you, so there is no second
+> direction — and for the eight attributes whose DOM property is spelled
+> differently there was no first one either, since `el[name] = v` wrote an
+> expando. On a COMPONENT `bind:x` is an ordinary two-way prop and is
+> unaffected (`FJS-D136`).
+
+> **RULE 31b** — `bind:class` on an ELEMENT is a compile error. It was
+> documented as the two-way half of this feature and never worked: it compiles
+> through the form-value path, whose generic branch is `el[name] = v`, and there
+> is no `class` DOM property — so the value went to a JS expando the DOM never
+> reads and neither direction touched the element (`FJS-478`). There is no way
+> to observe a child's class set, here or in any comparable framework, and
+> nothing in this repo asked for one. On a COMPONENT `bind:class` is unaffected:
+> that is an ordinary two-way prop.
+
+> **RULE 31a** — `$class` is a PROTOCOL name, not an internal one: it is a key
+> two compiled components pass each other, and the runtime reads it as a string.
+> Components never declare `export let $class` directly — use the `{class}` or
+> `bind:class` element shorthand on the child side; parents pass class with the
+> regular `class=` attribute. It does not move when the compiler's internal
+> names do, because renaming it breaks compiled output meeting other compiled
+> output rather than breaking source (`FJS-D134`).
 
 ---
 
@@ -1527,23 +1554,23 @@ of the UI that depends on async data. Multiple boundaries are allowed per compon
 
 #### `<mesa:mounted>` — Imperative Mount Gate
 
-Gates the **entire component template** behind a Promise returned by `$mounted()`.
+Gates the **entire component template** behind a Promise returned by `$.mounted()`.
 Nothing renders until the Promise resolves. Unlike `<mesa:boundary>`, this always
 applies to the whole template regardless of where it appears.
 
-**`$mounted(fn)`** — a builtin that wraps an async function in a Promise that
+**`$.mounted(fn)`** — a builtin that wraps an async function in a Promise that
 resolves after the component mounts. The variable name is the developer's choice.
-Only one `$mounted()` call is allowed per component — compiler error if used twice.
-For multiple async operations, use `Promise.all` inside a single `$mounted`.
+Only one `$.mounted()` call is allowed per component — compiler error if used twice.
+For multiple async operations, use `Promise.all` inside a single `$.mounted`.
 
 ```js
 // Single operation
-const mounting = $mounted(async () => {
+const mounting = $.mounted(async () => {
   user = await usersService.get(currentUser.id)
 })
 
-// Multiple operations — Promise.all inside single $mounted
-const mounting = $mounted(async () => {
+// Multiple operations — Promise.all inside single $.mounted
+const mounting = $.mounted(async () => {
   [user, notes] = await Promise.all([
     usersService.get(currentUser.id),
     notesService.getAll()
@@ -1586,7 +1613,7 @@ Still gates the whole template.
 
   let user
 
-  const mounting = $mounted(async () => {
+  const mounting = $.mounted(async () => {
     user = await usersService.get(currentUser.id)
   })
 </script>
@@ -1607,8 +1634,14 @@ Still gates the whole template.
 {/snippet}
 ```
 
-> **RULE 37** — `$mounted(fn)` may only appear once per component. Use `Promise.all`
-> inside a single `$mounted` for multiple async operations.
+> **RULE 37** — `$.mounted(fn)` may only appear once per component. Use `Promise.all`
+> inside a single `$.mounted` for multiple async operations.
+
+> **RULE 37a** — `$.mounted(fn)` is wired BY NAME — the variable it is assigned to is the
+> expression the template is gated behind — so `const ready = $.mounted(fn)` is the only
+> form. A bare call, a reference to `$.mounted` itself and a read from the template are all
+> refused: there is no name to gate on. For work at mount with no gate, `$.onMount(fn)`
+> (`FJS-477`).
 
 > **RULE 38** — `<mesa:mounted>` always gates the entire component template regardless
 > of wrapping or self-closing form.
@@ -1760,43 +1793,117 @@ If `out` returns a Promise, the element stays in the DOM until it resolves — n
 
 ---
 
-## 17. Built-in Functions (`$` Builtins)
+## 17. Built-in Functions (the `$` door)
 
-> **RULE 18** — Mesa built-in functions are auto-injected by the compiler as local
-> variables inside the component function. Developers never write import statements
-> for them. Only builtins that are actually used are injected — full tree-shaking.
+`$` is the component instance. Everything the framework offers a component is
+reached through it — `$.onMount`, `$.emit`, `$.tick` — and nothing is injected
+into the author's scope under a name of its own.
+
+**Five members are the exception and they are the ones read as DATA**: `$props`,
+`$attributes`, `$slots`, `$context` and `$async` each carry a bare spelling as
+well as the door one, and **the bare spelling is canonical** (`FJS-D135`).
+`{...$attributes}` is the shape it exists for — a spread sitting in markup,
+where `$.` is JavaScript punctuation in the middle of HTML. Both spellings are
+one binding, aliased at emit, so a component may mix them and cannot end up with
+two of anything.
+
+The line is how the member is READ, not what it compiles to. A bag is a name and
+then a key; a call is a call.
+
+| bare and door | `$props` · `$attributes` · `$slots` · `$context` · `$async` |
+|---|---|
+| **door only** | `$.onMount` · `$.onDestroy` · `$.onCleanup` · `$.mounted` · `$.tick` · `$.emit` · `$.inspect` · `$.transition` · `$.entrance` · `$.fade` · `$.slide` · `$.fly` |
+
+**Four prefixes, and each line is a different kind of thing** (`FJS-D137`):
+
+| `$` | the door — this component instance |
+| `$:` | the reactive label. A JavaScript label, in a namespace of its own; it shares only the character |
+| `$$` | the compiler's own locals. Never authored, never read |
+| `__` | the calling convention — `__anchor`, `__props`, `__block` are the component function's parameters and `__prev` is the render callback's |
+
+All four `__` names are RESERVED: declaring one at the top level of a script is a
+compile error, because it lands in the same scope and wins (`FJS-482`).
+
+**Two names wear a single `$` and are neither the door nor a local**: `$class`,
+the prop the `{class}` shorthand travels under, and `$dom`, the key a block
+factory answers with. Both are read BY NAME from outside the compiler, which is
+what puts them in the protocol namespace rather than either tier — so a
+single-`$` name in compiled output is correct for exactly these two and nothing
+else (`FJS-D134`). Neither is ever authored.
+
+> **RULE 18** — Mesa's builtins are reached through `$`. The compiler provides it
+> inside the component function; no import is written for it, and only the
+> members actually used are wired up.
+
+> **RULE 18c** — the five members read as data — `$props`, `$attributes`,
+> `$slots`, `$context`, `$async` — also carry a bare spelling, and it is the
+> canonical one. The bare names stay RESERVED: declaring one at the top level of
+> a script is refused rather than shadowing it. The other seven, and the five
+> animation helpers, are refused bare and name `$.x` as the replacement
+> (`FJS-D135`).
+
+> **RULE 18a** — `$` may not be destructured, aliased or shadowed. It is legal
+> only as the object of a member expression, so `$.emit` is the shape every
+> mention of it takes. `const { props } = $`, `const d = $`, `let $ = …`, a parameter
+> named `$` and passing `$` to a function are each a compile error naming what
+> was done. A copy is not what the compiler follows: several members are
+> compiled rather than read — `$context.k = v` becomes a provide call,
+> `$.inspect` is stripped when `debug` is off — and through a copy each one
+> silently does nothing.
+
+> **RULE 18b** — `$` is the component's, so it does not exist in a `<script
+> module>` block, which runs once at import outside any instance. Reaching for
+> it there is refused by name; import from `@frontierjs/mesa/runtime.js`
+> instead.
+
+**`$` the object and `$:` the label are unrelated.** A reactive watch is a
+labelled statement, which JavaScript keeps in a namespace separate from
+bindings, so the two can never collide and `$:` is unaffected by any of the
+above. Two things wearing one character, and the character is all they share.
 
 | Builtin | Purpose |
 |---|---|
-| `$onMount(fn)` | Runs after component mounts to DOM. No-op on server. |
-| `$onDestroy(fn)` | Runs when component is removed from DOM. |
-| `$onCleanup(fn)` | Registers cleanup inside a `$:` watch+handler. Runs before next execution or on destroy. Must be called before the first `await`. |
-| `$mounted(fn)` | Wraps an async function in a Promise that resolves after mount. Gates the whole template via `<mesa:mounted>`. One per component. |
-| `$emit(event, data?)` | Calls the parent's `on{Event}` / `on{event}` prop. Prop callbacks (`onchange?.(value)`) are preferred for new code; `$emit` is supported for compatibility. |
-| `$inspect(...exprs)` | Dev-only reactive inspector. Logs label + values when any tracked expression changes. Supports `.with(fn)` to replace the default logger. **Stripped entirely when `config.debug: false`.** Top-level only. |
+| `$.onMount(fn)` | Runs after component mounts to DOM. No-op on server. |
+| `$.onDestroy(fn)` | Runs when component is removed from DOM. |
+| `$.onCleanup(fn)` | Registers cleanup inside a `$:` watch+handler. Runs before next execution or on destroy. Must be called before the first `await`. |
+| `$.mounted(fn)` | Wraps an async function in a Promise that resolves after mount. Gates the whole template via `<mesa:mounted>`. One per component. |
+| `$.emit(event, data?)` | Calls the parent's `on{Event}` / `on{event}` prop. Prop callbacks (`onchange?.(value)`) are preferred for new code; `$.emit` is supported for compatibility. |
+| `$.inspect(...exprs)` | Dev-only reactive inspector. Logs label + values when any tracked expression changes. Supports `.with(fn)` to replace the default logger. **Stripped entirely when `config.debug: false`.** Top-level only. |
 | `$props` | All props passed to this component, including undeclared ones. |
 | `$attributes` | All attributes passed to this component. Use for forwarding to a child element. |
 | `$slots` | Reactive object indicating which named slots have content from the parent. Use as `{#if $slots.footer}`. See §9.6. |
 | `$context` | Subtree-scoped shared state. See §7. |
 | `$async.x` | Compiler-generated async state for any top-level `await` variable `x`. |
+| `$.tick(fn)` | Resolves after the DOM has updated. Use it to read the result of a change you just made. See §5. |
 | `$.transition(fn)` | Wraps a state change in the View Transitions API. |
 | `$.entrance(opts)` | Creates an enter/exit animation attachment. |
+| `$.fade(opts?)` | A ready-made entrance: opacity, `{ duration, easing }`. |
+| `$.slide(opts?)` | A ready-made entrance: height, `{ duration, easing }`. |
+| `$.fly(opts?)` | A ready-made entrance: offset, `{ x, y, duration, easing }`. |
 
-`$onMount` and `$onDestroy` are also exported from `@mesa/runtime` as `onMount` and
-`onDestroy` for use inside composable helper functions outside component scope.
+The five animation helpers and the four lifecycle functions are the same for
+every instance, so they live on one object each component's `$` inherits from.
+The rest — `props`, `slots`, `attributes`, `emit`, `context`, `mounted`,
+`inspect`, `async` — differ per instance and are set on `$` itself, and only
+when the component reaches for them.
 
-#### `$inspect` examples
+`$.onMount` and `$.onDestroy` are also exported from `@frontierjs/mesa/runtime.js`
+as `$onMount` and `$onDestroy`, for a composable helper written outside component
+scope — where there is no instance and therefore no `$`. Those are module
+exports and keep the bare spelling; the door is what a component writes.
+
+#### `$.inspect` examples
 
 ```js
 let count = 0
 let user  = { name: 'Alice' }
 
-$inspect(count)                       // logs label='count' on every change
-$inspect(count, user.name)            // multi-arg — logs both, retracks on either
-$inspect(count).with(console.trace)   // custom logger — replaces default
+$.inspect(count)                       // logs label='count' on every change
+$.inspect(count, user.name)            // multi-arg — logs both, retracks on either
+$.inspect(count).with(console.trace)   // custom logger — replaces default
 ```
 
-> **RULE 42** — `$inspect` is dev-only. With `config.debug: false` the compiler
+> **RULE 42** — `$.inspect` is dev-only. With `config.debug: false` the compiler
 > emits no code for it — the call site is removed entirely. It must appear at
 > the top level of the script block (not inside a function or block).
 
@@ -1903,7 +2010,7 @@ no boundary to mount into, and nothing outside Mesa could add one, because the
 markup is produced inside Mesa's own renderer.
 
 Compiling with `{ islands: true }` routes a `client:*` call site through
-`$runtime.island()` instead of calling the component directly. What that
+`$$runtime.island()` instead of calling the component directly. What that
 produces depends on the environment, not the flag:
 
 ```
@@ -1915,7 +2022,7 @@ client         →  identical to the direct call — no markers, no extra DOM
 
 > **RULE 26** *(amended)* — `client:*` directives are stripped by the Mesa core
 > compiler. Compiling with `{ islands: true }` instead emits the call site
-> through `$runtime.island()`, which wraps the output in island markers **in a
+> through `$$runtime.island()`, which wraps the output in island markers **in a
 > server render only**. The directive still never reaches the child as a prop,
 > and omitting the flag produces byte-identical output to before.
 
@@ -2042,7 +2149,7 @@ at module load time.
 ### 19.3 SSR Notes
 
 > **RULE 19** — During `renderToHTML`: signals are synchronous, no reactive graph is built.
-> `$onMount` is a no-op. `$context` is instance-scoped to that render call.
+> `$.onMount` is a no-op. `$context` is instance-scoped to that render call.
 > `watchProxy` / `watchPath` return the raw object and inert stubs, so `{page.path}` still
 > reads the right value — it is simply not reactive, which is all a one-shot render needs.
 >
@@ -2050,7 +2157,7 @@ at module load time.
 > DOM reachable, because compiled components call `htmlToFragment()` at module load — but
 > a DOM is not a client. `setRenderEnvironment(hasDOM, isClient)` carries both;
 > `initRenderer()` passes `(true, false)`. Conflating them made every guard above dead
-> code on the server: `$onMount` ran once per render against a `window` that outlived the
+> code on the server: `$.onMount` ran once per render against a `window` that outlived the
 > request, and path watches built signals nothing disposed.
 
 > **RULE 20** — Full per-request SSR (hydration, async data serialization) is deferred to a
@@ -2132,9 +2239,9 @@ components hydrate to their initial render and serialize cleanly.
 | `bind:` on `export const` prop | Cannot two-way bind an immutable prop |
 | `bind:` on `export var` prop | Cannot two-way bind a non-reactive prop |
 | `on:event` on a component | Use `onclick={fn}` prop instead |
-| `$mounted(fn)` used more than once | Only one `$mounted` per component — use `Promise.all` for multiple operations |
+| `$.mounted(fn)` used more than once | Only one `$.mounted` per component — use `Promise.all` for multiple operations |
 | `bind:value\|mask` without pattern argument | `\|mask` requires a pattern wrapped in `{ }` |
-| `$inspect` inside a function or block | `$inspect` must be at the top level of the script block |
+| `$.inspect` inside a function or block | `$.inspect` must be at the top level of the script block |
 
 ### 20.2 Warnings (Build Succeeds)
 
@@ -2158,7 +2265,7 @@ components hydrate to their initial render and serialize cleanly.
 | CSS scoping | Styles in `<style>` block are component-scoped by default — the scope class is appended to the selector's SUBJECT, so a component can style its own root and cannot reach into a child (RULE 55) |
 | `{#each}` keying | Unkeyed is keyed by index; state `(item.id)` when a row's DOM state must travel with the item |
 | DOM events | `on:eventname={handler}` with optional `\|modifier` chain |
-| Component events | `onclick={fn}` prop preferred; `$emit('click', data)` supported |
+| Component events | `onclick={fn}` prop preferred; `$.emit('click', data)` supported |
 | Two-way binding | `bind:value={variable}` (with optional `\|mask({pattern})` modifier) |
 | Group binding | `bind:group={array}` for checkboxes; `bind:group={scalar}` for radios |
 | Ref capture | `bind:this={variable}` for DOM elements and component instances |
@@ -2168,7 +2275,7 @@ components hydrate to their initial render and serialize cleanly.
 | Element lifecycle | `{@attach fn}` — enter, cleanup, and deferred exit |
 | Raw HTML | `{@html expr}` |
 | Parent content | `<slot />` for unattributed content; `export let children = null` + `{@render children?.(value)}` when the child must pass a value out |
-| Dev-mode logging | `$inspect(expr1, expr2, ...)` — stripped in production |
+| Dev-mode logging | `$.inspect(expr1, expr2, ...)` — stripped in production |
 
 ---
 
@@ -2195,22 +2302,30 @@ components hydrate to their initial render and serialize cleanly.
 | 15 | Component files are always ESM — top-level `await` is valid |
 | 16 | `$async.x` only exists on variables declared with `await` at the top level |
 | 17 | Non-const reactive vars can be manually assigned anytime — last write wins |
-| 18 | `$builtins` are auto-injected by the compiler — never manually imported |
-| 19 | SSR: signals synchronous, `$onMount` no-op, `$context` instance-scoped |
+| 18 | Mesa's builtins are reached through `$`, which the compiler provides inside the component function — no import, and only the members used are wired |
+| 18a | `$` may not be destructured, aliased or shadowed; it is legal only as the object of a member expression (`FJS-D132`) |
+| 18b | `$` does not exist in `<script module>`, which runs outside any instance — import from the runtime there (`FJS-D132`) |
+| 18d | Four prefixes: `$` the door, `$:` the label, `$$` the compiler's locals, `__` the calling convention — and all four `__` names are reserved (`FJS-D137`, `FJS-482`) |
+| 18e | `$class` and `$dom` wear a single `$` and are PROTOCOL, read by name from outside the compiler — the only single-`$` names in compiled output (`FJS-D134`) |
+| 18c | The five data members — `$props`, `$attributes`, `$slots`, `$context`, `$async` — also carry a bare spelling, which is canonical; the bare names stay reserved. The other seven and the animation helpers are refused bare (`FJS-D135`) |
+| 19 | SSR: signals synchronous, `$.onMount` no-op, `$context` instance-scoped |
 | 20 | Full hydration SSR deferred to a future version |
 | 21 | Compiler target is `@mesa/runtime` — full stack ownership |
 | 22 | `bind:` is only valid on `export let` props |
+| 22a | On an ELEMENT `bind:` is `value`, `checked`, `files` (plus `group`, `this`) — the DOM writes back for a form value and nothing else. Everything else is `attr={expr}`. On a COMPONENT `bind:` is unchanged (`FJS-D136`) |
 | 23 | `on:event` on a component is a compiler error — use `onclick={fn}` prop |
 | 24 | `bind:group` requires a top-level `let` variable |
 | 25 | `$context` provides and consumes must be at the top level of the script block |
 | 25a | `const` context consumers always track the provider; `let` initializes at mount then is independent; `var` snapshots at mount only |
-| 26 | `client:*` directives are stripped by the Mesa core compiler — build-layer concern. **Amended:** `{ islands: true }` emits the call site through `$runtime.island()`, which wraps it in island markers in a **server render only** (§18.5) |
+| 25b | `$context.<key>` is a compile step and therefore script-only; the imperative `$context.use` / `.provide` works anywhere (`FJS-477`) |
+| 26 | `client:*` directives are stripped by the Mesa core compiler — build-layer concern. **Amended:** `{ islands: true }` emits the call site through `$$runtime.island()`, which wraps it in island markers in a **server render only** (§18.5) |
 | 27 | `{#key expr}` destroys and recreates content on every change of `expr` |
 | 28 | `{#snippet name(args)}` defines a reusable template fragment; `{@render name(args)}` mounts it |
 | 29 | Snippets close over outer reactive variables; args are plain values, not signals |
 | 30 | `<script module>` runs once at module load — shared across all instances |
 | 31 | `class="..."` on a component is forwarded to the child's class prop automatically |
-| 31a | `$class` is a compiler-internal name — never declare `export let $class` directly. Use `{class}` or `bind:class` on the child element. |
+| 31b | `bind:class` on an ELEMENT is a compile error — it never worked, `class` is not a DOM property. `{class}` is the form that merges; on a component `bind:class` is an ordinary two-way prop (`FJS-478`) |
+| 31a | `$class` is a PROTOCOL name, not an internal one — never declare `export let $class` directly. Use `{class}` or `bind:class` on the child element. It does not move when internal names do (`FJS-D134`). |
 | 32 | `bind:class` and `{class}` on an element auto-wire the parent's class through |
 | 33 | `{@html expr}` injects raw HTML — only use with trusted content |
 | 34 | `{#virtual each}` takes `height=N` (fixed item height in px) and `viewport="Npx"`; the height is measured from the first row when it is not declared, and variable height is not supported |
@@ -2218,12 +2333,24 @@ components hydrate to their initial render and serialize cleanly.
 | 35a | `<slot />` is preferred for unattributed content; `export let children = null` + `{@render children?.(value)}` is the form for content the child must PARAMETERISE, and is not legacy for that |
 | 35b | `<slot>` takes no attribute but `name` — any other is a compile error, because a slot carries content in and never a value out |
 | 36 | `bind:this` on a component exposes exported `let` props and exported functions — never a DOM node |
-| 37 | `$mounted(fn)` may only appear once per component — use `Promise.all` inside for multiple operations |
+| 37 | `$.mounted(fn)` may only appear once per component — use `Promise.all` inside for multiple operations |
+| 37a | `$.mounted(fn)` is wired by NAME, so `const ready = $.mounted(fn)` is the only form; a bare call, a reference, or a template read are refused (`FJS-477`) |
 | 38 | `<mesa:mounted>` always gates the entire component template — wrapping and self-closing forms are equivalent |
 | 39 | `onerror` on `<mesa:mounted>` runs programmatically on rejection, independent of the `failed` snippet |
 | 40 | `<mesa:boundary>` and `<mesa:mounted>` resolve snippets in the same order: co-located → global → blank |
 | 41 | `bind:value\|mask` requires a pattern argument wrapped in `{ }` — string literal or reactive expression |
-| 42 | `$inspect` is dev-only — stripped entirely when `config.debug: false`. Top-level only. |
+| 42 | `$.inspect` is dev-only — stripped entirely when `config.debug: false`. Top-level only. |
+| 43 | Replacement is reactive, mutation is not — `o = {…}` notifies, `o.n = 2` does not unless a `$:` path watch covers it |
+| 44 | The compiler tracks what it compiled: every `let`/`const` in the component is reactive unaided, an imported binding is inert until a `$:` watch names it |
+| 45 | A watch fires only for writes going THROUGH the proxy Mesa created; a write on the raw object from outside is invisible |
+| 46 | A watch at a path covers that path and everything beneath it; a sibling subtree stays untracked |
+| 47 | Watches belong to the OBJECT, not the component that declared them — the registry is keyed by the object and shared process-wide |
+| 48 | `delete obj.key` notifies the watches covering that key exactly as `obj.key = undefined` does; deleting an absent key notifies nothing |
+| 49 | Values with internal slots — `Date`, `Map`, `Set`, `RegExp`, `Promise`, typed arrays, `Error` — pass through the proxy untouched and their contents are not reactive |
+| 50 | A `$: { }` block runs code — if every top-level statement in it is a bare read, it is a compile error |
+| 51 | Reactive logic does not belong in `.js` modules: a store holds state and the writes, deriving and reacting happen in components |
+| 52 | Inside a `$: { }` block the handler must be an inline function; the reference shorthand is available only on the unbraced form |
+| 53 | The compiler REPORTS and the build DECIDES — `compileSource` collects diagnostics and throws only on a parse failure |
 | 54 | `createRoot(fn)` gives ownership without tracking — for anything that owns a lifetime (see §5) |
 | 55 | Scoped CSS appends the hash to the selector's SUBJECT — a component styles its own root, and reaches no child's markup. Cross a boundary with `:global(...)` |
 | 56 | An instance `<script>` exports exactly two things: `export let` (a prop) and `export function` (a method on the instance API). Every other export form is a compiler error — module scope is `<script module>` |
@@ -2285,13 +2412,13 @@ export const cart = { items: [], total: 0 }
     // Watch+handler — debounced callback
     $: selectedCity, async () => {
         const t = setTimeout(() => onSelect(selectedCity), 300)
-        $onCleanup(() => clearTimeout(t))
+        $.onCleanup(() => clearTimeout(t))
     }
 
     // Auto-tracked side effect — runs when either dep changes
     $: document.title = `${selectedCity}, ${selectedState}`
 
-    $onMount(() => panelEl.focus())
+    $.onMount(() => panelEl.focus())
 </script>
 
 <!-- Global keyboard shortcut -->

@@ -12,7 +12,7 @@
 import { describe, test, expect } from 'bun:test'
 
 import { createClient } from '../../litestone/src/index.js'
-import { createApp, createService, membershipClaim, applyClaims, MEMBERSHIP } from '../index.ts'
+import { createApp, createService, membershipClaim, applyClaims, MEMBERSHIP, sessionGateLevel } from '../index.ts'
 import type { PrincipalResolver } from '../index.ts'
 import type { SessionContext } from '../src/auth/types.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
@@ -142,15 +142,77 @@ describe('createApp({ principal })', () => {
     await expect(app.service('docs').find({}, AS_U1)).rejects.toThrow(/may not set 'userId'/)
   })
 
-  test('does not run for an anonymous caller', async () => {
-    // Minting a principal out of claims alone turns *anonymous* into *someone*
-    // — an object satisfying `auth() != null` while carrying no identity.
+  test('RUNS for an anonymous caller — a guest may hold a claim', async () => {
+    // A bearer token is a claim the REQUEST proves, and the population it
+    // serves is exactly the one with no `auth().id`: a guest cart, an
+    // invitation, an unsubscribe link. Without this the only way to scope
+    // those rows is a hook reading them through `asSystem()`, which is the
+    // thing Invariant 6 exists to forbid.
     const db = await seeded()
-    let ran = false
-    const { app } = await appWith(db, async () => { ran = true; return {} })
+    let saw: unknown = 'never ran'
+    const { app } = await appWith(db, async (_ctx, user) => { saw = user; return {} })
 
     await app.service('docs').find({}, { auth: { user: null } })
-    expect(ran).toBe(false)
+    expect(saw).toBeNull()
+  })
+
+  test("a guest's claim scopes the SQL and grants no identity", async () => {
+    const db = await seeded()
+    const { app } = await appWith(db, async () => ({ workspaceId: 2 }))
+
+    const rows = rowsOf(await app.service('docs').find({}, { auth: { user: null } }))
+    expect(rows.map((r: any) => r.title)).toEqual(['ws two'])
+  })
+
+  test('a guest principal does NOT become ctx.auth.user', async () => {
+    // The whole of the care this path needs. `sessionGateLevel` grades any
+    // object it is handed, and a claims-only principal sets none of
+    // isSystemAdmin/isOwner/isAdmin while leaving verifiedAt and activatedAt
+    // UNDEFINED — silence, not null — so it falls through to LEVELS.USER.
+    // Promoting a guest to a session object would therefore grade every
+    // anonymous caller 4, in every app that adopted a resolver, silently.
+    const db = await seeded()
+    const { app, seen } = await appWith(db, async () => ({ workspaceId: 2 }))
+
+    await app.service('docs').find({}, { auth: { user: null } })
+    expect(seen.user).toBeNull()
+    expect(sessionGateLevel(seen.user as never)).toBe(0)
+  })
+
+  test('a resolver that claims nothing grants a guest nothing', async () => {
+    // `{}` must not re-scope the client to an empty principal — that would be a
+    // claim nobody made. The client therefore stays the ROOT one, which is not
+    // the same as an unfiltered one: this schema declares row tenancy, so the
+    // desugared `@@deny` compares `workspaceId` against a null claim and no row
+    // matches. Nothing is the right answer and it is reached honestly.
+    const db = await seeded()
+    const { app } = await appWith(db, async () => ({}))
+
+    const rows = rowsOf(await app.service('docs').find({}, { auth: { user: null } }))
+    expect(rows.length).toBe(0)
+  })
+
+  test('membershipClaim refuses a guest rather than querying for one', async () => {
+    // It reads `userId` off the user; with a guest that would become
+    // `where: { userId: undefined }`, which matches the first row holding a
+    // null column and hands a stranger someone else's standing.
+    const db = await seeded()
+    const resolver = membershipClaim({
+      tenantFrom: () => '1',
+      model:      'doc',
+      tenant:     'workspaceId',
+      subject:    'userId',
+      standing:   'title',
+    })
+    const app = createApp({ db, principal: resolver })
+    let claims: unknown
+    app.services.register(createService({
+      name: 'probe',
+      async find(ctx: ServiceContext) { claims = ctx.auth.user; return [] },
+    }))
+
+    await app.service('probe').find({}, { auth: { user: null } })
+    expect(claims).toBeNull()
   })
 
   test('a throw travels — the resolver is Hook tier', async () => {
@@ -194,10 +256,30 @@ describe('membershipClaim()', () => {
     expect(seen.user).toBeUndefined()
   })
 
-  test('no tenant named is no claim and no query', async () => {
+  test('no tenant NAMED is a different refusal from not belonging to one', async () => {
+    // Collapsing the two produces a sentence that names nothing: *you do not
+    // belong to the workspaceId this request names*, to a request that named
+    // none. And the status differs — an incomplete request, not a refused one.
     const db = await seeded()
     const { app } = await appWith(db, resolver(null))
-    await expect(app.service('docs').find({}, AS_U1)).rejects.toThrow(/do not belong to the 'workspaceId'/)
+
+    const err: any = await app.service('docs').find({}, AS_U1).then(() => null, (e: unknown) => e)
+    expect(err.message).toMatch(/names no 'workspaceId'/)
+    expect(err.code).toBe(400)
+  })
+
+  test('…and it quotes how one IS named, which only the resolver knows', async () => {
+    const db = await seeded()
+    const { app } = await appWith(db, membershipClaim({
+      tenantFrom: () => null,
+      model:      'member',
+      subject:    'userId',
+      tenant:     'workspaceId',
+      namedBy:    'the X-Workspace-Id header',
+    }))
+
+    await expect(app.service('docs').find({}, AS_U1))
+      .rejects.toThrow(/name one with the X-Workspace-Id header/)
   })
 
   test('parks the membership row, so the rest of it costs no second query', async () => {

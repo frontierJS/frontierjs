@@ -61,6 +61,15 @@
     service: SERVICE,
   }
 
+  // A resource that owns its own write (`FJS-D114`). The form must hand the
+  // record to `save()` and state the mode it was asked for, rather than
+  // choosing a service method itself — the RESOURCE knows the model's id field
+  // and the form does not.
+  const SAVER = {
+    ...RESOURCE,
+    save: (data, opts) => record_('save:' + (opts?.mode ?? '-') + ':' + (data?.reference ?? '')),
+  }
+
   // Bound so the spec can read them without reaching inside the component.
   let record    = undefined     // bound, so the spec can see what the form holds
   let dirty     = false
@@ -95,6 +104,10 @@
 
 <div id="upsert">
   <Form resource={RESOURCE} method="upsert" />
+</div>
+
+<div id="saves">
+  <Form resource={SAVER} />
 </div>
 
 <div id="reset-on-done">

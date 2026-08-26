@@ -1,0 +1,71 @@
+<!--
+  The walkthrough's stepping.
+
+  All fifteen steps are in the prerendered file — each with the whole file as it
+  stands and what that step bought you — so the page reads end to end with no
+  JavaScript. This moves which one is shown, and keeps the rail, the counter,
+  the buttons and the URL agreeing with it.
+-->
+<script>
+  $.onMount(() => {
+    const rail   = document.querySelector('[data-steps]')
+    const panels = document.querySelector('[data-panels]')
+    const prev   = document.querySelector('[data-prev]')
+    const next   = document.querySelector('[data-next]')
+    const count  = document.querySelector('[data-counter]')
+    if (!rail || !panels) return
+
+    const steps = [...panels.children]
+    const btns  = [...rail.querySelectorAll('.stepbtn')]
+    const total = steps.length
+    let i = steps.findIndex((s) => s.classList.contains('is-shown'))
+    if (i < 0) i = 0
+
+    const render = () => {
+      steps.forEach((s, n) => s.classList.toggle('is-shown', n === i))
+      for (const b of btns) {
+        const n = +b.dataset.n
+        b.classList.toggle('now', n === i)
+        b.classList.toggle('done', n < i)
+        if (n === i) b.setAttribute('aria-current', 'step')
+        else b.removeAttribute('aria-current')
+      }
+      if (prev) prev.disabled = i === 0
+      if (next) {
+        next.disabled = i === total - 1
+        next.textContent = i === total - 1 ? 'Done' : 'Next →'
+      }
+      if (count) count.textContent = `Step ${i + 1} of ${total}`
+      history.replaceState(null, '', '#' + (i + 1))
+    }
+
+    const go = (n) => { i = Math.max(0, Math.min(total - 1, n)); render() }
+
+    const onPrev = () => go(i - 1)
+    const onNext = () => go(i + 1)
+    const onRail = (e) => {
+      const b = e.target.closest('.stepbtn')
+      if (b) go(+b.dataset.n)
+    }
+    const onKey = (e) => {
+      if (e.target.matches('input, textarea')) return
+      if (e.key === 'ArrowRight') { e.preventDefault(); go(i + 1) }
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); go(i - 1) }
+    }
+
+    prev?.addEventListener('click', onPrev)
+    next?.addEventListener('click', onNext)
+    rail.addEventListener('click', onRail)
+    addEventListener('keydown', onKey)
+
+    const start = parseInt(location.hash.slice(1), 10)
+    go(Number.isFinite(start) ? start - 1 : i)
+
+    return () => {
+      prev?.removeEventListener('click', onPrev)
+      next?.removeEventListener('click', onNext)
+      rail.removeEventListener('click', onRail)
+      removeEventListener('keydown', onKey)
+    }
+  })
+</script>

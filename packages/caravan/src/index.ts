@@ -148,6 +148,167 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
+  // ── junction.config.js ────────────────────────────────────────────────────
+  //
+  // Read at boot(), never at register(): register() runs the moment
+  // `app.configure(createCaravan(...))` is called and junction does not load
+  // junction.config.js until `start()`, so anything read there is the config as
+  // it was BEFORE the file — which is to say, without it (`FJS-416`).
+
+  function applyJunctionConfig(app: CaravanApp): void {
+      // The caravan section of junction.config.js. Every key is honoured, and
+      // opts always wins — explicit beats config file. Absent is not a value:
+      // the tests are `=== undefined`, so `cleanupAfter: 0` from a config file
+      // disables the sweep rather than reading as "unset" (`admin: false` the
+      // same way).
+      const junctionCaravan = (app as {
+        config?: { _junction?: { caravan?: Partial<CaravanOptions> } }
+      }).config?._junction?.caravan
+
+      if (junctionCaravan) {
+        if (opts.db           === undefined && junctionCaravan.db           !== undefined) dbPath       = junctionCaravan.db
+        if (opts.jobsDir      === undefined && junctionCaravan.jobsDir      !== undefined) jobsDir      = junctionCaravan.jobsDir
+        if (opts.cleanupAfter === undefined && junctionCaravan.cleanupAfter !== undefined) cleanupAfter = junctionCaravan.cleanupAfter
+        if (opts.pollInterval === undefined && junctionCaravan.pollInterval !== undefined) pollInterval = junctionCaravan.pollInterval
+        if (opts.drainTimeout === undefined && junctionCaravan.drainTimeout !== undefined) drainTimeout = junctionCaravan.drainTimeout
+        if (opts.admin        === undefined && junctionCaravan.admin        !== undefined) adminOpts    = junctionCaravan.admin
+        if (opts.heartbeat    === undefined && junctionCaravan.heartbeat    !== undefined) heartbeatMs  = junctionCaravan.heartbeat
+        if (opts.lease        === undefined && junctionCaravan.lease        !== undefined) leaseMs      = junctionCaravan.lease
+
+        // Per queue rather than wholesale: a queue named in both places keeps
+        // the opts config, a queue only the file names is added.
+        for (const [name, config] of Object.entries(junctionCaravan.queues ?? {})) {
+          if (!opts.queues?.[name]) queueConf[name] = config
+        }
+
+        // The database opens on first use, which is normally after this. A
+        // dispatch before configure() opens it at the default path, and a
+        // config file naming a different one can no longer take effect — say so
+        // rather than run against a file the app did not name.
+        if (openedPath && openedPath !== dbPath) {
+          console.warn(
+            `[Caravan] jobs database was already opened at '${openedPath}', so the configured '${dbPath}' is not in use — ` +
+            `something dispatched or read the queue before app.configure(createCaravan(…))`
+          )
+          dbPath = openedPath
+        }
+      }
+  }
+
+  // ── admin routes ──────────────────────────────────────────────────────────
+  //
+  // Mounted at boot() rather than register(), because whether to mount them at
+  // all can come from junction.config.js and that file is not loaded until
+  // start() (`FJS-416`). Still early enough: junction's `boot-plugins` phase
+  // runs before `service-routes` and before `listen`.
+
+  function mountAdminRoutes(app: CaravanApp): void {
+    if (!adminOpts) return
+
+    const adminCfg  = adminOpts === true ? {} : adminOpts
+      const basePath  = adminCfg.path ?? '/jobs'
+      const secret    = adminCfg.secret
+
+      // These are raw app.get/app.post routes, so ctx is Junction's
+      // TransportContext: headers live on ctx.headers (lowercased by the
+      // transport), NOT nested under ctx.route — route is path captures only.
+      //
+      // Throwing an error that CARRIES its status. Junction's error boundary
+      // reads a numeric `status`/`statusCode`/`code` off any thrown value, so
+      // this maps to a real 401 without Caravan importing anything from
+      // Junction. (It used to return a hand-built Response, because the
+      // boundary only understood Junction's own error classes and a thrown
+      // `{ code: 401 }` surfaced as a 500.)
+      const deny = (status: number, message: string): never => {
+        throw Object.assign(new Error(message), { status })
+      }
+
+      const guard = (ctx: Record<string, unknown>): void => {
+        if (!secret) return
+        const headers = (ctx.headers ?? {}) as Record<string, string>
+        if (headers['x-caravan-secret'] !== secret) deny(401, 'Unauthorized')
+      }
+
+      const appRouter = app as unknown as {
+        get(path: string, fn: (ctx: unknown) => unknown): void
+        post(path: string, fn: (ctx: unknown) => unknown): void
+      }
+
+      // Junction's router uses brace syntax for path params ({id}); an
+      // Express-style ':id' parses as a literal static segment and never
+      // matches, which 404s every by-id route.
+      appRouter.get(basePath, (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        guard(c)
+        const q = c.query as Record<string, string> | undefined
+        return Response.json(caravan.list({
+          queue:  q?.queue,
+          status: q?.status as JobStatus | undefined,
+          limit:  q?.limit  ? parseInt(q.limit)  : 50,
+          offset: q?.offset ? parseInt(q.offset) : 0,
+        }))
+      })
+
+      appRouter.get(`${basePath}/schedules`, (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        guard(c)
+        return Response.json(caravan.nextRuns())
+      })
+
+      appRouter.get(`${basePath}/{id}`, (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        guard(c)
+        const id  = (c.route as Record<string, string>)?.id
+        const job = caravan.find(id)
+        if (!job) deny(404, `Job '${id}' not found`)
+        return Response.json(job)
+      })
+
+      appRouter.post(`${basePath}/{id}/retry`, async (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        guard(c)
+        const id = (c.route as Record<string, string>)?.id
+        const ok = await caravan.retry(id)
+        return Response.json({ ok })
+      })
+
+      appRouter.post(`${basePath}/{id}/cancel`, async (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        guard(c)
+        const id = (c.route as Record<string, string>)?.id
+        const ok = await caravan.cancel(id)
+        return Response.json({ ok })
+      })
+
+      // Run a registered job NOW, by name.
+      //
+      // The admin surface could retry a job and cancel a job but not START
+      // one, so the only way to exercise a nightly sweep was to wait until
+      // 03:00 — which means a cron handler's behaviour is untestable and, in
+      // an incident, unrunnable. "Run the sweep now" is the ops verb this was
+      // missing.
+      //
+      // POSTed to a NAME, not an id: an id is a job that already exists.
+      // The body, if any, becomes the job's data — the same shape dispatch()
+      // takes — so a scheduled handler that reads a parameter can be given a
+      // different one by hand. Refuses an unregistered name rather than
+      // queueing a job no worker will ever pick up.
+      appRouter.post(`${basePath}/run/{name}`, async (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        guard(c)
+        const name = (c.route as Record<string, string>)?.name
+        if (!handlers.has(name))
+          deny(404, `No handler registered for '${name}'`)
+
+        // TransportContext.body is already parsed by the transport — there is
+        // no request to read here, and awaiting one would hang.
+        const data = (c.body && typeof c.body === 'object') ? c.body : {}
+
+        const id = await caravan.dispatch(name, data)
+        return Response.json({ ok: true, id })
+      })
+  }
+
   const caravan: CaravanInstance = {
 
     name: 'caravan',
@@ -197,6 +358,13 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         ? dispatchOpts.actor ?? null
         : host?.principal?.()?.userId ?? null
 
+      // WHERE, on the same absent-is-not-null rule. A job queued inside a
+      // request is for the tenant that asked for it and nothing has to be
+      // said; `tenant: null` is work that belongs to no tenant, stated.
+      const tenantId = 'tenant' in dispatchOpts
+        ? dispatchOpts.tenant ?? null
+        : host?.tenant?.() ?? null
+
       const row = {
         id,
         queue:        targetQueue,
@@ -217,6 +385,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         run_at:       now + delay,
         created_at:   now,
         actor_id:     actorId,
+        tenant_id:    tenantId,
       }
 
       // The primary key is the only thing that can decide a race between two
@@ -518,44 +687,6 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     // ── Junction plugin protocol ──────────────────────────────────────────────
 
     register(app: CaravanApp): void {
-      // The caravan section of junction.config.js. Every key is honoured, and
-      // opts always wins — explicit beats config file. Absent is not a value:
-      // the tests are `=== undefined`, so `cleanupAfter: 0` from a config file
-      // disables the sweep rather than reading as "unset" (`admin: false` the
-      // same way).
-      const junctionCaravan = (app as {
-        config?: { _junction?: { caravan?: Partial<CaravanOptions> } }
-      }).config?._junction?.caravan
-
-      if (junctionCaravan) {
-        if (opts.db           === undefined && junctionCaravan.db           !== undefined) dbPath       = junctionCaravan.db
-        if (opts.jobsDir      === undefined && junctionCaravan.jobsDir      !== undefined) jobsDir      = junctionCaravan.jobsDir
-        if (opts.cleanupAfter === undefined && junctionCaravan.cleanupAfter !== undefined) cleanupAfter = junctionCaravan.cleanupAfter
-        if (opts.pollInterval === undefined && junctionCaravan.pollInterval !== undefined) pollInterval = junctionCaravan.pollInterval
-        if (opts.drainTimeout === undefined && junctionCaravan.drainTimeout !== undefined) drainTimeout = junctionCaravan.drainTimeout
-        if (opts.admin        === undefined && junctionCaravan.admin        !== undefined) adminOpts    = junctionCaravan.admin
-        if (opts.heartbeat    === undefined && junctionCaravan.heartbeat    !== undefined) heartbeatMs  = junctionCaravan.heartbeat
-        if (opts.lease        === undefined && junctionCaravan.lease        !== undefined) leaseMs      = junctionCaravan.lease
-
-        // Per queue rather than wholesale: a queue named in both places keeps
-        // the opts config, a queue only the file names is added.
-        for (const [name, config] of Object.entries(junctionCaravan.queues ?? {})) {
-          if (!opts.queues?.[name]) queueConf[name] = config
-        }
-
-        // The database opens on first use, which is normally after this. A
-        // dispatch before configure() opens it at the default path, and a
-        // config file naming a different one can no longer take effect — say so
-        // rather than run against a file the app did not name.
-        if (openedPath && openedPath !== dbPath) {
-          console.warn(
-            `[Caravan] jobs database was already opened at '${openedPath}', so the configured '${dbPath}' is not in use — ` +
-            `something dispatched or read the queue before app.configure(createCaravan(…))`
-          )
-          dbPath = openedPath
-        }
-      }
-
       // Expose caravan instance on app.jobs. claim() refuses to overwrite an
       // existing claim — two plugins owning one name used to be last-write-wins,
       // and the loser just stopped working with no error anywhere.
@@ -581,114 +712,43 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         app.registerMetricsSource('jobs', () => caravan.stats())
       }
 
-      // Admin HTTP endpoints — opt-in via opts.admin
-      if (adminOpts) {
-        const adminCfg  = adminOpts === true ? {} : adminOpts
-        const basePath  = adminCfg.path ?? '/jobs'
-        const secret    = adminCfg.secret
-
-        // These are raw app.get/app.post routes, so ctx is Junction's
-        // TransportContext: headers live on ctx.headers (lowercased by the
-        // transport), NOT nested under ctx.route — route is path captures only.
-        //
-        // Throwing an error that CARRIES its status. Junction's error boundary
-        // reads a numeric `status`/`statusCode`/`code` off any thrown value, so
-        // this maps to a real 401 without Caravan importing anything from
-        // Junction. (It used to return a hand-built Response, because the
-        // boundary only understood Junction's own error classes and a thrown
-        // `{ code: 401 }` surfaced as a 500.)
-        const deny = (status: number, message: string): never => {
-          throw Object.assign(new Error(message), { status })
-        }
-
-        const guard = (ctx: Record<string, unknown>): void => {
-          if (!secret) return
-          const headers = (ctx.headers ?? {}) as Record<string, string>
-          if (headers['x-caravan-secret'] !== secret) deny(401, 'Unauthorized')
-        }
-
-        const appRouter = app as unknown as {
-          get(path: string, fn: (ctx: unknown) => unknown): void
-          post(path: string, fn: (ctx: unknown) => unknown): void
-        }
-
-        // Junction's router uses brace syntax for path params ({id}); an
-        // Express-style ':id' parses as a literal static segment and never
-        // matches, which 404s every by-id route.
-        appRouter.get(basePath, (ctx: unknown) => {
-          const c = ctx as Record<string, unknown>
-          guard(c)
-          const q = c.query as Record<string, string> | undefined
-          return Response.json(caravan.list({
-            queue:  q?.queue,
-            status: q?.status as JobStatus | undefined,
-            limit:  q?.limit  ? parseInt(q.limit)  : 50,
-            offset: q?.offset ? parseInt(q.offset) : 0,
-          }))
-        })
-
-        appRouter.get(`${basePath}/schedules`, (ctx: unknown) => {
-          const c = ctx as Record<string, unknown>
-          guard(c)
-          return Response.json(caravan.nextRuns())
-        })
-
-        appRouter.get(`${basePath}/{id}`, (ctx: unknown) => {
-          const c = ctx as Record<string, unknown>
-          guard(c)
-          const id  = (c.route as Record<string, string>)?.id
-          const job = caravan.find(id)
-          if (!job) deny(404, `Job '${id}' not found`)
-          return Response.json(job)
-        })
-
-        appRouter.post(`${basePath}/{id}/retry`, async (ctx: unknown) => {
-          const c = ctx as Record<string, unknown>
-          guard(c)
-          const id = (c.route as Record<string, string>)?.id
-          const ok = await caravan.retry(id)
-          return Response.json({ ok })
-        })
-
-        appRouter.post(`${basePath}/{id}/cancel`, async (ctx: unknown) => {
-          const c = ctx as Record<string, unknown>
-          guard(c)
-          const id = (c.route as Record<string, string>)?.id
-          const ok = await caravan.cancel(id)
-          return Response.json({ ok })
-        })
-
-        // Run a registered job NOW, by name.
-        //
-        // The admin surface could retry a job and cancel a job but not START
-        // one, so the only way to exercise a nightly sweep was to wait until
-        // 03:00 — which means a cron handler's behaviour is untestable and, in
-        // an incident, unrunnable. "Run the sweep now" is the ops verb this was
-        // missing.
-        //
-        // POSTed to a NAME, not an id: an id is a job that already exists.
-        // The body, if any, becomes the job's data — the same shape dispatch()
-        // takes — so a scheduled handler that reads a parameter can be given a
-        // different one by hand. Refuses an unregistered name rather than
-        // queueing a job no worker will ever pick up.
-        appRouter.post(`${basePath}/run/{name}`, async (ctx: unknown) => {
-          const c = ctx as Record<string, unknown>
-          guard(c)
-          const name = (c.route as Record<string, string>)?.name
-          if (!handlers.has(name))
-            deny(404, `No handler registered for '${name}'`)
-
-          // TransportContext.body is already parsed by the transport — there is
-          // no request to read here, and awaiting one would hang.
-          const data = (c.body && typeof c.body === 'object') ? c.body : {}
-
-          const id = await caravan.dispatch(name, data)
-          return Response.json({ ok: true, id })
+      // Readiness, for the failure the counts cannot show on their own: a queue
+      // holding one stuck job reports `running: 1` for the life of the process,
+      // which is what a queue doing steady work reports too (`FJS-295`). The
+      // age of the oldest in-flight job is what separates them.
+      //
+      // Only bounded work is graded. A handler that declared no `timeout` said
+      // it has no bound, and failing an app's readiness probe on a long job
+      // somebody deliberately left unbounded would take a healthy app out of a
+      // load balancer. So the threshold is the LONGEST declared timeout, past
+      // which every bounded job should already have been given up on — and a
+      // queue where nothing declares one is never unhealthy here.
+      if (typeof app.registerHealthCheck === 'function') {
+        app.registerHealthCheck('jobs', () => {
+          const bounds = caravan.registrations().map(r => r.timeout).filter((t): t is number => t != null)
+          if (!bounds.length) return true
+          const limit  = Math.max(...bounds)
+          const oldest = Object.values(caravan.stats().queues)
+            .map(q => q.oldestRunningMs ?? 0)
+          return Math.max(0, ...oldest) < limit * 2
         })
       }
+
     },
 
-    async boot(_app: CaravanApp): Promise<void> {
+    async boot(app: CaravanApp): Promise<void> {
+      // The caravan section of junction.config.js is read HERE and not in
+      // register(), because register() runs at `app.configure(...)` time and
+      // junction does not load that file until `start()`. Every app configures
+      // its queue at module scope, so the whole block was unreachable for all
+      // of them — except an app that hand-loads the config itself and passes it
+      // to createApp, which is what made this look like it worked (`FJS-416`).
+      //
+      // boot() is the first hook that runs after junction's `load-config`
+      // phase, and it is still before `service-routes` and `listen`, so the
+      // admin routes this mounts are registered in time to be served.
+      applyJunctionConfig(app)
+      mountAdminRoutes(app)
       await caravan.start()
     },
 

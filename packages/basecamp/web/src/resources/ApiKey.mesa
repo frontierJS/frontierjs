@@ -11,13 +11,13 @@
   // to a bare make(): labels, required fields and validation all silently stop
   // being schema-derived.
   import { createResource } from '@frontierjs/sierra/junction'
-  import { stampWorkspace } from '../session.js'
 
   // `validate: false` is not a shortcut. ApiKey's create schema is
-  // `required: ["workspaceId", "userId", "name", "tokenHint"]`, and three of
-  // those four are written by the server: the workspace comes from a header,
-  // the owner is whoever is calling, and `tokenHint` is derived from a token
-  // that does not exist until auth mints it. So schema-derived validation in
+  // `required: ["userId", "name", "tokenHint"]`, and two of those three are
+  // written by the server: the owner is whoever is calling, and `tokenHint` is
+  // derived from a token that does not exist until auth mints it.
+  // (`workspaceId` was a fourth until the tenancy declaration started
+  // defaulting it from the principal — `FJS-387`.) So schema-derived validation in
   // the browser refuses every create before the request is made, naming fields
   // the caller was never meant to send — which renders as "the button does
   // nothing".
@@ -29,6 +29,5 @@
   export const apiKeys = createResource('api-keys', {
     model: 'ApiKey',
     validate: false,
-    hooks: { before: { create: [stampWorkspace] } },
   })
 </script>

@@ -80,6 +80,11 @@ const SKIP = {
   'feedback/AlertProvider': 'portals to document.body; no SSR output',
   'feedback/Toaster':       'portals to document.body; no SSR output',
   'overlay/CommandPalette': 'portals to document.body; no SSR output',
+  'overlay/ConfirmPanel':   'portals to document.body; no SSR output',
+  // Mounted once near the root and rendering nothing until somebody clicks a
+  // `[data-confirm]` element. A caller writes no attribute on it, and there is
+  // no element of its own for one to land on.
+  'overlay/ConfirmProvider': 'a listener, not an element — it renders the panel and nothing else',
   'layout/AccordionItem':   'reads Accordion\'s $context; standalone render has none',
   // It renders whichever control the field asked for and hands that control
   // the props its entry built — there is no element of its own for a caller's

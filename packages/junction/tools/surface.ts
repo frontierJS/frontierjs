@@ -43,6 +43,8 @@ export interface SurfaceService {
   model:         string
   methods:       string[]
   customMethods: string[]
+  /** The `type` in the seed each method's payload must satisfy, keyed by method. */
+  inputs:        Record<string, string>
   channel:       string[]
   transactional: string[]
   softDelete:    string | null
@@ -78,6 +80,7 @@ export function describeSurface(app: App): Surface {
       model:         d.model,
       methods:       d.methods,
       customMethods: d.customMethods,
+      inputs:        d.inputs ?? {},
       channel,
       transactional: d.transactional,
       softDelete:    d.softDelete,
@@ -105,7 +108,9 @@ export function describeSurface(app: App): Surface {
 // chain runs in the order it is listed, and the plugin list is configure order,
 // which `requires:` is checked against.
 
-const PHASES = ['before', 'around', 'after', 'error'] as const
+// Run order, not declaration order: `around` wraps everything (the derived
+// `gateAuth` lives there), then before, then validated, then after.
+const PHASES = ['around', 'before', 'validated', 'after', 'error'] as const
 
 function hookRows(map: Record<string, Record<string, string[]>>): string[] {
   const rows: string[] = []
@@ -173,6 +178,10 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
     out.push('')
     out.push(`- **methods** — ${svc.methods.length ? svc.methods.map(m => `\`${m}\``).join(', ') : '(none)'}`)
     if (svc.customMethods.length) out.push(`- **custom methods** — ${svc.customMethods.map(a => `\`${a}\``).join(', ')}`)
+    // A declared input is a fact about the wire that is written in a service
+    // file and readable nowhere else.
+    for (const [method, type] of Object.entries(svc.inputs).sort())
+      out.push(`- **input** — \`${method}\` takes \`${type}\``)
     if (svc.channel.length)       out.push(`- **broadcasts on** — ${svc.channel.map(c => `\`${c}\``).join(', ')}`)
     if (svc.transactional.length) out.push(`- **transactional** — ${svc.transactional.map(m => `\`${m}\``).join(', ')}`)
     if (svc.softDelete)           out.push(`- **soft delete** — \`${svc.softDelete}\``)

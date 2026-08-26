@@ -30,6 +30,7 @@ import { createDatabase } from '@frontierjs/junction'
 import { createLitestoneAuth } from '@frontierjs/auth'
 
 import { createBasecampDb } from '../api/src/core/db.ts'
+import { BLUEPRINTS }        from './blueprints.js'
 import { env } from '../api/src/core/env.ts'
 
 const PASSWORD = 'hunter2hunter2'
@@ -654,8 +655,145 @@ export class BasecampSeeder extends Seeder {
             data:  { status: 'unreachable', lastHeartbeatAt: new Date(Date.now() - 45 * 60_000).toISOString() },
           })
         }
+
+        // ── The registry mirror ───────────────────────────────────────
+        // Per workspace, because `RegistryImage` is the one new model that
+        // carries a workspaceId. Two repositories, and the SHARED DIGEST is
+        // the point: `latest` and the newest version tag are one image, which
+        // the repositories aggregate has to charge for once. A per-tag sum
+        // reports double the disk, and that is the number somebody uses to
+        // decide what to delete.
+        await seedRegistry(sys, ws.id, index)
       }
+
+      // ── The installation ──────────────────────────────────────────
+      // Outside the workspace loop, because none of these belongs to a
+      // tenant — all four models are `@@tenant(none)`. They are the rows
+      // /hub, /blueprints and a person's own settings screen read.
+      await seedInstallation(sys, owner, users)
     })
+  }
+}
+
+/**
+ * What no workspace owns — the catalogue, the settings, an archive, and one
+ * person's answer about notifications.
+ */
+async function seedInstallation(sys, owner, users) {
+  // ── The catalogue ───────────────────────────────────────────────────
+  // Written blueprint-then-params, which is the same two calls the service
+  // makes a caller do and for the same reason: the create schema is closed and
+  // `params` is a relation, so a single payload carrying both is refused.
+  for (const bp of BLUEPRINTS) {
+    const { params, ...columns } = bp
+    const row = await sys.blueprint.create({ data: columns })
+    for (const [position, p] of params.entries()) {
+      await sys.blueprintParam.create({
+        data: {
+          blueprintId:  row.id,
+          key:          p.key,
+          label:        p.label,
+          hint:         p.hint ?? null,
+          defaultValue: p.defaultValue ?? null,
+          required:     p.required === true,
+          secret:       p.secret   === true,
+          generate:     p.generate ?? null,
+          position,
+        },
+      })
+    }
+  }
+
+  // One withdrawn entry, because *deprecated* is a state the list has to hide
+  // and the detail page has to still resolve — and a catalogue where every row
+  // is live cannot show either.
+  const ghost = await sys.blueprint.findFirst({ where: { slug: 'ghost' } })
+  await sys.blueprint.update({
+    where: { id: ghost.id },
+    // `revision` is `@version`: every update carries the revision it read, the
+    // seed included.
+    data:  { deprecatedAt: new Date(Date.now() - 30 * 86_400_000).toISOString(), revision: ghost.revision },
+  })
+
+  // ── The settings ────────────────────────────────────────────────────
+  // The id is the constant the model defaults to, stated so the row this
+  // writes is the row `hub-config.current` reads.
+  await sys.hubConfig.create({
+    data: {
+      id:         'hub',
+      name:       'Acme Platform Hub',
+      // A real hostname rather than localhost: this is what webhook callbacks
+      // and every link in an email are built from, and the one setting whose
+      // wrongness nothing local can detect.
+      baseUrl:    'https://hub.acme.example',
+      adminEmail: 'sam@example.com',
+      backupEnabled:   true,
+      backupCron:      '0 2 * * *',
+      mailFromAddress: 'hub@acme.example',
+      mailFromName:    'Acme Platform Hub',
+    },
+  })
+
+  // ── One archive that already happened ───────────────────────────────
+  // Scheduled rather than manual, and with no `requestedBy`, because that is
+  // what the cron leaves behind: nobody asked, so the app owns it.
+  const took = new Date(Date.now() - 9 * 3_600_000)
+  await sys.backup.create({
+    data: {
+      kind: 'scheduled', status: 'success', destination: 'local',
+      sizeBytes: 14_900_000,
+      location:  './db/backups/basecamp-seeded.db',
+      startedAt:  took.toISOString(),
+      finishedAt: new Date(took.getTime() + 3_100).toISOString(),
+      durationMs: 3_100,
+    },
+  })
+
+  // ── One person who has chosen ───────────────────────────────────────
+  // Two rows, not fourteen. A preference exists only where somebody has said
+  // something, and `find` merges what is stored over the kind's default — so
+  // seeding everybody would erase the distinction the screen renders
+  // (*chosen* against *default*), which is the one thing that would go
+  // unnoticed.
+  await sys.notificationPreference.create({
+    data: { userId: owner.id, kind: 'weekly_digest', email: false, inApp: false },
+  })
+  await sys.notificationPreference.create({
+    data: { userId: owner.id, kind: 'deploy_success', email: true, inApp: true },
+  })
+}
+
+/** Two repositories of tags, one of which is addressed by two names. */
+async function seedRegistry(sys, workspaceId, index) {
+  const repos = index === 0
+    ? [['acme/dashboard', 184_000_000], ['acme/api-gateway', 97_000_000]]
+    : [['skunk/prototype', 61_000_000]]
+
+  for (const [repository, size] of repos) {
+    const head = `sha256:${repository.replace(/[^a-z0-9]/g, '').slice(0, 12)}head`
+    const rows = [
+      { tag: 'v2.14.1', digest: head, sizeBytes: size, inUse: true,  ageDays: 0 },
+      // The same bytes under a second name. Not a copy — the registry stores
+      // these layers once, which is what the aggregate has to know.
+      { tag: 'latest',  digest: head, sizeBytes: size, inUse: false, ageDays: 0 },
+      { tag: 'v2.14.0', digest: `${head}-1`, sizeBytes: size - 1_000_000, inUse: false, ageDays: 1 },
+      { tag: 'v2.13.9', digest: `${head}-2`, sizeBytes: size - 3_000_000, inUse: false, ageDays: 3 },
+      { tag: 'dev',     digest: `${head}-d`, sizeBytes: size + 6_000_000, inUse: true,  ageDays: 0 },
+    ]
+
+    for (const r of rows) {
+      await sys.registryImage.create({
+        data: {
+          workspaceId, repository, tag: r.tag, digest: r.digest,
+          sizeBytes: r.sizeBytes, inUse: r.inUse,
+          pushedAt:   new Date(Date.now() - r.ageDays * 86_400_000 - 840_000).toISOString(),
+          pushedBy:   r.tag === 'dev' ? 'remy' : 'ci-bot',
+          // The whole mirror was seen at once, which is what a sync is. A
+          // per-row time here would make the staleness figure meaningless.
+          observedAt: new Date(Date.now() - 900_000).toISOString(),
+        },
+      })
+    }
   }
 }
 
@@ -720,7 +858,7 @@ function slugify(s) {
 if (import.meta.main) {
   // Migrations first: seeding a database with no tables fails with a driver
   // error that names a table, not the missing step. This is the same call
-  // api/src/core/app.ts makes on boot, and it is litestone's runner for the
+  // api/src/app.ts makes on boot, and it is litestone's runner for the
   // same reason — migrations live in `db/migrations/main/` because the schema
   // declares `database main`, and a runner that globs one level up finds
   // nothing and reports success.
@@ -746,8 +884,19 @@ if (import.meta.main) {
       'domain', 'app', 'flagOverride', 'featureFlag', 'environment', 'project',
       'alertEvent', 'alertRuleChannel', 'alertRule', 'notificationChannel',
       'apiKey', 'secret', 'serverNetwork', 'network', 'volume', 'serverEvent',
+      'registryImage',
       'server', 'workspaceMember', 'workspace', 'session',
+      // Ahead of `user`, which they cascade from — listed anyway, because a
+      // cascade is a property of the schema and this list is what says what
+      // --force means.
+      'notificationPreference',
       'credential', 'verification', 'user', 'account',
+      // The installation's own rows. None carries a workspaceId, so nothing
+      // above takes them with it — a --force that left the catalogue behind
+      // fails on the first blueprint's `@unique` slug, and one that left
+      // `HubConfig` behind fails on its constant primary key. Both would read
+      // as a broken seeder rather than as an incomplete clear.
+      'blueprintParam', 'blueprint', 'backup', 'hubConfig',
     ]) await sys[model].deleteMany({})
 
     // auditEvent is NOT in that list and must not be: AuditEvent is
@@ -786,6 +935,8 @@ if (import.meta.main) {
                        'secret', 'apiKey', 'alertRule', 'notificationChannel',
                        'alertRuleChannel', 'dashboard', 'dashboardWidget',
                        'recipe', 'recipeRun', 'diskUsage', 'cleanupRun',
+                       'blueprint', 'blueprintParam', 'registryImage',
+                       'backup', 'hubConfig', 'notificationPreference',
                        'auditEvent']) {
     counts[model] = await sys[model].count()
   }

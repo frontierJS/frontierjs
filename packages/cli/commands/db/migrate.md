@@ -39,22 +39,32 @@ if (flag['apply-only']) {
   return
 }
 
-if (flag.dry) {
-  log.dry('Would run: litestone migrate create')
-  log.dry('Would run: litestone migrate apply')
+if (flag['create-only']) {
+  if (flag.dry) {
+    log.dry('Would run: litestone migrate create')
+    return
+  }
+  log.info('Creating migration from schema changes...')
+  context.exec({ command: `${ls} migrate create --schema ${schema}` })
+  log.success('Migration file created in db/migrations/')
   return
 }
 
-log.info('Creating migration from schema changes...')
-context.exec({ command: `${ls} migrate create --schema ${schema}` })
-log.success('Migration file created in db/migrations/')
-
-if (!flag['create-only']) {
-  log.info('Applying migration...')
-  context.exec({ command: `${ls} migrate apply --schema ${schema}` })
-  log.success('Migration applied')
-  log.info('Regenerating JSON Schema...')
-  context.exec({ command: `${ls} jsonschema --schema ${schema}` })
-  log.success('JSON Schema updated')
+if (flag.dry) {
+  log.dry('Would run: litestone migrate dev  (drift check, create, apply)')
+  return
 }
+
+// `migrate dev` rather than create + apply as two commands. It adds the one
+// check neither has: a database ahead of its own migration history — which is
+// what `db push` leaves behind — cannot apply the migration that create is
+// about to write, and `duplicate column name` from the middle of a generated
+// file is not an answer anybody can act on (FJS-D123).
+log.info('Creating and applying the migration...')
+context.exec({ command: `${ls} migrate dev --schema ${schema}` })
+log.success('Migration created and applied')
+
+log.info('Regenerating JSON Schema...')
+context.exec({ command: `${ls} jsonschema --schema ${schema}` })
+log.success('JSON Schema updated')
 ```

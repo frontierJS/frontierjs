@@ -1,0 +1,114 @@
+<!--
+  What the shop charges RIGHT NOW.
+
+  This is the island that makes the whole surface honest. The price in the table
+  beside it was written into the file when the site was built; a shop changes
+  prices without rebuilding, so by the time somebody reads the page the number
+  may be days old. Nothing in a static file can know that — so this asks.
+
+  It corrects the cells in place rather than rendering a second table, because
+  two prices on one screen is worse than one wrong price. What it renders itself
+  is only the STATUS: how many moved, or that the shop could not be reached.
+
+  Reaching into the page's DOM is deliberate and is the thing to understand
+  about it. An island owns the markup it renders and nothing else — but these
+  cells belong to a prerendered page that no longer has a component behind it,
+  so a component cannot be handed them. Writing the price through `textContent`
+  is the honest version of that; pretending to own the table would mean
+  rendering it twice.
+
+  Anonymous on purpose. `ProductVariant` reads at level 0 — which is why this
+  page is allowed to be public at all — so the fallback is the truth for a
+  reader with the API down, not an error dialog.
+-->
+<script>
+  import { createJunctionClient } from '@frontierjs/junction/client'
+  import { clientOptions }        from '../api.js'
+  import { money }                from '../money.js'
+
+  export let productId = null
+
+  let state = 'loading'   // loading | agreed | corrected | offline
+  let moved = []
+
+  $.onMount(async () => {
+    // Built in $.onMount and not at module scope: an island's body also runs
+    // during the static render, where there is no window, no fetch origin and
+    // no document to correct. `$.onMount` is a no-op on the server, which is
+    // what makes that safe rather than merely lucky.
+    try {
+      // Through the Junction client, not a hand-rolled fetch. A custom method
+      // has a URL shape — `POST /{service}` with `X-Service-Method`, or
+      // `POST /{service}/{id}` for a row — and writing it out by hand gets a
+      // 401 rather than a 404, because the path it accidentally names is the
+      // gated `create` route. The client is the one owner of that mapping.
+      //
+      // The prefix is ABSOLUTE, and this is the first request in this app that
+      // genuinely crosses an origin: the SPA is served by Vite, which forwards
+      // /api, so nothing in its drives has ever preflighted. A storefront is
+      // its own origin, so the API's CORS answer is load-bearing here.
+      const client = createJunctionClient(clientOptions)
+
+      // Addressed to the COLLECTION — `invoke(name, null, data)` — because it
+      // is a question about a set of shelves. One request fills a table with
+      // twelve rows in it.
+      const body = await client.service('product-variants').invoke('availability', null, { productId })
+
+      const rows = body?.variants ?? []
+      const seen = []
+      for (const row of rows) {
+        const cell = document.querySelector(`tr[data-sku="${row.sku}"] .price`)
+        if (!cell) continue
+
+        const baked = Number(cell.dataset.baked)
+        if (Number(row.price) !== baked) {
+          cell.textContent = money(row.price)
+          cell.dataset.live = String(row.price)
+          cell.classList.add('price-moved')
+          seen.push({ sku: row.sku, from: baked, to: row.price })
+        } else {
+          // Marked either way, so a drive can tell "checked and agreed" from
+          // "never ran" — which look identical if only a change is recorded.
+          cell.dataset.live = String(row.price)
+        }
+
+        const stock = document.querySelector(`tr[data-sku="${row.sku}"] .avail`)
+        if (stock) {
+          stock.textContent = row.available > 0 ? `${row.available} available` : 'Sold out'
+          stock.dataset.available = String(row.available)
+        }
+      }
+
+      moved = seen
+      state = seen.length ? 'corrected' : 'agreed'
+    } catch {
+      state = 'offline'
+    }
+  })
+</script>
+
+<p class="text-sm" id="live-prices">
+  {#if state === 'loading'}
+    <span class="text-muted" id="live-prices-state">Checking today’s prices…</span>
+  {:else if state === 'offline'}
+    <span class="text-muted" id="live-prices-state">
+      Prices above are as of the last build; the shop could not be reached.
+    </span>
+  {:else if state === 'corrected'}
+    <span class="text-warning" id="live-prices-state">
+      <strong id="live-prices-moved">{moved.length}</strong>
+      {moved.length === 1 ? 'price has' : 'prices have'} changed since this page was built.
+    </span>
+  {:else}
+    <span class="text-muted" id="live-prices-state">Prices confirmed with the shop.</span>
+  {/if}
+</p>
+
+<style>
+  /* Set on a cell the island rewrote, so a correction is visible rather than
+     silent — a number that changes under the reader with no mark is a number
+     they will not trust. */
+  :global(.price-moved) {
+    font-weight: 600;
+  }
+</style>

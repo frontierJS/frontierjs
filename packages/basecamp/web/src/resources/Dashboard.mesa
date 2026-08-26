@@ -13,9 +13,6 @@
   // own: the layout is managed through actions on the dashboard that owns it,
   // which is what keeps "may this widget be placed" one answer.
   import { createResource } from '@frontierjs/sierra/junction'
-  import { stampWorkspace } from '../session.js'
 
-  export const dashboards = createResource('dashboards', {
-    hooks: { before: { create: [stampWorkspace] } },
-  })
+  export const dashboards = createResource('dashboards')
 </script>

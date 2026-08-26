@@ -298,3 +298,91 @@ describe('what cannot be resolved', () => {
     await app.stop()
   })
 })
+
+// ============================================================
+// WHICH TENANT a job runs in (`FJS-384`).
+//
+// The other half of the same question, and it was missing entirely: WHO
+// crossed the boundary and WHERE did not, so a handler that had to touch
+// tenant rows had no legal way to be in a tenant and reached for `asSystem()`
+// — which drops the gate, the row policies and the audit actor together, to
+// relax exactly one of them.
+//
+// A tenant is STORED where a session deliberately is not, and the difference
+// is what makes that safe: an id names which rows, and the standing that
+// decides what may be done with them is still the re-resolved principal above.
+// ============================================================
+
+describe('the tenant a job runs in', () => {
+
+  it('records the tenant in scope at dispatch and re-binds it for the handler', async () => {
+    const { auth } = authStub({ alice: {} })
+    const app  = await bootApp({ auth })
+    const seen = recorder(app)
+    let inHandler: string | null | undefined
+
+    app.services.register(createService({
+      name: 'orders', methods: ['create'],
+      async create(ctx: never) {
+        // What a tenancy hook puts there — under `strategy row` it is the claim
+        // lifted off the principal, under `strategy database` it is the tenant
+        // the request resolved to.
+        ;(ctx as { locals: Record<string, unknown> }).locals.tenantId = 'acme'
+        await jobsOf(app).dispatch('record', {})
+        return {}
+      },
+    } as never))
+
+    jobsOf(app).handle('record2', async () => { inHandler = app.tenant() })
+
+    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+
+    expect(await until(() => seen.length > 0)).toBe(true)
+    expect(seen[0].tenantId).toBe('acme')
+
+    // And the scope is open for the length of the handler, so a service call
+    // inside it resolves to the same tenant without being handed anything.
+    await jobsOf(app).dispatch('record2', {}, { tenant: 'acme' })
+    expect(await until(() => inHandler !== undefined)).toBe(true)
+    expect(inHandler).toBe('acme')
+
+    await app.stop()
+  })
+
+  it('a stated null is work that belongs to no tenant, and absent is not null', async () => {
+    const { auth } = authStub({ alice: {} })
+    const app  = await bootApp({ auth })
+    const seen = recorder(app)
+
+    app.services.register(createService({
+      name: 'orders', methods: ['create'],
+      async create(ctx: never) {
+        ;(ctx as { locals: Record<string, unknown> }).locals.tenantId = 'acme'
+        await jobsOf(app).dispatch('record', { n: 1 })            // absent → inherits
+        await jobsOf(app).dispatch('record', { n: 2 }, { tenant: null })  // stated → none
+        return {}
+      },
+    } as never))
+
+    await app.service('orders').create({}, { auth: { user: { userId: 'alice' } } } as never)
+
+    expect(await until(() => seen.length > 1)).toBe(true)
+    const byN = (n: number) => seen.find(s => (s.data as { n: number }).n === n)!
+    expect(byN(1).tenantId).toBe('acme')
+    expect(byN(2).tenantId).toBeNull()
+
+    await app.stop()
+  })
+
+  it('nobody named a tenant → null, which is every app that declares no tenancy', async () => {
+    const app  = await bootApp({ system: SYSTEM })
+    const seen = recorder(app)
+
+    await jobsOf(app).dispatch('record', {})
+
+    expect(await until(() => seen.length > 0)).toBe(true)
+    expect(seen[0].tenantId).toBeNull()
+
+    await app.stop()
+  })
+})

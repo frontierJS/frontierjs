@@ -124,6 +124,16 @@ export async function run(t) {
   await t.eventually(`document.querySelector('#calls').textContent`,
     'create:ORD-1|patch:o-7:ORD-7b|upsert:ORD-9', 'and a stated method wins over both')
 
+  // A resource that owns the write gets handed the record and the mode. The
+  // form must NOT pick a service method for it: the resource knows the model's
+  // id field and this component does not (`FJS-D114`).
+  await typeInto(t, '#saves [name=reference]', 'ORD-S')
+  await typeInto(t, '#saves [name=total]', '3')
+  await t.evaluate(`document.querySelector('#saves form').requestSubmit(); return true;`)
+  await t.eventually(`document.querySelector('#calls').textContent`,
+    'create:ORD-1|patch:o-7:ORD-7b|upsert:ORD-9|save:auto:ORD-S',
+    'a resource with save() owns the write, and hears which mode was asked for')
+
   /* ── the two error sources ────────────────────────────────────────────── */
 
   // A server message is the half only the server can know. It arrives through
@@ -157,7 +167,7 @@ export async function run(t) {
   // The rejected attempt above is in the list too — the stub records the call
   // it was asked to make, and it was made.
   await t.eventually(`document.querySelector('#calls').textContent`,
-    'create:ORD-1|patch:o-7:ORD-7b|upsert:ORD-9|create:ORD-1|create:ORD-2',
+    'create:ORD-1|patch:o-7:ORD-7b|upsert:ORD-9|save:auto:ORD-S|create:ORD-1|create:ORD-2',
     'bind:this offers the same submit as onready')
 
   /* ── reset ────────────────────────────────────────────────────────────── */

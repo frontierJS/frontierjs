@@ -1,0 +1,305 @@
+---
+title: "FrontierJS — the landscape"
+description: "The register of what FrontierJS came from: twenty-one projects, what was taken from each, and where each one stops."
+render: static
+publishes: 0
+---
+<!--
+  The landscape. Twenty-one projects, what was taken from each, and where each
+  one stops.
+
+  The register and all twenty-one detail cards are prerendered, which the
+  hand-written page could not be: it fetched `projects.json` on load, so a
+  crawler saw *Loading…* and opening the file from disk showed an error about
+  `file://`. The data is checked into the repo beside this route, so it is read
+  at build time and baked in — the fetch, its failure path and that message are
+  all gone.
+
+  The word cloud is the one thing the island still builds, because it is packed
+  by measurement and cannot exist at a size nobody has.
+-->
+<script>
+  import LandscapeCloud from '../islands/LandscapeCloud.mesa'
+
+  export let data = null
+
+  const d = data ?? { projects: [], factors: [], stances: [] }
+  const first = d.projects[0] ?? null
+</script>
+
+<a href="#cloud-section" class="visually-hidden">Skip to content</a>
+
+<!-- ─── Hero ────────────────────────────────────────────────────────── -->
+<section id="top" class="hero">
+  <div class="container">
+    <p class="eyebrow">The landscape</p>
+    <h1>Nothing here was invented.</h1>
+    <p class="lede">
+      FrontierJS is an argument assembled out of other people's work — a hook pipeline
+      from one, a policy language from another, a routing convention from a third, and
+      a couple of cautionary tales about what happens when the seams are closed too
+      tightly. This is the register of what it came from, and where each one stops.
+    </p>
+    <p class="lede caveat">
+      The two numbers are <strong>self-assessed by the author</strong>, not measured:
+      <em>closeness</em> is how literally similar the code and vocabulary are,
+      <em>influence</em> is how much was actually taken. Treat them as a stated opinion
+      with its reasoning attached — which is what the last two columns are for.
+    </p>
+  </div>
+</section>
+
+<!-- ─── The cloud ───────────────────────────────────────────────────── -->
+<section id="cloud-section">
+  <div class="container">
+    <h2>Sized by <span data-factor-label>how close it is</span></h2>
+    <p class="lede">
+      Bigger means more of whatever you pick. A cloud is a good way to see the shape of
+      a field and a poor way to compare two numbers — so every value it hints at is
+      printed exactly in <a href="#register">the register below</a>, driven by this
+      same control.
+    </p>
+
+    <div class="controls">
+      <div class="segmented" data-factors role="group" aria-label="Size the cloud by">
+        {#each d.factors as f}
+          <button data-factor={f.key} data-label={f.label} data-help={f.help}
+                  aria-pressed={f.key === 'closeness'}>{f.label}</button>
+        {/each}
+      </div>
+      <span class="what" data-factor-help>How literally similar the code and vocabulary are.</span>
+
+      <div class="legend" aria-label="Tier">
+        <span><i style="background:var(--tier-1)"></i> Tier 1 · direct lineage</span>
+        <span><i style="background:var(--tier-2)"></i> Tier 2 · partial overlap</span>
+        <span><i style="background:var(--tier-3)"></i> Tier 3 · ancestors</span>
+      </div>
+    </div>
+
+    <!--
+      Empty in the file and filled at mount. Unlike everything else on this page
+      the cloud genuinely cannot be prerendered — it is packed against the box
+      it is measured in.
+    -->
+    <div class="cloud" data-cloud data-state="static"></div>
+
+    <div class="detail" data-detail>
+      {#each d.projects as p}
+        <div class="card" class:is-shown={p.rank === first?.rank} data-rank={p.rank}>
+          <div class="head">
+            <span class="name">{p.name}</span>
+            <span class="meta">{p.realm} · tier {p.tier} · closeness {p.closeness} · influence {p.inspiration}</span>
+            <a class="meta hostlink" href={p.url} target="_blank" rel="noopener">{p.host} ↗</a>
+          </div>
+          <p><span class="k">Taken</span>{p.relation}</p>
+          <p><span class="k">Stops at</span>{p.gap}</p>
+          <p><span class="k">The FrontierJS way</span><span class="stance" title={p.stanceHelp}>{p.stanceLabel}</span> {p.fjsWay}</p>
+        </div>
+      {/each}
+    </div>
+  </div>
+</section>
+
+<!-- ─── The register ────────────────────────────────────────────────── -->
+<section id="register">
+  <div class="container">
+    <h2>The register</h2>
+    <p class="lede">
+      The same data, exactly — every value the cloud implies, printed. Sorted by the
+      factor selected above. The third column is the one that matters: not what the
+      project does, but what was <em>done with it</em> here.
+    </p>
+
+    <div class="filters" data-filters role="group" aria-label="Filter by stance">
+      <span class="k">What was done with it</span>
+      {#each d.stances as s}
+        <button class="chip" type="button" data-key={s.key} title={s.help}
+                aria-pressed={s.key === 'all'}>{s.label}<span class="n">{s.n}</span></button>
+      {/each}
+    </div>
+
+    <div class="entries" data-rows>
+      {#each d.projects as p}
+        <article class="entry" data-rank={p.rank} data-name={p.name} data-url={p.url}
+                 data-tier={p.tier} data-stance={p.stance}
+                 data-closeness={p.closeness} data-inspiration={p.inspiration}
+                 data-proximity={p.proximity}>
+          <header>
+            <span class="tierdot" style="background:var(--tier-{p.tier})" title={`Tier ${p.tier}`}></span>
+            <span class="name"><a href={p.url} target="_blank" rel="noopener">{p.name}</a></span>
+            <span class="realm">{p.realm}</span>
+            <span class="stance" title={p.stanceHelp}>{p.stanceLabel}</span>
+            <span class="metrics">
+              <span class="m">closeness
+                <span class="bar">
+                  <span class="track"><span class="fill" style="width:{p.closeness}%; background:var(--tier-{p.tier})"></span></span>
+                  <span class="val">{p.closeness}</span>
+                </span>
+              </span>
+              <span class="m">influence
+                <span class="bar">
+                  <span class="track"><span class="fill" style="width:{p.inspiration}%; background:var(--tier-{p.tier})"></span></span>
+                  <span class="val">{p.inspiration}</span>
+                </span>
+              </span>
+            </span>
+          </header>
+          <div class="cols">
+            <div><p class="k">What was taken</p><p class="t">{p.relation}</p></div>
+            <div><p class="k">Where it stops</p><p class="t">{p.gap}</p></div>
+            <div class="way" style="border-left-color:var(--tier-{p.tier})">
+              <p class="k">The FrontierJS way</p><p class="t">{p.fjsWay}</p>
+            </div>
+          </div>
+        </article>
+      {/each}
+    </div>
+</div>
+</section>
+
+<div class="container pagenote">
+  <span>Twenty-one projects, self-assessed — the reasoning is in the last two columns.</span>
+  <span><a class="link" href="/">&larr; Back to the overview</a></span>
+</div>
+
+<LandscapeCloud client:load />
+
+<style>
+section { padding: 3.5rem 0; border-top: 1px solid var(--rule); scroll-margin-top: 4rem; }
+section:first-of-type { border-top: 0; }
+
+h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.05; letter-spacing: -.03em; margin: .35em 0 .3em; }
+h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); letter-spacing: -.02em; margin: 0 0 .35em; }
+h3 { font-size: .95rem; margin: 0 0 .4rem; }
+.eyebrow { font-size: .78rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0; }
+.lede { font-size: 1.05rem; color: var(--ink-soft); max-width: 60ch; line-height: 1.6; }
+
+/* ── the ordinal tier ramp — validated, see the note above ─────────── */
+:root {
+  --tier-1: #104281;
+  --tier-2: #256abf;
+  --tier-3: #5598e7;
+  --cloud-hover: color-mix(in srgb, var(--tier-1) 12%, transparent);
+}
+.theme-dark {
+  --tier-1: #b7d3f6;
+  --tier-2: #6da7ec;
+  --tier-3: #3987e5;
+}
+
+/* ── controls ──────────────────────────────────────────────────────── */
+.controls { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; margin: 1.5rem 0 1rem; }
+.segmented { display: inline-flex; border: 1px solid var(--rule-strong); border-radius: 8px; overflow: hidden; }
+.segmented button {
+  appearance: none; border: 0; background: var(--surface); color: var(--ink-soft);
+  font: inherit; font-size: .85rem; padding: .4rem .85rem; cursor: pointer;
+}
+.segmented button + button { border-left: 1px solid var(--rule); }
+.segmented button[aria-pressed="true"] { background: var(--surface-sunken); color: var(--ink); font-weight: 600; }
+.controls .what { font-size: .82rem; color: var(--ink-mute); }
+
+.legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-left: auto; font-size: .8rem; color: var(--ink-soft); }
+.legend span { display: inline-flex; align-items: center; gap: .4rem; }
+.legend i { width: .8rem; height: .8rem; border-radius: 3px; display: inline-block; }
+
+/* ── the cloud ─────────────────────────────────────────────────────── */
+.cloud {
+  position: relative;
+  height: clamp(22rem, 58vh, 34rem);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.cloud a {
+  position: absolute; white-space: nowrap; text-decoration: none;
+  font-weight: 700; letter-spacing: -.02em; line-height: 1;
+  padding: .12em .2em; border-radius: 6px;
+  transition: background-color .12s ease, transform .12s ease;
+}
+.cloud a:hover, .cloud a:focus-visible { background: var(--cloud-hover); transform: scale(1.04); }
+.cloud a:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
+.cloud[data-state="loading"]::after,
+.cloud[data-state="error"]::after {
+  content: attr(data-message);
+  position: absolute; inset: 0; display: grid; place-items: center;
+  color: var(--ink-mute); font-size: .9rem; padding: 2rem; text-align: center;
+}
+
+/* ── detail card ───────────────────────────────────────────────────── */
+.detail {
+  margin-top: 1rem; border: 1px solid var(--rule); border-left: 4px solid var(--tier-1);
+  border-radius: 10px; background: var(--surface-raised); padding: 1rem 1.15rem;
+  min-height: 8.5rem;
+}
+.detail .head { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
+.detail .name { font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
+.detail .meta { font-size: .78rem; color: var(--ink-mute); }
+.detail p { margin: .5rem 0 0; font-size: .9rem; color: var(--ink-soft); line-height: 1.55; max-width: 78ch; }
+.detail p .k { color: var(--ink-mute); font-size: .76rem; letter-spacing: .1em; text-transform: uppercase; margin-right: .45rem; }
+.detail .hint { color: var(--ink-mute); font-size: .85rem; }
+/* Same pill as the register's, inline in the prose line. */
+.detail .stance {
+  font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+  border: 1px solid var(--rule-strong); border-radius: 999px;
+  padding: .1rem .5rem; color: var(--ink-soft); margin-right: .35rem;
+  white-space: nowrap;
+}
+
+/* ── register ──────────────────────────────────────────────────────── */
+.filters { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin: 1.25rem 0 .25rem; }
+.filters .k { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin-right: .3rem; }
+.chip {
+  font: inherit; font-size: .78rem; line-height: 1.3;
+  border: 1px solid var(--rule-strong); border-radius: 999px;
+  background: var(--surface); color: var(--ink-soft);
+  padding: .25rem .7rem; cursor: pointer;
+}
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.chip .n { opacity: .6; font-variant-numeric: tabular-nums; margin-left: .3rem; }
+
+.entries { display: grid; gap: .75rem; margin-top: 1rem; }
+.entry {
+  border: 1px solid var(--rule); border-radius: 12px;
+  background: var(--surface-raised); padding: .9rem 1.05rem;
+}
+.entry.on { border-color: var(--rule-strong); background: var(--surface-sunken); }
+.entry > header { display: flex; gap: .65rem; align-items: baseline; flex-wrap: wrap; margin-bottom: .7rem; }
+.entry .name { font-weight: 700; font-size: 1rem; letter-spacing: -.01em; }
+.entry .name a { color: inherit; text-decoration: none; }
+.entry .name a:hover { text-decoration: underline; }
+.entry .realm { font-size: .78rem; color: var(--ink-mute); }
+/* Stance is a LABEL, never a colour — six of them cannot clear all-pairs
+   separation, and the word is unambiguous where a hue would not be. */
+.entry .stance {
+  font-size: .72rem; letter-spacing: .04em; text-transform: uppercase;
+  border: 1px solid var(--rule-strong); border-radius: 999px;
+  padding: .12rem .55rem; color: var(--ink-soft);
+}
+.entry .metrics { display: flex; gap: 1rem; margin-left: auto; flex-wrap: wrap; }
+.entry .metrics .m { display: flex; align-items: center; gap: .4rem; font-size: .74rem; color: var(--ink-mute); }
+
+.entry .cols { display: grid; gap: .9rem; grid-template-columns: minmax(0,1fr); }
+@media (min-width: 60rem) { .entry .cols { grid-template-columns: 1fr 1fr 1.25fr; gap: 1.4rem; } }
+.entry .cols .k { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute); margin: 0 0 .25rem; }
+.entry .cols p.t { margin: 0; font-size: .86rem; line-height: 1.55; color: var(--ink-soft); }
+/* The reflection is the payload — it gets the emphasis and the tier colour. */
+.entry .cols .way { border-left: 3px solid var(--tier-1); padding-left: .85rem; }
+.entry .cols .way p.t { color: var(--ink); }
+
+/* Thin marks, 4px rounded ends, 2px surface gap — magnitude read exactly. */
+.bar { display: flex; align-items: center; gap: .45rem; }
+.bar .track { width: 4.5rem; height: 6px; border-radius: 999px; background: var(--surface-sunken); overflow: hidden; flex: none; }
+.bar .fill { height: 100%; border-radius: 999px; display: block; }
+.bar .val { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: .8rem; }
+
+.tierdot { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; vertical-align: -1px; margin-right: .35rem; }
+
+/* Every detail card is in the file and one is shown. */
+.detail .card { display: none; }
+.detail .card.is-shown { display: block; }
+
+.hero { padding-bottom: 1rem; }
+.caveat { margin-top: .9rem; font-size: .92rem; color: var(--ink-mute); }
+.hostlink { margin-left: auto; }
+</style>

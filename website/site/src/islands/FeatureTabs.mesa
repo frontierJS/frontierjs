@@ -1,0 +1,51 @@
+<!--
+  Selection for the stack page's feature lists — and only selection.
+
+  Every row and every detail panel is already in the prerendered HTML, so a
+  visitor with no JavaScript reads the whole page and a crawler indexes it. This
+  moves `aria-selected` and the `is-shown` class, which is the part a file
+  cannot do.
+
+  It wires every tablist on the page, because there are sixteen of them and
+  giving each its own island would ship the same code sixteen times.
+-->
+<script>
+  $.onMount(() => {
+    const lists = [...document.querySelectorAll('[data-tabs]')]
+    const off = []
+
+    for (const list of lists) {
+      const panels = document.querySelector(`[data-panels="${list.dataset.tabs}"]`)
+      if (!panels) continue
+
+      const tabs = [...list.querySelectorAll('.row')]
+      const show = (i) => {
+        tabs.forEach((t, n) => t.setAttribute('aria-selected', String(n === i)))
+        for (const p of panels.children) p.classList.toggle('is-shown', +p.dataset.i === i)
+      }
+
+      const onClick = (e) => {
+        const b = e.target.closest('.row')
+        if (b) show(+b.dataset.i)
+      }
+      const onKey = (e) => {
+        const d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key]
+        if (!d) return
+        e.preventDefault()
+        const cur = +document.activeElement.dataset.i
+        const nxt = (cur + d + tabs.length) % tabs.length
+        show(nxt)
+        tabs[nxt].focus()
+      }
+
+      list.addEventListener('click', onClick)
+      list.addEventListener('keydown', onKey)
+      off.push(() => {
+        list.removeEventListener('click', onClick)
+        list.removeEventListener('keydown', onKey)
+      })
+    }
+
+    return () => { for (const f of off) f() }
+  })
+</script>

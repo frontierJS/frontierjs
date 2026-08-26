@@ -1,0 +1,126 @@
+<script>
+  // ConfirmPanel.mesa
+  // The two-button confirmation itself, anchored to an element.
+  //
+  // Two things ask for one: `ConfirmationPopover`, which wraps a trigger of its
+  // own, and `ConfirmProvider`, which has no trigger at all — it is handed the
+  // element somebody clicked. So the panel is the component and the anchor is a
+  // prop; the alternative was the same panel written twice, drifting on which
+  // one traps focus and which one closes on Escape.
+  //
+  // Not a modal: `aria-modal="false"`, no focus trap. Right for a two-button
+  // confirmation, and it means Escape and click-away are wired here.
+  //
+  // The parent decides WHEN it exists (`{#if open}`); this file decides where it
+  // sits, what it says and which of the two answers came back.
+  import { tone as toTone, cx, uid } from '../../utils.js'
+
+  export let anchor       = null       // the Element it points at
+  export let title        = 'Are you sure?'
+  export let message      = 'This action cannot be undone.'
+  export let confirmLabel = 'Confirm'
+  export let cancelLabel  = 'Cancel'
+  export let tone         = 'danger'
+  export let onconfirm    = undefined
+  export let oncancel     = undefined
+
+  let x      = 0
+  let y      = 0
+  let placed = false                   // has THIS open been positioned yet
+  let panelEl
+  let confirmEl
+
+  const titleId = uid('confirm-title')
+
+  const panelAnim = $.entrance({
+    in:  el => el.animate(
+      [{ opacity: 0, transform: 'scale(0.95) translateY(-4px)' },
+       { opacity: 1, transform: 'scale(1) translateY(0)' }],
+      { duration: 140, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
+    ),
+    out: el => el.animate(
+      [{ opacity: 1, transform: 'scale(1)' }, { opacity: 0, transform: 'scale(0.95)' }],
+      { duration: 100, fill: 'forwards' }
+    ).finished,
+  })
+
+  function position() {
+    if (!anchor || !panelEl) return
+    const tr   = anchor.getBoundingClientRect()
+    const pr   = panelEl.getBoundingClientRect()
+    const winW = window.innerWidth
+    const winH = window.innerHeight
+
+    // Prefer below the anchor, flip above if clipped
+    y = tr.bottom + pr.height + 8 > winH ? tr.top - pr.height - 8 : tr.bottom + 8
+
+    // Prefer left-aligned, flip if clipped
+    x = tr.left + pr.width > winW - 8 ? tr.right - pr.width : tr.left
+  }
+
+  function onClickAway(e) {
+    if (anchor?.contains?.(e.target) || panelEl?.contains(e.target)) return
+    oncancel?.()
+  }
+
+  $.onMount(() => {
+    // Placed SYNCHRONOUSLY, off a forced layout, and only then made visible:
+    // a panel painted before it is positioned appears wherever the last one was
+    // (`FJS-331`). It used to wait for a frame callback, which is a bet that a
+    // frame arrives — headless Chrome delivers almost no rendering lifecycle
+    // after load, so the panel stayed `visibility: hidden` at 0,0 and a click
+    // aimed at its confirm button landed on whatever was behind it.
+    position()
+    placed = true
+
+    // And again once the browser does have a frame, for the case where the
+    // panel's own content changed its size between the two.
+    requestAnimationFrame(position)
+
+    // Focus into the panel, or a keyboard user is left on the trigger with a
+    // dialog open they cannot reach. After the flush: focus is refused on a
+    // `visibility: hidden` element, and `placed` only reaches the DOM on
+    // mesa's microtask.
+    queueMicrotask(() => confirmEl?.focus())
+
+    document.addEventListener('click', onClickAway, { capture: true })
+  })
+
+  $.onDestroy(() => {
+    document.removeEventListener('click', onClickAway, { capture: true })
+  })
+</script>
+
+<mesa:window on:keydown={(e) => { if (e.key === 'Escape') oncancel?.() }} />
+
+<mesa:portal to={document.body}>
+  <div
+    bind:this={panelEl}
+    class="popover stack"
+    style:position="fixed"
+    style:gap="0.5rem"
+    style:inline-size="16rem"
+    style:max-width="16rem"
+    style:left="{x}px"
+    style:top="{y}px"
+    style:visibility="{placed ? 'visible' : 'hidden'}"
+    {@attach panelAnim}
+    role="dialog"
+    aria-modal="false"
+    aria-labelledby={titleId}
+  >
+    <strong id={titleId}>{title}</strong>
+    {#if message}
+      <p class="text-sm text-muted" style:margin="0">{message}</p>
+    {/if}
+    <div class="cluster" style:justify-content="flex-end">
+      <button type="button" class="btn ghost" on:click={() => oncancel?.()}>
+        {cancelLabel}
+      </button>
+      <button bind:this={confirmEl} type="button" class={cx('btn', toTone(tone) || 'danger')}
+              on:click={() => onconfirm?.()}>
+        {confirmLabel}
+      </button>
+    </div>
+  </div>
+</mesa:portal>

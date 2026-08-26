@@ -18,7 +18,7 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/
  * Parse YAML frontmatter from a source string.
  *
  * @param {string} source — raw file contents
- * @returns {{ frontmatter: Record<string, unknown>, content: string }}
+ * @returns {{ frontmatter: Record<string, unknown>, content: string, error: string|null }}
  */
 export function parseFrontmatter(source) {
   const match = source.match(FRONTMATTER_RE)
@@ -28,19 +28,24 @@ export function parseFrontmatter(source) {
   }
 
   let frontmatter = {}
+  let error = null
   try {
     const parsed = parseYaml(match[1])
     if (parsed && typeof parsed === 'object') {
       frontmatter = parsed
     }
-  } catch {
-    // Malformed YAML — treat as no frontmatter
-    // Sierra will emit a build warning separately
+  } catch (err) {
+    // Reported, not swallowed. The comment here used to say Sierra emitted a
+    // warning separately and nothing did: a route whose frontmatter would not
+    // parse got `{}`, which on a static target means no `render: static`, so
+    // the page was never emitted and the build said it succeeded. An
+    // unquoted colon in a description is enough to do it (`FJS-509`).
+    error = err.message
     frontmatter = {}
   }
 
   const content = source.slice(match[0].length)
-  return { frontmatter, content }
+  return { frontmatter, content, error }
 }
 
 /**
@@ -52,5 +57,15 @@ export function parseFrontmatter(source) {
 export async function readFrontmatter(filePath) {
   const { readFile } = await import('fs/promises')
   const source = await readFile(filePath, 'utf8')
-  return parseFrontmatter(source).frontmatter
+  const { frontmatter, error } = parseFrontmatter(source)
+  if (error) {
+    // Thrown rather than warned. Frontmatter is how a route says what it IS —
+    // its title, and on a static target whether it exists at all — so a file
+    // whose block will not parse has no correct interpretation, and the
+    // failure it produces otherwise is a page that is simply absent.
+    const err = new Error(`${filePath}: frontmatter is not valid YAML — ${error}`)
+    err.code = 'SIERRA_BAD_FRONTMATTER'
+    throw err
+  }
+  return frontmatter
 }

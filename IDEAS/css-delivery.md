@@ -19,7 +19,7 @@ changing that is unmeasured.
 call inside the component's own JavaScript —
 
 ```js
-$runtime.addStyles('m1dr2v21gtm', `p.m1dr2v21gtm { color: red }`)
+$$runtime.addStyles('m1dr2v21gtm', `p.m1dr2v21gtm { color: red }`)
 ```
 
 — and the runtime appends a `<style>` the first time the component mounts. The id

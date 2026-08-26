@@ -140,26 +140,190 @@ export function describeSkipped(skipped) {
          `<14-digit timestamp>_<lower_snake_label>.sql|.js: ${skipped.join(', ')}`
 }
 
+// ─── SHADOW ───────────────────────────────────────────────────────────────────
+//
+// A fresh in-memory database with the migration HISTORY replayed into it, then
+// introspected. It is what the files say the schema is, which is a different
+// fact from what the live database holds and from what `schema.lite` declares —
+// and until `FJS-D123` litestone could only compare the last two.
+//
+// One comparison was doing two jobs and doing neither: `create()` diffed the
+// schema against the LIVE database, so a database developed with `db push`
+// already matched and `migrate create` answered *already in sync — no migration
+// needed*. The deploy then refused, correctly, and told the developer to run the
+// command that had just declined to write anything. A closed loop with no way
+// out from inside the tool (`FJS-388`).
+//
+// With the shadow there are two questions and two answers:
+//
+//   schema  <-> shadow  — what migration is missing        (create, the guard)
+//   shadow  <-> live    — has somebody changed the db      (drift)
+//
+// Cheap: `create()` already opened a `:memory:` database to build a pristine
+// one out of the schema, so this is the same move seeded from the files.
+//
+// **A `.js` migration is not replayed and makes the answer unknown.** It needs a
+// Litestone client and may perform schema surgery through `sys.sql`, so
+// skipping it would answer a confident diff over a shadow missing part of its
+// history — the class of silent wrongness this ruling exists to remove. Callers
+// are handed `unknown` with the files named, and say so.
+
+export function buildShadow(dir = './migrations') {
+  const files = listMigrationFiles(dir)
+  const js    = files.filter(f => f.endsWith('.js'))
+  if (js.length) return { ok: false, reason: 'js-migrations', files: js, schema: null }
+
+  const db = new Database(':memory:')
+  try {
+    for (const file of files) {
+      for (const stmt of migrationStatements(join(resolve(dir), file))) {
+        try { db.run(stmt + ';') }
+        catch (e) {
+          return { ok: false, reason: 'replay-failed', file, error: e.message, schema: null }
+        }
+      }
+    }
+    return { ok: true, schema: introspect(db), files }
+  } finally {
+    db.close()
+  }
+}
+
+// What the history does NOT build that the schema declares — the deploy's
+// question, asked of the repo alone. No database, no container, no network, so
+// `fli deploy:doctor`, `fli check` and CI can ask it before an image is built
+// and `migrate apply` can ask it again at container start (`FJS-D123` section 6).
+//
+// `{ ok }` when the history builds the declared schema, `{ pending }` with a
+// summary when it does not, `{ unknown }` when the shadow could not be built —
+// reported rather than folded into either, since *I cannot tell* is not *it is
+// fine*.
+
+export function historyGap(parseResult, dir = './migrations', { pluralize = false, dbName = 'main' } = {}) {
+  const shadow = buildShadow(dir)
+  // `ok` is deliberately absent here: *I cannot tell* is a third answer, and a
+  // caller reading `.ok` on it would fold it into one of the other two.
+  if (!shadow.ok) return { unknown: true, reason: shadow.reason, file: shadow.file, error: shadow.error, files: shadow.files, message: shadowRefusal(shadow) }
+
+  const pristineDb = new Database(':memory:')
+  let pristine
+  try {
+    pristine = buildPristineForDatabase(pristineDb, parseResult, dbName)
+  } finally {
+    pristineDb.close()
+  }
+
+  const diff = diffSchemas(pristine, shadow.schema, parseResult, dbName, { pluralize })
+  if (!diff.hasChanges) return { ok: true, files: shadow.files }
+  return { ok: false, pending: true, diff, summary: summariseDiff(diff), files: shadow.files }
+}
+
+// ─── DRIFT + BASELINE ─────────────────────────────────────────────────────────
+//
+// The second of the shadow's two comparisons: shadow <-> live. *Has this
+// database got what the files build?* Not the same question as *does the
+// history build the schema* — one is about the database in front of you, the
+// other about the repo — and conflating them is the defect `FJS-D123` closes.
+
+export function driftAgainstLive(rawDb, parseResult, dir = './migrations', { pluralize = false, dbName = 'main' } = {}) {
+  const shadow = buildShadow(dir)
+  if (!shadow.ok) return { unknown: true, reason: shadow.reason, file: shadow.file, error: shadow.error, files: shadow.files, message: shadowRefusal(shadow) }
+
+  const diff = diffSchemas(shadow.schema, introspect(rawDb), parseResult, dbName, { pluralize })
+  return diff.hasChanges
+    ? { ok: false, drifted: true, diff, summary: summariseDiff(diff), files: shadow.files }
+    : { ok: true, files: shadow.files }
+}
+
+// Record migration files as applied WITHOUT running them.
+//
+// The way out for a database that is already correct and has no history to say
+// so — every app developed through `db push`, and the developer's own database
+// the moment `migrate create` writes the delta they had already pushed (an
+// `ALTER TABLE ADD COLUMN` is not idempotent, so replaying it there fails with
+// `duplicate column name`). Prisma calls this baselining and reaches it through
+// `migrate resolve --applied`; the need is the same and so is the shape.
+//
+// **It refuses to record a lie.** Baselining says *this database already holds
+// what these files build*, so that claim is CHECKED against the database first:
+// anything the shadow builds and the live database lacks is named and nothing
+// is written. Without that, one wrong baseline is a database that reports a
+// complete history and is missing a column, which is the exact failure this
+// ruling exists to make impossible.
+
+export function baseline(rawDb, parseResult, dir = './migrations', { pluralize = false, dbName = 'main' } = {}) {
+  const shadow = buildShadow(dir)
+  if (!shadow.ok) return { ok: false, blocked: true, message: shadowRefusal(shadow) }
+  if (!shadow.files.length) return { ok: false, message: 'there are no migration files to baseline' }
+
+  const applied = new Set(appliedMigrations(rawDb).map(m => m.name))
+  const pending = shadow.files.filter(f => !applied.has(f))
+  if (!pending.length) return { ok: true, recorded: [], message: 'every migration is already recorded as applied' }
+
+  // The claim being recorded, checked before it is recorded.
+  const drift = driftAgainstLive(rawDb, parseResult, dir, { pluralize, dbName })
+  if (drift.unknown) return { ok: false, blocked: true, message: drift.message }
+  if (!drift.ok) return {
+    ok: false, blocked: true, diff: drift.diff, summary: drift.summary,
+    message: 'this database does not hold what those migrations build, so recording them as applied would record a lie',
+  }
+
+  const recorded = []
+  for (const file of pending) {
+    const sql = file.endsWith('.js') ? null : loadMigrationSql(join(resolve(dir), file)).sql
+    recordMigration(rawDb, file, sql)
+    recorded.push(file)
+  }
+  return { ok: true, recorded }
+}
+
 // ─── CREATE ───────────────────────────────────────────────────────────────────
 // Diffs schema.lite (via pristine in-memory db) against live db.
 // Writes a new timestamped migration file if there are changes.
 
 export function create(db, parseResult, label = 'migration', dir = './migrations', { pluralize = false } = {}) {
-  const pristineDb     = new Database(':memory:')
-  const pristineSchema = buildPristine(pristineDb, parseResult)
-  pristineDb.close()
+  return createAgainstHistory(parseResult, 'main', label, dir, { pluralize })
+}
 
-  const liveSchema = introspect(db)
-  const diffResult = diffSchemas(pristineSchema, liveSchema, parseResult, 'main', { pluralize })
+// The body both create() and createForDatabase() run.
+//
+// It diffs the declared schema against the SHADOW — what the migration files
+// build — and not against the live database (`FJS-D123`). The live database is
+// where the developer has been working, so with `db push` it already matches
+// the schema and the old comparison answered *nothing to write* precisely when
+// a migration was most needed. The files are what a deploy replays, so the
+// files are what the question has to be asked of.
+//
+// The live database is therefore not consulted here at all, which is what makes
+// `migrate create` answerable with no database — and is why the same walk can
+// run in `fli check` and before an image is built.
+function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = false } = {}) {
+  const shadow = buildShadow(dir)
+  if (!shadow.ok) return { created: false, blocked: true, message: shadowRefusal(shadow) }
 
-  if (!diffResult.hasChanges) return { created: false, message: 'schema is already in sync — no migration needed' }
+  const pristineDb = new Database(':memory:')
+  let pristineSchema
+  try {
+    pristineSchema = buildPristineForDatabase(pristineDb, parseResult, dbName)
+  } finally {
+    pristineDb.close()
+  }
 
-  const sql      = generateMigrationSQL(diffResult, parseResult, { pluralize })
-  const name     = nextMigrationName(dir, label)
-  const summary  = summariseDiff(diffResult)
+  const diffResult = diffSchemas(pristineSchema, shadow.schema, parseResult, dbName, { pluralize })
+
+  if (!diffResult.hasChanges) return {
+    created: false,
+    message: shadow.files.length
+      ? 'the migration history already builds the schema — no migration needed'
+      : 'the schema declares nothing to build — no migration needed',
+  }
+
+  const sql     = generateMigrationSQL(diffResult, parseResult, { pluralize })
+  const name    = nextMigrationName(dir, label)
+  const summary = summariseDiff(diffResult)
 
   const header = [
-    `-- Litestone migration`,
+    `-- Litestone migration${dbName === 'main' ? '' : ` (database: ${dbName})`}`,
     `-- Created:   ${new Date().toISOString()}`,
     `-- Changes:`,
     summary.split('\n').map(l => `--   ${l}`).join('\n'),
@@ -173,37 +337,26 @@ export function create(db, parseResult, label = 'migration', dir = './migrations
   return { created: true, name, filePath, summary, sql }
 }
 
+// One sentence for every caller that could not build a shadow, so create, the
+// guard and the doctor say the same thing about the same directory.
+export function shadowRefusal(shadow) {
+  if (shadow.reason === 'js-migrations')
+    return `the migration history contains JavaScript migrations (${shadow.files.join(', ')}), ` +
+           `which run against a Litestone client and can change the schema through sys.sql. ` +
+           `They cannot be replayed into a shadow database, so what the history builds is unknown ` +
+           `and no migration can be derived from it. Write this one by hand`
+  if (shadow.reason === 'replay-failed')
+    return `the migration history does not replay — "${shadow.file}" failed: ${shadow.error}. ` +
+           `A deploy applies these files in this order, so it would fail the same way`
+  return 'the migration history could not be read'
+}
+
 // ─── CREATE FOR DATABASE ─────────────────────────────────────────────────────
 // Like create() but scoped to a specific named database.
 // Used by CLI multi-DB migrate create to write per-database migration files.
 
 export function createForDatabase(rawDb, parseResult, dbName, label = 'migration', dir = './migrations', { pluralize = false } = {}) {
-  const pristineDb     = new Database(':memory:')
-  const pristineSchema = buildPristineForDatabase(pristineDb, parseResult, dbName)
-  pristineDb.close()
-
-  const liveSchema = introspect(rawDb)
-  const diffResult = diffSchemas(pristineSchema, liveSchema, parseResult, dbName, { pluralize })
-
-  if (!diffResult.hasChanges) return { created: false, message: `${dbName}: schema is already in sync` }
-
-  const sql      = generateMigrationSQL(diffResult, parseResult, { pluralize })
-  const name     = nextMigrationName(dir, label)
-  const summary  = summariseDiff(diffResult)
-
-  const header = [
-    `-- Litestone migration (database: ${dbName})`,
-    `-- Created:   ${new Date().toISOString()}`,
-    `-- Changes:`,
-    summary.split('\n').map(l => `--   ${l}`).join('\n'),
-    ``, ``,
-  ].join('\n')
-
-  mkdirSync(resolve(dir), { recursive: true })
-  const filePath = join(resolve(dir), name)
-  writeFileSync(filePath, header + sql, 'utf8')
-
-  return { created: true, name, filePath, summary, sql }
+  return createAgainstHistory(parseResult, dbName, label, dir, { pluralize })
 }
 
 // ─── APPLY ────────────────────────────────────────────────────────────────────

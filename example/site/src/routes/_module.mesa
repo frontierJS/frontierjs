@@ -1,0 +1,98 @@
+<!--
+  The storefront's layout — every page under src/routes/ is rendered inside it.
+
+  It is the first LAYOUT this repo prerenders. `composeWrapper` walks up from a
+  page to the nearest `_module.mesa` and builds a synthetic module that nests
+  them, so the chain is resolved at build time and appears in the committed
+  route table; nothing here runs in a browser.
+
+  Which is the constraint worth stating: **a layout on a static target may not
+  hold state.** There is no application around these pages — no router, no
+  session, no store — so a header that wanted to show a basket count would have
+  to be an island. This one is markup, and that is why it costs nothing.
+-->
+<script>
+  import { BASE } from '../money.js'
+</script>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="container topbar-inner">
+    <a class="topbar-brand" href="/">FrontierJS Supply Co.</a>
+    <nav class="topbar-nav" aria-label="Storefront">
+      <a href="/">Home</a>
+      <a href="/catalog/">Catalogue</a>
+      <a href="/account/">Account</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="site-main">
+  <slot />
+</main>
+
+<footer class="site-footer">
+  <div class="container stack-sm">
+    <p class="text-sm text-muted">
+      Prices in {BASE}. This is the public storefront — one HTML file per page,
+      built ahead of time. The parts that have to be current ask the shop when
+      you open the page.
+    </p>
+    <p class="text-sm text-muted">
+      Staff sign in at the <a href="http://localhost:8010/">operations app</a>.
+    </p>
+  </div>
+</footer>
+
+<style>
+  /* A prerendered page has no application around it, so the shell is here.
+     Everything below reads a @frontierjs/css token — the package owns the
+     scale, and a surface that invented its own would drift from the SPA's the
+     first time either moved. */
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+  }
+  .skip-link:focus {
+    left: var(--space-4);
+    top: var(--space-4);
+    z-index: 10;
+    background: var(--surface);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius);
+  }
+
+  .topbar {
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .topbar-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding-block: var(--space-3);
+  }
+  .topbar-brand {
+    font-weight: 600;
+    text-decoration: none;
+    color: inherit;
+  }
+  .topbar-nav {
+    display: flex;
+    gap: var(--space-4);
+  }
+
+  .site-main {
+    display: block;
+    padding-block: var(--space-6);
+    min-height: 60vh;
+  }
+
+  .site-footer {
+    border-top: 1px solid var(--border);
+    padding-block: var(--space-5);
+    margin-top: var(--space-7);
+  }
+</style>

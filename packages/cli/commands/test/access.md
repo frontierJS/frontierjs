@@ -21,7 +21,7 @@ flags:
   strict:
     char: s
     type: boolean
-    description: With --from, exit 1 unless the verdict is narrows or unchanged
+    description: With --from, exit 1 unless the verdict is narrows, new or unchanged
     defaultValue: false
   json:
     char: j
@@ -108,14 +108,24 @@ be shown the permission answer.
 
 What it cannot answer is a predicate whose text changed. Two expressions are not
 comparable by reading them, so that is reported as undecidable rather than
-guessed — the guess is the one that ships.
+guessed — the guess is the one that ships. **An allow→deny inversion is the same
+answer for the same reason**: `@@allow(X)` replaced by `@@deny(!X)` over the same
+operations admits the same rows, and adopting declared tenancy desugars to
+exactly that pairing — so it reads as undecidable rather than as the widening
+each half looks like alone.
+
+**A model the baseline never had is `new`** — listed with the gate and policies
+it declares, graded on neither axis, and passing `--strict`. Nobody could do
+anything with a table that did not exist, so it cannot be a widening; but a
+branch that adds nine tables answering *no change to who may do what* is not the
+report a reviewer ran the command for.
 
 ## In CI
 
 ```
 fli test:access --check                      # the snapshot is stale
 fli test:access --from origin/main           # print the permission diff
-fli test:access --from origin/main --strict  # exit 1 on a widening
+fli test:access --from origin/main --strict  # exit 1 on a widening or an undecidable
 ```
 
 `--check` exits 1 with the differing lines when the snapshot is stale. `--strict`

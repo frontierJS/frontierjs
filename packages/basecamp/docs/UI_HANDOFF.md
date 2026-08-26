@@ -18,9 +18,9 @@ read `../db/README.md`.
 
 | Realm | State |
 |---|---|
-| **Data** | Done. 37 models, migration generated from `db/schema.lite`, 49 tests green. |
+| **Data** | Done. 45 models, migration generated from `db/schema.lite`, 103 tests green. |
 | **API** | Done. 21 services + 3 engines on Litestone accessors, zero raw SQL, verified over HTTP. |
-| **UI** | Built. Sierra SPA over every service; 230 browser checks, 27 of the mock's 41 screens (`SCREENS.md`). |
+| **UI** | Built. Sierra SPA over every service; 230 browser checks, 35 of the mock's 41 screens (`SCREENS.md`). |
 
 The mock that used to live in `web/` is at `docs/mock/BasecampUI.jsx` — read it
 for information architecture, not for markup.
@@ -212,7 +212,7 @@ Junction ships channels and the API already publishes to them:
 `publishToChannels(workspaceChannel(app))` is an after-hook on every converted
 service, and the deployment engine pushes `deployments patched` per step.
 
-Clients join `workspace:<id>` on connect (`core/app.ts` → `channels(...)`).
+Clients join `workspace:<id>` on connect (`app.ts` → `channels(...)`).
 A deployments view should subscribe rather than poll — the engine emits a step
 transition roughly every step, and that is the one screen where it shows.
 

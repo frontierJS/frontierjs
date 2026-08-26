@@ -15,6 +15,8 @@ import type { IAuth, SessionContext, App, Plugin, TransportContext } from '@fron
 import { parseTtl, Unauthorized, BadRequest, rateLimitHook }        from '@frontierjs/junction'
 import type { AuthPluginOptions }                                   from './types.ts'
 import { createAuthServices }                                       from './services.ts'
+import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
+import type { AuthOAuth }                                          from './oauth.ts'
 
 // Rate limiting is junction's `rateLimitHook`, not a copy of it.
 //
@@ -38,6 +40,7 @@ export function createAuthPlugin(
     loginRateLimit    = { max: 10, window: '15 minutes' },
     registerRateLimit = { max: 5,  window: '15 minutes' },
     services          = {},
+    oauth,
   } = opts
 
   // sessionTtl: prefer the explicit plugin opt, then read from the auth
@@ -49,6 +52,14 @@ export function createAuthPlugin(
 
   const loginLimiter    = rateLimitHook(loginRateLimit)
   const registerLimiter = rateLimitHook(registerRateLimit)
+  // Starting a flow writes a row, unauthenticated, once per click.
+  const oauthLimiter    = rateLimitHook(oauth?.rateLimit ?? { max: 20, window: '15 minutes' })
+
+  // The auth instance's OAuth half, feature-detected rather than required: a
+  // third-party IAuth provider has none, and `oauth:` configured against one is
+  // a mistake worth naming at boot rather than a 500 on first click.
+  const oauthAuth       = auth as Partial<AuthOAuth>
+  const oauthPath       = `${prefix}/oauth`
 
   return {
     name: '@frontierjs/auth',
@@ -59,6 +70,7 @@ export function createAuthPlugin(
     shutdown() {
       ;(loginLimiter    as unknown as { dispose?(): void }).dispose?.()
       ;(registerLimiter as unknown as { dispose?(): void }).dispose?.()
+      ;(oauthLimiter    as unknown as { dispose?(): void }).dispose?.()
     },
 
     // ── The service half ────────────────────────────────────────────
@@ -69,6 +81,52 @@ export function createAuthPlugin(
     // in. The registry is a Map — without this check one of the two silently
     // replaces the other and the app serves whichever registered last.
     boot(app: App) {
+      // ── Is the URL we hand the provider the URL that is mounted? ──────
+      //
+      // Asked in boot() and not at registration, because that is the first
+      // phase where `junction.config.js` has been read (`FJS-431`) — and
+      // `apiPrefix` is exactly the value that would move the route after the
+      // fact. Nothing else can catch this: the redirect URI is matched as an
+      // exact string BY THE PROVIDER, so a mismatch fails 100% of the time,
+      // for everyone, and is visible only on Google's error page.
+      if (oauth) {
+        const mounted  = (app.http?.router?.routePaths?.('GET') ?? []) as string[]
+        const expected = callbackPath(app, prefix, '{provider}')
+        if (!mounted.includes(expected)) {
+          const found = mounted.filter(p => p.includes('/oauth/') && p.endsWith('/callback'))
+          throw new Error(
+            `[auth] OAuth callback is mounted at ${found[0] ?? '(nowhere)'} ` +
+            `but the redirect URI this app gives its providers resolves to ${expected}. ` +
+            `A provider matches that string exactly, so every sign-in would fail. ` +
+            `Check apiPrefix and createAuthPlugin's prefix.`
+          )
+        }
+        // ── OAuth needs cookie mode, and the alternative is silent ────
+        //
+        // The callback is a browser REDIRECT. It can hand back a cookie, and it
+        // has nowhere to put a bearer token — a token on the URL is a thirty-day
+        // credential written into browser history, which is refused, and the
+        // short-lived-code exchange that would replace it is not built.
+        //
+        // So without cookieAuth the flow runs perfectly, sets nothing, and
+        // redirects a person who is not signed in to a page that will not say
+        // why. Refused here rather than discovered there.
+        if (!cookieAuth) {
+          throw new Error(
+            `[auth] { oauth } requires { cookieAuth: true }. The OAuth callback is a browser ` +
+            `redirect and can only hand back a session as a cookie — with Bearer sessions the ` +
+            `flow would complete and sign nobody in.`
+          )
+        }
+
+        if (!oauthAuth.oauthBegin) {
+          throw new Error(
+            `[auth] createAuthPlugin was given { oauth } but this IAuth provider has no OAuth support. ` +
+            `Use createLitestoneAuth with { oauthProviders }, or drop the oauth block.`
+          )
+        }
+      }
+
       if (services === false) return
 
       for (const svc of createAuthServices(auth, services)) {
@@ -216,6 +274,179 @@ export function createAuthPlugin(
         return ctx.json({ ok: true, user })
       })
 
+      // ── GET /auth/oauth ──────────────────────────────────────────────
+      //
+      // What a sign-in screen has to know before it can draw anything: which
+      // providers this app is actually configured for. Mounted whether or not
+      // `oauth` is configured, and answering `[]` when it is not, because *this
+      // app has no providers* is a real answer and a 404 is not one a screen
+      // can render — a client that had to treat "not found" as "none" could not
+      // tell it apart from a wrong prefix.
+      //
+      // Unauthenticated, because the page that asks has no session by
+      // definition, and not secret: the same names are on the sign-in page of
+      // every site that offers one.
+
+      app.get(oauthPath, async (ctx: TransportContext) =>
+        ctx.json({ providers: oauth ? (oauthAuth.oauthProviderNames?.() ?? []) : [] })
+      )
+
+      // ── The OAuth pair ───────────────────────────────────────────────
+      //
+      // Not like the seven above, and the difference is the caller: those
+      // answer JSON to a `fetch()`, and these are BROWSER NAVIGATIONS — a link
+      // somebody clicks, and a redirect the provider sends their address bar
+      // to. So both answer 302s, and a refusal has to be a redirect as well. A
+      // 400 with a JSON body would leave a person who clicked *Deny* at Google
+      // looking at `{"error":...}` in their URL bar.
+      //
+      // `{provider}`, not `:provider` — junction's raw routes take braces, and
+      // a colon registers as a LITERAL segment which then 404s forever.
+
+      if (oauth) {
+
+        app.get(`${oauthPath}/{provider}`, async (ctx: TransportContext) => {
+          oauthLimiter(ctx)
+          const provider = String(ctx.route?.provider ?? '')
+
+          if (!oauthAuth.oauthBegin) return oauthFailure(ctx, oauth, 'unavailable')
+
+          try {
+            const { authorizeUrl, state } = await oauthAuth.oauthBegin(provider, {
+              redirectUri: callbackUri(app, prefix, oauth.publicUrl, provider),
+              returnTo:    ctx.query?.returnTo ? String(ctx.query.returnTo) : null,
+            })
+
+            // The browser half of the state. A flow record found by the state
+            // value ALONE is login CSRF: an attacker starts a flow, keeps their
+            // own code and state, and hands the callback URL to somebody else,
+            // who is then signed in as the attacker in their own browser.
+            //
+            // `lax`, never `strict`: the callback is a cross-site top-level GET
+            // navigation from the provider and `strict` withholds the cookie on
+            // exactly that, so the flow would fail every single time.
+            ctx.setCookie?.(OAUTH_STATE_COOKIE, state, {
+              httpOnly: true,
+              sameSite: 'lax',
+              secure:   process.env.NODE_ENV === 'production',
+              maxAge:   600,
+              // callbackPath and NOT `${oauthPath}/...`: a cookie Path is
+              // matched against the URL the browser actually requests, which
+              // carries apiPrefix. Scoped without it the cookie is never sent
+              // to the callback at all, so every sign-in fails the state check
+              // — and it fails the same way a real attack does, which is the
+              // worst possible thing for it to look like.
+              path:     callbackPath(app, prefix, provider),
+            })
+
+            return ctx.redirect!(authorizeUrl)
+          } catch {
+            return oauthFailure(ctx, oauth, 'unavailable')
+          }
+        })
+
+        app.get(`${oauthPath}/{provider}/callback`, async (ctx: TransportContext) => {
+          const provider = String(ctx.route?.provider ?? '')
+          const state    = ctx.query?.state ? String(ctx.query.state) : ''
+          const code     = ctx.query?.code  ? String(ctx.query.code)  : ''
+          const cookiePath = callbackPath(app, prefix, provider)
+
+          // However this ends, the flow is over: the cookie is single use, and
+          // leaving it set means the next visit carries a state with no row.
+          ctx.setCookie?.(OAUTH_STATE_COOKIE, '', { maxAge: 0, path: cookiePath })
+
+          // The person clicked Deny, or the provider refused. Not an error on
+          // our side, and the most common non-happy path there is.
+          if (ctx.query?.error)         return oauthFailure(ctx, oauth, 'denied')
+          if (!code || !state)          return oauthFailure(ctx, oauth, 'state')
+          if (!oauthAuth.oauthCallback) return oauthFailure(ctx, oauth, 'unavailable')
+
+          let identity, returnTo
+          try {
+            const done = await oauthAuth.oauthCallback(provider, {
+              code,
+              state,
+              cookieState: ctx.cookies?.[OAUTH_STATE_COOKIE] ?? null,
+              redirectUri: callbackUri(app, prefix, oauth.publicUrl, provider),
+            })
+            identity = done.identity
+            returnTo = done.returnTo
+          } catch {
+            // One code for every refusal, deliberately. Which one it was is in
+            // the audit trail; telling the browser whether a state existed, or
+            // whether an exchange failed, is an oracle handed to whoever can
+            // reach the URL.
+            return oauthFailure(ctx, oauth, 'state')
+          }
+
+          if (!oauthAuth.oauthResolve) return oauthFailure(ctx, oauth, 'unavailable')
+
+          let resolved
+          try {
+            resolved = await oauthAuth.oauthResolve(provider, identity)
+          } catch {
+            return oauthFailure(ctx, oauth, 'exchange')
+          }
+
+          // An account already holds this address and has not proved it owns
+          // it. A distinct code, and the address-existence it discloses is
+          // already disclosed by POST /auth/register, which answers 409
+          // EmailTakenError — so hiding it here would buy nothing and leave a
+          // person who cannot sign in with no idea why.
+          if (resolved.outcome === 'proof-required') {
+            return oauthFailure(ctx, oauth, 'link_required')
+          }
+
+          // The same cookie every other route in this plugin sets, through the
+          // same options — this is a sign-in and there is no second kind.
+          if (cookieAuth && typeof ctx.setCookie === 'function') {
+            ctx.setCookie('session', resolved.token, {
+              httpOnly: true,
+              sameSite: 'lax',
+              secure:   process.env.NODE_ENV === 'production',
+              maxAge:   cookieMaxAge,
+            })
+          }
+
+          // `returnTo` was checked against the app's allow-list when the flow
+          // STARTED and written down only if it passed, so there is nothing
+          // left to decide here.
+          return ctx.redirect!(returnTo ?? '/')
+        })
+
+        // ── Proving the address, and attaching after ──────────────────
+        //
+        // Reached from a link in an email, so a browser navigation again — and
+        // the LAST step of the flow rather than a second one: it signs the
+        // person in, because presenting this token is the proof the account was
+        // asked for.
+        app.get(`${oauthPath}/link/confirm`, async (ctx: TransportContext) => {
+          oauthLimiter(ctx)
+          const token = ctx.query?.token ? String(ctx.query.token) : ''
+
+          if (!token)                        return oauthFailure(ctx, oauth, 'state')
+          if (!oauthAuth.confirmOAuthLink)   return oauthFailure(ctx, oauth, 'unavailable')
+
+          let issued
+          try {
+            issued = await oauthAuth.confirmOAuthLink(token)
+          } catch {
+            return oauthFailure(ctx, oauth, 'state')
+          }
+
+          if (cookieAuth && typeof ctx.setCookie === 'function') {
+            ctx.setCookie('session', issued.token, {
+              httpOnly: true,
+              sameSite: 'lax',
+              secure:   process.env.NODE_ENV === 'production',
+              maxAge:   cookieMaxAge,
+            })
+          }
+
+          return ctx.redirect!('/')
+        })
+      }
+
     }
   }
 }
@@ -305,4 +536,46 @@ function extractToken(ctx: TransportContext): string | null {
 
 function clearCookie(ctx: TransportContext): void {
   ctx.setCookie?.('session', '', { maxAge: 0 })
+}
+
+// ─── OAuth helpers ────────────────────────────────────────────────────────
+
+/**
+ * The redirect URI, exactly as the provider has it on file.
+ *
+ * Built from `app.config.apiPrefix` at REQUEST time rather than closed over at
+ * registration, because a plugin's `register()` runs synchronously inside
+ * `configure()` and `junction.config.js` is not loaded until the `load-config`
+ * start phase — so a value read at registration is the config as it was BEFORE
+ * the file (`FJS-431`). An apiPrefix that arrives from the config file would
+ * move the route and leave this string pointing at the old one, and a provider
+ * matches it as an exact string.
+ */
+function callbackPath(app: App, prefix: string, provider: string): string {
+  const apiPrefix = String((app as { config?: { apiPrefix?: string } }).config?.apiPrefix ?? '')
+    .replace(/\/+$/, '')
+  return `${apiPrefix}${prefix}/oauth/${provider}/callback`
+}
+
+function callbackUri(app: App, prefix: string, publicUrl: string, provider: string): string {
+  // String concatenation and deliberately not `new URL(...).pathname`: the boot
+  // check asks this for the literal `{provider}`, and URL percent-encodes the
+  // braces into %7B…%7D, so the comparison it exists to make never matched.
+  return `${publicUrl.replace(/\/+$/, '')}${callbackPath(app, prefix, provider)}`
+}
+
+/**
+ * Send the browser somewhere it can render a message.
+ *
+ * The code is coarse on purpose and is never the provider's own text, which is
+ * attacker-influenced and headed for a screen.
+ */
+function oauthFailure(
+  ctx:    TransportContext,
+  oauth:  { errorRedirect?: string },
+  code:   'denied' | 'state' | 'exchange' | 'unavailable' | 'link_required',
+): Response {
+  const target = oauth.errorRedirect ?? '/'
+  const join   = target.includes('?') ? '&' : '?'
+  return ctx.redirect!(`${target}${join}oauth_error=${code}`)
 }

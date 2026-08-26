@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-38 model(s) · 21 enum(s) · 2 database(s)
+45 model(s) · 26 enum(s) · 2 database(s)
 audit → logger · main → sqlite
 ```
 
@@ -24,12 +24,16 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `AlertSeverity` | `critical` · `info` · `warning` |
 | `AppStatus` | `deploying` · `error` · `running` · `starting` · `stopped` · `stopping` · `unknown` |
 | `AppType` | `container` · `cron` · `daemon` · `database` · `function` · `static` · `worker` |
+| `BackupDestination` | `local` · `s3` |
+| `BackupKind` | `manual` · `scheduled` |
 | `ChannelKind` | `email` · `pagerduty` · `slack` · `webhook` |
 | `DeployStatus` | `building` · `cancelled` · `deploying` · `failed` · `pending` · `pushing` · `rolled_back` · `success` |
 | `EnvironmentTier` | `development` · `preview` · `production` · `staging` · `test` |
 | `FlagType` | `boolean` · `variant` |
 | `JobKind` | `one_shot` · `scheduled` · `triggered` · `workflow` |
 | `JobStatus` | `cancelled` · `failed` · `pending` · `running` |
+| `NotificationKind` | `alert_firing` · `alert_resolved` · `deploy_failed` · `deploy_success` · `job_failed` · `member_joined` · `weekly_digest` |
+| `ParamGenerator` | `random_hex_16` · `random_hex_32` · `random_hex_64` |
 | `RunStatus` | `failed` · `pending` · `running` · `success` · `timeout` |
 | `SecretKind` | `generic` · `notification` · `provider_key` · `registry_auth` · `ssh_key` · `tls_cert` |
 | `ServerRole` | `build` · `database` · `gateway` · `general` · `worker` |
@@ -37,6 +41,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `StepStatus` | `failed` · `pending` · `running` · `skipped` · `success` |
 | `UserKind` | `ai` · `bot` · `human` |
 | `UserStatus` | `active` · `pending_verification` · `suspended` |
+| `VerificationPurpose` | `emailVerify` · `oauthLink` · `passwordReset` |
 | `WidgetKind` | `activity_feed` · `alert_status` · `app_status` · `deploy_feed` · `job_history` · `server_fleet` · `server_health` · `service_health` · `stat_counter` |
 | `WorkspaceRole` | `admin` · `billing` · `developer` · `owner` · `viewer` |
 | `WorkspaceStatus` | `active` · `suspended` |
@@ -242,6 +247,7 @@ table `app_network` · db `main` · gate `2.8`
 
 ```
 @@unique(appId, networkId)
+@@index(networkId)
 @@deny('create', !check(app, 'read'))
 @@deny('create', !check(network, 'read'))
 @@deny('delete', !check(app, 'read'))
@@ -274,6 +280,7 @@ table `app_server` · db `main` · gate `2.8`
 
 ```
 @@unique(appId, replicaIndex, serverId)
+@@index(serverId)
 @@deny('create', !check(app, 'read'))
 @@deny('create', !check(server, 'read'))
 @@deny('delete', !check(app, 'read'))
@@ -306,6 +313,93 @@ table `audit_event` · db `main` · gate `5.8.9.9`
 ```
 @@index(subjectType, subjectId)
 @@index(workspaceId)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+```
+
+### `Backup`
+
+table `backup` · db `main` · gate `7.7.8.7`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `destination` | `BackupDestination` | no | `'local'` | — |
+| `durationMs` | `Int` | yes | — | — |
+| `error` | `String` | yes | — | — |
+| `finishedAt` | `DateTime` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `kind` | `BackupKind` | no | `'manual'` | — |
+| `location` | `String` | yes | — | — |
+| `requestedBy` | `String` | yes | — | — |
+| `sizeBytes` | `Int` | yes | — | — |
+| `startedAt` | `DateTime` | yes | — | — |
+| `status` | `RunStatus` | no | `'pending'` | — |
+
+```
+@@index(createdAt)
+@@index(status)
+```
+
+### `Blueprint`
+
+table `blueprint` · db `main` · gate `1.7`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `appType` | `AppType` | no | `'container'` | — |
+| `brandColor` | `String` | yes | — | — |
+| `category` | `String` | no | — | **required on write** |
+| `cpuLimit` | `String` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `deprecatedAt` | `DateTime` | yes | — | — |
+| `description` | `String` | no | — | **required on write** |
+| `healthCheck` | `String` | yes | — | — |
+| `icon` | `String` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `image` | `String` | no | — | **required on write** |
+| `links` | `Json` | no | `'[]'` | — |
+| `memLimit` | `String` | yes | — | — |
+| `name` | `String` | no | — | **required on write** |
+| `notes` | `String` | yes | — | — |
+| `params` | `BlueprintParam[]` | — | — | relation |
+| `persistent` | `Boolean` | no | `0` | — |
+| `port` | `Int` | yes | — | — |
+| `replicas` | `Int` | no | `1` | — |
+| `revision` | `Int` | no | `1` | — |
+| `slug` | `String` | no | — | unique · **required on write** |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `String` | no | — | **required on write** |
+| `volumePath` | `String` | yes | — | — |
+
+```
+@@index(category)
+```
+
+### `BlueprintParam`
+
+table `blueprint_param` · db `main` · gate `1.7`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `blueprint` | `Blueprint` | — | — | relation |
+| `blueprintId` | `String` | no | — | **required on write** |
+| `defaultValue` | `String` | yes | — | — |
+| `generate` | `ParamGenerator` | yes | — | — |
+| `hint` | `String` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `key` | `String` | no | — | **required on write** |
+| `label` | `String` | no | — | **required on write** |
+| `position` | `Int` | no | `0` | — |
+| `required` | `Boolean` | no | `0` | — |
+| `secret` | `Boolean` | no | `0` | — |
+
+```
+@@unique(blueprintId, key)
+@@index(blueprintId)
 ```
 
 ### `CleanupRun`
@@ -344,11 +438,11 @@ table `credential` · db `main` · gate `8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `accessToken` | `String` | yes | — | @guarded(all) |
+| `accessToken` | `String` | yes | — | @secret |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `label` | `String` | yes | — | — |
-| `refreshToken` | `String` | yes | — | @guarded(all) |
+| `refreshToken` | `String` | yes | — | @secret |
 | `scope` | `String` | yes | — | — |
 | `tokenExpiresAt` | `DateTime` | yes | — | — |
 | `type` | `String` | no | — | **required on write** |
@@ -413,7 +507,9 @@ table `dashboard_widget` · db `main` · gate `2.4.4.4`
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 
 ```
+@@index(appId)
 @@index(dashboardId)
+@@index(serverId)
 @@deny('create', !check(app, 'read'))
 @@deny('create', !check(dashboard, 'read'))
 @@deny('create', !check(server, 'read'))
@@ -466,7 +562,9 @@ table `deployment` · db `main` · gate `2.4.4.4`
 
 ```
 @@index(appId)
+@@index(environmentId)
 @@index(status)
+@@index(triggeredBy)
 @@index(workspaceId)
 @@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
 @@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
@@ -671,6 +769,29 @@ table `flag_override` · db `main` · gate `2.4.4.4`
 @@deny('update', !check(flag, 'read'))
 ```
 
+### `HubConfig`
+
+table `hub_config` · db `main` · gate `7`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `adminEmail` | `String` | no | — | **required on write** |
+| `allowApiKeyAuth` | `Boolean` | no | `1` | — |
+| `allowBotUsers` | `Boolean` | no | `1` | — |
+| `backupCron` | `String` | no | `'0 2 * * *'` | — |
+| `backupDestination` | `BackupDestination` | no | `'local'` | — |
+| `backupEnabled` | `Boolean` | no | `0` | — |
+| `baseUrl` | `String` | no | — | **required on write** |
+| `heartbeatTimeoutSeconds` | `Int` | no | `120` | — |
+| `id` | `String` | no | `'hub'` | id |
+| `mailFromAddress` | `String` | yes | — | — |
+| `mailFromName` | `String` | yes | — | — |
+| `name` | `String` | no | `'Basecamp'` | — |
+| `requireTwoFactorForOwners` | `Boolean` | no | `0` | — |
+| `sessionTtlHours` | `Int` | no | `168` | — |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `version` | `Int` | no | `1` | — |
+
 ### `Invitation`
 
 table `invitation` · db `main` · gate `5`
@@ -730,6 +851,8 @@ table `job` · db `main` · gate `2.4.4.5` · @@softDelete
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
+@@index(appId)
+@@index(environmentId)
 @@index(nextRunAt)
 @@index(workspaceId)
 @@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
@@ -835,6 +958,48 @@ table `notification_channel` · db `main` · gate `2.5` · @@softDelete
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
+### `NotificationPreference`
+
+table `notification_preference` · db `main` · gate `1`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `email` | `Boolean` | no | `0` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `inApp` | `Boolean` | no | `1` | — |
+| `kind` | `NotificationKind` | no | — | **required on write** |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `user` | `User` | — | — | relation |
+| `userId` | `String` | no | — | **required on write** |
+
+```
+@@unique(kind, userId)
+@@index(userId)
+@@allow('create', userId == auth().id)
+@@allow('delete', userId == auth().id)
+@@allow('post-update', userId == auth().id)
+@@allow('read', userId == auth().id)
+@@allow('update', userId == auth().id)
+```
+
+### `OauthFlow`
+
+table `oauth_flow` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `expiresAt` | `DateTime` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `provider` | `String` | no | — | **required on write** |
+| `returnTo` | `String` | yes | — | — |
+| `state` | `String` | no | — | unique · @guarded(all) · **required on write** |
+| `verifier` | `String` | no | — | @guarded(all) · **required on write** |
+
+```
+@@index(expiresAt)
+```
+
 ### `Project`
 
 table `project` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
@@ -936,6 +1101,35 @@ table `recipe_run` · db `main` · gate `2.4.8.8`
 @@deny('update', !check(server, 'read'))
 ```
 
+### `RegistryImage`
+
+table `registry_image` · db `main` · gate `2.8.8.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `digest` | `String` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `inUse` | `Boolean` | no | `0` | — |
+| `observedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `pushedAt` | `DateTime` | yes | — | — |
+| `pushedBy` | `String` | yes | — | — |
+| `repository` | `String` | no | — | **required on write** |
+| `sizeBytes` | `Int` | no | `0` | — |
+| `tag` | `String` | no | — | **required on write** |
+| `workspace` | `Workspace` | — | — | relation |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(repository, tag, workspaceId)
+@@index(workspaceId)
+@@index(workspaceId, repository)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+```
+
 ### `Secret`
 
 table `secret` · db `main` · gate `5` · @@softDelete
@@ -1013,6 +1207,14 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+transition status.checkIn: installing, pending, unreachable → online @gate(8)
+transition status.drain: online → draining @gate(5)
+transition status.reboot: online, unreachable → pending
+transition status.reportDestroyed: draining, installing, online, pending, provisioning, ready, stopped, unreachable → destroyed
+transition status.reportRebuilding: draining, installing, online, pending, ready, stopped, unreachable → provisioning
+transition status.reportRunning: installing, pending, provisioning, ready, stopped, unreachable → online
+transition status.reportStopped: draining, installing, online, pending, provisioning, ready, unreachable → stopped
+transition status.undrain: draining → online @gate(5)
 ```
 
 ### `ServerEvent`
@@ -1054,6 +1256,7 @@ table `server_network` · db `main` · gate `2.5`
 
 ```
 @@unique(networkId, serverId)
+@@index(networkId)
 @@deny('create', !check(network, 'read'))
 @@deny('create', !check(server, 'read'))
 @@deny('delete', !check(network, 'read'))
@@ -1101,13 +1304,13 @@ table `user` · db `main` · gate `4.4.4.5` · @@softDelete
 | `deployments` | `Deployment[]` | — | — | relation |
 | `displayName` | `String` | yes | — | — |
 | `email` | `String` | no | — | unique · **required on write** |
-| `emailVerified` | `Boolean` | no | `0` | — |
+| `emailVerified` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isSystemAdmin` | `Boolean` | no | `0` | `@allow(write: auth().isSystemAdmin)` |
 | `kind` | `UserKind` | no | `'human'` | `@allow(write: auth().isSystemAdmin)` |
 | `memberships` | `WorkspaceMember[]` | — | — | relation |
 | `name` | `String` | yes | — | — |
-| `role` | `String` | no | `'user'` | — |
+| `role` | `String` | no | `'user'` | `@allow(write: auth().isAdmin)` |
 | `scopes` | `Json` | no | `'[]'` | — |
 | `status` | `UserStatus` | no | `'pending_verification'` | `@allow(write: auth().isSystemAdmin)` |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -1130,10 +1333,14 @@ table `verification` · db `main` · gate `8`
 | `expiresAt` | `DateTime` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `identifier` | `String` | no | — | **required on write** |
-| `value` | `String` | no | — | @guarded(all) · **required on write** |
+| `provider` | `String` | yes | — | — |
+| `purpose` | `VerificationPurpose` | no | — | **required on write** |
+| `subject` | `String` | yes | — | — |
+| `value` | `String` | no | — | unique · @guarded(all) · **required on write** |
 
 ```
-@@index(identifier)
+@@index(expiresAt)
+@@index(purpose, identifier)
 ```
 
 ### `Volume`
@@ -1220,5 +1427,11 @@ table `workspace_member` · db `main` · gate `1.5`
 
 ```
 @@unique(userId, workspaceId)
+@@index(userId)
 @@index(workspaceId, userId)
+@@allow('create', workspaceId == auth().workspaceId)
+@@allow('delete', workspaceId == auth().workspaceId)
+@@allow('read', userId == auth().id)
+@@allow('update', workspaceId == auth().workspaceId)
+@@deny('update', userId == auth().id)
 ```

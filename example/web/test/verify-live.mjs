@@ -3,12 +3,20 @@
  *
  * The other two drives watch the tab that made the change, so they cannot tell
  * a real broadcast from a tab seeing its own echo — and for a year they did
- * not. This one opens a watcher tab, signed out, sitting on /orders/ touching
- * nothing, and makes every change from somewhere the watcher has no part in
- * (node, over plain HTTP). Two questions, and they fail separately:
+ * not. This one opens a watcher tab sitting on /orders/ touching nothing, and
+ * makes every change from somewhere the watcher has no part in — node, over
+ * plain HTTP, with a session of its own. Two questions, and they fail
+ * separately:
  *
  *   • did a WS frame arrive?              → Junction's publish path
  *   • did the table change with no reload? → Sierra's store wiring
+ *   • did the DETAIL page change too?      → the row's node, not a list
+ *
+ * The third one is new and is `FJS-518`: every assertion here watched a LIST,
+ * and a detail page read its row with `service.get(id)` — a plain object no
+ * announcement can reach. It looked right only because the page re-read itself
+ * after its own actions, which is why the marker is checked as well as the
+ * text.
  *
  * It found the gap it was written for: a custom ACTION announced nothing.
  * `orders created` and `orders removed` crossed to the watcher; the `pay`
@@ -39,7 +47,18 @@ const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // Its own reference, so a failed run cannot poison the next one and the seeded
 // orders keep the states verify.mjs expects.
-const REF = 'ORD-LIVE-1'
+// A reference of its own per run, for the reason `verify:money` mints its
+// discount codes: `Order` is `@@softDelete` and `reference` is `@unique`, so
+// the row this drive deletes at the end keeps its reference, and the NEXT run's
+// create is a 409 naming a row no ordinary query can see. It passed on a freshly
+// seeded database and failed on every re-run, which reads as a broken app. The
+// hatch that would let it clean up properly does not cross a service —
+// `DELETE ?$withDeleted=true` is a 404 (`FJS-523`).
+const RUN  = Date.now().toString(36).slice(-5).toUpperCase()
+const REF  = `ORD-LIVE-${RUN}`
+// The detail screen's own order. Separate because the frame assertion takes a
+// slice of what arrived, and a second order's events would land inside it.
+const REF2 = `ORD-DTL-${RUN}`
 
 for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]]) {
   try {
@@ -155,13 +174,32 @@ async function goto(path) {
 
 const got = {}
 const t = (label, value) => { got[label] = value }
-let orderId = null
-let auth    = null
+let orderId  = null
+let detailId = null
+let auth     = null
 
 try {
-  // The watcher: signed out, on the orders table, and it does nothing else for
-  // the rest of this file. Orders are publicly readable, so it needs no session
-  // — which also proves the broadcast is not merely an echo to the writer.
+  // ─── The watcher ────────────────────────────────────────────────────────
+  //
+  // A tab on the orders table that touches nothing for the rest of this file.
+  // Every change below is made from NODE over plain HTTP, so what arrives here
+  // arrives over a socket this tab did not write on — which is the whole
+  // question, and the reason the other two drives cannot answer it.
+  //
+  // It used to be SIGNED OUT, and the header said so: *orders are publicly
+  // readable, so it needs no session*. They are not any more — `Order` read at
+  // level 0 was the catalogue's gate on the sales ledger — so the watcher signs
+  // in like a person would. That does not weaken the argument: an echo is one
+  // CLIENT seeing its own write, and the writer here is a fetch from node with
+  // a token of its own. Two sockets, two sessions, one row.
+  await goto('/')
+  await evaluate(`
+    [...document.querySelectorAll('header button')]
+      .find(b => b.textContent.includes('Sign in (admin)')).click();
+    await waitFor(() => [...document.querySelectorAll('header .badge')]
+      .some(el => el.textContent.includes('level')));
+    return true;
+  `)
   await goto('/orders/')
 
   t('watcher.live', await evaluate(`
@@ -169,10 +207,14 @@ try {
       .some(el => el.textContent.trim() === 'live'));
     return { socket: live };
   `))
-  // Sorted: `verify:jobs` re-creates a seeded order it cancels, which changes
-  // that row's id and therefore where it sorts. What matters here is which rows
-  // the watcher started with, not the order they came back in.
-  t('watcher.rowsBefore', await evaluate(`return { refs: refs().sort() }`))
+  // Sorted, and narrowed to the SEEDED references. Two things move this list
+  // otherwise: `verify:jobs` re-creates a seeded order it cancels, which changes
+  // that row's id and therefore where it sorts, and every drive that checks a
+  // basket out places a real order. What is being asserted is that the watcher
+  // started with the rows it should have — not that this database has only ever
+  // been read by this drive.
+  t('watcher.rowsBefore', await evaluate(
+    `return { refs: refs().filter(r => /^ORD-100\\d$/.test(r)).sort() }`))
 
   const framesBefore = inbound.length
 
@@ -193,9 +235,13 @@ try {
 
   // A run that threw before its cleanup leaves the row behind, and `reference`
   // is @unique — so the next create would be a 500 about nothing being tested.
-  const stale = await (await fetch(`${API}/api/orders?reference=${REF}`)).json()
-  for (const row of stale.data ?? [])
-    await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
+  // A run that threw before its cleanup leaves its own rows behind. The
+  // reference is unique per run, so this only ever finds this run's.
+  for (const ref of [REF, REF2]) {
+    const stale = await (await fetch(`${API}/api/orders?reference=${ref}`, { headers: auth })).json()
+    for (const row of stale.data ?? [])
+      await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
+  }
 
   // 1 ─ create
   const created = await fetch(`${API}/api/orders`, {
@@ -279,15 +325,90 @@ try {
     })(),
   })
 
+  // 6 ─ the DETAIL screen, which until `record()` existed was the one place
+  //     this whole mechanism did not reach.
+  //
+  //     Every assertion above watches a LIST. A detail page read its row with
+  //     `service.get(id)` — a plain object no announcement can reach — so the
+  //     page was stale the moment anybody else moved the order, and the only
+  //     reason it ever looked right is that it re-read the whole page after its
+  //     own actions (`FJS-518`). Its own order, because the frame assertion
+  //     above has already been taken and the row above has been deleted.
+  const second = await fetch(`${API}/api/orders`, {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ reference: REF2, total: 4.25, status: 'pending', customerId: 1 }),
+  })
+  const secondBody = await second.json()
+  detailId = secondBody.id ?? secondBody.data?.id
+
+  await goto(`/orders/${detailId}/`)
+
+  // The Status row of the definition list, found by its own term rather than by
+  // position: the page renders several pills and the list grows.
+  const STATUS_PILL = `
+    const status = () => {
+      const dt = [...document.querySelectorAll('dt')]
+        .find(el => el.textContent.trim() === 'Status');
+      return dt?.nextElementSibling?.querySelector('.pill')?.textContent.trim();
+    };`
+
+  t('detail.opened', await evaluate(`
+    ${STATUS_PILL}
+    await waitFor(() => status() === 'pending');
+    // A marker on the page's own window. A reload or a navigation takes it
+    // with it, which is how the assertion below tells *the screen moved* from
+    // *the screen was rebuilt and happened to be right*.
+    window.__fjsMark = 'detail-mark';
+    return { status: status() ?? '(no status)' };
+  `))
+
+  // Paid from node, on a session of its own, with nothing touching this tab.
+  const paidDetail = await fetch(`${API}/api/orders/${detailId}`, {
+    method: 'POST', headers: { ...auth, 'x-service-method': 'pay' }, body: '{}',
+  })
+  t('http.payDetail', { status: paidDetail.status })
+
+  // No reload, and no navigation: `document` is the one the page loaded with,
+  // so a page that had re-read itself would have replaced this marker.
+  t('detail.sawPay', await evaluate(`
+    ${STATUS_PILL}
+    const moved = await waitFor(() => status() === 'paid');
+    return { status: status() ?? '(gone)', moved, sameDocument: window.__fjsMark === 'detail-mark' };
+  `))
+
+  // 7 ─ optimism, proved without a stopwatch.
+  //
+  //     A move's TARGET is stated by the schema, so the screen can say what the
+  //     row will look like before the call is made and put it back if the call
+  //     is refused (`FJS-D138`). Asserting that by timing would be a race — a
+  //     local round trip is a few milliseconds — so this asserts it LOGICALLY:
+  //     the button carries `aria-busy` for exactly as long as the call is in
+  //     flight (`busy` is cleared in a `finally`), so a status that has already
+  //     moved WHILE the button is still busy cannot have come from the server.
+  // Optimism is NOT asserted here, and the reason is worth writing down: every
+  // in-flight marker this page offers is also true for a moment AFTER the call
+  // answers. The loading toast is settled in the `await`'s continuation, and
+  // the WS push lands before that continuation runs — so *the status moved
+  // while the toast was spinning* passes with the optimistic write taken out,
+  // which is a green light that means nothing. The move buttons are worse: an
+  // optimistic status regrades them in the same flush, so the button being
+  // gone is the feature rather than a witness to it. What would settle it is a
+  // marker for *no frame has arrived yet*, which is not reachable from the
+  // page. Optimism and its rollback are asserted where they can be
+  // negative-controlled: `junction/tests/nodes.test.ts` and
+  // `sierra/tests/resource-record.test.js`.
+
   t('consoleErrors', consoleErrors)
 } catch (e) {
   console.error('\nThe drive threw:', e.message)
   console.error('collected so far:', got)
   process.exitCode = 1
 } finally {
-  if (orderId && auth) await fetch(`${API}/api/orders/${orderId}`, {
-    method: 'DELETE', headers: auth,
-  }).catch(() => {})
+  for (const id of [orderId, detailId]) {
+    if (id && auth) await fetch(`${API}/api/orders/${id}`, {
+      method: 'DELETE', headers: auth,
+    }).catch(() => {})
+  }
   browser.close()
   chrome.kill()
   try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) } catch {}
@@ -296,6 +417,12 @@ try {
 if (process.exitCode) process.exit(1)
 
 // ─── the report ───────────────────────────────────────────────────────────
+
+function expectedTracking(reference) {
+  let hash = 0
+  for (const ch of reference) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff
+  return `TRK-${hash.toString(36).toUpperCase().padStart(4, '0')}`
+}
 
 const expected = {
   'watcher.live':       { socket: true },
@@ -308,9 +435,13 @@ const expected = {
   'watcher.sawPay':    { status: 'paid', updated: true },
   'watcher.movesRegraded': { moves: ['ship', 'refund', 'cancel'] },
 
-  // Deterministic from the reference — see api/jobs/book-courier.job.ts.
+  // Deterministic from the reference — the rule is `bookWithCourier` in
+  // api/src/jobs/book-courier.job.ts and this is the same three lines, so a
+  // divergence fails here rather than passing on a code nobody checked. It is
+  // derived rather than written down because the reference is minted per run
+  // (see REF above); it used to be the literal `TRK-1BFG`.
   'http.ship':          { status: 200, trackingInResponse: null },
-  'watcher.sawJobWrite': { tracking: 'TRK-1BFG', arrived: true },
+  'watcher.sawJobWrite': { tracking: expectedTracking(REF), arrived: true },
 
   'http.delete':       { status: 200 },
   'watcher.sawDelete': { left: true },
@@ -324,7 +455,14 @@ const expected = {
   // That is the whole difference between the two — the job used to patch, and a
   // patch is what a caller may not do to a `@system` column.
   'watcher.events':  { names: ['orders created', 'orders pay', 'orders ship', 'orders recordTracking', 'orders removed'] },
-  'watcher.payload': { ofPay: { reference: 'ORD-LIVE-1', status: 'paid' } },
+  'watcher.payload': { ofPay: { reference: REF, status: 'paid' } },
+
+  // The detail screen is live, which is the whole of `FJS-518`. `sameDocument`
+  // is what separates *the page moved* from *the page reloaded and looked
+  // right* — the failure mode that hid this for as long as it existed.
+  'detail.opened':   { status: 'pending' },
+  'http.payDetail':  { status: 200 },
+  'detail.sawPay':   { status: 'paid', moved: true, sameDocument: true },
 
   'consoleErrors': [],
 }

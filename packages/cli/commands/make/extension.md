@@ -53,6 +53,8 @@ Everything but the harbor is optional and discovered by position —
 ```js
 const { scaffoldExtensionSurface, extensionScripts } =
   await import(resolve(global.fliRoot, 'core/extension-surface.js'))
+const { port: portFor, projectIdFor } =
+  await import(resolve(global.fliRoot, 'core/ports.js'))
 
 const dir  = flag.dir || 'extension'
 const root = context.paths.root
@@ -60,12 +62,23 @@ const surface = join(root, dir)
 const fresh   = !existsSync(surface)
 const appName = basename(root)
 
+// Derived, not chosen — the same rule `make:widget` follows. A literal 8400 is
+// dev/ext/project-0, which is right for a fresh scaffold and wrong for every
+// app that has a number: two apps whose extensions both claim it cannot have
+// their dev servers up at once, and jetty's reload push would reach whichever
+// one bound first.
+const appPkgName = existsSync(join(root, 'package.json'))
+  ? JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).name ?? appName
+  : appName
+const projectId  = projectIdFor(appPkgName, appName)
+const devPort    = portFor('ext', { env: 'dev', projectId })
+
 if (flag.dry) {
   log.dry(`Would ${fresh ? 'create' : 'top up'} the ${dir}/ surface`)
   return
 }
 
-const { written, skipped } = scaffoldExtensionSurface({ root, dir, appName })
+const { written, skipped } = scaffoldExtensionSurface({ root, dir, appName, devPort })
 
 for (const f of written) log.success(`Created ${f}`)
 if (skipped.length) log.info(`Kept ${skipped.length} existing file(s) — a scaffold never overwrites your config.`)
@@ -97,7 +110,7 @@ if (existsSync(pkgPath)) {
 
 log.info('')
 log.info('  fli extension:build     → extension/dist/chrome/')
-log.info('  fli extension:dev       watch + reload, dev port 8400')
+log.info(`  fli extension:dev       watch + reload, dev port ${devPort}`)
 log.info('  fli extension:audit     permissions declared vs. chrome.* called')
 log.info('')
 log.info(`  Then load ${dir}/dist/chrome/ unpacked — see ${dir}/test/README.md`)

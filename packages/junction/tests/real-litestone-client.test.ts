@@ -453,3 +453,137 @@ describe('reservedQuery — a reserved key that is also a column', () => {
     expect(asked).toBe(1)
   })
 })
+
+// ─── releasing a @unique value a soft-deleted row still holds ─────────────────
+//
+// `SoftDeletedUniqueError` is a 409 telling a caller their value is held by a
+// row they cannot see, and litestone's documented way out is to move the value
+// aside: `update({ …, withDeleted: true })`. Every READ passed `$withDeleted`
+// through and no WRITE did, so the escape hatch the refusal points at was
+// unreachable through a service — a soft-deleted row's reference could never be
+// freed by any request an app could make (`FJS-523`).
+//
+// `remove` is deliberately not covered: against an already-deleted row the only
+// remaining action is to stop keeping it, which is a hard delete, and giving
+// `DELETE ?$withDeleted=true` that meaning is a decision rather than a
+// passthrough. Asserted below as still refused, so making it work is a
+// deliberate change and not a side effect.
+
+async function mkSoftDb(): Promise<AnyClient> {
+  return await createClient({
+    db: ':memory:',
+    schema: `
+      // No @@gate: what is under test is a directive, and a gated model would
+      // refuse these writes at level 0 for a reason that has nothing to do with
+      // it. The accessor tests above keep the gated model.
+      model Doc {
+        id        Int       @id
+        code      String    @unique
+        title     String?
+        deletedAt DateTime?
+
+        @@softDelete
+      }
+    `,
+  }) as unknown as AnyClient
+}
+
+describe('$withDeleted on a write', () => {
+  const svc = () => createService({ name: 'docs', model: 'doc' })
+
+  const seedDeleted = async () => {
+    const db = await mkSoftDb()
+    const t  = (db as unknown as { asSystem(): Record<string, {
+      create(a: unknown): Promise<unknown>, remove(a: unknown): Promise<unknown> }> }).asSystem().doc!
+    await t.create({ data: { id: 1, code: 'X', title: 'first' } })
+    await t.remove({ where: { id: 1 } })
+    return db
+  }
+
+  test('the deleted row is out of an ordinary read and its code is still taken', async () => {
+    const db = await seedDeleted()
+    const out = await svc().find(ctx(db, { service: 'docs' })) as { data: unknown[] }
+    expect(out.data).toHaveLength(0)
+
+    const err = await svc().create(ctx(db, {
+      service: 'docs', method: 'create', data: { id: 2, code: 'X' },
+    })).catch((e: Error) => e) as Error
+    expect(toFrameworkError(err).code).toBe(409)
+  })
+
+  test('a patch by id cannot reach it without the directive', async () => {
+    const db  = await seedDeleted()
+    const err = await svc().patch(ctx(db, {
+      service: 'docs', method: 'patch', id: 1, data: { title: 'nope' },
+    })).catch((e: Error) => e) as Error
+    expect(toFrameworkError(err).code).toBe(404)
+  })
+
+  test('…and does with it, which is what frees the value', async () => {
+    const db  = await seedDeleted()
+    const row = await svc().patch(ctx(db, {
+      service: 'docs', method: 'patch', id: 1,
+      data: { code: 'X-archived' }, directives: { withDeleted: true },
+    })) as { code: string }
+    expect(row.code).toBe('X-archived')
+
+    // The slot is free now, which is the whole point of the exercise.
+    const made = await svc().create(ctx(db, {
+      service: 'docs', method: 'create', data: { id: 2, code: 'X' },
+    })) as { code: string }
+    expect(made.code).toBe('X')
+  })
+
+  test('update by id honours it the same way', async () => {
+    const db  = await seedDeleted()
+    const row = await svc().update(ctx(db, {
+      service: 'docs', method: 'update', id: 1,
+      data: { code: 'X-2', title: 'moved' }, directives: { withDeleted: true },
+    })) as { code: string }
+    expect(row.code).toBe('X-2')
+  })
+
+  test('the row stays deleted — moving a value is not a restore', async () => {
+    const db = await seedDeleted()
+    await svc().patch(ctx(db, {
+      service: 'docs', method: 'patch', id: 1,
+      data: { code: 'X-archived' }, directives: { withDeleted: true },
+    }))
+    const out = await svc().find(ctx(db, { service: 'docs' })) as { data: unknown[] }
+    expect(out.data).toHaveLength(0)
+  })
+
+  // `softDelete:` on a service is the Junction-side OVERRIDE, for a model whose
+  // schema does not declare `@@softDelete`; by default the adapter trusts
+  // litestone and its own filter never runs. Both halves have to lift together
+  // or the directive works on one kind of service and not the other, so the
+  // override is exercised here rather than left to the default path above.
+  test('the override path lifts too, and still refuses the column itself', async () => {
+    const over = createService({ name: 'docs', model: 'doc', softDelete: 'deletedAt' } as never)
+
+    const db  = await seedDeleted()
+    const err = await over.patch(ctx(db, {
+      service: 'docs', method: 'patch', id: 1, data: { deletedAt: null },
+    })).catch((e: Error) => e) as Error
+    expect(err.message).toContain('use remove()')
+
+    const blind = await over.patch(ctx(db, {
+      service: 'docs', method: 'patch', id: 1, data: { title: 'nope' },
+    })).catch((e: Error) => e) as Error
+    expect(toFrameworkError(blind).code).toBe(404)
+
+    const row = await over.patch(ctx(db, {
+      service: 'docs', method: 'patch', id: 1,
+      data: { code: 'X-archived' }, directives: { withDeleted: true },
+    })) as { code: string }
+    expect(row.code).toBe('X-archived')
+  })
+
+  test('remove still does NOT read it — that half is a decision, not a passthrough', async () => {
+    const db  = await seedDeleted()
+    const err = await svc().remove(ctx(db, {
+      service: 'docs', method: 'remove', id: 1, directives: { withDeleted: true },
+    })).catch((e: Error) => e) as Error
+    expect(toFrameworkError(err).code).toBe(404)
+  })
+})

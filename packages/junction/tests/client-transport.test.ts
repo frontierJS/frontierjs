@@ -107,10 +107,15 @@ describe('with no socket, everything falls back to HTTP and settles', () => {
     expect(seen).toEqual([{ method: 'POST', path: '/orders?limit=50&status=paid', action: 'summary' }])
   })
 
-  it('an unset filter is dropped, not sent as the string "null"', async () => {
+  it('undefined is dropped and null is SENT — they are different answers', async () => {
+    // `null` used to be dropped with `undefined`, so *where the column is null*
+    // asked for every row instead of the null ones and nothing said so
+    // (`FJS-450`). It survives the round trip as null now, not as the string
+    // "null" — `undefined` stays the way to say *no opinion*.
     const seen = traceHttp()
-    await client().service('orders').invoke('summary', null, null, { limit: 50, kind: null })
-    expect(seen).toEqual([{ method: 'POST', path: '/orders?limit=50', action: 'summary' }])
+    await client().service('orders')
+      .invoke('summary', null, null, { limit: 50, kind: null, skip: undefined })
+    expect(seen).toEqual([{ method: 'POST', path: '/orders?limit=50&kind=null', action: 'summary' }])
   })
 })
 
@@ -167,8 +172,13 @@ describe('the workspace survives the switch to WebSocket', () => {
   // the scope. Found by building a real UI on it.
   //
   // It rides `meta.workspaceId` because meta is the field the server reads,
-  // and it is the ONLY caller-supplied value lifted onto ctx.client.headers
-  // server-side: identity stays with the connection, established at upgrade.
+  // It is no longer spelled separately: the workspace is one PER-CALL HEADER
+  // among however many an app declares (`setCallHeader`), and it rides the
+  // frame under `meta.headers` like the rest. Server-side only names the app
+  // declared in `http.callHeaders` are lifted onto ctx.client.headers, plus
+  // junction's own — identity stays with the connection, established at
+  // upgrade. tests/call-headers.test.ts is the mechanism; this is the
+  // regression that the workspace still works over both.
 
   it('HTTP sends it as a header', async () => {
     const seen: Array<Record<string, string>> = []
@@ -180,19 +190,22 @@ describe('the workspace survives the switch to WebSocket', () => {
     const c = client()
     c.setWorkspace('ws-1')
     await c.service('orders').get(3)
-    expect(seen[0]['X-Workspace-Id']).toBe('ws-1')
+    // Lowercased: header names are case-insensitive on the wire, and one
+    // spelling is what keeps the HTTP map and the socket's merge comparable.
+    expect(seen[0]['x-workspace-id']).toBe('ws-1')
   })
 
   it('WS sends it on the frame', async () => {
     const { c, sent } = withFakeSocket()
     ;(c as unknown as { setWorkspace(id: string): void }).setWorkspace('ws-1')
     await c.service('orders').get(3 as never)
-    expect((sent[0].meta as Record<string, unknown>).workspaceId).toBe('ws-1')
+    expect((sent[0].meta as Record<string, unknown>).headers)
+      .toEqual({ 'x-workspace-id': 'ws-1' })
   })
 
   it('and omits it entirely when no workspace is set', async () => {
     const { c, sent } = withFakeSocket()
     await c.service('orders').get(3 as never)
-    expect((sent[0].meta as Record<string, unknown>)?.workspaceId).toBeUndefined()
+    expect((sent[0].meta as Record<string, unknown>)?.headers).toBeUndefined()
   })
 })

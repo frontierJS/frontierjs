@@ -1,0 +1,218 @@
+---
+title: Hub settings
+---
+<script>
+  // The mock's HubSettingsView — the installation's own settings.
+  //
+  // ONE ROW, and the service says so: `hub-config` answers `current` and `save`
+  // and no CRUD verb at all, because a singleton has no collection and its id is
+  // a constant no screen should have to know.
+  //
+  // ─── The mock had four credentials on this screen and none is here ──────
+  //
+  // Its auth secret, agent secret, Resend key and Infisical token are all absent
+  // from the model, and the reasons are worth repeating where somebody would go
+  // looking for them: they are read at BOOT, before any database, so a row would
+  // never reach the running process; rotating one is a deploy rather than a
+  // form; and this app already models credential material as `Secret`, whose
+  // `data` is @encrypted and unreadable at every level. A form that appeared to
+  // set them would be a form that silently did nothing.
+  //
+  // ─── Why a version travels with the save ────────────────────────────────
+  //
+  // `HubConfig` carries @version, so an update must carry the revision it read.
+  // Two administrators with this form open is exactly the case it exists for:
+  // without it the second save silently erases the first, and with it the second
+  // gets a 409 naming both revisions and can re-read.
+  import { hubConfig } from '../../../resources/HubConfig.mesa'
+
+  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout  from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card     from '@frontierjs/ui/components/layout/Card.mesa'
+  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
+  import Switch   from '@frontierjs/ui/components/forms/Switch.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  let config    = null
+  let draft     = {}
+  let error     = null
+  let fieldErrs = {}
+  let loading   = true
+  let saving    = false
+  // A fresh installation has no row. Not an error: the form is the way to make
+  // one, and the screen says which state it is in.
+  let unset     = false
+
+  // The controls take a value and hand back a change rather than binding to
+  // `draft.x` — `bind:` on a COMPONENT needs a writable top-level let and a
+  // member expression is not one. Replacing the object is what makes it
+  // reactive.
+  //
+  // **`Switch` hands its `onchange` a BOOLEAN, where `Input` hands `oninput` an
+  // event.** They are not interchangeable: `e.target.checked` on a Switch reads
+  // a property of `undefined`, which throws inside the handler and leaves the
+  // control looking dead. Measured — it is what the first run of
+  // `verify:screens` found on this screen and on /settings/.
+  function write(name, value) { draft = { ...draft, [name]: value } }
+
+  async function load() {
+    error = null; loading = true; fieldErrs = {}
+    try {
+      config = await hubConfig.service.invoke('current', null)
+      draft  = { ...config }
+      unset  = false
+    } catch (e) {
+      if (e?.data?.code === 404 || /no settings yet/.test(e.message ?? '')) {
+        unset  = true
+        config = null
+        draft  = {
+          name: 'Basecamp', baseUrl: '', adminEmail: '',
+          heartbeatTimeoutSeconds: 120, sessionTtlHours: 168,
+          requireTwoFactorForOwners: false, allowApiKeyAuth: true, allowBotUsers: true,
+          backupEnabled: false, backupCron: '0 2 * * *', backupDestination: 'local',
+          mailFromAddress: '', mailFromName: '',
+        }
+      } else {
+        error = e.message
+      }
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+
+  async function save() {
+    error = null; fieldErrs = {}; saving = true
+    try {
+      // The revision this screen READ, not one off a store: a push moving the
+      // number would carry a revision nobody here has seen, which is the race
+      // @version exists to lose (`FJS-341`).
+      const payload = { ...draft }
+      if (!unset) payload.version = config.version
+
+      const saved = await hubConfig.service.invoke('save', null, payload)
+      config = saved
+      draft  = { ...saved }
+      unset  = false
+      toasts.success('Settings saved')
+    } catch (e) {
+      // Litestone validates on the write — `hub-config` mounts no create or
+      // patch, so there is no autoValidate — and its refusal carries an
+      // `errors` array, which the resource turns into per-field messages.
+      const mapped = hubConfig.fieldErrors(e)
+      fieldErrs    = mapped.fields ?? {}
+      error        = mapped.message ?? e.message
+    } finally {
+      saving = false
+    }
+  }
+</script>
+
+<div class="section-header">
+  <h2 class="h3">Settings</h2>
+  {#if config}
+    <span class="text-sm text-muted">revision {config.version}</span>
+  {/if}
+</div>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else}
+  {#if unset}
+    <Callout tone="info" title="This installation has no settings yet">
+      A base URL and an admin email are required and nothing can infer either — the base URL is
+      what webhook callbacks, outpost registration and every link in an email are built from.
+      Saving once creates the row.
+    </Callout>
+  {/if}
+
+  <Card id="hub-settings-general">
+    <h3 class="h5">General</h3>
+    <Input name="name" id="cfg-name" label="Hub name" value={draft.name}
+           error={fieldErrs.name}
+           hint="Shown in the browser tab and in email"
+           oninput={(e) => write('name', e.target.value)} />
+    <Input name="baseUrl" id="cfg-base-url" label="Base URL" value={draft.baseUrl}
+           error={fieldErrs.baseUrl}
+           hint="https://hub.example.com — webhook callbacks, outpost registration and every link in an email. The one setting whose wrongness nothing local can detect."
+           oninput={(e) => write('baseUrl', e.target.value)} />
+    <Input name="adminEmail" id="cfg-admin-email" label="Admin email" type="email"
+           value={draft.adminEmail} error={fieldErrs.adminEmail}
+           hint="Receives system alerts"
+           oninput={(e) => write('adminEmail', e.target.value)} />
+  </Card>
+
+  <Card id="hub-settings-limits">
+    <h3 class="h5">Timings</h3>
+    <Input name="heartbeatTimeoutSeconds" id="cfg-heartbeat" type="number"
+           label="Heartbeat timeout (seconds)" value={draft.heartbeatTimeoutSeconds}
+           error={fieldErrs.heartbeatTimeoutSeconds}
+           hint="A server goes unreachable after this long without checking in. Below the outpost's own interval, every healthy machine reads unreachable between beats."
+           oninput={(e) => write('heartbeatTimeoutSeconds', Number(e.target.value))} />
+    <Input name="sessionTtlHours" id="cfg-session-ttl" type="number"
+           label="Session lifetime (hours)" value={draft.sessionTtlHours}
+           error={fieldErrs.sessionTtlHours}
+           hint="168 is seven days"
+           oninput={(e) => write('sessionTtlHours', Number(e.target.value))} />
+  </Card>
+
+  <Card id="hub-settings-policy">
+    <h3 class="h5">Policy</h3>
+    <Switch id="cfg-2fa" label="Require 2FA for owners" checked={draft.requireTwoFactorForOwners}
+            onchange={(checked) => write('requireTwoFactorForOwners', checked)} />
+    <Switch id="cfg-api-keys" label="Allow API key authentication" checked={draft.allowApiKeyAuth}
+            onchange={(checked) => write('allowApiKeyAuth', checked)} />
+    <Switch id="cfg-bots" label="Allow bot accounts" checked={draft.allowBotUsers}
+            onchange={(checked) => write('allowBotUsers', checked)} />
+    <p class="text-sm text-muted">
+      Stored, and <strong>read by nothing yet</strong>. Each of these is a rule the sign-in path
+      or the key issuer would have to consult, and none of them does — a switch that changes a
+      column and no behaviour is worth saying out loud rather than leaving to be discovered.
+    </p>
+  </Card>
+
+  <Card id="hub-settings-backup">
+    <h3 class="h5">Scheduled backup</h3>
+    <Switch id="cfg-backup" label="Take a scheduled backup" checked={draft.backupEnabled}
+            onchange={(checked) => write('backupEnabled', checked)} />
+    <Input name="backupCron" id="cfg-backup-cron" label="Cron expression" value={draft.backupCron}
+           error={fieldErrs.backupCron}
+           hint="0 2 * * * is 02:00 daily"
+           oninput={(e) => write('backupCron', e.target.value)} />
+    <p class="text-sm text-muted">
+      <strong>Nothing registers this yet</strong> — see <a href="/hub/backups/">backups</a>. A
+      schedule that comes from a row has to be re-registered at boot and unregistered when the
+      row stops being true.
+    </p>
+  </Card>
+
+  <Card id="hub-settings-mail">
+    <h3 class="h5">Outgoing mail</h3>
+    <Input name="mailFromAddress" id="cfg-mail-from" label="From address" type="email"
+           value={draft.mailFromAddress} error={fieldErrs.mailFromAddress}
+           oninput={(e) => write('mailFromAddress', e.target.value)} />
+    <Input name="mailFromName" id="cfg-mail-name" label="From name"
+           value={draft.mailFromName} error={fieldErrs.mailFromName}
+           oninput={(e) => write('mailFromName', e.target.value)} />
+    <p class="text-sm text-muted">
+      The provider's credential is not here and cannot be. It is read at boot, before any
+      database — a value stored in this row would never reach the process that sends the mail.
+    </p>
+  </Card>
+
+  <div class="cluster">
+    <Button variant="primary" id="save-settings" disabled={saving} onclick={save}>
+      {saving ? 'Saving…' : unset ? 'Create settings' : 'Save settings'}
+    </Button>
+    {#if !unset}
+      <Button variant="ghost" onclick={load}>Discard changes</Button>
+    {/if}
+  </div>
+{/if}

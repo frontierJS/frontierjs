@@ -1,0 +1,520 @@
+---
+title: Basket
+---
+<script>
+  // The basket, and the checkout under it.
+  //
+  // Everything on this screen belongs to a STRANGER. There is no sign-in, no
+  // account and no user id anywhere in it: `Cart` and `CartLine` are
+  // `@@gate("0.0.0.5")` and their rows are reached by `@@allow('read', token ==
+  // auth().cartToken)`, so the only thing that makes these rows visible is a
+  // token this browser is holding. Which is also why a wrong token is an empty
+  // screen and not an error — a policy filters, it does not refuse.
+  //
+  // The arithmetic is the server's. `count`, each line's `total` and the
+  // basket's `total` all arrive on the response, because the number a shopper
+  // is shown and the number `checkout` writes onto the order have to be one
+  // calculation and not two that agree today.
+  import { cart, refresh, setQuantity, remove, checkout, clear, dismissReceipt,
+           redeemHandoff, handoffCodeFromUrl,
+           applyDiscount, removeDiscount, setShipping, loadShippingOptions } from '../../cart.js'
+  import { money } from '../../money.js'
+  import { prefs } from '../../prefs.js'
+  import { toFieldErrors } from '@frontierjs/sierra/junction'
+  import { goto } from '@frontierjs/sierra/router'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
+  import EmptyState    from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
+
+  // Path watches, because `cart` is a plain object with a stable identity —
+  // the same shape `session` and `status` have. Listing the fields is what
+  // makes this component re-render when a call comes back.
+  $: (cart.lines, cart.count, cart.total, cart.busy, cart.error, cart.receipt, cart.heldUntil)
+  // The breakdown's own paths. Listed rather than covered by `cart.total`,
+  // because a code that changes only the discount line — a fixed 5 off a
+  // basket already below the free-shipping threshold — moves four of these and
+  // leaves the total alone for one render.
+  $: (cart.subtotal, cart.discount, cart.discountCode, cart.discountLabel,
+      cart.shipping, cart.shippingLabel, cart.tax, cart.taxLabel, cart.taxRate,
+      cart.shippingMethodId, cart.shippingOptions)
+  // `handoffError` is NOT listed, and must not be. It is a local `let`, which
+  // is already a signal; the bare `$:` form is the deep-watch opt-in, and
+  // declaring it on a value with no depth switched the variable's own
+  // reactivity off — the alert below never appeared, whatever went wrong with
+  // a handoff code (`FJS-505`). `cart` and `prefs` are here because they are
+  // plain objects this component did not declare, which is the case the form
+  // exists for.
+  $: (prefs.currency)
+
+  // ── The hold, counting down ──────────────────────────────────────────────
+  //
+  // Adding to a basket sets stock aside — `StockReservation` in db/schema.lite
+  // — and the row carries an expiry, so nothing has to come back and undo an
+  // abandoned basket. The shopper is told, because a basket that quietly stops
+  // being held is a checkout that fails for a reason nobody was given.
+  //
+  // A ticking `now` rather than one read at render: this screen is often left
+  // open, and a countdown that only moves when something else re-renders is
+  // worse than no countdown at all. One timer, cleared on destroy.
+  let now = Date.now()
+  const tick = setInterval(() => { now = Date.now() }, 1_000)
+  $.onDestroy(() => clearInterval(tick))
+
+  $: holdLeftMs = cart.heldUntil ? Date.parse(cart.heldUntil) - now : 0
+  $: holdLeft   = holdLeftMs > 0
+    ? `${Math.floor(holdLeftMs / 60_000)}:${String(Math.floor((holdLeftMs % 60_000) / 1000)).padStart(2, '0')}`
+    : null
+
+  // ── Arriving from a widget ───────────────────────────────────────────────
+  //
+  // An embeddable buy button on somebody else's page keeps its basket in THAT
+  // origin's storage, which this one cannot read. `#h=<code>` is the handoff: a
+  // one-time code, in the fragment because a fragment is never sent to a server.
+  // Redeeming it gives this origin the token; the fragment is erased from
+  // history in the same breath, which is belt and braces — `redeem` already
+  // spent the code in the transaction that read it.
+  //
+  // Ahead of `refresh()`, because a shopper arriving with a handoff wants THAT
+  // basket and not whatever this browser was holding last week.
+  let handoffError = null
+  const code = handoffCodeFromUrl()
+
+  if (code) {
+    history.replaceState(null, '', location.pathname + location.search)
+    redeemHandoff(code).catch(err => { handoffError = err.message })
+  } else {
+    // What this browser is holding a token for. A basket checked out in another
+    // tab answers 404, which the store reads as "there is no basket" rather than
+    // as a failure — see cart.js.
+    refresh()
+  }
+
+  // ── Checkout ─────────────────────────────────────────────────────────────
+  //
+  // Hand-written rather than <Form {resource} />, and it has to be: a Form is
+  // generated from a MODEL's schema, and there is no model here — the payload
+  // is `type CheckoutDetails` in db/schema.lite, which the service names with
+  // `{ method: 'checkout', input: 'CheckoutDetails' }`.
+  //
+  // What that buys is the half that matters: the 400 comes back keyed by field
+  // and worded by the seed, so "We need an email address to send the receipt
+  // to" is written once, in the schema, and appears under the right box here
+  // without this file knowing the rule exists.
+  // ── The money the shopper can change ─────────────────────────────────────
+  //
+  // Two controls and neither of them sends an amount. The box sends a CODE and
+  // the picker sends an id; every figure on the screen below comes back from
+  // the server, because what a code is worth is a function of this basket at
+  // this instant and a browser that could state it could state the total.
+  //
+  // The options are loaded here rather than in `cart.js`'s module body:
+  // `ShippingMethod` reads at level 0, so this needs no session, but it is
+  // still a request and a store should not make one at import.
+  //
+  // No `$:` for `discountInput`, and that is not an omission. A local `let` is
+  // already reactive; declaring a path watch over one replaces every read of it
+  // with a plain variable, so the Apply button never re-enabled and the box
+  // looked broken with nothing in the console (`FJS-505`). `$:` is for a plain
+  // object with a stable identity — `cart`, `session`, `prefs` — and for
+  // nothing else.
+  let discountInput = ''
+  loadShippingOptions().catch(() => { /* the picker stays empty; checkout still works */ })
+
+  async function submitDiscount(e) {
+    e?.preventDefault?.()
+    const code = discountInput.trim()
+    if (!code) return
+    // The throw is already on `cart.error` — `run()` in cart.js puts the
+    // server's own sentence there — so this only has to stop it reaching the
+    // console. The box is left filled on a refusal, because a shopper who
+    // mistyped a code wants to correct it rather than retype it.
+    try {
+      await applyDiscount(code)
+      discountInput = ''
+    } catch { /* cart.error is rendered above */ }
+  }
+
+  let email  = ''
+  let name   = ''
+  let note   = ''
+  let fields = {}
+
+  async function submit(e) {
+    e?.preventDefault?.()
+    fields = {}
+    try {
+      await checkout({ email, name, note })
+    } catch (err) {
+      // The one owner of "a thrown value → per-field messages". Three shapes
+      // reach it because each hop wraps once, which is exactly the unwrapping
+      // an app should never be writing itself.
+      fields = toFieldErrors(err).fields ?? {}
+    }
+  }
+</script>
+
+<SectionHeader title="Basket" level={1} sub="no account needed — the basket is reached by a token, not by a session" />
+
+{#if handoffError}
+  <!-- A code is worth one basket, for two minutes, once — so the ordinary way
+       to land here is a link that was already used or has gone stale, and the
+       shopper needs to be told which rather than shown an empty basket. -->
+  <Alert tone="warning" id="handoff-error">{handoffError}</Alert>
+{/if}
+
+{#if cart.receipt}
+  <!-- ── After the order ──────────────────────────────────────────────────
+       The basket is gone by now: checkout closes the row and cart.js drops
+       the token, so there is nothing to go back to. The reference is the only
+       thing the shopper leaves with. -->
+  <Callout tone="success" title="Order placed" id="receipt">
+    <p>
+      Your order is <Mono>{cart.receipt.reference}</Mono> for
+      <strong id="receipt-total">{money(cart.receipt.total)}</strong>.
+    </p>
+    <!-- The breakdown comes back on the checkout answer rather than being
+         fetched: the basket it would be compared against has just been closed,
+         and the order it describes is one this shopper cannot read yet if they
+         checked out as a guest. -->
+    <p class="text-sm text-muted" id="receipt-breakdown">
+      {money(cart.receipt.subtotal)} in items{#if cart.receipt.discount > 0}, less {money(cart.receipt.discount)} for {cart.receipt.discountCode}{/if}{#if cart.receipt.shipping > 0}, plus {money(cart.receipt.shipping)} {cart.receipt.shippingLabel} delivery{/if}{#if cart.receipt.tax > 0}, plus {money(cart.receipt.tax)} {cart.receipt.taxLabel}{/if}.
+    </p>
+    <p class="text-sm text-muted">
+      A real shop would email this. So does this one, when a mail provider is
+      configured — <code>example/api/src/app.ts</code> wires conduit, and with none
+      the send is a no-op rather than a crash.
+    </p>
+    <Button variant="outlined" id="receipt-continue" onclick={() => { dismissReceipt(); goto('/products/') }}>
+      Keep shopping
+    </Button>
+  </Callout>
+{:else if !cart.lines.length}
+  <EmptyState
+    title="Your basket is empty"
+    description="Pick a colour and a size on any product page."
+  >
+    {#snippet action()}
+      <Button variant="primary" id="basket-shop" onclick={() => goto('/products/')}>Browse products</Button>
+    {/snippet}
+  </EmptyState>
+{:else}
+  {#if cart.error}
+    <Alert tone="danger" id="basket-error">{cart.error}</Alert>
+  {/if}
+
+  <!-- Two states and they are different facts, so they are different tones.
+       Held: the stock is yours until that moment. Expired: the lines are still
+       here and the stock is not — checkout re-checks, and may say somebody
+       else took the last one. -->
+  {#if holdLeft}
+    <Alert tone="info" id="basket-hold">
+      Held for you — <strong id="basket-hold-left">{holdLeft}</strong> left.
+      Adding or changing a line starts the {cart.holdMinutes} minutes again.
+    </Alert>
+  {:else if cart.heldUntil}
+    <Alert tone="warning" id="basket-hold-expired">
+      Your hold has run out. Nothing has left your basket, but the stock is back on sale — change a line to hold it again.
+    </Alert>
+  {/if}
+
+  <ul class="lines" id="basket-lines">
+    {#each cart.lines as line (line.id)}
+      <li class="line" data-sku={line.sku}>
+        {#if line.image}
+          <img class="thumb" src={line.image} alt={line.alt ?? ''} width="64" height="64" loading="lazy" />
+        {:else}
+          <span class="thumb thumb-empty" aria-hidden="true"></span>
+        {/if}
+
+        <div class="what">
+          <a href={`/products/${line.productId}/`} class="name">{line.product}</a>
+          <span class="text-sm text-muted">{line.colour} · {line.size}</span>
+          <Mono>{line.sku}</Mono>
+        </div>
+
+        <!-- A stepper and not a number box: every change is a request, and a
+             box that fires per keystroke would send four of them to reach 12.
+             Zero removes the line, which is what `setQuantity` does with a
+             quantity it cannot use — one idea, one control. -->
+        <div class="qty" role="group" aria-label={`Quantity for ${line.sku}`}>
+          <Button
+            variant="ghost" square
+            disabled={cart.busy}
+            aria-label="One fewer"
+            data-less={line.sku}
+            onclick={() => setQuantity(line.id, line.quantity - 1)}
+          >−</Button>
+          <span class="count" data-qty={line.sku}>{line.quantity}</span>
+          <Button
+            variant="ghost" square
+            disabled={cart.busy || line.quantity >= line.available}
+            aria-label="One more"
+            data-more={line.sku}
+            onclick={() => setQuantity(line.id, line.quantity + 1)}
+          >+</Button>
+        </div>
+
+        <div class="money">
+          <strong data-total={line.sku}>{money(line.total)}</strong>
+          <span class="text-sm text-muted">{money(line.unitPrice)} each</span>
+          <!-- `available` here is on hand less everybody ELSE's holds, so this
+               shopper's own reservation does not count against them. The plus
+               button is disabled at the same number. -->
+          {#if line.quantity >= line.available}
+            <span class="text-xs text-muted" data-max={line.sku}>all {line.available} available</span>
+          {/if}
+        </div>
+
+        <Button
+          variant="ghost"
+          disabled={cart.busy}
+          data-remove={line.sku}
+          onclick={() => remove(line.id)}
+        >Remove</Button>
+      </li>
+    {/each}
+  </ul>
+
+  <!-- ── The money ─────────────────────────────────────────────────────────
+       Every figure below is rendered and none is computed. `api/src/pricing.ts`
+       rounds each component once and sums the ROUNDED ones, so the column adds
+       up to the figure the card is charged — a property that survives exactly
+       as long as nothing here re-derives a line of it. -->
+  <div class="card stack-sm summary">
+    <div class="row">
+      <span>Subtotal <span class="text-muted text-sm">({cart.count} item{cart.count === 1 ? '' : 's'})</span></span>
+      <strong id="basket-subtotal">{money(cart.subtotal)}</strong>
+    </div>
+
+    {#if cart.discountCode}
+      <div class="row" data-line="discount">
+        <span>
+          {cart.discountLabel}
+          <Mono>{cart.discountCode}</Mono>
+        </span>
+        <!-- Negative, and written with the sign here rather than stored as one:
+             `Order.discount` is `@gte(0)` because it is an AMOUNT, and a column
+             that could hold a negative discount is one that can add money to a
+             sale by accident. -->
+        <strong id="basket-discount">−{money(cart.discount)}</strong>
+      </div>
+    {/if}
+
+    {#if cart.shippingLabel}
+      <div class="row" data-line="shipping">
+        <span>{cart.shippingLabel}</span>
+        <!-- A zero against a named method is the free-over threshold having
+             been met, and reads correctly without a fourth column saying so. -->
+        <strong id="basket-shipping">{cart.shipping > 0 ? money(cart.shipping) : 'Free'}</strong>
+      </div>
+    {/if}
+
+    {#if cart.tax > 0}
+      <div class="row" data-line="tax">
+        <span>{cart.taxLabel} <span class="text-muted text-sm">at {Math.round(cart.taxRate * 100)}%</span></span>
+        <strong id="basket-tax">{money(cart.tax)}</strong>
+      </div>
+    {/if}
+
+    <div class="row grand">
+      <span>Total</span>
+      <strong id="basket-total">{money(cart.total)}</strong>
+    </div>
+  </div>
+
+  <!-- ── Delivery ──────────────────────────────────────────────────────────
+       An ordinary CRUD read of a public table. `ShippingMethod` is
+       `@@gate("0.5.5.5")` and `Discount` beside it is `@@gate("5.5.5.5")` —
+       one list a stranger may read and one they may not, on this same screen,
+       which is the plainest statement in the app that a gate answers *what
+       kind of caller* and never *what kind of table*. -->
+  {#if cart.shippingOptions.length}
+    <div class="card stack-sm">
+      <SectionHeader title="Delivery" level={2} sub="ShippingMethod — readable at level 0, so a stranger can pick one" />
+      <div class="options">
+        {#each cart.shippingOptions as option (option.id)}
+          <label class="option">
+            <input
+              type="radio"
+              name="shipping"
+              value={option.id}
+              checked={cart.shippingMethodId === option.id}
+              disabled={cart.busy}
+              data-shipping={option.name}
+              onchange={() => setShipping(option.id)}
+            />
+            <span class="option-body">
+              <strong>{option.name}</strong>
+              {#if option.description}<span class="text-sm text-muted">{option.description}</span>{/if}
+              {#if option.freeOver != null}
+                <span class="text-xs text-muted">free over {money(option.freeOver)}</span>
+              {/if}
+            </span>
+            <span class="option-price">{option.price > 0 ? money(option.price) : 'Free'}</span>
+          </label>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  <!-- ── A code ────────────────────────────────────────────────────────────
+       Sends a string, never an amount. The refusal is the shop's own sentence,
+       written once in `api/src/pricing.ts` and used by BOTH this box and the
+       checkout — so a code that expires between the two says the same thing in
+       both places. -->
+  <div class="card stack-sm">
+    <SectionHeader title="Discount code" level={2} sub="the one table on this screen a shopper may not read" />
+    {#if cart.discountCode}
+      <div class="row">
+        <span>
+          <Mono id="applied-code">{cart.discountCode}</Mono>
+          <span class="text-sm text-muted">{cart.discountLabel}</span>
+        </span>
+        <Button variant="ghost" id="remove-discount" disabled={cart.busy} onclick={removeDiscount}>
+          Remove
+        </Button>
+      </div>
+    {:else}
+      <form class="cluster" style="gap: .5rem; align-items: flex-end" onsubmit={submitDiscount} novalidate>
+        <Input
+          id="discount-code"
+          name="code"
+          label="Have a code?"
+          bind:value={discountInput}
+          hint="try WELCOME10"
+        />
+        <Button type="submit" id="apply-discount" disabled={cart.busy || !discountInput.trim()}>
+          Apply
+        </Button>
+      </form>
+    {/if}
+  </div>
+
+  <!-- ── Checkout ──────────────────────────────────────────────────────── -->
+  <SectionHeader title="Checkout" level={2} sub="validated by type CheckoutDetails in db/schema.lite" />
+
+  <form class="card stack" onsubmit={submit} novalidate>
+    <Input
+      id="co-email"
+      name="email"
+      label="Email"
+      type="email"
+      bind:value={email}
+      error={fields.email ?? ''}
+      hint="the receipt goes here"
+    />
+    <Input
+      id="co-name"
+      name="name"
+      label="Name"
+      bind:value={name}
+      error={fields.name ?? ''}
+    />
+    <Textarea
+      id="co-note"
+      name="note"
+      label="Order note"
+      rows={3}
+      bind:value={note}
+      error={fields.note ?? ''}
+      hint="optional"
+    />
+
+    <div class="cluster" style="gap: .75rem">
+      <Button
+        id="co-submit"
+        type="submit"
+        variant="primary"
+        disabled={cart.busy}
+        loading={cart.busy}
+      >Place order — {money(cart.total)}</Button>
+
+      <Button variant="ghost" id="co-abandon" disabled={cart.busy} onclick={clear}>
+        Empty basket
+      </Button>
+    </div>
+  </form>
+
+  <p class="text-sm text-muted">
+    <code>checkout</code> is one transaction: the order, the stock coming down, the holds going away, the customer row and the basket closing either all happen or none do. Send an <code>Idempotency-Key</code> with it and a double-clicked button replays the first answer instead of placing a second order.
+  </p>
+
+  <p class="text-sm text-muted">
+    The hold is a row with a clock on it — <code>StockReservation</code>, expiring on its own — so nothing has to come back and undo a basket somebody walked away from. Decrementing <code>stock</code> on add would have been simpler and unrecoverable; leaving it until checkout oversells the last one.
+  </p>
+{/if}
+
+<style>
+  .lines { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem }
+
+  /* Photo · description · stepper · money · remove. The description is the
+     only track allowed to grow, so the numbers on the right stay in a column
+     the eye can run down. */
+  .line {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) auto auto auto;
+    align-items: center;
+    gap: 1rem;
+    padding: .75rem;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+  }
+
+  .thumb {
+    width: 64px; height: 64px;
+    object-fit: contain;
+    background: var(--surface-sunken);
+    border-radius: var(--radius-sm);
+  }
+  .thumb-empty { display: inline-block }
+
+  .what { display: grid; gap: .15rem; min-width: 0 }
+  .name { font-weight: 600 }
+
+  .qty   { display: flex; align-items: center; gap: .25rem }
+  .count { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums }
+
+  .money { display: grid; justify-items: end; gap: .1rem; font-variant-numeric: tabular-nums }
+
+  /* The breakdown reads down a column, so every figure is on the same right
+     edge and tabular — a receipt whose digits do not line up cannot be checked
+     by eye, which is the only thing anybody does with one. */
+  .summary { font-variant-numeric: tabular-nums }
+
+  .row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 1rem;
+  }
+  .row .grand, .grand {
+    font-size: var(--text-lg);
+    border-top: 1px solid var(--hairline);
+    padding-top: .5rem;
+  }
+
+  .options { display: grid; gap: .5rem }
+  .option {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .75rem;
+    padding: .6rem .75rem;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+  }
+  .option:hover { background: var(--surface-sunken) }
+  .option-body  { display: grid; gap: .1rem; min-width: 0 }
+  .option-price { font-variant-numeric: tabular-nums }
+
+  @media (max-width: 40rem) {
+    .line  { grid-template-columns: 48px minmax(0, 1fr) auto }
+    .money { grid-column: 2 / -1; justify-items: start }
+  }
+</style>

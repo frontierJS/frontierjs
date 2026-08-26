@@ -93,9 +93,9 @@ block entirely:
 el0.nodeValue = `${connected ? 'ws connected' : 'ws offline'}`;
 
 // caught — re-evaluated whenever the signal changes
-$runtime.render((__prev) => {
+$$runtime.render((__prev) => {
   var __a = `${connected.get() ? 'ws connected' : 'ws offline'}`;
-  if (__prev.a !== __a) $runtime.set_text(el1, __prev.a = __a);
+  if (__prev.a !== __a) $$runtime.set_text(el1, __prev.a = __a);
 });
 ```
 
@@ -103,7 +103,7 @@ A signal object is always truthy, so the common shape —
 `{sig ? 'yes' : 'no'}` — renders the true branch forever. It looks like working
 code that happens to be stuck.
 
-Grep for `nodeValue =` or `set_attribute(` **outside** a `$runtime.render(...)`
+Grep for `nodeValue =` or `set_attribute(` **outside** a `$$runtime.render(...)`
 callback to spot these in compiled output.
 
 ---
@@ -169,7 +169,7 @@ which is the actual complaint. It's a breaking API change across every package,
 and it's a second reactivity notation alongside `let`/`const`/`var`.
 
 **4. Runtime detection.** Rewrite *every* imported identifier read in a template
-to something like `$runtime.read(x)`, which returns `x.get()` if `x` looks like
+to something like `$$runtime.read(x)`, which returns `x.get()` if `x` looks like
 a signal and `x` otherwise.
 
 No list, no convention, no diagnostic — and it handles barrels and namespace

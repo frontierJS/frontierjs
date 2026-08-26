@@ -79,10 +79,13 @@ describe('junction surface', () => {
     // different app. A sorted or set-collapsed chain would render identically
     // for both, which is what makes this the assertion worth having.
     //
-    // The derived hooks a declared `model` brings — `gateAuth`, `autoValidate` —
-    // are part of the chain and lead it. That they run at all is invisible in
-    // the service file, which is half of why this file is worth committing.
-    expect(svc.hooks.before.create).toEqual(['gateAuth', 'autoValidate', 'requireAuth', 'stampOwner'])
+    // The derived hooks a declared `model` brings are part of the chain, and
+    // which PHASE each is in is the ordering rule: `gateAuth` wraps everything
+    // as an around hook (FJS-403), `autoValidate` leads the before chain. That
+    // they run at all is invisible in the service file, which is half of why
+    // this file is worth committing.
+    expect(svc.hooks.around.all).toEqual(['gateAuth'])
+    expect(svc.hooks.before.create).toEqual(['autoValidate', 'requireAuth', 'stampOwner'])
     expect(svc.hooks.after.all).toEqual(['audit'])
 
     await app.stop()

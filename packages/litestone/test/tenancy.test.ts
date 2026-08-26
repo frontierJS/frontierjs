@@ -182,7 +182,7 @@ describe('tenancy { strategy row } — desugaring', () => {
 
   it('does not fire the "@@deny with no @@allow" warning about its own rules', () => {
     const r = parse(`tenancy { strategy row  column wid }  model A { id Int @id  wid Int }`)
-    expect(r.warnings.filter(w => w.includes('has @@deny but no @@allow'))).toHaveLength(0)
+    expect(r.warnings.filter(w => w.includes('@@deny and no @@allow'))).toHaveLength(0)
   })
 })
 
@@ -311,6 +311,19 @@ describe('tenantFrom', () => {
     expect(tenantFrom(r, { host: 'example.com' })).toBeNull()
   })
 
+  it('takes two labels when the last one is localhost', () => {
+    // `.localhost` is a reserved TLD and every resolver already sends it to
+    // loopback, so `acme.localhost:8000` is what a person types the first time
+    // they try `resolve subdomain` — and answering null there reads as the
+    // registry not knowing the tenant rather than the host never naming one.
+    const r = { kind: 'subdomain' as const, name: null }
+    expect(tenantFrom(r, { host: 'acme.localhost' })).toBe('acme')
+    expect(tenantFrom(r, { host: 'acme.localhost:8110' })).toBe('acme')
+    // Still not a tenant called localhost, and still not one called example.
+    expect(tenantFrom(r, { host: 'localhost' })).toBeNull()
+    expect(tenantFrom(r, { host: 'shop.localhost.example.com' })).toBe('shop')
+  })
+
   it('matches a header whatever case the transport used', () => {
     const r = { kind: 'header' as const, name: 'X-Tenant-Id' }
     expect(tenantFrom(r, { headers: { 'x-tenant-id': 'acme' } })).toBe('acme')
@@ -352,6 +365,51 @@ describe('createTenantRegistry reads the block', () => {
 
   it('refuses a row schema instead of writing files nobody reads', async () => {
     await expect(createTenantRegistry({ schema: ROW_SCHEMA })).rejects.toThrow('strategy row')
+  })
+
+  // Every sqlite database is redirected to the tenant's own file, and a
+  // jsonl/logger one is deliberately left alone — shared across the fleet. That
+  // leaves its declared `path` resolving against the process CWD, which for an
+  // app assembling its schema in memory is the only thing it can resolve
+  // against: run a command from a surface directory and the audit trail lands
+  // in a directory nobody looks in. `clientOptions.databases` is the way to pin
+  // it, and it used to be dropped on the floor.
+  it('lets clientOptions name a shared log path, and still owns the sqlite ones', async () => {
+    const dir  = tmp()
+    const logs = join(dir, 'elsewhere') + '/'
+    const text = `
+      tenancy { strategy database  dir "./fleet"  registry "./fleet-index.db" }
+      database main { path "./main.db" }
+      database logs { path "./logs/"  driver logger }
+      model Post { id Int @id  title String  @@log(logs) }
+    `
+    await Bun.write(join(dir, 'schema.lite'), text)
+
+    const tenants = await createTenantRegistry({
+      path:          join(dir, 'schema.lite'),
+      clientOptions: { databases: { logs: { path: logs } } },
+    })
+    await tenants.create('acme')
+    const db: any = await tenants.get('acme')
+
+    // An override is resolved as a path, so the trailing slash it was written
+    // with is not part of the answer.
+    const paths = db.$databases
+    expect(paths.logs.path).toBe(join(dir, 'elsewhere'))
+    // …and the tenant's own file is still the tenant's own file.
+    expect(paths.main.path).toBe(join(dir, 'fleet', 'acme.db'))
+    tenants.close()
+  })
+
+  // Spreading a string yields one key per character, so the merge would have
+  // taken `':memory:'` silently and built `{ 0: ':', 1: 'm', … }`.
+  it('refuses the `databases: ":memory:"` shorthand by name', async () => {
+    await expect(createTenantRegistry({
+      schema:        `tenancy { strategy database }\nmodel Post { id Int @id }`,
+      dir:           join(tmp(), 'fleet'),
+      registry:      join(tmp(), 'i.db'),
+      clientOptions: { databases: ':memory:' as never },
+    })).rejects.toThrow('must be an object')
   })
 })
 

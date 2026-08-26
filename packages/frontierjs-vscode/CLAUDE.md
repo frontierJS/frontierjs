@@ -43,6 +43,23 @@ out/                  build output, not source
   type says non-null. Corollary the tests below encode: **schema-derived
   completions (enum and model names) only appear when the WHOLE document
   parses**; a half-typed field anywhere means scalar types only.
+- **`parse()` resolves no imports, so the server splices them itself.** A schema
+  that imports a package's models (`import "@frontierjs/auth/schema.lite"`) was
+  parsed as if those models did not exist, and every reference to one was an
+  error the author could not remove — a relation pointing at it, or an
+  `extend model` of it. `withImports()` reads the children with node's `fs` and
+  resolves them through the parser's OWN `resolveImportSpecifier`, so the editor
+  follows a bare specifier to the same file `parseFile` does. The ROOT is the
+  open BUFFER, not the file on disk: an unsaved edit is the state the author is
+  looking at. **Ranges are unaffected** — `makeDiagnostic` searches the open
+  document's text for the name in the message and never uses a line number — so
+  an error about an imported model lands at line 0 rather than at a wrong line.
+  Feature-detected off the bundle, like the catalog, so an older litestone still
+  gets a server. An import that resolves to nothing is NOT reported: the package
+  may simply not be installed here, and a squiggle on a line the author cannot
+  act on is worse than a schema that describes less. It went unseen for as long
+  as it existed because basecamp — the one real schema in this suite with
+  imports — had hand copies instead until 2026-08-24.
 - **Block detection is a stack of all block kinds, not a per-keyword counter**
   (`isInsideBlock`). A counter that only increments on its own keyword but
   decrements on every `}` goes negative after any earlier block — an `enum`
@@ -51,6 +68,25 @@ out/                  build output, not source
   `attrToken` = typing an attribute name, `inArgsOf` = inside that attribute's
   arguments. A line-wide `includes('@')` looks right until you notice most real
   field lines already carry an attribute, at which point the type list is gone.
+- **What the language contains is asked of litestone's catalog, never listed
+  here.** `scripts/build-parser.js` bundles `core/catalog.js` beside the parser
+  into `out/litestone/catalog-bundle.js`, and `server.ts` derives completion from
+  it. The lists that used to be written out in `server.ts` offered 50 field
+  attributes against the catalog's 55 and 15 model attributes against 22, and
+  never offered `tenancy`, `view`, `trait` or `type` at all — so completion
+  silently hid a quarter of the language for as long as anyone had been using it.
+  A hand-written inventory has no way to be wrong out loud. `test/lsp.test.js`
+  now asserts the offered set against the bundle, so it cannot drift back.
+- **The extension bundles litestone, it does not depend on it.** Same mechanism
+  as the parser, same three-base resolver, no `exports` entry and no runtime
+  dependency — which is why adding this changed nothing in `exports.snapshot.md`.
+  A checkout whose litestone predates the catalog falls back to a short built-in
+  list rather than failing to start.
+- **`ATTR_DOCS` still wins on hover where it has an entry** — it is longer, has
+  worked examples and explains the reasoning. The catalog is what the other 29
+  words get, which is the difference between hovering `@system` and hovering
+  nothing at all. Where the catalog answers, it contributes the two facts prose
+  keeps getting wrong: where the word is legal, and what its arguments accept.
 - **`@from`'s first argument is the model name, PascalCase** — `@from(Lead, …)`.
   litestone's docs used to show the lowercase form, which does not parse. Probe
   the parser before copying a doc example into a completion list.
@@ -116,14 +152,14 @@ out/                  build output, not source
 first on purpose: a stale `out/` tests the previous fix and reads as "the change
 did not work".
 
-### Litestone — 34 assertions over real LSP/stdio
+### Litestone — 46 assertions over real LSP/stdio
 
 - `test/lsp-client.js` — a small LSP client (Content-Length framing, requests
   correlated by id, `openDoc()` resolves on the diagnostics notification). No
   sleeps, one server process for the whole run.
 - `test/lsp.test.js` — the cases. Diagnostics, the null-schema mid-keystroke
-  state, block detection, caret-aware attributes, hover, formatting, and both
-  real app schemas in the repo.
+  state, block detection, caret-aware attributes, hover, formatting, imports
+  spliced from disk, and both real app schemas in the repo.
 
 Every case there is a defect that shipped. **A document that fails to parse is a
 case worth asserting, not invalid input** — it is what the editor sees on almost

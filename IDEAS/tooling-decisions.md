@@ -142,9 +142,12 @@ the same alignment trade with none of Biome's compensating simplicity.
 This is the part that survives whichever tool wins, and the reason to write this record
 even though the build is one afternoon:
 
-> **A linter owns generic JavaScript correctness. `fli doctor` owns everything derived
+> **A linter owns generic JavaScript correctness. `fli check` owns everything derived
 > from the seed. Neither reimplements the other, and the VS Code extension surfaces
 > both rather than implementing either.**
+
+(`fli check` rather than `fli doctor` since `FJS-D133` — the command exists and
+means *can this machine run fli*. The boundary is unchanged.)
 
 Without that sentence, the failure is predictable: `:id` in a raw route,
 `ctx.params` in a service context and a service missing `model:` all *look* like lint
@@ -160,6 +163,17 @@ that is where every check in the hazard catalogue lives.
 ---
 
 ## 2. One test runner, or a stated reason for four
+
+**Update 2026-08-24 — the decidable half is enforced, and it found something.**
+The one shape with no good reason was named here as *a hand-listed `node a.js &&
+node b.js`, which is where a new test file gets forgotten silently*. That is now
+`fli check`'s `test-files-run` (repo scope), and its first run found
+`packages/cli`'s own `tests/pipe.test.js` — the file written to reproduce
+`FJS-379` — run by nothing, with the suite green every time. A runner pointed at
+a directory cannot have this problem, so the rule skips those packages entirely:
+the argument for that shape is now enforced rather than restated. What is still
+open is the ruling below.
+
 
 Ten shapes of `test` script over `bun test`, `vitest run`, plain `node`, and `npm`.
 `CLAUDE.md` documents this as a hazard with its own table and a warning that **running
@@ -216,6 +230,25 @@ Two things unresolved rather than missing:
 ---
 
 ## 5. Dependency freshness and advisories
+
+**Update 2026-08-24 — decided and built: a phase.** `scripts/ci.mjs`'s
+`advisories`. The question this section framed was the right one and the answer
+was already in the project's own doctrine — everything else is a phase so that CI
+runs identically on a laptop, and a bot would have been the first exception.
+
+What it turned out to need is the thing this section called the *harder half* and
+put under 2.12: **a comparison, not a scan.** `bun audit` reports twelve
+advisories over seven packages here and five of them reach nothing an app
+installs. The phase fails only where an advised package is reachable from a
+PUBLISHED package's runtime `dependencies` — which found `packages/mesa` shipping
+`happy-dom@14.12.3`, two criticals, to every app that installs mesa (`FJS-475`).
+So the boring half could not be built boringly: without the reachability question
+it is twelve red lines nobody can act on, which is how a phase gets skipped.
+
+What is still 2.12 is the rest of it: a support policy, an advisory format, a
+channel, and reachability against `project:map --json` rather than against the
+dependency graph.
+
 
 `fli npm:audit` and `npm:outdated` exist as commands and nothing runs them. There is no
 renovate or dependabot config. This is the tooling half of `IDEAS/overview.md` 2.12

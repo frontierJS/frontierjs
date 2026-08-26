@@ -23,13 +23,15 @@ core/
   crud-templates.js     what a GENERATED CRUD page IS — shared by `make:scaffold`
                         and `admin:generate`. Built on @frontierjs/ui
   widget-surface.js     what a `widgets/` surface IS — shared by `new` and `make:widget`
+  site-surface.js       what a `site/` surface IS — ditto, `make:site`
   extension-surface.js  what an `extension/` surface IS — ditto, `make:extension`
   vendor.js     pack the workspace into an app's build context
   config.js · bootstrap.js · ports.js · utils.js · server.js
-commands/  one directory per namespace — db, auth, api, web, widgets, extension, site,
+commands/  one directory per namespace — db, auth, api, web, widgets, site, extension,
            deploy, git, github, npm, env, make, project, ports, browser, crypto,
            fetch, ai, cloudflare, caprover, completion, admin, literate, utils,
-           fli, release, test
+           fli, release, test, ksite (NOT FrontierJS — a separate static-site
+           toolchain that used to hold the `site:` namespace)
 cli/src/   the CLI's own source tree
 web/       the browser-facing side
 tests/     compiler · checks · runtime · registry · server · deploy · project-root · steps
@@ -289,8 +291,24 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   `scripts/ci.mjs` imports it by relative path and runs it over this repo as the
   `structure` phase. Loosening a rule here loosens it for every app on the next
   release, and tightening one can fail the repo's own CI — which is the point.
-  Zero dependencies, plain ESM, node or bun; a package import would break the
-  `ci.mjs` caller, which runs on plain node before anything is installed.
+  Plain ESM, node or bun, and **one import**: `@frontierjs/toolbelt/inflect`, the
+  substrate package below the dependency graph (`FJS-D26`). *What is the singular
+  of this service name* has one owner (Invariant 2) and five callers, and a rule
+  answering it a sixth time would grade an app by an inflection the app does not
+  run — `people` → `person` is exactly the case `service-model` has to get right.
+  Nothing else may be imported: `ci.mjs` runs on plain node.
+- **A rule about a NAME written twice has to accept every spelling of it.**
+  `transition-methods` asks whether a declared `@@transitions` move is reachable
+  from `api/`, and reachable means the move name OR the state it moves to —
+  `transition(id, 'cancel')` and `update({ data: { status: 'cancelled' } })` are
+  the same move and litestone enforces the machine on both. The name-only
+  version was written first and measured: it reports eleven of basecamp's
+  nineteen moves and is wrong about eight. **The two spellings are not
+  symmetrical**, which is the part worth knowing — `transition()` resolves a
+  move NAME, so the target-state spelling works for `update()` and throws here,
+  unless the move is unnamed (`pending -> paid` names itself `paid`). Both
+  directions are pinned in `tests/checks.test.js`, and writing one of them the
+  wrong way round is what found it.
 - **A rule that OVER-fires costs more than one that is missing, and neither
   caller can see it.** `ci.mjs` runs `runChecks` over the four APPS, so this
   repo's own tree is checked by nobody — two errors sat under a bare `fli check`
@@ -300,6 +318,17 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   first textual match. A check nobody trusts is the failure this engine exists
   to prevent. **Run `fli check` at the repo root after touching a rule** — it is
   the only caller that sees this package's own neighbours.
+- **`fli dev` runs two preflights and they disagree on purpose: the port check
+  REFUSES, the database check warns.** An empty database is the correct state
+  for a first run; a port that is already answering is not correct in any
+  reading. `appPorts(appRoot)` in `core/ports.js` derives which ports from the
+  SURFACES that exist — `web/`, `api/`, `widgets/`, `site/`, `extension/`,
+  Invariant 3 —
+  so a per-app list cannot go stale the day somebody adds one, and it names a
+  script the manifest actually declares, because two conventions are live (the
+  apps here call it `api`, `fli new` writes `dev:api`). **An app's own `dev`
+  cannot be `fli dev`** — this runs `bun run dev`, so that is a loop; `dev` runs
+  the surfaces and `fli dev` is the checked door in front of it.
 - **`core/db-preflight.js` is why `fli dev` mentions an empty database.** An app
   with no rows boots clean and shows a blank screen, so nothing says anything.
   It resolves the path from the schema's `database` declaration — NOT from
@@ -338,6 +367,19 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   clobbers is a scaffold nobody runs twice. The tag prefix belongs to the
   surface rather than to a widget, so the second `make:widget` reads it back out
   of `config/sierra.config.js` instead of taking a flag that would disagree.
+- **`core/site-surface.js` is the same rule again, and it exists because the
+  surface list was incomplete.** A public prerendered site passed every part of
+  `FJS-D107`'s test and was on none of its lists, so this repo's own example put
+  one inside `web/` and nothing could say so (`FJS-451`, `FJS-D127`). The axis
+  that decides it is **output**: one Vite root is one `dist/`, and `vite build`
+  empties `outDir`, so the SPA's build deleted the site. `app-layout` reports a
+  `target: 'static'` config found inside another surface now — decidable from the
+  config's own text, which is the only reason the rule can see it at all. Note
+  what the generator does NOT skip: it writes an `index.html` and a `src/main.js`,
+  because `target: 'static'` is the SPA's Vite config plus a prerender pass, so
+  `vite dev` on the surface serves routes as a client-routed app. Dev is an SPA
+  and the build is files; every generated comment says so, because a page that
+  works in dev and fails in the build is the normal case.
 - **`core/extension-surface.js` is the same again for jetty.** An `extension/`
   surface is written by one function, called by `fli new --extension` and by
   `fli make:extension`, and `fli extension:*` wraps jetty's binaries rather than
@@ -359,9 +401,92 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   module, and CI's `structure` phase imports `core/checks.js` directly, so the
   engine was green while the door was broken (`FJS-269`). A command whose only
   proof is the sweep has not been run.
+- **`core/doc-commands.js` grades the prose against the registry, and the
+  registers are exempt on purpose.** Every `` `fli <command>` `` in a README, a
+  CLAUDE.md or a command file must resolve; `IDEAS/` names commands that
+  deliberately do not exist. A namespace mention (`fli make`) and a built-in
+  (`fli list`, read from `bin/fli.js`'s `NO_PROJECT_NEEDED`) resolve too. It
+  found the message an empty workspace prints, which named `ws-init` and
+  `ws-add` where the aliases are `fli ws:init` and `fli ws:add`. (Written that
+  way here deliberately: a backticked `fli <name>` is a claim that you can run
+  it, which is the whole thing this grades — the rule caught this paragraph.)
+- **A test file no script names never runs, and `test-files-run` is the rule.**
+  This package's own `tests/pipe.test.js` pinned `FJS-379` and had never
+  executed. **A new test file here has to be added to the `test` script** — the
+  runner does not walk the directory, which is the shape the rule exists for.
 - **A rule belongs there only if it is SILENT when broken.** A violation that
   already raises an error belongs in the thing that raises it. `--list` prints
   the table with the invariant each rule comes from.
+- **Twelve of the rules read source rather than the tree, and `readCode` is why
+  they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
+  `call-header-declared`, `service-model`, `resource-model-miss`,
+  `service-module-db`, `scheduler-dispatch`, `gate-unreachable`,
+  `transition-methods`, `static-publish-db` and `static-publishes-0` match text — so they match the
+  paragraphs that DESCRIBE those hazards too, and this repo's own `api/` files
+  are full of them. Comments are blanked (to spaces, so every line number
+  survives) before a rule sees a byte. **A statement is judged, never a
+  substring**: `db.$setAuth(u)` alone is the fault, `const x = db.$setAuth(u)`
+  and `db.$setAuth(u).order.create(…)` are the correct shapes, and a call
+  spanning two lines is left alone rather than guessed at. Where a rule cannot
+  resolve what it is reading — a `callHeaders` naming a value that is not a
+  string literal or a single-valued constant — it **skips and says so**, because
+  a declaration this rule cannot read is not an absent declaration.
+- **One rule reads a DEPENDENCY's source, and what it is keyed on is the whole
+  of it.** `package-model-drift` compares the app's copy of a model against the
+  `.lite` the package ships, found through that package's own `exports` map — a
+  path guessed into a package is the thing litestone's own resolver refuses to do
+  and so is this. **Keyed on the columns THE PACKAGE DECLARES, never on the
+  copy's existence**: a package reaches an app two ways and they are not the
+  same, so `@frontierjs/auth` ships `Credential` to be IMPORTED and `User` to be
+  appended and grown, and a rule on presence fires on every correct install. A
+  column the app added is not a finding; a model attribute it added is not a
+  finding; a column the package declares and this declares differently is. The
+  issue was filed concluding a package needed a new way to say which file is
+  which — it does not, and the narrower question needed no new surface at all
+  (`FJS-483`). A **warning**, both declarations printed, because a deviation can
+  be right and the reader is the one who can tell: its first run named two
+  basecamp columns that had lost a field policy and one column where AUTH was the
+  side that was wrong.
+- **A finding may carry an EDIT, and `applyFixes` is the one thing that writes.**
+  `edit: { start, end, was, replacement }`, byte offsets into the real file —
+  which works only because `readCode` blanks comments to SPACES, so a span found
+  in the blanked text names the same bytes on disk. Three rules carry one
+  (`raw-route-param`, `service-model`, `resource-model-miss`) and the other six
+  carry none on purpose: `const scoped = db.$setAuth(u)` would silence
+  `set-auth-discarded` and leave every write below it unscoped, which is a green
+  check over the bug. **Adding a fix to a rule means asking whether the rewrite
+  is the WHOLE fix**, not whether it is easy. Edits go back to front, `was` is
+  re-verified before the write, and `--fix` re-runs the checks from disk rather
+  than subtracting what it applied.
+- **Where a BUILD already proves something, a rule here asks whether the proof is
+  switched on — never whether it passes.** Sierra's static-safety check taps what
+  a route's `load()` read and grades it against `@@gate`, fail-closed; nothing
+  textual can reach that question. What is decidable is a `target: 'static'`
+  config wiring no `db:` (the tap has no client, so every route is refused until
+  it declares `publishes:`) and a `publishes: 0` (the default bar, so it raises
+  nothing and silences the two fail-closed branches — measured by calling
+  `checkRoute`, not read off the source). That boundary is the general rule for
+  the next one of these: **the build owns the verdict, this owns the wiring.**
+- **`check-baseline.json` is the ratchet and it is not the allowance mechanism.**
+  One number per rule id at the app root, absent = 0, `--update` cannot raise and
+  `--adopt` is the separate verb that can. The findings still PRINT under a
+  baseline — it moves the exit code and nothing else — because a rule set that
+  goes red the day it is installed gets removed rather than obeyed. **A rule that
+  SKIPPED keeps its ceiling**: 0 findings from a rule with nothing to look at is
+  indistinguishable from 0 findings from a fixed one, and ratcheting the first
+  case down locks in a number no later run can meet. `allow` answers the other
+  question — *this one is fine, and here is why*, keyed by path and carrying a
+  reason — and neither replaces the other.
+- **Three proposed rules were killed by measuring them, and that is the cheaper
+  half of the work.** `IDEAS/diagnostics.md` listed `@encrypted` on a `Json`
+  column (it round-trips correctly now — `Int`, `Float` and an array THROW at the
+  write, loudly, which is somebody else's job), a directive key in a `find()`
+  filter (`autoFilter` answers a 400 naming the key and saying paging is a
+  directive), and a model service with no `channel:` (ruled the intended state
+  in `DECISIONS.md` § API design — a report on it "would fire on nearly every
+  service in every app, which is how a warning gets trained out"). **A rule
+  proposed off a hazard paragraph is a lead, not a spec**: two of those three
+  were fixed after the paragraph was written, and the third was ruled against.
 
 ## The context in this package
 

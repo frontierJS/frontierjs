@@ -4,6 +4,7 @@
 // Fully typed via AppConfig interface.
 
 import { join, resolve } from 'node:path'
+import { existsSync }      from 'node:fs'
 
 // ─── App config interface ─────────────────────────────────────────────────
 // Extend this in your app's config/types.ts
@@ -55,6 +56,20 @@ export interface AppConfig {
     // closes it with 1013. Default 8MB. Past Bun's own buffer a frame is
     // DROPPED rather than queued, and that drop is silent — FJS-139.
     wsMaxQueued?: number
+    // Caller-varied headers this app reads off a request — a basket token, a
+    // tenant, an experiment arm. Junction's own protocol headers are always
+    // allowed and are not listed here.
+    //
+    // ONE declaration, two readers, because it is one fact: cross-origin a
+    // header absent from the CORS allow-list never arrives, and over the
+    // socket a header the frame names is dropped unless it is here. Declaring
+    // it in one place and not the other gives an app that works until the
+    // socket connects, or until it is served from a second origin.
+    //
+    // It is an allow-list rather than a pass-through for one reason: a frame
+    // that could name its own header could name Authorization, and the
+    // caller's identity is established at upgrade.
+    callHeaders?: string[]
   }
 
   // Cache
@@ -192,6 +207,25 @@ export async function loadConfig(configDir = './config'): Promise<AppConfig & { 
 
   const env = process.env.NODE_ENV ?? 'development'
 
+  // A missing config FILE is an optional miss and stays silent — an app is
+  // allowed to declare nothing. A missing config DIRECTORY is a different fact:
+  // it is where the app pointed, and nothing is ever going to be read from it.
+  // The two were indistinguishable, so an app whose path was wrong booted on
+  // defaults looking like it had loaded something — measured in `basecamp`,
+  // which read `api/config` for its whole life without that directory existing
+  // and took junction's default CORS every boot.
+  //
+  // A warning rather than a throw: `loadConfig()` is also called speculatively
+  // by `createApp` for an app that legitimately keeps no config at all, and
+  // refusing to boot over that would be a rule nobody asked for.
+  if (!existsSync(absConfigDir)) {
+    console.warn(
+      `[Junction] no config directory at '${absConfigDir}' — booting on defaults. ` +
+      `Create it with a junction.config.js, or pass the directory this app actually uses.`
+    )
+    return { ...deepClone(defaultConfig) as AppConfig, ...envOverrides() }
+  }
+
   // Load default
   let config = deepClone(defaultConfig) as AppConfig & { _junction?: JunctionConfig }
 
@@ -212,11 +246,19 @@ export async function loadConfig(configDir = './config'): Promise<AppConfig & { 
   const envOverride = await tryImport(join(absConfigDir, `${env}.ts`))
   if (envOverride) config = deepMerge(config, envOverride) as typeof config
 
-  // Always respect env vars for critical secrets (override everything)
-  if (process.env.PORT)           config.port           = parseInt(process.env.PORT, 10)
-  if (process.env.DEBUG === '1')  config.debug          = true
+  return { ...config, ...envOverrides() }
+}
 
-  return config
+/**
+ * The env vars that beat every file, applied on both exits — the early return
+ * for a missing directory takes them too, or pointing at a directory that is
+ * not there would also silently drop `PORT`.
+ */
+function envOverrides(): Partial<AppConfig> {
+  const out: Partial<AppConfig> = {}
+  if (process.env.PORT)          out.port  = parseInt(process.env.PORT, 10)
+  if (process.env.DEBUG === '1') out.debug = true
+  return out
 }
 
 // ─── Deep merge ───────────────────────────────────────────────────────────

@@ -24,12 +24,19 @@ export {
 } from './src/core/errors.ts'
 export type { ErrorMapper } from './src/core/errors.ts'
 
+// Per-field errors an app's OWN rules can raise — the writer for the shape
+// sierra's toFieldErrors already reads, so a hand-written business rule
+// reports like a declared one.
+export { fieldErrors, validateFields, fieldError } from './src/core/field-errors.ts'
+export type { FieldError, FieldErrorBuilder }      from './src/core/field-errors.ts'
+
 // ─── Services ─────────────────────────────────────────────────────────────
 export { createService, createBaseService, ServiceRegistry, callService, setServiceCache,
          SERVICE_OPTION_KEYS, SERVICE_RUNTIME_KEYS, isCustomMethod, customMethodNames,
          READ_ONLY_METHODS, resolveMethodPolicy, serviceMethodNames,
+         methodEntryName, collectMethodInputs,
          isMethodAllowed, allowedMethodNames } from './src/core/service.ts'
-export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOptions, BaseServiceDefinition, CacheDeclaration, MethodPolicy, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
+export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOptions, BaseServiceDefinition, CacheDeclaration, MethodPolicy, MethodEntry, MethodDeclaration, TelemetryEvent, CallStartEvent, HookTelemetryEvent } from './src/core/service.ts'
 
 // ─── Sorting ──────────────────────────────────────────────────────────────
 // The one reading of `orderBy` (Bridge index). `autoSort` VALIDATES a request's
@@ -60,7 +67,11 @@ export { bridge, jsonResponse, errorResponse, redirectResponse } from './src/tra
 export type { ServiceContext, ServiceMethod, AnyMethod, ServiceContextLocals, CallOptions, RequestMeta } from './src/transport/bridge.ts'
 export type { QueryDirectives } from './src/core/context.ts'
 export { requestMeta } from './src/transport/bridge.ts'
-export { $, currentCall } from './src/core/context.ts'
+// `enterCall` is the escape hatch for calling a service method DIRECTLY —
+// a unit test holding a hand-built context, or an app invoking a method
+// outside the pipeline. `callService` opens the scope for every ordinary
+// path; without this, a method that reads `$` cannot be called any other way.
+export { $, currentCall, enterCall } from './src/core/context.ts'
 export type { CallContext } from './src/core/context.ts'
 
 // ─── Transport ────────────────────────────────────────────────────────────
@@ -125,10 +136,10 @@ export type { Schema, FieldDef, SchemaOptions, CompiledSchema, ValidationResult,
 export { createLitestoneBase, parseQuery as parseLitestoneQuery, parseWhere,
          deriveModelName, accessorCandidates, withLitestoneDb,
          sessionGateLevel, toDataPrincipal, LEVELS,
-         applyClaims, membershipClaim, MEMBERSHIP,
+         applyClaims, membershipClaim, MEMBERSHIP, tenantOf,
          jsonSchemaToJunctionSchema }                              from './src/core/litestone.ts'
 export type { GradableUser } from './src/core/litestone.ts'
-export type { PrincipalResolver, PrincipalClaims, MembershipClaimOptions } from './src/core/litestone.ts'
+export type { PrincipalResolver, PrincipalClaims, MembershipClaimOptions, NoClaim } from './src/core/litestone.ts'
 export type { LitestoneServiceOptions, ParsedQuery,
               LitestoneJsonSchema,
               LitestoneQueryEvent }                                   from './src/core/litestone.ts'

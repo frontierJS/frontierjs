@@ -8,13 +8,13 @@
 // `service_id` is now `appId`: the model it points at is App, not Service.
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, deriveSlug, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
 import { syncSchedule, unscheduleJob } from './job-schedule.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
-import type { ServiceContext } from '@frontierjs/junction'
 import jobRun from '../../jobs/job-run.job.ts'
+import { announce } from '../../channels.ts'
 
 /** Five fields: min hour dom month dow. */
 function isValidCron(expr: string): boolean {
@@ -28,6 +28,36 @@ export function createJobsService(app: BasecampApp) {
       throw new NotFound(`App '${appId}' not found in this workspace`)
   }
 
+
+  /** `JobRun` is `@@gate("2.8")` — created and updated by the machine alone. */
+  const sys = () => app.data.asSystem() as any
+
+  /**
+   * The job this call is about — through the CALLER's client where there is a
+   * caller, and through the system client where there is not.
+   *
+   * `job:run` is the one job here dispatched BOTH ways (`FJS-384`): a person
+   * triggers it, and a cron fires it with no actor at all. The confinement is
+   * the scoped read — a job in another workspace answers nothing — and it
+   * applies exactly when there is somebody to confine to. A cron fire is the
+   * app acting on its own behalf and legitimately spans workspaces, which is
+   * what `runsAsApp` in the handler declares.
+   */
+  async function jobInScope(jobId: string) {
+    const client = $.auth?.user ? db() : sys()
+    const row    = await client.job.findUnique({ where: { id: jobId } })
+    if (!row) throw new NotFound(`Job '${jobId}' not found`)
+    return row as Record<string, any>
+  }
+
+  /** The whole row, announced to the workspace the ROW names — `ws()` is the
+   *  request's workspace and a cron fire has no request. */
+  async function pushJob(jobId: string, workspaceId: string) {
+    const row = await sys().job.findUnique({ where: { id: jobId } })
+    if (row) announce(app, workspaceId, 'jobs patched', row)
+    return row
+  }
+
   return createService({
     name:  'jobs',
     model: 'Job',
@@ -38,7 +68,7 @@ export function createJobsService(app: BasecampApp) {
     channel: workspaceChannel(app),
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
 
-    async find(ctx: ServiceContext) {
+    async find() {
       const { limit, offset } = getPagination()
       const appId  = ($.query.appId ?? $.query.service_id) as string | undefined
       const kind   = $.query.kind   as string | undefined
@@ -60,7 +90,7 @@ export function createJobsService(app: BasecampApp) {
       return { ...job, recent_runs }
     },
 
-    async create(ctx: ServiceContext) {
+    async create() {
       const data = $.data as Record<string, unknown>
 
       if (data.kind === 'scheduled') {
@@ -156,13 +186,89 @@ export function createJobsService(app: BasecampApp) {
       return updated
     },
 
+
+    // ── The engine's writes ───────────────────────────────────────────
+    //
+    // `job:run` used to open `asSystem()` and write these itself. `JobRun` is
+    // `@@gate("2.8")` — created and updated by the machine — so what moves here
+    // is not the standing but the CONFINEMENT and the announcement, which the
+    // handler had to remember to do and once did not (`FJS-384`).
+
+    async startRun() {
+      const job     = await jobInScope(String($.id))
+      const trigger = (($.data ?? {}) as { trigger?: string }).trigger ?? 'manual'
+
+      // The ROW is the truth about whether this should run, not the thing that
+      // dispatched it: a cancel stamps the row, and a run already queued when
+      // it happened is still in the queue.
+      if (job.status === 'cancelled') return { runnable: false, status: job.status }
+
+      const startedAt = new Date().toISOString()
+      const run = await sys().jobRun.create({
+        data: { jobId: job.id, status: 'running', trigger, startedAt },
+      })
+      await sys().job.update({
+        where: { id: job.id },
+        data:  { status: 'running', lastRunAt: startedAt },
+      })
+      await pushJob(job.id, job.workspaceId)
+
+      return { runnable: true, runId: run.id, job, startedAt }
+    },
+
+    async finishRun() {
+      const job = await jobInScope(String($.id))
+      const { runId, status, output, error, exitCode, startedAt } = ($.data ?? {}) as {
+        runId: string; status: 'success' | 'failed'; output?: string
+        error?: string; exitCode?: number; startedAt?: string
+      }
+
+      const finishedAt = Date.now()
+      const startedMs  = startedAt ? Date.parse(startedAt) : finishedAt
+
+      // Addressed by the job as well as the run, so a run id from another job
+      // cannot be closed through this method.
+      await sys().jobRun.updateMany({
+        where: { id: runId, jobId: job.id },
+        data:  {
+          status,
+          finishedAt: new Date(finishedAt).toISOString(),
+          durationMs: finishedAt - startedMs,
+          exitCode:   exitCode ?? (status === 'success' ? 0 : 1),
+          // Json column — an object, never a string.
+          ...(status === 'success' ? { output: { stdout: output ?? '' } } : { error }),
+        },
+      })
+
+      await sys().job.update({
+        where: { id: job.id },
+        data:  status === 'success'
+          ? { status: 'pending', lastRunStatus: 'success', retryCount: 0 }
+          : { status: 'failed',  lastRunStatus: 'failed' },
+      })
+
+      app.events.emit(status === 'success' ? 'job:success' : 'job:failed',
+        { job_id: job.id, run_id: runId, ...(error ? { error } : {}) })
+      await pushJob(job.id, job.workspaceId)
+
+      return { runId, status }
+    },
+
     hooks: {
       before: {
-        all:     [sessionScope(app)],
+        // The engine's two are exempt from the session scope, the way
+        // invitations' two are and for the same kind of reason: `job:run` is
+        // also fired by a cron, where there is no session to authenticate and
+        // no header to name a workspace. `internalOnly` is what guards them —
+        // they are unreachable off the wire — and `jobInScope` is what confines
+        // them where there IS a caller.
+        all:     [sessionScope(app, { except: ['startRun', 'finishRun'] })],
         create:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner'), deriveSlug],
         patch:   [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
         remove:  [requireWorkspaceRole(app, 'admin', 'owner')],
         trigger: [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
+        startRun:  [internalOnly()],
+        finishRun: [internalOnly()],
         cancel:  [requireWorkspaceRole(app, 'developer', 'admin', 'owner')],
       },
     },

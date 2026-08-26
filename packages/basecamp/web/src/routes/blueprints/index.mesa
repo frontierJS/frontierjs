@@ -1,0 +1,276 @@
+---
+title: Blueprints
+---
+<script>
+  // The mock's BlueprintMarketplaceView — the deployment catalogue.
+  //
+  // Two things separate this screen from every other one in the app:
+  //
+  //   It belongs to NO WORKSPACE. `Blueprint` is `@@tenant(none)`, so the
+  //   switcher has no bearing on what is here and this screen does not reload
+  //   when it moves. Every other list in this app is keyed on
+  //   `session.workspaceId`; this one deliberately is not, and the absence is
+  //   the thing to notice rather than an omission.
+  //
+  //   Reading it is VISITOR(1) and writing it is the hub tier. A person with no
+  //   membership anywhere can browse the catalogue — which is what somebody who
+  //   has just accepted an invitation is — and only a sysadmin can change it.
+  //   The write controls are rendered for a sysadmin only; the refusal is the
+  //   server's either way, which is where a refusal has to live.
+  //
+  // ─── What this screen cannot do yet, and says so ────────────────────────
+  //
+  // The mock's card has a Deploy button that builds an App out of the blueprint
+  // and forgets which one it came from. Deploying from here needs two things
+  // that do not exist: a `blueprintId` on `App`, so the record of what something
+  // was built from survives, and a path that turns the params into the app's own
+  // environment. Neither is invented here. What the detail pane shows instead is
+  // the whole of what would be sent — image, ports, storage and every parameter
+  // with its rule — because a catalogue whose entries cannot be inspected is a
+  // list of logos.
+  import { session } from '../../session.js'
+  import { blueprints } from '../../resources/Blueprint.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+
+  $: session.user
+
+  let rows       = []
+  let categories = []
+  let selected   = null
+  let error      = null
+  let loading    = true
+  let category   = ''      // '' = every category
+  let search     = ''
+  let showGone   = false
+
+  async function load() {
+    error = null; loading = true
+    try {
+      // `includeDeprecated` is a filter the service reads off the query string,
+      // not a client-side one: a withdrawn blueprint is out of the list by
+      // default and still readable by id, because the apps built from it point
+      // at it.
+      const query = showGone ? { includeDeprecated: 'true' } : {}
+      const list  = await blueprints.service.find(query, { limit: 200 })
+      rows        = list.data
+      categories  = (await blueprints.service.invoke('categories', null)).categories
+      if (selected) selected = await blueprints.service.get(selected.id)
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  // No `$: session.workspaceId` here, and that is the point — see the header.
+  $: showGone, () => load()
+
+  // `categories` is derived from the rows on the server, so a blueprint added
+  // in a new category puts a new chip here without a migration. The count is
+  // the live one; it does not move with the search box, which filters what is
+  // ON SCREEN rather than what exists.
+  $: shown = rows.filter(b => {
+    if (category && b.category !== category) return false
+    if (!search) return true
+    const q = search.toLowerCase()
+    return b.name.toLowerCase().includes(q)
+        || b.description.toLowerCase().includes(q)
+        || b.category.toLowerCase().includes(q)
+  })
+
+  async function open(bp) {
+    error = null
+    if (selected?.id === bp.id) { selected = null; return }
+    try {
+      selected = await blueprints.service.get(bp.id)
+    } catch (e) {
+      error = e.message
+    }
+  }
+
+  async function withdraw(bp) {
+    error = null
+    try {
+      await blueprints.service.remove(bp.id)
+      if (selected?.id === bp.id) selected = null
+      await load()
+    } catch (e) {
+      // A 409 lands here when somebody else edited the row since this screen
+      // read it — `revision` is @version, and the withdrawal carries the one it
+      // read. Re-reading is the way out and the sentence says which two
+      // revisions disagreed.
+      error = e.message
+    }
+  }
+
+  const PARAM_COLUMNS = [
+    { key: 'key',     label: 'Variable' },
+    { key: 'label',   label: 'Label' },
+    { key: 'default', label: 'Default' },
+    { key: 'rule',    label: 'Rule' },
+  ]
+
+  function storage(bp) {
+    return bp.persistent ? (bp.volumePath ?? 'persistent') : 'stateless'
+  }
+</script>
+
+<div class="section-header">
+  <h1>Blueprints</h1>
+  <span class="text-sm text-muted">
+    Pre-configured applications. The same catalogue in every workspace.
+  </span>
+</div>
+
+{#if error}
+  <article class="alert danger" id="screen-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+<Callout tone="info" title="Deploying from a blueprint is not wired yet">
+  What a blueprint holds is real and complete — the image, the ports, the storage and every
+  parameter with its rule. What is missing is the step that turns one into a running app: an
+  <code>App</code> has no <code>blueprintId</code>, so nothing would record what it was built
+  from, and there is no path that turns these parameters into an app's own environment. The
+  detail pane below is the whole of what such a step would send.
+</Callout>
+
+<div class="cluster" id="blueprint-filters">
+  <label class="visually-hidden" for="blueprint-search">Search blueprints</label>
+  <Input id="blueprint-search" placeholder="Search blueprints…" value={search}
+         oninput={(e) => search = e.target.value} />
+
+  <button type="button" class={category === '' ? 'pill' : 'pill muted'}
+          id="category-all" onclick={() => category = ''}>
+    All ({rows.length})
+  </button>
+  {#each categories as c}
+    <button type="button" class={category === c.name ? 'pill' : 'pill muted'}
+            onclick={() => category = category === c.name ? '' : c.name}>
+      {c.name} ({c.count})
+    </button>
+  {/each}
+
+  <label class="check">
+    <input type="checkbox" checked={showGone} onchange={(e) => showGone = e.target.checked} />
+    <span class="text-sm text-muted">Show withdrawn</span>
+  </label>
+</div>
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !shown.length}
+  <EmptyState title="Nothing matches">
+    {rows.length
+      ? 'No blueprint in this catalogue matches that search.'
+      : 'This installation has no catalogue yet. A sysadmin curates it.'}
+  </EmptyState>
+{:else}
+  <div class="grid cols-3" id="blueprint-grid">
+    {#each shown as bp}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4">
+            {#if bp.icon}<span aria-hidden="true">{bp.icon}</span> {/if}{bp.name}
+          </h2>
+          <Badge tone="muted">{bp.version}</Badge>
+        </div>
+
+        <span class="cluster">
+          <Pill tone="info">{bp.category}</Pill>
+          {#if bp.deprecatedAt}
+            <!-- Withdrawn, not deleted: an app built from it still points here. -->
+            <Pill tone="warning">withdrawn</Pill>
+          {/if}
+        </span>
+
+        <p class="text-sm text-muted">{bp.description}</p>
+
+        <div class="cluster text-sm text-muted">
+          <span>:{bp.port ?? '—'}</span>
+          <span>{storage(bp)}</span>
+          <span>{bp.params.filter(p => p.required).length} required</span>
+        </div>
+
+        <div class="cluster">
+          <Button variant="outlined" onclick={() => open(bp)}>
+            {selected?.id === bp.id ? 'Hide details' : 'Details'}
+          </Button>
+          {#if session.user?.isSystemAdmin && !bp.deprecatedAt}
+            <Button variant="ghost" aria-label={`Withdraw ${bp.name}`}
+                    onclick={() => withdraw(bp)}>Withdraw</Button>
+          {/if}
+        </div>
+      </Card>
+    {/each}
+  </div>
+{/if}
+
+{#if selected}
+  <Card id="blueprint-detail">
+    <div class="section-header">
+      <h2 class="h4">{selected.name} {selected.version}</h2>
+      <Button variant="ghost" onclick={() => selected = null}>Close</Button>
+    </div>
+
+    <pre class="code" id="blueprint-image"><code>{selected.image}</code></pre>
+
+    <dl class="datalist">
+      <div><dt>Type</dt><dd>{selected.appType}</dd></div>
+      <div><dt>Port</dt><dd>{selected.port ?? 'none'}</dd></div>
+      <div><dt>Storage</dt><dd>{storage(selected)}</dd></div>
+      <div><dt>Health check</dt><dd>{selected.healthCheck ?? 'none'}</dd></div>
+      <div><dt>Replicas</dt><dd>{selected.replicas}</dd></div>
+      <div><dt>Limits</dt><dd>{selected.cpuLimit ?? '—'} CPU · {selected.memLimit ?? '—'} memory</dd></div>
+    </dl>
+
+    {#if !selected.params.length}
+      <p class="text-sm text-muted">This blueprint takes no parameters.</p>
+    {:else}
+      <Table id="blueprint-params" columns={PARAM_COLUMNS} rows={selected.params} striped hover={false}>
+        {#snippet row(p)}
+          <tr>
+            <td><code>{p.key}</code></td>
+            <td class="text-sm">{p.label}</td>
+            <!-- A secret's DEFAULT is not a secret: it is what ships with the
+                 catalogue, never anybody's value. What a person types goes to a
+                 Secret, which is @encrypted and never read back. -->
+            <td class="text-sm text-muted">{p.defaultValue || '—'}</td>
+            <td>
+              <span class="cluster">
+                {#if p.required}<Pill tone="danger">required</Pill>{/if}
+                {#if p.secret}<Pill tone="warning">secret</Pill>{/if}
+                {#if p.generate}<Pill tone="success">{p.generate}</Pill>{/if}
+              </span>
+            </td>
+          </tr>
+          {#if p.hint}
+            <tr><td colspan="4" class="text-sm text-muted">{p.hint}</td></tr>
+          {/if}
+        {/snippet}
+      </Table>
+    {/if}
+
+    {#if selected.notes}
+      <Callout tone="info" title="Before you deploy this">{selected.notes}</Callout>
+    {/if}
+
+    {#if (selected.links ?? []).length}
+      <div class="cluster">
+        {#each selected.links as link}
+          <a href={link.url} target="_blank" rel="noreferrer">{link.label} ↗</a>
+        {/each}
+      </div>
+    {/if}
+  </Card>
+{/if}

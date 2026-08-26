@@ -227,6 +227,39 @@ export async function loadFrontierConfig(projectRoot) {
   }
 }
 
+// ─── dockerfileScripts ────────────────────────────────────────────────────────
+// Which `bun run <script>` a Dockerfile's entrypoint invokes, in either form:
+//
+//   CMD ["bun", "run", "start"]
+//   CMD bun run db:migrate && bun run start
+//
+// `fli deploy:doctor` requires each of them to exist in the app's manifest, and
+// it reads them HERE rather than assuming the template's pair. Asserting
+// `db:migrate` unconditionally refuses an app whose Dockerfile is correct and
+// different: `basecamp` runs its migrations at boot inside app.ts, on purpose,
+// so it has no such script and was being blocked from a deploy that works
+// (`FJS-417`). A hand-written Dockerfile is the normal case for an app past its
+// first week.
+//
+// Only CMD and ENTRYPOINT lines are read. A `RUN bun run build` is a build step
+// that already succeeded by the time an image exists, and requiring its script
+// at deploy time would fail an image that is sitting there working.
+//
+// Returns [] when nothing matches, which the caller reports rather than treats
+// as "no requirements" — a Dockerfile whose entrypoint names no script is one
+// this cannot speak about.
+export function dockerfileScripts(src) {
+  const out = new Set()
+  for (const line of String(src ?? '').split('\n')) {
+    if (!/^\s*(CMD|ENTRYPOINT)\b/.test(line)) continue
+    // Exec form: the tokens are separate JSON strings.
+    for (const m of line.matchAll(/["']bun["']\s*,\s*["']run["']\s*,\s*["']([\w:.-]+)["']/g)) out.add(m[1])
+    // Shell form, including several joined by && or ;.
+    for (const m of line.matchAll(/\bbun\s+run\s+([\w:.-]+)/g)) out.add(m[1])
+  }
+  return [...out]
+}
+
 // ─── findWorkspaceRoot ────────────────────────────────────────────────────────
 // Walk up from `start` to locate the monorepo root — the directory holding
 // `packages/`. Priority order:

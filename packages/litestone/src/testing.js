@@ -8,6 +8,7 @@ export { FAKE, fakeFor } from './fake.js'
 export { deriveAccess, renderAccessSnapshot, gateLadder, policyExprToString,
          expectedVerdict, levelLabel, REACHABLE_LEVELS } from './access.js'
 export { schemaMutants, mutationScore } from './mutate.js'
+export { tempDir, reapTempDirs } from './tmp-dirs.js'
 
 import { parse, inlineImportsFromDisk } from './core/parser.js'
 import { modelToAccessor }          from './core/ddl.js'
@@ -20,9 +21,9 @@ import { DEFAULT_MESSAGES, validateField } from './core/validate.js'
 import { buildPolicyMap, evalJs }   from './core/policy.js'
 import { fakeFor, fakeEmail }       from './fake.js'
 import { Factory }                  from './seeder.js'
-import { mkdirSync, existsSync, readFileSync } from 'fs'
+import { tempDir }                  from './tmp-dirs.js'
+import { existsSync, readFileSync } from 'fs'
 import { join }                     from 'path'
-import { tmpdir }                   from 'os'
 
 // ─── makeTestClient ───────────────────────────────────────────────────────────
 //
@@ -60,9 +61,12 @@ async function _buildEnv(schemaText, opts = {}) {
   const result = parse(schemaText)
   if (!result.valid) throw new Error(`makeTestClient: schema errors:\n${result.errors.join('\n')}`)
 
-  // Unique tmpdir — parallel test runs never collide
-  const dir  = join(tmpdir(), `litestone-test-${Date.now()}-${Math.random().toString(36).slice(2)}`)
-  mkdirSync(dir, { recursive: true })
+  // Unique tmpdir — parallel test runs never collide. tempDir() also reaps the
+  // previous runs': nothing here can delete its own directory (tmp-dirs.js),
+  // and this helper is called once per test, so the leak was one directory per
+  // test in every app that uses it — 28,546 of them on the machine that found
+  // it (FJS-361).
+  const dir  = tempDir('litestone-test-')
   const path = join(dir, 'test.db')
 
   // A `database` block WINS over the `db:` option (documented litestone behaviour),
@@ -660,6 +664,348 @@ export async function createTestEnv(opts = {}) {
     },
 
     /**
+     * Every tenant-scoped model, actually crossed.
+     *
+     * `verifyRowPolicies` grades a compiled WHERE against litestone's own JS
+     * evaluator, which is sound for a rule it can evaluate and reports a rule
+     * holding a `check()` as not-graded by name. Declared tenancy generates both
+     * kinds — a column comparison for a model carrying the column, a `check()`
+     * delegation for one scoped through a parent — so on basecamp that grader
+     * covers 18 models and declines 14, and `FJS-382` is what the declined half
+     * costs: the two implementations of `check()` disagreed about a null foreign
+     * key, every scoped read dropped the row, and the grader called the policy
+     * correct throughout.
+     *
+     * This asks the question the other way round and needs no second
+     * implementation to compare against: seed a row for tenant A, then have
+     * tenant B and a caller with no tenant at all try to reach it. A row B can
+     * see is a finding whether the rule naming it is one comparison or six
+     * delegations deep.
+     *
+     * Both sides are asserted. A run where B reaches nothing proves nothing on
+     * its own — a policy that admits nobody and a model nothing was seeded into
+     * are the same observation — so A must reach its own row or the row is
+     * reported `unreachable` rather than counted as isolation.
+     *
+     * Five moves, and the last two are the ones a column comparison alone does
+     * not cover: `create` is B placing a row in A's tenant, `post-update` is B
+     * moving a row it legitimately owns into A's, which is the move the
+     * generated `post-update` deny exists for.
+     *
+     * **A model nothing scopes is a finding, not a skip.** The desugar errors on
+     * `@@tenant(via:)` naming an unscoped parent and stays silent for a model
+     * that names no `via` and has no scoped parent to infer one from — so the
+     * shape that reaches production is the quiet one, and it is exactly the
+     * shape this reports.
+     *
+     * `actors` overrides the two principals for a membership the declaration
+     * cannot describe — a standing that is a join, a claim minted by a resolver.
+     * The default is derived from `tenancy { }` alone, which is what every app
+     * on the feature already has.
+     */
+    verifyTenantIsolation: async ({ against = null, actors = null,
+                                   ops = ['read', 'create', 'update', 'delete', 'post-update'] } = {}) => {
+      const schema  = against ?? built.parsed.schema
+      const t       = schema.tenancy
+      const wanted  = new Set(ops)
+      const out     = []
+
+      // Said out loud rather than answered with an empty array, which reads as
+      // a pass everywhere it is asserted.
+      if (!t) return [{
+        model: null, op: null, actor: null, got: 'skipped',
+        message: 'not graded: this schema declares no `tenancy { }` block, so there is no tenant for one caller to cross into',
+      }]
+
+      // Under `strategy database` a tenant is a FILE and isolation is the
+      // filesystem: there is no query that reaches two tenants because there is
+      // no connection that holds two. This env builds one client over one
+      // database, so the crossing it would grade cannot be expressed here — and
+      // grading the predicate that does not exist would be a green run over
+      // nothing. The drive that can see it holds two registries.
+      if (t.strategy !== 'row') return [{
+        model: null, op: null, actor: null, got: 'skipped',
+        message: `not graded: strategy '${t.strategy}' isolates tenants by database file, not by a predicate — one client cannot reach two, so there is nothing here to cross. A drive holding the registry proves that strategy (example: verify:tenants)`,
+      }]
+
+      const sys       = built.db.asSystem()
+      const access    = deriveAccess(schema)
+      const { chain } = _chains(schema, sys)
+
+      // Two snapshots, and the distinction is load-bearing. The two tenants are
+      // FIXTURE — every model's seed points at them — so the per-model restore
+      // must land after they exist. Rolling back past them instead means the
+      // first model that finishes cleanly takes the tenants with it, and every
+      // model after it fails to seed with a foreign key error that says nothing
+      // about tenancy. Measured on basecamp: 28 of 29 scoped models reported
+      // `error` because the first one passed.
+      const origin = snapshot(built.db)
+      let   before = origin
+
+      try {
+        const [va, vb] = actors
+          ? [actors[0]?.[t.claim], actors[1]?.[t.claim]]
+          : await _tenantValues(schema, chain, sys)
+
+        if (va == null || vb == null) return [{
+          model: null, op: null, actor: null, got: 'error',
+          message: `not graded: could not establish two tenants — the '${t.column}' column is ${t.column in (schema.models[0] ?? {}) ? 'present' : 'declared'} but no value for it could be built. Pass actors: [a, b] to state them`,
+        }]
+
+        const who = (label, value) => actors && label !== 'nobody'
+          ? (label === 'A' ? actors[0] : actors[1])
+          : { ...DEFAULT_POLICY_PRINCIPAL, id: `tenant-${label}`, userId: `tenant-${label}`, [t.claim]: value }
+
+        const A        = who('A', va)
+        const B        = who('B', vb)
+        const NOBODY   = { ...DEFAULT_POLICY_PRINCIPAL, id: 'tenant-nobody', userId: 'tenant-nobody', [t.claim]: null }
+        const clientA  = await env.atLevel(7, A)
+        const clientB  = await env.atLevel(7, B)
+        const clientN  = await env.atLevel(7, NOBODY)
+
+        before = snapshot(built.db)
+
+        for (const model of schema.models) {
+          if (!_isValidatable(model, schema)) continue
+
+          const kind = _tenantKind(schema, model)
+
+          if (kind === 'exempt') {
+            out.push({ model: model.name, op: null, actor: null, got: 'exempt',
+              message: `${model.name} — @@tenant(none): declared to span tenants, so no crossing is graded` })
+            continue
+          }
+
+          // The silent shape. A model with no tenant column and no scoped parent
+          // to delegate to is not exempt and not scoped — every caller of every
+          // tenant reads every row, and the schema says nothing about it.
+          if (kind === 'unscoped') {
+            out.push({ model: model.name, op: null, actor: null, got: 'unscoped',
+              message: `${model.name} — nothing scopes this model: it carries no '${t.column}' column and no required relation to a model that does, and it does not declare @@tenant(none). Every tenant reads every row. Give it the column, scope it through a parent with @@tenant(via: rel), or declare the exemption` })
+            continue
+          }
+
+          const acc   = modelToAccessor(model.name)
+          const idKey = _idField(schema, model.name)
+          const gate  = access.models.find(m => m.name === model.name)?.gate
+
+          // A model that isolates correctly produces no finding, which is
+          // exactly what a model nothing ran against produces. `FJS-513` is a
+          // checker declining 14 models in silence, so this one says which ones
+          // it crossed — the coverage is the result, not the absence of one.
+          out.push({ model: model.name, op: null, actor: null, got: 'graded',
+            message: `${model.name} — scoped by ${kind === 'column' ? `'${_tenantColumn(schema, model)}'` : 'delegation'}, crossed on ${[...wanted].join(', ')} as tenant B and as a caller holding no claim` })
+
+          // One seeding pass per model, reused by every read-shaped assertion.
+          // The destructive moves re-seed, because a delete that correctly
+          // refuses and a delete that removed the row are the same absence on
+          // the next assertion.
+          const parents = new Map()
+          let rowA
+          try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+          catch (err) {
+            out.push({ model: model.name, op: null, actor: null, got: 'error',
+              message: `${model.name} — no row could be seeded for tenant A, so nothing about this model was crossed: ${err.message}` })
+            restore(built.db, before)
+            continue
+          }
+
+          const id = rowA[idKey]
+
+          // ── read ────────────────────────────────────────────────────────────
+          if (wanted.has('read')) {
+            if (gate && gate.read > 7) {
+              out.push({ model: model.name, op: 'read', actor: null, got: 'uncheckable',
+                message: `${model.name}.read — gated at ${gate.read} (${levelLabel(gate.read)}), which no principal can hold: the row boundary refuses before the tenant one is reached` })
+            } else {
+              const reach = async (client) => {
+                try { return new Set((await client[acc].findMany({ limit: 50 })).map(r => r[idKey])) }
+                catch (err) {
+                  if (err instanceof AccessDeniedError || err?.name === 'AccessDeniedError') return null
+                  throw err
+                }
+              }
+              const seenB = await reach(clientB)
+              const seenN = await reach(clientN)
+              const seenA = await reach(clientA)
+
+              if (seenB?.has(id)) out.push({ model: model.name, op: 'read', actor: 'B', got: 'leaked',
+                message: `${model.name}#${id} belongs to tenant A and a caller in tenant B read it` })
+              if (seenN?.has(id)) out.push({ model: model.name, op: 'read', actor: 'nobody', got: 'leaked',
+                message: `${model.name}#${id} belongs to tenant A and a caller holding no '${t.claim}' at all read it` })
+
+              // The vacuity guard. Without it a model whose rows nobody can see
+              // reports perfect isolation.
+              if (seenA && !seenA.has(id)) out.push({ model: model.name, op: 'read', actor: 'A', got: 'unreachable',
+                message: `${model.name}#${id} was seeded for tenant A and tenant A cannot read it, so the isolation asserted above is not distinguished from a model nothing can reach` })
+            }
+          }
+
+
+          // ── the unparented row ──────────────────────────────────────────────
+          //
+          // A delegated rule is `!check(rel)`, and `check()` answers TRUE for a
+          // null foreign key — a row naming no parent is not a row naming
+          // somebody else's (`FJS-382`, and the JS half is the one that matches
+          // what the declaration says). So where the scoping relation is
+          // OPTIONAL, a row that never got a parent belongs to no tenant and
+          // every tenant can reach it.
+          //
+          // Reported under its own name rather than as a leak, because it is
+          // the ruled behaviour and the fix is a schema decision: make the
+          // relation required, or give the model the column. A verdict here
+          // would be this checker overruling a decision record; silence would
+          // be the same hole `unscoped` exists to close.
+          if (kind === 'delegated' && wanted.has('read') && (!gate || gate.read <= 7)) {
+            const optionalScoped = model.fields.filter(f => {
+              if (f.type.kind !== 'relation' || f.type.array) return false
+              const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
+              if (!rel) return false
+              if (!model.fields.find(x => x.name === rel.fields[0])?.type.optional) return false
+              return _tenantKind(schema, schema.models.find(m => m.name === f.type.name)) !== 'unscoped'
+            }).map(f => f.name)
+
+            if (optionalScoped.length) {
+              let orphan = null
+              try { orphan = await _seedForTenant(schema, model.name, va, chain, new Map(), { optional: false }) }
+              catch { /* it cannot exist unparented, which is the answer this asks for */ }
+
+              if (orphan) {
+                let seenB = null
+                try { seenB = new Set((await clientB[acc].findMany({ limit: 50 })).map(r => r[idKey])) }
+                catch (err) { if (!(err instanceof AccessDeniedError || err?.name === 'AccessDeniedError')) throw err }
+
+                if (seenB?.has(orphan[idKey])) out.push({ model: model.name, op: 'read', actor: 'B', got: 'unparented',
+                  message: `${model.name} is scoped through ${optionalScoped.map(r => `'${r}'`).join(' + ')}, which is optional — a row created without one belongs to no tenant and every tenant reads it. Make the relation required, or give ${model.name} the '${t.column}' column` })
+              }
+
+              restore(built.db, before)
+              parents.clear()
+              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+              catch { rowA = null }
+            }
+          }
+
+          // ── create — B places a row in A's tenant ───────────────────────────
+          if (wanted.has('create') && rowA && (!gate || gate.create <= 7)) {
+            const payload = _columnPayload(schema, model, rowA)
+            if (payload) {
+              // The probe row is removed first so its @unique values are free:
+              // a create refused by a UNIQUE constraint is not a create refused
+              // by tenancy, and the two are the same throw from here.
+              try { await sys[acc].delete({ where: { [idKey]: id } }) } catch { /* a @@softDelete model keeps it; the retry below still tells us */ }
+
+              let made = null
+              let threw = null
+              try { made = await clientB[acc].create({ data: payload }) }
+              catch (err) { threw = err }
+
+              if (made) out.push({ model: model.name, op: 'create', actor: 'B', got: 'leaked',
+                message: `${model.name} — a caller in tenant B created a row carrying tenant A's ${kind === 'column' ? `'${_tenantColumn(schema, model)}'` : 'parent'}, so a row can be placed inside a tenant its author does not belong to` })
+
+              // A refusal is only evidence when it is the ACCESS boundary
+              // refusing. A UNIQUE violation, a missing column, a check
+              // constraint — each is a create that did not happen for a reason
+              // that has nothing to say about tenancy, and counting one as
+              // isolation is the shape this whole check exists to refuse.
+              else if (threw && !(threw instanceof AccessDeniedError || threw?.name === 'AccessDeniedError'))
+                out.push({ model: model.name, op: 'create', actor: 'B', got: 'error',
+                  message: `${model.name}.create — not graded: the write was refused by something other than access, so whether tenancy would have refused it is unknown: ${threw.message}` })
+
+              restore(built.db, before)
+              parents.clear()
+              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+              catch { rowA = null }
+            }
+          }
+
+          // ── post-update — B moves its OWN row into A's tenant ───────────────
+          if (wanted.has('post-update') && rowA && (!gate || gate.update <= 7)) {
+            let rowB = null
+            try { rowB = await _seedForTenant(schema, model.name, vb, chain, new Map()) }
+            catch { /* B's own row could not be built; the move below is unaskable */ }
+
+            if (rowB) {
+              const move = _tenantMove(schema, model, va, parents)
+              if (move) {
+                let moved = null
+                try { moved = await clientB[acc].update({ where: { [idKey]: rowB[idKey] }, data: move }) }
+                catch { /* refused */ }
+
+                // A refusal and a no-match are both acceptable; what is not is
+                // the row arriving in A's tenant.
+                const after = moved ? await sys[acc].findUnique({ where: { [idKey]: rowB[idKey] } }) : null
+                const key   = Object.keys(move)[0]
+                if (after && String(after[key]) === String(move[key])) out.push({
+                  model: model.name, op: 'post-update', actor: 'B', got: 'leaked',
+                  message: `${model.name}#${rowB[idKey]} started in tenant B and a caller in tenant B moved it into tenant A by writing '${key}'` })
+              }
+            }
+            restore(built.db, before)
+            parents.clear()
+            try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+            catch { rowA = null }
+          }
+
+          // ── update / delete — B reaches into A ──────────────────────────────
+          for (const op of ['update', 'delete']) {
+            if (!wanted.has(op) || !rowA) continue
+            if (gate && gate[op] > 7) {
+              out.push({ model: model.name, op, actor: null, got: 'uncheckable',
+                message: `${model.name}.${op} — gated at ${gate[op]} (${levelLabel(gate[op])}), which no principal can hold` })
+              continue
+            }
+
+            const stored = await sys[acc].findUnique({ where: { [idKey]: rowA[idKey] } })
+            if (!stored) continue
+
+            for (const [label, client] of [['B', clientB], ['nobody', clientN]]) {
+              let reached
+              try { reached = await _runPolicyOp(op, client, acc, schema, model, idKey, [stored]) }
+              catch (err) {
+                if (err instanceof AccessDeniedError || err?.name === 'AccessDeniedError') { reached = new Set() }
+                else throw err
+              }
+              if (reached.has(stored[idKey])) out.push({ model: model.name, op, actor: label, got: 'leaked',
+                message: label === 'B'
+                  ? `${model.name}#${stored[idKey]} belongs to tenant A and a caller in tenant B ${op}d it`
+                  : `${model.name}#${stored[idKey]} belongs to tenant A and a caller holding no '${t.claim}' ${op}d it` })
+
+              restore(built.db, before)
+              parents.clear()
+              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+              catch { rowA = null }
+              if (!rowA) break
+            }
+
+            // The other side: A must still reach its own row, or the two
+            // refusals above are indistinguishable from a model no write reaches.
+            if (rowA) {
+              const mine = await sys[acc].findUnique({ where: { [idKey]: rowA[idKey] } })
+              let ownReach
+              try { ownReach = await _runPolicyOp(op, clientA, acc, schema, model, idKey, mine ? [mine] : []) }
+              catch { ownReach = new Set() }
+              if (mine && !ownReach.has(mine[idKey])) out.push({ model: model.name, op, actor: 'A', got: 'unreachable',
+                message: `${model.name}#${mine[idKey]} was seeded for tenant A and tenant A cannot ${op} it, so the refusals asserted above are not distinguished from a model no ${op} reaches` })
+              restore(built.db, before)
+              parents.clear()
+              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+              catch { rowA = null }
+            }
+          }
+
+          restore(built.db, before)
+        }
+      } finally {
+        // The tenants themselves go too — they are this check's fixture, not
+        // the caller's data.
+        restore(built.db, origin)
+      }
+
+      return out
+    },
+
+    /**
      * Every `@guarded` / `@encrypted` / `@secret` field, actually read.
      *
      * The gate ladder says who may read the ROW; this says which COLUMNS come
@@ -701,12 +1047,8 @@ export async function createTestEnv(opts = {}) {
           // could not see it, and every protected field on it reported as
           // unchecked. Silent for `@@allow` apps and total for declared ones:
           // basecamp's whole schema stopped being covered the moment it adopted
-          // the block. The claim is decidable from the declaration, so it is
-          // stamped rather than guessed at.
-          const tcol = schema.tenancy?.strategy === 'row' ? schema.tenancy.column : null
-          if (tcol && model.fields.some(f => f.name === tcol)
-                   && !model.attributes.some(a => a.kind === 'tenant' && a.mode === 'none'))
-            matching[tcol] = who[schema.tenancy.claim]
+          // the block (`FJS-381`).
+          Object.assign(matching, _tenantStamp(schema, model, who))
 
           for (const [field, candidates] of Object.entries(_interestingValues(readRules, who, model))) {
             // Only a TARGETED value — one taken off the predicate — puts the row
@@ -919,7 +1261,9 @@ export async function createTestEnv(opts = {}) {
             // `error` for every other rule — it is the collision that makes a
             // dead validator look alive. Matching it by rule keeps both true.
             const refused = thrown?.name === 'ValidationError'
-              || (c.rule === '@unique' && /UNIQUE constraint failed/i.test(thrown?.message ?? ''))
+              || (c.rule === '@unique' && (thrown?.name === 'UniqueConflictError'
+                  || thrown?.name === 'SoftDeletedUniqueError'
+                  || /UNIQUE constraint failed/i.test(thrown?.message ?? '')))
             const got = thrown === null ? 'accepted' : (refused ? 'rejected' : 'error')
 
             // Refused — but by WHICH rule? Every case carries the message its
@@ -1274,7 +1618,7 @@ export function generateFactory(schema, modelName, options = {}) {
           // NOTE: ensure a row with id=1 exists in the referenced table,
           //       or override this field via .state() / fkDefaults.
           if (v.fn === 'auth') { out[name] = fkDefaults[name] ?? 1; continue }
-          // now(), uuid(), ulid(), cuid() → skip (ORM/db generates)
+          // now(), uuid(), ulid(), cuid(), nanoid() → skip (db or client generates)
           continue
         }
       }
@@ -2161,6 +2505,185 @@ function _policyAdmits(rules, ctx, row, modelName, policyMap) {
   return allows.some(ev)
 }
 
+// ─── tenancy ──────────────────────────────────────────────────────────────────
+//
+// `tenancy { strategy row }` desugars into generated `@@deny` rules and a
+// `@default(auth().claim)` stamp, and every rule it writes carries
+// `generated: 'tenancy'`. These read that marker rather than re-deriving the
+// desugar, because a second derivation of one rule is how the two halves of
+// `check()` came to disagree (`FJS-382`).
+
+/** The column this model carries its tenant in, or null where it carries none. */
+function _tenantColumn(schema, model) {
+  const t = schema.tenancy
+  if (!t || t.strategy !== 'row') return null
+  const tag = model?.attributes?.find(a => a.kind === 'tenant')
+  if (tag?.mode === 'none') return null
+  const column = tag?.column ?? t.column
+  return model?.fields?.some(f => f.name === column) ? column : null
+}
+
+/**
+ * How this model is scoped: `exempt` · `column` · `delegated` · `unscoped`.
+ *
+ * `unscoped` is the one worth having a name for. The desugar errors on a
+ * `@@tenant(via:)` naming a parent that is not itself scoped, and says nothing
+ * about a model that names no `via` and has no scoped parent to infer one from
+ * — so the model every tenant can read is the one nobody was told about.
+ */
+function _tenantKind(schema, model) {
+  if (model?.attributes?.some(a => a.kind === 'tenant' && a.mode === 'none')) return 'exempt'
+  if (_tenantColumn(schema, model)) return 'column'
+  return model?.attributes?.some(a => a.kind === 'deny' && a.generated === 'tenancy')
+    ? 'delegated'
+    : 'unscoped'
+}
+
+/**
+ * The tenancy claim, stamped for the principal a row is being seeded for.
+ *
+ * Row tenancy generates a DENY, so a seeder that satisfies only the model's
+ * `@@allow` rules builds a row the reader below cannot see — and every check
+ * downstream then reports its own blind spot as a clean result (`FJS-381`).
+ * One definition, because two seeders stamping this differently is the same
+ * class of defect one level up.
+ */
+function _tenantStamp(schema, model, principal) {
+  const column = _tenantColumn(schema, model)
+  return column ? { [column]: principal?.[schema.tenancy.claim] } : {}
+}
+
+/**
+ * Two tenants to cross between.
+ *
+ * The declared column is very often a FOREIGN KEY to the model the tenant IS,
+ * and then a made-up value is refused by the constraint rather than by the rule
+ * under test — which reads as isolation working. So where it is a relation the
+ * two tenants are real rows.
+ */
+async function _tenantValues(schema, chain) {
+  const t = schema.tenancy
+  const carrier = schema.models.find(m =>
+    _isValidatable(m, schema) && _tenantColumn(schema, m) === t.column)
+  if (!carrier) return [null, null]
+
+  const rel = carrier.fields.find(f =>
+    f.type.kind === 'relation' && !f.type.array &&
+    f.attributes.some(a => a.kind === 'relation' && a.fields?.[0] === t.column))
+
+  if (rel) {
+    const pk  = rel.attributes.find(a => a.kind === 'relation')?.references?.[0]
+             ?? _idField(schema, rel.type.name)
+    const one = await chain(rel.type.name).createOne()
+    const two = await chain(rel.type.name).createOne()
+    return [one[pk], two[pk]]
+  }
+
+  const field = carrier.fields.find(f => f.name === t.column)
+  return field?.type.name === 'Int' ? [900001, 900002] : ['tenant-a', 'tenant-b']
+}
+
+/**
+ * One row of this model, inside one tenant, parents included.
+ *
+ * `withParents()` builds a parent chain and knows nothing about tenancy, so a
+ * delegated child seeded through it points at a parent in no tenant at all and
+ * the `check()` it delegates to answers about the wrong row. The FK overrides
+ * built here win over the ones `createOne` derives from its own parents, which
+ * is what lets the shared chain keep its sequence — two chains per model would
+ * both write seq 1 and collide on every `@unique`.
+ *
+ * `parents` is memoised per tenant so a diamond gets ONE parent: two would be
+ * legitimate rows and would also leave a delegated child ambiguous about which
+ * of them its rule delegated through.
+ */
+async function _seedForTenant(schema, modelName, tenant, chain, parents = new Map(), opts = {}) {
+  const { seen = new Set(), depth = 8, optional = true } = opts
+  const model     = schema.models.find(m => m.name === modelName)
+  const column    = _tenantColumn(schema, model)
+  const overrides = column ? { [column]: tenant } : {}
+
+  for (const field of model?.fields ?? []) {
+    if (field.type.kind !== 'relation' || field.type.array) continue
+    const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
+    if (!rel) continue
+
+    const fk = rel.fields[0]
+    if (fk === column) continue
+
+    // An OPTIONAL scoping relation is filled by default, and that is the whole
+    // difference between grading a delegated model and grading a degenerate
+    // case of one. A delegated rule reads `check(rel)`, and a row whose `rel` is
+    // null is in no tenant at all (`FJS-382`) — so seeding it unparented tests
+    // the one shape the rule deliberately does not cover, reports every tenant
+    // reaching it, and says nothing about the rows the app actually holds.
+    // `optional: false` seeds that shape on purpose, once, to report it as what
+    // it is.
+    if (!optional && model.fields.find(f => f.name === fk)?.type.optional) continue
+
+    // Only a SCOPED parent has to be in this tenant. An exempt or unscoped one
+    // is shared by construction and `withParents` builds it for free.
+    const kind = _tenantKind(schema, schema.models.find(m => m.name === field.type.name))
+    if (kind === 'unscoped' || kind === 'exempt') continue
+    if (seen.has(field.type.name) || depth <= 0) continue
+
+    const key = `${field.type.name}|${tenant}`
+    let   row = parents.get(key)
+    if (!row) {
+      row = await _seedForTenant(schema, field.type.name, tenant, chain, parents,
+                                 { seen: new Set([...seen, modelName]), depth: depth - 1, optional })
+      parents.set(key, row)
+    }
+    overrides[fk] = row[rel.references?.[0] ?? _idField(schema, field.type.name)]
+  }
+
+  return chain(modelName).createOne(overrides)
+}
+
+/**
+ * A create payload taken off a row that already exists, so the values satisfy
+ * every rule but the one being asked about.
+ *
+ * The `@id` rides along only where the column has no default — the probe row is
+ * deleted before the attempt, so the value is free, and without it a model with
+ * a caller-supplied key cannot be created at all and the move reports nothing.
+ */
+function _columnPayload(schema, model, row) {
+  if (!row) return null
+  const data = {}
+  for (const field of model.fields) {
+    if (field.type.array || field.type.kind === 'relation') continue
+    const attrs = field.attributes
+    if (attrs.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'from' || a.kind === 'version')) continue
+    if (attrs.some(a => a.kind === 'id') && attrs.some(a => a.kind === 'default')) continue
+    if (row[field.name] === undefined || row[field.name] === null) continue
+    data[field.name] = row[field.name]
+  }
+  return Object.keys(data).length ? data : null
+}
+
+/**
+ * What a caller writes to move a row into another tenant.
+ *
+ * The column where the model carries one; where it does not, re-pointing the
+ * relation its delegation reads — which is the delegated spelling of the same
+ * move, and the reason the generated denies cover `post-update` at all.
+ */
+function _tenantMove(schema, model, tenant, parents) {
+  const column = _tenantColumn(schema, model)
+  if (column) return { [column]: tenant }
+
+  for (const field of model.fields) {
+    if (field.type.kind !== 'relation' || field.type.array) continue
+    const rel = field.attributes.find(a => a.kind === 'relation' && a.fields)
+    if (!rel) continue
+    const parent = parents.get(`${field.type.name}|${tenant}`)
+    if (!parent) continue
+    return { [rel.fields[0]]: parent[rel.references?.[0] ?? _idField(schema, field.type.name)] }
+  }
+  return null
+}
+
 // ─── factory chains ───────────────────────────────────────────────────────────
 //
 // The one place a `withParents()` chain is built, because building one twice is
@@ -2274,7 +2797,7 @@ function _shouldSkipField(field, model) {
   if (defAttr) {
     // @updatedAt implies DEFAULT in DDL — skip
     if (attrs.some(a => a.kind === 'updatedAt')) return true
-    // @default(now()), uuid(), ulid(), cuid() — db/ORM generates
+    // @default(now()), uuid(), ulid(), cuid(), nanoid() — db or client generates
     if (defAttr.value?.kind === 'call' && defAttr.value.fn !== 'auth') return true
   }
   if (attrs.some(a => a.kind === 'updatedAt')) return true
@@ -2285,6 +2808,20 @@ function _shouldSkipField(field, model) {
 
   // @version is owned by the client — always 1 on create, bumped by SQL after
   if (attrs.some(a => a.kind === 'version')) return true
+
+  // A NULLABLE foreign key. `_freshParents` seeds a parent for the REQUIRED
+  // relations only, so there is nothing for this column to point at and a
+  // generated value is refused by the CONSTRAINT rather than by whatever rule
+  // the caller is grading — `FOREIGN KEY constraint failed`, reported as *the
+  // call threw something that is not a refusal*. Null is always legal in an
+  // optional FK, so leaving it out is the honest fixture. The shape that
+  // reaches here is row tenancy over a nullable claim column: `expandTenancy`
+  // stamps it `@default(auth().<claim>)`, and the `auth` carve-out above
+  // deliberately does not skip those.
+  if (type.optional && model?.fields?.some(f =>
+        f.type.kind === 'relation' && !f.type.array &&
+        f.attributes?.some(a => a.kind === 'relation' && a.fields?.includes(name))))
+    return true
 
   // Well-known auto-timestamp fields
   if (name === 'createdAt') return true

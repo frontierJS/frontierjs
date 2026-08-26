@@ -94,6 +94,19 @@ src/
   `actor: null` rather than inferring it, so a timer never depends on whether
   some unrelated request was in scope. `dispatch({ actor })` is the override in
   both directions; absent is not null, tested with `in`.
+- **A job also records WHICH TENANT, and it is a second column because it is a
+  second fact.** `tenant_id` beside `actor_id`, read at dispatch from
+  `host.tenant()` and handed back through `runAs(actor, { tenant }, fn)`, so a
+  service call in the handler resolves to the tenant that asked for the work
+  without being threaded anything. Same absent-is-not-null rule as the actor:
+  `tenant: null` is work that belongs to no tenant, stated. NULL is the honest
+  and common value — an app that declares no tenancy, a cron fire, boot. Before
+  it, a handler under row tenancy had no legal way to be IN a tenant and reached
+  for `asSystem()`, which drops the gate, the row policies and the audit actor
+  together to relax one of them (`FJS-384`).
+  **Storing a tenant is not storing a session**: an id names WHICH ROWS, and the
+  standing that decides what may be done with them is still re-resolved from
+  `actor_id` at run time — so a caller who left the tenant in between is refused.
 - **An actor that cannot be resolved FAILS the job by name.** A deleted user, or
   a provider with no `sessionFor`. Downgrading to STRANGER(0) is the hazard this
   removes and upgrading to `system` would be worse, so neither happens.

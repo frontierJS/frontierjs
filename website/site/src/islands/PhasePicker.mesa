@@ -1,0 +1,49 @@
+<!--
+  Which phase of the loop is showing.
+
+  All six phases and all six terminal transcripts are in the prerendered file.
+  This swaps the visible one and keeps the strip, the focus ring and the URL
+  agreeing with it.
+-->
+<script>
+  $.onMount(() => {
+    const strip  = document.querySelector('[data-phases]')
+    const panels = document.querySelector('[data-phase-panels]')
+    if (!strip || !panels) return
+
+    const btns = [...strip.querySelectorAll('.phase')]
+    const ids  = btns.map((b) => b.dataset.id)
+
+    const pick = (id) => {
+      if (!ids.includes(id)) return
+      for (const b of btns) b.setAttribute('aria-selected', String(b.dataset.id === id))
+      for (const p of panels.children) p.classList.toggle('is-shown', p.dataset.id === id)
+      history.replaceState(null, '', '#' + id)
+    }
+
+    const onClick = (e) => {
+      const b = e.target.closest('.phase')
+      if (b) pick(b.dataset.id)
+    }
+    const onKey = (e) => {
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key]
+      if (!step || !document.activeElement.classList.contains('phase')) return
+      e.preventDefault()
+      const i = ids.indexOf(document.activeElement.dataset.id)
+      const n = ids[(i + step + ids.length) % ids.length]
+      pick(n)
+      strip.querySelector(`[data-id="${n}"]`)?.focus()
+    }
+
+    strip.addEventListener('click', onClick)
+    addEventListener('keydown', onKey)
+
+    const wanted = location.hash.slice(1)
+    if (wanted) pick(wanted)
+
+    return () => {
+      strip.removeEventListener('click', onClick)
+      removeEventListener('keydown', onKey)
+    }
+  })
+</script>

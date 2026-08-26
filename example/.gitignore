@@ -6,4 +6,15 @@ db/*.db
 db/*.db-shm
 db/*.db-wal
 db/audit/
-api/emails/.preview/
+
+# One shop is one FILE (`tenancy { strategy database }`), and the fleet is a
+# directory of them plus the registry that indexes it. Built by the API on
+# first boot — `bun run reset` removes both.
+db/shops/
+db/shops-registry.db*
+api/src/emails/.preview/
+
+# Object storage for File columns — written by the seed from db/seed-media/,
+# which IS committed. Ignoring only the destination keeps the source in git and
+# the derived bytes out.
+db/public/

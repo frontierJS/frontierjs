@@ -88,7 +88,7 @@ export function requireWorkspace(): Hook {
 // Who the caller is IN THE WORKSPACE this request is for.
 //
 // The resolution itself is the framework's now: `createApp({ principal })` in
-// core/app.ts, through `membershipClaim()`, which reads the WorkspaceMember row
+// app.ts, through `membershipClaim()`, which reads the WorkspaceMember row
 // once per request and puts `workspaceId` and `memberRole` on a fresh principal
 // before the Data boundary scopes the client from it (`FJS-D113`). What used to
 // be `applyStanding` + `withWorkspaceStanding` here — the read, the fresh
@@ -224,6 +224,75 @@ export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook
       throw new Forbidden(
         `Requires ${roles.join(' or ')} role in this workspace (you have: ${role ?? 'none'})`
       )
+  }
+}
+
+// ─── refuseRoleAboveOwn ──────────────────────────────────────────────────
+// Nobody hands out a role above the one they hold.
+//
+// `WorkspaceMember.role` is the column every gate in this app is graded from
+// (core/gate.ts), so a method that writes it is a method that writes standing.
+// `requireWorkspaceRole(app, 'admin', 'owner')` answers *may you manage the
+// team* and has nothing to say about WHICH role is being handed out, so an
+// administrator could name `role: 'owner'` — on somebody else's membership, or
+// on an invitation to an address they own and can then sign in as. Either way
+// level 5 mints level 6, which is `FJS-410` arriving by a second door.
+//
+// The Data boundary cannot cover this one: all three writers go through
+// `asSystem()` — a membership decides access, so it is read and written as
+// system — and `asSystem()` is the context every policy is bypassed in. The
+// rule has to be said here, and said out loud, because a filtered write would
+// report success and move nothing.
+//
+// Equal is allowed: an admin appointing an admin is what the role is for. It is
+// the step UP that nobody may take on their own authority.
+//
+// Registered per method rather than on `all` — `role` is a word two other
+// models use (a Server has one), and a hook that grades every payload carrying
+// the key would refuse a fleet write for holding the wrong kind of role.
+
+export function refuseRoleAboveOwn(): Hook {
+  return (ctx: ServiceContext): void => {
+    const granted = ((ctx.data ?? {}) as Record<string, unknown>).role
+    // Absent or malformed is not this hook's refusal: each caller runs the
+    // vocabulary through its own `toRole()`, which names the legal values.
+    if (typeof granted !== 'string' || !(granted in ROLE_LEVEL)) return
+
+    const mine = roleOf(ctx)
+    // No membership is `requireWorkspaceRole`'s refusal, and `asSystem()` paths
+    // (setup, the hub) run no hooks at all.
+    if (!mine) return
+
+    if (ROLE_LEVEL[granted]! > (ROLE_LEVEL[mine] ?? 0))
+      throw new Forbidden(
+        `You cannot grant the ${granted} role — you hold ${mine}. Ask an owner of this workspace.`
+      )
+  }
+}
+
+// ─── internalOnly ────────────────────────────────────────────────────────
+// A method the ENGINE calls and a person does not.
+//
+// A job handler has to reach the rows its run is about, and the four models it
+// writes — `DeploymentStep`, `JobRun`, `RecipeRun`, `CleanupRun` — are gated at
+// SYSTEM for update (`@@gate("2.4.8.8")`, `2.8`). That is the schema saying a
+// run's OUTCOME is written by the machine and not by the person who asked for
+// it, so no standing a workspace can grant reaches them: `owner` is 6.
+//
+// So the write stays `asSystem()` and what moves is the REFUSAL. A method
+// carrying this hook reads its parent through the caller's own client first,
+// which is what confines the write to the tenant the job was queued for; and
+// this hook is what keeps that method off the wire, because `methods:` is one
+// list and a name in it is served to every transport (junction answers 405 to
+// a name left out, in-process included, so an unlisted method cannot be called
+// at all).
+//
+// `ctx.transport` is `'internal'` for an in-process call and names the wire
+// otherwise — measured, not assumed.
+
+export function internalOnly(): Hook {
+  return (ctx: ServiceContext): void => {
+    if (ctx.transport !== 'internal') throw new NotFound('Not found')
   }
 }
 
@@ -533,9 +602,11 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
       // What changed. `AuditEvent.diff` was `Json?` and nothing wrote it, so
       // the trail could say a server was drained and not what state it was in
       // (FJS-154). A remove has a before and no after; a create the reverse.
-      let diff: Record<string, unknown> | null = null
+      let diff:     Record<string, unknown> | null = null
+      let subject:  Record<string, unknown> | null = null
+      let accessor: string | null = null
       try {
-        const accessor = accessorFor(app, ctx.service as string)
+        accessor = accessorFor(app, ctx.service as string)
         if (accessor) {
           // Both sides are read the same way, through the system client, and
           // the after side is RE-READ rather than taken from `ctx.result`. Two
@@ -550,6 +621,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
           const after = ctx.method === 'remove' || id === undefined
             ? null
             : await sys[accessor]?.findUnique?.({ where: { id } }) ?? result ?? null
+          subject = after ?? before
           diff = diffRows(before, after, sys.$protectedFields(accessor))
         }
       } catch {
@@ -557,11 +629,22 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
         // action is still recorded, which is the half that was already true.
       }
 
+      // Whose workspace, and a null here is a claim rather than a shrug: it says
+      // this row belongs to NO workspace and only the hub may read it
+      // (`FJS-D141`). `ctx.locals.workspaceId` is set by sessionScope, so a
+      // method that legitimately runs outside it wrote null and meant nothing
+      // by it — `jobs.startRun`/`finishRun` are `internalOnly()` and exempt
+      // from the scope hook, and filed twelve runs of a workspace's own `Job`
+      // under nobody, where its own feed can never show them. So the subject's
+      // own column answers second, and a Workspace is its own workspace.
+      const subjectWorkspace = (subject?.workspaceId as string | undefined)
+        ?? (accessor === 'workspace' ? subject?.id as string | undefined : undefined)
+
       // asSystem(): the trail must record actions the actor could not write
       // for themselves. AuditEvent create is a system-only concern.
       await sys.auditEvent.create({
         data: {
-          workspaceId: (ctx.locals.workspaceId as string | undefined) ?? null,
+          workspaceId: (ctx.locals.workspaceId as string | undefined) ?? subjectWorkspace ?? null,
           actorId:     session?.userId ?? null,
           // No session is not an anonymous user — it is a job or an
           // outpost acting for itself. `AuditEvent.actorType` defaults to 'user',

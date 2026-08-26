@@ -8,7 +8,7 @@
  *   1.  createSignal
  *   2.  createEffect  (+ edge cases)
  *   3.  createMemo
- *   4.  batch / $tick / untrack
+ *   4.  batch / tick / untrack
  *   5.  onCleanup — disposal order
  *   6.  addEvent — listener cleanup
  *   7.  DOM utils — htmlToFragment, refer, createTextNode, insertAfter, removeElements, addStyles
@@ -41,12 +41,12 @@ import {
   createWritableSignal,
   batch,
   flushSync,
-  $tick,
+  tick as mesaTick,
   untrack,
   // Lifecycle
   onCleanup,
-  $onMount,
-  $onDestroy,
+  onMount,
+  onDestroy,
   // Context
   createContext,
   provideContext,
@@ -96,7 +96,7 @@ import {
   // Boundary / Mounted
   boundaryBlock,
   mountedBlock,
-  $onMounted,
+  onMounted,
   // Slots
   attachSlot,
   attachNamedSlot,
@@ -119,7 +119,6 @@ import {
   noop,
   eachDefaultKey,
   addClass,
-  makeClassResolver,
   version,
   // Animation
   transition,
@@ -647,7 +646,7 @@ describe('createRoot', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §4  batch / $tick / untrack
+// §4  batch / tick / untrack
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('batch', () => {
@@ -679,14 +678,14 @@ describe('batch', () => {
   })
 })
 
-describe('$tick', () => {
+describe('tick', () => {
   it('resolves as a promise', async () => {
-    await expect($tick()).resolves.toBeUndefined()
+    await expect(mesaTick()).resolves.toBeUndefined()
   })
 
   it('executes callback after current microtask', async () => {
     let called = false
-    $tick(() => { called = true })
+    mesaTick(() => { called = true })
     expect(called).toBe(false) // not yet
     await tick()
     expect(called).toBe(true)
@@ -809,11 +808,11 @@ describe('return-based cleanup', () => {
     expect(log).toContain('async-cleanup')
   })
 
-  it('$onMount: returned function registers as component cleanup', async () => {
+  it('onMount: returned function registers as component cleanup', async () => {
     const log = []
 
     const comp = makeComponent(() => {
-      $onMount(() => {
+      onMount(() => {
         log.push('mounted')
         return () => log.push('mount-cleanup')
       })
@@ -1438,10 +1437,10 @@ describe('makeComponent', () => {
     expect(typeof instance.destroy).toBe('function')
   })
 
-  it('calls $onMount callbacks after microtask', async () => {
+  it('calls onMount callbacks after microtask', async () => {
     let mounted = false
     const comp = makeComponent(() => {
-      $onMount(() => { mounted = true })
+      onMount(() => { mounted = true })
       return div()
     })
     comp()
@@ -1465,10 +1464,10 @@ describe('makeComponent', () => {
     expect(runs).toBe(1) // effect stopped
   })
 
-  it('$onDestroy runs on destroy()', () => {
+  it('onDestroy runs on destroy()', () => {
     let destroyed = false
     const comp = makeComponent(() => {
-      $onDestroy(() => { destroyed = true })
+      onDestroy(() => { destroyed = true })
       return div()
     })
     comp().destroy()
@@ -2424,9 +2423,9 @@ describe('awaitBlock', () => {
   })
 
   // These tests mirror the actual compiler-emitted pattern:
-  //   pending: ($parentElement) => makeBlock($tpl)
-  //   then:    (value) => makeBlock($tpl, setupFn)   — setupFn closes over value
-  //   catch:   (err) => makeBlock($tpl, setupFn)     — setupFn closes over err
+  //   pending: ($parentElement) => makeBlock($$tpl)
+  //   then:    (value) => makeBlock($$tpl, setupFn)   — setupFn closes over value
+  //   catch:   (err) => makeBlock($$tpl, setupFn)     — setupFn closes over err
   it('compiler-style: pending is makeBlock wrapper, then receives value via closure', async () => {
     const container = div()
     const anchor = document.createComment('')
@@ -2435,11 +2434,11 @@ describe('awaitBlock', () => {
     let resolve
     const promise = new Promise((r) => { resolve = r })
 
-    // Simulate: ($parentElement) => $runtime.makeBlock($tpl)
+    // Simulate: ($parentElement) => $$runtime.makeBlock($$tpl)
     const pendingFn = () => makeBlock(
       () => { const el = div(); el.textContent = 'loading'; return el }
     )
-    // Simulate: (data) => $runtime.makeBlock($tpl, ($parentElement) => { el.nodeValue = data.msg })
+    // Simulate: (data) => $$runtime.makeBlock($$tpl, ($parentElement) => { el.nodeValue = data.msg })
     const thenFn = (data) => makeBlock(
       () => { const el = div(); el.textContent = ' '; return el },
       ($parentElement) => { $parentElement.textContent = data.msg }
@@ -3231,7 +3230,7 @@ describe('block teardown — <mesa:mounted>', () => {
   })
 })
 
-describe('$context reaches content a block creates LATER', () => {
+describe('context reaches content a block creates LATER', () => {
   // `_contextStack` is synchronous setup-time state: a component pushes its
   // map, runs init, pops. Everything built inside init therefore sees the
   // provider — and everything a block builds AFTERWARDS does not, because by
@@ -3929,8 +3928,8 @@ describe('SSR guards (_isBrowser = false)', () => {
     return import('../src/runtime.js?ssr=' + Date.now())
   }
 
-  it('$onMount is a no-op — does not fire on server', async () => {
-    const { $onMount: ssrOnMount, makeComponent: ssrMakeComp } = await ssrImport()
+  it('onMount is a no-op — does not fire on server', async () => {
+    const { onMount: ssrOnMount, makeComponent: ssrMakeComp } = await ssrImport()
     let mountFired = false
     const comp = ssrMakeComp(() => {
       ssrOnMount(() => { mountFired = true })
@@ -4150,18 +4149,18 @@ describe('integration: signals + DOM', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §  $onMounted
+// §  onMounted
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('$onMounted', () => {
+describe('onMounted', () => {
   it('returns a Promise', () => {
-    const p = $onMounted(async () => 42)
+    const p = onMounted(async () => 42)
     expect(p).toBeInstanceOf(Promise)
   })
 
   it('promise resolves with fn return value after mount', async () => {
     let resolve
-    const p = $onMounted(async () => {
+    const p = onMounted(async () => {
       return 'hello'
     })
     // simulate mount flush
@@ -4171,7 +4170,7 @@ describe('$onMounted', () => {
   })
 
   it('promise rejects when fn throws', async () => {
-    const p = $onMounted(async () => {
+    const p = onMounted(async () => {
       throw new Error('mount failed')
     })
     // Attach catch immediately to prevent unhandled rejection warning
@@ -4806,7 +4805,7 @@ describe('entrance() exit gate', () => {
 
     expect(container.querySelector('.target')).toBeTruthy()
     // An attachment runs when the element MOUNTS (VISION §10.6), which for an
-    // element built detached is one microtask later — the same queue $onMount
+    // element built detached is one microtask later — the same queue onMount
     // uses. Running it at build time is what left every entrance animation
     // stuck at keyframe 0: el.animate() on a disconnected node never starts.
     await tick()

@@ -1,3 +1,31 @@
+<script module>
+  /**
+   * Put text on the clipboard — the one implementation in this kit.
+   *
+   * It is exported (`FJS-D116`) because the fallback is the part that matters
+   * and the part nobody would remember to copy: `navigator.clipboard` does not
+   * exist on a page served over plain HTTP or in an older browser, and a second
+   * implementation would work on every machine the author tested and silently
+   * do nothing on somebody's staging box.
+   */
+  export async function copyText(text) {
+    if (!text) return false
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      const el = document.createElement('textarea')
+      el.value = text
+      el.style.cssText = 'position:fixed;opacity:0'
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+      return true
+    }
+  }
+</script>
+
 <script>
   // CopyButton.mesa
   // Copies text to clipboard. Shows a ✓ for `feedbackDuration` ms.
@@ -35,25 +63,14 @@
 
   async function copy() {
     if (!text) return
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      // Fallback for older browsers / non-HTTPS
-      const el = document.createElement('textarea')
-      el.value = text
-      el.style.cssText = 'position:fixed;opacity:0'
-      document.body.appendChild(el)
-      el.select()
-      document.execCommand('copy')
-      document.body.removeChild(el)
-    }
+    await copyText(text)
     copied = true
     oncopy?.(text)
     clearTimeout(_timer)
     _timer = setTimeout(() => { copied = false }, feedbackDuration)
   }
 
-  $onDestroy(() => clearTimeout(_timer))
+  $.onDestroy(() => clearTimeout(_timer))
 </script>
 
 <button

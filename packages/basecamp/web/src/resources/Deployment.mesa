@@ -11,12 +11,6 @@
   // against the schema are all on by default (they were three flags every
   // resource in this app set, which is why they stopped being flags).
   import { createResource } from '@frontierjs/sierra/junction'
-  import { stampWorkspace } from '../session.js'
 
-  export const deployments = createResource('deployments', {
-    // workspaceId is required by the schema and stamped by the server.
-    // Without this the browser refuses the create before sending it —
-    // see the note on stampWorkspace in session.js.
-    hooks: { before: { create: [stampWorkspace] } },
-  })
+  export const deployments = createResource('deployments')
 </script>

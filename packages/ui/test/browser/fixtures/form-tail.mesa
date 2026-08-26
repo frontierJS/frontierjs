@@ -114,6 +114,12 @@
   <Slider name="weight" bind:value={weight} min={0} max={10} />
   <Checkbox name="live" bind:checked={live} />
   <Switch name="notify" bind:checked={notify} />
+  <!-- The app writing the bound value, which is the half a click cannot reach.
+       `checked` compiles to `set_attribute`, and a control the DOM considers
+       dirty ignores the attribute — so this could be switched on and never
+       off. -->
+  <button type="button" id="notify-on"  on:click={() => { notify = true }}>notify on</button>
+  <button type="button" id="notify-off" on:click={() => { notify = false }}>notify off</button>
   <RadioGroup name="owner" items={OWNERS} bind:value={owner} />
   <Combobox name="regions" options={REGIONS} bind:value={regions} />
 

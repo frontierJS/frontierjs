@@ -679,7 +679,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               // correlationId/idempotencyKey become request metadata, which is
               // an ALS store rather than a context field.
               const {
-                query: _q, workspaceId: _ws,
+                query: _q, workspaceId: _ws, headers: _hdrs,
                 correlationId: _cid, idempotencyKey: _idk,
                 ...restExtra
               } = extra
@@ -700,19 +700,24 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               //
               // `ctx.headers` are the UPGRADE request's headers — one set for
               // the life of the connection. Anything a caller varies per call
-              // therefore cannot arrive that way, and the workspace is exactly
-              // that: X-Workspace-Id changes when a person switches workspace,
-              // without reconnecting. The browser client sends it on the frame
-              // (meta.workspaceId) and it is merged in here, so a hook reading
-              // ctx.client.headers['x-workspace-id'] sees the same value it
-              // would have seen over HTTP.
+              // therefore cannot arrive that way: a workspace changes when a
+              // person switches workspace, a guest basket's token comes into
+              // existence after the socket is already up. The browser client
+              // sends those on the frame (`meta.headers`) and they are merged
+              // in here, so a hook reading ctx.client.headers sees the same
+              // value it would have seen over HTTP.
               //
-              // ONE key, deliberately. Merging a client-supplied header map
-              // wholesale would let a frame carry its own Authorization and
-              // override the identity established at upgrade.
-              svcCtx.client.headers = extra.workspaceId
-                ? { ...ctx.headers, 'x-workspace-id': String(extra.workspaceId) }
-                : ctx.headers
+              // An ALLOW-LIST, not a merge. A frame that could name its own
+              // header could name Authorization and override the identity
+              // established at upgrade, so a name reaches the context only if
+              // the app declared it in `http.callHeaders` — or if it is one of
+              // junction's own, which the client sends unasked.
+              svcCtx.client.headers = _mergeCallHeaders(
+                ctx.headers,
+                extra.headers as Record<string, unknown> | undefined,
+                extra.workspaceId,
+                app,
+              )
               svcCtx.client.ip      = ctx.ip
               svcCtx.method    = method as string
               svcCtx.transport = 'websocket'
@@ -885,6 +890,49 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
       }
     }
   }
+}
+
+// ─── Per-call headers ─────────────────────────────────────────────────────
+
+/** Junction's own protocol headers — the browser client sends these whether or
+ *  not an app asked for them, so they are always mergeable. */
+const PROTOCOL_CALL_HEADERS = ['x-workspace-id', 'idempotency-key']
+
+/**
+ * The upgrade request's headers, plus the ones this frame is allowed to state.
+ *
+ * The allow-list is `config.http.callHeaders`, the same declaration the CORS
+ * middleware reads — one fact, two readers, because a header the app forgot in
+ * one place is dropped by the other and the app half-works.
+ *
+ * `workspaceId` is still accepted as its own meta key: it predates the general
+ * channel and an older client sends it that way. It resolves to the identical
+ * header, so a client sending both cannot disagree with itself.
+ */
+function _mergeCallHeaders(
+  upgrade:     Record<string, string>,
+  frame:       Record<string, unknown> | undefined,
+  workspaceId: unknown,
+  app:         App,
+): Record<string, string> {
+  const declared = ((app.config?.http as Record<string, unknown> | undefined)
+                     ?.callHeaders as string[] | undefined) ?? []
+  const allowed  = new Set([...PROTOCOL_CALL_HEADERS, ...declared.map(h => h.toLowerCase())])
+
+  let merged: Record<string, string> | null = null
+  const put = (name: string, value: unknown) => {
+    if (value == null) return
+    if (!allowed.has(name)) return
+    merged ??= { ...upgrade }
+    merged[name] = String(value)
+  }
+
+  for (const [name, value] of Object.entries(frame ?? {})) put(name.toLowerCase(), value)
+  put('x-workspace-id', workspaceId)
+
+  // The upgrade's own map when the frame added nothing, so the common case
+  // allocates nothing and a reader still sees one object per connection.
+  return merged ?? upgrade
 }
 
 // ─── publish() hook factory ───────────────────────────────────────────────

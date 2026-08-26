@@ -7,28 +7,57 @@
 // Usage:
 //   import { devtools } from './devtools/index.ts'
 //
-//   app.configure(devtools({ port: 4000 }))
+//   app.configure(devtools())
 //
 // In production, pass an auth gate:
 //   app.configure(devtools({
-//     port: 4000,
 //     auth: (req) => req.headers.get('x-admin-key') === process.env.ADMIN_KEY
 //   }))
 //
-// Then open http://localhost:4000
+// Then open http://localhost:8503
 
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { isListResult } from '../../core/envelope.ts'
+import { collectHealth, collectMetrics } from '../../transport/health.ts'
 
 export interface DevtoolsOptions {
-  port?:       number      // default 4000
+  /**
+   * Default 8503 — the console's slot in the framework's global tooling block
+   * (8500-8509, `packages/cli/core/ports.js`). A literal rather than an import
+   * because junction does not depend on the CLI; the number is assigned there
+   * and restated here, so moving it means moving both.
+   *
+   * It is a GLOBAL tooling port and not one derived from the app, because a
+   * person runs this beside whatever they are working on and types the URL
+   * from memory: an app-derived number would move with the app.
+   */
+  port?:       number
   maxEntries?: number      // ring buffer size, default 200
   // Auth gate — called for every HTTP + WS request.
   // In dev (NODE_ENV !== 'production') this is skipped automatically.
   auth?:       (req: Request) => boolean | Promise<boolean>
   // Field names whose values should be replaced with '***' in captured params.
   redact?:     string[]
+}
+
+// ─── The job queue, as this console needs it ─────────────────────────────────
+//
+// `AppJobs` is empty here — Caravan augments it, and Junction only peers on
+// that package — so the console states the slice it calls and casts once.
+// Every method is optional but `list`/`find`/`retry`/`cancel`/`dispatch`: a
+// queue that cannot answer those is not one this panel can drive, and is
+// reported as absent rather than rendered half-working.
+
+export interface JobsView {
+  list(opts?: { queue?: string; status?: string; limit?: number; offset?: number }): unknown[]
+  find(id: string): unknown
+  retry(id: string): Promise<boolean>
+  cancel(id: string): Promise<boolean>
+  dispatch(name: string, data: unknown): Promise<string>
+  stats?(): unknown
+  registrations?(): Array<{ name: string; queue: string; cron: string | null }>
+  nextRuns?(): Array<{ name: string; cron: string; nextRun: Date | null }>
 }
 
 // ─── Entry types ──────────────────────────────────────────────────────────────
@@ -126,7 +155,7 @@ class RingBuffer<T> {
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
 export function devtools(opts: DevtoolsOptions = {}) {
-  const port       = opts.port       ?? 4000
+  const port       = opts.port       ?? 8503
   const maxEntries = opts.maxEntries ?? 200
   const redactKeys = [...DEFAULT_REDACT, ...(opts.redact ?? [])].map(k => k.toLowerCase())
   const isProd     = process.env.NODE_ENV === 'production'
@@ -268,12 +297,23 @@ export function devtools(opts: DevtoolsOptions = {}) {
         if (typeof u2 === 'function') _unsubs.push(u2)
       }
 
+      appRef = app
+    },
+
+    // The server binds in ready(), not register(). `ready-hooks` is a
+    // `needsHost` start phase, so a boot without a port — `_startForTest()`,
+    // and every snapshot generator through it — skips this entirely. It used to
+    // bind in register(), which meant `junction surface` opened a real listener
+    // on 8503 as a side effect of describing an app, and would have thrown
+    // outright had anything else held the port (`FJS-419`).
+    ready(app: import('../../core/app.ts').App): void {
       // ── Start admin server ─────────────────────────────────────────
       // Fail CLOSED: in production the admin surface (request logs, params,
       // event stream, live WS feed) must never be served without an auth
       // gate. If no `auth` option was configured, refuse to bind at all
       // rather than silently serving unauthenticated.
       if (isProd && !opts.auth) {
+        app._devtools = { status: 'refused', reason: 'production, no auth gate' }
         console.warn(
           '[Junction devtools] NODE_ENV=production and no `auth` option configured — ' +
           'devtools admin server NOT started. Pass devtools({ auth: async (req) => boolean }) to enable it in production.'
@@ -283,6 +323,14 @@ export function devtools(opts: DevtoolsOptions = {}) {
 
       const htmlPath = join(dirname(fileURLToPath(import.meta.url)), 'admin.html')
 
+      // A held port is the failure this must not be quiet about. `ready()` errors
+      // are caught and logged by the start phase, so an EADDRINUSE here left the
+      // app running with the console reporting `disabled` — which is a lie: it
+      // was asked for and it failed. Worse, the port is held by a PREVIOUS run
+      // of the same console, so anything pointed at 8503 gets stale data from a
+      // process nobody meant to be talking to (`FJS-420`). Measured: a drive
+      // asserted against the last run's queue and reported half its checks red.
+      try {
       adminServer = Bun.serve({
         port,
 
@@ -312,57 +360,102 @@ export function devtools(opts: DevtoolsOptions = {}) {
 
           // REST state snapshot
           if (url.pathname === '/api/state') {
-            const services = app.services.list()
-            const mem      = process.memoryUsage()
-            // app.http and app.cache are typed App fields — no casts needed.
-            const httpStats = app.http?.stats
-            const cStats    = app.cache?.stats?.() ?? {}
-            const hits     = (cStats.hits as number) ?? 0
-            const misses   = (cStats.misses as number) ?? 0
-            const hitRate  = hits + misses > 0
-              ? ((hits / (hits + misses)) * 100).toFixed(1) + '%'
-              : 'n/a'
-
             return Response.json({
               app:         { name: app.config?.name ?? 'junction', version: app.config?.version ?? '' },
-              services,
+              services:    app.services.list(),
               connections: [...connections.values()],
               requests:    requests.all(),
               events:      events.all(),
               logs:        logs.all(),
-              metrics: {
-                app:     app.config?.name ?? 'junction',
-                version: app.config?.version ?? '',
-                uptime:  Math.floor((Date.now() - startedAt) / 1000),
-                ts:      new Date().toISOString(),
-                process: {
-                  memoryMb:    +(mem.rss / 1024 / 1024).toFixed(2),
-                  heapUsedMb:  +(mem.heapUsed / 1024 / 1024).toFixed(2),
-                  heapTotalMb: +(mem.heapTotal / 1024 / 1024).toFixed(2),
-                  pid:         process.pid,
-                  nodeVersion: process.version,
-                },
-                http: {
-                  requests:  httpStats?.request  ?? {},
-                  responses: httpStats?.response ?? {},
-                  online:    httpStats?.performance.online ?? false,
-                },
-                services: { registered: services, count: services.length },
-                cache: {
-                  hits, misses, hitRate,
-                  sets:   (cStats.sets   as number) ?? 0,
-                  evicts: (cStats.evicts as number) ?? 0,
-                  size:   (cStats.size   as number) ?? 0,
-                },
-              },
+              // The same object /metrics answers, plugin sections included.
+              // Building a second one here is what kept Caravan's queue stats
+              // out of this console for its whole life (`FJS-414`).
+              metrics:     collectMetrics(app, startedAt),
             })
+          }
+
+          // Readiness — the built-in probe, plugin-registered checks, and
+          // whatever the app declared through healthPlugin({ checks }). The
+          // last of those is the plugin's own option and unreachable from
+          // here, so what this shows is every check with a registered owner.
+          if (url.pathname === '/api/health')
+            return Response.json(await collectHealth(app, startedAt))
+
+          // ── Jobs ────────────────────────────────────────────────────
+          // Read straight off `app.jobs` rather than through Caravan's own
+          // admin routes: those are opt-in (`admin: true`), live on the app's
+          // port behind its apiPrefix, and are cross-origin from here. The
+          // queue object is already in reach, so the console works whether or
+          // not an app chose to publish that surface.
+          //
+          // Duck-typed for the same reason Caravan duck-types the app: this
+          // file must not import a package Junction only peers on.
+          if (url.pathname.startsWith('/api/jobs')) {
+            const q = app.jobs as unknown as JobsView | undefined
+            if (!q || typeof q.list !== 'function')
+              return Response.json({ error: 'No job queue installed' }, { status: 501 })
+
+            const rest = url.pathname.slice('/api/jobs'.length)
+            const p    = url.searchParams
+
+            if (req.method === 'GET' && (rest === '' || rest === '/')) {
+              return Response.json({
+                stats:         q.stats?.()         ?? { queues: {}, total: null },
+                registrations: q.registrations?.() ?? [],
+                nextRuns:      q.nextRuns?.()      ?? [],
+                jobs: q.list({
+                  queue:  p.get('queue')  || undefined,
+                  status: p.get('status') || undefined,
+                  limit:  p.get('limit')  ? parseInt(p.get('limit')!)  : 50,
+                  offset: p.get('offset') ? parseInt(p.get('offset')!) : 0,
+                }),
+              })
+            }
+
+            // Everything below acts on the queue, so it is POST-only — a
+            // retry reachable by GET is a retry a link preview can fire.
+            if (req.method === 'POST') {
+              const m = /^\/([^/]+)\/(retry|cancel)$/.exec(rest)
+              if (m) return Response.json({ ok: await q[m[2] as 'retry' | 'cancel'](m[1]) })
+
+              const run = /^\/run\/([^/]+)$/.exec(rest)
+              if (run) {
+                // The body, if any, is the job's data — same shape dispatch()
+                // takes, so a scheduled handler that reads a parameter can be
+                // given a different one by hand.
+                const known = (q.registrations?.() ?? []).some(r => r.name === run[1])
+                if (!known)
+                  return Response.json({ error: `No handler registered for '${run[1]}'` }, { status: 404 })
+                const data = await req.json().catch(() => ({}))
+                return Response.json({ ok: true, id: await q.dispatch(run[1], data) })
+              }
+            }
+
+            const one = /^\/([^/]+)$/.exec(rest)
+            if (req.method === 'GET' && one) {
+              const job = q.find(one[1])
+              return job
+                ? Response.json(job)
+                : Response.json({ error: `Job '${one[1]}' not found` }, { status: 404 })
+            }
+
+            return new Response('Not found', { status: 404 })
           }
 
           // Serve admin.html
           try {
             const file = Bun.file(htmlPath)
             return new Response(file, {
-              headers: { 'Content-Type': 'text/html; charset=utf-8' }
+              headers: {
+                'Content-Type': 'text/html; charset=utf-8',
+                // No validators and no directive means heuristic caching, and
+                // this page is the one place that is actively misleading: it is
+                // served BY the socket's own server, so a cached copy loads
+                // perfectly while the server is down and the only symptom is
+                // the badge reading `disconnected` — which reads as a broken
+                // console rather than an app that is not running (`FJS-421`).
+                'Cache-Control': 'no-store',
+              },
             })
           } catch {
             return new Response('Admin UI not found', { status: 404 })
@@ -393,7 +486,19 @@ export function devtools(opts: DevtoolsOptions = {}) {
         },
       })
 
-      console.log(`  ◈  Devtools:  http://localhost:${port}`)
+      // The banner is the one place an app says what it is serving, and this
+      // server is not on the router it is derived from. Reported there rather
+      // than only here, where a line printed mid-boot scrolls away above it —
+      // and where an app with the console switched OFF said nothing at all.
+      app._devtools = { status: 'on', url: `http://localhost:${adminServer.port}` }
+      } catch (err) {
+        const e = err as { code?: string }
+        const why = e?.code === 'EADDRINUSE'
+          ? `port ${port} already in use — another console is running there`
+          : `could not bind port ${port}: ${(err as Error).message}`
+        app._devtools = { status: 'refused', reason: why }
+        console.warn(`[Junction devtools] ${why}`)
+      }
     },
 
     shutdown() {

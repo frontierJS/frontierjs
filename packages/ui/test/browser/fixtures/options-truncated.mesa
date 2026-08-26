@@ -1,0 +1,78 @@
+<script>
+  // options-truncated.mesa — a picker over more rows than the server sent.
+  //
+  // `resource.options()` caps at the server's limit, so a relation with four
+  // hundred rows arrives as a page of it. A control that renders only the rows
+  // is indistinguishable from one showing a complete list, and the row somebody
+  // is looking for is simply absent (`FJS-391`).
+  //
+  // Two behaviours, and they are separate: SAYING how many were cut, which
+  // every list control can do, and SENDING what was typed to the server, which
+  // only the two searchable ones can. A native `<select>` cannot search, so it
+  // says the count and offers nothing — which is honest, and is the argument
+  // for a combobox over a big relation.
+  //
+  // The stub records every search it was asked for, because "did it filter the
+  // page it already had" and "did it ask the server" render identically.
+  import Form from '../../../components/forms/Form.mesa'
+  import { formFieldList } from '@frontierjs/sierra/field-rules'
+
+  const TOTAL = 400
+
+  const FIELDS = {
+    // A foreign key: a picker, and no way to search from a <select>.
+    customerId: { type: 'string', title: 'Customer',
+                  references: { model: 'Customer', field: 'id', relation: 'customer' } },
+    // A bound column whose strength is weak — a combobox, which can search.
+    tag:        { type: 'string', title: 'Tag',
+                  values: { set: 'Tags', strength: 'open', model: 'Tag', value: 'name', label: 'name' } },
+    // The array form of the same binding — a multiselect.
+    labels:     { type: 'array',  title: 'Labels',
+                  values: { set: 'Tags', strength: 'open', model: 'Tag', value: 'name', label: 'name' } },
+  }
+
+  // A field whose list is COMPLETE, for the negative control: an honest count
+  // and a wrong one look the same on a screen, so the silence has to be pinned.
+  const SMALL = {
+    tag: { type: 'string', title: 'Tag',
+           values: { set: 'Tags', strength: 'open', model: 'Tag', value: 'name', label: 'name' } },
+  }
+
+  const PAGE  = [{ value: 'alpha', label: 'alpha' }, { value: 'beta', label: 'beta' }]
+  const FOUND = [{ value: 'zulu',  label: 'zulu' }]
+
+  let searches = []
+
+  const resourceFor = (fields, total) => ({
+    context: { model: 'Order', service: 'orders', idField: 'id' },
+    fields,
+    formFields: (opts) => formFieldList(fields, opts),
+    options: (name, opts) => {
+      const search = opts?.search
+      if (search !== undefined) searches = [...searches, `${name}:${search}`]
+      // Resolved on a later turn: the count arrives after mount, which is the
+      // whole reason the control's latch is a watch rather than a statement.
+      return new Promise((res) => setTimeout(() => res(
+        search ? { options: FOUND, total: FOUND.length, truncated: false }
+               : { options: PAGE,  total, truncated: total > PAGE.length },
+      ), 20))
+    },
+    make: () => ({ customerId: '', tag: '', labels: [] }),
+    validate: () => [],
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service: {},
+  })
+
+  const BIG   = resourceFor(FIELDS, TOTAL)
+  const WHOLE = resourceFor(SMALL, PAGE.length)
+</script>
+
+<div id="big">
+  <Form resource={BIG} />
+</div>
+
+<div id="whole">
+  <Form resource={WHOLE} />
+</div>
+
+<output id="searches">{searches.join(',')}</output>
