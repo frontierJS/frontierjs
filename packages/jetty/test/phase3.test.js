@@ -451,6 +451,98 @@ group('createResource — channel push events update store')
   else bad('an event for another service was applied')
 }
 
+group('createResource — a pushed record is graded against the loaded query (FJS-493)')
+{
+  // A record is an announcement about a ROW; this store is the answer to a
+  // QUERY. Nothing on the wire says a row has LEFT a filter — there is no such
+  // event — so upserting whatever arrives put a row the list had just filtered
+  // out straight back into it. Sierra has asked `matchesQuery` since `FJS-011`;
+  // this side upserted, and the two stores had one implementation between them.
+  const { _registerActivePort } = await import('../src/resources/active-port.js')
+  const { createResource } = await import('../src/resources/resource.js')
+
+  const port = mockPagePort()
+  _registerActivePort(port)
+  const r = createResource('orders')
+
+  port._enqueueResponse(() => [{ id: 1, status: 'paid' }, { id: 2, status: 'paid' }])
+  await r.load({ status: 'paid' })
+
+  let rows = null
+  r.store.subscribe((d) => { rows = d })
+
+  // Still in the filter — an ordinary update.
+  port._emitChannel('orders', { id: 1, status: 'paid', note: 'x' }, 'orders updated')
+  if (rows?.find((o) => o.id === 1)?.note === 'x') ok('a record still matching the query is upserted')
+  else bad('a matching record was not applied', JSON.stringify(rows))
+
+  // THE REGRESSION. The dock ships order 1; it comes back as `orders ship`
+  // carrying status `shipped`, which the loaded query does not admit.
+  port._emitChannel('orders', { id: 1, status: 'shipped' }, 'orders ship')
+  if (!rows?.find((o) => o.id === 1)) ok('a record that has LEFT the query is removed, not upserted')
+  else bad('a record outside the loaded query stayed in the list', JSON.stringify(rows))
+
+  // And one that never matched is not admitted by a create either.
+  port._emitChannel('orders', { id: 9, status: 'pending' }, 'orders created')
+  if (!rows?.find((o) => o.id === 9)) ok('a record outside the query is not added by a create')
+  else bad('a non-matching create was added', JSON.stringify(rows))
+
+  // Undecidable → ask the server. The filter names a column this record does
+  // not carry (a `select` that dropped it, a projection), so neither answer is
+  // available and guessing either way is silent.
+  port._enqueueResponse(() => [{ id: 2, status: 'paid' }, { id: 7, status: 'paid' }])
+  port._emitChannel('orders', { id: 7 }, 'orders updated')
+  await new Promise((r2) => setTimeout(r2, 0))
+  // Asserted on the SHAPE, not on presence: upserting the pushed record whole
+  // also puts id 7 in the list, so `find(id === 7)` passes with the grading
+  // taken out. What only a reload can produce is the row with the column the
+  // push did not carry.
+  if (rows?.find((o) => o.id === 7)?.status === 'paid') ok('an undecidable record reloads the list rather than guessing')
+  else bad('an undecidable record did not trigger a reload', JSON.stringify(rows))
+
+  // A burst is ONE reload, not N — every answer but the last is thrown away by
+  // the one after it, and the mock has exactly one response enqueued.
+  port._enqueueResponse(() => [{ id: 2, status: 'paid' }])
+  for (let i = 0; i < 5; i++) port._emitChannel('orders', { id: 100 + i }, 'orders updated')
+  await new Promise((r2) => setTimeout(r2, 0))
+  if (rows?.length === 1) ok('a burst of undecidable pushes coalesces into one reload')
+  else bad('a burst did not coalesce', JSON.stringify(rows))
+}
+
+group('createResource — the query is only applied where there IS one')
+{
+  // The grading must not over-reach. A store nobody has loaded is the answer to
+  // no question, and a `set()` from elsewhere is rows this store can say nothing
+  // about — grading either against a remembered filter is how a correct row
+  // disappears.
+  const { _registerActivePort } = await import('../src/resources/active-port.js')
+  const { createResource } = await import('../src/resources/resource.js')
+
+  const port = mockPagePort()
+  _registerActivePort(port)
+  const r = createResource('parts')
+
+  // Attach the subscription without going through load(), so no query is set.
+  port._enqueueResponse(() => [])
+  await r.service.find({})
+
+  let rows = null
+  r.store.subscribe((d) => { rows = d })
+
+  port._emitChannel('parts', { id: 1, status: 'anything' }, 'parts created')
+  if (rows?.find((p) => p.id === 1)) ok('with nothing loaded, a pushed record is upserted as before')
+  else bad('an unloaded store dropped a pushed record', JSON.stringify(rows))
+
+  // Now load a filter, then replace the rows by hand: the query goes with them.
+  port._enqueueResponse(() => [{ id: 2, status: 'paid' }])
+  await r.load({ status: 'paid' })
+  r.store.set([{ id: 3, status: 'shipped' }])
+
+  port._emitChannel('parts', { id: 4, status: 'shipped' }, 'parts created')
+  if (rows?.find((p) => p.id === 4)) ok('a set() clears the query, so the old filter grades nothing')
+  else bad('a stale query graded rows it was not the answer to', JSON.stringify(rows))
+}
+
 group('the wire event names are Junction\'s, not a restatement of them')
 {
   // The defect FJS-059 named was a VOCABULARY drift: jetty spoke a set of event

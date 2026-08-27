@@ -21,7 +21,7 @@ render: static
 </script>
 
 <div class="container stack">
-  <header class="stack-sm">
+  <header class="stack">
     <h1>Your account</h1>
     <p class="text-muted">
       Orders you have placed with us, and what was in them.

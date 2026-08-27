@@ -641,3 +641,45 @@ describe('an allow→deny inversion (FJS-380)', () => {
     expect(r.verdict).toBe('widens')
   })
 })
+
+// ─── @@check is a compatibility question ─────────────────────────────────────
+//
+// A row invariant is the one constraint that changes what a WRITE is allowed to
+// be without changing what a read answers, so it lands on this axis and on no
+// other. The release still serving knows nothing about a new one and keeps
+// writing rows it forbids — refusals from a version that was working a minute
+// ago, which is the definition of a contract.
+describe('@@check in the release surface', () => {
+  const surface = (body: string) => deriveReleaseSurface(parse(
+    `model B { id String @id  startsAt DateTime  endsAt DateTime${body} }`).schema)
+
+  const BARE  = ''
+  const DATES = '\n  @@check("startsAt < endsAt", "an end must come after its start")'
+
+  it('is in the surface, so the committed snapshot carries it', () => {
+    expect(surface(DATES).models[0].checks).toEqual(['startsAt < endsAt'])
+    expect(renderReleaseSnapshot(surface(DATES))).toContain('@@check(startsAt < endsAt)')
+  })
+
+  it('adding one is a contract — the pivot', () => {
+    const r = classifyPivot(surface(BARE), surface(DATES))
+    expect(r.verdict).toBe('contract')
+    expect(r.findings.some(f => f.detail.includes('@@check(startsAt < endsAt) added'))).toBe(true)
+  })
+
+  // Every row the old constraint admitted is still admitted, so nothing the
+  // previous release can write stops being writable.
+  it('removing one is an expand', () => {
+    const r = classifyPivot(surface(DATES), surface(BARE))
+    expect(r.verdict).toBe('expand')
+  })
+
+  // The expression IS the identity: SQLite cannot alter a CHECK in place, and a
+  // different expression is a different rule.
+  it('editing the expression reads as one removed and one added', () => {
+    const r = classifyPivot(surface(DATES), surface('\n  @@check("startsAt <= endsAt")'))
+    expect(r.verdict).toBe('contract')
+    expect(r.counts.contract).toBe(1)
+    expect(r.counts.expand).toBe(1)
+  })
+})

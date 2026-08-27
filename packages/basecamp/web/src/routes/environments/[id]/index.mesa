@@ -20,11 +20,31 @@ title: Environment
   let error       = null
   let loading     = true
 
+  // The environment itself is WATCHED, not read. `service.get(id)` answers a
+  // plain object and nothing reaches a plain object — not a push, not a job,
+  // not another tab — so this screen used to be stale from the moment somebody
+  // else renamed or re-tiered it, and looked correct the whole time because it
+  // re-reads after its OWN actions (`FJS-533`). A record view is a subscription
+  // to the row's node.
+  let row = null, unwatch = null
+
+  function watch() {
+    row?.release()
+    unwatch?.()
+    row     = environments.record(page.params.id)
+    unwatch = row.subscribe(v => { environment = v })
+    return row.ready
+  }
+
+  $.onDestroy(() => { unwatch?.(); row?.release() })
+
   async function load() {
     error = null; loading = true
     try {
-      environment = await environments.service.get(page.params.id)
-      appRows     = (await apps.service.find({ environmentId: page.params.id })).data
+      await watch()
+      // The app list is its own read: it is a different service's rows, and
+      // nothing about the environment moving changes which apps sit in it.
+      appRows = (await apps.service.find({ environmentId: page.params.id })).data
     } catch (e) {
       error = e.message
     } finally {

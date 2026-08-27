@@ -70,3 +70,7 @@ repo-atlas.live.html
 
 # mesa
 _tmp_slots_*/
+# renderComponent writes a temp module beside the mesa package so the compiled
+# output's `import '@frontierjs/mesa/runtime.js'` resolves; it unlinks them in a
+# finally, so these only survive a hard-killed run. Nine reached a commit once.
+__mesa_render_*.mjs

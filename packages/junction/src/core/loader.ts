@@ -4,13 +4,15 @@
 // Name derived from filename: accounts.service.ts → 'accounts'.
 // Manual registration always takes precedence.
 
-import { join }              from 'node:path'
+import { join } from 'node:path'
 import { createService, isBuiltService } from './service.ts'
 import type { Service }     from './service.ts'
 import type { ServiceRegistry } from './service.ts'
 import { diagnostic }       from './diagnostics.ts'
 
 // ─── Loader ───────────────────────────────────────────────────────────────
+
+
 
 export interface LoaderOptions {
   dir:      string               // path to services/ directory

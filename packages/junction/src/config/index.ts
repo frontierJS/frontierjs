@@ -96,6 +96,20 @@ export interface AppConfig {
   }
 
   // AI
+  /**
+   * Outbound mail defaults.
+   *
+   * Here rather than only in the adapter's own options because a from-address is
+   * the canonical per-tenant value (`FJS-D126`) — one deployment serving several
+   * customers has one of these per customer — and a value captured in a
+   * provider's constructor cannot vary per call. An adapter still takes its own
+   * `from` for an app that has one; this is the floor a tenant overrides.
+   */
+  mail?: {
+    from?:    string
+    replyTo?: string
+  }
+
   ai?: {
     openai?:    string   // API key
     anthropic?: string
@@ -172,7 +186,11 @@ export interface JunctionPluginsConfig {
 }
 
 export interface JunctionServicesConfig {
-  dir?: string   // path to services dir for autoloadServices, default './src/services'
+  // Where the *.service.ts files are, resolved against the working directory.
+  // Absent, junction probes `./services` then `./src/services` beside the ENTRY
+  // — see `resolveServicesDir`. Stating one is a statement: a path that is not
+  // there is reported, never probed around.
+  dir?: string
 }
 
 export interface JunctionCaravanConfig {

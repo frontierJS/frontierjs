@@ -228,6 +228,17 @@ function tableConstraints(model, schema, pluralize = false) {
     }
   }
 
+  // @@check — the row invariants, emitted verbatim.
+  //
+  // The expression is written straight through because it is the author's SQL
+  // and nothing here can judge it. The migrator compares CHECK text between the
+  // pristine schema and the live table, so an edited expression rebuilds; both
+  // sides are this emitter's own output, which is what makes a string
+  // comparison exact there.
+  for (const attr of model.attributes) {
+    if (attr.kind === 'check') lines.push(`  CHECK (${attr.expr})`)
+  }
+
   // Foreign keys from @relation attributes
   for (const field of model.fields) {
     const rel = field.attributes.find(a => a.kind === 'relation')
@@ -387,9 +398,13 @@ function createFts(model, tableName) {
 }
 
 
-// ─── updatedAt trigger ────────────────────────────────────────────────────────
-// A field carrying `@updatedAt` is stamped with the current UTC timestamp by an
-// AFTER UPDATE trigger whenever a write left it alone.
+// ─── The stamp columns ────────────────────────────────────────────────────────
+// A field carrying `@updatedAt` is stamped by the CLIENT, on create and on
+// update alike, from the clock that client was given (`FJS-531`). It used to be
+// an AFTER UPDATE trigger, which could only ever read SQLite's own clock — so a
+// suite that froze the clock still got today, and the crossing a frozen clock
+// exists to stage could not be staged. `litestone migrate` retires an existing
+// trigger; the walk that does it is `droppedTriggers` in `migrate.js`.
 //
 // The ATTRIBUTE decides, and the name `updatedAt` is a fallback for a schema
 // relying on it. Binding to the name alone made the attribute decorative
@@ -398,61 +413,23 @@ function createFts(model, tableName) {
 // DEFAULT on insert left every row carrying a plausible timestamp that had
 // simply stopped advancing (FJS-394).
 //
-// **One trigger per table, not one per column.** SQLite blocks a trigger from
-// firing itself, but not from firing a SIBLING: with a trigger each, the first
-// one's UPDATE re-entered the second, which saw its own column unchanged BY
-// THAT INNER STATEMENT and overwrote the value the caller had just named.
-// Measured — a write setting one stamp column by hand had it replaced by now().
-// Inside one trigger the re-entry cannot happen, so each column carries its own
-// guard in the WHERE and no statement can speak for another's column.
+// The column DEFAULT stays and is the floor for a write that does not come
+// through the client: a raw INSERT still stamps. A raw UPDATE does not, and
+// that is the price of the clock being readable.
 //
-// This fires at the SQLite level, so it works correctly for:
-//   - client writes (update, updateMany)
-//   - direct SQL writes
-//   - migrations that modify rows
+// `@@external` answers none: generateDDL emits nothing for that table, so the
+// client must not stamp a column litestone does not own.
 
-// The timestamp litestone writes. Exported because the client names these
-// columns in its own UPDATE statements (FJS-396) and a second spelling would
-// sort differently from a row the trigger stamped. `defaultExpr`'s `now()` is
-// the same value in a third spelling and is left alone — changing its text
-// changes a column DEFAULT, which is a table rebuild on every existing app.
-export const NOW_SQL = `strftime('%Y-%m-%dT%H:%M:%fZ','now')`
-
-// Which fields this model stamps. One owner, because the client names the same
-// columns in its own statements and a rule read twice is a rule that disagrees.
-//
-// `@@external` answers none: generateDDL emits nothing for that table, so there
-// is no trigger to install and the client must not stamp a column litestone
-// does not own. `@updatedAt` on an external model has never done anything, and
-// making it work here would be a silent write into somebody else's table.
-export function updatedAtFields(model) {
-  if ((model.attributes ?? []).some(a => a.kind === 'external')) return []
-  return (model.fields ?? []).filter(f =>
-    (f.attributes ?? []).some(a => a.kind === 'updatedAt') ||
-    (f.name === 'updatedAt' && f.type.name === 'DateTime')
-  )
+// One field's answer, so the client can ask it per field while `updatedAtFields`
+// asks it per model.
+export function isUpdatedAtField(field) {
+  return (field.attributes ?? []).some(a => a.kind === 'updatedAt') ||
+         (field.name === 'updatedAt' && field.type?.name === 'DateTime')
 }
 
-function createUpdatedAtTrigger(model, tableName) {
-  const fields = updatedAtFields(model)
-  if (!fields.length) return null
-
-  const untouched = f => `NEW."${f.name}" IS OLD."${f.name}"`
-  // One column needs no per-statement guard — the WHEN clause already IS it,
-  // and emitting it anyway would change the body every existing database
-  // carries, so every app would migrate a trigger that does the same thing.
-  const guard = fields.length > 1 ? f => ` AND ${untouched(f)}` : () => ''
-
-  return [
-    `-- Auto-update ${fields.map(f => f.name).join(', ')} on every row change`,
-    `CREATE TRIGGER IF NOT EXISTS "${tableName}_updatedAt"`,
-    `AFTER UPDATE ON "${tableName}"`,
-    `WHEN ${fields.map(untouched).join(' OR ')}`,
-    `BEGIN`,
-    ...fields.map(f =>
-      `  UPDATE "${tableName}" SET "${f.name}" = ${NOW_SQL} WHERE rowid = NEW.rowid${guard(f)};`),
-    `END;`,
-  ].join('\n')
+export function updatedAtFields(model) {
+  if ((model.attributes ?? []).some(a => a.kind === 'external')) return []
+  return (model.fields ?? []).filter(isUpdatedAtField)
 }
 
 // ─── Topological sort ─────────────────────────────────────────────────────────
@@ -935,9 +912,6 @@ export function generateModelDDL(model, schema, { pluralize = false } = {}) {
 
   const fts = createFts(model, tableName)
   if (fts) parts.push(fts)
-
-  const updatedAt = createUpdatedAtTrigger(model, tableName)
-  if (updatedAt) parts.push(updatedAt)
 
   return parts.join('\n')
 }

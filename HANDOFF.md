@@ -1,4 +1,393 @@
-# Handoff — 2026-08-24
+# Handoff — 2026-08-26
+
+> **The Release realm got its recorded-state format, and the audit that
+> preceded it found the retrofit had already started.** `IDEAS/overview.md` has
+> said for weeks that 2.3b's shape matters more than its scope, because *a verb
+> can be added later and a recorded-state format cannot*. Five stores in this
+> tree already hold a piece of serving state and none of them knows about the
+> others: `db/release.snapshot.md`, a `releases/<commit>` directory name, a
+> renamed `_replaced` container, basecamp's `Deployment`/`DeploymentStep`, and
+> `Environment.variables` beside a `@version` that is an optimistic lock wearing
+> a generation's clothes. Three of them hold exactly one step of history, which
+> is why `fli deploy:rollback` can be taken once and not twice.
+
+> **A third research round read nine systems for what they RECORD rather than
+> how they fail** — Cloud Run, Workers, Helm, Nomad, NixOS, Kamal, Argo, OTP,
+> Vercel — and found the same two nouns in all nine: a frozen
+> artefact-plus-bindings and a mutable pointer at it. Five amendments came back
+> and are folded into `IDEAS/release-transitions.md` rather than listed apart:
+> pinned secret references (`latest` resolves at instance start, so it makes a
+> revision immutable in name only), a `bindingsHash` beside the generation
+> counter (a counter answers which came first, a hash answers whether anything
+> moved), retention recorded ON the Release (Kamal prunes at three days and the
+> promise expires in silence), a journal format version from row zero (Terraform
+> and Temporal both pay for this in public), and no per-release downgrade
+> instructions — OTP's `relup` is the maximalist end of that road and nobody
+> runs it.
+
+> **Phase 1a shipped: `packages/cli/db/deploy.lite`.** Five models — `Journal`,
+> `Release`, `BindingSet`, `Transition`, `TransitionStep` — carrying every field
+> including the ones nothing writes yet (`audienceKey`, `retentionUntil`,
+> `formatVersion`), because an unused column is free today and a journal
+> migration is not. It writes nothing and deploys nothing, which is the point.
+
+> **`FJS-534`: the CHECK family was half-built and both halves are fixed.** A
+> field `@check` reached the table and its refusal escaped as SQLite's own
+> sentence in a **500** — a validation problem answered as a server fault, with
+> nothing a form could mark. It is a `ValidationError` and a 400 now. And
+> `@@check` did not exist at all, which left a rule spanning two columns of one
+> row with nowhere to live but a service hook that a job, a migration,
+> `asSystem()` and a seed all walk past. Both take a message as the last
+> argument, where every field validator already carries one.
+
+> **A live list pages by GROWING, and building the first real one found that
+> the window's edge and the page it was minted from were walked in different
+> orders.** basecamp's audit trail moved onto `more()`; on the first run five
+> rows sharing one `createdAt` across the 50-row edge lost two of themselves,
+> because the page took the caller's `orderBy` and the cursor took the total
+> order (`FJS-535`). `table.orderTotal()` is now the one owner of both, and a
+> list whose ties cannot be broken carries no edge rather than a wrong one.
+> `findWindow` is exported, because the derived find is not the only find.
+
+> **Two rules that had two implementations now have one each.**
+> `@frontierjs/toolbelt/match` is `matchesQuery` — jetty's store upserted
+> whatever its channel delivered, so a shipped order went back into the queue it
+> had just left (`FJS-493`), and the fix is the MOVE rather than a second repair.
+> And `fli check` grew `detail-read-dead`, which is `FJS-518` made executable:
+> sixteen screens keep a row nothing can update, every one inspected and real
+> (`FJS-533`).
+
+---
+
+## A schema with no file can say where it lives (2026-08-26)
+
+`FJS-449`'s remaining half, and the register's own row named the shape it could
+not fix: `resolveFrom: 'schema'` anchors a relative `database { path }` to the
+app root and needs a schema FILE to do it, so an app assembling its schema in
+memory — auth's fragments, the outbox model, a tenant registry — fell back to
+the process CWD. That is the shape with the sharpest consequence measured: a
+`vite build` from a surface root prerendered twelve product pages as **zero
+products, exit 0**, which is a published static site with nothing in it.
+
+**Two ways to say it, and the first already worked.** An app that READ
+`db/schema.lite` and appended to it still has the file, and passing `path:`
+beside `schema:` makes the assembled string resolve exactly as the file would —
+the string is parsed, the path is the anchor. That was true before today and was
+written down nowhere, which is most of why the half stayed open. What is new is
+`resolveFrom: '<dir>'` — a directory or a `file:` URL — for a schema with no
+file behind it at all, and it THROWS on an anchor that is not a directory,
+because a statement that quietly reverts to the CWD is the failure being closed.
+
+The rule moved to `core/db-path.js` on node builtins alone. The CLI answers the
+same question before a client exists, and a second copy of it is how this
+started.
+
+**A mint is announced.** Creating the database FILE is ordinary — every first
+run does it. Creating the DIRECTORY above it is the signal, and it is the one
+thing all three orphans had in common: `example/db/db/`, `example/web/db/` and
+`example/site/db/` were each minted by a command run one directory away from
+where the path was written, none of them failed, and the repo's `*.db*` ignore
+rule kept `git status` clean, so the only way to find one was to go looking.
+Four sites say it now — the SQLite open, the tenant registry's directory, the
+jsonl/logger driver's first append, and the CLI's `ensureParentDir` — and the
+cwd is in the message, because `db/shop.db` from the app root and from a surface
+root print the same relative string and name different files. Eight lines across
+litestone's 3,215 tests, every one a temp tree a test deliberately made.
+
+**`example` lost three workarounds and is the proof.** `SHOPS_DIR`,
+`SHOPS_REGISTRY` and `AUDIT_DIR` were absolute `join(HERE, …)` constants, each
+with a paragraph explaining why the declaration could not be trusted; the app
+names the schema file once and reads all three off the block. Loading its data
+layer from `example/site/` mints no `site/db/`, `litestone studio` from
+`example/db/` creates no `db/db/` and opens the real database, and the storefront
+prerenders twelve products from the surface root. Green: litestone 3,215 ·
+junction 1,533 · auth 244 · caravan 188 · basecamp 210 (including the seed test
+whose isolation IS the CWD, which is why the default is unchanged) · sierra
+`test:safety` 5 · `example` `verify` 42, `verify:site` 39, `verify:jobs` 10,
+`verify:tenants` 26.
+
+**Watch the drive order in `example`.** `verify:jobs` cancels every pending
+order and says so; running it before `verify` fails four assertions that look
+like a defect and are a seed. `bun run reset` between them.
+
+---
+
+## Where an app's services are, probed rather than derived (2026-08-26)
+
+`FJS-458`, the day-one experience bug. The autoload default resolved
+`dirname(Bun.main)/services` — the FLAT layout, entry and services as siblings.
+The layout this repo documents and `fli new` writes puts the entry at
+`api/index.ts` and the services at `api/src/services`, so the default named
+`api/services`, which is not there, and a missing directory is a deliberate
+no-op: the app boots, `/health` answers, and every route those services would
+have mounted is a 404. An alpha user working from the README rather than from
+`fli new` hits it in hour one.
+
+`core/services-dir.ts` is the one answer now and it PROBES — `./services`, then
+`./src/services`, beside the entry, first that exists. Both layouts and a moved
+entry resolve with the app saying nothing. It knows nothing about an app having
+an `api/` directory, and there is deliberately no cwd-relative candidate: that
+is how a command run from the wrong place picks up somebody else's directory.
+
+**A declared directory is never probed around.** An absent one is reported by
+name, everywhere including a test, because the case it is most likely to be is
+`FJS-449`'s — a relative path resolved against the wrong cwd, landing on
+nothing and looking exactly like an app with no services.
+
+**The miss is on the boot banner** rather than in a warning: `autoload=` names
+the directory that answered, or the candidates that did not. A warning would
+have fired on every app that registers its services by hand — including most of
+junction's own test suite — and a framework that shouts at a correct app teaches
+everyone to stop reading. `services=3` beside
+`autoload="none — probed api/services, api/src/services"` says the same thing on
+the line people already read.
+
+**Two more callers had their own copy of the old default.** The snapshot tools
+were handed `--services` by hand, because the app's phase resolves against
+`Bun.main`, which when they run is the tool — that flag is an override now. And
+`build:app`'s bundling guard checked `<entry>/services`, so a canonical-layout
+app downgraded its ERROR to a warning and shipped a bundle that boots clean and
+404s every route: the same failure one level up, and the second defect this
+closes. That is why the rule lives in a module with node builtins and nothing
+else — `build:app` imports none of the runtime.
+
+`tests/services-dir.test.ts` pins it: ten resolutions, five banner sentences, and
+two apps booted in a real SUBPROCESS, because the default cannot be exercised
+in-process — under `bun test` the entry is the test file, which is also why
+`basecamp` keeps its absolute `autoload:`. `example` dropped its declaration and
+runs on the default: 20 services, `verify` 42/42. `fli new` keeps writing one —
+it is a true statement, and the only form that also works against the junction
+that is published today.
+
+---
+
+## A block owns its anchor — `FJS-512` and `FJS-468` are one defect (2026-08-26)
+
+**The alpha blocker was not a staleness bug and nothing had stopped tracking.**
+`FJS-512` was recorded as an unreproduced `{#if}` going stale beside an
+attribute that stayed current — the worst shape to ship, because it could not
+be described. It is a compiler defect with a one-line cause.
+
+A block asked for its anchor by leaving a label request pending, and the next
+node pushed into the template satisfied it. Between two blocks written on
+separate lines that node is a whitespace text run — and the compiler keeps
+those as separate entries while the emitted template is ONE STRING, where
+adjacent text parses as a single DOM Text node. So both blocks resolved to the
+same anchor, each inserted `[marker, content]` before it, and the second one's
+DOM landed inside the first one's `[marker, anchor)` removal range. Tearing the
+first branch down took the second one's content with it, and the block that had
+just built that content had no reason to run again.
+
+That is exactly the rule a COMPONENT invocation has followed since `FJS-110`,
+whose comment describes this hazard in full for components and had never been
+carried to blocks. `ownAnchor()` in `buildBlock`'s `go()` now pushes a comment
+of the block's own for `{#if}`, `{#each}`, `{#key}`, `{#await}`, `{@render}` and
+`{@html}`.
+
+**Two accidents decide whether a page shows it, and both of them are why this
+resisted isolation.** A component-ROOT template has its whitespace collapsed,
+so the anchors were already distinct there: the same three `{#if}`s in the same
+`<div>` are correct at a component root and wrong one branch down. That is why
+`chained-derived.mesa` — written to reproduce this and passing 7/7 — could not:
+it copied the markup and not the POSITION. And within one flush, whether the
+removal or the insertion runs first: with plain `<button>`s in the branches the
+removal happened to go first and the DOM came out right, and a kit `<Button>`
+adds a prop-push effect that inverts the subscriber order. The reproduction was
+a three-variant probe that changed one thing at a time; variant B — components
+in the branches — failed on the first run, with the action row EMPTY and
+`data-moves` current, which is the report verbatim.
+
+**`FJS-468` is the same defect from the other end**, and its own row named the
+mechanism: *the isolated case needs a SIBLING `{#if}` tearing down in the same
+flush*. Its spec pinned two assertions as broken on litestone's matrix
+convention, so the fix turned the runtime drive red — which is the convention
+working. Both are flipped to `true`.
+
+**What proves it.** `packages/mesa/test/block-anchor.test.js` — seven emission
+shapes and two DOM cases through a real mount, three of the nine failing
+against the compiler as it was. Then mesa 1333 vitest + 89 + 47 browser, `ui`
+857, `sierra` 1114 + 25 widget, `jetty` 445, `example` `verify` 42 and
+`verify:site` 39, `basecamp` `verify` 302 — the last of those with basecamp's
+server screen put BACK on the single `moves` Set the bug was found on, so *a
+draining server offers cancel, not drain* is asserted against the shape that
+failed rather than around it.
+
+---
+
+## A list that is a window, and the two defects the window exposed (2026-08-26)
+
+Three pieces, and the second and third are what the first found.
+
+**`fli check` grew `detail-read-dead`** — the thirtieth rule, and the executable
+form of `FJS-518`. A row a screen KEEPS should be watched (`resource.record(id)`)
+and not fetched once, because `service.get(id)` answers a plain object no
+announcement can reach. The heuristic is a BARE assignment and nothing else: a
+`const row = await …` is a genuinely one-shot read, and flagging those is how a
+rule gets turned off. Sixteen findings on this tree, every one inspected and
+real; the one screen already converted is silent, which is the built-in negative
+control. Filed as `FJS-533`, with the caveat that **not all sixteen are the same
+fix** — a screen over a `@@tenant(none)` model has no channel to broadcast on,
+so `record()` makes those no more live than they are and the answer there is the
+missing channel.
+
+Measuring it changed the rule twice: a wrapped ternary put the assignment a line
+up, and the comparison guard was eating plain `NAME = ` assignments. Both found
+by looking at the output rather than trusting it.
+
+**basecamp's audit trail became a window that grows** (`FJS-D145`'s first real
+caller). A trail is the shape a numbered page is worst for — it only grows, and
+it grows at the end a reader starts from, so between page 1 and page 2 every
+offset has moved by however many things happened in between. The service half is
+**`findWindow`, now exported from junction**, because the derived find is not the
+only find: a service that assembles its own query (this one forces `workspaceId`
+and declares the filters it exposes) had no way to answer `$after` short of
+restating both paths.
+
+**And the drive found `FJS-535` on its first run.** The page was ordered by the
+CALLER's `orderBy` and the cursor minted in the TOTAL order — the caller's plus
+the tiebreaker litestone appends — so where two rows tie on every sort key the
+page stopped where SQLite stopped while the edge named where the total order
+says it stopped, and the rows between were lost. Once per tie, silently, with the
+list reporting itself complete. `table.orderTotal(orderBy)` is the fix and it is
+one owner: the page's `ORDER BY` and the cursor come from it, and a list whose
+ties cannot be broken now carries **no edge rather than a wrong one**.
+
+It is invisible in any fixture built one row at a time. `window.test.ts` already
+had a non-unique walk and it passed, because it ordered ASCENDING over sequential
+ids where SQLite's own order and the total order agree by accident. The
+regression runs the tiebreaker AGAINST the scan order and loses 12 of 25 without
+the fix.
+
+**Then jetty, and `FJS-493` closed by MOVING the rule rather than repairing it a
+second time.** jetty's store upserted every record its channel delivered — but a
+record is an announcement about a ROW and a live list is the answer to a QUERY,
+and nothing on the wire says a row has left a filter, because there is no such
+event. So a shipped order came back as `orders ship` and went into the queue it
+had just left. `matchesQuery` is `@frontierjs/toolbelt/match` now, the fourth
+pure half to come down for `FJS-059`'s reason; sierra re-exports it and keeps
+only the SEAM.
+
+Two things fell out of building it. **The store has to remember the query its
+rows answer**, and `set()` clears it — rows put there by hand are not the answer
+to the last `populate()`'s question. And **the reload is coalesced**, because a
+burst of undecidable pushes is one question, not N.
+
+**What is not proved.** `example`: `verify:extension` could not run — another
+session's API held port 8110 — so jetty's end-to-end wire behaviour rests on the
+unit tests (negative-controlled: forcing the verdict to `true` turns 4 red) and
+not on a browser. Run it when the port is free; the drive's *the shipped order
+leaves the despatch queue* now has teeth, because the dock's render-time filter
+is gone and the store is the only thing deciding.
+
+---
+
+## The journal does not live in the app's database, and it was measured (2026-08-26)
+
+The record contained two sentences that pull apart: the journal is *in a
+Litestone database* so the framework's own tools inspect it, and it *lives with
+the app* so basecamp vanishing changes nothing. The prior art is one-sided —
+Capistrano writes `revisions.log` at the deploy root, Kamal writes
+`.kamal/app-audit.log` and locks a directory on the primary server, NixOS keeps
+generations on the machine, Helm and Argo store in the target cluster, OTP's
+`RELEASES` sits in the release directory. **Terraform is the only one that
+exiles state to a remote blob, and it does so because a cloud API has nowhere to
+put a file.** Our target is a machine with SQLite on it, so the exception does
+not apply.
+
+The recommendation is `deploy.db` at the deploy root as **its own Litestone
+client**, not a second `database` block on the app's — and the reason is
+`$locks`, which stores in main only. Under a second block the deploy lock lands
+in the app's database while `deploy.db` gets no `_locks` table at all: the lock
+cannot sit with the record it protects. `$backup` sweeps every declared SQLite
+database, and `05-backup` takes that copy before every deploy, so restoring it
+would erase the journal recording the deploy that authorised the restore.
+
+**All four properties were run, including a negative control on the rejected
+shape**, and they are `packages/cli/tests/deploy-journal.test.js` now. The
+ruling is deliberately NOT made — it belongs to whoever starts 1b, with the code
+in front of them. The open question in `IDEAS/release-transitions.md` carries the
+recommendation, the evidence and the one refusal (the operator's machine: two
+operators, two disagreeing histories of one server).
+
+### What running it taught that reading did not
+
+Three times this session, the source said one thing and the machine said
+another. Worth carrying forward as a habit rather than as three facts.
+
+- **A standalone fragment cannot carry `@@db(main)`.** `outbox.lite` does,
+  because it is pasted into an app that declares that database; one handed to
+  `createClient({ schema, db })` has no referent and fails to parse. Copying the
+  idiom would have shipped it broken. Asserted now, because nothing in the
+  fragment says *no `@@db` here*.
+- **`$locks` already exists** — owner, TTL, heartbeat, expiry cleanup. The first
+  recommendation said to build one shaped like caravan's `job_owners`, which
+  would have been a duplicate of the exact kind this repo files bugs about. And
+  contention **throws** rather than answering falsy: `LockNotAcquiredError`, 409,
+  `retryable`, naming the holder — already the *refuse by name* shape
+  `fli revert` wants.
+- **`@@check` was reported absent when field-level `@check` worked.** Reading
+  the parser's model-attribute list and stopping there produced a filed issue
+  that was half wrong within the hour. Corrected in place.
+
+## The CHECK family, and what `example` now declares (2026-08-26)
+
+`FJS-534`. The refusal was the sharper half and the one that was shipping: a
+`ValidationError` rather than a class of its own, because two error classes exist
+where two RECOVERIES exist — restore-or-release against send-another-value is
+why `SoftDeletedUniqueError` sits beside `UniqueConflictError` — and there is one
+here. Measured through junction's boundary: **400 `BadRequest`** carrying
+`[{path:['qty'],message:'must be at least one'}]`.
+
+**The expression is for the developer and never for the person.** It is on
+`err.constraint` and out of the sentence a control renders, because `qty > 0`
+under a form field is SQL reaching somebody who did not write it. Without an
+authored message the person reads `is not valid`.
+
+Three things it needed and only one was work. The migrator already compared
+CHECK text and rebuilt (`FJS-466` had done it), so migration needed nothing.
+`fli release:check` did need it — a new `@@check` is a **contract** and a removed
+one an expand, since it is the one constraint that changes what a WRITE may be
+without changing what a read answers. And the catalog refused the attribute
+until it had a row and a page.
+
+**`example` adopted it, and the schema had already asked twice.** `Discount`
+carried a comment saying `@@check` *cannot see `kind` from here, so the bound
+that matters is enforced in `pricing.ts`* — written when only the field-level
+form existed, and now deleted, because a model-level one can. `carts.service.ts`
+carried the other: it counts a redemption with a read-modify-write **instead of**
+`{ increment: 1 }` precisely so a validator can see the value, since an atomic
+operator computes inside SQLite where nothing in this package runs (`FJS-D27`).
+A raw `UPDATE … redemptions = redemptions + 5` past the limit is refused now.
+
+`Order` got the receipt identity its own header states in prose —
+`subtotal − discount + shipping + tax = total`. **The tolerance was fuzzed, not
+guessed**: 4,000 real `priceBasket` breakdowns, worst drift 7.3e-12 and never
+zero, so exact equality would have failed on live data. Half a penny is nine
+orders of magnitude above the noise and one below the smallest real error.
+`litestone release` grades the whole change **5 contract · 0 expand**, correctly.
+
+### Pick up here
+
+- **1b — mint a Release**, with `2.3f` (*digest, not tag*) as its prerequisite:
+  a Release cannot be content-addressed while its artefact is named by a tag
+  that means different bytes on different hosts.
+- **Two decisions belong to 1a and are recorded, not made**: where `deploy.db`
+  physically lives (recommended above), and what basecamp's existing
+  `Deployment`/`DeploymentStep` become — they describe the console's own fleet
+  actions, the journal describes the app's, and one has to be declared a mirror
+  before both are written to.
+- **`packages/cli` does not depend on litestone.** It now ships
+  `db/deploy.lite`, and opening `deploy.db` needs a client. Fine today — only
+  the test touches it, by relative path, which is the house convention — but the
+  dependency arrives with the writer.
+- **`example`'s money and cart drives have not been run against the new
+  constraints.** A `bun run api` from 00:58 was still holding port 8110 and the
+  drives refuse a port that answers, correctly. Everything else was verified:
+  the constraints are live in the migrated tenant database, all five refuse
+  through the real client, the seed writes 11 orders through the identity, and
+  every snapshot is regenerated and green.
+
+## Session summary — 2026-08-24
 
 > **Mesa now has four prefixes and each one is a different KIND of name.** `$`
 > is the door, `$:` is the label, `$$` is the compiler's own locals, and `__` is

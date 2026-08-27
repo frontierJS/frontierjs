@@ -30,10 +30,27 @@ title: Project
   // wins over the remembered one, which is the documented way to pin it.
   let draft   = { name: '', description: '', version: null }
 
+  // Watched, not read. `service.get(id)` answers a plain object and nothing
+  // reaches a plain object — not a push, not a job, not another tab — so this
+  // screen looked correct the whole time and was stale from the moment somebody
+  // else wrote the row, because it re-reads after its OWN actions and never
+  // after anyone else's (`FJS-533`).
+  let rowView = null, unwatch = null
+
+  function watchRow() {
+    rowView?.release()
+    unwatch?.()
+    rowView = projects.record(page.params.id)
+    unwatch = rowView.subscribe(v => { project = v })
+    return rowView.ready
+  }
+
+  $.onDestroy(() => { unwatch?.(); rowView?.release() })
+
   async function load() {
     error = null; loading = true
     try {
-      project = await projects.service.get(page.params.id)
+      await watchRow()
       draft   = fromRow(project)
       // The environments service filters by projectId; the workspace is already
       // on the header, so this is the only filter the page supplies.

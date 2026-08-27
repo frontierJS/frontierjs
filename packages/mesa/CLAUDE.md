@@ -294,10 +294,14 @@ drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
   each one with *no test suite found*.
 - **A fixture is a component**, because a slot cannot be expressed as a props
   object. Props reach it as JSON.
-- **A spec that PASSES can still be the point.** `chained-derived` is a shape
-  that misbehaved in a real screen (`FJS-512`) and does not here, so what it
-  pins is the list of causes ruled out. Say so in the header — a green spec
-  read as a repro is worse than no spec, because the next person stops looking.
+- **A spec that PASSES can still be the point, and it can also be lying about
+  where to look.** `chained-derived` was written for a shape that misbehaved in
+  a real screen (`FJS-512`) and passed here, so it was kept as the list of
+  causes ruled out. It passed because a component-ROOT template has its
+  whitespace collapsed and the real screen's blocks were one branch down, where
+  it survives — the fixture reproduced the markup and not the position. Say in
+  the header what a green spec pins; and when a spec cannot reproduce a real
+  failure, suspect the frame around the shape before the shape.
 - **Input goes through the pipeline** (`t.press`, `t.type`, `t.clickAt`). A
   dispatched `KeyboardEvent` moves no focus, types no character and dismisses
   no `[popover]`.

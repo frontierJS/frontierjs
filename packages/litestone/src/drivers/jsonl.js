@@ -19,6 +19,7 @@
 import {
   existsSync, mkdirSync, appendFileSync, readFileSync,
   statSync, openSync, readSync, closeSync } from 'fs'
+import { noteMintedDirectory } from '../core/db-path.js'
 import { dirname }    from 'path'
 import { Database }   from 'bun:sqlite'
 import { buildWhere } from '../core/query.js'
@@ -63,7 +64,14 @@ function parseLinesInto(out, content) {
 // Append a JSON line to a file. Returns { offset, bytes }.
 function appendLine(filePath, line) {
   if (!existsSync(filePath)) {
-    mkdirSync(dirname(filePath), { recursive: true })
+    const dir = dirname(filePath)
+    // Same signal as a minted SQLite directory: a jsonl/logger database whose
+    // directory did not exist is a relative declared path resolved from one
+    // directory away, and it is silent — an orphan `<surface>/db/audit/` sat in
+    // this repo for two days under the `*.db*` ignore rule (`FJS-449`).
+    const minted = !existsSync(dir)
+    mkdirSync(dir, { recursive: true })
+    if (minted) noteMintedDirectory(dir, filePath)
     appendFileSync(filePath, '', 'utf8')
   }
   const offset = statSync(filePath).size
@@ -166,11 +174,11 @@ function resolveDefault(field) {
 
 // ─── Table factory ────────────────────────────────────────────────────────────
 
-export function makeJsonlTable(filePath, model, schema, retention = null, maxSize = null) {
+export function makeJsonlTable(filePath, model, schema, retention = null, maxSize = null, now = Date.now) {
   // Run compaction immediately if retention or maxSize is configured.
   // This happens once when createClient() opens — before any queries are served.
   if (retention || maxSize) {
-    try { compactJsonl(filePath, model, retention, maxSize) } catch { /* non-fatal */ }
+    try { compactJsonl(filePath, model, retention, maxSize, now) } catch { /* non-fatal */ }
   }
 
   // Fields that get stored in the JSONL file (no relation/computed)
@@ -197,9 +205,38 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
 
   let _indexDb = null
 
+  // The index file, and whether the handle we hold still points at it.
+  //
+  // A retention compaction REWRITES the .jsonl, which moves every byte offset
+  // the index holds, so `compactJsonl` deletes the file and says the index is
+  // "rebuilt lazily". Nothing rebuilt it: SQLite notices its file has been
+  // unlinked under an open connection and marks that connection readonly, so
+  // the next append answered `SQLITE_READONLY_DBMOVED: attempt to write a
+  // readonly database` from inside `insertIndexRecord` — an uncaught throw on
+  // the audit path, which is fire-and-forget, so the REQUEST answered 201 and
+  // the process died a tick later.
+  //
+  // Live rather than hypothetical, and on a clock: the sweep only removes
+  // something once the oldest row is past the declared window, so a deployment
+  // crashes on the first night after its retention period elapses and looks
+  // like a nightly fault with nothing in the request log. Measured on
+  // `example` — `POST /api/discounts` 201, then the API gone (`FJS-540`).
+  //
+  // One `existsSync` per index operation is what the lazy rebuild costs. It is
+  // a syscall against a path the OS has cached, on a driver that already
+  // appends to a file for every write, and the alternative is a process that
+  // dies.
+  const indexPath = filePath + '.index.db'
+
   function getIndexDb() {
-    if (_indexDb) return _indexDb
-    _indexDb = new Database(filePath + '.index.db')
+    if (_indexDb && existsSync(indexPath)) return _indexDb
+    if (_indexDb) {
+      // Gone from under us. Close the dead handle before opening the new one:
+      // left open it holds the unlinked inode for the life of the process.
+      try { _indexDb.close() } catch { /* already dead — the reopen is the point */ }
+      _indexDb = null
+    }
+    _indexDb = new Database(indexPath)
 
     // Build index table: indexed fields + _offset
     // Primary key is the @id field when present, otherwise _offset itself.

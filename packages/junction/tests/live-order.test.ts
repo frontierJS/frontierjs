@@ -289,7 +289,8 @@ describe('every directive the client sends is one the bridge strips', () => {
   // All eight, and filters are the FIRST argument — they are not a directive
   // and the container no longer pretends otherwise.
   const ALL: QueryDirectives = {
-    limit: 10, offset: 20, orderBy: '-createdAt', select: ['a', 'b'], populate: 'customer',
+    limit: 10, offset: 20, after: 'eyJpZCI6MX0', orderBy: '-createdAt',
+    select: ['a', 'b'], populate: 'customer',
     search: 'acme', withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,
   }

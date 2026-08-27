@@ -49,6 +49,7 @@ export const RULES = [
   { id: 'unknown-ref',      level: 'error', what: 'a citation pointing at an id no register holds' },
   { id: 'dead-link',        level: 'error', what: 'a linked path that is not in the tree' },
   { id: 'unknown-status',   level: 'error', what: 'a status outside the register\'s own vocabulary' },
+  { id: 'closed-in-open',   level: 'error', what: 'a closed row still sitting in an open section — every count above it is wrong' },
   { id: 'unknown-severity', level: 'error', what: 'an open row in a section with no severity' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
   { id: 'unnamed-ruling',   level: 'warn',  what: 'a ruling with no id — nothing can cite it' },
@@ -129,7 +130,23 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
   for (const row of doc.issues) {
     if (row.closed) continue
 
-    if (!ISSUE_STATUS.includes(row.status)) {
+    // `closed` is in ISSUE_STATUS because the READER synthesises it for every row
+    // under § Closed — which is what made it silently legal as a hand-written
+    // cell in an open section, where it means the opposite. A row saying it is
+    // done, in the table of what is not, is counted as open by everything that
+    // reads this file: `register:check`'s own tally, `ws:map`, `ws:atlas`, and
+    // whoever is choosing what to work on next. Sixteen of them had accumulated
+    // when this rule was written, one being the only S1.
+    //
+    // Its own rule rather than an `unknown-status`, because the remedy is not
+    // *you wrote a bad word*: the row is correct and it is in the wrong place.
+    // This is the direction the register's own Conventions section already
+    // names — *the register also goes stale in the closing direction, which
+    // nothing here was watching for*.
+    if (row.status === 'closed') {
+      add('closed-in-open', row,
+        `is closed but sits under ${row.severity} — move it to § Closed, which is what every count reads`)
+    } else if (!ISSUE_STATUS.includes(row.status)) {
       add('unknown-status', row, `status "${row.status}" is not one of ${ISSUE_STATUS.join(', ')}`)
     }
 

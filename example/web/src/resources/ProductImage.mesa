@@ -8,3 +8,48 @@
 
   export const productImages = createResource('product-images', { model: 'ProductImage' })
 </script>
+
+<script>
+  // …and the markup half is this model's DEFAULT form (repo Invariant 18).
+  //
+  // It exists here rather than on the product screen because there is nothing
+  // on it a screen decides: `<Form>` with no children renders every writable
+  // column in schema order, and `file` is a photograph because `file File
+  // @accept(…)` says so — the column's control, its dialog filter and its
+  // refusal all come from the one declaration (`FJS-409`).
+  //
+  // What a caller states is the product the photograph belongs to. `only`
+  // narrows and orders, so `productId` is off the form and on the record: a
+  // person adding a photograph from a product's own page has already answered
+  // that question by being there, and a picker offering every product in the
+  // shop is a way to file it under the wrong one.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let productId = undefined
+  export let variantId = undefined
+  export let ondone    = undefined
+
+  // `make()` seeds a blank record from the schema — `readOnly` columns skipped,
+  // defaults applied — and this states the two the page knows.
+  $: draft = { ...productImages.make(), productId, variantId: variantId ?? null }
+</script>
+
+<Form
+  resource={productImages}
+  bind:record={draft}
+  method="create"
+  only={['file', 'alt', 'variantId', 'position']}
+  ondone={(row) => ondone?.(row)}
+  resetOnDone
+  {...$attributes}
+>
+  <!--
+    Children WIN over generation, so naming the actions slot alone would turn
+    the whole generated field list off. `{#snippet actions()}` is the prop form
+    and is the one that composes: the fields above it are still the schema's.
+  -->
+  {#snippet actions()}
+    <Button type="submit" data-add-photo>Add photograph</Button>
+  {/snippet}
+</Form>

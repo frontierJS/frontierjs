@@ -122,7 +122,7 @@
         <h2>{me?.name ?? me?.email}</h2>
         <p class="text-sm text-muted" data-email>{me?.email}</p>
       </div>
-      <button class="button subtle" onclick={signOut} data-signout>Sign out</button>
+      <button class="btn ghost" onclick={signOut} data-signout>Sign out</button>
     </div>
 
     <h3>Your orders</h3>
@@ -169,7 +169,7 @@
       <label>Email<input type="email" bind:value={email} data-email-input required /></label>
       <label>Password<input type="password" bind:value={password} data-password required /></label>
 
-      <button class="button primary" type="submit" data-submit
+      <button class="btn primary" type="submit" data-submit
               disabled={state === 'working'}>
         {mode === 'up' ? 'Create account' : 'Sign in'}
       </button>
@@ -192,31 +192,31 @@
 <style>
   .account { max-width: 44rem; }
   .who     { display: flex; align-items: start; justify-content: space-between;
-             gap: var(--space-4); margin-bottom: var(--space-5); }
+             gap: var(--space-2xl); margin-bottom: var(--space-3xl); }
   .who h2  { margin: 0; }
 
   .orders  { list-style: none; margin: 0; padding: 0;
-             border: 1px solid var(--border); border-radius: var(--radius); }
-  .orders li { border-bottom: 1px solid var(--border); }
+             border: 1px solid var(--rule); border-radius: var(--card-radius); }
+  .orders li { border-bottom: 1px solid var(--rule); }
   .orders li:last-child { border-bottom: 0; }
 
   .row     { display: grid; grid-template-columns: 8rem 1fr auto 6rem;
-             gap: var(--space-3); align-items: center; width: 100%;
-             padding: var(--space-3); background: none; border: 0;
+             gap: var(--space-lg); align-items: center; width: 100%;
+             padding: var(--space-lg); background: none; border: 0;
              text-align: left; cursor: pointer; font: inherit; color: inherit; }
-  .row:hover { background: var(--surface-2, var(--surface)); }
+  .row:hover { background: var(--surface-sunken); }
   .ref     { font-variant-numeric: tabular-nums; font-weight: 600; }
   .total   { text-align: right; font-variant-numeric: tabular-nums; }
   .status  { font-size: 0.8rem; }
 
   .lines   { width: 100%; border-collapse: collapse;
-             padding: 0 var(--space-3) var(--space-3); }
-  .lines td { padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); }
+             padding: 0 var(--space-lg) var(--space-lg); }
+  .lines td { padding: var(--space-sm) var(--space-lg); border-top: 1px solid var(--rule); }
   .num     { text-align: right; font-variant-numeric: tabular-nums; }
 
-  .signin  { display: grid; gap: var(--space-3); max-width: 22rem; }
-  .signin label { display: grid; gap: var(--space-1); }
+  .signin  { display: grid; gap: var(--space-lg); max-width: 22rem; }
+  .signin label { display: grid; gap: var(--space-2xs); }
   .link    { background: none; border: 0; padding: 0; font: inherit;
-             color: var(--link, inherit); text-decoration: underline; cursor: pointer; }
-  .error   { color: var(--danger-fg, #b3261e); }
+             color: var(--color-primary); text-decoration: underline; cursor: pointer; }
+  .error   { color: var(--color-danger); }
 </style>

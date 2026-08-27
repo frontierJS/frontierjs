@@ -124,10 +124,10 @@
 
 <div class="stack">
   <div class="field-group">
-    <label class="label" for="catalog-search">Search the catalogue</label>
+    <label for="catalog-search">Search the catalogue</label>
     <input
       id="catalog-search"
-      class="input"
+      class="field"
       type="search"
       autocomplete="off"
       placeholder="name or description"
@@ -150,10 +150,10 @@
     </p>
   {/if}
 
-  <ul class="list" id="catalog-list">
+  <ul class="rows divided" id="catalog-list">
     {#each matches as p (p.slug)}
       <li class="list-row" data-slug={p.slug}>
-        <a href={`/products/${p.slug}/`}>{p.name}</a>
+        <a href={`/products/${p.slug}/`} class="link">{p.name}</a>
         {#if price(p)}<span class="badge">{price(p)}</span>{/if}
       </li>
     {/each}

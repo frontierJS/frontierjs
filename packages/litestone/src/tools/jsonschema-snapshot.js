@@ -214,6 +214,23 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
         .join(' · ')}`)
     }
 
+    // The grid, beside the gate the header already carries. It is here for the
+    // reason every other keyword is: three readers consume this document and a
+    // keyword that stops being emitted makes an affordance stop working with
+    // nothing failing. `x-capabilities` shipped without a line here, so the one
+    // artefact that would have shown a client losing the names showed nothing.
+    const caps = def['x-capabilities']
+    if (caps) {
+      // The NAMES, which is what a client compares against the set on its
+      // principal — the one spelling that must never be guessed, since a wrong
+      // guess is an affordance that silently never matches.
+      const names = [caps.operations, caps.moves, caps.columns]
+        .flatMap(g => Object.values(g ?? {}))
+        .map(n => `\`${n}\``)
+      bullets.push(`- capabilities — ${names.join(' · ') || 'none'}` +
+                   `${caps.operations?.read ? '' : ' · read is not graded'}`)
+    }
+
     if (bullets.length) { out.push(...bullets); out.push('') }
 
     out.push('| Field | Type | Required | Label | Rules | Messages |')

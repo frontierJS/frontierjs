@@ -66,7 +66,7 @@ export function createVolumesService(app: BasecampApp) {
 
   /** The system client, typed once — the accessors have no generated types yet
    *  (`litestone types` is pending), so every read is otherwise `unknown`. */
-  const sys = (): any => (app.data as any).asSystem()
+  const sys = (): any => $.db.asSystem()
 
   /**
    * The caller's fleet, as id → name.

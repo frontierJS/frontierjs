@@ -62,6 +62,7 @@
 //  @email                → format: "email"
 //  @url                  → format: "uri"
 //  @datetime             → format: "date-time"
+//  @time                 → pattern (NOT format: "time" — see applyValidators)
 //  @regex(pattern)       → pattern: "pattern"
 //  @length(min, max)     → minLength / maxLength
 //  @gt(n)                → exclusiveMinimum: n
@@ -107,7 +108,10 @@ const MESSAGE_KEYWORDS = {
   url:        ['format'],
   date:       ['format'],
   datetime:   ['format'],
-  time:       ['format'],
+  // `pattern`, not `format` — see the emitter. This row said `format` for as
+  // long as the emitter produced nothing at all, so an author's `@time` message
+  // was keyed to a keyword no consumer could ever have checked.
+  time:       ['pattern'],
   regex:      ['pattern'],
   startsWith: ['pattern'],
   endsWith:   ['pattern'],
@@ -137,7 +141,9 @@ const MESSAGE_KEYWORDS = {
  * @returns {object}  JSON Schema object (not stringified)
  */
 import { parseGateString } from './plugins/gate.js'
+import { TIME_PATTERNS } from './core/validate.js'
 import { dependsOnClock } from './core/policy.js'
+import { capabilitiesForModel } from './core/capabilities.js'
 
 export function generateJsonSchema(schema, options = {}) {
   const {
@@ -517,20 +523,57 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     }
   }
 
+  // ── x-capabilities ─────────────────────────────────────────────────────────
+  // Which of this model's actions need a grant, so a screen can render exactly
+  // the buttons this caller could actually press. An AFFORDANCE and never a
+  // boundary, like `x-gate` beside it (Invariant 6): what a browser believes
+  // changes nothing about what the Data boundary does.
+  //
+  // Names rather than a verdict — the CALLER's set is on the principal, not in
+  // the schema, so this says which capability each action requires and the
+  // client compares. `read` is absent unless the model wrote `@@capabilities(all)`,
+  // which is exactly the shape of the declaration: absent means nothing is
+  // required, not that reading is refused.
+  //
+  // A move already appears in `x-transitions` and a column in the field's own
+  // schema; carrying the capability NAME here, in one place, is what stops a
+  // client from rebuilding `Model.action` by string concatenation — the one
+  // spelling that must never be guessed, since a wrong guess is an affordance
+  // that silently never matches.
+  // Derived, never rebuilt. This file used to re-expand the three kinds itself
+  // and got the machine-move filter wrong — it read the gate and not `@system`,
+  // so a browser was offered five grants the boundary never consults. That is
+  // the third author one rule collected (Invariant 4); `capabilitiesForModel`
+  // is the only one now.
+  const derived = capabilitiesForModel(model)
+  if (derived.length) {
+    const operations = {}, moves = {}, columns = {}
+    for (const c of derived) {
+      if (c.kind === 'operation') operations[c.target] = c.name
+      if (c.kind === 'move')      moves[c.target]      = c.name
+      if (c.kind === 'column')    columns[c.target]    = c.name
+    }
+    result['x-capabilities'] = { operations, moves, columns }
+  }
+
   // ── x-transitions ──────────────────────────────────────────────────────────
   // The model's state machines, keyed by field (a model can have more than one
   // status column). This is what lets the UI render exactly the legal buttons
   // for a record without hand-written logic — see sierra's
-  // resource.transitions(row, level). `gate` is a UI affordance only: the move
-  // is enforced at the Data boundary regardless of what the client believes.
+  // resource.transitions(row, level). `gate` and `system` are UI affordances
+  // only: the move is enforced at the Data boundary regardless of what the
+  // client believes. `system` says the APPLICATION makes this move, so no
+  // caller's level changes the answer and a screen renders no button rather
+  // than a disabled one — always present rather than only when true, so a
+  // reader tests a boolean instead of distinguishing false from absent.
   const transitionAttrs = model.attributes.filter(a => a.kind === 'transitions')
   if (transitionAttrs.length) {
     result['x-transitions'] = Object.fromEntries(
       transitionAttrs.map(a => [
         a.field,
         Object.fromEntries(
-          Object.entries(a.transitions).map(([name, { from, to, gate }]) =>
-            [name, { from, to, gate: gate ?? null }])
+          Object.entries(a.transitions).map(([name, { from, to, gate, system }]) =>
+            [name, { from, to, gate: gate ?? null, system: Boolean(system) }])
         ),
       ])
     )
@@ -741,6 +784,34 @@ function applyValidators(schema, attributes) {
       case 'datetime':
         schema.format = 'date-time'
         break
+      // A wall-clock time, and it is a `pattern` rather than `format: 'time'`
+      // on purpose: that format means RFC 3339 full-time, which requires
+      // seconds AND an offset, where `@time` requires neither and admits no
+      // offset at all — so a consumer honouring the format would refuse
+      // `09:30`, which the Data boundary accepts. The pattern is the
+      // validator's own regex, imported rather than restated, so the two
+      // boundaries cannot come to disagree about what a time is.
+      case 'time':
+        schema.pattern  = attr.seconds === true ? TIME_PATTERNS.hms : TIME_PATTERNS.hm
+        schema['x-time'] = { seconds: attr.seconds === true }
+        break
+      // Exact numbers. The JSON type stays `integer` — the value on the wire IS
+      // the scaled integer — and the scale travels beside it so a client can
+      // render 1299 as 12.99 without being told a second time.
+      case 'scale':
+        schema['x-scale'] = attr.places
+        break
+      case 'money':
+        // Three shapes and a reader has to tell them apart: a stated currency,
+        // one held per row in a sibling column, and the app's default. The
+        // scale is NOT resolved here — for `field:` it is not knowable from the
+        // schema, and a number that is right two thirds of the time is worse
+        // than an absent one.
+        schema['x-money'] = attr.currency
+          ? { currency: attr.currency }
+          : attr.field ? { field: attr.field } : {}
+        break
+
       case 'regex':
         if (attr.pattern) schema.pattern = attr.pattern
         break

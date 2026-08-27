@@ -32,14 +32,31 @@ function tree(name, files) {
 // `declaredGates()` counts, and one here would move what `gate-unreachable`
 // reports as the worst level in every other test in this file.
 const SCHEMA = `
+// Declared row tenancy, so \`service-as-system\` RUNS on the clean tree rather
+// than skipping — a rule that only ever skips is the failure this file exists to
+// prevent, and it is the strategy under which asSystem() can cross a tenant at
+// all. Both models carry the column, which is what the declaration requires.
+tenancy { strategy row  column workspaceId  claim workspaceId }
+
 enum LeadStatus { new qualified closed }
 
-model Account { id Int @id  name String }
+// Declares the grid with a FLAT gate, so \`capability-ladder\` RUNS on the clean
+// tree rather than skipping, and finds nothing — which is the shape a model
+// graded by capability is meant to be in: the ladder at the read floor, the
+// authority in the grant.
+model Account {
+  id          Int    @id
+  name        String
+  workspaceId Int
+  @@gate("2")
+  @@capabilities
+}
 model Lead {
-  id        Int    @id
-  name      String
-  accountId Int
-  status    LeadStatus @default(new)
+  id          Int    @id
+  name        String
+  accountId   Int
+  workspaceId Int
+  status      LeadStatus @default(new)
   @@gate(read: READER, write: USER, delete: ADMINISTRATOR)
   @@transitions(status,
     qualify: new              -> qualified,
@@ -61,7 +78,13 @@ const CLEAN = {
   // — a rule that only ever skips is the failure this file exists to prevent —
   // and its absence of findings is the shape an app is meant to be in: import
   // the file, declare nothing twice.
-  'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*' } }),
+  'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*' } }),
+  // A dependency that ships CSS, so `css-token-undefined` RUNS on the clean tree
+  // rather than skipping. The token below is the one the clean page reads.
+  'node_modules/@acme/skin/package.json':
+    JSON.stringify({ name: '@acme/skin', exports: { './index.css': './src/index.css' } }),
+  'node_modules/@acme/skin/src/index.css':
+    ':root { --gap: 1rem; --rule: #ddd; }\n',
   'node_modules/@acme/kit/package.json':
     JSON.stringify({ name: '@acme/kit', exports: { './schema.lite': './db/kit.lite' } }),
   'node_modules/@acme/kit/db/kit.lite':
@@ -76,6 +99,15 @@ const CLEAN = {
   'api/config/junction.config.js':      'export default {}\n',
   'web/index.html':                     '<!doctype html>\n<body><div id="app"></div></body>\n',
   'web/config/vite.config.js':          'export default { server: { port: 8010, strictPort: true } }\n',
+  // A `const` local read, so `detail-read-dead` RUNS over the clean tree rather
+  // than skipping — a rule that only ever skips is what this file exists to
+  // catch — and finds nothing, because a one-shot read is not the defect.
+  // The style block reads a token the dependency above declares and one the file
+  // declares itself, which is the shape `css-token-undefined` must stay quiet on.
+  'web/src/pages/lead.mesa':            "<script>\n  async function label(id) {\n" +
+                                        "    const row = await leads.service.get(id)\n" +
+                                        "    return row.name\n  }\n</script>\n" +
+                                        "<style>\n  .card { --pad: 4px; gap: var(--gap); padding: var(--pad) }\n</style>\n",
   'web/src/resources/Lead.mesa':        resource('leads'),
   'web/src/resources/Account.mesa':     resource('accounts'),
   // The third surface. It is in the clean app because every rule must RUN
@@ -301,7 +333,13 @@ describe('package-model-drift', () => {
         '}',
       ].join('\n'),
     }),
-    'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*' } }),
+    'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*' } }),
+  // A dependency that ships CSS, so `css-token-undefined` RUNS on the clean tree
+  // rather than skipping. The token below is the one the clean page reads.
+  'node_modules/@acme/skin/package.json':
+    JSON.stringify({ name: '@acme/skin', exports: { './index.css': './src/index.css' } }),
+  'node_modules/@acme/skin/src/index.css':
+    ':root { --gap: 1rem; --rule: #ddd; }\n',
   }
 
   const withModel = (body) => ({ ...CLEAN, ...KIT, 'db/schema.lite': SCHEMA + '\n' + body })
@@ -1050,6 +1088,80 @@ describe('service-model', () => {
 // this name reach a model* — from the API realm and the UI realm, which is why
 // they share one resolver rather than one regex each.
 
+// A row a screen KEEPS is watched, not fetched once. `service.get(id)` answers a
+// plain object and nothing can reach one — not a push, not a job, not another
+// tab — so the screen is stale with nothing said (`FJS-518`, `FJS-D138`).
+//
+// The heuristic is *bare assignment*, and the negative controls are what make it
+// usable: a `const` local is a genuinely one-shot read, and a comparison is not
+// an assignment at all. A rule that flagged either would be answered by turning
+// it off.
+
+describe('detail-read-dead', () => {
+  const screen = (body) => ({ ...CLEAN, 'web/src/pages/x.mesa': body })
+
+  test('a bare assignment keeps the row, so it is reported', () => {
+    const root = tree('drd-bare', screen(
+      "<script>\n  let order = null\n  async function load() {\n" +
+      "    order = await orders.service.get(page.params.id)\n  }\n</script>\n"))
+    const { findings } = only(root, 'detail-read-dead')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/orders\.record\(id\)/)
+    expect(findings[0].message).toMatch(/`order` keeps a row/)
+  })
+
+  test('a wrapped ternary is the same read — the assignment is a line up', () => {
+    const root = tree('drd-ternary', screen(
+      "<script>\n  let customer = null\n  async function load() {\n" +
+      "    customer = order?.customerId\n" +
+      "      ? await customers.service.get(order.customerId).catch(() => null)\n" +
+      "      : null\n  }\n</script>\n"))
+    expect(only(root, 'detail-read-dead').findings).toHaveLength(1)
+  })
+
+  test('a const local is a one-shot read and is left alone', () => {
+    const root = tree('drd-const', screen(
+      "<script>\n  async function label(id) {\n" +
+      "    const row = await orders.service.get(id)\n    return row.reference\n  }\n</script>\n"))
+    expect(only(root, 'detail-read-dead').findings).toEqual([])
+  })
+
+  test('a comparison is not an assignment', () => {
+    const root = tree('drd-compare', screen(
+      "<script>\n  async function same(id) {\n" +
+      "    return current == await orders.service.get(id)\n  }\n</script>\n"))
+    expect(only(root, 'detail-read-dead').findings).toEqual([])
+  })
+
+  test('watching it is what silences the rule', () => {
+    const root = tree('drd-record', screen(
+      "<script>\n  let order = null\n  const row = orders.record(page.params.id)\n" +
+      "  row.subscribe(v => { order = v })\n</script>\n"))
+    expect(only(root, 'detail-read-dead').findings).toEqual([])
+  })
+
+  test('a surface with no service.get() at all is SKIPPED, not passed', () => {
+    // A rule that found nothing because there was nothing to look at has not
+    // run, and reporting the two as one number is how coverage quietly stops.
+    // CLEAN carries a legitimate `service.get()` so the rule runs there, so
+    // this tree has to drop the whole surface and rebuild the part it needs.
+    const root = tree('drd-none', without('web/src/pages/',
+      { 'web/src/pages/x.mesa': "<script>\n  let x = 1\n</script>\n" }))
+    const res = only(root, 'detail-read-dead')
+    expect(res.findings).toEqual([])
+    expect(res.ran).not.toContain('detail-read-dead')
+    expect(res.skipped.map(s => s.rule)).toContain('detail-read-dead')
+  })
+
+  test('it reads the client surfaces, not the API', () => {
+    const root = tree('drd-api', {
+      ...CLEAN,
+      'api/src/services/x.ts': "let row\nrow = await orders.service.get(1)\n",
+    })
+    expect(only(root, 'detail-read-dead').findings).toEqual([])
+  })
+})
+
 describe('resource-model-miss', () => {
   const withVariant = (body) => ({
     ...CLEAN,
@@ -1088,6 +1200,86 @@ describe('resource-model-miss', () => {
                               "export const leads = createResource('leads')\n</script>\n",
     })
     expect(only(root, 'resource-model-miss').findings).toEqual([])
+  })
+})
+
+describe('service-as-system', () => {
+  // FJS-519. `asSystem()` keeps the tenant it is standing in — so which client
+  // is elevated decides whether the answer is scoped at all. The app-level
+  // client cannot be named positively (`app.claim(<any name>, db)`), so the
+  // rule tests the other direction.
+  // CLEAN already declares row tenancy. `tenancy` REPLACES that block, so ''
+  // is an app that declares none.
+  const svc = (body, tenancy = null) => ({
+    ...CLEAN,
+    'db/schema.lite': tenancy === null
+      ? CLEAN['db/schema.lite']
+      : CLEAN['db/schema.lite'].replace(/^tenancy \{[^}]*\}\n/m, tenancy),
+    'api/src/services/leads.service.ts':
+      "import { createService } from '@frontierjs/junction'\n" + body,
+  })
+
+  test('the app client elevated inside a service is a warning', () => {
+    const root = tree('sas-app', svc('export default (app) => createService({\n' +
+      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n'))
+    const { findings } = only(root, 'service-as-system')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(3)
+    expect(findings[0].message).toMatch(/app\.data\.asSystem\(\)/)
+    expect(findings[0].message).toMatch(/EVERY tenant/)
+  })
+
+  test('a cast does not hide the receiver', () => {
+    // Three of basecamp's sites are spelled this way.
+    const root = tree('sas-cast', svc('export default (app) => createService({\n' +
+      '  find: () => (app.data as any).asSystem().lead.findMany({ where: {} }),\n})\n'))
+    const { findings } = only(root, 'service-as-system')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/^app\.data\.asSystem/)
+  })
+
+  test('the request client, either spelling, is the correct shape', () => {
+    const root = tree('sas-scoped', svc('export default () => createService({\n' +
+      '  find: () => $.db.asSystem().lead.findMany({ where: {} }),\n' +
+      '  get:  (ctx) => ctx.locals.db.asSystem().lead.findFirst({ where: {} }),\n})\n'))
+    expect(only(root, 'service-as-system').findings).toEqual([])
+  })
+
+  test('a local bound to the request client is the same shape', () => {
+    const root = tree('sas-local', svc('export default () => createService({\n' +
+      '  find: (ctx) => {\n    const db = ctx.locals.db\n' +
+      '    return db.asSystem().lead.findMany({ where: {} })\n  },\n})\n'))
+    expect(only(root, 'service-as-system').findings).toEqual([])
+  })
+
+  test('no tenancy block means there is no claim to lose', () => {
+    const root = tree('sas-none', svc('export default (app) => createService({\n' +
+      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n', ''))
+    const { findings, skipped } = only(root, 'service-as-system')
+    expect(findings).toEqual([])
+    expect(skipped[0].why).toMatch(/no tenancy block/)
+  })
+
+  test('strategy database is skipped — one client is one file', () => {
+    // The hazard is physical there: a system context cannot reach a second
+    // tenant's database, so every finding would be noise. `example` is this.
+    const root = tree('sas-db', svc('export default (app) => createService({\n' +
+      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
+      'tenancy { strategy database  dir "./shops" }\n'))
+    const { findings, skipped } = only(root, 'service-as-system')
+    expect(findings).toEqual([])
+    expect(skipped[0].why).toMatch(/strategy database/)
+  })
+
+  test('a doc comment naming the block is not the block', () => {
+    // This repo's own schema says *declared once in the `tenancy { }` block
+    // below*, and an unblanked match reads that empty pair as the declaration
+    // and skips the whole app.
+    const root = tree('sas-comment', svc('export default (app) => createService({\n' +
+      '  find: () => app.data.asSystem().lead.findMany({ where: {} }),\n})\n',
+      '/// scoped by the `tenancy { }` block below\n' +
+      'tenancy { strategy row  column workspaceId  claim workspaceId }\n'))
+    expect(only(root, 'service-as-system').findings).toHaveLength(1)
   })
 })
 
@@ -1737,6 +1929,121 @@ describe('test-files-run', () => {
     const root = pkg('nolist', { test: 'vitest run' }, { 'tests/a.test.js': '//\n' })
     const { findings, skipped } = check(root)
     expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+})
+
+describe('a styled value names a token the stylesheets define', () => {
+  // The declaration is dropped WHOLE, so this is not a wrong colour — it is no
+  // border at all, with the stylesheet present in the bundle and every selector
+  // matching. It took this repo's own storefront apart while its drive stayed
+  // green, because a drive asserts what a page says.
+  const styled = (css) => ({ ...CLEAN, 'web/src/pages/panel.mesa': `<style>\n  .p { ${css} }\n</style>\n` })
+
+  test('a token nothing declares is reported, naming it', () => {
+    const root = tree('token-bad', styled('gap: var(--space-4)'))
+    const { findings } = only(root, 'css-token-undefined')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/var\(--space-4\)/)
+    expect(findings[0].line).toBe(2)
+  })
+
+  test('a token the dependency declares is not', () => {
+    const root = tree('token-dep', styled('gap: var(--gap)'))
+    expect(only(root, 'css-token-undefined').findings).toEqual([])
+  })
+
+  test('a token the file itself declares is not', () => {
+    const root = tree('token-local', styled('--mine: 2px; gap: var(--mine)'))
+    expect(only(root, 'css-token-undefined').findings).toEqual([])
+  })
+
+  // The line between a defect and a knob. A fallback is an author saying the
+  // token may be absent, and it is what a component's own knob looks like from
+  // outside — `var(--cp-accent, var(--color-primary))`. Nothing is dropped.
+  test('an undeclared token carrying a fallback is not', () => {
+    const root = tree('token-fallback', styled('gap: var(--knob, 1rem)'))
+    expect(only(root, 'css-token-undefined').findings).toEqual([])
+  })
+
+  test('one finding per token per file, not one per use', () => {
+    const root = tree('token-dedupe', styled('gap: var(--space-4); padding: var(--space-4)'))
+    expect(only(root, 'css-token-undefined').findings).toHaveLength(1)
+  })
+
+  test('an app whose dependencies ship no CSS is skipped, not passed', () => {
+    const bare = { ...CLEAN }
+    delete bare['node_modules/@acme/skin/package.json']
+    delete bare['node_modules/@acme/skin/src/index.css']
+    bare['package.json'] = JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*' } })
+    const root = tree('token-nocss', { ...bare, 'web/src/pages/panel.mesa': '<style>\n  .p { gap: var(--nope) }\n</style>\n' })
+    const { findings, skipped } = only(root, 'css-token-undefined')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
+  })
+})
+
+describe('a model graded by capability is not also graded by ladder', () => {
+  // `FJS-D146`: the grid and the gate are ANDed, with the gate as the floor. That
+  // is what keeps standing that crosses tenants available — and it means a write
+  // level above the read level is the ladder answering what the grid was declared
+  // to answer, so every grant is silently narrowed by it. The shape is a model
+  // moved onto capabilities with its old gate left behind.
+  const grid = (gate) => ({
+    ...CLEAN,
+    'db/schema.lite': SCHEMA + `\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n  ${gate}\n  @@capabilities\n}\n`,
+  })
+
+  test('a laddered gate on a grid model is reported, naming the operations', () => {
+    const root = tree('cap-ladder', grid('@@gate("2.5.5.6")'))
+    const { findings } = only(root, 'capability-ladder')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/create, update, delete need level 5\/5\/6 where read needs 2/)
+    expect(findings[0].message).toMatch(/ANDed/)
+  })
+
+  test('a flat gate is the shape it is asking for, and says nothing', () => {
+    const root = tree('cap-flat', grid('@@gate("2")'))
+    expect(only(root, 'capability-ladder').findings).toEqual([])
+  })
+
+  test('a laddered gate on a model with no grid is untouched', () => {
+    const root = tree('cap-nogrid', {
+      ...CLEAN,
+      'db/schema.lite': SCHEMA + '\nmodel Plain {\n  id Int @id\n  workspaceId Int\n  @@gate("2.5.5.6")\n}\n',
+    })
+    expect(only(root, 'capability-ladder').findings).toEqual([])
+  })
+
+  test('it reads the NAMED gate form too, which is what this repo writes', () => {
+    // Reading only `@@gate("2.5.5.6")` would make the rule silent on every schema
+    // that spells its gate by name — `example` and `basecamp` both do — so it
+    // would have been dead exactly where it matters.
+    const root = tree('cap-named', {
+      ...CLEAN,
+      'db/schema.lite': SCHEMA +
+        '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n' +
+        '  @@gate(read: READER, write: USER, delete: ADMINISTRATOR)\n  @@capabilities\n}\n',
+    })
+    const { findings } = only(root, 'capability-ladder')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/create, update, delete need level 4\/4\/5 where read needs 2/)
+  })
+
+  test('a named gate that is flat says nothing', () => {
+    const root = tree('cap-named-flat', {
+      ...CLEAN,
+      'db/schema.lite': SCHEMA +
+        '\nmodel Invoice {\n  id Int @id\n  workspaceId Int\n  @@gate(all: READER)\n  @@capabilities\n}\n',
+    })
+    expect(only(root, 'capability-ladder').findings).toEqual([])
+  })
+
+  test('it skips rather than passing when no model declares the grid', () => {
+    // A rule reporting nothing because it found nothing to look at has not
+    // passed, and this file is written to keep the two apart.
+    const root = tree('cap-none', { ...CLEAN, 'db/schema.lite': 'model Lead { id Int @id }\n' })
+    const { skipped } = runChecks({ root, only: ['capability-ladder'] })
     expect(skipped).toHaveLength(1)
   })
 })

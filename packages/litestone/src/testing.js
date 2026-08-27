@@ -20,8 +20,10 @@ import { levelLabel, REACHABLE_LEVELS, deriveAccess, gateLadder, expectedVerdict
 import { DEFAULT_MESSAGES, validateField } from './core/validate.js'
 import { buildPolicyMap, evalJs }   from './core/policy.js'
 import { fakeFor, fakeEmail }       from './fake.js'
+import { capabilityNames }          from './core/capabilities.js'
 import { Factory }                  from './seeder.js'
 import { tempDir }                  from './tmp-dirs.js'
+import { parseDuration }            from './tools/retention.js'
 import { existsSync, readFileSync } from 'fs'
 import { join }                     from 'path'
 
@@ -41,6 +43,74 @@ import { join }                     from 'path'
 // Note: When using autoFactories, all FK fields default to 1.
 // Seed FK parents in the `data` option or use withRelation() to avoid FK violations.
 
+// ─── The clock ────────────────────────────────────────────────────────────────
+//
+// `createClient({ now })` has always taken a clock. What a suite could not do is
+// MOVE it, and moving it is the whole point: the bugs worth a test here are
+// crossings — a window that opens, a schedule at a boundary, a retention that
+// expires — and a frozen instant can only ever assert one side of one.
+//
+// So the option is normalised into a holder every client this env opens reads
+// through, and the holder is handed back on `env.clock`.
+//
+// WHAT IT DOES NOT COVER, and it is not a small caveat: `@default(now())` and
+// `@updatedAt` are stamped by SQLITE, not by this — a column DEFAULT and an
+// AFTER UPDATE trigger, both `strftime('%Y-%m-%dT%H:%M:%fZ','now')` (`ddl.js`).
+// Freezing the clock does not move them. A suite that needs a row to be old
+// STATES its timestamp on the write, which works because a column default only
+// applies to a column the write omits. What the clock does move is `now()` in a
+// policy and `@@softDelete`'s stamp. See `FJS-531`.
+
+function makeTestClock(source) {
+  // A function is the caller's own source and they keep it. Moving it here would
+  // be two things claiming to say what time it is, and the loser would be
+  // whichever one the reader did not have in mind.
+  const owned = typeof source === 'function'
+  let fixed   = owned ? null : toDate(source)
+
+  const refuseOwned = (verb) => {
+    if (owned) throw new Error(
+      `createTestEnv: cannot ${verb}() a clock passed as a function — that source is yours to move. ` +
+      `Pass a Date or an ISO string instead, or move your own holder.`)
+  }
+
+  return {
+    /** The instant every client reads. */
+    now: () => owned ? toDate(source()) : (fixed ?? new Date()),
+
+    /** Freeze at, or move to, an instant. Answers the new one. */
+    set(at) {
+      refuseOwned('set')
+      fixed = toDate(at)
+      return fixed
+    },
+
+    /**
+     * Move by a duration — `'90m'`, `'2d'`, `'1y'`, or milliseconds. From the
+     * wall clock this also FREEZES, because a moving clock plus an offset is a
+     * clock that is still moving and the assertion after it would be a race.
+     */
+    advance(by) {
+      refuseOwned('advance')
+      const ms = typeof by === 'number' ? by : parseDuration(by, 'clock')
+      if (ms == null) throw new Error(`createTestEnv: clock.advance() needs a duration — '90m', '2d', or milliseconds`)
+      fixed = new Date((fixed ?? new Date()).getTime() + ms)
+      return fixed
+    },
+
+    /** Is time standing still? False for the wall clock and for a caller's own source. */
+    get frozen() { return !owned && fixed !== null },
+  }
+}
+
+function toDate(at) {
+  if (at == null) return null
+  const d = at instanceof Date ? at : new Date(at)
+  if (Number.isNaN(d.getTime()))
+    throw new Error(`createTestEnv: '${at}' is not a date — pass a Date or an ISO-8601 string`)
+  return d
+}
+
 export async function makeTestClient(schemaText, opts = {}) {
   const { db, factories } = await _buildEnv(schemaText, opts)
   return { db, factories }
@@ -55,8 +125,16 @@ async function _buildEnv(schemaText, opts = {}) {
     autoFactories = false,
     data: seederFn,
     migrations,
+    now,
     ...clientOpts
   } = opts
+
+  // The clock is built here rather than passed straight through, because what a
+  // suite needs is not a frozen instant but a MOVABLE one: the bugs this exists
+  // for are crossings — a window that opens, a retention that expires — and a
+  // value can only ever assert one side of one. Every client this env opens
+  // reads the same holder, so moving it moves the level clients too.
+  const clock = makeTestClock(now)
 
   const result = parse(schemaText)
   if (!result.valid) throw new Error(`makeTestClient: schema errors:\n${result.errors.join('\n')}`)
@@ -83,6 +161,7 @@ async function _buildEnv(schemaText, opts = {}) {
     parsed: result,
     db:     path,
     ...clientOpts,
+    now:       () => clock.now(),
     databases: { ...dbOverrides, ...(clientOpts.databases ?? {}) },
   })
 
@@ -128,7 +207,7 @@ async function _buildEnv(schemaText, opts = {}) {
     }
   }
 
-  return { db, factories, parsed: result, dir, path, dbOverrides, clientOpts }
+  return { db, factories, parsed: result, dir, path, dbOverrides, clientOpts, clock }
 }
 
 // ─── readOnly ─────────────────────────────────────────────────────────────────
@@ -268,6 +347,8 @@ export async function createTestEnv(opts = {}) {
     db:        built.db,
     system:    built.db.asSystem(),
     factories: built.factories,
+    // The clock every client this env opened reads. Movable — see makeTestClock.
+    clock:     built.clock,
     schema:    built.parsed.schema,
     dir:       built.dir,
     // The main database file. A test that reads the bytes on disk — "is this
@@ -289,6 +370,7 @@ export async function createTestEnv(opts = {}) {
           parsed:    parse(schemaText),
           db:        built.path,
           ...built.clientOpts,
+          now:       () => built.clock.now(),
           plugins:   [...others, new GatePlugin({ getLevel: () => n })],
           databases: { ...built.dbOverrides, ...(built.clientOpts.databases ?? {}) },
         }))
@@ -299,7 +381,18 @@ export async function createTestEnv(opts = {}) {
       // does not care who the principal is, and `verifyRowPolicies` cares about
       // nothing else.
       if (n === 8) return levels.get(n).asSystem()
-      return levels.get(n).$setAuth(principal ?? { id: 'test-principal' })
+      // The synthetic caller holds every capability the schema declares, so a
+      // refusal at this level came from the GATE. The grid is ANDed with the
+      // ladder (`FJS-D146`) and refuses with the same AccessDeniedError, so a
+      // caller holding none would report every write on an opted-in model as a
+      // deny no gate issued — the same isolation problem `@guarded` columns and
+      // row policies already have here, and the same answer: take the other
+      // rule out of the way rather than grade two rules with one assertion
+      // (`FJS-351`). A stated `principal` is left exactly as given: a caller
+      // building one is asking about a specific person, and a set injected
+      // under them is a grant they did not write.
+      return levels.get(n).$setAuth(
+        principal ?? { id: 'test-principal', capabilities: [...capabilityNames(built.parsed.schema)] })
     },
 
     // Every gated model's ladder, model name attached. The axis, not the run.
@@ -414,7 +507,14 @@ export async function createTestEnv(opts = {}) {
               // at nothing, and the write fails on the constraint rather than
               // reaching the gate.
               const data = factory.buildOne(await _freshParents(schema, row.model, chain))
-              delete data[idKey]
+              // The id comes out only where something else will make one. A key
+              // with no `@default` is CALLER-supplied and required, so stripping
+              // it fails the required check and the gate is never asked — which
+              // is what `OutpostNonce` (`nonce String @id`) reported at every
+              // level. `_columnPayload` already draws this line for the tenancy
+              // checker; drawing it differently here is how one harness grades a
+              // model the other cannot build.
+              if (_hasDefault(schema, row.model, idKey)) delete data[idKey]
               // The optional ones come out: they are refused below level 8 and
               // the row does not need them. A REQUIRED one stays in, so the
               // write reaches the field lock and is classified below — stripping
@@ -531,7 +631,7 @@ export async function createTestEnv(opts = {}) {
     verifyRowPolicies: async ({ against = null, principal = null,
                                 ops = ['read', 'update', 'delete'] } = {}) => {
       const schema     = against ?? built.parsed.schema
-      const who        = principal ?? DEFAULT_POLICY_PRINCIPAL
+      const who        = withDeclaredCapabilities(principal ?? DEFAULT_POLICY_PRINCIPAL, schema)
       const policyMap  = buildPolicyMap(schema, buildRelationMap(schema))
       const access     = deriveAccess(schema)
       const sys        = built.db.asSystem()
@@ -754,11 +854,13 @@ export async function createTestEnv(opts = {}) {
 
         const who = (label, value) => actors && label !== 'nobody'
           ? (label === 'A' ? actors[0] : actors[1])
-          : { ...DEFAULT_POLICY_PRINCIPAL, id: `tenant-${label}`, userId: `tenant-${label}`, [t.claim]: value }
+          : withDeclaredCapabilities(
+              { ...DEFAULT_POLICY_PRINCIPAL, id: `tenant-${label}`, userId: `tenant-${label}`, [t.claim]: value }, schema)
 
         const A        = who('A', va)
         const B        = who('B', vb)
-        const NOBODY   = { ...DEFAULT_POLICY_PRINCIPAL, id: 'tenant-nobody', userId: 'tenant-nobody', [t.claim]: null }
+        const NOBODY   = withDeclaredCapabilities(
+          { ...DEFAULT_POLICY_PRINCIPAL, id: 'tenant-nobody', userId: 'tenant-nobody', [t.claim]: null }, schema)
         const clientA  = await env.atLevel(7, A)
         const clientB  = await env.atLevel(7, B)
         const clientN  = await env.atLevel(7, NOBODY)
@@ -1019,7 +1121,7 @@ export async function createTestEnv(opts = {}) {
      */
     verifyFieldProtection: async ({ against = null, principal = null } = {}) => {
       const schema     = against ?? built.parsed.schema
-      const who        = principal ?? DEFAULT_POLICY_PRINCIPAL
+      const who        = withDeclaredCapabilities(principal ?? DEFAULT_POLICY_PRINCIPAL, schema)
       const sys        = built.db.asSystem()
       const mismatches = []
       const before     = snapshot(built.db)
@@ -2305,6 +2407,24 @@ const DEFAULT_POLICY_PRINCIPAL = {
   role:        'member',
 }
 
+/**
+ * The same caller, holding every capability the schema declares.
+ *
+ * A verifier grades ONE rule and has to take the others out of the way, or a
+ * refusal proves nothing about the rule it names (`FJS-351`). The grid is ANDed
+ * with the gate and throws the same `AccessDeniedError` a policy violation
+ * would, so a caller holding no grants makes every write on an opted-in model
+ * report *the call threw rather than filtering, which a policy never does* —
+ * a true sentence about the grid that says nothing about the policy.
+ *
+ * A set the caller already stated is left alone: they are asking about a
+ * specific person, and a grant injected under one is a grant nobody wrote.
+ */
+function withDeclaredCapabilities(who, schema) {
+  if (who?.capabilities) return who
+  return { ...who, capabilities: [...capabilityNames(schema)] }
+}
+
 // Which of these rows the operation actually reached, as a Set of ids.
 //
 // All three compile the policy into a WHERE, so "reached" is observable without
@@ -2710,6 +2830,15 @@ function _chains(schema, sys) {
       return cache[acc] ??= registry[acc]?.withParents({ fresh: true })
     },
   }
+}
+
+// Does this column carry a `@default`? The question the id strip turns on: a key
+// the database or the client mints is absent from a create, a key the caller
+// states is required in one.
+function _hasDefault(schema, modelName, fieldName) {
+  return Boolean(schema.models.find(m => m.name === modelName)
+    ?.fields.find(f => f.name === fieldName)
+    ?.attributes.some(a => a.kind === 'default'))
 }
 
 // The model's `@id` column. Not assumed to be `id`: `@@map`ped and renamed keys

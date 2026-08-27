@@ -216,4 +216,51 @@ The logger driver buffers and flushes on a **~1s timer and on process exit**. Im
 
 **Nothing is lost.** This is visibility lag, not data loss, and it is why reading the trail immediately after writing (as several examples do) reports an empty log.
 
-Related: the logger `path` resolves against the **process CWD, not the schema file**, so where the trail lands depends on where you launch from.
+Related: every relative `database { path }` — the logger's included — resolves against the **process CWD** by default, so where the trail lands depends on where you launch from. `createClient({ path, resolveFrom: 'schema' })` anchors it to the app root instead, and a schema assembled in memory says where it would have lived: pass the file as `path:` beside the string, or a directory as `resolveFrom`. Litestone says so when it CREATES a directory for a database — the one signal every instance of `FJS-449` had in common. See § *Where a relative database path lands*.
+
+## Where a relative `database { path }` lands
+
+Against the **process CWD**, by default. So the same schema means a different
+file depending on which directory the command was typed in, and nothing fails
+when it goes wrong: SQLite creates the file, litestone creates the directory
+above it, and every tool then reports on the new empty database. Measured
+(`FJS-449`): `litestone studio` run from `db/` served `db/db/shop.db` — 4,096
+bytes, one empty header page — for nineteen hours, while the real database sat
+two directories up; and a `vite build` run from a surface root prerendered
+twelve product pages as **zero products, exit 0**, which is a published static
+site with nothing in it.
+
+Three ways to say otherwise, and they are for different shapes:
+
+| | |
+| --- | --- |
+| `createClient({ path, resolveFrom: 'schema' })` | anchors to the APP ROOT — the schema file's directory, or its parent when that directory is `db`. This is what the litestone CLI does at every call site, which is why a command is safe from any directory. |
+| `createClient({ schema, path, resolveFrom: 'schema' })` | an app that reads `db/schema.lite` and appends fragments to it — auth's models, the outbox — still has the file. Name it. The string is parsed; the path is the anchor. |
+| `createClient({ schema, resolveFrom: '<dir>' })` | a schema with no file behind it at all. A directory or a `file:` URL — `new URL('../..', import.meta.url)`. It is a statement: an anchor that is not a directory throws rather than falling back. |
+
+`createTenantRegistry` takes `path` the same way, and it matters twice over —
+the `tenancy { dir }` and `tenancy { registry }` paths are written against the
+**schema file's own directory**, not the app root, which is the one place the
+two bases differ.
+
+An override is not affected and must not be: `createClient({ db })` and
+`databases: { name: { path } }` come from code, and code is written against the
+process.
+
+**The default stays the CWD.** Isolation-by-CWD is a real contract — a seed test
+that runs in a scratch directory redirects a database that has no env var by the
+working directory alone — so anchoring is opted into, not applied.
+
+**And a mint is announced.** Creating the database FILE is ordinary; every first
+run does it. Creating the DIRECTORY it sits in is the signal, and it is what
+every measured instance of this had in common:
+
+```
+[litestone] Created /app/site/db for a database that was not there.
+            path: /app/site/db/shop.db
+            cwd:  /app/site
+```
+
+The cwd is in the message because the resolved path alone does not say what went
+wrong: `db/shop.db` from the app root and from a surface root print the same
+relative string and name different files.

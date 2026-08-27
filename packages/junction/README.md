@@ -66,7 +66,7 @@ my-app/
 │   ├── src/
 │   │   ├── app.ts
 │   │   ├── core/            ← env, Litestone client, auth, hooks
-│   │   └── services/        ← *.service.ts — autoloaded at boot
+│   │   └── services/        ← *.service.ts — autoloaded at boot, found without being declared
 │   └── test/
 └── web/                     ← UI realm — Sierra + Mesa
 ```
@@ -100,7 +100,7 @@ packages/junction/
 │   ├── hooks-resilience.ts ← circuitBreaker, rateLimit
 │   ├── litestone.ts      ← Litestone adapter, gateAuth, autoValidate
 │   ├── schema.ts         ← createSchema(), v.* — zero-dep validation
-│   ├── loader.ts         ← auto-discovery of *.service.ts files
+│   ├── loader.ts         ← auto-discovery of *.service.ts files, and where they are
 │   ├── logger.ts         ← ILogger — pretty dev / JSON prod
 │   ├── env.ts            ← defineEnv() — typed, validated at startup
 │   └── errors.ts         ← named HTTP error classes
@@ -807,6 +807,40 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `http.compress` | `boolean` | `true` | gzip responses |
 | `http.maxBodySize` | `number` | `262144` | max request body bytes |
 | `cache.defaultTtl` | `string` | `'5 minutes'` | default cache entry TTL |
+
+### Where the services are
+
+Nowhere, ideally. Junction probes two directories beside the **entry file** —
+`./services`, then `./src/services` — and autoloads `**/*.service.ts` from the
+first one that exists. That is the flat layout and the canonical one, so an app
+laid out either way says nothing:
+
+```
+api/index.ts + api/services/          api/index.ts + api/src/services/
+api/src/app.ts + api/src/services/
+```
+
+Say otherwise with `services: { dir }` in `junction.config.js` (resolved against
+the working directory) or `createApp({ autoload: '/abs/path' })`, and switch it
+off with `autoload: false`. A **declared** directory is never probed around: if
+it is not there, junction says so by name and loads nothing — a relative path
+resolved against the wrong working directory lands on nothing and otherwise
+looks exactly like an app with no services.
+
+The boot banner carries the answer either way:
+
+```
+🚀 shop v1.0.0 … services=20 autoload=api/src/services …
+🚀 shop v1.0.0 … services=3  autoload="none — probed api/services, api/src/services" …
+```
+
+The second line is an app that loaded nothing and will 404 every route those
+services would have mounted. Nothing throws — a missing directory is a
+deliberate no-op — so the banner is where that shows.
+
+Under a test runner the entry is the **test file**, so an app that needs its
+services in a test states an absolute path: `autoload: new URL('./services',
+import.meta.url).pathname`.
 
 ---
 
@@ -2177,7 +2211,7 @@ Directory autoload fails in a bundled build for two independent reasons:
 1. The scan root resolves against `Bun.main` — the **output** file, not your source tree. Bundling `./app.ts` to `./dist/app.js` makes junction look for `./dist/services`; inside a compiled binary it looks in `/$bunfs/root`.
 2. `findServiceFiles()` globs `**/*.service.ts` — TypeScript source only. Bundled `.js` services are invisible to it, so shipping them alongside does not help.
 
-A missing services directory is a deliberate no-op, so nothing throws. You get a clean boot logging `"services":0` and a 404 on every autoloaded route.
+A missing services directory is a deliberate no-op, so nothing throws. You get a clean boot logging `"services":0` and a 404 on every autoloaded route — with `autoload` on the boot banner naming the directories that were looked at, which is the one place that miss is visible.
 
 `build:app` guards against this: it **errors** when it finds a services directory that would be skipped, and **warns** when it cannot rule the case out (no `autoload: false` in the entry, or a `junction.config.js` that may set `services.dir`). The one exception it allows silently is an in-place `js` build — `--outdir` equal to the entry's directory — where the output sits beside the original `.ts` services and autoload genuinely still works.
 

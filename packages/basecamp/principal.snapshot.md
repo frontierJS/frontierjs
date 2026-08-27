@@ -37,6 +37,7 @@ the whole mechanism** — a caller holding none reads nothing, with a 200.
 | Caller column | `userId` |
 | Tenant column | `workspaceId` |
 | Standing column | `role` |
+| Capability grants | `capabilities` |
 | Read alongside | `workspace` |
 
 **No row is no claim.** A caller naming a tenant they do not belong to comes out
@@ -52,6 +53,7 @@ What this resolver may merge onto the principal, by name.
 | --- | --- |
 | `workspaceId` | the tenant — read by the desugared `@@deny` on every scoped model |
 | `memberRole` | a standing, graded by the app's own `getLevel` |
+| `capabilities` | the grant set — read by the Data boundary's capability grid (`FJS-D151`), which is the one claim name this framework fixes rather than the app |
 
 `userId` and `id` are refused by name: a claim says what a caller HOLDS for this
 request, never who they are. Identity is `IAuth`'s and nothing else's.
@@ -83,7 +85,7 @@ executed by litestone's `verifyGateLadder`.
 | --- | --- | --- |
 | Scoped by column | 18 | `Invitation` · `Secret` · `ApiKey` · `Server` · `Network` · `Project` · `Environment` · `App` · `Domain` · `Deployment` · `Job` · `Recipe` · `FeatureFlag` · `NotificationChannel` · `AlertRule` · `Dashboard` · `AuditEvent` · `RegistryImage` |
 | Scoped by delegation | 14 | `ServerEvent` · `Volume` · `ServerNetwork` · `AppServer` · `AppNetwork` · `DeploymentStep` · `JobRun` · `RecipeRun` · `DiskUsage` · `CleanupRun` · `FlagOverride` · `AlertRuleChannel` · `AlertEvent` · `DashboardWidget` |
-| Exempt — `@@tenant(none)` | 13 | `Credential` · `Session` · `Verification` · `OauthFlow` · `User` · `Account` · `Workspace` · `WorkspaceMember` · `Blueprint` · `BlueprintParam` · `Backup` · `HubConfig` · `NotificationPreference` |
+| Exempt — `@@tenant(none)` | 14 | `Credential` · `Session` · `Verification` · `OauthFlow` · `User` · `Account` · `Workspace` · `WorkspaceMember` · `OutpostNonce` · `Blueprint` · `BlueprintParam` · `Backup` · `HubConfig` · `NotificationPreference` |
 
 An exemption is a decision, so it is listed by name rather than counted. A model
 moving into this row is a model every tenant can now read.

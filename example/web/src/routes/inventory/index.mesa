@@ -323,8 +323,8 @@ title: Inventory
 
 <style>
   .num   { text-align: right; font-variant-numeric: tabular-nums }
-  .up    { color: var(--success-fg, inherit) }
-  .down  { color: var(--danger-fg, inherit) }
+  .up    { color: var(--color-success) }
+  .down  { color: var(--color-danger) }
 
   /* Two forms side by side above ~52rem and stacked below it — `auto-fit`
      rather than a media query, because what decides is how much room the pair

@@ -148,9 +148,20 @@ Consequences worth stating:
 
 - **Anonymous is not every tenant, it is none of them.** No principal → no
   claim → nothing matches.
-- **`asSystem()` is the only way across**, which is what a cross-tenant admin
-  tier is built on. It is also the only thing that can create a tenant's first
-  row before anyone belongs to it.
+- **`asSystem()` means no permission rules, not no scope**, and which of the two
+  you get depends on where you reach for it. `db.asSystem()` off the ROOT client
+  has no principal, so there is no claim, so nothing is scoped — that is the
+  cross-tenant admin tier, and the only thing that can create a tenant's first
+  row before anyone belongs to it. `db.$setAuth(user).asSystem()` keeps that
+  user's claim: it crosses the gate, `@guarded` and every hand-written policy,
+  and it stays inside the tenant it was standing in. That is the client an
+  application wants inside a request — a `@@gate("8")` model can be read by
+  nothing else, so before this the only client that could read a credential was
+  the one that ignored tenancy (`FJS-519`).
+- **So reaching for the app-level client inside a request is the wrong reach.**
+  `app.data.asSystem()` in a service handler is unscoped by construction,
+  because the app client has no principal to take a claim from. The request's
+  own client is the one to elevate.
 - **A stated wrong tenant is refused by name** (`AccessDeniedError`), not
   written and then hidden.
 - **Raw SQL enforces none of it** — `db.sql` requires `asSystem()` once a schema

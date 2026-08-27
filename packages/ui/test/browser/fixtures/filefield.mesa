@@ -1,0 +1,47 @@
+<script>
+  // filefield.mesa — the control a `File` column gets, in its three states.
+  //
+  // Three fixtures in one, because what separates them IS the component: a
+  // column with nothing in it, a column holding the URL the server resolved a
+  // stored reference into, and a column holding the browser File somebody just
+  // chose. Only the third is ever handed back to the form, and the spec's job
+  // is that the other two are drawn and not submitted.
+  import FileField from '../../../components/forms/FileField.mesa'
+
+  // A 1×1 transparent GIF, so the <img> has real bytes to decode without the
+  // fixture reaching the network.
+  export let stored = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+
+  const field = { name: 'file', accept: 'image/png, image/gif', required: false, multiple: false }
+
+  let empty    = undefined
+  let existing = stored
+  let handed   = 'none'
+</script>
+
+<div id="empty">
+  <FileField name="file" field={field} value={empty}
+             onvalue={(v) => { empty = v; handed = v === null ? 'null' : (v?.name ?? String(v)) }} />
+</div>
+
+<div id="existing">
+  <!--
+    `undefined` puts the RECORD's value back, which is what a form does with it:
+    a field the caller did not change is a key the patch does not carry, so the
+    stored file stays exactly as it is. Modelled here rather than assumed,
+    because the alternative reading — undefined clears the field — is the one
+    that silently drops a photograph on every edit that did not touch it.
+  -->
+  <FileField name="file2" field={field} value={existing}
+             onvalue={(v) => {
+               handed   = v === null ? 'null' : (v === undefined ? 'undefined' : (v?.name ?? String(v)))
+               existing = v === undefined ? stored : v
+             }} />
+</div>
+
+<div id="unresolved">
+  <FileField name="file3" field={field} value={'{"key":"storage/x.png","provider":"local"}'} onvalue={() => {}} />
+</div>
+
+<output id="handed">{handed}</output>
+<output id="kind">{existing instanceof File ? 'File' : typeof existing}</output>

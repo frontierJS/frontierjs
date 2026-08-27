@@ -206,6 +206,40 @@ if (dockerfileSrc && !/^\s*COPY\s+db\b/m.test(dockerfileSrc)) {
   renderCheck('Dockerfile copies db/', 'pass')
 }
 
+// ─── Can this image be promoted, or only deployed? ────────────────────────────
+//
+// The property is invariant 1 of the Release design: one artefact moves from
+// staging to production unchanged and only its bindings differ. A build that
+// bakes configuration into the image breaks it silently — the image still
+// builds, starts, answers health and reports a digest; it is simply a different
+// digest per environment. Measured, and the rules are in `core/build-check.js`.
+//
+// This reads THIS tree. The deploy's own `02b-build-check` step asks the same
+// question of the server's real build context, which is the one that holds
+// `.env.production` — a file that is deliberately in no repository.
+if (dockerfileSrc) {
+  const bc = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
+  const findings = bc.inspectBuild(bc.gatherLocal({
+    root: context.paths.root, fs: await import('fs'), dockerfile,
+  }))
+
+  if (!findings.length) {
+    renderCheck('image carries no deployment state — promotable', 'pass')
+  } else {
+    for (const f of findings) {
+      renderCheck(f.title + (f.line ? `  (${dockerfile}:${f.line})` : ''),
+                  f.level === 'error' ? 'fail' : 'warn',
+                  `fix: ${f.hint}`)
+      if (f.level === 'error') fail()
+      else warn()
+    }
+    // A summary either way: warnings alone still answer the question this
+    // section asks, and without the line the reader learns only what is wrong.
+    if (bc.refuses(findings)) renderCheck('fli deploy will refuse this build', 'info')
+    else                      renderCheck(bc.summarise(findings), 'pass')
+  }
+}
+
 // ─── The migration history must build the schema ──────────────────────────────
 //
 // The one check that catches a deploy which builds, starts, answers /health and

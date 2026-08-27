@@ -53,7 +53,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/cli`
 
-`packages/cli` · ships `LICENSE` `README.md` `bin/` `commands/` `core/` `package.json` `web/`
+`packages/cli` · ships `LICENSE` `README.md` `bin/` `commands/` `core/` `db/` `package.json` `web/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -302,6 +302,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./inflect` | `src/inflect/inflect.js` | yes |
 | exports | `./json` | `src/json/json.js` | yes |
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
+| exports | `./match` | `src/match/match.js` | yes |
 | exports | `./query (types)` | `src/query/query.d.ts` | yes |
 | exports | `./query (default)` | `src/query/query.js` | yes |
 | exports | `./search` | `src/search/search.js` | yes |
@@ -320,8 +321,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 69 files |
-| exports | `./components/*` | `components/*.mesa` | 69 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 70 files |
+| exports | `./components/*` | `components/*.mesa` | 70 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

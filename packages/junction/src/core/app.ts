@@ -16,6 +16,7 @@ import { createMemoryCache }        from '../cache/index.ts'
 import { createScheduler }          from '../scheduler/index.ts'
 import { createDatabase, type DatabaseClient } from '../storage/database/index.ts'
 import { autoloadServices }         from './loader.ts'
+import { resolveServicesDir, describeServicesDir, type ServicesDirResolution } from './services-dir.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { toFrameworkError, NotFound }   from './errors.ts'
 import { helmet, cors }                 from '../transport/middleware.ts'
@@ -98,6 +99,29 @@ export type PluginInput = PluginFn | Plugin
 export interface AppConduit {}
 
 /**
+ * The shape of `app.db`.
+ *
+ * Empty here for the same reason as `AppConduit` above and with the opposite
+ * problem: Junction genuinely does not know what the client is — a Litestone
+ * client and a plain table-shaped object are both valid, and `createBaseService`
+ * adapts the latter. It was `unknown`, which is honest and unusable: an app
+ * cannot narrow it, because Invariant 5 rules that a property is typed by
+ * AUGMENTING an exported interface and never by redeclaring it (declaration
+ * merging requires identical types, so a redeclaration silently loses). So the
+ * largest app in this repo claimed a SECOND name for the identical object —
+ * `app.data` — and read it 29 times against `app.db`'s three (`FJS-532`).
+ *
+ * Empty accepts any object, so assignment stays as permissive as `unknown` was.
+ * The augmenter here is usually the APP rather than a package, which changes
+ * nothing about how it works:
+ *
+ *   declare module '@frontierjs/junction' {
+ *     interface AppDb extends MyLitestoneClient {}
+ *   }
+ */
+export interface AppDb {}
+
+/**
  * The shape of `app.jobs`.
  *
  * Same contract as AppConduit above: empty here so Junction keeps no dependency
@@ -154,8 +178,10 @@ export interface App {
    * only `config.database.url` was set. Typed loosely because both a Litestone
    * client and a plain table-shaped object are valid — `createBaseService`
    * adapts the latter.
+   *
+   * Augment `AppDb`, don't redeclare this field.
    */
-  db?:       unknown
+  db?:       AppDb
 
   /** The tenant registry, when `createApp({ tenants })` was given one. */
   tenants?:  import('./litestone.ts').TenantRegistryLike
@@ -709,6 +735,12 @@ export function createApp(opts: AppOptions = {}): App {
   // Async plugin register() rejections, captured by configure() and
   // rethrown by start() — a half-registered plugin must not boot.
   const _registerFailures: Array<{ plugin: string; err: unknown }> = []
+  // What `autoload-services` decided, kept so the banner can report a miss.
+  // The report is on the banner rather than beside the decision because that
+  // phase needs a host: every app mounted by a test runner or a snapshot tool
+  // resolves the entry to the runner's own file and finds nothing, which is
+  // not news — an app about to SERVE with no services anywhere is.
+  let _servicesDir: ServicesDirResolution = { dir: null, source: 'none', probed: [] }
   const events    = createEventBus()
   const telemetry = createEventBus()
   const cache     = createMemoryCache({
@@ -779,7 +811,11 @@ export function createApp(opts: AppOptions = {}): App {
   // ── Build the app object ─────────────────────────────────────────────
   const app: App = {
     config,
-    db,
+    // The OPTION stays `unknown` and the field is `AppDb`, which is the one
+    // place those two meet. Narrowing the option too would mean an app that
+    // augments `AppDb` could no longer pass the plain table-shaped object
+    // `createBaseService` adapts — permissive in, typed out.
+    db: db as AppDb,
     tenants: opts.tenants,
     logger,
     services,
@@ -1455,8 +1491,11 @@ export function createApp(opts: AppOptions = {}): App {
       //   autoload: false        → disabled
       //   opts.autoload (string) → explicit path, CWD-relative
       //   _junction.services.dir → from junction.config.js, CWD-relative
-      //   default                → './services' beside the ENTRY FILE (Bun.main)
-      // A missing directory is a silent no-op, so the default costs nothing.
+      //   default                → probed beside the ENTRY FILE (Bun.main):
+      //                            `./services`, then `./src/services`
+      // `resolveServicesDir` is the one owner of that list — the snapshot tools
+      // ask it the same question, where `Bun.main` is the tool.
+      //
       // NOT needsHost. Registering services reads a directory and builds
       // objects; it binds nothing. It was grouped with the host phases and the
       // cost was invisible until an app was mounted by @frontierjs/testing:
@@ -1464,28 +1503,36 @@ export function createApp(opts: AppOptions = {}): App {
       // services in a test env and every call answered `Service 'x' not found`
       // — a 404 that reads like a wrong name rather than an unloaded app.
       //
-      // Safe to run without a host because a missing directory is a silent
-      // no-op. The one thing a test cannot reach is `_junction.services.dir`:
+      // The one thing a test cannot reach is `_junction.services.dir`:
       // `load-config` IS needsHost, so junction.config.js is not read, and an
-      // app that wants its services in a test states `autoload:` directly.
+      // app that wants its services in a test states `autoload:` directly —
+      // an ABSOLUTE path, because the entry under `bun test` is the test file.
       { name: 'autoload-services', run: async () => {
-        const { resolve: resolvePath, dirname: dirnamePath } = await import('node:path')
-
-        const explicitDir = opts.autoload === false
-          ? undefined
+        const declared = opts.autoload === false
+          ? false
           : (opts.autoload
               ?? (config as { _junction?: { services?: { dir?: string } } })._junction?.services?.dir)
 
-        const servicesDir = opts.autoload === false
-          ? undefined
-          : explicitDir
-            ? resolvePath(process.cwd(), explicitDir)
-            : typeof Bun !== 'undefined' && Bun.main
-              ? resolvePath(dirnamePath(Bun.main), 'services')
-              : undefined
+        _servicesDir = resolveServicesDir({
+          entry:    typeof Bun !== 'undefined' ? Bun.main : null,
+          declared,
+        })
 
-        if (servicesDir) {
-          await autoloadServices({ dir: servicesDir, app, registry: services })
+        // A declared directory that is not there is a statement that failed,
+        // so it is loud wherever it happens — including in a test, where the
+        // app is the thing that stated it. What it names is the RESOLVED path:
+        // a relative one is resolved against the cwd, and a command run from
+        // the wrong directory is most of how this goes wrong.
+        if (_servicesDir.source === 'declared-missing') {
+          logger.warn(
+            `[Junction] No services directory at ${_servicesDir.probed[0]} — ` +
+            `declared as "${_servicesDir.declared}", and nothing will be autoloaded from it. ` +
+            `A relative path is resolved against the working directory.`
+          )
+        }
+
+        if (_servicesDir.dir) {
+          await autoloadServices({ dir: _servicesDir.dir, app, registry: services })
         }
       }},
 
@@ -1572,6 +1619,15 @@ export function createApp(opts: AppOptions = {}): App {
           url:      _base,
           routes:   http.router.routeCount,
           services: services.list().length,
+          // Where the autoloaded ones came from, and — this is the half that
+          // costs a day when it is missing — what was looked at when none did.
+          // `services=3` on an app with twelve reads as an app with three, and
+          // every route the other nine would have mounted is a 404, which
+          // reads as a wrong URL rather than as a directory nobody found
+          // (`FJS-458`). A field rather than a warning: an app that registers
+          // its services by hand is not doing anything wrong, and a framework
+          // that shouts at a correct app teaches everyone to stop reading.
+          autoload: describeServicesDir(_servicesDir),
           prefix:   _prefix || undefined,
           health:   _healthPath ? `${_base}${_healthPath}` : undefined,
           docs:     _docsPath   ? `${_base}${_docsPath}`   : undefined,

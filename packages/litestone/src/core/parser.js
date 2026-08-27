@@ -1,4 +1,11 @@
 // schema.lite parser — recursive descent, zero dependencies
+//
+// `@frontierjs/toolbelt` is the one import, and it is the substrate rather than
+// a dependency: it ships pure functions and depends on nothing, which is what
+// lets litestone reach it without inverting the graph (`FJS-D26`).
+
+import { isKnownCurrency } from '@frontierjs/toolbelt/units'
+import { expandCapabilityType } from './capabilities.js'
 
 // ─── Tokenizer ────────────────────────────────────────────────────────────────
 
@@ -1109,6 +1116,20 @@ class Parser {
           throw new ParseError('@system takes no arguments — it is a lock, not a level', this.peek())
         return { kind: 'system' }
       }
+      case 'capability': {
+        // @capability — writing THIS column is its own capability.
+        //
+        // Opt-in per column and never derived wholesale: every writable column
+        // on basecamp is 461 of them, which is not a list anybody picks from
+        // (`FJS-D147`). The model's own @@capabilities switch has to be on for
+        // this to mean anything — validate() says so.
+        if (this.check(TK.LPAREN))
+          throw new ParseError(
+            '@capability takes no arguments — it says this column\'s write is its own ' +
+            'capability, and which callers hold it is a Role row rather than a schema fact',
+            this.peek())
+        return { kind: 'capability' }
+      }
       case 'encrypted': {
         // @encrypted                       → AES-256-GCM under a random IV. Implies
         //                                    @guarded(all). Not filterable.
@@ -1149,7 +1170,7 @@ class Parser {
       // promises the value comes back.
       case 'hashed': return { kind: 'hashed' }
 
-      case 'check':    return { kind: 'check',     expr: this.parseParenString() }
+      case 'check':    return { kind: 'check',     ...this.parseCheckArgs() }
 
       // ── @secret — composite encrypted+guarded+logged field ─────────────────
       // @secret                        — rotatable (default)
@@ -1237,6 +1258,15 @@ class Parser {
       }
       case 'updatedAt': return { kind: 'updatedAt' }   // auto-set on every update
       case 'version':   return { kind: 'version' }     // optimistic concurrency — see client.js
+
+      // ── Exact numbers ──────────────────────────────────────────────────────
+      // `@scale(n)` — the column is an integer and the point sits n places in.
+      // `@money(USD)` — the same thing with the scale DERIVED from the currency,
+      // because scale is not a free parameter for money: JPY has none, KWD has
+      // three, and an author who has to know the ISO table by heart will get it
+      // wrong (`FJS-D142`).
+      case 'scale':     return { kind: 'scale', places: this.parseParenNumber() }
+      case 'money':     return this.parseMoney()
       case 'updatedBy': {
         // @updatedBy              → stamps ctx.auth.id on every update
         // @updatedBy(auth().field) → stamps ctx.auth[field] on every update
@@ -2001,6 +2031,33 @@ class Parser {
         }
         return { kind: 'softDelete', cascade }
       }
+      case 'capabilities': {
+        // @@capabilities       — create, update, delete and every named move
+        // @@capabilities(all)  — the same, plus read
+        //
+        // A SWITCH and not a list: `FJS-D139` rules that a capability is a
+        // reference to something the seed already declares, so the names come
+        // from this model's own surface and a second list would be a second
+        // owner of them.
+        //
+        // `read` is opt-in because its refusal is the silent one (`FJS-D140`):
+        // a capability refusal on a write throws and names itself, while a
+        // missing read capability composes with the policy layer into an empty
+        // list with a 200. `all` is the widening token this language already
+        // uses — @guarded(all), @allow('all', …).
+        let read = false
+        if (this.check(TK.LPAREN)) {
+          this.eat(TK.LPAREN)
+          const arg = this.eat(TK.IDENT).value
+          if (arg !== 'all')
+            throw new ParseError(
+              `@@capabilities only accepts (all), got (${arg}). Bare covers create, update, ` +
+              `delete and every named move; (all) adds read.`, this.peek())
+          read = true
+          this.eat(TK.RPAREN)
+        }
+        return { kind: 'capabilities', read }
+      }
       case 'softDeleteCascade':
         throw new ParseError(`@@softDeleteCascade is no longer supported. Use @@softDelete(cascade) instead.`, this.peek())
       case 'hasTemplates': {
@@ -2135,6 +2192,21 @@ class Parser {
           throw new ParseError(`@@tenant column must be a valid identifier, got '${column}'`, this.peek())
         return { kind: 'tenant', mode: 'column', column }
       }
+      // ── @@check — a row invariant that spans more than one column ───────────
+      //
+      //   @@check("startsAt < endsAt")
+      //   @@check("startsAt < endsAt", "an end must come after its start")
+      //
+      // The table-level half of `@check`. A field validator sees one field,
+      // `@@unique` is about rows in a table rather than values in a row, and
+      // `@@allow` is who rather than what is valid — so a two-column invariant
+      // had nowhere to live but a service hook, which every other writer
+      // bypasses: a job on `db.`, a migration, `asSystem()`, a seed.
+      //
+      // Repeatable, like `@@unique` and `@@index`: a model may hold several
+      // invariants and they are not one answer to one question.
+      case 'check':  return { kind: 'check',        ...this.parseCheckArgs() }
+
       case 'gate':   return { kind: 'gate',         value: this.parseGateArg() }
       case 'transitions': return { kind: 'transitions', ...this.parseTransitionsArg() }
       case 'auth':   return { kind: 'auth' }
@@ -2209,6 +2281,62 @@ class Parser {
   }
 
   // Parse @gt(value) or @gt(value, msg)
+  parseParenNumber() {
+    this.eat(TK.LPAREN)
+    const value = this.eat(TK.NUMBER).value
+    this.eat(TK.RPAREN)
+    return value
+  }
+
+  /**
+   * `@money` · `@money(USD)` · `@money("USD")` · `@money(field: currency)`
+   *
+   * A bare code and a quoted one are the same thing; the schema reads better
+   * unquoted and a string is what somebody pasting from JSON will write.
+   * `field:` names a sibling column holding the code per row, which is the shape
+   * a shop taking more than one currency needs — django-money's two columns and
+   * one declaration.
+   */
+  parseMoney() {
+    if (!this.check(TK.LPAREN)) return { kind: 'money', currency: null, field: null }
+
+    this.eat(TK.LPAREN)
+
+    // `field: currency` — an IDENT followed by a colon, which no currency is.
+    if (this.check(TK.IDENT) && this.peek(1)?.type === TK.COLON) {
+      const key = this.eat(TK.IDENT).value
+      this.eat(TK.COLON)
+      const field = this.eat(TK.IDENT).value
+      this.eat(TK.RPAREN)
+      if (key !== 'field') {
+        const t = this.peek()
+        throw new ParseError(`@money takes a currency or 'field:', got '${key}:'`, { line: t.line, col: t.col })
+      }
+      return { kind: 'money', currency: null, field }
+    }
+
+    const currency = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+    this.eat(TK.RPAREN)
+    return { kind: 'money', currency: String(currency).toUpperCase(), field: null }
+  }
+
+  // ── @check / @@check argument parser ────────────────────────────────────────
+  //
+  //   @check("qty > 0")
+  //   @check("qty > 0", "must be at least one")
+  //
+  // The message is the LAST argument, which is where every other validator on a
+  // field carries one. Without it the only sentence available is the expression,
+  // and an expression under a form control is SQL leaking to a person who did
+  // not write it.
+  parseCheckArgs() {
+    this.eat(TK.LPAREN)
+    const expr    = this.eat(TK.STRING).value
+    const message = this.maybeEat(TK.COMMA) ? this.eat(TK.STRING).value : null
+    this.eat(TK.RPAREN)
+    return message ? { expr, message } : { expr }
+  }
+
   parseNumMessage() {
     this.eat(TK.LPAREN)
     const value = this.eat(TK.NUMBER).value
@@ -2285,19 +2413,60 @@ class Parser {
           `not what it does. Write \`promote: false -> true\`.`, this.peek())
       if (name === null) name = to   // unnamed → named after the target state
 
-      // Optional @gate(N) — the minimum level allowed to make this move
-      let gate = null
-      if (this.check(TK.AT)) {
+      // Optional per-move attributes, in either order.
+      //
+      //   @gate(N)  the minimum level allowed to MAKE this move
+      //   @system   the move is the APPLICATION's: a caller may ask for it and
+      //             never make one, and the app states `{ system: true }` on the
+      //             call. The move still runs on the caller's own client, so the
+      //             gate, the row policies and the audit actor all survive —
+      //             which is the whole difference from asSystem().
+      //
+      // They compose: `@system @gate(5)` is a move the engine decides, on behalf
+      // of a caller who must still be senior enough to ask for it.
+      let gate   = null
+      let system = false
+      while (this.check(TK.AT)) {
         this.eat(TK.AT)
         const attr = this.eat(TK.IDENT)
-        if (attr.value !== 'gate')
-          throw new ParseError(`@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate is supported`, attr)
-        gate = this.parseTransitionGate(field, name)
+
+        if (attr.value === 'gate') {
+          if (gate !== null)
+            throw new ParseError(`@@transitions(${field}) '${name}': @gate stated twice`, attr)
+          gate = this.parseTransitionGate(field, name)
+          continue
+        }
+
+        if (attr.value === 'system') {
+          if (system)
+            throw new ParseError(`@@transitions(${field}) '${name}': @system stated twice`, attr)
+          // It takes no argument, and the shape somebody reaches for is the
+          // column's — `@guarded(all)`. Named rather than left to fail on the
+          // paren, which reports a missing comma somewhere else entirely.
+          if (this.check(TK.LPAREN))
+            throw new ParseError(
+              `@@transitions(${field}) '${name}': @system takes no argument — it says the application makes ` +
+              `this move and states so on the call. Use @gate(N) beside it to say who may ask.`, attr)
+          system = true
+          continue
+        }
+
+        throw new ParseError(
+          `@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate and @system are supported`, attr)
       }
+
+      // 8 and 9 are sentinels meaning *no caller reaches this*, which is the
+      // opposite of what @system says. A move declaring both has two answers to
+      // one question and the reader cannot tell which was meant.
+      if (system && gate !== null && gate >= 8)
+        throw new ParseError(
+          `@@transitions(${field}) '${name}': @system and @gate(${gate}) contradict each other — ` +
+          `@gate(${gate}) admits no caller at all, where @system says the application makes the move ` +
+          `THROUGH one. Drop the gate, or lower it to the level a caller must hold to ask.`, this.peek())
 
       if (name in transitions)
         throw new ParseError(`@@transitions(${field}): duplicate transition name '${name}'`, this.peek())
-      transitions[name] = { from, to, gate }
+      transitions[name] = { from, to, gate, system }
     } while (this.maybeEat(TK.COMMA))
 
     this.eat(TK.RPAREN)
@@ -2413,16 +2582,26 @@ class Parser {
           if (arrow.type !== TK.ARROW)
             throw new ParseError(`Expected '->' in transition '${tName}', got '${arrow.value}'`, arrow)
           const to = this.eat(TK.IDENT).value
-          // A gate is a MODEL concern: one enum can drive a machine on two
-          // models that answer to different authority, and this block is shared
-          // by both. Caught by name because the generic parse failure here is
-          // `Expected IDENT, got '@'`, which says neither why nor where it goes.
-          if (this.check(TK.AT))
+          // Both per-move attributes are a MODEL concern: one enum can drive
+          // the same move on two models that answer to different authority, and
+          // on one of them the move can be the engine's while on the other it is
+          // a person's. This block is shared by both. Caught by name because the
+          // generic parse failure here is `Expected IDENT, got '@'`, which says
+          // neither why nor where it goes.
+          if (this.check(TK.AT)) {
+            const at   = this.peek()
+            const next = this.peek(1)
+            // `@gate` keeps its argument in the suggestion; `@system` has none.
+            const attr = next && next.type === TK.IDENT
+              ? (next.value === 'gate' ? '@gate(N)' : `@${next.value}`)
+              : 'an attribute'
             throw new ParseError(
-              `Enum '${name}', transition '${tName}': a gate cannot go on the enum's shared block — ` +
-              `one enum can drive the same move on two models that answer to different authority. ` +
-              `Declare @@transitions(<field>, ${tName}: ${froms.join(', ')} -> ${to} @gate(N)) on the model, ` +
-              `which overrides this block for that field.`, this.peek())
+              `Enum '${name}', transition '${tName}': ${attr} cannot go on the enum's shared block — ` +
+              `one enum can drive the same move on two models that answer to different authority, and ` +
+              `the move can be the application's on one and a person's on the other. ` +
+              `Declare @@transitions(<field>, ${tName}: ${froms.join(', ')} -> ${to} ${attr === 'an attribute' ? '@gate(N)' : attr}) ` +
+              `on the model, which overrides this block for that field.`, at)
+          }
           if (tName in transitions)
             throw new ParseError(`Enum '${name}': duplicate transition name '${tName}'`, this.peek())
           transitions[tName] = { from: froms, to }
@@ -2773,6 +2952,9 @@ function resolveTraits(schema) {
 export const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   'id', 'unique', 'map', 'relation', 'generated', 'from',
   'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'allow', 'deny',
+  // Storage facts about a COLUMN. A `type` describes a shape inside a Json
+  // column or a custom method's input, where there is no column to scale.
+  'scale', 'money',
   // Not because the SET has no table — it does — but because nothing on this
   // path runs the check. A `type` describes a shape inside a Json column or a
   // custom method's declared input; neither reaches litestone's write path,
@@ -3101,12 +3283,15 @@ function expandTenancy(schema) {
     // their own row into somebody else's tenant, with the WHERE matching
     // legitimately at the moment it ran. Evaluated in JS after the write, inside
     // the transaction, so a violation rolls back.
+    // `claim` rides the attribute so a reader does not have to recover it from
+    // the expression tree. buildPolicyMap carries it through, and a system
+    // context needs it to answer *is a tenant in scope at all* (FJS-519).
     model.attributes.push({
-      kind: 'deny', operations: ['read', 'update', 'delete', 'post-update'], generated: 'tenancy', message,
+      kind: 'deny', operations: ['read', 'update', 'delete', 'post-update'], generated: 'tenancy', claim, message,
       expr: { type: 'or', left: noPrincipal, right: mismatch },
     })
     model.attributes.push({
-      kind: 'deny', operations: ['create'], generated: 'tenancy', message,
+      kind: 'deny', operations: ['create'], generated: 'tenancy', claim, message,
       expr: {
         type: 'or',
         left: noPrincipal,
@@ -3549,6 +3734,58 @@ function validate(schema) {
       // predicate on the FK guards the direct write AND the `{ rel: { connect } }`
       // form. A @derived field is NOT this case and is left alone: it rides the
       // SELECT as an expression, so the read strip reaches it.
+      // A @capability on a model that does not carry @@capabilities is a
+      // declaration that means nothing: the switch is what says this model is
+      // graded that way at all, so without it the column is guarded by the gate
+      // and the policies exactly as before and the attribute reads as
+      // protection nobody applied.
+      if (field.attributes.some(a => a.kind === 'capability') &&
+          !model.attributes.some(a => a.kind === 'capabilities'))
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @capability, but '${model.name}' does not ` +
+          `declare @@capabilities — the column tier is opt-in ON TOP of the model's own switch. ` +
+          `Add @@capabilities to ${model.name}, or drop @capability.`)
+
+      // Three shapes that make @capability contradict its neighbour, refused for
+      // the reason @system beside a field @allow('write') is: one says the
+      // application fills this column and the other says a granted caller may.
+      //
+      // The stamp is the one that bites hardest and it is silent in the worst
+      // direction — the write check reads the payload AFTER the create path
+      // applies @default(auth().x), so the stamp refuses itself and the MODEL
+      // becomes uncreatable for everyone who does not hold the column's grant,
+      // naming a column the caller never sent. Measured.
+      if (field.attributes.some(a => a.kind === 'capability')) {
+        const authDefault = field.attributes.find(a =>
+          a.kind === 'default' && a.value?.kind === 'call' && a.value.fn === 'auth')
+        const notWritable = field.attributes.find(a =>
+          a.kind === 'computed' || a.kind === 'generated' || a.kind === 'derived' ||
+          a.kind === 'from' || a.kind === 'funcCall')
+        const lockedShut  = field.attributes.find(a =>
+          a.kind === 'guarded' || a.kind === 'system' || a.kind === 'secret')
+
+        if (authDefault) errors.push(
+          `Model '${model.name}', field '${field.name}': @capability with @default(auth().${authDefault.value.field ?? 'id'}) — ` +
+          `the stamp writes this column on every create, and the capability says a caller needs a grant to write it. ` +
+          `The stamp would be refused for every caller who does not hold '${model.name}.${field.name}', which makes ` +
+          `${model.name} uncreatable rather than the column protected. Keep the stamp, or keep the capability.`)
+
+        if (notWritable) errors.push(
+          `Model '${model.name}', field '${field.name}': @capability on a @${notWritable.kind} field — ` +
+          `it is not a column anyone writes, so there is no write for a capability to grade.`)
+
+        if (lockedShut) errors.push(
+          `Model '${model.name}', field '${field.name}': @capability with @${lockedShut.kind} — ` +
+          `@${lockedShut.kind} says no caller writes this column at any standing, and @capability says a caller ` +
+          `holding '${model.name}.${field.name}' does. Only one of them can be true.`)
+
+        if (field.type.kind === 'relation' || field.type.kind === 'implicitM2M') errors.push(
+          `Model '${model.name}', field '${field.name}': @capability on a relation — a relation is not stored, so ` +
+          `there is no column to grade.` +
+          (rel?.fields?.[0] ? ` Put it on '${rel.fields[0]}', which guards the direct write and the ` +
+          `{ ${field.name}: { connect: … } } form alike.` : ''))
+      }
+
       const fieldPolicy = field.attributes.find(a => a.kind === 'fieldAllow')
       if (fieldPolicy && (field.type.kind === 'relation' || field.type.kind === 'implicitM2M')) {
         const fk = rel?.fields?.[0]
@@ -4231,6 +4468,60 @@ function validate(schema) {
         errors.push(`Model '${model.name}', field '${field.name}': @version cannot be optional — a row with no version cannot be checked`)
       if (field.attributes.some(a => a.kind === 'id'))
         errors.push(`Model '${model.name}', field '${field.name}': @version cannot be the @id — the version changes on every write`)
+    }
+  }
+
+  // ── @scale / @money validation ──────────────────────────────────────────────
+  // The point of the pair is exactness, so every way of declaring one that
+  // cannot be exact is refused here rather than producing a plausible number.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const scale = field.attributes.find(a => a.kind === 'scale')
+      const money = field.attributes.find(a => a.kind === 'money')
+      if (!scale && !money) continue
+
+      const at = `Model '${model.name}', field '${field.name}'`
+
+      // `Int`, and the type stays true. A scaled value stored in a REAL column
+      // is the drift the declaration exists to remove, and an attribute that
+      // silently overrode its own type would mean `Float` means two things
+      // depending on a token further down the line (`FJS-D142`).
+      if (field.type.name !== 'Int')
+        errors.push(`${at}: @${scale ? 'scale' : 'money'} requires an Int field, got ${field.type.name} — a scaled value is stored as an integer`)
+
+      if (field.type.array)
+        errors.push(`${at}: @${scale ? 'scale' : 'money'} cannot be an array — the scale describes one value`)
+
+      // Both would be two answers to what the point means, and the currency's
+      // is the one that is not the author's to choose.
+      if (scale && money)
+        errors.push(`${at}: @scale and @money together — @money derives the scale from the currency, so state one`)
+
+      if (scale) {
+        const n = scale.places
+        if (!Number.isInteger(n) || n < 0)
+          errors.push(`${at}: @scale(${n}) — the number of places must be a whole number, 0 or more`)
+        // A signed 64-bit integer holds about 9.2e18. At nine places that still
+        // leaves nine figures of major units, and past it the headroom goes
+        // where nobody is looking.
+        else if (n > 9)
+          errors.push(`${at}: @scale(${n}) — at most 9 places, or the integer runs out of room for the value in front of the point`)
+      }
+
+      if (money) {
+        if (money.currency && !isKnownCurrency(money.currency))
+          errors.push(`${at}: @money(${money.currency}) — not a currency this runtime knows. The scale comes from the currency, so a code nobody recognises would silently take two places`)
+
+        if (money.field) {
+          const sibling = model.fields.find(f => f.name === money.field)
+          if (!sibling)
+            errors.push(`${at}: @money(field: ${money.field}) — no field '${money.field}' on this model`)
+          else if (sibling.type.name !== 'String')
+            errors.push(`${at}: @money(field: ${money.field}) — '${money.field}' holds the ISO code and must be String, got ${sibling.type.name}`)
+          else if (sibling.type.array)
+            errors.push(`${at}: @money(field: ${money.field}) — '${money.field}' must be one code, not an array`)
+        }
+      }
     }
   }
 
@@ -4965,6 +5256,7 @@ export function parseFile(filePath) {
   allErrors.push(...tenancy.errors)
   allWarnings.push(...tenancy.warnings)
   resolveTransitions(schema)
+  allErrors.push(...expandCapabilityType(schema))
   const { valid, errors, warnings } = validate(schema)
   allErrors.push(...errors)
   allWarnings.push(...warnings)
@@ -5009,7 +5301,8 @@ export function parse(src) {
   const edgeErrors = expandEdgeAttributes(schema)
   const tenancy = expandTenancy(schema)
   resolveTransitions(schema)
+  const capabilityErrors = expandCapabilityType(schema)
   const { valid, errors, warnings } = validate(schema)
-  const merged = [...authorshipErrors, ...edgeErrors, ...tenancy.errors, ...errors]
+  const merged = [...authorshipErrors, ...edgeErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
   return { schema, valid: merged.length === 0, errors: merged, warnings: [...tenancy.warnings, ...warnings] }
 }

@@ -156,6 +156,80 @@ const distinctHosts = (sides) => {
   }
   return [...seen.values()]
 }
+
+// ─── deployPlan ───────────────────────────────────────────────────────────────
+// Phase 1d. The journal rows a transition WOULD write, built from a minted
+// Release and from the REAL step list — `_steps-docker/`, read with the runner's
+// own filter and sort, so a plan cannot describe a pipeline that has moved.
+//
+// One helper rather than two call sites, because `fli deploy --plan` and
+// `fli deploy:plan` must print the same document: a plan is a thing people read
+// to decide, and two implementations of it is the failure mode the whole Release
+// design is arranged against.
+//
+// It mints rather than being handed a Release, so `--plan` needs no separate
+// `release:mint` run and cannot disagree with one.
+const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb }) => {
+  const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
+  const { readdirSync, readFileSync } = await import('fs')
+
+  const { bindingSet, schemaSurfaceHash, mintRelease, BindingError } = await core('release.js')
+  const { stepFilesIn, stepNameOf, planSteps, planTransition, formatPlan } = await core('plan.js')
+  const { extractFrontmatter } = await core('compiler.js')
+
+  let bindings
+  try { bindings = bindingSet(deployConf, target) }
+  catch (e) {
+    if (!(e instanceof BindingError)) throw e
+    return { error: e.message }
+  }
+
+  const schema = schemaSurfaceHash(context.paths.db)
+
+  // The pivot is litestone's answer, asked rather than re-derived — the same
+  // walk `fli release:check` prints. No baseline answers unknown, which counts
+  // as a contract.
+  let pivot = 'unknown', findings = []
+  if (!schema.missing) {
+    const out = context.exec({
+      command: `cd ${context.paths.root} && bunx litestone release --schema ${context.paths.db}/schema.lite --json`,
+      stdio:   'pipe', allowFailure: true,
+    })
+    try {
+      const verdict = JSON.parse(String(out ?? '').trim())
+      pivot    = verdict.verdict  ?? 'unknown'
+      findings = verdict.findings ?? []
+    } catch {}
+  }
+
+  const release = mintRelease({
+    app:           deployConf.app_id ?? deployConf.appId,
+    environment:   target,
+    digest:        flag.digest || null,
+    bindingsHash:  bindings.hash,
+    schemaHash:    schema.hash,
+    pivot,
+    pivotFindings: findings,
+    createdBy:     context.git.user?.() ?? null,
+  })
+
+  // The steps, off disk. `skip:` is evaluated against the same shape the runner
+  // hands a predicate, so a step shown as skipped is one that will be skipped.
+  const dir   = new URL('file://' + global.fliRoot + '/commands/deploy/_steps-docker').pathname
+  const files = stepFilesIn(readdirSync(dir))
+  const metas = files.map(f => {
+    const fm = extractFrontmatter(readFileSync(`${dir}/${f}`, 'utf8')) ?? {}
+    return { name: stepNameOf(f), title: fm.title, skip: fm.skip, runOnAbort: fm.runOnAbort }
+  })
+
+  const steps = planSteps(metas, {
+    flag,
+    context: { config: { doApi, doWeb, deployConf, target } },
+  })
+
+  const plan = planTransition({ release, steps, actor: release.createdBy })
+  return { ...plan, release, bindings, findings, schema, text: formatPlan({ ...plan, release, bindings, findings }) }
+}
 </script>
 
 ## Overview

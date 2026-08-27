@@ -9,7 +9,7 @@
  * it passes coercion and validation to be refused by SQLite as a 500.
  */
 
-import { createMakeFromSchema, derefFieldSchema } from '../../src/jsonschema/jsonschema.js'
+import { createMakeFromSchema, derefFieldSchema, fieldShape, fieldShapes } from '../../src/jsonschema/jsonschema.js'
 
 /* ── derefFieldSchema ──────────────────────────────────────────────── */
 
@@ -104,4 +104,51 @@ test('jsonschema: something that is not a properties map does not throw', functi
   // An enum definition used to arrive here and throw on the `in` check.
   assert.deepEqual(createMakeFromSchema(undefined)(), {})
   assert.deepEqual(createMakeFromSchema({ enum: ['a', 'b'] })(), {}, 'a non-object entry is skipped, not read')
+})
+
+
+/* ── fieldShape / fieldShapes ──────────────────────────────────────────
+ *
+ * The minimum `@frontierjs/toolbelt/match` reads. Two questions in one walk
+ * because they come off different places: nullability is on the RAW schema, and
+ * `derefFieldSchema` follows the non-null branch of an `anyOf`, so by the time
+ * the target is in hand the null branch is gone and nothing can tell.
+ */
+
+test('jsonschema: fieldShape reads a plain type', function () {
+  assert.deepEqual(fieldShape({ type: 'integer' }), { type: 'integer', nullable: false })
+})
+
+test('jsonschema: a nullable column keeps its type AND says it is nullable', function () {
+  // Both spellings litestone emits.
+  assert.deepEqual(fieldShape({ type: ['string', 'null'] }), { type: 'string', nullable: true })
+  assert.deepEqual(
+    fieldShape({ anyOf: [{ type: 'number' }, { type: 'null' }] }),
+    { type: 'number', nullable: true })
+})
+
+test('jsonschema: a $ref is followed for the type', function () {
+  const resolve = (ref) => ref === '#/$defs/Plan' ? { type: 'string', enum: ['free', 'pro'] } : null
+  assert.deepEqual(fieldShape({ $ref: '#/$defs/Plan' }, resolve), { type: 'string', nullable: false })
+})
+
+test('jsonschema: a $ref nothing resolves leaves no type, which is not a failure', function () {
+  // Same answer a Json column gives, and the caller that cares about the
+  // difference is holding the raw schema (sierra's buildFieldRules).
+  assert.deepEqual(fieldShape({ $ref: '#/$defs/Gone' }), { type: null, nullable: false })
+})
+
+test('jsonschema: fieldShapes takes a model definition or a bare properties bag', function () {
+  const props = { id: { type: 'integer' }, name: { type: 'string' } }
+  const want  = { id: { type: 'integer', nullable: false }, name: { type: 'string', nullable: false } }
+  assert.deepEqual(fieldShapes({ properties: props }), want)
+  assert.deepEqual(fieldShapes(props), want, 'the bag itself is accepted')
+  assert.deepEqual(fieldShapes(undefined), {}, 'and nothing at all answers nothing')
+})
+
+test('jsonschema: fieldShapes is what matchesQuery needs off a column', function () {
+  // The one reason the type is read: the wire is text, so `'5'` for an Int has
+  // to compare as SQLite's affinity would.
+  const shapes = fieldShapes({ properties: { id: { type: 'integer' } } })
+  assert.equal(shapes.id.type, 'integer')
 })

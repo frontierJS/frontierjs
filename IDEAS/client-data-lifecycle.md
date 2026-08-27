@@ -7,12 +7,14 @@ revised: 2026-08-25
 
 # Idea — The client-side data lifecycle has no owner
 
-**Status: RULED and PARTLY BUILT — [`FJS-D138`](../DECISIONS.md#fjs-d138).**
+**Status: RULED and BUILT — [`FJS-D138`](../DECISIONS.md#fjs-d138) and
+[`FJS-D145`](../DECISIONS.md#fjs-d145).**
 Steps 2–6 of the ruling's build order shipped 2026-08-25: the node registry,
 lists as views, the TTL, `resource.record(id)` and the optimistic overlay —
 closing [`FJS-518`](../ISSUES.md#fjs-518) and, with it, the two absences this
-file was written about. **What is left is cursor paging** (step 7, Hole 4),
-which is a separate axis and is not ruled.
+file was written about. Cursor paging (step 7, Hole 4) was ruled as
+[`FJS-D145`](../DECISIONS.md#fjs-d145) and built on 2026-08-26. **Nothing in
+this file is open.**
 Dated 2026-08-06, revised 2026-08-25 after an audit of the tree and a sweep of
 the prior art. **Two of the four holes below are closed** — a load has an
 identity (`FJS-082`) and the announcement reaches writes that came through no
@@ -114,7 +116,7 @@ row on a filter miss cannot roll one back either. All three are in, so the
 removal path, the placement and the announcement are no longer what stands
 between here and an optimistic write. **What stands there now is Hole 2.**
 
-### Hole 4 — pagination is `offset`, and `offset` is wrong for the case this framework is best at
+### Hole 4 — pagination is `offset`, and `offset` is wrong for the case this framework is best at — **ruled [`FJS-D145`](../DECISIONS.md#fjs-d145), built 2026-08-26**
 
 Added 2026-08-12, from a sweep for what a developer still wires up by hand. Verified:
 `ctx.directives` is `{limit, offset, orderBy, select}` and the word *cursor* does not
@@ -149,6 +151,23 @@ encoded key is a promise the client will not construct one, and the moment it is
 readable somebody filters on it. And **`offset` stays**, because a numbered page is a
 legitimate UI and `Pagination.mesa` renders one; the question is which is the default
 and whether a live resource may use offset at all.
+
+**Both are ruled, and the framing above turned out to be the wrong one**
+([`FJS-D145`](../DECISIONS.md#fjs-d145), 2026-08-25). Nobody who does live data
+pages at all: TanStack DB's query-driven sync goes from ten rows to twenty by
+sending the delta, Zero keeps a limited query live as a materialised view, and
+Relay appends into a connection. So the answer is a **window that grows** —
+`limit` is the window, `more()` raises it — with a keyset cursor as the wire
+under it and never a concept an application types. `offset` is what you ASK for;
+the window is what a live resource GETS. The cursor is opaque, which costs less
+here than elsewhere because an illegal one is refusable by name through
+`$checkOrderBy`. And an ordering with **no unique tiebreaker is refused**,
+because that is the case the keyset literature says fails silently.
+
+**What the ruling could only be written after the rest of this file was built**
+is item 3 of it: a window bounded by VALUES makes *is this row inside it* a
+comparison the browser already performs, so `stale` stops meaning *the framework
+cannot page* and starts meaning *there is more below*.
 
 
 ---
@@ -258,8 +277,12 @@ order the features are interesting in.
    reveals what they did. Asserted where it can be negative-controlled, which
    is not the browser: every in-flight marker a page offers is also true for a
    moment after the call answers.
-7. **Cursor paging** (Hole 4), separately and afterwards — cheaper once a list
-   holds ids, and still carrying its own two open questions.
+7. ~~**Cursor paging** (Hole 4)~~ — **ruled `FJS-D145` 2026-08-25, built
+   2026-08-26.** `$after` is the directive, `endCursor`/`hasMore` the envelope,
+   `resource.more()` the window. The tiebreaker is derived by litestone and
+   asked of it by junction, so there is one answer to it. A non-unique ordering
+   walks 25 tied rows with nothing served twice — the case it used to get
+   silently wrong.
 
 ## Why this is worth doing
 

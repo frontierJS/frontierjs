@@ -38,7 +38,7 @@ export const tree = {
       file: "src/routes/catalog/index.mesa",
       companion: "src/routes/catalog/index.meta.js",
       layout: "src/routes/_module.mesa",
-      meta: {"title":"Catalog","render":"static","isIndex":true},
+      meta: {"title":"Catalogue","render":"static","isIndex":true},
       params: [],
       children: [],
     },

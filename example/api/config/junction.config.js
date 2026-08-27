@@ -9,16 +9,6 @@
 // belongs in exactly one of the two places or the one here is decoration.
 
 export default {
-  // ── Where the services are ────────────────────────────────────────────
-  // Stated rather than inferred. Junction's default is `services/` beside the
-  // ENTRY (`dirname(Bun.main)`), which is the flat layout — with the entry at
-  // api/index.ts and the services under api/src/, the default resolves to a
-  // directory that is not there. Nothing fails: the app boots, answers /health,
-  // and every route those services would have mounted is a 404.
-  services: {
-    dir: './api/src/services',
-  },
-
   // ── Caravan — the durable job queue ───────────────────────────────────
   // A SQLite queue in its own file: nothing about it touches db/shop.db, so a
   // wiped queue loses no shop data and a wiped shop loses no jobs.

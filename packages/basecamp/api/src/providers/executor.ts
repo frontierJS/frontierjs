@@ -103,7 +103,7 @@ function outpostExecutor(app: BasecampApp, serverId: string, target: string): Ex
  * able to disagree, which is why the rule is here rather than in either.
  */
 export async function resolveExecutor(app: BasecampApp, appId: string): Promise<Executor | NoExecutor> {
-  const db = app.data.asSystem() as any
+  const db = app.db.asSystem() as any
 
   const placements = await db.appServer.findMany({
     where:   { appId },

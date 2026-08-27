@@ -139,6 +139,12 @@ secrets are scoped, and who is allowed to spend the resources.
   what is missing is the tree — which hook, which query, how long. Junction already
   has the seam list to instrument, and `IDEAS/framework-shape.md` item 4 wants
   request-correlated logging anyway. Same work, done once.
+  **Specified 2026-08-26 in `IDEAS/lantern.md`**, and probing moved the gap: the
+  query→call correlation already ships, so the missing pieces are a store, an id
+  that survives the call boundary, and the half this document did not think to ask
+  for — **the decision**. Which `@@gate` refused, which `@@allow` compiled into the
+  WHERE that emptied the screen. That is the part Encore has no answer to either,
+  because nobody does.
 - **Generate the diagrams.** `project:map --json` plus the bridge index is enough
   to emit the request-path view that `website/journey.html` currently hardcodes.
 - **A local dev dashboard** that puts `project:view`, the devtools overlay, traces
@@ -213,3 +219,4 @@ build.
 - `IDEAS/ecosystem-gaps.md` — the Laravel comparison (breadth of batteries)
 - `IDEAS/framework-shape.md` — item 3 (Release) and item 4 (observability)
 - `packages/cli/commands/project/map.md`, `view.md` — the app model that already exists
+- `IDEAS/lantern.md` — item 3's first half, specified: the trace, and the decision inside it

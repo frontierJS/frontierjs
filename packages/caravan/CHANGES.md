@@ -1,5 +1,66 @@
 # Changes — @frontierjs/caravan
 
+## 2026-08-25 — a fixed-time schedule fires once per calendar day, whatever the clock does
+
+188 tests, 0 fail (18 new). Typecheck clean.
+
+The firing path asked one question — *does the current minute match?* — and on
+the two days a year when the local clock is not a function of real time it gave
+two wrong answers. Measured on `America/New_York` before anything was changed:
+`30 2 * * *` fired **zero** times on the spring boundary, because 02:30 never
+occurred; `30 1 * * *` fired **twice** on the autumn one, and the two fires were
+two dispatch ids, because `occurrenceKey('cron', name, minute)` was built from
+the epoch minute and 01:30 EDT and 01:30 EST are different epoch minutes. A job
+that charges a card did it twice a year, twice.
+
+**The rule is Vixie cron's, ruled as `FJS-D144`**: a fixed-time schedule fires
+once per calendar day; a wildcard schedule follows the new wall clock; a shift
+over three hours is a clock correction rather than daylight saving.
+
+**Both boundaries now fall out of one loop rather than being special-cased.** A
+fixed-time schedule keeps a mark — the last wall-clock minute it looked at — and
+each tick walks FORWARD over the local clock from that mark to now, firing any
+minute the expression matches. Spring: the local clock goes 01:59 → 03:00, so
+02:00–02:59 is still in the walk and 02:30 fires once, just after the change.
+Autumn: the local clock goes 01:59 → 01:00, so the walk is empty until it passes
+01:59 again and nothing re-runs. **The mark only ever moves forward, and that is
+the whole of the second half** — the first version let it follow the clock down
+and the repeated hour was walked a second time, which is the original defect
+wearing new code. The test caught it.
+
+**The wildcard carve-out is not a nicety, it is a regression guard.** `30 * * * *`
+already fired 25 times on the 25-hour day, which is correct, and compensating it
+would have taken one away. Measured before and after.
+
+**A fire is now named by the wall clock it belongs to**, for a fixed-time
+schedule — so the identity two processes must agree on is the moment the
+schedule asked for rather than the instant it was run at. `index.ts` needed no
+change: the number still flows into `occurrenceKey`, and the autumn duplicate
+now collapses to one dispatch id the way `FJS-294` intended.
+
+Free with the walk: **a minute missed because the event loop was blocked or the
+container was paused is now caught up**, which *does the current minute match*
+could not see at all.
+
+`CronScheduler` takes `now`. The behaviour above happens on two days a year and
+a suite that cannot move the clock can only assert the parser — which is what
+this suite did assert, with four green `timeZone` tests sitting above a defect in
+the firing path. `nextRuns()` deliberately stays the wall clock's own answer and
+is a day out on the spring boundary; two implementations of *when does this fire*
+would be worse.
+
+**Two instances over one `jobs.db` are asserted rather than argued.** The
+scheduler firing once is half the guarantee; the other half is that two processes
+with no leader between them produce one row, which rests on both computing the
+same id. The test stalls one instance across the fire — a blocked event loop,
+five minutes — and it lands one row under the wall-clock identity and **two**
+under the old epoch-minute one, same scenario, only the id construction
+different. That also says the old identity was not only a boundary bug: naming a
+fire by the minute it was RUN AT rather than the minute it was FOR double-
+dispatches on any day an instance falls behind.
+
+`FJS-525` · `tests/cron-dst.test.ts`
+
 ## 2026-08-23 — a job records WHICH TENANT, beside who asked
 
 170 tests, 0 fail. Typecheck clean.

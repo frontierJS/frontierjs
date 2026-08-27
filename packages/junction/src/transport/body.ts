@@ -74,9 +74,20 @@ export async function parseBody(
     return { type: 'empty', data: null, files: [], size: 0 }
   }
 
-  const contentType = (req.headers.get('content-type') || '').toLowerCase()
-  const idx         = contentType.indexOf(';')
-  const baseType    = idx === -1 ? contentType : contentType.slice(0, idx).trim()
+  // The header as SENT, and a lowercased copy for comparing the type.
+  //
+  // They have to be two values. The media type is case-insensitive and the
+  // PARAMETERS are not — RFC 2046 §5.1.1 makes a multipart boundary
+  // case-sensitive — and this read the boundary out of the lowercased string.
+  // Every browser generates a mixed-case one (`----WebKitFormBoundary…`), so
+  // the boundary handed to the splitter matched nothing in the body: no parts,
+  // `data: {}`, and a create that answers `Request body is required` about a
+  // request that plainly has one. curl's boundary is lowercase hex, which is
+  // why every hand-rolled probe of this path passed (`FJS-542`).
+  const rawContentType = req.headers.get('content-type') || ''
+  const contentType    = rawContentType.toLowerCase()
+  const idx            = contentType.indexOf(';')
+  const baseType       = idx === -1 ? contentType : contentType.slice(0, idx).trim()
 
   // No content-type → empty (can't know how to parse)
   if (!contentType) {
@@ -128,11 +139,20 @@ export async function parseBody(
 
   // ── Multipart ────────────────────────────────────────────────────────
   if (baseType === CT_MULTIPART) {
+    // Found in the lowercased copy — `boundary=` is a parameter NAME and those
+    // are case-insensitive — and read out of the raw header, because the VALUE
+    // is not.
     const boundaryIdx = contentType.indexOf(BOUNDARY_PREFIX)
     if (boundaryIdx === -1)
       return { type: 'multipart', data: {}, files: [], size }
 
-    const boundary = contentType.slice(boundaryIdx + BOUNDARY_PREFIX.length).trim()
+    // A quoted boundary is legal and is what a value containing a comma or a
+    // space has to use, so the quotes come off before it is matched against the
+    // bytes.
+    const boundary = rawContentType
+      .slice(boundaryIdx + BOUNDARY_PREFIX.length)
+      .trim()
+      .replace(/^"(.*)"$/, '$1')
     const { fields, files } = parseMultipart(buffer, boundary, MAX_FILE_SIZE)
     return { type: 'multipart', data: fields, files, size }
   }

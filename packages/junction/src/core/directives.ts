@@ -26,6 +26,15 @@
 export interface QueryDirectives {
   limit?:       number
   offset?:      number
+  /**
+   * The window's far edge — an opaque cursor the server minted (`FJS-D145`).
+   *
+   * A caller sending this is growing a window rather than stepping to a page,
+   * so it is the keyset path: no OFFSET, no COUNT, and the answer carries the
+   * next edge. It never combines with `offset`; a cursor plus an offset names
+   * no position either one of them means.
+   */
+  after?:       string
   /** Raw sort spec — 'name,-createdAt' | { name: 'asc' } | [{...}] */
   orderBy?:     unknown
   /** Raw select spec — 'id,name' | ['id','name'] */

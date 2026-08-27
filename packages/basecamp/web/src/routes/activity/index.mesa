@@ -45,6 +45,14 @@ title: Activity
   let loading = true
   let kind    = 'all'
 
+  // This feed is CAPPED, where /admin/audit/ is a window that grows
+  // (`FJS-D145`). Two sources merged by time cannot grow one of them: the tail
+  // below whichever source runs out first would be one-sided and say so
+  // nowhere, which is a worse lie than a cap that admits to being one. A window
+  // here is a cursor on `servers.feed` first, and then a merge that grows both
+  // and trims to the newer of the two tails.
+  const FEED_CAP = 100
+
   // Which screen a subject lives on. A service with no detail route is left
   // unlinked rather than pointed at a 404 — the same rule the shell nav follows.
   const SUBJECT_ROUTE = {
@@ -70,14 +78,14 @@ title: Activity
     }
 
     try {
-      const trail = (await audit.service.find({}, { limit: 100 })).data
+      const trail = (await audit.service.find({}, { limit: FEED_CAP })).data
 
       // The fleet's own events. Not fatal if refused — the trail alone is
       // still a feed, and a screen that blanks because half its data needs a
       // role the reader lacks is worse than one that shows the half it can.
       let fleet = []
       try {
-        const raw = await servers.service.invoke('feed', null, null, { limit: 100 })
+        const raw = await servers.service.invoke('feed', null, null, { limit: FEED_CAP })
         fleet = (Array.isArray(raw) ? raw : raw?.data ?? []).map(e => ({
           id:          `srv-${e.id}`,
           createdAt:   e.createdAt,
@@ -164,6 +172,14 @@ title: Activity
       <Button variant={kind === k ? 'outlined' : 'ghost'} onclick={() => kind = k}>{k}</Button>
     {/each}
   </div>
+
+  {#if rows.length >= FEED_CAP}
+    <!-- A capped list that says nothing about the cap reads as a complete one. -->
+    <p class="text-sm text-muted" id="activity-cap">
+      Showing the most recent {FEED_CAP} of each source. The full trail is on
+      <a href="/admin/audit/">the audit screen</a>, which pages by growing.
+    </p>
+  {/if}
 
   <Table id="activity-rows" columns={ACTIVITY_COLUMNS} rows={visible} striped>
     {#snippet row(r)}

@@ -27,11 +27,12 @@ it re-resolved when it runs. Survives a restart.
 | `announce-payment` | `fulfilment` | on dispatch | — | 5 | 30000, 120000, 600000 | **none** |
 | `book-courier` | `fulfilment` | on dispatch | — | 5 | 60000, 300000, 1800000 | 30000ms |
 | `release-holds` | `default` | `*/5 * * * *` | — | 3 | default | **none** |
+| `retention` | `default` | `0 4 * * *` | — | 3 | default | **none** |
 | `sweep-abandoned` | `default` | `0 3 * * *` | — | 3 | default | **none** |
 
-4 handler(s), 2 of them on a clock.
+5 handler(s), 3 of them on a clock.
 
-**3 with no timeout.** Absent means no bound, honestly — but a
+**4 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a
 single-concurrency queue everything behind it waits (`FJS-295`). Worth knowing
 which ones those are, which is why the column is here rather than omitted when

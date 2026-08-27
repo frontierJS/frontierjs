@@ -1,0 +1,226 @@
+// ─── @frontierjs/cli — the deploy journal ────────────────────────────────────
+//
+// What a Release is, and what a deploy wrote down. `fli` is the only writer;
+// basecamp is a reader and reaches it through the Outpost, never by opening
+// the file, because the file is on the target and basecamp is not.
+//
+// This fragment is OPENED, not INSTALLED, and the difference is the first
+// thing to know about it. `outbox.lite` is pasted into an app's own schema and
+// carries `@@db(main)` because that app declares main; this one is handed to
+// `createClient({ schema, db })` with `db` naming `deploy.db`, so there is no
+// `database` block to reference and `@@db(main)` does not parse. Do not add one.
+//
+// It is deliberately NOT a second `database` block on the app's client, and
+// each ground was measured rather than argued:
+//
+//   · `$locks` stores in main only. Under a second block the deploy lock lands
+//     in the app's database while `deploy.db` gets no `_locks` table at all —
+//     the lock cannot sit with the record it protects.
+//   · `$backup` sweeps every declared SQLite database. `05-backup` takes that
+//     copy before every deploy, so restoring it would erase the journal that
+//     records the deploy which authorised the restore.
+//   · The transaction manager holds main's alone, so a row outside it survives
+//     main's rollback. That is a defect for an outbox (`FJS-D35`) and the
+//     requirement here: the journal must outlive the app's own rollback.
+//
+// One journal per host. A Release id is content-addressed, so the same id names
+// the same bytes on every host and N journals agree without a central one.
+//
+// `@@gate("8")`: nothing outside `asSystem()` has anything to say to these
+// models. The same line `auth.lite` and `outbox.lite` draw around machinery a
+// package owns and an application does not write.
+
+enum PivotKind        { expand contract unknown }
+enum TransitionKind   { deploy revert }
+enum TransitionStatus { planned running succeeded failed }
+enum StepStatus       { pending running succeeded failed skipped }
+
+/// The file's own header row, and the only row in this model.
+///
+/// A journal format is a replay contract: a resumed transition replays rows a
+/// previous version wrote, so a reader has to be able to ask what wrote them
+/// before it parses any. Terraform carries the same field for the same reason
+/// and pays the same way — newer state is unreadable by an older binary, which
+/// is a refusal to design rather than a surprise to discover.
+///
+/// `app` and `host` are here so that pointing `fli` at the wrong `deploy.db`
+/// is a refusal rather than a history of somebody else's machine.
+///
+/// The single-row rule is DECLARED, and it takes two constraints to say it: the
+/// `@check` refuses any other id and the primary key refuses a second row of
+/// this one. Model-level `@@check` would say it in one line and does not exist
+/// (`FJS-534`), which is why it reads as two.
+model Journal {
+  id            String   @id @default("journal") @check("id = 'journal'")
+
+  formatVersion Int      @default(1)
+  app           String
+  host          String
+
+  createdAt     DateTime @default(now())
+
+  @@gate("8")
+}
+
+/// One immutable artefact-plus-bindings, addressed by its own content.
+///
+/// Two builds of an unchanged tree mint the same id, which is what makes
+/// *promote a digest* and *revert to a known thing* one operation rather than
+/// two that can disagree.
+model Release {
+  id             String       @id
+
+  app            String
+  environment    String
+
+  /// The bytes. A tag is not an identity — two hosts at one commit hold two
+  /// images with the same name and nothing compares them — so identity is the
+  /// digest and `imageRef` is the readable name beside it. Null where the
+  /// builder could not say which bytes ran, which is honest, and is not the
+  /// same as recording a plausible tag.
+  digest         String?
+  imageRef       String?
+
+  /// The binding set this Release was minted against. The counter answers
+  /// which came first; the hash answers whether anything has moved, which is
+  /// the question a revert actually asks.
+  bindingsHash   String
+  generation     Int
+
+  /// The release surface at this commit — what `db/release.snapshot.md` holds.
+  schemaHash     String
+
+  pivot          PivotKind    @default(unknown)
+
+  /// Set when a person declared a pivot the schema cannot see, or overrode one
+  /// the classifier called. The second direction is the dangerous one and this
+  /// is where it is loud.
+  pivotDeclared  Boolean      @default(false)
+  pivotFindings  Json         @default("[]")
+
+  /// When this Release stops being a revert target. Every surveyed system put
+  /// retention in a setting away from the object it bounds, so the promise
+  /// expired in silence and was discovered by the person reverting; here
+  /// `fli revert` reads it off the Release it was asked for and refuses by
+  /// naming the date it closed.
+  retentionUntil DateTime?
+
+  /// One value today. The column is here because adding it later is a journal
+  /// migration and adding it now is a column.
+  audienceKey    String       @default("everyone")
+
+  createdAt      DateTime     @default(now())
+  createdBy      String?
+
+  transitions    Transition[]
+
+  @@gate("8")
+  @@index([app, environment, createdAt])
+  @@index([retentionUntil])
+}
+
+/// The bindings an Environment provides, as they stood at one generation.
+///
+/// Mutable but generational: serving state is the pair (Release, Generation),
+/// and reverting a Release onto today's bindings is the documented failure this
+/// separation exists to refuse.
+model BindingSet {
+  id          String   @id @default(uuid())
+
+  app         String
+  environment String
+  generation  Int
+
+  /// The identity of this set, so *nothing has moved since* is answerable.
+  hash        String
+
+  /// Plain configuration values. Never a secret value.
+  values      Json     @default("{}")
+
+  /// `name@version`, pinned. A reference naming `latest` is resolved at process
+  /// start, so two instances of one immutable Release hold two different values
+  /// and the Release is immutable in name only. A rotation moves this to a new
+  /// pinned version, which is a new generation — exactly the event a generation
+  /// is for.
+  secretRefs  Json     @default("{}")
+
+  createdAt   DateTime @default(now())
+  createdBy   String?
+
+  @@gate("8")
+  @@unique([app, environment, generation])
+  @@index([app, environment, hash])
+}
+
+/// One attempt to move serving state — a deploy or a revert.
+model Transition {
+  /// `occurrenceKey('deploy', …)`. The id IS the idempotency key, so a replayed
+  /// attempt is the same row rather than a second one.
+  id            String           @id
+
+  kind          TransitionKind
+  app           String
+  environment   String
+
+  releaseId     String
+  release       Release          @relation(fields: [releaseId], references: [id])
+
+  /// What was serving when this began. Null on a first deploy.
+  fromReleaseId String?
+  generation    Int
+
+  status        TransitionStatus @default(planned)
+
+  /// Whether this passes the point at which compensation ends. Recorded rather
+  /// than re-derived, because what matters afterwards is the answer the
+  /// operator was shown and agreed to, not the answer a later classifier gives.
+  crossesPivot  Boolean          @default(false)
+
+  /// The steps as planned. `--plan` prints this and executes nothing, so the
+  /// plan and the record are one object rather than two that can disagree.
+  plan          Json             @default("[]")
+
+  actor         String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+
+  steps         TransitionStep[]
+
+  @@gate("8")
+  @@transitions(status,
+    start:   planned            -> running,
+    succeed: running            -> succeeded,
+    fail:    [planned, running] -> failed)
+  @@index([app, environment, startedAt])
+  @@index([releaseId])
+  @@index([status])
+}
+
+/// One step of one transition.
+model TransitionStep {
+  /// `occurrenceKey('deploy', transitionId, name)`. The primary key is the
+  /// idempotency key, so a step claimed twice is one row and a resume replays
+  /// into a no-op instead of doing the work a second time.
+  id           String     @id
+
+  transitionId String
+  transition   Transition @relation(fields: [transitionId], references: [id], onDelete: Cascade)
+
+  name         String
+  ordinal      Int
+  status       StepStatus @default(pending)
+
+  /// What this step checked before it ran — the Release id currently serving,
+  /// the binding generation, and the schema as at last applied. Drift refuses
+  /// and names itself; nothing here reconciles.
+  precondition Json       @default("{}")
+
+  output       String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  durationMs   Int?
+
+  @@gate("8")
+  @@unique([transitionId, ordinal])
+  @@index([transitionId])
+}

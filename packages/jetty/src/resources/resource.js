@@ -12,8 +12,11 @@
 //
 // Push-event store population:
 //   Sierra: client.resource(name, idField) auto-wires WS push events to its store
-//   Jetty:  this module subscribes to harbor channels named `${name}:created`,
-//           `${name}:patched`, `${name}:removed` and updates the store.
+//   Jetty:  this module takes ONE subscription — to the channel named for the
+//           service — and the wire event decides what happens to the store.
+//           `removed` removes; anything else is a record, graded against the
+//           query `load()` asked for (`@frontierjs/toolbelt/match`): in the
+//           filter it is upserted, out of it removed, undecidable it reloads.
 //
 // Return shapes — same contract as Sierra, see its resource.js header:
 //   service.find(query, params) / getOptions()  → the list envelope
@@ -26,15 +29,17 @@
 // and service.find() when you need `total` for a pager. jetty's store accepts
 // a bare array too, since an adapter is free to hand one back.
 //
-// See docs/future-refactors.md for the planned Option B extraction. Until that
-// lands, this file is the canonical jetty-side implementation. Drift between
-// here and Sierra's resource.js is the risk — if you change one, audit the
-// other.
+// The pure halves are `@frontierjs/toolbelt` and are shared rather than copied
+// — `/hooks`, `/jsonschema` (`FJS-059`) and `/match` (`FJS-493`). What is left
+// here is the ORCHESTRATION, which is genuinely jetty's: Sierra calls
+// `client.service(name)`, this calls `harbor.request('service:call')`. Do not
+// resync the two; move the next pure piece down instead.
 
 import { getActivePort }                        from './active-port.js'
 import { createStore }                          from './store.js'
 import { runPhase, runAroundHooks, mergeHooks } from '@frontierjs/toolbelt/hooks'
-import { createMakeFromSchema }                 from '@frontierjs/toolbelt/jsonschema'
+import { createMakeFromSchema, fieldShapes }    from '@frontierjs/toolbelt/jsonschema'
+import { matchesQuery }                         from '@frontierjs/toolbelt/match'
 
 /**
  * Create a resource wrapper for a remote service, routed through harbor.
@@ -120,6 +125,41 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // Local store, populated by load() and harbor channel:event push messages.
   const store = createStore({ idField })
 
+  // What `matchesQuery` reads, and all it reads: field name → { type }. Built
+  // once from the schema this resource was given, `{}` where it was given none
+  // — which is exactly what Sierra falls back to on a schema-registry miss, and
+  // degrades exactly one way: a string operand against a numeric column reads
+  // as no match, where the server's type affinity would have matched. A caller
+  // filtering an Int column from a URL should pass the schema.
+  let _fields = null
+  function fieldRules() {
+    if (_fields) return _fields
+    if (!schema) return (_fields = {})
+    const modelDef = extractModelDef(schema, serviceName, model)
+    return (_fields = fieldShapes(modelDef, (ref) => resolveAgainst(schema, ref)))
+  }
+
+  // A record this store cannot grade means asking the server again, and a burst
+  // of pushes is one question rather than N: they arrive together, and every
+  // answer but the last is thrown away by the one after it. Coalesced onto a
+  // microtask, and a reload already in flight is left to finish — its rows are
+  // newer than the event that asked for this one.
+  let _reloading = false
+  let _reloadQueued = false
+  function scheduleReload() {
+    if (_reloadQueued || _reloading) return
+    const query = store.query()
+    if (query === null) return   // nothing has loaded yet; there is nothing to refresh
+    _reloadQueued = true
+    queueMicrotask(async () => {
+      _reloadQueued = false
+      _reloading = true
+      try { await load(query, _lastParams) }
+      catch (e) { console.warn(`[resource:${serviceName}] reload after an undecidable push failed:`, e?.message ?? e) }
+      finally { _reloading = false }
+    })
+  }
+
   // Subscribe to push events. Idempotent — channels.subscribe in PagePort is
   // refcount-aware, so multiple resources subscribing to overlapping channels
   // is fine. We only subscribe lazily on first port availability to avoid
@@ -155,7 +195,23 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // created / updated / patched / restored, and a custom action, all mean
       // "here is a record" — the same fallback Junction's own browser client
       // applies, and the reason a REMOVE has to be recognised explicitly above.
-      if (method) store.upsert(record)
+      if (!method) return
+
+      // …and a record is an announcement about a ROW, while this store is the
+      // answer to a QUERY. Nothing on the wire says a row has left a filter —
+      // there is no such event — so upserting whatever arrives put a row the
+      // list had just filtered OUT straight back into it (`FJS-493`).
+      //
+      // `null` is *cannot decide from this record*: the filter names a column a
+      // `select` dropped, or a relation, or is `$search`. Reloading is the only
+      // honest answer and it is coalesced, because a burst of pushes would
+      // otherwise be a burst of requests.
+      const verdict = matchesQuery(fieldRules(), record, store.query() ?? {})
+      if (verdict === true)  store.upsert(record)
+      else if (verdict === false) {
+        const id = record?.[idField]
+        if (id != null) store.remove(id)
+      } else scheduleReload()
     })
   }
 
@@ -279,8 +335,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // load() — populate the local store via service.find.
   // store.populate already accepted a params argument; load() never passed one,
   // so the store could only ever hold the server's default page.
+  // `_lastParams` is remembered for the same reason the store remembers the
+  // query: a reload after an undecidable push has to ask the question this list
+  // was filled by, and a page-2 list refilled at page 1 is a different answer.
+  let _lastParams = {}
   async function load(query, params) {
-    return store.populate(service, query ?? {}, params ?? {})
+    _lastParams = params ?? {}
+    return store.populate(service, query ?? {}, _lastParams)
   }
 
   // hooks() — append hooks after creation

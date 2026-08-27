@@ -57,7 +57,7 @@ export function createDeploymentsService(app: BasecampApp) {
 
   /** `DeploymentStep` is update-at-SYSTEM — a step's outcome is what the
    *  machine reported, and no standing a workspace grants writes one. */
-  const sys = () => app.data.asSystem() as any
+  const sys = () => $.db.asSystem() as any
 
   /** The whole row, announced. A client assigning an event payload over the
    *  record it renders loses every field a projection omits. */

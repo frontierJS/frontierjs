@@ -39,7 +39,7 @@ function backupDir(app: BasecampApp): string {
 
 async function takeBackup(app: BasecampApp, backupId: string): Promise<void> {
   const log = app.logger.child('backup-run')
-  const sys = app.data.asSystem()
+  const sys = app.db.asSystem()
 
   const row = await sys.backup.findFirst({ where: { id: backupId } })
   if (!row) {

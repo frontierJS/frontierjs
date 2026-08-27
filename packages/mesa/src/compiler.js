@@ -3937,6 +3937,24 @@ export function buildBlock(data, option = {}) {
       return labelRequest
     }
 
+    // A BLOCK owns its anchor — the same rule a component invocation follows,
+    // and for the same reason (`FJS-110`). A pending label is otherwise
+    // satisfied by the next text node, and `tpl` keeps those as separate
+    // entries while the emitted template is ONE STRING, where adjacent text
+    // parses as a single DOM Text node. Two blocks separated only by
+    // whitespace then resolve to that one node, and for a block the cost is
+    // worse than a stale prop push: each inserts its content before the shared
+    // anchor, so the second block's DOM sits inside the first block's
+    // [marker, anchor) range — tearing the first branch down removes the
+    // second one's content, and the block that built it sees no reason to run
+    // again. `FJS-512`, which read as a `{#if}` going stale while an attribute
+    // beside it stayed current.
+    const ownAnchor = () => {
+      const label = requireLabel(true, true)
+      label.set(tpl.push(xNode.nodeComment({ label: true })))
+      return label
+    }
+
     body.forEach((n) => {
       if (n.type === 'text') {
         if (n.value.includes('{')) {
@@ -4335,8 +4353,7 @@ export function buildBlock(data, option = {}) {
         if (!n.closedTag) go(n, false, el)
       } else if (n.type === 'each') {
         if (isRoot) requireFragment = true
-        if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true }))
-        binds.push(ctx.makeEachBlock(n, { label: requireLabel(true, true) }).source)
+        binds.push(ctx.makeEachBlock(n, { label: ownAnchor() }).source)
       } else if (n.type === 'virtual-each') {
         // virtual-each is special: $$virtualEach() treats its anchor as the scroll
         // container element (calls parent.appendChild directly). Keep original behavior —
@@ -4348,30 +4365,25 @@ export function buildBlock(data, option = {}) {
         binds.push(ctx.makeVirtualEachBlock(n, { label: requireLabel(true, isRoot) }))
       } else if (n.type === 'if') {
         if (isRoot) requireFragment = true
-        if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true }))
-        binds.push(ctx.makeifBlock(n, requireLabel(true, true)))
+        binds.push(ctx.makeifBlock(n, ownAnchor()))
       } else if (n.type === 'key') {
         if (isRoot) requireFragment = true
-        if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true }))
-        binds.push(ctx.makeKeyBlock(n, requireLabel(true, true)))
+        binds.push(ctx.makeKeyBlock(n, ownAnchor()))
       } else if (n.type === 'await') {
         if (isRoot) requireFragment = true
-        if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true }))
-        binds.push(ctx.makeAwaitBlock(n, requireLabel(true, true)))
+        binds.push(ctx.makeAwaitBlock(n, ownAnchor()))
       } else if (n.type === 'systag') {
         if (n.value.startsWith('@render ')) {
           if (isRoot) requireFragment = true
-          if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true }))
-          binds.push(ctx.makeRenderTag(n, requireLabel(true, true)))
+          binds.push(ctx.makeRenderTag(n, ownAnchor()))
         } else if (n.value.startsWith('@html ')) {
           // {@html expr} — sets innerHTML of a placeholder text node's parent.
           // We insert a comment anchor in the template and use setInnerHTML at runtime.
           if (isRoot) requireFragment = true
-          if (!tpl.getLast()) tpl.push(xNode.nodeComment({ label: true }))
           const rawExpr = n.value.slice('@html '.length).trim()
           const exp = ctx.accessors ? rewriteExpr(rawExpr, ctx.accessors) : rawExpr
           ctx.detectDependency(rawExpr)
-          const label = requireLabel(true, true)
+          const label = ownAnchor()
           binds.push(xNode('html-tag', { label, exp }, (w, nd) => {
             w.writeLine(`$$runtime.createEffect(() => { $$runtime.setInnerHTML(${nd.label.name}, ${nd.exp}); });`)
           }))

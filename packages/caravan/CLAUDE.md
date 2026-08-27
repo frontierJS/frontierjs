@@ -50,11 +50,33 @@ src/
   handler that blocks the event loop past it stalls its own heartbeat and has
   its work taken — same ground as `FJS-295`.
 - **A cron fire is named by its minute, and that is what makes it fire once.**
-  `cron:<job>:<epoch-minute>` is the dispatch id, so every instance fires its
+  `cron:<job>:<minute>` is the dispatch id, so every instance fires its
   own schedule and all but the first are the no-op a stated id already is. There
   is no leader on purpose — a lease-held leader misses fires whenever the lease
   is between owners. The assumption instead is that two clocks agree to within a
-  minute, which cron already makes.
+  minute, which cron already makes. **Which minute depends on the expression**:
+  a wildcard schedule is named by the epoch minute, a fixed-time one by the WALL
+  CLOCK minute, because on the autumn boundary one wall clock is two instants and
+  the epoch minute names one daily fire twice (`FJS-525`).
+- **A fixed-time schedule is WALKED, a wildcard one is SAMPLED, and the split is
+  `FJS-D144`.** `_tickFixed` keeps the last wall-clock minute it looked at and
+  walks forward over the local clock to now, firing every minute the expression
+  matches; `_tickWildcard` asks whether the clock says this now. Both boundary
+  behaviours come out of the walk rather than out of a rule about either — the
+  local clock going 01:59 → 03:00 leaves the skipped hour in it, and going
+  01:59 → 01:00 leaves it empty — and a minute missed to a blocked event loop is
+  caught up for free. **The mark only ever moves forward**: letting it follow the
+  clock down walks the repeated hour twice, which is the defect wearing new code.
+  A jump over three hours in either direction is a clock correction and replays
+  nothing. Do not compensate a wildcard schedule: `30 * * * *` fires 25 times on
+  a 25-hour day, which is correct, and compensating it removes one.
+- **`nextRuns()` is the wall clock's own answer and is a day out on the spring
+  boundary**, for a schedule `_tickFixed` will run just after the gap. Reporting,
+  not firing. Deliberately not a second implementation of the walk.
+- **`CronScheduler` takes `now`.** The behaviour above happens on two days a
+  year, and a suite that cannot move the clock can only assert the parser — which
+  is exactly what this suite asserted while `FJS-525` sat in the firing path
+  under four green `timeZone` tests.
 - **The database opens on first use and the workers are built by `start()`.**
   Nothing reads an option until it is needed, which is what makes every key of
   the `caravan` section of `junction.config.js` settable. The cost: a dispatch

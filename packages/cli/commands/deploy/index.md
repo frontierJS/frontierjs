@@ -24,6 +24,10 @@ flags:
     type: boolean
     description: Deploy the web only (skip API)
     defaultValue: false
+  plan:
+    type: boolean
+    description: Print the journal rows this deploy would write, and run nothing
+    defaultValue: false
 ---
 
 Deploys via SSH. Environment resolved in order:
@@ -90,6 +94,27 @@ if (deployConf?.server) {
   context.config.target     = target
   context.config.deployConf = deployConf
   context.config.startTime  = Date.now()
+
+  // ── --plan: print and stop ────────────────────────────────────────────────
+  // Phase 1d, and the same document `fli deploy:plan` prints — one helper, two
+  // entry points, because a plan is what somebody reads to decide.
+  //
+  // `abort` rather than a bare return: the runner discovers steps AFTER the
+  // orchestrator runs, and falls back to `_steps/` when no stepsDir is set —
+  // which is the legacy CapRover list. Returning early would run it. Aborting
+  // leaves 09-cleanup as the only step that executes, and on abort it releases
+  // locks this run never took.
+  if (flag.plan) {
+    const plan = await deployPlan(context, flag, { target, deployConf, doApi, doWeb })
+    if (plan.error) log.error(plan.error)
+    else {
+      console.log()
+      console.log(plan.text)
+      console.log()
+    }
+    context.config.abort = true
+    return
+  }
 
 } else {
   // ── Legacy CapRover deploy (no frontier.config.js deploy block) ────────────

@@ -16,7 +16,7 @@
 
 import { resolveRef, modelNameFor } from './schema-registry.js'
 import { DIRECTIVE_PARAMS }          from '@frontierjs/toolbelt/directives'
-import { derefFieldSchema }          from '@frontierjs/toolbelt/jsonschema'
+import { derefFieldSchema, fieldShape } from '@frontierjs/toolbelt/jsonschema'
 
 // `derefFieldSchema` is `@frontierjs/toolbelt/jsonschema`'s — the same walk
 // jetty's resource needs, and one of the pure halves that moved to the
@@ -26,13 +26,6 @@ import { derefFieldSchema }          from '@frontierjs/toolbelt/jsonschema'
 export { derefFieldSchema }
 
 // ── Field rules ───────────────────────────────────────────────────────────────
-
-/** Is this raw field schema allowed to hold null? */
-function _isNullable(raw) {
-  if (Array.isArray(raw.type)) return raw.type.includes('null')
-  if (Array.isArray(raw.anyOf)) return raw.anyOf.some(d => d?.type === 'null')
-  return false
-}
 
 const _CARRIED = [
   'format', 'pattern', 'minLength', 'maxLength',
@@ -48,11 +41,21 @@ const _CARRIED = [
   // object with eight properties apart from a shape somebody declared — and
   // the control table has to answer differently for the two.
   'x-litestone-file',
+  // `@accept("image/png, …")` — the MIME list the Data boundary will admit. It
+  // is carried so the picker can offer the same list the server enforces: the
+  // refusal is real either way (`FileStorage` checks it before a byte is
+  // stored), but a person who has already chosen a 4MB file and waited for it
+  // to upload is being told something the dialog could have told them.
+  'x-litestone-accept',
   // `writeOnly` is `@transient`: a field the caller sends and no read ever
   // answers. It gets a control like any other writable field — that is the
   // point of declaring it — and this is what lets a form say so, and what stops
   // a detail view rendering a value that is never there.
   'writeOnly',
+  // `x-time` is `@time`, and the `pattern` carried above is its enforcement —
+  // this key exists only to pick the control, because `<input type="time">`
+  // shows a seconds box or does not and nothing in a pattern says which.
+  'x-time',
 ]
 
 /**
@@ -77,18 +80,15 @@ export function buildFieldRules(schema, resolve = resolveRef) {
   for (const [name, raw] of Object.entries(properties)) {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
 
-    // nullable is read off the RAW schema: deref follows the non-null branch of
-    // an anyOf, so by the time we have the target the null branch is gone.
-    const nullable = _isNullable(raw)
+    // Type and nullability are one walk and it is the toolbelt's: nullability is
+    // read off the RAW schema, and deref follows the non-null branch of an
+    // anyOf, so by the time the target is in hand the null branch is gone.
+    // Shared because `matchesQuery` needs exactly this much of a field and
+    // jetty cannot reach the rest of this module (`FJS-493`).
+    const { type, nullable } = fieldShape(raw, resolve)
     const def = derefFieldSchema(raw, resolve)
 
-    let type = def.type
-    if (Array.isArray(type)) type = type.find(t => t !== 'null')
-    if (!type && Array.isArray(def.anyOf)) {
-      type = def.anyOf.find(d => d && d.type !== 'null')?.type
-    }
-
-    const rule = { type: type ?? null, required: required.has(name), nullable }
+    const rule = { type, required: required.has(name), nullable }
 
     // A `$ref` nothing could resolve leaves no type behind, which is exactly
     // what a `Json` column looks like — and the control table reads a missing
@@ -428,13 +428,29 @@ function _builtinControl(rule) {
   if (Array.isArray(rule.enum)) return { control: 'select', options: rule.options ?? rule.enum }
 
   // A `File` column $refs FileRef, which derefs to an ordinary object — so the
-  // json control below would offer a textarea over a storage key, a bucket and
-  // a provider, which is not a document anybody edits by hand. It has no
-  // control here yet: `FileUpload` speaks browser `File` objects and a form
-  // holds the stored reference, and the upload between the two is a path this
-  // package does not have (`FJS-409`).
+  // `json` control below would offer a textarea over a storage key, a bucket
+  // and a provider, which is not a document anybody edits by hand.
+  //
+  // The upload BETWEEN the browser's File and the stored ref is what this had
+  // no answer for (`FJS-409`), and the answer turned out to be already built
+  // and unused: the junction client switches a request to `multipart/form-data`
+  // the moment any value in it is a File, the bridge merges those files back
+  // into `ctx.data`, and `FileStorage` stores the bytes and writes the ref. So
+  // the bytes go WITH THE RECORD, through the service the form already calls —
+  // which is also the only route that keeps the gate, the row policies and
+  // `@accept`, where a signed URL or an upload route is a second door with its
+  // own answer to who may write. What the form holds until submit is the
+  // browser `File` itself; nothing has to invent a pending state, and a form
+  // abandoned half-filled uploads nothing at all.
   if (rule['x-litestone-file']) {
-    return { control: null, reason: 'file — a stored file reference needs an upload path a form does not have' }
+    return {
+      control:  'file',
+      accept:   rule['x-litestone-accept'] ?? null,
+      // `File[]`. The array's `x-litestone-file` is on `items`, which
+      // `derefFieldSchema` has already lifted, so the only thing separating the
+      // two here is the declared type.
+      multiple: rule.type === 'array',
+    }
   }
 
   switch (rule.type) {
@@ -459,6 +475,17 @@ function _builtinControl(rule) {
       // type attribute, which is why this row names one.
       if (rule.format === 'date') return { control: 'input', type: 'date' }
       if (rule.format === 'date-time') return { control: 'datetime' }
+      // A wall clock has no zone, so `<input type="time">` round-trips it and
+      // the plain input is right — the same reason `date` is here and
+      // `date-time` is not. `step` is what makes the seconds box appear: the
+      // control shows HH:MM unless the step is not a whole number of minutes,
+      // so a column that accepts seconds has to ask for it or a person cannot
+      // type a value the boundary would take.
+      if (rule['x-time']) {
+        return rule['x-time'].seconds
+          ? { control: 'input', type: 'time', step: 1 }
+          : { control: 'input', type: 'time' }
+      }
       return { control: 'input' }
     }
 
@@ -646,7 +673,7 @@ export function canAtLevel(gate, operation, level) {
  * A model can declare more than one, so the field key is part of the answer, not
  * an implementation detail.
  *
- * @returns {Record<string, Record<string, {from:string[], to:string, gate:number|null}>>|null}
+ * @returns {Record<string, Record<string, {from:string[], to:string, gate:number|null, system:boolean}>>|null}
  */
 export function buildTransitions(schema) {
   const t = schema?.['x-transitions']
@@ -676,7 +703,15 @@ export function buildTransitions(schema) {
  * against the row by litestone's own JS evaluator, and neither exists in a
  * browser — which is why `x-transitions` carries the gate and not the
  * predicate. So this answers `allowed: true` for a move a policy refuses, and
- * `refusedBy` is `'gate'` or `null` where the server may also say `'policy'`.
+ * `refusedBy` is `'system'`, `'gate'` or `null` where the server may also say
+ * `'policy'`.
+ *
+ * `'system'` is the exception to permissive-when-unknown, and the only verdict
+ * here that is not a guess: a `@system` move is the APPLICATION's, so no
+ * caller's level changes the answer and a browser is never the application.
+ * A screen renders no button for one rather than a disabled button, because a
+ * disabled button says *ask somebody more senior* about something no caller can
+ * do.
  *
  * That is the documented affordance contract rather than a gap: unknown is
  * permissive, the Data boundary refuses regardless, and the honest failure is a
@@ -697,9 +732,22 @@ export function transitionsAt(spec, row, level) {
     if (current == null) continue
     for (const [name, t] of Object.entries(transitions ?? {})) {
       if (!Array.isArray(t?.from) || !t.from.includes(current)) continue
-      const gate    = t.gate ?? null
-      const allowed = gate == null || typeof level !== 'number' ? true : level >= gate
-      out.push({ name, field, from: current, to: t.to, gate, allowed, refusedBy: allowed ? null : 'gate' })
+      const gate   = t.gate ?? null
+      const system = Boolean(t.system)
+
+      // `@system` is asked first, and it is the ONE refusal this side can be
+      // certain of: it needs no level and no policy, because the application
+      // makes the move and a browser is never the application. Everything else
+      // here is permissive-when-unknown; this is not.
+      let allowed   = !system
+      let refusedBy = system ? 'system' : null
+
+      if (allowed && gate != null && typeof level === 'number') {
+        allowed   = level >= gate
+        refusedBy = allowed ? null : 'gate'
+      }
+
+      out.push({ name, field, from: current, to: t.to, gate, system, allowed, refusedBy })
     }
   }
   return out
@@ -1187,221 +1235,17 @@ export function stripReadOnly(fields, data, opts = {}) {
   return out ?? data
 }
 
-// ── Does this record belong in that query's results? ──────────────────────────
+// ── Does this record belong in that query's results? ──────────────────────
 //
-// A pushed record is an announcement about a row, not about a list. The store a
-// `load(query)` filled means "the rows matching that query", so applying every
-// event to it unconditionally is what let a row that LEFT the filter stay in the
-// list, updated in place and quietly wrong (`FJS-011`).
+// `@frontierjs/toolbelt/match` owns it; this is the re-export, so every
+// caller here is unchanged.
 //
-// The question is answered here rather than on the server because the client
-// already holds the constraint table, so a query-scoped subscription costs no
-// registry, no re-run and no second transport — only the events for rows this
-// list filtered out, which is bandwidth rather than correctness.
+// It moved because there are two live stores and only one of them asked.
+// jetty's upserted whatever its channel delivered, so a row that had LEFT the
+// list went straight back into it (`FJS-493`) — and jetty may not import
+// sierra, while a hand copy is what `FJS-059` already paid for once.
 //
-// The operators are exactly what Junction's `parseWhere` / `translateOps` accept
-// and Litestone's `buildWhere` compiles — the `$`-prefixed wire spelling, and the
-// bare Litestone spelling that reaches the same place through parseWhere's nested
-// branch. Nothing more: a keyword the server cannot be sent does not belong here.
-//
-// Three answers, not two. A matcher forced to return a boolean has to guess about
-// a filter it cannot see through — a `select` that dropped the filtered column, a
-// filter naming a relation, `$search`, a raw clause — and guessing wrong is
-// silent. `null` says *cannot decide*, and its caller asks the server again.
-
-const _WIRE_OPS = {
-  $in: 'in', $nin: 'notIn', $lt: 'lt', $lte: 'lte', $gt: 'gt', $gte: 'gte',
-  $ne: 'not', $like: 'contains', $ilike: 'contains', $start: 'startsWith', $end: 'endsWith',
-}
-
-// The same operators under the names Litestone knows them by. An unprefixed
-// operator block travels through `parseWhere` untouched (it only looks for a
-// leading `$`), so both spellings reach `buildWhere` and both are legal here.
-const _BARE_OPS = new Set([
-  'in', 'notIn', 'lt', 'lte', 'gt', 'gte', 'not', 'equals',
-  'contains', 'startsWith', 'endsWith',
-  'has', 'hasEvery', 'hasSome', 'hasNone', 'isEmpty',
-])
-
-// Filters whose answer is not in the record, so a pushed row cannot be graded
-// against them: `$search` is an FTS5 index, `$onlyDeleted`/`$onlyTemplates` are
-// visibility flags the record does not carry a decidable answer for (the marker
-// column can be renamed, and this side holds no schema), `$raw` is SQL.
-const _OPAQUE = new Set(['$search', '$onlyDeleted', '$onlyTemplates', '$raw'])
-
-// Not filters at all — `parseQuery` destructures these out before `parseWhere`
-// sees the rest. They ride in `query` only on the pre-directives fallback path.
-//
-// Read off the wire's own table rather than restated, because a Data-realm
-// feature that grows a per-call option is otherwise a filter on a column nobody
-// declared here, three layers from the cause (FJS-306). Only the decidability
-// question above is this module's to answer.
-const _DIRECTIVES = new Set(DIRECTIVE_PARAMS.filter(p => !_OPAQUE.has(p)))
-
-/** Three-valued AND — false wins over unknown, unknown wins over true. */
-function _and(a, b) {
-  if (a === false || b === false) return false
-  if (a === null  || b === null)  return null
-  return true
-}
-
-function _not(v) {
-  return v === null ? null : !v
-}
-
-/**
- * A query operand as the column would hold it. The wire is strings — a query
- * built from a URL or a form control sends `'5'` for an Int — and SQLite's type
- * affinity converts on comparison, so `WHERE id = '5'` matches row 5 and a
- * client matcher comparing `5 === '5'` would not.
- */
-function _operand(rule, v) {
-  if (v instanceof Date) return v.toISOString()
-  if (typeof v !== 'string' || v === '') return v
-  if (rule?.type === 'integer') return /^[+-]?\d+$/.test(v.trim()) ? Number(v) : v
-  if (rule?.type === 'number')  { const n = Number(v); return Number.isFinite(n) ? n : v }
-  if (rule?.type === 'boolean') {
-    if (v === 'true')  return true
-    if (v === 'false') return false
-  }
-  return v
-}
-
-/** `IN (…)` for a scalar column, `hasSome` for an array one — as the bare-array shorthand compiles. */
-function _inList(rule, actual, list) {
-  if (!Array.isArray(list)) return null
-  const wanted = list.map(v => _operand(rule, v))
-  if (Array.isArray(actual)) return actual.some(v => wanted.includes(v))
-  return wanted.includes(actual)
-}
-
-// LIKE is case-insensitive for ASCII in SQLite, which is what makes `$like` and
-// `$ilike` compile to the same `contains` on the server.
-const _like = (actual, operand, test) =>
-  actual == null ? false : test(String(actual).toLowerCase(), String(operand).toLowerCase())
-
-function _matchOp(rule, actual, op, operand) {
-  switch (op) {
-    case 'in':     return _inList(rule, actual, operand)
-    // NOT IN excludes NULL rows in SQLite, so Litestone ORs `IS NULL` back in.
-    case 'notIn':  return operand?.length ? _not(_inList(rule, actual, operand)) : true
-    case 'gt':     return actual == null ? false : actual >  _operand(rule, operand)
-    case 'gte':    return actual == null ? false : actual >= _operand(rule, operand)
-    case 'lt':     return actual == null ? false : actual <  _operand(rule, operand)
-    case 'lte':    return actual == null ? false : actual <= _operand(rule, operand)
-    case 'contains':   return _like(actual, operand, (a, b) => a.includes(b))
-    case 'startsWith': return _like(actual, operand, (a, b) => a.startsWith(b))
-    case 'endsWith':   return _like(actual, operand, (a, b) => a.endsWith(b))
-    case 'equals':
-      if (operand === null) return actual == null
-      if (Array.isArray(operand)) {
-        // The exact set, in order — the one place an array is not a membership test.
-        if (!Array.isArray(actual)) return null
-        return actual.length === operand.length && actual.every((v, i) => v === operand[i])
-      }
-      return actual === _operand(rule, operand)
-    case 'not':
-      if (operand === null) return actual != null
-      if (Array.isArray(operand)) return operand.length ? _not(_inList(rule, actual, operand)) : true
-      // `col != ?` is NULL, not true, on a NULL column.
-      return actual == null ? false : actual !== _operand(rule, operand)
-    case 'has':      return Array.isArray(actual) ? actual.includes(operand) : null
-    case 'hasEvery': return Array.isArray(actual) ? operand.every(v => actual.includes(v)) : null
-    case 'hasSome':  return Array.isArray(actual) ? operand.some(v => actual.includes(v))  : null
-    case 'hasNone':  return Array.isArray(actual) ? !operand.some(v => actual.includes(v)) : null
-    case 'isEmpty':  return Array.isArray(actual) ? (operand ? actual.length === 0 : actual.length > 0) : null
-    default:         return null
-  }
-}
-
-function _matchField(rule, actual, expected) {
-  if (expected === null) return actual == null
-  if (expected instanceof Date) return actual === expected.toISOString()
-  if (Array.isArray(expected)) {
-    // A bare array is membership, never equality — Prisma reads it the other way
-    // and a schema ported from there filters wider than it did.
-    return expected.length ? _inList(rule, actual, expected) : false
-  }
-  if (typeof expected !== 'object') return actual === _operand(rule, expected)
-
-  if ('$null' in expected) return expected.$null ? actual == null : actual != null
-
-  const keys = Object.keys(expected)
-  if (!keys.length) return true
-
-  // Every key an operator, or none of them: the same disambiguation the server
-  // makes (`isTypedJsonPath`). Anything else is a path into a JSON document or a
-  // filter over a relation, neither of which this record can answer.
-  if (!keys.every(k => k in _WIRE_OPS || _BARE_OPS.has(k))) return null
-
-  let verdict = true
-  for (const k of keys) {
-    verdict = _and(verdict, _matchOp(rule, actual, _WIRE_OPS[k] ?? k, expected[k]))
-    if (verdict === false) return false
-  }
-  return verdict
-}
-
-/**
- * Does this record satisfy that query?
- *
- * @param {Record<string, object>} fields  from buildFieldRules(); `{}` still
- *        matches structurally, it just cannot convert a string operand
- * @param {object} record
- * @param {object} query  filters as they travel over the wire
- * @returns {true|false|null}  in the results, not in them, or undecidable
- */
-export function matchesQuery(fields, record, query) {
-  if (!query || typeof query !== 'object') return true
-  if (!record || typeof record !== 'object') return null
-
-  let verdict = true
-
-  for (const [key, val] of Object.entries(query)) {
-    if (val === undefined || _DIRECTIVES.has(key)) continue
-
-    let one
-    if (_OPAQUE.has(key)) {
-      one = null
-    } else if (key === '$or') {
-      one = Array.isArray(val) ? _some(fields, record, val) : null
-    } else if (key === '$and') {
-      one = Array.isArray(val) ? _every(fields, record, val) : null
-    } else if (key === '$not') {
-      one = _not(matchesQuery(fields, record, val))
-    } else if (key.startsWith('$')) {
-      one = null   // an operator the server may know and this does not
-    } else if (!(key in record)) {
-      // A `select` that dropped the filtered column, or a filter naming a
-      // relation — the row is here, the answer is not.
-      one = null
-    } else {
-      one = _matchField(fields?.[key], record[key], val)
-    }
-
-    verdict = _and(verdict, one)
-    if (verdict === false) return false
-  }
-
-  return verdict
-}
-
-function _some(fields, record, list) {
-  let verdict = false
-  for (const q of list) {
-    const one = matchesQuery(fields, record, q)
-    if (one === true) return true
-    if (one === null) verdict = null
-  }
-  return verdict
-}
-
-function _every(fields, record, list) {
-  let verdict = true
-  for (const q of list) {
-    verdict = _and(verdict, matchesQuery(fields, record, q))
-    if (verdict === false) return false
-  }
-  return verdict
-}
+// The `fields` table is `buildFieldRules()`'s output, passed whole: the
+// matcher reads `rule.type` and nothing else, so anything richer satisfies it.
+export { matchesQuery } from '@frontierjs/toolbelt/match'
 

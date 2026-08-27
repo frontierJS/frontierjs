@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 45 models · 2 databases
+-- 46 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -64,13 +64,12 @@ CREATE TABLE IF NOT EXISTS "account" (
   CHECK ("type" IN ('individual', 'organization'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_account_deletedAt" ON "account" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "account_updatedAt"
-AFTER UPDATE ON "account"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "account" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
+
+CREATE TABLE IF NOT EXISTS "outpost_nonce" (
+  "nonce" TEXT NOT NULL PRIMARY KEY,
+  "seenAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_outpost_nonce_seenAt" ON "outpost_nonce" ("seenAt");
 
 CREATE TABLE IF NOT EXISTS "network" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -88,13 +87,6 @@ CREATE TABLE IF NOT EXISTS "network" (
   UNIQUE ("workspaceId", "slug")
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_network_deletedAt" ON "network" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "network_updatedAt"
-AFTER UPDATE ON "network"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "network" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "blueprint" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -123,13 +115,6 @@ CREATE TABLE IF NOT EXISTS "blueprint" (
   CHECK ("appType" IN ('container', 'worker', 'database', 'daemon', 'cron', 'static', 'function'))
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_blueprint_category" ON "blueprint" ("category");
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "blueprint_updatedAt"
-AFTER UPDATE ON "blueprint"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "blueprint" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "backup" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -170,13 +155,6 @@ CREATE TABLE IF NOT EXISTS "hub_config" (
   "version" INTEGER NOT NULL DEFAULT 1,
   CHECK ("backupDestination" IN ('local', 's3'))
 ) STRICT;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "hub_config_updatedAt"
-AFTER UPDATE ON "hub_config"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "hub_config" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "user" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -203,13 +181,6 @@ CREATE TABLE IF NOT EXISTS "user" (
 CREATE INDEX IF NOT EXISTS "idx_user_accountId" ON "user" ("accountId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_user_email" ON "user" ("email") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_user_deletedAt" ON "user" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "user_updatedAt"
-AFTER UPDATE ON "user"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "user" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "workspace" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -230,13 +201,6 @@ CREATE TABLE IF NOT EXISTS "workspace" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_workspace_accountId" ON "workspace" ("accountId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_workspace_deletedAt" ON "workspace" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "workspace_updatedAt"
-AFTER UPDATE ON "workspace"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "workspace" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "blueprint_param" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -296,19 +260,13 @@ CREATE TABLE IF NOT EXISTS "notification_preference" (
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_notification_preference_userId" ON "notification_preference" ("userId");
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "notification_preference_updatedAt"
-AFTER UPDATE ON "notification_preference"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "notification_preference" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "workspace_member" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "workspaceId" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
   "role" TEXT NOT NULL DEFAULT 'viewer',
+  "capabilities" TEXT NOT NULL DEFAULT '[]' CHECK (json_valid("capabilities") AND json_type("capabilities") = 'array'),
   "invitedBy" TEXT,
   "invitedAt" TEXT,
   "acceptedAt" TEXT,
@@ -321,13 +279,6 @@ CREATE TABLE IF NOT EXISTS "workspace_member" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_workspace_member_workspaceId_userId" ON "workspace_member" ("workspaceId", "userId");
 CREATE INDEX IF NOT EXISTS "idx_workspace_member_userId" ON "workspace_member" ("userId");
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "workspace_member_updatedAt"
-AFTER UPDATE ON "workspace_member"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "workspace_member" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "invitation" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -344,13 +295,6 @@ CREATE TABLE IF NOT EXISTS "invitation" (
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_invitation_workspaceId" ON "invitation" ("workspaceId");
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "invitation_updatedAt"
-AFTER UPDATE ON "invitation"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "invitation" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "secret" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -369,13 +313,6 @@ CREATE TABLE IF NOT EXISTS "secret" (
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_secret_deletedAt" ON "secret" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "secret_updatedAt"
-AFTER UPDATE ON "secret"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "secret" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "api_key" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -400,13 +337,6 @@ CREATE TABLE IF NOT EXISTS "api_key" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_api_key_credentialId" ON "api_key" ("credentialId");
 CREATE INDEX IF NOT EXISTS "idx_api_key_userId" ON "api_key" ("userId");
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "api_key_updatedAt"
-AFTER UPDATE ON "api_key"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "api_key" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "server" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -445,13 +375,6 @@ CREATE INDEX IF NOT EXISTS "idx_server_workspaceId" ON "server" ("workspaceId") 
 CREATE INDEX IF NOT EXISTS "idx_server_status" ON "server" ("status") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_server_lastHeartbeatAt" ON "server" ("lastHeartbeatAt") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_server_deletedAt" ON "server" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "server_updatedAt"
-AFTER UPDATE ON "server"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "server" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "project" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -471,13 +394,6 @@ CREATE TABLE IF NOT EXISTS "project" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_project_workspaceId" ON "project" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_project_deletedAt" ON "project" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "project_updatedAt"
-AFTER UPDATE ON "project"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "project" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "recipe" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -498,13 +414,6 @@ CREATE TABLE IF NOT EXISTS "recipe" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_recipe_workspaceId" ON "recipe" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_recipe_deletedAt" ON "recipe" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "recipe_updatedAt"
-AFTER UPDATE ON "recipe"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "recipe" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "feature_flag" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -515,7 +424,7 @@ CREATE TABLE IF NOT EXISTS "feature_flag" (
   "tags" TEXT NOT NULL DEFAULT '[]' CHECK (json_valid("tags") AND json_type("tags") = 'array'),
   "variants" TEXT NOT NULL DEFAULT '[]',
   "isEnabled" INTEGER NOT NULL DEFAULT 0,
-  "rollout" INTEGER NOT NULL DEFAULT 0,
+  "rollout" INTEGER NOT NULL DEFAULT 100,
   "createdBy" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -527,13 +436,6 @@ CREATE TABLE IF NOT EXISTS "feature_flag" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_feature_flag_workspaceId" ON "feature_flag" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_feature_flag_deletedAt" ON "feature_flag" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "feature_flag_updatedAt"
-AFTER UPDATE ON "feature_flag"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "feature_flag" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "notification_channel" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -556,13 +458,6 @@ CREATE TABLE IF NOT EXISTS "notification_channel" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_notification_channel_workspaceId" ON "notification_channel" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_notification_channel_deletedAt" ON "notification_channel" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "notification_channel_updatedAt"
-AFTER UPDATE ON "notification_channel"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "notification_channel" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "alert_rule" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -580,13 +475,6 @@ CREATE TABLE IF NOT EXISTS "alert_rule" (
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_alert_rule_workspaceId" ON "alert_rule" ("workspaceId");
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "alert_rule_updatedAt"
-AFTER UPDATE ON "alert_rule"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "alert_rule" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "dashboard" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -606,13 +494,6 @@ CREATE TABLE IF NOT EXISTS "dashboard" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_dashboard_workspaceId" ON "dashboard" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_dashboard_deletedAt" ON "dashboard" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "dashboard_updatedAt"
-AFTER UPDATE ON "dashboard"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "dashboard" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "audit_event" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -742,13 +623,6 @@ CREATE TABLE IF NOT EXISTS "environment" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_environment_projectId" ON "environment" ("projectId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_environment_deletedAt" ON "environment" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "environment_updatedAt"
-AFTER UPDATE ON "environment"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "environment" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "recipe_run" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -826,20 +700,13 @@ CREATE INDEX IF NOT EXISTS "idx_app_workspaceId" ON "app" ("workspaceId") WHERE 
 CREATE INDEX IF NOT EXISTS "idx_app_environmentId" ON "app" ("environmentId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_app_status" ON "app" ("status") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_app_deletedAt" ON "app" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "app_updatedAt"
-AFTER UPDATE ON "app"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "app" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "flag_override" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "flagId" TEXT NOT NULL,
   "environmentId" TEXT NOT NULL,
   "isEnabled" INTEGER NOT NULL DEFAULT 0,
-  "rollout" INTEGER NOT NULL DEFAULT 0,
+  "rollout" INTEGER NOT NULL DEFAULT 100,
   "variantKey" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -848,13 +715,6 @@ CREATE TABLE IF NOT EXISTS "flag_override" (
   FOREIGN KEY ("environmentId") REFERENCES "environment" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_flag_override_environmentId" ON "flag_override" ("environmentId");
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "flag_override_updatedAt"
-AFTER UPDATE ON "flag_override"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "flag_override" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "domain" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -879,13 +739,6 @@ CREATE TABLE IF NOT EXISTS "domain" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_domain_appId" ON "domain" ("appId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_domain_deletedAt" ON "domain" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "domain_updatedAt"
-AFTER UPDATE ON "domain"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "domain" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "app_server" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -949,13 +802,6 @@ CREATE INDEX IF NOT EXISTS "idx_deployment_workspaceId" ON "deployment" ("worksp
 CREATE INDEX IF NOT EXISTS "idx_deployment_status" ON "deployment" ("status");
 CREATE INDEX IF NOT EXISTS "idx_deployment_environmentId" ON "deployment" ("environmentId");
 CREATE INDEX IF NOT EXISTS "idx_deployment_triggeredBy" ON "deployment" ("triggeredBy");
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "deployment_updatedAt"
-AFTER UPDATE ON "deployment"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "deployment" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "job" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -989,13 +835,6 @@ CREATE INDEX IF NOT EXISTS "idx_job_nextRunAt" ON "job" ("nextRunAt") WHERE "del
 CREATE INDEX IF NOT EXISTS "idx_job_appId" ON "job" ("appId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_job_environmentId" ON "job" ("environmentId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_job_deletedAt" ON "job" ("deletedAt") WHERE "deletedAt" IS NULL;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "job_updatedAt"
-AFTER UPDATE ON "job"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "job" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "dashboard_widget" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -1016,13 +855,6 @@ CREATE TABLE IF NOT EXISTS "dashboard_widget" (
 CREATE INDEX IF NOT EXISTS "idx_dashboard_widget_dashboardId" ON "dashboard_widget" ("dashboardId");
 CREATE INDEX IF NOT EXISTS "idx_dashboard_widget_serverId" ON "dashboard_widget" ("serverId");
 CREATE INDEX IF NOT EXISTS "idx_dashboard_widget_appId" ON "dashboard_widget" ("appId");
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "dashboard_widget_updatedAt"
-AFTER UPDATE ON "dashboard_widget"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "dashboard_widget" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 CREATE TABLE IF NOT EXISTS "deployment_step" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

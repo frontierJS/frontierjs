@@ -24,7 +24,15 @@ This is the answer that came back first and by the widest margin.
 > foundation here than this file claimed and less test coverage** — and the
 > corrections are inline. Two defects came out of the pass and have ids:
 > `FJS-522` (`@time` never reaches the client) and `FJS-521` (the one retention
-> window that ships runs at boot and never again).
+> window that ships runs at boot and never again). **Both are fixed** — and
+> `FJS-522`'s fix is worth reading before this file's own vocabulary question is
+> answered, because it is the first place the *format* route was tried and
+> rejected on evidence: `format: 'time'` is RFC 3339 full-time, seconds and an
+> offset both mandatory, so claiming it would have made the browser refuse a
+> value the boundary accepts. A `pattern` carrying the validator's own regex
+> says the same thing with no second definition. **A vocabulary that borrows a
+> standard's word inherits the standard's meaning**, which is the same trap
+> `FJS-D143` avoided by keeping `DateTime` rather than minting `Instant`.
 
 ---
 
@@ -92,8 +100,15 @@ at 02:30 runs zero times in spring and twice in autumn. Every hand-rolled schedu
 gets this wrong once; Caravan's cron already handles the evaluation half correctly and
 nothing above it knows the question exists.
 
-> **Measured 2026-08-25** — `nextFireTime` against `America/New_York`, both boundaries.
-> The evaluator is right and both consequences are live:
+> **Measured 2026-08-25, and FIXED the same day** (`FJS-D144`, `FJS-525`) — the
+> table below is what the firing path did before. It now walks the local clock
+> forward from the last minute it looked at, so a fixed-time schedule fires once
+> per calendar day across both boundaries and a wildcard one still follows the new
+> wall clock. **This is the only one of the four failures that is closed**, and it
+> is closed in the scheduler alone: no model can still say what zone its column
+> means.
+>
+> Against `America/New_York`, both boundaries:
 >
 > | expression | crossing | fires |
 > | --- | --- | --- |
@@ -101,13 +116,13 @@ nothing above it knows the question exists.
 > | `30 1 * * *` | fall back, 2026-11-01 | **twice** — `05:30Z` and `06:30Z`, both *1:30 AM* |
 > | `0 9 * * *` | neither | `14:00Z` = 09:00 EST, correct |
 >
-> The second row is the one with a cost attached, and the queue's own idempotency does
+> The second row was the one with a cost attached, and the queue's own idempotency did
 > not cover it: a cron fire is dispatched under `cron:<job>:<epoch-minute>`
-> (`FJS-294`), and the two 1:30 AMs are different minutes, so both queue a row and the
-> job really runs twice. That is defensible — they are two real occurrences — but it is
-> *unstated*, untested, and not a decision anybody made. It is the sharpest instance in
-> the tree of the gap this record is about: the evaluation is correct and **nothing
-> above it can express what the answer should be**.
+> (`FJS-294`), and the two 1:30 AMs are different minutes, so both queued a row and the
+> job really ran twice. It was *unstated*, untested, and not a decision anybody made —
+> the sharpest instance in the tree of the gap this record is about: the evaluation was
+> correct and **nothing above it could express what the answer should be**. Naming the
+> answer is what fixed it, and the fix is one loop rather than two rules.
 
 **4. "Today" is not a range.** A report filtered to *today* means a different eight
 hours to a viewer in Auckland than to one in Los Angeles, and a report grouped by day
@@ -167,12 +182,15 @@ narrower and more tractable than *no vocabulary at all*.
 
 Two things make this worth knowing before anything is designed:
 
-- **The rungs are wired unevenly, and `@time` is not wired at all.** `@date` emits
-  `format: 'date'` into the JSON Schema and `@datetime` emits `format: 'date-time'`;
-  `field-rules.js` turns those into `<input type="date">` and the kit's `DateTimeInput`.
-  `@time` has **no case in the emitter**, so it validates on the server and reaches the
-  browser as a bare string in a plain text box — the rule is discoverable only by
-  submitting. Filed as `FJS-522`.
+- **The rungs are wired unevenly, and `@time` was not wired at all** — ~~filed as
+  `FJS-522`~~, fixed 2026-08-26. `@date` emits `format: 'date'` and `@datetime`
+  `format: 'date-time'`; `field-rules.js` turns those into `<input type="date">`
+  and the kit's `DateTimeInput`. `@time` had **no case in the emitter**, so it
+  validated on the server and reached the browser as a bare string in a plain
+  text box. It now emits a `pattern` — the validator's own regex, exported and
+  imported rather than restated — plus `x-time: { seconds }` for the control,
+  which is `<input type="time">` with a `step` where seconds are allowed.
+  **Deliberately not `format: 'time'`**: see the note at the top.
 - **Nothing in the tree declares any of the three.** Zero uses across `example` and
   `basecamp`, against 141 `DateTime` columns. Which is why the hole above has never
   been seen, and why the vocabulary question is genuinely open rather than

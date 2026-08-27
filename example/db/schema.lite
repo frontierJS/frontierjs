@@ -79,16 +79,16 @@ database main {
 }
 
 // @@log(audit) writes here, and this is the ONE database a tenant registry does
-// not redirect — a logger database is shared across the whole fleet by design.
-// So this is also the one path still resolving against the process CWD, and
-// every site and widget script runs `cd <surface>` first: it is how an orphan
-// `example/site/db/` came to exist and sit there for two days, unnoticed
-// because the repo ignores `*.db*` everywhere. api/src/core/db.ts names it
-// absolutely for that reason.
+// not redirect — a logger database is shared across the whole fleet by design,
+// so it is the one whose declared path is used as written.
 //
-// A litestone CLI command anchors to the app root instead and is safe from any
-// directory (`FJS-449`); an app assembling its schema in memory, as
-// api/src/core/db.ts does, has no location to anchor to and gets the CWD.
+// Three scripts here `cd <surface>` before running, and this path is read from
+// the APP ROOT regardless: the CLI anchors to it from the schema file, and
+// api/src/core/db.ts names that file to `createTenantRegistry` so the string it
+// assembled in memory resolves the same way (`FJS-449`). Before that it
+// followed the process CWD, which is how an orphan `example/site/db/` came to
+// exist and sit there for two days, unnoticed because the repo ignores `*.db*`
+// everywhere.
 database audit {
   path      env("AUDIT_PATH", "./db/audit/")
   driver    logger
@@ -547,10 +547,11 @@ model Discount {
   kind  DiscountKind @default(percent) @label("Kind")
 
   /// Percent: 0–100. Fixed: an amount in the shop's base currency. One column
-  /// for two units, which is the cost of not having two tables — `@@check`
-  /// cannot see `kind` from here, so the bound that matters (a percentage
-  /// above 100) is enforced in `pricing.ts` where both halves are in scope,
-  /// and the discount is capped at the subtotal regardless.
+  /// for two units, which is the cost of not having two tables — a FIELD
+  /// validator here cannot see `kind`, so the bound that matters is declared
+  /// at the model instead, below. `pricing.ts` still caps the discount at the
+  /// subtotal, which is a different rule: this one is about what may be
+  /// STORED, that one about what may be charged.
   value Float @gte(0) @label("Value")
 
   /// The floor this code is worth anything at. Zero means none.
@@ -584,6 +585,29 @@ model Discount {
   carts Cart[]
 
   createdAt DateTime @default(now())
+
+  /// The limit, enforced where no code path can get around it.
+  ///
+  /// `carts.service.ts` counts a redemption with a read-modify-write rather than
+  /// `{ increment: 1 }` precisely so a validator can see the new value — an
+  /// atomic operator computes it inside SQLite, where nothing in this package
+  /// runs (`FJS-D27`). This is the other half of that argument: a CHECK is IN
+  /// the table, so it fires for the atomic operator too, and for a migration, a
+  /// seed, `asSystem()` and `fli tinker`. The service still refuses first and
+  /// says something useful; this is what makes the refusal true.
+  @@check("maxRedemptions IS NULL OR redemptions <= maxRedemptions",
+          "a code cannot be redeemed more times than its limit")
+
+  /// A window that closes before it opens. Two nullable columns of one row,
+  /// which is the shape no field validator can see: each is individually fine
+  /// and the pair is not.
+  @@check("startsAt IS NULL OR endsAt IS NULL OR startsAt < endsAt",
+          "a discount must end after it starts")
+
+  /// The bound `value` cannot state on its own, because what it means depends
+  /// on `kind` and a field validator sees one field.
+  @@check("kind != 'percent' OR value <= 100",
+          "a percentage discount cannot be more than 100%")
 
   @@gate("5.5.5.5")
   @@log(audit)
@@ -843,6 +867,35 @@ model Order {
   /// they are two different sentences that will change at different times.
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
+
+  /// ─── The receipt adds up ────────────────────────────────────────────────
+  ///
+  /// `subtotal − discount + shipping + tax = total`, the identity this model's
+  /// header states in prose and `api/src/pricing.ts` computes. Until it could be
+  /// declared it was true by everyone remembering — a job, a migration or an
+  /// `asSystem()` repair that touched one column and not the rest left a receipt
+  /// that did not add up, and nothing said so.
+  ///
+  /// A tolerance rather than equality, and it is not caution: fuzzed over 4,000
+  /// real breakdowns from `priceBasket` — every discount kind, five tax rates,
+  /// the free-over threshold either side — the worst drift between `total` and
+  /// SQLite's own sum of the components was 7.3e-12, and it was never zero. So
+  /// equality would fail on live data. Half a penny is nine orders of magnitude
+  /// above the noise and an order of magnitude below the smallest real error,
+  /// which is one penny.
+  ///
+  /// `subtotal = 0` is the exemption, and it is the shape of an order staff
+  /// raised by hand: a total, and no lines to itemise. What it cannot say is
+  /// *no lines* — a CHECK may not hold a subquery, which is the same wall
+  /// `@@fts`'s membership note runs into further up this file.
+  @@check("subtotal = 0 OR abs(total - (subtotal - discount + shipping + tax)) < 0.005",
+          "the breakdown does not add up to the total")
+
+  /// Nothing may take off more than was there. `pricing.ts` caps a fixed-amount
+  /// code at the subtotal in both directions; this is the same rule, said where
+  /// a write that did not come through the checkout still meets it.
+  @@check("discount <= subtotal",
+          "a discount cannot be larger than the subtotal")
 
   @@softDelete(cascade)
 

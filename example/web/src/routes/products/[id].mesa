@@ -13,6 +13,11 @@ title: Product
   import { products }        from '../../resources/Product.mesa'
   import { productVariants } from '../../resources/ProductVariant.mesa'
   import { productImages }   from '../../resources/ProductImage.mesa'
+  // The default import IS the resource file's markup half — this model's own
+  // form (repo Invariant 18). The named export beside it is the accessor the
+  // gallery above reads from; one file, two halves, and neither restates the
+  // other.
+  import ProductImageForm    from '../../resources/ProductImage.mesa'
   import { session } from '../../session.js'
   import { cart, add } from '../../cart.js'
   import { money }     from '../../money.js'
@@ -236,6 +241,27 @@ title: Product
         </div>
       {/if}
 
+      <!-- ── Add one ────────────────────────────────────────────────────
+           `@@gate("0.4.4.5")` — anyone reads a photograph and staff write one,
+           so the form is behind the same level the boundary will ask for. An
+           affordance, not the guard: `x-gate` is permissive when it does not
+           know and the server refuses regardless.
+
+           The form itself is `<ProductImageForm />` and nothing else. Every
+           control on it, including the file picker and the list of MIME types
+           its dialog offers, comes from `db/schema.lite` — this page names no
+           field. -->
+      {#if session.level >= 4}
+        <div class="add-photo" data-add-photo-panel>
+          <SectionHeader title="Add a photograph" />
+          <ProductImageForm
+            productId={Number(page.params.id)}
+            variantId={chosen?.id ?? null}   <!-- the colourway on screen, so a photograph lands on the one being looked at -->
+            ondone={() => productImages.load({ productId: Number(page.params.id) }, { limit: 50, orderBy: 'position' })}
+          />
+        </div>
+      {/if}
+
       {#if images().length > 1}
         <div class="strip">
           {#each colours as c (c)}
@@ -392,6 +418,11 @@ title: Product
      renders at thumbnail size inside a square hole the aspect-ratio reserved. */
   .detail  { display: grid; grid-template-columns: 22rem minmax(0, 1fr); gap: 1.5rem; align-items: start }
   .gallery { display: grid; gap: .75rem }
+  .add-photo {
+    padding: var(--space-lg);
+    border: 1px solid var(--rule);
+    border-radius: var(--card-radius);
+  }
   .right   { display: grid; gap: 1rem; align-content: start }
   /* Three across, so the numbers sit beside the photograph rather than
      stacking into a column as tall as it. */
@@ -401,7 +432,7 @@ title: Product
     width: 100%; aspect-ratio: 1; max-height: 22rem;
     object-fit: contain;
     background: var(--surface-sunken);
-    border-radius: var(--radius-md);
+    border-radius: var(--card-radius);
   }
   .hero-empty { display: grid; place-items: center }
 
@@ -411,11 +442,11 @@ title: Product
     padding: .35rem; width: 5rem;
     background: var(--surface-sunken);
     border: 1px solid transparent;
-    border-radius: var(--radius-sm);
+    border-radius: var(--btn-radius);
     cursor: pointer;
     color: inherit;
   }
-  .swatch[aria-pressed="true"] { border-color: var(--accent) }
+  .swatch[aria-pressed="true"] { border-color: var(--color-primary) }
   .swatch img { width: 100%; aspect-ratio: 1; object-fit: contain }
 
   /* The three controls sit on one line at desktop width and wrap on their own
@@ -430,7 +461,7 @@ title: Product
   .grid { width: 100%; border-collapse: collapse }
   .grid th, .grid td {
     padding: .6rem;
-    border-bottom: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--rule);
     text-align: left;
     vertical-align: top;
   }

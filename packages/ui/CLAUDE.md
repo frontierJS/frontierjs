@@ -18,7 +18,7 @@ components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
               Checkbox · RadioGroup · Switch · Slider · NumberInput · Combobox ·
               MultiSelect · DatePicker · DateTimeInput · JsonInput · FileUpload ·
-              Button
+              FileField · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
               Json · …

@@ -164,9 +164,15 @@ const db = await createClient({ path: './schema.lite', now: () => new Date('2026
 
 `now` takes a function returning a `Date` or an ISO string; absent, it is the
 wall clock. It reaches both halves of the policy compiler — the WHERE and the
-JS evaluator a `create` policy uses — and `@@softDelete`'s stamp, so a frozen
-clock freezes every timestamp litestone writes rather than only the ones a
-policy compares against.
+JS evaluator a `create` policy uses — and `@@softDelete`'s stamp.
+
+**It does not reach every timestamp litestone writes**, which this section used
+to claim. `@default(now())` is a column DEFAULT and `@updatedAt` is an AFTER
+UPDATE trigger, and both are `strftime('%Y-%m-%dT%H:%M:%fZ','now')` — SQLite's
+own clock, which no JS injection can move (`FJS-531`). A test that needs a row
+to be old states its timestamp on the write; a column default only applies to a
+column the write omits. `createTestEnv`'s `env.clock` is the movable form of
+this option and carries the same caveat.
 
 **SQLite's own clock is refused in a `$raw` predicate.** `datetime('now')`
 answers `2026-08-13 07:38:31` — a space, no milliseconds, no `Z` — while
@@ -235,6 +241,14 @@ model User {
 `@allow('all', expr)` — both
 
 `asSystem()` always sees and writes all fields.
+
+**It does not lift row tenancy.** A `tenancy { strategy row }` declaration
+desugars into `@@deny`, and those are the one kind of policy a system context
+keeps — while a tenant is in scope. `db.$setAuth(user).asSystem()` crosses the
+gate and every hand-written policy and stays inside that user's tenant;
+`db.asSystem()` off the root client has no principal, so there is no claim and
+nothing is scoped, which is what a migration, a seed and a cross-tenant admin
+tier are. The rule is *no permission rules, not no scope* (`FJS-519`).
 
 **It has to name a column.** A field `@allow` on a RELATION field is refused at
 parse, naming the foreign key that would have worked — a relation is not stored,
@@ -426,6 +440,124 @@ Because a policy filters rather than throws, **the refused write returns
 normally**. Test it by reading the row back through `asSystem()`; the return
 value cannot tell you.
 
+## Capabilities — the grid a ladder cannot express
+
+**Enforced, and the grant column is declared.** What is not built is the affordance —
+`x-capabilities` to a browser, a section in `access.snapshot.md`, and
+`db.$capabilitiesFor(principal)`. `IDEAS/permission-sets.md` § *Build order* is what
+is left.
+
+A `@@gate` is a ladder and answers *how far up is this caller*. A business
+application mostly asks a grid — *which nouns, and which verbs on them* — and a
+billing clerk and a production planner are both level 4 with neither above the other.
+
+```lite
+model Invoice {
+  id     Int           @id
+  number String
+  note   String        @capability
+  status InvoiceStatus @default(draft)
+
+  @@gate("2")
+  @@capabilities(all)
+  @@transitions(status, issue: draft -> issued, void: issued -> voided @gate(5))
+}
+```
+
+**A capability is a REFERENCE to something this schema already declares**, never a
+name in a list — so there is no enum to keep in step, and a typo refers to nothing
+and is caught rather than sitting in a role row granting silence. The model above
+declares seven: `Invoice.read`, `.create`, `.update`, `.delete`, `.issue`, `.void`
+and `.note`.
+
+- **`@@capabilities`** is a switch, not a list. Bare covers create, update, delete
+  and every named move. **`(all)` adds read**, which is opt-in because its refusal is
+  the silent one — a capability refusal on a write throws and names itself, while a
+  missing read capability composes with the policy layer into an empty list and a 200.
+- **`@capability` on a column** says writing that column is its own capability. Opt-in
+  per column and never derived wholesale: every writable column on a real application
+  is hundreds, which is not a list anybody picks from. It needs the model's own switch
+  and is refused by name without it.
+- **A named move is a capability automatically** — `@@transitions` already names it,
+  which is what gives it a referent. **A move the ENGINE makes is not**: `@system`, or
+  a gate of 8 or 9. No caller asks for one, so offering it in a role editor offers
+  something no role can use.
+- **A finer grant REPLACES the coarse one for the action it names.** Writing a
+  `@capability` column asks for that column's grant and NOT for `Model.update`;
+  making a move asks for the move's grant and not for `Model.update` either. That is
+  the whole of what the fine tiers are for — if both applied, `Invoice.note` could
+  only be handed to somebody who already held every other edit to an invoice, which
+  is the grant it was written to withhold. An update naming anything else still needs
+  `Model.update`, because the rest of the payload is what that grant is about; both
+  spellings of a move agree, since `update({ data: { status: 'void' } })` and
+  `transition(id, 'void')` are one move; and a bare update with no keys is an ordinary
+  update. **CREATE keeps both**: `Model.create` is the grant for the row existing at
+  all, which is not what a column grant withholds.
+- **The gate still applies, ANDed.** A model that opts in usually wants its gate flat
+  at the read floor, or a billing clerk at READER(2) is refused by the ladder before
+  the grid is consulted. Steep is defensible where the grants are bounded by the gate
+  anyway and you want the ladder to catch a mis-stamped one — `fli check`'s
+  `capability-ladder` is a warning for exactly that reason.
+- **A test that grades another rule has to hold the grants.** The grid throws the same
+  `AccessDeniedError` a gate does, so a synthetic caller holding none reports every
+  write on an opted-in model as a refusal that rule never issued. `createTestEnv`'s
+  `atLevel`, `verifyRowPolicies` and `verifyTenantIsolation` hand their caller every
+  declared capability for that reason; one you build yourself is left as you wrote it.
+
+**Who holds one is data; that the column holds capabilities is schema.**
+
+```lite
+model Role {
+  id           String       @id @default(cuid())
+  workspaceId  String
+  name         String       @label("Role")
+  capabilities Capability[]
+
+  @@gate("2.5.5.6")
+  @@unique([workspaceId, name])
+}
+```
+
+**`Capability` is a type litestone synthesises from this schema's own surface** — the
+set is derived, so the type IS that set. It is a real enum, which is the whole of the
+implementation: an enum array is already a JSON column, already validated member by
+member at the write, already emitted into `$defs` with its values. So one declaration
+buys three things — a value naming nothing is refused at the write with a suggestion,
+`db.$enums.Capability` and the JSON Schema `$ref` give a role editor its multiselect,
+and the escalation guard below comes with the column rather than being a predicate
+every model restates. Declaring `enum Capability` by hand is refused; so is a
+`Capability[]` in a schema where no model declares `@@capabilities`, because that
+column could never be written and could not say why.
+
+**You may only grant what you hold.** A write to a grant column is refused unless every
+value is in the writer's own effective set. A **subset**, never a rank — this repo's own
+hand-written version compares role levels ordinally, so a developer (2) may hand out
+billing (1), two sets neither of which contains the other, and a sideways move is
+invisible to any comparison of two numbers (`FJS-529`). Seeding roles is therefore
+`asSystem()`'s job: a caller holding nothing can grant nothing.
+
+Separation of duties — *the person who administers access must not use it* — is the
+real exception this forbids. It is squarely in the 20%, and the hatch is a service
+method that writes its own rule; a blunt off-switch on the guard would turn an
+administrator who cannot delegate payroll into one who can mint everything.
+
+**A capability name written by hand is checked too.** The read tier has no attribute of
+its own — a column read must strip rather than refuse — so it is spelled as a
+predicate, and the literal in it is resolved against the same derived set:
+
+```lite
+salary Float @allow('read', 'Employee.salary' in auth().capabilities)
+```
+
+A misspelling there makes the predicate permanently false, so the column disappears for
+everybody including the holders, with nothing anywhere saying why. It is a parse error
+naming the nearest legal capability.
+
+**Where it sits in the reading order** is the section below: the gate first, because
+it reads nothing; then capabilities, which read a flat list and no rows and may
+therefore refuse without disclosing anything; then the policies, which read the row
+and must filter rather than refuse.
+
 ## Combining them — what refuses, what goes quiet, and why
 
 GatePlugin runs before row-level policies. A caller below the `@@gate` threshold is
@@ -447,9 +579,11 @@ Measured, on one model carrying all of them:
 | Declaration | Scope | Read | Create | Update | Delete |
 | --- | --- | --- | --- | --- | --- |
 | `@@gate` | model | throws | throws | throws | throws |
+| `@@capabilities` | model | throws under `(all)`, else — | throws | throws | throws |
 | `@@allow` / `@@deny` | row | filters — empty list, 200 | **throws** | filters — returns `null` | filters — 0 deleted |
 | field `@allow` | column | strips silently | drops silently | drops silently | — |
 | `@guarded` · `@system` | column | strips / readable | throws | throws | — |
+| `@capability` | column | — | throws | throws | — |
 | `@@transitions` | move | — | — | throws | — |
 
 ### Rule one — a refusal must never confirm a row exists

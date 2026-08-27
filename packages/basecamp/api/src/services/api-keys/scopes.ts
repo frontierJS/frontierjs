@@ -35,7 +35,7 @@ export interface Scope { id: string; group: string; label: string }
 
 /** Typed once. asSystem() answers `unknown`, so every accessor off it would
  *  otherwise be its own diagnostic — the class Invariant 14 is counting. */
-const sysOf = (app: BasecampApp): any => app.data.asSystem()
+const sysOf = (app: BasecampApp): any => app.db.asSystem()
 
 export function scopeVocabulary(app: BasecampApp): Scope[] {
   const services = app.services.list().filter(n => !OFF_LIMITS.has(n)).sort()

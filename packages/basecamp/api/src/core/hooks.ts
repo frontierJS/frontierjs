@@ -8,6 +8,7 @@ import type { Hook, AroundHook, ServiceContext }  from '@frontierjs/junction'
 import { env }                             from './env.ts'
 import { channelManager, workspaceChannelName } from '../channels.ts'
 import type { BasecampApp }                from '../basecamp.types.ts'
+import { grantsFor, grantsWithin }         from './capabilities.ts'
 
 // ─── The session ─────────────────────────────────────────────────────────
 // Junction puts the caller on ctx.auth.user as a SessionContext — camelCase
@@ -139,7 +140,7 @@ export async function restandingFor(
   const user = userOf(ctx)
   if (!user?.userId) return null
 
-  const sys: any = app.data.asSystem()
+  const sys: any = app.db.asSystem()
   const member: MemberRow | null = await sys.workspaceMember.findFirst({
     where:   { workspaceId, userId: user.userId },
     include: { workspace: true },
@@ -148,7 +149,7 @@ export async function restandingFor(
   ctx.locals[MEMBERSHIP]   = member
   ctx.locals.workspaceId   = workspaceId
 
-  applyClaims(ctx, app.data, member
+  applyClaims(ctx, app.db, member
     ? { workspaceId, memberRole: member.role }
     : {})
 
@@ -227,46 +228,109 @@ export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook
   }
 }
 
-// ─── refuseRoleAboveOwn ──────────────────────────────────────────────────
-// Nobody hands out a role above the one they hold.
+// ─── refuseGrantAboveOwn ─────────────────────────────────────────────────
+// Nobody hands out authority they do not hold themselves.
 //
 // `WorkspaceMember.role` is the column every gate in this app is graded from
-// (core/gate.ts), so a method that writes it is a method that writes standing.
-// `requireWorkspaceRole(app, 'admin', 'owner')` answers *may you manage the
-// team* and has nothing to say about WHICH role is being handed out, so an
-// administrator could name `role: 'owner'` — on somebody else's membership, or
-// on an invitation to an address they own and can then sign in as. Either way
-// level 5 mints level 6, which is `FJS-410` arriving by a second door.
+// (core/gate.ts) and `WorkspaceMember.capabilities` is the grid beside it
+// (core/capabilities.ts), so a method that writes either is a method that
+// writes standing. `requireWorkspaceRole(app, 'admin', 'owner')` answers *may
+// you manage the team* and has nothing to say about WHAT is being handed out,
+// so an administrator could name `role: 'owner'` — on somebody else's
+// membership, or on an invitation to an address they own and can then sign in
+// as. Either way level 5 mints level 6, which is `FJS-410` by a second door.
 //
-// The Data boundary cannot cover this one: all three writers go through
-// `asSystem()` — a membership decides access, so it is read and written as
-// system — and `asSystem()` is the context every policy is bypassed in. The
-// rule has to be said here, and said out loud, because a filtered write would
-// report success and move nothing.
+// ─── Two axes, because authority has two ─────────────────────────────────
+//
+// This compared `ROLE_LEVEL[granted] > ROLE_LEVEL[mine]` and nothing else for
+// most of its life, and an ordinal comparison cannot see a SIDEWAYS move:
+// `billing` and `developer` are both READER-and-above on one axis while *reads
+// everything, writes only billing* and *apps, deploys, jobs* are two sets
+// neither of which contains the other. A developer therefore passed while
+// granting authority that is not a subset of their own (`FJS-529`).
+//
+// The subset rule is what sees that, and it does not REPLACE the ladder — it
+// sits beside it, the same way the grid sits beside the gate (`FJS-D146`).
+// Neither axis subsumes the other here, and the proof is in this app: `admin`
+// and `owner` hold the same grid, because what separates them is the WORKSPACE
+// (delete it, remove the last administrator) and that is the gate's business.
+// So a subset test cannot tell an admin minting an owner from an admin
+// appointing an admin, which is the original `FJS-410` escalation. Drop either
+// check and a real refusal goes with it — measured, in the suite, both ways.
+//
+// ─── Why it is here and not at the Data boundary ─────────────────────────
+//
+// All three writers go through `asSystem()` — a membership decides access, so
+// it cannot be read through the caller it is deciding about — and `asSystem()`
+// has no principal at all, so *what you hold* is undefined there rather than
+// merely skipped. `WorkspaceMember.capabilities` carries the column guard
+// litestone puts on a `Capability[]`, and that guard covers every OTHER door:
+// a job, a hub screen, `fli tinker`. This covers the one a person walks
+// through. Measured, not assumed.
 //
 // Equal is allowed: an admin appointing an admin is what the role is for. It is
-// the step UP that nobody may take on their own authority.
+// the step OUTWARD that nobody may take on their own authority.
 //
 // Registered per method rather than on `all` — `role` is a word two other
 // models use (a Server has one), and a hook that grades every payload carrying
 // the key would refuse a fleet write for holding the wrong kind of role.
 
-export function refuseRoleAboveOwn(): Hook {
+export function refuseGrantAboveOwn(): Hook {
   return (ctx: ServiceContext): void => {
-    const granted = ((ctx.data ?? {}) as Record<string, unknown>).role
-    // Absent or malformed is not this hook's refusal: each caller runs the
-    // vocabulary through its own `toRole()`, which names the legal values.
-    if (typeof granted !== 'string' || !(granted in ROLE_LEVEL)) return
+    const data = (ctx.data ?? {}) as Record<string, unknown>
 
-    const mine = roleOf(ctx)
     // No membership is `requireWorkspaceRole`'s refusal, and `asSystem()` paths
     // (setup, the hub) run no hooks at all.
+    const mine = roleOf(ctx)
     if (!mine) return
 
-    if (ROLE_LEVEL[granted]! > (ROLE_LEVEL[mine] ?? 0))
-      throw new Forbidden(
-        `You cannot grant the ${granted} role — you hold ${mine}. Ask an owner of this workspace.`
-      )
+    // ── the ladder ──────────────────────────────────────────────────────
+    // Kept, and it is not redundant with the set rule below. What separates
+    // `owner` from `admin` in this app is the WORKSPACE — delete it, remove the
+    // last administrator — which is the gate's business, so the two roles hold
+    // the SAME grid and a subset test cannot tell them apart. An admin handing
+    // out `owner` is an escalation the grid is blind to, exactly as a sideways
+    // grant is one the ladder is blind to. Two axes, both checked.
+    const granted = data.role
+    // Absent or malformed is not this hook's refusal: each caller runs the
+    // vocabulary through its own `toRole()`, which names the legal values.
+    if (typeof granted === 'string' && granted in ROLE_LEVEL) {
+      if (ROLE_LEVEL[granted]! > (ROLE_LEVEL[mine] ?? 0))
+        throw new Forbidden(
+          `You cannot grant the ${granted} role — you hold ${mine}. Ask an owner of this workspace.`
+        )
+    }
+
+    // ── the grid ────────────────────────────────────────────────────────
+    // `ROLE_LEVEL` is ordinal, and an ordinal comparison cannot see a SIDEWAYS
+    // move: `billing` and `developer` are peers on the ladder while *reads
+    // everything, writes only billing* and *apps, deploys, jobs* are two sets
+    // neither of which contains the other, so a developer passed the check
+    // above while granting authority that is not a subset of their own
+    // (`FJS-529`). The subset rule is exact and needs no ladder: may you grant
+    // it → do you hold it.
+    //
+    // Both spellings a payload can use are graded here — a role, which is
+    // shorthand for the set it stands for, and capabilities named directly —
+    // so the two cannot drift.
+    const held   = new Set(grantsFor(mine))
+    const wanted = new Set<string>()
+    if (typeof granted === 'string' && granted in ROLE_LEVEL)
+      for (const c of grantsFor(granted)) wanted.add(c)
+    if (Array.isArray(data.capabilities))
+      for (const c of data.capabilities) wanted.add(String(c))
+
+    const over = grantsWithin(wanted, held)
+    if (!over.length) return
+
+    // The sentence names what is being reached for rather than the two roles:
+    // with a sideways grant the roles are the confusing half, because *you hold
+    // developer and cannot grant billing* reads as a mistake about seniority.
+    throw new Forbidden(
+      `You cannot grant ${over.slice(0, 3).map(c => `'${c}'`).join(', ')}` +
+      `${over.length > 3 ? ` and ${over.length - 3} more` : ''} — you do not hold ` +
+      `${over.length === 1 ? 'it' : 'them'} yourself. Ask an owner of this workspace.`
+    )
   }
 }
 
@@ -393,22 +457,45 @@ export function workspaceChannel(app: BasecampApp): import('@frontierjs/junction
 // can forge any other machine's check-in. Per-server secrets need a mint and a
 // hand-over at install time — ring 1 in `IDEAS/deploy-plane.md`, which is not
 // built.
+//
+// Replay protection is the app's own database and therefore survives a restart
+// and is shared between replicas (`OutpostNonce`, `FJS-376`). It used to be a
+// module-level Map, which was neither.
 
-/** Nonces already seen inside the freshness window. Replay protection is only
- *  as good as the memory behind it: this is per PROCESS, so two replicas do not
- *  share it, and a restart forgets. Both are honest for what this defends —
- *  a captured signature is dead in five minutes either way — and a shared store
- *  is the change to make when Basecamp runs more than one process. */
-const seenNonces = new Map<string, number>()
+/**
+ * Has this nonce been spent inside the freshness window — and claim it if not.
+ *
+ * The store is `OutpostNonce`, a table, because replay protection is only as
+ * good as the memory behind it and this used to be a module-level `Map`: per
+ * PROCESS, so two replicas each held their own set and a request captured at
+ * one replayed at the other passed, while a restart forgot everything still
+ * inside the window (`FJS-376`).
+ *
+ * **The claim is the INSERT.** Asking whether the row exists and then writing
+ * it is a race between exactly the two replicas this exists for — both would
+ * find it absent. `nonce` is the primary key, so a duplicate is refused by
+ * SQLite atomically and that refusal IS the replay.
+ *
+ * Anything OTHER than a key collision propagates. Reporting a broken database
+ * as *replayed* would refuse the request, which is the safe direction, and it
+ * would also hide the breakage behind a 401 that reads as a caller's problem.
+ *
+ * Swept on write rather than on a timer: no clock to own, and the table only
+ * grows while signed requests are arriving.
+ */
+async function rememberNonce(app: BasecampApp, nonce: string, windowMs: number): Promise<boolean> {
+  const sys    = app.db.asSystem() as any
+  const cutoff = new Date(Date.now() - windowMs).toISOString()
 
-function rememberNonce(nonce: string, windowMs: number): boolean {
-  const now = Date.now()
-  // Swept on write rather than on a timer: no clock to own, and the map only
-  // grows while requests are arriving.
-  for (const [seen, at] of seenNonces) if (now - at > windowMs) seenNonces.delete(seen)
-  if (seenNonces.has(nonce)) return true
-  seenNonces.set(nonce, now)
-  return false
+  await sys.outpostNonce.deleteMany({ where: { seenAt: { lt: cutoff } } })
+
+  try {
+    await sys.outpostNonce.create({ data: { nonce } })
+    return false
+  } catch (err) {
+    if ((err as { name?: string }).name === 'UniqueConflictError') return true
+    throw err
+  }
 }
 
 export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?: string[] } = {}): Hook {
@@ -443,7 +530,7 @@ export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?
       // The clock is this side's, stated: the kit is pure and takes no ambient
       // state, which is what lets litestone and mesa import it.
       now:       Math.floor(Date.now() / 1000),
-      seenNonce: (n: string) => rememberNonce(n, TOLERANCE_S * 1_000),
+      seenNonce: (n: string) => rememberNonce(app, n, TOLERANCE_S * 1_000),
     })
 
     if (!result.ok) {
@@ -570,7 +657,7 @@ export function basecampAuditPreImage(app: BasecampApp, { except = [] }: { excep
     try {
       const accessor = accessorFor(app, ctx.service as string)
       if (!accessor) return
-      const db  = app.data.asSystem() as any
+      const db  = app.db.asSystem() as any
       const row = await db[accessor]?.findUnique?.({ where: { id: ctx.id } })
       if (row) (ctx.locals as Record<string, unknown>).auditBefore = row
     } catch {
@@ -597,7 +684,7 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
     const before  = (ctx.locals as Record<string, unknown>).auditBefore as Record<string, unknown> | null ?? null
 
     try {
-      const sys = app.data.asSystem() as any
+      const sys = app.db.asSystem() as any
 
       // What changed. `AuditEvent.diff` was `Json?` and nothing wrote it, so
       // the trail could say a server was drained and not what state it was in
@@ -673,9 +760,9 @@ export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: s
 
 export function getPagination(
   defaults: { limit?: number; max?: number } = {}
-): { limit: number; offset: number } {
+): { limit: number; offset: number; after?: string } {
   const q = $.query as Record<string, unknown>
-  const d = ($.directives ?? {}) as { limit?: number; offset?: number }
+  const d = ($.directives ?? {}) as { limit?: number; offset?: number; after?: string }
 
   const limit  = Math.min(
     parseInt(String(d.limit ?? q.limit ?? defaults.limit ?? 20), 10),
@@ -686,5 +773,9 @@ export function getPagination(
   return {
     limit:  isNaN(limit)  ? (defaults.limit ?? 20)  : Math.max(1, limit),
     offset: isNaN(offset) ? 0 : Math.max(0, offset),
+    // `$after` is the third thing a caller can ask for and it is one of these,
+    // not a filter: a hand-written find that reads limit and offset and drops
+    // the cursor answers page one to every press of "load more" (`FJS-D145`).
+    after:  typeof d.after === 'string' && d.after !== '' ? d.after : undefined,
   }
 }

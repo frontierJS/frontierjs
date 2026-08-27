@@ -151,6 +151,147 @@ async function mint(fields) {
   return body
 }
 
+// ─── The rules that span two columns ───────────────────────────────────────
+//
+// Five `@@check` constraints, and what makes them a feature rather than five
+// validators is that not one of them can be written as a field rule: each reads
+// a SECOND column of the same row. `value <= 100` is only true when `kind` is
+// `percent`; a window is two nullable columns of which each is individually
+// fine; and the receipt identity reads five.
+//
+// The other half is WHERE they hold. A `@@check` is in the table, so it fires
+// for a migration, a seed, `fli tinker`, an atomic `{ increment: 1 }` — which
+// computes inside SQLite, where nothing in this package runs — and for
+// `asSystem()`, the bypass that drops the gate, the row policies and
+// `@@softDelete` and cannot drop this. `carts.service.ts` counts a redemption
+// with a read-modify-write PRECISELY so a validator can see the new value; the
+// check is what makes that refusal true rather than merely usual.
+//
+// Which is why this section is in two halves and the split is not arbitrary:
+// three of the five columns are `@system`, so no caller can reach them and the
+// only boundary that can be asked is the Data one. Each case is otherwise a
+// VALID payload with one value moved, and each refusal is paired with the
+// acceptance next door — a refusal that cannot be shown to come from the rule
+// it names proves nothing about that rule (`FJS-351`).
+
+console.log('\n  the rules that span two columns')
+
+let probed = 0
+/** Post a discount that is valid but for the one value under test. Answers the
+ *  status and, on a refusal, the declared message — not a class name: the whole
+ *  point of the second argument to `@@check` is that the sentence the author
+ *  wrote is the sentence the caller reads. */
+async function tryMint(fields) {
+  const code = `${PREFIX}X${String(++probed).padStart(2, '0')}`
+  const r = await asStaff('/discounts', {
+    method: 'POST',
+    body:   JSON.stringify({ code, label: `probe ${code}`, kind: 'percent', value: 10, ...fields }),
+  })
+  const body = await r.json()
+  // Cleaned up on the way out: an accepted one is a row this drive made, and
+  // `code` is @unique, so leaving it makes the next run's mint collide.
+  if (r.ok && body?.id) await asStaff(`/discounts/${body.id}`, { method: 'DELETE' })
+  return { status: r.status, message: (body?.data ?? [])[0]?.message ?? body?.message ?? null }
+}
+
+const overHundred = await tryMint({ value: 150 })
+check('a percentage over 100 is refused',       overHundred.status,  400)
+check('…in the words the schema wrote',         overHundred.message, 'a percentage discount cannot be more than 100%')
+check('…and exactly 100 is not',                (await tryMint({ value: 100 })).status, 201)
+// The one that separates this from `@lte(100)` on the field: the same number,
+// the other kind. A fixed discount of 150 is £150 off, which is a real thing a
+// shop sells, and a field rule could not tell the two apart.
+check('…while 150 OFF is a discount, not an error',
+      (await tryMint({ kind: 'fixed', value: 150 })).status, 201)
+
+const backwards = await tryMint({ endsAt: '2026-01-01T00:00:00.000Z', startsAt: '2026-12-01T00:00:00.000Z' })
+check('a window that closes before it opens is refused', backwards.status,  400)
+check('…in the words the schema wrote',                  backwards.message, 'a discount must end after it starts')
+check('…the same two dates the right way round are not',
+      (await tryMint({ startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2026-12-01T00:00:00.000Z' })).status, 201)
+// Both columns are nullable and the rule says so: one date alone is a code that
+// opens and never closes, which is the ordinary case.
+check('…and a one-sided window is ordinary',
+      (await tryMint({ endsAt: '2026-12-01T00:00:00.000Z' })).status, 201)
+
+// ── The three no caller can reach ─────────────────────────────────────────
+//
+// `redemptions`, `subtotal`, `discount`, `shipping` and `tax` are all `@system`
+// — the server writes them and a caller may not — so there is no request that
+// can put a bad value in any of them, and the boundary that has to be asked is
+// the Data one. A separate process under bun, because this file runs on node
+// and the app's client is TypeScript; the API is up throughout, which is the
+// point: SQLite enforces this for whoever is writing.
+const dataBoundary = JSON.parse(execFileSync('bun', ['-e', `
+import { sys } from './api/src/core/db.ts'
+
+const P   = 'CHK' + Date.now().toString(36).slice(-5).toUpperCase()
+const out = {}
+const made = []
+
+async function ask(name, fn) {
+  try { const row = await fn(); made.push(row); out[name] = 'accepted' }
+  catch (e) { out[name] = e?.errors?.[0]?.message ?? e?.message ?? String(e) }
+}
+
+// The receipt identity. 100 - 0 + 5 + 20 is 125, and this claims 999.
+await ask('receiptRefused', () => sys.order.create({ data: {
+  reference: P + '-1', status: 'pending', customerId: 1,
+  subtotal: 100, discount: 0, shipping: 5, tax: 20, total: 999 } }))
+await ask('receiptAccepted', () => sys.order.create({ data: {
+  reference: P + '-2', status: 'pending', customerId: 1,
+  subtotal: 100, discount: 0, shipping: 5, tax: 20, total: 125 } }))
+
+// Off by a thousandth. The bound is half a penny rather than equality because
+// the arithmetic is binary floating point on both sides and the drift is real
+// but tiny — an equality here would refuse live data.
+await ask('toleranceAccepted', () => sys.order.create({ data: {
+  reference: P + '-3', status: 'pending', customerId: 1,
+  subtotal: 100, discount: 0, shipping: 5, tax: 20, total: 125.001 } }))
+
+// A discount larger than the subtotal, with a breakdown that still adds up
+// (10 - 50 + 45 + 0 = 5) — so the refusal can only be the rule under test.
+await ask('discountRefused', () => sys.order.create({ data: {
+  reference: P + '-4', status: 'pending', customerId: 1,
+  subtotal: 10, discount: 50, shipping: 45, tax: 0, total: 5 } }))
+
+// The exemption, and it is a real order rather than a loophole: staff raise one
+// by hand with a total and nothing to itemise. A CHECK may not hold a subquery,
+// so 'no lines' cannot be said and 'subtotal = 0' is what stands in for it.
+await ask('handRaisedAccepted', () => sys.order.create({ data: {
+  reference: P + '-5', status: 'pending', customerId: 1, subtotal: 0, total: 40 } }))
+
+// The redemption ceiling. \`redemptions\` is the counter \`carts.checkout\`
+// moves inside the sale's own transaction; this is the same column written from
+// outside it.
+const d = await sys.discount.create({ data: {
+  code: P + 'D', label: 'check probe', kind: 'fixed', value: 5, maxRedemptions: 2 } })
+await ask('redemptionsRefused', () => sys.discount.update({ where: { id: d.id }, data: { redemptions: 3 } }))
+await ask('redemptionsAccepted', () => sys.discount.update({ where: { id: d.id }, data: { redemptions: 2 } }))
+
+// Hard-deleted, not hidden: \`Order\` is @@softDelete and a hidden row keeps its
+// @unique reference, so a soft delete here makes the next run collide.
+for (const row of made) if (row?.reference) await sys.order.deleteMany({ where: { reference: row.reference }, withDeleted: true })
+await sys.discount.deleteMany({ where: { code: P + 'D' } })
+
+console.log(JSON.stringify(out))
+`], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split('\n').pop())
+
+check('a receipt that does not add up is refused at the Data boundary',
+      dataBoundary.receiptRefused,  'the breakdown does not add up to the total')
+check('…and the same numbers made consistent are not',
+      dataBoundary.receiptAccepted, 'accepted')
+check('…a thousandth of drift is inside the half-penny bound',
+      dataBoundary.toleranceAccepted, 'accepted')
+check('a discount larger than the subtotal is refused',
+      dataBoundary.discountRefused, 'a discount cannot be larger than the subtotal')
+check('…while an order with no lines to itemise is exempt',
+      dataBoundary.handRaisedAccepted, 'accepted')
+check('a redemption past the limit is refused — with the gate bypassed',
+      dataBoundary.redemptionsRefused, 'a code cannot be redeemed more times than its limit')
+check('…and one up to it is not',
+      dataBoundary.redemptionsAccepted, 'accepted')
+
 // ─── Baskets ───────────────────────────────────────────────────────────────
 
 const call = (method, id, body, token) => api(id == null ? '/carts' : `/carts/${id}`, {

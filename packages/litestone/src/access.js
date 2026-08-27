@@ -41,6 +41,7 @@ export const REACHABLE_LEVELS = [0, 1, 2, 3, 4, 5, 6, 7, 8]
 // Imported as well as re-exported: `export … from` does not bind the name in
 // this module's own scope, and describeModel below calls it.
 import { policyExprToString } from './core/policy.js'
+import { deriveCapabilities } from './core/capabilities.js'
 export { policyExprToString }
 
 // ─── deriveAccess ─────────────────────────────────────────────────────────────
@@ -61,9 +62,22 @@ export { policyExprToString }
 // actually changed.
 
 export function deriveAccess(schema) {
+  // The names come from `deriveCapabilities` and are not re-expanded here. This
+  // file used to rebuild the list — create/update/delete, every move below gate
+  // 8, then the opted-in columns — which is the same rule written twice, and the
+  // two disagreed the first time the derivation learned something: a `@system`
+  // move left the enforced set and stayed in this table, so a picker offered
+  // five grants the boundary would never consult (Invariant 4).
+  const byModel = new Map()
+  for (const c of deriveCapabilities(schema)) {
+    const list = byModel.get(c.model) ?? []
+    list.push(c.name)
+    byModel.set(c.model, list)
+  }
+
   const models = [...(schema.models ?? [])]
     .sort((a, b) => a.name.localeCompare(b.name))
-    .map(model => describeModel(model))
+    .map(model => describeModel(model, byModel.get(model.name) ?? []))
 
   const counts = {
     models:       models.length,
@@ -77,7 +91,7 @@ export function deriveAccess(schema) {
   return { models, levels: LEVELS, counts }
 }
 
-function describeModel(model) {
+function describeModel(model, derivedNames = []) {
   const attrs      = model.attributes ?? []
   const gateAttr   = attrs.find(a => a.kind === 'gate')
   const gateSource = gateAttr ? String(gateAttr.value) : null
@@ -117,8 +131,23 @@ function describeModel(model) {
 
   const softAttr = attrs.find(a => a.kind === 'softDelete')
 
+  // The grid, beside the ladder. A capability is a REFERENCE, so what is
+  // recorded is the model's SWITCH and the columns that opted in — the names
+  // themselves are derived from exactly this and would be a second answer to
+  // one question if they were stored a second time.
+  // `columns` is what the release comparison grades — a column opting in or out
+  // is a change to the surface — and `names` is what a reader is shown. Two
+  // views of one derivation, never two derivations.
+  const capAttr    = attrs.find(a => a.kind === 'capabilities')
+  const capColumns = (model.fields ?? [])
+    .filter(f => (f.attributes ?? []).some(a => a.kind === 'capability'))
+    .map(f => f.name)
+
   return {
     name:       model.name,
+    capabilities: capAttr
+      ? { read: Boolean(capAttr.read), columns: capColumns, names: derivedNames }
+      : null,
     db:         attrs.find(a => a.kind === 'db')?.name ?? null,
     external:   attrs.some(a => a.kind === 'external'),
     gate,
@@ -307,6 +336,29 @@ export function renderAccessSnapshot(access, opts = {}) {
         out.push(`| \`${m.name}\` | \`${t.field}\` | \`${t.name}\` | ${t.from.join(', ')} → ${t.to} | ${lvl} |`)
       }
     }
+    out.push('')
+  }
+
+  // ── Capabilities ──
+  const withCaps = models.filter(m => m.capabilities)
+  if (withCaps.length) {
+    out.push('## Capabilities')
+    out.push('')
+    out.push('The grid the ladder cannot express. **ANDed with `@@gate`, which stays the floor** —')
+    out.push('a caller needs the level AND the grant, so a model that opts in usually wants its')
+    out.push('gate flat at the read floor. A capability THROWS where a row policy filters.')
+    out.push('')
+    out.push('Every name here is a REFERENCE to something declared above, so this table is')
+    out.push('derived rather than authored: a capability cannot be misspelled into existence.')
+    out.push('')
+    out.push('| Model | Read | Capabilities |')
+    out.push('| --- | --- | --- |')
+    for (const m of withCaps) {
+      const names = m.capabilities.names.map(n => `\`${n}\``)
+      out.push(`| \`${m.name}\` | ${m.capabilities.read ? 'graded' : '—'} | ${names.join(' · ')} |`)
+    }
+    out.push('')
+    out.push('A move the ENGINE makes is absent — `@system`, or a gate of 8 or 9. No caller asks\nfor one, so it is nobody\'s grant.')
     out.push('')
   }
 

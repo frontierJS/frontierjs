@@ -164,6 +164,25 @@ async function until(expression, predicate, label, ms = 15_000) {
   throw new Error(`${label} — last value: ${JSON.stringify(last)?.slice(0, 200)}`)
 }
 
+/**
+ * Write `n` audit rows into the scratch database, newest-first, tagged.
+ *
+ * A subprocess rather than an HTTP call because the trail is written by a hook
+ * and the service is read-only — there is no request that puts a row there. It
+ * is also the honest fixture: these arrive the way real ones do, underneath a
+ * screen that is already open.
+ */
+async function auditFixture(n, tag) {
+  const p = spawn('bun', ['web/test/audit-fixture.mjs', String(n), tag], {
+    cwd: PKG, stdio: ['ignore', 'ignore', 'pipe'],
+    env: { ...process.env, DATABASE_URL: DB },
+  })
+  let err = ''
+  p.stderr.on('data', d => { err += d })
+  const code = await new Promise(r => p.on('exit', r))
+  if (code !== 0) fail(`audit-fixture.mjs exited ${code}\n${err}`)
+}
+
 const goto = async path => { await send('Page.navigate', { url: BASE + path }); await sleep(1200) }
 const text = sel => evaluate(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? null`)
 const body = () => evaluate(`document.body.textContent`)
@@ -359,6 +378,77 @@ try {
   await until(`document.getElementById('settings-notifications')?.textContent ?? ''`,
     t => /3 of 7 chosen/.test(t), 'the choice did not survive a reload')
   ok('and it survives a reload')
+
+  // ─── The audit trail ───────────────────────────────────────────────────
+  // The one screen here whose job is to be COMPLETE, and the one shape a
+  // numbered page is worst for: a trail only grows, and it grows at the end a
+  // reader starts from, so every offset means something different a second
+  // later. This asserts the window instead (`FJS-D145`) — a far edge named by
+  // the last row's sort keys rather than by a count of rows before it.
+  console.log('\n  /admin/audit/ — a window that grows')
+
+  await auditFixture(60, 'window')
+
+  await goto('/admin/audit/')
+  await until(`document.querySelectorAll('#audit-rows tbody tr').length`, n => n > 0,
+    'the audit trail never rendered a row')
+
+  const firstWindow = await evaluate(`document.querySelectorAll('#audit-rows tbody tr').length`)
+  check('the first window is one page and stops there', firstWindow === 50, `saw ${firstWindow}`)
+  // The half that was missing before: a capped list said nothing about the rows
+  // it was not showing, which reads exactly like a trail that has fifty rows.
+  check('and it offers the rest', await evaluate(`!!document.getElementById('audit-more')`))
+
+  // Three rows written ABOVE the window's start, between reading it and
+  // growing it. This is the whole argument: under an offset, `offset=50` now
+  // names three rows that were on page one, so growing repeats them and skips
+  // three others — silently, and only ever under a list somebody is writing to.
+  await auditFixture(3, 'inserted')
+
+  await click('#audit-more')
+  const grown = await until(`document.querySelectorAll('#audit-rows tbody tr').length`,
+    n => n > firstWindow, 'growing the window added no rows')
+
+  const tokens = () => evaluate(`
+    [...document.querySelectorAll('#audit-rows tbody tr')]
+      .map(tr => (tr.textContent.match(/\\b[wi]-\\d{3}\\b/) ?? [null])[0])
+      .filter(Boolean)`)
+
+  const seen = await tokens()
+  check('growing appended rows past the edge', grown > firstWindow, `${firstWindow} → ${grown}`)
+  check('and served none of them twice', new Set(seen).size === seen.length,
+    `${seen.length} rows, ${new Set(seen).size} distinct`)
+  // A keyset scan resumes from a POSITION, so rows written above the window
+  // cannot move it. They are legitimately absent — a reload is how you see
+  // them, which is what a trail's "newest first" already means.
+  check('rows written above the window did not enter it',
+    !seen.some(t => t.startsWith('i-')), seen.filter(t => t.startsWith('i-')).join(','))
+
+  // Five fixture rows share one `createdAt`, straddling the 50-row edge. A
+  // cursor built from the sort column alone names a position five rows wide:
+  // resuming past it loses two, resuming at it repeats three. The tiebreaker is
+  // litestone's, appended to the sort keys; this is where it shows.
+  const tie = ['w-047', 'w-048', 'w-049', 'w-050', 'w-051']
+  check('the rows sharing one timestamp all survive the edge, once each',
+    tie.every(t => seen.filter(x => x === t).length === 1),
+    tie.map(t => `${t}:${seen.filter(x => x === t).length}`).join(' '))
+
+  // Growing to the end: the button is the only statement about whether more
+  // exists, so it has to stop being there.
+  for (let i = 0; i < 6 && await evaluate(`!!document.getElementById('audit-more')`); i++) {
+    const n = await evaluate(`document.querySelectorAll('#audit-rows tbody tr').length`)
+    await click('#audit-more')
+    await until(`document.querySelectorAll('#audit-rows tbody tr').length`,
+      c => c > n, 'growing the window stopped adding rows before the end')
+  }
+  check('growing to the end retires the button and says so',
+    await evaluate(`!!document.getElementById('audit-end')`))
+
+  const all = await tokens()
+  check('and the whole trail was served once each', new Set(all).size === all.length,
+    `${all.length} rows, ${new Set(all).size} distinct`)
+  check('every fixture row is in it', all.filter(t => t.startsWith('w-')).length === 60,
+    `${all.filter(t => t.startsWith('w-')).length} of 60`)
 
   // ─── The console ───────────────────────────────────────────────────────
   console.log('\n  the console')

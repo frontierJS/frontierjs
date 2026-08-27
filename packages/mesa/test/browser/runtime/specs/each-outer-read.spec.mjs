@@ -33,21 +33,19 @@ export async function run(t) {
   t.is(await t.evaluate(`return document.querySelectorAll('.note').length;`), 2,
     'a nested {#each} over a slice of the outer variable renders its rows')
 
-  // ── FJS-468, asserted BROKEN ─────────────────────────────────────────────
+  // ── FJS-468 ──────────────────────────────────────────────────────────────
   //
-  // These two should be `true`. They are not: an {#if} inside the {#each},
-  // whose condition reads the outer `notes`, does not render — while the text
-  // interpolation above and the nested {#each} below, reading the same
-  // variable in the same row, both do.
-  //
-  // Pinned as the current behaviour rather than skipped, on litestone's matrix
-  // convention: a known defect asserted still-broken turns the suite RED when
-  // somebody fixes it, where a skip goes stale in silence. Flip both to `true`
-  // and delete this block when it is fixed.
-  t.is(await t.evaluate(`return { v: !!document.querySelector('.if-inline') };`).then(r => r.v), false,
-    'FJS-468: an {#if} reading the outer variable does NOT re-evaluate (should be true)')
-  t.is(await t.evaluate(`return { v: !!document.querySelector('.if-fn') };`).then(r => r.v), false,
-    'FJS-468: nor does one that reaches it through a function (should be true)')
+  // These two used to be `false`, and the read was that an {#if} reading an
+  // outer `let` stopped tracking. It never stopped: the sibling above,
+  // `{#if row.open}`, shared an ANCHOR with them — a block adopted whatever
+  // text node followed it, and whitespace between two blocks is one DOM text
+  // node — so both blocks inserted their content before it, and the sibling's
+  // teardown removed the range that now held theirs. `FJS-512` is the same
+  // defect measured from the other end.
+  t.is(await t.evaluate(`return { v: !!document.querySelector('.if-inline') };`).then(r => r.v), true,
+    'an {#if} reading the outer variable re-evaluates')
+  t.is(await t.evaluate(`return { v: !!document.querySelector('.if-fn') };`).then(r => r.v), true,
+    'and so does one that reaches it through a function')
   t.is(await t.evaluate(`return { v: !!document.querySelector('.if-before') };`).then(r => r.v), false,
     'and the sibling that went the other way is gone')
 
@@ -65,5 +63,5 @@ export async function run(t) {
   t.is(await t.evaluate(`return document.querySelectorAll('.note').length;`), 2,
     'and so does a nested {#each} over a slice of it')
   t.is(await t.evaluate(`return { v: !!document.querySelector('.if-inline') };`).then(r => r.v), true,
-    'and the {#if} — which is the one that stops')
+    'and the {#if}, which is the one that used to stop')
 }

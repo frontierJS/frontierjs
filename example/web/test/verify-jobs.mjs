@@ -17,8 +17,15 @@
  * browser drives.
  */
 
+import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
+
 const API = process.env.API_URL ?? 'http://localhost:8110'
 const REF = 'ORD-JOBS-1'
+// The audit database is `driver logger` with `retention 90d`, so its rows are
+// lines in a file rather than a table. Relative to the app root, which is where
+// `bun run verify:jobs` is invoked from — the same resolution the declaration
+// gets, and the reason `FJS-449` is a hazard worth knowing about here.
+const AUDIT = 'db/audit/auditLogs.jsonl'
 
 try {
   const r = await fetch(`${API}/api/health`)
@@ -62,10 +69,21 @@ try {
   auth = { authorization: `Bearer ${(await login.json()).token}`, 'content-type': 'application/json' }
 
   // `reference` is @unique, so a run that threw before its cleanup would make
-  // the next one fail for a reason that has nothing to do with jobs.
-  const stale = await (await fetch(`${API}/api/orders?reference=${REF}`, { headers: auth })).json()
-  for (const row of stale.data ?? [])
-    await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
+  // the next one fail for a reason that has nothing to do with jobs — and the
+  // sweep has to look with `$withDeleted` and RELEASE the value rather than
+  // delete the row again: `Order` soft-deletes and a deleted row keeps its
+  // `@unique` values, so the row this drive removed still holds ORD-JOBS-1 and
+  // a second DELETE is a no-op against something already gone (`FJS-546`).
+  const stale = await (await fetch(`${API}/api/orders?reference=${REF}&$withDeleted=true`, { headers: auth })).json()
+  for (const row of stale.data ?? []) {
+    // `@length(3, 20)`, so the freed reference is truncated rather than grown.
+    const freed = `${REF}-X${row.id}`.slice(0, 20)
+    await fetch(`${API}/api/orders/${row.id}?$withDeleted=true`, {
+      method: 'PATCH', headers: auth, body: JSON.stringify({ reference: freed }),
+    })
+    if (!row.deletedAt)
+      await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
+  }
 
   // ── 1. the queue is mounted and declares what it runs ──────────────────
   //
@@ -87,6 +105,12 @@ try {
     names: schedules.map(s => s.name).sort(),
     cron:  cronOf('sweep-abandoned'),
     holds: cronOf('release-holds'),
+    // The schema's own retention policy, which litestone sweeps once inside
+    // `createClient` and never again — so `database audit { retention 90d }` is
+    // true for one moment unless something puts it on a clock (`FJS-521`). The
+    // declaration is the policy and the schedule is the app's; asserting the
+    // expression here is what stops that sentence quietly becoming false again.
+    retain: cronOf('retention'),
     // A cron with no next fire time is a parse failure that reports as silence.
     hasNextRun: schedules.every(s => !!s.nextRun),
   })
@@ -277,6 +301,81 @@ try {
       .filter(o => !pendingBefore.includes(o.reference))
       .every(o => o.status === before.data.find(b => b.reference === o.reference).status),
   })
+  // ── 7. the OTHER cron, and the one the schema declares ─────────────────
+  //
+  // `database audit { … retention 90d }` is a policy in the seed, and until a
+  // job existed it was true for exactly one moment per boot: litestone sweeps
+  // once inside `createClient`, so a shop whose API stays up for a month pruned
+  // on the day it started and never again (`FJS-521`). The declaration is
+  // litestone's and the CLOCK is the app's, because unattended recurring work
+  // belongs to the queue (`FJS-D36`) and litestone may not import it.
+  //
+  // Asserting the schedule is registered is what section 1 does and it is not
+  // this: a handler that runs on time and sweeps nothing is the same silence
+  // the whole feature exists to break. So this plants two rows one line apart —
+  // one older than the window, one written now — and asks whether the pass can
+  // tell them apart. Planting BOTH is what isolates the rule: a sweep that
+  // truncated the file would pass a test that only looked for the old row's
+  // absence.
+  //
+  // Written to the file directly rather than through the logger, because there
+  // is no way to ask the logger for a row with last spring's date on it.
+  //
+  // The old row goes at the FRONT and that is not cosmetic. `compactJsonl` has a
+  // cheap pre-check — an append-only log is oldest-first, so if the FIRST line
+  // is inside the window every line is, and the pass returns without reading the
+  // file. It is the right optimisation (this runs on every boot, over a file
+  // that grows for the life of the deployment) and it means a probe appending an
+  // old line to the end measures the pre-check rather than the sweep: the job
+  // reports `done`, removes nothing, and looks broken. A log that has genuinely
+  // aged has its old rows at the top, which is what this reproduces.
+  //
+  // The companion index maps ids to byte offsets, so a rewrite invalidates it —
+  // removed here for the same reason the compaction removes its own, and
+  // rebuilt lazily on the next write.
+  const MARK   = `retention-probe-${Date.now().toString(36)}`
+  const stamp  = (daysAgo) => new Date(Date.now() - daysAgo * 86_400_000).toISOString()
+  const line   = (age) => JSON.stringify({
+    operation: 'create', model: MARK, field: null, records: '[0]',
+    before: null, after: null, actorId: null, actorType: null, meta: null,
+    createdAt: stamp(age),
+  })
+
+  if (!existsSync(AUDIT)) throw new Error(`no audit log at ${AUDIT} — has anything been written?`)
+  // 200 days is comfortably past the declared 90 and comfortably short of a
+  // clock-skew argument. The fresh one carries today's date and the same marker.
+  const trail = readFileSync(AUDIT, 'utf8')
+  writeFileSync(AUDIT, line(200) + '\n' + trail.replace(/\n?$/, '\n') + line(0) + '\n')
+  try { rmSync(AUDIT + '.index.db') } catch { /* absent is fine — it is rebuilt lazily */ }
+
+  const planted = readFileSync(AUDIT, 'utf8')
+  t('retention.planted', {
+    old:   planted.includes(`"createdAt":"${stamp(200).slice(0, 10)}`),
+    fresh: planted.split('\n').filter(l => l.includes(MARK)).length,
+  })
+
+  const retainRun = await fetch(`${API}/api/jobs/run/retention`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  })
+  const { id: retainId } = await retainRun.json()
+  const retainJob = await until(async () => {
+    const j = await (await fetch(`${API}/api/jobs/${retainId}`)).json()
+    return j.status === 'done' || j.status === 'failed' ? j : null
+  })
+
+  const swept = readFileSync(AUDIT, 'utf8').split('\n').filter(l => l.includes(MARK))
+  t('retention.sweptTheOldOne', {
+    accepted: retainRun.status,
+    finished: retainJob ? retainJob.status : null,
+    // One line left carrying the marker, and it is the fresh one. Two would mean
+    // the pass ran and did nothing; zero would mean it took the wrong rows.
+    left:     swept.length,
+    leftIsFresh: swept.length === 1 && swept[0].includes(`"createdAt":"${stamp(0).slice(0, 10)}`),
+    // The rest of the trail is still there. A retention pass that emptied the
+    // file would satisfy every assertion above it.
+    othersKept: readFileSync(AUDIT, 'utf8').split('\n').filter(l => l.trim() && !l.includes(MARK)).length > 0,
+  })
+
 } catch (e) {
   console.error('\nThe drive threw:', e.message)
   console.error('collected so far:', got)
@@ -297,9 +396,13 @@ if (process.exitCode) process.exit(1)
 const expected = {
   'admin.list': { status: 200, isArray: true },
   'cron.registered': {
-    names: ['release-holds', 'sweep-abandoned'],
+    names: ['release-holds', 'retention', 'sweep-abandoned'],
     cron:  '0 3 * * *',
     holds: '*/5 * * * *',
+    // 04:00, after the 03:00 sweep: a run that cancels an order has already
+    // happened, so the audit rows being aged are that run's and not ones
+    // written a minute later.
+    retain: '0 4 * * *',
     hasNextRun: true,
   },
 
@@ -311,6 +414,11 @@ const expected = {
     name: 'book-courier', queue: 'fulfilment', status: 'done', attempts: 1,
     maxAttempts: 5, retryDelay: '[60000,300000,1800000]',
   },
+  'retention.planted':      { old: true, fresh: 2 },
+  'retention.sweptTheOldOne': {
+    accepted: 200, finished: 'done', left: 1, leftIsFresh: true, othersKept: true,
+  },
+
   // Shipping a shipped order is a no-op at the Data boundary (the row is
   // already at the target state), so the SECOND ship answers 200 and the only
   // thing that must not happen twice is the courier booking. `unique` is what

@@ -1,0 +1,150 @@
+<script module>
+  // What a stored file reference looks like once it has been READ.
+  //
+  // `@frontierjs/litestone`'s ExternalRefPlugin resolves a `File` column into a
+  // public URL on the way out, so what a form is handed for an existing row is
+  // a string. What it is handed for a row nobody has saved is `undefined`, and
+  // what the person then puts there is a browser `File`. Three shapes, one
+  // field, and telling them apart is most of this component.
+  //
+  // Exported because a detail view asks the same question of the same column
+  // (`FJS-D116`) — the rule that put `formatBytes` in the toolbelt rather than
+  // here.
+
+  /** The URL a stored reference points at, or null if this is not one. */
+  export function storedUrl(value) {
+    if (typeof value !== 'string' || !value) return null
+    // A raw `{"key":…,"provider":…}` reaches a form when something read the row
+    // without resolving it. Not renderable and not the caller's fault, so it is
+    // reported rather than drawn as a broken image.
+    if (value.trimStart().startsWith('{')) return null
+    return value
+  }
+
+  /** Is this value a file the person has just chosen, rather than a stored one? */
+  export function isPicked(value) {
+    return typeof File !== 'undefined' && value instanceof File
+  }
+</script>
+
+<script>
+  // FileField.mesa — the control a `File` column gets in a generated form.
+  //
+  // `FileUpload` is the input and this is the FIELD: the difference is the
+  // value it holds. FileUpload speaks `File[]` and knows nothing about a record;
+  // a column's value is one of three things — nothing yet, a stored reference
+  // the server resolved to a URL, or a File the person has just chosen — and a
+  // form has to render all three and hand back only the last.
+  //
+  // It uploads nothing. The bytes travel with the record: the junction client
+  // switches the create or patch to multipart the moment any value in it is a
+  // File, so `<Form>` submitting this field is the upload (`FJS-409`). That is
+  // why there is no progress bar here and no pending state to reconcile — a
+  // form abandoned half-filled has uploaded nothing, and the write is one
+  // request that either happened or did not.
+  //
+  // Registered as `file` in FormField.mesa's own table; a resolver answering
+  // that name elsewhere replaces it, like any other control.
+
+  import FileUpload, { isImage } from './FileUpload.mesa'
+  import Button                  from './Button.mesa'
+  import { formatBytes }         from '@frontierjs/toolbelt/units'
+  // `storedUrl` and `isPicked` are this file's own <script module> exports and
+  // are in scope here already — importing them back would redeclare them.
+
+  export let name     = ''
+  export let field    = undefined
+  export let value    = undefined
+  export let onvalue  = undefined
+  export let accept   = undefined
+  export let multiple = undefined
+
+  // Stated wins, then the schema, then everything. `@accept` reaches here
+  // through `x-litestone-accept`, so the dialog offers the list the Data
+  // boundary will admit rather than a superset of it.
+  $: resolvedAccept   = accept   ?? field?.accept   ?? '*/*'
+  $: resolvedMultiple = multiple ?? field?.multiple ?? false
+
+  $: existing = storedUrl(value)
+  $: picked   = isPicked(value) ? value : null
+  // A value that is neither, and is not empty. The one shape that means
+  // something is wrong upstream rather than in this form — a row read by a path
+  // that did not resolve the reference. Said out loud, because an <img> pointed
+  // at a JSON blob is a broken-image icon and no explanation.
+  $: unresolved = value != null && !existing && !picked
+
+  function choose(files) {
+    // FileUpload always answers a list. A single-file column takes the first —
+    // the input carries `multiple` only when the column is `File[]`, so a list
+    // longer than one is not reachable here.
+    onvalue?.(resolvedMultiple ? files : (files[0] ?? null))
+  }
+
+  // Back to what the server has. `null` would CLEAR the column, which is a
+  // different action and is only offered where the column is optional.
+  function keepExisting() { onvalue?.(undefined) }
+  function clear()        { onvalue?.(null) }
+
+  $: canClear = field?.required !== true && (existing || picked)
+</script>
+
+{#if picked}
+  <div class="file-field-current">
+    {#if isImage(picked)}
+      <img class="file-field-thumb" src={URL.createObjectURL(picked)} alt="" data-file-preview />
+    {/if}
+    <div class="file-field-meta">
+      <p class="text-sm">{picked.name}</p>
+      <p class="text-xs text-muted">{formatBytes(picked.size)} — not saved yet</p>
+    </div>
+    <Button variant="ghost" size="sm" onclick={keepExisting} data-file-undo>Undo</Button>
+  </div>
+{:else if existing}
+  <div class="file-field-current">
+    <img class="file-field-thumb" src={existing} alt="" data-file-current />
+    <div class="file-field-meta">
+      <p class="text-sm text-muted">Stored — choose a file to replace it</p>
+    </div>
+    {#if canClear}
+      <Button variant="ghost" size="sm" tone="danger" onclick={clear} data-file-clear>Remove</Button>
+    {/if}
+  </div>
+{/if}
+
+{#if unresolved}
+  <p class="text-sm text-danger" data-file-unresolved>
+    This file reference was not resolved into a URL, so it cannot be shown.
+  </p>
+{/if}
+
+<!--
+  The caller's attributes go to the INPUT and not to the preview above it: this
+  is a form control, so what a `<label for>` and an `aria-describedby` have to
+  reach is the thing that emits input. FileUpload forwards them onward to its
+  own dropzone.
+-->
+<FileUpload
+  {name}
+  label=""
+  accept={resolvedAccept}
+  multiple={resolvedMultiple}
+  onchange={choose}
+  {...$attributes}
+/>
+
+<style>
+  .file-field-current {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    margin-block-end: var(--space-sm);
+  }
+  .file-field-thumb {
+    width: 56px; height: 56px;
+    object-fit: contain;
+    border-radius: var(--btn-radius);
+    background: var(--surface-sunken);
+    flex: none;
+  }
+  .file-field-meta { flex: 1; min-width: 0 }
+</style>

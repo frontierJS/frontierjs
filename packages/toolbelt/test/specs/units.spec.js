@@ -8,7 +8,7 @@
  * no answer.
  */
 
-import { formatBytes, formatMoney, BYTE_UNITS } from '../../src/units/units.js'
+import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies } from '../../src/units/units.js'
 
 /* ── The ladder ────────────────────────────────────────────────────── */
 
@@ -147,4 +147,41 @@ test('units: a code is normalised, and an absent one falls to the default', func
 
 test('units: a numeric string is a number here too', function () {
   assert.equal(formatMoney('28.5', 'USD'), '$28.50')
+})
+
+// ─── Minor units ──────────────────────────────────────────────────────────────
+
+test('units: minorUnits reads the currency, not a table we ship', function () {
+  assert.equal(minorUnits('USD'), 2)
+  assert.equal(minorUnits('JPY'), 0)      // the yen has no minor unit
+  assert.equal(minorUnits('KWD'), 3)
+  assert.equal(minorUnits('CLP'), 0)
+  assert.equal(minorUnits('usd'), 2)      // normalised
+})
+
+test('units: an unknown code THROWS rather than answering two', function () {
+  // The whole reason `isKnownCurrency` exists. `Intl.NumberFormat` does not
+  // throw on `UDS` — it answers two decimal places — so a typo would take a
+  // plausible scale and be wrong by a hundred wherever the real currency has
+  // none. Answering here is what lets litestone refuse it at parse.
+  assert.throws(() => minorUnits('UDS'), /not a currency this runtime knows/)
+  assert.throws(() => minorUnits('BTC'), /not a currency this runtime knows/)
+  assert.throws(() => minorUnits('US'),  /not an ISO 4217 code/)
+  assert.throws(() => minorUnits(''),    /not an ISO 4217 code/)
+})
+
+test('units: isKnownCurrency separates a real code from a plausible one', function () {
+  assert.equal(isKnownCurrency('USD'), true)
+  assert.equal(isKnownCurrency('XXX'), true)    // ISO's own "no currency" code
+  assert.equal(isKnownCurrency('UDS'), false)
+  assert.equal(isKnownCurrency('BTC'), false)   // real money, not ISO 4217
+})
+
+test('units: the runtime knows a few hundred codes, and the odd ones are the point', function () {
+  const known = knownCurrencies()
+  assert.ok(known.size > 150, `expected a full ISO list, got ${known.size}`)
+  // If this ever shrinks to only two-decimal currencies, `@money` has silently
+  // stopped deriving anything.
+  const odd = [...known].filter(c => minorUnits(c) !== 2)
+  assert.ok(odd.length > 10, `expected currencies with non-2 minor units, got ${odd.length}`)
 })

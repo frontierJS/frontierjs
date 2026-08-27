@@ -55,10 +55,22 @@ export function perShopAuth<O extends object>(
     return p
   }
 
+  // `oauthProviderNames()` is the ONE synchronous method across `IAuth` and
+  // `AuthOAuth` — everything else answers a Promise — and it answers this app's
+  // own CONFIGURATION, which is the same for every shop, so there is nothing
+  // per-shop to resolve. Wrapped like the rest it returns a Promise, and a
+  // Promise is not a broken value anywhere that awaits: `GET /auth/oauth` writes
+  // it straight into `ctx.json`, `JSON.stringify` renders it `{}`, and a sign-in
+  // page draws no buttons at all with a 200 and no error (`FJS-548`). Anything
+  // added to this list has to be synchronous AND shop-independent — both, or the
+  // pass-through is a different bug.
+  const PER_APP = new Set(['oauthProviderNames'])
+
   return new Proxy(base as object, {
     get(target, key: string) {
       const value = Reflect.get(target, key)
       if (typeof value !== 'function') return value
+      if (PER_APP.has(key)) return (value as (...a: unknown[]) => unknown).bind(target)
       return async (...args: unknown[]) => {
         // `verifySession(token, from)` is the one method that carries its own
         // origin, because it runs before there is a request scope to read.

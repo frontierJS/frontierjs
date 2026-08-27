@@ -38,7 +38,8 @@ s3://mybucket/myapp/analytics
 ```
 
 The suffix is not cosmetic — two databases sharing one replica url would
-overwrite each other's generations. It is also what a restore names:
+overwrite each other's generations. It is also what a restore names — one invocation per database, by hand; see
+§ Restoring:
 
 ```bash
 litestream restore -o ./main.db s3://mybucket/myapp/main
@@ -50,6 +51,47 @@ litestream restore -o ./main.db s3://mybucket/myapp/main
 of append-only files with no WAL, so it cannot be replicated here at all —
 `litestone replicate` names any it finds and carries on. Cover those with
 `litestone backup` on a schedule, or sync the directory to object storage.
+
+## Restoring
+
+**Replication is derived from the schema; restore is not, and you have to type it.**
+There is no `litestone restore` — it is filed as `ISSUES.md` `FJS-540`, with what it
+should do — so coming back is one litestream invocation per declared SQLite database,
+naming the same suffix `replicate` wrote to:
+
+```bash
+litestream restore -o ./data/main.db      s3://mybucket/myapp/main
+litestream restore -o ./data/analytics.db s3://mybucket/myapp/analytics
+```
+
+Then the databases litestream never had. A `jsonl` or `logger` database is a directory,
+so its way back is the copy `litestone backup` made:
+
+```bash
+cp -r ./backups/2026-04-21_120000/audit ./data/audit
+```
+
+Three things to check, because nothing here is checking them for you:
+
+- **Every database, not just `main`.** `litestone backup --db main` and
+  `litestone replicate --db main` narrow deliberately; a restore that narrows by
+  accident starts an app whose audit trail stops at the disaster.
+- **The `-wal` and `-shm` files.** `litestream restore` writes a consistent database
+  and needs no help; a restore done by copying files back does — copy the sidecars or
+  copy none of them, never one of three. `db.$backup()` already handles this, which is
+  the reason to use it over `cp`.
+- **The app is not restored — the Data realm is.** A restore does not un-send an
+  email, un-run a job, or un-notify a client.
+
+**A restore nothing has read is a rumour.** The cheapest proof available today is to
+restore into a temporary directory, point a client at it and run the app's own suite:
+
+```bash
+litestream restore -o /tmp/verify/main.db s3://mybucket/myapp/main
+DATABASE_URL=/tmp/verify/main.db bun run test
+```
+
+Making that one command is the other half of `FJS-540`.
 
 ## Which Litestream
 

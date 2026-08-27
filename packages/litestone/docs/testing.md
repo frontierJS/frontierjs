@@ -267,6 +267,70 @@ a model onto the service that exposes it is an API-realm fact, and litestone
 cannot see it. `@frontierjs/testing`'s `verifyTransportParity()` is the first
 consumer.
 
+## The clock — `env.clock`
+
+Time is injectable, and the reason to inject it is not to stop it: it is to
+**cross** something. A window that opens, a schedule at a boundary, a row aging
+past a retention — every one of those is two assertions with a move between
+them, and a frozen instant can only ever make one of them.
+
+```js
+const env = await createTestEnv({ schema, now: '2026-06-01T00:00:00Z' })
+
+await env.db.sale.findMany()        // the spring window is open
+env.clock.advance('20d')
+await env.db.sale.findMany()        // it closed on the 15th
+env.clock.set('2026-09-15T00:00:00Z')
+await env.db.sale.findMany()        // autumn
+```
+
+`now` takes a `Date`, an ISO string, or a function. `env.clock` is the holder
+every client this env opened reads through — **including the ones `atLevel`
+builds**, which are lazy, so one constructed mid-suite follows a later move
+rather than freezing at whatever the clock said when it was made.
+
+| | |
+| --- | --- |
+| `clock.now()` | the instant every client reads |
+| `clock.set(at)` | freeze at, or move to, an instant |
+| `clock.advance(by)` | `'90m'`, `'2d'`, `'1y'`, or milliseconds |
+| `clock.frozen` | is time standing still? |
+
+**A function stays yours.** Pass one and `set`/`advance` refuse by name: two
+things claiming to say what time it is means the loser is whichever one the
+reader did not have in mind. Move your own holder instead.
+
+**`advance` from the wall clock also freezes**, because an offset from a moving
+clock is still moving and the assertion after it would be a race.
+
+### What it moves
+
+Everything this client writes or grades against: `now()` in a row policy,
+`@@softDelete`'s stamp, `@default(now())`, `@updatedAt` on create and on update,
+and the retention cutoff. So the crossing this exists for is one call:
+
+```js
+await env.db.note.create({ data: { body: 'x' } })   // stamped 2020
+env.clock.advance('100d')
+env.db.asSystem().$retain()                          // and now it is old enough to go
+```
+
+Until `FJS-531` those stamps were SQLite's own clock — a column DEFAULT and an
+AFTER UPDATE trigger — so a frozen clock produced a row dated today and every
+window over it was quietly wrong. Stating the timestamp on the write is still
+supported and still wins, because key PRESENCE decides:
+
+```js
+await env.db.note.create({ data: { body: 'x', createdAt: '2019-05-06T07:08:09.000Z' } })
+```
+
+### What it does not move
+
+**SQL that runs without this client.** A raw `db.sql` statement takes whatever
+SQLite's clock says, and a `@derived` expression reading `now()` is compiled once
+at startup into a subquery with no parameter to bind. Both are reads of the
+database's own clock rather than of yours.
+
 ## makeTestClient
 
 The primary entry point for tests. Creates an in-memory Litestone client:

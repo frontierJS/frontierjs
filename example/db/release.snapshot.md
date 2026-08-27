@@ -146,6 +146,12 @@ table `discount` · db `main` · gate `5.5.5.5`
 | `startsAt` | `DateTime` | yes | — | — |
 | `value` | `Float` | no | — | **required on write** |
 
+```
+@@check(kind != 'percent' OR value <= 100)
+@@check(maxRedemptions IS NULL OR redemptions <= maxRedemptions)
+@@check(startsAt IS NULL OR endsAt IS NULL OR startsAt < endsAt)
+```
+
 ### `InventoryMovement`
 
 table `inventory_movement` · db `main` · gate `5.5.9.9`
@@ -212,6 +218,8 @@ table `order` · db `main` · gate `1.4.4.5` · @@softDelete(cascade)
 | `userId` | `String` | yes | — | @system |
 
 ```
+@@check(discount <= subtotal)
+@@check(subtotal = 0 OR abs(total - (subtotal - discount + shipping + tax)) < 0.005)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
 transition status.cancel: paid, pending → cancelled

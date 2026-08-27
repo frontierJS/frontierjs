@@ -181,8 +181,10 @@ Type?      — optional (nullable)
 @default(auth().field)           stamp from ctx.auth at write time (runtime-only)
 @default(fieldName)              copy sibling field value on create
 @map("col_name")                 custom DB column name
-@updatedAt                       auto-set to now() on every UPDATE — any field
-                                 name, however many; see SQLite gotchas
+@updatedAt                       set to now() on create and on every UPDATE — any
+                                 field name, however many. Written by the CLIENT,
+                                 from the clock it was given; a raw SQL UPDATE
+                                 stamps nothing. See SQLite gotchas
 @updatedBy                       stamp ctx.auth.id on every UPDATE
 @updatedBy(auth().field)         stamp custom auth field on every UPDATE
 @createdBy                       stamp ctx.auth.id on CREATE — a stamp, not a
@@ -570,6 +572,17 @@ await db.$audit({ operation: 'login.failed', model: 'User', records: [id],
                            // names no actor. THROWS — unlike @@log, the record
                            // is what the caller asked for. actorId defaults to
                            // this client's principal; a system context has none.
+db.$capabilitiesFor(user)
+                           // { held, unknown, byModel } — what can this person do.
+                           // Fourth sibling of the three above and the same
+                           // contract: takes its subject as an ARGUMENT, and every
+                           // flavour answers identically for the same one. `unknown`
+                           // is the half that earns it — a capability is a
+                           // reference, so a rename leaves the OLD string sitting in
+                           // every Role row; this is what shows you the data
+                           // migration that did not run. Accepts a principal or the
+                           // bare list, since the union of somebody's roles exists
+                           // before a principal does
 db.$protectedFields('secret')
                            // { data: 'encrypted' } — which columns must never be
                            // written down in plain text, and which protection
@@ -579,6 +592,10 @@ db.$protectedFields('secret')
                            // app writing its own audit table had nothing to ask.
                            // Same contract as $checkWhere — unknown accessor is
                            // {}, every flavour of client answers the same
+db.$softDelete             // { ModelName: boolean } — which models hide a removed
+                           // row rather than destroying it. A COPY, and on every
+                           // flavour of client: the live map is what every read
+                           // filters against, and junction holds a $setAuth one
 db.$schema                 // parsed schema object
 db.$plugins                // installed plugin names, in run order — every client
                            // flavour. A gated schema auto-installs GatePlugin, so
@@ -871,6 +888,8 @@ database audit {
 
 Log entry shape: `operation, model, field?, records (id array), before?, after?, actorId?, actorType?, meta Json?, createdAt`.
 
+**A jsonl/logger retention pass reads the FIRST line and stops if it is inside the window.** An append-only log is oldest-first, so a fresh first line means every line is fresh — the right optimisation for a check that runs on every boot over a file that grows for the life of the deployment. What it costs is a probe: append an old row to the END and the pass returns `null`, having read nothing, so `$retain()` answers `[]` and the job that called it reports success while removing nothing. A test planting an old row has to plant it where an old row would actually be. The companion `.index.db` holds byte offsets and is DELETED by a compaction that rewrites the file, then rebuilt lazily — so anything rewriting that file by hand owes the same removal.
+
 **Protected fields are redacted.** Any `@encrypted` / `@guarded` / `@secret` field has its value replaced with `'[redacted]'` in both the field-level entry and the model-level `before`/`after` snapshot — the trail records *that* the field was written, never what it holds. This is what makes `@secret`'s expansion safe: `@secret` implies `@log(<first logger db>)`, so declaring a logger database alone starts logging every `@secret` field, and without redaction that writes plaintext beside a correctly-encrypted row. `null` is preserved rather than redacted (nothing to leak, and it keeps `null → value` transitions visible); unprotected fields on the same model are still logged in full; the row returned to the caller is untouched.
 
 `onLog` callback on `createClient` can enrich entries:
@@ -973,6 +992,13 @@ each at `<url>/<name>`. jsonl/logger have no WAL and cannot be replicated; they
 are named and skipped. **Refuses litestream below v0.5** (0.3.x cannot parse
 STRICT tables and loops forever without exiting, so `pgrep` reports healthy
 against an empty replica). `LITESTREAM_BIN` overrides the lookup.
+
+**There is no `litestone restore`, and the asymmetry is the trap** (`ISSUES.md`
+`FJS-540`): the outbound side reads the schema and covers every database, while
+coming back is `litestream restore -o ./main.db <url>/<name>` typed once per
+SQLite database plus a directory copy for the jsonl/logger ones. A two-database
+app that restores `main` alone starts, and looks fine. `docs/replication.md`
+§ Restoring is the checklist until the command exists.
 
 ```bash
 litestone replicate --schema db/schema.lite --url s3://mybucket/myapp
@@ -1276,7 +1302,9 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 
 **A protection that only STRIPS is not a protection.** `@guarded` hid its value from every read and let the same caller name the column in a `where`, which recovers it one `startsWith` at a time, and in an `orderBy`, which leaks the ordering of every row at once (`FJS-393`). The refusal is `collectGuardedArgs` in `client.js`, at the read where `ctx.isSystem` is known — NOT in `filterableKeysFor`, which answers whether a column CAN be compared and is therefore the same answer on every flavour of client, which is what lets junction ask `$checkWhere` of a caller's own. **It walks the relation graph**, because the filter grammar does: `where: { author: { is: { … } } }`, a relation `orderBy` and a nested `include` all ask about a model the table is not. `ctx.guardedMap.reaches` is the gate — a model from which no guarded column is reachable at any depth costs one boolean — and the walk descends only into a relation key or a logical/relation operator, since a nested object under an ordinary column is a typed-Json path where a key sharing a guarded column's name means something else. The sibling hole through a field-level `@allow('read', …)` is open and measured (`FJS-442`): a predicate is not a set, and refusing it needs a ruling first. **A credential lookup is now a system read by construction** — a `Session`/`Invitation`/`ApiKey` token is `@guarded(all)` and found BY its value, so `where: { token }` on a caller's client is refused; auth and basecamp already went through `asSystem()` for it, and the comment in `invitations.service.ts` says why. Allowing bare equality instead would have kept them working and left the hole open for anything low-entropy, which is what a probe enumerates.
 
-**A trigger's `RETURNING` is evaluated before the trigger fires**, and `@updatedAt` is a trigger. So a write that leans on it hands the caller the OLD timestamp while the row already holds the new one (`FJS-396`). Two halves now: the client names every stamp column in its own `SET` clause — `stampSets` in `client.js`, over `updatedAtFields` exported from `ddl.js`, so which columns and which timestamp expression have one owner each — and the trigger is the floor beneath it, for raw SQL and migrations, standing down for a statement that already named the column. A path that issues an `UPDATE` and hands back a row must call `stampSets`; `test/updated-at.test.ts` asserts the returned row equals a re-read for every write verb, so a new path that forgets goes red. `@@external` answers no stamp columns at all — no DDL means no trigger, and a client stamp with nothing behind it is a silent write into somebody else's table.
+**`@updatedAt` is stamped by the CLIENT, and there is no trigger any more.** It was an AFTER UPDATE trigger, and a trigger can only ever read SQLite's own clock — so `createClient({ now })` moved a policy's `now()` and left every stamp on today, which meant the one thing a frozen clock is for (staging a row aging past a window) could not be staged (`FJS-531`). Three mechanisms became one: `@default(now())` and `@updatedAt`-on-create go through `buildGeneratedDefaultMap`, `@updatedAt`-on-update through `stampSets`, all three reading the client's clock. `isUpdatedAtField` in `ddl.js` is the one answer to *is this a stamp column* — the ATTRIBUTE, or the name `updatedAt` on a `DateTime`, because binding to the attribute alone leaves a column named for the job unstamped. **`FJS-396` is closed at the root rather than narrowed**: RETURNING is evaluated before an AFTER trigger, so a write that leaned on one handed back a value the row no longer held, and naming the column in the SET clause only fixed that while the two values DIFFERED — which they do not when the clock has not moved between two writes to one row (under an injected clock, every write after the first). With no trigger there is no window. **The floor is now asymmetric and that is the price**: the column DEFAULT stays, so a raw INSERT still stamps; a raw UPDATE does not, and a hand-written statement owns its own stamp. An existing database is migrated by `litestone migrate` — pristine stops carrying the trigger, `droppedTriggers` in `migrate.js` sees it, one `DROP TRIGGER IF EXISTS` and no table rebuild. `@@external` answers no stamp columns at all: a client stamp into a table litestone does not own is a silent write into somebody else's.
+
+**Retention measures from the client's clock too.** `runSqliteRetention` and `compactJsonl` both took `Date.now()`, so `env.clock.advance('100d')` moved nothing either pass could see — the sweep is a crossing, and the clock could not stage the one thing it was reached for. One reading of the option (`nowMs` in `retention.js`) because both halves take it, and two interpretations is how the jsonl half ends up sweeping to a different instant than the SQLite half.
 
 **`json_extract` returns native types** — `json_extract(data, '$.id')` returns integer; comparing to string silently fails. Cast: `CAST(json_extract(data, '$.id') AS TEXT)`
 

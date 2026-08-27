@@ -12,7 +12,7 @@ bun run verify       # 271 checks in a real browser; starts and stops both serve
 bun run verify:build # builds, then probes the PRODUCTION output (FJS-085)
 bun run db:types     # regenerate db/schema.d.ts — the client's types
 bun run db:seed      # an example fleet
-bun run verify:screens # the five Phase 13 screens, in a browser, on a temp database
+bun run verify:screens # five screens + the audit window, in a browser, on a temp database
 bun run db:reset     # stops the servers, deletes the databases
 DEVTOOLS=1 bun run api   # …and junction's console on 8503 beside it
 bun run image        # build the container image from the WORKING TREE
@@ -118,6 +118,30 @@ docs/     SCREENS.md — the mock inventory, 35 of 41 screens built, the rest
   addresses `ctx.id` rather than the header and would otherwise carry an admin's
   standing into any other workspace they can name; and the role hooks, because a
   gate refuses with a level and a person needs the sentence.
+- **`Server` and `Environment` are graded on TWO axes, and the second one is a
+  column.** `@@capabilities` on both models plus `@capability` on
+  `Environment.variables`, ANDed with the gate (`FJS-D146`): a caller needs the
+  level AND the grant. `WorkspaceMember.capabilities` holds the grant and
+  `membershipClaim({ capabilities })` reads it onto `auth().capabilities` off the
+  row the standing already comes from — per request, per workspace, so the same
+  person holds a different set in each.
+  **`api/src/core/capabilities.ts` is the one owner of role → set** and every
+  membership write stamps through it: setup, the hub, an accepted invitation,
+  `addMember`, `setMemberRole`, `db/seed.js` and the test fixtures. A role is a
+  DEFAULT set rather than a synonym for one — the column is the truth afterwards,
+  which is what lets one grant come off one person without inventing a role — and
+  `setMemberRole` RE-stamps, since leaving old grants behind makes a demotion
+  change a word on screen and nothing else.
+  **The grid does not replace `refuseGrantAboveOwn()`, it gives it a second
+  axis.** `admin` and `owner` hold the same grid, because what separates them is
+  the workspace itself, so a subset test cannot see an admin minting an owner
+  (`FJS-410`) while the ladder cannot see a sideways grant (`FJS-529`). Both are
+  checked. It stays a hook because all three membership writers are `asSystem()`,
+  which has no principal — *what you hold* is undefined there, not merely
+  skipped — and litestone's own `Capability[]` guard covers every other door.
+  **The two `capability-ladder` warnings from `fli check` are answered, not
+  ignored**: the gates stay steep because the grant table is bounded by them, so
+  the ladder still catches a grant mis-stamped by a bug or a migration.
 - **Ten models declare `@version`, and a service-side write of a row must carry
   the version it read.** The rule for which ten is in `db/schema.lite`'s header:
   a row a PERSON edits, never one a machine also writes on its own schedule —

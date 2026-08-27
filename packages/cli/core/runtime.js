@@ -502,11 +502,17 @@ export async function Command({ file, arg, flag, emit }) {
       if (allStepFiles.length === 0) return
 
       // ── Step ordering validation ────────────────────────────────────────────
-      // Warn if two step files share the same numeric prefix — their relative
-      // order is lexicographic and could be surprising if names are not careful.
+      // Warn if two step files would sort by luck — their relative order is
+      // lexicographic and could be surprising if names are not careful.
+      //
+      // The prefix is `\d+[a-z]*`, not `\d+`. A LETTERED step is the deliberate
+      // way to insert one between two others without renumbering the rest, and
+      // `01b-env-check` sorting after `01-preflight` is the whole point of
+      // spelling it that way — matching on digits alone warned about every one
+      // of those, which is how a warning teaches everyone to ignore it.
       const prefixCounts = new Map()
       for (const f of allStepFiles) {
-        const prefix = basename(f).match(/^(\d+)/)?.[1]
+        const prefix = basename(f).match(/^(\d+[a-z]*)/)?.[1]
         if (prefix) prefixCounts.set(prefix, (prefixCounts.get(prefix) ?? 0) + 1)
       }
       for (const [prefix, count] of prefixCounts) {

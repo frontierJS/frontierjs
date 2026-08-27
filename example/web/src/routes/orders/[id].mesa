@@ -405,13 +405,13 @@ title: Order
              merchant edits next month must not reprice a sale from last one —
              so all of this is a read. -->
         <div class="receipt">
-          <p class="cluster space-between">
+          <p class="split">
             <span class="text-sm text-muted">Subtotal</span>
             <strong id="items-subtotal">{money(order.subtotal)}</strong>
           </p>
 
           {#if order.discount > 0}
-            <p class="cluster space-between" data-receipt="discount">
+            <p class="split" data-receipt="discount">
               <span class="text-sm text-muted">
                 {order.discountLabel} <Mono>{order.discountCode}</Mono>
               </span>
@@ -420,20 +420,20 @@ title: Order
           {/if}
 
           {#if order.shippingLabel}
-            <p class="cluster space-between" data-receipt="shipping">
+            <p class="split" data-receipt="shipping">
               <span class="text-sm text-muted">{order.shippingLabel}</span>
               <strong id="items-shipping">{order.shipping > 0 ? money(order.shipping) : 'Free'}</strong>
             </p>
           {/if}
 
           {#if order.tax > 0}
-            <p class="cluster space-between" data-receipt="tax">
+            <p class="split" data-receipt="tax">
               <span class="text-sm text-muted">{order.taxLabel} at {Math.round(order.taxRate * 100)}%</span>
               <strong id="items-tax">{money(order.tax)}</strong>
             </p>
           {/if}
 
-          <p class="cluster space-between grand">
+          <p class="split grand">
             <span class="text-sm text-muted">Order total</span>
             <strong id="items-order-total">{money(order.total)}</strong>
           </p>
@@ -497,7 +497,7 @@ title: Order
         <ul class="stack" id="payments-list">
           {#each taken as p}
             <li class="card stack" data-payment={p.id}>
-              <div class="cluster space-between">
+              <div class="split">
                 <div class="cluster">
                   <Pill tone={p.status === 'succeeded' ? 'success'
                             : p.status === 'refunded'  ? 'warning'
@@ -524,15 +524,15 @@ title: Order
               </dl>
 
               <!--
-                NO {#if} AROUND THIS, deliberately.
-                An empty list renders no rows on its own, so the conditional
-                bought nothing — and it cost the panel its ledger: wrapped in
+                NO {#if} AROUND THIS, deliberately. An empty list renders no
+                rows on its own, so the conditional buys nothing — and it once
+                cost the panel its ledger: wrapped in
                 `{#if eventsFor(p).length}` the block never appeared on the
                 render that completes a refund, while the count beside it and
-                the nested {#each} both updated correctly. `FJS-468` has the
-                isolated repro. Rendering unconditionally is the better markup
-                either way, which is why this is a fix rather than a
-                workaround.
+                the nested {#each} both updated. That was `FJS-468`, a sibling
+                block sharing this one's anchor, and it is fixed in the
+                compiler; the markup stays as it is because it is the better
+                markup, not because it is a workaround.
               -->
               <div>
                 <p class="text-sm text-muted">
@@ -676,7 +676,7 @@ title: Order
   .receipt { font-variant-numeric: tabular-nums; display: grid; gap: .25rem }
   .receipt p { margin: 0 }
   .receipt .grand {
-    border-top: 1px solid var(--hairline);
+    border-top: 1px solid var(--rule);
     padding-top: .4rem;
     margin-top: .25rem;
   }

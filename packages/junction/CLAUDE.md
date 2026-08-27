@@ -224,8 +224,11 @@ src/
   the CI half (`snapshots` phase). Two constraints on the app it is pointed at:
   it must expose the app **without listening** (a built `App` or a factory — the
   same contract `@frontierjs/testing` takes as `api:`; guard an entry's
-  `app.start()` with `import.meta.main`), and autoloaded services need
-  `--services`, because that phase is `needsHost` and resolves against `Bun.main`.
+  `app.start()` with `import.meta.main`). Autoloaded services are found without
+  `--services` now — the tool asks `resolveServicesDir` the same question the
+  app asks, naming the app MODULE as the entry, because the app's own phase
+  resolves against `Bun.main`, which here is the tool. `--services` is an
+  override, and one that is checked: a directory named and absent is fatal.
   The snapshot lives at the APP ROOT: an app is built with the cwd its own scripts
   use, and CI reruns the command from the snapshot's directory.
 - **`hasRoute()` is a matching question, not an existence one** — every app

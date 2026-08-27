@@ -97,6 +97,30 @@ if (flag.clean) {
 log.info('Vendoring dependencies into the build context...')
 vendorApp(context.paths.root, log)
 
+// ─── Build check ──────────────────────────────────────────────────────────────
+// Reported here and refused in `fli deploy`. The difference is what the two
+// commands are for: this one answers *does the image build and start at all*,
+// and blocking that on a promotion property would trade a working smoke test for
+// a correctness argument the deploy is about to make anyway.
+const bc = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
+const bcFindings = bc.inspectBuild(bc.gatherLocal({ root: context.paths.root, fs: await import('fs'), dockerfile }))
+
+if (!bcFindings.length) {
+  log.success(`Build check: ${bc.summarise(bcFindings)}`)
+} else {
+  log.info('')
+  for (const f of bcFindings) {
+    const [head, detail, fix] = bc.renderFinding(f)
+    const say = f.level === 'error' ? log.error : log.warn
+    say(`  ${head}`)
+    log.info(`    ${detail}`)
+    log.info(`    ${fix}`)
+  }
+  log.info('')
+  if (bc.refuses(bcFindings)) log.warn(`Build check: ${bc.summarise(bcFindings)} — fli deploy will refuse this build`)
+  else                        log.info(`Build check: ${bc.summarise(bcFindings)}`)
+}
+
 // ─── Build ────────────────────────────────────────────────────────────────────
 log.info(`Building ${tag} from ${dockerfile}...`)
 context.exec({ command: `docker build -t ${tag} -f ${dockerfile} ${context.paths.root}` })

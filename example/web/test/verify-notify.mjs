@@ -25,7 +25,26 @@
 
 const API  = process.env.API_URL       ?? 'http://localhost:8110'
 const SINK = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
-const REF  = 'ORD-NOTIFY-1'
+// A reference of this run's own, not a fixed one, and the reason is a live
+// hazard rather than tidiness: `Order` is `@@softDelete` and a soft-deleted row
+// KEEPS its `@unique` values, so the cleanup below — which deletes over HTTP and
+// therefore soft-deletes — cannot free the reference it just used. A fixed REF
+// makes this drive pass exactly once per seed and then answer a 409 on create,
+// an undefined order id, and a 500 from `pay` on `/orders/undefined` that names
+// nothing about the cause. Same shape as `verify:money` minting its own discount
+// codes under a run prefix.
+//
+// UPPERCASE, because `Order.reference` carries an `@upper` transform: a
+// lowercase id is stored uppercased, and the drive would then search the mail
+// sink for a subject containing the reference it THINKS it used. That miss is
+// silent — the mail is there and the assertion says `missing`.
+//
+// SHORT, because the column is `@length(3, 20)`. A run id on the end of
+// `ORD-NOTIFY-` overruns it, and the 400 that follows is a create the drive does
+// not check, an undefined order id, and a 500 from `pay` on `/orders/undefined`
+// naming nothing about the cause.
+const RUN  = Date.now().toString(36).slice(-6).toUpperCase()
+const REF  = `ORD-N${RUN}`
 
 for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['the mail sink', `${SINK}/outbox`]]) {
   try {
@@ -270,7 +289,18 @@ const expected = {
 
   'mail.arrived': {
     to:      ['ops@acme.test'],
-    from:    'shop@example.test',
+    // The FLAGSHIP's own address, not the deployment's default.
+    //
+    // One process serves the whole fleet, so a from-address destructured out of
+    // the mailer's options when the plugin was configured is one address for
+    // every shop — and a customer reads it on the receipt. `createConduitMailer`
+    // resolves it per send through `app.configFor()`, which answers this shop's
+    // registry settings over `config.mail.from` as the floor (`FJS-D126`).
+    //
+    // `shop@example.test` is that floor and is what a shop with no settings of
+    // its own still reads; seeing it here would mean the per-send read had
+    // silently gone back to being a constant.
+    from:    'orders@flagship.test',
     subject: `Your order ${REF} is confirmed`,
     bodyHasTotal: true, bodyHasAction: true, htmlHasAnchor: true,
   },

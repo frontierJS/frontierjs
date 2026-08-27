@@ -449,6 +449,85 @@ for derived — if it has no independent existence, it is not a Projection.
 
 ## Access control
 
+### <a id="fjs-d150"></a>2026-08-26 · `FJS-D150` — a move can say the APPLICATION makes it, with `@system`, and the escape is the column's own. `@gate(8)` keeps meaning *asSystem() and nothing else*.
+
+`FJS-506` ruled what `@gate(8)` means on a move — `asSystem()` and nothing else,
+`getLevel` clamped to 7 so SYSADMIN is refused by name — and drew a filter from
+it: *every move not at 8 is one a person can make*, the only mechanical way to
+derive a capability set from a state machine. Adopting it in basecamp found the
+counterexample immediately, and it is not rare.
+
+**A move can be the engine's decision and a person's request at the same time.**
+`Server.reportRunning` and its three siblings are reached by somebody pressing
+*Sync from provider*: basecamp asks the provider, and the provider's answer picks
+the move. The decision is the engine's; the request is a person's, and the write
+is on their scoped client. At `@gate(8)` every one of them refuses. The only way
+past was `asSystem()`, which drops the gate, the row policies **and the audit
+actor** to make one move — the trade `FJS-384` refused once already.
+
+**The word already existed one level down.** `@system` on a COLUMN means the
+application writes it and its caller does not, and `system: ['col']` on the write
+is the application saying it is the one writing — keeping every other rule
+(`FJS-D22`). A move is a write to exactly one column, so the same statement and
+the same hatch apply unchanged:
+
+```
+@@transitions(status,
+  drain:         online                    -> draining @gate(5),
+  checkIn:       [pending, unreachable]     -> online   @system,
+  reportStopped: [pending, online]          -> stopped  @system @gate(5))
+```
+```js
+await db.server.transition(id, 'reportStopped', { system: true })
+```
+
+**Two attributes, two questions, and they compose.** `@gate(N)` is *how senior
+must a caller be*; `@system` is *whose decision is this*. `@system @gate(5)` is
+the person-requested engine move — the engine decides, an administrator asks —
+and it is the shape the counterexample needed. `@system` with `@gate(8)` or
+`@gate(9)` is refused at parse: those are sentinels meaning *no caller reaches
+this*, which is the opposite of what `@system` says, and a move declaring both
+has two answers to one question.
+
+**The hatch is the column's, not a second one.** `{ system: true }` on
+`transition()` becomes `system: [field]` on the update underneath, so writing the
+column directly — `update({ data: { status } })` — is refused and permitted by
+exactly the same rule. Two spellings of one move (`fli check`'s
+`transition-methods` already treats them as one), so a rule enforced on only the
+named one is not enforced at all.
+
+**It is a third refusal and screens must tell it from the second.**
+`TransitionSystemError`, 403, not retryable, beside `TransitionGateError`'s 403.
+Separate class because the remedies differ in kind: a gate refusal is answered by
+being more senior, and this one cannot be answered by any caller at any level. A
+screen that renders them alike tells somebody to go and find an administrator who
+also cannot do it. `transitions(row)` reports `refusedBy: 'system' | 'gate' |
+'policy' | null` (`FJS-495` added the last two), and `system` is asked FIRST
+because it is the cheapest — no level to resolve, no policy to evaluate.
+
+**On the client it is the one verdict that is not a guess.** `x-transitions`
+carries `system` beside `gate`, and sierra's `transitionsAt` reads it. Everything
+else there is permissive-when-unknown, because a gate is an affordance and a
+policy is invisible from a browser — but a browser is never the application, so
+`@system` is decidable there with certainty. A screen renders no button rather
+than a disabled one.
+
+**What it recovered in basecamp**: `Server.checkIn` was declared `@gate(8)` and
+**the machine never ran**. The heartbeat writes `status` as one column of one
+update — splitting it out would write and announce the row twice for a single
+check-in — so it wrote the value by hand against a `CHECK_IN_FROM` set kept in
+the service, under a comment admitting the two had to agree. That is the
+duplication `@@transitions` exists to delete, kept only because the declaration
+could not be satisfied. The set is gone; the from-state is asked of the schema.
+
+*Lives in:* `packages/litestone/src/core/parser.js` (`parseTransitionsArg`),
+`src/core/client.js` (`checkTransitions`, `transition`, `transitions`,
+`TransitionSystemError`), `src/jsonschema.js`;
+`packages/sierra/src/junction/field-rules.js` (`transitionsAt`); adopted in
+`packages/basecamp/db/schema.lite` (`Server`) and
+`api/src/services/servers/servers.service.ts`. Reference:
+`packages/litestone/docs/schema.md` § `@@transitions`.
+
 ### <a id="fjs-d141"></a>2026-08-25 · `FJS-D141` — a null tenant column means the row belongs to NO tenant, and belonging to nobody is readable through `asSystem()` alone. A row meant to be shared says so with `@@tenant(none)`, which is a declaration rather than an absent value.
 
 `FJS-432` asked what basecamp's `AuditEvent.workspaceId String?` means, and the
@@ -515,6 +594,159 @@ with a green suite.
 applied in `packages/basecamp/db/schema.lite` (`AuditEvent`) and
 `packages/basecamp/api/src/core/hooks.ts` (`basecampAuditLog`).
 
+### <a id="fjs-d148"></a>2026-08-25 · `FJS-D148` — a derived reference set needs two things around it: a way to be ASKED, and a way to be MOVED. `$capabilitiesFor` is the first, a data migration is the second.
+
+**Asking. `db.$capabilitiesFor(principal)` on every flavour of client**, the shape
+`$checkWhere`, `$checkOrderBy` and `$protectedFields` already have — a question asked
+of the client rather than reimplemented per caller. A CLI (`litestone access --for
+<user>`) is a caller of it, not a second implementation, because a role editor and a
+support screen both need the answer live and a command cannot be called from a screen.
+
+**It is two questions and only one of them is answerable this way**, which is the
+trap worth naming. *What can Ada do in workspace X* is a live query over her
+assignments. *What could Ada do in March* **cannot be recomputed** — the roles have
+changed since — so any implementation that answers the first and looks like it
+answers the second is wrong in the silent direction. The second is only answerable by
+recording the effective set **at the moment of the decision**, into the audit trail.
+That belongs to `IDEAS/compliance-from-the-seed.md` rather than here: it is a fact
+about what the trail must carry, not about what a capability is.
+
+**No snapshot section.** `access.snapshot.md` grades the DECLARED surface and this
+depends on rows, which is exactly why it has no committed home. Only the join shape
+is static, and the join shape is not the question anybody asks.
+
+**Moving. A rename emits a data migration**, because `FJS-D139` made the capability a
+reference and therefore made renaming its referent a rename of the capability. The
+old string sits in every `Role.capabilities` array in every tenant's database, so the
+rewrite is a data change. What D139 bought is that the blast radius is **computable**
+rather than guessed, so the generator has something to generate from.
+
+**Amended 2026-08-26 on measuring it: it is computable from two SCHEMAS and not from
+two databases, so it is not `diffSchemas`/`autoMigrate`.** That sentence was written
+expecting the rewrite to fall out of the migration engine, and for a renamed COLUMN it
+would — but a renamed MOVE changes the capability set and emits **byte-identical DDL**,
+and the engine diffs a replayed shadow database against a pristine one, so it reports
+*no migration needed* while every grant row holding the old name goes quiet. Moves are
+where most capabilities come from. `capabilityDrift(before, after)` therefore rides the
+`--from <ref>` comparison, which reads two `.lite` files, and `litestone access --from`
+prints the rewrite. **It pairs only where the pairing is forced** — a model whose whole
+prefix moved with its target set intact, or a single loss against a single gain on one
+model — because a lost name and a gained name are a rename in the author's head and a
+coincidence in the data; anything else is reported unpaired with no SQL, since a wrong
+rewrite hands one role another's authority and looks exactly like it worked.
+
+Two alternatives were weighed and both refused. **An alias** — `@@renamed("Server.reboot")`
+on the move, old string keeps resolving — needs no migration and accumulates in the
+schema forever, and two names resolving to one capability weakens the *a typo cannot
+exist* property D139 was chosen for. **Refuse-the-rename-while-rows-hold-it** is a
+correct fail-closed stopgap and is not shipped: it cannot reach a tenant fleet you do
+not own, and the generator lands with this ruling, so it would be a stopgap with
+nothing to stop.
+
+### <a id="fjs-d149"></a>2026-08-25 · `FJS-D149` — a non-CRUD action earns a capability by being a MOVE, and a capability is always per tenant.
+
+Two questions about what is in the set and whose it is.
+
+**A method that changes state is a transition, and that is where its capability
+lives.** `orders.pay` calling `db.order.update()` is covered by `Order.update` and
+cannot be told apart from correcting a typo in the note — which is the complaint the
+grid exists to answer. The answer is not a new binding site: it is
+`@@transitions(status, pay: pending -> paid)`, which names the move in the seed and
+therefore gives `Order.pay` a referent under `FJS-D139`. This is already the repo's
+practice and `example` states it at the declaration — *the four moves take an id and
+nothing else, and a move's rules are in `@@transitions` where every other rule about
+this row lives.*
+
+**`methods: [{ method: 'pay', capability: 'Order.pay' }]` is refused**, and it is
+refused because it is the most natural-looking answer: it mints a capability name in
+a service file, and `FJS-D139` rules that a capability is a reference to something
+**the seed** declares. A service names which rule applies; it never carries one.
+
+**`@@actions(pay, refund)` is the named escape** for an action that genuinely is not
+a move — no state column, nothing to transition. It is the `input:` shape one level
+over: the seed owns what the thing is, the service names which one applies. Most
+candidates for it turn out to write a row, which makes them transitions after all,
+so it exists rather than being reached for.
+
+**And a capability is per tenant. No claim, empty set.** Cross-tenant standing is the
+**gate's** job — `isSystemAdmin` grading SYSADMIN(7) above any membership is what
+basecamp already does — and because `FJS-D146` ANDs the two, a global capability was
+never needed for the case that motivates one. A second global set would be a second
+seam to resolve, to audit and to render, buying a tier the ladder already has.
+
+The division that falls out: **the ladder carries standing that crosses tenants, the
+grid carries authority within one.** Confirm rather than assume is still owed — a
+probe that the claim seam resolves per request per tenant and caches nothing across
+them.
+
+### <a id="fjs-d146"></a>2026-08-25 · `FJS-D146` — a model that opts into capabilities still applies its `@@gate`. Both, ANDed, and the gate is the floor.
+
+The three answers were AND, OR, and exclusive-per-model, and the argument against
+AND was Invariant 4: a model graded on two axes has two owners of one refusal.
+
+**AND wins because the two axes answer different questions and only one of them can
+be asked at a bootstrap.** Sorted by what each layer can *see*, the division is not a
+duplication:
+
+| Layer | Sees | Therefore |
+| --- | --- | --- |
+| `@@gate` | the session. Reads nothing | the only layer usable before anything is read |
+| capability | a flat list on the principal. Reads nothing | may refuse safely — verb-scoped, leaks nothing |
+| `@@allow` | the row. Costs the query | must filter; refusing would leak |
+
+OR makes the gate a bypass — hold the capability and the ladder stops applying, which
+turns *anonymous* into a caller with a grant. Exclusive-per-model makes a model that
+adopts capabilities unreachable from the standing tier, and `FJS-519` is what that
+costs: the table whose rows decide access has to keep the ladder, because its writers
+go through `asSystem()` and a capability there is enforced by nothing.
+
+**The cost is real and has to be written down: opting in usually means flattening the
+gate.** `@@gate("2.4.4.5")` with `@@capabilities` means a caller needs level 4 AND
+`Invoice.create`, so a billing clerk at READER(2) holding the capability is refused by
+the ladder — which is the case the grid exists for. A model that opts in generally
+wants its gate flat at the read floor (`@@gate("2")`) and the grid doing the rest.
+That is not the gate becoming decorative: it is the gate saying *you must be a
+member at all*, which is the one thing a capability cannot say, because a stranger
+holds no list.
+
+**Which makes a static check possible and it should exist**: a model carrying
+`@@capabilities` whose write levels sit above its read level is declaring a grid and
+then gating it by ladder, and the capability is unreachable for exactly the callers it
+was written for. A `fli check` warning, in the family that reads the seed — not an
+error, because a deliberately high floor under a grid is a legitimate belt-and-braces.
+
+### <a id="fjs-d147"></a>2026-08-25 · `FJS-D147` — the grant column is a synthesised `Capability[]` type, the column tier is `@capability`, and none of this is a package.
+
+Two spellings and a packaging question, settled together because they are one
+question about where this lives.
+
+**The column that holds grants is typed, not attributed.** `capabilities
+Capability[]` — `Capability` is a type litestone synthesises from the schema's own
+surface, the way `File` is a built-in carrying behaviour. `FJS-D139` already rules
+that the set is derived, so the type IS that set: validation, the escalation guard and
+the role editor's picker all read one source.
+
+The alternative considered was `String[] @capability`, and it was rejected on a
+collision found while writing it out. `@capability` is also wanted on an ordinary
+column to say *writing this column is its own capability* (`hostname String
+@capability`), and the two meanings are not distinguishable by type — a `String[]`
+column may legitimately want the column tier. Two roles need two words, and typing
+the grant column is better than inventing a second attribute: the type states what
+the column holds, which is a fact about the column rather than a rule about it.
+
+So: **`Capability[]` for the column that holds grants, `@capability` for a column
+whose write is one.**
+
+**And it is seed syntax in litestone, not a package.** `IDEAS/package-map.md`
+reserved `warden` as a tier-1 package; the reservation is retired. Three things
+argued against it and none for it: row tenancy and value sets both shipped as a seed
+declaration plus a battery with no package of their own; `FJS-D113` refused a
+*declaration* for membership because the resolver varies per application, which
+applies unchanged to role → capability expansion; and `DECISIONS.md` § Outpost names
+`warden` among the words rejected under the rule that infrastructure takes place
+nouns and AI takes personified nouns. A capability is enforced at the Data boundary,
+so it belongs where every other Data-boundary rule is declared.
+
 ### <a id="fjs-d140"></a>2026-08-25 · `FJS-D140` — `@@capabilities` covers writes and named moves. `read` is opt-in, because a missing read capability is the one refusal nobody can see.
 
 A model that opts into capabilities has said nothing yet about *which of its
@@ -566,6 +798,26 @@ schema syntax rather than data stored in a customer's rows, which is what made
 none of this: the table whose rows decide access keeps its full ladder, because
 its writers go through `asSystem()` and a capability declared there would be
 enforced by nothing (`FJS-519`).
+
+### <a id="fjs-d151"></a>2026-08-26 · `FJS-D151` — the caller's set is `auth().capabilities`.
+
+Named because nothing named it. `FJS-D139` settled what a capability IS and
+`FJS-D147` settled how a column holds one, and neither said what the claim on the
+principal is called — the record carries `auth().perms` twelve times, every one of
+them from the probe that predates the vocabulary those two rulings fixed.
+
+It is not a cosmetic gap. The claim is what enforcement reads, what every
+application's principal resolver writes, and what a role expansion produces; a
+second spelling appearing later is a rename across app code rather than a schema
+edit. `perms` is also an abbreviation of a word this design deliberately stopped
+using — a *permission* named a thing in a list, and `FJS-D139` replaced that with a
+reference to something the seed declares.
+
+So: **`auth().capabilities`**, a flat list, resolved onto the principal at the same
+seam a per-request standing is (`FJS-D113`) and per tenant (`FJS-D149`). Measured
+cheap before being ruled: basecamp's standing already comes off
+`ctx.locals[MEMBERSHIP]`, resolved once per request, so a union across several role
+assignments is a join at that seam rather than a per-write cost.
 
 ### <a id="fjs-d139"></a>2026-08-25 · `FJS-D139` — a capability is a REFERENCE to something the seed already declares. It is never a name in a list, so there is no `enum Capability`.
 
@@ -1265,6 +1517,51 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d152"></a>2026-08-26 · `FJS-D152` — litestone's clock has ONE owner and it is the client. The `@updatedAt` trigger is retired, and `@updatedAt` stops covering a raw `UPDATE`.
+
+`createClient({ now })` reached `now()` in a row policy and `@@softDelete`'s
+stamp. `@default(now())` was a column DEFAULT, `@updatedAt` an AFTER UPDATE
+trigger, the retention cutoff a bare `Date.now()` — three clocks in the database
+and one in JavaScript, and the option was named as though it owned all four. So
+a suite frozen at 2020 got a row stamped today, and **the one thing a frozen
+clock is for — a row aging past a window — could not be staged at all.**
+
+The conservative option was to bind the value in JS only when a clock is
+injected, leaving the trigger as the floor. **Measured, and it is the worse of
+the two.** The trigger's guard is `WHEN NEW.x IS OLD.x`, which reads as *fire
+whenever the value being written equals the one stored* — and under a frozen
+clock that is every write after the create. `update`, `updateMany` and `upsert`
+each came back stamped 2020 with the database holding today. That is `FJS-396`'s
+shape (RETURNING is evaluated before an AFTER trigger, and junction hands that
+row to the HTTP response *and* the `svc updated` broadcast), so naming the column
+in the SET clause had only ever closed it **while the two values differed**. The
+conservative variant is *more* exposed, not less: it only ever runs with a clock
+injected, which is exactly the case where they are equal.
+
+So the trigger goes. Everything litestone writes reads the client's clock —
+`@default(now())` and `@updatedAt` on create through the generated-default map,
+`@updatedAt` on update through `stampSets`, plus the retention cutoff on both the
+SQLite and jsonl passes. `FJS-396` closes at the root rather than being narrowed
+a second time.
+
+**The price is a floor that is no longer symmetric, and it is the ruling.** The
+column DEFAULT stays, so a raw `INSERT` still stamps; a raw `UPDATE` does not.
+`@updatedAt` is a client stamp now, and a hand-written statement, a JS migration
+or a `db.asSystem().sql` owns its own. That is the correct trade because the
+alternative is a stamp that cannot be tested: a mechanism inside SQLite is one no
+suite can move, and a framework whose timestamps are unreachable from a test is a
+framework whose time-dependent behaviour is asserted nowhere.
+
+Two things are stated rather than left implicit. **Upgrading is one generated
+statement** — pristine stops carrying the trigger, `droppedTriggers` in
+`migrate.js` already walks for it, `DROP TRIGGER IF EXISTS` with no table
+rebuild. And **one clock is still not achievable**: a raw statement reads
+SQLite's, and a `@derived` expression using `now()` is compiled once at startup
+into a subquery with no parameter to bind. Both are named in the docs rather than
+presented as covered.
+
+`FJS-531`.
+
 ### <a id="fjs-d142"></a>2026-08-25 · `FJS-D142` — exact numbers are `Int @scale(n)`, money is `@money(currency)` on top of it, and the minor-unit table is the platform's rather than ours.
 
 `.lite` has eight scalar types and nothing between `Int` and `Float`, so every
@@ -1322,6 +1619,30 @@ value object is a separate question with a separate home (toolbelt, beside
 **Storing a Money as JSON TEXT stays retired** (`packages/litestone/docs/roadmap.md`):
 `opaqueSortKind` classifies a `Json` column as opaque, so `$checkOrderBy` throws
 on it, and a price nobody can sort, group or sum is not a price column.
+
+**BUILT 2026-08-26.** `Int @scale(n)` and `Int @money(CUR | field: col | )`,
+refused at parse for a non-`Int` type, an array, both attributes together, more
+than nine places, a `field:` naming nothing or naming a non-`String`, and — the
+one that matters most — **a currency this runtime does not know**. That last
+refusal is only possible because `Intl.supportedValuesOf('currency')` exists:
+`Intl.NumberFormat` does NOT throw on an unknown code, it answers two decimal
+places, so `@money(UDS)` would have taken a plausible scale and been wrong by a
+hundred wherever the real currency has none. Both facts come from ICU and
+neither is a table this repo ships.
+
+The value of the feature turned out to be concentrated in **one refusal at the
+write**: a fraction is now `must be a whole number of minor units of USD — 12.99
+is 1299`, where it used to be SQLite's `cannot store REAL value in INTEGER
+column line.total` — true, about a physical column, and no use to the person who
+just typed the price. Storage, DDL and the JSON type are all unchanged;
+`x-scale` and `x-money` travel beside `type: 'integer'`, and the `field:` form
+deliberately resolves no scale, because it is not knowable from the schema.
+
+**One open item closed itself.** *The column's own name* — `cents Int @money`
+reading back `12.99` — was to be refused at parse. Under the ruling the stored
+value IS the integer, so `cents` reading back `1299` is honest and there is no
+mixed spelling left to refuse. The rule was an artefact of the float-returning
+draft.
 
 Open and deliberately not settled here: **per-row currency**, where `example`'s
 `Payment` already holds `amount` beside `currency` as two columns nothing pairs —
@@ -2048,6 +2369,79 @@ handles and would otherwise answer *is this copy safe under an open WAL* twice)
 
 ## API design (Junction)
 
+### <a id="fjs-d145"></a>2026-08-25 · `FJS-D145` — a live list's answer is a WINDOW THAT GROWS, not pages. A keyset cursor is the wire under it and never a concept anyone types. `offset` stays, for the numbered page it was always right for.
+
+The last thing `IDEAS/client-data-lifecycle.md` was written about (its Hole 4,
+ranked 2.15). It is ruled after the rest of that file was built, because what
+the store became changes the answer.
+
+**Four parts.**
+
+**1. `limit` is the window; `more()` raises it.** A live resource pages by
+growing, not by stepping. There is no page 3, and the reason is that nobody who
+does live data has one: TanStack DB's query-driven sync goes from ten products
+to twenty by sending the delta rather than reloading, Zero keeps a limited query
+live as a materialised view, and Relay appends into a connection. The framework
+had the incompatible half — a `channel:` subscription pushing rows into a store
+that pages by position, with no coherent answer to *what does page 3 mean now*.
+
+**2. A cursor is the WIRE and not the concept.** Keyset: the sort key plus a
+unique tiebreaker, compared as a row value. Both halves are already declared —
+`db.$checkOrderBy()` is the one definition of what may be sorted by and why, and
+its `reason` already separates *no such field* from *`@computed`, so SQLite can
+neither sort nor paginate by it*, which is exactly the distinction a cursor has
+to make; the schema states the unique keys. So the tiebreaker is derived and
+nobody writing an application types the word cursor.
+
+**3. `stale` shrinks, and this is the part that is only true now.** A window
+bounded by VALUES answers *is this row in it* with a comparison the browser
+already makes — `comparatorFor` is the same `parseSort` the server compiles.
+Today a pushed row past page 1 is refused and counted, because a list paging by
+position cannot know whether the row belongs on an earlier page. With a window
+it can: a row landing inside is placed, and `stale` reduces to the honest case,
+a row beyond the far edge. That turns the counter from *the framework cannot
+page* into *there is more below*, which is a thing a view wants to render
+anyway.
+
+**4. `offset` stays exactly as it is.** A numbered page is a legitimate UI and
+`Pagination.mesa` renders one. The rule is **`offset` is what you ASK for; the
+window is what a live resource GETS** — and asking for one is not an error, it
+is asking for today's behaviour, including the refusal past page 1. The default
+is derived rather than configured: a cursorable ordering over a model with a
+unique key gets a window, everything else gets offset.
+
+**Opaque, and it costs less here than it costs anywhere else.** Relay's
+rationale holds — the server owns the format, the client cannot fabricate one,
+and an unencoded cursor is filtered on by somebody within a week, after which
+the sort key and the tiebreaker are public API forever. What opacity normally
+costs is debuggability, and here it does not: an illegal cursor is refusable
+**by name** through the same mechanism that already refuses an illegal sort, and
+`fli tinker` can decode one, because the server is in the room.
+
+**One refusal, and it is the reason this is a framework feature rather than an
+application's.** A cursor over an ordering with no unique tiebreaker is refused
+by name. The keyset literature is unanimous that a non-unique sort column fails
+*silently* — rows at the boundary are duplicated or skipped, with no error and
+no gap, which is this repo's whole silent-wrong-data class. The unique keys are
+declared, so the framework can refuse at the seam instead of being subtly wrong.
+Same move as `@@unique` over a nullable column (`FJS-D130`).
+
+**A change of filter or `orderBy` RESETS the window.** That is a `load()`, not a
+`more()`, and it is stated here because it is cheap to say now and expensive to
+discover: a `more()` carrying a cursor minted under a different sort is a scan
+through an order that no longer exists.
+
+**What this deliberately does not build.** Numbered pages backed by cursor
+tokens — the worst of both, and the shape that makes a cursor a concept an
+application has to hold. `offset` made illegal. And a second paging directive
+landing in `ctx.directives` before the precedence against `$offset` is settled.
+
+**It is smaller than the ranking reads.** `findManyCursor` already ships in
+litestone's client, so what is missing is the directive, the envelope
+(`endCursor`, whether there is more) and the store's window — not the SQL. The
+design question was never the query; it was where the cursor is carried and what
+a live list does with one.
+
 ### <a id="fjs-d144"></a>2026-08-25 · `FJS-D144` — a fixed-time schedule fires ONCE per calendar day across a DST boundary, following Vixie cron. A wildcard schedule follows the new wall clock, and a shift over three hours is a clock correction.
 
 Caravan evaluates a cron expression in a named zone, and what it does at a
@@ -2085,7 +2479,20 @@ saving in winter. An IANA name, validated at parse against
 
 **This is a Caravan ruling and not Junction's**, on `FJS-D36`'s ground: Caravan owns
 the clock, `app.scheduler` is an in-process timer with no persistence, and a
-schedule that dispatches into a queue is the queue's. `FJS-525` is the work.
+schedule that dispatches into a queue is the queue's.
+
+**Built the same day** (`FJS-525`). Both boundaries fall out of one loop rather
+than being special-cased: a fixed-time schedule keeps a mark — the last
+wall-clock minute it looked at — and each tick walks FORWARD over the local clock
+from that mark to now. Spring goes 01:59 → 03:00, so the skipped hour is still in
+the walk; autumn goes 01:59 → 01:00, so the walk is empty until it passes 01:59
+again. **The mark only ever moves forward**, which is the half that is easy to get
+wrong: the first implementation let it follow the clock down, walked the repeated
+hour a second time, and reproduced the defect in new code. A fixed-time fire is
+named by the wall clock it belongs to, so the autumn duplicate collapses into one
+dispatch id through `FJS-294`'s machinery. Free with the walk: a minute missed to
+a blocked event loop is caught up, which sampling the current minute could not
+see.
 
 ### <a id="fjs-d126"></a>2026-08-25 · `FJS-D126` — a tenant DOES carry configuration. The read moves to call scope, the source is a resolver, and what may be overridden is an explicit list refused at boot.
 
@@ -5098,6 +5505,13 @@ pinned upstream release with its checksum verified, from `deploy:setup` and
 `litestone replicate --install`; `$LITESTREAM_BIN` so an operator with a packaged
 copy is not fought; and a digest pin in the Dockerfile `make:deploy` writes.
 `FJS-243` is that work — today there is no version check at all.
+
+**What this ruling does not cover is coming back.** Driving upstream's binary is the
+right call outbound and leaves restore in the same hand-typed shape upstream ships it
+in: one `litestream restore` per database, with the jsonl/logger databases litestream
+cannot replicate on a third route. The schema knows the set; nothing reads it inbound.
+That is `FJS-540`, and it is a wrapper question rather than a fork question — exactly
+what this ruling says the project is allowed to build.
 
 **Revisit only on a named trigger**: upstream goes unmaintained *and* a CVE
 lands; a patch we need is refused upstream; or "install a Go binary first"

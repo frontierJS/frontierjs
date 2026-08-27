@@ -29,7 +29,13 @@ const HERE = import.meta.dir
 //     Same bytes, both ways: auth ships them as .lite and schema.ts reads them.
 //     This file is the in-memory alternative, for an app assembling one string.
 
-export const appSchema = readFileSync(join(HERE, '../../../db/schema.lite'), 'utf8')
+// The FILE, kept beside the string it was read from. It is what every relative
+// `database { path }` and the `tenancy { }` block resolve against once
+// `resolveFrom: 'schema'` is stated below — a schema assembled in memory has no
+// location, so this is the location (`FJS-449`).
+export const SCHEMA_FILE = join(HERE, '../../../db/schema.lite')
+
+export const appSchema = readFileSync(SCHEMA_FILE, 'utf8')
 
 // OutboxMessage arrives the same way and for the same reason — it is
 // @@gate("8") framework machinery that changes when @frontierjs/junction does,
@@ -94,35 +100,34 @@ export const STORAGE_BASE = process.env.STORAGE_BASE ?? `http://localhost:${proc
 // }`, so there is no single client here any more — there is a registry, and
 // every request opens the shop it names.
 //
-// `dir` and `registry` are passed rather than left to the declaration. Relative
-// paths in the block resolve against the SCHEMA FILE's directory, and this app
-// assembles its schema in memory (auth's fragments, the outbox model), so there
-// is no file to resolve against and the declaration would land them beside
-// whatever directory the process happened to start in. The CLI, which reads the
-// file, gets the same two paths from the block.
-export const SHOPS_DIR     = join(HERE, '../../../db/shops')
-export const SHOPS_REGISTRY = join(HERE, '../../../db/shops-registry.db')
-
-// `database audit` is the one file the registry does NOT redirect — a logger
-// database is shared across the fleet by design — so its declared path is the
-// only one still resolving against the process CWD. Every site and widget
-// script runs `cd <surface>` first, which is how `example/site/db/` came to
-// exist and sit there ignored by `*.db*`. Named absolutely here for the same
-// reason `dir` and `registry` are: a schema assembled in memory has no file to
-// anchor a relative path against.
-export const AUDIT_DIR = join(HERE, '../../../db/audit') + '/'
-
+// `path` is what makes the DECLARATION usable from any directory. The block says
+// `dir "./shops"` and `registry "./shops-registry.db"`, written against the
+// schema file's own directory; the string handed over here was assembled in
+// memory (auth's fragments, the outbox model), so without naming the file those
+// two land beside whatever directory the process happened to start in. Three
+// scripts here `cd <surface>` before running, which is how an orphan
+// `example/site/db/` came to exist and sit unnoticed under the repo's `*.db*`
+// ignore, and how one `vite build` prerendered twelve product pages as zero
+// products and exited 0 (`FJS-449`).
+//
+// The CLI reads the file and gets the same two paths. That is the point: one
+// answer, whoever is asking.
 const registry = await createTenantRegistry({
   schema:        fullSchema,
-  dir:           SHOPS_DIR,
-  registry:      SHOPS_REGISTRY,
+  path:          SCHEMA_FILE,
   encryptionKey: ENCRYPTION_KEY,
 
   // Every tenant's client is built with these. Without the gate every signed-in
   // user grades 1 and cannot write (see core/gate.ts); without FileStorage a
   // `File` column has nowhere to put the bytes.
   clientOptions: {
-    databases: { audit: { path: AUDIT_DIR } },
+    // Every tenant client anchors its declared paths the same way. `database
+    // audit` is the one file the registry does NOT redirect — a logger database
+    // is shared across the fleet by design — so it is the one that was still
+    // following the process CWD, and it is now the declaration's `./db/audit/`
+    // read from the app root.
+    path:        SCHEMA_FILE,
+    resolveFrom: 'schema',
 
     plugins: [
       new GatePlugin({ getLevel: shopGateLevel }),
@@ -172,6 +177,14 @@ async function openShop(id: string) {
 // has nothing to do with the request.
 await registry.getOrCreate(DEFAULT_SHOP)
 
+// The flagship's own settings, under `config` because the rest of the meta blob
+// is the fleet's business and this key is junction's (`tenantConfig` in app.ts).
+// `set` merges, so it is safe to run on every boot and does not stamp over
+// whatever else a shop keeps here.
+registry.meta.set(DEFAULT_SHOP, {
+  config: { name: 'Flagship Store', mail: { from: 'orders@flagship.test' } },
+})
+
 /**
  * What `createApp({ tenants })` is handed: the registry, with this app's answer
  * for a request that names no shop.
@@ -191,6 +204,12 @@ export const shops = {
   create:      (id: string, meta?: Record<string, unknown>) => registry.create(id, meta),
   getOrCreate: async (id: string) => { await registry.getOrCreate(id); return openShop(id) },
   list:        () => registry.list(),
+  // Each shop's own settings, which the registry has always carried as a JSON
+  // blob and nothing has ever read. This is what `createApp({ tenantConfig })`
+  // resolves per shop — a control plane rather than a row, which is the shape
+  // `FJS-D126` refused to declare precisely because it differs per app.
+  meta:        (id: string) => registry.meta.get(id) as Record<string, unknown>,
+  metaSet:     (id: string, patch: Record<string, unknown>) => registry.meta.set(id, patch),
   delete:      (id: string) => registry.delete(id),
 }
 

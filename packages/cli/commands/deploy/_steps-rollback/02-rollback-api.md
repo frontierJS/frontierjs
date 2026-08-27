@@ -44,10 +44,17 @@ if (hasReplaced) {
   // No _replaced — list available images for this app and let user choose
   log.info('No _replaced container found — checking available images...')
 
+  // The ID is in the format because a tag is a NAME: two tags can point at one
+  // image — a rebuild that produced identical layers, or a retag — so a
+  // rollback chosen by tag can restore the very bytes it was trying to leave,
+  // and nothing would say so (`IDEAS/deploy-plane.md` §2.3f).
+  const { parseImageList, movesBytes, short } =
+    await import(new URL('file://' + global.fliRoot + '/core/image.js'))
+
   let imageOutput = ''
   try {
     const result = context.exec({
-      command: `ssh ${host} "docker images --format '{{.Repository}}:{{.Tag}} {{.CreatedAt}}' | grep '^${appId}:' | head -10"`,
+      command: `ssh ${host} "docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.CreatedAt}}' | grep '^${appId}:' | head -10"`,
       stdio: 'pipe',
     })
     imageOutput = result?.toString('utf8').trim() ?? ''
@@ -55,7 +62,7 @@ if (hasReplaced) {
     imageOutput = ''
   }
 
-  const images = imageOutput.split('\n').filter(Boolean)
+  const images = parseImageList(imageOutput)
 
   if (images.length < 2) {
     log.warn('No previous image found to roll back to')
@@ -64,13 +71,22 @@ if (hasReplaced) {
   }
 
   // images[0] is current, images[1] is previous
-  const previousImage = images[1].split(' ')[0]
-  const currentImage  = images[0].split(' ')[0]
+  const current  = images[0]
+  const previous = images[1]
+  // Addressed by ID, so what starts is the artefact that was chosen and not
+  // whatever answers to that name by the time the command runs.
+  const previousImage = previous.id
 
-  log.info(`Current image:  ${currentImage}`)
-  log.info(`Previous image: ${previousImage}`)
+  log.info(`Current image:  ${current.tag}   ${short(current.id)}`)
+  log.info(`Previous image: ${previous.tag}   ${short(previous.id)}`)
 
-  const confirm = await question(`Roll back API to ${previousImage}? (y/N) `)
+  if (!movesBytes(current, previous)) {
+    log.warn('Both tags name the SAME image — this rollback would change nothing')
+    log.info('The previous deploy produced identical bytes, or the tag was moved')
+    return
+  }
+
+  const confirm = await question(`Roll back API to ${previous.tag} (${short(previous.id)})? (y/N) `)
   if (confirm.trim().toLowerCase() !== 'y') {
     log.info('API rollback cancelled')
     return

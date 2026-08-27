@@ -1,122 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema",
   "$defs": {
-    "User": {
-      "type": "object",
-      "title": "User",
-      "properties": {
-        "email": {
-          "type": "string",
-          "format": "email"
-        },
-        "name": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "emailVerified": {
-          "type": "boolean",
-          "default": false
-        },
-        "role": {
-          "type": "string",
-          "default": "user"
-        },
-        "accountId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "kind": {
-          "$ref": "#/$defs/UserKind",
-          "default": "human"
-        },
-        "status": {
-          "$ref": "#/$defs/UserStatus",
-          "default": "pending_verification"
-        },
-        "username": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "displayName": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "avatarUrl": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "scopes": {
-          "default": []
-        },
-        "isSystemAdmin": {
-          "type": "boolean",
-          "default": false
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "email"
-      ],
-      "x-litestone-policies": true,
-      "x-gate": {
-        "read": 4,
-        "create": 4,
-        "update": 4,
-        "delete": 5
-      },
-      "x-relations": [
-        {
-          "field": "account",
-          "model": "Account",
-          "type": "belongsTo",
-          "fields": [
-            "accountId"
-          ],
-          "references": [
-            "id"
-          ],
-          "onDelete": null,
-          "optional": true
-        },
-        {
-          "field": "memberships",
-          "model": "WorkspaceMember",
-          "type": "hasMany",
-          "fields": [],
-          "references": [],
-          "onDelete": null,
-          "optional": false
-        },
-        {
-          "field": "deployments",
-          "model": "Deployment",
-          "type": "hasMany",
-          "fields": [],
-          "references": [],
-          "onDelete": null,
-          "optional": false
-        },
-        {
-          "field": "apiKeys",
-          "model": "ApiKey",
-          "type": "hasMany",
-          "fields": [],
-          "references": [],
-          "onDelete": null,
-          "optional": false
-        }
-      ]
-    },
     "Credential": {
       "type": "object",
       "title": "Credential",
@@ -233,8 +117,25 @@
       "type": "object",
       "title": "Verification",
       "properties": {
+        "purpose": {
+          "$ref": "#/$defs/VerificationPurpose"
+        },
         "identifier": {
-          "type": "string"
+          "type": "string",
+          "description": "The address being proved. Required, and every purpose has one — that is the test for whether something belongs in this table at all."
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "oauthLink only: which identity is waiting to be attached once the address answers for itself. Null for the other two, which attach nothing."
+        },
+        "subject": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "expiresAt": {
           "type": "string",
@@ -243,6 +144,7 @@
       },
       "additionalProperties": false,
       "required": [
+        "purpose",
         "identifier",
         "expiresAt"
       ],
@@ -252,6 +154,154 @@
         "update": 8,
         "delete": 8
       }
+    },
+    "OauthFlow": {
+      "type": "object",
+      "title": "OauthFlow",
+      "description": "An authorization in flight.  `Oauth` and not `OAuth`, for the reason basecamp's `ThreeCX` is not `3CX`: the accessor is the model name with its first character lowered and nothing else, so `OAuthFlow` would be reached as `db.oAuthFlow`.  NOT a Verification, and the reuse was the mistake: nobody is proving anything here, there is no address yet and there may be no account at the end of it. `state` is a CSRF token echoed back by a redirect rather than a secret sent to a person, its life is minutes rather than hours, and it carries a PKCE verifier that no other row in this schema has a use for. Three different answers to what a column means is three tables wearing one name.",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "returnTo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Already checked against the app's allow-list when the flow started, so what is stored here is known good and the way back decides nothing."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "expiresAt"
+      ],
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
+    },
+    "User": {
+      "type": "object",
+      "title": "User",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "emailVerified": {
+          "type": "boolean",
+          "default": false
+        },
+        "role": {
+          "type": "string",
+          "default": "user"
+        },
+        "accountId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/UserKind",
+          "default": "human"
+        },
+        "status": {
+          "$ref": "#/$defs/UserStatus",
+          "default": "pending_verification"
+        },
+        "username": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scopes": {
+          "default": []
+        },
+        "isSystemAdmin": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "email"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 4,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "account",
+          "model": "Account",
+          "type": "belongsTo",
+          "fields": [
+            "accountId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": null,
+          "optional": true
+        },
+        {
+          "field": "memberships",
+          "model": "WorkspaceMember",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "deployments",
+          "model": "Deployment",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "apiKeys",
+          "model": "ApiKey",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
     },
     "Account": {
       "type": "object",
@@ -487,7 +537,8 @@
         },
         "role": {
           "$ref": "#/$defs/WorkspaceRole",
-          "default": "viewer"
+          "default": "viewer",
+          "description": "This caller's authority in this workspace. Nobody may change their own."
         },
         "invitedBy": {
           "type": [
@@ -523,6 +574,7 @@
         "workspaceId",
         "userId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 1,
         "create": 5,
@@ -563,11 +615,15 @@
       "title": "Invitation",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "email": {
           "type": "string",
-          "format": "email"
+          "format": "email",
+          "minLength": 6,
+          "maxLength": 200
         },
         "role": {
           "$ref": "#/$defs/WorkspaceRole",
@@ -586,7 +642,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "email",
         "expiresAt"
       ],
@@ -618,7 +673,9 @@
       "title": "Secret",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "name": {
           "type": "string",
@@ -646,7 +703,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "name"
       ],
       "x-litestone-policies": true,
@@ -678,7 +734,9 @@
       "title": "ApiKey",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "userId": {
           "type": "string"
@@ -687,7 +745,9 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "name": {
           "type": "string",
@@ -695,7 +755,9 @@
           "maxLength": 200
         },
         "tokenHint": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         },
         "scopes": {
           "type": "array",
@@ -760,10 +822,8 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "userId",
-        "name",
-        "tokenHint"
+        "name"
       ],
       "x-litestone-policies": true,
       "x-gate": {
@@ -806,7 +866,9 @@
       "title": "Server",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "name": {
           "type": "string",
@@ -930,7 +992,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "name",
         "slug"
       ],
@@ -940,6 +1001,101 @@
         "create": 4,
         "update": 4,
         "delete": 5
+      },
+      "x-transitions": {
+        "status": {
+          "reboot": {
+            "from": [
+              "online",
+              "unreachable"
+            ],
+            "to": "pending",
+            "gate": null,
+            "system": false
+          },
+          "drain": {
+            "from": [
+              "online"
+            ],
+            "to": "draining",
+            "gate": 5,
+            "system": false
+          },
+          "undrain": {
+            "from": [
+              "draining"
+            ],
+            "to": "online",
+            "gate": 5,
+            "system": false
+          },
+          "checkIn": {
+            "from": [
+              "pending",
+              "installing",
+              "unreachable"
+            ],
+            "to": "online",
+            "gate": null,
+            "system": true
+          },
+          "reportRunning": {
+            "from": [
+              "pending",
+              "provisioning",
+              "installing",
+              "ready",
+              "unreachable",
+              "stopped"
+            ],
+            "to": "online",
+            "gate": 5,
+            "system": true
+          },
+          "reportStopped": {
+            "from": [
+              "pending",
+              "provisioning",
+              "installing",
+              "ready",
+              "online",
+              "unreachable",
+              "draining"
+            ],
+            "to": "stopped",
+            "gate": 5,
+            "system": true
+          },
+          "reportRebuilding": {
+            "from": [
+              "pending",
+              "installing",
+              "ready",
+              "online",
+              "unreachable",
+              "draining",
+              "stopped"
+            ],
+            "to": "provisioning",
+            "gate": 5,
+            "system": true
+          },
+          "reportDestroyed": {
+            "from": [
+              "pending",
+              "provisioning",
+              "installing",
+              "ready",
+              "online",
+              "unreachable",
+              "draining",
+              "stopped"
+            ],
+            "to": "destroyed",
+            "gate": 5,
+            "system": true
+          }
+        }
       },
       "x-relations": [
         {
@@ -1016,6 +1172,7 @@
         "kind",
         "message"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -1037,6 +1194,23 @@
           "optional": false
         }
       ]
+    },
+    "OutpostNonce": {
+      "type": "object",
+      "title": "OutpostNonce",
+      "properties": {
+        "seenAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "x-gate": {
+        "read": 8,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      }
     },
     "Volume": {
       "type": "object",
@@ -1100,6 +1274,7 @@
         "serverId",
         "name"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -1127,7 +1302,9 @@
       "title": "Network",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "name": {
           "type": "string"
@@ -1153,7 +1330,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "name",
         "slug"
       ],
@@ -1212,6 +1388,7 @@
         "serverId",
         "networkId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -1252,7 +1429,9 @@
       "title": "Project",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "name": {
           "type": "string",
@@ -1283,7 +1462,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "name",
         "slug"
       ],
@@ -1328,7 +1506,9 @@
           "type": "string"
         },
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "name": {
           "type": "string",
@@ -1355,7 +1535,6 @@
       "additionalProperties": false,
       "required": [
         "projectId",
-        "workspaceId",
         "name",
         "slug"
       ],
@@ -1424,7 +1603,9 @@
       "title": "App",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "environmentId": {
           "type": "string"
@@ -1466,7 +1647,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "environmentId",
         "name",
         "slug"
@@ -1544,7 +1724,9 @@
       "title": "Domain",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "appId": {
           "type": "string"
@@ -1613,7 +1795,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "appId",
         "hostname"
       ],
@@ -1697,6 +1878,7 @@
         "appId",
         "serverId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 8,
@@ -1764,6 +1946,7 @@
         "appId",
         "networkId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 8,
@@ -1813,7 +1996,9 @@
           ]
         },
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "status": {
           "$ref": "#/$defs/DeployStatus",
@@ -1915,8 +2100,7 @@
       },
       "additionalProperties": false,
       "required": [
-        "appId",
-        "workspaceId"
+        "appId"
       ],
       "x-litestone-policies": true,
       "x-gate": {
@@ -1932,21 +2116,24 @@
               "pending"
             ],
             "to": "building",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "push": {
             "from": [
               "building"
             ],
             "to": "pushing",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "release": {
             "from": [
               "pushing"
             ],
             "to": "deploying",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "succeed": {
             "from": [
@@ -1955,7 +2142,8 @@
               "deploying"
             ],
             "to": "success",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "fail": {
             "from": [
@@ -1965,7 +2153,8 @@
               "deploying"
             ],
             "to": "failed",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "cancel": {
             "from": [
@@ -1975,14 +2164,16 @@
               "deploying"
             ],
             "to": "cancelled",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "rollback": {
             "from": [
               "success"
             ],
             "to": "rolled_back",
-            "gate": 5
+            "gate": 5,
+            "system": false
           }
         }
       },
@@ -2091,6 +2282,7 @@
         "deploymentId",
         "name"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -2118,7 +2310,9 @@
       "title": "Job",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "appId": {
           "type": [
@@ -2207,7 +2401,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "name"
       ],
       "x-litestone-policies": true,
@@ -2225,21 +2418,24 @@
               "failed"
             ],
             "to": "running",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "idle": {
             "from": [
               "running"
             ],
             "to": "pending",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "fail": {
             "from": [
               "running"
             ],
             "to": "failed",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "cancel": {
             "from": [
@@ -2248,7 +2444,8 @@
               "failed"
             ],
             "to": "cancelled",
-            "gate": null
+            "gate": null,
+            "system": false
           }
         }
       },
@@ -2359,6 +2556,7 @@
       "required": [
         "jobId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 8,
@@ -2386,7 +2584,9 @@
       "title": "Recipe",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "name": {
           "type": "string",
@@ -2443,7 +2643,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "name",
         "slug",
         "script"
@@ -2562,6 +2761,7 @@
         "serverId",
         "script"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -2653,6 +2853,7 @@
       "required": [
         "serverId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 8,
@@ -2751,6 +2952,7 @@
       "required": [
         "serverId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -2778,7 +2980,9 @@
       "title": "FeatureFlag",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "key": {
           "type": "string",
@@ -2813,7 +3017,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 100,
-          "default": 0
+          "default": 100
         },
         "createdBy": {
           "type": [
@@ -2824,7 +3028,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "key"
       ],
       "x-litestone-policies": true,
@@ -2878,7 +3081,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 100,
-          "default": 0
+          "default": 100
         },
         "variantKey": {
           "type": [
@@ -2892,6 +3095,7 @@
         "flagId",
         "environmentId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -2932,7 +3136,9 @@
       "title": "NotificationChannel",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "name": {
           "type": "string",
@@ -3001,7 +3207,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "name",
         "kind"
       ],
@@ -3043,7 +3248,9 @@
       "title": "AlertRule",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "name": {
           "type": "string",
@@ -3073,7 +3280,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "name",
         "metricName"
       ],
@@ -3135,6 +3341,7 @@
         "ruleId",
         "channelId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 5,
@@ -3238,6 +3445,7 @@
         "subjectId",
         "message"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 8,
@@ -3265,7 +3473,9 @@
       "title": "Dashboard",
       "properties": {
         "workspaceId": {
-          "type": "string"
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "name": {
           "type": "string",
@@ -3306,7 +3516,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "workspaceId",
         "name",
         "slug"
       ],
@@ -3384,6 +3593,7 @@
         "dashboardId",
         "kind"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 2,
         "create": 4,
@@ -3440,7 +3650,9 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
         },
         "actorId": {
           "type": [
@@ -3476,6 +3688,7 @@
         "subjectType",
         "subjectId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
         "read": 5,
         "create": 8,
@@ -3497,6 +3710,612 @@
           "optional": true
         }
       ]
+    },
+    "Blueprint": {
+      "type": "object",
+      "title": "Blueprint",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "icon": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "brandColor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 4,
+              "maxLength": 9
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "appType": {
+          "$ref": "#/$defs/AppType",
+          "default": "container"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "persistent": {
+          "type": "boolean",
+          "default": false
+        },
+        "volumePath": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "healthCheck": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 1
+        },
+        "cpuLimit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memLimit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 1000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "links": {
+          "default": []
+        },
+        "deprecatedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "slug",
+        "name",
+        "category",
+        "description",
+        "version",
+        "image"
+      ],
+      "x-version": "revision",
+      "x-gate": {
+        "read": 1,
+        "create": 7,
+        "update": 7,
+        "delete": 7
+      },
+      "x-relations": [
+        {
+          "field": "params",
+          "model": "BlueprintParam",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "BlueprintParam": {
+      "type": "object",
+      "title": "BlueprintParam",
+      "properties": {
+        "blueprintId": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "hint": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "defaultValue": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "secret": {
+          "type": "boolean",
+          "default": false
+        },
+        "generate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ParamGenerator"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "position": {
+          "type": "integer",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "blueprintId",
+        "key",
+        "label"
+      ],
+      "x-gate": {
+        "read": 1,
+        "create": 7,
+        "update": 7,
+        "delete": 7
+      },
+      "x-relations": [
+        {
+          "field": "blueprint",
+          "model": "Blueprint",
+          "type": "belongsTo",
+          "fields": [
+            "blueprintId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "RegistryImage": {
+      "type": "object",
+      "title": "RegistryImage",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "readOnly": true,
+          "x-litestone-kind": "tenancy"
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "digest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "default": 0
+        },
+        "inUse": {
+          "type": "boolean",
+          "default": false
+        },
+        "pushedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pushedBy": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "tag",
+        "digest"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 2,
+        "create": 8,
+        "update": 8,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "workspace",
+          "model": "Workspace",
+          "type": "belongsTo",
+          "fields": [
+            "workspaceId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "Backup": {
+      "type": "object",
+      "title": "Backup",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/BackupKind",
+          "default": "manual"
+        },
+        "status": {
+          "$ref": "#/$defs/RunStatus",
+          "default": "pending"
+        },
+        "destination": {
+          "$ref": "#/$defs/BackupDestination",
+          "default": "local"
+        },
+        "sizeBytes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestedBy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "x-gate": {
+        "read": 7,
+        "create": 7,
+        "update": 8,
+        "delete": 7
+      }
+    },
+    "HubConfig": {
+      "type": "object",
+      "title": "HubConfig",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "default": "Basecamp"
+        },
+        "baseUrl": {
+          "type": "string",
+          "format": "uri"
+        },
+        "adminEmail": {
+          "type": "string",
+          "format": "email"
+        },
+        "heartbeatTimeoutSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 3600,
+          "default": 120
+        },
+        "sessionTtlHours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8760,
+          "default": 168
+        },
+        "requireTwoFactorForOwners": {
+          "type": "boolean",
+          "default": false
+        },
+        "allowApiKeyAuth": {
+          "type": "boolean",
+          "default": true
+        },
+        "allowBotUsers": {
+          "type": "boolean",
+          "default": true
+        },
+        "backupEnabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "backupCron": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "default": "0 2 * * *"
+        },
+        "backupDestination": {
+          "$ref": "#/$defs/BackupDestination",
+          "default": "local"
+        },
+        "mailFromAddress": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "email"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mailFromName": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 80
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "baseUrl",
+        "adminEmail"
+      ],
+      "x-version": "version",
+      "x-gate": {
+        "read": 7,
+        "create": 7,
+        "update": 7,
+        "delete": 7
+      }
+    },
+    "NotificationPreference": {
+      "type": "object",
+      "title": "NotificationPreference",
+      "properties": {
+        "userId": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/NotificationKind"
+        },
+        "email": {
+          "type": "boolean",
+          "default": false
+        },
+        "inApp": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "userId",
+        "kind"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 1,
+        "create": 1,
+        "update": 1,
+        "delete": 1
+      },
+      "x-relations": [
+        {
+          "field": "user",
+          "model": "User",
+          "type": "belongsTo",
+          "fields": [
+            "userId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "VerificationPurpose": {
+      "type": "string",
+      "enum": [
+        "passwordReset",
+        "emailVerify",
+        "oauthLink"
+      ],
+      "title": "VerificationPurpose"
     },
     "AccountType": {
       "type": "string",
@@ -3724,6 +4543,44 @@
         "stat_counter"
       ],
       "title": "WidgetKind"
+    },
+    "ParamGenerator": {
+      "type": "string",
+      "enum": [
+        "random_hex_16",
+        "random_hex_32",
+        "random_hex_64"
+      ],
+      "title": "ParamGenerator"
+    },
+    "BackupKind": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "scheduled"
+      ],
+      "title": "BackupKind"
+    },
+    "BackupDestination": {
+      "type": "string",
+      "enum": [
+        "local",
+        "s3"
+      ],
+      "title": "BackupDestination"
+    },
+    "NotificationKind": {
+      "type": "string",
+      "enum": [
+        "deploy_success",
+        "deploy_failed",
+        "alert_firing",
+        "alert_resolved",
+        "member_joined",
+        "job_failed",
+        "weekly_digest"
+      ],
+      "title": "NotificationKind"
     }
   }
 }

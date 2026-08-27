@@ -70,6 +70,9 @@ const NOT_SEEDED: Record<string, string> = {
   session:      'a live sign-in, which nothing here has done',
   verification: 'a token in flight',
   oauth_flow:   'an authorization in flight',
+  // A nonce is spent, not stored: the row exists to refuse a replay for five
+  // minutes and is swept after. Seeding one would seed a refusal (FJS-376).
+  outpost_nonce: 'a signature already used, which nothing here has sent',
 
   // Empty because they describe something that has not happened.
   alert_event:  'nothing evaluates an alert rule (FJS-123)',

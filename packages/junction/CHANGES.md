@@ -1,5 +1,279 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-26 — `membershipClaim({ capabilities })`, and a standing claim that was a guess
+
+`FJS-D151`. 1541 tests, 0 fail, typecheck clean.
+
+A capability is always per tenant (`FJS-D149`) and the same person holds a
+different set in each, so the grant cannot live on the session. It is read off
+the membership row — the row the standing already comes from, so it costs no
+second query — and emitted as `auth().capabilities`, which is the one claim name
+this framework fixes rather than the app: litestone's grid reads that name, so
+what an app chooses is which COLUMN it comes from.
+
+Absent and empty are the same answer and both are legitimate; a column that is
+not a list is neither, and is refused by name rather than coerced into an empty
+set that reads as a caller holding nothing.
+
+**A standing's claim name was read off the end of `claims`**, which was the
+standing only while a resolver emitted exactly two. The third claim took the
+label the moment one existed, and basecamp's snapshot said the grant column was
+*read from `WorkspaceMember.role`*. `describe()` states `standingClaim` now.
+`principal.snapshot.md` gains a `Capability grants` row and names the grant claim
+for what it is.
+
+## 2026-08-26 — no browser had ever uploaded a file
+
+`FJS-542`. 1541 tests, 0 fail.
+
+`parseBody` lowercased the whole `content-type` header and then read the
+multipart boundary out of that copy. The media type is case-insensitive and its
+PARAMETERS are not — RFC 2046 §5.1.1 says so about this parameter by name — so
+the boundary handed to the splitter did not match the one in the body. No part
+was found, `data` was `{}`, and the request answered **`Request body is
+required` about a request that plainly has one**.
+
+Chrome and Safari send `----WebKitFormBoundary…`. Firefox sends dashes and
+digits. So this is every browser, and it is every file any browser has ever
+tried to upload to a Junction app.
+
+**Every probe of the path passed.** curl, Bun's own `new Request({ body: form })`
+and undici all generate lowercase-hex boundaries, and the one existing multipart
+test asserted the parsed body's TYPE and never its contents. It was found by
+putting a real file input in a real browser, and nothing short of that would
+have found it.
+
+Two values now — the raw header for parameter values, a lowercased copy for
+comparing the type — plus quote-stripping, which a boundary holding a space or a
+comma requires. `tests/multipart-boundary.test.ts`, negative-controlled.
+
+
+## 2026-08-26 — where an app's services are, probed rather than derived
+
+`FJS-458`. 1526 tests, 0 fail; typecheck clean.
+
+The autoload default resolved `dirname(Bun.main)/services` — the FLAT layout,
+entry and services as siblings. The layout this framework documents and
+scaffolds puts the entry at `api/index.ts` and the services at
+`api/src/services`, so the default named `api/services`, which is not there.
+Nothing fails: `autoloadServices` is not called, the app boots, `/health`
+answers, and every route those services would have mounted is a 404. Measured
+on `example` while moving it to the canonical layout — the boot line went from
+`services=12` to `services=3`, the three auth registers, and the only symptom
+was one URL that did not answer.
+
+`resolveServicesDir` is the one owner of the answer now, and it PROBES:
+`./services`, then `./src/services`, beside the entry, first one that exists.
+Both layouts, and an entry that has moved to `api/src/app.ts`, all resolve
+without the app saying anything. Nothing in it knows an app has an `api/`
+directory — that is the app's shape, not junction's — so a cwd-relative
+candidate is deliberately absent: that is how you pick up somebody else's
+directory when a command is run from the wrong place.
+
+**A declared directory is never probed around.** `services: { dir }` or
+`createApp({ autoload })` naming a directory that is not there is reported by
+name, loudly, wherever it happens — including in a test, because the app is the
+thing that stated it. Falling back to a probe would hide the case this is most
+likely to be: a relative path resolved against the wrong working directory,
+which lands on nothing and looks exactly like an app with no services.
+
+**And the miss is visible.** The boot banner carries `autoload=` — the directory
+that answered, or the candidates that did not:
+
+    services=20 autoload=api/src/services
+    services=3  autoload="none — probed api/services, api/src/services"
+
+A field rather than a warning. An app that registers its services by hand is
+not doing anything wrong, and a framework that shouts at a correct app teaches
+everyone to stop reading; `services=3` beside `autoload=none — probed …` says
+what a warning would have said, on the line people already read at boot.
+
+**The snapshot tools ask the same question.** `junction surface|jobs|principal`
+had to be handed `--services` because the app's own phase resolves against
+`Bun.main`, which when they run is the tool — so an app whose services are all
+autoloaded described as empty unless somebody remembered a flag. They now ask
+`resolveServicesDir` with the app MODULE named as the entry. `--services` is an
+override, and a directory named there and absent is fatal rather than skipped.
+
+**`build:app`'s bundling guard was the fourth caller and had its own copy**, so
+it checked `<entry>/services` while the app scanned somewhere else. On a
+canonical-layout app that meant the guard found nothing, downgraded its ERROR to
+a warning, and shipped a bundle that boots clean and 404s every route — the same
+failure one level up. It asks the resolver now, which is why the rule lives in
+`core/services-dir.ts` with node builtins and nothing else: `build:app` is a
+build script that imports none of the runtime.
+
+`example` dropped its `services: { dir }` declaration and boots with 20 services
+on the default; `basecamp` keeps its absolute `autoload:` for the reason that
+has nothing to do with layout — under `bun test` the entry is the test file.
+`fli new` keeps writing the declaration: it is a true statement, and it is the
+only form that also works against the published junction.
+
+## 2026-08-26 — `remove` declines `$withDeleted` by name
+
+`FJS-523`'s remaining half, and the change is what it SAYS rather than what it does.
+
+`remove` never honoured the directive and does not start now: against an already-deleted
+row the only action left is to destroy it, which is the one write that defeats
+`@@softDelete`. A directive on the ordinary DELETE would hand that to every caller who
+may remove a row — no separate permission to grade, no way back — so what a model
+declares recoverable would be recoverable until somebody put six characters on a URL.
+
+What was wrong is that it refused with a **404 naming the row**. The row is plainly
+there; the answer reads as *it is gone* rather than as *the flag is declined*, which is
+how the whole hole stayed invisible for as long as it did. It is a 400 naming
+`$withDeleted` and pointing at the patch that DOES free a `@unique` value.
+
+Two things are deliberate. It is graded on the **request**, never on the row's state —
+the same call must not succeed or refuse depending on data the caller cannot see. And
+it is silent on a model with no `@@softDelete`, where `remove` is already the hard
+delete the directive is asking about and there is nothing to decline.
+
+**Whether the model soft-deletes is ASKED** — `db.$softDelete` through
+`modelSoftDeletes`, memoised per client, keyed through `accessorCandidates` like every
+other name that crosses this boundary. Deriving it here would be a second reading of
+`@@softDelete`, and two readings drift. `in` rather than a bare read, so a Litestone
+older than the capability answers `false` and degrades to the previous behaviour instead
+of exploding — which is also how it found `FJS-536`.
+
+11 tests against a real Litestone client, with a model that hides nothing as the
+negative control.
+
+## 2026-08-26 — `findWindow`: the window is one function, and the page is walked in the order the cursor resumes in
+
+Two things, and the second is a defect the first exposed.
+
+**`findWindow(table, args, after, label)` is now the one owner of both paths a
+list read can take** — an ordinary page with the far edge minted off its last
+row, or a keyset scan resuming from an edge — and it is exported, because the
+derived find is not the only find. A service that assembles its own query (one
+forcing a tenant column, one narrowing to the filters it means to expose) had
+no way to answer `$after` short of restating both branches, and a restatement is
+how the tiebreaker, the absent `total` and the *a cursor and an offset never
+combine* rule end up with two answers. basecamp's audit trail is the first
+caller outside junction.
+
+**Then: a tie across the edge lost rows** (`FJS-535`). The page was ordered by
+the CALLER's `orderBy` and the cursor minted in the TOTAL order — the caller's
+plus the tiebreaker litestone appends — so where two rows tie on every sort key
+the page stopped wherever SQLite happened to stop while the edge named where the
+total order says it stopped. The rows in between were never served and the list
+reported itself complete.
+
+It is invisible in a fixture built one row at a time: an ordering only goes
+partial on a tie, and a tie on `createdAt` is a burst of writes inside one
+millisecond — the ordinary case for anything a hook writes. The existing
+non-unique walk in `tests/window.test.ts` passed because it ordered ASCENDING
+over sequential ids, where SQLite's own order and the total order agree by
+accident. It took building the thing: basecamp's audit trail, five rows sharing
+one timestamp across the 50-row edge, two of them gone.
+
+`table.orderTotal(orderBy)` is asked for the ordering and used for the page's
+`ORDER BY` and the cursor alike. **A list that cannot be totally ordered now
+carries no edge rather than a wrong one** — the read is still answered, because
+a read is not a request for a window, and `endCursor` is `null` so nothing asks
+for a position that cannot be named.
+
+## 2026-08-26 — the suite is green on a full run
+
+`tests/heartbeat.test.ts` § *holds a connection that answers the ping* asserted
+`app.channels.stats().connections` is 1 and found 2 on every full run, passing in
+isolation — one red on `bun run test` for as long as it existed, and
+`knownTestFailures` carried no entry, so the tests phase was red for everyone.
+
+**It was not a decision about what the heartbeat guarantees**, which is why it
+sat filed. Both halves were already asserted, by the cases that can make them:
+*evicts a connection that answers nothing* checks `connections === 0`, which is
+what eviction means and is about the socket under test; *holds a connection*
+checks `c.closed` on the line above, which is what holding means. The count
+beside it was a third claim — **no other test's socket exists** — that a case
+owning one connection cannot make, and that would be wrong in principle on a run
+where it passed.
+
+`toBeGreaterThan(0)`. The connection is counted; it does not claim to be alone.
+
+1513 pass, 0 fail, three consecutive full runs. `FJS-516`.
+
+## 2026-08-26 — `app.db` can be typed
+
+`App.db` was `unknown`. Honest — junction genuinely does not know what the
+client is, since a Litestone client and a plain table-shaped object are both
+valid and `createBaseService` adapts the latter — and unusable, because an app
+cannot narrow it: Invariant 5 rules that a property is typed by AUGMENTING an
+exported interface and never by redeclaring it, declaration merging requiring
+identical types so a redeclaration silently loses.
+
+**Junction had already solved this three times and `db` was the one that missed
+it.** `AppConduit`, `AppJobs` and `AppNotify` are each an empty interface a
+package augments, carrying the note *empty here on purpose … augment it, don't
+redeclare*. `AppDb` is the fourth, and here the augmenter is usually the APP
+rather than a package, which changes nothing about how it works.
+
+The cost of not having it was measurable: basecamp claimed a SECOND runtime name
+for the identical object — `app.claim('data', db)` — and read `app.data` 29
+times against `app.db`'s three, two names for one owner reached by obeying
+Invariant 5's letter (`FJS-532`).
+
+**The option stays `unknown` and the field is `AppDb`**, with one cast where they
+meet. Narrowing the option too would mean an app that augments could no longer
+pass the plain object `createBaseService` adapts — permissive in, typed out.
+
+## 2026-08-26 — `$after`: a live list grows a window instead of stepping through pages (`FJS-D145`)
+
+Offset paging is correct for a static table and silently wrong for a moving
+one — rows shift between page 1 and page 2, so one item is shown twice and
+another is never shown at all — and it sat worst beside this framework's best
+feature, a `channel:` subscription pushing rows into a store that pages by
+position.
+
+**`$after` is the window's far edge**, one row in
+`@frontierjs/toolbelt/directives`, so both transports carry it from one change
+and the bridge strips it from the filters like any other directive. A caller
+sending it is on the keyset path: no OFFSET, no COUNT, and `total` is `null`
+rather than guessed, because reporting the page length as the total is what
+makes a list claim to be complete every time it is capped.
+
+**An ordinary page carries the edge too**, minted from the last row it already
+holds — `endCursor` and `hasMore` on the list envelope. No second query, so a
+caller that never grows a window pays nothing for one. The tiebreaker is
+**asked of the table** (`cursorFor`) rather than derived here: it is the
+schema's, and two answers to it would name a position the next page does not
+resume from.
+
+**On the client, `resource().more()`** grows the window and `hasMore()` asks
+whether there is anything past it. It appends rather than places — the server
+answered in the window's own order and a keyset slice sorts after everything
+already in it — and `limit` grows with the window so the trim that guards page 1
+does not cut off what was just fetched. Growing is **not a chance to ask a
+different question**: the query and the directives are the last `load()`'s,
+because a cursor minted under one ordering names no position in another. It
+takes the same stamp a `load()` does, so a reload during a `more()` supersedes
+the slice instead of mixing two windows.
+
+One thing fell out of the entity keying: **a list is a set of ids in an order,
+so one row cannot be in it twice.** Growing a window is where that shows — the
+server resumes from the edge, but a row can arrive on the socket in between and
+be in both the list and the slice.
+
+14 cases in `tests/window.test.ts`, including a walk over a **non-unique**
+ordering through a real request. Green: 1509 tests, typecheck clean.
+
+## 2026-08-26 — `config.mail`, so a from-address can be a tenant's
+
+`AppConfig` gains an optional `mail: { from?, replyTo? }`.
+
+A from-address is the canonical per-tenant value (`FJS-D126`) — one deployment
+serving several customers has one of these per customer, printed on every
+receipt — and until now it existed only inside a mail adapter's own constructor
+options, where it is captured once and cannot vary per call. An adapter still
+takes its own `from` for an app that has one; this is the floor a tenant
+overrides.
+
+`example` is the first consumer, and the shape is worth reading before writing
+one: `createConduitMailer` resolves it per SEND through `app.configFor()` rather
+than destructuring it at construction, which is the one line that separates a
+fleet from a single deployment.
+
 ## 2026-08-26 — a write may name a soft-deleted row, so a held `@unique` value can be released (`FJS-523`)
 
 `SoftDeletedUniqueError` is a 409 telling a caller their value is held by a row

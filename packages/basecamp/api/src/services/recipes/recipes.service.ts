@@ -93,7 +93,7 @@ export function createRecipesService(app: BasecampApp) {
   /** The gated half. `RecipeRun` update and `Recipe` update are both above any
    *  standing a workspace grants, which is the schema's statement that an
    *  outcome is the machine's to write. */
-  const sys = () => app.data.asSystem() as any
+  const sys = () => $.db.asSystem() as any
 
   return createService({
     name:  'recipes',
@@ -239,7 +239,7 @@ export function createRecipesService(app: BasecampApp) {
 
     // ── startRun / finishRun — the engine's two writes ────────────────
     //
-    // `recipe:run` used to open `app.data.asSystem()` and write the run row
+    // `recipe:run` used to open `$.db.asSystem()` and write the run row
     // itself, behind a comment saying a job has no caller to scope to. It has
     // one: caravan records the actor and the tenant at dispatch and junction
     // re-binds both through `app.runAs`, so a handler's service call resolves

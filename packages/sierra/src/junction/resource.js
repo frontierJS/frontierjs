@@ -844,6 +844,33 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   }
 
   /**
+   * Grow the window — the live list's answer to paging (`FJS-D145`).
+   *
+   *   await orders.load(page.query, page.directives)
+   *   // ... a "load more" button
+   *   await orders.more()
+   *
+   * A keyset scan resuming from the edge of what this list already holds, so
+   * it cannot skip a row or serve one twice the way an offset does under a
+   * list that is being written to — which is the case this framework is best
+   * at and was worst for. The cursor is minted by the server and handed back
+   * verbatim; nothing here constructs one.
+   *
+   * **Growing is not a chance to ask a different question**: the query and the
+   * directives are the last `load()`'s, because a cursor minted under one
+   * ordering names no position in another. A different filter or a different
+   * sort is a `load()`.
+   *
+   * Answers the rows it added — `[]` when there is nothing past the window.
+   * `hasMore()` is the same question asked before pressing.
+   */
+  async function more() {
+    const rows = await junctionResource.more()
+    _rememberVersions(rows)
+    return rows
+  }
+
+  /**
    * One row, live — the same nodes the list is a view over, filtered to one.
    *
    * `service.get(id)` answers a plain object no announcement can reach, which
@@ -1204,6 +1231,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
   return {
     service, store, stale, make, load, save, record, mutate,
+    more, hasMore: junctionResource.hasMore,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
     version, versionField: versionOf, conflict,
     formFields, options,
@@ -1226,6 +1254,8 @@ function _emptyResource(name) {
     stale:   { get: () => 0, subscribe: fn => { fn(0); return () => {} }, bump: () => {}, reset: () => {} },
     make:    (spec) => Object.assign({}, spec),
     load:    async () => [],
+    more:    async () => [],
+    hasMore: () => false,
     mutate:  (_id, _intent, run) => (run ? run() : noop()),
     record:  () => ({
       id: null,

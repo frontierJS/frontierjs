@@ -29,8 +29,19 @@ export const MAIL_TARGET = 'provider:mail'
 export function createConduitMailer(app: App, opts: { from: string }): IMail {
 
   function payload(msg: MailMessage): Record<string, unknown> {
+    // Read per SEND, not captured at construction.
+    //
+    // This is a FLEET: one process serves every shop, and each one is a business
+    // whose customers see its name on the receipt. A from-address destructured
+    // out of `opts` when the plugin was configured is one address for all of
+    // them — the exact shape `FJS-D126` exists for, and the exact line
+    // `mail/index.ts:142` still has in junction's own Resend adapter.
+    //
+    // `configFor()` rather than `$.config`: a confirmation is sent from a
+    // Caravan job as often as from a request, and `$` refuses outside a service
+    // call. `runAs(actor, { tenant })` has warmed it either way.
     const body: Record<string, unknown> = {
-      from:    msg.from ?? opts.from,
+      from:    msg.from ?? app.configFor?.().mail?.from ?? opts.from,
       to:      Array.isArray(msg.to) ? msg.to : [msg.to],
       subject: msg.subject,
     }

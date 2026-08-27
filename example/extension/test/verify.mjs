@@ -308,13 +308,19 @@ const shipped = await until(async () => {
 })
 check('the Ship button runs the declared transition, not a PATCH of status', shipped, 'shipped')
 
-// …and it leaves the queue. The row comes BACK on the channel as `orders ship`
-// and jetty's store upserts whatever arrives, so this is the dock filtering on
-// render rather than the store removing it — see `FJS-493`, and the comment in
-// App.mesa that will be deleted with it.
+// …and it leaves the queue, and the STORE is what removes it (`FJS-493`). The
+// row comes back on the channel as `orders ship` carrying `status: 'shipped'`,
+// which the query this list was loaded with does not admit — so the store grades
+// it out rather than upserting it into a list it has left. Nothing on the wire
+// says a row has left a filter; there is no such event, which is why a store
+// that applies every announcement it gets is wrong here and only here.
+//
+// This used to be the dock re-filtering on render, which passes either way. The
+// store is now the only thing deciding, so this assertion has teeth: put the
+// upsert back and the shipped row stays on screen.
 const dropped = await until(async () => await evaluate(
   `document.querySelector('[data-order="${before}"]') ? null : true`))
-check('and the shipped order leaves the despatch queue', dropped, true)
+check('and the shipped order leaves the despatch queue — the STORE removes it', dropped, true)
 
 // ─── the island ────────────────────────────────────────────────────────────
 //

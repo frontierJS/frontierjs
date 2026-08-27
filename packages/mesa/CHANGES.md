@@ -1,5 +1,48 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-26 — a block owns its anchor
+
+`FJS-512` and `FJS-468`, which turn out to be one defect. 1333 vitest + 89
+runtime-browser + 47 vite-browser, 0 fail.
+
+A block asked for its anchor by leaving a label request pending, and the next
+node pushed to the template satisfied it. Between two blocks written on separate
+lines that node is a whitespace text run — and `tpl` keeps those as separate
+entries while the emitted template is one STRING, where adjacent text parses as
+a single DOM Text node. So both blocks resolved to the same anchor:
+
+    {#if moves.has('drain')}<Button …>Drain</Button>{/if}
+    {#if moves.has('undrain')}<Button …>Cancel drain</Button>{/if}
+
+Each inserts `[marker, content]` before the shared anchor, so the second block's
+DOM lands INSIDE the first block's `[marker, anchor)` range. Removing the first
+branch removes the second one's content with it, and the block that had just
+built that content sees no reason to run again. The page keeps a live, correct
+`{#if}` rendering nothing until something rebuilds the subtree.
+
+This is the rule a component invocation has followed since `FJS-110`, and the
+fix is that rule applied to `{#if}`, `{#each}`, `{#key}`, `{#await}`, `{@render}`
+and `{@html}` — `ownAnchor()` pushes a comment of the block's own rather than
+adopting a neighbour.
+
+**Two accidents decide whether a given page shows it**, which is what kept it
+unisolated for a day and made `FJS-512` read as a `{#if}` going stale beside an
+attribute that stayed current:
+
+  · a component-root template has its whitespace COLLAPSED, so the anchors were
+    already distinct there. The same three `{#if}`s in the same `<div>` are
+    correct at the root of a component and wrong one branch down, which is why
+    `chained-derived.mesa` passed 7/7 while basecamp's screen failed.
+  · which of the two blocks the flush reaches first. With plain elements in the
+    branches the removal happened to run before the insertion and the DOM came
+    out right; a kit `<Button>` adds a prop-push effect, the subscriber order
+    inverts, and the new branch is built into the range that is about to go.
+
+`test/block-anchor.test.js` pins both halves — seven emission shapes plus two
+DOM cases through a real mount, three of the nine failing against the compiler
+as it was. `each-outer-read.spec.mjs`'s two assertions pinned BROKEN for
+`FJS-468` are `true` now.
+
 ## 2026-08-25 — a block test reading a derived, covered
 
 `test/browser/runtime/{fixtures,specs}/chained-derived` — a `{#if}` whose test

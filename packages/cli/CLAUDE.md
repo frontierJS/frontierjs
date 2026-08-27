@@ -25,6 +25,25 @@ core/
   widget-surface.js     what a `widgets/` surface IS — shared by `new` and `make:widget`
   site-surface.js       what a `site/` surface IS — ditto, `make:site`
   extension-surface.js  what an `extension/` surface IS — ditto, `make:extension`
+  image.js      WHICH BYTES ran, and how far that answer travels — a registry
+                digest means the same thing anywhere, an image id means it on
+                one host, and a tag means nothing at all
+  build-check.js  can this image be PROMOTED, or only deployed — the three doors
+                configuration takes into an artefact (the context, an ENV line,
+                a build ARG) plus an unpinned base. It traces a context file
+                ACROSS STAGES, because a wholesale `COPY --from=b /app /app`
+                ships what a subtree copy does not, and grading on the context
+                copy alone refuses every multi-stage build here. Pure — the
+                caller reads the files, so the suite needs no daemon
+  plan.js       the journal rows a transition WOULD write — `Transition` +
+                `TransitionStep`, built once and either printed (1d) or inserted
+                (1e). The step list is READ off `_steps-docker/` with the
+                runner's own filter and sort, and each `skip:` is evaluated the
+                way the runner evaluates it, so a plan cannot describe a
+                pipeline that has moved
+  release.js    what a Release IS — the four terms and the content-addressed id.
+                Minting writes nothing: the id is a pure function of the tree and
+                the bindings, which is what makes a digest promotable
   vendor.js     pack the workspace into an app's build context
   config.js · bootstrap.js · ports.js · utils.js · server.js
 commands/  one directory per namespace — db, auth, api, web, widgets, site, extension,
@@ -32,9 +51,16 @@ commands/  one directory per namespace — db, auth, api, web, widgets, site, ex
            fetch, ai, cloudflare, caprover, completion, admin, literate, utils,
            fli, release, test, ksite (NOT FrontierJS — a separate static-site
            toolchain that used to hold the `site:` namespace)
+db/        deploy.lite — the deploy journal's models. OPENED, not installed:
+           `createClient({ schema, db })` with `db` naming `deploy.db` on the
+           target, so it declares no `database` block and `@@db(main)` in it
+           does not parse
 cli/src/   the CLI's own source tree
 web/       the browser-facing side
 tests/     compiler · checks · runtime · registry · server · deploy · project-root · steps
+           · deploy-journal (a real Litestone client over a real file)
+           · release-mint (what does and does not move a Release id)
+           · image-identity (registry digest vs image id vs tag)
 ```
 
 ---
@@ -258,6 +284,33 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   conditional on that lock, since a rewritten manifest has none that matches. A
   branch in the template instead would sit in a file nobody regenerates when the
   source mode changes.
+- **A `.dockerignore` pattern without `**` protects the context ROOT and nothing
+  under it.** Docker matches with Go's `filepath.Match`, where a plain `*` does
+  not cross a separator — measured: with `.env.*`, a root `.env.production` is
+  excluded and `api/.env.production` is COPIED; `**/.env.*` reaches both. That
+  is what `02b-build-check` grades and it found a live one, `db/*.db` admitting
+  `db/db/basecamp.db` into basecamp's image (`FJS-543`). **The step reads the
+  SERVER rather than this tree, and must**: the file most likely to be baked is
+  the one deliberately in no repository — `.env.production` sits at the deploy
+  root, which IS the build context — and it runs after `02-pull`, because before
+  it the server's Dockerfile is the previous release's. Refusing there and only
+  REPORTING in `deploy:local` is deliberate: that command answers *does this
+  build and start at all*, and `deploy:doctor` is where the question is asked
+  without deploying anything. `deploy.api.buildCheck = false` opts out, beside
+  the `envCheck` already there.
+- **A step file's prefix is `\d+[a-z]*`, and a LETTERED one is how you insert a
+  step without renumbering the rest.** `01b-env-check` sorts after
+  `01-preflight` because the runner sorts whole filenames, which is the point of
+  spelling it that way. The duplicate-prefix warning used to match on digits
+  alone and therefore fired on every deliberate insertion — a warning that is
+  always wrong is how everyone learns to ignore the one that is right.
+- **`fli deploy --plan` and `fli deploy:plan` print the same document, from
+  `deployPlan` in `_module.md`.** Two implementations of a plan is the failure
+  the whole Release design is arranged against: a plan is what somebody reads to
+  decide. `--plan` sets `context.config.abort` rather than returning — the
+  runner discovers steps AFTER the orchestrator and falls back to `_steps/` when
+  no `stepsDir` is set, which is the legacy CapRover list, so an early return
+  would run it.
 - **`project:map` and `project:view` read the API surface; they never scan for
   it.** What a service answers is decided at CONSTRUCTION — `collectCustomMethods`,
   read back through `svc.describe()` — so a regex over `*.service.ts` cannot

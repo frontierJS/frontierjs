@@ -9,8 +9,9 @@ import { Database }     from 'bun:sqlite'
 import { resolve, join, dirname, basename, extname } from 'path'
 import { tmpdir } from 'os'
 import { existsSync, mkdirSync, mkdtempSync, statSync } from 'fs'
+import { resolveAnchor, noteMintedDirectory } from './db-path.js'
 import { parse, parseFile, inferFromFk } from './parser.js'
-import { isSoftDelete, isSoftDeleteCascade, modelToTableName, modelToAccessor, updatedAtFields, NOW_SQL } from './ddl.js'
+import { isSoftDelete, isSoftDeleteCascade, modelToTableName, modelToAccessor, updatedAtFields, isUpdatedAtField } from './ddl.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
 import { detectM2MPairs, buildEdgeMap } from './ddl.js'
 import {
@@ -27,6 +28,8 @@ import {
 import { validate, applyTransforms, buildValidationMap, ValidationError } from './validate.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
+import { CapabilityPlugin, requireCapability, requireGrantSubset } from '../plugins/capability.js'
+import { capabilityDeclarations, capabilityNames } from './capabilities.js'
 import { buildPolicyMap, buildScopeMap, compileScope, compileDerived, checkDerivedType, dependsOnClock, policyExprToString, buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, evalJs, compileFieldPredicate } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, hashField,
@@ -36,7 +39,7 @@ import { backupSqliteTo } from './backup.js'
 import { resolveTenancy } from './tenancy.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS } from './ids.js'
-import { runSqliteRetention } from '../tools/retention.js'
+import { runSqliteRetention, compactJsonl } from '../tools/retention.js'
 export { ValidationError } from './validate.js'
 
 // ─── Transition error types ──────────────────────────────────────────────────
@@ -123,6 +126,32 @@ export class TransitionGateError extends Error {
     this.required   = required
     this.got        = got
     this.status     = 403   // own the mapping — junction reads err.status, no registration needed
+    this.retryable  = false
+  }
+}
+
+/**
+ * A move declared `@system` — the application makes it, and this caller did not
+ * say they were the application.
+ *
+ * Separate from `TransitionGateError` because the remedy is different in kind.
+ * A gate refusal is answered by being more senior; this one cannot be answered
+ * by any caller at any level, only by the code that owns the move naming the
+ * column on the write. Both are 403, and a screen that treats them alike tells
+ * a person to ask an administrator for something no administrator can do.
+ */
+export class TransitionSystemError extends Error {
+  constructor(model, field, transitionName) {
+    super(`Transition '${transitionName}' on ${model}.${field} is @system — the application makes this move, ` +
+          `not its caller. Name the column on the write to make it and keep the gate, the row policies and ` +
+          `the audit actor:\n\n` +
+          `    db.${model.charAt(0).toLowerCase() + model.slice(1)}.transition(id, '${transitionName}', { system: true })\n\n` +
+          `asSystem() makes it too, and drops all three with it.`)
+    this.name       = 'TransitionSystemError'
+    this.model      = model
+    this.field      = field
+    this.transition = transitionName
+    this.status     = 403
     this.retryable  = false
   }
 }
@@ -245,6 +274,20 @@ export function uniqueConflictColumns(err) {
   const m = /UNIQUE constraint failed:\s*(.+)$/m.exec(err?.message ?? '')
   if (!m) return null
   return m[1].split(',').map(s => s.trim().split('.').pop()).filter(Boolean)
+}
+
+// `CHECK constraint failed: qty > 0` → `qty > 0`. SQLite echoes the expression
+// as this emitter wrote it, which is the only machine-readable account of WHICH
+// check fired — the same position `UNIQUE constraint failed: doc.code` holds for
+// the other constraint, and the same reason it is parsed rather than guessed.
+export function checkViolationExpr(err) {
+  const m = /CHECK constraint failed:\s*(.+)$/m.exec(err?.message ?? '')
+  return m ? m[1].trim() : null
+}
+
+export function isCheckViolation(err) {
+  return err?.code === 'SQLITE_CONSTRAINT_CHECK' ||
+         !!(err?.message && err.message.includes('CHECK constraint failed'))
 }
 
 export function isUniqueConflict(err) {
@@ -464,19 +507,36 @@ function buildAutoIdMap(schema) {
 // required column declaring one could not be inserted at all — the insert
 // reached SQLite with the column missing and failed NOT NULL (FJS-423).
 //
+// `now()` IS here, and it is the exception that proves the rule: ddl.js can
+// express it and does, and the column DEFAULT stays as the floor for a raw
+// INSERT. What it cannot do is read the client's clock, so a create that omits
+// the column is stamped here instead — otherwise a frozen clock stamps a fresh
+// row with today (`FJS-531`). `@updatedAt` is stamped for the same reason and
+// is a THIRD mechanism: on create it is neither the trigger nor a `@default`,
+// it is an implied column DEFAULT that ddl.js writes from the attribute.
+//
 // Key PRESENCE decides, not `== null`: a stated null is a caller asking for
 // null, which is what a SQL DEFAULT does too, so a nullable `@default(cuid())`
 // answers the same as a nullable `@default(uuid())` either way. The id path
 // above differs on purpose — an id is never legitimately null.
-function buildGeneratedDefaultMap(schema) {
+function buildGeneratedDefaultMap(schema, now) {
   const map = {}
   for (const model of schema.models) {
     const entries = []
     for (const field of model.fields) {
       if (field.attributes.some(a => a.kind === 'id')) continue
+      // The stamp columns, by the same rule ddl.js uses — the ATTRIBUTE, or the
+      // name `updatedAt` on a DateTime. Reading only the attribute would leave a
+      // column named for the job unstamped now that no trigger covers it.
+      if (isUpdatedAtField(field)) {
+        entries.push({ field: field.name, generate: () => nowISO(now) })
+        continue
+      }
       const def = field.attributes.find(a => a.kind === 'default')
       if (def?.value?.kind !== 'call') continue
-      const generate = GENERATED_DEFAULTS[def.value.fn]
+      const generate = def.value.fn === 'now'
+        ? () => nowISO(now)
+        : GENERATED_DEFAULTS[def.value.fn]
       if (generate) entries.push({ field: field.name, generate })
     }
     if (entries.length) map[model.name] = entries
@@ -1522,6 +1582,22 @@ function suggestKey(unknown, allowed) {
   if (bestDist > threshold) return null
   if (bestDist >= lower.length) return null
   return best
+}
+
+// A refusal has to say what WOULD have been legal, and past a certain size the
+// full list stops being that. `Capability` is derived from the whole schema —
+// 153 values on a real application — and a message carrying all of them is one
+// nobody reads, so a large enum suggests the nearest name instead and says how
+// to see the rest. The threshold is about the message, not about capabilities:
+// any generated enum grows past it eventually.
+const ENUM_LIST_LIMIT = 12
+
+function enumOptions(meta, offending) {
+  const values = [...meta.values]
+  if (values.length <= ENUM_LIST_LIMIT) return `must be one of: ${values.join(', ')}`
+  const near = suggestKey(offending, values)
+  return (near ? `did you mean "${near}"? ` : '') +
+         `${values.length} values are legal — db.$enums.${meta.enumName} is the list`
 }
 
 // ─── Query-arg validation ─────────────────────────────────────────────────────
@@ -3463,6 +3539,66 @@ function makeTable(
       cols.map(c => (named?.[c] === undefined ? undefined : redactValue(c, named[c]))))
   }
 
+  // A CHECK the row did not satisfy.
+  //
+  // It used to escape as SQLite's own sentence inside a 500 — the server saying
+  // it broke about a request it understood perfectly, and a validation problem
+  // at that. `@@unique` has had the translated answer since `FJS-441`; `@check`
+  // is the same class and had never been given one (`FJS-534`).
+  //
+  // It becomes a `ValidationError` rather than a class of its own, because the
+  // way out is the way out of every other validation failure: send a different
+  // value. Two errors exist where two RECOVERIES exist — restore-or-release
+  // against send-another-value is why `SoftDeletedUniqueError` is separate from
+  // `UniqueConflictError` — and there is only one here.
+  //
+  // **The expression is for the developer and never for the person.** It goes on
+  // `err.constraint` and into the summary message, and it stays out of the
+  // per-field `errors[]` a form renders: `qty > 0` under a control is SQL
+  // reaching somebody who did not write it. An author who wants a sentence
+  // there writes one — `@check("qty > 0", "must be at least one")`.
+  function asCheckViolation(err) {
+    if (!isCheckViolation(err) || err instanceof ValidationError) return err
+    const expr = checkViolationExpr(err)
+    if (!expr) return err
+
+    const model = ctx.models[modelName]
+    const norm  = (e) => String(e ?? '').replace(/\s+/g, ' ').trim()
+    const want  = norm(expr)
+
+    // A field's own check names the column, so the message lands on the box.
+    const field = model?.fields?.find(f =>
+      f.attributes?.some(a => a.kind === 'check' && norm(a.expr) === want))
+    if (field) {
+      const declared = field.attributes.find(a => a.kind === 'check' && norm(a.expr) === want)
+      const out = new ValidationError([
+        { path: [field.name], message: declared?.message ?? 'is not valid' },
+      ])
+      out.model      = modelName
+      out.constraint = expr
+      return out
+    }
+
+    // A model-level one spans columns by definition, so there is no single box
+    // to mark and the empty path is the form-level answer — the shape
+    // `VersionConflictError` already takes for a refusal about a whole record.
+    const declared = model?.attributes?.find(a => a.kind === 'check' && norm(a.expr) === want)
+    const out = new ValidationError([
+      { path: [], message: declared?.message ?? 'this record is not valid' },
+    ])
+    out.model      = modelName
+    out.constraint = expr
+    return out
+  }
+
+  // One owner for "SQLite refused this write". Both constraints route through
+  // here, because eight call sites each choosing which translator to try is how
+  // one of them ends up trying neither.
+  function asConstraintError(err, data) {
+    if (isCheckViolation(err)) return asCheckViolation(err)
+    return asUniqueConflict(err, data)
+  }
+
   // ── which row of a batch ────────────────────────────────────────────────────
   //
   // A batch write throws SQLite's own message, which names the COLUMN and never
@@ -3628,6 +3764,14 @@ function makeTable(
   const _systemWriteKeys = new Set(
     Object.keys(fieldPolicy).filter(name => fieldPolicy[name].system)
   )
+  // @capability — the column tier of the grid. Precomputed for the same reason:
+  // empty on almost every model, so the per-write cost is a size test.
+  const _capabilityWriteKeys = ctx.capabilityMap?.[modelName]?.columns ?? new Set()
+  // The columns that HOLD capabilities, as opposed to the ones a capability grades.
+  // Typed `Capability[]` — litestone synthesises that enum from the schema's own
+  // surface, so the type carries both the typo refusal and the escalation guard.
+  const _grantColumns = new Set(
+    (_modelForKeys?.fields ?? []).filter(f => f.type?.name === 'Capability').map(f => f.name))
   const _modelRels = ctx.relationMap?.[modelName] ?? {}
 
   // ── @edge / @scoped write helpers ─────────────────────────────────────────────
@@ -3854,6 +3998,7 @@ function makeTable(
   // SYSTEM bypass: ctx.isSystem skips enforcement and logs a warning.
   //
   const _tableTransitions = ctx.transitionMap?.[modelName] ?? null
+  const _tableCapabilities = ctx.capabilityMap?.[modelName] ?? null
 
   // Resolve the caller's gate level for this model. GatePlugin owns the scale and
   // the per-request cache (ctx.levelFor). When a transition declares @gate the
@@ -3864,7 +4009,7 @@ function makeTable(
     return await ctx.levelFor(modelName, ctx)
   }
 
-  async function checkTransitions(data, whereParams, whereSql) {
+  async function checkTransitions(data, whereParams, whereSql, systemFields = null) {
     if (!_tableTransitions) return null
     if (ctx.isSystem) return null   // SYSTEM always bypasses — logged below
 
@@ -3914,6 +4059,28 @@ function makeTable(
         const level = await transitionLevel()
         if (!levelPasses(required, level))
           throw new TransitionGateError(tableName, fieldName, matchedName, required, level)
+      }
+
+      // ── The capability half of the same question ────────────────────────
+      // A named move is one of the four things a capability can refer to
+      // (`FJS-D139`), and it is graded HERE rather than in the plugin because
+      // this is the only place that knows which move a write turned out to be:
+      // `transition(id, 'pay')` and an update setting the column are the same
+      // move, and both arrive as a payload. ANDed with the gate above it
+      // (`FJS-D146`) — the gate is a floor, so both have to pass.
+      if (_tableCapabilities?.moves.has(matchedName))
+        requireCapability(modelName, matchedName, ctx)
+
+      // ── @system, the move half ──────────────────────────────────────────
+      // The same statement `@system` makes about a column, made about a MOVE:
+      // the application decides it and a caller may only ask. The escape is the
+      // column mechanism unchanged — name the field on the write — because a
+      // move IS a write to that column and there is no reason for two hatches.
+      // asSystem() passes for the reason it passes everywhere else.
+      if (transitions[matchedName].system && !ctx.isSystem) {
+        const named = Array.isArray(systemFields) ? systemFields : systemFields ? [systemFields] : []
+        if (!named.includes(fieldName))
+          throw new TransitionSystemError(tableName, fieldName, matchedName)
       }
 
       return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue }
@@ -4624,6 +4791,45 @@ function makeTable(
       )
     }
 
+    // ── @capability, the column tier ──────────────────────────────────────
+    // `Server.update` says a caller may write the row; `Server.hostname` says
+    // this one column needs a grant of its own (`FJS-D147`). Opt-in per column
+    // rather than derived, because deriving every writable column gives basecamp
+    // 461 capabilities and no picker can show that.
+    //
+    // Refused by name rather than dropped, which is the difference between this
+    // and a field @allow('write', …) that happens to name a capability: a
+    // capability THROWS (`FJS-D146`), because it is verb-scoped and refusing
+    // leaks nothing about any row.
+    //
+    // Only the WRITE tier is here. A per-column READ wants the predicate
+    // spelling — @allow('read', 'X' in auth().capabilities) — because a column
+    // read must STRIP rather than refuse, or a caller who never named the column
+    // gets a 403 on an ordinary list.
+    //
+    // The payload this reads is the one AFTER the create path applies its stamps,
+    // which is why @capability beside @default(auth().x) is refused at parse: the
+    // stamp would refuse itself and take every create with it.
+    // CREATE only. On an update the plugin's `_checkUpdate` owns this, because
+    // there the column grant REPLACES `Model.update` for the keys it covers and
+    // that partition needs the whole payload in one place. A create is the other
+    // shape: `Model.create` is the grant for making the row exist at all and is
+    // not the one a column grant was meant to withhold, so both apply.
+    if (!ctx.isSystem && requireAll && _capabilityWriteKeys.size &&
+        data && typeof data === 'object' && !Array.isArray(data)) {
+      for (const k of Object.keys(data))
+        if (_capabilityWriteKeys.has(k)) requireCapability(modelName, k, ctx)
+    }
+
+    // ── The escalation guard on a grant column ────────────────────────────
+    // The values are already known to be REAL capabilities — that is the enum's
+    // job, one layer down. This asks the other question: may this caller hand
+    // them out. Subset, never a rank (`FJS-529`).
+    if (!ctx.isSystem && _grantColumns.size && data && typeof data === 'object' && !Array.isArray(data)) {
+      for (const k of Object.keys(data))
+        if (_grantColumns.has(k)) requireGrantSubset(modelName, k, data[k], ctx)
+    }
+
     // Required-field pre-flight. The schema knows requiredness; without this
     // a missing NOT NULL field surfaced as SQLite's raw "NOT NULL constraint
     // failed" instead of a ValidationError shaped like every other field rule.
@@ -4713,7 +4919,7 @@ function makeTable(
           throw new ValidationError([{
             path:    [field],
             message: `invalid ${meta.enumName} value${bad.length > 1 ? 's' : ''} ` +
-                     `${bad.map(v => `"${v}"`).join(', ')} — must be one of: ${[...meta.values].join(', ')}`,
+                     `${bad.map(v => `"${v}"`).join(', ')} — ${enumOptions(meta, bad[0])}`,
           }])
         }
         continue
@@ -4726,7 +4932,7 @@ function makeTable(
       if (!meta.values.has(String(val))) {
         throw new ValidationError([{
           path:    [field],
-          message: `invalid ${meta.enumName} value "${val}" — must be one of: ${[...meta.values].join(', ')}`,
+          message: `invalid ${meta.enumName} value "${val}" — ${enumOptions(meta, val)}`,
         }])
       }
     }
@@ -5027,15 +5233,54 @@ function makeTable(
     return (_upsertUniqueColsCache = s)
   }
 
-  // ── @updatedAt — stamped in the STATEMENT, not read back off the trigger ────
-  // The DDL trigger stays and is the floor: it covers raw SQL and a migration,
-  // neither of which comes through here. But SQLite evaluates RETURNING BEFORE
-  // an AFTER trigger fires, so a write that leaned on it handed the caller the
-  // OLD timestamp while the row in the database already held the new one
-  // (FJS-396) — and junction gives that row to the HTTP response AND the
-  // `svc updated` broadcast, so every open tab replaced a correct row with a
-  // stale one. Naming the column in the SET clause answers RETURNING correctly
-  // and leaves the trigger a no-op for this write, since NEW is no longer OLD.
+  // ── The cursor's sort keys, and the tiebreaker ──────────────────────────
+  // A keyset cursor is a position in a TOTAL order, and an ordering with no
+  // unique column is not one: two rows sharing a `createdAt` sit either side
+  // of a page boundary and the comparison cannot separate them, so one is
+  // served twice and one is never served at all. No error, no gap — the
+  // silent-wrong-data class, and the reason the keyset literature calls a
+  // unique tiebreaker a correctness requirement rather than a tuning knob.
+  //
+  // The schema declares which columns are unique, so this is DERIVED rather
+  // than asked of the caller: the model's own id is appended, in the last
+  // sort key's direction, and nobody writing an application types the word
+  // cursor (`FJS-D145`). The order the caller asked for is unchanged — what
+  // is added is determinism among rows it left equal.
+  //
+  // It REFUSES only when there is nothing to append, which is a model with no
+  // unique column at all. Paging that by keyset cannot be made correct, and
+  // `limit`/`offset` is the honest answer.
+  //
+  // One owner, because the far side mints the FIRST window's edge off an
+  // ordinary page (junction's `find`) and an edge that disagreed with this
+  // about the tiebreaker would name a position the next page does not resume
+  // from — a scan that skips a row, which is the thing this exists to stop.
+  function cursorFields(orderBy) {
+    const fields = normaliseOrderBy(orderBy)
+    const uniqueCols = _upsertUniqueCols()
+    if (fields.some(f => uniqueCols.has(f.col))) return fields
+    const tie = ctx.models[modelName]?.fields
+      .find(f => f.attributes.some(a => a.kind === 'id'))?.name
+    if (!tie) throw new Error(
+      `${modelName}.findManyCursor: orderBy ${JSON.stringify(orderBy)} is not a total order and ` +
+      `this model declares no unique column to break the tie with, so a cursor would serve some ` +
+      `rows twice and skip others. Order by a @unique column, or page with limit/offset.`)
+    fields.push({ col: tie, dir: fields[fields.length - 1]?.dir ?? 'ASC' })
+    return fields
+  }
+
+
+  // ── @updatedAt — stamped in the STATEMENT, from the client's clock ──────────
+  // There is no DDL trigger any more and that is what makes RETURNING sound.
+  // SQLite evaluates RETURNING BEFORE an AFTER trigger fires, so while one
+  // existed the caller could be handed the value this statement named while the
+  // row already held the trigger's (FJS-396) — junction gives that row to the
+  // HTTP response AND the `svc updated` broadcast, so every open tab replaced a
+  // correct row with a stale one. Naming the column made NEW differ from OLD
+  // and stood the trigger down, which closed it for as long as the two values
+  // differed — and they are equal whenever the clock has not moved between two
+  // writes to one row, which under an injected clock is every write after the
+  // first (FJS-531). One writer, no trigger, no window.
   const _stampCols = updatedAtFields(ctx.models[modelName] ?? {}).map(f => f.name)
 
   // `named` is the columns this statement already sets, which is what the
@@ -5045,7 +5290,13 @@ function makeTable(
   // of the row being written are the whole set.
   function stampSets(named) {
     if (!_stampCols.length) return []
-    return _stampCols.filter(c => !named.has(c)).map(c => `"${c}" = ${NOW_SQL}`)
+    // A literal rather than a bind: this is appended to seven different SET
+    // lists whose parameter arrays are built separately, and a value that is
+    // positional in one of them and not the others is the bug this avoids. The
+    // text is machine-generated, never caller-supplied — but `now` IS the
+    // caller's function, so its answer is escaped rather than trusted.
+    const _at = nowISO(ctx.now).replace(/'/g, "''")
+    return _stampCols.filter(c => !named.has(c)).map(c => `"${c}" = '${_at}'`)
   }
 
   // Pre-compute base SELECT — reused by every buildSQL call
@@ -5852,6 +6103,10 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
               const rows = readAll(_fastFindUniqueStmt.all(v), { mode: 'single' })
               if (_nt) fireQuery({ operation: 'findUnique', args, sql: _fastFindUniqueSql, params: [v], duration: _nt ? performance.now() - _t0 : 0, rowCount: rows.length })
               if (rows.length > 1) throw new Error(`findUnique on "${tableName}" returned more than one row`)
+              // The plugin hooks are not skipped here — `_canFastFindUnique`
+              // requires there to be none. The LOG is a separate question: a
+              // table can declare `@@log` with no plugin installed anywhere.
+              if (tableHasAnyLog && rows[0]) emitLogs('read', [rows[0]])
               return rows[0] ?? null
             }
           }
@@ -5870,9 +6125,25 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const rows            = readAll(readDb.query(sql).all(...params), { mode: 'single', selectedFields: ps?.requestedFields })
       if (_nt) fireQuery({ operation: 'findUnique', args, sql, params, duration: _nt ? performance.now() - _fuT0 : 0, rowCount: rows.length })
       if (rows.length > 1) throw new Error(`findUnique on "${tableName}" returned more than one row`)
-      const row = rows[0] ?? null
-      if (row) { withIncludes([row], ps, include); const _r = finaliseOne(row, ps); attachFlatEdges([_r], scopedBy); return _r }
-      return null
+      let row = rows[0] ?? null
+      if (row) { withIncludes([row], ps, include); row = finaliseOne(row, ps); attachFlatEdges([row], scopedBy) }
+      // The same tail `findFirst`, `findMany` and `findManyAndCount` all have,
+      // and it had never been here. Two consequences, both silent:
+      //
+      //   · every plugin's read hook was skipped for the single most common
+      //     read an app makes. `ExternalRefPlugin` resolves a stored ref into a
+      //     public URL in `onAfterRead`, so a `File` column came back as its raw
+      //     `{"key":…,"provider":…}` from `get(id)` and as a URL from the same
+      //     column read by `find` — an `<img src>` that works in a list and is
+      //     broken on the detail screen beside it, and an edit form handed the
+      //     storage handle instead of the photograph (`FJS-541`).
+      //   · a `@@log` model recorded reads through every path but this one.
+      //
+      // `beforeRead` above was already here, which is what made the gap look
+      // like plugin support rather than half of it.
+      if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
+      if (tableHasAnyLog && row) emitLogs('read', [row])
+      return row
     },
 
 
@@ -6584,7 +6855,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (_noReturn) {
         let result
         try { result = writeDb.run(_crSql, ..._crParams) }
-        catch (e) { throw asUniqueConflict(e, row) }
+        catch (e) { throw asConstraintError(e, row) }
         const _crChanges = rowsChanged(writeDb)
         fireQuery({ operation: 'create', args: { data, include, select }, sql: _crSql, params: _crParams, duration: _nt ? performance.now() - _crT0 : 0, rowCount: _crChanges })
         if (!_crChanges) return null
@@ -6599,7 +6870,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // Uses writeDb so it works inside open transactions.
       let created
       try { created = read(writeDb.query(_crSql).get(..._crParams), { mode: 'single', hydrateFrom: true }) }
-      catch (e) { throw asUniqueConflict(e, row) }
+      catch (e) { throw asConstraintError(e, row) }
       fireQuery({ operation: 'create', args: { data, include, select }, sql: _crSql, params: _crParams, duration: _nt ? performance.now() - _crT0 : 0, rowCount: created ? 1 : 0 })
       if (!created) return null
       // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
@@ -6693,7 +6964,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           try {
             if (_cmNeedRows) { const r = stmt.get(...args); if (r) _cmInserted.push(r) }
             else stmt.run(...args)
-          } catch (e) { throw asBatchRowError(asUniqueConflict(e, row), count, rows.length, row) }
+          } catch (e) { throw asBatchRowError(asConstraintError(e, row), count, rows.length, row) }
           count++
         }
         // A mixed batch has no single SQL to report. Uniform — the ordinary
@@ -6785,7 +7056,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // ── Transition enforcement ────────────────────────────────────────────
       // Check before SQL: validates from-state, throws TransitionViolationError if invalid.
       // Note: uses whereParams (original, no policy filter) for the current-value SELECT.
-      const _transResult = await checkTransitions(row, whereParams, whereSql)
+      const _transResult = await checkTransitions(row, whereParams, whereSql, system)
       // If transitions apply, narrow WHERE to include AND field = currentValue (optimistic lock)
       const { sql: _txWhereSql, params: _txWhereParams } = _transResult
         ? applyTransitionWhereClause(_transResult, finalWhereSql, finalWhereParams)
@@ -6858,7 +7129,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           // An update moving a column ONTO a value another row holds raises the
           // same constraint a create does, and had none of the same answers.
           try { writeDb.run(_upSql, ..._upParams) }
-          catch (e) { throw asUniqueConflict(e, row) }
+          catch (e) { throw asConstraintError(e, row) }
           const _upChanges = rowsChanged(writeDb)
           fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: _upChanges })
           if (!_upChanges) {
@@ -6877,7 +7148,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // RETURNING * gives the updated row directly — no follow-up SELECT needed.
         // Uses writeDb so it works inside open transactions.
         try { updated = read(writeDb.query(_upSql).get(..._upParams), { mode: 'single', hydrateFrom: true }) }
-        catch (e) { throw asUniqueConflict(e, row) }
+        catch (e) { throw asConstraintError(e, row) }
         fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: updated ? 1 : 0 })
         if (!updated) {
           if (_transResult) throwTransitionRefusal()
@@ -6996,7 +7267,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       try {
         _umRows = _umNeedRows ? writeDb.query(_umSql).all(...params) : null
         if (!_umRows) writeDb.run(_umSql, ...params)
-      } catch (e) { throw asUniqueConflict(e, row) }
+      } catch (e) { throw asConstraintError(e, row) }
       const count = _umRows ? _umRows.length : rowsChanged(writeDb)
       fireQuery({ operation: 'updateMany', args: { where, data }, sql: _umSql, params, duration: _nt ? performance.now() - _umT0 : 0, rowCount: count })
       if (tableHasAnyLog && _umRows?.length) emitLogs('update', _umRows)
@@ -7309,7 +7580,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             } else {
               stmt.run(...args)
             }
-          } catch (e) { throw asBatchRowError(asUniqueConflict(e, row), count, rows.length, row) }
+          } catch (e) { throw asBatchRowError(asConstraintError(e, row), count, rows.length, row) }
           count++
         }
         sql = [...stmts.values()].map(e => e.sql).join('\n')
@@ -7562,6 +7833,43 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
 
 
+    // The ordering a window is walked in — the caller's, plus whatever it takes
+    // to make it TOTAL.
+    //
+    // The first window is an ordinary page and the cursor is minted off its
+    // last row, so the two have to be walked in the same order or the edge
+    // names a position that page did not stop at. It rarely shows: an ordering
+    // is only partial where two rows tie on every sort key, which for a
+    // `createdAt` is a burst of writes inside one millisecond — the ordinary
+    // case for anything a hook writes, and invisible in every fixture built one
+    // row at a time. Measured on basecamp's audit trail: five rows sharing one
+    // timestamp across the edge lost two of themselves, quietly.
+    //
+    // `null` rather than a throw where no tie can be broken. A caller asking
+    // for a cursor by name is told why (`findManyCursor`); a caller merely
+    // reading a list is asking for none, and refusing that read would turn a
+    // window into a requirement.
+    orderTotal(orderBy) {
+      let fields
+      try { fields = cursorFields(orderBy) } catch { return null }
+      return fields.map(f => ({ [f.col]: f.dir.toLowerCase() }))
+    },
+
+    // The edge of a window, minted from a row somebody already has.
+    //
+    // The first window is an ordinary page — junction's `find` runs
+    // findManyAndCount and then asks this for the last row's position, so
+    // growing a window costs no extra query and a list that never grows one
+    // pays nothing. Answers `null` where the row lacks a sort key, which is a
+    // `select` that dropped one: a cursor built from an absent value names a
+    // position that is not there.
+    cursorFor(row, orderBy) {
+      if (!row) return null
+      const fields = cursorFields(orderBy)
+      for (const { col } of fields) if (!(col in row)) return null
+      return encodeCursor(extractCursorValues(row, fields))
+    },
+
     // ── findManyCursor ──────────────────────────────────────────────────────
     // Cursor-based pagination — O(log n) via index, unlike offset pagination.
     //
@@ -7601,8 +7909,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       const mode   = sdMode({ withDeleted, onlyDeleted })
 
-      // Normalise orderBy — always an array of { col, dir }
-      const fields = normaliseOrderBy(orderBy)
+      const fields = cursorFields(orderBy)
 
       // Decode cursor if provided
       const cursorValues = cursor ? decodeCursor(cursor) : null
@@ -8016,7 +8323,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // Skips enforcement for SYSTEM auth (same as update()).
     //
     // updateMany() is NOT covered — transition safety requires single-row update().
-    async transition(id, transitionName) {
+    async transition(id, transitionName, { system = false } = {}) {
       if (!_tableTransitions) throw new CapabilityNotDeclaredError(modelName, 'transition()', '@@transitions',
         'No enum field on this model declares a transitions block, so there are no named moves to make.')
 
@@ -8031,7 +8338,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         throw new TransitionNotFoundError(tableName, transitionName, [...new Set(available)])
       }
 
-      return this.update({ where: { [idField]: id }, data: { [targetField]: targetValue } })
+      // `{ system: true }` becomes the column mechanism: a move is a write to
+      // this field, so the two hatches are one. Stated as a boolean here because
+      // the caller has already named the move, and the field it writes is not
+      // something they should have to look up.
+      return this.update({
+        where: { [idField]: id },
+        data:  { [targetField]: targetValue },
+        ...(system ? { system: [targetField] } : {}),
+      })
     },
 
     // ── transitions ─────────────────────────────────────────────────────────
@@ -8093,11 +8408,21 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       for (const [fieldName, spec] of Object.entries(_tableTransitions)) {
         const currentValue = row[fieldName]
         if (currentValue == null) continue
-        for (const [name, { from, to, gate }] of Object.entries(spec.transitions)) {
+        for (const [name, { from, to, gate, system }] of Object.entries(spec.transitions)) {
           if (!from.includes(currentValue)) continue
 
-          let allowed = gate == null ? true : levelPasses(gate, await levelFor())
-          let refusedBy = allowed ? null : 'gate'
+          // `@system` is asked FIRST and it is the cheapest: no level to
+          // resolve and no policy to evaluate, because the answer is the same
+          // at every level. It is also the one a screen must render
+          // differently — a gate refusal says *ask somebody more senior*, and
+          // this one cannot be answered by any caller at all.
+          let allowed   = !(system && !ctx.isSystem)
+          let refusedBy = allowed ? null : 'system'
+
+          if (allowed && gate != null) {
+            allowed   = levelPasses(gate, await levelFor())
+            refusedBy = allowed ? null : 'gate'
+          }
 
           if (allowed && policies) {
             updateOk ??= admits('update', row)
@@ -8106,12 +8431,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             refusedBy = allowed ? null : 'policy'
           }
 
-          // `refusedBy` says which half said no, because a screen has two
-          // different things to render: *you are not senior enough* and *not
-          // this record*. A status alone cannot carry that and the caller
-          // would otherwise guess from the gate being non-null, which is wrong
-          // for every ungated move a policy refuses.
-          out.push({ name, field: fieldName, from: currentValue, to, gate: gate ?? null, allowed, refusedBy })
+          // `refusedBy` says which half said no, because a screen has three
+          // different things to render: *not you, ever* (`system`), *you are
+          // not senior enough* (`gate`) and *not this record* (`policy`). A
+          // status alone cannot carry that, and the caller would otherwise
+          // guess from the gate being non-null — wrong for every ungated move a
+          // policy refuses, and wrong for every `@system` one.
+          out.push({ name, field: fieldName, from: currentValue, to,
+                     gate: gate ?? null, system: Boolean(system), allowed, refusedBy })
         }
       }
       return out
@@ -8144,42 +8471,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 // ─── Multi-database helpers ───────────────────────────────────────────────────
 
 // Resolve a database path definition to an absolute filesystem path.
+// Re-exported for the CLI, which answers the same question before a client
+// exists. The rule itself is core/db-path.js.
+export { schemaAnchor } from './db-path.js'
+
 // pathDef: { kind: 'literal', value } | { kind: 'env', var, default }
 // override: optional string from createClient options.databases[name].path
-// Where a relative `database { path }` is anchored.
-//
-// The declaration is written against the APP ROOT — `db/schema.lite` says
-// `./db/shop.db`, naming a sibling of itself from one level up — so anchoring it
-// to the process CWD makes the same schema mean a different file depending on
-// which directory the command was typed in. That is `FJS-449`: `litestone studio`
-// run from `db/` opened `db/db/shop.db`, an empty database it had just created,
-// and served it for nineteen hours; a `vite build` run from a surface root
-// prerendered twelve product pages as zero products and exited 0.
-//
-// The app root is where `db/` lives (Invariant 3), so it is the schema file's
-// own directory, or its parent when that directory is named `db`. A schema kept
-// anywhere else anchors to its own directory, which is what a flat single-file
-// example wants and is what it already got from the CWD.
-//
-// **It is opt-in, and the reason is measured.** Anchoring every caller that
-// passes a schema file breaks isolation-by-CWD, which is a real contract and not
-// an accident: basecamp's seed test runs the seeder in a scratch directory with
-// `cwd: dir`, redirecting `database main` by env var and `database audit` — which
-// has no env var — by the CWD alone. Under an unconditional anchor that audit
-// log went back to the shared `db/audit/` and the suite failed with SQLITE_BUSY.
-// basecamp's own `core/db.ts` documents depending on it.
-//
-// So the default is unchanged and the CLI opts in. That is where the defect was
-// reported from and where there is no isolation contract to break — a person
-// typing `litestone studio` in `db/` means the app's database, not a new one.
-// An app that assembles its schema in memory has no location to anchor to at
-// all, which is the other half this does not reach.
-export function schemaAnchor(schemaFilePath) {
-  if (!schemaFilePath) return null
-  const dir = dirname(resolve(schemaFilePath))
-  return basename(dir) === 'db' ? dirname(dir) : dir
-}
-
 function resolveDbPath(pathDef, override, anchor = null) {
   // An override comes from code — `createClient({ db })`, `databases: {…}` —
   // and code is written against the process, not against the schema file.
@@ -8206,7 +8503,10 @@ function openSqliteConnections(absPath) {
   if (absPath !== ':memory:') {
     try {
       const dir = dirname(absPath)
-      if (dir && dir !== '.' && !existsSync(dir)) mkdirSync(dir, { recursive: true })
+      if (dir && dir !== '.' && !existsSync(dir)) {
+        mkdirSync(dir, { recursive: true })
+        noteMintedDirectory(dir, absPath)
+      }
     } catch { /* fall through — let the Database() call surface the real error */ }
   }
 
@@ -8504,8 +8804,11 @@ export async function createClient({
   path:       schemaFilePath,  // path to .lite file  — e.g. './db/schema.lite'
   schema:     schemaInline,    // inline schema string — e.g. `model users { ... }`
   parsed:     schemaPreParsed, // pre-parsed parseResult (advanced)
-  resolveFrom = 'cwd',         // 'schema' anchors a relative `database { path }`
-                               // to the app root instead — see schemaAnchor
+  resolveFrom = 'cwd',         // where a relative `database { path }` is anchored:
+                               // 'cwd' (default) · 'schema' (the app root, from the
+                               // schema FILE) · a directory · a file: URL. An app
+                               // assembling its schema in memory has no file, so it
+                               // states the root — see core/db-path.js
 
   db:         dbPath,
   computed: computedInput,
@@ -8523,9 +8826,13 @@ export async function createClient({
   onLog,
   onQuery,
   policyDebug = false,
-  now,                   // () => Date | ISO string — the clock every time-dependent
-                         // rule reads. Injected so a test can freeze it and a report
-                         // can pin it; absent means the wall clock.
+  now,                   // () => Date | ISO string — the clock this client reads and
+                         // writes: `now()` in a policy predicate, `@@softDelete`'s stamp,
+                         // `@default(now())`, `@updatedAt` on create and update, and the
+                         // retention cutoff. Injected so a test can freeze it and a report
+                         // can pin it; absent means the wall clock. What it does NOT reach
+                         // is SQL that runs without it — a raw statement, and a `@derived`
+                         // expression, which is compiled once at startup (`FJS-531`).
   scopes:     scopeRegistry = {},   // { ModelName: { scopeName: scopeDef, ... } }
   allowChildFkOverride = false,     // false (default) → parent's co-FK silently overwrites child's value
                                     // true → explicit child value wins; missing values still auto-filled
@@ -8618,7 +8925,7 @@ export async function createClient({
   // and said nothing. The more specific channel still wins.
   if (dbPath && !inMemory && !resolvedOverrides.main) resolvedOverrides.main = { path: dbPath }
 
-  const dbRegistry  = buildDbRegistry(schema, resolvedDbPath, resolvedOverrides, resolveAccessConfig(accessConfig, readOnly, schema), inMemory, resolveFrom === 'schema' ? schemaAnchor(schemaFilePath) : null)
+  const dbRegistry  = buildDbRegistry(schema, resolvedDbPath, resolvedOverrides, resolveAccessConfig(accessConfig, readOnly, schema), inMemory, resolveAnchor(resolveFrom, schemaFilePath))
   const modelDbMap  = buildModelDbMap(schema)
 
   // Shared with the transaction manager below. Every read connection is wrapped
@@ -8872,18 +9179,82 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Scans schema for @log/@@@log attributes — used by makeTable to fire entries.
   const logMap = buildLogMap(schema)
 
-  // ── SQLite retention — run on startup ──────────────────────────────────────
-  // For each SQLite database with a retention policy, delete rows older than
-  // the declared period from every model in that database with a createdAt field.
-  for (const [dbName, conn] of Object.entries(dbRegistry)) {
-    if (conn.driver === 'sqlite' && conn.retention && conn.rawWriteDb) {
-      const dbModels = schema.models.filter(m => {
-        const dbAttr = m.attributes.find(a => a.kind === 'db')
-        return (dbAttr?.name ?? 'main') === dbName
-      })
-      runSqliteRetention(conn.rawWriteDb, dbModels, conn.retention)
+  // ── Retention ──────────────────────────────────────────────────────────────
+  // One pass at startup, for each database declaring a policy. **Startup is not
+  // a schedule**: a process that stays up never prunes again, which for a
+  // long-lived server is every day after the first. `$retain()` below is the
+  // same pass on demand, and scheduling it is the app's — the clock belongs to
+  // the queue (`FJS-D36`) and this package cannot import it (`FJS-521`).
+  const _retentionModels = (dbName) => schema.models.filter(m => {
+    const dbAttr = m.attributes.find(a => a.kind === 'db')
+    return (dbAttr?.name ?? 'main') === dbName
+  })
+
+  function _runRetention({ jsonl = true } = {}) {
+    const swept = []
+    for (const [dbName, conn] of Object.entries(dbRegistry)) {
+      if (!conn.retention && !conn.maxSize) continue
+
+      if (conn.driver === 'sqlite' && conn.retention && conn.rawWriteDb) {
+        for (const r of runSqliteRetention(conn.rawWriteDb, _retentionModels(dbName), conn.retention, pluralizeTableNames, now))
+          swept.push({ database: dbName, driver: 'sqlite', ...r })
+        continue
+      }
+
+      // The jsonl half compacts inside `makeJsonlTable`, so the boot pass skips
+      // it rather than doing it twice; a later `$retain()` has to do it here,
+      // because nothing reopens those tables.
+      if (jsonl && (conn.driver === 'jsonl' || conn.driver === 'logger')) {
+        for (const model of _retentionModels(dbName)) {
+          const filePath = jsonlFilePath(conn.absPath, model.name)
+          try {
+            const res = compactJsonl(filePath, model, conn.retention, conn.maxSize, now)
+            if (res)
+              swept.push({ database: dbName, driver: conn.driver, model: model.name, table: filePath, removed: res.removed ?? 0 })
+          } catch (err) {
+            // Reported, not swallowed. A compaction that throws every pass looks
+            // exactly like one that had nothing to do (`FJS-521`).
+            console.warn(`[litestone] retention: could not compact "${filePath}" — ${err?.message ?? err}`)
+            swept.push({ database: dbName, driver: conn.driver, model: model.name, table: filePath, removed: 0, error: String(err?.message ?? err) })
+          }
+        }
+      }
     }
+    return swept
   }
+
+  _runRetention({ jsonl: false })
+
+  // ── $retain ────────────────────────────────────────────────────────────────
+  //
+  // The startup pass, on demand — and the reason it exists is that startup is
+  // not a schedule. A process that stays up prunes once, on the day it booted,
+  // which for a long-lived server means a declared `retention 90d` stops being
+  // true the day after the deploy (`FJS-521`).
+  //
+  // Scheduling it is the APP's, and that is a consequence of two rulings rather
+  // than a gap: unattended recurring work belongs to the queue (`FJS-D36`), and
+  // this package may not import it (Invariant 1). One line in a `*.job.ts`:
+  //
+  //     export default defineJob('retention', () => db.asSystem().$retain(),
+  //                              { cron: '0 4 * * *' })
+  //
+  // `asSystem()` for raw SQL's reason (`FJS-D52`): it deletes rows through no
+  // gate, no row policy and no `@@softDelete`, so the bypass is said at the call
+  // site rather than assumed. Answers one row per table it touched.
+  function $retain() {
+    return _runRetention()
+  }
+
+  function retainRefusal() {
+    throw new Error(
+      `$retain() — retention deletes rows and applies none of this schema's access rules.\n\n` +
+      `@@gate, @@allow/@@deny and @@softDelete are all enforced above SQLite, and a\n` +
+      `retention sweep is a DELETE against the base table. Say the bypass:\n\n` +
+      `    db.asSystem().$retain()\n`
+    )
+  }
+
   const jsonMap       = buildJsonMap(schema)
   const generatedMap  = buildGeneratedMap(schema)
   const fromMap       = buildFromMap(schema, pluralizeTableNames)
@@ -8897,7 +9268,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const boolMap        = buildBoolMap(schema)
   const filterKindMap  = buildFilterKindMap(schema)
   const autoIdMap      = buildAutoIdMap(schema)
-  const generatedDefaultMap = buildGeneratedDefaultMap(schema)
+  const generatedDefaultMap = buildGeneratedDefaultMap(schema, now)
   const authDefaultMap     = buildAuthDefaultMap(schema)
   const fieldRefDefaultMap = buildFieldRefDefaultMap(schema)
   const updatedByMap       = buildUpdatedByMap(schema)
@@ -8907,6 +9278,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const sequenceMap    = buildSequenceMap(schema)
   const enumMap        = buildEnumMap(schema)
   const transitionMap  = buildTransitionMap(schema)
+  const capabilityMap  = capabilityDeclarations(schema)
   const ftsMap        = buildFtsMap(schema)
   const validationMap  = buildValidationMap(schema)
   const fieldPolicyMap = buildFieldPolicyMap(schema)
@@ -9133,6 +9505,16 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     effectivePlugins = [...effectivePlugins, new GatePlugin({ getLevel: FrontierGateGetLevel })]
   }
 
+  // ── Capability enforcement ────────────────────────────────────────────────
+  // Same argument as the gate one line up: a declared @@capabilities that nothing
+  // enforces is fail-open. Unlike the gate this takes no resolver and therefore
+  // has nothing to replace — the caller's set is auth().capabilities (`FJS-D151`)
+  // — so it is installed whenever a model declares the grid.
+  const _anyCapabilities = schema.models.some(m => m.attributes?.some(a => a.kind === 'capabilities'))
+  if (_anyCapabilities && !effectivePlugins.some(p => p instanceof CapabilityPlugin)) {
+    effectivePlugins = [...effectivePlugins, new CapabilityPlugin()]
+  }
+
   // Plugin runner — orchestrates all installed plugins
   const pluginRunner = new PluginRunner(effectivePlugins)
 
@@ -9153,6 +9535,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     // gets auto-filled.
     allowChildFkOverride: allowChildFkOverride === true,
     transitionMap,
+    capabilityMap,
     models:        modelIndex,
     schema,
     hasValidation: validationMap,
@@ -9215,7 +9598,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     const conn   = dbRegistry[dbName] ?? dbRegistry.main
     if (conn.driver === 'jsonl' || conn.driver === 'logger') {
       const filePath = jsonlFilePath(conn.absPath, model.name)
-      const table    = makeJsonlTable(filePath, model, schema, conn.retention, conn.maxSize)
+      const table    = makeJsonlTable(filePath, model, schema, conn.retention, conn.maxSize, now)
       jsonlTableCache[model.name] = table
       jsonlTables.push(table)
     }
@@ -9826,6 +10209,72 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     return out
   }
 
+  // ─── $capabilitiesFor ───────────────────────────────────────────────────
+  //
+  // $capabilitiesFor(principal) → { held, unknown, byModel }
+  //
+  // *What can this person do* — `FJS-D148`. The fourth sibling of $checkWhere,
+  // $checkOrderBy and $protectedFields, and the same contract: it takes its
+  // subject as an ARGUMENT and every flavour of client answers identically for
+  // the same one, because what a name GRANTS is a fact about the schema and not
+  // about which client is asking. Defaulting to this client's own principal
+  // would break exactly that.
+  //
+  // Takes a principal (anything carrying `capabilities`) or the bare list, since
+  // an application computing the union of somebody's roles holds the list before
+  // it holds a principal, and the two are told apart without guessing.
+  //
+  // `unknown` is the half that earns the method. A capability is a reference,
+  // so renaming the referent renames the capability and the OLD string is left
+  // sitting in every Role row in every tenant's database — which is why D148
+  // rules that a rename emits a data migration. This is what shows you the
+  // migration that did not run: a name somebody still holds and this schema no
+  // longer declares, which grants nothing and looks exactly like a grant.
+  //
+  // It answers what is HELD and never the complement. *What can Ada not do* is
+  // the whole derived set minus this, which on a real application is 150 rows of
+  // nothing happening.
+  //
+  // The other half of D148's question — *what could Ada do in March* — is not
+  // answerable here and no argument makes it so: the roles have changed, so it
+  // can only come from what the audit trail recorded at the moment of the
+  // decision (`IDEAS/compliance-from-the-seed.md`).
+  function $capabilitiesFor(principal) {
+    const raw = Array.isArray(principal) || principal instanceof Set
+      ? principal
+      : principal?.capabilities
+    const wanted = raw instanceof Set ? [...raw] : Array.isArray(raw) ? raw : []
+
+    const declared = capabilityNames(schema)
+    const held = [], unknown = [], byModel = {}
+
+    for (const name of [...new Set(wanted.map(String))].sort()) {
+      if (!declared.has(name)) { unknown.push(name); continue }
+      held.push(name)
+      const cut = name.lastIndexOf('.')
+      ;(byModel[name.slice(0, cut)] ??= []).push(name.slice(cut + 1))
+    }
+    return { held, unknown, byModel }
+  }
+
+  // ─── $softDelete ────────────────────────────────────────────────────────
+  //
+  // $softDelete → { ModelName: boolean }
+  //
+  // Which models hide a removed row rather than destroying it. Keyed by MODEL
+  // name, like $enums and $relations; the accessor-keyed siblings are the ones
+  // that take an argument.
+  //
+  // A COPY, and on every flavour of client. The live map is what every read
+  // filters against, so handing it out let a caller turn soft delete off for
+  // the whole client by assigning to a property they had asked to read. And it
+  // answered on the root client alone, so the one flavour an application
+  // actually holds — junction scopes `ctx.locals.db` with $setAuth — threw the
+  // unknown-property error instead of answering a question about the schema.
+  function softDeleteInfo() {
+    return { ...softDeleteMap }
+  }
+
   // ─── $audit ─────────────────────────────────────────────────────────────
   //
   // $audit({ operation, model, records, actorId, meta }) → the written row
@@ -10278,20 +10727,21 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // All table operations through this wrapper bypass @guarded, @encrypted,
   // and @@gate checks. Use for auth checks, background jobs, admin operations.
   //
-  // Memoized — built once on first call, same instance returned every time.
-  // This is intentional and safe: asSystem() carries no per-request state
-  // (no auth, no user identity). It is purely a capability flag on a shared
-  // read/write connection. In multi-tenant setups, all tenants share the same
-  // asSystem() instance — that is correct because the system context is
-  // explicitly identity-free by design.
+  // Memoised PER SCOPE, keyed by the context it was reached from, so
+  // `db.asSystem()` and `db.$setAuth(u).asSystem()` are different proxies and
+  // the second one keeps `u`. It used to be one root-level memo handed out by
+  // every scoped client, which discarded the principal — so the composition
+  // this file documented for audit logging did not work, and a tenant claim
+  // could not survive into a system read at all (FJS-519).
   //
-  // If you need both system-level access AND a user identity (e.g. for audit
-  // logging), use db.$setAuth(user).asSystem() instead — that path is NOT
-  // memoized and creates a fresh scoped client per user.
-  let _systemProxy = null
-  function asSystem() {
-    if (_systemProxy) return _systemProxy
-    const sysCtx = { ...ctx, isSystem: true }
+  // Identity-free is still the DEFAULT and is still correct: `db.asSystem()`
+  // has no principal, which is what a migration, a seed and a job with no
+  // caller are.
+  const _systemProxies = new WeakMap()
+  function makeSystemProxy(baseCtx) {
+    const hit = _systemProxies.get(baseCtx)
+    if (hit) return hit
+    const sysCtx = { ...baseCtx, isSystem: true }
     const rawSysTables = makeAllTables(sysCtx)
     sysCtx.tables = rawSysTables
     // Apply scopes — system ctx is fixed for the lifetime of asSystem(), so the
@@ -10332,7 +10782,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    _systemProxy = new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, _systemProxy), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: sys$lock, $locks: lockPrimitive.$locks }, {
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$capabilitiesFor', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: sys$lock, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -10343,12 +10794,15 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         // the normal defensive spelling. Without this it threw
         // `"asSystem" is not a table in this schema` — a message about tables,
         // about a method every other flavour of this client has.
-        if (prop === 'asSystem') return () => _systemProxy
+        if (prop === 'asSystem') return () => proxy
         if (prop === '$close')  return () => _closeAll()
         if (prop === '$inTransaction') return txState.depth > 0
         if (prop === '$schema') return schema
+        if (prop === '$retain')     return $retain
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
+      if (prop === '$capabilitiesFor') return $capabilitiesFor
+        if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$scopes') return $scopes
         if (prop === '$checkOrderBy') return $checkOrderBy
         // A system context names no principal, so an actor has to be STATED —
@@ -10368,18 +10822,21 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         return dedupeKeys(
           Reflect.ownKeys(target),
           Object.keys(sysTables),
-          ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$scopes', '$audit', '$enums', '$plugins', '$tenancy'],
+          sysOwnProps,
         )
       },
-      has(target, prop) { return prop === 'asSystem' || prop in target || prop in sysTables },
+      has(target, prop) { return sysOwnProps.includes(prop) || prop in target || prop in sysTables },
       getOwnPropertyDescriptor(target, prop) {
         if (prop in sysTables || prop === 'asSystem')
           return { configurable: true, enumerable: true, writable: false }
         return Reflect.getOwnPropertyDescriptor(target, prop)
       },
     })
-    return _systemProxy
+    _systemProxies.set(baseCtx, proxy)
+    return proxy
   }
+
+  function asSystem() { return makeSystemProxy(ctx) }
 
   // ── $setAuth ───────────────────────────────────────────────────────────────
   // Returns a new scoped client with ctx.auth set to the given user.
@@ -10418,6 +10875,11 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       return _runRawSql(strings, values)
     }
 
+    // This scope's own system proxy, not the root's. It keeps `user`, which is
+    // what carries a tenant claim across the bypass and what an audit actor is
+    // read from.
+    const authAsSystem = () => makeSystemProxy(authCtx)
+
     // Auth-scoped multi-model query — runs in $transaction but uses the
     // auth proxy's tables (which carry ctx.auth), not the outer client's.
     // Without this, $transaction would pass `clientProxy` (unscoped) and
@@ -10443,27 +10905,29 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
+    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$capabilitiesFor', '$softDelete', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
         if (prop in target)             return Reflect.get(target, prop)
         if (prop === '$setAuth')        return $setAuth
-        if (prop === 'asSystem')        return asSystem
+        if (prop === 'asSystem')        return authAsSystem
         if (prop in authTables)         return authTables[prop]
         if (prop === '$close')          return () => _closeAll()
         if (prop === '$inTransaction')  return txState.depth > 0
         if (prop === '$schema')         return schema
         if (prop === '$auth')           return user
+        if (prop === '$retain')         return retainRefusal
         if (prop === '$checkWhere')     return $checkWhere
-      if (prop === '$protectedFields') return $protectedFields
         if (prop === '$protectedFields') return $protectedFields
+      if (prop === '$capabilitiesFor') return $capabilitiesFor
+        if (prop === '$softDelete')     return softDeleteInfo()
         if (prop === '$scopes')         return $scopes
         if (prop === '$checkOrderBy')   return $checkOrderBy
         if (prop === '$audit')          return (entry, opts) => auditWith(user, entry, opts)
         if (prop === '$cacheSize')      return _cacheSize()
         if (prop === '$enums')          return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
-      if (prop === '$plugins')        return pluginRunner.names
         if (prop === '$plugins')        return pluginRunner.names
         if (prop === '$tenancy')        return tenancyInfo()
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(authTables).join(', ')}`)
@@ -10472,10 +10936,10 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         return dedupeKeys(
           Reflect.ownKeys(target),
           Object.keys(authTables),
-          ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy'],
+          authOwnProps,
         )
       },
-      has(target, prop) { return prop in target || prop in authTables },
+      has(target, prop) { return authOwnProps.includes(prop) || prop in target || prop in authTables },
       getOwnPropertyDescriptor(target, prop) {
         if (prop in authTables) return { configurable: true, enumerable: true, writable: false }
         return Reflect.getOwnPropertyDescriptor(target, prop)
@@ -10499,6 +10963,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     const rawTables = makeLazyTables(sCtx)
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$capabilitiesFor', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -10518,8 +10983,11 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$schema') return schema
         if (prop === '$scope')  return overrides.scopedBy ?? {}
         if (prop === '$auth')   return overrides.auth ?? null
+        if (prop === '$retain')     return retainRefusal
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
+      if (prop === '$capabilitiesFor') return $capabilitiesFor
+        if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$scopes') return $scopes
         if (prop === '$checkOrderBy') return $checkOrderBy
         if (prop === '$audit')  return (entry, opts) => auditWith(overrides.auth ?? null, entry, opts)
@@ -10528,8 +10996,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$tenancy') return tenancyInfo()
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(tables).join(', ')}`)
       },
-      ownKeys(t)   { return dedupeKeys(Reflect.ownKeys(t), Object.keys(tables)) },
-      has(t, prop) { return prop in t || prop in tables },
+      ownKeys(t)   { return dedupeKeys(Reflect.ownKeys(t), Object.keys(tables), scopedOwnProps) },
+      has(t, prop) { return scopedOwnProps.includes(prop) || prop in t || prop in tables },
     })
     return scopedProxy
   }
@@ -10568,6 +11036,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     return result
   }
 
+  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$capabilitiesFor', '$scopes', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -10596,12 +11065,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop === '$attached')       return $attachedDatabases()
       if (prop === '$schema')         return schema
       if (prop === '$relations')      return relationMap
+      if (prop === '$retain')     return retainRefusal
       if (prop === '$checkWhere')     return $checkWhere
       if (prop === '$protectedFields') return $protectedFields
-        if (prop === '$scopes')         return $scopes
+      if (prop === '$capabilitiesFor') return $capabilitiesFor
+      if (prop === '$scopes')         return $scopes
       if (prop === '$checkOrderBy')   return $checkOrderBy
       if (prop === '$audit')          return (entry, opts) => auditWith(ctx.auth ?? null, entry, opts)
-      if (prop === '$softDelete')     return softDeleteMap
+      if (prop === '$softDelete')     return softDeleteInfo()
       if (prop === '$cacheSize')      return _cacheSize()
       if (prop === '$config') {
         const absSchema = schemaFilePath ? resolve(schemaFilePath) : null
@@ -10631,11 +11102,11 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         Reflect.ownKeys(target),
         Object.keys(scopedTables),
         viewNames,
-        ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db'],
+        rootOwnProps,
       )
     },
     has(target, prop) {
-      return prop in target || prop in scopedTables
+      return rootOwnProps.includes(prop) || prop in target || prop in scopedTables
     },
     getOwnPropertyDescriptor(target, prop) {
       if (prop in scopedTables) return { configurable: true, enumerable: true, writable: false }

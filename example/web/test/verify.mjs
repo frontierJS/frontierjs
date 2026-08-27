@@ -170,6 +170,27 @@ async function installHelpers() {
         await new Promise(r => setTimeout(r, 40));
       }
     };
+    // Wait for a list to STOP GROWING, not to start.
+    //
+    // A waitFor on a nonzero count resolves on the FIRST row, and a count
+    // read from there is a legal answer to a question nobody asked: an {#each}
+    // building ten rows passes through five. It cost a green verify run an hour
+    // after the previous one — 5 of 10 products, once, unreproducibly, which
+    // reads as a paging bug in the app.
+    //
+    // Stable across two consecutive polls rather than a fixed sleep: a sleep
+    // long enough to be safe on a loaded machine is a sleep paid on every run.
+    window.settled = async (sel, ms = 8000) => {
+      const t0 = Date.now();
+      let last = -1;
+      for (;;) {
+        const n = document.querySelectorAll(sel).length;
+        if (n > 0 && n === last) return n;
+        if (Date.now() - t0 > ms) throw new Error('settled timed out: ' + sel + ' (last ' + n + ')');
+        last = n;
+        await new Promise(r => setTimeout(r, 60));
+      }
+    };
     window.byText = (sel, text) =>
       [...document.querySelectorAll(sel)].find(el => el.textContent.trim().includes(text));
     return true;
@@ -237,10 +258,7 @@ try {
 
   // 2 ─ public reads work with no session
   await goto('/products/')
-  t('products.rows', await evaluate(`
-    await waitFor(() => document.querySelectorAll('tbody tr').length);
-    return document.querySelectorAll('tbody tr').length;
-  `))
+  t('products.rows', await evaluate(`return await settled('tbody tr');`))
   // A price on this screen is a RANGE over the family's variants, which is the
   // one number no COLUMN holds — it is `@from(ProductVariant, min/max: price)`
   // on Product, answered by SQLite on the row. The list used to load every
@@ -376,7 +394,7 @@ try {
   await goto('/orders/')
 
   t('orders.rows', await evaluate(`
-    await waitFor(() => document.querySelectorAll('tbody tr').length);
+    await settled('tbody tr');
     return [...document.querySelectorAll('tbody tr code')]
       .filter(c => /^ORD-100\\d$/.test(c.textContent.trim())).length;
   `))
@@ -421,7 +439,7 @@ try {
     })()`
 
   // 5 ─ the affordances, as an administrator
-  t('moves.admin', await evaluate(`return ${readMoves}`))
+  t('moves.admin', await evaluate(`await settled('tbody tr'); return ${readMoves}`))
 
   // An illegal move is a client error, not a 500 — nothing leaves `shipped`.
   t('moves.illegalStatus', await evaluate(`
@@ -645,7 +663,7 @@ try {
     // the router, which reads as the tablist being broken.
     await waitFor(() => byText('[role="tab"]', 'Items'));
     byText('[role="tab"]', 'Items').click();
-    await waitFor(() => document.querySelectorAll('#items-table tbody tr').length);
+    await settled('#items-table tbody tr');
     return [...document.querySelectorAll('#items-table tbody tr')].map(tr =>
       [...tr.querySelectorAll('td')].map(td => td.textContent.trim()));
   `))
@@ -744,7 +762,7 @@ try {
 
   await goto('/orders/')
   t('moves.user', await evaluate(`
-    await waitFor(() => document.querySelectorAll('tbody tr').length);
+    await settled('tbody tr');
     await waitFor(() => byText('header .badge', 'level 4'));
     return ${readMoves};
   `))

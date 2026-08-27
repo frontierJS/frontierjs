@@ -33,7 +33,7 @@ function runner(app: BasecampApp) {
   // `appServer` is still read as system, deliberately: resolving which machine
   // an app sits on is a placement question, `AppServer` is `@@gate("2.8")`, and
   // a cron fire has no standing to read it with at all.
-  const db   = app.data.asSystem()
+  const db   = app.db.asSystem()
   const jobs = app.service('jobs')
   const log  = app.logger.child('job-run')
 

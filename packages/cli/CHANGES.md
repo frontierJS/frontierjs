@@ -1,4 +1,371 @@
+# Changes — @frontierjs/cli
+
+## css-token-undefined — a styled value names a token the stylesheets define
+
+The thirty-second rule, and the first one about CSS. A `var(--x)` naming a token
+nothing declares is invalid at computed-value time, so the browser drops the
+**declaration** rather than the value — `gap: var(--space-4)` is no gap, not a
+wrong one. Nothing reports it: the stylesheet is in the bundle, every selector
+matches, and a browser drive asserts what a page says. `example/site/` shipped
+its entire public storefront with no gap, border or radius anywhere while
+`verify:site` stayed green at 39/39 (`FJS-545`).
+
+The token table is read off the app's own dependencies — any package whose
+`exports` names a `.css` — for `package-model-drift`'s reason: the answer is a
+property of what is installed, and a list written into the rule goes stale the
+first time a package adds a rung, while an app on a design system this file has
+never heard of would be graded against one it does not have.
+
+**Only the bare form is a finding.** `var(--knob, var(--color-primary))` is an
+author saying the token may be absent, and is what a component's own knob looks
+like from outside; nothing is dropped, so nothing is reported. That single line
+is what separates the defect from the idiom, and it is why the rule can be an
+error rather than a warning.
+
+## 2026-08-26 — `--plan`: the journal rows, printed instead of inserted
+
+Phase 1d of `IDEAS/release-transitions.md`. `fli deploy:plan` and `fli deploy
+--plan` build the rows `db/deploy.lite` would receive — one `Transition` and one
+`TransitionStep` per step — and print them. Nothing is written, no server is
+reached, and it exits 0 whatever the pivot says: a plan is a document, so there
+is nothing for it to refuse.
+
+It is the same object either way. The model carries the plan on the transition
+itself, so the document a person read and the record a deploy wrote cannot be
+two things that disagree — `core/plan.js` builds them and 1e will insert what 1d
+prints.
+
+**The steps are read, not listed.** They come from `_steps-docker/` with the
+runner's own filter and sort, and each `skip:` predicate is evaluated the way the
+runner evaluates it — including its fail-open direction, so a predicate that
+throws is reported as *it will RUN* rather than silently removed from the plan. A
+step added to the pipeline appears here with nobody editing the command. A
+skipped step is shown rather than dropped: an operator needs *the backup did not
+run* to be visible, and the ordinals have to stay stable so a resumed transition
+can find where it stopped even after a `skip:` has changed its answer.
+
+**The transition id, and the one term a plan cannot answer.**
+
+    deploy:shop:production:none:a1b2c3d4e5f6:1:1
+     kind  app  environment  from  to  generation  attempt
+
+`from → to` is what lets a crashed deploy resume — rerunning computes the same id
+and finds the same row — while keeping R1→R2 and R2→R1 apart. `generation` is
+there because a rotated secret is a new intent, not a replay. `attempt` is the
+journal's count of prior transitions for that pair, and **a plan has no journal
+to count**, so it says `1` and labels the id provisional. The case it exists for
+is deploy R2 → revert to R1 → deploy R2 again: every other term is identical to
+the first attempt, so without a counter the third operation resumes a transition
+already marked `succeeded` and leaves R1 serving. Surfacing that before 1e writes
+a row under it is what `--plan` is for.
+
+Also here: the duplicate-prefix warning now matches `\d+[a-z]*` rather than
+`\d+`, so `01b-env-check` beside `01-preflight` is no longer reported. A lettered
+step is the deliberate way to insert one without renumbering the rest, and a
+warning that fires on every correct use is how everyone learns to ignore it.
+
+46 tests, pure.
+
+## 2026-08-26 — the build check: can this image be promoted, or only deployed?
+
+Phase 1c of `IDEAS/release-transitions.md`, and the half `core/image.js` left
+open. That module made a deploy able to say WHICH bytes it ran. This is whether
+those bytes mean anything in a second environment — invariant 1 of the Release
+design: one artefact moves from staging to production unchanged, and only its
+bindings differ.
+
+A build that bakes configuration into the image breaks that silently. The result
+still builds, still starts, still answers health, and still reports a digest. It
+is simply a different digest per environment, and nothing says so. Measured, on
+two contexts identical except for a `.env.production`:
+
+    stage       sha256:dfa9655f267c02…    DIFFERENT — configuration is in the digest
+    production  sha256:32ab9ba5e266f8…
+
+and the negative control, the same two trees with `.env*` ignored:
+
+    stage       sha256:fa3ecac547cb08…    IDENTICAL — one artefact serves both
+    production  sha256:fa3ecac547cb08…
+
+`core/build-check.js` grades four things: a value file the build copies, an `ENV`
+line holding a value the environment is meant to supply, a build `ARG` naming a
+credential (measured: one `--build-arg` left the value in two `docker history`
+lines), and an unpinned base image. The base is graded twice — no tag or
+`:latest` refuses, a version tag warns — because `oven/bun:1` is what this
+package's own `make:deploy` writes, and a check that refuses its own scaffold is
+a default whose first use is red.
+
+**The first version of the context rule was wrong, and measuring is what caught
+it.** Grading a file as baked the moment a context COPY reached it refused every
+multi-stage build in this repo: two trees whose `.env` differed, copied wholesale
+into a build stage whose runtime stage takes only `dist/`, produce a
+byte-IDENTICAL final image. The question is therefore not *did a COPY reach it*
+but *does it reach the FINAL image*, which is a walk across stages —
+`COPY --from=build /app /app` ships what `COPY --from=build /app/site/dist ./dist`
+does not, and both forms are here. The intermediate case is a warning rather than
+silence, because the value does sit in a layer on the build host, readable with
+`docker build --target build`. The trace was then graded against the daemon on
+four shapes and two files at two depths: 8 of 8 agreed, and those eight are the
+fixtures in `tests/build-check.test.js`.
+
+**It is not a `fli check` rule**, which is what the design record proposed. That
+surface reads the app's own tree, and the file most likely to be baked is the one
+deliberately in no repository: `.env.production` sits at the deploy root, which
+IS the build context. So `_steps-docker/02b-build-check` reads the server, after
+`02-pull` — before the pull the server's Dockerfile is the previous release's —
+and refuses. `deploy:local` reports instead, because that command answers *does
+this build and start at all*; `deploy:doctor` asks without deploying anything.
+`deploy.api.buildCheck = false` opts out, beside the `envCheck` already there.
+
+It found a live one on its first run. Docker's `*` does not cross a separator, so
+basecamp's `db/*.db` excluded `db/basecamp.db` and admitted `db/db/basecamp.db` —
+and `db/db/` is precisely what a relative `database { path }` resolved against the
+wrong working directory creates (`FJS-449`), git-ignored and therefore in no
+diff. `COPY db ./db` then `COPY --from=build /app /app` put it in the image.
+Pattern fixed, `FJS-543` filed for the rest.
+
+The suite is pure — no daemon, no network, no fixtures on disk — because a check
+that needs Docker is a check that stops running. 66 tests.
+
+## 2026-08-26 — `service-as-system` reads all of `services/`, not just `*.service.*`
+
+A filename filter made two real sites invisible. A helper module beside a service
+runs in the same call scope and carries the identical hazard — basecamp's
+`api-keys/scopes.ts` reaches for the app-level client from inside a hook, and
+`jobs/job-schedule.ts` does it at boot — and neither is a `*.service.ts`, so the
+rule had never looked at them.
+
+The DIRECTORY is the principled boundary rather than the filename: anything under
+`services/` runs inside a call, and a job handler lives in `jobs/`, is not inside
+one, and is exactly where the app-level client is the right reach. Both newly
+visible sites turn out to be correct and now carry named allowances saying why,
+which is the point — an invisible site is not a decision anybody made.
+
+
+## 2026-08-26 — `fli check`: `capability-ladder`
+
+A model that declares `@@capabilities` and still grades its writes by ladder. The grid
+and the gate are ANDed with the gate as the floor (`FJS-D146`), so a write level above
+the read level is the ladder answering what the grid was declared to answer — and both
+have to pass, so every grant is silently narrowed. The shape it catches is a model
+moved onto capabilities with its old gate left in place: a billing clerk holding
+`Invoice.create` refused because creates want ADMINISTRATOR(5), which reads as *not
+senior enough* about somebody deliberately granted the capability.
+
+**It reads both gate spellings.** Matching only `@@gate("2.5.5.6")` would have made
+the rule silent on every schema that writes its levels by name — which is the form
+`example` and `basecamp` both use, so it would have been dead exactly where it
+matters. `write:` widens to create/update/delete and `all:` to every position, the
+same way the parser treats them.
+
+A warning rather than an error — two authorities in front of one operation is
+legitimate where the ladder guards something the grid does not model, and a text scan
+cannot tell that from a leftover. `@@gate("2")` flat at the read floor is the usual
+answer. The clean fixture now declares the grid with a flat gate so the rule RUNS there
+rather than skipping.
+
+
+## 2026-08-26 — digest, not tag: a deploy can say which bytes it ran
+
+`2.3f`'s first step (`IDEAS/deploy-plane.md`). The pipeline builds on the target
+and names the result `${appId}:${shortSha}` from the SHA of that server's own
+checkout, so **two servers at one commit hold two images with the same name and
+different bytes**, a rebuild after a dependency change produces a third, and
+nothing compared them. The failure shape was the worst available: stage and
+production reporting one version while running different code.
+
+**Docker has two digests and they do not reach equally far**, which is the whole
+substance of `core/image.js`. `RepoDigests` is the registry digest and means the
+same bytes anywhere, but exists only once an image has been pushed or pulled;
+`Id` is the config hash and always exists, and identifies bytes on **one host**.
+A build-on-target pipeline has no registry, so `Id` is what there is — and
+reporting it as though it were the other is how the problem comes back wearing a
+fix. So the scope is in the sentence: *these bytes on this host; no registry to
+compare across*. Same line `@frontierjs/outpost` draws about building on the
+target — an answer that is true while there is one machine and stops being true
+at the second.
+
+**Step 04 asks the image what it is and step 06 runs that**, falling back to the
+tag only when nothing could be read and saying so when it does. **Rollback got
+the sharper end**: it listed images by `Repository:Tag` and took the second row,
+so it rolled back to a NAME — and two tags can point at one image, from a
+rebuild that produced identical layers or a moved tag. The list carries `{{.ID}}`
+now, the container is addressed by it, and a rollback whose target is the same
+image is refused by name: *both tags name the SAME image — this rollback would
+change nothing*.
+
+`imageIdentity` answers `null` rather than guessing, because the entire point is
+that two things which look alike are not.
+
+## 2026-08-26 — `fli release:mint`: a Release is computed, and nothing is deployed
+
+Phase 1b of `IDEAS/release-transitions.md`. `core/release.js` computes a Release
+from four terms — the image digest, a hash over the resolved bindings, a hash of
+the committed release surface, and litestone's pivot verdict — and the id is the
+hash of those and of nothing else.
+
+**That the id is a pure function is the whole point, not a property of the
+step.** Two mints of an unchanged tree answer the same id, proved against
+basecamp: `2997a04e6063` twice. *Build once, promote a digest* is only a sentence
+you can say if the thing being promoted has a name that does not depend on who
+computed it.
+
+**The environment is deliberately NOT in the id.** One artefact promotes from
+staging to production unchanged and only its bindings differ, so the environment
+is on the row and the bindings are in the hash. If that ever flips, promotion
+becomes a rebuild — which is why it is a test rather than a comment.
+
+**The schema term is the committed `release.snapshot.md`, hashed rather than
+re-derived.** It is exactly what `fli release:check` classifies and what the
+`snapshots` CI phase already fails a stale one of, so re-deriving it here would
+be a second answer to *what is the data boundary of this release* that could
+disagree with the first.
+
+**Bindings are declared in the deploy block, values and secret REFERENCES kept
+apart** — `deploy.bindings` and `deploy.secrets`, per-target beating app-wide. Two
+keys rather than one bag because the rule is not a convention to remember: a
+value is in the repository and a reference points at something that is not. An
+unpinned reference is refused by name, because a secret is resolved when a
+process starts and `latest` means two instances of one immutable Release hold
+two different values.
+
+The digest is usually absent and says so rather than showing a tag: `fli deploy`
+builds on the target, so `${app}:${sha}` names different bytes on different
+hosts. `2.3f` supplies it.
+
+Writing it turned up `FJS-537` — `context.exec({ capture: true })` is not an
+option, so four auth commands parse an empty string and print `Failed` directly
+beneath the output they meant to read. `release:mint` reached for the same
+option because four neighbours use it, which is how a wrong idiom spreads.
+
+## 2026-08-26 — `register:check` catches a register that stopped counting, and `detail-read-dead` names its own limit
+
+**`closed-in-open`.** A row carrying `status: closed` while still sitting in an
+open severity table is counted as open by everything that reads the register —
+its own tally, `ws:map`, `ws:atlas`, and whoever is choosing what to work on.
+Sixteen had accumulated in this repo, one of them the only S1 (fixed two days
+earlier). `closed` is in `ISSUE_STATUS` because the READER synthesises it for
+every row under § Closed, which is exactly what made it silently legal as a
+hand-written cell where it means the opposite.
+
+Its own rule rather than an `unknown-status`, because the remedy is not *you
+wrote a bad word*: the row is correct and it is in the wrong place. It is the
+direction `ISSUES.md`'s own Conventions section already names — *the register
+also goes stale in the closing direction, which nothing here was watching for*.
+
+**`detail-read-dead` now says when its advice applies.** It told every reader of
+`service.get(id)` to watch the row instead, unconditionally. A store node holds
+one shape and a push REPLACES it, so that is only correct where the detail row IS
+the row: four of basecamp's composed reads (`include:`, a `withWidgets()`, an
+adapter ping that answers no row at all) lose their children at the first
+announcement, silently. Measured — adopting it on `apps/[id]` took that app's
+drive from 302/302 to two failures. The message names the condition and says the
+reload-on-push those screens hand-roll is a fair exception.
+
+
+## 2026-08-26 — `db/deploy.lite`: what a Release is, before anything deploys one
+
+The first step of the Release realm's phase 1 (`IDEAS/release-transitions.md`),
+and it writes nothing and deploys nothing. Five models — `Journal`, `Release`,
+`BindingSet`, `Transition`, `TransitionStep` — carrying every field including
+the ones nothing fills yet: `audienceKey`, `retentionUntil`, `formatVersion`.
+That is the sequencing rule the record is built on, *state shape early,
+behaviour late*, and the reason is that a recorded-state migration is the
+expensive kind of change while an unused column is free.
+
+**It is opened, not installed**, which is the whole of how it differs from
+`junction/db/outbox.lite`. That one is pasted into an app's schema and carries
+`@@db(main)`; this one is handed to `createClient({ schema, db })` with `db`
+naming `deploy.db` on the target, so there is no `database` block to reference
+and the same line fails to parse. Found by running it, not by reading — and it
+is now asserted, because nothing in the fragment says *no `@@db` here*.
+
+**The journal is its own client rather than a second `database` block on the
+app's, and both grounds were measured.** `$locks` stores in main only, so under
+a second block the deploy lock lands in the app's database while `deploy.db`
+gets no `_locks` table at all — the lock cannot sit with the record it protects.
+And `$backup` sweeps every declared SQLite database, which is the copy
+`05-backup` takes before every deploy, so restoring it would erase the journal
+recording the deploy that authorised the restore. Both are asserted as a
+negative control, so the rejection fails loudly if litestone ever moves either.
+
+Two things came out of writing it. Lock contention **throws** rather than
+answering falsy — `LockNotAcquiredError`, 409, `retryable`, naming the holder,
+which is already the *refuse by name* shape `fli revert` wants. And the CHECK
+family turned out to be half-built (`FJS-534`): field-level `@check` works, so
+`Journal`'s single-row rule IS declared — `@check("id = 'journal'")` plus the
+primary key, two constraints saying one rule — while model-level `@@check`,
+which would say it in one line, does not exist.
+
+## 2026-08-26 — `detail-read-dead`: a row a screen KEEPS is watched, not fetched once
+
+`service.get(id)` answers a plain object. It is the raw proxy by design — the
+same escape hatch `service.find()` is — and nothing can reach a plain object:
+not a WS push, not a write from another tab, not a job. So a screen that assigns
+one to state it keeps is stale from the moment somebody else writes that row,
+and it looks right the whole time, because a screen usually re-reads after its
+own actions and never after anyone else's. That was every detail screen in this
+repo (`FJS-518`), and `resource.record(id)` is the answer (`FJS-D138`).
+
+**The heuristic is a bare assignment**, and the negative controls are what make
+it usable. `order = await …` in a Mesa script is an outer `let`: state the
+component keeps. `const row = await …` is a local — a label, a check, something
+handed straight on — and flagging those is how a rule gets turned off. A
+comparison is not an assignment at all. `X.service.get(…)` is the whole test for
+*is this a resource*: `.service` exists on nothing else and every resource has
+`record()`, so there is no binding to trace and an imported resource is judged
+like one made in the file.
+
+It follows a wrapped ternary back up to three lines, because
+`x = cond ? await …get(id) : null` is what every one of these screens actually
+writes and matching only the line the call sits on missed them.
+
+**A warning, and it fails open** — a screen may legitimately keep a row nothing
+will ever write again. **No `--fix`**: the change is a subscribe, a release and
+a lifetime, and a half-applied one is a green check over a leak.
+
+Its first run reported **sixteen**, every one inspected and real: one in
+`example` and fifteen in `basecamp`, including three dashboard widgets and the
+fleet screens where the row genuinely moves mid-deploy. The screen already
+converted to `record()` is silent, which is the rule's own negative control.
+Seven cases in `tests/checks.test.js`, and `CLEAN` grew a legitimate one-shot
+read so the rule RUNS over the clean tree rather than only ever skipping.
+
 # Changes
+
+## 2026-08-26 — `service-as-system`, the 29th rule
+
+`asSystem()` keeps the tenant it is standing in now (`FJS-519`), which makes
+*which client you elevate* decide whether the answer is scoped at all:
+`ctx.locals.db.asSystem()` crosses the gate and every policy and stays in the
+caller's tenant, `app.data.asSystem()` has no principal, so no claim, so every
+tenant — with a 200.
+
+**The app-level client cannot be named positively.** It is `app.claim(<any
+name>, db)`; basecamp calls it `app.data` and another app will call it something
+else. So the rule tests the other direction — a receiver that is not the
+request's client — which is also where the fix is. A cast does not hide it:
+three of basecamp's sites are `(app.data as any).asSystem()`, read backwards
+through the parens.
+
+**A warning rather than an error**, because an unscoped system client is exactly
+right for a cross-tenant admin tier. What is wrong is reaching for it by habit
+inside a request, where the symptom is silent.
+
+**It runs only under `strategy row`.** With no `tenancy` block there is no claim
+to lose, and under `strategy database` one client IS one file, so a system
+context cannot physically reach a second tenant — `example` is that case and is
+skipped by name rather than reported at.
+
+Writing it found the trap `fli check` blanks comments for, one file over:
+basecamp's own schema explains the feature in a doc comment — *declared once in
+the `tenancy { }` block below* — and an unblanked match reads that empty pair as
+the declaration and skips the entire app. Seven tests. The clean fixture now
+declares row tenancy so the rule RUNS there rather than skipping, which is what
+the suite's own *nothing was skipped* assertion is for.
+
+Fourteen findings on basecamp, entered as named allowances: eleven files
+deferred to `FJS-519` part 2, and the hub's, which does not expire.
 
 ## 2026-08-25 — `transition-methods`, the 28th rule
 

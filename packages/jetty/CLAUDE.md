@@ -67,7 +67,8 @@ It is the only place that scheme is written down.
   anywhere). Removing them is in scope; adding to them is not.
 - **`resources/` is no longer a copy of Sierra's, and what is left is not one.**
   The pure halves are `@frontierjs/toolbelt` — `/jsonschema` and `/hooks`
-  (`FJS-059`) — and the orchestrator around them is deliberately separate:
+  (`FJS-059`), `/match` (`FJS-493`) — and the orchestrator around them is
+  deliberately separate:
   Sierra calls `client.service(name)`, this calls `harbor.request('service:call')`,
   which is two facts rather than one with two owners. **`createStore` is also
   jetty's own**: Sierra's is service-backed and stamps each request, this one
@@ -110,11 +111,21 @@ It is the only place that scheme is written down.
   `api-keys`, and establishing a session is a ROUTE (`FJS-D20`) — so the
   pseudo-service the placeholder invented would shadow the methods of an app
   that has one. `makeAuthFlow` prefers the block and falls back to the call.
-- **A pushed record is upserted whatever it is** (`FJS-493`). `store.upsert` for
-  anything that is not a `removed`, so a row that has LEFT the loaded filter
-  stays in the list — Sierra answers this with `matchesQuery`, which is pure and
-  lives in a module jetty may not import. `example/extension/`'s dock filters on
-  render and says so.
+- **A pushed record is GRADED, and the store is what remembers the question.**
+  A record is an announcement about a ROW; a live list is the answer to a QUERY,
+  and nothing on the wire says a row has left a filter — there is no such event
+  — so upserting whatever arrives put a shipped order back into the queue it had
+  just left (`FJS-493`). `@frontierjs/toolbelt/match` decides: in the filter
+  upsert, out of it REMOVE, undecidable RELOAD. Two things follow. **`store.set()`
+  clears the remembered query** — rows put there by hand are not the answer to
+  the last `populate()`'s question — and `null` is not `{}`, since an empty
+  filter admits every row while *nobody has asked yet* can grade none. **The
+  reload is coalesced onto a microtask**, because a burst of undecidable pushes
+  arrives together and every answer but the last is thrown away by the next.
+  The field table is `fieldShapes` off the schema the resource was GIVEN, and
+  `{}` where it was given none — the same fallback Sierra takes on a registry
+  miss, degrading one way: a string operand against a numeric column reads as no
+  match.
 
 ## Proving a change
 

@@ -68,6 +68,14 @@ interface LitestoneTable {
   deleteMany:       (args:  Record<string, unknown>) => Promise<{ count: number }>
   restore:          (args:  Record<string, unknown>) => Promise<unknown>     // @@softDelete models only
   search:           (query: string, args?: Record<string, unknown>) => Promise<unknown[]>  // @@fts models only — the ROWS, ranked
+  // The window (`FJS-D145`). Optional because a litestone that predates them
+  // simply answers no cursor, and offset carries on as it always did.
+  findManyCursor?:  (args?: Record<string, unknown>) =>
+    Promise<{ items: unknown[]; nextCursor: string | null; hasMore: boolean }>
+  cursorFor?:       (row: unknown, orderBy?: unknown) => string | null
+  /** The caller's ordering plus whatever makes it total; `null` where no tie
+   *  can be broken, which is a list that cannot carry a window. */
+  orderTotal?:      (orderBy?: unknown) => unknown[] | null
 }
 
 // Split into the client's own API and the table it answers per model, then
@@ -162,6 +170,7 @@ export interface ParsedQuery {
   orderBy?: Record<string, 'asc' | 'desc'>[]
   offset: number
   limit:  number
+  after?: string    // $after — the window's far edge, opaque (`FJS-D145`)
   select?: Record<string, boolean>
   include?: Record<string, boolean | { select: Record<string, boolean> }>
   search?:         string    // $search — FTS5 via table.search()
@@ -189,12 +198,13 @@ export function parseQuery(
   maxLimit = 100,
   directives: QueryDirectives = {}
 ): ParsedQuery {
-  const { $limit, $offset, $orderBy, $select, $populate,
+  const { $limit, $offset, $after, $orderBy, $select, $populate,
           $search, $withDeleted, $onlyDeleted,
           $withTemplates, $onlyTemplates, ...where } = query
 
   const limitRaw   = directives.limit       ?? $limit
   const offsetRaw  = directives.offset      ?? $offset
+  const afterRaw   = directives.after       ?? $after
   const orderByRaw = directives.orderBy     ?? $orderBy
   const selectRaw  = directives.select      ?? $select
   const popRaw     = directives.populate    ?? $populate
@@ -216,6 +226,7 @@ export function parseQuery(
     orderBy:      orderByRaw != null ? parseSort(orderByRaw as SortParam) : undefined,
     offset,
     limit,
+    after:        typeof afterRaw === 'string' && afterRaw !== '' ? afterRaw : undefined,
     select:       selectRaw  != null ? parseSelect(selectRaw as SelectParam) : undefined,
     include:      popRaw     != null ? parsePopulate(popRaw as PopulateParam) : undefined,
     search:       typeof searchRaw === 'string' ? searchRaw : undefined,
@@ -421,6 +432,86 @@ export interface LitestoneServiceOptions {
   bulkMax?:    number
 }
 
+// ─── findWindow ───────────────────────────────────────────────────────────
+
+/** The list envelope a windowed read answers. `total` is null on the keyset
+ *  path, where no COUNT was run. */
+export interface WindowResult {
+  total:     number | null
+  limit:     number
+  offset:    number
+  data:      unknown[]
+  endCursor: string | null
+  hasMore:   boolean
+}
+
+/**
+ * Run a list read and answer the window's far edge with it (`FJS-D145`).
+ *
+ * The one owner of the two paths a list can take. `after` present is the
+ * keyset path — no OFFSET, no COUNT, the edge minted by the scan; absent is an
+ * ordinary page, and the edge is minted from the last row it already holds, so
+ * every list carries one and a caller that never grows a window pays nothing.
+ *
+ * Exported because the derived find is not the only find. A service that
+ * assembles its own query — one that forces a tenant column, or narrows to the
+ * filters it means to expose — used to have no way to answer `$after` short of
+ * restating both branches, and a restatement is how the tiebreaker, the absent
+ * total and the `offset` rule end up with two answers.
+ *
+ * `args` is the query as the caller built it, `limit`/`offset` included.
+ * `label` names the list in the refusal, since this cannot see a model.
+ */
+export async function findWindow(
+  table: LitestoneTable,
+  args:  Record<string, unknown>,
+  after?: string,
+  label = 'This list',
+): Promise<WindowResult> {
+  const limit  = (args.limit  as number) ?? 0
+  const offset = (args.offset as number) ?? 0
+
+  if (after) {
+    // A cursor and an offset never combine, and the cursor wins: it is the more
+    // specific request, and the two together name no position either one means.
+    const scan: Record<string, unknown> = { ...args, cursor: after }
+    delete scan.offset
+    if (typeof table.findManyCursor !== 'function') throw new BadRequest(
+      `${label} cannot answer $after — this Litestone client has no cursor paging. ` +
+      `Use $offset.`)
+    const page = await table.findManyCursor(scan)
+    // `total` is deliberately absent rather than guessed: no COUNT ran, and
+    // reporting the page length as the total is what makes a list claim to be
+    // complete every time it is capped.
+    return {
+      total: null, limit, offset: 0, data: page.items,
+      endCursor: page.nextCursor, hasMore: page.hasMore,
+    }
+  }
+
+  // The ordinary page — and it is walked in the SAME order the keyset scan
+  // would walk it. Two rows tying on every sort key otherwise leave the page
+  // ending wherever SQLite happened to stop, while the edge minted off that row
+  // names where the total order says it stopped: the rows between the two are
+  // lost, once per tie, and only ever under real data. The tiebreaker is the
+  // schema's and is asked for rather than derived here.
+  // Duck-typed, so a litestone that predates either method answers no cursor
+  // and offset carries on exactly as it did.
+  const ordered = typeof table.orderTotal === 'function' ? table.orderTotal(args.orderBy) : null
+  const scan    = ordered ? { ...args, orderBy: ordered } : args
+
+  const { rows, total } = await table.findManyAndCount(scan)
+  // No total order, no window: a list whose ties cannot be broken has no edge
+  // to name, and offering one would be the same silent loss from the other end.
+  const endCursor = (offset === 0 && rows.length > 0 && ordered && typeof table.cursorFor === 'function')
+    ? table.cursorFor(rows[rows.length - 1], ordered)
+    : null
+  return {
+    total, limit, offset, data: rows,
+    endCursor, hasMore: total > offset + rows.length,
+  }
+}
+
 export function createLitestoneBase(opts: LitestoneServiceOptions) {
   const {
     model,
@@ -569,14 +660,36 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
    * service (`FJS-523`). That 409 says a caller's value is held by a row they
    * cannot see, and litestone's documented way out is to move the value aside —
    * `update({ …, withDeleted: true })` — which is this.
-   *
-   * `remove` is deliberately not a caller: against an already-deleted row the
-   * only remaining action is to stop keeping it, which is a HARD delete, and
-   * giving `DELETE ?$withDeleted=true` that meaning is a semantic decision
-   * rather than a passthrough. It stays open on `FJS-523`.
    */
   function writeWhere(q: { withDeleted?: boolean }): Record<string, unknown> {
     return q.withDeleted ? {} : softDeleteFilter()
+  }
+
+  /**
+   * `remove` is the one write the directive does NOT lift, and it says so.
+   *
+   * Against an already-deleted row the only action left is to stop keeping it,
+   * which is a hard delete — the one write that defeats `@@softDelete`. A
+   * directive on the ordinary DELETE would hand that to every caller who may
+   * remove a row, with no separate permission to grade and no way back, so
+   * what a model declares recoverable would be recoverable until somebody put
+   * six characters on a URL.
+   *
+   * It refused already; it refused by 404ing about a row that is plainly
+   * there, which reads as the row being gone rather than as the directive
+   * being declined. The refusal names the flag and the way out instead.
+   *
+   * Graded on the REQUEST and never on the row's state: the same call must not
+   * succeed or refuse depending on whether the row happens to be deleted.
+   */
+  function refuseHardDelete(ctx: ServiceContext, q: { withDeleted?: boolean }): void {
+    if (!q.withDeleted) return
+    if (!softDelete && !modelSoftDeletes(ctx.locals.db, model ?? ctx.service)) return
+    throw new BadRequest(
+      `$withDeleted is not honoured on remove. Removing a row on a soft-deleting model ` +
+      `stamps it; destroying one is not something a directive turns on. To free a @unique ` +
+      `value a deleted row still holds, move the value aside with PATCH ?$withDeleted=true.`
+    )
   }
 
   function ensureBulkAllowed(op: string): void {
@@ -715,8 +828,10 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       if (q.withTemplates) args.withTemplates = true
       if (q.onlyTemplates) args.onlyTemplates = true
 
-      const { rows, total } = await table.findManyAndCount(args)
-      return { total, limit: q.limit, offset: q.offset, data: rows }
+      // The window (`FJS-D145`) — a caller asking `$after` is growing a
+      // window rather than stepping to a page. Both paths are `findWindow`'s,
+      // because a service that assembles its own query answers the same two.
+      return await findWindow(table, args, q.after, modelLabel(ctx))
     },
 
     async get(ctx: ServiceContext): Promise<unknown> {
@@ -888,6 +1003,8 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
     async remove(ctx: ServiceContext): Promise<unknown> {
       const table = getTable(ctx)
       const q     = parseQuery(ctx.query, paginate.default, paginate.max, ctx.directives)
+
+      refuseHardDelete(ctx, q)
 
       if (ctx.id) {
         const where = { [idField]: ctx.id, ...softDeleteFilter() }
@@ -1469,6 +1586,36 @@ async function modelVersionField(client: unknown, accessor: string): Promise<str
 
   perModel.set(accessor, field)
   return field
+}
+
+/**
+ * Does this model hide a removed row rather than destroying it?
+ *
+ * Asked of Litestone (`db.$softDelete`) rather than derived, for the reason
+ * every other crossing here is asked: a second reading of `@@softDelete` is a
+ * second answer, and the two drift.
+ *
+ * `in` rather than a bare read, and not only because a Litestone client throws
+ * on an unknown property — a client older than the capability answers `false`,
+ * which degrades to the behaviour this refusal replaced instead of exploding.
+ *
+ * The map is keyed by MODEL name and a service names an accessor, so the
+ * candidates are walked the way every other name crossing this boundary is.
+ *
+ * Not memoised, deliberately: `ctx.locals.db` is a fresh scoped client per
+ * request, so a cache keyed on it would never hit — and the only caller runs
+ * when a request actually carried the directive.
+ */
+function modelSoftDeletes(client: unknown, accessor: string): boolean {
+  const c = client as { $softDelete?: Record<string, boolean> } | null
+  if (!c || typeof c !== 'object' || !('$softDelete' in c)) return false
+
+  const candidates = accessorCandidates(accessor)
+  for (const [modelName, soft] of Object.entries(c.$softDelete ?? {})) {
+    if (candidates.includes(modelName.charAt(0).toLowerCase() + modelName.slice(1)))
+      return Boolean(soft)
+  }
+  return false
 }
 
 /** The accessor's table on this client, without tripping the throw-on-unknown proxy. */
@@ -2281,6 +2428,15 @@ export interface MembershipClaimOptions {
   standing?:  string
   /** What the standing is called on the principal. Default `<standing>`. */
   standingAs?: string
+  /** The column holding this member's capability grants, if the row carries one.
+   *  Emitted as `auth().capabilities` (`FJS-D151`), which is the name litestone's
+   *  own grid reads — so it is not renameable the way a tenant claim is.
+   *
+   *  It is read HERE rather than off the session for the reason the standing is:
+   *  a capability is always per tenant (`FJS-D149`), and the same person holds a
+   *  different set in each. Resolved per request from the row already in hand,
+   *  cached nowhere. */
+  capabilities?: string
   /** What the tenant claim is called on the principal. Default `<tenant>`. */
   as?:        string
   /** Relations to read alongside the row — `['workspace']` puts the tenant's
@@ -2297,6 +2453,19 @@ export interface MembershipClaimOptions {
 /** Where this call's resolved membership row is parked, so a caller can read
  *  the rest of it without a second query. */
 export const MEMBERSHIP = 'membership'
+
+/** A grant column reaches here as a JSON array, as `null`, or absent. All three
+ *  mean *these are the capabilities this membership holds* and two of them mean
+ *  none; anything else is a column that is not a grant, which is worth saying
+ *  rather than coercing into an empty set that reads as a caller holding nothing. */
+function asCapabilityList(v: unknown): string[] {
+  if (v == null) return []
+  if (Array.isArray(v)) return v.map(String)
+  throw new Error(
+    `membershipClaim: the capabilities column holds ${typeof v}, not a list. ` +
+    `A grant column is declared \`Capability[]\` in the seed — this one is not, ` +
+    `and emitting it as auth().capabilities would grade every capability check against it`)
+}
 
 export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver {
   const claimName    = opts.as ?? opts.tenant
@@ -2372,6 +2541,12 @@ export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver
     return {
       [claimName]: tenant,
       ...(standingName && opts.standing ? { [standingName]: row[opts.standing] } : {}),
+      // An absent column and an empty grant are the same answer and both are
+      // legitimate — a membership that holds no capabilities is what a fresh
+      // viewer is — so this normalises rather than refusing. What it will not do
+      // is emit a non-list: litestone throws by name on one, naming this
+      // resolver, and a JSON column read back as `null` is the ordinary case.
+      ...(opts.capabilities ? { capabilities: asCapabilityList(row[opts.capabilities]) } : {}),
     }
   }
 
@@ -2397,7 +2572,11 @@ export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver
     subject:    opts.subject,
     tenant:     opts.tenant,
     standing:   opts.standing   ?? null,
-    claims:     [claimName, ...(standingName && opts.standing ? [standingName] : [])],
+    standingClaim: (standingName && opts.standing) ? standingName : null,
+    capabilities: opts.capabilities ?? null,
+    claims:     [claimName,
+                 ...(standingName && opts.standing ? [standingName] : []),
+                 ...(opts.capabilities ? ['capabilities'] : [])],
     include:    opts.include    ?? [],
     namedBy:    opts.namedBy    ?? null,
   })
@@ -2416,6 +2595,13 @@ export interface PrincipalDescription {
   subject:  string | null
   tenant:   string | null
   standing: string | null
+  /** What the standing is CALLED on the principal. Stated rather than read off
+   *  the end of `claims`, which was only the standing while a resolver emitted
+   *  exactly two: the third claim took the label the moment one existed. */
+  standingClaim?: string | null
+  /** The column holding this membership's capability grants, where it has one.
+   *  Emitted as `auth().capabilities`, the one claim name the framework fixes. */
+  capabilities?: string | null
   /** The claim NAMES this resolver can emit. Never values — a value is a caller. */
   claims:   string[]
   include:  string[]
@@ -2510,7 +2696,7 @@ export function describePrincipalRealm(app: unknown, db: unknown): PrincipalReal
     const field = owner?.fields?.find(f => f.name === described.standing)
     const values = (schema?.enums ?? []).find(e => e.name === field?.type?.name)?.values ?? []
     standing = { column: `${owner?.name ?? described.model}.${described.standing}`,
-                 claim: described.claims[described.claims.length - 1] ?? described.standing,
+                 claim: described.standingClaim ?? described.standing,
                  values: values.map(v => (typeof v === 'string' ? v : (v as { name: string }).name)) }
   }
 
