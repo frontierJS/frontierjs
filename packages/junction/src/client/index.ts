@@ -1065,6 +1065,11 @@ export class JunctionClient extends EventEmitter {
     let limit:  number | null = null
     let offset = 0
     let total:  number | null = null
+    // The window's far edge, and whether there is anything past it
+    // (`FJS-D145`). `endCursor` is opaque and is handed back verbatim — this
+    // client never constructs one, which is the whole of what opacity buys.
+    let endCursor: string | null = null
+    let more:      boolean       = false
 
     const stale = new Stale()
 
@@ -1079,8 +1084,10 @@ export class JunctionClient extends EventEmitter {
     // new, which errs towards reporting a gap that is not there rather than
     // hiding one that is. An offered refresh is cheap; a list that looks
     // complete and is not is the whole defect.
+    // The keyset path runs no COUNT, so `total` is null there and the server's
+    // own answer is the only one — it fetched one row past the window and knows.
     const hasMore = (): boolean =>
-      total !== null && total > offset + store.get().length
+      total === null ? more : total > offset + store.get().length
 
     const insert = (record: T): void => {
       if (total !== null) total++
@@ -1216,6 +1223,8 @@ export class JunctionClient extends EventEmitter {
         limit  = typeof res.limit  === 'number' ? res.limit  : (params.limit ?? null)
         offset = typeof res.offset === 'number' ? res.offset : (params.offset ?? 0)
         total  = typeof res.total  === 'number' ? res.total  : null
+        endCursor = typeof res.endCursor === 'string' ? res.endCursor : null
+        more      = res.hasMore === true
         store.set(rows)
         // This answer is current by definition; whatever the list could not
         // account for before it has just been accounted for.
@@ -1321,7 +1330,46 @@ export class JunctionClient extends EventEmitter {
       }
     }
 
-    return { service: svc, store, load, stale, record, mutate }
+    // ── Growing the window ─────────────────────────────────────────────────
+    // A live list pages by growing, not by stepping: `limit` is the window and
+    // this raises it (`FJS-D145`). It is a KEYSET scan — the server resumes
+    // from the edge of what this list already has — so it cannot skip a row or
+    // serve one twice the way an offset does under a list that is being
+    // written to, which is the case this framework is best at and was worst for.
+    //
+    // Answers the rows it added, `[]` when there is nothing past the window.
+    // The window's own query and directives are the last `load()`'s: growing is
+    // not a chance to ask a different question, and one that wants a different
+    // filter or a different order is a `load()`, because a cursor minted under
+    // one ordering names no position in another.
+    const more_ = async (): Promise<T[]> => {
+      if (lastQuery === null) throw new Error(
+        `[Junction] ${name}.more() before load() — a window has to be opened before it can grow.`)
+      if (!endCursor || !more) return []
+
+      // The same stamp a load() takes, so a load() during a more() — or a
+      // second more() — supersedes this slice: it belongs to a window that is
+      // gone, and appending it would put rows from one question into the
+      // answer to another.
+      const stamp = ++issued
+      const res = await svc.find(lastQuery, { ...lastParams, after: endCursor })
+      if (stamp !== issued) return res.data
+
+      const rows = res.data
+      endCursor  = typeof res.endCursor === 'string' ? res.endCursor : null
+      more       = res.hasMore === true
+      // Appended, not placed: the server answered them in the window's own
+      // order and they sort after everything already in it, which is what a
+      // keyset scan means. `limit` grows with the window so the trim that
+      // guards page 1 does not now cut off what was just fetched.
+      if (rows.length) {
+        if (limit !== null) limit += rows.length
+        store.set([...store.get(), ...rows])
+      }
+      return rows
+    }
+
+    return { service: svc, store, load, stale, record, mutate, more: more_, hasMore }
   }
 
   // ── HTTP request ─────────────────────────────────────────────────────
@@ -1749,6 +1797,7 @@ function directiveParams(d: QueryDirectives | null | undefined): Record<string, 
   if (!d) return p
   if (d.limit       != null) p['$limit']       = d.limit
   if (d.offset      != null) p['$offset']      = d.offset
+  if (d.after       != null) p['$after']       = d.after
   if (d.orderBy     != null) p['$orderBy']     = typeof d.orderBy === 'string' ? d.orderBy : JSON.stringify(d.orderBy)
   if (d.select      != null) p['$select']      = Array.isArray(d.select)   ? d.select.join(',')   : d.select
   if (d.populate    != null) p['$populate']    = Array.isArray(d.populate) ? d.populate.join(',') : d.populate
@@ -1958,6 +2007,12 @@ export class Store<T extends Record<string, unknown> = Record<string, unknown>> 
       const keep = new Set<unknown>()
       for (const row of rows) {
         if (!_hasId(row, idField)) continue
+        // A list is a set of ids in an order, so one row cannot be in it twice.
+        // Growing a window is where this shows: the server resumes from the
+        // edge, but a row can arrive on the socket in between and be in both
+        // the list and the slice. First occurrence wins — that is where the
+        // list already had it.
+        if (keep.has(row[idField])) continue
         // Only rows that came from OUTSIDE become truth. Every mutator here
         // works on a materialised array, so most of what arrives is this
         // store's own view of a node — and once a node carries an unconfirmed
@@ -2124,6 +2179,18 @@ export interface ResourceResult<T extends Record<string, unknown> = Record<strin
     intent: Partial<T> | null,
     run: () => Promise<T | null>
   ) => Promise<T | null>
+  /**
+   * Grow the window — the live list's answer to paging (`FJS-D145`).
+   *
+   * A keyset scan resuming from the edge of what this list already holds, so
+   * it cannot skip a row or serve one twice the way an offset does under a
+   * list that is being written to. Answers the rows it added, `[]` when there
+   * is nothing past the window. Growing is not a chance to ask a different
+   * question: the query and the directives are the last `load()`'s.
+   */
+  more: () => Promise<T[]>
+  /** Is there anything past the window? */
+  hasMore: () => boolean
 }
 
 export interface RecordOptions<T extends Record<string, unknown> = Record<string, unknown>> {

@@ -15,13 +15,26 @@ title: Server
   let loading = true
   let busy    = null
 
+  // The server row is WATCHED. `service.get(id)` answers a plain object nothing
+  // can reach, so a drain from another tab or an outpost checking in moved the
+  // store and never this variable (`FJS-533`).
+  let rowView = null, unwatch = null
+
+  function watchRow() {
+    rowView?.release()
+    unwatch?.()
+    rowView = servers.record(page.params.id)
+    unwatch = rowView.subscribe(v => { server = v })
+    return rowView.ready
+  }
+
+  $.onDestroy(() => { unwatch?.(); rowView?.release() })
+
   async function load() {
     error = null
     try {
-      server = await servers.service.get(page.params.id)
-      // `events` is a custom method: POST /servers/:id with
-      // X-Service-Method: events. The sub-path form is a 404.
-      events = rowsOf(await servers.service.invoke('events', page.params.id))
+      await watchRow()
+      await loadEvents()
     } catch (e) {
       error = e.message
     } finally {
@@ -29,20 +42,26 @@ title: Server
     }
   }
 
+  // The trail is its own read and does NOT ride the row's node: it is a custom
+  // method — POST /servers/:id with X-Service-Method: events, the sub-path form
+  // is a 404 — and no announcement carries it.
+  async function loadEvents() {
+    events = rowsOf(await servers.service.invoke('events', page.params.id))
+  }
+
   load()
   $: page.params.id, () => load()
 
-  // Live. A drain from another tab, or an outpost checking in, changes this page
-  // without anyone touching it.
+  // The row moves itself now; this is here for the TRAIL, which nothing pushes.
   // The event is named after the method — `servers heartbeat`, `servers drain`
   // — so this listens to all of them and filters out the READS. That filter is
-  // load-bearing: the service publishes after `get` too, and reloading on it
-  // would make this page reload in response to its own reload, forever.
+  // still load-bearing: the service publishes after `get` too, and re-reading on
+  // it would make this page answer its own read, forever.
   const READS = new Set(['get', 'find', 'events'])
 
   const off = servers.service.on('*', (method, row) => {
     if (READS.has(method) || row?.id !== page.params.id) return
-    load()
+    loadEvents().catch(e => { error = e.message })
   })
   $.onDestroy(off)
 
@@ -53,13 +72,17 @@ title: Server
   async function act(method) {
     error = null; busy = method
     try {
-      server = await servers.service.invoke(method, server.id)
-      events = rowsOf(await servers.service.invoke('events', server.id))
+      // The answer is used for the SENTENCE and not assigned over `server`:
+      // the row is a subscription now, and the move's own announcement is what
+      // carries it onto the screen. Assigning here would race that push and
+      // win with an older object on the way back.
+      const moved = await servers.service.invoke(method, server.id)
+      await loadEvents()
       // A transition is confirmed where the operator is looking, not only by
       // the status pill changing further down the page. `error` stays as the
       // inline record of a refusal — a toast is transient, and a refusal is
       // something you may need to read twice.
-      toasts.success(`${server.name} → ${server.status}`)
+      toasts.success(`${moved.name} → ${moved.status}`)
     } catch (e) {
       error = e.message
     } finally {
@@ -117,21 +140,12 @@ title: Server
   // and inventing a second ladder in the browser is the copy this change is
   // removing. `transitionsAt` treats an unknown level as permissive, which is
   // the documented contract for every x-* affordance.
-  // One derived per button, each reading `server` DIRECTLY. The obvious shape
-  // is a single `moves` Set with `moves.has('drain')` in each `{#if}`, and it
-  // does not work: the Set re-derives (an attribute bound to it updates) while
-  // the block tests reading it do not re-run, so after a drain the page kept
-  // the button set it had before — `FJS-512`. Reading a plain `let` is the
-  // shape every other derived in this app uses.
-  // `server` is named in each expression rather than closed over inside `can`.
-  // Mesa decides what an expression depends on from the expression's own text,
-  // so `can('drain')` mentions no reactive value — it happens to work, and the
-  // hub layout's nav carries the same note for the same reason.
-  const can = (row, name) => !!row && servers.transitions(row).some(t => t.name === name)
-
-  $: canDrain   = can(server, 'drain')
-  $: canUndrain = can(server, 'undrain')
-  $: canReboot  = can(server, 'reboot')
+  // `server` is named in the expression rather than closed over inside a
+  // helper. Mesa decides what an expression depends on from the expression's
+  // own text, so a `moves()` that mentions no reactive value happens to work
+  // and re-derives for the wrong reason; the hub layout's nav carries the same
+  // note for the same reason.
+  $: moves = new Set(server ? servers.transitions(server).map(t => t.name) : [])
 </script>
 
 {#if loading}
@@ -156,17 +170,17 @@ title: Server
   {/if}
 
   <div class="cluster" id="server-actions">
-    {#if canDrain}
+    {#if moves.has('drain')}
       <Button variant="outlined" disabled={busy === 'drain'} onclick={() => act('drain')}>
         {busy === 'drain' ? 'Draining…' : 'Drain'}
       </Button>
     {/if}
-    {#if canUndrain}
+    {#if moves.has('undrain')}
       <Button variant="outlined" disabled={busy === 'undrain'} onclick={() => act('undrain')}>
         {busy === 'undrain' ? 'Cancelling…' : 'Cancel drain'}
       </Button>
     {/if}
-    {#if canReboot}
+    {#if moves.has('reboot')}
       <Button variant="outlined" disabled={busy === 'reboot'} onclick={() => act('reboot')}>Reboot</Button>
     {/if}
     <Button variant="ghost" disabled={busy === 'sync'} onclick={() => act('sync')}>

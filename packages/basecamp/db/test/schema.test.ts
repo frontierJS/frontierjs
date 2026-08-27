@@ -35,6 +35,7 @@ import { RECLAIM_TARGET_NAMES } from '../../api/src/services/cleanup/targets.ts'
 // import is what keeps it a copy of the schema rather than a second opinion.
 import { USER_STATUSES, WORKSPACE_STATUSES } from '../../api/src/services/hub/hub.service.ts'
 import { NOTIFICATION_KIND_NAMES } from '../../api/src/services/notification-preferences/kinds.ts'
+import { grantsFor } from '../../api/src/core/capabilities.ts'
 
 const SCHEMA     = join(import.meta.dir, '..', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', 'migrations')
@@ -147,7 +148,14 @@ async function auditEntries(dir: string, model: string, ops: string[]): Promise<
 
 /** A principal with standing in a workspace, as applyStanding() builds one. */
 function as(memberRole: string, extra: Record<string, unknown> = {}) {
-  return { id: 'u1', userId: 'u1', memberRole, ...extra }
+  // The grants that role really holds, from the app's own table — the same
+  // reason `moveTo` below reads the version through `sys`. `Server` and
+  // `Environment` declare `@@capabilities`, which is ANDed with the gate, so a
+  // caller built without them is refused by the GRID and every test here that
+  // names a tenancy rule or a gate would be grading the wrong refusal
+  // (`FJS-351`). It is also the honest shape: a real caller at this role holds
+  // exactly this set, because `membershipClaim` reads it off their row.
+  return { id: 'u1', userId: 'u1', memberRole, capabilities: grantsFor(memberRole), ...extra }
 }
 
 /**
@@ -282,7 +290,7 @@ describe('generated migration', () => {
     expect(onDisk).toContain(generateDDL(r.schema))
   })
 
-  test('applies to a fresh database — 45 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 46 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -309,8 +317,10 @@ describe('generated migration', () => {
     // `RegistryImage` (observed, which commits to MIRRORING a registry rather
     // than querying it live), `Backup` and `HubConfig` (the installation, which
     // no workspace owns) and `NotificationPreference` (one row per person and
-    // kind, a column per transport).
-    expect(tables.length).toBe(45)
+    // kind, a column per transport). 46 since `OutpostNonce`, which is neither
+    // a person's nor a workspace's: a machine's spent credential, kept only as
+    // long as the signature carrying it could be replayed (`FJS-376`).
+    expect(tables.length).toBe(46)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {
@@ -319,7 +329,11 @@ describe('generated migration', () => {
     })
     expect(nonStrict).toEqual([])
     raw.close()
-  })
+  // Replaying 46 CREATE TABLEs is most of bun's 5s default on a loaded machine,
+  // and the memoised `freshDb()` only spares the SECOND caller. An explicit
+  // budget rather than a faster test: what this asserts is the shape of the
+  // migration, and timing it out says nothing about that.
+  }, 30_000)
 
   test('the database the migrations build is the one schema.lite declares', async () => {
     // The text check above compares the initial migration against generateDDL,

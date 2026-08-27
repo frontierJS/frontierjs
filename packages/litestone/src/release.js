@@ -124,6 +124,15 @@ function describeModel(model, access, pluralize) {
     .map(a => [...a.fields])          // an index is ordered — the column order IS the index
     .sort(cmpCols)
 
+  // A row invariant is something N-1 binds to in the direction nothing else
+  // here covers: it does not change what a read ANSWERS, it changes what a
+  // write is allowed to be. The expression is the identity — an edited one is
+  // a different constraint, and SQLite cannot alter one in place either.
+  const checks = attrs
+    .filter(a => a.kind === 'check')
+    .map(a => a.expr)
+    .sort()
+
   const policies = {}
   for (const [op, entry] of Object.entries(access?.policies ?? {})) {
     policies[op] = {
@@ -139,9 +148,16 @@ function describeModel(model, access, pluralize) {
     external:    attrs.some(a => a.kind === 'external'),
     softDelete:  isSoftDelete(model) ? (isSoftDeleteCascade(model) ? 'cascade' : true) : false,
     gate:        access?.gateSource ?? null,
+    // The grid, on the surface for the same reason the gate is: a model gaining
+    // one starts refusing writes N-1 has been making all along, with no column,
+    // no type and no constraint moving. Nothing else in the surface can see it.
+    capabilities: access?.capabilities
+      ? { read: access.capabilities.read, columns: [...access.capabilities.columns].sort() }
+      : null,
     fields,
     uniques,
     indexes,
+    checks,
     policies,
     transitions: [...(access?.transitions ?? [])]
       .map(t => ({ field: t.field, name: t.name, from: states(t.from), to: states(t.to), gate: t.gate ?? null }))
@@ -618,6 +634,16 @@ function compareConstraints(b, m, f) {
     added:   (cols) => add(f, EXPAND, `model ${m.name}`, `@@index(${cols}) added`),
     removed: (cols) => add(f, EXPAND, `model ${m.name}`, `@@index(${cols}) removed`),
   })
+
+  // A new CHECK is the same shape as a new `@@unique` and contracts for the
+  // same reason: the release still serving knows nothing about it and writes
+  // rows it forbids, which come back as refusals from a version that was
+  // working a minute ago. Removing one cannot break N-1 — every row the old
+  // constraint admitted is still admitted.
+  diffSets(b.checks ?? [], m.checks ?? [], {
+    added:   (expr) => add(f, CONTRACT, `model ${m.name}`, `@@check(${expr}) added — an N-1 write that does not satisfy it is now refused`),
+    removed: (expr) => add(f, EXPAND,   `model ${m.name}`, `@@check(${expr}) removed`),
+  })
 }
 
 const k = (cols) => cols.join(', ')
@@ -634,8 +660,38 @@ function diffSets(was, now, { added, removed }) {
 // is still serving them, and adding a row policy empties a screen with a 200.
 // The comparison is possible here only because the rule is declared.
 
+// The grid is on the same two axes as everything else and it grades cleanly on
+// both: a caller who held no grant is refused where they were not before, which
+// is a CONTRACT for the deploy and a NARROWS for access. What it is not is a
+// version of the gate — the two are ANDed, so a model can narrow here while its
+// ladder does not move at all.
+function compareCapabilities(b, m, f, at) {
+  const was = b.capabilities, now = m.capabilities
+  if (!was && !now) return
+
+  if (!was) {
+    add(f, CONTRACT, at, `@@capabilities added — every write N-1 makes now needs a grant no N-1 caller holds`,
+        { access: NARROWS })
+  } else if (!now) {
+    add(f, EXPAND, at, `@@capabilities removed — no grant is required on this model now`,
+        { access: WIDENS })
+  } else if (was.read !== now.read) {
+    now.read
+      ? add(f, CONTRACT, at, `@@capabilities(all) — reads now need \`${m.name}.read\`, and a caller without it is refused rather than filtered`, { access: NARROWS })
+      : add(f, EXPAND,   at, `@@capabilities(all) dropped to @@capabilities — reads need no grant now`, { access: WIDENS })
+  }
+
+  const wasCols = new Set(was?.columns ?? []), nowCols = new Set(now?.columns ?? [])
+  for (const c of nowCols) if (!wasCols.has(c))
+    add(f, CONTRACT, `${at}.${c}`, `@capability added — writing this column needs \`${m.name}.${c}\``, { access: NARROWS })
+  for (const c of wasCols) if (!nowCols.has(c))
+    add(f, EXPAND, `${at}.${c}`, `@capability removed — this column is covered by \`${m.name}.update\` alone now`, { access: WIDENS })
+}
+
 function compareAccess(b, m, f) {
   const at = `model ${m.name}`
+
+  compareCapabilities(b, m, f, at)
 
   if (b.gate !== m.gate) {
     const was = levels(b.gate), now = levels(m.gate)
@@ -782,6 +838,102 @@ const q = (s) => `\`${s}\``
 // A table cell that may hold raw SQL. A `|` ends the cell and silently drops
 // the rest of the row.
 const cell = (v) => (v ? `\`${String(v).replace(/\|/g, '\\|')}\`` : '—')
+
+// ─── capabilityDrift ──────────────────────────────────────────────────────────
+//
+//   capabilityDrift(before, after) → { lost, gained, renames, columns, sql, ambiguous }
+//
+// **What a rename of a capability costs, computed rather than guessed** —
+// `FJS-D148`. A capability is a REFERENCE, so renaming the referent renames the
+// capability, and the old string is left sitting in every grant column in every
+// tenant's database, granting nothing and looking exactly like a grant.
+//
+// It is computed from two SCHEMAS and could not be computed from two databases,
+// which is the correction this function carries. D148 expected the rewrite to
+// fall out of `diffSchemas`/`autoMigrate`, and for a renamed column it does —
+// but a MOVE rename changes the capability set and emits **byte-identical DDL**
+// (measured), so the migration engine, which diffs a replayed shadow database
+// against a pristine one, reports *no migration needed* while every grant row
+// holding the old name goes quiet. Moves are where most capabilities come from.
+// So this rides the `--from <ref>` comparison, which reads two `.lite` files,
+// and is where the blast radius was computable all along.
+//
+// **The pairing is inferred only where it is forced**, because a lost name and a
+// gained name are a rename in the author's head and a coincidence in the data.
+// Two shapes are decidable: a model whose whole prefix moved with its target set
+// intact, and a single loss paired with a single gain on one model. Anything
+// else is reported as `ambiguous` with no SQL, since a wrong rewrite hands
+// somebody else's authority to a role and would look like it worked.
+export function capabilityDrift(before, after) {
+  const setOf = (surface) => {
+    const out = new Map()
+    for (const m of surface.models ?? []) {
+      if (!m.capabilities) continue
+      if (m.capabilities.read) out.set(`${m.name}.read`, { model: m.name, target: 'read' })
+      for (const op of ['create', 'update', 'delete']) out.set(`${m.name}.${op}`, { model: m.name, target: op })
+      for (const t of m.transitions ?? [])
+        if (t.gate !== 8 && t.gate !== 9) out.set(`${m.name}.${t.name}`, { model: m.name, target: t.name })
+      for (const c of m.capabilities.columns ?? []) out.set(`${m.name}.${c}`, { model: m.name, target: c })
+    }
+    return out
+  }
+
+  const was = setOf(before), now = setOf(after)
+  const lost   = [...was.keys()].filter(k => !now.has(k)).sort()
+  const gained = [...now.keys()].filter(k => !was.has(k)).sort()
+
+  // Every column that HOLDS capabilities, read off the after-schema: the rewrite
+  // has to run everywhere one is stored, and a schema can carry several.
+  const columns = []
+  for (const m of after.models ?? [])
+    for (const f of m.fields ?? [])
+      if (f.type === 'Capability' || f.type === 'Capability[]')
+        columns.push({ model: m.name, table: m.table, column: f.name })
+
+  const renames = [], ambiguous = []
+  const byModel = (names) => {
+    const g = new Map()
+    for (const n of names) (g.get(was.get(n)?.model ?? now.get(n)?.model) ?? g.set(was.get(n)?.model ?? now.get(n)?.model, []).get(was.get(n)?.model ?? now.get(n)?.model)).push(n)
+    return g
+  }
+  const lostBy = byModel(lost), gainedBy = byModel(gained)
+
+  const pairedModels = new Set()
+  for (const [lm, lnames] of lostBy) {
+    const ltargets = lnames.map(n => was.get(n).target).sort().join('\u0000')
+    for (const [gm, gnames] of gainedBy) {
+      if (pairedModels.has(gm) || lm === gm) continue
+      const gtargets = gnames.map(n => now.get(n).target).sort().join('\u0000')
+      // The whole prefix moved and the targets are intact — a model rename.
+      if (ltargets !== gtargets || !ltargets) continue
+      if (!now.has(`${gm}.create`) || was.has(`${gm}.create`)) continue
+      pairedModels.add(gm)
+      for (const n of lnames) renames.push({ from: n, to: `${gm}.${was.get(n).target}`, why: `model ${lm} → ${gm}` })
+      break
+    }
+  }
+
+  for (const [lm, lnames] of lostBy) {
+    const open = lnames.filter(n => !renames.some(r => r.from === n))
+    if (!open.length) continue
+    const gains = (gainedBy.get(lm) ?? []).filter(n => !renames.some(r => r.to === n))
+    if (open.length === 1 && gains.length === 1)
+      renames.push({ from: open[0], to: gains[0], why: `${was.get(open[0]).target} → ${now.get(gains[0]).target} on ${lm}` })
+    else
+      ambiguous.push(...open)
+  }
+
+  // A quoted-string replace over the stored JSON array. Exact by construction:
+  // a capability name is `Model.target`, two identifiers and a dot, so it can
+  // hold no quote and the quoted form cannot match a prefix of a longer name.
+  const sql = []
+  for (const r of renames)
+    for (const c of columns)
+      sql.push(`UPDATE "${c.table}" SET "${c.column}" = replace("${c.column}", '"${r.from}"', '"${r.to}"') ` +
+               `WHERE "${c.column}" LIKE '%"${r.from}"%';`)
+
+  return { lost, gained, renames: renames.sort((a, b) => a.from.localeCompare(b.from)), columns, sql, ambiguous: ambiguous.sort() }
+}
 
 // ─── classifyAccess ───────────────────────────────────────────────────────────
 //
@@ -938,6 +1090,7 @@ export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) 
     const extra = []
     for (const cols of m.uniques) extra.push(`@@unique(${k(cols)})`)
     for (const cols of m.indexes) extra.push(`@@index(${k(cols)})`)
+    for (const expr of m.checks ?? []) extra.push(`@@check(${expr})`)
     for (const [op, p] of Object.entries(m.policies).sort()) {
       for (const e of p.allows) extra.push(`@@allow('${op}', ${e})`)
       for (const e of p.denies) extra.push(`@@deny('${op}', ${e})`)

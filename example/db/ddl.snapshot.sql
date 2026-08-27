@@ -114,7 +114,10 @@ CREATE TABLE IF NOT EXISTS "discount" (
   "redemptions" INTEGER NOT NULL DEFAULT 0,
   "active" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK ("kind" IN ('percent', 'fixed'))
+  CHECK ("kind" IN ('percent', 'fixed')),
+  CHECK (maxRedemptions IS NULL OR redemptions <= maxRedemptions),
+  CHECK (startsAt IS NULL OR endsAt IS NULL OR startsAt < endsAt),
+  CHECK (kind != 'percent' OR value <= 100)
 ) STRICT;
 
 -- What the shop charges to send it.
@@ -232,6 +235,8 @@ CREATE TABLE IF NOT EXISTS "order" (
   "deletedAt" TEXT,
   "userId" TEXT,
   CHECK ("status" IN ('pending', 'paid', 'shipped', 'refunded', 'cancelled')),
+  CHECK (subtotal = 0 OR abs(total - (subtotal - discount + shipping + tax)) < 0.005),
+  CHECK (discount <= subtotal),
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_order_deletedAt" ON "order" ("deletedAt") WHERE "deletedAt" IS NULL;
@@ -267,13 +272,6 @@ CREATE TABLE IF NOT EXISTS "cart" (
   FOREIGN KEY ("discountId") REFERENCES "discount" ("id") ON DELETE SET NULL,
   FOREIGN KEY ("shippingMethodId") REFERENCES "shipping_method" ("id") ON DELETE SET NULL
 ) STRICT;
--- Auto-update updatedAt on every row change
-CREATE TRIGGER IF NOT EXISTS "cart_updatedAt"
-AFTER UPDATE ON "cart"
-WHEN NEW."updatedAt" IS OLD."updatedAt"
-BEGIN
-  UPDATE "cart" SET "updatedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
-END;
 
 -- A photograph. The bytes live in object storage and this column holds the
 -- reference — `File` is the type that means that, and `FileStorage` in

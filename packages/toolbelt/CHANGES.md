@@ -1,3 +1,43 @@
+# Changes — @frontierjs/toolbelt
+
+## 2026-08-26 — `/match`, and `fieldShapes` under it
+
+**`@frontierjs/toolbelt/match` — does this record belong in that query's
+results?** `matchesQuery(fields, record, query)`, three answers: `true` upsert,
+`false` REMOVE, `null` *cannot decide, ask the server*.
+
+It moved out of sierra because there are two live stores and they had one
+implementation between them. Sierra's asked; jetty's upserted whatever its
+channel delivered, so a row that had LEFT the loaded filter went straight back
+into the list (`FJS-493`). jetty may not import sierra, and a hand copy is what
+`FJS-059` already paid for once — the fourth pure half to come down for exactly
+that reason, after `/hooks`, `/jsonschema` and `/inflect`.
+
+**`fieldShapes` is in `/jsonschema` and is the minimum `/match` reads**: field
+name → `{ type, nullable }`. Two questions in one walk, because they come off
+different places — nullability is on the RAW schema, and `derefFieldSchema`
+follows the non-null branch of an `anyOf`, so by the time the target is in hand
+the null branch is gone. Sierra's `buildFieldRules` computes its own `type` and
+`nullable` through it now, so there is one answer to *what type is this field*.
+
+The type is read for one reason and it is worth stating: the wire is text, so a
+query built from a URL or a form control sends `'5'` for an Int, and SQLite's
+affinity makes `WHERE id = '5'` match row 5 where `5 === '5'` does not. `{}` is
+a legal fields table and degrades exactly one way — a string operand against a
+numeric column reads as no match — which is what sierra has always done on a
+schema-registry miss.
+
+31 cases moved with the function (`test/specs/match.spec.js`), 6 more for the
+shapes. Sierra keeps the SEAM: that `createResource` hands the matcher down,
+built over the model it resolved, plus one line asserting its re-export is this
+function and not a copy.
+
+## 2026-08-26 — `$after` joins the directive table (`FJS-D145`)
+
+One row, and both of Junction's transports plus Sierra's router read it — which
+is the whole reason the table exists. Read with `asText` and never `asNumber`:
+the token is base64 and a numeric-looking one must not be turned into a number.
+
 # @frontierjs/toolbelt — changes
 
 ## 2026-08-25 — `/glow`: the languages this repo writes, and transcripts (`FJS-515`)

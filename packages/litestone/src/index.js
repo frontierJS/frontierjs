@@ -2,7 +2,7 @@
 
 export { createClient, ValidationError,
          TransitionViolationError, TransitionConflictError,
-         TransitionNotFoundError, TransitionGateError,
+         TransitionNotFoundError, TransitionGateError, TransitionSystemError,
          VersionRequiredError, VersionConflictError,
          LockNotAcquiredError, LockReleasedByOtherError,
          LockExpiredError, SoftDeletedUniqueError,

@@ -314,6 +314,11 @@ export interface TestEnv {
   schema:    ParseResult['schema']
   /** The throwaway directory holding this env's databases. */
   dir:       string
+  /**
+   * The clock every client this env opened reads — including the ones `atLevel`
+   * builds, so moving it moves those too.
+   */
+  clock:     TestClock
 
   /** A scoped client for a principal, graded by the app's own `getLevel`. */
   actingAs(user: unknown): LitestoneClient
@@ -438,6 +443,34 @@ export interface TestEnvOptions extends Record<string, unknown> {
    * migration is refused, since a template is built on a raw connection.
    */
   migrations?: string | string[]
+  /**
+   * The clock every client this env opens reads, exposed as `env.clock`.
+   *
+   * A `Date` or an ISO string FREEZES time there and stays movable; a function
+   * is your own source and `env.clock` will refuse to move it. Absent is the
+   * wall clock, and `set`/`advance` freeze it from that point.
+   *
+   * It moves `now()` in a row policy and `@@softDelete`'s stamp. It does NOT
+   * move `@default(now())` or `@updatedAt`, which SQLite stamps (`FJS-531`) —
+   * state those on the write when a row has to be old.
+   */
+  now?: Date | string | (() => Date | string)
+}
+
+/** A clock a suite can move. See `TestEnvOptions.now`. */
+export interface TestClock {
+  /** The instant every client reads. */
+  now(): Date
+  /** Freeze at, or move to, an instant. Answers the new one. */
+  set(at: Date | string): Date
+  /**
+   * Move by a duration — `'90m'`, `'2d'`, `'1y'`, or milliseconds. From the wall
+   * clock this also freezes, because an offset from a moving clock is still
+   * moving and the assertion after it would be a race.
+   */
+  advance(by: string | number): Date
+  /** Is time standing still? False for the wall clock and for your own source. */
+  readonly frozen: boolean
 }
 
 /**

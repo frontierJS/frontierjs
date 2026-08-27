@@ -2,25 +2,51 @@
 title: Audit trail
 ---
 <script>
+  // The forensic table — who did what in this workspace, newest first.
+  //
+  // **The list is a WINDOW, not a page** (`FJS-D145`). A trail only grows, and
+  // it grows at the end a reader starts from, so an offset means something
+  // different every second: ask for rows 50–99 a minute after rows 0–49 and
+  // whatever arrived in between has pushed the boundary along, serving one row
+  // twice and skipping another. On the one screen in this app whose job is to
+  // be complete, that is the wrong failure to have quietly.
+  //
+  // So `load()` takes the first window and `more()` grows it from the far edge
+  // — by the sort keys of the last row it holds, which is a position rather
+  // than a count. The rows live in the resource's store; this file holds no
+  // array of its own, so a row cannot be in the window and not on the screen.
+  //
+  // It was `service.find(…, { limit: 50 })` — a hard cap with nothing saying
+  // rows were missing, which reads exactly like a trail that only has 50.
   import { session } from '../../../session.js'
   import { audit } from '../../../resources/AuditEvent.mesa'
+  import { useStore } from '@frontierjs/sierra/junction'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
 
-  let rows    = []
+  const { get: rows, unsubscribe } = useStore(audit.store)
+
   let error   = null
   let loading = true
+  let growing = false
+  let more    = false
   let filter  = ''
+
+  // The window's own limit. Named once: `load()` states it and `more()` reuses
+  // the last load's directives, so a second number here would be a window that
+  // grows in a different size than it started.
+  const PAGE = 50
 
   async function load() {
     error = null; loading = true
     try {
       // The service filters; the browser does not. A page-local .filter() would
-      // hide rows that are simply on the next page and call that a result.
-      rows = (await audit.service.find(filter ? { subjectType: filter } : {}, { limit: 50 })).data
+      // hide rows that are simply past the far edge and call that a result.
+      await audit.load(filter ? { subjectType: filter } : {}, { limit: PAGE })
+      more = audit.hasMore()
     } catch (e) {
       // 403 here is the service saying this caller is not an admin — which is
       // the correct answer, and worth showing rather than hiding the page.
@@ -30,8 +56,24 @@ title: Audit trail
     }
   }
 
+  // Growing states no query: the cursor was minted under the last load's
+  // ordering and names no position in another one, so a new filter is a
+  // `load()` and this is deliberately unable to become one.
+  async function grow() {
+    error = null; growing = true
+    try {
+      await audit.more()
+      more = audit.hasMore()
+    } catch (e) {
+      error = e.message
+    } finally {
+      growing = false
+    }
+  }
+
   load()
   $: session.workspaceId, () => load()
+  $.onDestroy(() => unsubscribe())
 
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
   const AUDIT_COLUMNS = [
@@ -61,12 +103,12 @@ title: Audit trail
 
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
-{:else if !rows.length}
+{:else if !rows().length}
   <article class="alert info">
     <div class="alert-content">Nothing recorded yet — the trail fills as work happens.</div>
   </article>
 {:else}
-  <Table id="audit-rows" columns={AUDIT_COLUMNS} rows={rows} striped hover={false}>
+  <Table id="audit-rows" columns={AUDIT_COLUMNS} rows={rows()} striped hover={false}>
     {#snippet row(event)}
       <tr>
         <td class="text-sm text-muted">{when(event.createdAt)}</td>
@@ -76,4 +118,19 @@ title: Audit trail
       </tr>
     {/snippet}
   </Table>
+
+  <!-- The count is what this window holds, never a total: the keyset path runs
+       no COUNT, and printing the page length as a total is how a capped list
+       claims to be complete. What the reader needs is whether there is more,
+       which is the button being there. -->
+  <div class="cluster" id="audit-window">
+    <span class="text-sm text-muted">{rows().length} events</span>
+    {#if more}
+      <Button id="audit-more" variant="outlined" disabled={growing} onclick={grow}>
+        {growing ? 'Loading…' : 'Load more'}
+      </Button>
+    {:else}
+      <span class="text-sm text-muted" id="audit-end">— end of trail</span>
+    {/if}
+  </div>
 {/if}

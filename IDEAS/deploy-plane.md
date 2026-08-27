@@ -67,6 +67,19 @@ restarts `_replaced`, which is genuinely the right mechanism — but the thing i
 restores is *the previous build of possibly-the-same source*, and the image it would
 otherwise fall back to is a tag rather than a digest.
 
+**Rolling back the code says nothing about the data, and only one direction of that
+is derived.** The pipeline is well wired to replication — `01-preflight` detects
+litestream and version-checks it, `05-backup` takes the copy, `06-swap` is built
+around the checkpoint the container stop forces, `deploy:doctor` fails on a build too
+old to parse STRICT tables — and `litestone replicate` derives one replica per
+declared database off the seed. Two gaps sit under that, both filed: `deploy:setup`
+installs docker, nginx, git, bun, rsync and sqlite3 and **not litestream**, so every
+one of those checks grades a binary the plane never put there (`ISSUES.md`
+`FJS-243`); and there is no `litestone restore`, so the way back is one
+`litestream restore` per database typed by hand plus a directory copy for the
+jsonl/logger ones (`FJS-540`). An operator restoring under pressure is the worst
+possible audience for a step nothing derives.
+
 **The image tag is not unique, and Docker will believe it.** `02-pull` sets
 `imageTag = ${appId}:${shortSha}` from the SHA of *the target server's own checkout*.
 Two servers at the same commit hold two images with the same name and different

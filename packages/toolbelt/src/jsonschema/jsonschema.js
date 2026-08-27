@@ -44,6 +44,56 @@ export function derefFieldSchema(def, resolve) {
   return def
 }
 
+/**
+ * What TYPE is this field, and may it hold null?
+ *
+ * Two questions, one walk, because they are read off different places and
+ * nothing else can tell them apart afterwards: nullability is on the RAW
+ * schema, and `derefFieldSchema` follows the non-null branch of an `anyOf`, so
+ * by the time the target is in hand the null branch is gone.
+ *
+ * @param {object} raw   the field's schema as the model declares it
+ * @param {(ref: string) => object|null} [resolve]
+ * @returns {{ type: string|null, nullable: boolean }}
+ */
+export function fieldShape(raw, resolve) {
+  if (!raw || typeof raw !== 'object') return { type: null, nullable: false }
+
+  const nullable = Array.isArray(raw.type)  ? raw.type.includes('null')
+    : Array.isArray(raw.anyOf) ? raw.anyOf.some(d => d?.type === 'null')
+    : false
+
+  const def = derefFieldSchema(raw, resolve)
+  let type = def.type
+  if (Array.isArray(type)) type = type.find(t => t !== 'null')
+  if (!type && Array.isArray(def.anyOf)) type = def.anyOf.find(d => d && d.type !== 'null')?.type
+
+  return { type: type ?? null, nullable }
+}
+
+/**
+ * The same for every field of a model definition.
+ *
+ * The minimum `@frontierjs/toolbelt/match` reads, for a consumer that has a
+ * schema and no field-rule builder — jetty, where the richer table is Sierra's
+ * and lives on the other side of the dependency direction.
+ *
+ * @param {object} modelDef  `{ properties }`, or the properties bag itself
+ * @param {(ref: string) => object|null} [resolve]
+ * @returns {Record<string, { type: string|null, nullable: boolean }>}
+ */
+export function fieldShapes(modelDef, resolve) {
+  const properties = modelDef?.properties ?? modelDef
+  if (!properties || typeof properties !== 'object') return {}
+
+  const out = {}
+  for (const [name, raw] of Object.entries(properties)) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    out[name] = fieldShape(raw, resolve)
+  }
+  return out
+}
+
 const TYPE_DEFAULTS = {
   string:  '',
   integer: 0,

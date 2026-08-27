@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**91 words** — 11 declarations · 57 field attributes · 23 model attributes.
+**96 words** — 11 declarations · 60 field attributes · 25 model attributes.
 
 ## Declarations
 
@@ -50,6 +50,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@omit` | Hide or lock a value | [(all)] |  | level: all |  |
 | `@guarded` | Hide or lock a value | [(all)] | on a model's field · on a trait's field |  |  |
 | `@system` | Hide or lock a value |  |  |  |  |
+| `@capability` | Hide or lock a value |  |  |  |  |
 | `@encrypted` | Hide or lock a value |  | on a model's field · on a trait's field |  |  |
 | `@hashed` | Hide or lock a value |  |  |  |  |
 | `@secret` | Hide or lock a value | [(rotate: …)] | on a model's field · on a trait's field |  |  |
@@ -59,6 +60,8 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@updatedBy` | Record who and when | [(<authField>)] |  |  |  |
 | `@createdBy` | Record who and when | [(<authField>)] |  |  |  |
 | `@version` | Record who and when |  | on a model's field · on a trait's field |  |  |
+| `@scale` | Shape the table | (<places>) | on a model's field · on a trait's field |  |  |
+| `@money` | Shape the table | [(<CURRENCY>)] \| [(field: <column>)] | on a model's field · on a trait's field |  |  |
 | `@keepVersions` | Record who and when |  |  |  |  |
 | `@log` | Record who and when | (<database>[, reads: false][, writes: false]) |  |  |  |
 | `@trim` | Clean a value on write |  |  |  |  |
@@ -75,7 +78,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@accept` | Refuse a bad value | ("image/*") |  |  |  |
 | `@date` | Refuse a bad value | [(message)] |  |  |  |
 | `@datetime` | Refuse a bad value | [(message)] |  |  |  |
-| `@time` | Refuse a bad value | [(seconds: true)][(message)] |  |  |  |
+| `@time` | Refuse a bad value | [(seconds: true[, message: "..."])] |  |  |  |
 | `@regex` | Refuse a bad value | ("pattern"[, message]) |  |  |  |
 | `@length` | Refuse a bad value | (min[, max][, message]) |  |  |  |
 | `@startsWith` | Refuse a bad value | ("text"[, message]) |  |  |  |
@@ -96,12 +99,14 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | --- | --- | --- | --- | --- | --- |
 | `@@index` | Shape the table | ([field, …]) |  |  |  |
 | `@@unique` | Shape the table | ([field, …]) |  |  | parses as `uniqueIndex` |
+| `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
 | `@@map` | Shape the table | ("table_name") | in a model |  |  |
 | `@@label` | Shape the table | (<field>) |  |  | parses as `labelField` |
 | `@@external` | Shape the table |  |  |  |  |
 | `@@strict` | Shape the table |  |  |  |  |
 | `@@noStrict` | Shape the table |  |  |  |  |
 | `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram]) | in a model | tokenize: unicode61 · ascii · porter · trigram |  |
+| `@@capabilities` | Decide who may | [(all)] |  | scope: all |  |
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |
 | `@@softDeleteCascade` | Shape the table |  |  |  | **removed** — use `softDelete` |
 | `@@hasTemplates` | Shape the table | [(<field>)] |  |  |  |
@@ -125,7 +130,7 @@ A blank `legal` column above means the ordinary answer for that level.
 
 | position | refuses |
 | --- | --- |
-| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `allow`, `values` |
+| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `allow`, `values`, `scale`, `money` |
 | on a trait's field | `id` |
 | in a trait | `map`, `db`, `fts` |
 | on an enum member | everything except `@label` |

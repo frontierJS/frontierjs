@@ -187,37 +187,78 @@ cost (a million-row update would write a million snapshots) and it belongs to
 whoever builds replay. The cheap middle is an opt-in per model — `@@log(audit,
 snapshots: all)` — rather than a global default.
 
-## Backup is the other question, and it has no owner
+## Backup ships. Restore is the half that does not
 
-Added 2026-08-12, from an ecosystem sweep of the app lifecycle. Checkpoints answer
-*what changed and can I go back to a moment I named*. They do not answer **the file is
-gone**, and nothing in this repo does.
+Added 2026-08-12, from an ecosystem sweep of the app lifecycle. Rewritten
+2026-08-26, because the original section was wrong about its own headline and had
+been for twelve days.
 
-**Every competing framework inherits this from a vendor and FJS cannot.** A Rails app
-on RDS, a Next app on Neon, anything on PlanetScale — the database is somebody's
-product and backups arrive with it. FJS's whole pitch is one binary beside one file,
-self-hosted, no account required (`IDEAS/offline-first-and-release.md`). The corollary
-nobody has written down: **there is no vendor to inherit backups from, so it is the
-framework's problem or it is nobody's.** For a self-hoster, losing the file is losing
-the company.
+Checkpoints answer *what changed and can I go back to a moment I named*. They do not
+answer **the file is gone** — and something in this repo now does, in one direction.
 
-It is also the missing counterpart to the Release realm. `IDEAS/release-transitions.md`
-makes its central honest claim *revert restores serving state, not database history* —
-which is only an acceptable thing to say if something else answers data. Today nothing
-does, so the two records leave a hole between them rather than each covering their half.
+### What ships
 
-What makes it FJS-shaped rather than a wrapper around `cp`:
+- **`litestone replicate`** — a Litestream driver derived from the seed
+  (`src/tools/replicate.js`). One replica per declared SQLite database at
+  `<url>/<name>`, the YAML generated rather than written, the binary run as a managed
+  subprocess with signals forwarded. It **refuses litestream below v0.5 by version**,
+  not by process table: 0.3.x bundles a SQLite that cannot parse the STRICT tables
+  litestone emits, so pointed at a litestone database it starts, prints
+  `replicating to:`, and then loops on a sync error forever without exiting — a live
+  process, an empty replica, and every `pgrep` check reporting a healthy backup.
+- **`db.$backup()`** — a hot copy that handles the `-wal`/`-shm` half, which is the
+  exact thing that makes a hand-rolled restore come back wrong.
+- **`litestone backup`** — every declared database, **including the jsonl and logger
+  ones litestream cannot cover at all**: they are directories of append-only files
+  with no WAL, so `replicate` names them and carries on. `sqlite3_rsync` is the
+  one-shot sibling.
+- **The deploy plane knows about all of it end to end.** `01-preflight` detects and
+  version-checks and stashes `litestreamRunning`, `05-backup` takes the copy,
+  `06-swap` is built around the checkpoint on container stop, `deploy:doctor` fails on
+  a build too old and merely informs on an absent one, `deploy:status` prints the pid,
+  the replica url and the generated yml. `litestreamStatus()` in
+  `deploy/_module.md` is the one owner of the question.
+- **`FJS-D31`** ruled the artefact out of scope: no `@frontierjs/litestream`, because
+  republishing a durability tool means lagging its data-corruption fixes, and
+  `bun add litestream` today installs a stranger's package. `fli new --with litestream`
+  is recognised **by name** and refused with that reason rather than 404ing at install.
 
-- **The Data realm is a file**, so a snapshot is a file copy plus the WAL discipline
-  SQLite already documents. Cheap, and the same substrate this whole record is built on.
-- **A multi-database app is a set of files** — tenants are db-per-tenant, a logger
-  database is a database — which is the same partial-restore failure mode the open
-  question below already raises for checkpoints. One answer should serve both.
-- **The verify half is the part everyone skips, and it is the part FJS can do.** An
-  unrestored backup is a rumour. The framework owns the test harness, so a restore can
-  be *proven*: restore into a temporary database, run the app's own suite against it,
-  report. No other framework can offer "your backup is known-good" because no other
-  framework owns both ends of that sentence.
+So the sentence this section used to lead with — *every competing framework inherits
+backups from a vendor and FJS has none to inherit from* — is the wrong way round. On
+continuous replication FJS is **ahead** of a Rails app on RDS or a Next app on Neon,
+because the driver reads the schema: it knows which databases exist, which ones the
+tool physically cannot cover, and which build of the tool will silently do nothing.
+A vendor knows none of that about your app.
+
+### What is missing, and it is the restore direction
+
+- **`deploy:setup` installs docker, nginx, git, bun, rsync and sqlite3 and not
+  litestream** (`ISSUES.md` `FJS-243`). The pipeline detects it, version-checks it and
+  doctors it, then never installs it. Wants a pinned release fetched with its checksum
+  verified, a per-platform table, and a digest pin in the Dockerfile `make:deploy`
+  writes.
+- **Restore is asymmetric** (`ISSUES.md` `FJS-540`). `replicate` is schema-driven and
+  multi-database; coming back is `litestream restore -o ./main.db s3://…` typed by
+  hand, once per database, off a comment in `replicate.js` — with the jsonl and logger
+  databases restored by a third route, and nothing reading the same `dbs:` list on the
+  way in. The component that knows *which databases exist and where each one streams
+  to* knows it outbound only. A two-database app restores `main`, misses `audit`, and
+  starts. **`litestone restore` as the mirror of `replicate`** is the fix and it is
+  about a day: every declared database, litestream for the SQLite ones and the copy
+  for the rest, `--at <timestamp>` where `l0Retention` allows it, and a refusal rather
+  than a partial when one database in the set cannot be reached.
+- **Nothing proves a restore**, and this is the only claim here no vendor can match.
+  An unrestored backup is a rumour. The framework owns the test harness, so a restore
+  can be *proven*: restore into a temporary database, run the app's own suite against
+  it (`@frontierjs/litestone/testing`'s `createTestEnv` is already the runner for
+  exactly this shape), report. No other framework can offer *your backup is known-good*
+  because no other framework owns both ends of that sentence.
+
+It is still the missing counterpart to the Release realm.
+`IDEAS/release-transitions.md` makes its central honest claim *revert restores serving
+state, not database history* — which is only an acceptable thing to say if something
+else answers data. Replication answers half of it today; the restore that is derived
+and proven answers the rest.
 
 Deliberately not in scope: offsite transport policy, retention schedules, encryption at
 rest as a bespoke mechanism. Those are configuration and a destination, and the escape

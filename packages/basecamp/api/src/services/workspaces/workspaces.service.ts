@@ -12,7 +12,8 @@ import { $ } from '@frontierjs/junction'
 
 import { createService, NotFound, Conflict, Forbidden, BadRequest, Unauthorized, authenticate }
   from '@frontierjs/junction'
-import { requireWorkspaceRole, refuseRoleAboveOwn, roleOf, restandingFor, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { requireWorkspaceRole, refuseGrantAboveOwn, roleOf, restandingFor, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { grantsFor } from '../../core/capabilities.ts'
 import { db, actor, slugify, narrowPatch, changesNothing } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import type { WorkspaceRole }  from '../../../../db/schema.d.ts'
@@ -102,9 +103,12 @@ export function createWorkspacesService(app: BasecampApp) {
     return value as WorkspaceRole
   }
 
-  /** Membership decides access, so it is read as system, not through the caller. */
-  function members() {
-    return app.data.asSystem().workspaceMember
+  /** Membership decides access, so it is read as system, not through the caller.
+   *  `any` for the reason every sibling service says it: `$.db` is the request's
+   *  client and Litestone's accessors exist only at runtime, so a typed handle
+   *  would be a fiction maintained by hand until `litestone types` lands. */
+  function members(): any {
+    return $.db.asSystem().workspaceMember
   }
 
   return createService({
@@ -157,12 +161,13 @@ export function createWorkspacesService(app: BasecampApp) {
 
       // One transaction: a workspace whose creator is not a member of it is
       // unreachable by its own owner.
-      const ws = await app.data.asSystem().$transaction(async (tx: any) => {
+      const ws = await ($.db.asSystem() as any).$transaction(async (tx: any) => {
         const ws = await tx.workspace.create({
           data: { ...data, accountId: user.accountId, ownerId: user.userId },
         })
         await tx.workspaceMember.create({
-          data: { workspaceId: ws.id, userId: user.userId, role: 'owner', acceptedAt: new Date().toISOString() },
+          data: { workspaceId: ws.id, userId: user.userId, role: 'owner',
+                  capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
         })
         return ws
       })
@@ -220,8 +225,9 @@ export function createWorkspacesService(app: BasecampApp) {
       if (await members().exists({ where: { workspaceId: wsId, userId: target } }))
         throw new Conflict('User is already a member of this workspace')
 
+      const next = toRole(role ?? 'developer')
       return members().create({
-        data: { workspaceId: wsId, userId: target, role: toRole(role ?? 'developer'),
+        data: { workspaceId: wsId, userId: target, role: next, capabilities: grantsFor(next),
                 invitedBy: actor(), invitedAt: new Date().toISOString() },
       })
     },
@@ -253,7 +259,7 @@ export function createWorkspacesService(app: BasecampApp) {
       const member = await members().findFirst({ where: { workspaceId: wsId, userId: target } })
       if (!member) throw new NotFound('Member not found')
 
-      // A member who outranks you is not yours to move either. `refuseRoleAboveOwn`
+      // A member who outranks you is not yours to move either. `refuseGrantAboveOwn`
       // grades what is being HANDED OUT and this grades who is being acted on —
       // an admin demoting an owner is the same inversion pointed the other way,
       // and the last-owner guard below only catches it where there happens to
@@ -270,7 +276,14 @@ export function createWorkspacesService(app: BasecampApp) {
         if (owners <= 1) throw new Forbidden('Cannot demote the last owner of a workspace')
       }
 
-      return members().update({ where: { id: member.id }, data: { role: toRole(role) } })
+      // Re-stamped, not merged. A role IS a default set (core/capabilities.ts),
+      // so leaving the old grants behind would make a demotion change the word
+      // on the screen and nothing about what the person may actually do.
+      const next = toRole(role)
+      return members().update({
+        where: { id: member.id },
+        data:  { role: next, capabilities: grantsFor(next) },
+      })
     },
 
     async removeMember() {
@@ -297,11 +310,11 @@ export function createWorkspacesService(app: BasecampApp) {
         create:        [stampOwnership],
         patch:         [requireWorkspaceRole(app, 'admin', 'owner')],
         remove:        [requireWorkspaceRole(app, 'owner')],
-        // refuseRoleAboveOwn is the other half of FJS-410: the hook above says
+        // refuseGrantAboveOwn is the other half of FJS-410: the hook above says
         // *may you manage the team*, this one says *not a role above your own*.
         // Without it an admin still mints an owner, on somebody else's row.
-        addMember:     [requireWorkspaceRole(app, 'admin', 'owner'), refuseRoleAboveOwn()],
-        setMemberRole: [requireWorkspaceRole(app, 'admin', 'owner'), refuseRoleAboveOwn()],
+        addMember:     [requireWorkspaceRole(app, 'admin', 'owner'), refuseGrantAboveOwn()],
+        setMemberRole: [requireWorkspaceRole(app, 'admin', 'owner'), refuseGrantAboveOwn()],
         removeMember:  [requireWorkspaceRole(app, 'admin', 'owner')],
       },
     },

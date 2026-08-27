@@ -84,6 +84,14 @@ console.log('\n  the fleet')
 check('the shop does not exist before it is created', shops.list().includes(SHOP), false)
 await shops.getOrCreate(SHOP)
 check('the shop exists once it has been created', shops.list().includes(SHOP), true)
+
+// Written HERE rather than beside the assertions, and that is not tidiness. The
+// API is a separate process holding its own memo, keyed per shop and resolved on
+// that shop's first call — so settings written after the checks below have
+// already addressed this shop would be correct in the registry and stale in the
+// process serving it. `invalidateTenantConfig` is the answer inside one process;
+// across two, the answer is to write before the first request.
+shops.metaSet(SHOP, { config: { name: 'High Street', mail: { from: `orders@${SHOP}.test` } } })
 check('…and so does the one every other drive uses', shops.list().includes(DEFAULT_SHOP), true)
 
 // The staff of THIS shop, created through auth against this shop's own client.
@@ -200,6 +208,38 @@ check('…and the customer landed in that shop only',
       (await (await at(null, `/customers?email=local-${RUN}@x.test`, {
         headers: { authorization: `Bearer ${homeToken}` },
       })).json()).total, 0)
+
+// ─── the fourth thing: a shop differs in more than its rows ───────────────
+//
+// The three checks above separate the DATA, the PEOPLE and the SESSION, and all
+// three are rows. A shop is also a BUSINESS — it has a name, and a customer
+// reads that name on a receipt sent from an address (`FJS-D126`). None of that
+// is a row, and until per-tenant configuration existed one deployment had one
+// name and one from-address for every shop it served.
+//
+// The source here is the registry's own per-tenant meta blob, which has carried
+// arbitrary JSON since tenants existed and which nothing read.
+
+console.log('\n  the shopfront')
+
+const settings = async (host) => (await at(host, '/shopfront', {
+  method:  'POST',
+  headers: { 'content-type': 'application/json', 'x-service-method': 'settings' },
+  body:    '{}',
+})).json()
+
+const cfgHome = await settings(null)
+const cfgAway = await settings(HOST)
+
+check('the flagship reads its own name',        cfgHome.name, 'Flagship Store')
+check('…and its own from-address',              cfgHome.from, 'orders@flagship.test')
+check('the other shop reads a different name',  cfgAway.name, 'High Street')
+check('…and a different from-address',          cfgAway.from, `orders@${SHOP}.test`)
+
+// The half that makes it safe. Only the declared paths apply, so a shop cannot
+// reach a value the deployment owns — and `database` could not be listed even
+// by mistake, because junction refuses the reserved paths at boot.
+check('a shop cannot move the port it is served on', cfgAway.port, cfgHome.port)
 
 // The file this drive made, removed. A tenant that outlives its drive is a
 // database nobody owns, and `delete` is the half of the fleet API that nothing

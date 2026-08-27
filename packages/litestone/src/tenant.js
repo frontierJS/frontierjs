@@ -34,6 +34,7 @@ import { apply }           from './core/migrations.js'
 import { splitStatements } from './core/migrate.js'
 import { parse, parseFile } from './core/parser.js'
 import { resolveTenancy, tenantFrom } from './core/tenancy.js'
+import { noteMintedDirectory }  from './core/db-path.js'
 
 // ─── Tenant ID sanitization ───────────────────────────────────────────────────
 // Tenant IDs are free-form strings that become filenames.
@@ -671,8 +672,14 @@ export async function createTenantRegistry({
       ? ':memory:'
       : (declared?.registry ?? join(schemaDir, 'tenants-registry.db'))
 
-  // Ensure tenant directory exists (skip in inMemory mode)
-  if (!inMemory) mkdirSync(absDir, { recursive: true })
+  // Ensure tenant directory exists (skip in inMemory mode). A directory that
+  // was not there is the same signal it is for a database file: every measured
+  // instance of `FJS-449` is a relative declared path resolved from one
+  // directory away, and nothing fails — the fleet simply becomes empty.
+  if (!inMemory && !existsSync(absDir)) {
+    mkdirSync(absDir, { recursive: true })
+    noteMintedDirectory(absDir, registryPath)
+  }
 
   // Open registry DB
   const registryDb = openRegistry(registryPath)

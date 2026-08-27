@@ -1,5 +1,42 @@
 # Changes — @frontierjs/jetty
 
+## 2026-08-26 — a pushed record is graded against the loaded query (`FJS-493`)
+
+The store upserted every record its channel delivered. But a record is an
+announcement about a ROW and a live list is the answer to a QUERY, and **nothing
+on the wire says a row has left a filter** — there is no such event. So an order
+the dock had just SHIPPED came back as `orders ship` and went straight into the
+list it had left, updated in place and quietly wrong.
+
+Sierra has asked `matchesQuery` since `FJS-011`. That function is now
+`@frontierjs/toolbelt/match`, which this package may import — a hand copy is
+what `FJS-059` already paid for once. Three answers, three actions: in the
+filter it is upserted, out of it REMOVED, undecidable it reloads.
+
+**The store remembers the query** its rows are the answer to, because nothing
+else can grade an arriving record. `set()` CLEARS it — rows put there by hand
+are not the answer to the last `populate()`'s question, and grading them against
+it is grading them against somebody else's filter — and `populate()` sets it
+back afterwards. `null` is not `{}`: an empty filter admits every row, *nobody
+has asked yet* can grade none.
+
+**The reload is coalesced onto a microtask.** A burst of undecidable pushes
+arrives together and every answer but the last is thrown away by the one after
+it, so it is one request rather than N. A reload already in flight is left to
+finish — its rows are newer than the event that asked for this one.
+
+The field table comes from the schema the resource was given, through
+`fieldShapes`, and is `{}` where it was given none — which is what sierra falls
+back to on a schema-registry miss, and degrades exactly one way: a string
+operand against a numeric column reads as no match.
+
+`example/extension/`'s dock re-filtered on render to cover this; that is gone,
+and `verify:extension`'s *the shipped order leaves the despatch queue* now has
+teeth — it passed either way while the screen was also deciding.
+
+6 cases in `test/phase3.test.js`, negative-controlled: forcing the verdict to
+`true` turns 4 red. jetty 445 pass.
+
 ## 2026-08-25 — a real Junction, at last
 
 **`createJunctionAdapter`** (`FJS-279`), exported as `@frontierjs/jetty/junction`

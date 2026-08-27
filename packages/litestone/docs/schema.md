@@ -17,6 +17,7 @@ Schemas live in `.lite` files. Syntax is close to Prisma's SDL with SQLite-nativ
 | `File[]` | `TEXT` JSON array | multiple files |
 | `EnumName` | `TEXT` + CHECK | `string` |
 | `EnumName[]` | `TEXT` JSON, no CHECK | `string[]` — a set of declared values |
+| `Capability[]` | `TEXT` JSON, no CHECK | `string[]` — synthesised from the models declaring `@@capabilities`; see `access-control.md` |
 | `Type[]` | `TEXT` JSON | `Array` (auto-parsed) |
 | `Type?` | nullable | `null` when absent |
 
@@ -261,12 +262,21 @@ All of it holds on every read path — `findMany`, `findFirst`, `findUnique`,
 @phone                           E.164 + common formats
 @date                            YYYY-MM-DD date string
 @datetime                        ISO-8601 datetime string
+@time                            HH:MM, 24-hour, leading zeros required
+@time(seconds: true)             HH:MM:SS accepted as well — named args only
 @regex("pattern")                regex validation
 @length(min, max)                string length (either bound optional)
 @gt(n)  @gte(n)  @lt(n)  @lte(n)
 @startsWith(s)  @endsWith(s)  @contains(s)
 @minItems(n)  @maxItems(n)  @uniqueItems     array columns only
 ```
+
+`@time` is a wall clock and not an instant: no date, no zone. It reaches a form
+as `<input type="time">` — carried by a `pattern` rather than by JSON Schema's
+`format: 'time'`, which means RFC 3339 full-time and would demand seconds and an
+offset this rule does not accept. The seconds flag WIDENS what may be stored; it
+does not make a finer value mandatory. What a zoned time would look like is not
+settled — `IDEAS/time-and-recurrence.md`.
 
 An array column also carries two rules that come from its TYPE rather than an
 attribute: the value must be an array, and on `Int[]` / `String[]` the elements
@@ -281,6 +291,43 @@ authored string is what every realm says. The wording when there is none comes
 from `DEFAULT_MESSAGES` in `core/validate.js`, which is the single definition of
 it — a rule enforced anywhere else, with its wording built at the throw site, is
 how the two realms end up refusing the same write in different words.
+
+### Constraints the database enforces (`@check`, `@@check`)
+
+```
+@check("qty > 0")                          on a field — a SQLite CHECK on that column
+@check("qty > 0", "must be at least one")  with the sentence a form shows
+@@check("startsAt < endsAt")               on the model — spans columns. Repeatable
+@@check("startsAt < endsAt", "an end must come after its start")
+```
+
+**These are the rules the database refuses, not the ones the client checks.** A
+validator above runs in this package and is emitted to the client, so a form can
+refuse a value before sending it; a CHECK is in the table, so it holds against a
+job writing through `db.`, a migration, `asSystem()`, a seed and `fli tinker` —
+every writer that does not pass through a service. The cost of that reach is
+that it cannot be evaluated in a browser, so it arrives as a refusal rather than
+as an affordance.
+
+**`@@check` is the half that spans columns**, which nothing else can say: a
+validator sees one field, `@@unique` is about rows in a table rather than values
+in a row, `@@allow` is who rather than what is valid, and `@@transitions` is one
+column's moves. `startsAt < endsAt`, `discount <= subtotal` and
+`status != 'shipped' OR trackingCode IS NOT NULL` have no other home in the seed.
+
+**A violation is a `ValidationError`** — 400, with `errors` — so it lands under
+the control like any other refused value. A field `@check` names its column; a
+`@@check` spans them, so its message is on the record rather than on a box.
+
+**Write the message.** Without one the person sees `is not valid` and the
+expression goes to the developer on `err.constraint`, because `qty > 0` under a
+form control is SQL reaching somebody who did not write it. The message is the
+last argument, where every validator above carries one.
+
+**Editing an expression rebuilds the table.** SQLite cannot alter a CHECK in
+place, so the migrator compares the constraint text and rebuilds when it moves.
+Adding one to a populated table is also a **contract** for `fli release:check`:
+the release still serving can write rows the new constraint forbids.
 
 ### Transforms (applied before validation + write)
 ```
@@ -611,7 +658,9 @@ model Order {
 - **A `Boolean` column is a state machine too**, and it is the one every schema has. `@@transitions(isPrimary, promote: false -> true, demote: true -> false @gate(5))` — the two directions are routinely different authorities (suspend and unsuspend, publish and unpublish), which a single field `@allow('write', …)` answers with one predicate and this answers with two. A boolean move **must be named**: `-> true` says which value is written, not what a person did.
 - **`from` takes a list** — `[pending, paid] -> cancelled`.
 - **`@gate(N)`** is the minimum level allowed to make that particular move, on Litestone's 0–9 scale (a number or a name: `@gate(ADMINISTRATOR)`). It is a floor *on top of* `@@gate`'s update level, which had to pass to reach the write at all — shipping an order and refunding one are not the same authority.
-- **`@gate(8)` on a move means the engine makes it and a person never does**, which is the distinction most state machines end up guarding in a service hook instead. `getLevel` is clamped to 7, so SYSADMIN is refused by name — `TransitionGateError: 'build' … requires level 8, user has 7` — and `asSystem()` passes because a system context bypasses the check entirely. `transitions(row)` reports `allowed: false` for one, so a screen offers the right buttons with nothing written. Two consequences worth stating: the pipeline half of a machine belongs in the schema beside the rest of it rather than in an `internalOnly()` hook, and **every move *not* at 8 is one a person can make** — the one mechanical filter that separates the two halves of a machine (`IDEAS/permission-sets.md`). `@gate(9)` refuses everything, `asSystem()` included, which is a move declared for its from-state and never made.
+- **`@gate(8)` on a move means the engine makes it through `asSystem()` and nothing else.** `getLevel` is clamped to 7, so SYSADMIN is refused by name — `TransitionGateError: 'build' … requires level 8, user has 7` — and a system context bypasses the check entirely. `transitions(row)` reports `allowed: false` for one, so a screen offers the right buttons with nothing written. `@gate(9)` refuses everything, `asSystem()` included, which is a move declared for its from-state and never made.
+- **`@system` on a move is the other way of saying *the engine decides this*, and it is usually the one you want.** It means what `@system` means on a column: the application makes the move, its caller does not, and the application says so on the call — `transition(id, name, { system: true })`, which becomes `system: [field]` on the update underneath, so writing the column directly is refused and permitted by exactly the same rule. The difference from `@gate(8)` is the whole point: the move runs on the CALLER's own client, so the model gate, the row policies and the audit actor all still apply, where `asSystem()` drops all three to make one move. Refused with `TransitionSystemError` (403), which is a separate class from the gate's 403 because no caller at any level can answer it. `transitions(row)` reports `refusedBy: 'system'`, and `x-transitions` carries the flag, so a browser renders no button rather than a disabled one — the one verdict on that side that is not permissive-when-unknown.
+- **The two compose, and they answer different questions.** `@gate(N)` is *how senior must a caller be*; `@system` is *whose decision is this*. `@system @gate(5)` is the person-REQUESTED engine move — somebody presses *sync*, a provider's answer picks the move — which is the shape `@gate(8)` cannot express at all. Declaring `@system` with `@gate(8)` or `@gate(9)` is refused at parse: those admit no caller, which contradicts it. So the filter that separates the two halves of a machine is **every move carrying neither `@gate(8)` nor `@system`** (`FJS-D150`, `IDEAS/permission-sets.md`).
 
 Any move that isn't declared throws `TransitionViolationError`; a declared one the caller can't make throws `TransitionGateError` (which carries `status: 403`). The `WHERE` clause is narrowed to the from-state, so two concurrent writers can't both win — the loser gets a retryable `TransitionConflictError`.
 

@@ -36,7 +36,14 @@ after which only forward recovery exists.
 
 ```
 fli release:check   — classify this deploy, and commit db/release.snapshot.md
+fli release:mint    — compute the Release this tree would deploy
 ```
+
+A **Release** is what that verdict is attached to: an immutable
+artefact-plus-bindings, addressed by its own content. `release:mint` computes one
+and writes nothing — the id is a hash of its four terms, so the same tree mints
+the same id on a laptop, in CI and on the target, which is what makes a digest
+promotable between environments instead of rebuilt.
 
 Every other deployment tool ships a rollback that restores code and nothing
 else, because it sees an opaque image and cannot tell whether the change was

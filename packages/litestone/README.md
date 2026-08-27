@@ -2135,7 +2135,7 @@ db.$detach('archive')
 // Schema introspection
 db.$schema           // augmented parsed schema (includes auto-generated models)
 db.$databases        // { main: { driver, access, path }, ... }
-db.$softDelete       // { modelName: boolean }
+db.$softDelete       // { ModelName: boolean } — a copy, on every flavour of client
 db.$enums            // { EnumName: ['val1', 'val2', ...] }
 db.$scopes('post')   // the @@scope names this model declares
 db.$tenancy          // the resolved tenancy { } block, or null
@@ -2264,6 +2264,8 @@ litestone transform [config.js]      anonymise / shard pipeline (dev only)
 litestone backup [dest]              back up every database (SQLite + JSONL/logger)
                                        --vacuum  compact first
 litestone replicate [config.js]      stream every SQLite WAL to S3/R2 via litestream
+                                       (restore is `litestream restore`, by hand,
+                                        one per database — docs/replication.md)
 litestone rsync <dest>               sync every SQLite db via sqlite3_rsync
 
 litestone tenant list|create <id>|delete <id>|migrate

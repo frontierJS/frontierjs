@@ -1,5 +1,5 @@
 ---
-title: Catalog
+title: Catalogue
 render: static
 ---
 <!--
@@ -38,17 +38,79 @@ render: static
 </script>
 
 <div class="container stack">
-  <h1>Catalog</h1>
+  <h1>Catalogue</h1>
   <p class="text-muted">{data?.products?.length ?? 0} products, prerendered.</p>
 
   <CatalogList client:load products={data?.products ?? []} />
+</div>
 
-  <!--
-    Pushed below the fold on purpose: client:visible must not fetch its chunk
-    until this scrolls into view, and the drive checks exactly that against the
-    browser's resource timing.
-  -->
-  <div style="height: 120vh" aria-hidden="true"></div>
+<!--
+  LiveStock is pushed below the fold on purpose: `client:visible` must not fetch
+  its chunk until it scrolls into view, and the drive asserts exactly that
+  against the browser's resource timing.
 
+  This band is what does the pushing, and it is real content on its own ground
+  rather than an empty spacer — it sits OUTSIDE the page container so it can run
+  edge to edge, with a container of its own inside. `min-height`, not `height`:
+  the floor is all the assertion needs, and a band that grows past it keeps the
+  island below the fold either way.
+-->
+<section class="promise">
+  <div class="container stack">
+    <h2 class="h4">Shipping and returns</h2>
+    <ul class="cards">
+      <li class="card">
+        <div class="surface-body stack">
+          <strong>Free delivery over $75</strong>
+          <p class="text-sm text-muted">
+            The threshold the checkout actually applies — a row in
+            ShippingMethod, not a line of copy.
+          </p>
+        </div>
+      </li>
+      <li class="card">
+        <div class="surface-body stack">
+          <strong>30 days to change your mind</strong>
+          <p class="text-sm text-muted">
+            A refund is a declared transition on the order, gated so that only a
+            supervisor can run it.
+          </p>
+        </div>
+      </li>
+      <li class="card">
+        <div class="surface-body stack">
+          <strong>Made in small runs</strong>
+          <p class="text-sm text-muted">
+            Which is why availability below is asked of the shop rather than
+            baked into this file.
+          </p>
+        </div>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<div class="container">
   <LiveStock client:visible />
 </div>
+
+<style>
+  .promise {
+    /* The FLOOR the lazy-island assertion needs — whatever this grows to,
+       #live-stock starts below the first screen. */
+    min-height:    100vh;
+    display:       grid;
+    align-content: center;
+    padding-block: var(--space-6xl);
+    background:    var(--surface);
+    border-block:  var(--border-width) solid var(--rule);
+  }
+  .cards {
+    list-style: none;
+    margin:     0;
+    padding:    0;
+    display:    grid;
+    gap:        var(--space-2xl);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  }
+</style>

@@ -32,5 +32,36 @@ context.exec({
   command: `ssh ${host} "cd ${serverPath} && docker build -t ${imageTag} -f ${dockerfile} ."`,
 })
 
+// ─── Which bytes did that produce? ───────────────────────────────────────────
+// `${appId}:${shortSha}` is a NAME, and two servers at the same commit hold two
+// images with the same name and different bytes — stage and production
+// reporting one version while running different code, with nothing comparing
+// them (`IDEAS/deploy-plane.md` §2.3f). So the image is asked what it is, and
+// the answer is carried through the rest of the pipeline.
+//
+// `stdio: 'pipe'`, not `capture: true` — the latter is not an execSync option
+// and leaves the output on the terminal while returning null (`FJS-537`).
+const { imageIdentity, describeIdentity, addressOf } =
+  await import(new URL('file://' + global.fliRoot + '/core/image.js'))
+
+let identity = null
+try {
+  const raw = context.exec({
+    command: `ssh ${host} "docker image inspect ${imageTag} --format '{{json .}}'"`,
+    stdio:   'pipe',
+  })
+  identity = imageIdentity(JSON.parse(String(raw ?? '').trim()))
+} catch {
+  // A build that cannot be inspected is not a build that failed — the deploy
+  // continues by tag, and says so, because a missing digest is a weaker claim
+  // rather than a broken pipeline.
+  identity = null
+}
+
+context.config.imageIdentity = identity
+context.config.imageAddress  = addressOf(identity, imageTag).address
+
 log.success(`Image built → ${imageTag}`)
+log.info(`  bytes: ${describeIdentity(identity)}`)
+if (!identity) log.warn('  no digest — this deploy cannot say which bytes it ran')
 ```

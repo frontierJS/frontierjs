@@ -12,20 +12,28 @@
   // being schema-derived.
   import { createResource } from '@frontierjs/sierra/junction'
 
-  // `validate: false` is not a shortcut. ApiKey's create schema is
-  // `required: ["userId", "name", "tokenHint"]`, and two of those three are
-  // written by the server: the owner is whoever is calling, and `tokenHint` is
-  // derived from a token that does not exist until auth mints it.
-  // (`workspaceId` was a fourth until the tenancy declaration started
-  // defaulting it from the principal — `FJS-387`.) So schema-derived validation in
-  // the browser refuses every create before the request is made, naming fields
-  // the caller was never meant to send — which renders as "the button does
-  // nothing".
+  // `validate: false` is not a shortcut, and the reason left is ONE column.
   //
-  // Nothing in the schema can currently say *the system writes this column*,
-  // which is `FJS-D22`. Until it can, the server is the only place this model
-  // can be validated, and it still is: `autoValidate` runs there against the
-  // same schema, after the before-hook has filled in all three.
+  // Create-mode required was `["userId", "name", "tokenHint"]`. Two of those
+  // have since been answered in the schema: `workspaceId` stopped being a
+  // fourth when the tenancy declaration started defaulting it from the
+  // principal (`FJS-387`), and `tokenHint` is now `@system` (`FJS-D22`,
+  // `FJS-095`) — derived from a token that does not exist until auth mints it,
+  // so it is out of `required`, `readOnly` on this side, and not offered by a
+  // generated form. `credentialId` went with it for the same reason.
+  //
+  // What is left is `userId`. It is genuinely caller-supplied — a key may be
+  // issued to a bot rather than to the person asking, which is what
+  // `assertBotOwner` in the service is about — so it cannot be `@system`, and
+  // it is `required` while this screen does not offer an owner control and
+  // lets the before hook default it to the caller. Turning validation on today
+  // would refuse every create in the browser, naming a field the form has no
+  // box for: "the button does nothing".
+  //
+  // The way out is an owner control on the create form, not another
+  // annotation. Until then the server is the only place this model is
+  // validated, and it still is: `autoValidate` runs there against the same
+  // schema, after the before hook has filled the column in.
   export const apiKeys = createResource('api-keys', {
     model: 'ApiKey',
     validate: false,

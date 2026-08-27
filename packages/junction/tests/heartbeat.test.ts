@@ -100,7 +100,12 @@ describe('ws liveness — the server drives it', () => {
     await c.ready
     await sleep(TIMEOUT * 3)
     expect(c.closed).toBeNull()
-    expect(app.channels.stats().connections).toBe(1)
+    // `> 0` and not `=== 1`. This case owns one connection and `stats()` counts
+    // every socket the server holds, so exclusivity is a claim about the other
+    // cases in this file rather than about the heartbeat — it read 2 on every
+    // full-suite run and passed in isolation (FJS-516). What the case is named
+    // for is the line above; this one only has to see the connection counted.
+    expect(app.channels.stats().connections).toBeGreaterThan(0)
     c.close()
     await sleep(50)
   })

@@ -59,10 +59,28 @@ describe('membershipClaim().describe()', () => {
     const d = claim.describe()
     expect(d).toEqual({
       kind: 'membership', model: 'workspaceMember', subject: 'userId',
-      tenant: 'workspaceId', standing: 'role',
+      tenant: 'workspaceId', standing: 'role', standingClaim: 'memberRole', capabilities: null,
       claims: ['workspaceId', 'memberRole'], include: ['workspace'],
       namedBy: 'the X-Workspace-Id header',
     })
+  })
+
+  test('a grant column is named, and adds the one claim the framework spells', () => {
+    // `capabilities` is not renameable the way a tenant claim is: litestone's
+    // grid reads `auth().capabilities` (`FJS-D151`), so what the app chooses is
+    // which COLUMN it comes out of, and the claim's name is fixed.
+    const d = membershipClaim({
+      tenantFrom: () => 'ws-1', model: 'workspaceMember', subject: 'userId',
+      tenant: 'workspaceId', standing: 'role', standingAs: 'memberRole',
+      capabilities: 'capabilities',
+    }).describe()
+    expect(d.capabilities).toBe('capabilities')
+    expect(d.claims).toEqual(['workspaceId', 'memberRole', 'capabilities'])
+    // The standing's claim is STATED. It used to be read off the end of
+    // `claims`, which was the standing only while a resolver emitted exactly
+    // two — so the third claim took the label the moment one existed, and the
+    // snapshot said the grant column was 'read from WorkspaceMember.role'.
+    expect(d.standingClaim).toBe('memberRole')
   })
 
   test('emits NO values — a claim name is the app, a claim value is a caller', () => {

@@ -5,7 +5,7 @@
 
 // ─── App ──────────────────────────────────────────────────────────────────
 export { createApp }                              from './src/core/app.ts'
-export type { App, AppConduit, AppJobs, AppNotify, Plugin, PluginFn, AppOptions, ServiceCaller } from './src/core/app.ts'
+export type { App, AppConduit, AppDb, AppJobs, AppNotify, Plugin, PluginFn, AppOptions, ServiceCaller } from './src/core/app.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 export { loadConfig, deepMerge, parseTtl, defaultConfig } from './src/config/index.ts'
@@ -134,12 +134,14 @@ export type { Schema, FieldDef, SchemaOptions, CompiledSchema, ValidationResult,
 
 // ─── Litestone ───────────────────────────────────────────────────────────
 export { createLitestoneBase, parseQuery as parseLitestoneQuery, parseWhere,
+         findWindow,
          deriveModelName, accessorCandidates, withLitestoneDb,
          sessionGateLevel, toDataPrincipal, LEVELS,
          applyClaims, membershipClaim, MEMBERSHIP, tenantOf,
          jsonSchemaToJunctionSchema }                              from './src/core/litestone.ts'
 export type { GradableUser } from './src/core/litestone.ts'
 export type { PrincipalResolver, PrincipalClaims, MembershipClaimOptions, NoClaim } from './src/core/litestone.ts'
+export type { WindowResult } from './src/core/litestone.ts'
 export type { LitestoneServiceOptions, ParsedQuery,
               LitestoneJsonSchema,
               LitestoneQueryEvent }                                   from './src/core/litestone.ts'

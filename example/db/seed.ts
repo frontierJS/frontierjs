@@ -207,6 +207,37 @@ const COLOURS = [
 ]
 
 /**
+ * Find a seeded row the drives may have removed, and bring it back if they did.
+ *
+ * A plain `findFirst` is why this exists. Six of this schema's models declare
+ * `@@softDelete`, so a drive that deletes a seeded row over HTTP HIDES it — and
+ * a soft-deleted row keeps its `@unique` values, deliberately, because
+ * `restore()` has to be able to bring it back. The next seed then neither finds
+ * the row (the read excludes it) nor may create one (the value is held), and
+ * dies with a `SoftDeletedUniqueError` naming a table, an id and a column,
+ * which is the Data boundary being correct and is not a sentence anybody
+ * running `bun run db:seed` can act on.
+ *
+ * The seeder's contract is that it restores what a drive consumes (`FJS-080`).
+ * Once removal is something the schema can express, restoring the row IS that
+ * contract — five drives reseed as their first act, so without this the whole
+ * self-starting half of the suite fails on the run after any order is deleted.
+ *
+ * Cascading models bring their children back with them, which is what
+ * `@@softDelete(cascade)` already means: `restore` walks the same tree the
+ * delete walked.
+ */
+async function reseed<T extends { id: number, deletedAt?: string | null }>(
+  model: { findFirst: Function, restore: Function },
+  where: Record<string, unknown>,
+): Promise<T | null> {
+  const hit = await model.findFirst({ where, withDeleted: true }) as T | null
+  if (!hit?.deletedAt) return hit
+  await model.restore({ where: { id: hit.id } })
+  return await model.findFirst({ where }) as T | null
+}
+
+/**
  * The three tables that stand between the lines and the total.
  *
  * Guarded per table like everything else here. `TaxRate` in particular is
@@ -272,7 +303,7 @@ async function seedCatalogue() {
   // file uses answers "has anything been seeded", which stops a thirteenth
   // product added here from ever reaching a database that already has twelve.
   for (const p of CATALOGUE) {
-    const existing = await sys.product.findFirst({ where: { slug: p.slug } })
+    const existing = await reseed<any>(sys.product, { slug: p.slug })
     if (existing) continue
 
     const product = await sys.product.create({ data: {
@@ -347,11 +378,15 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   await seedCatalogue()
   await seedMoney()
 
-  if (await sys.customer.count() === 0) {
-    await sys.customer.createMany({ data: [
-      { name: 'Acme Corp', firstName: 'Ada', lastName: 'Ashby',  email: 'ops@acme.test',   notes: 'Net-30. Always disputes shipping.' },
-      { name: 'Globex',    firstName: 'Gil', lastName: 'Boothe', email: 'buy@globex.test', notes: 'Prefers pickup.' },
-    ] })
+  // By EMAIL rather than by count, and the reason is `@@softDelete`: `count()`
+  // excludes hidden rows, so a run in which the customers screen removed both
+  // reads zero here and then cannot create either of them — the email is still
+  // held by the row that is merely hidden.
+  for (const c of [
+    { name: 'Acme Corp', firstName: 'Ada', lastName: 'Ashby',  email: 'ops@acme.test',   notes: 'Net-30. Always disputes shipping.' },
+    { name: 'Globex',    firstName: 'Gil', lastName: 'Boothe', email: 'buy@globex.test', notes: 'Prefers pickup.' },
+  ]) {
+    if (!await reseed<any>(sys.customer, { email: c.email })) await sys.customer.create({ data: c })
   }
 
   // One order per interesting state, so every transition button has a row that
@@ -391,7 +426,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
     const lines = await orderLinesFor(items)
     const money = await priceOrder(lines, discountCode, shipping)
 
-    const existing = await sys.order.findFirst({ where: { reference: row.reference } })
+    const existing = await reseed<any>(sys.order, { reference: row.reference })
     if (existing) {
       // Present but moved on — the drive pays and ships these. Put the state
       // back so the next run finds the same buttons.
@@ -458,7 +493,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
     await sys.user.updateMany({ where: { email: DEMO.buyer.email }, data: { emailVerified: true } })
   }
   const buyerUser = await sys.user.findFirst({ where: { email: DEMO.buyer.email } })
-  const buyerCustomer = await sys.customer.findFirst({ where: { email: DEMO.buyer.email } })
+  const buyerCustomer = await reseed<any>(sys.customer, { email: DEMO.buyer.email })
   if (buyerUser && !buyerCustomer) {
     await sys.customer.create({ data: {
       email:     DEMO.buyer.email,
@@ -479,8 +514,8 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   // the order would give the account page an order it can open and an
   // itemisation it cannot read, which is the exact failure the second column
   // exists to prevent, arriving as an empty table rather than an error.
-  const buyerRecord = await sys.customer.findFirst({ where: { email: DEMO.buyer.email } })
-  if (buyerUser && buyerRecord && !await sys.order.findFirst({ where: { reference: 'ORD-2001' } })) {
+  const buyerRecord = await reseed<any>(sys.customer, { email: DEMO.buyer.email })
+  if (buyerUser && buyerRecord && !await reseed<any>(sys.order, { reference: 'ORD-2001' })) {
     const lines = await orderLinesFor([
       { sku: 'FJS-TEE-NVY-L',   quantity: 1 },
       { sku: 'JCT-MUG-COL-ONE', quantity: 2 },

@@ -1,7 +1,11 @@
-// `@updatedAt` — the timestamp SQLite moves for you.
+// `@updatedAt` — the timestamp the CLIENT moves for you.
 //
-// The stamp is an AFTER UPDATE trigger rather than a client-side write, so it
-// holds for a direct SQL statement and a migration as well as for `update()`.
+// It was an AFTER UPDATE trigger, which held for a direct SQL statement and a
+// migration as well as for `update()`. What a trigger cannot do is read the
+// clock the client was given, so a suite that froze one still got today and the
+// crossing a frozen clock exists to stage could not be staged (`FJS-531`). The
+// client stamps now, on create and update alike; the column DEFAULT stays as the
+// floor for a raw INSERT and a raw UPDATE is on its own.
 // What decides that a field gets one is the ATTRIBUTE. It used to be the field
 // NAME (`f.name === 'updatedAt' && f.type.name === 'DateTime'`), which was wrong
 // in both directions — decorative wherever the two agreed and a silent no-op
@@ -16,10 +20,13 @@
 // otherwise lose its trigger on upgrade — a silent data-freshness regression is
 // exactly what this fix exists to stop.
 //
-// What the trigger cannot do is reach the row a write RETURNS: RETURNING is
-// evaluated before an AFTER trigger runs, so the caller's copy holds the old
-// value and a re-read holds the new one (`FJS-396`, open). The last case here
-// pins that so the day it changes is a red test rather than a surprise.
+// It also closes `FJS-396` at the root rather than narrowing it. RETURNING is
+// evaluated before an AFTER trigger runs, so a write that leaned on one handed
+// the caller a value the row no longer held — and naming the column in the SET
+// clause only fixed that while the two values DIFFERED, which they do not when
+// the clock has not moved between two writes to one row. With no trigger there
+// is no window: the cases below assert the returned row equals a re-read for
+// every write verb.
 
 import { describe, it, expect } from 'bun:test'
 import { createClient } from '../src/index.js'
@@ -117,22 +124,16 @@ describe('@updatedAt — the attribute decides', () => {
 })
 
 describe('@updatedAt — the emitted DDL', () => {
-  it('stamps every declaring field from one trigger per table', () => {
-    const sql = ddl()
-    // One trigger, named for the table — a sibling trigger re-enters this one
-    // and speaks for a column it does not own.
-    expect(sql.match(/CREATE TRIGGER IF NOT EXISTS "doc_updatedAt"/g)).toHaveLength(1)
-    expect(sql).toContain('SET "touched" =')
-    expect(sql).toContain('SET "updatedAt" =')
-    expect(sql).toContain('"ticket_updatedAt"')
-    expect(sql).toContain('SET "changedAt" =')
+  it('emits no stamp trigger at all — the client owns the write now', () => {
+    // `FJS-531`. A trigger can only read SQLite's clock, so a suite that froze
+    // one still got today and the crossing a frozen clock exists to stage could
+    // not be staged. An existing trigger is retired by `litestone migrate`.
+    expect(ddl()).not.toMatch(/CREATE TRIGGER[^]*?_updatedAt/)
   })
 
-  it('leaves the one-column body every existing database carries unchanged', () => {
-    // A changed body migrates a trigger that does the same thing, on every app.
-    expect(ddl()).toContain(
-      `UPDATE "ticket" SET "changedAt" = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;`)
-    expect(ddl()).toContain('"legacy_updatedAt"')
+  it('keeps the column DEFAULT, which is the floor for a write the client never sees', () => {
+    // A raw INSERT still stamps. A raw UPDATE does not, and that is the price.
+    expect(ddl()).toContain(`"changedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))`)
   })
 
   it('emits nothing for an @@external model, and the client stamps nothing either', async () => {
@@ -252,14 +253,25 @@ describe('@updatedAt — the row a write hands back (FJS-396)', () => {
     }
   })
 
-  it('still stamps a raw SQL write, which never comes through the client', async () => {
+  it('does NOT stamp a raw SQL update — the price of the clock being readable', async () => {
+    // The floor is asymmetric on purpose and this is the half that was lost.
+    // A hand-written UPDATE is responsible for its own stamp now; there is no
+    // trigger left to do it, because a trigger can only read SQLite's clock.
     const db  = await createClient({ schema: SCHEMA, db: ':memory:' })
     const row = await db.doc.create({ data: { title: 'a' } })
     await settle()
 
     await db.asSystem().sql`UPDATE doc SET title = 'b' WHERE id = ${row.id}`
     const after = await db.doc.findUnique({ where: { id: row.id } })
-    expect(after.touched).not.toBe(row.touched)
-    expect(after.updatedAt).not.toBe(row.updatedAt)
+    expect(after.touched).toBe(row.touched)
+    expect(after.updatedAt).toBe(row.updatedAt)
+  })
+
+  it('still stamps a raw SQL INSERT — the column DEFAULT is untouched', async () => {
+    const db  = await createClient({ schema: SCHEMA, db: ':memory:' })
+    await db.asSystem().sql`INSERT INTO doc (id, title) VALUES (99, 'raw')`
+    const row = await db.doc.findUnique({ where: { id: 99 } })
+    expect(row.updatedAt).toBeTruthy()
+    expect(row.touched).toBeTruthy()
   })
 })

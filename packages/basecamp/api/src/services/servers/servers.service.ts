@@ -341,11 +341,20 @@ export function createServersService(app: BasecampApp) {
             // silently undid the drain. A report we cannot act on is recorded
             // rather than swallowed: an operator looking at a row that
             // disagrees with the provider needs to see why.
+            // Membership in the list is the question — it holds exactly the
+            // moves legal from where this row IS. `allowed` is a different
+            // question and is deliberately not consulted: these moves are
+            // `@system`, so it reads false for every caller, and the
+            // application is about to make it AS the application.
             const legal = (await db().server.transitions(server))
               .some((t: { name: string }) => t.name === move)
 
             if (legal) {
-              await db().server.transition(id, move)
+              // `{ system: true }` names the column on the write, which is what
+              // the `@system` on these moves requires. Not `asSystem()`: the
+              // caller pressed a button, and the gate, the row policies and the
+              // audit actor all still apply to them.
+              await db().server.transition(id, move, { system: true })
               await recordEvent(id, 'status_synced',
                 `Status synced from provider: ${PROVIDER_TARGET[move]}`,
                 { provider_status: reported })
@@ -373,7 +382,7 @@ export function createServersService(app: BasecampApp) {
       // accessors have no generated types yet (`litestone types` is pending),
       // so every `sys.server` read is otherwise `unknown` and each one is its
       // own diagnostic.
-      const sys  = app.data.asSystem() as any
+      const sys  = $.db.asSystem() as any
       const id   = $.id as string
       const data = $.data as HeartbeatData
 
@@ -393,16 +402,22 @@ export function createServersService(app: BasecampApp) {
 
       const now = new Date().toISOString()
 
-      // `checkIn` in `@@transitions` — declared @gate(8), which is the schema's
-      // way of saying the move is the machine's and not a person's. It is
-      // written here rather than through `transition()` because the status is
-      // one column of ONE update: splitting it out would write the row twice
-      // and announce it twice for a single check-in. A system client bypasses
-      // enforcement, so this from-set and the declared one have to agree —
-      // there is no compare-and-swap protecting the pair, and no second writer
-      // to need one: an outpost only ever reports about its own machine.
-      const CHECK_IN_FROM = new Set(['pending', 'installing', 'unreachable'])
-      const newStatus = CHECK_IN_FROM.has(server.status) ? 'online' : server.status
+      // `checkIn` is declared `@system`: the move is the machine's, not a
+      // person's. It is still written as one column of ONE update rather than
+      // through `transition()`, because splitting it out would write the row
+      // twice and announce it twice for a single check-in — and `asSystem()` is
+      // right here for the reason it usually is not, since a heartbeat has no
+      // caller at all.
+      //
+      // What that costs is enforcement: a system client bypasses the machine.
+      // So the from-set is ASKED of the schema rather than kept beside it —
+      // `transitions(row)` answers exactly the moves legal from where this row
+      // is, off the row already in hand. It used to be a `Set` here with a
+      // comment saying the two had to agree, which is the duplication
+      // `@@transitions` exists to delete.
+      const canCheckIn = (await sys.server.transitions(server))
+        .some((t: { name: string }) => t.name === 'checkIn')
+      const newStatus = canCheckIn ? 'online' : server.status
 
       // Capture the updated row: it is both this method's answer and the
       // payload the channel publishes. Answering `{ ok, server_id, status }`

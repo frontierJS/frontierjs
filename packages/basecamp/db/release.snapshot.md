@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-45 model(s) · 26 enum(s) · 2 database(s)
+46 model(s) · 27 enum(s) · 2 database(s)
 audit → logger · main → sqlite
 ```
 
@@ -26,6 +26,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `AppType` | `container` · `cron` · `daemon` · `database` · `function` · `static` · `worker` |
 | `BackupDestination` | `local` · `s3` |
 | `BackupKind` | `manual` · `scheduled` |
+| `Capability` | `Environment.create` · `Environment.delete` · `Environment.update` · `Environment.variables` · `Server.create` · `Server.delete` · `Server.drain` · `Server.reboot` · `Server.undrain` · `Server.update` |
 | `ChannelKind` | `email` · `pagerduty` · `slack` · `webhook` |
 | `DeployStatus` | `building` · `cancelled` · `deploying` · `failed` · `pending` · `pushing` · `rolled_back` · `success` |
 | `EnvironmentTier` | `development` · `preview` · `production` · `staging` · `test` |
@@ -163,14 +164,14 @@ table `api_key` · db `main` · gate `5`
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `createdBy` | `String` | yes | — | — |
-| `credentialId` | `String` | yes | — | — |
+| `credentialId` | `String` | yes | — | @system |
 | `expiresAt` | `DateTime` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `lastUsedAt` | `DateTime` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
 | `revokedAt` | `DateTime` | yes | — | — |
 | `scopes` | `String[]` | no | `'[]'` | — |
-| `tokenHint` | `String` | no | — | **required on write** |
+| `tokenHint` | `String` | no | — | @system · **required on write** |
 | `totalUses` | `Int` | no | `0` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `usageDate` | `String` | yes | — | — |
@@ -718,7 +719,7 @@ table `feature_flag` · db `main` · gate `2.4.4.5` · @@softDelete
 | `isEnabled` | `Boolean` | no | `0` | — |
 | `key` | `String` | no | — | **required on write** |
 | `overrides` | `FlagOverride[]` | — | — | relation |
-| `rollout` | `Int` | no | `0` | — |
+| `rollout` | `Int` | no | `100` | — |
 | `tags` | `String[]` | no | `'[]'` | — |
 | `type` | `FlagType` | no | `'boolean'` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
@@ -750,7 +751,7 @@ table `flag_override` · db `main` · gate `2.4.4.4`
 | `flagId` | `String` | no | — | **required on write** |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isEnabled` | `Boolean` | no | `0` | — |
-| `rollout` | `Int` | no | `0` | — |
+| `rollout` | `Int` | no | `100` | — |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `variantKey` | `String` | yes | — | — |
 
@@ -1000,6 +1001,19 @@ table `oauth_flow` · db `main` · gate `8`
 @@index(expiresAt)
 ```
 
+### `OutpostNonce`
+
+table `outpost_nonce` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `nonce` | `String` | no | — | id |
+| `seenAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+
+```
+@@index(seenAt)
+```
+
 ### `Project`
 
 table `project` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
@@ -1207,13 +1221,13 @@ table `server` · db `main` · gate `2.4.4.5` · @@softDelete
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
-transition status.checkIn: installing, pending, unreachable → online @gate(8)
+transition status.checkIn: installing, pending, unreachable → online
 transition status.drain: online → draining @gate(5)
 transition status.reboot: online, unreachable → pending
-transition status.reportDestroyed: draining, installing, online, pending, provisioning, ready, stopped, unreachable → destroyed
-transition status.reportRebuilding: draining, installing, online, pending, ready, stopped, unreachable → provisioning
-transition status.reportRunning: installing, pending, provisioning, ready, stopped, unreachable → online
-transition status.reportStopped: draining, installing, online, pending, provisioning, ready, unreachable → stopped
+transition status.reportDestroyed: draining, installing, online, pending, provisioning, ready, stopped, unreachable → destroyed @gate(5)
+transition status.reportRebuilding: draining, installing, online, pending, ready, stopped, unreachable → provisioning @gate(5)
+transition status.reportRunning: installing, pending, provisioning, ready, stopped, unreachable → online @gate(5)
+transition status.reportStopped: draining, installing, online, pending, provisioning, ready, unreachable → stopped @gate(5)
 transition status.undrain: draining → online @gate(5)
 ```
 
@@ -1414,6 +1428,7 @@ table `workspace_member` · db `main` · gate `1.5`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `acceptedAt` | `DateTime` | yes | — | — |
+| `capabilities` | `Capability[]` | no | `'[]'` | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `invitedAt` | `DateTime` | yes | — | — |

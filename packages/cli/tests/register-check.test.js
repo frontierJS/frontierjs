@@ -43,6 +43,7 @@ beforeAll(() => {
     '| <a id="fjs-015"></a>FJS-015 | cli | **Old.** | open | 2026-01-01 | — |',
     '| <a id="fjs-020"></a>FJS-020 | cli | **Reused id, first.** | open | 2026-08-17 | — |',
     '| <a id="fjs-020"></a>FJS-020 | ui | **Reused id, second.** | open | 2026-08-17 | — |',
+    '| <a id="fjs-021"></a>FJS-021 | cli | **Done, and still here.** | closed | 2026-08-17 | — |',
     '',
     '## Decisions awaiting a ruling',
     '| Id | Pkg | Question | Detail |',
@@ -108,6 +109,31 @@ describe('errors', () => {
     const result = runRegisterCheck({ root: ROOT, today: TODAY })
     expect(of(result, 'unknown-status').map(h => h.id).sort()).toEqual(['FJS-010', 'wrong'])
     expect(of(result, 'malformed-date').map(h => h.id).sort()).toEqual(['FJS-011', 'wrong'])
+  })
+
+  test('a closed row still sitting in an open section', () => {
+    // The direction the register goes wrong that nothing was watching: the row
+    // is correct and it is in the wrong place, so every count above it reads it
+    // as work still to do. Sixteen had accumulated in this repo's own register
+    // when the rule was written, one of them the only S1.
+    const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'closed-in-open')
+    expect(hits.map(h => h.id)).toEqual(['FJS-021'])
+    expect(hits[0].message).toContain('§ Closed')
+    expect(hits[0].message).toContain('S1')
+  })
+
+  test('a row under § Closed is not reported by it', () => {
+    // `closed` is in ISSUE_STATUS because the reader SYNTHESISES it for every
+    // row down there — which is exactly what made it silently legal in an open
+    // section. A rule that fired on both would be unfixable.
+    const hits = of(runRegisterCheck({ root: ROOT, today: TODAY }), 'closed-in-open')
+    expect(hits.some(h => h.id === 'FJS-003')).toBe(false)
+  })
+
+  test('a bad status is still a bad status, and a different rule', () => {
+    const result = runRegisterCheck({ root: ROOT, today: TODAY })
+    expect(of(result, 'unknown-status').some(h => h.id === 'FJS-021')).toBe(false)
+    expect(of(result, 'closed-in-open').some(h => h.id === 'FJS-010')).toBe(false)
   })
 
   test('every error is levelled as one', () => {

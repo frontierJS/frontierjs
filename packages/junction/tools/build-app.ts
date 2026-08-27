@@ -21,6 +21,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join, resolve }                    from 'node:path'
+import { resolveServicesDir }                                          from '../src/core/services-dir.ts'
 
 const args      = Bun.argv.slice(2)
 const flag      = (n: string) => args.includes(`--${n}`)
@@ -102,13 +103,17 @@ const entryCode = entrySrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$
 
 const optedOut     = /autoload\s*:\s*false/.test(entryCode)
 const explicitDir  = entryCode.match(/autoload\s*:\s*['"`]([^'"`]+)['"`]/)?.[1]
-const scannedDir   = explicitDir
-  ? resolve(process.cwd(), explicitDir)         // explicit path → CWD-relative
-  : join(dirname(entry), 'services')            // default → beside the entry file
+
+// Asked, not restated. This guard exists to name a directory the RUNNING app
+// would have scanned, so a copy of the resolution here is a guard that checks
+// somewhere the app no longer looks — which is how the canonical layout got a
+// green bundle and a 404 on every route (`FJS-458`).
+const resolved     = resolveServicesDir({ entry, declared: explicitDir })
+const scannedDir   = resolved.dir ?? resolved.probed[resolved.probed.length - 1] ?? join(dirname(entry), 'services')
 
 // Building in place keeps Bun.main in the same directory as the .ts services.
 const inPlace  = artifact === 'js' && outdir === dirname(entry)
-const dirFound = existsSync(scannedDir)
+const dirFound = resolved.dir !== null
 
 const whereMain = artifact === 'binary'
   ? '/$bunfs/root inside a binary'

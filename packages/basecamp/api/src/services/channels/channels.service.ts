@@ -93,7 +93,7 @@ export function createChannelsService(app: BasecampApp) {
    *  is absent from the row a scoped client would produce, and absent from the
    *  one it would write. `litestone types` would make this unnecessary; until
    *  then it is one cast rather than four. */
-  const sys = (): any => (app.data as any).asSystem()
+  const sys = (): any => $.db.asSystem()
 
   /** The outbound boundary, or a refusal that names what is missing. `app.conduit`
    *  is optional on the app type — a Basecamp built without the plugin is a

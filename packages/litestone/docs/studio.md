@@ -148,7 +148,7 @@ asks all of them against the *proposed* text, before anything is written —
 
 | Realm | Pane |
 | --- | --- |
-| Data | the DDL this model emits — table, indexes, FTS index, `updatedAt` trigger |
+| Data | the DDL this model emits — table, indexes, FTS index |
 | Data | the access surface — gate, row policies, protected fields |
 | API | the JSON Schema a validator and a generated form read |
 | Release | `expand` / `contract` from `classifyPivot`, and `widens` / `narrows` from `classifyAccess` |

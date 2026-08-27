@@ -62,7 +62,12 @@ const runCmd = [
   // health step then reports as a sick application.
   `--env PORT=3000`,
   `--env NODE_ENV=production`,
-  imageTag,
+  // The DIGEST where step 04 could read one, and the tag only as a fallback.
+  // Running the tag means running whatever currently answers to that name, and
+  // the name is not unique across servers or across rebuilds — which is the
+  // whole of what 2.3f is about. `imageAddress` is the tag when nothing could
+  // be read, and step 04 has already said so out loud.
+  context.config.imageAddress ?? imageTag,
 ].join(' ')
 
 context.exec({ command: `ssh ${host} "${runCmd}"` })

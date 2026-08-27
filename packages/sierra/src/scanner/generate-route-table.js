@@ -95,9 +95,27 @@ export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/
   // fetchable files on a public origin. Nothing linked them, which is why it
   // went unnoticed: a static host serves a file whether a page links it or not.
   //
-  // Dev is untouched. `vite dev` on a static target IS a client-routed app and
-  // calls `load()` in the browser, so the loaders have to be there.
-  const loaderNodes = opts.omitLoaders ? [] : routeNodes.filter(n => n.companion)
+  // Dev is not untouched, and the sentence that used to be here said it was.
+  // `vite dev` on a static target IS a client-routed app — but a route that
+  // declares `render: static` never calls `load()` in a browser at all: that
+  // function runs at BUILD time, in Node, and is where a storefront reads its
+  // own database. Kept in the table, the dev router imported it, called it, and
+  // got `Module "fs" has been externalized for browser compatibility` — caught,
+  // downgraded to a console warning, and rendered as a page with nothing on it.
+  // Vite followed the same import into the browser graph on the way, so the
+  // terminal filled with un-analyzable-dynamic-import warnings about the
+  // migration engine and the service autoloader (`FJS-543`).
+  //
+  // So the rule is per ROUTE and not per target: a prerendered route's loader
+  // is build-time by definition, and a route on a static target that is NOT
+  // prerendered is an ordinary client-routed page whose `load()` does run in
+  // the browser and must stay.
+  //
+  // `omitLoaders` above it is the whole-table switch the static BUILD sets, and
+  // it stays: this narrows what dev ships, never what the build does.
+  const loaderNodes = opts.omitLoaders
+    ? []
+    : routeNodes.filter(n => n.companion && n.meta?.render !== 'static')
   const loaderEntries = loaderNodes
     .map(n => {
       const absFile = resolve(projectRoot, n.companion)

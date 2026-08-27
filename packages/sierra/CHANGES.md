@@ -1,5 +1,130 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-26 — dev on a static surface ran the build-time loader
+
+`FJS-543`. 1114 tests, 0 fail.
+
+A `render: static` route's `load()` runs in Node at build time and is where an
+app reads its own database. The client route table kept its import anyway, and
+the comment beside the omission asserted that this was fine — *dev is untouched,
+`vite dev` on a static target IS a client-routed app and calls `load()` in the
+browser*. True of a client-routed page; false of a prerendered one.
+
+So the dev router imported the companion, called it, and got `Module "fs" has
+been externalized for browser compatibility` — caught, downgraded to a
+`console.warn`, and rendered as a page with nothing on it. Vite followed the
+same import into the browser graph on the way and reported eight un-analyzable
+dynamic imports out of litestone's migration runner and junction's config
+loader, service autoloader and database storage.
+
+The rule is per ROUTE now and not per target: a prerendered route's loader is
+build-time by definition, and a route on a static target that is NOT prerendered
+is an ordinary client-routed page whose `load()` does run in the browser and
+keeps its loader. That is more precise than the whole-table switch the static
+build sets, and the switch is untouched — this narrows what dev ships and
+nothing about the built output changes.
+
+The router says the rest, once per route, in dev: `data` is null here because
+this page's data is baked at build time. *Empty and correct* and *empty and
+broken* are otherwise the same screen.
+
+
+## 2026-08-26 — a `File` column has a control
+
+`FJS-409`. 1114 tests, 0 fail.
+
+`controlFor` answered `{ control: null, reason: 'file — a stored file reference
+needs an upload path a form does not have' }`, which was honest and was not a
+control. The upload path turned out to be built and unused: the junction client
+switches a request to `multipart/form-data` the moment any value in it is a
+File, the bridge merges those files back into `ctx.data`, and `FileStorage`
+stores the bytes and writes the ref.
+
+So the bytes go **with the record**, through the service the form already calls
+— which is also the only route carrying the gate, the row policies and
+`@accept`. A signed URL or an upload endpoint would be a second door with its own
+answer to who may write.
+
+`x-litestone-accept` is carried now, so the file dialog offers the same list the
+Data boundary enforces. The refusal is real either way; a person who has already
+chosen a 4MB file and waited for it to upload is being told something the dialog
+could have said first.
+
+Nothing else changed: a browser `File` already passed through strip, coerce,
+blank and validate untouched, which is why there is no pending state to
+reconcile and no upload to resume.
+
+
+## 2026-08-26 — a wall-clock column gets a time input
+
+`@time` reaches the schema as a `pattern` plus `x-time: { seconds }` (litestone,
+same date). `x-time` is carried into the field rules and the control table answers
+`<input type="time">` for it — the same argument `date` already wins: a wall clock
+has no zone, so the element round-trips it and a type attribute is the whole
+answer, where `date-time` needs a control because `datetime-local` carries no zone
+and the value has to be converted at each edge.
+
+`step: 1` where the column accepts seconds. The element shows HH:MM unless the
+step is not a whole number of minutes, so without it a person cannot type a value
+the boundary would take. `Input` already forwards both `type` and `step`, so
+`@frontierjs/ui` needed no change.
+
+The `pattern` is what refuses a bad value, on both sides — it is the Data
+boundary's own regex, so `validateAgainstFields` and the write agree by
+construction rather than by a copy. `FJS-522`.
+
+## 2026-08-26 — `matchesQuery` moved to the substrate
+
+`@frontierjs/toolbelt/match` owns it; `field-rules.js` re-exports it, so every
+caller here is unchanged and `resource.js` still hands it to junction built over
+the model it resolved.
+
+It moved because there were two live stores and one implementation between them:
+jetty's upserted whatever its channel delivered, so a row that had LEFT the
+loaded filter stayed in the list (`FJS-493`), and jetty may not import this
+package. Same shape as `FJS-059`, same answer.
+
+`buildFieldRules` now reads type and nullability through the toolbelt's
+`fieldShape`, so there is one owner of *what type is this field* — the matcher
+needs exactly that much of a field and nothing more.
+
+`tests/live-filter.test.js` keeps the SEAM, which is the half only this side can
+answer, plus one line asserting the re-export IS the toolbelt function rather
+than a copy made here to fix an import. Its 31 behavioural cases are in
+`toolbelt/test/specs/match.spec.js`. sierra 1114 pass.
+
+## 2026-08-26 — `transitionsAt` knows the third refusal, and it is the certain one
+
+`x-transitions` now carries `system` beside `gate`, so a `@system` move —
+declared as the APPLICATION's rather than any caller's (`FJS-D150`) — reports
+`allowed: false, refusedBy: 'system'` at every level, `undefined` included.
+
+It is the only verdict this module gives that is not permissive-when-unknown. A
+gate is an affordance and a policy is invisible from a browser, so both degrade
+to *offer the button and let the boundary refuse*; a browser is never the
+application, so this one is decidable here with certainty. A screen renders no
+button for it rather than a disabled one, which is the difference between saying
+nothing and telling somebody to go and ask an administrator who also cannot do
+it.
+
+
+## 2026-08-26 — `resource.more()` — the live list's answer to paging (`FJS-D145`)
+
+`more()` grows the window and `hasMore()` says whether there is anything past
+it. A keyset scan resuming from the edge of what the list already holds, so it
+cannot skip a row or serve one twice the way an offset does under a list that
+is being written to. The versions of what it read are remembered exactly as a
+`load()`'s are.
+
+Growing is not a chance to ask a different question: the query and the
+directives are the last `load()`'s. A different filter or a different sort is a
+`load()`, because a cursor minted under one ordering names no position in
+another.
+
+`offset` is untouched — a numbered page is a legitimate UI and
+`Pagination.mesa` renders one. Offset is what you ASK for; the window is what a
+live resource GETS.
+
 ## 2026-08-26 — an edit form was sending the server its own columns back (`FJS-526`)
 
 `@system`, `@generated`, `@computed`, `@from`, `@version` and a tenancy stamp

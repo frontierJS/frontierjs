@@ -32,6 +32,7 @@ import { createLitestoneAuth } from '@frontierjs/auth'
 import { createBasecampDb } from '../api/src/core/db.ts'
 import { BLUEPRINTS }        from './blueprints.js'
 import { env } from '../api/src/core/env.ts'
+import { grantsFor } from '../api/src/core/capabilities.ts'
 
 const PASSWORD = 'hunter2hunter2'
 const RNG_SEED = 42
@@ -334,6 +335,10 @@ export class BasecampSeeder extends Seeder {
               workspaceId: ws.id,
               userId:      user.id,
               role:        user.id === owner.id ? 'owner' : user.seedRole,
+              // Stamped through the app's own table, so seeded data and a real
+              // sign-up produce the same membership rather than two shapes that
+              // only differ once a capability is checked.
+              capabilities: grantsFor(user.id === owner.id ? 'owner' : user.seedRole),
               acceptedAt:  new Date().toISOString(),
             },
           })
@@ -346,6 +351,7 @@ export class BasecampSeeder extends Seeder {
         if (slug === 'acme-platform') {
           await sys.workspaceMember.create({
             data: { workspaceId: ws.id, userId: bot.id, role: 'developer',
+                    capabilities: grantsFor('developer'),
                     acceptedAt: new Date().toISOString() },
           })
         }

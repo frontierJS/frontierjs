@@ -286,7 +286,7 @@ title: Basket
        rounds each component once and sums the ROUNDED ones, so the column adds
        up to the figure the card is charged — a property that survives exactly
        as long as nothing here re-derives a line of it. -->
-  <div class="card stack-sm summary">
+  <div class="card stack summary">
     <div class="row">
       <span>Subtotal <span class="text-muted text-sm">({cart.count} item{cart.count === 1 ? '' : 's'})</span></span>
       <strong id="basket-subtotal">{money(cart.subtotal)}</strong>
@@ -335,7 +335,7 @@ title: Basket
        which is the plainest statement in the app that a gate answers *what
        kind of caller* and never *what kind of table*. -->
   {#if cart.shippingOptions.length}
-    <div class="card stack-sm">
+    <div class="card stack">
       <SectionHeader title="Delivery" level={2} sub="ShippingMethod — readable at level 0, so a stranger can pick one" />
       <div class="options">
         {#each cart.shippingOptions as option (option.id)}
@@ -368,7 +368,7 @@ title: Basket
        written once in `api/src/pricing.ts` and used by BOTH this box and the
        checkout — so a code that expires between the two says the same thing in
        both places. -->
-  <div class="card stack-sm">
+  <div class="card stack">
     <SectionHeader title="Discount code" level={2} sub="the one table on this screen a shopper may not read" />
     {#if cart.discountCode}
       <div class="row">
@@ -463,15 +463,15 @@ title: Basket
     gap: 1rem;
     padding: .75rem;
     background: var(--surface);
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-md);
+    border: 1px solid var(--rule);
+    border-radius: var(--card-radius);
   }
 
   .thumb {
     width: 64px; height: 64px;
     object-fit: contain;
     background: var(--surface-sunken);
-    border-radius: var(--radius-sm);
+    border-radius: var(--btn-radius);
   }
   .thumb-empty { display: inline-block }
 
@@ -494,7 +494,7 @@ title: Basket
   }
   .row .grand, .grand {
     font-size: var(--text-lg);
-    border-top: 1px solid var(--hairline);
+    border-top: 1px solid var(--rule);
     padding-top: .5rem;
   }
 
@@ -505,8 +505,8 @@ title: Basket
     align-items: center;
     gap: .75rem;
     padding: .6rem .75rem;
-    border: 1px solid var(--hairline);
-    border-radius: var(--radius-md);
+    border: 1px solid var(--rule);
+    border-radius: var(--card-radius);
     cursor: pointer;
   }
   .option:hover { background: var(--surface-sunken) }

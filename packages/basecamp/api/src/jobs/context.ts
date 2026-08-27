@@ -12,7 +12,7 @@
 // A request carries both answers — a signed-in caller, and a workspace named in
 // a header. A job wakes up an hour later with neither, and until 2026-08-23 the
 // framework had no way to give them back, so all five handlers here opened
-// `app.data.asSystem()` behind a comment saying a job has no caller. That drops
+// `app.db.asSystem()` behind a comment saying a job has no caller. That drops
 // the gate, the row policies and the audit actor together to relax the one that
 // was in the way (`FJS-384`).
 //
@@ -115,7 +115,7 @@ export function runsAsApp(ctx: JobContext<unknown>, job: string): AppJob {
     `the dispatch to say the app owns it even though a request started it.`
   )
 
-  return { mode: 'app', app, db: app.data.asSystem() }
+  return { mode: 'app', app, db: app.db.asSystem() }
 }
 
 /**

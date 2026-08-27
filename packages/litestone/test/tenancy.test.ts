@@ -477,3 +477,101 @@ describe('a row cannot be moved out of its tenant', () => {
     expect((await sys.doc.findUnique({ where: { id: 1 } })).workspaceId).toBe(2)
   })
 })
+
+// ─── asSystem() keeps the tenant in scope (FJS-519) ─────────────────────────
+//
+// `asSystem()` means NO PERMISSION RULES. It did not mean *no scope*, and the
+// gap was a hole in a shipped feature: row tenancy desugars to `@@deny`, which
+// is a policy, so a system context read every tenant's rows — and a `@@gate("8")`
+// model can be read by nothing else, so the only client that could read a
+// credential was the one that ignored tenancy.
+//
+// Two halves, and the second one is what the first needed. Keeping the
+// tenancy-generated denies under a system context is the rule; `asSystem()`
+// being memoised PER SCOPE is what gives it a claim to keep, because a scoped
+// client used to hand back the root's identity-free proxy.
+
+const VAULT_SCHEMA = `
+tenancy {
+  strategy row
+  column   workspaceId
+  claim    workspaceId
+}
+
+model Secret {
+  id          Int    @id @default(autoincrement())
+  workspaceId Int
+  label       String
+  @@gate("8")
+}
+
+model Note {
+  id          Int    @id @default(autoincrement())
+  workspaceId Int
+  body        String
+  @@gate("0")
+}
+`
+
+describe('asSystem() and row tenancy', () => {
+  const seed = async () => {
+    const db   = await createClient({ schema: VAULT_SCHEMA, db: ':memory:' })
+    const root = db.asSystem()
+    await root.secret.create({ data: { workspaceId: 1, label: 'ws1 key' } })
+    await root.secret.create({ data: { workspaceId: 2, label: 'ws2 key' } })
+    await root.note.create({ data: { workspaceId: 1, body: 'ws1 note' } })
+    await root.note.create({ data: { workspaceId: 2, body: 'ws2 note' } })
+    return { db, root }
+  }
+
+  it('gives a scoped client its own system proxy rather than the root one', async () => {
+    const { db } = await seed()
+    const one = db.$setAuth({ id: 1, workspaceId: 1 })
+    const two = db.$setAuth({ id: 2, workspaceId: 2 })
+    expect(one.asSystem()).not.toBe(db.asSystem())
+    expect(one.asSystem()).not.toBe(two.asSystem())
+    // Still memoised, per scope.
+    expect(one.asSystem()).toBe(one.asSystem())
+  })
+
+  it('crosses the gate and keeps the tenant', async () => {
+    const { db } = await seed()
+    const sys = db.$setAuth({ id: 1, workspaceId: 1 }).asSystem()
+
+    // @@gate("8") is unreachable for the scoped caller and reachable here...
+    await expect(db.$setAuth({ id: 1, workspaceId: 1 }).secret.findMany()).rejects.toThrow()
+    // ...but only for its own tenant, which is the whole point.
+    expect((await sys.secret.findMany()).map((r: any) => r.label)).toEqual(['ws1 key'])
+    expect((await sys.note.findMany()).map((r: any) => r.body)).toEqual(['ws1 note'])
+  })
+
+  it('keeps nothing when nothing is in scope', async () => {
+    // A migration, a seed, or a job with no caller. The generated predicate's
+    // first branch is `auth().<claim> == null`, so applying it with no
+    // principal would deny every row rather than widen to all of them.
+    const { root } = await seed()
+    expect((await root.secret.findMany()).length).toBe(2)
+    expect((await root.note.findMany()).length).toBe(2)
+  })
+
+  it('refuses a cross-tenant write from a scoped system client', async () => {
+    const { db, root } = await seed()
+    const sys   = db.$setAuth({ id: 1, workspaceId: 1 }).asSystem()
+    const other = await root.note.findFirst({ where: { workspaceId: 2 } })
+
+    // The stamp still applies — a create naming nothing lands in the scope.
+    expect((await sys.note.create({ data: { body: 'stamped' } })).workspaceId).toBe(1)
+    // Naming another tenant is refused, and reaching one matches no rows.
+    await expect(sys.note.create({ data: { workspaceId: 2, body: 'x' } })).rejects.toThrow()
+    expect(await sys.note.updateMany({ where: { id: other.id }, data: { body: 'hijacked' } })).toEqual({ count: 0 })
+    expect((await root.note.findFirst({ where: { id: other.id } })).body).toBe('ws2 note')
+  })
+
+  it('refuses moving its own row into another tenant', async () => {
+    // post-update, which is the half a hand-written policy got for free.
+    const { db } = await seed()
+    const sys = db.$setAuth({ id: 1, workspaceId: 1 }).asSystem()
+    const mine = await sys.note.create({ data: { body: 'mine' } })
+    await expect(sys.note.update({ where: { id: mine.id }, data: { workspaceId: 2 } })).rejects.toThrow()
+  })
+})

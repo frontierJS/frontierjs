@@ -2883,6 +2883,35 @@ describe('client — cursor pagination', () => {
   })
   afterAll(() => db.$close())
 
+  // ── The tiebreaker (`FJS-D145`) ──────────────────────────────────────────
+  // A keyset cursor is a position in a TOTAL order. An ordering with no unique
+  // column is not one, and it fails silently: two rows sharing a sort value sit
+  // either side of a page boundary, so one is served twice and one never.
+
+  test('a non-unique ordering is completed with the model id rather than refused', async () => {
+    // Every user here shares `accountId`, so ordering by it alone is a tie for
+    // all 25 rows — the worst case for a keyset scan.
+    const seen: number[] = []
+    let cursor: string | null = null
+    for (let i = 0; i < 10; i++) {
+      const p: any = await db.user.findManyCursor({ limit: 5, orderBy: { accountId: 'asc' }, cursor })
+      for (const u of p.items) seen.push(u.id)
+      cursor = p.nextCursor
+      if (!p.hasMore) break
+    }
+    expect(seen.length).toBe(25)
+    expect(new Set(seen).size).toBe(25)      // nothing served twice
+    expect([...seen].sort((a, b) => a - b)).toEqual(Array.from({ length: 25 }, (_, i) => i + 1))
+  })
+
+  test('an ordering that is already total is left alone', async () => {
+    const p1: any = await db.user.findManyCursor({ limit: 5, orderBy: { email: 'asc' } })
+    const p2: any = await db.user.findManyCursor({ limit: 5, orderBy: { email: 'asc' }, cursor: p1.nextCursor })
+    expect(p1.items.map((u: any) => u.email)).not.toEqual(p2.items.map((u: any) => u.email))
+    const all = [...p1.items, ...p2.items].map((u: any) => u.email)
+    expect(new Set(all).size).toBe(10)
+  })
+
   test('first page returns limit items + hasMore', async () => {
     const p = await db.user.findManyCursor({ limit: 10, orderBy: { id: 'asc' } })
     expect(p.items.length).toBe(10)
@@ -3189,8 +3218,9 @@ describe('client — @@fts + @@softDelete', () => {
   test('a table rebuild puts the generated triggers back', async () => {
     // rebuildSQL drops the table, which takes every trigger on it, and nothing
     // recreated them — so a model came out of a column-drop migration with an
-    // FTS index that had silently stopped updating and an updatedAt that had
-    // stopped being stamped. Both keep working; neither reports anything.
+    // FTS index that had silently stopped updating. It keeps working and reports
+    // nothing. The stamp trigger is no longer among them (`FJS-531`): the client
+    // writes `@updatedAt` itself, so there is none to put back.
     const before = parse(`model Note { id Int @id  title String  keep String  updatedAt DateTime  @@fts([title]) }`)
     const after  = parse(`model Note { id Int @id  title String  updatedAt DateTime  @@fts([title]) }`)
     const raw = new Database(tmpDb('fts-rebuild' + Math.random().toString(36).slice(2)))
@@ -3200,7 +3230,7 @@ describe('client — @@fts + @@softDelete', () => {
       .all().map((r: any) => r.name).sort()
     const wanted = triggers()
     expect(wanted).toContain('note_fts_update')
-    expect(wanted).toContain('note_updatedAt')
+    expect(wanted).not.toContain('note_updatedAt')
 
     const diff = diffSchemas(buildPristine(new Database(':memory:'), after), introspect(raw), after)
     expect(diff.tableDiffs.some((d: any) => d.name === 'note' && d.needsRebuild)).toBe(true)
@@ -3527,6 +3557,24 @@ describe('client — metadata properties', () => {
     expect(db.$softDelete.Account).toBe(false)
   })
 
+  test('$softDelete answers on every flavour of client', () => {
+    // A capability that depends only on the schema belongs on all four. This
+    // one answered on the root alone, so the flavour an application actually
+    // holds — junction scopes ctx.locals.db with $setAuth — threw the
+    // unknown-property error at a question about the schema.
+    for (const c of [db, db.$setAuth({ id: 1 }), db.asSystem(), db.$scopedBy({})]) {
+      expect(c.$softDelete.User).toBe(true)
+      expect(c.$softDelete.Account).toBe(false)
+      expect('$softDelete' in c).toBe(true)
+    }
+  })
+
+  test('$softDelete answers a copy — the live map is what every read filters on', () => {
+    const answer = db.$softDelete
+    answer.User = false
+    expect(db.$softDelete.User).toBe(true)
+  })
+
   test('$relations exposes relation map', () => {
     expect(db.$relations).toHaveProperty('User')
     expect(db.$relations.User).toHaveProperty('account')
@@ -3545,7 +3593,7 @@ describe('client — metadata properties', () => {
 
 describe('updatedAt auto-trigger', () => {
 
-  test('trigger generated when updatedAt DateTime field exists', () => {
+  test('no trigger is generated — the client owns the stamp', () => {
     const r = parse(`
       model Post {
         id        Int  @id
@@ -3555,9 +3603,12 @@ describe('updatedAt auto-trigger', () => {
       }
     `)
     const ddl = generateDDL(r.schema)
-    expect(ddl).toContain('post_updatedAt')
-    expect(ddl).toContain('AFTER UPDATE ON')
-    expect(ddl).toContain('WHEN NEW."updatedAt" IS OLD."updatedAt"')
+    // `FJS-531`. A trigger reads SQLite's clock and nothing else, so it could
+    // not follow `createClient({ now })` and a frozen clock stamped today.
+    expect(ddl).not.toContain('post_updatedAt')
+    expect(ddl).not.toContain('AFTER UPDATE ON "post"')
+    // The column DEFAULT stays — it is the floor for a raw INSERT.
+    expect(ddl).toContain(`"updatedAt" TEXT NOT NULL DEFAULT (strftime`)
   })
 
   test('no trigger on models without updatedAt', () => {
@@ -3615,7 +3666,7 @@ describe('updatedAt auto-trigger', () => {
     db.$close()
   })
 
-  test('trigger fires via raw SQL too (database-level)', async () => {
+  test('a raw SQL update stamps nothing — the price of a readable clock', async () => {
     const db = await makeDb(`
       model Post {
         id        Int  @id
@@ -3629,7 +3680,8 @@ describe('updatedAt auto-trigger', () => {
     await Bun.sleep(15)
     raw.run(`UPDATE post SET title = 'Direct SQL' WHERE id = 1`)
     const row = raw.query(`SELECT * FROM post WHERE id = 1`).get() as any
-    expect(row.updatedAt).not.toBe('2024-01-01T00:00:00.000Z')
+    // There is no trigger to fire. A hand-written statement owns its own stamp.
+    expect(row.updatedAt).toBe('2024-01-01T00:00:00.000Z')
     db.$close()
   })
 })
@@ -10159,8 +10211,8 @@ describe('@@transitions — parser', () => {
 
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
     expect(attr.field).toBe('status')
-    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null })
-    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5 })
+    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false })
+    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false })
     expect(attr.transitions.cancel.from).toEqual(['pending', 'paid'])
   })
 
@@ -10169,7 +10221,7 @@ describe('@@transitions — parser', () => {
 model Order { id Int @id  status S  @@transitions(status, pending -> paid) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
-    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null })
+    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false })
   })
 
   test('@gate accepts a level name as well as a number', () => {
@@ -10190,7 +10242,7 @@ model M { id Int @id  s S  @@transitions(s, go: a -> b @gate(ADMINISTRATOR)) }`)
     ['gate out of range',  `@@transitions(s, a -> b @gate(12))`, 'integer 0–9'],
     ['unknown level name', `@@transitions(s, a -> b @gate(NOPE))`, 'unknown level'],
     ['no clauses',         `@@transitions(s)`,                   'at least one transition'],
-    ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate is supported'],
+    ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate and @system are supported'],
   ])('rejects: %s', (_label, attr, fragment) => {
     const r = parse(`enum S { a b }
 model M { id Int @id  s S  n Int  ${attr} }`)
@@ -10355,7 +10407,7 @@ describe('@@transitions — transitions() listing', () => {
   test('a gated move is reported with allowed:false, not hidden', async () => {
     const user   = db.$setAuth({ id: 1, role: 'member' })
     const refund = (await user.order.transitions(2)).find((t: any) => t.name === 'refund')
-    expect(refund).toEqual({ name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5, allowed: false, refusedBy: 'gate' })
+    expect(refund).toEqual({ name: 'refund', field: 'status', from: 'paid', to: 'refunded', gate: 5, system: false, allowed: false, refusedBy: 'gate' })
   })
 
   test('the same record reads differently for a higher level', async () => {
@@ -10505,6 +10557,133 @@ describe('@@transitions — transitions() listing', () => {
     plain.$close()
   })
 })
+
+// ─── @system on a move ───────────────────────────────────────────────────────
+// The statement `@system` already makes about a COLUMN, made about a MOVE: the
+// application decides it and a caller may only ask for one. It exists because
+// `@gate(8)` could not say this — 8 means asSystem() and nothing else, so the
+// only way to make the move was to drop the gate, the row policies and the
+// audit actor along with it (`FJS-506`).
+describe('@@transitions — @system, the move the application makes', () => {
+  const LITE = `
+    enum SrvStatus { pending  online  stopped  draining }
+
+    model Srv {
+      id     Int       @id @default(autoincrement())
+      status SrvStatus @default(pending)
+      name   String
+      ownerId Int      @default(0)
+
+      @@gate("2.4.4.5")
+      @@transitions(status,
+        drain:  online              -> draining @gate(5),
+        report: [pending, online]   -> stopped  @system,
+        ask:    [pending, draining] -> online   @system @gate(5))
+    }
+  `
+
+  const env = async () => {
+    const { db } = await makeTestClient(LITE) as any
+    const sys    = db.asSystem()
+    const mk      = async () => (await sys.srv.create({ data: { name: 'a' } })).id
+    return { db, sys, mk }
+  }
+
+  test('a caller is refused whatever their level, and the refusal names itself', async () => {
+    const { db, mk } = await env()
+    const id = await mk()
+
+    // ADMINISTRATOR(5) passes the model gate and every transition gate here.
+    // The refusal is not about seniority and the error class says so.
+    const admin = db.$setAuth({ id: 'u', isAdmin: true })
+    await expect(admin.srv.transition(id, 'report')).rejects.toThrow(/is @system/)
+
+    try { await admin.srv.transition(id, 'report') }
+    catch (err: any) {
+      expect(err.name).toBe('TransitionSystemError')
+      expect(err.status).toBe(403)
+      expect(err.retryable).toBe(false)
+      expect(err.transition).toBe('report')
+    }
+    db.$close()
+  })
+
+  test('writing the column directly is the same move and the same refusal', async () => {
+    // `transition(id, name)` and `update({ data: { status } })` are two
+    // spellings of one move — `fli check`'s transition-methods rule already
+    // treats them as one — so a rule enforced on only the named spelling is not
+    // enforced at all.
+    const { db, mk } = await env()
+    const id = await mk()
+    await expect(db.$setAuth({ id: 'u', isAdmin: true }).srv.update({ where: { id }, data: { status: 'stopped' } }))
+      .rejects.toThrow(/is @system/)
+    db.$close()
+  })
+
+  test('the application makes it by naming the column, and keeps its caller', async () => {
+    // The whole point: this is not asSystem(). The move runs on the caller's
+    // own client, so the gate, the row policies and the audit actor all still
+    // apply — only the one statement *I am the application here* is added.
+    const { db, mk } = await env()
+    const id  = await mk()
+    const row = await db.$setAuth({ id: 'u', isAdmin: true }).srv.transition(id, 'report', { system: true })
+    expect(row.status).toBe('stopped')
+    db.$close()
+  })
+
+  test('the column hatch on update is the same hatch', async () => {
+    const { db, mk } = await env()
+    const id  = await mk()
+    const row = await db.$setAuth({ id: 'u', isAdmin: true })
+      .srv.update({ where: { id }, data: { status: 'stopped' }, system: ['status'] })
+    expect(row.status).toBe('stopped')
+    db.$close()
+  })
+
+  test('asSystem() makes it, as it makes everything', async () => {
+    const { sys, mk } = await env()
+    const id = await mk()
+    expect((await sys.srv.transition(id, 'report')).status).toBe('stopped')
+  })
+
+  test('a gate BESIDE it still grades who may ask', async () => {
+    // `@system @gate(5)` is the person-requested engine move — a person presses
+    // *sync*, the provider decides. Both halves apply, and the gate is asked of
+    // the caller even though the move is the application's.
+    const { db, mk } = await env()
+    const id = await mk()
+
+    // USER(4): verified and activated. It has to clear the MODEL's update gate
+    // (4) so that what refuses is the TRANSITION gate (5) and not the one above
+    // it — a bare principal grades CREATOR(3) and fails for the wrong reason.
+    const user = db.$setAuth({ id: 'u', userId: 'u', role: 'user', verifiedAt: '2024-01-01', activatedAt: '2024-01-01' })
+    await expect(user.srv.transition(id, 'ask', { system: true }))
+      .rejects.toThrow(/requires level 5/)
+    expect((await db.$setAuth({ id: 'u', isAdmin: true }).srv.transition(id, 'ask', { system: true })).status)
+      .toBe('online')
+    db.$close()
+  })
+
+  test('transitions() reports it as its own refusal, above the gate', async () => {
+    const { db, sys, mk } = await env()
+    const row = await sys.srv.findUnique({ where: { id: await mk() } })
+
+    const at5 = await db.$setAuth({ id: 'u', isAdmin: true }).srv.transitions(row)
+    const rep = at5.find((t: any) => t.name === 'report')
+    expect(rep).toEqual({ name: 'report', field: 'status', from: 'pending', to: 'stopped',
+                         gate: null, system: true, allowed: false, refusedBy: 'system' })
+
+    // `ask` carries a gate the caller PASSES, so `system` is what refuses it —
+    // reported as system rather than gate, which is what a screen renders as no
+    // button rather than a disabled one.
+    expect(at5.find((t: any) => t.name === 'ask').refusedBy).toBe('system')
+
+    // asSystem() sees them as ordinary moves.
+    expect((await sys.srv.transitions(row)).every((t: any) => t.allowed)).toBe(true)
+    db.$close()
+  })
+})
+
 
 
 describe('enum transitions — enforcement', () => {
@@ -10805,7 +10984,7 @@ describe('enum transitions — conflict and upsert', () => {
     // gate is read: this client is unauthenticated, so `demote` is reported and
     // not offered, which is what a greyed-out button needs.
     const moves = await bdb.domain.transitions(await bdb.domain.findUnique({ where: { id: d.id } }))
-    expect(moves).toEqual([{ name: 'demote', field: 'isPrimary', from: true, to: false, gate: 5, allowed: false, refusedBy: 'gate' }])
+    expect(moves).toEqual([{ name: 'demote', field: 'isPrimary', from: true, to: false, gate: 5, system: false, allowed: false, refusedBy: 'gate' }])
 
     // The gate is a floor on the MOVE, not on the model: the same caller may
     // promote and may not demote.
@@ -10911,7 +11090,7 @@ describe('enum transitions — conflict and upsert', () => {
         transitions { pay: pending -> paid @gate(5) }
       }
       model Order { id Int @id @default(autoincrement())  status Status @default(pending) }
-    `)).rejects.toThrow(/a gate cannot go on the enum's shared block[\s\S]*@@transitions/)
+    `)).rejects.toThrow(/@gate\(N\) cannot go on the enum's shared block[\s\S]*@@transitions/)
   })
 
   test('the same predicate on the FK guards the direct write and connect alike', async () => {
@@ -11028,8 +11207,8 @@ describe('enum transitions — JSON Schema', () => {
     const js = generateJsonSchema(schema)
     const modelDef = js['$defs']?.['Order'] ?? js['Order']
     expect(modelDef['x-transitions']).toBeDefined()
-    expect(modelDef['x-transitions'].status.pay).toEqual({ from: ['pending'], to: 'paid', gate: null })
-    expect(modelDef['x-transitions'].status.refund).toEqual({ from: ['paid','shipped'], to: 'refunded', gate: null })
+    expect(modelDef['x-transitions'].status.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false })
+    expect(modelDef['x-transitions'].status.refund).toEqual({ from: ['paid','shipped'], to: 'refunded', gate: null, system: false })
   })
 
   test('enum def carries no transitions — the model is the only source', () => {
@@ -11074,7 +11253,7 @@ model M {
     const js = generateJsonSchema(schema)
     const t = (js['$defs']?.['M'] ?? js['M'])['x-transitions']
     expect(Object.keys(t).sort()).toEqual(['phase','stage'])
-    expect(t.stage.a2).toEqual({ from: ['a1'], to: 'a2', gate: null })
+    expect(t.stage.a2).toEqual({ from: ['a1'], to: 'a2', gate: null, system: false })
   })
 })
 
@@ -14385,6 +14564,27 @@ describe('createTestEnv', () => {
         action      String
         @@gate("5.8.9.9")
       }
+    ` })
+
+    expect(await env.verifyGateLadder()).toEqual([])
+    env.close()
+  })
+
+  test('a caller-supplied primary key survives the create fixture', async () => {
+    // The ladder strips the id from a create fixture, which is right where the
+    // database or the client mints one and wrong where the CALLER does: a
+    // `String @id` with no `@default` is required, so stripping it fails the
+    // required check and the gate is never asked — reported as *no fixture
+    // could be built*, at every level, for a model that creates perfectly well.
+    // `_columnPayload` already drew this line for the tenancy checker; this is
+    // the same rule in the other harness. Found on basecamp's `OutpostNonce`,
+    // whose primary key IS the nonce because the insert is the claim
+    // (`FJS-376`). All three key shapes here, so a fix for one cannot break
+    // the two that were already working.
+    const env = await createTestEnv({ schema: `
+      model Nonce { nonce String @id  seenAt DateTime @default(now())  @@gate("8") }
+      model Uuid  { id    String @id @default(uuid())  code String     @@gate("8") }
+      model Auto  { id    Int    @id @default(autoincrement())  code String  @@gate("8") }
     ` })
 
     expect(await env.verifyGateLadder()).toEqual([])
@@ -26001,11 +26201,10 @@ model Thing { id Int @id  name String }
     }
   })
 
-  test('an inline schema still anchors to the CWD — there is nowhere else', async () => {
-    // The half FJS-449 does NOT fix, asserted so it is a stated limit rather
-    // than an assumption: an app that assembles its schema in memory (appending
-    // auth's fragments, which is the documented shape) hands over a string with
-    // no location in it.
+  test('an inline schema with nothing stated still anchors to the CWD', async () => {
+    // Unchanged, and pinned: a string carries no location, so with nothing said
+    // there is nowhere else to anchor to. What changed is that there is now
+    // something to say — see the three below.
     const root = mkdtempSync(join(tmpdir(), 'litestone-anchor-inline-'))
     const cwd = process.cwd()
     try {
@@ -26020,6 +26219,74 @@ model Thing { id Int @id  name String }
       process.chdir(cwd)
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  // ── a STATED anchor — the half `resolveFrom: 'schema'` cannot reach ───────
+  //
+  // An app that assembles its schema in memory — auth's fragments, the outbox
+  // model, a tenant registry — has no file, so `'schema'` has nothing to work
+  // from and every declared path followed whichever directory the process
+  // started in. That is how a `vite build` from a surface root prerendered
+  // twelve product pages as zero products and exited 0. The app knows where its
+  // root is; this is how it says so, once, instead of one absolute `join()` per
+  // declared path.
+
+  test('an inline schema anchors to a stated directory', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'litestone-anchor-said-'))
+    const elsewhere = mkdtempSync(join(tmpdir(), 'litestone-anchor-elsewhere-'))
+    const cwd = process.cwd()
+    try {
+      process.chdir(elsewhere)
+      const db = await createClient({ resolveFrom: root, schema: `
+database main { path "./db/app.db" }
+model Thing { id Int @id  name String }
+` })
+      expect(existsSync(join(root, 'db', 'app.db'))).toBe(true)
+      expect(existsSync(join(elsewhere, 'db', 'app.db'))).toBe(false)
+      db.$close()
+    } finally {
+      process.chdir(cwd)
+      rmSync(root, { recursive: true, force: true })
+      rmSync(elsewhere, { recursive: true, force: true })
+    }
+  })
+
+  test('a file: URL names the directory, and a URL naming a FILE names its directory', async () => {
+    // `import.meta.url` is what a plain-ESM app holds, and getting a directory
+    // out of it by hand is the step people get wrong. Both forms are accepted:
+    // a URL ending in `/` IS the directory, anything else names a file in one.
+    const root = mkdtempSync(join(tmpdir(), 'litestone-anchor-url-'))
+    const cwd = process.cwd()
+    const schema = `
+database main { path "./db/app.db" }
+model Thing { id Int @id  name String }
+`
+    try {
+      process.chdir(tmpdir())
+      const asDir = await createClient({ resolveFrom: new URL(`file://${root}/`), schema })
+      expect(existsSync(join(root, 'db', 'app.db'))).toBe(true)
+      asDir.$close()
+      rmSync(join(root, 'db'), { recursive: true, force: true })
+
+      const asFile = await createClient({ resolveFrom: `file://${join(root, 'app.ts')}`, schema })
+      expect(existsSync(join(root, 'db', 'app.db'))).toBe(true)
+      asFile.$close()
+    } finally {
+      process.chdir(cwd)
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('an anchor that is not a directory throws rather than falling back', async () => {
+    // A statement that quietly reverts to the CWD is the whole of what this
+    // fixes. The message names the path, because a typo'd anchor and a correct
+    // one look identical from the outside.
+    const schema = `
+database main { path "./db/app.db" }
+model Thing { id Int @id  name String }
+`
+    await expect(createClient({ resolveFrom: '/no/such/place', schema }))
+      .rejects.toThrow(/not a directory/)
   })
 
   test('the DEFAULT is still the CWD, even for a schema file — isolation depends on it', async () => {
@@ -26059,5 +26326,125 @@ model Thing { id Int @id  name String }
       process.chdir(cwd)
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+// ─── @check / @@check — the constraints the database enforces ────────────────
+//
+// FJS-534. Two halves of one gap: a field `@check` reached the table but its
+// refusal escaped as SQLite's own sentence in a 500 — a validation problem
+// answered as a server fault, with nothing a form could mark — and the
+// table-level `@@check` did not exist at all, which left a rule spanning two
+// columns with nowhere to live but a service hook that every other writer
+// bypasses.
+describe('@check and @@check', () => {
+  let TMP: string
+
+  beforeEach(() => { TMP = mkdtempSync(join(tmpdir(), 'lt-check-')) })
+  afterEach(()  => { rmSync(TMP, { recursive: true, force: true }) })
+
+  const SCHEMA = `model Booking {
+    id       String   @id @default(uuid())
+    qty      Int      @check("qty > 0", "must be at least one")
+    ratio    Int      @check("ratio <= 100")
+    startsAt DateTime
+    endsAt   DateTime
+    @@check("startsAt < endsAt", "an end must come after its start")
+    @@check("qty < 1000")
+  }`
+
+  const client = () => createClient({ schema: SCHEMA, db: join(TMP, 'b.db') })
+  const early  = new Date('2026-01-01T00:00:00.000Z')
+  const late   = new Date('2026-06-01T00:00:00.000Z')
+  const good   = { qty: 5, ratio: 5, startsAt: early, endsAt: late }
+
+  test('both levels reach the table, and @@check is repeatable', async () => {
+    const db  = await client()
+    const ddl = (await db.asSystem().sql`
+      SELECT sql FROM sqlite_master WHERE name = 'booking'`)[0].sql
+
+    expect(ddl).toContain('CHECK (qty > 0)')
+    expect(ddl).toContain('CHECK (ratio <= 100)')
+    expect(ddl).toContain('CHECK (startsAt < endsAt)')
+    expect(ddl).toContain('CHECK (qty < 1000)')
+  })
+
+  // The message is the last argument, where every field validator carries one.
+  test("a field check refuses with the author's sentence, on the field's own box", async () => {
+    const db = await client()
+    let err: any = null
+    try { await db.asSystem().booking.create({ data: { ...good, qty: 0 } }) }
+    catch (e) { err = e }
+
+    expect(err?.name).toBe('ValidationError')
+    expect(err.errors).toEqual([{ path: ['qty'], message: 'must be at least one' }])
+    expect(err.model).toBe('Booking')
+    expect(err.constraint).toBe('qty > 0')
+  })
+
+  // The expression is for whoever wrote it. It stays on the error and out of
+  // the sentence a control renders, because `ratio <= 100` under a form field
+  // is SQL reaching somebody who did not write it.
+  test('with no message the person gets a sentence and the developer gets the expression', async () => {
+    const db = await client()
+    let err: any = null
+    try { await db.asSystem().booking.create({ data: { ...good, ratio: 999 } }) }
+    catch (e) { err = e }
+
+    expect(err.errors).toEqual([{ path: ['ratio'], message: 'is not valid' }])
+    expect(err.errors[0].message).not.toContain('ratio <=')
+    expect(err.constraint).toBe('ratio <= 100')
+  })
+
+  // A rule over several columns names none of them, so the empty path is the
+  // record-level answer and the summary must not render a bare `: `.
+  test('a model check is a record-level refusal, not a field one', async () => {
+    const db = await client()
+    let err: any = null
+    try { await db.asSystem().booking.create({ data: { ...good, startsAt: late, endsAt: early } }) }
+    catch (e) { err = e }
+
+    expect(err?.name).toBe('ValidationError')
+    expect(err.errors).toEqual([{ path: [], message: 'an end must come after its start' }])
+    expect(err.message).toBe('Validation failed — an end must come after its start')
+    expect(err.constraint).toBe('startsAt < endsAt')
+  })
+
+  // Every write path routes through one translator. An update used to be the
+  // path most likely to be missed, because the value arrives without the rest
+  // of the row beside it.
+  test('an update is translated too', async () => {
+    const db  = await client()
+    const row = await db.asSystem().booking.create({ data: good })
+
+    let err: any = null
+    try { await db.asSystem().booking.update({ where: { id: row.id }, data: { qty: -1 } }) }
+    catch (e) { err = e }
+
+    expect(err?.name).toBe('ValidationError')
+    expect(err.errors).toEqual([{ path: ['qty'], message: 'must be at least one' }])
+  })
+
+  test('a row that satisfies every check is written', async () => {
+    const db  = await client()
+    const row = await db.asSystem().booking.create({ data: good })
+    expect(row.qty).toBe(5)
+  })
+
+  // The uniqueness translator shares the call sites. Routing both through one
+  // owner must not have taken the other's answer away.
+  test('a unique conflict still answers as itself', async () => {
+    const db = await createClient({
+      schema: `model Code { id String @id @default(uuid())  slug String @unique  n Int @check("n > 0") }`,
+      db: join(TMP, 'c.db'),
+    })
+    await db.asSystem().code.create({ data: { slug: 'a', n: 1 } })
+
+    let err: any = null
+    try { await db.asSystem().code.create({ data: { slug: 'a', n: 1 } }) }
+    catch (e) { err = e }
+
+    expect(err?.name).toBe('UniqueConflictError')
+    expect(err.status).toBe(409)
   })
 })

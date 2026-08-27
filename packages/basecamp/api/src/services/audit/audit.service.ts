@@ -29,7 +29,7 @@
 // Access is admin/owner. A trail that every member can read is a list of what
 // their colleagues have been doing.
 
-import { createService, $ } from '@frontierjs/junction'
+import { createService, findWindow, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -41,8 +41,20 @@ export function createAuditService(app: BasecampApp) {
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
     methods: 'readOnly',
 
+    // A trail is the shape a numbered page is worst for. It only grows, and it
+    // grows at the end a reader starts from, so between asking for page 1 and
+    // page 2 every offset has moved by however many things happened in between
+    // — which is a row served twice and another one skipped, silently, on the
+    // one screen in the app whose whole job is to be complete.
+    //
+    // So the answer here is a WINDOW THAT GROWS (`FJS-D145`): the browser holds
+    // what it has read and asks for what is past the far edge of it, by the
+    // sort keys of the last row rather than by a count of rows before it.
+    // `findWindow` owns both paths — junction's derived find calls the same
+    // function — because a hand-written find restating them is how the
+    // tiebreaker and the absent total end up with two answers.
     async find() {
-      const { limit, offset } = getPagination({ limit: 50 })
+      const { limit, offset, after } = getPagination({ limit: 50 })
 
       // Filters are declared here rather than passed through: `$.query` is
       // whatever a caller sent, and handing it to the client verbatim would let
@@ -51,18 +63,21 @@ export function createAuditService(app: BasecampApp) {
       const subjectType = $.query.subjectType as string | undefined
       const actorId     = $.query.actorId     as string | undefined
 
-      const { rows, total } = await db().auditEvent.findManyAndCount({
+      return await findWindow(db().auditEvent, {
         where: {
           workspaceId: ws(),
           ...(action      ? { action }      : {}),
           ...(subjectType ? { subjectType } : {}),
           ...(actorId     ? { actorId }     : {}),
         },
+        // `createdAt` is not unique — a burst of writes inside one millisecond
+        // shares a timestamp — so the cursor cannot be built from it alone.
+        // Litestone appends the model's own id to the sort keys and refuses
+        // where there is nothing to append; the tiebreaker is the schema's, and
+        // is not restated here.
         orderBy: { createdAt: 'desc' },
         limit, offset,
-      })
-
-      return { total, limit, offset, data: rows }
+      }, after, 'The audit trail')
     },
 
     hooks: {

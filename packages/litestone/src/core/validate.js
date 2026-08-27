@@ -20,7 +20,10 @@ export class ValidationError extends Error {
    * @param {Array<{ path: string[], message: string }>} errors
    */
   constructor(errors) {
-    const summary = errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    // An empty path is a record-level refusal — a `@@check` spans columns, so
+    // there is no box to name — and joining it anyway produced a leading `: `.
+    const summary = errors.map(e =>
+      (e.path?.length ? `${e.path.join('.')}: ${e.message}` : e.message)).join(', ')
     super(`Validation failed — ${summary}`)
     this.name       = 'ValidationError'
     this.errors     = errors   // [{ path: ['field'], message: 'msg' }]
@@ -33,12 +36,27 @@ const EMAIL_RE    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const URL_RE      = /^https?:\/\/.+/
 const DATE_RE     = /^\d{4}-\d{2}-\d{2}$/
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?$/
-// 24-hour clock with leading zeros required. Range 00:00 → 23:59. The seconds
-// variant accepts 00:00:00 → 23:59:59. Strict leading zeros mean values sort
-// lexicographically the same as numerically — important for ORDER BY in admin
-// queries that don't bother parsing.
+// 24-hour clock with leading zeros required. Range 00:00 → 23:59. Under
+// `@time(seconds: true)` the seconds are OPTIONAL — 00:00 and 00:00:00 are both
+// accepted — because the flag widens what may be stored and does not make a
+// finer value mandatory. Strict leading zeros mean values sort lexicographically
+// the same as numerically — important for ORDER BY in admin queries that don't
+// bother parsing.
 const TIME_RE_HM   = /^([01]\d|2[0-3]):[0-5]\d$/
-const TIME_RE_HMS  = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/
+const TIME_RE_HMS  = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/
+
+/**
+ * The same two rules as a JSON Schema `pattern`, for the emitter.
+ *
+ * A pattern rather than `format: 'time'`, because RFC 3339 full-time — which
+ * is what that format means — requires both seconds and an offset, and `@time`
+ * requires neither and admits no offset at all. A consumer honouring the format
+ * would refuse `09:30`, which the Data boundary accepts.
+ */
+export const TIME_PATTERNS = {
+  hm:  TIME_RE_HM.source,
+  hms: TIME_RE_HMS.source,
+}
 // E.164 international format + common local formats
 const PHONE_RE    = /^\+?[\d\s\-().]{7,20}$/
 
@@ -51,7 +69,7 @@ const VALIDATORS = {
   // @time(seconds: true) accepts HH:MM:SS as well as HH:MM. Default is
   // strict HH:MM (no seconds). Either form: 24-hour, leading zeros.
   time:        (v, seconds) => seconds
-                                 ? (TIME_RE_HM.test(String(v)) || TIME_RE_HMS.test(String(v)))
+                                 ? TIME_RE_HMS.test(String(v))
                                  : TIME_RE_HM.test(String(v)),
   phone:       (v)          => PHONE_RE.test(String(v)),
   regex:       (v, pattern) => new RegExp(pattern).test(String(v)),
@@ -76,6 +94,14 @@ const VALIDATORS = {
   minItems:    (v, n) => v.length >= n,
   maxItems:    (v, n) => v.length <= n,
   uniqueItems: (v)    => new Set(v.map(String)).size === v.length,
+
+  // Exact numbers. A scaled column holds the value with the point moved, so
+  // what a caller sends is the WHOLE number of minor units — 1299, not 12.99.
+  // Without this the refusal came from SQLite, which says `cannot store REAL
+  // value in INTEGER column p.total`: a true sentence about a physical column
+  // that tells nobody what to send instead (`FJS-D142`).
+  scale:       (v)    => Number.isInteger(typeof v === 'string' ? Number(v) : v),
+  money:       (v)    => Number.isInteger(typeof v === 'string' ? Number(v) : v),
 }
 
 // What an array column's elements have to be. Only the two kinds SQLite cannot
@@ -111,6 +137,10 @@ export const DEFAULT_MESSAGES = {
   minItems:    (n) => `must have at least ${n} item(s)`,
   maxItems:    (n) => `must have at most ${n} item(s)`,
   uniqueItems: ()  => 'must have unique items',
+  // The scale is named because it is the whole of what the caller has to know:
+  // at 2 places £12.99 is 1299, and at 0 places ¥1235 is 1235.
+  scale:       (n) => `must be a whole number of minor units — the column holds ${n} decimal place(s), so 12.99 is 1299`,
+  money:       (c) => `must be a whole number of minor units${c ? ` of ${c}` : ''} — 12.99 is 1299`,
   // The two array rules that come from the TYPE rather than an attribute. They
   // are in this table for the same reason as the rest: it is the one definition
   // of the wording, and `x-messages` falls back to it.
@@ -286,6 +316,16 @@ export function validateField(fieldName, value, attributes) {
         defaultMsg = DEFAULT_MESSAGES[kind]()
         break
 
+      case 'scale':
+        pass       = VALIDATORS.scale(value)
+        defaultMsg = DEFAULT_MESSAGES.scale(attr.places)
+        break
+
+      case 'money':
+        pass       = VALIDATORS.money(value)
+        defaultMsg = DEFAULT_MESSAGES.money(attr.currency)
+        break
+
       case 'time':
         // @time(seconds: true) accepts HH:MM:SS as well as HH:MM. Default
         // (seconds: false) accepts HH:MM only — strict 24-hour clock format
@@ -423,6 +463,10 @@ export function buildValidationMap(schema) {
     'email','url','phone','date','datetime','time','regex','length','startsWith','endsWith',
     'contains','lt','lte','gt','gte','trim','lower','upper',
     'minItems','maxItems','uniqueItems',
+    // A scaled column's rule is *a whole number of minor units*, and without it
+    // here the model skips the pass entirely and the refusal comes from SQLite
+    // naming a physical column.
+    'scale','money',
   ])
 
   const map = {}

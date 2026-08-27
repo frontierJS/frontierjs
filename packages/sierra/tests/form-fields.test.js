@@ -42,14 +42,15 @@ vi.mock('@frontierjs/sierra/junction', () => ({
 
 const {
   createResource, controlFor, defaultControlFor, formFieldList, labelFieldFor, buildFieldRules,
-  registerControl, unregisterControl, registeredControls,
+  registerControl, unregisterControl, registeredControls, validateAgainstFields,
 } = await import('../src/junction/resource.js')
 const { registerSchemas, serviceNameFor } = await import('../src/junction/schema-registry.js')
 
 // What generateJsonSchema emits (create mode) for:
 //   model Order    { id Int @id  reference String @length(3,20)  status OrderStatus @default("pending")
 //                    total Float @default(0)  active Boolean  body String @markdown
-//                    dueOn DateTime? @date  customerId Int  customer Customer @relation(...)
+//                    dueOn DateTime? @date  opensAt String @time  shutsAt String @time(seconds: true)
+//                    customerId Int  customer Customer @relation(...)
 //                    tags String[] }
 //   model Customer { id Int @id  name String  email String }
 const DEFS = {
@@ -62,6 +63,8 @@ const DEFS = {
       active:     { type: 'boolean', title: 'Is live' },
       body:       { type: 'string', contentMediaType: 'text/markdown' },
       dueOn:      { anyOf: [{ type: 'string', format: 'date' }, { type: 'null' }] },
+      opensAt:    { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$', 'x-time': { seconds: false } },
+      shutsAt:    { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d)?$', 'x-time': { seconds: true } },
       customerId: { type: 'integer', title: 'Customer' },
       tags:       { type: 'array', items: { type: 'string' } },
       notes:      { type: 'object' },
@@ -129,6 +132,25 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(controlFor({ type: 'string', format: 'date-time' })).toEqual({ control: 'datetime' })
   })
 
+  test('a wall-clock time is a time input, and the seconds box is a step', () => {
+    // The same argument as `date`: no zone, so the element round-trips it.
+    expect(controlFor(rules().opensAt)).toEqual({ control: 'input', type: 'time' })
+    // `<input type="time">` shows HH:MM unless the step is not a whole number
+    // of minutes — so without this, a column that ACCEPTS seconds gives a
+    // person no way to type them (`FJS-522`).
+    expect(controlFor(rules().shutsAt)).toEqual({ control: 'input', type: 'time', step: 1 })
+  })
+
+  test('the pattern survives into the rule, so the browser checks what the server checks', () => {
+    // `x-time` picks the control and enforces nothing. The refusal is the
+    // `pattern`, which is the validator's own regex — carried, not restated.
+    const at = (v) => validateAgainstFields(rules(), { reference: 'abc', customerId: 1, opensAt: v }, 'create')
+                        .find(e => e.field === 'opensAt')
+    expect(at('09:30')).toBeUndefined()
+    expect(at('9:30')?.message).toBeTruthy()   // leading zeros are what make it sort
+    expect(at('24:00')?.message).toBeTruthy()
+  })
+
   // ── Against a real schema, because the fixtures above are hand-written ─────
   //
   // Every rule in this file is typed out by hand, which is fast and is also how
@@ -178,11 +200,19 @@ describe('controlFor — the one place a type becomes a control', () => {
     expect(controlFor(rules.title, { field: 'title', model: 'Doc' }).control).toBe('input')
 
     // A File column derefs to FileRef — an object with eight properties — so a
-    // table that answers `json` for an object offers a textarea over a storage
-    // key and a bucket. It has no control yet, and says so.
+    // table that answers `json` for an object would offer a textarea over a
+    // storage key and a bucket. It answers `file`, and the resolved $ref is the
+    // only thing separating the two: this is what `x-litestone-file` is carried
+    // for (`FJS-409`).
     const file = controlFor(rules.attachment, { field: 'attachment', model: 'Doc' })
-    expect(file.control).toBe(null)
-    expect(file.reason).toMatch(/file/)
+    expect(file.control).toBe('file')
+    // `File` and `File[]` are one control and two inputs, and the declared type
+    // is all that separates them once the $ref is resolved away.
+    expect(file.multiple).toBe(false)
+    // No `@accept` on this column, so the picker offers everything — null
+    // rather than a guessed default, because the kit is what decides what "no
+    // restriction" looks like to a file dialog.
+    expect(file.accept).toBe(null)
 
     // And the other half of that ambiguity: with NO resolver the same `File`
     // column has no type either, which reads exactly like a Json document. It
@@ -219,7 +249,8 @@ describe('formFieldList — the field set, derived', () => {
   test('every writable column, in schema order', () => {
     const list = formFieldList(rules()).filter(f => f.control)
     expect(list.map(f => f.name)).toEqual(
-      ['reference', 'status', 'total', 'active', 'body', 'dueOn', 'customerId', 'tags', 'notes'],
+      ['reference', 'status', 'total', 'active', 'body', 'dueOn', 'opensAt', 'shutsAt',
+       'customerId', 'tags', 'notes'],
     )
   })
 

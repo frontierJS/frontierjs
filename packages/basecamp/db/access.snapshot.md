@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-45 models · 45 gated · 0 unrestricted
-35 with row policies · 7 with protected fields · 19 gated transitions
+46 models · 46 gated · 0 unrestricted
+35 with row policies · 8 with protected fields · 19 gated transitions
 ```
 
 ## Gates
@@ -52,6 +52,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `NotificationChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `NotificationPreference` | 1 VISITOR | 1 VISITOR | 1 VISITOR | 1 VISITOR |
 | `OauthFlow` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `OutpostNonce` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Project` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `Recipe` | 4 USER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `RecipeRun` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
@@ -397,6 +398,8 @@ rather than refusing the row.
 
 | Model | Field | Rule |
 | --- | --- | --- |
+| `ApiKey` | `credentialId` | `@system` |
+| `ApiKey` | `tokenHint` | `@system` |
 | `Credential` | `value` | `@guarded(all)` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
@@ -433,11 +436,28 @@ An ungated move needs only the model's update level.
 | `Server` | `status` | `reboot` | online, unreachable → pending | — |
 | `Server` | `status` | `drain` | online → draining | 5 ADMINISTRATOR |
 | `Server` | `status` | `undrain` | draining → online | 5 ADMINISTRATOR |
-| `Server` | `status` | `checkIn` | pending, installing, unreachable → online | 8 SYSTEM |
-| `Server` | `status` | `reportRunning` | pending, provisioning, installing, ready, unreachable, stopped → online | — |
-| `Server` | `status` | `reportStopped` | pending, provisioning, installing, ready, online, unreachable, draining → stopped | — |
-| `Server` | `status` | `reportRebuilding` | pending, installing, ready, online, unreachable, draining, stopped → provisioning | — |
-| `Server` | `status` | `reportDestroyed` | pending, provisioning, installing, ready, online, unreachable, draining, stopped → destroyed | — |
+| `Server` | `status` | `checkIn` | pending, installing, unreachable → online | — |
+| `Server` | `status` | `reportRunning` | pending, provisioning, installing, ready, unreachable, stopped → online | 5 ADMINISTRATOR |
+| `Server` | `status` | `reportStopped` | pending, provisioning, installing, ready, online, unreachable, draining → stopped | 5 ADMINISTRATOR |
+| `Server` | `status` | `reportRebuilding` | pending, installing, ready, online, unreachable, draining, stopped → provisioning | 5 ADMINISTRATOR |
+| `Server` | `status` | `reportDestroyed` | pending, provisioning, installing, ready, online, unreachable, draining, stopped → destroyed | 5 ADMINISTRATOR |
+
+## Capabilities
+
+The grid the ladder cannot express. **ANDed with `@@gate`, which stays the floor** —
+a caller needs the level AND the grant, so a model that opts in usually wants its
+gate flat at the read floor. A capability THROWS where a row policy filters.
+
+Every name here is a REFERENCE to something declared above, so this table is
+derived rather than authored: a capability cannot be misspelled into existence.
+
+| Model | Read | Capabilities |
+| --- | --- | --- |
+| `Environment` | — | `Environment.create` · `Environment.delete` · `Environment.update` · `Environment.variables` |
+| `Server` | — | `Server.create` · `Server.delete` · `Server.drain` · `Server.reboot` · `Server.undrain` · `Server.update` |
+
+A move the ENGINE makes is absent — `@system`, or a gate of 8 or 9. No caller asks
+for one, so it is nobody's grant.
 
 ## Levels
 

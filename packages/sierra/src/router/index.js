@@ -51,6 +51,8 @@ export * from './internals.js'
 let _tree = null
 let _components = {}
 let _loaders = {}
+// Routes already told about in dev — one note each, not one per navigation.
+const _prerenderNoted = new Set()
 
 // What index.html hardcoded. Read once, before any navigation can move it, so a
 // route that declares no title puts the app's own name back rather than leaving
@@ -632,6 +634,26 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   let loadedData   = null
   let loaderModule = null
   const loaderFactory = _loaders[toNode.id]
+
+  // A prerendered route has a companion and no loader here, deliberately: its
+  // `load()` runs in Node at build time and is where an app reads its own
+  // database, so it is not in the client table (`FJS-543`). What that leaves in
+  // dev is `data: null` and a page with nothing on it, which looks exactly like
+  // a page whose query returned nothing — so it is said once, per route.
+  //
+  // Dev only. In the built output this is not a state anybody reaches: the page
+  // is a file with its data already in it.
+  if (import.meta.env?.DEV && !loaderFactory && toNode.meta?.render === 'static' && toNode.companion) {
+    if (!_prerenderNoted.has(toNode.id)) {
+      _prerenderNoted.add(toNode.id)
+      console.info(
+        `[Sierra] ${toNode.file ?? toNode.id} declares \`render: static\`, so its ` +
+        `load() runs at BUILD time — \`data\` is null here and the page renders empty. ` +
+        `Run the build to see it with data.`
+      )
+    }
+  }
+
   if (loaderFactory) {
     try {
       // Check prefetch cache first — avoids a second round-trip when the user

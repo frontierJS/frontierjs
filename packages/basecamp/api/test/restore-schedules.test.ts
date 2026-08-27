@@ -58,7 +58,7 @@ async function makeApp() {
   // Proxy whose accessors are the schema's models, and no static type here
   // knows them. Every line below would otherwise open with the same cast.
   const db: any = env.db.asSystem()
-  const app = { data: env.db, jobs, logger: noopLog() } as unknown as BasecampApp
+  const app = { db: env.db, jobs, logger: noopLog() } as unknown as BasecampApp
   return { app, jobs, db }
 }
 

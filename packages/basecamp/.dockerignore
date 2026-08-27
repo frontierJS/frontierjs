@@ -8,11 +8,16 @@ node_modules
 
 # The live databases and the audit trail. Copying a development database into
 # an image is how a container comes up holding somebody's laptop data.
-db/*.db
-db/*.db-shm
-db/*.db-wal
+#
+# `**`, not `db/*.db`: a plain `*` does not cross a separator, so `db/*.db`
+# excluded `db/basecamp.db` and copied `db/db/basecamp.db` — and `db/db/` is
+# exactly what a relative `database { path }` resolved against the wrong working
+# directory creates (FJS-449). It is git-ignored, so it appears in no diff.
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite
 db/audit
-db/basecamp-jobs.db*
 
 # Built output — the image builds its own, from the source it copied, so a
 # stale dist on the host cannot become the thing that ships.

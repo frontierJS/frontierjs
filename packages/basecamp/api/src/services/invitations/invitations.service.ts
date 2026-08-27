@@ -34,7 +34,8 @@
 // token does.
 
 import { createService, NotFound, BadRequest, Conflict, Forbidden, Unauthorized, Gone, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, refuseRoleAboveOwn, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { sessionScope, requireWorkspaceRole, refuseGrantAboveOwn, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { grantsFor } from '../../core/capabilities.ts'
 import { db, ws, actor, findScoped, getScoped } from '../../core/resource.ts'
 import { env } from '../../core/env.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -68,7 +69,7 @@ export function createInvitationsService(app: BasecampApp) {
 
   /** The system client. Everything about an invitation is a system act: the
    *  token is `@guarded`, and the accept path has no principal to scope by. */
-  const sys = () => app.data.asSystem() as any
+  const sys = () => $.db.asSystem() as any
 
   /** A role off the wire, refused BY NAME. The vocabulary is the map
    *  `core/gate.ts` grades on, which a data test holds to the schema enum — a
@@ -363,6 +364,10 @@ export function createInvitationsService(app: BasecampApp) {
             workspaceId: workspace.id,
             userId,
             role:        invitation.role,
+            // Stamped from the role the invitation named, which is the role
+            // `refuseGrantAboveOwn` already graded against the inviter's own
+            // set when the invitation was created.
+            capabilities: grantsFor(invitation.role),
             // The three columns `WorkspaceMember` has always declared and
             // nothing ever wrote. Carried forward from the invitation, which is
             // then consumed — the membership is where a membership's origin
@@ -393,11 +398,11 @@ export function createInvitationsService(app: BasecampApp) {
         // caller who is not a member yet and may not exist yet, which is the
         // entire population this service is for.
         all:    [sessionScope(app, { except: ['preview', 'accept'] })],
-        // refuseRoleAboveOwn runs AFTER stampInvitation, which normalises the
+        // refuseGrantAboveOwn runs AFTER stampInvitation, which normalises the
         // role — and it is here because an invitation is the second way to hand
         // out standing: an admin inviting an address they own as `owner` signs
         // in as that account and holds level 6 (`FJS-410`).
-        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampInvitation, refuseRoleAboveOwn()],
+        create: [requireWorkspaceRole(app, 'admin', 'owner'), stampInvitation, refuseGrantAboveOwn()],
         resend: [requireWorkspaceRole(app, 'admin', 'owner')],
         remove: [requireWorkspaceRole(app, 'admin', 'owner')],
       },

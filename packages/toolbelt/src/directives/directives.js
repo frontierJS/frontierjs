@@ -62,6 +62,10 @@ const asBool = (v) => (v === undefined ? undefined : truthy(v))
 const DIRECTIVES = Object.freeze([
   { param: '$limit',         name: 'limit',         read: asNumber },
   { param: '$offset',        name: 'offset',        read: asNumber },
+  // The window's far edge, opaque. A cursor is minted by the server and handed
+  // back verbatim — `asText` and never `asNumber`, because the token is base64
+  // and a numeric-looking one must not be read as a number (`FJS-D145`).
+  { param: '$after',         name: 'after',         read: asText  },
   { param: '$orderBy',       name: 'orderBy',       read: asIs    },
   { param: '$select',        name: 'select',        read: asIs    },
   { param: '$populate',      name: 'populate',      read: asIs    },
@@ -92,7 +96,7 @@ export const RESERVED_PARAMS = new Set([...DIRECTIVE_PARAMS, ...TRANSPORT_PARAMS
  * not the same as asking for the defaults.
  *
  * @param {Record<string, unknown>} params
- * @returns {{ limit?: number, offset?: number, orderBy?: unknown, select?: unknown,
+ * @returns {{ limit?: number, offset?: number, after?: string, orderBy?: unknown, select?: unknown,
  *             populate?: unknown, search?: string,
  *             withDeleted?: boolean, onlyDeleted?: boolean,
  *             withTemplates?: boolean, onlyTemplates?: boolean }}

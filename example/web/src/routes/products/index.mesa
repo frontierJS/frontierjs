@@ -230,7 +230,7 @@ title: Products
   .thumb {
     width: 40px; height: 40px;
     object-fit: contain;
-    border-radius: var(--radius-sm);
+    border-radius: var(--btn-radius);
     background: var(--surface-sunken);
     flex: none;
   }

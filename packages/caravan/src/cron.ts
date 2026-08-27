@@ -2,6 +2,12 @@
 // Cron parser and scheduler.
 // Based on original implementation — supports *, exact, every (*/n),
 // between (1-5), in (1,3,5), named days (MON/monday/mo), and timezones.
+//
+// A schedule in a named zone crosses two boundaries a year where the wall clock
+// is not a function of real time, and what happens there is `FJS-D144`: a
+// FIXED-TIME schedule fires once per calendar day whatever the clock does, and a
+// WILDCARD schedule follows the new wall clock. The two need different machinery
+// and the carve-out is the reason — see § Firing below.
 
 // ─── Parser ───────────────────────────────────────────────────────────────────
 
@@ -192,6 +198,57 @@ export function nextFireTime(
   return result.date ?? null
 }
 
+// ─── The wall clock as an identity ────────────────────────────────────────────
+//
+// A fire is named by the wall clock it belongs to rather than by the instant it
+// happened at, because the two disagree exactly where this matters: on the
+// autumn boundary one wall-clock minute is two instants, and a fire named by the
+// instant is two fires. `wallMinute` reads the local clock and returns it as
+// minutes since the epoch AS IF IT WERE UTC — a naive count, comparable and
+// stable, and the same number in every process reading the same zone, which is
+// what lets two instances collapse to one dispatch (see CronSchedule.fn).
+
+const WALL_PARTS: Intl.DateTimeFormatOptions = {
+  hour12: false,
+  year:   'numeric', month: '2-digit', day:    '2-digit',
+  hour:   '2-digit', minute: '2-digit',
+}
+
+function wallMinute(date: Date, timeZone?: string): number {
+  const fmt   = new Intl.DateTimeFormat('en-US', { ...WALL_PARTS, ...(timeZone ? { timeZone } : {}) })
+  const parts = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value])) as Record<string, string>
+  // `hour12: false` renders midnight as 24 in some ICU versions; % 24 is the fix
+  // and it is safe because the field is a clock hour rather than a duration.
+  return Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour % 24, +parts.minute) / 60_000
+}
+
+/**
+ * Is this expression asking for a PARTICULAR moment in the day?
+ *
+ * Vixie cron's own carve-out, and it is load-bearing rather than a nicety: a
+ * fixed-time job means *once a day, at that time*, so it must be compensated
+ * across a boundary; a wildcard job means *every hour* and is already right,
+ * because following the new wall clock is what it asked for. Measured before
+ * this was written — `30 * * * *` fires 25 times on a 25-hour local day, which
+ * is correct, and compensating it would take one of them away.
+ *
+ * A `*` ANYWHERE in the minute or hour field disqualifies, `*\/5` included. That
+ * is the rule as cron states it, and the reading is the honest one: a schedule
+ * with a step in the hour has no single time to move.
+ */
+export function isFixedTime(expr: string): boolean {
+  const fields = expr.trim().split(/\s+/)
+  if (fields.length !== 5) return false
+  return !fields[0].includes('*') && !fields[1].includes('*')
+}
+
+/**
+ * Past this, a jump is a CLOCK CORRECTION rather than daylight saving, and
+ * nothing is replayed. Vixie's number. Without it an NTP step, a suspended
+ * laptop or a container that was paused replays every fire it slept through.
+ */
+const CORRECTION_MINUTES = 180
+
 // ─── Scheduler ────────────────────────────────────────────────────────────────
 
 export interface CronSchedule {
@@ -205,19 +262,48 @@ export interface CronSchedule {
    * `() => caravan.dispatch(...)`, which resolves a job id — a type error.
    * `async` functions still assign fine here, and _tick() awaits the result.
    *
-   * The argument is the epoch MINUTE the fire belongs to, and it is handed over
-   * rather than read inside the fire because it is what makes the fire nameable
-   * across processes: this scheduler is in-process with no coordination, so two
+   * The argument is the MINUTE the fire belongs to, and it is handed over rather
+   * than read inside the fire because it is what makes the fire nameable across
+   * processes: this scheduler is in-process with no coordination, so two
    * instances on one jobs.db both fire, and the only thing that can make the
    * second one a no-op is a dispatch id both compute the same way.
+   *
+   * Which minute depends on what the schedule asked for. A wildcard schedule
+   * gets the epoch minute — it wanted whatever the clock now says. A fixed-time
+   * schedule gets the WALL-CLOCK minute (`wallMinute`), because on the autumn
+   * boundary one wall clock is two instants and the epoch minute would name the
+   * same daily fire twice. Both are numbers and both are stable across
+   * processes; a schedule is only ever one of the two.
    */
   fn:        (fireMinute: number) => void
 }
 
+export interface CronSchedulerOptions {
+  /**
+   * The clock. Absent, it is the wall clock.
+   *
+   * Injectable because the behaviour that matters most here happens on two days
+   * a year, and a suite that cannot move the clock can only assert the parser.
+   * That is precisely what the suite did assert, which is how `FJS-525` sat in
+   * the firing path with four green `timeZone` tests above it.
+   */
+  now?: () => Date
+}
+
 export class CronScheduler {
+  private _now:        () => Date
   private _schedules:  CronSchedule[] = []
   private _timer:      ReturnType<typeof setInterval> | null = null
   private _lastMinute: number = -1
+  // Per fixed-time schedule, the last wall-clock minute considered. It is the
+  // whole of the boundary behaviour: the walk from it to now runs FORWARD over
+  // the local clock, so a skipped hour is still in the walk and a repeated one
+  // is not. Keyed by name because two schedules may be in two zones.
+  private _lastWall:   Map<string, number> = new Map()
+
+  constructor(options: CronSchedulerOptions = {}) {
+    this._now = options.now ?? (() => new Date())
+  }
 
   add(schedule: CronSchedule): void {
     // Validate at registration time — fail fast, naming the job as well as the
@@ -235,6 +321,12 @@ export class CronScheduler {
     const existing = this._schedules.findIndex(s => s.name === schedule.name)
     if (existing >= 0) this._schedules[existing] = schedule
     else               this._schedules.push(schedule)
+
+    // A replaced schedule may name a different time or a different zone, so the
+    // mark left by the old one describes a walk that no longer means anything.
+    // Dropping it makes the next tick treat this schedule as freshly registered,
+    // which fires the current minute and replays nothing.
+    this._lastWall.delete(schedule.name)
   }
 
   /**
@@ -251,6 +343,7 @@ export class CronScheduler {
     const at = this._schedules.findIndex(s => s.name === name)
     if (at < 0) return false
     this._schedules.splice(at, 1)
+    this._lastWall.delete(name)
     return true
   }
 
@@ -271,9 +364,18 @@ export class CronScheduler {
     }
   }
 
-  /** Returns the next fire time for each registered schedule. */
+  /**
+   * Returns the next fire time for each registered schedule.
+   *
+   * This is the WALL CLOCK's own answer and it does not know about
+   * compensation: on a spring boundary it reports the following day for a
+   * schedule `_tickFixed` will in fact run just after the gap. Reporting, not
+   * firing — and deliberately not a second implementation of the walk, because
+   * two answers to *when does this fire* is worse than one that is a day out on
+   * one day a year (`FJS-525`).
+   */
   nextRuns(): Array<{ name: string; cron: string; nextRun: Date | null }> {
-    const now = new Date()
+    const now = this._now()
     return this._schedules.map(s => ({
       name:    s.name,
       cron:    s.cron,
@@ -285,33 +387,98 @@ export class CronScheduler {
     return [...this._schedules]
   }
 
+  // ─── Firing ─────────────────────────────────────────────────────────────────
+  //
+  // The tick runs every 10s and does its work once a minute. What it does then
+  // depends on what the schedule asked for (`FJS-D144`):
+  //
+  //   wildcard    — does the clock say this NOW? Following the new wall clock is
+  //                 what `30 * * * *` asked for, and it is already right across
+  //                 both boundaries: 25 fires on a 25-hour day.
+  //   fixed time  — which wall-clock minutes have passed since the last look,
+  //                 and does any of them match? One forward walk over the LOCAL
+  //                 clock, which is where both boundary behaviours come from
+  //                 rather than from a rule about either.
+  //
+  // Spring: the local clock goes 01:59 → 03:00, so the walk covers 02:00…02:59
+  // and a 02:30 schedule fires once, just after the change. Autumn: the local
+  // clock goes 01:59 → 01:00, so the walk is empty until it passes 01:59 again
+  // and a 01:30 schedule does not re-run. Neither case is special-cased; both
+  // fall out of walking a clock that is not monotonic.
+  //
+  // The walk also covers the ordinary reason a minute is missed — a blocked
+  // event loop, a paused container — which the old *does the current minute
+  // match* could not see at all.
+
   private _tick(): void {
-    const now    = new Date()
+    const now    = this._now()
     // Unique minute key — year*525960 overflows for nothing; just use epoch minutes
-    const minute = Math.floor(Date.now() / 60_000)
+    const minute = Math.floor(now.getTime() / 60_000)
 
     if (minute === this._lastMinute) return
     this._lastMinute = minute
 
     for (const schedule of this._schedules) {
-      const { isValid } = parseCronExpr(schedule.cron, new Date(now), {
-        timeZone: schedule.timeZone,
-      })
+      if (isFixedTime(schedule.cron)) this._tickFixed(schedule, now)
+      else                            this._tickWildcard(schedule, now, minute)
+    }
+  }
 
-      if (isValid) {
-        try {
-          // fn is declared `(minute) => void` (see CronSchedule) but may really
-          // return a promise — recover it to attach rejection handling.
-          const result = schedule.fn(minute) as unknown
-          if (result instanceof Promise) {
-            result.catch(err =>
-              console.error(`[Caravan] Cron "${schedule.name}" failed:`, err)
-            )
-          }
-        } catch (err) {
+  private _tickWildcard(schedule: CronSchedule, now: Date, minute: number): void {
+    const { isValid } = parseCronExpr(schedule.cron, new Date(now), {
+      timeZone: schedule.timeZone,
+    })
+    if (isValid) this._fire(schedule, minute)
+  }
+
+  private _tickFixed(schedule: CronSchedule, now: Date): void {
+    const nowWall = wallMinute(now, schedule.timeZone)
+    const seen    = this._lastWall.get(schedule.name)
+
+    // First look at this schedule, or a jump too large in either direction to be
+    // daylight saving: adopt the clock and consider this minute alone. A freshly
+    // registered schedule must not fire for the hours before it existed, and a
+    // corrected clock must not fire for the hours it was wrong about.
+    if (seen === undefined || Math.abs(nowWall - seen) > CORRECTION_MINUTES) {
+      this._lastWall.set(schedule.name, nowWall)
+      this._walk(schedule, nowWall - 1, nowWall)
+      return
+    }
+
+    // The mark only ever moves FORWARD, and that is the whole of the autumn
+    // behaviour. The local clock going back IS the repeated hour; letting the
+    // mark follow it down would walk that hour a second time, which is the
+    // double fire this exists to stop — measured, and the first version of this
+    // method had exactly that bug.
+    if (nowWall <= seen) return
+
+    this._lastWall.set(schedule.name, nowWall)
+    this._walk(schedule, seen, nowWall)
+  }
+
+  /** Every wall-clock minute in (from, to] that the expression matches. */
+  private _walk(schedule: CronSchedule, from: number, to: number): void {
+    for (let wall = from + 1; wall <= to; wall++) {
+      // A naive Date read in UTC IS the wall clock, so the existing validator
+      // grades a minute that may never have happened as though it were an
+      // instant — which is what lets the spring gap be walked at all.
+      const { isValid } = parseCronExpr(schedule.cron, new Date(wall * 60_000), { timeZone: 'UTC' })
+      if (isValid) this._fire(schedule, wall)
+    }
+  }
+
+  private _fire(schedule: CronSchedule, fireMinute: number): void {
+    try {
+      // fn is declared `(minute) => void` (see CronSchedule) but may really
+      // return a promise — recover it to attach rejection handling.
+      const result = schedule.fn(fireMinute) as unknown
+      if (result instanceof Promise) {
+        result.catch(err =>
           console.error(`[Caravan] Cron "${schedule.name}" failed:`, err)
-        }
+        )
       }
+    } catch (err) {
+      console.error(`[Caravan] Cron "${schedule.name}" failed:`, err)
     }
   }
 }

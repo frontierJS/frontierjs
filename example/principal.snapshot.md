@@ -86,11 +86,19 @@ A following a link into B was not refused, they were signed out of A (`FJS-383`)
 
 The allow-list of configuration keys a tenant may override.
 
-**None. This app installs no `createApp({ tenantConfig })`**, so everything it is
-configured with resolves once at boot and is the same for every tenant: the mail
-transport and its from-address, a bucket, a timezone, a locale, a branding value,
-a rate limit.
+| Path | |
+| --- | --- |
+| `name` | a tenant may set this |
+| `mail.from` | a tenant may set this |
 
-That is a legitimate app. What it cannot do is be one deployment that several
-customers each experience as theirs, where the customer-facing half of *theirs* is
-mostly not rows.
+2 path(s). **Everything else is the floor**, and a
+resolver answering a path not on this list is refused by name rather than dropped.
+
+This list is the half that makes the feature safe rather than the half that makes
+it work, which is why it is committed. A path arriving here is a value a tenant
+can now change about every other tenant's experience of this deployment — read
+the diff as that, not as configuration.
+
+`port`, `host`, `database`, `http`, `auth`, `apiPrefix` and `logging` are refused
+at boot and can never appear: a database path handed to a tenant is every other
+tenant's rows, and the rest are read at boot with no tenant in scope.

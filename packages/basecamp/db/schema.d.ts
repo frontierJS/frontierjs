@@ -78,6 +78,8 @@ export type BackupDestination = 'local' | 's3'
 
 export type NotificationKind = 'deploy_success' | 'deploy_failed' | 'alert_firing' | 'alert_resolved' | 'member_joined' | 'job_failed' | 'weekly_digest'
 
+export type Capability = 'Environment.create' | 'Environment.delete' | 'Environment.update' | 'Environment.variables' | 'Server.create' | 'Server.delete' | 'Server.drain' | 'Server.reboot' | 'Server.undrain' | 'Server.update'
+
 // ── Models ───────────────────────────────────────────────────────────────────
 
 // ─── Credential ──────────────────────────────────────────────────
@@ -557,6 +559,18 @@ export interface WorkspaceMember {
   userId: string
   /** This caller's authority in this workspace. Nobody may change their own. */
   role: WorkspaceRole
+  /**
+   * What this membership may do on the models that declare @@capabilities —
+   * the grid that runs BESIDE the ladder rather than under it (`FJS-D146`).
+   * Stamped from the role at every write through `grantsFor()`; a role is the
+   * default set and not a synonym for one, so an operator may take a grant
+   * away from one person without inventing a role for them.
+   * 
+   * Read onto the principal as `auth().capabilities` by `membershipClaim`,
+   * per request and per workspace — the same person holds a different set in
+   * each, which is why it is a column here and not a field on the session.
+   */
+  capabilities: Capability[]
   invitedBy?: string | null
   invitedAt?: string | null
   acceptedAt?: string | null
@@ -570,6 +584,18 @@ export interface WorkspaceMemberCreate {
   userId: string
   /** This caller's authority in this workspace. Nobody may change their own. */
   role?: WorkspaceRole
+  /**
+   * What this membership may do on the models that declare @@capabilities —
+   * the grid that runs BESIDE the ladder rather than under it (`FJS-D146`).
+   * Stamped from the role at every write through `grantsFor()`; a role is the
+   * default set and not a synonym for one, so an operator may take a grant
+   * away from one person without inventing a role for them.
+   * 
+   * Read onto the principal as `auth().capabilities` by `membershipClaim`,
+   * per request and per workspace — the same person holds a different set in
+   * each, which is why it is a column here and not a field on the session.
+   */
+  capabilities?: Capability[]
   invitedBy?: string | null
   invitedAt?: string | null
   acceptedAt?: string | null
@@ -580,6 +606,7 @@ export interface WorkspaceMemberUpdate {
   workspaceId?: string
   userId?: string
   role?: WorkspaceRole
+  capabilities?: Capability[]
   invitedBy?: string | null
   invitedAt?: string | null
   acceptedAt?: string | null
@@ -590,6 +617,7 @@ export interface WorkspaceMemberWhere extends WhereBase {
   workspaceId?: string | WhereOp<string> | null
   userId?: string | WhereOp<string> | null
   role?: WorkspaceRole | WhereOp<WorkspaceRole> | null
+  capabilities?: Capability[] | WhereOp<Capability[]> | null
   invitedBy?: string | WhereOp<string> | null
   invitedAt?: string | WhereOp<string> | null
   acceptedAt?: string | WhereOp<string> | null
@@ -965,6 +993,35 @@ export type ServerEventOrderBy =
   | { [K in keyof Omit<ServerEvent, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<ServerEvent, never>]?: OrderDir }>
 
+// ─── OutpostNonce ────────────────────────────────────────────────
+
+export interface OutpostNonce {
+  nonce: string
+  seenAt: string
+}
+
+export interface OutpostNonceCreate {
+  nonce?: string
+  seenAt?: string
+}
+
+export interface OutpostNonceUpdate {
+  nonce?: string
+  seenAt?: string
+}
+
+export interface OutpostNonceWhere extends WhereBase {
+  nonce?: string | WhereOp<string> | null
+  seenAt?: string | WhereOp<string> | null
+  AND?: OutpostNonceWhere[]
+  OR?:  OutpostNonceWhere[]
+  NOT?: OutpostNonceWhere
+}
+
+export type OutpostNonceOrderBy =
+  | { [K in keyof Omit<OutpostNonce, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<OutpostNonce, never>]?: OrderDir }>
+
 // ─── Volume ──────────────────────────────────────────────────────
 
 export interface Volume {
@@ -1207,6 +1264,11 @@ export interface Environment {
   slug: string
   tier: EnvironmentTier
   isProtected: boolean
+  /**
+   * The environment's variables — a separate grant from editing the
+   * environment itself. Renaming a staging environment and reading its
+   * secrets are the same `update` to the gate and are not the same act.
+   */
   variables: unknown
   /** @version */
   version: number
@@ -1223,6 +1285,11 @@ export interface EnvironmentCreate {
   slug: string
   tier?: EnvironmentTier
   isProtected?: boolean
+  /**
+   * The environment's variables — a separate grant from editing the
+   * environment itself. Renaming a staging environment and reading its
+   * secrets are the same `update` to the gate and are not the same act.
+   */
   variables?: unknown
 }
 
@@ -3095,6 +3162,7 @@ export interface ServiceTypes {
   apiKeys: ApiKey
   servers: Server
   serverEvents: ServerEvent
+  outpostNonces: OutpostNonce
   volumes: Volume
   networks: Network
   serverNetworks: ServerNetwork
@@ -3226,6 +3294,7 @@ export interface LitestoneClient {
   readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere>
   readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere>
   readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere>
+  readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere>
   readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere>
   readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere>
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere>

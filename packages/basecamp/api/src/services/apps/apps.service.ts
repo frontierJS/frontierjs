@@ -181,7 +181,7 @@ export function createAppsService(app: BasecampApp) {
       if (existing.some((p: any) => p.replicaIndex === replicaIndex))
         throw new BadRequest(`Replica ${replicaIndex} of this app is already on '${server.name}'`)
 
-      await app.data.asSystem().appServer.create({
+      await $.db.asSystem().appServer.create({
         data: { appId: target.id, serverId, replicaIndex, status: 'unknown' },
       })
 
@@ -205,7 +205,7 @@ export function createAppsService(app: BasecampApp) {
       })
       if (!rows.length) throw new NotFound('This app is not placed on that server')
 
-      const sys = app.data.asSystem()
+      const sys = $.db.asSystem()
       for (const row of rows) await sys.appServer.delete({ where: { id: row.id } })
 
       return detail(target.id)

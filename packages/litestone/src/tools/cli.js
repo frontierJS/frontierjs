@@ -27,7 +27,7 @@ import { create, apply, status, verify,
          describeSkipped, appliedMigrations,
          baseline, historyGap, driftAgainstLive }      from '../core/migrations.js'
 import { backupSqliteTo }                              from '../core/backup.js'
-import { schemaAnchor }                               from '../core/client.js'
+import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy }                              from '../core/tenancy.js'
 import { CATALOG, GROUPS, POSITIONS, positionsOf, docFor } from '../core/catalog.js'
 import { modelToAccessor, modelToTableName }           from '../core/ddl.js'
@@ -410,7 +410,10 @@ function ensureParentDir(absPath) {
   if (!absPath || absPath === ':memory:') return
   try {
     const dir = dirname(absPath)
-    if (dir && dir !== '.' && !existsSync(dir)) mkdirSync(dir, { recursive: true })
+    if (dir && dir !== '.' && !existsSync(dir)) {
+      mkdirSync(dir, { recursive: true })
+      noteMintedDirectory(dir, absPath)
+    }
   } catch { /* let the subsequent open() surface the real error */ }
 }
 
@@ -3940,6 +3943,7 @@ async function cmdAccess(cfg) {
   const from     = getFlag('from')
 
   if (from) return cmdAccessDiff(cfg, from, { asJson, strict: flag('strict') })
+  if (getFlag('for')) return cmdAccessFor(cfg, getFlag('for'), { asJson })
 
   // Same trap as cmdTypes and cmdJsonSchema: a banner printed to stdout ends up
   // inside the file when the caller redirects.
@@ -4014,10 +4018,86 @@ async function cmdAccess(cfg) {
 // on it would fail every branch that adds a table (`FJS-444`).
 const ACCESS_STRICT_OK = new Set(['unchanged', 'new', 'narrows'])
 
+// `litestone access --for <who>` — what can this person do.
+//
+// `FJS-D148` names this command and names it a CALLER: the answer comes from
+// `db.$capabilitiesFor`, so a support screen asking live and an operator asking
+// here cannot drift. Everything else in `access` describes the DECLARED surface
+// and needs no database; this one is a join over rows and opens one.
+//
+// The person is found through the same resolver `tinker --as` uses, read through
+// asSystem() — you are an operator looking somebody up, so finding the row must
+// not depend on what that row is allowed to see.
+//
+// **It answers what is true NOW and says so.** *What could Ada do in March* is a
+// different question that no argument to this command can answer, because the
+// roles have changed since; it is only answerable from what the audit trail
+// recorded at the time. Printing a date here would make this look like it
+// answered that.
+async function cmdAccessFor(cfg, who, { asJson }) {
+  if (!asJson) header('litestone access --for')
+
+  const { createClient } = await import('../core/client.js')
+  const parseResult = loadSchema(cfg.schema)
+
+  const base = await createClient({
+    parsed:        parseResult,
+    db:            clientDb(parseResult, cfg),
+    encryptionKey: getEncKey(),
+  })
+  const sys = base.asSystem()
+
+  const found = await findPrincipal(sys, base.$schema, who)
+  if (!found.model)
+    fatal(`This schema does not say which model holds people.\n` +
+          `     Mark it ${cyan('@@auth')} — or name it here: ${cyan('--for Customer:' + who)}.`)
+  if (!found.row)
+    fatal(`No ${cyan(found.model)} row matches ${cyan(found.needle)}.\n` +
+          `     Tried ${found.tried.join(', ')}.`)
+
+  const answer = base.$capabilitiesFor(found.row)
+  const label  = found.row.email ?? found.row.username ?? found.row.name ?? `#${found.row.id}`
+
+  if (asJson) {
+    process.stdout.write(JSON.stringify({ subject: label, model: found.model, ...answer }, null, 2) + '\n')
+    await base.$close()
+    return
+  }
+
+  console.log(`  ${dim(found.model)}  ${cyan(label)}`)
+  console.log()
+
+  if (!answer.held.length && !answer.unknown.length) {
+    console.log(`  ${dim('holds no capabilities')}`)
+    // Not the same as "is refused everything": a model declaring no
+    // @@capabilities is graded by its gate and its policies alone, and this
+    // command says nothing about those.
+    console.log(`  ${dim('Only models declaring @@capabilities are graded this way.')}`)
+  }
+
+  for (const [model, targets] of Object.entries(answer.byModel))
+    console.log(`  ${model.padEnd(24)} ${targets.join(' · ')}`)
+
+  if (answer.unknown.length) {
+    console.log()
+    console.log(`  ${yellow('!')}  ${answer.unknown.length} name${answer.unknown.length !== 1 ? 's' : ''} this schema no longer declares:`)
+    for (const n of answer.unknown) console.log(`     ${n}`)
+    console.log(`     ${dim('A capability is a reference, so renaming one leaves the old string in the row.')}`)
+    console.log(`     ${dim('These grant nothing. `litestone access --from <ref>` computes the rewrite.')}`)
+  }
+
+  console.log()
+  console.log(`  ${dim('This is what is true now. What somebody could do in the past is only')}`)
+  console.log(`  ${dim('answerable from the audit trail, which records it at the time.')}`)
+  console.log()
+
+  await base.$close()
+}
+
 async function cmdAccessDiff(cfg, from, { asJson, strict }) {
   if (!asJson) header('litestone access')
 
-  const { deriveReleaseSurface, classifyAccess, formatAccessDiff } = await import('../release.js')
+  const { deriveReleaseSurface, classifyAccess, formatAccessDiff, capabilityDrift } = await import('../release.js')
 
   const schemaPath = resolve(cfg.schema)
   const after      = deriveReleaseSurface(loadSchema(cfg.schema).schema)
@@ -4026,12 +4106,19 @@ async function cmdAccessDiff(cfg, from, { asJson, strict }) {
   const before   = baseline.text ? parseBaseline(baseline.text, false, deriveReleaseSurface) : null
   const result   = before?.surface ? classifyAccess(before.surface, after) : null
 
+  // What a rename COST, beside what it means. A capability is a reference, so a
+  // renamed referent leaves the old string in every grant column — and the
+  // migration engine cannot see it, because a move rename emits identical DDL.
+  // This comparison reads two schemas, which is the only place it is computable.
+  const drift = before?.surface ? capabilityDrift(before.surface, after) : null
+
   if (asJson) {
     process.stdout.write(JSON.stringify({
       baseline: { from, label: baseline.label, resolved: !!before?.surface, note: before?.error ?? before?.note ?? baseline.note ?? null },
       verdict:  result?.verdict ?? 'unknown',
       counts:   result?.counts  ?? { widens: 0, unknown: 0, narrows: 0 },
       findings: result?.findings ?? [],
+      ...(drift?.lost.length ? { capabilityDrift: drift } : {}),
     }, null, 2) + '\n')
     if (strict && !ACCESS_STRICT_OK.has(result?.verdict)) process.exit(1)
     return
@@ -4051,6 +4138,28 @@ async function cmdAccessDiff(cfg, from, { asJson, strict }) {
   console.log(`  ${mark}  ${lines[0]}`)
   for (const line of lines.slice(1)) console.log(line ? `  ${line}` : '')
   console.log()
+  if (drift?.lost.length) {
+    console.log(`  ${yellow('!')}  ${drift.lost.length} capability name${drift.lost.length !== 1 ? 's' : ''} disappeared, and ` +
+                `${drift.columns.length ? `${drift.columns.length} column${drift.columns.length !== 1 ? 's' : ''} hold${drift.columns.length !== 1 ? '' : 's'} grants` : 'nothing in this schema holds grants'}`)
+    console.log(`     ${dim('A capability is a reference. The old string stays in every row and grants nothing —')}`)
+    console.log(`     ${dim('and `migrate create` cannot see this: a renamed move emits identical DDL.')}`)
+    console.log()
+
+    for (const r of drift.renames) console.log(`     ${green('→')}  ${r.from}  becomes  ${r.to}   ${dim(`(${r.why})`)}`)
+    for (const n of drift.ambiguous) console.log(`     ${yellow('?')}  ${n}  ${dim('— gone, and nothing pairs with it unambiguously')}`)
+
+    if (drift.sql.length) {
+      console.log()
+      console.log(`     ${dim('The rewrite, for a migration file:')}`)
+      for (const q of drift.sql) console.log(`     ${q}`)
+    }
+    if (drift.ambiguous.length) {
+      console.log()
+      console.log(`     ${dim('The unpaired ones are not guessed: a wrong rewrite hands one role')}`)
+      console.log(`     ${dim("another's authority and looks like it worked. Decide those by hand.")}`)
+    }
+    console.log()
+  }
   console.log(`  ${dim('--strict')}  ${dim('exit 1 unless the verdict is narrows, new or unchanged (CI)')}`)
   console.log(`  ${dim('--json')}    ${dim('the diff as data')}`)
   console.log()

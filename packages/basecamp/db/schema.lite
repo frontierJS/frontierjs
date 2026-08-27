@@ -52,7 +52,7 @@
 /// A gate is per MODEL and never per row. WHICH rows is TENANCY, declared once
 /// in the `tenancy { }` block below rather than as a rule per model: every model
 /// carrying `workspaceId` is scoped on it, the 14 that reach one through a
-/// relation are scoped through that parent, and the THIRTEEN that legitimately
+/// relation are scoped through that parent, and the FOURTEEN that legitimately
 /// span workspaces say so by name with `@@tenant(none)`. They are three kinds
 /// of thing and the kind is the argument:
 ///
@@ -62,8 +62,10 @@
 ///                     is READ from
 ///   the installation  HubConfig and Backup describe the whole install,
 ///                     Blueprint/BlueprintParam are one curated catalogue
-///                     every workspace sees, and NotificationPreference has no
-///                     workspace column at all
+///                     every workspace sees, NotificationPreference has no
+///                     workspace column at all, and OutpostNonce is a machine's
+///                     spent credential, which no workspace owns and no
+///                     session resolves a claim from
 ///
 /// A NULLABLE column is not a fourth kind and `AuditEvent` used to be listed as
 /// one. It is scoped like everything else, and its null means the row belongs
@@ -517,6 +519,16 @@ model WorkspaceMember {
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   /// This caller's authority in this workspace. Nobody may change their own.
   role        WorkspaceRole @default(viewer)
+  /// What this membership may do on the models that declare @@capabilities —
+  /// the grid that runs BESIDE the ladder rather than under it (`FJS-D146`).
+  /// Stamped from the role at every write through `grantsFor()`; a role is the
+  /// default set and not a synonym for one, so an operator may take a grant
+  /// away from one person without inventing a role for them.
+  ///
+  /// Read onto the principal as `auth().capabilities` by `membershipClaim`,
+  /// per request and per workspace — the same person holds a different set in
+  /// each, which is why it is a column here and not a field on the session.
+  capabilities Capability[] @default("[]")
   invitedBy   String?
   invitedAt   DateTime?
   acceptedAt  DateTime?
@@ -704,7 +716,13 @@ model ApiKey {
   // shape as Domain.certSecretId — because auth owns that table's lifecycle
   // and revoking DELETES the row this points at. A foreign key would either
   // block the revoke or cascade away the record of it.
-  credentialId String?
+  //
+  // @system: derived from a token that does not exist until auth mints it, so
+  // a caller has nothing to send and a generated form must not offer a box for
+  // it. The application still writes it, by naming the column on the write
+  // (`FJS-D22`) — which keeps the gate, the row policies and the audit actor
+  // where `asSystem()` would drop all three to set one value.
+  credentialId String?   @system
 
   name         String    @trim @length(1, 200)
 
@@ -712,7 +730,12 @@ model ApiKey {
   // token, so the mock's `reveal` button is not a feature that was skipped —
   // it is one that cannot exist without storing the token, which is the entire
   // thing an API key is designed not to do.
-  tokenHint    String
+  //
+  // @system for the same reason as credentialId, and it is the one that was
+  // costing something: NOT NULL and therefore in create-mode `required`, so a
+  // browser validating against the schema refused every create by naming a
+  // field the caller was never meant to send (`FJS-095`).
+  tokenHint    String    @system
 
   scopes       String[]  @default("[]")
 
@@ -789,6 +812,21 @@ model Server {
   serverNetworks   ServerNetwork[]
 
   @@gate("2.4.4.5")
+
+  // A second axis, ANDed with the gate above (`FJS-D146`). The gate answers
+  // *is this caller senior enough*; this answers *is a machine theirs to touch
+  // at all*, which the ladder cannot express — every developer grades USER(4)
+  // and only some of them are on call.
+  //
+  // The derived set is create, update, delete and the three HUMAN moves:
+  // `reboot`, `drain` and `undrain`. The five `@system` moves below are the
+  // machine reporting on itself, and a move nobody asks for is nobody's grant,
+  // so they are out of the set and out of any picker (`FJS-506`).
+  //
+  // Nothing here narrows what a viewer may READ — bare @@capabilities covers
+  // writes and moves, and a read refusal is the silent one (`FJS-D140`).
+  @@capabilities
+
   // WHICH servers — the tenancy block at the top of this file, not a rule
   // written here. `workspaceId` is the declared claim, resolved per request
   // from the caller's WorkspaceMember row, and compiled into the SQL of
@@ -822,15 +860,31 @@ model Server {
   // `checkIn` names the from-set heartbeat has always used. A server sitting at
   // `ready` or `provisioning` that starts checking in stays where it is; that
   // is today's behaviour written down rather than a decision made here.
+  // Two kinds of move, and `@system` is what says which.
+  //
+  // `reboot`, `drain` and `undrain` are a PERSON's: somebody decides, and the
+  // gate says how senior they must be.
+  //
+  // The rest are the ENGINE's — an outpost checking in, a provider reporting
+  // what it sees. `@system` says so: the application makes them by naming the
+  // column on the write, so the gate, the row policies and the audit actor all
+  // still apply, where `asSystem()` would drop all three. `checkIn` used to
+  // carry `@gate(8)` for the same intent and the machine never ran, because 8
+  // admits no caller at all and the heartbeat had to write the column by hand
+  // against a from-set kept in the service (`FJS-506`, ruled `FJS-D150`).
+  //
+  // `reportRunning` and its siblings carry `@gate(5)` BESIDE `@system`, because
+  // a person presses *Sync from provider* and the provider's answer decides the
+  // move: the engine makes it, an administrator asks for it.
   @@transitions(status,
     reboot:           [online, unreachable]                                        -> pending,
     drain:            online                                                       -> draining @gate(5),
     undrain:          draining                                                     -> online   @gate(5),
-    checkIn:          [pending, installing, unreachable]                           -> online   @gate(8),
-    reportRunning:    [pending, provisioning, installing, ready, unreachable, stopped]           -> online,
-    reportStopped:    [pending, provisioning, installing, ready, online, unreachable, draining]  -> stopped,
-    reportRebuilding: [pending, installing, ready, online, unreachable, draining, stopped]       -> provisioning,
-    reportDestroyed:  [pending, provisioning, installing, ready, online, unreachable, draining, stopped] -> destroyed)
+    checkIn:          [pending, installing, unreachable]                           -> online   @system,
+    reportRunning:    [pending, provisioning, installing, ready, unreachable, stopped]           -> online       @system @gate(5),
+    reportStopped:    [pending, provisioning, installing, ready, online, unreachable, draining]  -> stopped      @system @gate(5),
+    reportRebuilding: [pending, installing, ready, online, unreachable, draining, stopped]       -> provisioning @system @gate(5),
+    reportDestroyed:  [pending, provisioning, installing, ready, online, unreachable, draining, stopped] -> destroyed @system @gate(5))
   @@softDelete
   @@log(audit)
   @@unique([workspaceId, slug])
@@ -852,6 +906,35 @@ model ServerEvent {
   @@gate("2.4.8.8")
   @@index([serverId])
 }
+
+// A nonce an OUTPOST has already spent, kept exactly as long as the signature
+// carrying it could still be replayed.
+//
+// It is a table rather than a Map because replay protection is only as good as
+// the memory behind it, and a module-level Map is per PROCESS: two replicas
+// each hold their own set, so a captured request replayed at the other one
+// passes, and a restart forgets everything inside the freshness window
+// (`FJS-376`). The signature already binds method, path, body hash and
+// timestamp — this is the one part of it that needs to survive a process.
+//
+// `nonce` is the PRIMARY KEY and that is the mechanism, not a detail: the
+// claim is the INSERT. A read-then-write is a race between the two replicas
+// this exists for, and both would find the nonce absent. A duplicate key is
+// refused by SQLite, atomically, and that refusal IS the replay.
+//
+// @@gate("8"): nothing outside asSystem() has anything to say to this table.
+// @@tenant(none): a machine's credential belongs to no workspace, and the
+// endpoints that spend one carry no session to resolve a claim from.
+// No @@log(audit): one row per signed request would bury the human trail.
+model OutpostNonce {
+  nonce  String   @id
+  seenAt DateTime @default(now())
+
+  @@gate("8")
+  @@tenant(none)
+  @@index([seenAt])
+}
+
 
 // A persistent volume on a server. **Observed, not declared.**
 //
@@ -995,7 +1078,10 @@ model Environment {
   slug        String          @trim @length(1, 64)
   tier        EnvironmentTier @default(development)
   isProtected Boolean         @default(false)
-  variables   Json            @default("[]")
+  /// The environment's variables — a separate grant from editing the
+  /// environment itself. Renaming a staging environment and reading its
+  /// secrets are the same `update` to the gate and are not the same act.
+  variables   Json            @default("[]") @capability
 
   version     Int             @version
   createdAt   DateTime        @default(now())
@@ -1008,6 +1094,13 @@ model Environment {
   flagOverrides FlagOverride[]
 
   @@gate("2.4.4.5")
+
+  // `setVariable` is one write to `Environment` and the gate has one word for
+  // it, so granting somebody the ability to set a variable granted every other
+  // edit to the environment with it. `@capability` on the column is the finer
+  // place to bind the rule, which is what the column tier is for (`FJS-D147`).
+  @@capabilities
+
   // Environment carries its own workspaceId rather than reaching through
   // projectId, so tenancy scopes it on a column rather than through a parent.
   @@softDelete(cascade)
@@ -1516,7 +1609,12 @@ model FeatureFlag {
   variants    Json      @default("[]")
 
   isEnabled   Boolean   @default(false)
-  rollout     Int       @default(0) @gte(0) @lte(100)
+  // 100, not 0. `isEnabled` is the switch and this NARROWS it, so the pair a
+  // new flag starts with has to mean "off, and when you turn it on, everyone".
+  // Defaulting to 0 makes enabling a flag do nothing for anybody the moment an
+  // SDK starts bucketing, with the screen showing it on (FJS-124). Rolling out
+  // to nobody is `isEnabled: false`, which is the state that already says it.
+  rollout     Int       @default(100) @gte(0) @lte(100)
 
   createdBy   String?
   version     Int       @version
@@ -1541,7 +1639,7 @@ model FlagOverride {
   environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
 
   isEnabled     Boolean     @default(false)
-  rollout       Int         @default(0) @gte(0) @lte(100)
+  rollout       Int         @default(100) @gte(0) @lte(100)   // see FeatureFlag.rollout
   // Which variant this environment is pinned to, for a type=variant flag. Null
   // means "weighted as declared" rather than "off".
   variantKey    String?

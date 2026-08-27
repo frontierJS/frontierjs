@@ -6,8 +6,27 @@ dated: 2026-08-24
 
 # Idea — Permission sets: the grid the ladder cannot express
 
-**Status: ARGUED, with one thing RULED.** No part of this is declared syntax, and
-one part of it already runs. `FJS-D139` settles the shape of a capability — a
+**Status: RULED, and being built.** Seven rulings settle the shape. **Step 1 shipped
+2026-08-26** — `@@capabilities` and `@capability` are declared syntax, and the set they
+imply derives from them (`litestone/src/core/capabilities.js`). **Steps 3 through 6 shipped the
+same day**: all three tiers refuse at the Data boundary, `Capability[]` is the declared
+grant column with the escalation guard on it, the affordance and the access-axis
+grading are in, and the cli asks both questions — what one person holds, and what a
+rename cost. Building step 6 amended `FJS-D148`: a renamed MOVE emits byte-identical
+DDL, so the migration engine cannot see it and the rewrite is computed from two
+schemas. What is left is adoption — § *Build order*. **`FJS-D139`** a capability is a
+REFERENCE to something the seed declares, so there is no enum · **`FJS-D140`** writes and
+moves by default, `@@capabilities(all)` for read · **`FJS-D146`** the gate still applies,
+ANDed, as the floor · **`FJS-D147`** `Capability[]` for the grant column, `@capability`
+for a column whose write is one, and none of it is a package · **`FJS-D148`**
+`$capabilitiesFor` to ask, a data migration to rename · **`FJS-D149`** a non-CRUD action
+earns a capability by being a move, and a capability is always per tenant · **`FJS-D151`**
+the caller's set is `auth().capabilities`. **Step 7 shipped the same day** and adoption is what found the
+three defects listed against it — including the one that inverted the whole
+argument, a finer grant ADDING to the coarse one rather than replacing it. The
+claim seam's probe is answered by executing it: `membershipClaim` reads the
+grant off the membership row, per request and per workspace, so the same person
+holds a different set in each and nothing is cached across them. `FJS-D139` settles the shape of a capability — a
 reference to something the seed already declares, never a name in a list — which is
 the one decision here that a shipped application could not take back, and
 `FJS-D140` settles which operations a declaration covers.
@@ -29,6 +48,14 @@ first draft baked in one, the `builtIn` column was writable so a tenant
 administrator could mint a role nobody could delete, and the escalation operator got
 a name. `§ Directions considered and refused` is the other half of that review — the
 plausible suggestions that would have cost the closed set or the refusal shape.
+
+**Revised a fourth time 2026-08-25.** The escalation operator was dropped rather than
+spelled: the column declaration `FJS-D139` already forces carries the guard, and
+probing basecamp's own hand-written version found it compares role levels ordinally
+and is therefore blind to a sideways move — a developer may hand out `billing`
+today. Three measurements are recorded with it, one of which changed the design
+(the column tier is opt-in per column, because deriving every writable column gives
+basecamp 461 capabilities and no picker).
 
 **Revised a third time 2026-08-25, and this pass took things away.** A capability
 names one action, which deletes the enum rather than generating it; the residue of
@@ -69,13 +96,13 @@ Read downward; each layer knows nothing about the one above it.
 | **Capability** | one thing the code can enforce | `enum Permission`, the seed |
 | **Capability set** | a bundle under a name a person picked | a `Role` row, per tenant |
 | **Assignment** | this caller holds that bundle | a `Member` row |
-| **Effective capabilities** | the flat union, resolved per request | `auth().perms` on the principal |
+| **Effective capabilities** | the flat union, resolved per request | `auth().capabilities` on the principal |
 | **Enforcement** | may this caller do this to this row | `@@allow` / `@@require`, compiled to SQL |
 
 **The enforcement layer does not know RBAC exists**, and that is the whole of why
 this is worth building rather than a role column and some hooks. Today a capability
 arrives from a role; tomorrow it may arrive from a group, a direct grant, a service
-account or an API key, and nothing below `auth().perms` changes. The identifier is
+account or an API key, and nothing below `auth().capabilities` changes. The identifier is
 `Permission` because that is the word a buyer asks the question in; *capability* is
 the word this record reasons in.
 
@@ -107,8 +134,8 @@ client, not read off a file:
 ```lite
 model Invoice {
   @@gate("2")
-  @@allow('read',   'billing_read'  in auth().perms)
-  @@allow('update', 'billing_write' in auth().perms)
+  @@allow('read',   'billing_read'  in auth().capabilities)
+  @@allow('update', 'billing_write' in auth().capabilities)
 }
 ```
 
@@ -212,7 +239,7 @@ What falls out for free once the vocabulary is declared:
   empty-screen failure mode does not return. **This is why the declaration is not
   sugar over `@@allow` and must not be built as sugar** — the obvious
   implementation, desugaring `@@require(read: invoices_read)` into
-  `@@allow('read', 'invoices_read' in auth().perms)`, inherits the exact failure
+  `@@allow('read', 'invoices_read' in auth().capabilities)`, inherits the exact failure
   this record opens by complaining about: `@@allow` filters, so a caller missing the
   grant is shown *no invoices* rather than told they need *View invoices*. The
   declaration is gate-shaped over a grid — a different owner of the translation from
@@ -291,10 +318,10 @@ model Invoice {
   amount   Int
 
   @@gate("2")
-  @@allow('read',   'invoices_read'  in auth().perms)
-  @@allow('create', 'invoices_write' in auth().perms)
-  @@allow('update', 'invoices_write' in auth().perms)
-  @@allow('delete', 'invoices_void'  in auth().perms)
+  @@allow('read',   'invoices_read'  in auth().capabilities)
+  @@allow('create', 'invoices_write' in auth().capabilities)
+  @@allow('update', 'invoices_write' in auth().capabilities)
+  @@allow('delete', 'invoices_void'  in auth().capabilities)
 }
 ```
 
@@ -357,7 +384,7 @@ permission is always new code that reads it.
 hold* is enforceable, and today it is not.** The predicate is refused at parse:
 
 ```
-@@allow('create', permissions in auth().perms)
+@@allow('create', permissions in auth().capabilities)
 
 Role: 'permissions' is an array field, and 'in' asks whether ONE value is in a
 list. Overlap between two lists is not expressible yet
@@ -371,7 +398,7 @@ SQL is a shape already compiled for the singular case:
 **This is the mandatory piece of the whole idea.** A grid shipped without it hands
 every tenant administrator a route to every permission the application has.
 
-**The spelling is `allIn`** — `@@allow('create', permissions allIn auth().perms)` —
+**The spelling is `allIn`** — `@@allow('create', permissions allIn auth().capabilities)` —
 and the menu is one operator rather than a family. Subset and *contains all* are the
 same operator with the operands swapped, so naming both is naming one thing twice;
 an intersection is not a predicate at all and does not belong in a boolean
@@ -617,7 +644,7 @@ multiselect, the snapshot and the coverage report to mean anything.
 ## Per-column capabilities, and the two shapes with no noun
 
 The finest thing worth binding to is usually a column rather than a model, and
-**that tier already compiles**: a field `@allow('write', 'x' in auth().perms)` is a
+**that tier already compiles**: a field `@allow('write', 'x' in auth().capabilities)` is a
 predicate both ways (`FJS-D129`), so per-column capabilities need no mechanism that
 does not exist. Probed against three column kinds, and two of them have no noun to
 bind to.
@@ -648,6 +675,155 @@ gets `create` and `delete` like anything else. Which is also what `networks.atta
 turns out to be: not a verb needing a new binding site, a **create on a join model**
 that was hidden inside sugar.
 
+**A per-column READ needs no attribute either, and must not be a capability.** Probed
+2026-08-26 against a real client, because the symmetry with `@@capabilities(all)` invites
+a `@capability(read)` that should not exist:
+
+```lite
+hostname String @allow('read', 'Server.hostname' in auth().capabilities)
+```
+
+```
+holder  row : { id, region: 'eu', hostname: 'box-1' }
+without row : { id, region: 'eu' }                     ← stripped
+holder  filter by hostname : 1 row
+without filter by hostname : 0 rows                    ← no binary search
+```
+
+Both halves of `FJS-D129` do the work already — the strip on the returned row, and the
+narrowing that only bites when the caller NAMES the column, which is what closes the
+recover-it-by-`startsWith` hole. **And a capability could not have done it**, which is the
+part worth keeping: a capability THROWS, and that is exactly what makes it safe to refuse
+(§ *Why a capability may refuse where a policy may not*) — verb-scoped, leaking nothing. A
+column read is not a verb, it is a value, so refusing one would 403 a caller who never
+asked for the column, and stripping instead is the policy tier wearing the capability's
+word. `Server.read` is not the precedent it looks like: *may I reach this model at all* is
+coarse and answers cleanly.
+
+**What the probe DID find is a hole, and it is `FJS-D139`'s own property leaking.** The
+capability name in that predicate is a literal nothing resolves. Typo it:
+
+```lite
+@allow('read', 'Server.hostnme' in auth().capabilities)
+```
+
+```
+holder  row : { id, region }     ← the holder loses it too
+without row : { id, region }
+```
+
+The column becomes invisible to everybody, permanently, with no parse error, no read
+error and nothing in a log — the exact silence D139 exists to make impossible, through a
+door D139 does not cover, because the name here is written rather than referred to. The
+fix is not new syntax: **the grant column's validator is the same validator**, so a
+string literal compared against `auth().capabilities` is checked against
+`capabilityNames(schema)` and refused by name with a suggestion. One check, two callers,
+folded into step 4 rather than filed as its own defect — nothing holds a capability name
+yet, so there is nothing to be wrong today.
+
+## Build order
+
+Step 1 shipped 2026-08-26. The rest, in dependency order:
+
+| | | |
+| --- | --- | --- |
+| ~~1~~ | ~~the two declarations, and the derived set~~ | **shipped** — `@@capabilities`, `@@capabilities(all)`, `@capability`, `deriveCapabilities()` |
+| ~~2~~ | ~~the refusals~~ | half shipped with 1 (`@capability` without the model's switch); the half that needs a held name folded into 4 |
+| ~~3~~ | ~~enforcement~~ | **shipped 2026-08-26** — `CapabilityPlugin` auto-installed on the gate's seam (so every read path is free), a move graded where the transition's `@gate` is, a column graded beside `@system`, four contradictions refused at parse. 19 tests against a real client |
+| ~~4~~ | ~~the grant column~~ | **shipped 2026-08-26** — `Capability` synthesised as a real enum, so storage, the typo refusal and the picker come from tested machinery; the escalation guard as a property of the column (subset, never a rank); the hand-written literal inside a predicate resolved at parse. 14 tests |
+| ~~5~~ | ~~affordance and snapshot~~ | **shipped 2026-08-26** — `x-capabilities` (names, never a verdict), `$capabilitiesFor` on all four flavours with its `unknown` bucket, a derived section in `access.snapshot.md`, and a grid change graded on the access axis. 14 tests |
+| ~~6~~ | ~~cli~~ | **shipped 2026-08-26** — `litestone access --for <who>`, `capabilityDrift` on the `--from` comparison (which is where a rename is computable — **`migrate create` cannot see one**, measured), and `fli check`'s `capability-ladder`. 11 tests |
+| ~~7~~ | ~~basecamp adopts it~~ | **shipped 2026-08-26** — `Server` and `Environment` opt in (10 capabilities, grouped by model, which is a picker), `WorkspaceMember.capabilities` is the grant column, and `membershipClaim({ capabilities })` reads it onto `auth().capabilities` off the row the standing already comes from — per request, per workspace, cached nowhere, which settles `FJS-D149`'s owed probe by executing it. **Adoption found three defects in the mechanism and one in the record.** The record said this deletes `refuseRoleAboveOwn`: it does not, because all three membership writers are `asSystem()`, which has no principal, so *what you hold* is undefined there rather than merely skipped — and the guard needed the ladder axis KEPT beside the new subset one, since `admin` and `owner` hold the same grid. In the mechanism: `@system` moves derived as capabilities (basecamp's `Server` offered eight where three are human); `access.js` re-derived the picker's list by hand instead of asking `deriveCapabilities`, and the two disagreed the moment the derivation learned something (Invariant 4); and **a finer grant ADDED to the coarse one instead of replacing it** — writing a `@capability` column also demanded `Model.update` and a move also demanded it, so `Server.reboot` alone could not reboot and `Environment.variables` could only be handed to somebody who already held every other edit. That last one is the complaint this whole record was written to answer, shipped inverted, and invisible to every unit test because no fixture had ever held one grant and not the other |
+
+## The grant column is declared, not written — and the operator is dropped
+
+`allIn` was proposed for one requirement: **you may only grant what you hold**, the
+guard without which a role editor is a route from any tenant administrator to every
+capability the application has. It is no longer proposed, and the reason is that
+`FJS-D139` had already made the declaration it needs unavoidable.
+
+**A column has to say it holds capabilities anyway.** D139's headline is that a typo
+cannot exist — but something must know *which column holds capabilities* for
+`'Sever.reboot'` to be caught at all, and that same declaration is what a role
+editor's multiselect reads. So the declaration is owed whether or not an operator
+exists, and once it exists the escalation guard is a property of the column rather
+than a predicate each model restates:
+
+```lite
+model Role {
+  id           String       @id @default(cuid())
+  workspaceId  String
+  name         String       @label("Role")
+  builtIn      Boolean      @default(false) @system
+
+  /// Every member is a reference to something this schema already declares.
+  /// A value naming nothing is refused at the write, by name.
+  /// Writing it may not exceed the writer's own effective set.
+  capabilities Capability[]
+
+  @@gate("2.5.5.6")
+  @@unique([workspaceId, name])
+}
+```
+
+`Capability` is a type litestone synthesises from the schema's own surface, the way
+`File` is a built-in that carries behaviour — D139 already says the set is derived,
+so the type IS that set. The alternative spelling is `String[] @capability`, which
+works and is less good: validation becomes attribute-driven where the type already
+carries it.
+
+**One declaration buys three things where the operator bought one** — the escalation
+guard, the typo refusal, and the picker, all off one source. And an operator buys its
+one thing only if every model remembers to write it.
+
+**No opt-out ships.** `@grantsAny` was drafted for separation of duties — *the person
+who administers access must not be able to use it* — and it does not solve that: it
+removes the check rather than scoping it, so an administrator who cannot delegate
+payroll becomes one who can mint every capability in the application. The shape that
+would work is a second reference set (`grantable Capability[]`, what may be handed
+out, defaulting to `capabilities`), and it is not shipped either: separation of duties
+is squarely in the 20%, the escape hatch is that a grant goes through a service method
+where the application writes its own rule, and `grantable` is additive whenever a real
+application asks. A blunt off-switch on a security rule is the worse of the two.
+
+### Three things were measured before this was recommended
+
+**The set is derivable, and 153 is a ceiling rather than a size.** Litestone's own
+parser over both applications:
+
+| | basecamp | example |
+| --- | --- | --- |
+| models | 45 | 17 |
+| model × write op | 135 | 51 |
+| named moves | 19 (1 at `@gate(8)`) | 4 |
+| **derived set under `FJS-D140`** | **153** | **55** |
+| plus every writable column | 614 | 191 |
+
+153 across 45 models is ~3.4 each and groups by model, which is a picker. **461
+derived column capabilities is not**, and that is the one thing the recommendation
+gained from measuring: **the column tier is opt-in per column** (`@capability` on the
+field), never derived wholesale. D140's switch is what makes 153 a ceiling — only the
+models that opt in contribute.
+
+**The escalation rule is not exception-free, and the probe found something better than
+it broke.** basecamp ships `ROLE_LEVEL = { viewer: 1, billing: 1, developer: 2, admin:
+3, owner: 4 }` and `refuseRoleAboveOwn()` compares it **ordinally**. `billing` is 1 and
+`developer` is 2, so a developer may hand out `billing` — while billing is *reads
+everything, writes only billing* and developer is *apps, deploys, jobs*, two sets
+neither of which contains the other. A subset rule refuses it; an ordinal one cannot
+see it, because a sideways move is invisible to a ladder comparison. Latent today
+(there is no billing model yet, which `core/gate.ts` says at the declaration) and live
+the day one exists. **So the argument for declaring the guard is not that an
+application might forget it — it is that this repo already wrote it, ordinally,
+because ordinal is what a ladder teaches.** What stays true is that separation of
+duties is a real exception the universal rule forbids; it is 20%, and the hatch is a
+service method.
+
+**The guard is cheap.** `roleOf(ctx)` reads `ctx.locals[MEMBERSHIP]`, resolved once per
+request at the standing seam (`FJS-D113`). No query at write time, and a multi-role
+union is a join at that same seam rather than a per-write cost.
+
+
 ## The residue is empty, and that is the finding
 
 All 83 of basecamp's guarded service methods were classified against those tiers,
@@ -671,6 +847,85 @@ That reframes the work. What is missing is not a new place to bind a rule; it is
 genuinely unreachable class is a method that writes nothing at all, and § *The
 convention underneath* has the honest reading of those: they should usually be
 writing a row.
+
+## The `capabilities { }` block — labels now, narrowing deferred
+
+A derived set is machine-readable and a role editor is not for machines. `Server.reboot`
+is exact and *Restart a machine* is what a customer administrator picks from a list. So
+there is a block, and what it carries is **labels**.
+
+```lite
+capabilities {
+  Server.reboot   @label("Restart a machine")
+  Invoice.void    @label("Void an invoice")
+}
+```
+
+The member form matches an enum's (`starter @label("Starter")`) rather than a bare
+string, so a second attribute later costs no grammar change.
+
+**A label is an OVERRIDE over composition, never the source.** `Invoice.delete`
+composes to *Delete invoices* on its own; the block exists for the ones composition
+gets stilted, which is what keeps it short — you write the exceptions, not 153 lines.
+That is `@label`'s contract everywhere else in this language: a default derived from
+the identifier, overridable.
+
+**The block is the only possible home for one whole tier, and that is what decides it.**
+Three of `FJS-D139`'s four forms have a declaration site and one does not:
+
+| Form | Declared at | Could carry `@label` |
+| --- | --- | --- |
+| `Server.hostname` | the field | already does |
+| `Server.reboot` | the move in `@@transitions` | not today, could |
+| `NetworkAttachment.create` | the model | could |
+| `Invoice.delete` | **nowhere — the operation is implied** | **never** |
+
+No extension of `@label` reaches `Model.create`/`update`/`delete`, because there is
+nothing there to attach one to.
+
+**Both staleness directions are already safe, which is why this needs no `fli check`
+rule.** A label naming a capability that does not exist is refused at parse — that is
+`FJS-D139`'s machinery and it comes free — and a capability with no label composes.
+Nothing can silently mean the wrong thing in either direction.
+
+**And it is load-bearing rather than cosmetic.** `FJS-D148` already leaned on it
+without a home: *`@label` absorbs most of the pressure — the sentence a person reads is
+renamed freely and the code never.* A capability's identifier is stored verbatim in
+every tenant's `Role.capabilities`, so renaming it is a data migration; renaming its
+label is free. The block is what makes that sentence true.
+
+**Scope, stated because the block will invite it**: label now, description perhaps.
+Not grouping, not ordering, not a danger flag, not an icon — a role editor does not
+exist yet to say what it needs, and inventing its requirements from here is how the
+vocabulary stops being reviewable.
+
+### Narrowing was the first proposal for this block and is deferred
+
+The first use suggested for `capabilities { }` was to NARROW the derived set — list the
+grantable ones and exclude the rest. It is cheap to build (`FJS-D139`'s resolution
+machinery validates every entry for free) and it does not reintroduce the enum that
+ruling deleted, because a filter over references mints no names. It is deferred for
+three reasons, recorded so they are not re-derived.
+
+**The failure modes are opposite, and narrowing's is the bad one.** A missing label
+falls back to the reference and still reads. A missing narrowing entry makes the action
+reachable by nobody — silently, because a capability nothing can grant looks exactly
+like one nobody has been granted.
+
+**So it cannot ship without a `fli check` rule** comparing the block against the derived
+set, in the family `gate-unreachable` is already in. Labels need no such rule; that is
+the whole difference.
+
+**And exclusion has to MEAN ungrantable rather than ungraded**, stated at the
+declaration. Ungraded would let a narrowing read as a relaxation — the action falling
+through to gate and policies alone, which is *wider* than before. Fail-closed is
+surprising; fail-open is the class this record exists to remove.
+
+**The measurement does not yet say it is needed.** 153 on basecamp is ~3.4 per model
+and groups by model; whether that is too many is a question a role editor answers and
+none exists. Narrowing is purely additive to a set that already exists, so building the
+set first forecloses nothing.
+
 
 ## Why a capability may refuse where a policy may not
 
@@ -801,70 +1056,78 @@ language stops being reviewable.
 
 ## Open questions
 
-- **Is a permission per tenant?** Basecamp says yes — `WorkspaceMember.role` is
-  read per request and the standing is resolved onto the principal
-  (`FJS-D113`, `membership-tenancy.md`). So a grant set is a claim, resolved at the
-  same seam, and this needs no new resolver. Confirm rather than assume.
+- ~~**Is a permission per tenant?**~~ Ruled by `FJS-D149`: always per tenant, no claim
+  means an empty set. Cross-tenant standing is the **gate's** job, which `FJS-D146` keeps
+  available by ANDing the two — so the ladder carries standing that crosses tenants and
+  the grid carries authority within one. The probe is still owed: confirm the claim seam
+  resolves per request per tenant and caches nothing across them.
 - ~~**Who assigns?**~~ Answered above: declare the vocabulary, let a row carry the
   assignment. Both spellings survive — a `role` block for the ones an application
   ships, a `Role` table for the ones a customer invents — because the boundary reads
   a flat permission set and neither spelling reaches it.
-- **`allIn` is proposed and unruled.** The operator is mandatory; the spelling is
-  not settled, and the alternative worth weighing is a field-level
-  `@allow('write', …)` handed the whole array, which needs no new operator at all
-  but reads less like the sentence it enforces.
-- **What answers *what can this person do*, once roles union?** A single role made it
-  a fact — read the row, read the bundle. A stack of roles makes it a query across N
-  assignments, and **no committed artefact can answer it**, which is the one property
-  this whole record is written to protect. `access.snapshot.md` still grades the
-  vocabulary and the predicates, so the *declared* surface is as reviewable as ever;
-  what has no home is the *effective* surface, per person, per tenant, at a moment.
-  That is a Studio or basecamp screen and an audit export, and it should be designed
-  with the union rather than after it — the same mistake this file is a merge of.
-- **What does a rename of a capability cost?** A capability is stored verbatim in
-  every `Role.permissions` array, so renaming one is a data migration over tenant rows
-  rather than a schema edit. `@label` absorbs most of the pressure — the sentence a
-  person reads is renamed freely and the code never — but the migration path should be
-  stated before the first application ships a typo. **Sharper now that the capability
-  is its referent**: renaming a move or a column IS renaming the capability, so the
-  blast radius is computable rather than guessed, and the rename tool has to know it.
+- ~~**`allIn` is proposed and unruled.**~~ Dropped 2026-08-25 — § *The grant column
+  is declared, not written*. The declaration D139 already forces (which column holds
+  capabilities) carries the escalation guard as a property of the column, so the
+  operator buys one of the three things the declaration buys and only if every model
+  remembers to write it. What remains open is the spelling: `Capability[]` as a
+  synthesised type, recommended, against `String[] @capability`.
+- ~~**What answers *what can this person do*, once roles union?**~~ Ruled by `FJS-D148`:
+  `db.$capabilitiesFor(principal)` on every flavour of client, the shape `$checkWhere` and
+  `$protectedFields` already have, with a CLI as a caller rather than a second
+  implementation. **It is two questions and only one is answerable that way** — *what can
+  Ada do now* is a live query, *what could Ada do in March* cannot be recomputed because
+  the roles have changed, and is only answerable by recording the effective set into the
+  audit trail at the moment of the decision. That half moved to
+  `IDEAS/compliance-from-the-seed.md`, where it is a fact about what the trail carries.
+- ~~**What does a rename of a capability cost?**~~ Ruled by `FJS-D148`: a rename emits a
+  data migration. Renaming the referent IS renaming the capability, the old string sits in
+  every `Role.capabilities` array in every tenant's database, and that rewrite is a schema
+  diff — which `diffSchemas`/`autoMigrate` already models and the runner already runs per
+  tenant. An alias (`@@renamed`) was refused: it accumulates forever and two names
+  resolving to one capability weakens the *a typo cannot exist* property D139 was chosen
+  for.
 - ~~**Which operations does `@@capabilities` cover?**~~ Ruled by `FJS-D140`: writes
   and moves by default, `@@capabilities(all)` for read, chosen by which refusal is
   silent and backed by the 1-of-20 measurement. The token is recoverable — it is
   syntax, not stored data.
+- **Should `capabilities { }` also NARROW?** Argued in § *The `capabilities { }` block*
+  and deferred: cheap, compatible with `FJS-D139`, and unable to ship without a
+  `fli check` rule because a forgotten entry makes an action reachable by nobody in
+  silence. Exclusion must mean *ungrantable*, never *ungraded*. Revisit once a role
+  editor exists to say whether 153 is too many.
 - ~~**Does an application get to declare a coarse grant anyway?**~~ Answered by
   `FJS-D139`: the framework mints none and cannot, because a bundle is not a thing
   the seed declares and there is nothing for a capability to refer to. A `Role` row
   is data, so a customer bundles whatever they like — bundling is layer 2 and always
   was. What remains open is only what a role editor *shows* for a large bundle.
-- **Does the grid apply WITH the ladder or INSTEAD of it, per model?** Deliberately
-  deferred. What is settled is that the ladder does not become vestigial —
-  § *The one model that keeps the ladder* names the case only a gate can serve, and
-  it is at least one per application. The section above says both, gate as floor. The counter-argument is Invariant 4: a model graded
-  on two axes has two owners of one refusal, and a model that adopts `@@permission`
-  has to drop its gate to the read floor or a billing clerk at level 2 can never
-  write an invoice gated at 4 — which makes the gate decorative in exactly the place
-  the grid is interesting. Exclusive-per-model is the third option and is unargued.
-- **Is this `warden`, and is it a package?** `IDEAS/package-map.md` reserves the name
-  as a tier-1 package. Two things argue against a package at all: row tenancy and
-  value sets both shipped as a seed declaration plus a battery with no package,
-  and `FJS-D113` refused a *declaration* for membership because the resolver varies
-  per application — which applies unchanged to role → permission expansion. The name
-  has a second problem: `DECISIONS.md` § Outpost rules that infrastructure takes
-  place nouns and AI takes personified nouns, and names `warden` among the words
-  rejected for exactly that reason. If this is seed syntax rather than a package the
-  name question does not arise.
-- **Does a permission narrow to a field?** `@allow('write', …)` is already a
-  compiled predicate per field (`FJS-D129`), so the crossing is `auth().can('x')`
-  inside one — cheap if the claim is on the principal, and worth checking that it is
-  before promising it.
-- **Custom methods and named moves.** Measured above: a custom method is covered as
-  the CRUD it performs and cannot carry a rule of its own, and a transition is
-  covered as `update` while its per-move `@gate(N)` takes a level and no predicate.
-  So the open question is no longer *does it reach* but *what does the declaration
-  look like when the verb set is open* — and the projection to a custom method
-  probably wants the same `methods:` declaration that already narrows the surface,
-  while a move wants a capability where `@gate(N)` already sits.
+- ~~**Does the grid apply WITH the ladder or INSTEAD of it, per model?**~~ Ruled by
+  `FJS-D146`: **both, ANDed, gate as floor.** OR would make the gate a bypass, turning
+  *anonymous* into a caller with a grant; exclusive-per-model would put a model that opts
+  in out of reach of the standing tier, which `FJS-519` shows is exactly what the table
+  deciding access cannot afford. The cost is written down with it — a model that opts in
+  usually wants its gate flat at the read floor, and a `fli check` warning is owed for one
+  that declares a grid and then gates it by ladder.
+- ~~**Is this `warden`, and is it a package?**~~ Ruled by `FJS-D147`: not a package. Seed
+  syntax in litestone, where every other Data-boundary rule is declared, and the
+  `package-map.md` reservation is retired. The name question does not arise.
+- ~~**Does a permission narrow to a field?**~~ Yes, and both halves are settled.
+  `@allow('write', …)` is already a compiled predicate per field (`FJS-D129`), and the
+  column tier is `@capability` on the field (`FJS-D147`), opt-in per column because
+  deriving every writable column gives basecamp 461 of them and no picker. The cost
+  worry was measured rather than promised: `roleOf(ctx)` reads `ctx.locals[MEMBERSHIP]`,
+  resolved once per request at the standing seam (`FJS-D113`), so the claim is on the
+  principal and there is no query at write time. **The read half needs no attribute
+  either** — probed 2026-08-26, `@allow('read', 'X' in auth().capabilities)` strips and
+  refuses to be filtered by, and a `@capability(read)` could not have done it because a
+  capability throws where a column read must strip.
+- ~~**Custom methods and named moves.**~~ Ruled by `FJS-D149`: a method that changes state
+  **is** a transition, and naming it in `@@transitions` is what gives it a referent under
+  D139 — already the repo's practice, and `example` states it at the declaration.
+  `methods: [{ method: 'pay', capability: … }]` is refused precisely because it is the
+  most natural-looking answer: it mints a capability name in a service file, and a service
+  names which rule applies rather than carrying one. `@@actions(pay, refund)` is the named
+  escape for an action that genuinely is not a move, and most candidates for it turn out
+  to write a row.
 
 ## See also
 

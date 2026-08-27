@@ -1,5 +1,831 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-26 — a finer capability grant REPLACES the coarse one
+
+`IDEAS/permission-sets.md` step 7, found by adopting the grid in basecamp. 3226
+tests, 0 fail.
+
+**A `@capability` column and a named move both required `Model.update` as well
+as their own grant**, so the two fine tiers could not do the thing they exist
+for. `Environment.variables` could only be handed to somebody who already held
+`Environment.update` — every other edit to the environment, which is exactly the
+grant it was meant to withhold — and `Server.reboot` alone could not reboot
+anything. That is the complaint this whole design was written to answer,
+shipped inverted, and no unit test could see it: no fixture had ever held one
+grant and not the other.
+
+The rule now partitions an update's payload three ways. A key with a
+`@capability` is graded by that column's grant; a key that is a transitions
+field is graded by the MOVE it resolves to, which needs the stored row and is
+therefore checked where the transition is; everything else is what
+`Model.update` is for. So an update naming only graded keys never asks for the
+coarse grant, and one naming anything else still does. Both spellings of a move
+agree, because `update({ data: { status: 'cancelled' } })` and
+`transition(id, 'cancel')` are one move and litestone enforces both. **CREATE
+keeps both**: `Model.create` is the grant for making the row exist at all, which
+is not what a column grant withholds.
+
+A knock-on the wrong ordering had hidden: a `@system` move was refused as a
+missing `Model.update` rather than as `@system`, which points a reader at a
+grant that would not have helped.
+
+## 2026-08-26 — a `@system` move is nobody's grant, and the picker's list had a second author
+
+Two defects on the same seam, both found adopting the grid.
+
+`deriveCapabilities` excluded a move at `@gate(8)`/`@gate(9)` and not one marked
+`@system` — the spelling `FJS-506` added a day earlier and the one an
+application actually reaches for. basecamp's `Server` therefore offered eight
+move capabilities where three are human, which is the noise a role editor
+carries for good.
+
+**Three files rebuilt that list rather than asking for it**, and each got the
+machine-move filter slightly differently. `access.js` did not ask — create/update/delete,
+then every move below gate 8, then the opted-in columns — which is one rule with
+two authors, and the two disagreed the moment the derivation learned something:
+the `@system` moves left the enforced set and stayed in the committed snapshot.
+`jsonschema.js` did the same for `x-capabilities`, which is the reader furthest
+from the boundary: a browser was offered five grants nothing would ever consult,
+which is a button that is never right to show and never fails loudly. And
+`jsonschema-snapshot.js` rendered no capability line at all, so the one committed
+artefact that would show a client losing the names showed nothing.
+
+Invariant 4. `capabilitiesForModel` is the single owner and all three read it;
+the snapshot carries the names now. Negative-controlled: breaking the owner
+fails all three consumers together, which is the property that was missing.
+
+`atLevel(n)` hands its synthetic caller every capability the schema declares, so
+`verifyGateLadder` still grades the GATE on a model that opts in. The grid is
+ANDed and refuses with the same `AccessDeniedError`, so a caller holding none
+reported every write on an opted-in model as a deny no gate issued — the same
+isolation problem row policies and `@guarded` columns already have here, with
+the same answer (`FJS-351`). A caller that states its own principal is left
+exactly as given: a set injected under it is a grant nobody wrote.
+
+## 2026-08-26 — `findUnique` ran no plugin read hook
+
+`FJS-541`. 3216 tests, 0 fail.
+
+`findFirst`, `findMany` and `findManyAndCount` each end with
+`plugins.afterRead(...)` and `emitLogs('read', …)`. `findUnique` had neither, on
+either of its paths — while calling `beforeRead`, which is what made the gap read
+as plugin support rather than half of it.
+
+`get(id)` is the most common read an app makes, and two things were silently
+wrong through it. `ExternalRefPlugin` resolves a stored file reference into a
+public URL in `onAfterRead`, so a `File` column answered raw
+`{"key":…,"provider":…}` by id and a URL from the same column read by `find` —
+an `<img src>` that works in a list and is broken on the detail screen beside
+it, and an edit form handed the storage handle instead of the photograph. And a
+`@@log` model recorded reads through every path but this one.
+
+The ultra-fast path skipping `beforeRead` is correct rather than a hole —
+`_canFastFindUnique` requires there to be no plugins at all — but it can be
+taken on a table that declares `@@log`, so the read entry was missing there too.
+
+Found while wiring `FJS-409`, and asserted end to end in `example`, which asks
+`get` and `find` for the same row and compares them. Either alone passes.
+
+## 2026-08-26 — the retention sweep killed the process it swept for
+
+`FJS-540`. 3216 tests, 0 fail.
+
+A jsonl or logger table keeps a companion `.index.db` of byte offsets, and a
+retention compaction rewrites the file, so every one of those offsets is wrong.
+`compactJsonl` deletes the index and its comment says it is *rebuilt lazily*.
+Nothing rebuilt it: the driver caches the handle and returns it for ever, and
+SQLite marks a connection readonly once its file is unlinked underneath. The
+next append threw `SQLITE_READONLY_DBMOVED` out of `insertIndexRecord`.
+
+**On the audit path, which is fire-and-forget and deferred a tick** — so the
+write that triggered it had already answered. What a reader sees is a `201`
+followed by a dead API and nothing in the request log.
+
+It is on a clock rather than a race, which is why nothing had hit it: the sweep
+removes nothing until the OLDEST row is past the declared window, so a
+deployment crashes the first time its retention period elapses, at whatever hour
+the job runs. Latent for as long as the driver has had an index; unreachable
+until `FJS-521` gave retention a schedule; and invisible to the jsonl case in
+`retention.test.ts`, which compacts and never writes again.
+
+`getIndexDb()` is the one owner of the handle, so it asks whether the file is
+still there and reopens when it is not — closing the dead handle first, which
+otherwise holds the unlinked inode for the life of the process. One `existsSync`
+per index operation, on a driver that already appends to a file for every write.
+
+Found by driving the job end to end in `example` rather than by reading it.
+
+## 2026-08-26 — a schema with no file can say where it lives
+
+`FJS-449`'s remaining half. 3215 tests, 0 fail.
+
+`resolveFrom: 'schema'` anchors a relative `database { path }` to the app root,
+and it needs a schema FILE to do it. An app that assembles its schema in memory
+— auth's fragments, the outbox model, a tenant registry — has none, so it fell
+back to the process CWD and every declared path followed whichever directory the
+process started in. That is the shape with the sharpest consequence measured so
+far: a `vite build` from a surface root prerendered twelve product pages as zero
+products and exited 0, publishing a static site with nothing in it.
+
+Two ways to say it now, and the first was already there:
+
+  · **`path:` beside `schema:`.** An app that READ `db/schema.lite` and appended
+    to it still has the file; naming it makes the string it assembled resolve
+    exactly as the file would. This worked and was not written down anywhere,
+    which is most of why the half stayed open.
+  · **`resolveFrom: '<dir>'`** — a directory, or a `file:` URL, for a schema with
+    no file behind it at all. `new URL('../..', import.meta.url)` is the shape.
+    It is a statement: an anchor that is not a directory throws, because a
+    statement that quietly reverts to the CWD is the failure this exists to end.
+
+The rule moved to `core/db-path.js` on node builtins alone — `schemaAnchor`,
+`resolveAnchor`, and the note below — because the CLI answers the same question
+before a client exists and a second copy of it is how this started.
+
+**A mint is announced.** Creating the database FILE is ordinary; every first run
+does it. Creating the DIRECTORY it sits in is the signal, and it is the one
+thing every measured instance had in common — `example/db/db/`,
+`example/web/db/` and `example/site/db/` were each minted by a command run one
+directory away from where the path was written, none of them failed, and the
+repo's `*.db*` ignore rule kept `git status` clean, so the only way to find one
+was to go looking. Four sites say it now: the SQLite open, the tenant registry's
+directory, the jsonl/logger driver's first append, and the CLI's own
+`ensureParentDir`. The cwd is in the message, because the resolved path alone
+does not say what went wrong: `db/shop.db` from the app root and from a surface
+root print the same relative string and name different files.
+
+`example` is the proof and it lost three workarounds. `SHOPS_DIR`,
+`SHOPS_REGISTRY` and `AUDIT_DIR` were absolute `join(HERE, …)` constants, each
+with a paragraph explaining why the declaration could not be trusted; the app
+names the schema file once and reads all three off the block. Loading its data
+layer from `example/site/` mints no `site/db/`, `litestone studio` from
+`example/db/` creates no `db/db/` and opens the real database, and the storefront
+prerenders twelve products from the surface root.
+
+
+## 2026-08-26 — `access --for`, and what a rename cost
+
+Step 6 of `IDEAS/permission-sets.md` § *Build order*, and it amended a ruling.
+
+**`litestone access --for <who>`** — the command `FJS-D148` names, and a CALLER of
+`$capabilitiesFor` rather than a second implementation, so a support screen asking
+live and an operator asking here cannot drift. It finds the person through the same
+resolver `tinker --as` uses, read through `asSystem()`: you are an operator looking
+somebody up, so finding the row must not depend on what that row may see. It prints
+what is true NOW and says so — *what could Ada do in March* is only answerable from
+what the audit trail recorded at the time, and a command that looked like it answered
+that would be wrong in the silent direction.
+
+**A renamed MOVE is invisible to the migration engine, and that is measured.** D148
+expected the rewrite to fall out of `diffSchemas`/`autoMigrate`. For a renamed COLUMN
+it would. But a move rename changes the capability set and emits **byte-identical
+DDL** — the engine diffs a replayed shadow database against a pristine one, and a
+move name is not a database object — so it reports *no migration needed* while every
+grant row holding the old string goes quiet. Moves are where most capabilities come
+from, so that is the main case rather than an edge.
+
+**So the blast radius is computed from two SCHEMAS.** `capabilityDrift(before, after)`
+rides the `--from <ref>` comparison, which already reads two `.lite` files, and
+`litestone access --from` prints the names that disappeared, the rewrite SQL, and the
+ones it will not guess about. **It pairs only where the pairing is forced** — a model
+whose whole prefix moved with its target set intact, or a single loss against a single
+gain on one model — because a lost name and a gained name are a rename in the author's
+head and a coincidence in the data. Two moving at once, or a genuine deletion, are
+reported unpaired with no SQL: a wrong rewrite hands one role another's authority and
+looks exactly like it worked. The SQL is a quoted-string `replace` over the stored JSON
+array, exact by construction, since a capability name is two identifiers and a dot and
+can hold no quote.
+
+**`fli check` gained `capability-ladder`** (in `@frontierjs/cli`): a model declaring
+the grid whose write levels sit above its read level. The two are ANDed with the gate
+as the floor (`FJS-D146`), so a laddered gate is the ladder answering what the grid was
+declared to answer, and every grant is narrowed by it — the shape being a model moved
+onto capabilities with its old gate left behind. A warning, because two authorities in
+front of one operation is legitimate where the ladder guards something the grid does
+not model.
+
+11 tests. Litestone green: 3215. cli green: 933.
+
+
+## 2026-08-26 — the affordance: `x-capabilities`, `$capabilitiesFor`, and the snapshot
+
+Step 5 of `IDEAS/permission-sets.md` § *Build order*. Everything that has to KNOW
+about the boundary without being it — a screen choosing buttons, a reviewer reading a
+diff, an operator asking what somebody can do. All of it permissive-when-unknown, the
+contract `x-gate` already has (Invariant 6).
+
+**`x-capabilities` carries NAMES and never a verdict.** The caller's set is on the
+principal, so the model says which capability each action requires and the client
+compares. It exists so nothing downstream ever builds `Model.action` by
+concatenation, which is the one spelling that must not be guessed — a wrong guess is
+an affordance that silently never matches. `read` is absent unless the model wrote
+`(all)`, mirroring the declaration exactly (absent = no grant required, never
+refused), and a move at 8 or 9 is absent too, since an affordance for a grant nobody
+can hold can only disappoint.
+
+**`db.$capabilitiesFor(principal)` is the fourth sibling** of `$checkWhere`,
+`$checkOrderBy` and `$protectedFields`, with their contract: it takes its subject as
+an ARGUMENT and every flavour of client answers identically for the same one, because
+what a name GRANTS is a fact about the schema. Defaulting to the client's own
+principal would have broken precisely that.
+
+**`unknown` is the half that earns the method.** A capability is a reference, so
+renaming the referent renames the capability and the old string is left sitting in
+every `Role` row in every tenant's database — which is why `FJS-D148` rules a rename
+emits a data migration. This is the only thing that can see the migration that did
+not run: a stale grant grants nothing and looks exactly like a grant. It answers what
+is HELD and never the complement, which on a real application is 150 rows of nothing
+happening. The other half of D148's question — *what could Ada do in March* — is not
+answerable here and no argument makes it so; the roles have changed, so it can only
+come from what the audit trail recorded at the time.
+
+**`access.snapshot.md` grew a section**, derived rather than authored: every name in
+it is a reference to something declared above, so a capability cannot be misspelled
+into the table.
+
+**And a grid change is graded on the access axis, which is the half that would
+otherwise have been silent.** A model gaining `@@capabilities` starts refusing writes
+N-1 has been making all along with no column, no type and no constraint moving —
+nothing else in the release surface can see it. Four transitions grade on both axes:
+opting in is CONTRACT/narrows, opting out EXPAND/widens, `(all)` arriving or leaving
+moves reads, and a column opting in or out moves that column. Not a version of the
+gate — the two are ANDed, so a model can narrow here while its ladder does not move.
+
+14 tests. Litestone green: 3205.
+
+
+## 2026-08-26 — `$softDelete` on every flavour, and three traps that disagreed
+
+`FJS-536`, found by junction reaching for it.
+
+**A capability that depends only on the schema belongs on every flavour of client.**
+That is a stated rule and `$softDelete` was on one of the four — so the flavour an
+application actually holds threw `"$softDelete" is not a table in this schema` at a
+question about the schema, because junction scopes `ctx.locals.db` with `$setAuth`.
+One owner (`softDeleteInfo`) now answers root, `$setAuth`, `asSystem` and `$scopedBy`.
+
+It answers a **copy**. The map it used to hand back is the live one every read filters
+against, so a caller could turn soft delete off for the whole client by assigning to a
+property they had asked to read.
+
+**The second half is bigger.** Each proxy listed its capability names in `ownKeys`,
+denied every one of them in `has`, and described none of them in
+`getOwnPropertyDescriptor` — so `'$checkWhere' in db` was **false**, on every flavour,
+for every capability. `in` is the documented way to feature-detect one, precisely
+because this client throws on an unknown property, and it had never worked. Each
+proxy's list is hoisted so the two traps read one array; two copies is what let them
+disagree. Enumerability is deliberately untouched — a capability stays out of
+`Object.keys`, where it has never belonged.
+
+Three stray duplicate branches at the wrong indent went with it, including `$scopes`
+missing from the root client's own `ownKeys`.
+
+## 2026-08-26 — the grant column: `Capability[]`
+
+Step 4 of `IDEAS/permission-sets.md` § *Build order*. Enforcement asks *does this
+caller hold X*; this is where an X comes from.
+
+**`Capability` is synthesised from the schema's own surface, as a real enum** —
+`FJS-D147` says the set is derived, so the type IS that set. Making it an enum rather
+than a new kind of thing is the whole of the implementation: an enum ARRAY is already
+a JSON column, already validated member by member at the write (SQLite cannot CHECK
+the elements of a JSON array, so that loop already IS the boundary), already emitted
+into `$defs` with its values and already answered by `db.$enums`. One declaration
+therefore buys the typo refusal, the storage and a role editor's multiselect off
+machinery that was already tested — the JSON Schema comes out as
+`{ items: { $ref: '#/$defs/Capability' } }` with no new key to teach anybody.
+
+Two shapes are refused rather than resolved: a hand-written `enum Capability`, because
+two answers to one name is the ambiguity `FJS-D139` exists to remove, and a
+`Capability[]` in a schema where nothing declares `@@capabilities`, which is a column
+that could never be written and could not say why.
+
+**A large enum suggests instead of listing.** `Capability` is 153 values on a real
+application and a refusal carrying all of them is one nobody reads, so past twelve the
+message names the nearest legal value and points at `db.$enums.<Name>`. General to
+every enum, because any generated one grows past that eventually.
+
+**You may only grant what you hold, and it is a property of the column.** A write to a
+`Capability[]` is refused unless every value is in the writer's own effective set — so
+a role editor cannot be a route from a tenant administrator to every capability in the
+application, and no model can forget to write the rule. **A subset, never a rank**:
+this repo's own hand-written guard compares role LEVELS ordinally, so a developer (2)
+may hand out billing (1), two sets neither of which contains the other, and a sideways
+move is invisible to any comparison of two numbers (`FJS-529`). Seeding roles is
+consequently `asSystem()`'s job, which is the rule working rather than an obstacle.
+
+**And a capability name written by hand is now resolved too.** The read tier has no
+attribute of its own — a column read must strip rather than refuse — so it is spelled
+`@allow('read', 'X' in auth().capabilities)`, and that literal referred to nothing the
+parser checked. Measured: a misspelling makes the predicate permanently false, so the
+column disappears for EVERYBODY including the holders, with no parse error, no read
+error and nothing in a log. Refused at parse now, naming the nearest legal capability,
+across `@@allow`, `@@deny`, `@@scope` and a field `@allow` — by a deep walk rather
+than a switch over node kinds, since a node type a switch missed would fail silent in
+exactly the way being closed. It says nothing where no model declares the grid: below
+that, `auth().capabilities` is the application's own bag.
+
+14 tests. Litestone green: 3189.
+
+
+## 2026-08-26 — the clock has one owner, and the `@updatedAt` trigger is retired
+
+`createClient({ now })` reached `now()` in a row policy and `@@softDelete`'s
+stamp. It did not reach `@default(now())`, which is a column DEFAULT, or
+`@updatedAt`, which was an AFTER UPDATE trigger, or the retention cutoff, which
+read `Date.now()` directly. So an env frozen at 2020 stamped a fresh `createdAt`
+with today, and the one thing a frozen clock exists for — **a row aging past a
+window** — could not be staged at all.
+
+```js
+await env.db.note.create({ data: { body: 'x' } })   // stamped 2020, was: today
+env.clock.advance('100d')
+env.db.asSystem().$retain()                          // sweeps it, was: nothing
+```
+
+### Why the trigger had to go
+
+Binding the value in JS and leaving the trigger in place looked free — both SQL
+mechanisms stand down when the caller names the column. They do not. The
+trigger's guard is `WHEN NEW.x IS OLD.x`, which reads as *fire whenever the value
+being written equals the one stored*, and under a frozen clock that is every
+write after the create. Measured on `update`, `updateMany` and `upsert`: the row
+came back stamped 2020 while the database held today.
+
+That is `FJS-396`'s shape. RETURNING is evaluated before an AFTER trigger fires,
+and junction hands that row to the HTTP response *and* the `svc updated`
+broadcast — so naming the column in the SET clause had only ever closed it while
+the two values differed. With no trigger there is no window, and it closes at the
+root rather than being narrowed again.
+
+### What stamps what now
+
+| | reads the client's clock |
+| --- | --- |
+| `@default(now())` on create | yes — `buildGeneratedDefaultMap` |
+| `@updatedAt` on create | yes — same, and it was a THIRD mechanism (an implied column DEFAULT) |
+| `@updatedAt` on update | yes — `stampSets` |
+| `@@softDelete`'s stamp, `now()` in a policy | yes, unchanged |
+| retention cutoff, SQLite and jsonl alike | yes — `nowMs`, one reading for both |
+| a raw `db.sql` statement | no |
+| `@derived` reading `now()` | no — compiled once at startup, no parameter to bind |
+
+Key PRESENCE still decides, so an explicit `null` clears and a stated timestamp
+wins. `isUpdatedAtField` is the one answer to *is this a stamp column*, because
+the trigger earned itself off the column NAME as well as the attribute and
+binding to the attribute alone leaves `updatedAt DateTime` unstamped.
+
+### Upgrading
+
+One generated statement. Pristine stops carrying the trigger, `droppedTriggers`
+in `migrate.js` already walks for exactly that, and `litestone migrate` writes
+`DROP TRIGGER IF EXISTS "<table>_updatedAt"` with **no table rebuild**.
+
+**The price, and it is asserted rather than described**: the column DEFAULT
+stays, so a raw INSERT still stamps. A raw UPDATE does not. `@updatedAt` is a
+client stamp now and a hand-written statement owns its own.
+
+`FJS-531`, ruled as `FJS-D152`.
+
+## 2026-08-26 — capabilities are enforced
+
+Step 3 of `IDEAS/permission-sets.md` § *Build order*. All three tiers refuse at the
+Data boundary now; what is still unbuilt is the grant column that validates a role's
+array and the affordance that offers the list.
+
+**A capability THROWS where a policy filters, and that is safe here for a reason a
+policy cannot borrow.** A `@@allow` decides WHICH ROWS, so refusing by name would
+answer *there is a row you may not see*; a capability is verb-scoped and
+row-independent, so `Invoice.void` discloses nothing about any invoice — and refusing
+is the only useful answer, since a caller who does not hold it will not hold it for
+the next row either. It lands as `AccessDeniedError` with the capability on its own
+field, beside the gate's `required`/`got`, so a reader tells the two refusals apart
+without parsing a sentence.
+
+**The model tier rides the plugin seam the gate rides, deliberately.**
+`CapabilityPlugin` is auto-installed whenever a model declares the grid — the gate's
+fail-open argument, unchanged: a declared rule nothing enforces is worse than no
+rule. It takes no resolver and therefore has nothing to replace, since `FJS-D151`
+names the caller's set `auth().capabilities`. Riding the same hooks is what makes
+`aggregate`, `groupBy`, `count`, `exists` and every other read path free — this
+package's own history is three read methods that skipped the gate for as long as they
+existed, and a second traversal would have been a second chance to repeat it.
+`src/plugins/reach.js` is the extraction that made that shareable: *which models does
+this call touch* — the `include:` walk and the nested-write walk — is a property of
+the arguments and the relation graph, so it belongs to neither rule that asks.
+
+**A move is graded where the transition's own `@gate` is**, because that is the only
+place that knows which move a payload turned out to be: `transition(id, 'issue')` and
+`update({ data: { state: 'issued' } })` are one move, litestone enforces both, and a
+capability reaching only the named call would be a rule with a documented way around
+it. Asserted both ways. A move at `@gate(8)` is not in the set and is therefore not
+asked for — it is the engine's, and the gate refuses it on its own.
+
+**A column is graded against the payload, beside `@system`.** Refused by name rather
+than dropped, which is what separates it from a field `@allow('write', …)` that
+happens to name a capability.
+
+**Four contradictions are refused at parse, and one of them was measured biting.**
+`@capability` beside `@default(auth().x)` made the model UNCREATABLE for every caller
+without that grant — the write check reads the payload after the create path stamps,
+so the stamp refused itself, naming a column the caller never sent. Also refused:
+`@capability` on a field nobody writes (`@computed`, `@generated`, `@derived`,
+`@from`), beside `@guarded`/`@system`/`@secret` (one says no caller ever, the other
+says a granted caller does), and on a relation, which is not stored — pointing at the
+foreign key.
+
+**`asSystem()` drops it**, the way it drops the gate and the row policies: a
+capability is permission, not scope (`FJS-519`'s distinction). A principal carrying
+`capabilities` as anything but an array or a Set throws by name instead of reading as
+an empty set, because *granted nothing* and *the resolver is broken* are the same
+refusal from the outside and only one of them is somebody's afternoon.
+
+19 tests, every one against a real client. Litestone green: 3171.
+
+
+## 2026-08-26 — `@@capabilities` and `@capability` parse, and the set derives
+
+The first shipped piece of the capability design (`IDEAS/permission-sets.md`,
+seven rulings). **Two declarations and one derivation — nothing enforces yet.**
+
+**`@@capabilities` is a switch, not a list**, because `FJS-D139` rules that a
+capability is a REFERENCE to something the seed already declares. Bare covers
+create, update, delete and every named move; `(all)` adds read, opt-in because
+its refusal is the silent one (`FJS-D140`). **`@capability` on a column** says
+that column's write is its own capability — opt-in per column and never derived
+wholesale, since every writable column on basecamp is 461 of them and that is
+not a list anybody picks from (`FJS-D147`).
+
+**`src/core/capabilities.js` is the one place the set comes from.**
+`deriveCapabilities(schema)` walks the models that opted in and answers
+`{ name, model, kind, target, gate }` per capability, sorted; `capabilityNames`
+is the same as a Set, which is what a grant column validates against. Four
+forms, each already declared once: an operation on a model, a named move, a
+`@capability` column, an operation on a join model.
+
+**A move at `@gate(8)` is excluded and that is `FJS-506` paying off**: getLevel
+is clamped to 7, so no caller passes and `asSystem()` bypasses — offering it in
+a role editor offers something no role can use. Gate 9 goes with it, being
+LOCKED to everyone.
+
+**A `@capability` on a model with no `@@capabilities` is refused by name.** The
+switch is what says the model is graded that way at all, so without it the
+attribute reads as protection nobody applied.
+
+Ten tests. The catalog's own coverage guard caught both new attributes missing a
+row and then a missing docs pointer, which is what it is for; `docs/access-control.md`
+has the section they point at, opening with the fact that nothing enforces this yet.
+3152 pass.
+
+## 2026-08-26 — `@time` reaches the client, and it does not borrow a standard's word
+
+`@time` has validated on every write since it was written and emitted nothing at
+all into the JSON Schema, so a `String @time` column reached a form as a bare
+string, got a plain text box, and every value a person typed was accepted in the
+browser and refused at the boundary. `@date` and `@datetime` each emit a `format`
+and each gets a control; the third rung had neither.
+
+The obvious fix was the wrong one. JSON Schema's `format: "time"` means RFC 3339
+*full-time*, which requires seconds **and** an offset. `@time` requires neither
+and admits no offset at all, so a consumer honouring the format would refuse
+`09:30` — a value this boundary accepts. Two boundaries disagreeing about what a
+time IS is a worse failure than one of them saying nothing.
+
+So it emits a `pattern`, and the pattern is the validator's own regex, exported
+from `validate.js` and imported by the emitter rather than restated:
+
+```
+opensAt String @time                 → pattern ^([01]\d|2[0-3]):[0-5]\d$
+                                       x-time { seconds: false }
+shutsAt String @time(seconds: true)  → pattern ^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$
+                                       x-time { seconds: true }
+```
+
+`x-time` picks the control and enforces nothing — sierra answers
+`<input type="time">`, with `step: 1` where seconds are allowed, because the
+element shows HH:MM unless the step is not a whole number of minutes and a column
+that ACCEPTS seconds would otherwise give nobody a way to type them.
+
+Two things fell out of the pass. `MESSAGE_KEYWORDS` had claimed
+`time: ['format']` for as long as the emitter produced no format, so an author's
+`@time(message: …)` was keyed to a keyword no consumer could ever have checked —
+it is `pattern` now. And the seconds variant was two alternative regexes where
+one optional group says the same thing: the flag WIDENS what may be stored, it
+does not make a finer value mandatory, and `09:30` is valid under
+`seconds: true`.
+
+Nothing in this repo declares a `@time`, `@date` or `@datetime` column — 141
+`DateTime` columns and zero of the three — so this is covered by unit tests on
+both sides of the wire and by no drive. `FJS-522`; 19 cases in
+`test/time-column.test.ts`.
+
+## 2026-08-26 — `@system` on a move: the engine decides it, the caller keeps their standing
+
+`@gate(8)` says a move is the engine's, and it says it by admitting no caller at
+all. That is right for a move nothing but a migration makes, and wrong for the
+common one it was being asked to cover: a move the engine DECIDES and a person
+REQUESTS. Somebody presses *sync*, the provider's answer picks the move, and the
+write is on their scoped client — so at `@gate(8)` it refuses, and the only way
+past was `asSystem()`, which drops the gate, the row policies and the audit actor
+to make one move.
+
+`@system` on a transition clause is the same statement `@system` already makes
+about a column, and it reuses the same hatch: the application makes the move by
+naming the column on the write. `transition(id, name, { system: true })` becomes
+`system: [field]` on the update underneath, so writing the column directly is
+refused and permitted by one rule rather than two.
+
+```
+@@transitions(status,
+  drain:         online                -> draining @gate(5),
+  checkIn:       [pending, unreachable] -> online   @system,
+  reportStopped: [pending, online]      -> stopped  @system @gate(5))
+```
+
+The two compose and answer different questions — `@gate(N)` is how senior a
+caller must be, `@system` is whose decision it is — so `@system @gate(5)` is the
+person-requested engine move. `@system` with `@gate(8)` or `@gate(9)` is refused
+at parse: those admit no caller, which contradicts it.
+
+`TransitionSystemError` (403) is its own class beside `TransitionGateError`'s
+403, because the remedies differ in kind: a gate refusal is answered by being
+more senior and this one cannot be answered by any caller at all. `transitions()`
+reports `refusedBy: 'system'` and asks it FIRST — no level to resolve, no policy
+to evaluate. `x-transitions` carries the flag, so sierra's `transitionsAt` gives
+a browser the one verdict on that side that is not permissive-when-unknown.
+
+Ruled as `FJS-D150`; the counterexample came from adopting `FJS-506` in basecamp.
+
+## 2026-08-26 — `@check` refuses in words a form can use, and `@@check` exists
+
+Two halves of one gap (`FJS-534`), and the one that was shipping is the one
+nobody would have looked for: field `@check` worked. It parsed, it reached the
+DDL verbatim, SQLite enforced it — and the throw was a bare `Error` with no
+status carrying SQLite's own sentence, so a **validation** problem came back as
+a **500** and there was nothing for `toFieldErrors` to hang on a control. That is
+the class `FJS-441` closed for uniqueness, still open one constraint over.
+
+**It is a `ValidationError`, not a class of its own.** Two errors exist where
+two RECOVERIES exist — restore-or-release against send-another-value is why
+`SoftDeletedUniqueError` sits beside `UniqueConflictError` — and there is one
+here. Through junction's boundary it is now a **400** carrying
+`[{path:['qty'],message:'must be at least one'}]`, which is the shape `<Form>`
+already reads.
+
+**`@@check` is the half that spans columns.** Repeatable like `@@unique`,
+emitted as a table CHECK. Until now a rule over two columns of one row —
+`startsAt < endsAt`, `discount <= subtotal` — could only live in a service hook,
+and a hook is bypassed by every other writer: a job on `db.`, a migration,
+`asSystem()`, a seed, `fli tinker`.
+
+**Both take a message as the last argument**, where every field validator
+already carries one. Without it the person sees `is not valid` and the
+expression goes to whoever wrote it on `err.constraint`; `qty > 0` under a form
+control is SQL reaching somebody who did not write it. A field check marks its
+own box, a `@@check` names no column and is therefore a record-level error with
+an empty path — which turned up `ValidationError` rendering a bare `: ` in its
+summary for one, fixed here.
+
+Three things it needed and only one was work. The migrator already compared
+CHECK text and rebuilt (`FJS-466`), so migration needed nothing. `fli
+release:check` did need it: a new `@@check` is a **contract** and a removed one
+an expand, because it is the one constraint that changes what a WRITE may be
+without changing what a read answers — it is in the surface, the committed
+snapshot and the classifier. And the catalog refused the attribute until it had
+a row and a page, which is `docs/schema.md` § Constraints the database enforces.
+
+## 2026-08-26 — `orderTotal(orderBy)`: the ordering a window is walked in
+
+The tiebreaker was already litestone's — `findManyCursor` appends the model's id
+where the caller's `orderBy` is not a total order, and refuses where there is
+nothing to append. What nothing could ask for was that ordering itself, so
+junction's first window ran an ordinary `findManyAndCount` in the caller's order
+and then minted an edge in the total one. Where two rows tie on every sort key
+those are different orders, and the rows between where the page stopped and
+where the edge said it stopped were lost (`FJS-535`).
+
+`orderTotal(orderBy)` answers the caller's ordering plus whatever makes it
+total, in the caller-facing form, so one query can be run in it. It answers
+`null` rather than throwing where no tie can be broken: a caller asking for a
+cursor by name is told why, and a caller merely reading a list is asking for no
+cursor at all — refusing that read would turn a window into a requirement.
+
+## 2026-08-26 — `@scale(n)` and `@money`, and the ISO table read off the platform
+
+17 new cases in `test/exact-numbers.test.ts`, 4 in toolbelt's `units` spec.
+Typecheck clean.
+
+`.lite` had `Int` and `Float` and nothing between them, and SQLite has no
+fixed-point type to put there, so every exact quantity was a float and a hope
+(`FJS-D150`).
+
+**`Int @scale(n)`** — the column stays an `INTEGER`, the DDL is unchanged, and
+the point sits n places in. **`Int @money(USD)`** is the same thing with the
+scale DERIVED from the currency, because scale is not a free parameter for
+money: JPY has none, USD has two, KWD has three, and an author asked for a
+number has to know the ISO table by heart. `@money(field: currency)` names a
+sibling column for a shop taking more than one; bare `@money` is the app's
+default. `@scale` and `@money` together are refused — two answers to where the
+point is.
+
+**Almost all the value is in one refusal at the write.** A fraction now answers
+`must be a whole number of minor units of USD — 12.99 is 1299`. It used to be
+SQLite's `cannot store REAL value in INTEGER column line.total`: true, about a
+physical column, and no use to the person who just typed a price.
+
+**The ISO table is not shipped and the typo is still caught**, which needed both
+halves of ICU. The minor units come from
+`resolvedOptions().maximumFractionDigits`. Whether the code is real comes from
+`Intl.supportedValuesOf('currency')` — 306 of them — and that half is
+load-bearing: **`Intl.NumberFormat` does not throw on an unknown code**, it
+answers two decimal places, so `@money(UDS)` would have taken a plausible scale
+and been wrong by a factor of a hundred against any of the 26 currencies that do
+not have two. `minorUnits()` and `isKnownCurrency()` are new in
+`@frontierjs/toolbelt/units`, beside `formatMoney`, which already turned on the
+same fact (`FJS-440`).
+
+**The integer comes back in JS**, which is the half the earlier draft had
+backwards. Rails hands back a `Money`, Prisma a `Decimal`, Django a `Decimal`,
+Stripe an integer — none of them a float — and reading back `12.99` would put a
+float at the boundary the column exists to move it off.
+
+On the wire: `x-scale` and `x-money` beside `type: 'integer'`. The `field:` form
+carries the column name and **no scale**, because it is not knowable from the
+schema and a number right two thirds of the time is worse than an absent one.
+
+**Rounding and allocation are still the application's**, stated in the docs
+rather than implied: `@scale` makes the stored value exact and refuses a
+fraction. It does not pick half-up over banker's, and it does not decide which
+line of a split bill gets the leftover penny.
+
+The catalog is what made this land properly — three of its checks failed in a
+row and each named a real omission: no row for the new words, `POSITION_RULES`
+not restating the parser's own forbidden set, and a word with no page. The last
+one is why `docs/exact-numbers.md` exists.
+
+`FJS-D150` · `docs/exact-numbers.md` · `test/exact-numbers.test.ts`
+
+
+## 2026-08-26 — retention swept the wrong table, and swept it once
+
+3074 pass, 1 skip, 0 fail (9 new). Typecheck clean.
+
+Three defects under one declaration, and the one we went looking for was the
+least of them (`FJS-521`).
+
+**The sweep named the MODEL where the table is snake_case.** `DELETE FROM
+"AuditEvent"` matches nothing — the table is `audit_event` — and the throw landed
+in a `catch` commented *table may not exist yet on first run*, which is a
+plausible reason for a real failure and is why nobody looked again. So every
+model whose name is not a case-variant of its table kept every row for ever:
+any multi-word name, and every name at all under `pluralize`. Measured — `Log`
+was deleted and `AuditEvent` was not, in the same pass, silently. A single-word
+test would have passed, because SQLite matches identifiers case-insensitively.
+
+**And a table that is missing is now ASKED about rather than inferred from a
+throw.** The first-run case is legitimate and stays quiet; a DELETE that fails
+against a table that is there is reported. Those were one silent branch.
+
+**Startup is not a schedule.** The pass runs inside `createClient` and nothing
+reschedules it, so a server up for a month prunes on the day it booted —
+`retention 90d` stops being true the day after a deploy. `db.asSystem().$retain()`
+is the same pass on demand, answering `{ model, table, removed }` per table plus
+`error` where one would not sweep. **Scheduling it is the app's**, and that is
+two rulings rather than a gap: unattended recurring work belongs to the queue
+(`FJS-D36`) and this package may not import it. `example` and `basecamp` both
+have a `retention.job.ts` now — the declaration was in both schemas and the
+sweep had never run twice in either.
+
+**`asSystem()` only**, for raw SQL's reason (`FJS-D52`): it is a DELETE against
+the base table through no gate, no row policy and no `@@softDelete`. The other
+three flavours of client refuse it by name and say the way out.
+
+**The jsonl half is covered too** — it compacted at `makeJsonlTable` init and
+its failure was `catch { /* non-fatal */ }`, so a policy that threw every boot
+looked like one with nothing to do.
+
+**Not fixed, deliberately.** The cutoff is a rolling instant — the duration back
+from the moment the pass runs, `d` a flat 24 hours, `y` a flat 365 days — with no
+calendar and no zone. A calendar-aligned window needs a zone the seed cannot yet
+state (`FJS-D143`), and inventing half a vocabulary here is what that record
+warns against. Stated in the docs and asserted in the suite instead.
+
+Also: `index.d.ts` declared `runSqliteRetention(db, retention)` against an
+implementation taking three arguments, so a caller reaching for the export wrote
+a call that swept nothing. Both retention exports are now typed as they are.
+
+`FJS-521` · `test/retention.test.ts`
+
+
+## 2026-08-26 — a cursor's tiebreaker is DERIVED, and there is one owner of it (`FJS-D145`)
+
+`findManyCursor` took the caller's `orderBy` as the cursor's sort keys and
+asked nothing about it. **An ordering with no unique column is not a total
+order**, and a keyset scan over one fails silently: two rows sharing a
+`createdAt` sit either side of a page boundary and the comparison cannot
+separate them, so one is served twice and one is never served at all. No error,
+no gap — the class this repo exists to remove, and the reason the keyset
+literature calls a unique tiebreaker a correctness requirement rather than a
+tuning knob.
+
+The schema declares which columns are unique, so it is **derived**: the model's
+own id is appended, in the last sort key's direction. The order the caller asked
+for is unchanged; what is added is determinism among rows it left equal.
+Measured on the worst case — 25 rows all sharing one `rank`, walked in slices of
+five — which used to repeat and skip and now returns each row exactly once.
+
+It **refuses** only when there is nothing to append, a model with no unique
+column at all. That cannot be made correct, and `limit`/`offset` is the honest
+answer.
+
+**`cursorFor(row, orderBy)` is new and is why the derivation is a named
+function.** The far side mints the FIRST window's edge off an ordinary page —
+Junction's `find` runs `findManyAndCount` and then asks for the last row's
+position, so growing a window costs no extra query — and an edge that disagreed
+with this about the tiebreaker would name a position the next page does not
+resume from. One owner, per Invariant 4. Answers `null` where a `select`
+dropped a sort key, since a cursor built from an absent value names a position
+that is not there.
+
+## 2026-08-26 — the test clock moves, and what it does not move is now asserted
+
+3065 pass, 1 skip, 0 fail (12 new). Typecheck clean.
+
+`createTestEnv` spreads its unknown options into `createClient`, so `now` already
+reached both the env client and `atLevel`'s. It was undeclared, undocumented and
+asserted nowhere — and it could only be **frozen**, which is the half that is not
+worth much: every bug worth a test here is a crossing, and a fixed instant
+asserts one side of one.
+
+**`env.clock` is the movable form.** `now` takes a `Date`, an ISO string or a
+function; the option is normalised into a holder every client this env opens
+reads through — `set(at)`, `advance('20d')` or milliseconds, `frozen`. A window
+that opens can now be asserted on both sides in one test.
+
+**A function stays the caller's**, and `set`/`advance` refuse it by name: two
+things claiming to say what time it is means the loser is whichever one the
+reader did not have in mind. **`advance` from the wall clock freezes**, because
+an offset from a moving clock is still moving and the assertion after it is a
+race. Durations go through `parseDuration` — the one owner — which grew a label
+so a clock is not told it has an *invalid retention duration*.
+
+**The lazy client is the case that would have been missed.** `atLevel()` builds
+its client on first use, so one constructed mid-suite has to follow a later move
+rather than holding the instant it was built at. Pinned.
+
+**And the hole is asserted rather than left to be discovered.** The clock moves
+`now()` in a row policy and `@@softDelete`'s stamp. It does NOT move
+`@default(now())` or `@updatedAt`: a column DEFAULT and an AFTER UPDATE trigger,
+both `strftime('%Y-%m-%dT%H:%M:%fZ','now')` — SQLite's own clock, which nothing
+in JavaScript can move. The option's own comment called itself *the clock every
+time-dependent rule reads* and `docs/access-control.md` said a frozen clock
+*freezes every timestamp litestone writes*; both were wrong and both are
+corrected. A suite that needs an old row states the timestamp on the write, which
+works because a column default only applies to a column the write omits.
+
+`FJS-524` · `FJS-531` (the fork: bind those two in JS only when `now` is
+injected, or always) · `test/test-clock.test.ts`
+
+
+## 2026-08-26 — `asSystem()` keeps the tenant it is standing in
+
+`asSystem()` dropped the gate, every row policy, `@guarded`, `@system` and every
+field `@allow` in one move. Right for a migration; wrong for the shipped feature
+underneath it. **Row tenancy desugars to `@@deny`, which is a policy**, so a
+system context read every tenant's rows — and since a `@@gate("8")` model can be
+read by nothing else, the only client that could read a credential was the one
+that ignored tenancy. A per-tenant credential could not be enforced declaratively
+at all, and doing it in a resolver's own where-clause is what Invariant 6 refuses.
+
+**It now means *no permission rules*, not *no scope*.** One `rulesFor()` answers
+*which rules apply to this caller* for all three readers — the SQL builder, the
+JS evaluator, and the builder again through a `check()` delegation — because
+written at each call site a model reached through a delegation would be graded by
+a different rule than the one that reached it. Under a system context it keeps
+exactly the denies tenancy generated.
+
+**And only while a tenant is IN SCOPE**, which is the clause that makes it safe
+rather than breaking every boot: the generated predicate's first branch is
+`auth().<claim> == null`, so applying it with no principal would deny every row
+rather than widen to all of them. A migration, a seed and any job with no caller
+read everything, exactly as before.
+
+**The half that was not in the plan: `asSystem()` was memoised once, at the
+root.** Every scoped client handed back that same proxy —
+`db.$setAuth(u).asSystem() === db.asSystem()`, measured — so the principal was
+discarded and there was no claim for the rule above to keep. It is memoised per
+scope now, keyed by the context it was reached from, and `db.asSystem()` is still
+identity-free because that is what a migration is. **This also makes a
+composition this file has documented for its whole life actually work**: the
+comment promised `db.$setAuth(user).asSystem()` for *system-level access AND a
+user identity (e.g. for audit logging)* and called it "NOT memoized", and the
+auth proxy returned the root function, so it was neither.
+
+Five tests in `test/tenancy.test.ts`, including the two a column comparison does
+not cover — a scoped system client placing a row in another tenant, and moving
+its own row into one. `FJS-519`, cases 1 and 3 (the standing table wanting
+*policies off* and *a rule kept*) deliberately still open.
+
 ## 2026-08-26 — a test fixture never invents a foreign key
 
 `_shouldSkipField` deliberately does NOT skip a field whose default is
@@ -23,6 +849,19 @@ opposite answers about a row that belongs to no tenant. A nullable claim COLUMN
 hides it from every tenant; `@@tenant(via: rel)` over an optional relation shows
 it to every tenant (`FJS-382`). Both measured, both deliberate, neither
 reconciled — `docs/multi-tenancy.md` § What it desugars into, and `FJS-528`.
+
+## 2026-08-26 — a caller-supplied primary key survives the create fixture
+
+`verifyGateLadder` strips the id from every create fixture, which is right where
+the database or the client mints one and wrong where the CALLER does: a
+`String @id` with no `@default` is required, so stripping it fails the required
+check and **the gate is never asked** — reported as *no fixture could be built*,
+at every level, for a model that creates perfectly well.
+
+`_columnPayload` had already drawn this line for the tenancy checker, in those
+words. Drawing it differently in the other harness is how one grader reports a
+model the other cannot build. Found on basecamp's `OutpostNonce`, whose primary
+key is the nonce because the insert is the claim (`FJS-376`).
 
 ## 2026-08-26 — `@keep`, the third fate a soft-deleted parent's children can have
 

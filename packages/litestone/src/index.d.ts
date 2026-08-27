@@ -503,6 +503,26 @@ export interface LitestoneClient {
     actorType?: string
     meta?: Record<string, unknown>
   }, opts?: { database?: string }): Promise<Record<string, unknown>>
+  /**
+   * Run every `retention` policy this schema declares, now.
+   *
+   * The startup pass on demand — and it exists because startup is not a
+   * schedule: a process that stays up prunes once, on the day it booted, so a
+   * declared `retention 90d` stops being true the day after a deploy
+   * (`FJS-521`). Scheduling is the app's, since the clock belongs to the queue
+   * (`FJS-D36`) and litestone cannot import it:
+   *
+   * ```js
+   * export default defineJob('retention', () => db.asSystem().$retain(),
+   *                          { cron: '0 4 * * *' })
+   * ```
+   *
+   * **`asSystem()` only.** It is a DELETE against the base table and applies no
+   * gate, no row policy and no `@@softDelete`; every other flavour of client
+   * refuses it by name. The cutoff is a rolling instant — the duration back from
+   * the moment it runs, `d` a flat 24 hours — with no calendar and no zone.
+   */
+  $retain(): RetentionResult[]
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ size: number }>
   $walStatus(): { busy: boolean; frames: number; checkpointed: number } | Record<string, { busy: boolean; frames: number; checkpointed: number } | null>
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>
@@ -810,6 +830,15 @@ export declare function createProvider(options: FileStorageOptions): unknown
 
 export declare class ValidationError extends Error {
   errors: Array<{ path: string[]; message: string }>
+  /** Present when the refusal came from a `@check` / `@@check`, absent otherwise. */
+  model?:      string
+  /**
+   * The CHECK expression that refused, for whoever wrote it. It is deliberately
+   * not in `errors[].message` — SQL under a form control reaches somebody who
+   * did not write it, so the sentence a person sees comes from the attribute's
+   * own message argument.
+   */
+  constraint?: string
 }
 
 export declare class TransitionViolationError extends Error {
@@ -1167,10 +1196,34 @@ export declare function replicate(configPath: string, opts?: { verbose?: boolean
 
 // ─── Retention ────────────────────────────────────────────────────────────────
 
-export declare function parseDuration(str: string): number
+/** Answers milliseconds. `what` names the caller in the error message. */
+export declare function parseDuration(str: string, what?: string): number
 export declare function parseSize(str: string): number
-export declare function runSqliteRetention(db: unknown, retention: string): void
-export declare function compactJsonl(path: string, retention: string): void
+
+/** One row per table the sweep touched. */
+export interface RetentionResult {
+  model:    string
+  /** The table, or for a jsonl database the file. */
+  table:    string
+  removed:  number
+  error?:   string
+}
+
+// Both of these were declared with the wrong arity — `runSqliteRetention(db,
+// retention)` against an implementation taking three arguments, so a caller
+// reaching for the export wrote a call that swept nothing (`FJS-521`). Prefer
+// `db.asSystem().$retain()`, which resolves every declared policy for you.
+// `now` is the same option `createClient` takes and defaults to the wall clock;
+// the client threads its own through, so a sweep measures from the clock a test
+// froze rather than from today (`FJS-531`).
+export declare function runSqliteRetention(
+  db: unknown, models: unknown[], retention: string, pluralize?: boolean,
+  now?: (() => Date | string | number) | Date | string | number,
+): RetentionResult[]
+export declare function compactJsonl(
+  path: string, model: unknown, retention?: string | null, maxSize?: string | null,
+  now?: (() => Date | string | number) | Date | string | number,
+): { removed: number; remaining: number; reason: string } | null
 
 // ─── Transform pipeline ───────────────────────────────────────────────────────
 

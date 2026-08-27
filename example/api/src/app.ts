@@ -125,8 +125,37 @@ const app = createApp({
   // resolved for a caller with no session at all — see api/cart-claim.ts.
   principal: cartClaim,
 
+  // ── Each shop is a business, and a business has a name ──────────────────
+  //
+  // `tenancy { }` decides which ROWS a caller sees and stops there; the
+  // customer-facing half of *this is my shop* is mostly not rows — the name on
+  // the receipt and the address the confirmation comes from (`FJS-D126`).
+  //
+  // The source is the registry's own per-tenant meta blob, which has carried
+  // arbitrary JSON since tenants existed and which nothing has ever read. A
+  // control plane rather than a row, and the reason the ruling refused to
+  // declare the source: basecamp's would be a row, an app deployed per customer
+  // would use a file, and this one already had somewhere to put it.
+  //
+  // `tenantConfigKeys` is the half that makes it safe rather than the half that
+  // makes it work — only these two paths apply, a resolver answering anything
+  // else is refused by name, and `database` could not be listed here even by
+  // mistake: junction refuses the reserved paths at boot, and a shop naming its
+  // own database file is every other shop's orders.
+  // Under `.config` rather than at the top of the blob: the registry's meta is
+  // general-purpose and a shop may keep anything there, while junction refuses a
+  // key `tenantConfigKeys` does not name — so reading the blob whole would make
+  // one unrelated field break every request for that shop.
+  tenantConfig:     (shop: string) => (shops.meta(shop).config ?? {}) as Record<string, unknown>,
+  tenantConfigKeys: ['name', 'mail.from'],
+
   config: {
     name: 'shop', port: PORT, apiPrefix: '/api',
+
+    // The FLOOR for every shop. A shop whose registry meta names neither reads
+    // exactly these, which is what makes adopting per-shop config free for a
+    // fleet of one.
+    mail: { from: 'shop@example.test' },
 
     // The other half of the File column — db.ts writes the bytes under here
     // and this serves them. Rooted at the storage directory rather than at a

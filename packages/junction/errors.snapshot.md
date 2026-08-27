@@ -113,6 +113,7 @@ something that will never work, or not to retry something that would.
 | `TransitionConflictError` | status 409 · retryable true | `Conflict` | 409 | true | — |
 | `TransitionGateError` | status 403 · retryable false | `Forbidden` | 403 | false | — |
 | `TransitionNotFoundError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
+| `TransitionSystemError` | status 403 · retryable false | `Forbidden` | 403 | false | — |
 | `TransitionViolationError` | status 409 · retryable false | `Conflict` | 409 | false | — |
 | `UniqueConflictError` | status 409 · retryable false | `Conflict` | 409 | false | list(0) |
 | `ValidationError` | nothing | `BadRequest` | 400 | — | list(1) |

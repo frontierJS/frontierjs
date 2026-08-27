@@ -90,7 +90,7 @@ export async function loadApp(modulePath: string, exportName: string | null, ser
   if (exportName) {
     const picked = mod[exportName]
     if (picked === undefined) fatal(`${rel(abs)} has no export \`${exportName}\` — found: ${Object.keys(mod).join(', ') || '(none)'}`)
-    return build(picked, exportName, servicesDir)
+    return build(picked, exportName, servicesDir, abs)
   }
 
   const apps      = Object.entries(mod).filter(([, v]) => isApp(v))
@@ -106,7 +106,7 @@ export async function loadApp(modulePath: string, exportName: string | null, ser
   if (candidates.length > 1)
     fatal(`${rel(abs)} exports more than one candidate — name one with --export: ${candidates.map(([k]) => k).join(', ')}`)
 
-  return build(candidates[0][1], candidates[0][0], servicesDir)
+  return build(candidates[0][1], candidates[0][0], servicesDir, abs)
 }
 
 // A committed artefact may not vary with a developer's local switches, and one
@@ -125,23 +125,31 @@ function clearLocalToggles(): void {
   delete process.env.DEVTOOLS
 }
 
-async function build(value: unknown, label: string, servicesDir: string | null): Promise<App> {
+async function build(value: unknown, label: string, servicesDir: string | null, modulePath: string): Promise<App> {
 
   const app = typeof value === 'function'
     ? await quietly(() => Promise.resolve((value as () => App | Promise<App>)()))
     : value
   if (!isApp(app)) fatal(`\`${label}\` is not a Junction app (no .service()/.configure())`)
 
-  // Autoload is a `needsHost` phase — its default directory is resolved against
-  // `Bun.main`, which here is this tool, so the test lifecycle skips it and an
-  // app whose services are all autoloaded describes as empty. Named explicitly
-  // and run in the same position production runs it: before boot, so a plugin's
-  // boot() sees every service.
-  if (servicesDir) {
-    const abs = resolve(servicesDir)
-    if (!existsSync(abs)) fatal(`No services directory at ${rel(abs)}`)
-    const { autoloadServices } = await import('../src/core/loader.ts')
-    await quietly(() => autoloadServices({ dir: abs, app, registry: app.services }))
+  // The app's own autoload phase resolves its directory against `Bun.main`,
+  // which HERE is this tool — so an app whose services are all autoloaded
+  // describes as empty. Asked the same question the app asks, with the app's
+  // own module named as the entry: `--services` is an override now rather than
+  // the only way to get an answer, which is what kept the snapshot of an app's
+  // surface dependent on a flag somebody had to remember (`FJS-458`).
+  //
+  // Loaded here rather than left to the phase, and in the position production
+  // runs it — before boot, so a plugin's boot() sees every service.
+  const { autoloadServices }   = await import('../src/core/loader.ts')
+  const { resolveServicesDir } = await import('../src/core/services-dir.ts')
+  const resolved = resolveServicesDir({ entry: modulePath, declared: servicesDir })
+
+  if (servicesDir && resolved.source === 'declared-missing')
+    fatal(`No services directory at ${rel(resolved.probed[0])}`)
+
+  if (resolved.dir) {
+    await quietly(() => autoloadServices({ dir: resolved.dir!, app, registry: app.services }))
   }
 
   // `load-config` is a `needsHost` phase too, and skipping it means every

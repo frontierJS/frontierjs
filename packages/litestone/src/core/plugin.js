@@ -77,14 +77,18 @@ export class Plugin {
 // ─── AccessDeniedError ────────────────────────────────────────────────────────
 
 export class AccessDeniedError extends Error {
-  constructor(message, { model, operation, required, got } = {}) {
+  constructor(message, { model, operation, required, got, capability } = {}) {
     super(message ?? `Access denied on "${model}" for "${operation}"`)
     this.name    = 'AccessDeniedError'
     this.code    = 'ACCESS_DENIED'
     this.model   = model
     this.operation = operation
+    // The gate's two numbers. Absent on a capability refusal, which is not a
+    // point on their scale — `capability` is what that one carries instead, so a
+    // reader can tell the two refusals apart without parsing the sentence.
     this.required  = required
     this.got       = got
+    this.capability = capability
   }
 }
 

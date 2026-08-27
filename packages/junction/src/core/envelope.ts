@@ -52,6 +52,24 @@ export interface ServiceResult<T = unknown> {
   total?:  number
   limit?:  number
   offset?: number
+
+  /**
+   * The far edge of this window, opaque, or `null` where there is not one
+   * (`FJS-D145`).
+   *
+   * A live list grows rather than stepping: it sends this back as `$after` to
+   * take the next slice, which is a keyset scan and never skips or repeats a
+   * row the way an offset does under a moving list. Minted from the last row a
+   * page already holds, so an ordinary page carries one at no extra cost and a
+   * caller that never grows a window pays nothing for it.
+   *
+   * `total` is absent on the keyset path — that answer runs no COUNT, and
+   * reporting the page length as the total is what makes a list claim to be
+   * complete every time it is capped.
+   */
+  endCursor?: string | null
+  /** Is there anything past this window? Answered on both paths. */
+  hasMore?:   boolean
 }
 
 export type ListResult<T = unknown>   = ServiceResult<T[]>   & { kind: 'list' }
@@ -93,13 +111,16 @@ export function single<T>(object: string, data: T, errors: unknown[] = []): Sing
 export function list<T>(
   object: string,
   data:   T[],
-  meta:   { total?: number; limit?: number; offset?: number } = {},
+  meta:   { total?: number; limit?: number; offset?: number
+            endCursor?: string | null; hasMore?: boolean } = {},
   errors: unknown[] = []
 ): ListResult<T> {
   const out: ListResult<T> = { kind: 'list', object, data, errors }
   if (meta.total  !== undefined) out.total  = meta.total
   if (meta.limit  !== undefined) out.limit  = meta.limit
   if (meta.offset !== undefined) out.offset = meta.offset
+  if (meta.endCursor !== undefined) out.endCursor = meta.endCursor
+  if (meta.hasMore   !== undefined) out.hasMore   = meta.hasMore
   return out
 }
 
@@ -160,7 +181,14 @@ export function describeShape(value: unknown): string {
 // `kind` and `object` are in it because the client asks this of what came off
 // the wire: a pre-`kind` envelope from an older server is `{ object: 'list',
 // data, total }`, and reading its own field names as strays would refuse it.
-const LIST_KEYS = new Set(['data', 'total', 'limit', 'offset', 'skip', 'errors', 'kind', 'object'])
+// What a list answer may carry. A key not in here is refused loudly rather
+// than dropped, because a rebuild keeps only what this set names and a summary
+// riding alongside the rows would vanish in silence. `endCursor`/`hasMore` are
+// the window's two (`FJS-D145`).
+const LIST_KEYS = new Set([
+  'data', 'total', 'limit', 'offset', 'skip', 'errors', 'kind', 'object',
+  'endCursor', 'hasMore',
+])
 
 // Named rather than duck-typed on one property, because each of these reaches a
 // service by a different mistake: a Response is a raw-route handler's return
@@ -246,13 +274,18 @@ export function wrapResult(raw: unknown, object: string, method = ''): ServiceRe
         `drops the rest. A summary alongside rows is its own named method.`
       )
     }
-    const p = raw as { total?: number; limit?: number; offset?: number; skip?: number; errors?: unknown[] }
+    const p = raw as {
+      total?: number; limit?: number; offset?: number; skip?: number
+      endCursor?: string | null; hasMore?: boolean; errors?: unknown[]
+    }
     // Canonical pagination field is `offset`; `skip` accepted from services
     // written Feathers-style so it isn't silently dropped.
     return list(object, shaped.data, {
       total:  p.total,
       limit:  p.limit,
       offset: p.offset ?? p.skip,
+      endCursor: p.endCursor,
+      hasMore:   p.hasMore,
     }, p.errors ?? [])
   }
 

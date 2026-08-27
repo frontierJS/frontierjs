@@ -40,6 +40,39 @@ const SCHEMA = `
   }
 `
 
+// The same shape as SCHEMA, plus the grant column. Separate because a
+// `Capability[]` only exists once a model declares `@@capabilities` — the type is
+// synthesised from the models that opt in, so an empty grid makes it unwritable.
+const GRANTS = `
+  tenancy { strategy row  column workspaceId  claim workspaceId }
+
+  model Member {
+    id           Int          @id @default(autoincrement())
+    workspaceId  String
+    userId       String
+    role         String
+    capabilities Capability[] @default("[]")
+    @@tenant(none)
+  }
+
+  model Doc {
+    id          Int    @id @default(autoincrement())
+    workspaceId String
+    title       String
+    @@capabilities
+  }
+`
+
+const grantResolver = (tenant: string | null) => membershipClaim({
+  tenantFrom:   () => tenant,
+  model:        'member',
+  subject:      'userId',
+  tenant:       'workspaceId',
+  standing:     'role',
+  standingAs:   'memberRole',
+  capabilities: 'capabilities',
+})
+
 async function seeded() {
   const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
   const sys = db.asSystem()
@@ -292,6 +325,60 @@ describe('membershipClaim()', () => {
     }))
     rowsOf(await app.service('docs').find({}, AS_U1))
     expect(row).toMatchObject({ userId: 'u1', role: 'admin' })
+  })
+
+  test('a grant column reaches the Data boundary\'s grid, per request per tenant', async () => {
+    // `FJS-D149`: a capability is always per tenant, so it is read off the
+    // MEMBERSHIP row — the same row and the same query the standing comes from,
+    // resolved fresh on every request and cached nowhere. The proof is that the
+    // same person holds a different set in each workspace and the boundary
+    // grades them differently, which is the thing a session-held set cannot do.
+    const db: any = await createClient({ db: ':memory:', schema: GRANTS })
+    const sys = db.asSystem()
+    await sys.member.create({ data: { workspaceId: '1', userId: 'u1', role: 'admin', capabilities: ['Doc.update'] } })
+    await sys.member.create({ data: { workspaceId: '2', userId: 'u1', role: 'admin', capabilities: [] } })
+    const one = await sys.doc.create({ data: { workspaceId: '1', title: 'a' } })
+    const two = await sys.doc.create({ data: { workspaceId: '2', title: 'b' } })
+
+    const editIn = async (tenant: string, id: number) => {
+      const app = createApp({ db, principal: grantResolver(tenant) })
+      app.services.register(createService({
+        name: 'docs',
+        methods: ['patch'],
+        async patch(ctx: ServiceContext) {
+          return (ctx.locals.db as any).doc.update({ where: { id }, data: { title: 'edited' } })
+        },
+      }))
+      return app.service('docs').patch(String(id), {}, AS_U1)
+    }
+
+    // Workspace 1: the membership carries the grant, so the write goes through.
+    expect((await editIn('1', one.id) as { title: string }).title).toBe('edited')
+
+    // Workspace 2: same person, same standing, same request shape — and the
+    // membership there carries nothing, so the grid refuses by name. Nothing
+    // about the session differs between these two calls.
+    const err: any = await editIn('2', two.id).then(() => null, (e: unknown) => e)
+    expect(err).not.toBeNull()
+    expect(err.message).toMatch(/Doc\.update/)
+  })
+
+  test('an absent grant column is an empty set, and a non-list is refused by name', async () => {
+    // Absent and empty are the same answer and both are legitimate — a fresh
+    // viewer holds nothing. A column that is not a list is neither, and coercing
+    // it would grade every capability check against a value nobody declared.
+    const db: any = await createClient({ db: ':memory:', schema: GRANTS })
+    await db.asSystem().member.create({ data: { workspaceId: '1', userId: 'u1', role: 'admin' } })
+    const { app, seen } = await appWith(db, grantResolver('1'))
+    rowsOf(await app.service('docs').find({}, AS_U1))
+    expect(seen.user).toMatchObject({ capabilities: [] })
+
+    const bad = createApp({ db, principal: membershipClaim({
+      tenantFrom: () => '1', model: 'member', subject: 'userId',
+      tenant: 'workspaceId', capabilities: 'role',   // a String column, not a grant
+    }) })
+    bad.services.register(createService({ name: 'docs', async find() { return [] } }))
+    await expect(bad.service('docs').find({}, AS_U1)).rejects.toThrow(/not a list/)
   })
 
   test('an accessor that does not exist is refused by name', async () => {

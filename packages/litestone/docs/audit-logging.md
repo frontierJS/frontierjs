@@ -177,8 +177,22 @@ Also applies to JSONL databases. Accepts: `30d`, `24h`, `2w`, `1y`.
 
 **On startup means only on startup**, and a long-lived process is the normal case: the
 pass runs inside `createClient` and nothing reschedules it, so a server that boots on
-Monday prunes on Monday and not afterwards. The cutoff is also a rolling instant rather
-than a day boundary — `Date.now()` minus the duration, with `d` a flat 24 hours and `y`
-a flat 365 days — so *ninety days* is measured from whenever the process last started,
-in no particular zone. Both are `FJS-521`; a window that has to hold for a regulator
-needs a job, not a boot.
+Monday prunes on Monday and not afterwards. **`db.asSystem().$retain()` is the same
+pass on demand**, and scheduling it is the app's — the clock belongs to the queue
+(`FJS-D36`) and litestone cannot import it:
+
+```js
+export default defineJob('retention', () => db.asSystem().$retain(), { cron: '0 4 * * *' })
+```
+
+`asSystem()` because a sweep is a DELETE against the base table and applies no gate, no
+row policy and no `@@softDelete`; every other flavour of client refuses it by name. It
+answers one row per table it touched — `{ model, table, removed }`, plus `error` where a
+table would not sweep, which is worth logging: a declared policy quietly not applying is
+the failure the whole declaration exists to prevent.
+
+The cutoff is a **rolling instant** rather than a day boundary — `Date.now()` minus the
+duration, with `d` a flat 24 hours and `y` a flat 365 days — so *ninety days* is measured
+from the moment the pass runs, in no particular zone. That half is stated rather than
+fixed: a calendar-aligned window needs a zone the seed has no way to say yet
+(`FJS-D143`).

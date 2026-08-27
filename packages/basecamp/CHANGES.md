@@ -1,5 +1,266 @@
 # Changes — Basecamp
 
+## 2026-08-26 — capabilities adopted, and the never-escalate guard grew its second axis
+
+`IDEAS/permission-sets.md` step 7 · `FJS-529` closed. Typecheck at baseline.
+
+`Server` and `Environment` declare `@@capabilities`, `Environment.variables`
+carries `@capability`, and `WorkspaceMember.capabilities` is the grant column —
+10 capabilities, grouped by model, which is a picker. The two models are the
+design's own worked examples: *restart a machine* is authority every developer
+grades USER(4) for and only some of them are on call for, and `setVariable` is
+one write to `Environment` that the gate had no way to separate from renaming it.
+
+`api/src/core/capabilities.ts` is the one owner of role → set. Every membership
+write stamps through it — setup, the hub, an invitation accepted, `addMember`,
+`setMemberRole`, the seed and the test fixtures — so a grant a fixture invents
+cannot differ from one production writes. A role is a DEFAULT set and not a
+synonym for one: the column is the truth afterwards, which is what lets an
+operator take one grant off one person without inventing a role to hold the
+difference. `setMemberRole` re-stamps rather than merging, since leaving the old
+grants behind would make a demotion change a word on screen and nothing else.
+
+**`refuseRoleAboveOwn` is `refuseGrantAboveOwn` and grades two axes.** `FJS-529`
+proposed the subset rule as a replacement for the ordinal one; that is wrong here
+and the suite said so. `admin` and `owner` hold the same grid — what separates
+them is the workspace itself, which is the gate's business — so a subset test
+cannot tell an admin minting an owner from an admin appointing an admin, which is
+`FJS-410` arriving again. The ladder catches a step UP, `grantsWithin()` catches
+a step SIDEWAYS, and neither subsumes the other. Both spellings a payload can use
+are graded by one rule.
+
+It stays a hook rather than becoming the column's own guard, and the reason is
+measured: all three membership writers go through `asSystem()` — membership
+decides access and cannot be read through the caller it decides about — and
+`asSystem()` has no principal, so *what you hold* is undefined there rather than
+merely skipped. Litestone's `Capability[]` guard covers every other door.
+
+**Two `capability-ladder` warnings are deliberate.** `fli check` says a model
+graded by capability usually wants its gate flat at the read floor, and `Server`
+and `Environment` keep `@@gate("2.4.4.5")`. The grant table is bounded by the
+gate — a developer is never handed `Server.drain`, which is `@gate(5)` — so the
+ladder never refuses a legitimate holder, and it is what still catches a grant
+mis-stamped by a bug, a migration or a hub screen. The warning names something
+the rule cannot judge from the schema alone; this is the answer.
+
+## 2026-08-26 — every service reaches the REQUEST's client, not the app's
+
+`FJS-519` part 2. Fourteen sites across eleven services moved from
+`app.db.asSystem()` to `$.db.asSystem()`. The app-level client carries no
+principal and therefore no tenant claim, so under `strategy row` it read and
+wrote **every** workspace with a 200 — and part 1 made `asSystem()` keep the
+tenancy scope of the client it is reached from, which only helps a client that
+has one.
+
+**A rename rather than a per-site judgement**, which is what the measurement
+bought: `$.db` resolves on every READ, so the lazy `const sys = () => $.db.asSystem()`
+that eleven of these files already had resolves against the call it is invoked
+inside. Eight of the models involved are genuinely tenant-scoped — `AppServer`,
+`Channel`, `DeploymentStep`, `Invitation`, `JobRun`, `Recipe`, `Volume`,
+`Server` — so those eight gained real scoping. Three touch `@@tenant(none)`
+models (`User`, `WorkspaceMember`, `Workspace`) and are unchanged in behaviour;
+they moved anyway, because leaving them means carrying an allowance forever.
+
+**Three sites stay, and each has a reason rather than a deferral.** `/hub/` is
+the cross-workspace tier and reaching every tenant is what it is for.
+`api-keys/scopes.ts` reads the key record that DECIDES the caller's access —
+the class `core/hooks.ts:142` is excluded for, and through a client already
+scoped by that answer it could refuse every API key as unrecorded.
+`jobs/job-schedule.ts` runs at BOOT, where there is no call scope at all and
+`$` throws by name; it restores every tenant's schedules deliberately
+(`FJS-327`).
+
+The eleven deferred allowances in `scripts/ci-allowances.json` are gone. The
+three that remain say why they are correct instead of when they will be fixed.
+
+210 tests pass, typecheck clean.
+
+
+## 2026-08-26 — a rollout percentage that applies
+
+`FJS-124`. `rollout` was stored, returned by `resolve`, and applied by nothing, so a
+flag at 10% behaved as on-or-off for its whole life.
+
+What was owed was less a branch than an **agreement**: the decision has to be made where
+the user is, per request, in whatever language the SDK is written in — so the server and
+every SDK must land on the same answer for the same user, or the percentage names a
+different tenth in each of them.
+
+**MurmurHash3 x86 32-bit over `<flagKey>:<unitId>`, mod 100**, published beside
+`resolveIn()` and executed by it. Each part is load-bearing:
+
+- **murmur3** — synchronous, dependency-free, ~30 lines, stock implementation in every
+  language an SDK might be written in. A crypto hash is reproducible too, but WebCrypto
+  is async and a flag check sits in a render path.
+- **the flag key inside the hash** — so two flags at 10% do not select the same tenth.
+  Hashing the unit alone gives every flag one cohort, and a staged rollout then tests the
+  same unlucky group over and over.
+- **mod 100** — matching `rollout Int @gte(0) @lte(100)`. A finer bucket is a number the
+  column cannot express.
+
+`variantFor` is the same rule salted apart (`:variant`), because sharing one bucket puts
+everyone at the front of a rollout into the first arm of the experiment they are there to
+test. A pinned variant on an override still wins — that is a decision somebody made.
+
+`resolve` takes an optional `unitId` and decides for it, reporting `bucket`, `inRollout`
+and `on` beside the configured `isEnabled`; a screen explaining *why* needs the pair, and
+"this user is at 47, the rollout is 10" is the sentence that makes a percentage
+trustworthy. Absent, the answer is exactly what it was. This service never invents one.
+
+**`rollout` now defaults to 100**, on the flag, on the override and in `setOverride`'s
+coercion. That is not a detail: `isEnabled` is the switch and the rollout NARROWS it, so
+the pair a new flag starts with has to read "off, and when you turn it on, everyone".
+At `@default(0)` enabling a flag did nothing for anybody the moment an SDK started
+bucketing — with the screen showing it on — which is a percentage feature whose default
+percentage is nobody. Rolling out to nobody is `isEnabled: false`, the state that already
+says it. A stated 0 is still a real 0; the fallback fires only on an absent column.
+
+**The canonical vectors are asserted first**, because they are what makes *use a stock
+murmur3* a sufficient instruction. Then the three properties a rollout is used for, none
+of which follows from the hash being correct: even spread, independence between flags,
+and that raising 10 to 20 never takes the feature off anyone. 22 tests, no fixture.
+
+## 2026-08-26 — three detail screens watch their row instead of holding a copy
+
+`service.get(id)` answers a plain object and nothing reaches a plain object, so
+`environments/[id]`, `projects/[id]` and `servers/[id]` were stale from the
+moment somebody else wrote the row — and looked correct throughout, because each
+re-reads after its own actions and never after anyone else's (`FJS-533`).
+
+`servers/[id]` is the interesting one: the ROW is a subscription now, and the
+`on('*')` handler it already had is kept for the TRAIL, which is a custom method
+no announcement carries. Its `act()` no longer assigns the answer over `server`
+— the move's own announcement carries it — because assigning would race that
+push and win with the older object.
+
+The other detail screens were left deliberately. `apps`, `dashboards`,
+`blueprints`, `deployments` and `jobs` compose children in `get()` that the list
+read does not carry, and a store node holds one shape: watching them drops the
+children at the first push. Measured rather than reasoned — converting
+`apps/[id]` took `bun run verify` from 302/302 to two failures on hostnames.
+
+## 2026-08-26 — `Server`'s engine moves say they are the engine's
+
+Five of `Server`'s eight declared moves are decided by a machine, and the schema
+had no way to say so. `checkIn` carried `@gate(8)`, which admits no caller at
+all, and the four `report*` moves carried nothing.
+
+They carry `@system` now (`FJS-D150`), and the four reports carry `@gate(5)`
+beside it, because a person presses *Sync from provider* and the provider's
+answer decides the move: the engine makes it, an administrator asks for it.
+`sync` names the column on the write — `transition(id, move, { system: true })`
+— so the caller keeps their gate, their row policies and their audit actor,
+which `asSystem()` would have cost.
+
+**What it recovered**: `checkIn` was declared `@gate(8)` and the machine had
+never run. The heartbeat writes `status` as one column of one update — splitting
+it out would write and announce the row twice for a single check-in — so it
+carried its own `CHECK_IN_FROM` set under a comment admitting the two had to
+agree by hand. The set is gone; the from-state is asked of the schema through
+`transitions(row)`, off the row already in hand.
+
+## 2026-08-26 — the audit trail is a window that grows
+
+`/admin/audit/` read `service.find(…, { limit: 50 })` — a hard cap with nothing
+saying rows were missing, which reads exactly like a trail that has fifty rows.
+And a trail is the shape a numbered page is worst for: it only grows, and it
+grows at the end a reader starts from, so between asking for page 1 and page 2
+every offset has moved by however many things happened in between — a row served
+twice and another skipped, on the one screen in this app whose job is to be
+complete.
+
+It is a window now (`FJS-D145`). `load()` takes the first one, `more()` grows it
+from the far edge by the sort keys of the last row rather than by a count of
+rows before it, and the rows live in the resource's store — this screen holds no
+array of its own, so a row cannot be in the window and not on the table.
+
+**The service half is `findWindow`**, junction's own, rather than a second copy
+of the two paths. The audit find is hand-written on purpose (it forces
+`workspaceId` and declares the three filters it exposes), and `getPagination`
+grew `after` beside `limit` and `offset` — a hand-written find that reads two of
+the three answers page one to every press of *load more*.
+
+**The drive found a framework defect doing it** (`FJS-535`): five fixture rows
+sharing one `createdAt` across the 50-row edge, two of them gone, because the
+page was ordered by `createdAt` alone while the cursor was minted in the total
+order. `web/test/audit-fixture.mjs` is the fixture that makes it visible — the
+seeder writes about fourteen trail rows per workspace, which is a fine example
+and a useless window, since a window with nothing past its edge cannot be told
+from a hard cap.
+
+Nine checks in `verify:screens`, and two of them are the argument: three rows
+written ABOVE the window between reading it and growing it, which under an
+offset would repeat three rows from page one; and the tie block, which under a
+cursor built from the sort column alone loses two.
+
+`/activity/` still reads a flat 100 and is deliberately unchanged: it merges the
+trail with `servers.feed`, sorted by time, and growing one source alone makes
+the tail of a merged feed silently one-sided. A window there is a cursor on the
+fleet's own events first.
+
+## 2026-08-26 — one name for the Data boundary
+
+`app.data` is gone. It was a second claimed name for the object already on
+`app.db` — `app.data === app.db` was true — and it existed because junction
+typed `App.db` as `unknown` and Invariant 5 forbids narrowing a field by
+redeclaring it. So this app claimed a name it could type, and then the alias won:
+29 reads against `app.db`'s three, with the declaration itself saying *nothing
+here reads it, and nothing should*.
+
+Junction now exports `interface AppDb {}` (`FJS-532`), so the type comes from an
+augmentation:
+
+```ts
+declare module '@frontierjs/junction' {
+  interface AppDb extends BasecampDb {}
+}
+```
+
+`app.claim('data', db)` is deleted and all 25 reads are `app.db`.
+
+**One test failed and it is the one worth recording.**
+`restore-schedules.test.ts` builds its app by hand — `{ data: env.db, jobs,
+logger }` — so the rename moved the source and left the stub, and four cases read
+`undefined.asSystem`. A hand-built collaborator is exactly what the house rule
+about fake clients is about, and a rename is where it shows.
+
+182 pass, typecheck baseline unmoved. This does NOT move anything onto `$.db`,
+which is `FJS-519` part 2 and is a per-site judgement — the hub reads across
+tenants on purpose, three caravan handlers have no service call to resolve
+against, and `core/hooks.ts` resolves the claim itself.
+
+## 2026-08-26 — a spent nonce outlives the process, and two derived columns say who writes them
+
+**`OutpostNonce`** (`FJS-376`). Replay protection was a module-level `Map`, which
+is per PROCESS: a request captured at one replica replayed at the other passed,
+and a restart forgot everything still inside the five-minute window. It is a
+table now, in the app's own database, where the outbox and the job queue already
+put what must survive a process.
+
+The primary key is the nonce, and that is the mechanism rather than a detail:
+**the claim is the INSERT.** Asking whether the row exists and then writing it is
+a race between exactly the two replicas this exists for — both would find it
+absent. A duplicate key is refused by SQLite atomically, and that refusal is the
+replay. Anything other than a `UniqueConflictError` propagates: reporting a
+broken database as *replayed* refuses the request, which is the safe direction,
+and hides the breakage behind a 401 that reads as the caller's problem.
+
+Three tests, and two of them fail against the old Map — a nonce written straight
+into the table is refused by a process that never verified the request carrying
+it, which is the second replica expressed testably.
+
+**`ApiKey.tokenHint` and `credentialId` are `@system`** (`FJS-095`). Both are
+derived from a token that does not exist when the request is made, and
+`tokenHint` was NOT NULL and therefore in create-mode `required` — so a browser
+validating against the schema refused every create by naming a field the form
+has no box for. The app fills them by naming the columns on the write, which
+keeps the gate, the row policies and the audit actor where `asSystem()` would
+drop all three to set two values.
+
+`ApiKey.mesa` still says `validate: false`, now for one column and a stated
+reason: `userId` is genuinely caller-supplied, since a key may be issued to a
+bot. The way out is an owner control on the create form, not another annotation.
+
 ## 2026-08-26 — the audit trail is scoped by the schema, and a null means nobody
 
 `AuditEvent` said `@@tenant(none)` and declared no policy, so the only thing

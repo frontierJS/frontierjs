@@ -105,8 +105,15 @@ app wrong under load, and the fix is one attribute plus a `WHERE version = ?`.
 
 ## 2. Exact numbers — `@scale(n)`, and `@money` on top of it
 
-> **RULED 2026-08-25 — `FJS-D142`.** Unbuilt, but the shape is settled and this
-> section is now the argument rather than the proposal. The ruling changed two
+> **RULED 2026-08-25 — `FJS-D142`. BUILT 2026-08-26.** `Int @scale(n)` and
+> `Int @money(…)` ship, with the refusals in `test/exact-numbers.test.ts` and the
+> page at `packages/litestone/docs/exact-numbers.md`. Two things the build
+> changed about this section: the ISO table is read off
+> `Intl.supportedValuesOf('currency')` rather than shipped — which is the only
+> way a typo'd code is refusable, since `Intl.NumberFormat` answers two decimal
+> places for `UDS` rather than throwing — and *the column's own name* below
+> closed itself, because under the integer return `cents` reading back `1299` is
+> honest. This section is now the argument rather than the proposal. The ruling changed two
 > things in it: the case is led by multiplication and comparison rather than by
 > `SUM` (measured — see *Where the float bites*), and **what comes back in JS is
 > the integer**, not the float an earlier draft asked for. Prior art is folded in

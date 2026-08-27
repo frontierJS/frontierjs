@@ -23,6 +23,9 @@ import { signRequest } from '@frontierjs/toolbelt/signature'
 import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
+import { grantsFor, grantsWithin } from '../src/core/capabilities.ts'
+import { refuseGrantAboveOwn }    from '../src/core/hooks.ts'
+import { MEMBERSHIP }             from '@frontierjs/junction'
 
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
@@ -61,8 +64,13 @@ beforeAll(async () => {
   ws = await sys.workspace.create({
     data: { accountId: acct.id, name: 'Fleet', slug: `fleet-${uniq()}`, ownerId: o.id },
   })
+  // Stamped through the app's own table rather than by hand: a fixture that
+  // invents its own grants tests a grid nothing in production produces.
   for (const [u, role] of [[o, 'owner'], [d, 'developer'], [v, 'viewer']] as const)
-    await sys.workspaceMember.create({ data: { workspaceId: ws.id, userId: u.id, role, acceptedAt: new Date().toISOString() } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: ws.id, userId: u.id, role,
+      capabilities: grantsFor(role), acceptedAt: new Date().toISOString(),
+    } })
 
   // The workspace id rides on the SESSION here. resolveWorkspaceId() reads the
   // header first, then ?workspace_id, then the principal.
@@ -298,7 +306,8 @@ describe('the two transports answer the same app', () => {
       data: { accountId: acct.id, name: 'Parity', slug: `pw-${uniq()}`, ownerId: user.id ?? user.userId },
     })
     await sys.workspaceMember.create({
-      data: { workspaceId: wsp.id, userId: user.id ?? user.userId, role: 'owner', acceptedAt: new Date().toISOString() },
+      data: { workspaceId: wsp.id, userId: user.id ?? user.userId, role: 'owner',
+              capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
     })
     const login = await penv.app.auth.login(email, 'hunter2hunter2')
     token = login.token ?? login.accessToken
@@ -331,7 +340,8 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
     const acct = await sys.account.findFirst({ where: {} })
     const u    = await sys.user.create({ data: { email: `q-${uniq}@x.co`, accountId: acct.id } })
     await sys.workspaceMember.create({
-      data: { workspaceId: ws.id, userId: u.id, role: 'developer', acceptedAt: new Date().toISOString() },
+      data: { workspaceId: ws.id, userId: u.id, role: 'developer',
+              capabilities: grantsFor('developer'), acceptedAt: new Date().toISOString() },
     })
 
     // No workspaceId on the session — the third fallback cannot answer, so the
@@ -504,6 +514,67 @@ describe('an outpost endpoint takes a signature or nothing', () => {
 
     expect((await req.send({ ...honest, outpost_url: 'http://attacker.invalid' })).status).toBe(401)
   })
+
+  // ── replay ──────────────────────────────────────────────────────────
+  // The fifth refusal, and the only one with a lifetime: the other four are
+  // decidable from the request alone, where this one needs memory of what has
+  // already arrived (`FJS-376`).
+
+  test('a captured request replayed is refused, and the first one still worked', async () => {
+    const body  = { outpost_version: '0.4.2', health: { cpu: 2, memory: 8 } }
+    const path  = `/servers/${machine.id}`
+    const heads = await signed(path, body)
+
+    const send = () => {
+      const req = env.http.post(path).set('x-service-method', 'heartbeat')
+      for (const [k, v] of Object.entries(heads)) req.set(k, v)
+      return req.send(body)
+    }
+
+    expect((await send()).status).toBe(200)
+    expect((await send()).status).toBe(401)
+  })
+
+  test('the memory is the DATABASE, which is what a second replica shares', async () => {
+    // The proof that the store is not a per-process Map: this nonce is written
+    // straight into the table and nothing in THIS process has ever verified a
+    // signature carrying it. A Map would have no idea and let it through —
+    // which is exactly what a second replica used to do with a request
+    // captured at the first, and what a restart used to do inside the window.
+    const sys   = env.system as any
+    const nonce = crypto.randomUUID()
+    await sys.outpostNonce.create({ data: { nonce } })
+
+    const body = { outpost_version: '0.4.3' }
+    const path = `/servers/${machine.id}`
+    const req  = env.http.post(path).set('x-service-method', 'heartbeat')
+    const hs   = await signRequest({
+      secret: SECRET, method: 'POST', path, body: JSON.stringify(body),
+      timestamp: Math.floor(Date.now() / 1000), nonce,
+    })
+    for (const [k, v] of Object.entries(hs)) req.set(k, v)
+
+    expect((await req.send(body)).status).toBe(401)
+  })
+
+  test('a spent nonce is swept once it can no longer be replayed', async () => {
+    // The table only has to remember as long as the signature is live — five
+    // minutes — and the sweep runs on write rather than on a timer, so there is
+    // no clock to own and nothing grows while nothing is arriving.
+    const sys  = env.system as any
+    const old  = crypto.randomUUID()
+    await sys.outpostNonce.create({
+      data: { nonce: old, seenAt: new Date(Date.now() - 3_600_000).toISOString() },
+    })
+
+    const body = { outpost_version: '0.4.4' }
+    const path = `/servers/${machine.id}`
+    const req  = env.http.post(path).set('x-service-method', 'heartbeat')
+    for (const [k, v] of Object.entries(await signed(path, body))) req.set(k, v)
+    expect((await req.send(body)).status).toBe(200)
+
+    expect(await sys.outpostNonce.findUnique({ where: { nonce: old } })).toBeNull()
+  })
 })
 
 // ─── Nobody grades themselves, and nobody grants above their own standing ────
@@ -575,6 +646,40 @@ describe('a workspace role is not a thing you may hand yourself', () => {
       .rejects.toThrow(/cannot grant the owner role/)
   })
 
+  test('…nor one SIDEWAYS — a peer on the ladder is not a subset of you', async () => {
+    // `FJS-529`, and the case a level comparison structurally cannot see:
+    // `billing` and `developer` are both *below admin* on one axis, so
+    // `ROLE_LEVEL[granted] > ROLE_LEVEL[mine]` is false and the ordinal guard
+    // passes while the two GRIDS contain neither the other.
+    //
+    // Asked of the RULE rather than staged as a scenario, and deliberately.
+    // basecamp has no live sideways pair today: `billing` holds nothing (there
+    // is no billing model yet), `admin` and `owner` hold the same grid, and
+    // nobody below admin may manage the team at all — so every arrangement of
+    // real roles is either legitimate or refused by `requireWorkspaceRole`
+    // before this hook is reached. The rule is live now and the app that trips
+    // it is one schema change away, which is exactly when a test nobody wrote
+    // would have been wanted.
+    expect(grantsWithin(['Server.drain'], ['Server.reboot'])).toEqual(['Server.drain'])
+    expect(grantsWithin(['Server.reboot'], ['Server.drain'])).toEqual(['Server.reboot'])
+    // The negative control: holding it is holding it.
+    expect(grantsWithin(['Server.reboot'], ['Server.reboot', 'Server.drain'])).toEqual([])
+
+    // And the hook applies it over BOTH spellings a payload can use, so the two
+    // cannot drift into disagreeing about one grant.
+    const guard = refuseGrantAboveOwn()
+    const asDeveloper = (data: unknown) => ({
+      data, locals: { [MEMBERSHIP]: { role: 'developer' } },
+    } as unknown as Parameters<typeof guard>[0])
+
+    expect(() => guard(asDeveloper({ capabilities: ['Server.drain'] })))
+      .toThrow(/do not hold it yourself/)
+    expect(() => guard(asDeveloper({ role: 'admin' }))).toThrow()
+    // Their own grid, either way, is not an escalation.
+    expect(() => guard(asDeveloper({ capabilities: ['Server.reboot'] }))).not.toThrow()
+    expect(() => guard(asDeveloper({ role: 'developer' }))).not.toThrow()
+  })
+
   test('an admin still manages the team at their own level', async () => {
     // The direction that must keep working — a rule that refused this would be
     // caught in a screen rather than here.
@@ -595,7 +700,8 @@ describe('a workspace role is not a thing you may hand yourself', () => {
     const wsRow = await sys.workspace.findUnique({ where: { id: ws.id } })
     const second = await sys.user.create({ data: { email: `own2-${uniq()}@x.co`, accountId: wsRow.accountId } })
     await sys.workspaceMember.create({
-      data: { workspaceId: ws.id, userId: second.id, role: 'owner', acceptedAt: new Date().toISOString() } })
+      data: { workspaceId: ws.id, userId: second.id, role: 'owner',
+              capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() } })
 
     await expect(env.as(adminS).service('workspaces')
       .call('setMemberRole', ws.id, { userId: second.id, role: 'developer' }))
@@ -654,7 +760,8 @@ describe('a job runs as whoever asked for it', () => {
     const w    = await sys.workspace.create({
       data: { accountId: acct.id, name: 'Elsewhere', slug: `else-${uniq()}`, ownerId: u.id } })
     await sys.workspaceMember.create({
-      data: { workspaceId: w.id, userId: u.id, role: 'owner', acceptedAt: new Date().toISOString() } })
+      data: { workspaceId: w.id, userId: u.id, role: 'owner',
+              capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() } })
     const server = await sys.server.create({
       data: { workspaceId: w.id, name: 'far-01', slug: `far-${uniq()}`, status: 'online' } })
     const recipe = await sys.recipe.create({
@@ -1215,5 +1322,131 @@ describe('an audited action files under the workspace that owns its subject', ()
     })
     expect(row).toBeTruthy()
     expect(row.workspaceId).toBe(ws.id)
+  })
+})
+
+// ─── @system, at the two doors it has ────────────────────────────────────
+// `tokenHint` and `credentialId` are derived from a token that does not exist
+// when the request is made. They used to be ordinary writable columns, which
+// put `tokenHint` in create-mode `required` and made a browser validating
+// against the schema refuse every create by naming a field the caller was
+// never meant to send — the reason `ApiKey.mesa` turns validation off
+// (`FJS-095`). `@system` is the declaration that says so.
+describe('a column the system writes and its caller does not', () => {
+  test('the mint still lands, and it lands through the SCOPED client', async () => {
+    const made: any = await env.as(owner).service('api-keys').create({
+      name: `ci-${Math.random().toString(36).slice(2, 8)}`,
+      scopes: ['servers:read'], expiresIn: '30d',
+    })
+
+    // The plaintext is answered once and is on no later read.
+    expect(typeof made.token).toBe('string')
+    expect(made.tokenHint).toBeTruthy()
+    expect(made.tokenHint).not.toBe(made.token)
+
+    // Written by the application naming the column, not by asSystem() — so the
+    // row still carries the audit actor, which is the whole of why `system:`
+    // exists rather than a bypass.
+    const sys = env.system as any
+    const row = await sys.apiKey.findUnique({ where: { id: made.id } })
+    expect(row.credentialId).toBeTruthy()
+    expect(row.createdBy).toBeTruthy()
+  })
+
+  test('a forged hint is not what lands — the mint overwrites it', async () => {
+    // `@system` refuses a non-system write naming the column, and on THIS
+    // model that refusal is a backstop rather than the thing a caller meets:
+    // `stampKey` is a before hook and it assigns `data.tokenHint` from the
+    // token it just minted, so a forged value is replaced before the payload
+    // reaches the Data boundary. Asserting the outcome rather than the throw,
+    // because the throw is unreachable here and a test claiming otherwise
+    // would pass for a reason that is not the reason.
+    const made: any = await env.as(owner).service('api-keys').create({
+      name: `forged-${Math.random().toString(36).slice(2, 8)}`,
+      scopes: ['servers:read'], expiresIn: '30d',
+      tokenHint: 'fjs_not…mine',
+    })
+    expect(made.tokenHint).not.toBe('fjs_not…mine')
+  })
+
+  test('the DECLARATION is what refuses — the boundary, asked directly', async () => {
+    // Where `@system` actually lives. No hook in front of it, so this is the
+    // rule itself: a scoped client naming the column is refused by name, and
+    // `system: [...]` on the same write is the application saying it meant to.
+    // Without this the service test above would pass on a schema that had
+    // dropped the annotation entirely.
+    const sys  = env.system as any
+    const user = await sys.user.findFirst({ where: {} })
+    const db   = (env.actingAs as any)({ id: user.id, workspaceId: ws.id, memberRole: 'admin' })
+    const row  = { workspaceId: ws.id, userId: user.id, name: `direct-${Math.random().toString(36).slice(2, 8)}` }
+
+    await expect(db.apiKey.create({ data: { ...row, tokenHint: 'fjs_a…b' } }))
+      .rejects.toThrow(/tokenHint/)
+
+    const ok = await db.apiKey.create({
+      data:   { ...row, tokenHint: 'fjs_a…b' },
+      system: ['tokenHint'],
+    })
+    expect(ok.tokenHint).toBe('fjs_a…b')
+  })
+})
+
+// ─── an engine move is the application's, and the schema says so ─────────
+// `Server`'s report* moves are decided by a provider and REQUESTED by a person
+// pressing *Sync from provider*, so they carry `@system @gate(5)`: the engine
+// makes the move, an administrator asks for it (`FJS-506`). Before `@system`
+// existed the only marker was `@gate(8)`, which admits no caller at all — so
+// `sync` would have had to drop to `asSystem()` and lose the audit actor.
+describe('a move the engine makes, asked for by a person', () => {
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+
+  const aServer = async (status: string) => (env.system as any).server.create({
+    data: { workspaceId: ws.id, name: `sys-${uniq()}`, slug: `sys-${uniq()}`, status },
+  })
+
+  test('an owner cannot make one by hand, at any level', async () => {
+    const server = await aServer('online')
+    await expect(env.as(owner).service('servers').patch(server.id, { status: 'stopped' }))
+      .resolves.toBeTruthy()   // narrowPatch drops `status` — this is the CRUD door
+
+    // The row did not move, which is narrowPatch. The Data boundary is the
+    // door that matters, and it refuses by name.
+    const sys = env.system as any
+    expect((await sys.server.findUnique({ where: { id: server.id } })).status).toBe('online')
+
+    const db = (env.actingAs as any)({ id: 'someone', workspaceId: ws.id, memberRole: 'owner' })
+    await expect(db.server.transition(server.id, 'reportStopped')).rejects.toThrow(/is @system/)
+  })
+
+  test('the screen is told not to offer it, and told WHY', async () => {
+    // `refusedBy` is the half a status cannot carry: *not you, ever* renders as
+    // no button, where *not senior enough* renders as a disabled one that says
+    // ask an administrator — advice that would be wrong here.
+    const server = await aServer('online')
+    const db     = (env.actingAs as any)({ id: 'someone', workspaceId: ws.id, memberRole: 'owner' })
+    const moves  = await db.server.transitions(server)
+
+    const report = moves.find((t: any) => t.name === 'reportStopped')
+    expect(report.system).toBe(true)
+    expect(report.allowed).toBe(false)
+    expect(report.refusedBy).toBe('system')
+
+    // A person's move on the same row is unaffected and still graded.
+    expect(moves.find((t: any) => t.name === 'drain')).toMatchObject({ system: false, allowed: true })
+  })
+
+  test('checkIn is the machine\'s move and the from-set comes from the schema', async () => {
+    // The heartbeat writes `status` as one column of one update, so it asks the
+    // machine rather than keeping its own copy of the from-set. A server that
+    // is DRAINING is not checking in — it stays where it is.
+    const sys      = env.system as any
+    const draining = await aServer('draining')
+    const pending  = await aServer('pending')
+
+    const can = async (row: any) =>
+      (await sys.server.transitions(row)).some((t: any) => t.name === 'checkIn')
+
+    expect(await can(pending)).toBe(true)
+    expect(await can(draining)).toBe(false)
   })
 })

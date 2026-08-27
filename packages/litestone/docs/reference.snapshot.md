@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Studio's Explore panel, which also places a word into your schema and shows you
 the diff first.
 
-**91 words** — 11 declarations · 57 field attributes · 23 model attributes.
+**96 words** — 11 declarations · 60 field attributes · 25 model attributes.
 
 ## Index
 
@@ -30,16 +30,17 @@ the diff first.
 - *Identify a row* — [`@id`](#id-field) · [`@unique`](#unique-field) · [`@map`](#map-field) · [`@default`](#default-field) · [`@sequence`](#sequence-field)
 - *Reach another row* — [`@relation`](#relation-field) · [`@from`](#from-field) · [`@edge`](#edge-field) · [`@scoped`](#scoped-field)
 - *Compute a value* — [`@computed`](#computed-field) · [`@transient`](#transient-field) · [`@derived`](#derived-field) · [`@generated`](#generated-field) · [`@hardDelete`](#harddelete-field) · [`@keep`](#keep-field)
-- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
+- *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@log`](#log-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@markdown`](#markdown-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
+- *Shape the table* — [`@scale`](#scale-field) · [`@money`](#money-field)
 - *Decide who may* — [`@allow`](#allow-field)
 
 **Model attributes**
 
-- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@strict`](#strict-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@softDelete`](#softdelete-model) · [`@@softDeleteCascade`](#softdeletecascade-model) · [`@@hasTemplates`](#hastemplates-model)
-- *Decide who may* — [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
+- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@strict`](#strict-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@softDelete`](#softdelete-model) · [`@@softDeleteCascade`](#softdeletecascade-model) · [`@@hasTemplates`](#hastemplates-model)
+- *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
 ## Declarations
@@ -510,6 +511,21 @@ model Example {
 - **Deeper** — [modelling.md](modelling.md)
 - **See also** — [`@guarded`](#guarded-field) · [`@transient`](#transient-field)
 
+#### `@capability` <a id="capability-field"></a>
+
+Writing THIS column is its own capability — `Server.hostname`, held by a Role row rather than declared anywhere. Opt-in per column and never derived wholesale: every writable column on a real app is hundreds, which is not a list anybody picks from. Needs the model's own @@capabilities, and is refused by name without it.
+
+```lite
+model Example {
+  id Int @id
+  @@capabilities
+  hostname String @capability
+}
+```
+
+- **Deeper** — [access-control.md](access-control.md)
+- **See also** — [`@@capabilities`](#capabilities-model) · [`@guarded`](#guarded-field) · [`@allow`](#allow-field)
+
 #### `@encrypted` <a id="encrypted-field"></a>
 
 Encrypted at rest. Hides the value from a reader and stays WRITABLE, which is what a caller submitting a secret needs. Not a guard: the choice is @allow('write', …) for a column some callers may set, @guarded for one only asSystem() touches, and @encrypted for one anybody may write and nobody may read back.
@@ -564,6 +580,8 @@ model Example {
   age Int @check("age >= 0")
 }
 ```
+
+- **Deeper** — [schema.md](schema.md)
 
 ### Record who and when
 
@@ -859,7 +877,7 @@ model Example {
 
 - **Deeper** — [schema.md](schema.md)
 
-#### `@time` `[(seconds: true)][(message)]` <a id="time-field"></a>
+#### `@time` `[(seconds: true[, message: "..."])]` <a id="time-field"></a>
 
 Must be HH:MM, 24-hour, leading zeros required. `seconds: true` also accepts HH:MM:SS. Named arguments only.
 
@@ -1047,6 +1065,38 @@ model Example {
 - **Deeper** — [json-types.md](json-types.md)
 - **See also** — [`type`](#type-declaration)
 
+### Shape the table
+
+#### `@scale` `(<places>)` <a id="scale-field"></a>
+
+The column is an integer and the decimal point sits &lt;places&gt; places in — 1_500_000 at scale 6 is 1.5. Exact where a Float is not: SQLite has no fixed-point type, and the drift lands on multiplication and on comparing two derived numbers, which is what a reorder point or a projected on-hand IS. What a caller sends and reads back is the WHOLE number of minor units; a value with a fraction is refused by name. At most 9 places, or a 64-bit integer runs out of room in front of the point.
+
+```lite
+model Example {
+  id Int @id
+  qty Int @scale(6)
+}
+```
+
+- **Legal** — on a model's field · on a trait's field
+- **Deeper** — [exact-numbers.md](exact-numbers.md)
+- **See also** — [`@money`](#money-field)
+
+#### `@money` `[(<CURRENCY>)] | [(field: <column>)]` <a id="money-field"></a>
+
+An amount, stored as a whole number of minor units. The scale is DERIVED from the currency and is not the author's to pick — JPY has none, USD has two, KWD has three — and the ISO table is read off Intl rather than shipped, so a code this runtime does not know is refused at parse rather than silently taking two places. `field:` names a sibling String column holding the code per row, for a shop that takes more than one currency. Bare @money is the app's default currency. Formatting is formatMoney in @frontierjs/toolbelt/units; rounding and splitting a bill are the application's, not the schema's.
+
+```lite
+model Example {
+  id Int @id
+  total Int @money(USD)
+}
+```
+
+- **Legal** — on a model's field · on a trait's field
+- **Deeper** — [exact-numbers.md](exact-numbers.md)
+- **See also** — [`@scale`](#scale-field)
+
 ### Decide who may
 
 #### `@allow` `('read'|'write'|'all', <expression>)` <a id="allow-field"></a>
@@ -1100,6 +1150,22 @@ model Example {
 
 - **Parses as** — `uniqueIndex`
 - **Deeper** — [performance.md](performance.md)
+
+#### `@@check` `("<sql>"[, "<message>"])` <a id="check-model"></a>
+
+A row invariant that spans more than one column, emitted as a table CHECK. The table-level half of field `@check`: a field validator sees one field, `@@unique` is about rows in a table rather than values in a row, and `@@allow` is who rather than what is valid — so a two-column rule had nowhere to live but a service hook, which a job, a migration, `asSystem()` and a seed all bypass. Repeatable. The message is the last argument and is what a form shows; without one the expression is on the error for a developer and the person sees a generic sentence, because SQL under a control reaches somebody who did not write it. A violation is a `ValidationError` — 400, with the message on the record rather than on a box, since a rule over several columns names none of them.
+
+```lite
+model Example {
+  id Int @id
+  startsAt DateTime
+  endsAt DateTime
+  @@check("startsAt < endsAt", "an end must come after its start")
+}
+```
+
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@check`](#check-field)
 
 #### `@@map` `("table_name")` <a id="map-model"></a>
 
@@ -1231,6 +1297,21 @@ model Example {
 - **Deeper** — [schema.md](schema.md)
 
 ### Decide who may
+
+#### `@@capabilities` `[(all)]` <a id="capabilities-model"></a>
+
+Grade this model by CAPABILITY as well as by @@gate — both, ANDed, the gate as floor. A capability is a REFERENCE to something this schema already declares (an operation, a named move, a @capability column), so there is no list to keep in step and no enum. Bare covers create, update, delete and every named move; `(all)` adds read, which is opt-in because its refusal is the silent one — a write refusal throws and names itself, a missing read capability filters into an empty list with a 200.
+
+```lite
+model Example {
+  id Int @id
+  @@capabilities(all)
+}
+```
+
+- **`scope`** — `all`
+- **Deeper** — [access-control.md](access-control.md)
+- **See also** — [`@capability`](#capability-field) · [`@@gate`](#gate-model) · [`@allow`](#allow-field) · [`@@transitions`](#transitions-model)
 
 #### `@@gate` `("<read>.<create>.<update>.<delete>" | "<n>")` <a id="gate-model"></a>
 
@@ -1443,7 +1524,7 @@ entry above says so only when its answer is not the ordinary one.
 
 | position | refuses |
 | --- | --- |
-| on a type's field | `@id`, `@unique`, `@map`, `@relation`, `@generated`, `@from`, `@encrypted`, `@guarded`, `@secret`, `@updatedAt`, `@version`, `@allow`, `@values` |
+| on a type's field | `@id`, `@unique`, `@map`, `@relation`, `@generated`, `@from`, `@encrypted`, `@guarded`, `@secret`, `@updatedAt`, `@version`, `@allow`, `@values`, `@scale`, `@money` |
 | on a trait's field | `@id` |
 | in a trait | `@map`, `@db`, `@fts` |
 | on an enum member | everything except `@label` |

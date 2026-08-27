@@ -245,10 +245,15 @@ a migration you write by hand, not a rebuild on every run.
 
 ## Schema objects Litestone did not create
 
-Litestone generates triggers for `@@fts` (index sync) and for an `updatedAt`
-field, and indexes for `@@index` and `@@softDelete`. They are diffed like
-anything else: one whose body no longer matches the schema is dropped and
-recreated, and one the schema no longer declares is dropped.
+Litestone generates triggers for `@@fts` (index sync), and indexes for `@@index`
+and `@@softDelete`. They are diffed like anything else: one whose body no longer
+matches the schema is dropped and recreated, and one the schema no longer
+declares is dropped.
+
+`<table>_updatedAt` is in that second class as of `FJS-531` — the client stamps
+the column itself now, so an existing database is migrated by one
+`DROP TRIGGER IF EXISTS` with no table rebuild. The name stays on the owned list
+below, because it is what lets the migration take it away.
 
 **Only names Litestone generates are ever dropped:**
 

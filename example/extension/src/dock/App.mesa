@@ -25,14 +25,12 @@
   // another tab is an upsert here, with nothing in this file polling.
   const queue = createResource('orders')
 
-  // Filtered on the way out, and that is a workaround rather than a style.
-  // jetty's store upserts every record its channel delivers — an order this
-  // dock has just SHIPPED arrives back as `orders ship` and goes straight into
-  // the list it has left. Sierra's store asks `matchesQuery` and removes the
-  // row instead; jetty has no such half (`FJS-493`), so the screen makes the
-  // decision the store cannot.
-  queue.store.subscribe(rows =>
-    { orders = (rows ?? []).filter(o => o.status === 'paid') })
+  // The store is the filter now. An order this dock has just SHIPPED arrives
+  // back as `orders ship`, and the record no longer matches the query `load()`
+  // asked for — so the store REMOVES it rather than upserting it into a list it
+  // has left (`FJS-493`). This used to re-filter on the way out, which was the
+  // screen making a decision the store could not.
+  queue.store.subscribe(rows => { orders = rows ?? [] })
 
   // Paid and not yet shipped: what a person standing at the bench is for.
   const load = () => guard(() => queue.load({ status: 'paid' }, { orderBy: 'createdAt' }))

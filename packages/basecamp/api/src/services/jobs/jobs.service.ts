@@ -30,7 +30,7 @@ export function createJobsService(app: BasecampApp) {
 
 
   /** `JobRun` is `@@gate("2.8")` — created and updated by the machine alone. */
-  const sys = () => app.data.asSystem() as any
+  const sys = () => $.db.asSystem() as any
 
   /**
    * The job this call is about — through the CALLER's client where there is a

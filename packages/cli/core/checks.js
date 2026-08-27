@@ -79,8 +79,12 @@ export const RULES = [
     title: 'a service resolves to the model whose @@gate grades it' },
   { id: 'resource-model-miss',  scope: 'app',  severity: 'error', invariant: 2,
     title: 'a resource name resolves to the model it means' },
+  { id: 'detail-read-dead',     scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a row a screen KEEPS is watched, not fetched once' },
   { id: 'service-module-db',    scope: 'app',  severity: 'error', invariant: null,
     title: 'a service reads the request-scoped client, not the module one' },
+  { id: 'service-as-system',    scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'asSystem() off the app client crosses tenants; off the request client it does not' },
   { id: 'scheduler-dispatch',   scope: 'app',  severity: 'error', invariant: null,
     title: 'a timer that dispatches into a queue is the queue\'s schedule' },
   { id: 'gate-unreachable',     scope: 'app',  severity: 'warn',  invariant: null,
@@ -93,6 +97,10 @@ export const RULES = [
     title: "a copied model still agrees with the package that ships it" },
   { id: 'transition-methods',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a declared move and the code that makes it still name each other' },
+  { id: 'capability-ladder',    scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a model graded by capability is not also graded by ladder' },
+  { id: 'css-token-undefined',  scope: 'app',  severity: 'error', invariant: 13,
+    title: 'a styled value names a token the stylesheets define' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
     title: 'four markdown files are the standard at a package root' },
   { id: 'test-files-run',       scope: 'repo', severity: 'error', invariant: null,
@@ -1224,6 +1232,111 @@ const CHECKS = {
   // `db.asSystem()` and `db.$setAuth(…)` are deliberate and do not match: the
   // pattern is the module binding followed by an ACCESSOR, which is the shape
   // that means *I forgot which client I am holding*.
+
+  // ── A row a screen keeps ────────────────────────────────────────────────────
+  //
+  // `service.get(id)` answers a plain object. It is the raw proxy by design —
+  // the same escape hatch `service.find()` is — and nothing can reach a plain
+  // object: not a WS push, not a write from another tab, not a job. So a screen
+  // that assigns one to state it KEEPS is stale from the moment somebody else
+  // writes that row, and it looks right the whole time, because the screen
+  // usually re-reads after its own actions and never after anyone else's.
+  //
+  // Every detail screen in this repo was that, and none of them looked broken
+  // (`FJS-518`). `resource.record(id)` is a view of the row's node — same path
+  // a list takes, filtered to one — so a push moves the screen (`FJS-D138`).
+  //
+  // **Bare assignment only, and that is the whole of the heuristic.** `order =
+  // await …` in a Mesa script is an outer `let`: state the component keeps.
+  // `const row = await …` is a local, which is a genuinely one-shot read — a
+  // label, a check, something handed straight to another call — and flagging
+  // those would be answered by turning the rule off.
+  //
+  // `X.service.get(…)` is the whole test for *is this a resource*: `.service`
+  // exists on nothing else, and every resource has `record()`. No binding to
+  // trace, so a resource imported from `src/resources/` is judged the same as
+  // one made in the file.
+  //
+  // A WARNING, and it fails open. A screen may legitimately keep a row nothing
+  // will ever write again — an archived order, a row read to seed a form that
+  // then owns it — and a rule that cannot tell those apart must not be the
+  // thing that fails a build. No `--fix` either: the change is a subscribe, a
+  // release and a lifetime, and a half-applied one is a green check over a leak.
+  'detail-read-dead': ({ root }) => {
+    const files = sources(root, ['.mesa', ...SCRIPT_EXT], 'web', 'widgets', 'site', 'extension')
+    if (!files.length) return { skipped: 'no client surface' }
+
+    const findings = []
+    let looked = 0
+
+    for (const path of files) {
+      const lines = readCode(path).split('\n')
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        const at   = line.indexOf('.service.get(')
+        if (at < 0) continue
+        looked++
+
+        // What is being read, and what it is being kept in. The resource name
+        // is the identifier immediately left of `.service`.
+        const left = line.slice(0, at)
+        const res  = left.match(/([A-Za-z_$][\w$]*)$/)?.[1]
+        if (!res) continue
+
+        // `NAME =` and nothing else before it. A declaration keyword means a
+        // local; anything else (a property, an argument, a comparison) is not
+        // an assignment to kept state.
+        //
+        // The assignment is often a line UP — `customer = cond ? await … : null`
+        // wraps — so a continuation is followed back. Only one line, and only
+        // over an operator that cannot end a statement, because the alternative
+        // is pairing an assignment with a call that has nothing to do with it.
+        // `NAME = ` at the start of a statement, and nothing that merely looks
+        // like one: `==`, `!=`, `<=`, `>=` and `=>` are all rejected by the
+        // character on either side of the `=`, and a declaration keyword means
+        // a local rather than kept state.
+        const named = (text) => {
+          const m = text.match(/^\s*([A-Za-z_$][\w$]*)\s*([=!<>+\-*/%&|^]?)=(=?)/)
+          if (!m || m[2] || m[3]) return null
+          return m[1]
+        }
+
+        let kept = /^\s*(?:const|let|var)\b/.test(line) ? null : named(left)
+        // A continuation — this line, or the one it hangs off, opens with an
+        // operator that cannot begin a statement. Walked back at most three,
+        // which covers the wrapped ternary every one of these screens writes
+        // (`x = cond ? await …get(id) : null`) and stops well short of pairing
+        // an assignment with a call that has nothing to do with it.
+        for (let back = i - 1; !kept && back >= 0 && i - back <= 3; back--) {
+          const hangs = /^\s*[?:&|+]/.test(lines[back + 1]) || /[=?:,(&|+]\s*$/.test(lines[back])
+          if (!hangs) break
+          if (/^\s*(?:const|let|var)\b/.test(lines[back])) break
+          kept = named(lines[back])
+        }
+        if (!kept) continue
+        const assign = [null, kept]
+
+        findings.push({
+          file: path, line: i + 1,
+          message: `\`${assign[1]}\` keeps a row that nothing can update. \`service.get()\` is the raw ` +
+                   `proxy and answers a plain object, so a write from another tab, a job or a webhook ` +
+                   `reaches the store and never this variable — the screen is stale with nothing said. ` +
+                   `Watch it instead: \`const row = ${res}.record(id)\`, \`row.subscribe(v => ${assign[1]} = v)\`, ` +
+                   `and release it when the screen goes. ` +
+                   `**Only where the detail row IS the row.** A store node holds one shape and a push ` +
+                   `REPLACES it, so if this service's \`get()\` composes children the list read does not ` +
+                   `carry — \`include:\`, a \`withWidgets()\`, an adapter ping — watching it drops them at ` +
+                   `the first announcement, silently. Four of basecamp's five composed reads did exactly ` +
+                   `that when this was adopted. There the reload-on-push those screens already hand-roll ` +
+                   `is the correct answer, and it is a fair exception; so is a row nothing will write ` +
+                   `again. Record either as one.`,
+        })
+      }
+    }
+
+    return looked ? { findings } : { findings, skipped: 'no service.get() on a client surface' }
+  },
+
   'service-module-db': ({ root }) => {
     const files = scripts(root, 'api').filter(p => /\.service\.[cm]?[jt]s$/.test(basename(p)))
     if (!files.length) return { skipped: 'no *.service.* under api/' }
@@ -1251,6 +1364,101 @@ const CHECKS = {
                    `is ${'`$.db`'} (or ctx.locals.db): through this one auth() is null, so every row policy ` +
                    `matches nothing — an empty list with a 200 — and a write belongs to nobody in the ` +
                    `audit trail. asSystem() is the deliberate bypass and is not this.`,
+        })
+      }
+    }
+    return { findings }
+  },
+
+  // `FJS-519`: `asSystem()` means no PERMISSION rules. It does not mean no
+  // scope — it keeps row tenancy — but it can only keep a tenant that is in
+  // scope, and the claim comes from the principal. So which client you elevate
+  // decides whether the result is scoped at all:
+  //
+  //   ctx.locals.db.asSystem()   the caller's tenant, gate and policies crossed
+  //   app.data.asSystem()        no principal, no claim, every tenant
+  //
+  // The app-level client cannot be named positively — it is `app.claim(<any
+  // name>, db)`, and basecamp calls it `app.data` — so the test runs the other
+  // way: a receiver that is not the request's client. That is also where the
+  // fix is.
+  //
+  // A WARNING and not an error, because the unscoped client is exactly right
+  // for a cross-tenant admin tier. What is wrong is reaching for it by habit
+  // inside a request, where the symptom is silent: rows from every tenant with
+  // a 200.
+  'service-as-system': ({ root }) => {
+    // Only under `strategy row`. With no tenancy block there is no claim to
+    // lose, and under `strategy database` one client IS one file, so a system
+    // context physically cannot reach a second tenant — the hazard does not
+    // exist and every finding would be noise. `example` is that case.
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+    // Comments blanked first. basecamp's own schema explains the feature in a
+    // doc comment — *declared once in the `tenancy { }` block below* — and a
+    // raw match reads that empty pair as the declaration and skips the app.
+    const block = readCode(schema.path).match(/\btenancy\s*\{[^}]*\}/s)
+    if (!block)                            return { skipped: 'no tenancy block — nothing to scope' }
+    if (!/\bstrategy\s+row\b/.test(block[0])) return { skipped: 'strategy database — one client is one tenant' }
+
+    // Everything under `services/`, not just `*.service.*`. A helper module
+    // beside a service runs in the same call scope and carries the identical
+    // hazard — basecamp's `api-keys/scopes.ts` reaches for the app client from
+    // inside a hook — so a filename filter made two real sites invisible. The
+    // directory is the principled boundary: a job handler lives in `jobs/`,
+    // is NOT inside a call, and is where the app client is the right reach.
+    const files = scripts(root, 'api').filter(p => /[/\\]services[/\\]/.test(p))
+    if (!files.length) return { skipped: 'no api/**/services/** source' }
+
+    const REQUEST = /^(?:ctx\.locals\.db|\$\.db)$/
+    const BOUND   = /(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:ctx\.locals\.db|\$\.db)\b/g
+
+    // The receiver of a `.asSystem()`, read backwards so a cast survives:
+    // `(app.data as any).asSystem()` is the spelling three of basecamp's use.
+    const receiverAt = (code, dot) => {
+      let i = dot - 1
+      while (i >= 0 && /\s/.test(code[i])) i--
+      if (code[i] === ')') {
+        let depth = 1
+        i--
+        while (i >= 0 && depth) {
+          if (code[i] === ')') depth++
+          else if (code[i] === '(') depth--
+          i--
+        }
+        return code.slice(i + 2, dot).replace(/\)\s*$/, '').replace(/\s+as\s+[\w<>\[\]|]+\s*$/, '').trim()
+      }
+      let j = i
+      while (j >= 0 && /[\w$.]/.test(code[j])) j--
+      return code.slice(j + 1, dot).trim()
+    }
+
+    const findings = []
+    for (const path of files) {
+      const code = readCode(path)
+      if (!code.includes('.asSystem')) continue
+
+      // Names this file binds to the request's client — `const db = ctx.locals.db`.
+      const local = new Set()
+      for (const m of code.matchAll(BOUND)) local.add(m[1])
+
+      const seen = new Set()
+      for (const m of code.matchAll(/\.asSystem\s*\(/g)) {
+        const recv = receiverAt(code, m.index)
+        if (!recv) continue
+        if (REQUEST.test(recv) || local.has(recv)) continue
+
+        const line = lineOf(code, m.index)
+        if (seen.has(line)) continue
+        seen.add(line)
+        findings.push({
+          file: path, line,
+          message: `${recv}.asSystem() elevates a client that carries no principal, so it carries no ` +
+                   `tenant claim either — under row tenancy it reads and writes EVERY tenant, with a 200. ` +
+                   `The request's own client is the one to elevate: ctx.locals.db.asSystem() (or $.db), ` +
+                   `which crosses the gate and every policy and stays in the caller's tenant. If crossing ` +
+                   `tenants is what you mean — a hub or admin tier — this is correct and this warning is ` +
+                   `the place to say so.`,
         })
       }
     }
@@ -1302,6 +1510,46 @@ const CHECKS = {
   // 8 and 9 are excluded by name. `8` means nothing outside asSystem() has
   // anything to say to this model and `9` is locked; both are deliberate, and
   // the identity models ship that way.
+  // A model that declares the grid AND grades writes by ladder. The two are
+  // ANDed with the gate as the floor (`FJS-D146`), which is what keeps standing
+  // that crosses tenants available — but a write level ABOVE the read level is
+  // the ladder answering the question the grid was declared to answer, and both
+  // have to pass, so the ladder silently narrows every grant.
+  //
+  // The shape it catches is a model moved onto capabilities with its old gate
+  // left in place: a billing clerk holding `Invoice.create` is refused because
+  // the clerk grades USER(4) and creates want ADMINISTRATOR(5) — a 403 that
+  // reads as *not senior enough* about a person who was deliberately granted the
+  // capability. `@@gate("2")` flat at the read floor is the usual answer.
+  //
+  // A warning rather than an error: two authorities in front of one operation is
+  // legitimate where the ladder is guarding something the grid does not model,
+  // and this cannot tell that from a leftover.
+  'capability-ladder': ({ root }) => {
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+
+    const models = capabilityModels(schema)
+    if (!models.length) return { skipped: 'no model declares @@capabilities' }
+
+    const findings = []
+    for (const m of models) {
+      if (!m.gate) continue
+      const above = ['create', 'update', 'delete'].filter(op => m.gate[op] > m.gate.read)
+      if (!above.length) continue
+      findings.push({
+        file: schema.path, line: m.gateLine,
+        message: `${m.name} declares @@capabilities and @@gate("${m.gateSource}") — ` +
+                 `${above.join(', ')} need${above.length > 1 ? '' : 's'} level ` +
+                 `${above.map(o => m.gate[o]).join('/')} where read needs ${m.gate.read}. The grid and ` +
+                 `the ladder are ANDed, so a caller granted a capability on this model is still refused ` +
+                 `unless they also climb — which is the ladder answering what the grid was declared to ` +
+                 `answer. A model graded by capability usually wants its gate flat at the read floor.`,
+      })
+    }
+    return { findings }
+  },
+
   'gate-unreachable': ({ root }) => {
     const schema = schemaFile(root)
     if (!schema) return { skipped: 'no db/schema.lite' }
@@ -1683,6 +1931,60 @@ const CHECKS = {
     return { findings }
   },
 
+  // Invariant 13. A `var(--x)` naming a token nothing defines is invalid at
+  // computed-value time, so the WHOLE declaration is dropped — not the value,
+  // the line. `gap: var(--space-4)` on a design system whose ladder is
+  // `--space-2xl` is no gap at all, and there is no console message, no build
+  // warning and no failing selector: the stylesheet is in the bundle and is
+  // being ignored one declaration at a time. It cost this repo's own storefront
+  // every border, gap and radius on the page while `verify:site` stayed green,
+  // because a drive asserts what a page SAYS and none of this changes that.
+  //
+  // A `var()` carrying a FALLBACK is not a finding and that is the whole of
+  // where the line sits: a fallback is an author saying the token may be absent,
+  // and it is also what a component's own knob looks like from outside
+  // (`var(--cp-accent, var(--color-primary))`). Only the bare form drops.
+  //
+  // The token table is read from the DEPENDENCIES rather than listed here —
+  // whatever CSS this app installs is the answer, so an app on a design system
+  // this file has never heard of is graded against its own.
+  'css-token-undefined': ({ root }) => {
+    const defined = shippedTokens(root)
+    if (!defined.size) return { skipped: 'no dependency ships CSS' }
+
+    const findings = []
+    for (const surface of ['web', 'site', 'widgets', 'extension']) {
+      walk(join(root, surface), 6, (dir) => {
+        for (const name of safeRead(dir)) {
+          if (!name.endsWith('.mesa') && !name.endsWith('.css')) continue
+          const file = join(dir, name)
+          let text
+          try { text = readFileSync(file, 'utf8') } catch { continue }
+
+          // Declared anywhere in this file counts. A Mesa style block is scoped
+          // to the file, so file scope is the smallest honest unit — narrower
+          // than that reports a knob set in one block and read in the next.
+          const local = new Set([...text.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)].map(m => m[1]))
+
+          const seen = new Set()
+          for (const m of text.matchAll(/var\(\s*(--[A-Za-z0-9_-]+)\s*\)/g)) {
+            const token = m[1]
+            if (defined.has(token) || local.has(token) || seen.has(token)) continue
+            seen.add(token)
+            findings.push({
+              file,
+              line: lineOf(text, m.index),
+              message: `var(${token}) — nothing defines this token, so every declaration reading it is ` +
+                       `dropped whole. Name the one you meant, or give it a fallback if it is a knob a ` +
+                       `caller may set.`,
+            })
+          }
+        }
+      })
+    }
+    return { findings }
+  },
+
   'package-root-md': ({ root }) => {
     const pkgs = []
     for (const name of safeRead(join(root, 'packages'))) {
@@ -1908,6 +2210,44 @@ function models({ text }) {
 // nothing else — never a guess at a path inside a package, which is the rule the
 // litestone parser's own resolver follows. A package that exports none ships
 // none as far as anything here is concerned.
+// Every custom property the CSS this app INSTALLS declares.
+//
+// Read off the dependencies for `package-model-drift`'s reason: the answer is a
+// property of what is installed, and a list written here goes stale the first
+// time a package adds a rung. A package is included when its `exports` names a
+// `.css` file; the whole of its shipped CSS is then read, because a bundle and
+// the sources it was built from declare the same tokens and either may be the
+// one an app links.
+function shippedTokens(root) {
+  const out = new Set()
+  let pkg
+  try { pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) } catch { return out }
+
+  for (const name of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) {
+    const dir = join(root, 'node_modules', name)
+    let manifest
+    try { manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch { continue }
+
+    const shipsCss = Object.values(manifest.exports ?? {})
+      .some(t => typeof t === 'string' && t.endsWith('.css'))
+    if (!shipsCss) continue
+
+    // `exports` targets may be patterns (`./foundation/*.css`), so the files are
+    // walked rather than resolved one by one — a pattern names a directory, and
+    // globbing it here would be a second implementation of `files:`.
+    walk(dir, 4, (sub) => {
+      for (const file of safeRead(sub)) {
+        if (!file.endsWith('.css')) continue
+        try {
+          for (const m of readFileSync(join(sub, file), 'utf8').matchAll(/(--[A-Za-z0-9_-]+)\s*:/g))
+            out.add(m[1])
+        } catch { /* unreadable is not a definition */ }
+      }
+    })
+  }
+  return out
+}
+
 function shippedSchemas(root) {
   const out = []
   let pkg
@@ -2075,6 +2415,53 @@ const GATE_LEVELS = {
  * A line scan like `models()`, for its reason: this must answer with no
  * database, no migration and no installed litestone.
  */
+// Models declaring `@@capabilities`, with the gate each one carries. A text scan
+// like declaredGates beside it — `fli check` runs on an app's tree with no client
+// built, so the schema is read as text rather than parsed.
+function capabilityModels({ text }) {
+  const out   = []
+  const lines = text.split('\n')
+  let current = null
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    if (line.trim().startsWith('//')) continue
+    const m = line.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)/)
+    if (m) { current = { name: m[1], gate: null, gateSource: null, gateLine: 0, grid: false }; out.push(current); continue }
+    if (!current) continue
+
+    if (/@@capabilities\b/.test(line)) current.grid = true
+
+    // BOTH spellings. Reading only the compact one would make this rule silent on
+    // every schema that writes its gate by name — which is the shape `example`
+    // and `basecamp` use, so the rule would have been dead where it matters most.
+    const compact = line.match(/@@gate\s*\(\s*['"`]([\d.]+)['"`]\s*\)/)
+    const named   = compact ? null : line.match(/@@gate\s*\(([^)]*[A-Za-z][^)]*)\)/)
+
+    if (compact) {
+      // "R.C.U.D" with inheritance: a position not stated takes the one before it.
+      const [r = 0, c = r, u = c, d = u] = compact[1].split('.').map(Number)
+      current.gate       = { read: r, create: c, update: u, delete: d }
+      current.gateSource = compact[1]
+      current.gateLine   = i + 1
+    } else if (named) {
+      const lvl = (t) => /^\d$/.test(t) ? Number(t) : (GATE_LEVELS[t.toUpperCase()] ?? null)
+      const kv  = {}
+      for (const m2 of named[1].matchAll(/\b(read|create|update|delete|write|all)\s*:\s*([A-Za-z0-9_]+)/g))
+        kv[m2[1]] = lvl(m2[2])
+      if (Object.values(kv).some(v => v != null)) {
+        // `write:` is create+update+delete, `all:` is every position — the same
+        // widening the parser gives them.
+        const pick = (op) => kv[op] ?? (op === 'read' ? kv.all : (kv.write ?? kv.all)) ?? kv.all ?? 0
+        current.gate       = { read: pick('read'), create: pick('create'), update: pick('update'), delete: pick('delete') }
+        current.gateSource = named[1].trim()
+        current.gateLine   = i + 1
+      }
+    }
+  }
+  return out.filter(m => m.grid)
+}
+
 function declaredGates({ text }) {
   const out   = []
   const lines = text.split('\n')

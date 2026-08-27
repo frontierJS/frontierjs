@@ -276,7 +276,7 @@ describe('a generated migration builds what the schema builds', () => {
     }
   `
 
-  it('emits the FTS table, the soft-delete index and the stamp trigger', () => {
+  it('emits the FTS table and the soft-delete index, and no stamp trigger', () => {
     const p = project(RICH)
     create(null, parse(RICH), 'init', p.migrations)
     const sql = readFileSync(join(p.migrations, readdirSync(p.migrations)[0]), 'utf8')
@@ -285,7 +285,9 @@ describe('a generated migration builds what the schema builds', () => {
     expect(sql).toContain('doc_fts_insert')
     expect(sql).toContain('"idx_doc_deletedAt"')
     expect(sql).toContain('WHERE "deletedAt" IS NULL')
-    expect(sql).toContain('"doc_updatedAt"')
+    // `FJS-531` — the client stamps `@updatedAt`, so a migration writes no
+    // trigger for it and an existing one is dropped rather than restated.
+    expect(sql).not.toContain('"doc_updatedAt"')
     p.cleanup()
   })
 

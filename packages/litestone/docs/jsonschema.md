@@ -134,10 +134,11 @@ strict off-the-shelf draft-07 validator will not follow `#/$defs/…`.
 | `readOnly` | field | `@version`, `@computed`, `@generated`, `@from`, `@system` |
 | `writeOnly` | field | `@transient` — the mirror, and the reason the pair is used rather than an `x-` key |
 | `items` | field | array types (`String[]` → `{type:'string'}`, `Int[]` → integer) |
-| `format` | field | `@email`→`email`, `@url`→`uri`, `@phone`→`phone`, `@date`→`date`, `DateTime`/`@datetime`→`date-time`. **`@time` emits nothing** — the third rung of the same ladder has no case in the emitter, so the rule is enforced at the boundary and invisible to every consumer of this document (`FJS-522`) |
+| `format` | field | `@email`→`email`, `@url`→`uri`, `@phone`→`phone`, `@date`→`date`, `DateTime`/`@datetime`→`date-time`. **`@time` deliberately emits no format** — it carries a `pattern` instead; see below |
 | `contentMediaType` | field | `@markdown` → `text/markdown` |
 | `contentEncoding` | field | `Bytes` → `base64` |
-| `pattern` | field | `@regex`, and `@startsWith`/`@endsWith`/`@contains` (anchored, regex-escaped) |
+| `pattern` | field | `@regex`, `@startsWith`/`@endsWith`/`@contains` (anchored, regex-escaped), and `@time` |
+| `x-time` | field | `@time` → `{ seconds }`. Picks the control and enforces nothing — the refusal is the `pattern` |
 | `minLength` / `maxLength` | field | `@length(min, max)` |
 | `minimum` / `maximum` | field | `@gte` / `@lte` |
 | `exclusiveMinimum` / `exclusiveMaximum` | field | `@gt` / `@lt` |
@@ -157,6 +158,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-relations` | model | `[{field, model, type: 'belongsTo'\|'hasMany'\|'m2m', fields, references, onDelete, optional}]` | sierra `field-rules.js`, `resource.js`, `fli` |
 | `x-gate` | model | `{read, create, update, delete}` — the `@@gate` levels, 0–9 | sierra `field-rules.js` (affordance), static-safety |
 | `x-transitions` | model | `{ field: { name: {from: [], to, gate: N\|null} } }` | sierra `field-rules.js`, `example`'s orders screen |
+| `x-capabilities` | model | `{operations, moves, columns}` — action → the capability NAME it requires | affordance; a screen deciding which buttons a grant-holder could press |
 | `x-version` | model | the `@version` column's name, so a client knows what to round-trip | sierra `field-rules.js` |
 | `x-label-field` | model | the `@@label(field)` column's name — which column identifies a row to a person | sierra `field-rules.js`, `resource.js` |
 | `x-litestone-file` | `FileRef` def | `true` — marks the def as a file ref, not a user `type` | junction (maps it to `any`), `fli` |
@@ -168,7 +170,7 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-litestone-secret` | field | `true` — `audience: 'system'` only | nothing yet |
 | `x-litestone-guarded` | field | `true` — `audience: 'system'` only | nothing yet |
 
-`x-gate` and the `gate` inside `x-transitions` are **UI affordances**. The Data
+`x-gate`, `x-capabilities` and the `gate` inside `x-transitions` are **UI affordances**. The Data
 boundary enforces regardless of what the client believes, so an unknown answer
 is permissive by design (Invariant 6).
 
@@ -253,6 +255,15 @@ into a picker instead of a number spinner.
 - **A relation field is not in `properties`.** It used to be, and being
   non-optional put it in `required[]`, so Junction rejected every create that
   did not carry a relation array and Sierra seeded a meaningless `[]`.
+- **`x-capabilities` carries NAMES, not a verdict.** The caller's set lives on the
+  principal and never in the schema, so this says which capability each action
+  requires and the client compares. It exists so that a client never builds
+  `Model.action` by concatenation — a wrong guess is an affordance that silently
+  never matches. `read` is absent unless the model wrote `@@capabilities(all)`, which
+  is exactly the shape of the declaration: absent means *no grant required*, never
+  *refused*. A move at level 8 or 9 is absent too — no caller can hold it, so an
+  affordance for it can only disappoint.
+
 - **`x-transitions` is on the model, never on the enum `$def`.** Only a model can
   carry a per-transition `@gate`, and two sources would drift the moment one
   model narrowed the machine.
@@ -273,6 +284,14 @@ into a picker instead of a number spinner.
 - **`@default(auth().id)` fields are optional in `create`** — present in
   `properties`, deliberately absent from `required[]`, because Junction stamps
   them from the auth context.
+- **`@time` is the one validator that names no `format`, and that is deliberate.**
+  JSON Schema's `time` means RFC 3339 *full-time*, which requires seconds **and**
+  an offset. `@time` requires neither and admits no offset at all, so a consumer
+  honouring the format would refuse `09:30` — a value the Data boundary accepts.
+  Two boundaries disagreeing about what a time is would be a worse failure than
+  the silence it replaced, so it carries the validator's own regex as a `pattern`
+  and `x-time: { seconds }` beside it for the control. The pattern is imported
+  from the validator rather than restated: one regex, both sides.
 
 ---
 

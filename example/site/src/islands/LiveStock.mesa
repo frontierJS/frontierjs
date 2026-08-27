@@ -70,7 +70,7 @@
     <p class="text-muted" id="live-stock-state">
       <strong id="live-stock-count">{sellable.length}</strong> of {live.length} variants can be ordered today.
     </p>
-    <ul class="list" id="live-stock-list">
+    <ul class="rows divided" id="live-stock-list">
       {#each sellable as v}
         <li class="list-row" data-sku={v.sku}>
           <strong>{v.sku}</strong>

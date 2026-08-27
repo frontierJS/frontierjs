@@ -132,10 +132,28 @@ try {
   // the order takes its Payment rows with it (onDelete: Cascade); the ledger
   // is append-only and keeps its rows, which is what append-only means — every
   // count below is scoped to THIS run's event ids for exactly that reason.
-  for (const ref of ['ORD-PAY-1', 'ORD-PAY-2']) {
-    const stale = await json(await fetch(`${API}/api/orders?reference=${ref}`, { headers: auth }))
-    for (const row of stale?.data ?? [])
-      await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
+  //
+  // **The sweep has to look with `$withDeleted` and RELEASE the value rather
+  // than delete the row again.** `Order` soft-deletes and a deleted row keeps
+  // its `@unique` values — deliberately, or `restore()` would fail whenever a
+  // stranger had taken the reference meanwhile — so this drive's own cleanup
+  // leaves ORD-PAY-1 held by a row no ordinary read returns, a second DELETE
+  // is a no-op against something already gone, and the next run's create is a
+  // 409 that reports as *the provider refused the payment*. It passed exactly
+  // once per database for its whole life (`FJS-546`, `FJS-530`); the release
+  // below is the same one `verify.mjs` does and the documented way out of a
+  // `SoftDeletedUniqueError`.
+  for (const ref of ['ORD-PAY-1', 'ORD-PAY-2', 'ORD-PAY-3']) {
+    const stale = await json(await fetch(`${API}/api/orders?reference=${ref}&$withDeleted=true`, { headers: auth }))
+    for (const row of stale?.data ?? []) {
+      // `@length(3, 20)`, so the freed reference is truncated rather than grown.
+      const freed = `${ref}-X${row.id}`.slice(0, 20)
+      await fetch(`${API}/api/orders/${row.id}?$withDeleted=true`, {
+        method: 'PATCH', headers: auth, body: JSON.stringify({ reference: freed }),
+      })
+      if (!row.deletedAt)
+        await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
+    }
   }
 
   const newOrder = async (reference, total) => {

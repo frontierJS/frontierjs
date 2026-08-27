@@ -48,7 +48,7 @@ this section exists to show.
 - `/` — render: `static` · title: `FrontierJS Supply Co.`
 - `/404/` — render: `static` · title: `Page not found — FrontierJS Supply Co.`
 - `/account/` — description: `Sign in to see what you have ordered.` · render: `static` · title: `Your account — FrontierJS Supply Co.`
-- `/catalog/` — render: `static` · title: `Catalog`
+- `/catalog/` — render: `static` · title: `Catalogue`
 - `/products/:slug/` — render: `static`
 
 ## Layouts

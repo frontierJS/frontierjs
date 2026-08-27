@@ -37,6 +37,22 @@ const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
 // The dev payment provider, started by `bun run api` beside the mail sink.
 const PSP    = process.env.PSP_URL ?? 'http://localhost:8112'
+// A fixed reference makes this drive pass exactly ONCE per database. `Order`
+// soft-deletes and a soft-deleted row keeps its `@unique` values, so the cleanup
+// before the create — a DELETE over HTTP, which soft-deletes — cannot free the
+// reference it just used: the next run's create is a 409 nobody checks, an
+// undefined order id, and every assertion after it against `/orders/undefined`.
+// Same shape and same fix as `verify:notify` and `verify:money`, which mint
+// theirs under a run prefix (ISSUES.md FJS-530).
+//
+// UPPERCASE, because `Order.reference` carries `@upper`: a lowercase id is
+// stored uppercased and a later search for what the drive THINKS it used misses
+// in silence. SHORT, because the column is `@length(3, 20)`.
+//
+// Module scope, because the expectations block at the bottom names it too.
+const RUN    = Date.now().toString(36).slice(-6).toUpperCase()
+const REF    = `ORD-U${RUN}`      // the pending order: menu, modal, cancel
+const REF_B  = `ORD-V${RUN}`      // the settled one: payments and the refund
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 for (const [name, url] of [['api (bun run api)', `${API}/api/health`], ['web (bun run web)', UI]]) {
@@ -211,17 +227,16 @@ try {
   const token = await evaluate(`return localStorage.getItem('shop_token')`)
   const auth  = { authorization: 'Bearer ' + token }
 
-  // A run that threw before its cleanup leaves the row behind, and `reference`
-  // is @unique — so the next run's create is a 500 that has nothing to do with
-  // what is being tested. Clear it first rather than requiring `bun run reset`.
-  const stale = await (await fetch(`${API}/api/orders?reference=ORD-UI-1`, { headers: auth })).json()
+  // Still swept, for the run that threw before its own cleanup — the reference
+  // is fresh, but a stray row under an older prefix is the same 409 waiting.
+  const stale = await (await fetch(`${API}/api/orders?reference=${REF}`, { headers: auth })).json()
   for (const row of stale.data ?? [])
     await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
 
   const created = await (await fetch(`${API}/api/orders`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...auth },
-    body: JSON.stringify({ reference: 'ORD-UI-1', status: 'pending', total: 9.5, customerId: 1 }),
+    body: JSON.stringify({ reference: REF, status: 'pending', total: 9.5, customerId: 1 }),
   })).json()
   const orderId = created?.id ?? created?.data?.id
   if (!orderId) throw new Error('could not create the order this drive works on: ' + JSON.stringify(created))
@@ -380,14 +395,15 @@ try {
   //
   // The API half is `verify:pay`'s, exhaustively. What is only reachable here
   // is the half a person does: seeing what was taken, and clicking Refund.
-  const staleB = await (await fetch(`${API}/api/orders?reference=ORD-UI-2`, { headers: auth })).json()
+  const staleB = await (await fetch(`${API}/api/orders?reference=${REF_B}`, { headers: auth })).json()
   for (const row of staleB.data ?? [])
     await fetch(`${API}/api/orders/${row.id}`, { method: 'DELETE', headers: auth })
 
   const orderB = (await (await fetch(`${API}/api/orders`, {
     method: 'POST', headers: { 'content-type': 'application/json', ...auth },
-    body: JSON.stringify({ reference: 'ORD-UI-2', status: 'pending', total: 24, customerId: 1 }),
+    body: JSON.stringify({ reference: REF_B, status: 'pending', total: 24, customerId: 1 }),
   })).json())?.id
+  if (!orderB) throw new Error('could not create the settled order this drive works on')
 
   const intent = await (await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
@@ -448,7 +464,16 @@ try {
     // The provider's webhook lands inside the request, so the reload the
     // handler does already holds the moved rows — waiting on the ROW rather
     // than on a toast, because a toast is a message and this is the claim.
+    //
+    // BOTH facts are waited for and they are not one render. The refunded
+    // amount is a cell on the payment row the handler reloaded; the second
+    // event is a row appended to that payment's own trail, and it can arrive a
+    // render later. Reading the trail in the tick the amount appeared counted
+    // one event about one run in three — a failure that says the refund wrote
+    // half of what it writes, which is not what happened.
     await waitFor(() => document.querySelector('[data-refunded]'), 15000);
+    await waitFor(() => document.querySelectorAll('[data-payment] [data-events] li').length >= 2, 5000)
+      .catch(() => {});
     const row = document.querySelector('[data-payment]');
     return {
       payment:  row.querySelector('.pill')?.textContent.trim(),
@@ -794,8 +819,10 @@ rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }
 // ─── assertions ───────────────────────────────────────────────────────────
 
 const expected = {
-  'detail.heading':     'ORD-UI-1',
-  'detail.breadcrumbs': { items: ['Orders', 'ORD-UI-1'] },
+  // Both read the reference the run minted, not a literal — see the note beside
+  // the create. `REF` is hoisted onto the module scope for exactly this.
+  'detail.heading':     REF,
+  'detail.breadcrumbs': { items: ['Orders', REF] },
 
   // pending → paid → shipped. cancelled and refunded are exits, not stages.
   'detail.steps': { labels: ['pending', 'paid', 'shipped'], current: 'pending' },

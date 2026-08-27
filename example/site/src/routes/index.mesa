@@ -19,7 +19,7 @@ render: static
 </script>
 
 <div class="container stack">
-  <section class="stack-sm">
+  <section class="stack">
     <h1>Kit for people who ship</h1>
     <p class="text-muted">
       Tees, mugs and stickers for the three realms. Everything below was written
@@ -27,7 +27,7 @@ render: static
     </p>
   </section>
 
-  <section class="stack-sm">
+  <section class="stack">
     <h2 class="h4">Latest</h2>
     <ul class="cards" id="home-featured">
       {#each products as p}
@@ -41,6 +41,15 @@ render: static
             {#if p.blurb}<p class="text-sm text-muted">{p.blurb}</p>{/if}
           </a>
         </li>
+      {:else}
+        <!--
+          True in both places and that is the point of writing it here rather
+          than something about the build: in the published page it means the
+          shop has nothing active, and under `vite dev` it means `data` is null
+          because this route's `load()` runs at build time. Sierra says the
+          second one in the console; the page says what it can see.
+        -->
+        <li class="text-muted text-sm">Nothing to show.</li>
       {/each}
     </ul>
   </section>
@@ -54,14 +63,17 @@ render: static
     padding: 0;
     margin: 0;
     display: grid;
-    gap: var(--space-4);
+    gap: var(--space-2xl);
     /* `minmax(0, …)` and not `auto`: an <img> at width:100% contributes no
        intrinsic minimum, and a track sized from content collapses the card. */
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
   }
   .card-link {
     display: grid;
-    gap: var(--space-2);
+    /* start, not stretch: a Badge is an inline term, and a grid item defaults
+       to filling its column — which turns a price into a full-width bar. */
+    justify-items: start;
+    gap: var(--space-sm);
     text-decoration: none;
     color: inherit;
   }
@@ -69,7 +81,7 @@ render: static
     width: 100%;
     aspect-ratio: 4 / 3;
     object-fit: contain;
-    background: var(--surface-sunken, var(--surface));
-    border-radius: var(--radius);
+    background: var(--surface-sunken);
+    border-radius: var(--card-radius);
   }
 </style>

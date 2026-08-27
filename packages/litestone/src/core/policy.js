@@ -388,8 +388,9 @@ export function buildPolicyMap(schema, relationMap) {
 
       for (const op of attr.operations) {
         if (!bucket[op]) bucket[op] = { allows: [], denies: [] }
-        if (attr.kind === 'allow') bucket[op].allows.push({ expr: attr.expr, message: attr.message ?? null })
-        else                       bucket[op].denies.push({ expr: attr.expr, message: attr.message ?? null })
+        const entry = { expr: attr.expr, message: attr.message ?? null, generated: attr.generated ?? null, claim: attr.claim ?? null }
+        if (attr.kind === 'allow') bucket[op].allows.push(entry)
+        else                       bucket[op].denies.push(entry)
       }
     }
   }
@@ -398,6 +399,35 @@ export function buildPolicyMap(schema, relationMap) {
 }
 
 // ─── Public entry points ──────────────────────────────────────────────────────
+
+// ─── Which rules apply to this caller ────────────────────────────────────────
+//
+// The ONE answer, because three callers ask it and one of them recurses: the
+// SQL builder, the JS evaluator, and the builder again through a `check()`
+// delegation. Written at each call site instead, a model reached through a
+// delegation would be graded by a different rule than the one it was reached
+// from.
+//
+// `asSystem()` means NO PERMISSION RULES. It does not mean no scope, and the
+// difference is FJS-519: row tenancy desugars to `@@deny`, which is a policy, so
+// a system context read every tenant's rows — and since a `@@gate("8")` model
+// can be read by nothing else, the only client that could read a credential was
+// the one that ignored tenancy.
+//
+// So a system context keeps exactly the denies tenancy generated, and only
+// while a tenant is IN SCOPE. With no principal there is no tenant to keep and
+// the generated predicate would deny everything, its first branch being
+// `auth().<claim> == null` — so the null check is the rule rather than a guard
+// on it: a migration, a seed and any job with no caller read everything, as
+// before.
+function rulesFor(policyMap, modelName, op, ctx) {
+  const rules = policyMap?.[modelName]?.[op]
+  if (!rules) return null
+  if (!ctx.isSystem) return rules
+
+  const denies = rules.denies.filter(d => d.generated === 'tenancy' && ctx.auth?.[d.claim] != null)
+  return denies.length ? { allows: [], denies } : null
+}
 
 // Returns { sql, params } to AND-merge into a query WHERE, or null (no filter).
 // Pass op = 'read' | 'update' | 'delete' for SQL-based enforcement.
@@ -452,12 +482,9 @@ export function compileFieldPredicate(modelName, exprs, op, ctx, policyMap, sche
 
 export function buildPolicyFilter(modelName, op, ctx, policyMap, schema, relationMap) {
   ctx = atOneInstant(ctx)
-  if (ctx.isSystem) {
-    if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[2mskipped (asSystem)[0m')
-    return null
-  }
-  if (!policyMap[modelName]?.[op]) {
-    if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[2mno policy[0m')
+  if (!rulesFor(policyMap, modelName, op, ctx)) {
+    if (ctx.policyDebug === 'verbose')
+      plog(ctx, op, modelName, ctx.isSystem ? '[2mskipped (asSystem)[0m' : '[2mno policy[0m')
     return null
   }
 
@@ -499,14 +526,10 @@ export function buildPolicyFilter(modelName, op, ctx, policyMap, schema, relatio
  */
 export function policyVerdict(modelName, row, ctx, policyMap, relationMap, op) {
   ctx = atOneInstant(ctx)
-  if (ctx.isSystem) {
-    if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[2mskipped (asSystem)[0m')
-    return { ok: true }
-  }
-
-  const rules = policyMap?.[modelName]?.[op]
+  const rules = rulesFor(policyMap, modelName, op, ctx)
   if (!rules) {
-    if (ctx.policyDebug === 'verbose') plog(ctx, op, modelName, '[2mno policy[0m')
+    if (ctx.policyDebug === 'verbose')
+      plog(ctx, op, modelName, ctx.isSystem ? '[2mskipped (asSystem)[0m' : '[2mno policy[0m')
     return { ok: true }
   }
 
@@ -555,7 +578,7 @@ function buildFilterSql(modelName, op, params, ctx, policyMap, schema, relationM
   if (visited.has(modelName)) return '1'  // cycle guard — open if recursive
   const next = new Set([...visited, modelName])
 
-  const rules = policyMap[modelName]?.[op]
+  const rules = rulesFor(policyMap, modelName, op, ctx)
   if (!rules) return null
 
   const { allows, denies } = rules

@@ -122,7 +122,7 @@ export function createApiKeysService(app: BasecampApp) {
 
     // asSystem(): `kind` is a column on auth's User, which no caller-scoped
     // client here reads — the same reason the hub service is written this way.
-    const sys: any = app.data.asSystem()
+    const sys: any = $.db.asSystem()
     const bot = await sys.user.findUnique({ where: { id: userId } })
     if (!bot || bot.kind !== 'bot')
       throw new BadRequest('userId may only name a bot account — create one on the hub Users screen')
@@ -241,7 +241,12 @@ export function createApiKeysService(app: BasecampApp) {
       const data = $.data as Record<string, unknown>
 
       try {
-        const row = await db().apiKey.create({ data })
+        // `system:` names the two columns the caller may not send — `stampKey`
+        // derived them from a token that did not exist when the request was
+        // made, and `@system` refuses a write naming one BY NAME. Stating them
+        // here keeps the gate, the row policies and the audit actor, where
+        // `asSystem()` would drop all three to set two values.
+        const row = await db().apiKey.create({ data, system: ['credentialId', 'tokenHint'] })
         // `token` is not a column and is on no later read. The screen has one
         // chance to show it, and says so.
         return { ...present(row), token: $.locals.mintedToken }
@@ -297,8 +302,9 @@ export function createApiKeysService(app: BasecampApp) {
       if (row.credentialId) await authOrRefuse().revokeApiKey(row.credentialId)
 
       return present(await db().apiKey.update({
-        where: { id: row.id },
-        data:  { revokedAt: new Date().toISOString(), credentialId: null },
+        where:  { id: row.id },
+        data:   { revokedAt: new Date().toISOString(), credentialId: null },
+        system: ['credentialId'],
       }))
     },
 

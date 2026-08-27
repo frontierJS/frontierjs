@@ -45,6 +45,7 @@
 
 import { createService, BadRequest, Conflict, Forbidden, NotFound, $ } from '@frontierjs/junction'
 import { requireSystemAdmin, getPagination } from '../../core/hooks.ts'
+import { grantsFor } from '../../core/capabilities.ts'
 import { db, slugify } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
@@ -84,7 +85,7 @@ export function createHubService(app: BasecampApp) {
    *  `any` for the same reason `db()` is: a Litestone client is a proxy and
    *  its accessors exist only at runtime, so a typed handle would be a fiction
    *  maintained by hand. */
-  const sys = (): any => app.data.asSystem()
+  const sys = (): any => app.db.asSystem()
 
   /** The acting sysadmin, for the two self-lockout guards. */
   function actor(): string {
@@ -382,6 +383,7 @@ export function createHubService(app: BasecampApp) {
         })
         await tx.workspaceMember.create({
           data: { workspaceId: ws.id, userId: bot.id, role: wsRole,
+                  capabilities: grantsFor(wsRole),
                   invitedBy: actor(), invitedAt: new Date().toISOString(),
                   acceptedAt: new Date().toISOString() },
         })

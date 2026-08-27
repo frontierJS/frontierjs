@@ -37,7 +37,7 @@ render: static
 </script>
 
 <article class="container product">
-  <div class="product-media stack-sm">
+  <div class="product-media stack">
     {#if hero}
       <img class="product-hero" src={hero.src} alt={hero.alt} />
     {/if}
@@ -51,7 +51,7 @@ render: static
   </div>
 
   <div class="stack">
-    <header class="stack-sm">
+    <header class="stack">
       <p class="text-sm text-muted" id="product-brand">{data?.brand}</p>
       <h1 id="product-name">{data?.name}</h1>
       {#if data?.description}
@@ -59,7 +59,7 @@ render: static
       {/if}
     </header>
 
-    <section class="stack-sm">
+    <section class="stack">
       <h2 class="h4">Options</h2>
       <table class="table" id="product-variants">
         <thead>
@@ -96,7 +96,7 @@ render: static
 <style>
   .product {
     display: grid;
-    gap: var(--space-6);
+    gap: var(--space-4xl);
     grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
     align-items: start;
   }
@@ -109,7 +109,7 @@ render: static
     aspect-ratio: 1;
     object-fit: contain;
     background: var(--surface);
-    border-radius: var(--radius);
+    border-radius: var(--card-radius);
   }
   .product-thumbs {
     list-style: none;
@@ -117,13 +117,13 @@ render: static
     padding: 0;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(4rem, 1fr));
-    gap: var(--space-2);
+    gap: var(--space-sm);
   }
   .product-thumbs img {
     width: 100%;
     aspect-ratio: 1;
     object-fit: contain;
     background: var(--surface);
-    border-radius: var(--radius-sm, var(--radius));
+    border-radius: var(--btn-radius);
   }
 </style>

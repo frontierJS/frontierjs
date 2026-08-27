@@ -18,6 +18,7 @@
  *     image assertion below reads naturalWidth and never querySelector alone.
  */
 import { spawn, execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -253,6 +254,159 @@ await evaluate(`([...document.querySelectorAll('.swatch')]
 await new Promise(r => setTimeout(r, 400))
 const after = await evaluate(`document.querySelector('img.hero')?.src ?? ''`)
 check('clicking a swatch swaps the hero', before !== after && after.length > 0, true)
+
+// ─── a photograph, put there by a person ──────────────────────────────────
+//
+// Everything above reads photographs the SEEDER wrote, and the seeder hands
+// litestone a path on disk. This is the other direction and it is the one a
+// shop actually does: somebody chooses a file in a browser and the shelf has a
+// picture on it (`FJS-409`).
+//
+// The route is the ordinary one and that is the substance. A File anywhere in
+// the payload turns the create into `multipart/form-data` at the client, the
+// bridge merges it back into `ctx.data`, and `FileStorage` stores the bytes and
+// writes the ref — so an upload is a create, through the service, with the gate
+// and the row policies and `@accept` all on it. A signed URL or an upload route
+// would be a second door with its own answer to who may write.
+
+console.log('\n  catalogue — a photograph somebody uploaded')
+
+const staffToken = (await (await fetch(`${API}/api/auth/login`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email: 'alex@shop.test', password: 'correct-horse-battery' }),
+})).json())?.token
+const asStaff = { authorization: `Bearer ${staffToken}` }
+
+const photo = readFileSync(join(ROOT, 'db/seed-media/fjs-hoodie-navy.png'))
+const upload = (name, type, alt) => {
+  const fd = new FormData()
+  fd.append('productId', '1')
+  fd.append('alt', alt)
+  fd.append('position', '99')
+  fd.append('file', new File([photo], name, { type }))
+  return fetch(`${API}/api/product-images`, { method: 'POST', headers: asStaff, body: fd })
+}
+
+// `@@gate("0.4.4.5")` — reading a photograph is public and writing one is not.
+// Asserted before the happy path, because a route that accepts a file from
+// anybody is the same 201 as one that accepts it from staff.
+const anon = new FormData()
+anon.append('productId', '1'); anon.append('alt', 'from nobody')
+anon.append('file', new File([photo], 'nobody.png', { type: 'image/png' }))
+check('a stranger may not add a photograph',
+      (await fetch(`${API}/api/product-images`, { method: 'POST', body: anon })).status, 401)
+
+const made = await upload('uploaded.png', 'image/png', 'A hoodie, uploaded through a form')
+const row  = await made.json()
+check('staff may — and the create is multipart', made.status, 201)
+
+// The two reads, which had disagreed. `find` resolved the stored reference into
+// a public URL and `get(id)` answered the raw `{"key":…}` — so the same column
+// was an <img src> in a list and a broken image on the detail screen beside it,
+// and an edit form was handed the storage handle instead of the photograph
+// (`FJS-541`). They are asked together here because either alone passes.
+const viaGet  = await (await fetch(`${API}/api/product-images/${row.id}`, { headers: asStaff })).json()
+const viaFind = (await (await fetch(`${API}/api/product-images?id=${row.id}`, { headers: asStaff })).json()).data[0]
+check('the stored file reads back as a URL',        typeof viaGet.file === 'string' && viaGet.file.startsWith('http'), true)
+check('…by id and in a list, identically',          viaGet.file, viaFind.file)
+
+const served = await fetch(viaGet.file)
+check('and the URL serves the bytes that went up',
+      [served.status, served.headers.get('content-type'), (await served.arrayBuffer()).byteLength],
+      [200, 'image/png', photo.byteLength])
+
+// `@accept("image/png, image/jpeg, image/webp")` is a Data-boundary rule, so it
+// refuses the same file the picker would have filtered out. Both halves exist
+// on purpose: the dialog is a courtesy and this is the guard.
+const wrong = await upload('notes.txt', 'text/plain', 'not a photograph')
+check('a file the column does not accept is refused', wrong.status, 400)
+check('…naming the type and the list',
+      (await wrong.json()).message, m => /text\/plain/.test(m) && /image\/png/.test(m))
+
+// ── and the same thing, done by a person ──────────────────────────────────
+//
+// The half no HTTP assertion reaches: that the FORM offers a file picker at
+// all. Nothing on the product screen names this column — `<Form>` asks the
+// resource, which read the schema — so a control that answered null would
+// render a form with the photograph silently missing from it, which is what
+// this feature was before today.
+
+await goto('/products/1/', 'img.hero', 1)
+await evaluate(`(localStorage.setItem('shop_token', ${JSON.stringify(staffToken)}), true)`)
+await goto('/products/1/', '[data-add-photo-panel] input[type=file]', 1)
+
+check('the generated form has a file picker',
+      await evaluate(`!!document.querySelector('[data-add-photo-panel] input[type=file]')`), true)
+// The list comes from `@accept` in the schema, through `x-litestone-accept`, to
+// the dialog — so a person is told before choosing rather than after uploading.
+check('…offering the types the schema accepts',
+      await evaluate(`document.querySelector('[data-add-photo-panel] input[type=file]').accept`),
+      'image/png, image/jpeg, image/webp')
+check('…and an alt-text box beside it, because the column is required',
+      await evaluate(`!!document.querySelector('[data-add-photo-panel] [name="alt"]')`), true)
+
+const swatchesBefore = await evaluate(`document.querySelectorAll('.swatch').length`)
+
+// A File cannot be put on an <input type="file"> by assignment — the list is
+// read-only except through a DataTransfer, which is also what a real drop
+// carries. Same door `@frontierjs/ui`'s own FileUpload spec uses.
+await evaluate(`(() => {
+  const dt = new DataTransfer()
+  dt.items.add(new File([new Uint8Array(${JSON.stringify([...photo.subarray(0, 64)])})], 'from-the-browser.png', { type: 'image/png' }))
+  document.querySelector('[data-add-photo-panel] .fjs-dropzone')
+    .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
+  return true
+})()`)
+await evaluate(`(() => {
+  const alt = document.querySelector('[data-add-photo-panel] [name="alt"]')
+  alt.value = 'Chosen in a browser'
+  alt.dispatchEvent(new Event('input', { bubbles: true }))
+  return true
+})()`)
+check('the chosen file previews before it is saved',
+      await evaluate(`!!document.querySelector('[data-add-photo-panel] [data-file-preview]')`), true)
+
+await evaluate(`(document.querySelector('[data-add-photo-panel] [data-add-photo]').click(), true)`)
+
+// Asked of the API and not of the strip, because the strip is one swatch per
+// COLOURWAY: a second photograph of a colour that already has one adds no
+// element, so counting them answers a question about the gallery's shape rather
+// than about whether anything uploaded. The row is the fact.
+const ALT = 'Chosen in a browser'
+const arrived = await (async () => {
+  for (let i = 0; i < 60; i++) {
+    const found = (await (await fetch(
+      `${API}/api/product-images?alt=${encodeURIComponent(ALT)}`, { headers: asStaff })).json()).data ?? []
+    if (found.length) return found[0]
+    await new Promise(r => setTimeout(r, 200))
+  }
+  return null
+})()
+check('submitting the form uploads the file the browser chose', !!arrived, true)
+check('…as a stored reference the API resolves to a URL',
+      typeof arrived?.file === 'string' && arrived.file.startsWith('http'), true)
+// `resetOnDone` — a form that keeps the file it just sent invites a second
+// upload of the same photograph, and the preview is the only thing on screen
+// that says whether it did.
+check('…and the form is clear again, so the same file is not sent twice',
+      await evaluate(`!document.querySelector('[data-add-photo-panel] [data-file-preview]')`), true)
+
+// An <img> that is PRESENT is not an <img> that loaded — the trap this whole
+// file is arranged around. The gallery reloaded after the save, so every
+// photograph on screen has been read back through the service since the upload:
+// a resolution that broke on the way out would show here as a swatch that is
+// there and blank.
+await settleImages('.swatch img')
+check('…and the new photograph decoded in the browser that sent it',
+      await evaluate(`[...document.querySelectorAll('.swatch img')].every(i => i.naturalWidth > 0)`), true)
+
+// Put the catalogue back. `19 photographs seeded` above counts live rows, and
+// this drive added two.
+for (const stale of ((await (await fetch(`${API}/api/product-images?position=99&$limit=50`, { headers: asStaff })).json()).data ?? []))
+  await fetch(`${API}/api/product-images/${stale.id}`, { method: 'DELETE', headers: asStaff })
+for (const stale of ((await (await fetch(
+  `${API}/api/product-images?alt=${encodeURIComponent(ALT)}&$limit=50`, { headers: asStaff })).json()).data ?? []))
+  await fetch(`${API}/api/product-images/${stale.id}`, { method: 'DELETE', headers: asStaff })
 
 console.log(`\n  ${pass} passed, ${fail} failed\n`)
 stopAll()

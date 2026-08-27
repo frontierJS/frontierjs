@@ -130,6 +130,7 @@ export function renderPrincipalSnapshot(
       out.push(`| Caller column | ${d.subject ? `\`${d.subject}\`` : '—'} |`)
       out.push(`| Tenant column | ${d.tenant ? `\`${d.tenant}\`` : '—'} |`)
       out.push(`| Standing column | ${d.standing ? `\`${d.standing}\`` : '— (no standing on the row)'} |`)
+      out.push(`| Capability grants | ${d.capabilities ? `\`${d.capabilities}\`` : '— (the grid grades nobody, or grades them from elsewhere)'} |`)
       out.push(`| Read alongside | ${d.include.length ? d.include.map(i => `\`${i}\``).join(', ') : '—'} |`)
     }
     out.push('')
@@ -169,7 +170,10 @@ export function renderPrincipalSnapshot(
         ? 'the tenant — read by the desugared `@@deny` on every scoped model'
         : standingClaim === c
           ? 'a standing, graded by the app\'s own `getLevel`'
-          : 'a capability — read by whatever row policy names it, and by nothing else'
+          : c === 'capabilities'
+            ? 'the grant set — read by the Data boundary\'s capability grid (`FJS-D151`), ' +
+              'which is the one claim name this framework fixes rather than the app'
+            : 'a capability — read by whatever row policy names it, and by nothing else'
       out.push(`| \`${c}\` | ${what} |`)
     }
     out.push('')

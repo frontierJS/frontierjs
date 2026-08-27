@@ -374,18 +374,33 @@ try {
 
   // The search box is in the PRERENDERED markup, and so are all twelve rows —
   // so "the box exists" and "there are twelve rows" are both true before the
-  // island has mounted, and typing into it then does nothing. Mounting REPLACES
-  // the markup, so element identity changing is the one precise signal that the
-  // island went live; a sleep is not, because the mount is a dynamic import.
+  // island has mounted, and typing into it then does nothing.
+  //
+  // Element identity changing is NOT the signal, though it reads like one: the
+  // node is captured after `Page.navigate` returns, so on a warm cache the
+  // island has already mounted by then and `el !== before` can never become
+  // true. It timed out about one run in six.
+  //
+  // Two facts replace it, and the first is MONOTONIC — true from the moment it
+  // lands and true forever after, so it cannot be missed by looking late: the
+  // island's own chunk has executed. The chunk running is not the mount having
+  // run, so the second is the keystroke itself, re-applied each poll — typing
+  // into the node a mount is about to replace is a keystroke into a dead box,
+  // and the fresh node comes back with an empty value, which is what makes
+  // re-applying self-correcting rather than a retry loop over a real failure.
   t('catalog.filter', await evaluate(`
-    const before = document.getElementById('catalog-search');
+    await waitFor(() => chunks().includes('CatalogList'));
+    await waitFor(() => document.querySelectorAll('#catalog-list li').length === 12);
     const box = await waitFor(() => {
       const el = document.getElementById('catalog-search');
-      return el && el !== before ? el : null;
+      if (!el) return null;
+      if (el.value !== 'mug') {
+        el.value = 'mug';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        return null;
+      }
+      return el;
     });
-    await waitFor(() => document.querySelectorAll('#catalog-list li').length === 12);
-    box.value = 'mug';
-    box.dispatchEvent(new Event('input', { bubbles: true }));
     // The SHOP's answer, not the first render after the keystroke: the box is
     // debounced and the request is a round trip, and two rows is also what the
     // local fallback would show.

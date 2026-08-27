@@ -102,7 +102,7 @@ export function syncSchedule(
 // handler that RUNS a job has no reason to know how many were scheduled.
 
 export async function restoreSchedules(app: BasecampApp): Promise<number> {
-  const db  = app.data.asSystem()
+  const db  = app.db.asSystem()
   const log = app.logger.child('job-schedule')
 
   const jobs = await db.job.findMany({

@@ -38,7 +38,7 @@ const { parse } = await import('../../litestone/src/core/parser.js')
 const { generateJsonSchema } = await import('../../litestone/src/jsonschema.js')
 
 const LITE = `
-  enum OrderStatus { pending  paid  shipped  refunded  cancelled }
+  enum OrderStatus { pending  paid  shipped  refunded  settled  cancelled }
 
   model Order {
     id     Int @id
@@ -50,6 +50,7 @@ const LITE = `
       pay:    pending         -> paid,
       ship:   paid            -> shipped,
       refund: paid            -> refunded @gate(5),
+      settle: paid            -> settled   @system,
       cancel: [pending, paid] -> cancelled)
   }
 
@@ -69,9 +70,9 @@ describe('the schema actually carries the machine', () => {
 
   test('generateJsonSchema puts x-transitions on the model, keyed by field', () => {
     expect(DEFS.Order['x-transitions'].status.pay)
-      .toEqual({ from: ['pending'], to: 'paid', gate: null })
+      .toEqual({ from: ['pending'], to: 'paid', gate: null, system: false })
     expect(DEFS.Order['x-transitions'].status.refund)
-      .toEqual({ from: ['paid'], to: 'refunded', gate: 5 })
+      .toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false })
   })
 
   test('the enum $def carries none — the model is the only source', () => {
@@ -81,7 +82,7 @@ describe('the schema actually carries the machine', () => {
 
   test('buildTransitions reads it back', () => {
     expect(Object.keys(buildTransitions(DEFS.Order).status).sort())
-      .toEqual(['cancel', 'pay', 'refund', 'ship'])
+      .toEqual(['cancel', 'pay', 'refund', 'settle', 'ship'])
   })
 
   test('a model with no machine has none', () => {
@@ -100,16 +101,39 @@ describe('transitionsAt — the button list', () => {
 
   test('carries where it came from and where it goes', () => {
     const pay = transitionsAt(spec(), { status: 'pending' }, 4).find(t => t.name === 'pay')
-    expect(pay).toEqual({ name: 'pay', field: 'status', from: 'pending', to: 'paid', gate: null, allowed: true, refusedBy: null })
+    expect(pay).toEqual({ name: 'pay', field: 'status', from: 'pending', to: 'paid', gate: null, system: false, allowed: true, refusedBy: null })
   })
 
-  test("refusedBy is 'gate' or nothing — this half cannot see a policy", () => {
+  test("a @system move is refused at every level, and that verdict is not a guess", () => {
+    // The one answer this side can be CERTAIN of. Everything else here is
+    // permissive-when-unknown, because a gate is an affordance and a policy is
+    // invisible from a browser — but `@system` says the APPLICATION makes the
+    // move, and a browser is never the application, so no level changes it.
+    for (const level of [4, 5, 9, undefined, null]) {
+      const settle = transitionsAt(spec(), { status: 'paid' }, level).find(t => t.name === 'settle')
+      expect(settle.system).toBe(true)
+      expect(settle.allowed).toBe(false)
+      expect(settle.refusedBy).toBe('system')
+    }
+  })
+
+  test('a screen can tell the three refusals apart', () => {
+    // `refusedBy` exists so a screen renders *not you, ever* differently from
+    // *ask somebody more senior*. Without it both are `allowed: false` and a
+    // person is told to go and find an administrator who also cannot do it.
+    const at4 = transitionsAt(spec(), { status: 'paid' }, 4)
+    expect(at4.find(t => t.name === 'refund').refusedBy).toBe('gate')
+    expect(at4.find(t => t.name === 'settle').refusedBy).toBe('system')
+    expect(at4.find(t => t.name === 'ship').refusedBy).toBeNull()
+  })
+
+  test("refusedBy is 'gate', 'system' or nothing — this half cannot see a policy", () => {
     // The server's answer to the same question may say `'policy'`; a browser
     // holds no policy engine, so a move an @@allow refuses reads as allowed
     // here and is refused at the boundary (`FJS-495`). Asserted so the two
     // shapes cannot quietly diverge again.
     const moves = transitionsAt(spec(), { status: 'paid' }, 4)
-    expect(moves.every(t => t.refusedBy === (t.allowed ? null : 'gate'))).toBe(true)
+    expect(moves.every(t => t.refusedBy === (t.allowed ? null : (t.system ? 'system' : 'gate')))).toBe(true)
   })
 
   test('a gated move below the level is reported disabled, not dropped', () => {
@@ -158,7 +182,7 @@ describe('on the resource', () => {
   test('createResource derives the button list straight off the schema', () => {
     const orders = createResource('orders')
     expect(orders.transitions({ status: 'paid' }, 4).map(t => t.name).sort())
-      .toEqual(['cancel', 'refund', 'ship'])
+      .toEqual(['cancel', 'refund', 'settle', 'ship'])
   })
 
   test('refund is offered but disabled at USER, enabled at ADMINISTRATOR', () => {

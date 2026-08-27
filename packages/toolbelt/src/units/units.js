@@ -118,3 +118,67 @@ export function formatMoney(amount, currency = 'USD', opts = {}) {
     return `${code} ${n.toFixed(opts.decimals ?? 2)}`
   }
 }
+
+// ─── Minor units ──────────────────────────────────────────────────────────────
+//
+// How many decimal places a currency HAS. The fact `@money` derives its scale
+// from, and the one `formatMoney` above already turns on: JPY has none, KWD has
+// three, and a hand-rolled `toFixed(2)` invents a minor unit the yen does not
+// have (`FJS-440`).
+//
+// Read off ICU rather than shipped as a table. Two platform facts do the work,
+// and both update with the runtime rather than with this package:
+//
+//   Intl.supportedValuesOf('currency')  — 306 ISO 4217 codes, which is what
+//                                         makes a TYPO refusable
+//   resolvedOptions().maximumFractionDigits — the minor units
+//
+// The first one is load-bearing. `Intl.NumberFormat` does NOT throw on an
+// unknown code — `ZZZ` and `BTC` both resolve to 2 decimals in silence — so a
+// mistyped `@money(UDS)` would take scale 2 and be wrong by a factor of a
+// hundred wherever the real currency has none. Asking whether ICU knows the code
+// is the only way to tell those apart, and there are 26 currencies where it
+// matters.
+
+let _known = null
+
+/** The ISO 4217 codes this runtime knows, as a Set. */
+export function knownCurrencies() {
+  if (_known) return _known
+  try {
+    _known = new Set(Intl.supportedValuesOf('currency'))
+  } catch {
+    // An older runtime without supportedValuesOf: everything is "known", which
+    // degrades to the pre-existing behaviour rather than refusing every code.
+    _known = null
+  }
+  return _known ?? new Set()
+}
+
+/** Does this runtime recognise the code? Always true where ICU cannot be asked. */
+export function isKnownCurrency(code) {
+  const set = knownCurrencies()
+  if (!set.size) return true
+  return set.has(String(code ?? '').toUpperCase())
+}
+
+/**
+ * Decimal places for a currency — 2 for USD, 0 for JPY, 3 for KWD.
+ *
+ * Throws on a code this runtime does not know, because the alternative is
+ * answering 2 for a typo. A caller that wants the lenient reading asks
+ * `isKnownCurrency` first.
+ *
+ * @param {string} currency  ISO 4217, e.g. 'USD'
+ * @returns {number}
+ */
+export function minorUnits(currency) {
+  const code = String(currency ?? '').toUpperCase()
+  if (!/^[A-Z]{3}$/.test(code))
+    throw new Error(`minorUnits: '${currency}' is not an ISO 4217 code — three letters, e.g. 'USD'`)
+  if (!isKnownCurrency(code))
+    throw new Error(`minorUnits: '${code}' is not a currency this runtime knows`)
+
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: code })
+    .resolvedOptions().maximumFractionDigits
+}

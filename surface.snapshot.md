@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-19 services · 25 routes · 10 plugins · prefix /api
+20 services · 25 routes · 10 plugins · prefix /api
 ```
 
 ## App hooks
@@ -289,6 +289,20 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`
 - **broadcasts on** — `shipping-methods`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `shopfront` · model `shopfront`
+
+- **methods** — `settings`
+- **custom methods** — `settings`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

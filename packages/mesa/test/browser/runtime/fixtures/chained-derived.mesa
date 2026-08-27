@@ -4,9 +4,12 @@
   // Written from a screen where this did NOT work (`FJS-512`, basecamp's
   // server detail): the page derived the set of legal moves from the row and
   // drew one button per member, and after a transition the set re-derived
-  // while the buttons did not. It passes here, which is the useful half — it
-  // is what rules the plain shape out. Everything this fixture combines was
-  // suspected and is now measured as fine:
+  // while the buttons did not. It passed here from the day it was written, and
+  // the reason is the one thing it did not copy — POSITION. These blocks are
+  // at a component root, where the template's whitespace is collapsed, so each
+  // gets its own anchor; the real screen's were inside an outer branch, where
+  // the whitespace survives and two blocks shared one. Nothing in the list
+  // below was ever the cause, and all of it is still worth holding:
   //
   //   a `{#if}` testing a `$:` derived rather than a plain `let`;
   //   testing it with a METHOD CALL (`moves.has(…)`) rather than the value,
@@ -17,8 +20,8 @@
   //   an outer branch chain whose selected branch does not change;
   //   an OBJECT replaced whole, by an async handler after an await.
   //
-  // So the fixture is coverage rather than a reproduction. Whatever is left in
-  // the real screen is not on this list.
+  // So the fixture is coverage rather than a reproduction — the reproduction is
+  // `test/block-anchor.test.js` and the sibling teardown in `each-outer-read`.
   // The `let` is what changes. Everything below is downstream of it.
   let loading = false
   // An OBJECT, replaced whole by an async handler after an await — a screen

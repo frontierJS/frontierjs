@@ -19,6 +19,7 @@
 //   }
 
 import { existsSync, readFileSync, writeFileSync, rmSync, statSync, openSync, readSync, closeSync } from 'fs'
+import { modelToTableName } from '../core/ddl.js'
 
 // ─── Duration parser ──────────────────────────────────────────────────────────
 // Accepts: 30d, 90d, 1y, 24h, 60m, 3600s
@@ -34,10 +35,24 @@ const DURATION_UNITS = {
   y:  31_536_000_000,
 }
 
-export function parseDuration(str) {
+// `what` names the caller in the error, because this is the one duration parser
+// and a test clock told it had an "invalid retention duration" is being told
+// about a feature it is not using.
+// A clock option is `() => Date | ISO string`, a bare `Date`, or absent. One
+// reading, because both passes take it and a second interpretation is how the
+// jsonl half ends up sweeping to a different instant than the SQLite half.
+function nowMs(now) {
+  const raw = typeof now === 'function' ? now() : now
+  if (raw == null)            return Date.now()
+  if (typeof raw === 'number') return raw
+  const t = raw instanceof Date ? raw.getTime() : new Date(raw).getTime()
+  return Number.isNaN(t) ? Date.now() : t
+}
+
+export function parseDuration(str, what = 'retention') {
   if (!str) return null
   const match = String(str).match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d|w|y)$/)
-  if (!match) throw new Error(`Invalid retention duration '${str}' — expected format: 30d, 24h, 1y, 60m`)
+  if (!match) throw new Error(`Invalid ${what} duration '${str}' — expected format: 30d, 24h, 1y, 60m`)
   return Number(match[1]) * (DURATION_UNITS[match[2]] ?? 0)
 }
 
@@ -66,15 +81,28 @@ export function parseSize(str) {
 // Safe to call at startup — silently skips tables that don't exist yet,
 // and no-ops when nothing needs deleting.
 //
+// The cutoff is a ROLLING INSTANT: the duration back from the moment the pass
+// runs, with `d` a flat 24 hours and `y` a flat 365 days. No calendar and no
+// zone enter it, so *ninety days* is ninety times twenty-four hours from now and
+// not a day boundary anywhere. Stated rather than fixed — a calendar-aligned
+// window needs a zone, which the seed has no way to say yet (`FJS-D143`).
+//
 // @param rawWriteDb  raw Bun Database handle
 // @param models      array of model AST nodes belonging to this database
 // @param retention   duration string e.g. '30d', '90d', '1y'
+// @param pluralize   the client's table-name rule — see below
+// @returns [{ model, table, removed }] for every table it touched
 
-export function runSqliteRetention(rawWriteDb, models, retention) {
+export function runSqliteRetention(rawWriteDb, models, retention, pluralize = false, now = Date.now) {
   const ms = parseDuration(retention)
-  if (!ms) return
+  if (!ms) return []
 
-  const cutoff = new Date(Date.now() - ms).toISOString()
+  // The client's clock, not the wall clock. A sweep is a CROSSING — a row aging
+  // past a window — and staging one is the whole reason a test freezes a clock;
+  // reading `Date.now()` here made `env.clock.advance('100d')` move nothing that
+  // this pass could see.
+  const cutoff = new Date(nowMs(now) - ms).toISOString()
+  const swept  = []
 
   for (const model of models) {
     // Only models with a createdAt DateTime field
@@ -83,25 +111,50 @@ export function runSqliteRetention(rawWriteDb, models, retention) {
     )
     if (!hasCreatedAt) continue
 
+    // The TABLE, not the model. `DELETE FROM "AuditEvent"` names nothing — the
+    // table is `audit_event` — and the throw landed in a catch commented *table
+    // may not exist yet*, so retention silently kept every row for every model
+    // whose name is not a case-variant of its table: any multi-word name, and
+    // every name at all under `pluralize` (`FJS-521`). `Log` survived only
+    // because SQLite matches identifiers case-insensitively.
+    const table = modelToTableName(model, pluralize)
+
+    // Asked rather than inferred from a throw. A table that is not there yet is
+    // the legitimate first-run case and must stay quiet; a DELETE that fails
+    // against a table that IS there is a defect, and the two used to be one
+    // silent branch.
+    const exists = rawWriteDb
+      .query(`SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?`)
+      .get(table)
+    if (!exists) continue
+
     try {
       rawWriteDb.prepare(
-        `DELETE FROM "${model.name}" WHERE "createdAt" < ?`
+        `DELETE FROM "${table}" WHERE "createdAt" < ?`
       ).run(cutoff)
       // sqlite3_changes(), not bun's `.changes` — the latter counts what the
       // FTS and cascade triggers wrote too, so the line said 17 rows removed
       // for one (FJS-320).
       const removed = rawWriteDb.query('SELECT changes() AS n').get()?.n ?? 0
+      swept.push({ model: model.name, table, removed })
 
       if (removed > 0) {
         console.log(
           `[litestone] retention: removed ${removed} row${removed === 1 ? '' : 's'}` +
-          ` from "${model.name}" (older than ${retention})`
+          ` from "${table}" (older than ${retention})`
         )
       }
-    } catch {
-      // Table may not exist yet on first run — silent skip
+    } catch (err) {
+      // A table that exists and will not sweep is worth saying out loud: the
+      // whole point of the declaration is rows going away.
+      console.warn(
+        `[litestone] retention: could not sweep "${table}" — ${(err && err.message) || err}`
+      )
+      swept.push({ model: model.name, table, removed: 0, error: String((err && err.message) || err) })
     }
   }
+
+  return swept
 }
 
 // ─── JSONL compaction ─────────────────────────────────────────────────────────
@@ -140,13 +193,13 @@ function readFirstLine(filePath) {
   return chunks.join('').trim()
 }
 
-export function compactJsonl(filePath, model, retention, maxSize) {
+export function compactJsonl(filePath, model, retention, maxSize, now = Date.now) {
   if (!existsSync(filePath)) return null
   if (!retention && !maxSize) return null
 
   const ms       = retention ? parseDuration(retention) : null
   const maxBytes = maxSize   ? parseSize(maxSize)       : null
-  const cutoff   = ms ? new Date(Date.now() - ms).toISOString() : null
+  const cutoff   = ms ? new Date(nowMs(now) - ms).toISOString() : null
   // Find the timestamp field — prefer createdAt, fall back to first DateTime
   const tsField  = ms
     ? (model.fields.find(f => f.name === 'createdAt' && f.type.name === 'DateTime')?.name ??

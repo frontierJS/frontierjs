@@ -19,6 +19,7 @@
   import Checkbox      from './Checkbox.mesa'
   import Combobox      from './Combobox.mesa'
   import DateTimeInput from './DateTimeInput.mesa'
+  import FileField     from './FileField.mesa'
   import MultiSelect   from './MultiSelect.mesa'
   import Input         from './Input.mesa'
   import JsonInput     from './JsonInput.mesa'
@@ -122,6 +123,21 @@
       // `e.target.value` is the one value that must not reach the write.
       props: ({ field: f, value: v, onvalue }) => ({
         name: f.name, value: v, onvalue: (doc) => onvalue(doc),
+      }),
+    },
+    // A `File` column. The value is one of three shapes — nothing, the URL the
+    // server resolved a stored reference into, or the browser `File` the person
+    // just chose — and only the third is ever handed back, so `onvalue` again
+    // and never `e.target.value`.
+    //
+    // Nothing uploads here. A File anywhere in the payload turns the create or
+    // patch into `multipart/form-data` at the client, so submitting the form IS
+    // the upload (`FJS-409`) — which keeps the bytes on the one route that has
+    // the gate, the row policies and `@accept` on it.
+    file: {
+      component: FileField,
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, field: f, value: v, onvalue: (next) => onvalue(next),
       }),
     },
     datetime: {

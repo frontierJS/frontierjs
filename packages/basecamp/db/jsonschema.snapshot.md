@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-71 definitions · 45 models · 26 enums · 0 other
+73 definitions · 46 models · 27 enums · 0 other
 ```
 
 ## Definitions
@@ -38,6 +38,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `ApiKey` | model |
 | `Server` | model |
 | `ServerEvent` | model |
+| `OutpostNonce` | model |
 | `Volume` | model |
 | `Network` | model |
 | `ServerNetwork` | model |
@@ -96,6 +97,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `BackupKind` | enum |
 | `BackupDestination` | enum |
 | `NotificationKind` | enum |
+| `Capability` | enum |
 
 ## Enums
 
@@ -128,6 +130,7 @@ validates, and a select that silently drops an option.
 - `BackupKind` — `manual`, `scheduled`
 - `BackupDestination` — `local`, `s3`
 - `NotificationKind` — `deploy_success`, `deploy_failed`, `alert_firing`, `alert_resolved`, `member_joined`, `job_failed`, `weekly_digest`
+- `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Environment.variables`, `Server.create`, `Server.delete`, `Server.drain`, `Server.reboot`, `Server.undrain`, `Server.update`
 
 ## Models
 
@@ -279,6 +282,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `workspaceId` | `string` | yes | — | — | — |
 | `userId` | `string` | yes | — | — | — |
 | `role` | `WorkspaceRole` = `"viewer"` | — | — | — | — |
+| `capabilities` | `Capability[]` = `[]` | — | — | — | — |
 | `invitedBy` | `string`? | — | — | — | — |
 | `invitedAt` | `string`? | — | — | `format: "date-time"` | — |
 | `acceptedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -330,9 +334,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `userId` | `string` | yes | — | — | — |
-| `credentialId` | `string`? | — | — | — | — |
+| `credentialId` | `string`? | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
-| `tokenHint` | `string` | yes | — | — | — |
+| `tokenHint` | `string` | — | — | `x-litestone-kind` | — |
 | `scopes` | `string[]` = `[]` | — | — | — | — |
 | `expiresAt` | `string`? | — | — | `format: "date-time"` | — |
 | `revokedAt` | `string`? | — | — | `format: "date-time"` | — |
@@ -342,7 +346,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `usesOnDate` | `integer` = `0` | — | — | — | — |
 | `createdBy` | `string`? | — | — | — | — |
 
-**On create**: required — `userId`, `name`, `tokenHint` · not accepted — `id`
+**On create**: required — `userId`, `name` · not accepted — `id`
 
 ### `Server`
 
@@ -352,7 +356,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `volumes` — hasMany `Volume`
 - relation `appServers` — hasMany `AppServer`
 - relation `serverNetworks` — hasMany `ServerNetwork`
-- transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `checkIn`: pending|installing|unreachable → online @8 · `reportRunning`: pending|provisioning|installing|ready|unreachable|stopped → online · `reportStopped`: pending|provisioning|installing|ready|online|unreachable|draining → stopped · `reportRebuilding`: pending|installing|ready|online|unreachable|draining|stopped → provisioning · `reportDestroyed`: pending|provisioning|installing|ready|online|unreachable|draining|stopped → destroyed
+- transitions on `status` — `reboot`: online|unreachable → pending · `drain`: online → draining @5 · `undrain`: draining → online @5 · `checkIn`: pending|installing|unreachable → online · `reportRunning`: pending|provisioning|installing|ready|unreachable|stopped → online @5 · `reportStopped`: pending|provisioning|installing|ready|online|unreachable|draining → stopped @5 · `reportRebuilding`: pending|installing|ready|online|unreachable|draining|stopped → provisioning @5 · `reportDestroyed`: pending|provisioning|installing|ready|online|unreachable|draining|stopped → destroyed @5
+- capabilities — `Server.create` · `Server.update` · `Server.delete` · `Server.reboot` · `Server.drain` · `Server.undrain` · read is not graded
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -397,6 +402,17 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `metadata` | `json` = `{}` | — | — | — | — |
 
 **On create**: required — `serverId`, `kind`, `message` · not accepted — `id`
+
+### `OutpostNonce`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `nonce` | `string` | — | — | — | — |
+| `seenAt` | `string` | — | — | `format: "date-time"` | — |
+
+**On create**: required — nothing · not accepted — `nonce`
 
 ### `Volume`
 
@@ -483,6 +499,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `deployments` — hasMany `Deployment`
 - relation `jobs` — hasMany `Job`
 - relation `flagOverrides` — hasMany `FlagOverride`
+- capabilities — `Environment.create` · `Environment.update` · `Environment.delete` · `Environment.variables` · read is not graded
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -794,7 +811,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `tags` | `string[]` = `[]` | — | — | — | — |
 | `variants` | `json` = `[]` | — | — | — | — |
 | `isEnabled` | `boolean` = `false` | — | — | — | — |
-| `rollout` | `integer` = `0` | — | — | `minimum: 0` `maximum: 100` | — |
+| `rollout` | `integer` = `100` | — | — | `minimum: 0` `maximum: 100` | — |
 | `createdBy` | `string`? | — | — | — | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
 
@@ -812,7 +829,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `flagId` | `string` | yes | — | — | — |
 | `environmentId` | `string` | yes | — | — | — |
 | `isEnabled` | `boolean` = `false` | — | — | — | — |
-| `rollout` | `integer` = `0` | — | — | `minimum: 0` `maximum: 100` | — |
+| `rollout` | `integer` = `100` | — | — | `minimum: 0` `maximum: 100` | — |
 | `variantKey` | `string`? | — | — | — | — |
 
 **On create**: required — `flagId`, `environmentId` · not accepted — `id`

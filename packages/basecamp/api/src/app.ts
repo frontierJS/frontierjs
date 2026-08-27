@@ -31,6 +31,7 @@ import { createBasecampDb }              from './core/db.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
 import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, resolveWorkspaceId } from './core/hooks.ts'
+import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { apiKeyGuard, apiKeyUsage }       from './services/api-keys/scopes.ts'
 import { slugify }                        from './core/resource.ts'
@@ -87,8 +88,9 @@ export async function buildBasecampApp(
   //              `app.sqlite`, all of which want a Database, not an ORM.
   //   db       — the Litestone client. THE Data boundary: every service,
   //              job and bootstrap path reads and writes through it. It is
-  //              also what createApp is given, so `app.db` is this and
-  //              `app.data` is the name for it.
+  //              what createApp is given, so `app.db` IS this — typed by the
+  //              `AppDb` augmentation in basecamp.types.ts rather than by a
+  //              second claimed name for the same object (`FJS-532`).
   //
   // Migrations run first, so the Litestone client opens a database whose
   // tables already exist.
@@ -175,11 +177,12 @@ export async function buildBasecampApp(
   // every service gets a client on ctx.locals.db already scoped to the caller.
   // Omitting it leaves services running against an unscoped client — an option
   // with exactly one correct answer.
-  // `autoload` stated rather than defaulted. The default resolves `./services`
-  // beside the ENTRY FILE (Bun.main), which is the entry point in production
-  // and the test runner under `bun test` — so an app mounted by
+  // `autoload` stated rather than defaulted, and the reason is the TEST RUNNER.
+  // The default probes beside the entry file (`Bun.main`), which is this app in
+  // production and the test file under `bun test` — so an app mounted by
   // @frontierjs/testing found no services at all. An absolute path is the same
-  // answer from either.
+  // answer from either. Nothing to do with the layout: `api/src/services` is
+  // where the probe looks anyway (`FJS-458`).
   const servicesDir = new URL('./services', import.meta.url).pathname
   // `principal:` is what makes this app's tenancy work, and it is the whole of
   // what used to be `withWorkspaceStanding` + `applyStanding` (`FJS-D113`).
@@ -203,6 +206,11 @@ export async function buildBasecampApp(
       tenant:      'workspaceId',
       standing:    'role',
       standingAs:  'memberRole',
+      // The grid, read off the same row as the standing and therefore costing
+      // no second query. It cannot live on the session: a capability is always
+      // per tenant (`FJS-D149`) and the same person holds a different set in
+      // each workspace, which is the fact the whole membership row exists for.
+      capabilities: 'capabilities',
       // The workspace's own row travels with the membership: its status is one
       // join away from a row already being read, and a second query per request
       // for it is the thing this option exists to avoid.
@@ -245,9 +253,8 @@ export async function buildBasecampApp(
   // Attach the Basecamp-specific subsystems. Every one of them is a claim —
   // the guarded namespace claim, which throws on a collision instead of
   // silently last-write-wins. Nothing here assigns over a name Junction owns:
-  // `app.db` stays the Litestone client createApp was given, and the raw
-  // handle takes a name of its own rather than replacing it.
-  app.claim('data',   db)
+  // `app.db` IS the Litestone client createApp was given and is claimed by
+  // nobody, and the raw handle takes a name of its own rather than replacing it.
   app.claim('sqlite', rawDb)
   app.claim('providers', await buildProviders(
     ((config as Record<string, unknown>).providers ?? {}) as Record<string, Record<string, unknown>>
@@ -555,7 +562,8 @@ export async function buildBasecampApp(
           data: { accountId: account.id, name: wsName, slug, type: 'team', ownerId: user.id },
         })
         await tx.workspaceMember.create({
-          data: { workspaceId: workspace.id, userId: user.id, role: 'owner', acceptedAt: new Date().toISOString() },
+          data: { workspaceId: workspace.id, userId: user.id, role: 'owner',
+                  capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() },
         })
         return { account, workspace }
       })

@@ -44,7 +44,7 @@ import { announce } from '../../channels.ts'
 export function createCleanupService(app: BasecampApp) {
 
   /** The system client, typed once — the accessors have no generated types yet. */
-  const sys = (): any => (app.data as any).asSystem()
+  const sys = (): any => $.db.asSystem()
 
   /** The caller's fleet, as id → name. The tenancy boundary for this whole
    *  service: neither model carries a workspace, so a query that skipped this

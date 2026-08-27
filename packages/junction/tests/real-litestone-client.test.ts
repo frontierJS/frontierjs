@@ -579,11 +579,67 @@ describe('$withDeleted on a write', () => {
     expect(row.code).toBe('X-archived')
   })
 
-  test('remove still does NOT read it — that half is a decision, not a passthrough', async () => {
+  // `remove` is the one write the directive does not lift, and the change here
+  // is what it says rather than what it does. It refused before too — with a
+  // 404 about a row that is plainly there, which reads as the row being gone.
+  test('remove refuses the directive by NAME, not by 404ing about the row', async () => {
     const db  = await seedDeleted()
     const err = await svc().remove(ctx(db, {
       service: 'docs', method: 'remove', id: 1, directives: { withDeleted: true },
     })).catch((e: Error) => e) as Error
-    expect(toFrameworkError(err).code).toBe(404)
+
+    expect(toFrameworkError(err).code).toBe(400)
+    expect(err.message).toContain('$withDeleted is not honoured on remove')
+    // The way out is named, or the refusal is a dead end.
+    expect(err.message).toContain('PATCH')
+  })
+
+  test('…and it is graded on the request, so a LIVE row refuses identically', async () => {
+    // Grading it on the row's state would make one request succeed or refuse
+    // depending on data the caller cannot see.
+    const db = await mkSoftDb()
+    await (db as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> })
+      .asSystem().doc!.create({ data: { id: 1, code: 'X' } })
+
+    const err = await svc().remove(ctx(db, {
+      service: 'docs', method: 'remove', id: 1, directives: { withDeleted: true },
+    })).catch((e: Error) => e) as Error
+    expect(toFrameworkError(err).code).toBe(400)
+
+    // …and the row is untouched: a refusal that half-wrote would be worse.
+    const out = await svc().find(ctx(db, { service: 'docs' })) as { data: unknown[] }
+    expect(out.data).toHaveLength(1)
+  })
+
+  test('a bulk remove refuses it too — same reason, same sentence', async () => {
+    const bulk = createService({ name: 'docs', model: 'doc', allowBulk: true } as never)
+    const db   = await seedDeleted()
+    const err  = await bulk.remove(ctx(db, {
+      service: 'docs', method: 'remove', query: { code: 'X' }, directives: { withDeleted: true },
+    })).catch((e: Error) => e) as Error
+    expect(toFrameworkError(err).code).toBe(400)
+    expect(err.message).toContain('$withDeleted is not honoured on remove')
+  })
+
+  test('an ordinary remove is untouched, and so is a model that hides nothing', async () => {
+    const db = await seedDeleted()
+    await (db as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> })
+      .asSystem().doc!.create({ data: { id: 2, code: 'Y' } })
+    await svc().remove(ctx(db, { service: 'docs', method: 'remove', id: 2 }))
+    expect(((await svc().find(ctx(db, { service: 'docs' }))) as { data: unknown[] }).data).toHaveLength(0)
+
+    // On a model with no @@softDelete the directive changes nothing, so there
+    // is nothing to decline: remove is already the hard delete it asks about.
+    const plain = await createClient({
+      db: ':memory:',
+      schema: 'model Note { id Int @id  body String }',
+    }) as unknown as AnyClient
+    const notes = createService({ name: 'notes', model: 'note' })
+    await (plain as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> })
+      .asSystem().note!.create({ data: { id: 1, body: 'b' } })
+    await notes.remove(ctx(plain, {
+      service: 'notes', method: 'remove', id: 1, directives: { withDeleted: true },
+    }))
+    expect(((await notes.find(ctx(plain, { service: 'notes' }))) as { data: unknown[] }).data).toHaveLength(0)
   })
 })

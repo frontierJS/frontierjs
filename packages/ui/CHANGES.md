@@ -1,5 +1,29 @@
 # Changes
 
+## 2026-08-26 — `FileField`, the control a `File` column gets
+
+`FJS-409`. 70/70 components, 871 passing.
+
+`FileUpload` is the input and this is the FIELD, and the difference is the value.
+FileUpload speaks `File[]` and knows nothing about a record; a column's value is
+one of three things — nothing yet, the URL a read resolved a stored reference
+into, or the `File` somebody has just chosen — and a form has to render all three
+while handing back only the last.
+
+It uploads nothing. The bytes travel with the record, so there is no progress
+bar, no pending state and nothing to resume.
+
+Two intentions that a single button cannot serve are separate: `undefined` leaves
+the stored file alone (what an edit that did not touch this field means) and
+`null` clears the column. A control offering only one of them makes *I picked the
+wrong file* indistinguishable from *remove the photograph*.
+
+A reference that reached the form UNRESOLVED is named rather than drawn — an
+`<img>` pointed at a JSON blob is a broken-image icon and no explanation. That
+was `FJS-541`'s shape, and the report stays after the fix: resolution happens in
+litestone and a form is downstream of every read an app might add.
+
+
 ## 2026-08-23 — a relation picker is a searchable select
 
 `FJS-459`, and it is the direct consequence of the change above it. Giving every

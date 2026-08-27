@@ -17,9 +17,12 @@
 // stated once, in `resolveIn()`. A UI that reimplemented it would be a second
 // owner of the only thing this service is for.
 //
-// Nothing here decides whether a given USER is in a rollout percentage. That is
-// a bucketing decision that has to happen where the user is, per request, and
-// inventing it here would produce a number the SDK could not reproduce.
+// **Who is in a rollout percentage is a rule, not a number** (`FJS-124`). It has
+// to be decided where the user is — per request, in whatever language the SDK is
+// written in — so what this file owns is the RULE, published beside `resolveIn`
+// and reproducible anywhere: MurmurHash3 x86 32-bit over `<flagKey>:<unitId>`,
+// mod 100. `resolve` will apply it for a stated `unitId`, which is what makes it
+// checkable against an SDK rather than merely described.
 
 import { createService, NotFound, BadRequest, Conflict, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
@@ -40,15 +43,150 @@ export function resolveIn(
 ) {
   if (override) return {
     isEnabled:  !!override.isEnabled,
-    rollout:    Number(override.rollout ?? 0),
+    rollout:    Number(override.rollout ?? 100),
     variantKey: (override.variantKey as string | null) ?? null,
     source:     'override' as const,
   }
   return {
     isEnabled:  !!flag.isEnabled,
-    rollout:    Number(flag.rollout ?? 0),
+    rollout:    Number(flag.rollout ?? 100),
     variantKey: null,
     source:     'default' as const,
+  }
+}
+
+// ─── bucketing ──────────────────────────────────────────────────────────────
+//
+// `rollout` was stored, returned, and applied by nothing, so a flag at 10%
+// behaved as on-or-off (`FJS-124`). Closing that is not code so much as an
+// agreement: the server and every SDK must land on the same answer for the same
+// user, or the percentage is a different 10% in each of them.
+//
+// **MurmurHash3 x86 32-bit, over `<flagKey>:<unitId>`, mod 100.** Every part of
+// that is load-bearing:
+//
+//   • **Murmur3** because it is synchronous, dependency-free, ~30 lines, and has
+//     a stock implementation in every language an SDK might be written in. A
+//     crypto hash would be reproducible too, but WebCrypto is async — a flag
+//     check sits in a render path and cannot await.
+//   • **The flag key is in the hash**, so two flags at 10% do not select the
+//     same tenth of the population. Hashing the unit alone gives every flag the
+//     same cohort, which is the carryover bias that makes a staged rollout test
+//     one unlucky group over and over.
+//   • **mod 100**, matching `rollout Int @gte(0) @lte(100)`. A finer bucket
+//     would be a number the column cannot express.
+//
+// Two properties follow and both are asserted rather than assumed: raising a
+// percentage only ever ADDS units (nobody loses the feature when 10 becomes 20),
+// and the same unit lands in the same bucket in every environment — so a cohort
+// tested in staging is the cohort that gets it in production.
+//
+// The `unitId` is the caller's to choose: a user id, an account id, a device id.
+// This service never invents one. Absent, no bucketing is reported at all.
+
+/** MurmurHash3 x86 32-bit, seed 0. Verified against the canonical vectors —
+ *  see `api/test/flags.test.ts`, which is the contract an SDK is written to. */
+export function murmur3(text: string): number {
+  const bytes  = new TextEncoder().encode(text)
+  const n      = bytes.length
+  const blocks = n >> 2
+  let   h      = 0
+
+  for (let i = 0; i < blocks; i++) {
+    const j = i << 2
+    let k = bytes[j]! | (bytes[j + 1]! << 8) | (bytes[j + 2]! << 16) | (bytes[j + 3]! << 24)
+    k = Math.imul(k, 0xcc9e2d51)
+    k = (k << 15) | (k >>> 17)
+    k = Math.imul(k, 0x1b873593)
+    h ^= k
+    h = (h << 13) | (h >>> 19)
+    h = (Math.imul(h, 5) + 0xe6546b64) | 0
+  }
+
+  // The trailing 1–3 bytes, which get the k-mix and none of the h-mix.
+  const tail = blocks << 2
+  const rem  = n & 3
+  if (rem) {
+    let k = 0
+    if (rem === 3) k ^= bytes[tail + 2]! << 16
+    if (rem >= 2)  k ^= bytes[tail + 1]! << 8
+    k ^= bytes[tail]!
+    k = Math.imul(k, 0xcc9e2d51)
+    k = (k << 15) | (k >>> 17)
+    k = Math.imul(k, 0x1b873593)
+    h ^= k
+  }
+
+  h ^= n
+  h ^= h >>> 16
+  h = Math.imul(h, 0x85ebca6b)
+  h ^= h >>> 13
+  h = Math.imul(h, 0xc2b2ae35)
+  h ^= h >>> 16
+  return h >>> 0
+}
+
+/** Which of the hundred buckets this unit falls in for this flag. 0–99. */
+export function bucketFor(flagKey: string, unitId: string): number {
+  return murmur3(`${flagKey}:${unitId}`) % 100
+}
+
+/**
+ * Which variant this unit gets, by cumulative weight.
+ *
+ * Salted apart from the rollout bucket (`:variant`), so a unit's position in
+ * the rollout says nothing about which arm it lands in — sharing one bucket
+ * would put everyone at the front of the rollout in the first variant.
+ *
+ * `assertVariants` already refuses weights that do not add to 100, so the walk
+ * cannot fall off the end; the last variant is returned if it ever does, which
+ * is a rounding answer rather than a null one.
+ */
+export function variantFor(
+  flagKey:  string,
+  unitId:   string,
+  variants: Record<string, unknown>[],
+): string | null {
+  if (!variants.length) return null
+  const b = murmur3(`${flagKey}:variant:${unitId}`) % 100
+  let seen = 0
+  for (const v of variants) {
+    seen += Number(v.weight ?? 0)
+    if (b < seen) return (v.key as string) ?? null
+  }
+  return (variants[variants.length - 1]!.key as string) ?? null
+}
+
+/**
+ * The resolved config, decided for ONE unit.
+ *
+ * `isEnabled` stays what it was — the switch somebody set — and `on` is the
+ * answer for this unit, which is the only field an SDK branches on. Both are
+ * returned because a screen explaining *why* needs the pair, and `bucket` is
+ * there for the same reason: "this user is at 47, the rollout is 10" is the
+ * sentence that makes a percentage trustworthy.
+ */
+export function decideFor(
+  resolved: ReturnType<typeof resolveIn>,
+  flagKey:  string,
+  unitId:   string,
+  type:     string,
+  variants: Record<string, unknown>[] | null | undefined,
+) {
+  const bucket    = bucketFor(flagKey, unitId)
+  const inRollout = resolved.rollout >= 100 || (resolved.rollout > 0 && bucket < resolved.rollout)
+  const on        = resolved.isEnabled && inRollout
+
+  return {
+    ...resolved,
+    unitId,
+    bucket,
+    inRollout,
+    on,
+    // A pinned variant is a decision the override made and outranks the split.
+    variantKey: type === 'variant' && on
+      ? (resolved.variantKey ?? variantFor(flagKey, unitId, variants ?? []))
+      : resolved.variantKey,
   }
 }
 
@@ -207,7 +345,7 @@ export function createFlagsService(app: BasecampApp) {
 
       const values = {
         isEnabled:  isEnabled === true || isEnabled === 'true',
-        rollout:    Math.max(0, Math.min(100, Number(rollout ?? 0))),
+        rollout:    Math.max(0, Math.min(100, Number(rollout ?? 100))),
         variantKey: (variantKey as string | null) ?? null,
       }
 
@@ -251,10 +389,16 @@ export function createFlagsService(app: BasecampApp) {
       if (!environmentId) throw new BadRequest('environmentId is required')
       await environmentInWorkspace(environmentId)
 
+      // Who the answer is FOR. Optional, and absent means the caller wants the
+      // configuration rather than a decision — which is every screen in this
+      // app. Stated, never invented: bucketing the calling operator would
+      // answer a question about the wrong person entirely.
+      const unitId = ($.query.unitId ?? ($.data as Record<string, string>)?.unitId) as string | undefined
+
       const flags = await db().featureFlag.findMany({
         where: { workspaceId: ws() }, orderBy: { key: 'asc' }, limit: 500,
       })
-      if (!flags.length) return { total: 0, environmentId, data: [] }
+      if (!flags.length) return { total: 0, environmentId, ...(unitId ? { unitId } : {}), data: [] }
 
       const overrides = await db().flagOverride.findMany({
         where: { environmentId, flagId: { in: flags.map((f: { id: string }) => f.id) } },
@@ -264,12 +408,19 @@ export function createFlagsService(app: BasecampApp) {
       return {
         total: flags.length,
         environmentId,
-        data: flags.map((f: Record<string, unknown>) => ({
-          key:      f.key,
-          type:     f.type,
-          variants: f.type === 'variant' ? f.variants : undefined,
-          ...resolveIn(f, byFlag.get(f.id) as Record<string, unknown> | undefined),
-        })),
+        ...(unitId ? { unitId } : {}),
+        data: flags.map((f: Record<string, unknown>) => {
+          const resolved = resolveIn(f, byFlag.get(f.id) as Record<string, unknown> | undefined)
+          return {
+            key:      f.key,
+            type:     f.type,
+            variants: f.type === 'variant' ? f.variants : undefined,
+            ...(unitId
+              ? decideFor(resolved, f.key as string, unitId,
+                          f.type as string, f.variants as Record<string, unknown>[])
+              : resolved),
+          }
+        }),
       }
     },
 
