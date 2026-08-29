@@ -28,8 +28,13 @@ import { cartClaim, CART_HEADER }               from './core/cart-claim.ts'
 import { IDP_URL }                              from './core/idp-sink.ts'
 import { createConduitMailer, MAIL_TARGET }     from './core/mailer.ts'
 import { PSP_TARGET, PSP_URL, WEBHOOK_PATH, verifyWebhook } from './core/psp.ts'
+import { stripeTarget, verifyStripeSignature, STRIPE_WEBHOOK_PATH } from './core/stripe.ts'
 
-const PORT = 8110
+// 8110 is dev/be/project-1 — derived, never chosen (packages/cli/core/ports.js).
+// The env override is what lets a drive start an app of its own on the TEST row
+// (7110) instead of needing one hand-started on the dev row, which is the
+// difference between `verify:cart` and every drive with a preamble.
+const PORT = Number(process.env.API_PORT ?? 8110)
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
 //
@@ -350,7 +355,16 @@ app.configure(conduit({
     auth:          { type: 'hmac', ref: 'SHOP_PSP_KEY' },
     registered_at: Date.now(),
     last_seen_at:  null,
-  }],
+  },
+  // Stripe. A REAL vendor beside this project's own conventions, and the two
+  // disagree in every way a connector can: `form` bodies against JSON, a bearer
+  // key against an HMAC, and a webhook signature scheme of Stripe's own rather
+  // than `@frontierjs/toolbelt/signature`'s. That disagreement is the point —
+  // one connector cannot show whether the boundary is generic (`FJS-D153`).
+  //
+  // The descriptor is built by the connector rather than spelled out here, which
+  // is the shape it will keep when it becomes `@frontierjs/conduit-stripe`.
+  stripeTarget()],
 }))
 
 // The env vars this app needs and does not otherwise default. Each sink
@@ -364,6 +378,26 @@ app.configure(conduit({
 process.env.SHOP_MAIL_KEY            ??= 'dev-mail-key'
 process.env.SHOP_PSP_KEY             ??= 'dev-psp-key'
 process.env.SHOP_PSP_WEBHOOK_SECRET  ??= 'dev-psp-webhook-secret'
+
+// Stripe, and the same split for the same reason — `sk_…` is what the shop
+// spends with, `whsec_…` is what Stripe signs events with, and they are issued
+// separately at Stripe because one compromise must not be both directions.
+//
+// The defaults are the DEV SINK's, so the example runs with no Stripe account.
+// Real keys go in `.env` (gitignored), and `STRIPE_URL` is the switch that
+// matters: without it the connector still talks to api/src/core/stripe-sink.ts
+// on :8114 and the real key is never used.
+//
+//   STRIPE_URL=https://api.stripe.com
+//   STRIPE_SECRET_KEY=sk_test_…
+//   STRIPE_WEBHOOK_SECRET=whsec_…
+//
+// `whsec_…` is NOT on the API-keys screen — it belongs to an endpoint, and
+// `stripe listen --forward-to localhost:8110/api/webhooks/stripe` prints the one
+// for a local forward. The PUBLISHABLE key (`pk_…`) has no home here: it is a
+// browser credential for Stripe.js, and this app collects no card details.
+process.env.STRIPE_SECRET_KEY        ??= 'sk_test_dev'
+process.env.STRIPE_WEBHOOK_SECRET    ??= 'whsec_dev'
 
 // ─── Notifications ────────────────────────────────────────────────────────
 //
@@ -438,6 +472,44 @@ app.post(WEBHOOK_PATH, async (ctx) => {
     .call('record', null, (ctx.body ?? {}) as Record<string, unknown>, { auth: { user: SYSTEM } })
 
   return ctx.json(result as Record<string, unknown>, 200)
+})
+
+// ─── Stripe's events ──────────────────────────────────────────────────────
+//
+// The same shape as the route above and a different dialect. Stripe signs
+// `"<timestamp>.<raw body>"` under `Stripe-Signature`; this project signs a
+// canonical string over method, path, timestamp, nonce and a body hash. Neither
+// is wrong and neither generalises, which is why a connector owns its vendor's
+// (`FJS-D153`).
+//
+// `ctx.rawBody` and not `ctx.body`: the signature is over BYTES, and
+// re-serialising the parsed object produces different ones for the same
+// document — key order, whitespace, number formatting — so every legitimate
+// event would be refused.
+//
+// What this deliberately does NOT do is drive the order state machine. The shop
+// already has a provider doing that, and pointing two at one machine is a
+// decision about which one is authoritative rather than a detail of wiring. The
+// line where that would go is the `payments.record` call in the route above.
+app.post(STRIPE_WEBHOOK_PATH, async (ctx) => {
+  const check = verifyStripeSignature({
+    rawBody: ctx.rawBody ?? '',
+    header:  ctx.headers['stripe-signature'],
+    secret:  process.env.STRIPE_WEBHOOK_SECRET ?? 'whsec_dev',
+    now:     Math.floor(Date.now() / 1000),
+  })
+
+  if (!check.ok) {
+    // Logged with the reason, answered without it — a forger learns that it
+    // failed, whoever is on call learns that Stripe's clock is 40s out.
+    console.warn(`[stripe] refused a webhook — ${check.reason}`)
+    return ctx.json({ error: 'invalid signature' }, 401)
+  }
+
+  const event = (ctx.body ?? {}) as { id?: string; type?: string }
+  // Stripe retries until it gets a 2xx, so anything that is not a signature
+  // failure answers 200 — including an event type this app does not handle.
+  return ctx.json({ received: true, id: event.id, type: event.type }, 200)
 })
 
 // GET /api/session was here — a hand-written route that resolved the Bearer

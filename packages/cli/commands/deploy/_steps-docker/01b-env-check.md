@@ -48,11 +48,7 @@ if (!requiredKeys.length) {
 const envFile   = deployConf.api?.env ?? `${serverPath}/.env.production`
 let serverEnv = ''
 try {
-  const result = context.exec({
-    command: `ssh ${host} "cat ${envFile} 2>/dev/null || echo ''"`,
-    stdio: 'pipe',
-  })
-  serverEnv = result?.toString('utf8') ?? ''
+  serverEnv = machineFor(context, host, serverPath).capture(`cat ${envFile} 2>/dev/null || echo ''`)
 } catch {
   log.warn(`Env check: could not read ${envFile} on ${host} — skipping`)
   return

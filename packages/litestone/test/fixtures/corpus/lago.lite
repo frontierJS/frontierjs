@@ -1,0 +1,3401 @@
+// lago — the data model of getlago/lago-api, expressed in .lite.
+//
+// Derived mechanically from db/structure.sql (AGPL-3.0) by
+// sql-to-lite.mjs beside this file. A CORPUS FIXTURE, not a design:
+// nothing here is a claim about how any of it should be modelled, and every
+// place the conversion made a choice the source did not is recorded in
+// gaps.json. 139 models. Regenerate with fetch.mjs.
+
+enum BillableMetricRoundingFunction {
+  round
+  floor
+  ceil
+}
+
+enum BillableMetricWeightedInterval {
+  seconds
+}
+
+enum BillingObjectConnectionBehavior {
+  specific
+  skip
+}
+
+enum ConnectionCategory {
+  payment
+  tax
+  accounting
+  crm
+}
+
+enum CustomerAccountType {
+  customer
+  partner
+}
+
+enum CustomerType {
+  company
+  individual
+}
+
+enum EnrichedStoreMigrationStatus {
+  pending
+  checking
+  processing
+  enabling
+  completed
+  failed
+}
+
+enum EnrichedStoreSubMigrationStatus {
+  pending
+  comparing
+  reprocessing
+  waiting_for_enrichment
+  deduplicating
+  dedup_paused
+  validating
+  completed
+  failed
+}
+
+enum EntitlementPrivilegeValueTypes {
+  integer
+  string
+  boolean
+  select
+}
+
+enum EntityDocumentNumbering {
+  per_customer
+  per_billing_entity
+}
+
+enum FixedChargeChargeModel {
+  standard
+  graduated
+  volume
+}
+
+enum InboundWebhookStatus {
+  pending
+  processing
+  succeeded
+  failed
+}
+
+enum InvoiceCustomSectionType {
+  manual
+  system_generated
+}
+
+enum InvoiceSettlementSettlementType {
+  payment
+  credit_note
+}
+
+enum OrderExecutionMode {
+  execute_in_lago
+  order_only
+}
+
+enum OrderFormStatus {
+  generated
+  signed
+  expired
+  voided
+}
+
+enum OrderFormVoidReason {
+  manual
+  expired
+  invalid
+}
+
+enum OrderStatus {
+  created
+  executed
+  failed
+}
+
+enum PaymentMethodTypes {
+  provider
+  manual
+}
+
+enum PaymentPayablePaymentStatus {
+  pending
+  processing
+  succeeded
+  failed
+}
+
+enum PaymentType {
+  provider
+  manual
+}
+
+enum PlanPricingType {
+  legacy
+  product_catalog
+}
+
+enum ProductType {
+  usage
+  fixed
+}
+
+enum QuoteOrderType {
+  subscription_creation
+  subscription_amendment
+  one_off
+}
+
+enum QuoteStatus {
+  draft
+  approved
+  voided
+}
+
+enum QuoteVoidReason {
+  manual
+  superseded
+  cascade_of_expired
+  cascade_of_voided
+}
+
+enum RateCardBillingTiming {
+  arrears
+  advance
+}
+
+enum RateCardRateBillingIntervalUnit {
+  day
+  week
+  month
+  year
+}
+
+enum RateCardRateModel {
+  standard
+  graduated
+  package
+  percentage
+  volume
+  graduated_percentage
+  custom
+  dynamic
+}
+
+enum RateCardRegroupPaidFees {
+  none
+  invoice
+}
+
+enum SubscriptionActivationRuleStatuses {
+  inactive
+  pending
+  satisfied
+  declined
+  failed
+  expired
+  not_applicable
+}
+
+enum SubscriptionActivationRuleTypes {
+  payment
+}
+
+enum SubscriptionCancelationReasons {
+  payment_failed
+  timeout
+}
+
+enum SubscriptionCancellationReasons {
+  payment_failed
+  timeout
+  manual
+}
+
+enum SubscriptionInvoiceIssuingDateAdjustments {
+  keep_anchor
+  align_with_finalization_date
+}
+
+enum SubscriptionInvoiceIssuingDateAnchors {
+  current_period_end
+  next_period_start
+}
+
+enum SubscriptionInvoicingReason {
+  subscription_starting
+  subscription_periodic
+  subscription_terminating
+  in_advance_charge
+  in_advance_charge_periodic
+  progressive_billing
+}
+
+enum SubscriptionOnTerminationCreditNote {
+  credit
+  skip
+  refund
+  offset
+}
+
+enum SubscriptionOnTerminationInvoice {
+  generate
+  skip
+}
+
+enum TaxStatus {
+  pending
+  succeeded
+  failed
+}
+
+enum UsageMonitoringAlertDirection {
+  increasing
+  decreasing
+}
+
+enum UsageMonitoringAlertTypes {
+  current_usage_amount
+  billable_metric_current_usage_amount
+  billable_metric_current_usage_units
+  lifetime_usage_amount
+  wallet_balance_amount
+  wallet_credits_balance
+  wallet_ongoing_balance_amount
+  wallet_credits_ongoing_balance
+  billable_metric_lifetime_usage_units
+}
+
+enum UsageMonitoringTriggeredAlertKinds {
+  triggered
+  resolved
+  seeded
+}
+
+model TemplatePublicEnrichedEvent {
+  id String @id
+  organizationId String @map("organization_id")
+  eventId String @map("event_id")
+  transactionId String @map("transaction_id")
+  externalSubscriptionId String @map("external_subscription_id")
+  code String
+  timestamp DateTime
+  subscriptionId String @map("subscription_id")
+  planId String @map("plan_id")
+  chargeId String @map("charge_id")
+  chargeFilterId String? @map("charge_filter_id")
+  properties Json
+  groupedBy Json @map("grouped_by")
+  value String?
+  decimalValue Float @map("decimal_value")
+  enrichedAt DateTime @map("enriched_at")
+}
+
+model ActiveStorageAttachment {
+  id String @id @default(uuid())
+  name String
+  recordType String @map("record_type")
+  blobId String @map("blob_id")
+  blob ActiveStorageBlob @relation(fields: [blobId], references: [id])
+  createdAt DateTime @map("created_at")
+  recordId String? @map("record_id")
+
+  @@index([blobId])
+  @@unique([recordType, recordId, name, blobId], nullsDistinct: true)
+}
+
+model ActiveStorageBlob {
+  id String @id @default(uuid())
+  key String
+  filename String
+  contentType String? @map("content_type")
+  metadata String?
+  serviceName String @map("service_name")
+  byteSize Int @map("byte_size")
+  checksum String?
+  createdAt DateTime @map("created_at")
+
+  @@unique([key])
+}
+
+model ActiveStorageVariantRecord {
+  id String @id @default(uuid())
+  blobId String @map("blob_id")
+  blob ActiveStorageBlob @relation(fields: [blobId], references: [id])
+  variationDigest String @map("variation_digest")
+
+  @@unique([blobId, variationDigest])
+}
+
+model AddOn {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  name String
+  code String
+  description String?
+  amountCents Int @map("amount_cents")
+  amountCurrency String @map("amount_currency")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  invoiceDisplayName String? @map("invoice_display_name")
+
+  @@index([deletedAt])
+  @@index([organizationId])
+}
+
+model AddOnsTax {
+  id String @id @default(uuid())
+  addOnId String @map("add_on_id")
+  addOn AddOn @relation(fields: [addOnId], references: [id])
+  taxId String @map("tax_id")
+  tax Tax @relation(fields: [taxId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([addOnId])
+  @@unique([addOnId, taxId])
+  @@index([organizationId])
+  @@index([taxId])
+}
+
+model AdjustedFee {
+  id String @id @default(uuid())
+  feeId String? @map("fee_id")
+  fee Fee? @relation(fields: [feeId], references: [id])
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  subscriptionId String? @map("subscription_id")
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  chargeId String? @map("charge_id")
+  charge Charge? @relation(fields: [chargeId], references: [id])
+  invoiceDisplayName String? @map("invoice_display_name")
+  feeType Int? @map("fee_type")
+  adjustedUnits Boolean @map("adjusted_units") @default(false)
+  adjustedAmount Boolean @map("adjusted_amount") @default(false)
+  units Float @default(0.0)
+  unitAmountCents Int @map("unit_amount_cents") @default(0)
+  properties Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  groupId String? @map("group_id")
+  group Group? @relation(fields: [groupId], references: [id])
+  groupedBy Json @map("grouped_by")
+  chargeFilterId String? @map("charge_filter_id")
+  unitPreciseAmountCents Float @map("unit_precise_amount_cents") @default(0.0)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  fixedChargeId String? @map("fixed_charge_id")
+  fixedCharge FixedCharge? @relation(fields: [fixedChargeId], references: [id])
+
+  @@index([chargeFilterId])
+  @@index([chargeId])
+  @@index([feeId])
+  @@index([groupId])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([subscriptionId])
+}
+
+model AiConversation {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  membershipId String @map("membership_id")
+  membership Membership @relation(fields: [membershipId], references: [id])
+  name String
+  mistralConversationId String? @map("mistral_conversation_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([membershipId])
+  @@index([organizationId])
+}
+
+model ApiKey {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  value String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  expiresAt DateTime? @map("expires_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  name String?
+  permissions Json
+
+  @@index([organizationId])
+  @@unique([value])
+}
+
+model AppliedAddOn {
+  id String @id @default(uuid())
+  addOnId String @map("add_on_id")
+  addOn AddOn @relation(fields: [addOnId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  amountCents Int @map("amount_cents")
+  amountCurrency String @map("amount_currency")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([addOnId])
+  @@index([addOnId, customerId])
+  @@index([customerId])
+}
+
+model AppliedCoupon {
+  id String @id @default(uuid())
+  couponId String @map("coupon_id")
+  customerId String @map("customer_id")
+  status Int @default(0)
+  amountCents Int? @map("amount_cents")
+  amountCurrency String? @map("amount_currency")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  terminatedAt DateTime? @map("terminated_at")
+  percentageRate Int? @map("percentage_rate") @scale(5)
+  frequency Int @default(0)
+  frequencyDuration Int? @map("frequency_duration")
+  frequencyDurationRemaining Int? @map("frequency_duration_remaining")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([couponId])
+  @@index([customerId])
+  @@index([organizationId])
+}
+
+model AppliedInvoiceCustomSection {
+  id String @id @default(uuid())
+  name String
+  code String
+  displayName String? @map("display_name")
+  details String?
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([invoiceId])
+  @@index([organizationId])
+}
+
+model AppliedPricingUnit {
+  id String @id @default(uuid())
+  pricingUnitId String @map("pricing_unit_id")
+  pricingUnit PricingUnit @relation(fields: [pricingUnitId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  pricingUnitableType String @map("pricing_unitable_type")
+  pricingUnitableId String @map("pricing_unitable_id")
+  conversionRate Float @map("conversion_rate") @default(0.0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId])
+  @@index([pricingUnitId])
+  @@index([pricingUnitableType, pricingUnitableId])
+}
+
+model AppliedUsageThreshold {
+  id String @id @default(uuid())
+  usageThresholdId String @map("usage_threshold_id")
+  usageThreshold UsageThreshold @relation(fields: [usageThresholdId], references: [id])
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  lifetimeUsageAmountCents Int @map("lifetime_usage_amount_cents") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([usageThresholdId, invoiceId])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([usageThresholdId])
+}
+
+model ArInternalMetadata {
+  key String @id
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model BillableMetricFilter {
+  id String @id @default(uuid())
+  billableMetricId String @map("billable_metric_id")
+  billableMetric BillableMetric @relation(fields: [billableMetricId], references: [id])
+  key String
+  values String[]
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([billableMetricId])
+  @@index([deletedAt])
+  @@index([organizationId])
+}
+
+model BillableMetric {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  name String
+  code String
+  description String?
+  properties Json?
+  aggregationType Int @map("aggregation_type")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  fieldName String? @map("field_name")
+  deletedAt DateTime? @map("deleted_at")
+  recurring Boolean @default(false)
+  weightedInterval BillableMetricWeightedInterval? @map("weighted_interval")
+  customAggregator String? @map("custom_aggregator")
+  expression String?
+  roundingFunction BillableMetricRoundingFunction? @map("rounding_function")
+  roundingPrecision Int? @map("rounding_precision")
+
+  @@index([deletedAt])
+  @@index([organizationId, code, expression])
+  @@index([organizationId])
+}
+
+model BillingEntity {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  city String?
+  country String?
+  zipcode String?
+  state String?
+  timezone String @default("UTC")
+  defaultCurrency String @map("default_currency") @default("USD")
+  documentLocale String @map("document_locale") @default("en")
+  documentNumberPrefix String? @map("document_number_prefix")
+  documentNumbering EntityDocumentNumbering @map("document_numbering")
+  finalizeZeroAmountInvoice Boolean @map("finalize_zero_amount_invoice") @default(true)
+  invoiceFooter String? @map("invoice_footer")
+  invoiceGracePeriod Int @map("invoice_grace_period") @default(0)
+  netPaymentTerm Int @map("net_payment_term") @default(0)
+  email String?
+  emailSettings String[] @map("email_settings")
+  euTaxManagement Boolean? @map("eu_tax_management") @default(false)
+  legalName String? @map("legal_name")
+  legalNumber String? @map("legal_number")
+  logo String?
+  name String
+  code String
+  taxIdentificationNumber String? @map("tax_identification_number")
+  vatRate Float @map("vat_rate") @default(0.0)
+  archivedAt DateTime? @map("archived_at")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  appliedDunningCampaignId String? @map("applied_dunning_campaign_id")
+  appliedDunningCampaign DunningCampaign? @relation(fields: [appliedDunningCampaignId], references: [id], onDelete: SetNull)
+  einvoicing Boolean @default(false)
+  subscriptionInvoiceIssuingDateAnchor SubscriptionInvoiceIssuingDateAnchors @map("subscription_invoice_issuing_date_anchor")
+  subscriptionInvoiceIssuingDateAdjustment SubscriptionInvoiceIssuingDateAdjustments @map("subscription_invoice_issuing_date_adjustment")
+  phone String?
+  paymentTerm Json? @map("payment_term")
+
+  @@index([appliedDunningCampaignId])
+  @@index([organizationId])
+}
+
+model BillingEntitiesInvoiceCustomSection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  billingEntityId String @map("billing_entity_id")
+  billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
+  invoiceCustomSectionId String @map("invoice_custom_section_id")
+  invoiceCustomSection InvoiceCustomSection @relation(fields: [invoiceCustomSectionId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([billingEntityId])
+  @@unique([billingEntityId, invoiceCustomSectionId])
+  @@index([invoiceCustomSectionId])
+  @@index([organizationId])
+}
+
+model BillingEntitiesTax {
+  id String @id @default(uuid())
+  billingEntityId String @map("billing_entity_id")
+  billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
+  taxId String @map("tax_id")
+  tax Tax @relation(fields: [taxId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([billingEntityId])
+  @@unique([billingEntityId, taxId])
+  @@index([organizationId])
+  @@index([taxId])
+}
+
+model BillingObjectConnection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  ownerType String @map("owner_type")
+  ownerId String @map("owner_id")
+  paymentProviderCustomerId String? @map("payment_provider_customer_id")
+  paymentProviderCustomer PaymentProviderCustomer? @relation(fields: [paymentProviderCustomerId], references: [id])
+  integrationCustomerId String? @map("integration_customer_id")
+  integrationCustomer IntegrationCustomer? @relation(fields: [integrationCustomerId], references: [id])
+  category ConnectionCategory
+  behavior BillingObjectConnectionBehavior
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([ownerType, ownerId, category])
+  @@index([paymentProviderCustomerId])
+  @@index([integrationCustomerId])
+  @@index([organizationId])
+}
+
+model CachedAggregation {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  timestamp DateTime
+  externalSubscriptionId String @map("external_subscription_id")
+  chargeId String @map("charge_id")
+  groupId String? @map("group_id")
+  group Group? @relation(fields: [groupId], references: [id])
+  currentAggregation Float? @map("current_aggregation")
+  maxAggregation Float? @map("max_aggregation")
+  maxAggregationWithProration Float? @map("max_aggregation_with_proration")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  groupedBy Json @map("grouped_by")
+  chargeFilterId String? @map("charge_filter_id")
+  currentAmount Float? @map("current_amount")
+  eventTransactionId String? @map("event_transaction_id")
+  presentationBreakdowns Json @map("presentation_breakdowns") @default("[]")
+
+  @@index([chargeId])
+  @@index([organizationId, eventTransactionId])
+  @@index([externalSubscriptionId])
+}
+
+model ChargeFilterValue {
+  id String @id @default(uuid())
+  chargeFilterId String @map("charge_filter_id")
+  chargeFilter ChargeFilter @relation(fields: [chargeFilterId], references: [id])
+  billableMetricFilterId String @map("billable_metric_filter_id")
+  billableMetricFilter BillableMetricFilter @relation(fields: [billableMetricFilterId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  values String[]
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([chargeFilterId])
+  @@index([billableMetricFilterId])
+  @@index([deletedAt])
+  @@index([organizationId])
+}
+
+model ChargeFilter {
+  id String @id @default(uuid())
+  chargeId String @map("charge_id")
+  charge Charge @relation(fields: [chargeId], references: [id])
+  properties Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  invoiceDisplayName String? @map("invoice_display_name")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  code String?
+
+  @@index([chargeId])
+  @@index([deletedAt])
+  @@index([organizationId])
+}
+
+model Charge {
+  id String @id @default(uuid())
+  billableMetricId String? @map("billable_metric_id")
+  billableMetric BillableMetric? @relation(fields: [billableMetricId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  planId String? @map("plan_id")
+  plan Plan? @relation(fields: [planId], references: [id])
+  amountCurrency String? @map("amount_currency")
+  chargeModel Int @map("charge_model") @default(0)
+  properties Json @default("\"{}\"")
+  deletedAt DateTime? @map("deleted_at")
+  payInAdvance Boolean @map("pay_in_advance") @default(false)
+  minAmountCents Int @map("min_amount_cents") @default(0)
+  invoiceable Boolean @default(true)
+  prorated Boolean @default(false)
+  invoiceDisplayName String? @map("invoice_display_name")
+  regroupPaidFees Int? @map("regroup_paid_fees")
+  parentId String? @map("parent_id")
+  parent Charge? @relation(fields: [parentId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  code String
+  acceptsTargetWallet Boolean @map("accepts_target_wallet") @default(false)
+
+  @@index([planId, billableMetricId, payInAdvance])
+  @@index([acceptsTargetWallet])
+  @@index([billableMetricId])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([parentId])
+  @@index([planId])
+  @@index([planId, billableMetricId, prorated])
+}
+
+model ChargesTax {
+  id String @id @default(uuid())
+  chargeId String @map("charge_id")
+  charge Charge @relation(fields: [chargeId], references: [id])
+  taxId String @map("tax_id")
+  tax Tax @relation(fields: [taxId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([chargeId])
+  @@unique([chargeId, taxId])
+  @@index([organizationId])
+  @@index([taxId])
+}
+
+model Commitment {
+  id String @id @default(uuid())
+  planId String @map("plan_id")
+  plan Plan @relation(fields: [planId], references: [id])
+  commitmentType Int @map("commitment_type")
+  amountCents Int @map("amount_cents")
+  invoiceDisplayName String? @map("invoice_display_name")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([commitmentType, planId])
+  @@index([organizationId])
+  @@index([planId])
+}
+
+model CommitmentsTax {
+  id String @id @default(uuid())
+  commitmentId String @map("commitment_id")
+  commitment Commitment @relation(fields: [commitmentId], references: [id])
+  taxId String @map("tax_id")
+  tax Tax @relation(fields: [taxId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([commitmentId])
+  @@unique([commitmentId, taxId])
+  @@index([organizationId])
+  @@index([taxId])
+}
+
+model CouponTarget {
+  id String @id @default(uuid())
+  couponId String @map("coupon_id")
+  coupon Coupon @relation(fields: [couponId], references: [id])
+  planId String? @map("plan_id")
+  plan Plan? @relation(fields: [planId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  billableMetricId String? @map("billable_metric_id")
+  billableMetric BillableMetric? @relation(fields: [billableMetricId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([billableMetricId])
+  @@index([couponId])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([planId])
+}
+
+model Coupon {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  name String
+  code String
+  status Int @default(0)
+  terminatedAt DateTime? @map("terminated_at")
+  amountCents Int? @map("amount_cents")
+  amountCurrency String? @map("amount_currency")
+  expiration Int
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  couponType Int @map("coupon_type") @default(0)
+  percentageRate Int? @map("percentage_rate") @scale(5)
+  frequency Int @default(0)
+  frequencyDuration Int? @map("frequency_duration")
+  expirationAt DateTime? @map("expiration_at")
+  reusable Boolean @default(true)
+  limitedPlans Boolean @map("limited_plans") @default(false)
+  deletedAt DateTime? @map("deleted_at")
+  limitedBillableMetrics Boolean @map("limited_billable_metrics") @default(false)
+  description String?
+
+  @@index([deletedAt])
+  @@index([organizationId])
+}
+
+model CreditNoteItem {
+  id String @id @default(uuid())
+  creditNoteId String @map("credit_note_id")
+  creditNote CreditNote @relation(fields: [creditNoteId], references: [id])
+  feeId String? @map("fee_id")
+  fee Fee? @relation(fields: [feeId], references: [id])
+  amountCents Int @map("amount_cents") @default(0)
+  amountCurrency String @map("amount_currency")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  preciseAmountCents Int @map("precise_amount_cents") @scale(5)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([creditNoteId])
+  @@index([feeId])
+  @@index([organizationId])
+}
+
+model CreditNote {
+  id String @id @default(uuid())
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  sequentialId Int @map("sequential_id")
+  number String
+  creditAmountCents Int @map("credit_amount_cents") @default(0)
+  creditAmountCurrency String @map("credit_amount_currency")
+  creditStatus Int? @map("credit_status")
+  balanceAmountCents Int @map("balance_amount_cents") @default(0)
+  balanceAmountCurrency String @map("balance_amount_currency") @default("0")
+  reason Int
+  file String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  totalAmountCents Int @map("total_amount_cents") @default(0)
+  totalAmountCurrency String @map("total_amount_currency")
+  refundAmountCents Int @map("refund_amount_cents") @default(0)
+  refundAmountCurrency String? @map("refund_amount_currency")
+  refundStatus Int? @map("refund_status")
+  voidedAt DateTime? @map("voided_at")
+  description String?
+  taxesAmountCents Int @map("taxes_amount_cents") @default(0)
+  refundedAt DateTime? @map("refunded_at")
+  issuingDate DateTime @map("issuing_date")
+  status Int @default(1)
+  couponsAdjustmentAmountCents Int @map("coupons_adjustment_amount_cents") @default(0)
+  preciseCouponsAdjustmentAmountCents Int @map("precise_coupons_adjustment_amount_cents") @scale(5) @default(0.0)
+  preciseTaxesAmountCents Int @map("precise_taxes_amount_cents") @scale(5) @default(0.0)
+  taxesRate Float @map("taxes_rate") @default(0.0)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  xmlFile String? @map("xml_file")
+  offsetAmountCents Int @map("offset_amount_cents") @default(0)
+  offsetAmountCurrency String? @map("offset_amount_currency")
+
+  @@index([customerId])
+  @@index([invoiceId])
+  @@unique([invoiceId, sequentialId])
+  @@index([organizationId])
+}
+
+model CreditNotesTax {
+  id String @id @default(uuid())
+  creditNoteId String @map("credit_note_id")
+  creditNote CreditNote @relation(fields: [creditNoteId], references: [id])
+  taxId String? @map("tax_id")
+  tax Tax? @relation(fields: [taxId], references: [id])
+  taxDescription String? @map("tax_description")
+  taxCode String @map("tax_code")
+  taxName String @map("tax_name")
+  taxRate Float @map("tax_rate") @default(0.0)
+  amountCents Int @map("amount_cents") @default(0)
+  amountCurrency String @map("amount_currency")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  baseAmountCents Int @map("base_amount_cents") @default(0)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([creditNoteId])
+  @@unique([creditNoteId, taxCode])
+  @@index([organizationId])
+  @@index([taxCode])
+  @@index([taxId])
+}
+
+model Credit {
+  invoiceId String? @map("invoice_id")
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  appliedCouponId String? @map("applied_coupon_id")
+  appliedCoupon AppliedCoupon? @relation(fields: [appliedCouponId], references: [id])
+  amountCents Int @map("amount_cents")
+  amountCurrency String @map("amount_currency")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  creditNoteId String? @map("credit_note_id")
+  creditNote CreditNote? @relation(fields: [creditNoteId], references: [id])
+  beforeTaxes Boolean @map("before_taxes") @default(false)
+  id String @id @default(uuid())
+  progressiveBillingInvoiceId String? @map("progressive_billing_invoice_id")
+  progressiveBillingInvoice Invoice? @relation(fields: [progressiveBillingInvoiceId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([appliedCouponId])
+  @@index([creditNoteId])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([progressiveBillingInvoiceId])
+}
+
+model CustomerMetadata {
+  id String @id @default(uuid())
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  key String
+  value String
+  displayInInvoice Boolean @map("display_in_invoice") @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([customerId])
+  @@unique([customerId, key])
+  @@index([organizationId])
+}
+
+model Customer {
+  id String @id @default(uuid())
+  externalId String @map("external_id")
+  name String?
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  country String?
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  state String?
+  zipcode String?
+  email String?
+  city String?
+  url String?
+  phone String?
+  logoUrl String? @map("logo_url")
+  legalName String? @map("legal_name")
+  legalNumber String? @map("legal_number")
+  vatRate Float? @map("vat_rate")
+  paymentProvider String? @map("payment_provider")
+  slug String?
+  sequentialId Int? @map("sequential_id")
+  currency String?
+  invoiceGracePeriod Int? @map("invoice_grace_period")
+  timezone String?
+  deletedAt DateTime? @map("deleted_at")
+  documentLocale String? @map("document_locale")
+  taxIdentificationNumber String? @map("tax_identification_number")
+  netPaymentTerm Int? @map("net_payment_term")
+  externalSalesforceId String? @map("external_salesforce_id")
+  paymentProviderCode String? @map("payment_provider_code")
+  shippingAddressLine1 String? @map("shipping_address_line1")
+  shippingAddressLine2 String? @map("shipping_address_line2")
+  shippingCity String? @map("shipping_city")
+  shippingZipcode String? @map("shipping_zipcode")
+  shippingState String? @map("shipping_state")
+  shippingCountry String? @map("shipping_country")
+  finalizeZeroAmountInvoice Int @map("finalize_zero_amount_invoice") @default(0)
+  firstname String?
+  lastname String?
+  customerType CustomerType? @map("customer_type")
+  appliedDunningCampaignId String? @map("applied_dunning_campaign_id")
+  appliedDunningCampaign DunningCampaign? @relation(fields: [appliedDunningCampaignId], references: [id])
+  excludeFromDunningCampaign Boolean @map("exclude_from_dunning_campaign") @default(false)
+  lastDunningCampaignAttempt Int @map("last_dunning_campaign_attempt") @default(0)
+  lastDunningCampaignAttemptAt DateTime? @map("last_dunning_campaign_attempt_at")
+  skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
+  accountType CustomerAccountType @map("account_type")
+  billingEntityId String @map("billing_entity_id")
+  billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
+  paymentReceiptCounter Int @map("payment_receipt_counter") @default(0)
+  subscriptionInvoiceIssuingDateAnchor SubscriptionInvoiceIssuingDateAnchors? @map("subscription_invoice_issuing_date_anchor")
+  subscriptionInvoiceIssuingDateAdjustment SubscriptionInvoiceIssuingDateAdjustments? @map("subscription_invoice_issuing_date_adjustment")
+  awaitingWalletRefresh Boolean @map("awaiting_wallet_refresh") @default(false)
+  dunningCurrencyAttempts Json @map("dunning_currency_attempts")
+  paymentTerm Json? @map("payment_term")
+
+  @@check("(invoiceGracePeriod >= 0)")
+  @@check("(netPaymentTerm >= 0)")
+  @@index([organizationId, createdAt, id])
+  @@index([accountType])
+  @@index([appliedDunningCampaignId])
+  @@index([awaitingWalletRefresh])
+  @@index([billingEntityId])
+  @@index([deletedAt])
+  @@index([organizationId, externalId])
+  @@index([organizationId])
+  @@index([sequentialId])
+}
+
+model CustomersInvoiceCustomSection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  billingEntityId String @map("billing_entity_id")
+  billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  invoiceCustomSectionId String @map("invoice_custom_section_id")
+  invoiceCustomSection InvoiceCustomSection @relation(fields: [invoiceCustomSectionId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([billingEntityId, customerId, invoiceCustomSectionId])
+  @@index([invoiceCustomSectionId])
+  @@index([billingEntityId])
+  @@index([customerId])
+  @@index([organizationId])
+}
+
+model CustomersTax {
+  id String @id @default(uuid())
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  taxId String @map("tax_id")
+  tax Tax @relation(fields: [taxId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([customerId])
+  @@unique([customerId, taxId])
+  @@index([organizationId])
+  @@index([taxId])
+}
+
+model DailyUsage {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  externalSubscriptionId String @map("external_subscription_id")
+  fromDatetime DateTime @map("from_datetime")
+  toDatetime DateTime @map("to_datetime")
+  usage Json @default("\"{}\"")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  refreshedAt DateTime @map("refreshed_at")
+  usageDiff Json @map("usage_diff") @default("\"{}\"")
+  usageDate DateTime? @map("usage_date")
+
+  @@index([organizationId, externalSubscriptionId])
+  @@index([customerId])
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([subscriptionId, usageDate])
+  @@index([usageDate])
+}
+
+model DataExportPart {
+  id String @id @default(uuid())
+  index Int?
+  dataExportId String @map("data_export_id")
+  dataExport DataExport @relation(fields: [dataExportId], references: [id])
+  objectIds String[] @map("object_ids")
+  completed Boolean @default(false)
+  csvLines String? @map("csv_lines")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([dataExportId])
+  @@index([organizationId])
+}
+
+model DataExport {
+  id String @id @default(uuid())
+  format Int?
+  resourceType String @map("resource_type")
+  resourceQuery Json? @map("resource_query")
+  status Int @default(0)
+  expiresAt DateTime? @map("expires_at")
+  startedAt DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  membershipId String? @map("membership_id")
+  membership Membership? @relation(fields: [membershipId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([membershipId])
+  @@index([organizationId])
+}
+
+model DunningCampaignThreshold {
+  id String @id @default(uuid())
+  dunningCampaignId String @map("dunning_campaign_id")
+  dunningCampaign DunningCampaign @relation(fields: [dunningCampaignId], references: [id])
+  currency String
+  amountCents Int @map("amount_cents")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([deletedAt])
+  @@index([dunningCampaignId])
+  @@index([organizationId])
+}
+
+model DunningCampaign {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  name String
+  code String
+  description String?
+  appliedToOrganization Boolean @map("applied_to_organization") @default(false)
+  daysBetweenAttempts Int @map("days_between_attempts") @default(1)
+  maxAttempts Int @map("max_attempts") @default(1)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  bccEmails String[]? @map("bcc_emails")
+
+  @@index([deletedAt])
+  @@index([organizationId])
+}
+
+model EnrichedEvent {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  eventId String @map("event_id")
+  transactionId String @map("transaction_id")
+  externalSubscriptionId String @map("external_subscription_id")
+  code String
+  timestamp DateTime
+  subscriptionId String @map("subscription_id")
+  planId String @map("plan_id")
+  chargeId String @map("charge_id")
+  chargeFilterId String? @map("charge_filter_id")
+  groupedBy Json @map("grouped_by")
+  value String?
+  decimalValue Float @map("decimal_value") @default(0.0)
+  enrichedAt DateTime @map("enriched_at")
+  operationType String? @map("operation_type")
+  preciseTotalAmountCents Float? @map("precise_total_amount_cents")
+  targetWalletCode String? @map("target_wallet_code")
+
+  @@index([eventId])
+  @@unique([organizationId, externalSubscriptionId, transactionId, timestamp, chargeId])
+  @@index([organizationId, externalSubscriptionId, code, timestamp])
+  @@index([organizationId, subscriptionId, chargeId, chargeFilterId, timestamp])
+}
+
+model EnrichedEventsDefault {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  eventId String @map("event_id")
+  transactionId String @map("transaction_id")
+  externalSubscriptionId String @map("external_subscription_id")
+  code String
+  timestamp DateTime
+  subscriptionId String @map("subscription_id")
+  planId String @map("plan_id")
+  chargeId String @map("charge_id")
+  chargeFilterId String? @map("charge_filter_id")
+  groupedBy Json @map("grouped_by")
+  value String?
+  decimalValue Float @map("decimal_value") @default(0.0)
+  enrichedAt DateTime @map("enriched_at")
+  operationType String? @map("operation_type")
+  preciseTotalAmountCents Float? @map("precise_total_amount_cents")
+  targetWalletCode String? @map("target_wallet_code")
+
+  @@index([eventId])
+  @@unique([organizationId, externalSubscriptionId, transactionId, timestamp, chargeId])
+  @@index([organizationId, externalSubscriptionId, code, timestamp])
+  @@index([organizationId, subscriptionId, chargeId, chargeFilterId, timestamp])
+}
+
+model EnrichedStoreMigration {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  status EnrichedStoreMigrationStatus
+  startedAt DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  errorMessage String? @map("error_message")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([organizationId])
+}
+
+model EnrichedStoreSubscriptionMigration {
+  id String @id @default(uuid())
+  enrichedStoreMigrationId String @map("enriched_store_migration_id")
+  enrichedStoreMigration EnrichedStoreMigration @relation(fields: [enrichedStoreMigrationId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  status EnrichedStoreSubMigrationStatus
+  billableMetricCodes Json? @map("billable_metric_codes") @default("[]")
+  eventsReprocessedCount Int? @map("events_reprocessed_count") @default(0)
+  duplicatesRemovedCount Int? @map("duplicates_removed_count") @default(0)
+  dedupPendingQueries Json? @map("dedup_pending_queries") @default("[]")
+  comparisonResults Json? @map("comparison_results")
+  errorMessage String? @map("error_message")
+  startedAt DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  attempts Int? @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([enrichedStoreMigrationId, subscriptionId])
+  @@index([enrichedStoreMigrationId])
+  @@index([organizationId])
+  @@index([subscriptionId])
+}
+
+model EntitlementEntitlementValue {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  entitlementPrivilegeId String @map("entitlement_privilege_id")
+  entitlementPrivilege EntitlementPrivilege @relation(fields: [entitlementPrivilegeId], references: [id])
+  entitlementEntitlementId String @map("entitlement_entitlement_id")
+  entitlementEntitlement EntitlementEntitlement @relation(fields: [entitlementEntitlementId], references: [id])
+  value String
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([entitlementEntitlementId])
+  @@index([entitlementPrivilegeId])
+  @@index([organizationId])
+}
+
+model EntitlementEntitlement {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  entitlementFeatureId String @map("entitlement_feature_id")
+  entitlementFeature EntitlementFeature @relation(fields: [entitlementFeatureId], references: [id])
+  planId String? @map("plan_id")
+  plan Plan? @relation(fields: [planId], references: [id])
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  subscriptionId String? @map("subscription_id")
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@arc([planId, subscriptionId])
+  @@index([entitlementFeatureId])
+  @@index([organizationId])
+  @@index([planId])
+  @@index([subscriptionId])
+}
+
+model EntitlementFeature {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  code String
+  name String?
+  description String?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId])
+}
+
+model EntitlementPrivilege {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  entitlementFeatureId String @map("entitlement_feature_id")
+  entitlementFeature EntitlementFeature @relation(fields: [entitlementFeatureId], references: [id])
+  code String
+  name String?
+  valueType EntitlementPrivilegeValueTypes @map("value_type")
+  config Json
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([entitlementFeatureId])
+  @@index([organizationId])
+}
+
+model EntitlementSubscriptionFeatureRemoval {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  entitlementFeatureId String? @map("entitlement_feature_id")
+  entitlementFeature EntitlementFeature? @relation(fields: [entitlementFeatureId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  entitlementPrivilegeId String? @map("entitlement_privilege_id")
+  entitlementPrivilege EntitlementPrivilege? @relation(fields: [entitlementPrivilegeId], references: [id])
+
+  @@arc([entitlementFeatureId, entitlementPrivilegeId])
+  @@index([entitlementFeatureId])
+  @@index([entitlementPrivilegeId])
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([deletedAt])
+}
+
+model ErrorDetail {
+  id String @id @default(uuid())
+  ownerType String @map("owner_type")
+  ownerId String @map("owner_id")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  details Json
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  errorCode Int @map("error_code") @default(0)
+
+  @@index([deletedAt])
+  @@index([errorCode])
+  @@index([organizationId])
+  @@index([ownerType, ownerId])
+}
+
+model Event {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  customerId String? @map("customer_id")
+  transactionId String @map("transaction_id")
+  code String
+  properties Json
+  timestamp DateTime?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  metadata Json
+  subscriptionId String? @map("subscription_id")
+  deletedAt DateTime? @map("deleted_at")
+  externalCustomerId String? @map("external_customer_id")
+  externalSubscriptionId String? @map("external_subscription_id")
+  preciseTotalAmountCents Float? @map("precise_total_amount_cents")
+
+  @@index([createdAt])
+  @@index([organizationId, code])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, timestamp])
+  @@index([organizationId, transactionId])
+  @@unique([organizationId, externalSubscriptionId, transactionId], nullsDistinct: true)
+}
+
+model ItemMetadata {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ownerType String @map("owner_type")
+  ownerId String @map("owner_id")
+  value Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId])
+  @@unique([ownerType, ownerId])
+  @@index([value])
+}
+
+model Organization {
+  id String @id @default(uuid())
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  apiKey String? @map("api_key")
+  webhookUrl String? @map("webhook_url")
+  vatRate Float @map("vat_rate") @default(0.0)
+  country String?
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  state String?
+  zipcode String?
+  email String?
+  city String?
+  logo String?
+  legalName String? @map("legal_name")
+  legalNumber String? @map("legal_number")
+  invoiceFooter String? @map("invoice_footer")
+  invoiceGracePeriod Int @map("invoice_grace_period") @default(0)
+  timezone String @default("UTC")
+  documentLocale String @map("document_locale") @default("en")
+  emailSettings String[] @map("email_settings")
+  taxIdentificationNumber String? @map("tax_identification_number")
+  netPaymentTerm Int @map("net_payment_term") @default(0)
+  defaultCurrency String @map("default_currency") @default("USD")
+  documentNumbering Int @map("document_numbering") @default(0)
+  documentNumberPrefix String? @map("document_number_prefix")
+  euTaxManagement Boolean? @map("eu_tax_management") @default(false)
+  premiumIntegrations String[] @map("premium_integrations")
+  customAggregation Boolean? @map("custom_aggregation") @default(false)
+  finalizeZeroAmountInvoice Boolean @map("finalize_zero_amount_invoice") @default(true)
+  clickhouseEventsStore Boolean @map("clickhouse_events_store") @default(false)
+  hmacKey String @map("hmac_key")
+  authenticationMethods String[] @map("authentication_methods")
+  auditLogsPeriod Int? @map("audit_logs_period") @default(30)
+  preFilterEvents Boolean @map("pre_filter_events") @default(false)
+  clickhouseDeduplicationEnabled Boolean @map("clickhouse_deduplication_enabled") @default(false)
+  featureFlags String[] @map("feature_flags")
+  maxWallets Int? @map("max_wallets")
+  slug String
+
+  @@check("(invoiceGracePeriod >= 0)")
+  @@check("(netPaymentTerm >= 0)")
+  @@unique([apiKey])
+  @@unique([hmacKey])
+  @@unique([slug])
+}
+
+model PaymentProviderCustomer {
+  id String @id @default(uuid())
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  paymentProviderId String? @map("payment_provider_id")
+  paymentProvider PaymentProvider? @relation(fields: [paymentProviderId], references: [id])
+  type String
+  providerCustomerId String? @map("provider_customer_id")
+  settings Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  code String?
+  isDefault Boolean @map("is_default") @default(false)
+
+  @@index([organizationId])
+  @@index([paymentProviderId])
+  @@index([providerCustomerId])
+}
+
+model Fee {
+  id String @id @default(uuid())
+  invoiceId String? @map("invoice_id")
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  chargeId String? @map("charge_id")
+  charge Charge? @relation(fields: [chargeId], references: [id])
+  subscriptionId String? @map("subscription_id")
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  amountCents Int @map("amount_cents")
+  amountCurrency String @map("amount_currency")
+  taxesAmountCents Int @map("taxes_amount_cents")
+  taxesRate Float @map("taxes_rate") @default(0.0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  units Float @default(0.0)
+  appliedAddOnId String? @map("applied_add_on_id")
+  appliedAddOn AppliedAddOn? @relation(fields: [appliedAddOnId], references: [id])
+  properties Json
+  feeType Int? @map("fee_type")
+  invoiceableType String? @map("invoiceable_type")
+  invoiceableId String? @map("invoiceable_id")
+  eventsCount Int? @map("events_count")
+  groupId String? @map("group_id")
+  group Group? @relation(fields: [groupId], references: [id])
+  payInAdvanceEventId String? @map("pay_in_advance_event_id")
+  paymentStatus Int @map("payment_status") @default(0)
+  succeededAt DateTime? @map("succeeded_at")
+  failedAt DateTime? @map("failed_at")
+  refundedAt DateTime? @map("refunded_at")
+  trueUpParentFeeId String? @map("true_up_parent_fee_id")
+  trueUpParentFee Fee? @relation(fields: [trueUpParentFeeId], references: [id])
+  addOnId String? @map("add_on_id")
+  addOn AddOn? @relation(fields: [addOnId], references: [id])
+  description String?
+  unitAmountCents Int @map("unit_amount_cents") @default(0)
+  payInAdvance Boolean @map("pay_in_advance") @default(false)
+  preciseCouponsAmountCents Int @map("precise_coupons_amount_cents") @scale(5) @default(0.0)
+  totalAggregatedUnits Float? @map("total_aggregated_units")
+  invoiceDisplayName String? @map("invoice_display_name")
+  preciseUnitAmount Float @map("precise_unit_amount") @default(0.0)
+  amountDetails Json @map("amount_details")
+  chargeFilterId String? @map("charge_filter_id")
+  groupedBy Json @map("grouped_by")
+  payInAdvanceEventTransactionId String? @map("pay_in_advance_event_transaction_id")
+  deletedAt DateTime? @map("deleted_at")
+  preciseAmountCents Float @map("precise_amount_cents") @default(0.0)
+  taxesPreciseAmountCents Float @map("taxes_precise_amount_cents") @default(0.0)
+  taxesBaseRate Float @map("taxes_base_rate") @default(1.0)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  billingEntityId String @map("billing_entity_id")
+  billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
+  preciseCreditNotesAmountCents Int @map("precise_credit_notes_amount_cents") @scale(5) @default(0.0)
+  fixedChargeId String? @map("fixed_charge_id")
+  fixedCharge FixedCharge? @relation(fields: [fixedChargeId], references: [id])
+  duplicatedInAdvance Boolean? @map("duplicated_in_advance") @default(false)
+  originalFeeId String? @map("original_fee_id")
+  originalFee Fee? @relation(fields: [originalFeeId], references: [id])
+  rateCardRateId String? @map("rate_card_rate_id")
+  rateCardRate RateCardRate? @relation(fields: [rateCardRateId], references: [id])
+  rateOverrideId String? @map("rate_override_id")
+  rateOverride RateOverride? @relation(fields: [rateOverrideId], references: [id])
+
+  @@index([addOnId])
+  @@index([appliedAddOnId])
+  @@index([billingEntityId])
+  @@index([chargeFilterId])
+  @@index([chargeId])
+  @@index([chargeId, invoiceId])
+  @@index([deletedAt])
+  @@index([fixedChargeId])
+  @@index([groupId])
+  @@index([invoiceId])
+  @@index([invoiceableType, invoiceableId])
+  @@index([organizationId])
+  @@index([organizationId, createdAt, id])
+  @@index([originalFeeId])
+  @@index([payInAdvanceEventTransactionId])
+  @@index([rateCardRateId])
+  @@index([rateOverrideId])
+  @@index([subscriptionId])
+  @@index([trueUpParentFeeId])
+}
+
+model Invoice {
+  id String @id @default(uuid())
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  issuingDate DateTime? @map("issuing_date")
+  taxesAmountCents Int @map("taxes_amount_cents") @default(0)
+  totalAmountCents Int @map("total_amount_cents") @default(0)
+  invoiceType Int @map("invoice_type") @default(0)
+  paymentStatus Int @map("payment_status") @default(0)
+  number String @default("")
+  sequentialId Int? @map("sequential_id")
+  file String?
+  customerId String? @map("customer_id")
+  customer Customer? @relation(fields: [customerId], references: [id])
+  taxesRate Float @map("taxes_rate") @default(0.0)
+  status Int @default(1)
+  timezone String @default("UTC")
+  paymentAttempts Int @map("payment_attempts") @default(0)
+  readyForPaymentProcessing Boolean @map("ready_for_payment_processing") @default(true)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  versionNumber Int @map("version_number") @default(4)
+  currency String?
+  feesAmountCents Int @map("fees_amount_cents") @default(0)
+  couponsAmountCents Int @map("coupons_amount_cents") @default(0)
+  creditNotesAmountCents Int @map("credit_notes_amount_cents") @default(0)
+  prepaidCreditAmountCents Int @map("prepaid_credit_amount_cents") @default(0)
+  subTotalExcludingTaxesAmountCents Int @map("sub_total_excluding_taxes_amount_cents") @default(0)
+  subTotalIncludingTaxesAmountCents Int @map("sub_total_including_taxes_amount_cents") @default(0)
+  paymentDueDate DateTime? @map("payment_due_date")
+  netPaymentTerm Int @map("net_payment_term") @default(0)
+  voidedAt DateTime? @map("voided_at")
+  organizationSequentialId Int @map("organization_sequential_id") @default(0)
+  readyToBeRefreshed Boolean @map("ready_to_be_refreshed") @default(false)
+  paymentDisputeLostAt DateTime? @map("payment_dispute_lost_at")
+  skipCharges Boolean @map("skip_charges") @default(false)
+  paymentOverdue Boolean? @map("payment_overdue") @default(false)
+  negativeAmountCents Int @map("negative_amount_cents") @default(0)
+  progressiveBillingCreditAmountCents Int @map("progressive_billing_credit_amount_cents") @default(0)
+  taxStatus TaxStatus? @map("tax_status")
+  totalPaidAmountCents Int @map("total_paid_amount_cents") @default(0)
+  selfBilled Boolean @map("self_billed") @default(false)
+  appliedGracePeriod Int? @map("applied_grace_period")
+  billingEntityId String @map("billing_entity_id")
+  billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
+  billingEntitySequentialId Int? @map("billing_entity_sequential_id")
+  finalizedAt DateTime? @map("finalized_at")
+  voidedInvoiceId String? @map("voided_invoice_id")
+  xmlFile String? @map("xml_file")
+  expectedFinalizationDate DateTime? @map("expected_finalization_date")
+  prepaidGrantedCreditAmountCents Int? @map("prepaid_granted_credit_amount_cents")
+  prepaidPurchasedCreditAmountCents Int? @map("prepaid_purchased_credit_amount_cents")
+  paymentMethodId String? @map("payment_method_id")
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  skipAutomaticPayment Boolean? @map("skip_automatic_payment")
+  purchaseOrderNumber String? @map("purchase_order_number")
+  paymentTerm Json? @map("payment_term")
+  paymentTermSource String? @map("payment_term_source")
+  searchTerms String? @map("search_terms")
+
+  @@check("(netPaymentTerm >= 0)")
+  @@index([organizationId, status])
+  @@index([organizationId, issuingDate, createdAt, id])
+  @@unique([customerId, billingEntityId, sequentialId], nullsDistinct: true)
+  @@index([number])
+  @@index([customerId, organizationId])
+  @@index([paymentDueDate])
+  @@index([paymentMethodId])
+  @@index([readyToBeRefreshed])
+  @@index([voidedInvoiceId])
+}
+
+model Plan {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  code String
+  interval Int?
+  description String?
+  amountCents Int? @map("amount_cents")
+  amountCurrency String @map("amount_currency")
+  trialPeriod Float? @map("trial_period")
+  payInAdvance Boolean? @map("pay_in_advance") @default(false)
+  billChargesMonthly Boolean? @map("bill_charges_monthly")
+  parentId String? @map("parent_id")
+  parent Plan? @relation(fields: [parentId], references: [id])
+  deletedAt DateTime? @map("deleted_at")
+  pendingDeletion Boolean @map("pending_deletion") @default(false)
+  invoiceDisplayName String? @map("invoice_display_name")
+  billFixedChargesMonthly Boolean? @map("bill_fixed_charges_monthly") @default(false)
+  pricingType PlanPricingType @map("pricing_type")
+
+  @@check("((pricingType <> 'legacy') OR ((interval IS NOT NULL) AND (amountCents IS NOT NULL) AND (payInAdvance IS NOT NULL)))")
+  @@index([billFixedChargesMonthly])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([parentId])
+}
+
+model Subscription {
+  id String @id @default(uuid())
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  planId String @map("plan_id")
+  plan Plan @relation(fields: [planId], references: [id])
+  status Int
+  canceledAt DateTime? @map("canceled_at")
+  terminatedAt DateTime? @map("terminated_at")
+  startedAt DateTime? @map("started_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  previousSubscriptionId String? @map("previous_subscription_id")
+  name String?
+  externalId String @map("external_id")
+  billingTime Int @map("billing_time") @default(0)
+  subscriptionAt DateTime? @map("subscription_at")
+  endingAt DateTime? @map("ending_at")
+  trialEndedAt DateTime? @map("trial_ended_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  onTerminationCreditNote SubscriptionOnTerminationCreditNote? @map("on_termination_credit_note")
+  onTerminationInvoice SubscriptionOnTerminationInvoice @map("on_termination_invoice")
+  paymentMethodId String? @map("payment_method_id")
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodType PaymentMethodTypes @map("payment_method_type")
+  skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
+  progressiveBillingDisabled Boolean @map("progressive_billing_disabled") @default(false)
+  lastReceivedEventOn DateTime? @map("last_received_event_on")
+  cancelationReason SubscriptionCancelationReasons? @map("cancelation_reason")
+  incompletedAt DateTime? @map("incompleted_at")
+  activatedAt DateTime? @map("activated_at")
+  billingEntityId String? @map("billing_entity_id")
+  billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id])
+  consolidateInvoice Boolean @map("consolidate_invoice") @default(true)
+  skipDailyUsage Boolean @map("skip_daily_usage") @default(false)
+  cancellationReason SubscriptionCancellationReasons? @map("cancellation_reason")
+  purchaseOrderNumber String? @map("purchase_order_number")
+  billingAnchorDate DateTime? @map("billing_anchor_date")
+
+  @@index([planId, status])
+  @@index([billingEntityId])
+  @@index([customerId])
+  @@index([endingAt])
+  @@index([externalId])
+  @@index([lastReceivedEventOn])
+  @@index([id])
+  @@index([organizationId])
+  @@index([paymentMethodId])
+  @@index([planId])
+  @@index([previousSubscriptionId, status])
+  @@index([startedAt])
+  @@index([startedAt, endingAt])
+  @@index([status])
+}
+
+model FeesTax {
+  id String @id @default(uuid())
+  feeId String @map("fee_id")
+  fee Fee @relation(fields: [feeId], references: [id])
+  taxId String? @map("tax_id")
+  tax Tax? @relation(fields: [taxId], references: [id], onDelete: SetNull)
+  taxDescription String? @map("tax_description")
+  taxCode String @map("tax_code")
+  taxName String @map("tax_name")
+  taxRate Float @map("tax_rate") @default(0.0)
+  amountCents Int @map("amount_cents") @default(0)
+  amountCurrency String @map("amount_currency")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  preciseAmountCents Float @map("precise_amount_cents") @default(0.0)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([feeId])
+  @@index([organizationId])
+  @@index([taxId])
+}
+
+model IntegrationCustomer {
+  id String @id @default(uuid())
+  integrationId String @map("integration_id")
+  integration Integration @relation(fields: [integrationId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  externalCustomerId String? @map("external_customer_id")
+  type String
+  settings Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  code String?
+  isDefault Boolean @map("is_default") @default(false)
+  category ConnectionCategory?
+
+  @@unique([customerId, category, code], nullsDistinct: true)
+  @@index([customerId])
+  @@unique([customerId, type])
+  @@index([externalCustomerId])
+  @@index([integrationId])
+  @@index([organizationId])
+}
+
+model InvoiceSettlement {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  billingEntityId String @map("billing_entity_id")
+  billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
+  targetInvoiceId String @map("target_invoice_id")
+  targetInvoice Invoice @relation(fields: [targetInvoiceId], references: [id])
+  settlementType InvoiceSettlementSettlementType @map("settlement_type")
+  sourcePaymentId String? @map("source_payment_id")
+  sourcePayment Payment? @relation(fields: [sourcePaymentId], references: [id])
+  sourceCreditNoteId String? @map("source_credit_note_id")
+  sourceCreditNote CreditNote? @relation(fields: [sourceCreditNoteId], references: [id])
+  amountCents Int @map("amount_cents")
+  amountCurrency String @map("amount_currency")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([billingEntityId])
+  @@index([organizationId])
+  @@index([sourceCreditNoteId])
+  @@index([sourcePaymentId])
+  @@index([targetInvoiceId])
+}
+
+model InvoiceSubscription {
+  id String @id @default(uuid())
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  recurring Boolean?
+  timestamp DateTime?
+  fromDatetime DateTime? @map("from_datetime")
+  toDatetime DateTime? @map("to_datetime")
+  chargesFromDatetime DateTime? @map("charges_from_datetime")
+  chargesToDatetime DateTime? @map("charges_to_datetime")
+  invoicingReason SubscriptionInvoicingReason? @map("invoicing_reason")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  regeneratedInvoiceId String? @map("regenerated_invoice_id")
+  regeneratedInvoice Invoice? @relation(fields: [regeneratedInvoiceId], references: [id])
+  fixedChargesFromDatetime DateTime? @map("fixed_charges_from_datetime")
+  fixedChargesToDatetime DateTime? @map("fixed_charges_to_datetime")
+
+  @@index([subscriptionId, fromDatetime, toDatetime])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([regeneratedInvoiceId])
+  @@index([subscriptionId])
+}
+
+model InvoiceMetadata {
+  id String @id @default(uuid())
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  key String
+  value String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([invoiceId])
+  @@unique([invoiceId, key])
+  @@index([organizationId])
+}
+
+model InvoicesTax {
+  id String @id @default(uuid())
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  taxId String? @map("tax_id")
+  tax Tax? @relation(fields: [taxId], references: [id], onDelete: SetNull)
+  taxDescription String? @map("tax_description")
+  taxCode String @map("tax_code")
+  taxName String @map("tax_name")
+  taxRate Float @map("tax_rate") @default(0.0)
+  amountCents Int @map("amount_cents") @default(0)
+  amountCurrency String @map("amount_currency")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  feesAmountCents Int @map("fees_amount_cents") @default(0)
+  taxableBaseAmountCents Int @map("taxable_base_amount_cents") @default(0)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([taxId])
+}
+
+model InvoicesPaymentRequest {
+  id String @id @default(uuid())
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  paymentRequestId String @map("payment_request_id")
+  paymentRequest PaymentRequest @relation(fields: [paymentRequestId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([invoiceId, paymentRequestId])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([paymentRequestId])
+}
+
+model PaymentRequest {
+  id String @id @default(uuid())
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  amountCents Int @map("amount_cents") @default(0)
+  amountCurrency String @map("amount_currency")
+  email String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  paymentStatus Int @map("payment_status") @default(0)
+  paymentAttempts Int @map("payment_attempts") @default(0)
+  readyForPaymentProcessing Boolean @map("ready_for_payment_processing") @default(true)
+  dunningCampaignId String? @map("dunning_campaign_id")
+  dunningCampaign DunningCampaign? @relation(fields: [dunningCampaignId], references: [id])
+
+  @@index([customerId])
+  @@index([dunningCampaignId])
+  @@index([organizationId])
+}
+
+model Payment {
+  id String @id @default(uuid())
+  invoiceId String? @map("invoice_id")
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  paymentProviderId String? @map("payment_provider_id")
+  paymentProvider PaymentProvider? @relation(fields: [paymentProviderId], references: [id])
+  paymentProviderCustomerId String? @map("payment_provider_customer_id")
+  amountCents Int @map("amount_cents")
+  amountCurrency String @map("amount_currency")
+  providerPaymentId String? @map("provider_payment_id")
+  status String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  payableType String @map("payable_type") @default("Invoice")
+  payableId String? @map("payable_id")
+  providerPaymentData Json? @map("provider_payment_data")
+  payablePaymentStatus PaymentPayablePaymentStatus? @map("payable_payment_status")
+  paymentType PaymentType @map("payment_type")
+  reference String?
+  providerPaymentMethodData Json @map("provider_payment_method_data")
+  providerPaymentMethodId String? @map("provider_payment_method_id")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  customerId String @map("customer_id")
+  errorCode String? @map("error_code")
+  paymentMethodId String? @map("payment_method_id")
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+
+  @@index([organizationId, createdAt, id])
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([payableId, payableType, errorCode])
+  @@index([payableType, payableId])
+  @@index([paymentMethodId])
+  @@index([paymentProviderCustomerId])
+  @@index([paymentProviderId])
+  @@index([paymentType])
+}
+
+model PlansTax {
+  id String @id @default(uuid())
+  planId String @map("plan_id")
+  plan Plan @relation(fields: [planId], references: [id])
+  taxId String @map("tax_id")
+  tax Tax @relation(fields: [taxId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId])
+  @@index([planId])
+  @@unique([planId, taxId])
+  @@index([taxId])
+}
+
+model Tax {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  description String?
+  code String
+  name String
+  rate Float @default(0.0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  appliedToOrganization Boolean @map("applied_to_organization") @default(false)
+  autoGenerated Boolean @map("auto_generated") @default(false)
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+}
+
+model UsageMonitoringAlertThreshold {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  usageMonitoringAlertId String @map("usage_monitoring_alert_id")
+  usageMonitoringAlert UsageMonitoringAlert @relation(fields: [usageMonitoringAlertId], references: [id])
+  value Int @scale(5)
+  code String?
+  recurring Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  notifyOn String[] @map("notify_on")
+
+  @@index([usageMonitoringAlertId])
+  @@index([organizationId])
+}
+
+model UsageMonitoringTriggeredAlert {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  usageMonitoringAlertId String @map("usage_monitoring_alert_id")
+  usageMonitoringAlert UsageMonitoringAlert @relation(fields: [usageMonitoringAlertId], references: [id])
+  subscriptionId String? @map("subscription_id")
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  currentValue Int @map("current_value") @scale(5)
+  previousValue Int @map("previous_value") @scale(5)
+  crossedThresholds Json? @map("crossed_thresholds")
+  triggeredAt DateTime @map("triggered_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  walletId String? @map("wallet_id")
+  wallet Wallet? @relation(fields: [walletId], references: [id])
+  kind UsageMonitoringTriggeredAlertKinds
+  inAlarmThresholds Json? @map("in_alarm_thresholds")
+  fullyResolved Boolean? @map("fully_resolved")
+
+  @@arc([subscriptionId, walletId])
+  @@index([usageMonitoringAlertId])
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([walletId])
+}
+
+model UsageThreshold {
+  id String @id @default(uuid())
+  planId String? @map("plan_id")
+  plan Plan? @relation(fields: [planId], references: [id])
+  thresholdDisplayName String? @map("threshold_display_name")
+  amountCents Int @map("amount_cents")
+  recurring Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  subscriptionId String? @map("subscription_id")
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@arc([planId, subscriptionId])
+  @@index([organizationId])
+  @@index([planId])
+  @@index([subscriptionId])
+}
+
+model WalletTransactionConsumption {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  inboundWalletTransactionId String @map("inbound_wallet_transaction_id")
+  inboundWalletTransaction WalletTransaction @relation(fields: [inboundWalletTransactionId], references: [id])
+  outboundWalletTransactionId String @map("outbound_wallet_transaction_id")
+  outboundWalletTransaction WalletTransaction @relation(fields: [outboundWalletTransactionId], references: [id])
+  consumedAmountCents Int @map("consumed_amount_cents")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([inboundWalletTransactionId])
+  @@index([outboundWalletTransactionId])
+  @@unique([inboundWalletTransactionId, outboundWalletTransactionId])
+  @@index([organizationId])
+}
+
+model WalletTransaction {
+  id String @id @default(uuid())
+  walletId String @map("wallet_id")
+  wallet Wallet @relation(fields: [walletId], references: [id])
+  transactionType Int @map("transaction_type")
+  status Int
+  amount Int @scale(5) @default(0.0)
+  creditAmount Int @map("credit_amount") @scale(5) @default(0.0)
+  settledAt DateTime? @map("settled_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  invoiceId String? @map("invoice_id")
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  source Int @default(0)
+  transactionStatus Int @map("transaction_status") @default(0)
+  invoiceRequiresSuccessfulPayment Boolean @map("invoice_requires_successful_payment") @default(false)
+  metadata Json? @default("[]")
+  creditNoteId String? @map("credit_note_id")
+  creditNote CreditNote? @relation(fields: [creditNoteId], references: [id])
+  failedAt DateTime? @map("failed_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  lockVersion Int @map("lock_version") @default(0)
+  priority Int @default(50)
+  name String?
+  paymentMethodId String? @map("payment_method_id")
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodType PaymentMethodTypes @map("payment_method_type")
+  skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
+  remainingAmountCents Int? @map("remaining_amount_cents")
+  voidedInvoiceId String? @map("voided_invoice_id")
+  voidedInvoice Invoice? @relation(fields: [voidedInvoiceId], references: [id])
+  billingEntityId String? @map("billing_entity_id")
+  billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id])
+  purchaseOrderNumber String? @map("purchase_order_number")
+
+  @@check("((remainingAmountCents >= 0) OR (remainingAmountCents IS NULL))")
+  @@index([billingEntityId])
+  @@index([creditNoteId])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([paymentMethodId])
+  @@index([voidedInvoiceId])
+  @@index([walletId])
+}
+
+model Wallet {
+  id String @id @default(uuid())
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  status Int
+  name String?
+  rateAmount Int @map("rate_amount") @scale(5) @default(0.0)
+  creditsBalance Int @map("credits_balance") @scale(5) @default(0.0)
+  consumedCredits Int @map("consumed_credits") @scale(5) @default(0.0)
+  expirationAt DateTime? @map("expiration_at")
+  lastBalanceSyncAt DateTime? @map("last_balance_sync_at")
+  lastConsumedCreditAt DateTime? @map("last_consumed_credit_at")
+  terminatedAt DateTime? @map("terminated_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  balanceCents Int @map("balance_cents") @default(0)
+  balanceCurrency String @map("balance_currency")
+  consumedAmountCents Int @map("consumed_amount_cents") @default(0)
+  consumedAmountCurrency String @map("consumed_amount_currency")
+  ongoingBalanceCents Int @map("ongoing_balance_cents") @default(0)
+  ongoingUsageBalanceCents Int @map("ongoing_usage_balance_cents") @default(0)
+  creditsOngoingBalance Int @map("credits_ongoing_balance") @scale(5) @default(0.0)
+  creditsOngoingUsageBalance Int @map("credits_ongoing_usage_balance") @scale(5) @default(0.0)
+  depletedOngoingBalance Boolean @map("depleted_ongoing_balance") @default(false)
+  invoiceRequiresSuccessfulPayment Boolean @map("invoice_requires_successful_payment") @default(false)
+  lockVersion Int @map("lock_version") @default(0)
+  readyToBeRefreshed Boolean @map("ready_to_be_refreshed") @default(false)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  allowedFeeTypes String[] @map("allowed_fee_types")
+  lastOngoingBalanceSyncAt DateTime? @map("last_ongoing_balance_sync_at")
+  priority Int @default(50)
+  paidTopUpMinAmountCents Int? @map("paid_top_up_min_amount_cents")
+  paidTopUpMaxAmountCents Int? @map("paid_top_up_max_amount_cents")
+  paymentMethodId String? @map("payment_method_id")
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodType PaymentMethodTypes @map("payment_method_type")
+  skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
+  traceable Boolean @default(false)
+  code String?
+  billingEntityId String? @map("billing_entity_id")
+  billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id])
+  purchaseOrderNumber String? @map("purchase_order_number")
+
+  @@index([billingEntityId])
+  @@index([customerId])
+  @@index([organizationId])
+  @@index([organizationId, customerId])
+  @@index([paymentMethodId])
+  @@index([readyToBeRefreshed])
+}
+
+model FixedChargeEvent {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  fixedChargeId String @map("fixed_charge_id")
+  fixedCharge FixedCharge @relation(fields: [fixedChargeId], references: [id])
+  units Float @default(0.0)
+  timestamp DateTime?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([deletedAt])
+  @@index([fixedChargeId])
+  @@index([organizationId])
+  @@index([subscriptionId])
+}
+
+model FixedCharge {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  planId String @map("plan_id")
+  plan Plan @relation(fields: [planId], references: [id])
+  addOnId String @map("add_on_id")
+  addOn AddOn @relation(fields: [addOnId], references: [id])
+  parentId String? @map("parent_id")
+  chargeModel FixedChargeChargeModel @map("charge_model")
+  properties Json
+  invoiceDisplayName String? @map("invoice_display_name")
+  payInAdvance Boolean @map("pay_in_advance") @default(false)
+  prorated Boolean @default(false)
+  units Float @default(0.0)
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  code String
+
+  @@index([addOnId])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([parentId])
+  @@index([planId])
+}
+
+model FixedChargesTax {
+  id String @id @default(uuid())
+  fixedChargeId String @map("fixed_charge_id")
+  fixedCharge FixedCharge @relation(fields: [fixedChargeId], references: [id])
+  taxId String @map("tax_id")
+  tax Tax @relation(fields: [taxId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([fixedChargeId])
+  @@unique([fixedChargeId, taxId])
+  @@index([organizationId])
+  @@index([taxId])
+}
+
+model GroupProperty {
+  id String @id @default(uuid())
+  chargeId String @map("charge_id")
+  charge Charge @relation(fields: [chargeId], references: [id], onDelete: Cascade)
+  groupId String @map("group_id")
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  values Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  invoiceDisplayName String? @map("invoice_display_name")
+
+  @@index([chargeId])
+  @@unique([chargeId, groupId])
+  @@index([deletedAt])
+  @@index([groupId])
+}
+
+model Group {
+  id String @id @default(uuid())
+  billableMetricId String @map("billable_metric_id")
+  billableMetric BillableMetric @relation(fields: [billableMetricId], references: [id], onDelete: Cascade)
+  parentGroupId String? @map("parent_group_id")
+  parentGroup Group? @relation(fields: [parentGroupId], references: [id])
+  key String
+  value String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([billableMetricId])
+  @@index([billableMetricId, parentGroupId])
+  @@index([deletedAt])
+  @@index([parentGroupId])
+}
+
+model IdempotencyRecord {
+  id String @id @default(uuid())
+  idempotencyKey Bytes @map("idempotency_key")
+  resourceId String? @map("resource_id")
+  resourceType String? @map("resource_type")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String? @map("organization_id")
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@unique([idempotencyKey])
+  @@index([organizationId])
+  @@index([resourceType, resourceId])
+}
+
+model InboundWebhook {
+  id String @id @default(uuid())
+  source String
+  eventType String @map("event_type")
+  payload Json
+  status InboundWebhookStatus
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  code String?
+  signature String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  processingAt DateTime? @map("processing_at")
+
+  @@index([organizationId])
+  @@index([status, createdAt])
+  @@index([status, processingAt])
+}
+
+model IntegrationCollectionMapping {
+  id String @id @default(uuid())
+  integrationId String @map("integration_id")
+  integration Integration @relation(fields: [integrationId], references: [id])
+  mappingType Int @map("mapping_type")
+  type String
+  settings Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  billingEntityId String? @map("billing_entity_id")
+  billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id], onDelete: Cascade)
+
+  @@index([billingEntityId])
+  @@index([integrationId])
+  @@index([organizationId])
+}
+
+model IntegrationItem {
+  id String @id @default(uuid())
+  integrationId String @map("integration_id")
+  integration Integration @relation(fields: [integrationId], references: [id])
+  itemType Int @map("item_type")
+  externalId String @map("external_id")
+  externalAccountCode String? @map("external_account_code")
+  externalName String? @map("external_name")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([externalId, integrationId, itemType])
+  @@index([integrationId])
+  @@index([organizationId])
+}
+
+model IntegrationMapping {
+  id String @id @default(uuid())
+  integrationId String @map("integration_id")
+  integration Integration @relation(fields: [integrationId], references: [id])
+  mappableType String @map("mappable_type")
+  mappableId String @map("mappable_id")
+  type String
+  settings Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  billingEntityId String? @map("billing_entity_id")
+  billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId])
+  @@index([mappableType, mappableId])
+  @@index([organizationId])
+}
+
+model IntegrationResource {
+  id String @id @default(uuid())
+  syncableType String @map("syncable_type")
+  syncableId String @map("syncable_id")
+  externalId String? @map("external_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  integrationId String? @map("integration_id")
+  integration Integration? @relation(fields: [integrationId], references: [id])
+  resourceType Int @map("resource_type") @default(0)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([integrationId])
+  @@index([organizationId])
+  @@index([syncableType, syncableId])
+}
+
+model Integration {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  name String
+  code String
+  type String
+  secrets String?
+  settings Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([code, organizationId])
+  @@index([organizationId])
+}
+
+model Invite {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  membershipId String? @map("membership_id")
+  membership Membership? @relation(fields: [membershipId], references: [id])
+  email String
+  token String
+  status Int @default(0)
+  acceptedAt DateTime? @map("accepted_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  roles String[]
+
+  @@index([membershipId])
+  @@index([organizationId])
+  @@unique([token])
+}
+
+model InvoiceConnection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  paymentProviderCustomerId String? @map("payment_provider_customer_id")
+  paymentProviderCustomer PaymentProviderCustomer? @relation(fields: [paymentProviderCustomerId], references: [id])
+  integrationCustomerId String? @map("integration_customer_id")
+  integrationCustomer IntegrationCustomer? @relation(fields: [integrationCustomerId], references: [id])
+  category ConnectionCategory
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([integrationCustomerId])
+  @@unique([invoiceId, category])
+  @@index([organizationId])
+  @@index([paymentProviderCustomerId])
+}
+
+model InvoiceCustomSection {
+  id String @id @default(uuid())
+  name String
+  code String
+  description String?
+  displayName String? @map("display_name")
+  details String?
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  sectionType InvoiceCustomSectionType @map("section_type")
+
+  @@index([organizationId, deletedAt])
+  @@index([organizationId])
+  @@index([sectionType])
+}
+
+model LifetimeUsage {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  currentUsageAmountCents Int @map("current_usage_amount_cents") @default(0)
+  invoicedUsageAmountCents Int @map("invoiced_usage_amount_cents") @default(0)
+  recalculateCurrentUsage Boolean @map("recalculate_current_usage") @default(false)
+  recalculateInvoicedUsage Boolean @map("recalculate_invoiced_usage") @default(false)
+  currentUsageAmountRefreshedAt DateTime? @map("current_usage_amount_refreshed_at")
+  invoicedUsageAmountRefreshedAt DateTime? @map("invoiced_usage_amount_refreshed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  historicalUsageAmountCents Int @map("historical_usage_amount_cents") @default(0)
+
+  @@index([organizationId])
+  @@index([recalculateCurrentUsage])
+  @@index([recalculateInvoicedUsage])
+  @@unique([subscriptionId])
+}
+
+model MembershipRole {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  membershipId String @map("membership_id")
+  roleId String @map("role_id")
+  role Role @relation(fields: [roleId], references: [id])
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([membershipId, organizationId])
+  @@index([roleId])
+}
+
+model Membership {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  status Int @default(0)
+  revokedAt DateTime? @map("revoked_at")
+
+  @@unique([id, organizationId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model OrderForm {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  quoteVersionId String @map("quote_version_id")
+  quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
+  number String
+  sequentialId Int @map("sequential_id")
+  status OrderFormStatus
+  voidReason OrderFormVoidReason? @map("void_reason")
+  expiresAt DateTime? @map("expires_at")
+  signedAt DateTime? @map("signed_at")
+  voidedAt DateTime? @map("voided_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("(sequentialId > 0)")
+  @@index([customerId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, expiresAt])
+  @@index([organizationId, status])
+  @@unique([quoteVersionId])
+  @@unique([organizationId, number])
+  @@unique([organizationId, sequentialId])
+}
+
+model Order {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  orderFormId String @map("order_form_id")
+  orderForm OrderForm @relation(fields: [orderFormId], references: [id])
+  number String
+  sequentialId Int @map("sequential_id")
+  status OrderStatus
+  executionMode OrderExecutionMode? @map("execution_mode")
+  executeAt DateTime? @map("execute_at")
+  executedAt DateTime? @map("executed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  executionRecord Json @map("execution_record")
+
+  @@check("(sequentialId > 0)")
+  @@index([customerId])
+  @@index([executeAt])
+  @@unique([orderFormId])
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@unique([organizationId, number])
+  @@unique([organizationId, sequentialId])
+}
+
+model PasswordReset {
+  id String @id @default(uuid())
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id])
+  token String
+  expireAt DateTime @map("expire_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([token])
+  @@index([userId])
+}
+
+model PaymentIntent {
+  id String @id @default(uuid())
+  invoiceId String @map("invoice_id")
+  organizationId String @map("organization_id")
+  paymentUrl String? @map("payment_url")
+  status Int @default(0)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  providerSessionId String? @map("provider_session_id")
+
+  @@index([invoiceId])
+  @@index([organizationId])
+}
+
+model PaymentMethod {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  paymentProviderId String? @map("payment_provider_id")
+  paymentProvider PaymentProvider? @relation(fields: [paymentProviderId], references: [id])
+  paymentProviderCustomerId String? @map("payment_provider_customer_id")
+  paymentProviderCustomer PaymentProviderCustomer? @relation(fields: [paymentProviderCustomerId], references: [id])
+  providerMethodId String @map("provider_method_id")
+  providerMethodType String? @map("provider_method_type")
+  isDefault Boolean @map("is_default") @default(false)
+  deletedAt DateTime? @map("deleted_at")
+  details Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([customerId])
+  @@index([organizationId])
+  @@index([paymentProviderCustomerId])
+  @@index([paymentProviderId])
+  @@index([providerMethodType])
+}
+
+model PaymentProvider {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  type String
+  secrets String?
+  settings Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  code String
+  name String
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+}
+
+model PaymentReceipt {
+  id String @id @default(uuid())
+  number String
+  paymentId String @map("payment_id")
+  payment Payment @relation(fields: [paymentId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  billingEntityId String @map("billing_entity_id")
+
+  @@index([billingEntityId])
+  @@index([organizationId])
+  @@unique([paymentId])
+}
+
+model PendingViesCheck {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  billingEntityId String @map("billing_entity_id")
+  billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  attemptsCount Int @map("attempts_count") @default(0)
+  lastAttemptAt DateTime? @map("last_attempt_at")
+  taxIdentificationNumber String? @map("tax_identification_number")
+  lastErrorType String? @map("last_error_type")
+  lastErrorMessage String? @map("last_error_message")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([billingEntityId])
+  @@unique([customerId])
+  @@index([organizationId])
+}
+
+model PlanRateCard {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  planId String @map("plan_id")
+  plan Plan @relation(fields: [planId], references: [id])
+  rateCardId String @map("rate_card_id")
+  rateCard RateCard @relation(fields: [rateCardId], references: [id])
+  units Float?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([planId])
+  @@index([rateCardId])
+}
+
+model PresentationBreakdown {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  feeId String @map("fee_id")
+  fee Fee @relation(fields: [feeId], references: [id])
+  presentationBy Json @map("presentation_by") @default("[]")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  units Float @default(0.0)
+
+  @@index([feeId])
+  @@index([organizationId])
+}
+
+model PricingUnitUsage {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  feeId String @map("fee_id")
+  fee Fee @relation(fields: [feeId], references: [id])
+  pricingUnitId String @map("pricing_unit_id")
+  pricingUnit PricingUnit @relation(fields: [pricingUnitId], references: [id])
+  shortName String @map("short_name")
+  amountCents Int @map("amount_cents")
+  preciseAmountCents Float @map("precise_amount_cents") @default(0.0)
+  unitAmountCents Int @map("unit_amount_cents") @default(0)
+  conversionRate Float @map("conversion_rate") @default(0.0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  preciseUnitAmount Float @map("precise_unit_amount") @default(0.0)
+
+  @@index([feeId])
+  @@index([organizationId])
+  @@index([pricingUnitId])
+}
+
+model PricingUnit {
+  id String @id @default(uuid())
+  name String
+  code String
+  shortName String @map("short_name")
+  description String?
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([code, organizationId])
+  @@index([organizationId])
+}
+
+model ProductCategory {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  code String
+  name String
+  description String?
+  invoiceDisplayName String? @map("invoice_display_name")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([deletedAt])
+  @@index([organizationId])
+}
+
+model ProductFilterValue {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  productFilterId String @map("product_filter_id")
+  productFilter ProductFilter @relation(fields: [productFilterId], references: [id])
+  billableMetricFilterId String @map("billable_metric_filter_id")
+  billableMetricFilter BillableMetricFilter @relation(fields: [billableMetricFilterId], references: [id])
+  value String?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([billableMetricFilterId])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([productFilterId])
+}
+
+model ProductFilter {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  productId String @map("product_id")
+  product Product @relation(fields: [productId], references: [id])
+  name String
+  code String
+  description String?
+  invoiceDisplayName String? @map("invoice_display_name")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([productId])
+}
+
+model Product {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  productCategoryId String? @map("product_category_id")
+  productCategory ProductCategory? @relation(fields: [productCategoryId], references: [id])
+  billableMetricId String? @map("billable_metric_id")
+  billableMetric BillableMetric? @relation(fields: [billableMetricId], references: [id])
+  addOnId String? @map("add_on_id")
+  addOn AddOn? @relation(fields: [addOnId], references: [id])
+  chargeId String? @map("charge_id")
+  charge Charge? @relation(fields: [chargeId], references: [id])
+  productType ProductType @map("product_type")
+  code String
+  name String
+  invoiceDisplayName String? @map("invoice_display_name")
+  description String?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([addOnId])
+  @@index([billableMetricId])
+  @@index([chargeId])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([productCategoryId])
+}
+
+model QuantifiedEvent {
+  id String @id @default(uuid())
+  externalSubscriptionId String @map("external_subscription_id")
+  externalId String? @map("external_id")
+  addedAt DateTime @map("added_at")
+  removedAt DateTime? @map("removed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  billableMetricId String? @map("billable_metric_id")
+  properties Json
+  deletedAt DateTime? @map("deleted_at")
+  groupId String? @map("group_id")
+  group Group? @relation(fields: [groupId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  groupedBy Json @map("grouped_by")
+  chargeFilterId String? @map("charge_filter_id")
+
+  @@index([billableMetricId])
+  @@index([chargeFilterId])
+  @@index([deletedAt])
+  @@index([externalId])
+  @@index([groupId])
+  @@index([organizationId])
+  @@index([organizationId, externalSubscriptionId, billableMetricId])
+}
+
+model QuoteOwner {
+  id Int @id
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  quoteId String @map("quote_id")
+  quote Quote @relation(fields: [quoteId], references: [id])
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId])
+  @@index([userId])
+  @@unique([quoteId, userId])
+}
+
+model QuoteVersion {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  quoteId String @map("quote_id")
+  quote Quote @relation(fields: [quoteId], references: [id])
+  sequentialId Int @map("sequential_id")
+  status QuoteStatus
+  approvedAt DateTime? @map("approved_at")
+  voidedAt DateTime? @map("voided_at")
+  voidReason QuoteVoidReason? @map("void_reason")
+  billingItems Json? @map("billing_items")
+  content String?
+  shareToken String? @map("share_token")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  currency String?
+  mentionVariables Json? @map("mention_variables")
+  billingEntityId String? @map("billing_entity_id")
+  billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id])
+
+  @@check("((status = 'approved') = (approvedAt IS NOT NULL))")
+  @@check("(sequentialId > 0)")
+  @@check("((status = 'voided') = ((voidReason IS NOT NULL) AND (voidedAt IS NOT NULL)))")
+  @@index([billingEntityId])
+  @@index([organizationId])
+  @@index([quoteId])
+  @@unique([quoteId, sequentialId])
+}
+
+model Quote {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  subscriptionId String? @map("subscription_id")
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  number String
+  sequentialId Int @map("sequential_id")
+  orderType QuoteOrderType @map("order_type")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("(sequentialId > 0)")
+  @@index([customerId])
+  @@index([subscriptionId])
+  @@unique([organizationId, number])
+  @@unique([organizationId, sequentialId])
+}
+
+model RateCardRate {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  rateCardId String @map("rate_card_id")
+  rateCard RateCard @relation(fields: [rateCardId], references: [id])
+  code String
+  effectiveFrom DateTime @map("effective_from")
+  rateModel RateCardRateModel @map("rate_model")
+  rateProperties Json @map("rate_properties")
+  minAmountCents Int @map("min_amount_cents") @default(0)
+  billingIntervalCount Int @map("billing_interval_count") @default(1)
+  billingIntervalUnit RateCardRateBillingIntervalUnit @map("billing_interval_unit")
+  appliedPricingUnitConversionRate Float? @map("applied_pricing_unit_conversion_rate")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("(billingIntervalCount >= 1)")
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([rateCardId])
+}
+
+model RateCard {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  productId String @map("product_id")
+  product Product @relation(fields: [productId], references: [id])
+  productFilterId String? @map("product_filter_id")
+  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
+  code String
+  name String
+  description String?
+  currency String
+  billingTiming RateCardBillingTiming @map("billing_timing")
+  proration Boolean @default(false)
+  displayOnInvoice Boolean @map("display_on_invoice") @default(true)
+  regroupPaidFees RateCardRegroupPaidFees @map("regroup_paid_fees")
+  appliedPricingUnitCode String? @map("applied_pricing_unit_code")
+  walletTargetable Boolean? @map("wallet_targetable")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([productFilterId])
+  @@index([productId])
+}
+
+model RateOverride {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  rateModel RateCardRateModel @map("rate_model")
+  rateProperties Json @map("rate_properties")
+  minAmountCents Int @map("min_amount_cents") @default(0)
+  billingIntervalCount Int? @map("billing_interval_count")
+  billingIntervalUnit RateCardRateBillingIntervalUnit? @map("billing_interval_unit")
+  pricingUnitConversionRate Float? @map("pricing_unit_conversion_rate")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([deletedAt])
+  @@index([organizationId])
+}
+
+model RatePhase {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  planRateCardId String? @map("plan_rate_card_id")
+  planRateCard PlanRateCard? @relation(fields: [planRateCardId], references: [id])
+  subscriptionRateCardId String? @map("subscription_rate_card_id")
+  subscriptionRateCard SubscriptionRateCard? @relation(fields: [subscriptionRateCardId], references: [id])
+  code String
+  position Int
+  billingIntervalCycleCount Int? @map("billing_interval_cycle_count")
+  rateOverrideId String? @map("rate_override_id")
+  rateOverride RateOverride? @relation(fields: [rateOverrideId], references: [id])
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  name String?
+
+  @@check("((planRateCardId IS NULL) <> (subscriptionRateCardId IS NULL))")
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([planRateCardId])
+  @@index([subscriptionRateCardId])
+}
+
+model RecurringTransactionRule {
+  id String @id @default(uuid())
+  walletId String @map("wallet_id")
+  wallet Wallet @relation(fields: [walletId], references: [id])
+  trigger Int @default(0)
+  paidCredits Int @map("paid_credits") @scale(5) @default(0.0)
+  grantedCredits Int @map("granted_credits") @scale(5) @default(0.0)
+  thresholdCredits Int? @map("threshold_credits") @scale(5) @default(0.0)
+  interval Int? @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  method Int @default(0)
+  targetOngoingBalance Int? @map("target_ongoing_balance") @scale(5)
+  startedAt DateTime? @map("started_at")
+  invoiceRequiresSuccessfulPayment Boolean @map("invoice_requires_successful_payment") @default(false)
+  transactionMetadata Json? @map("transaction_metadata") @default("[]")
+  expirationAt DateTime? @map("expiration_at")
+  terminatedAt DateTime? @map("terminated_at")
+  status Int? @default(0)
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  ignorePaidTopUpLimits Boolean @map("ignore_paid_top_up_limits") @default(false)
+  transactionName String? @map("transaction_name")
+  paymentMethodId String? @map("payment_method_id")
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodType PaymentMethodTypes @map("payment_method_type")
+  skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
+  grantsTargetTopUp Boolean? @map("grants_target_top_up")
+  purchaseOrderNumber String? @map("purchase_order_number")
+
+  @@index([expirationAt])
+  @@index([organizationId])
+  @@index([paymentMethodId])
+  @@index([startedAt])
+  @@index([walletId])
+}
+
+model RecurringTransactionRulesInvoiceCustomSection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  recurringTransactionRuleId String @map("recurring_transaction_rule_id")
+  recurringTransactionRule RecurringTransactionRule @relation(fields: [recurringTransactionRuleId], references: [id])
+  invoiceCustomSectionId String @map("invoice_custom_section_id")
+  invoiceCustomSection InvoiceCustomSection @relation(fields: [invoiceCustomSectionId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([invoiceCustomSectionId])
+  @@index([organizationId])
+  @@index([recurringTransactionRuleId])
+  @@unique([recurringTransactionRuleId, invoiceCustomSectionId])
+}
+
+model Refund {
+  id String @id @default(uuid())
+  paymentId String @map("payment_id")
+  payment Payment @relation(fields: [paymentId], references: [id])
+  creditNoteId String? @map("credit_note_id")
+  creditNote CreditNote? @relation(fields: [creditNoteId], references: [id])
+  paymentProviderId String? @map("payment_provider_id")
+  paymentProvider PaymentProvider? @relation(fields: [paymentProviderId], references: [id])
+  paymentProviderCustomerId String @map("payment_provider_customer_id")
+  paymentProviderCustomer PaymentProviderCustomer @relation(fields: [paymentProviderCustomerId], references: [id])
+  amountCents Int @map("amount_cents") @default(0)
+  amountCurrency String @map("amount_currency")
+  status String
+  providerRefundId String @map("provider_refund_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  refundableType String? @map("refundable_type")
+  refundableId String? @map("refundable_id")
+  reason String?
+
+  @@check("((creditNoteId IS NOT NULL) OR ((refundableType IS NOT NULL) AND (refundableId IS NOT NULL)))")
+  @@index([creditNoteId])
+  @@index([organizationId])
+  @@index([paymentId])
+  @@index([paymentProviderCustomerId])
+  @@index([paymentProviderId])
+  @@index([refundableType, refundableId])
+}
+
+model Role {
+  id String @id @default(uuid())
+  organizationId String? @map("organization_id")
+  code String
+  admin Boolean @default(false)
+  permissions String[]
+  name String
+  description String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([organizationId])
+}
+
+model SchemaMigration {
+  version String @id
+}
+
+model SubscriptionActivationRule {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  type SubscriptionActivationRuleTypes
+  timeoutHours Int @map("timeout_hours") @default(0)
+  status SubscriptionActivationRuleStatuses
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([subscriptionId, type])
+  @@index([status, expiresAt])
+  @@index([organizationId])
+}
+
+model SubscriptionFixedChargeUnitsOverride {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  fixedChargeId String @map("fixed_charge_id")
+  fixedCharge FixedCharge @relation(fields: [fixedChargeId], references: [id])
+  units Float @default(0.0)
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([fixedChargeId])
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([deletedAt])
+}
+
+model SubscriptionRateCard {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  rateCardId String @map("rate_card_id")
+  rateCard RateCard @relation(fields: [rateCardId], references: [id])
+  billingAnchorDate DateTime @map("billing_anchor_date")
+  nextBillingAt DateTime @map("next_billing_at")
+  startedAt DateTime @map("started_at")
+  endedAt DateTime? @map("ended_at")
+  units Float?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("((endedAt IS NULL) OR (startedAt <= endedAt))")
+  @@index([deletedAt])
+  @@index([nextBillingAt])
+  @@index([organizationId])
+  @@index([rateCardId])
+  @@index([subscriptionId])
+}
+
+model SubscriptionsInvoiceCustomSection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  invoiceCustomSectionId String @map("invoice_custom_section_id")
+  invoiceCustomSection InvoiceCustomSection @relation(fields: [invoiceCustomSectionId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([invoiceCustomSectionId])
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@unique([subscriptionId, invoiceCustomSectionId])
+}
+
+model UsageMonitoringAlert {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  subscriptionExternalId String? @map("subscription_external_id")
+  billableMetricId String? @map("billable_metric_id")
+  billableMetric BillableMetric? @relation(fields: [billableMetricId], references: [id])
+  alertType UsageMonitoringAlertTypes @map("alert_type")
+  previousValue Int @map("previous_value") @scale(5) @default(0.0)
+  lastProcessedAt DateTime? @map("last_processed_at")
+  name String?
+  code String
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  walletId String? @map("wallet_id")
+  wallet Wallet? @relation(fields: [walletId], references: [id])
+  direction UsageMonitoringAlertDirection
+
+  @@arc([subscriptionExternalId, walletId])
+  @@index([billableMetricId])
+  @@index([organizationId])
+  @@index([subscriptionExternalId])
+  @@index([walletId])
+}
+
+model UsageMonitoringSubscriptionActivity {
+  id Int @id
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  enqueued Boolean @default(false)
+  insertedAt DateTime @map("inserted_at") @default(now())
+  enqueuedAt DateTime? @map("enqueued_at")
+
+  @@index([organizationId, enqueued])
+  @@index([organizationId])
+  @@unique([subscriptionId])
+}
+
+model UserDevice {
+  id String @id @default(uuid())
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id])
+  fingerprint String
+  browser String?
+  os String?
+  deviceType String? @map("device_type")
+  lastLoggedAt DateTime @map("last_logged_at")
+  lastIpAddress String? @map("last_ip_address")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([userId, fingerprint])
+}
+
+model User {
+  id String @id @default(uuid())
+  email String?
+  passwordDigest String? @map("password_digest")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model Version {
+  id Int @id
+  itemType String @map("item_type")
+  itemId String @map("item_id")
+  event String
+  whodunnit String?
+  object Json?
+  objectChanges Json? @map("object_changes")
+  createdAt DateTime? @map("created_at")
+  lagoVersion String? @map("lago_version")
+
+  @@index([itemType, itemId])
+}
+
+model WalletTarget {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  walletId String @map("wallet_id")
+  wallet Wallet @relation(fields: [walletId], references: [id])
+  billableMetricId String @map("billable_metric_id")
+  billableMetric BillableMetric @relation(fields: [billableMetricId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([billableMetricId])
+  @@index([organizationId])
+  @@index([walletId])
+}
+
+model WalletTransactionsInvoiceCustomSection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  walletTransactionId String @map("wallet_transaction_id")
+  walletTransaction WalletTransaction @relation(fields: [walletTransactionId], references: [id])
+  invoiceCustomSectionId String @map("invoice_custom_section_id")
+  invoiceCustomSection InvoiceCustomSection @relation(fields: [invoiceCustomSectionId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([invoiceCustomSectionId])
+  @@index([organizationId])
+  @@index([walletTransactionId])
+  @@unique([walletTransactionId, invoiceCustomSectionId])
+}
+
+model WalletsInvoiceCustomSection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  walletId String @map("wallet_id")
+  wallet Wallet @relation(fields: [walletId], references: [id])
+  invoiceCustomSectionId String @map("invoice_custom_section_id")
+  invoiceCustomSection InvoiceCustomSection @relation(fields: [invoiceCustomSectionId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([invoiceCustomSectionId])
+  @@index([organizationId])
+  @@index([walletId])
+  @@unique([walletId, invoiceCustomSectionId])
+}
+
+model WebhookEndpoint {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  webhookUrl String @map("webhook_url")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  signatureAlgo Int @map("signature_algo") @default(0)
+  eventTypes String[]? @map("event_types")
+  name String?
+
+  @@index([organizationId])
+  @@unique([webhookUrl, organizationId])
+}
+
+model Webhook {
+  id String @id @default(uuid())
+  objectId String? @map("object_id")
+  objectType String? @map("object_type")
+  status Int @default(0)
+  retries Int @default(0)
+  httpStatus Int? @map("http_status")
+  endpoint String?
+  webhookType String? @map("webhook_type")
+  payload Json?
+  response Json?
+  lastRetriedAt DateTime? @map("last_retried_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  webhookEndpointId String? @map("webhook_endpoint_id")
+  webhookEndpoint WebhookEndpoint? @relation(fields: [webhookEndpointId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  payloadKey String? @map("payload_key")
+  responseKey String? @map("response_key")
+
+  @@index([organizationId, webhookEndpointId, webhookType, updatedAt])
+  @@index([webhookEndpointId, updatedAt, createdAt])
+  @@index([webhookEndpointId, status, updatedAt])
+  @@index([objectType, objectId, webhookType])
+  @@index([organizationId])
+  @@index([webhookEndpointId])
+}

@@ -1,5 +1,372 @@
 # Changes — @frontierjs/litestone
 
+## 2026-08-29 — ERPNext, and a declared answer to where `@@arc` stops
+
+`test/fixtures/corpus/frappe-to-lite.mjs`, and **ERPNext — 534 models**, the new
+scale ceiling: parses in 248ms, builds in 732ms, re-boots in 470ms, zero drift.
+
+It is here for one construct no other source can supply: **polymorphism the
+schema DECLARES**. A Frappe `Dynamic Link` names the field holding its target
+doctype, and that controlling field answers closed-or-open directly — a `Select`
+with N options is a closed set of N, a `Link` to `DocType` is open. The question
+`references/Tag.lite` leaves to the author is, here, a fact in the file:
+
+```
+78 declared polymorphic fields — 61 OPEN (78%), 17 CLOSED (22%)
+closed arity:  2 ×1   3 ×7   4 ×4   5 ×1   6 ×2   7 ×1   16 ×1
+               15 of 17 inside @@arc's ceiling; 3 is the mode
+```
+
+**Both halves of the taxonomy come out right and they say different things.**
+Where a target set is closed it is small, which is `@@arc`'s case and agrees with
+Lago from the other direction (five arcs found as hand-rolled SQL, every one
+arity 2). But **open is the common case**, so the `(subjectType, subjectId)` pair
+serves most real polymorphism — and case 3's stated cost, *something has to sweep
+attachments whose subject is gone*, is the cost most applications actually pay.
+The sweep is the half worth making cheaper.
+
+The framework itself uses an open pair 252 times: every child table is addressed
+by `(parenttype, parent)`. And 84 doctypes are submittable — a real
+draft → submitted → cancelled machine `@@transitions` could carry, though it is a
+framework convention rather than anything the file declares.
+
+A Frappe app is one JSON per doctype, so this target arrives as a tarball and
+`fetch.mjs` extracts it; `tar` has to be on PATH.
+
+## 2026-08-29 — `busyTimeout` is configurable, and a failed audit write no longer crashes the process
+
+**The second half of `FJS-569`.** The wait every connection owes a second writer
+was a literal 5000 with no way for an app to change it. It is now
+`createClient({ busyTimeout })`, resolved **option → env
+(`LITESTONE_BUSY_TIMEOUT`) → 5000** — the same precedence `resolveTenancy` uses,
+and the env var is the only channel for the callers that construct no client and
+most want a different number: the CLI, a migration against a live database, a
+worker under a supervisor.
+
+**Per database, as `{ default, <db> }`**, because the database this issue came
+from wants the opposite answer to main. An audit `logger` index write is
+fire-and-forget and its failure is swallowed by design, so spending the loop's
+next five seconds to place a row nobody awaits is worse than dropping it —
+`{ audit: 250 }` is an app saying so. A malformed value, and a key naming a
+database the schema does not declare, are refused **by name at `createClient`**
+rather than at the connection that would have used it: a dropped key is a
+database silently keeping the default, which is the class of silence the whole
+issue is about.
+
+**There is deliberately no `database { }` spelling** (`FJS-D155`). How long to
+wait for another process is a fact about *this* process, and the same schema is
+opened by an API answering a person and by a queue draining a batch. Same reason
+a relative `database { path }` resolves against the working directory.
+
+**Writing the end-to-end test found a second defect.** `fireLog` is documented to
+never throw to its caller and its `try`/`catch` wraps a call to an `async`
+`create` — so it caught nothing, and a failed audit write became an *unhandled
+rejection* rather than the dropped row it claims to be. It could not be seen
+while the index had a five-second wait; under `busyTimeout: { audit: 0 }` it
+happens every time. Caught on the promise now, and the first loss per model warns
+once, naming the model — a lost audit row is the one write whose whole purpose is
+being there afterwards, and whatever produces one produces thousands.
+
+**`docs/concurrency.md`** is the documented half the issue also asked for: what
+`bun:sqlite` being synchronous actually costs, the three reasons a call is long
+and the different answer each takes, why two clients on one file in one process
+deadlock (measured, twelve lines), and when a worker thread is the answer —
+`node:worker_threads` works, and a worker holding the write lock for 600ms left
+the main loop ticking while the main thread's own write waited 639ms and
+committed, where the same shape on one thread expires its whole timeout because
+the holder's release never gets a turn.
+
+## 2026-08-29 — Discourse, and the corpus reaches 843 models
+
+`sql-to-lite.mjs` unchanged, which is what a front-end is for: **Discourse,
+356 models** — nearly twice `openmrp`'s 188 and with real relations rather than a
+mechanical conversion. Parses in 82ms, builds in 365ms, re-boots in 116ms, zero
+drift. It is the new scale ceiling.
+
+Six applications now, three front-ends, **843 models, 803 recorded constructs,
+and every one parses, builds and re-boots with zero drift.**
+
+**A partial index is the largest unrepresented construct in the corpus by 2.3×**
+— 251 of them, in every source that has predicates at all, and `.lite` cannot say
+it. A UNIQUE partial index is dropped rather than emitted whole, because
+emitting it would be a stronger constraint than the source declares.
+
+Discourse's 15 polymorphic pairs are the unambiguous kind — `bookmarkable`,
+`chatable`, `votable`, `linkable`. The Rails `-able` suffix is the idiom for
+*anything that can be X'd*, which is weak evidence for an OPEN target set and so
+for the `(subjectType, subjectId)` shape rather than `@@arc`.
+
+Two Postgres types earned names rather than *unknown*: `tsvector`, where the
+`.lite` answer is `@@fts` — SQLite FTS5, a different engine on a different table,
+so a replacement the author makes and never a conversion — and `halfvec`
+(pgvector), where there is no type and no index that would make one useful.
+
+STI detection moved into the shared pass so every front-end sees it, and is
+reported as a **candidate**: 21 across six schemas, but a `type` column is a
+plain category in plenty of them and only reading the application separates the
+two. Same terms as the polymorphic pass, for the same reason.
+
+## 2026-08-29 — a third corpus front-end: a PostgreSQL dump, and `@@check`/`@@arc` meet real input
+
+`test/fixtures/corpus/sql-to-lite.mjs`, and **Lago** — 139 models, parses,
+builds and re-boots with zero drift in 270ms. A `structure.sql` is the only
+source that carries **CHECK constraints, views and native enums**, none of which
+Prisma has and Rails' `schema.rb` mostly does not, so it is the first input
+`@@check` and `@@arc` have ever had that this project did not write:
+
+```
+CHECK ((invoice_grace_period >= 0))                  →  @@check("(invoiceGracePeriod >= 0)")
+CHECK ((plan_id IS NOT NULL) <> (subscription_id …)) →  @@arc([planId, subscriptionId])
+                                                     →  CHECK (("planId" IS NOT NULL) + ("subscriptionId" IS NOT NULL) = 1)
+```
+
+Both survive the trip and a raw `INSERT` with neither arc member set is refused
+by SQLite. 17 `@@check` and 5 `@@arc` emitted; 8 checks dropped as genuinely
+inexpressible — `jsonb_typeof`, `cardinality`, the `~` regex operator, a `::text`
+cast on a column.
+
+**All five arcs are arity 2** — `plan XOR subscription`, `feature XOR privilege`,
+`subscription XOR wallet` — the first real-world evidence about where `@@arc`'s
+ceiling belongs. Production billing writes exclusive arcs, writes them small, and
+writes them as hand-rolled SQL because it has nothing better to say.
+
+Converting a CHECK meant two passes worth naming: a cast on a string literal is
+dropped (`'approved'::public.quote_status` is an ordinary comparison wearing
+Postgres punctuation), and identifiers are rewritten by a walk rather than a
+regex, because a regex rewrote the words **inside** string literals.
+
+New: `FJS-575` — 20 columns are `numeric(40, 15)` and `@scale` caps at 9, so
+every per-unit rate in a real usage-based billing schema lands as a `Float`.
+
+Views are recorded and skipped: `.lite`'s `view` needs its columns declared plus
+an `@@sql` body, and a Postgres body is not SQLite.
+
+## 2026-08-29 — a second corpus front-end: Rails `schema.rb`
+
+`test/fixtures/corpus/rails-to-lite.mjs`. Three Prisma schemas largely agree
+with each other, so a fourth confirms rather than finds; a Rails one disagrees.
+Mastodon — **116 models** — parses, builds and re-boots with zero drift in
+179ms, and arrived carrying what Prisma has no way to express:
+
+- **43 partial indexes.** `unique … where: "deleted_at IS NULL"` is uniqueness
+  among LIVE rows. A **unique** partial index is DROPPED rather than emitted
+  whole, because emitting it would be a stronger constraint than the source
+  declares; a plain one keeps its columns and loses its predicate.
+- **Single-table inheritance** — a string `type` column partitioning one table
+  across several classes. No spelling: the column becomes an ordinary String and
+  the partition is lost.
+- **Polymorphic pairs**, reported as candidates and never resolved to `@@arc` —
+  `polymorphic.mjs` is the shared pass, and it refuses to guess because the
+  target set lives in application code and in the data, never in the schema.
+  Whether real pairs cluster below `@@arc`'s ceiling is the question the corpus
+  now exists to answer.
+
+Rails inverts one default that matters: a column is **nullable unless
+`null: false`**, the opposite of `.lite`.
+
+Writing it turned up `FJS-571` in `@frontierjs/toolbelt` — `singularize` never
+reached a compound's head, so `UserStatus` became `user_statuses` and read back
+as `user_statuse`, a round trip that fails open in junction. Fixed there.
+
+## 2026-08-29 — `@@arc`, and the case for not building polymorphic relations
+
+*This row points at an Order or a Product* is asked constantly and has one good
+answer here. `@@arc([orderId, productId])` declares several optional foreign keys
+of which exactly one is set, `optional: true` relaxes it to at most one, and
+`message:` carries the sentence a form shows.
+
+**The members stay ordinary relations**, which is the whole of the argument. A
+real `@relation`, a real `onDelete`, a real `include` — and the attribute adds
+only a table CHECK counting the non-null members, so the rule holds against a
+job on `db.`, a migration, a seed, an atomic operator and `asSystem()`, which
+drops the gate and every row policy and cannot drop a CHECK. The polymorphic
+alternative — a `subjectType` naming a model beside a `subjectId` — keeps none of
+the three: nothing refuses a deleted id, orphans need a sweep job because the
+database will not do it, and reading the subject is a second query per type.
+
+Two refusals at parse. A **required** member, because a column always set is
+always the answer — two of them can never sum to one, one among optionals is not
+a choice. And fewer than two members, which is `@@check` written the long way.
+An unknown member was going to be a third and is not: the generic
+model-attribute field-ref check already covers every `@@`-word carrying a
+`fields` array, so the arc's own version was a duplicate message and was removed
+rather than kept beside it.
+
+**The expression has one owner.** `arcCheckExpr()` in `ddl.js` is what the
+emitter writes and what `client.js` matches SQLite's reported CHECK text back
+against to find the declaration holding the message. Two spellings would not
+fail — they would fall through to `this record is not valid`, which is the
+generic sentence `FJS-534` removed for `@check` one attribute earlier. Without a
+`message:` the sentence is derived: `exactly one of orderId, productId must be
+set`. The SQL stays on `err.constraint` for the developer.
+
+**What was refused, and why it is written down.** Real polymorphic relations were
+priced against the tree first: 158 `relationMap` threadings and 69 single-valued
+`.targetModel` reads are the cheap half, and the expensive half is that
+`policy.js:805` compiles the *target's own policy* into a correlated subquery —
+so a polymorphic target is N branches in a `CASE`, each carrying its own
+`@@gate`. A caller who reads `Order` at 4 and `Product` at 5 would then see half
+a list as a 200 with fewer rows, which is exactly the shape Invariant 6 is
+arranged around. Prisma refuses it too; ZenStack's `@@delegate` is the best
+answer in the ecosystem and solves the *closed* set only, since `extends` is a
+closed set by construction. The argument is `IDEAS/polymorphic-relations.md`
+(4.28), and the open set keeps `subjectType`/`subjectId` and keeps saying what it
+cannot do — `references/Tag.lite` argues both sides where somebody copies from.
+
+19 tests. `docs/schema.md` § *Exclusive foreign keys*, and the reference snapshot
+is at 97 words.
+
+## 2026-08-29 — a one-to-one back-reference pairs, and `unknown type` means it
+
+`FJS-563`. `model A { b B? }` where `B` holds the foreign key carries no
+`@relation` and no column — the exact singular counterpart of the plural hasMany
+back-reference — and it failed the type check, so it was reported as
+**`unknown type 'B'` for a model that is registered**. That message sends the
+reader hunting a model which is plainly there.
+
+The parser now marks it `backRefOne` and pairs it against the unlabelled
+`@relation` pointing back, the same rule the array already used. `client.js`'s
+`buildRelationMap` looks for a singular back-reference as well as an array one,
+which was the second half: with the parse fixed, `include: { profile: true }`
+was still `Unknown relation "profile"`, because the map keyed the entry under the
+model's own name when it could not find the field. It is stored as `hasMany`
+carrying **`toOne`** rather than as a fourth relation kind — 29 sites branch on
+kind and only the attach needed to change — so a to-one include answers the row
+and an absent one is `null` rather than `[]`.
+
+**Three refusals replace the wrong one.** A foreign key that is not unique is a
+to-many written as a to-one and would answer one of many rows arbitrarily, so it
+is named, with both ways out. No unlabelled back-reference at all is named, and
+points at the labelled one where there is one. Two candidates are named, both of
+them. Uniqueness counts a field `@unique`, an exactly-matching model `@@unique`,
+and **a primary key** — `eventTypeId Int @id` being both the FK and the PK is how
+calcom writes a 1:1.
+
+Found by the corpus, and proved by it: the converter's workaround is off by
+default now, and Cal.com, Trigger.dev and Documenso — **232 models** — parse,
+build a database and re-boot with zero drift without it. `test/one-to-one.test.ts`
+pins all nine branches, since two of the three fixtures are git-ignored.
+
+## 2026-08-29 — a corpus of schemas nobody here wrote
+
+`test/fixtures/corpus/` and `test/corpus.test.ts`. `fixtures/scale/openmrp.lite`
+asks whether the Data realm survives SIZE; this asks whether it survives SHAPES
+this project did not invent. `prisma-to-lite.mjs` converts a published Prisma
+schema mechanically, `fetch.mjs` pulls the targets, and the test is openmrp's —
+parse, build, boot again and migrate nothing.
+
+**The `.lite` output is not the artifact; the refusal list is.** Three real
+schemas were converted on the first run — Cal.com (100 models), Trigger.dev (81)
+and Documenso (51), **232 models and 124 enums** — and all three now parse, build
+a database and re-boot with zero drift, in 47–379ms each.
+
+Two defects fell out, both invisible to any rule a checker could carry, because a
+rule is written by somebody who has already thought of the case:
+
+- **`FJS-563`** — the non-owning side of a one-to-one must be labelled, and
+  unlabelled the parser reports `unknown type 'B'` for a model it has registered.
+  37 occurrences, and the single cause of every `unknown type` error in all three
+  schemas. A list back-reference pairs unlabelled; a singular one does not; Prisma
+  requires no label either way, so every ported 1:1 arrives broken.
+- **`FJS-564`** — an array column is expressible and its default is not, the empty
+  array included. 11 occurrences.
+
+`FJS-561` (no composite `@@id`) gained 7 occurrences plus 4 models with no primary
+key at all, and **`FJS-D130` came out of it vindicated**: 22 composite `@@unique`
+declarations over a nullable column, every one answered by `nullsDistinct: true`.
+
+Three findings were **withdrawn after being probed at minimum size** and are worth
+recording as the method's failure mode: referential actions (`onDelete`/`onUpdate`
+are supported — 348 false gaps from one converter bug), a duplicate index that came
+from stripping a Postgres opclass, and a `:memory:`-against-file divergence that
+would not reproduce. Same shape as the withdrawn `FJS-560`: **a parser refusing a
+name is evidence about the name.**
+
+Only `triggerdev.lite` is committed — Apache-2.0. Cal.com and Documenso are AGPL,
+and a schema converted from a copyleft source is plausibly a derived work, so
+vendoring one into an MIT package is a licensing decision rather than a testing
+one; they are fetched on demand and **skipped by name** when absent.
+
+## 2026-08-29 — the docs stopped saying `@scale`/`@money` were coming
+
+Documentation only; nothing in the package moved. `docs/roadmap.md` still
+carried *Exact numbers — `@scale(n)`, then `@money`* under **High priority**,
+opening *there is no fixed-point numeric type*, three days after `FJS-D142`
+shipped both; *Typed JSON fields* proposed `Json @type(T)`, which ships; and
+`@slug`'s entry proposed the attribute rather than the collision handling that
+is the part still unbuilt. `docs/README.md` described the roadmap as *what's
+coming: `@scale`/`@money`*, and **three shipped pages were linked from nothing**
+— `exact-numbers.md`, `json-types.md` and `traits.md`, the last of which
+`CLAUDE.md` cites as the reference for `extend model`.
+
+A session took the three signposts for the current state and filed a defect
+saying the language has no `Decimal` (`FJS-560`) — which is a ruling holding,
+not a gap. The shipped entries are now tombstones in a `## Shipped` section at
+the TOP of the roadmap, the file opens by saying it is proposals and never a
+statement of behaviour, and `fli check`'s `roadmap-shipped` + `docs-index` grade
+both halves so the next one is a warning rather than a day.
+
+## 2026-08-29 — a reference catalogue, in `.lite` so it can be checked
+
+`references/`, three models to start: `Notification`, `AuditEvent`, `Tag`. Not
+shipped and not importable — a shape you read before writing a model that half a
+dozen apps have already written differently, and copy into your own schema.
+
+**`.lite` rather than prose, because a reference that cannot parse is wrong** and
+this is the only format where that is decidable. `test/references.test.ts` parses
+every file and fails on an error, so a parser rule that moves takes the catalogue
+with it instead of leaving a folder of plausible stale examples. It also asserts
+no WARNINGS — a reference is the one place a footgun warning must not be
+tolerated, since it is what somebody is about to copy — that the first model is
+named for the file, and that the file is listed in the README, which is the
+silent failure here.
+
+**A file is self-contained, and that is measured rather than assumed.** A
+standalone model parses clean; a `@relation` to a model the file does not declare
+is TWO errors (`unknown type 'User'` and `@relation references unknown model
+'User'`). So a reference carries the foreign key COLUMN and never the relation —
+honest rather than a workaround, since the column is the shape and which model it
+points at is the installing app's answer.
+
+**Two findings on the first pass.** The polymorphic subject exists twice in this
+repo under two names: basecamp's `AuditEvent` spells it `subjectType`/`subjectId`
+with an index on the pair, and `example`'s `Notification` spells the same idea
+`contextType`/`contextId`. One concept, two spellings, nothing anywhere able to
+notice. The catalogue prefers `subject` for anything new and says so at both
+files, which is a recommendation and not a demand to migrate.
+
+And `@frontierjs/notifications` writes to a model it does not ship:
+`drivers/inapp.ts` calls `asSystem().notification.create()` naming five columns
+against a hand-written structural type that is the only description of the shape
+anywhere. `Notification.lite` is that shape written down. Whether it should be
+SHIPPED rather than referenced is `IDEAS/machinery-models.md`, deliberately not
+answered here.
+
+## 2026-08-29 — `litestone studio` moves to 8502, the port the scheme reserved for it
+
+`FJS-557`. 3228 pass, 1 skip, 0 fail.
+
+Studio ran on 5001 for its whole life and the framework's port scheme reserves
+`studio: 8502` — dev, tooling, project 0, service 2. So the number a person
+actually got was one the scheme had never heard of, the number the scheme
+reserved was answered by nothing, and `fli ports:status` showed 8502 free.
+
+Nothing failed, which is why it lasted: the only symptom was that the documented
+port did not answer. It was found by the tools group on `fli gui`'s new
+dashboard, which derives a tile's start command by matching a command's own
+`--port` default against the reserved block — so studio was the one tile with no
+start button, and that tile is the only thing in the repo that noticed.
+
+**8502 wins because the scheme owns a global tooling port.** That block is
+refused to every app precisely so a tool somebody runs beside whatever they are
+working on keeps one number they type from memory; 5001 is outside it,
+unreserved, and common enough to collide with something nobody started. The
+literal carries a comment naming the slot, because this package sits below the
+CLI that owns the formula and cannot import it.
+
+`--port` is unchanged, and the two studio drives pass one explicitly, so they
+are unaffected.
+
 ## 2026-08-26 — a finer capability grant REPLACES the coarse one
 
 `IDEAS/permission-sets.md` step 7, found by adopting the grid in basecamp. 3226
@@ -253,6 +620,51 @@ gate — the two are ANDed, so a model can narrow here while its ladder does not
 
 14 tests. Litestone green: 3205.
 
+
+## 2026-08-29 — one wait, on every connection
+
+`FJS-569`, half of it. `src/core/pragmas.js` is the floor and every
+`new Database(...)` in this package now calls it.
+
+**It was set on four connections and missing from four**, so whether a database
+waited for the write lock was an accident of which file opened it. Measured with
+one connection holding the lock: with the timeout the second waits 5007ms, with
+no pragmas at all it fails in **1ms**. Absent from the main READ connection, the
+tenant registry and each tenant handle, four CLI handles — and from the
+`jsonl`/`logger` companion index, which is the one that mattered: a `logger`
+database is schema-global, so that index is the single file every tenant and
+every process writes, and it had no wait at all. A second `example` API beside a
+running one died on its first audit write.
+
+**WAL was tried on that index and taken back out**, which is worth recording
+because the argument for it is good: under a rollback journal a reader and a
+writer exclude each other on the file every process touches. What kills it is
+that the index is DELETED by anything rewriting the `.jsonl` — compaction, and
+also `verify:jobs`, which plants an aged row by hand — and WAL puts two more
+files beside it. Every one of those places silently starts owing two more
+unlinks, and one that does not recovers the byte offsets the rewrite just
+invalidated: measured, as a retention sweep reporting success having removed
+nothing. It is a change worth making on its own terms, after finding every
+hand-rewriter; it is not part of a floor.
+
+**What the timeout is FOR is stated in the module, because it is narrower than it
+looks.** `bun:sqlite` is synchronous, so a connection waiting on the lock blocks
+the thread — in one process that is the event loop, and it can deadlock: the
+waiter blocks the loop, the holder's continuation never runs to commit, and the
+wait can only expire. Measured at 5000ms-then-failure for an 800ms hold in one
+process, and 1444ms-then-commit for the same hold across two. So it is a
+cross-process device, and what makes the in-process case fine is `$transaction`'s
+FIFO lock, which queues two transactions on one client before SQLite ever sees
+them.
+
+Four tests, behavioural rather than a `PRAGMA` read — asserting the statement ran
+does not assert that a second writer survives. Each takes the lock from a real
+second PROCESS, because holding it in the test process reproduces exactly the
+deadlock above and would pass for the wrong reason. Negative-controlled: with the
+index pragma commented out the logger case goes red.
+
+**Still open**: 5000 is not configurable, and a queue draining a batch and a
+request answering a person want different answers.
 
 ## 2026-08-26 — `$softDelete` on every flavour, and three traps that disagreed
 

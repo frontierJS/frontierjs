@@ -1,0 +1,60 @@
+---
+title: New product
+---
+<script>
+  // The create page, and there is no form on it. `<Product />` IS the form:
+  // the markup half of resources/Product.mesa (repo Invariant 18), so a create
+  // page and an edit page render the same fields without either of them saying
+  // what the fields are.
+  //
+  // What is left here is what a screen actually decides — the heading, where
+  // Cancel leads, where a successful save goes, and the two notes below about
+  // what the schema does to what you type.
+  import Product      from '@/resources/Product.mesa'
+  import { products } from '@/resources/Product.mesa'
+  import { goto } from '@frontierjs/sierra/router'
+  import { session } from '@/session.js'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+
+  $: session.level
+
+  // `var` rather than `const`, for the reason orders/create.mesa gives: a gate
+  // level comes off the schema and never changes, so this is a snapshot and
+  // saying so is better than a silent one-time read in the template.
+  var createLevel = products.gate.create
+</script>
+
+<SectionHeader title="New product" level={1}>
+  {#snippet action()}
+    <Button variant="ghost" href="/products/">Back to list</Button>
+  {/snippet}
+</SectionHeader>
+
+{#if session.level < createLevel}
+  <Alert tone="warning">
+    Not signed in at level {createLevel}. Reading products is public —
+    <code>@@gate("0.4.4.5")</code> — and creating one is not, so this will come
+    back 401. The button is NOT disabled: the server is the thing that decides,
+    and <code>x-gate</code> in the browser is an affordance.
+  </Alert>
+{/if}
+
+<Product
+  class="card"
+  style="max-width: 32rem"
+  method="create"
+  submitLabel="Create product"
+  cancelHref="/products/"
+  ondone={(row) => goto(`/products/${row.id}/`)}
+/>
+
+<p class="text-sm text-muted">
+  <code>slug</code> is <code>@lower</code> in the schema, so type it in capitals
+  and watch what gets stored. Both <code>name</code> and <code>slug</code> are
+  <code>@unique</code>: reuse one and the refusal comes back under that box by
+  name, because a <code>UniqueConflictError</code> carries <code>errors</code>
+  and not just a sentence.
+</p>

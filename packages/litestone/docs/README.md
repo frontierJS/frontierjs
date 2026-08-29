@@ -12,12 +12,15 @@
 - [migrations.md](migrations.md) — autoMigrate, file migrations, JS migrations, CLI
 - [typescript.md](typescript.md) — litestone types, generated .d.ts, WhereBase, WindowSpec
 - [jsonschema.md](jsonschema.md) — generateJsonSchema: every key it emits, modes, audience, who reads each
+- [exact-numbers.md](exact-numbers.md) — `Int @scale(n)` and `Int @money(USD)`: an exact quantity and an amount of money, stored as whole minor units. **There is no `Decimal` and that is a ruling, not a gap** ([`FJS-D142`](../../../DECISIONS.md#fjs-d142))
+- [json-types.md](json-types.md) — `type T { }` in the seed and `Json @type(T)`: a declared shape for a Json column, validated on write
+- [traits.md](traits.md) — `@@trait` and `extend model X { }`: what a package contributes into a seed, and what the installing app says back about a model it did not write
 
 ## Querying
 - [querying.md](querying.md) — findMany, findFirst, findUnique, count, exists, pagination, writes, multi-model `db.query()` batch
 - [filtering.md](filtering.md) — where clause, operators, AND/OR/NOT, $raw + sql tag
 - [sorting.md](sorting.md) — orderBy, NULLS FIRST/LAST, relation field, relation aggregate
-- [relations.md](relations.md) — belongsTo, hasMany, manyToMany, include, nested writes, recursive tree
+- [relations.md](relations.md) — belongsTo, hasMany, one-to-one, manyToMany, include, nested writes, recursive tree
 - [aggregation.md](aggregation.md) — aggregate(), groupBy(), interval/fillGaps, FILTER, named aggs, query() dispatcher
 - [window-functions.md](window-functions.md) — all window fns, partitionBy, frame specs, FILTER
 
@@ -36,6 +39,7 @@
 
 ## Infrastructure
 - [performance.md](performance.md) — WAL, dual connections, select:false, indexes, fast paths
+- [concurrency.md](concurrency.md) — `bun:sqlite` is synchronous: what blocks the event loop, `busyTimeout` (option → env → default), why two clients on one file in one process deadlock, and when to reach for a worker thread
 - [multi-tenancy.md](multi-tenancy.md) — the `tenancy { }` block: a database per tenant or a tenant column, and how a request names one
 - [replication.md](replication.md) — Litestream wrapper, WAL replication, point-in-time recovery
 
@@ -47,7 +51,7 @@
 - [publishing.md](publishing.md) — npm scope, pre-publish checklist, version strategy
 
 ## Meta
-- [roadmap.md](roadmap.md) — what's coming: `@scale`/`@money`, Embedding, LatLng, @slug, ExternalSync
+- [roadmap.md](roadmap.md) — **proposals only, never a statement of behaviour**: Embedding, LatLng, ExternalSync, and the unbuilt half of `@slug`. What the language accepts is `reference.snapshot.md` above
 - [gotchas.md](gotchas.md) — production surprises and edge cases
 
 ## Audits

@@ -39,10 +39,14 @@ const apiPort    = deployConf.api?.port ?? 3000
 const host       = `${user}@${server}`
 const container  = `${appId}-api`
 
-// ─── SSH check ────────────────────────────────────────────────────────────────
-try {
-  context.exec({ command: `ssh -o ConnectTimeout=5 -o BatchMode=yes ${host} "echo ok" > /dev/null` })
-} catch {
+// ─── Is the machine reachable ─────────────────────────────────────────────────
+const machine = machineFor(context, host, path, deployConf.transport)
+const ask = (script) => {
+  try { return machine.capture(script) }
+  catch { return '' }
+}
+
+if (!machine.reach()) {
   log.error(`Cannot reach ${host}`)
   return
 }
@@ -52,11 +56,7 @@ echo(`\n── ${appId} · ${target} · ${host} ──────────�
 // ─── API container ────────────────────────────────────────────────────────────
 echo('\nAPI')
 try {
-  const result = context.exec({
-    command: `ssh ${host} "docker inspect ${container} --format '{{.State.Status}} {{.Config.Image}} {{.State.StartedAt}}' 2>/dev/null || echo 'not found'"`,
-    stdio: 'pipe',
-  })
-  const line  = result?.toString('utf8').trim() ?? 'not found'
+  const line = ask(`docker inspect ${container} --format '{{.State.Status}} {{.Config.Image}} {{.State.StartedAt}}' 2>/dev/null || echo 'not found'`) || 'not found'
 
   if (line === 'not found' || line === '') {
     echo(`  container: not running`)
@@ -75,11 +75,7 @@ try {
 // ─── Health check ─────────────────────────────────────────────────────────────
 const healthPath = deployConf.api?.health ?? '/health'
 try {
-  const result = context.exec({
-    command: `ssh ${host} "curl -s -o /dev/null -w '%{http_code}' http://localhost:${apiPort}${healthPath} 2>/dev/null || echo 'unreachable'"`,
-    stdio: 'pipe',
-  })
-  const code = result?.toString('utf8').trim() ?? 'unreachable'
+  const code = ask(`curl -s -o /dev/null -w '%{http_code}' http://localhost:${apiPort}${healthPath} 2>/dev/null || echo 'unreachable'`) || 'unreachable'
   const ok   = code === '200'
   echo(`  health:     ${healthPath} → ${code}${ok ? ' ✓' : ' ✗'}`)
 } catch {
@@ -91,20 +87,12 @@ if (deployConf.web !== false) {
   echo('\nWeb')
   try {
     // Current symlink target
-    const currentResult = context.exec({
-      command: `ssh ${host} "readlink ${path}/current 2>/dev/null || echo 'not set'"`,
-      stdio: 'pipe',
-    })
-    const current = currentResult?.toString('utf8').trim() ?? 'not set'
+    const current = ask(`readlink ${path}/current 2>/dev/null || echo 'not set'`) || 'not set'
     const relName = current.split('/').pop()
     echo(`  current:    ${relName === 'not set' ? 'not deployed yet' : relName}`)
 
     // Available releases
-    const relResult = context.exec({
-      command: `ssh ${host} "ls -1dt ${path}/releases/* 2>/dev/null | head -5 | xargs -I{} basename {} 2>/dev/null || echo ''"`,
-      stdio: 'pipe',
-    })
-    const releases = relResult?.toString('utf8').trim().split('\n').filter(Boolean) ?? []
+    const releases = ask(`ls -1dt ${path}/releases/* 2>/dev/null | head -5 | xargs -I{} basename {} 2>/dev/null || echo ''`).split('\n').filter(Boolean)
     if (releases.length > 0) {
       echo(`  releases:   ${releases.join('  ')}`)
     } else {
@@ -118,16 +106,13 @@ if (deployConf.web !== false) {
 // ─── Deploy lock ──────────────────────────────────────────────────────────────
 echo('\nDeploy')
 try {
-  const lockResult = context.exec({
-    command: `ssh ${host} "cat ${path}/.deploy.lock 2>/dev/null || echo ''"`,
-    stdio: 'pipe',
-  })
-  const lock = lockResult?.toString('utf8').trim() ?? ''
+  const lock = ask(`cat ${path}/.deploy.lock 2>/dev/null || echo ''`)
   if (lock) {
     // Lock format: pid:timestamp:target
     const [pid, ts, tgt] = lock.split(':')
     echo(`  lock:       ACTIVE — pid ${pid}, target ${tgt}, since ${ts}`)
-    echo(`  ⚠ Remove if stale: ssh ${host} "rm ${path}/.deploy.lock"`)
+    const byHand = `rm ${path}/.deploy.lock`
+    echo(`  ⚠ Remove if stale: ${machine.local ? byHand : `ssh ${host} "${byHand}"`}`)
   } else {
     echo(`  lock:       clear`)
   }
@@ -138,23 +123,11 @@ try {
 // ─── Disk usage ───────────────────────────────────────────────────────────────
 echo('\nDisk')
 try {
-  const diskResult = context.exec({
-    command: `ssh ${host} "df -h ${path} 2>/dev/null | tail -1 | awk '{print $3\\" used / \\"$2\\" total (\\"$5\\" full)\\"}'  "`,
-    stdio: 'pipe',
-  })
-  echo(`  server:     ${diskResult?.toString('utf8').trim() ?? '—'}`)
-
-  const dbResult = context.exec({
-    command: `ssh ${host} "du -sh ${path}/db 2>/dev/null | cut -f1 || echo '—'"`,
-    stdio: 'pipe',
-  })
-  echo(`  db/:        ${dbResult?.toString('utf8').trim() ?? '—'}`)
-
-  const relResult = context.exec({
-    command: `ssh ${host} "du -sh ${path}/releases 2>/dev/null | cut -f1 || echo '—'"`,
-    stdio: 'pipe',
-  })
-  echo(`  releases/:  ${relResult?.toString('utf8').trim() ?? '—'}`)
+  // The awk program keeps its own quotes — the script goes to the machine's
+  // shell on stdin, so nothing here is parsed twice.
+  echo(`  server:     ${ask(`df -h ${path} 2>/dev/null | tail -1 | awk '{print $3" used / "$2" total ("$5" full)"}'`) || '—'}`)
+  echo(`  db/:        ${ask(`du -sh ${path}/db 2>/dev/null | cut -f1 || echo '—'`) || '—'}`)
+  echo(`  releases/:  ${ask(`du -sh ${path}/releases 2>/dev/null | cut -f1 || echo '—'`) || '—'}`)
 } catch {
   echo(`  disk:       error reading`)
 }
@@ -162,10 +135,7 @@ try {
 // ─── Litestream ───────────────────────────────────────────────────────────────
 echo('\nLitestream')
 try {
-  const ls = litestreamStatus((cmd) => {
-    try { return context.exec({ command: `ssh ${host} "${cmd}"`, stdio: 'pipe' })?.toString('utf8') ?? '' }
-    catch { return '' }
-  })
+  const ls = litestreamStatus(ask)
 
   if (ls.running) {
     if (ls.supported === false) {
@@ -180,11 +150,7 @@ try {
     }
 
     // Try to find what replica URL it's replicating to
-    const configResult = context.exec({
-      command: `ssh ${host} "cat ${path}/.litestone/litestream.yml 2>/dev/null || echo ''"`,
-      stdio: 'pipe',
-    })
-    const yml = configResult?.toString('utf8').trim() ?? ''
+    const yml = ask(`cat ${path}/.litestone/litestream.yml 2>/dev/null || echo ''`)
     const urlMatch = yml.match(/url:\s*(.+)/)
     if (urlMatch) {
       echo(`  replica:    ${urlMatch[1].trim()}`)

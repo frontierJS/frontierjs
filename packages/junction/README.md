@@ -581,6 +581,25 @@ rather than mounting a second endpoint: Caravan adds `jobs`, the outbox adds
 straight into the body, so a promise would serialise as `{}`; anything that
 needs a query caches it rather than running one per scrape.
 
+### Announcing a second listener
+
+An app that starts its own sidecar — a dev mail catcher, a stand-in payment
+provider — has a process nothing here can see: the boot banner is derived from
+mounted routes and a sidecar has none.
+
+```typescript
+const sink = startMailSink()          // your process, your handle
+app.registerDevService({
+  name: 'mail',
+  url:  'http://localhost:8111',
+  note: 'inbox: http://localhost:8111/',
+})
+```
+
+It gets a line on the boot banner and a `devServices` entry in `/manifest`.
+Announcing is all it does: junction never starts, stops or health-checks the
+process — you already hold the handle that can.
+
 ---
 
 ## Middleware

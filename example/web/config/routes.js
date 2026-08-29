@@ -83,6 +83,16 @@ export const tree = {
       params: [],
       children: [
       {
+          id: "products.create",
+          path: "/products/create/",
+          file: "src/routes/products/create.mesa",
+          companion: null,
+          layout: "src/routes/_module.mesa",
+          meta: {"siteName":"Kitchen sink","title":"New product"},
+          params: [],
+          children: [],
+        },
+      {
           id: "products.[id]",
           path: "/products/:id/",
           file: "src/routes/products/[id].mesa",
@@ -117,13 +127,16 @@ export const components = {
   'orders.create': () => import('../src/routes/orders/create.mesa'),
   'orders.[id]': () => import('../src/routes/orders/[id].mesa'),
   'products': () => import('../src/routes/products/index.mesa'),
+  'products.create': () => import('../src/routes/products/create.mesa'),
   'products.[id]': () => import('../src/routes/products/[id].mesa'),
   'settings': () => import('../src/routes/settings/index.mesa'),
 }
 
+
 // Loader factory map — routes with a .meta.js companion
 // Only populated for routes that have a companion file
 export const loaders = {
+
 
 }
 
@@ -144,6 +157,7 @@ export const all = [
   "/orders/create/",
   "/orders/:id/",
   "/products/",
+  "/products/create/",
   "/products/:id/",
   "/settings/"
 ]
@@ -157,6 +171,7 @@ export const published = [
   "/orders/create/",
   "/orders/:id/",
   "/products/",
+  "/products/create/",
   "/products/:id/",
   "/settings/"
 ]
@@ -169,6 +184,7 @@ export const indexed = [
   "/orders/",
   "/orders/create/",
   "/products/",
+  "/products/create/",
   "/settings/"
 ]
 

@@ -34,6 +34,11 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative }                                  from 'node:path'
 import { findSnapshots }        from './snapshots.js'
+// The tree readers both this and `core/runnables.js` use. One answer to *where
+// could an app be*, *what is a drive* and *what is a command*: two would drift,
+// and the one that drifted would be the one nobody reads the output of.
+import { SKIP, safeRead, isDir, readJson, appDirs, driveRows, readCommands } from './runnables.js'
+import { readProofs } from './proofs.js'
 import { RULES }                from './checks.js'
 import { styleBundle }          from './assets.js'    
 import { PROJECTS, GLOBAL, ENV, CAT } from './ports.js'
@@ -42,7 +47,6 @@ import { PROJECTS, GLOBAL, ENV, CAT } from './ports.js'
 // UI. Nothing else in this file needs to know what a realm is.
 const REALM_BY_BIN = { litestone: 'data', junction: 'api', sierra: 'ui', fli: 'repo' }
 
-const SKIP = new Set(['node_modules', 'dist', 'build', '.git', 'coverage', '.output', '.vite'])
 
 // ─── collect ──────────────────────────────────────────────────────────────────
 //
@@ -453,25 +457,18 @@ function checkRules() {
 // Read as pairs. Which package a row is about is a matching question and
 // belongs to the reader that draws the page, not here.
 
+// The proof table's rows, read through `core/proofs.js` — which also resolves
+// them, for `fli proves` and the two rules that grade the table. A second parse
+// here is what that module exists to prevent.
+//
+// The markup is stripped on the way through: this page renders for a person,
+// while the resolver needs the backticks, because a backticked token IS the
+// path or the target it is matching. Two readings of one parse rather than two
+// parses.
 function proofs(root) {
-  const src = read(join(root, 'CLAUDE.md'))
-  if (!src) return []
-
-  const out = []
-  let inTable = false
-
-  for (const line of src.split('\n')) {
-    if (/^\|\s*Changed\s*\|\s*Run\s*\|/i.test(line)) { inTable = true; continue }
-    if (inTable && !line.startsWith('|')) break
-    if (!inTable || /^\|\s*-+/.test(line)) continue
-
-    const cells = splitRow(line)
-    if (cells.length < 2) continue
-    out.push({ changed: plain(cells[0]), run: plain(cells[1]) })
-  }
-
-  return out
+  return readProofs(root).map(p => ({ changed: plain(p.changed), run: plain(p.run) }))
 }
+
 
 // ─── apps ─────────────────────────────────────────────────────────────────────
 //
@@ -516,37 +513,7 @@ function byFile2(a, b) { return a.folder.localeCompare(b.folder) }
 // declared — an app at the root of the workspace has them too — and the script
 // body is carried, because it names the harness file to read when one fails.
 
-function drives(root) {
-  const out = []
-
-  for (const dir of appDirs(root)) {
-    const pkg = readJson(join(dir, 'package.json'))
-    if (!pkg?.scripts) continue
-    for (const [name, run] of Object.entries(pkg.scripts)) {
-      if (!/^verify/.test(name)) continue
-      out.push({ where: relative(root, dir) || '.', script: name, run })
-    }
-  }
-
-  return out.sort((a, b) => (a.where + a.script).localeCompare(b.where + b.script))
-}
-
-/** Every directory that could hold an app: the root, its children, and packages/*. */
-function appDirs(root) {
-  const dirs = [root]
-  for (const name of safeRead(root)) {
-    if (SKIP.has(name) || name.startsWith('.')) continue
-    const child = join(root, name)
-    if (!isDir(child)) continue
-    dirs.push(child)
-    if (name !== 'packages') continue
-    for (const inner of safeRead(child)) {
-      if (SKIP.has(inner) || inner.startsWith('.')) continue
-      if (isDir(join(child, inner))) dirs.push(join(child, inner))
-    }
-  }
-  return dirs
-}
+const drives = driveRows
 
 // ─── ports ────────────────────────────────────────────────────────────────────
 //
@@ -694,38 +661,6 @@ function commands(root) {
     namespaces: Object.entries(counts).map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
   }
-}
-
-/**
- * A command is a markdown file; a nested one is `<ns>/<cmd>/index.md`. The
- * `title:` in its frontmatter is how it is actually invoked (`db:seed`), so it
- * is read rather than rebuilt from the path — the two disagree often enough
- * that a rebuilt name sends someone to a command that does not exist.
- */
-function readCommands(dir, root, trail, depth = 3) {
-  if (depth < 0) return []
-  const out = []
-
-  for (const name of safeRead(dir)) {
-    if (name.startsWith('_') || name.startsWith('.')) continue
-    const child = join(dir, name)
-
-    if (isDir(child)) { out.push(...readCommands(child, root, [...trail, name], depth - 1)); continue }
-    if (!name.endsWith('.md')) continue
-
-    const head  = read(child)?.slice(0, 1200) ?? ''
-    const stem  = name.replace(/\.md$/, '')
-    const path  = [...trail, stem === 'index' ? null : stem].filter(Boolean)
-
-    out.push({
-      name:        head.match(/^title:\s*(.+)$/m)?.[1].trim() ?? path.join(':'),
-      description: head.match(/^description:\s*(.+)$/m)?.[1].trim() ?? '',
-      ns:          trail[0] ?? path[0] ?? '',
-      file:        relative(root, child).split('\\').join('/'),
-    })
-  }
-
-  return out
 }
 
 // ─── rulings ──────────────────────────────────────────────────────────────────
@@ -947,10 +882,7 @@ function kebab(s) { return s.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase() }
 
 // ─── the tree ─────────────────────────────────────────────────────────────────
 
-function safeRead(dir) { try { return readdirSync(dir).sort() } catch { return [] } }
-function isDir(path)   { try { return statSync(path).isDirectory() } catch { return false } }
 function read(path)    { try { return readFileSync(path, 'utf8') } catch { return null } }
-function readJson(path) { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
 
 function byName(a, b) { return a.name.localeCompare(b.name) }
 function byFile(a, b) { return a.file.localeCompare(b.file) }

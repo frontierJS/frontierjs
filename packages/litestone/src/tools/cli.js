@@ -2,6 +2,7 @@
 // litestone CLI
 
 import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync, readdirSync } from 'fs'
+import { applyBusyTimeout } from '../core/pragmas.js'
 import { resolve, relative, join, dirname, basename } from 'path'
 import { spawnSync }                                from 'child_process'
 import { Database }                                from 'bun:sqlite'
@@ -397,7 +398,9 @@ function openDb(dbPath) {
     console.log(`  ${dim(`db not found — will be created: ${rel(abs)}`)}`)
   ensureParentDir(abs)
   try {
-    return new Database(abs)
+    const db = new Database(abs)
+    applyBusyTimeout(db)
+    return db
   } catch (e) {
     if (e?.code === 'SQLITE_CANTOPEN')
       fatal(`unable to open database file\n     path: ${abs}\n     Check that the parent directory is writable.`)
@@ -490,7 +493,7 @@ function openSqliteDbs(parseResult, cfg) {
       console.log(`  ${dim(`db not found — will be created: ${rel(absPath)}`)}`)
     ensureParentDir(absPath)
     let rawDb
-    try { rawDb = new Database(absPath) }
+    try { rawDb = new Database(absPath); applyBusyTimeout(rawDb) }
     catch (e) {
       if (e?.code === 'SQLITE_CANTOPEN') {
         fatal(`unable to open database '${db.name}'\n     path: ${absPath}\n     Check that the parent directory is writable.`)
@@ -1755,7 +1758,13 @@ async function cmdStudio(cfg) {
           create: migCreate, createForDatabase: migCreateForDb } = await import('../core/migrations.js')
   const { diffSchemas, buildPristine, generateMigrationSQL, summariseDiff } = await import('../core/migrate.js')
 
-  const port        = parseInt(getFlag('port') ?? '5001')
+  // 8502 is dev/tooling/project 0/service 2 in the framework's port scheme —
+  // the block reserved whole for tools somebody runs beside whatever app they
+  // are working on, so the URL is the same tomorrow. Written as a literal
+  // because this package sits below the CLI that owns the formula. It was 5001
+  // for its whole life, which the scheme had never heard of: the reserved slot
+  // answered nothing and the tool sat outside the range (`FJS-557`).
+  const port        = parseInt(getFlag('port') ?? '8502')
   const parseResult = loadSchema(cfg.schema)
   const db     = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
   const rawDb  = db.$db
@@ -5093,6 +5102,7 @@ async function cmdSeedRun(seedName, cfg) {
     const applied = new Set()
     if (dbPath && existsSync(dbPath)) {
       const raw = new Database(dbPath, { readonly: true })
+      applyBusyTimeout(raw)
       try {
         const rows = raw.query(`SELECT name FROM _litestone_seeds WHERE status = 'applied'`).all()
         for (const r of rows) applied.add(r.name)
@@ -5129,6 +5139,7 @@ async function cmdSeedRun(seedName, cfg) {
   console.log(`  ${dim('Database:')} ${rel(dbPath)}\n`)
 
   const raw = new Database(dbPath)
+  applyBusyTimeout(raw)
 
   // Ensure tracking table exists
   // appliedAt is ISO-8601, the format every other timestamp litestone writes

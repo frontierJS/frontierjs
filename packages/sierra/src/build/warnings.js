@@ -405,3 +405,34 @@ function extractProvidedSlots(source) {
 
   return names
 }
+
+// ─── A module that failed to initialise, read a second time ───────────────────
+
+/**
+ * Explain a TDZ error that is really a re-import of a module that already
+ * threw (`FJS-551`).
+ *
+ * A module ending in a top-level `await` — which is what an app's own db module
+ * is, `export const db = await openShop(…)` — reports its real error exactly
+ * once. Every import after that resolves to a partially-initialised namespace
+ * instead of re-throwing, so the next reader gets `Cannot access 'X' before
+ * initialization` naming whichever binding it happened to touch first, and the
+ * cause is gone.
+ *
+ * A build imports the app's db module from several places, so what it usually
+ * holds is the SECOND kind. Four messages of that shape once hid a schema parse
+ * error naming a file and a line, and cost two people the same wrong diagnosis
+ * on the same day — they read as a broken build rather than as a broken schema.
+ *
+ * Additive: the original message is kept in front, because it is still the only
+ * thing that names where the read happened.
+ */
+export function explainModuleInitFailure(message, specifier) {
+  if (!/before initialization/.test(String(message ?? ''))) return message
+  const where = specifier ? ` '${specifier}'` : ''
+  return `${message}\n` +
+    `      This is not the real error. A module${where} in this import graph threw while\n` +
+    `      it was initialising; re-importing it yields a half-built namespace rather than\n` +
+    `      the original throw, so what you are reading is a binding that never got a value.\n` +
+    `      To see the cause, import it once on its own:  bun -e "await import('<the module>')"`
+}

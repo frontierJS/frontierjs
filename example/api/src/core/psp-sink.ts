@@ -40,6 +40,7 @@
 
 import { signRequest, verifyRequest } from '@frontierjs/toolbelt/signature'
 
+// dev/be/project 1/service 2 — see mail-sink.ts on where the number comes from.
 const PORT = Number(process.env.PSP_SINK_PORT ?? 8112)
 
 /** What the provider accepts as the shop's signing key — the other side of

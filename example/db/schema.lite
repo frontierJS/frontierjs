@@ -23,7 +23,6 @@
 /// USER(4) with a row policy and two field policies bounding it: 8 is for a
 /// model nothing outside auth has anything to say to, not for identity.
 
-
 // ─── Tenancy ──────────────────────────────────────────────────────────────
 //
 // MANY SHOPS, one file each. A shop is the tenant, and the isolation is the
@@ -59,7 +58,6 @@ tenancy {
   resolve  subdomain
 }
 
-
 // ─── Databases ────────────────────────────────────────────────────────────
 //
 // `main` is where everything lands: a model with no @@db goes here, and auth's
@@ -94,7 +92,6 @@ database audit {
   driver    logger
   retention 90d
 }
-
 
 // ─── Removal and revision ─────────────────────────────────────────────────
 //
@@ -140,7 +137,6 @@ database audit {
 //   Cart · CartLine    one shopper, one basket. There is no second editor
 //   OrderLine · InventoryMovement · PaymentEvent
 //                      append-only — written once, never edited
-
 
 // ─── Catalogue ────────────────────────────────────────────────────────────
 
@@ -255,28 +251,28 @@ model Product {
 /// colourway that is retired is still what the navy tees in the warehouse are,
 /// and a deleted row must not take that answer with it.
 model Colour {
-  id   Int    @id
-  name String @length(1, 30) @unique
-
+  id         Int       @id
+  name       String    @length(1, 30) @unique
+  
   /// For the swatch a picker draws. Optional — a colourway added by a merchant
   /// typing it into the variant form has no hex until somebody sets one.
-  hex String? @length(4, 7)
-
+  hex        String?   @length(4, 7)
+  
   /// Out of the offered list, still on every variant that ran in it. This is
   /// what @@scope below reads, and it is why the set is a table and not an enum:
   /// retiring a colourway is a row edit rather than a deploy.
-  retired Boolean @default(false)
-
-  createdAt DateTime @default(now())
-
+  retired    Boolean   @default(false)
+  
+  createdAt  DateTime  @default(now())
+  
   /// What a picker shows, and — because `value` and this are the same column —
   /// the column an `open` binding writes what the merchant typed into.
   @@label(name)
-
+  
   /// The narrowing the value set names. It travels to the browser as a filter,
   /// so the list the picker offers is the list the Data boundary will accept.
   @@scope(current, retired == false)
-
+  
   @@gate("0.4.4.5")
 }
 
@@ -292,12 +288,12 @@ valueset ProductColour {
 /// The buyable thing. One row per option combination, and the row a basket
 /// line, a price and a stock count all point at.
 model ProductVariant {
-  id        Int     @id
-  productId Int     @label("Product") @required("Every variant belongs to a product")
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  sku String @length(3, 20) @unique @upper
-
+  id            Int                  @id
+  productId     Int                  @label("Product") @required("Every variant belongs to a product")
+  product       Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  sku           String               @length(3, 20) @unique @upper
+  
   /// The option columns. NOT nullable, and the @@unique below is the whole
   /// reason — see the note on `enum Size`. A product with nothing to choose
   /// takes the defaults, which is what Shopify spells "Default Title".
@@ -306,12 +302,12 @@ model ProductVariant {
   /// behind it. `open` is what makes it a colourway rather than an enum — the
   /// merchant picks one the shop has run before, and typing a new one adds it
   /// to the list instead of asking for a schema change and a deploy.
-  colour String @length(1, 30) @default("Default") @values(ProductColour, open)
-  size   Size    @default(one)
-
-  price   Float   @gte(0)
-  barcode String? @unique
-
+  colour        String               @length(1, 30) @default("Default") @values(ProductColour, open)
+  size          Size                 @default(one)
+  
+  price         Float                @gte(0)
+  barcode       String?              @unique
+  
   /// ON HAND: what the warehouse could physically pick right now. NOT what is
   /// buyable — a basket holding a reservation has not taken this down yet, and
   /// a shopper who is offered the last one after somebody else is already
@@ -321,36 +317,36 @@ model ProductVariant {
   /// it is a sum over another table that changes with the clock, and a column
   /// would be a cached answer with nothing to invalidate it. `api/inventory.ts`
   /// is the one place it is computed and the one place this column is written.
-  stock Int @default(0) @gte(0)
-
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-
+  stock         Int                  @default(0) @gte(0)
+  
+  active        Boolean              @default(true)
+  createdAt     DateTime             @default(now())
+  
   /// Stamped by `Product`'s cascade, and reachable on its own for a colourway
   /// that was a mistake. The ledger and the holds hanging off this row are not
   /// touched by either: they belong to the shelf, and what physically moved did
   /// not stop having happened.
-  deletedAt DateTime?
-
-  images       ProductImage[]
+  deletedAt     DateTime?
+  
+  images        ProductImage[]
   /// The holds against this shelf, and every reason it ever moved.
-  reservations StockReservation[]
-  movements    InventoryMovement[]
-
+  reservations  StockReservation[]
+  movements     InventoryMovement[]
+  
   /// One row per combination. Without it a second "navy / m" is a legal insert
   /// and the two rows fight over one shelf.
   @@unique([productId, colour, size])
-
+  
   /// A picker over variants shows the SKU — the option columns are two fields
   /// and a label field is one, and a SKU is what the shop floor says out loud.
   @@label(sku)
-
+  
   /// `(cascade)` reaches the photographs of THIS colourway and nothing else — a
   /// flat-lay of the whole range names no variant, so its foreign key is null
   /// and it is not matched. The holds and the ledger below are not soft-delete
   /// tables at all, so the cascade cannot touch them by construction.
   @@softDelete(cascade)
-
+  
   @@gate("0.4.4.5")
   @@log(audit)
 }
@@ -359,51 +355,50 @@ model ProductVariant {
 /// reference — `File` is the type that means that, and `FileStorage` in
 /// api/db.ts is what turns a path or an upload into one.
 model ProductImage {
-  id        Int     @id
-  productId Int     @label("Product")
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
+  id         Int              @id
+  productId  Int              @label("Product")
+  product    Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
   /// Null means "shows the family". A colourway shot names its variant, and a
   /// flat-lay of the whole range names none.
-  variantId Int?            @label("Variant")
-  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
-
-  file File   @accept("image/png, image/jpeg, image/webp")
-  alt  String @length(1, 160) @label("Alt text")
-                              @required("Describe the photo — a shop with no alt text is a shop half its customers cannot use")
-
-  position Int @default(0)
-
-  createdAt DateTime @default(now())
-
+  variantId  Int?             @label("Variant")
+  variant    ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  
+  file       File             @accept("image/png, image/jpeg, image/webp")
+  alt        String           @length(1, 160) @label("Alt text")
+  @required("Describe the photo — a shop with no alt text is a shop half its customers cannot use")
+  
+  position   Int              @default(0)
+  
+  createdAt  DateTime         @default(now())
+  
   /// Stamped by `Product`'s cascade. The bytes are not deleted with the row —
   /// a restored product with no photographs is a product nobody will buy.
-  deletedAt DateTime?
-
+  deletedAt  DateTime?
+  
   @@softDelete
-
+  
   @@gate("0.4.4.5")
 }
-
 
 // ─── Customers ────────────────────────────────────────────────────────────
 
 model Customer {
-  id    Int    @id
-  name  String @length(1, 80)
-  firstName  String @length(1, 80)
-  lastName  String @length(1, 80)
-  fullName  String? @generated(`{firstName} {lastName}`)
-  email String @email @unique @lower
-
+  id          Int        @id
+  name        String     @length(1, 80)
+  firstName   String     @length(1, 80)
+  lastName    String     @length(1, 80)
+  fullName    String?    @generated(`{firstName} {lastName}`)
+  email       String     @email @unique @lower
+  
   /// Staff-only. Field-level @allow is the tool for "some callers may read this
   /// column": the field is stripped from the response for anyone the policy
   /// rejects, without a line of service code saying so.
   ///
   /// NOT @guarded — that is a system-context lock (@guarded / @guarded(all)),
   /// not a level, and it takes no numeric argument. @guarded(5) does not parse.
-  notes String? @allow('read', auth().role == 'admin')
-
+  notes       String?    @allow('read', auth().role == 'admin')
+  
   /// The credential behind this record, once there is one.
   ///
   /// A `Customer` is the SHOP's record of a person — it exists the moment
@@ -416,15 +411,15 @@ model Customer {
   /// reading each other's orders. Written by the app — at checkout when the
   /// caller is signed in, and at registration when an address already has a
   /// history — never by the caller, which is what `@system` says.
-  userId String? @unique @system
-
+  userId      String?    @unique @system
+  
   /// `@keep` is the whole of the paragraph below, said in one word: when this
   /// row is soft-deleted these do NOT go with it. Without it the schema warns
   /// that the children were left live — which is what forgetting the cascade
   /// looks like, and here it is the intention.
-  orders    Order[] @keep
-  createdAt DateTime @default(now())
-
+  orders      Order[]    @keep
+  createdAt   DateTime   @default(now())
+  
   /// How many orders this person has, answered by SQLite on the row.
   ///
   /// It is on screen because it is what makes `@keep` VISIBLE rather than
@@ -432,8 +427,8 @@ model Customer {
   /// cascaded it would read 0 with nothing on the page saying which happened.
   /// A `@from` reads its target the way the target is read, so this counts LIVE
   /// orders — an order removed on its own does come off it.
-  orderCount Int @from(Order, count: true)
-
+  orderCount  Int        @from(Order, count: true)
+  
   /// ─── Removal, and why the orders do not go with it ──────────────────────
   ///
   /// A customer asks to be taken off the books. Until this column the shop
@@ -451,14 +446,14 @@ model Customer {
   /// `email` is `@unique` and a deleted row keeps it, so a returning customer
   /// is a `restore()` and not a second record — and re-registering the address
   /// against a NEW record is a 409 the app has to answer on purpose.
-  deletedAt DateTime?
-
+  deletedAt   DateTime?
+  
   /// Two staff editing one customer. `userId` is `@system`, but it is stamped
   /// once when an account is linked and never written again — a one-shot stamp
   /// is not a second editor, which is what keeps this row inside the rule at the
   /// top of the file.
-  version Int @version
-
+  version     Int        @version
+  
   /// Read needs a SIGNED-IN caller, and the policies below decide which rows.
   ///
   /// It was `"0.4.4.5"` — the catalogue's gate, pasted onto the ledger — so
@@ -471,21 +466,20 @@ model Customer {
   /// the link in their email is VISITOR(1), and their own order history is
   /// exactly the thing they should be able to see while they wait.
   @@gate("1.4.4.5")
-
+  
   /// Staff read every customer. `isStaff` is a column on User and NOT a level:
   /// a verified shopper and a member of staff both grade USER(4), so the ladder
   /// cannot tell them apart and was never meant to — a gate answers *what kind
   /// of caller*, and this is *which person*.
   @@allow('read', auth().isStaff)
-
+  
   /// …and a shopper reads their own record and no other.
   @@allow('read', userId == auth().id)
-
+  
   @@softDelete
-
+  
   @@log(audit)
 }
-
 
 // ─── Money ────────────────────────────────────────────────────────────────
 //
@@ -621,13 +615,13 @@ model Discount {
 /// statement in this schema that a gate answers *what kind of caller* and not
 /// *what kind of table*.
 model ShippingMethod {
-  id Int @id
-
-  name        String  @length(1, 40) @unique @label("Method")
-  description String? @length(0, 120) @label("Description")
-
-  price Float @gte(0) @label("Price")
-
+  id           Int      @id
+  
+  name         String   @length(1, 40) @unique @label("Method")
+  description  String?  @length(0, 120) @label("Description")
+  
+  price        Float    @gte(0) @label("Price")
+  
   /// The subtotal at which this method costs nothing. Null means never free.
   ///
   /// Measured against the subtotal AFTER the discount, which is a decision and
@@ -636,19 +630,19 @@ model ShippingMethod {
   /// qualifies. Discount-first is the answer that cannot surprise a merchant
   /// into shipping for free at a loss, and `pricing.ts` is where it is written
   /// down once.
-  freeOver Float? @gte(0) @label("Free over")
-
+  freeOver     Float?   @gte(0) @label("Free over")
+  
   /// The order they are offered in. A merchant decides which one is at the
   /// top; alphabetical would put Express above Standard and change what most
   /// people pick.
-  position Int     @default(0) @label("Position")
-  active   Boolean @default(true) @label("Active")
-
-  carts Cart[]
-
+  position     Int      @default(0) @label("Position")
+  active       Boolean  @default(true) @label("Active")
+  
+  carts        Cart[]
+  
   /// A rate table two people maintain, and nothing else writes a column on it.
-  version Int @version
-
+  version      Int      @version
+  
   @@gate("0.5.5.5")
 }
 
@@ -662,28 +656,28 @@ model ShippingMethod {
 /// `label` is not decoration. A line on a receipt reading `Tax` where the law
 /// says `VAT` is a receipt a business customer cannot file.
 model TaxRate {
-  id Int @id
-
-  label String @length(1, 30) @label("Shown as")
-
+  id         Int      @id
+  
+  label      String   @length(1, 30) @label("Shown as")
+  
   /// A FRACTION, not a percentage — 0.2 and not 20. One representation, chosen
   /// because it is the one the arithmetic uses; a column storing 20 and a
   /// calculation dividing by 100 puts a unit conversion between the merchant
   /// and the money, and it only has to be forgotten once.
-  rate Float @gte(0) @lte(1) @label("Rate")
-
+  rate       Float    @gte(0) @lte(1) @label("Rate")
+  
   /// Which one applies when nothing else says. Exactly one row should carry
   /// it; `pricing.ts` takes the first active default and charges nothing when
   /// there is none, because a shop that has not configured tax is a shop that
   /// does not charge it — not one that should refuse to sell.
-  isDefault Boolean @default(false) @label("Default")
-  active    Boolean @default(true)  @label("Active")
-
+  isDefault  Boolean  @default(false) @label("Default")
+  active     Boolean  @default(true)  @label("Active")
+  
   /// Same shape as `ShippingMethod`, and the stakes are higher: two people
   /// editing one rate and the second write winning silently is a shop charging
   /// a number nobody chose.
-  version Int @version
-
+  version    Int      @version
+  
   @@gate("0.5.5.5")
 }
 
@@ -711,10 +705,11 @@ type TrackingUpdate {
 }
 
 model Order {
-  id        Int         @id
-  reference String      @length(3, 20, "A reference is 3 to 20 characters, like ORD-1001") @unique @upper
-  status    OrderStatus @default(pending)
+  id             Int          @id
+  reference      String       @length(3, 20, "A reference is 3 to 20 characters, like ORD-1001") @unique @upper
+  status         OrderStatus  @default(pending)
 
+  
   /// ─── What was charged, and why ──────────────────────────────────────────
   ///
   /// Nine columns for one number, and every one of them is a copy of something
@@ -739,31 +734,31 @@ model Order {
   /// `@default(0)` rather than nullable because an order with no discount was
   /// discounted by zero, which is a fact — where null would mean *nobody has
   /// worked it out yet*, and that state does not exist after checkout.
-
+  
   /// The lines, added up. What `OrderLine.lineTotal` sums to.
-  subtotal Float @default(0) @gte(0) @system @label("Subtotal")
-
+  subtotal       Float        @default(0) @gte(0) @system @label("Subtotal")
+  
   /// What came off, and the code that took it off. The code is nullable
   /// because most orders have none; `discount` is 0 for those, and the two
   /// must agree — a row with a code and a zero is a bug worth being able to
   /// find.
-  discountCode  String? @system @label("Code")
-  discountLabel String? @system @label("Discount")
-  discount      Float   @default(0) @gte(0) @system @label("Discount amount")
-
+  discountCode   String?      @system @label("Code")
+  discountLabel  String?      @system @label("Discount")
+  discount       Float        @default(0) @gte(0) @system @label("Discount amount")
+  
   /// What was charged to send it, and what the shopper picked. A label of
   /// `Standard` against a zero is the free-over threshold having been met, and
   /// that reads correctly on a receipt without a fourth column to say so.
-  shippingLabel String? @system @label("Shipping")
-  shipping      Float   @default(0) @gte(0) @system @label("Shipping cost")
-
+  shippingLabel  String?      @system @label("Shipping")
+  shipping       Float        @default(0) @gte(0) @system @label("Shipping cost")
+  
   /// Money that was never the shop's. The RATE is stored beside the amount
   /// because a receipt has to be checkable: an auditor reading `$8.40` needs
   /// the 0.2 it came from, and the row in `TaxRate` may have moved since.
-  taxLabel String? @system @label("Tax")
-  taxRate  Float   @default(0) @gte(0) @system @label("Rate")
-  tax      Float   @default(0) @gte(0) @system @label("Tax amount")
-
+  taxLabel       String?      @system @label("Tax")
+  taxRate        Float        @default(0) @gte(0) @system @label("Rate")
+  tax            Float        @default(0) @gte(0) @system @label("Tax amount")
+  
   /// What the card was charged. The sum of the five above, stored rather than
   /// derived, and the only one of them a payment is ever compared against.
   ///
@@ -773,10 +768,10 @@ model Order {
   /// therefore no breakdown to add up. A screen renders the five above only
   /// where there are lines to explain, which is the same condition under which
   /// they were computed at all.
-  total Float @default(0) @gte(0)
-
-  note      String?
-
+  total          Float        @default(0) @gte(0)
+  
+  note           String?
+  
   /// belongsTo. `customerId` is emitted as a plain integer, so the browser only
   /// knows it is a reference because x-relations says so — that is what turns
   /// it into a picker instead of a number spinner.
@@ -785,10 +780,10 @@ model Order {
   /// the one rule that has nowhere else to live (required-ness is the absence
   /// of `?`, not an attribute). Both reach the browser AND the server from
   /// here — the form, the client-side check and the API all say this sentence.
-  customerId Int      @label("Customer")
-                      @required("Please select a customer from the list")
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
+  customerId     Int          @label("Customer")
+  @required("Please select a customer from the list")
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
   /// Written by a JOB, not by a request. `ship` books a courier, that call is
   /// slow and can fail, so it happens after the response: the action queues
   /// `book-courier` (@frontierjs/caravan) and the job patches this column when
@@ -804,14 +799,14 @@ model Order {
   // call. Without it the generated form offered a text box whose value a worker
   // overwrote a second later, and the page carried a hand-written exclusion
   // list to stop it (FJS-095).
-  trackingCode String? @system @label("Tracking")
-
+  trackingCode   String?      @system @label("Tracking")
+  
   /// What was bought. An order that carries only a total is a receipt with the
   /// itemisation torn off — see `model OrderLine` for what that cost.
-  lines OrderLine[]
-
-  createdAt DateTime @default(now())
-
+  lines          OrderLine[]
+  
+  createdAt      DateTime     @default(now())
+  
   /// ─── Removal ────────────────────────────────────────────────────────────
   ///
   /// The orders screen has a Delete button behind level 5, and until this column
@@ -828,8 +823,8 @@ model Order {
   /// UPDATE and not a state change — so nothing here stops a `pending` order
   /// being removed. Deliberate: the state machine says which states follow which,
   /// and whether a row may leave the list is an access question.
-  deletedAt DateTime?
-
+  deletedAt      DateTime?
+  
   /// The state machine, declared where every other access rule lives rather
   /// than in whichever service handler was written first. Litestone enforces
   /// it at the Data boundary with an optimistic-lock WHERE, and it reaches the
@@ -844,7 +839,7 @@ model Order {
     refund: paid            -> refunded @gate(5),
     cancel: [pending, paid] -> cancelled
   )
-
+  
   /// Whose order this is, when the buyer had an account at the moment of sale.
   ///
   /// DENORMALISED from `Customer.userId`, deliberately. A row policy compares
@@ -858,16 +853,16 @@ model Order {
   /// takes the customer record with it, and the orders under it, through the
   /// policy on `Customer` — but an order already written is a receipt, and
   /// back-filling receipts is a write nobody asked for.
-  userId String? @system
-
+  userId         String?      @system
+  
   @@gate("1.4.4.5")
-
+  
   /// Staff read every order; a shopper reads their own. Two allows rather than
   /// one expression, because within an operation they are OR'd — and because
   /// they are two different sentences that will change at different times.
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
-
+  
   /// ─── The receipt adds up ────────────────────────────────────────────────
   ///
   /// `subtotal − discount + shipping + tax = total`, the identity this model's
@@ -890,18 +885,17 @@ model Order {
   /// `@@fts`'s membership note runs into further up this file.
   @@check("subtotal = 0 OR abs(total - (subtotal - discount + shipping + tax)) < 0.005",
           "the breakdown does not add up to the total")
-
+  
   /// Nothing may take off more than was there. `pricing.ts` caps a fixed-amount
   /// code at the subtotal in both directions; this is the same rule, said where
   /// a write that did not come through the checkout still meets it.
   @@check("discount <= subtotal",
           "a discount cannot be larger than the subtotal")
-
+  
   @@softDelete(cascade)
-
+  
   @@log(audit)
 }
-
 
 /// What was bought, at the price it was bought for.
 ///
@@ -928,29 +922,29 @@ model Order {
 /// signed tape is the only thing that answers it. The question here is what
 /// the shop billed for, which the tape cannot answer: it carries no prices.
 model OrderLine {
-  id      Int   @id
-  orderId Int   @label("Order")
-  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  variantId Int            @label("Variant")
-  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
-
+  id           Int             @id
+  orderId      Int             @label("Order")
+  order        Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  variantId    Int             @label("Variant")
+  variant      ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  
   /// The three copies. `sku` is what a picker in the warehouse reads,
   /// `description` is what the customer read, and neither is looked up again.
-  sku         String @length(1, 40)
-  description String @length(1, 160) @label("Item")
-
-  quantity  Int   @gte(1) @lte(99)
-  unitPrice Float @gte(0) @label("Unit price")
-
+  sku          String          @length(1, 40)
+  description  String          @length(1, 160) @label("Item")
+  
+  quantity     Int             @gte(1) @lte(99)
+  unitPrice    Float           @gte(0) @label("Unit price")
+  
   /// STORED, not multiplied at read time — and this is the column that decides
   /// whether the lines add up to the total. Rounding is done once, on the
   /// server, at the moment of sale; a screen that recomputed `unitPrice *
   /// quantity` in JavaScript would round on its own and the sum of what is
   /// shown would not be what was charged, by a penny, on the orders where it
   /// matters most.
-  lineTotal Float @gte(0) @label("Total")
-
+  lineTotal    Float           @gte(0) @label("Total")
+  
   /// A FOURTH copy, and the one that is not about the sale.
   ///
   /// The three above are copies because a price and a description are facts
@@ -964,14 +958,14 @@ model OrderLine {
   /// `Order.userId` can disagree, and nothing in the schema can stop them.
   /// `carts.checkout` writes both inside one transaction, which is the whole of
   /// what keeps them together.
-  userId String? @system
-
-  createdAt DateTime @default(now())
-
+  userId       String?         @system
+  
+  createdAt    DateTime        @default(now())
+  
   /// Stamped by `Order`'s cascade and by nothing else — there is no path that
   /// removes a line on its own, the same way there is none that writes one.
-  deletedAt DateTime?
-
+  deletedAt    DateTime?
+  
   /// Read where the order reads; write only through `asSystem()`.
   ///
   /// A line has no caller-facing write path at all — `carts.checkout` is the
@@ -984,16 +978,15 @@ model OrderLine {
   /// every SKU, every quantity and every price the shop has ever charged,
   /// answerable to anyone with `curl`. Same paste as `Order` and `Customer`.
   @@gate("1.8.8.8")
-
+  
   @@allow('read', auth().isStaff)
   @@allow('read', userId == auth().id)
-
+  
   @@softDelete
-
+  
   /// Every read of this table is "the lines of one order".
   @@index([orderId])
 }
-
 
 // ─── Payments ─────────────────────────────────────────────────────────────
 //
@@ -1087,29 +1080,28 @@ model Payment {
 /// claimed and the order unpaid — and the provider's retry is deduped away by
 /// the very row that recorded nothing happening.
 model PaymentEvent {
-  id Int @id
-
+  id          Int       @id
+  
   /// The provider's id FOR THE EVENT, not for the payment — one payment
   /// produces several, and deduping on the payment would drop the ones that
   /// come after the first.
-  eventId String @unique @length(3, 80) @label("Event")
-
-  kind String @length(1, 60) @label("Type")
-
+  eventId     String    @unique @length(3, 80) @label("Event")
+  
+  kind        String    @length(1, 60) @label("Type")
+  
   /// Which payment it was about, as the provider spelt it. A plain string and
   /// not a relation: an event may name a payment this shop has no row for
   /// (a provider-side refund, a test event fired from their dashboard), and a
   /// foreign key would refuse to record the one event most worth recording.
-  paymentRef String? @length(0, 64) @label("Payment")
-
-  receivedAt DateTime @default(now())
-
+  paymentRef  String?   @length(0, 64) @label("Payment")
+  
+  receivedAt  DateTime  @default(now())
+  
   /// Read 5, create 8, update and delete 9. Append-only, and LOCKED rather
   /// than SYSTEM for the two that would edit history: a ledger `asSystem()`
   /// can rewrite is a ledger.
   @@gate("5.8.9.9")
 }
-
 
 // ─── Basket ───────────────────────────────────────────────────────────────
 
@@ -1212,23 +1204,23 @@ model Cart {
 /// either honour what it quoted or say out loud that it changed, and it can do
 /// neither if the number was never written down.
 model CartLine {
-  id     Int  @id
-  cartId Int  @label("Basket")
-  cart   Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
-
-  variantId Int            @label("Variant") @required("Pick a size and colour")
-  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-
-  quantity  Int   @gte(1) @lte(99) @default(1)
-  unitPrice Float @gte(0) @system
-
-  createdAt DateTime @default(now())
-
+  id         Int             @id
+  cartId     Int             @label("Basket")
+  cart       Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  
+  variantId  Int             @label("Variant") @required("Pick a size and colour")
+  variant    ProductVariant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  
+  quantity   Int             @gte(1) @lte(99) @default(1)
+  unitPrice  Float           @gte(0) @system
+  
+  createdAt  DateTime        @default(now())
+  
   /// One line per variant. A second "navy / m" is a quantity change, not a
   /// second row — and without this the basket shows the same thing twice and
   /// the two rows disagree about how many.
   @@unique([cartId, variantId])
-
+  
   /// The basket's token, copied onto the line.
   ///
   /// A policy cannot traverse a relation — `cart.token == auth().cartToken`
@@ -1242,8 +1234,8 @@ model CartLine {
   /// `AccessDeniedError` on a guest adding a line to their own basket. It does
   /// not need one: the create policy below only admits the caller's own token,
   /// and reading it back tells the bearer a secret they are already holding.
-  token String
-
+  token      String
+  
   /// All four at 0, unlike `Cart` above, and the difference is delete.
   ///
   /// A gate answers *what kind of caller* and a policy answers *which rows*.
@@ -1263,7 +1255,6 @@ model CartLine {
   @@allow('update', token == auth().cartToken)
   @@allow('delete', token == auth().cartToken)
 }
-
 
 /// What `carts.checkout` accepts. A basket knows what is in it; it does not
 /// know who is buying, and a guest has no Customer row until this moment.
@@ -1301,7 +1292,6 @@ type CheckoutDetails {
                 @required("Please give a name for the order")
   note  String? @length(0, 500) @label("Order note")
 }
-
 
 // ─── Inventory ────────────────────────────────────────────────────────────
 //
@@ -1403,35 +1393,35 @@ model StockReservation {
 /// client a `move()` is handed is therefore a real decision at every call site,
 /// and it is why `api/inventory.ts` takes one rather than reaching for a global.
 model InventoryMovement {
-  id Int @id
-
-  variantId Int            @label("Variant")
+  id           Int                @id
+  
+  variantId    Int                @label("Variant")
   /// Restrict, not Cascade. A shelf that has ever moved cannot be deleted out
   /// from under its own ledger — retiring a variant is `active: false`, which
   /// is what a shop means by "we do not sell this any more". The alternative
   /// is an append-only table a DELETE on another table can empty.
-  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
-
-  kind StockMovementKind
-
+  variant      ProductVariant     @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  
+  kind         StockMovementKind
+  
   /// SIGNED, and it is the movement rather than the new total: +12 received,
   /// −2 sold. A ledger of totals cannot be summed, and summing is the only
   /// thing anybody ever wants to do with one.
-  quantity Int
-
+  quantity     Int
+  
   /// Both ends, written down. A movement that says only "−2" is unreadable the
   /// moment two of them race; with both, a row is checkable on its own and a
   /// gap between one row's `after` and the next one's `before` is visible.
-  stockBefore Int @gte(0)
-  stockAfter  Int @gte(0)
-
+  stockBefore  Int                @gte(0)
+  stockAfter   Int                @gte(0)
+  
   /// What it was for. An order reference for a sale, a delivery note for a
   /// receipt, blank for a stocktake correction that only has the note.
-  reference String? @length(1, 40)
-  note      String? @length(0, 200)
-
-  createdAt DateTime @default(now())
-
+  reference    String?            @length(1, 40)
+  note         String?            @length(0, 200)
+  
+  createdAt    DateTime           @default(now())
+  
   @@gate("5.5.9.9")
 }
 
@@ -1468,7 +1458,6 @@ type StockAdjustment {
               @required("An adjustment with no reason is a number nobody can audit")
 }
 
-
 // ─── Notifications ────────────────────────────────────────────────────────
 //
 // `fli add notifications` writes this model; it is here by hand because this
@@ -1481,15 +1470,15 @@ type StockAdjustment {
 // with a branch in it.
 
 model Notification {
-  id          Int       @id
-  userId      String
-  type        String
-  data        Json
-  contextType String?
-  contextId   Int?
-  readAt      DateTime?
-  createdAt   DateTime  @default(now())
-
+  id           Int        @id
+  userId       String
+  type         String
+  data         Json
+  contextType  String?
+  contextId    Int?
+  readAt       DateTime?
+  createdAt    DateTime   @default(now())
+  
   /// RCUD: read is open because the row policy below is what scopes it —
   /// a gate is per-operation and cannot say "your own rows". Create is 8
   /// (SYSTEM): only `asSystem()` writes one, which is what the inApp driver
@@ -1500,7 +1489,6 @@ model Notification {
   @@allow('read',   userId == auth().id)
   @@allow('update', userId == auth().id)
 }
-
 
 // ─── What is NOT in this file ─────────────────────────────────────────────
 //

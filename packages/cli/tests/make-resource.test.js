@@ -89,13 +89,26 @@ describe('fli make:resource', () => {
     expect(src).toContain('export let record')
   })
 
-  test('the form states `auto` off the PAGE\'s children, not its own', () => {
-    // The wrapper always hands <Form> a slot, so <Form>'s own "did I get
-    // children" test would answer about the resource file and generation would
-    // be off in every app that ran this command.
+  test('the default form carries a button row, because a form with no submit is not one', () => {
+    // Measured, not assumed: the wrapper used to be `<Form ...><slot /></Form>`
+    // with no button anywhere, so `<Lead />` — the shape this file's own header
+    // tells a create page to render — put five controls on screen and no way to
+    // send them. A page passing `<Button slot="actions">` did not fix it: that
+    // names a slot on the WRAPPER, which never forwarded one, so the button was
+    // swallowed in silence.
     const src = readFileSync(file(), 'utf8')
-    expect(src).toContain('auto={!$slots.default}')
-    expect(src).toContain('<slot />')
+    expect(src).toContain('slot="actions" type="submit"')
+    expect(src).toContain('export let submitLabel')
+    expect(src).toContain('export let cancelHref')
+  })
+
+  test('a page may replace the whole row, and <Form> takes the snippet over its own slot', () => {
+    // The edit page is the caller: Save beside Delete is not the default row.
+    // The prop is forwarded explicitly — <Form> checks `actions` before
+    // `$slots.actions`, so the caller's snippet wins over the two buttons here.
+    const src = readFileSync(file(), 'utf8')
+    expect(src).toContain('export let actions')
+    expect(src).toMatch(/<Form resource=\{leads\}[^>]*\{actions\}/)
   })
 
   test('`web:resource` writes the same file, because it is the same module', () => {

@@ -12,3 +12,38 @@
 
   export const customers = createResource('customers')
 </script>
+
+<script>
+  // …and the markup half is this model's DEFAULT form (repo Invariant 18).
+  //
+  // No field list here either. Every writable column of `Customer`, in schema
+  // order, with the control its type implies — <Form> asks the resource, which
+  // read the model. `fullName` is `@generated` and `userId` is `@system`, so
+  // neither is offered and neither is named.
+  //
+  // This is the file where the argument for putting a form on the RESOURCE is
+  // visible rather than asserted: the only screen that edits a customer does it
+  // in a drawer, which cancels by closing rather than by navigating, and it
+  // reaches the same fields as a create page would by passing `oncancel`
+  // instead of `cancelHref`. The fields are the model's; the button row is the
+  // screen's; nothing is written twice.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined   // absent → Form makes one from the schema
+  export let method      = undefined   // Form's auto | create | patch
+  export let submitLabel = 'Save'
+  export let cancelHref  = null        // Cancel navigates…
+  export let oncancel    = null        // …or calls back, for a drawer
+  export let submitId    = undefined   // a drive needs to find the button
+  export let actions     = null        // snippet — replaces the whole button row
+
+  // Everything else — class, style, ondone, onerror, showError — rides
+  // $attributes onto <Form>, which is where those props are declared. The
+  // customers screen turns `showError` off while its conflict panel is up.
+</script>
+
+<Form resource={customers} bind:record={record} {method} {actions} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

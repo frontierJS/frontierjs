@@ -212,6 +212,11 @@ export function formatPlan({ transition, steps, release, bindings, findings = []
   out.push(`  ${transition.kind === 'revert' ? 'Revert' : 'Deploy'} plan — ${release.app} → ${release.environment}`)
   out.push('')
   row('Release', release.id)
+  // The digest is a TERM of that id, so a plan that has not built anything is
+  // naming a Release the deploy will not mint. Said here rather than left to be
+  // discovered when the two ids disagree — a plan is what somebody reads to
+  // decide, and *this exact id* is not what it is offering.
+  if (!release.digest) row('', 'provisional — the bytes are a term of this id and nothing has built them')
   // A tag is not an identity, so an absent digest says so rather than showing
   // one as though it were.
   row('bytes', release.digest ? `${short(release.digest)}  (${release.imageRef ?? 'digest'})` : '— not built')

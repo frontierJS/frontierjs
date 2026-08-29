@@ -28,7 +28,7 @@ scripts/
   build-parser.js     litestone's parser → out/litestone/parser-bundle.js
   bundle.js           the two packaged entry points → self-contained CJS
   verify-package.js   packs, unpacks, tests the artefact
-icons/                frontierjs.svg → frontierjs.png · litestone-{light,dark}.svg
+icons/                frontierjs.png (marketplace) · mesa.png · litestone.png (file icons)
 syntaxes/ · snippets/ · language-configuration/
 out/                  build output, not source
 ```
@@ -142,13 +142,49 @@ out/                  build output, not source
   `vscode` stays external (the host provides it) and so does
   `out/litestone/parser-bundle.js` — `server.js` require()s it by a computed
   path and it must sit beside it.
-- **The marketplace PNG is generated, not drawn.** `icons/frontierjs.svg` is the
-  source; regenerate after editing it with
-  `convert -background none -density 384 icons/frontierjs.svg -resize 128x128 PNG32:icons/frontierjs.png`.
+- **The icons are RASTER and the repo holds no source for them.** They were cut
+  from three 1536x1024 design sheets, which are kept on disk as
+  `icons/*.image-ref.png` and are ignored by BOTH git and vsce — so a fresh
+  clone has the icons and not the sheets, and `icons/*.png` is the master
+  wherever you are. There is no `frontierjs.svg` and no `convert` line any more:
+  the pipeline that note described produced the three-line placeholder these
+  replaced. Sizes are what the sheet held — the art is never upscaled, so
+  `mesa.png` and `litestone.png` are odd-sized square canvases (168, 166) with
+  the tile centred at its native pixels rather than resampled into a round
+  number. The marketplace icon must be 128x128 and is the one that was scaled.
+- **A file icon has to survive 16px, and most of that sheet did not.** The
+  explorer renders these at 16 and the extension's own frontiersman is mud at
+  that size — a hat and a coat need more pixels than a tree row has. The two
+  that ship are silhouettes with one idea each (a sun behind a butte, a feather)
+  and were chosen by rendering them at 16 on both a dark and a light ground
+  rather than by looking at the sheet. Check any replacement the same way.
+- **One PNG serves both `light` and `dark`.** Both file icons carry their own
+  dark document ground, which reads on either theme; the pair exists in the
+  manifest because the schema is a pair. `@frontierjs/css`'s theme classes have
+  nothing to do with it.
+- **Whether a language icon is SHOWN is the file icon theme's decision, not
+  this manifest's.** A theme that maps `.mesa` itself wins, and Seti — the
+  default — maps by extension and falls through to its own generic file. So an
+  icon that is correct here can be invisible in an editor, and the only way to
+  know is to look at one. Nothing in `npm test` or `verify:package` can see it:
+  both check that the FILE is shipped and named, which is the half that used to
+  be wrong.
+- **There are two changelogs and the marketplace reads only one.** `CHANGELOG.md`
+  is the name the Changelog tab is generated from and no other name works, so it
+  ships in the `.vsix`; `CHANGES.md` is the engineering history and is
+  `.vscodeignore`d, along with `PROJECT_STATE.md`. Writing an entry in
+  `CHANGES.md` alone changes nothing a user of the extension ever sees. The fifth
+  root markdown file is answered by an allowance in `scripts/ci-allowances.json`.
+- **`capabilities` is a security statement, not metadata.** Mesa diagnostics load
+  the workspace's OWN compiler and call it, so `untrustedWorkspaces.supported` is
+  `false` — an extension declaring nothing is disabled in a restricted workspace
+  anyway, which is the right behaviour reached by accident rather than a stated
+  one. `virtualWorkspaces` is `false` because the server is a node process and
+  both languages resolve through the filesystem.
 
 ## Proving a change
 
-**`npm test`** — three suites, 76 assertions, over the built output. It builds
+**`npm test`** — three suites, 88 assertions, over the built output. It builds
 first on purpose: a stale `out/` tests the previous fix and reads as "the change
 did not work".
 

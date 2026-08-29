@@ -33,3 +33,53 @@
 
   export const orders = createResource('orders')
 </script>
+
+<script>
+  // …and the markup half is this model's DEFAULT form (repo Invariant 18).
+  //
+  // <Form> with no children renders every WRITABLE column in schema order,
+  // each with the control its type implies: `status` is a select over the
+  // enum's members, `customerId` a picker whose rows come from the Customer
+  // relation, `total` a number, the rest text. Not one of those names is
+  // written down here, and `trackingCode` is absent for the same reason —
+  // `@system` on the column, so it reaches the browser as `readOnly` and the
+  // control table has no control for one. This app's only hard-coded field
+  // name lived on the create page until then (`FJS-095`).
+  //
+  // <Form> also owns submit, in-flight state, the reveal rule, and the map
+  // from a rejection to a message under the right control — including a 401,
+  // which arrives with no field information and lands in the form-level Alert.
+  // It sets `novalidate` itself, which is load-bearing: the kit's controls put
+  // a real `required` on the input, so the browser's own constraint validation
+  // would refuse to fire submit at all while one is empty — silently in a
+  // headless browser. The message this app shows is the one authored in
+  // db/schema.lite.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined   // absent → Form makes one from the schema
+  export let method      = undefined   // Form's auto | create | patch
+  export let submitLabel = 'Save'
+  export let cancelHref  = null        // Cancel navigates…
+  export let oncancel    = null        // …or calls back, for a drawer
+  export let submitId    = undefined   // a drive needs to find the button
+  export let actions     = null        // snippet — replaces the whole button row
+
+  // Everything else — class, style, ondone, onerror, showError — rides
+  // $attributes onto <Form>, which is where those props are declared.
+</script>
+
+<Form resource={orders} bind:record={record} {method} {actions} {...$attributes}>
+  <!--
+    `slot="actions"` rather than children: children mean "I am writing this
+    form myself" and turn the generated field list off, where a named slot does
+    not. <Form> puts them in a `.cluster` so a button row is a row, and two
+    elements may name the same slot.
+
+    No `loading`, no `disabled`, no "Saving…" — a type="submit" button inside a
+    <Form> reads the form's in-flight state from context and disables and spins
+    on its own. Cancel does not, and must not: you abandon a save while it runs.
+  -->
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

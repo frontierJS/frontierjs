@@ -31,6 +31,17 @@ import { join } from 'node:path'
 const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
 const API    = process.env.API_URL ?? 'http://localhost:8110'
 
+// A product minted per run, and the reason is a live hazard rather than
+// tidiness: `Product.name` and `Product.slug` are both `@unique` and the model
+// is `@@softDelete`, so a soft-deleted row KEEPS both values. A fixed pair makes
+// this section pass exactly once per seed and then answer a 409 the drive does
+// not check — the same shape `FJS-530` found in `verify:notify` and `FJS-546`
+// found in three more. The slug is typed in CAPITALS below because the column is
+// `@lower`; what gets stored is the lowercase form, and that is the assertion.
+const P_RUN  = Math.random().toString(36).slice(2, 7)
+const P_NAME = `CDP Tee ${P_RUN}`
+const P_SLUG = `cdp-tee-${P_RUN}`
+
 // ─── Reading the ledger from node ─────────────────────────────────────────
 //
 // `Order` and `Customer` read at level 1 with a row policy apiece, so the
@@ -387,6 +398,80 @@ try {
   // while a stranger could read the whole ledger.
   await signIn('admin', 5)
   t('signedIn.badge', await evaluate(`return byText('header .badge', 'level').textContent.trim()`))
+
+  // ─── Creating a product ────────────────────────────────────────────────
+  //
+  // `Product` is `@@gate("0.4.4.5")` — read 0, create 4 — so any signed-in
+  // member of staff may. It sits HERE, right after sign-in, rather than beside
+  // the level-4 section further down, because everything below the order form
+  // is downstream of `ORD-CDP-1` and a section that never runs asserts nothing
+  // (`FJS-558`).
+  //
+  // The form names no field. Every control on it comes from db/schema.lite
+  // through the same registry that drives the order form, so what is asserted
+  // here is the GENERATION: the five writable columns are offered, and the nine
+  // the server owns are not — `id`, `createdAt`, `deletedAt`, `version`, the two
+  // relations and the four `@from` aggregates all reach the browser `readOnly`
+  // and the control table has no control for one.
+  await goto('/products/create/')
+  t('productCreate.generatedFields', await evaluate(`
+    await waitFor(() => document.querySelector('form [name]'));
+    const named = [...document.querySelectorAll('form [name]')].map(e => e.name);
+    return {
+      writable: ['name','slug','description','brand','active'].filter(f => named.includes(f)),
+      // A single list rather than a boolean, so a failure names the column that
+      // leaked rather than saying 'false'.
+      serverOwned: named.filter(n => ['id','createdAt','deletedAt','version','variantCount','priceFrom','priceTo','onHand'].includes(n)),
+      // The enum reaches the browser as the select's options, not as text in
+      // this file.
+      brandOptions: [...document.querySelectorAll('form [name=brand] option')].map(o => o.value).filter(Boolean).length > 0,
+    };
+  `))
+
+  t('productCreate.saves', await evaluate(`
+    const set = (n, v) => {
+      const el = document.querySelector('form [name=' + n + ']');
+      const proto = el.tagName === 'SELECT' ? HTMLSelectElement
+                  : el.tagName === 'TEXTAREA' ? HTMLTextAreaElement : HTMLInputElement;
+      Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(el, v);
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    set('name', ${JSON.stringify(P_NAME)});
+    set('slug', ${JSON.stringify(P_SLUG.toUpperCase())});
+    set('description', 'Written by the CDP drive.');
+    const brand = document.querySelector('form [name=brand]');
+    set('brand', [...brand.options].map(o => o.value).find(Boolean));
+    document.querySelector('form button[type=submit]').click();
+    // The form navigates to the new row on success. Waiting for the URL rather
+    // than for an absence of errors: a form that silently did nothing also has
+    // no error on it.
+    await waitFor(() => /^\\/products\\/\\d+\\/$/.test(location.pathname));
+    return true;
+  `))
+
+  // Read back through the API, which is the only side that can say what was
+  // STORED. `@lower` on the column means the capitals typed above are not what
+  // is in the row, and nothing in the browser would show the difference.
+  const madeProduct = await (async () => {
+    const r = await (await fetch(`${API}/api/products?slug=${P_SLUG}`)).json()
+    return (r.data ?? [])[0] ?? null
+  })()
+  t('productCreate.slugWasLowered', {
+    found: !!madeProduct, slug: madeProduct?.slug ?? null, name: madeProduct?.name ?? null,
+  })
+
+  // Taken away again. The name and slug are per-run so nothing collides with the
+  // next run either way — this is about the CATALOGUE, which is a demo people
+  // look at: a drive that leaves a row behind every time fills it with rubbish.
+  // Soft-deleted, like any other removal here, so the row keeps its @unique
+  // values and stops appearing in a list.
+  if (madeProduct) {
+    await fetch(`${API}/api/products/${madeProduct.id}`, {
+      method: 'DELETE', headers: { authorization: `Bearer ${_staff}` },
+    })
+  }
+
 
   // Re-opened, because signing in does not re-run a load() that already
   // answered — the anonymous one answered NOTHING, which is the correct answer
@@ -807,6 +892,14 @@ const expected = {
   'products.rows':         10,
   'products.priceRange':   true,
   'products.manyNullBarcodes': { nulls: 43, none: true },
+
+  'productCreate.generatedFields': {
+    writable:     ['name', 'slug', 'description', 'brand', 'active'],
+    serverOwned:  [],
+    brandOptions: true,
+  },
+  'productCreate.saves':           true,
+  'productCreate.slugWasLowered':  { found: true, slug: P_SLUG, name: P_NAME },
 
   // The whole point: for an anonymous caller the column is not in the table at
   // all, because it was not in the response at all.

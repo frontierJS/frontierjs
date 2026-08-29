@@ -1,5 +1,851 @@
 # Changes — @frontierjs/cli
 
+## 2026-08-29 — a dev surface has a name
+
+1430 tests + 99 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.6,
+`IDEAS/overview.md` 5.19.
+
+`example.localhost` rather than `localhost:8010`, and it is worth having only
+because the derivation was already here: `core/ports.js` knows that project 1 is
+`example` and that 8010 is its frontend, so a name is a RENDERING of the table
+that already owns the numbers. The frontend takes the bare label and every other
+surface is a subdomain of it — which is what makes the cookie property real,
+since `example.localhost` and `api.example.localhost` are a parent and a child
+where `:8010` and `:8110` are one origin sharing one jar. Tools live under
+`fli.localhost`, so no app can shadow `studio`.
+
+`fli proxy` is the half that is not free, and two measurements shaped it.
+
+**It is a TCP proxy and not an http one.** The first cut piped an http request
+upstream and handled `upgrade` by piping sockets. It works under node and is
+silently broken under bun, which is what `fli` runs on: bun's `node:http` emits
+`upgrade`, hands over a socket that reports `writable: true`, and nothing
+written to it ever reaches the client — measured, with the upstream seeing the
+handshake and the browser waiting forever. Junction's live layer and vite's HMR
+are both sockets, so that is a page that loads and then silently stops updating.
+At the TCP layer there is nothing to be compatible about: read the first head,
+pick the target from its Host, pipe bytes.
+
+**Nothing is rewritten.** The Host was going to be swapped to `localhost:<port>`
+for vite's DNS-rebinding guard, until the guard was read: it allows
+`hostname.endsWith('.localhost')` in both the 5.x and 8.x this workspace
+resolves. Which matters, because junction READS the host — `resolve subdomain`
+tenancy is nothing else — so rewriting would have made every tenant one tenant
+to appease a check that was never going to fire.
+
+**One bound, stated rather than hidden.** The target is picked from the first
+request on a CONNECTION and kept, because routing per request means parsing
+every request on a keep-alive socket. No real client reaches it: a Host is
+derived from the URL, and a browser pools per origin, so two names are two
+connections. Asserted as its own case.
+
+**Strictly additive.** Every number keeps working, a tile's `open` is still the
+port, and the name is shown as text beside it. `fli check`'s **`dev-host-unique`**
+(error) refuses two packages whose names reduce to one label — `strictPort`'s
+failure one layer up, and silent in the same way: the page works, and it is the
+wrong app.
+
+Proven end to end against the live `example` web on 8010 and its real vite HMR
+socket, which answered 101 through the proxy.
+
+
+## 2026-08-29 — the Release names the artefact
+
+1406 tests, 0 fail. `IDEAS/deploy-plane.md` §2.3f, the half that was owed.
+
+**The Release id had no digest in it**, because the journal opened before the
+build: a transition cannot be minted around bytes that do not exist yet. So two
+deploys of different source minted the same id, and `fli deploy:revert` looked
+its target's image up by that id, got the newest transition carrying it — the one
+serving — restored the bytes it was reverting from, and reported success.
+
+`01c-journal` is `04c-journal`. The transition opens after the artefact exists,
+which is the ordering the whole row turns on. What it costs is that a build
+failure now records nothing, and that is the right answer rather than the price:
+no artefact, no Release, nothing transitioned. The steps ahead of the journal are
+marked done when it opens — `_steps-revert/02-decide` already did this for the
+two ahead of it — and their notes come with them, because `04-build-api` records
+which bytes it built and a revert reads that to find a startable image.
+
+`fli deploy --plan` says its own Release id is **provisional**, since it builds
+nothing and the digest is a term of that id.
+
+### `deploy.builder` — built once, shipped by content
+
+A machine, resolved like every other side, defaulting to the api target — so an
+app that declares none behaves exactly as it did. Declared, the image is built
+there and shipped with `docker save | docker load`, which preserves the image ID.
+No registry: the record keeps three distribution strategies open and makes none
+of them the definition, and this is the one that needs no infrastructure.
+
+Not built here by default, deliberately: `fli` is a laptop CLI, and building
+locally trades server drift for developer-machine drift, which is worse. The
+builder is a declared machine with an identity.
+
+### What running it found: the WAL was in the image
+
+An unchanged redeploy kept minting a NEW Release, which under the new ordering
+means the bytes really did move. They did: the container writes `db/app.db-wal`
+into the mounted volume, the volume is inside the build context, and the
+scaffold's `.dockerignore` said `db/*.db` — which never matched a sidecar. So
+**every deploy after the first copied the running app's write-ahead log into the
+image**, and moved the digest with it.
+
+`02b-build-check` exists to catch exactly this and was blind to it: `isStateFile`
+graded `.db-wal` as state and `CONTEXT_FIND` looked for `*.db` and not the
+sidecars — two lists for one fact, with the finder's own comment claiming it was
+*the same list spelled for `find`*. The finder is built from the list now, and a
+test asserts every extension the classifier grades is one the finder looks for.
+The scaffold writes the `**/` forms basecamp already had (`FJS-555`).
+
+### The proof
+
+`deployJournalCycle` gained the assertion this row is about — **an unchanged
+redeploy mints the same Release** — which was trivially true while every Release
+was identical and means something now. Its resume assertion changed with the
+ordering: what a resume IS, is one transition continued rather than a second
+opened, so that is what it counts.
+
+## 2026-08-29 — the rules, and the machine, where somebody looks
+
+1396 tests + 99 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.5.
+
+`fli check` is the arch-test surface and `fli doctor` asks whether this machine
+can run fli at all. Neither was anywhere a person looks, which for a set of
+rules that are silent when broken is most of the value gone. One panel on the
+front page now carries both, kept as two questions: a missing `sqlite3` is not
+an architecture finding, and a model named in the plural is not something `apt`
+can fix.
+
+**`core/doctor.js` is new, because that engine did not exist.** It was a hundred
+lines inside `commands/fli/doctor.md`, interleaved with the `echo`s that printed
+it, so the only way to ask was to run the command and read a terminal — and the
+front page, the second caller, could not ask at all. The command is now the
+rendering of it and gained `--json`; `has`, `env` and `home` are injected, for
+the reason `@frontierjs/outpost` injects its docker runner, so a missing
+`docker` and a present one are both a test.
+
+**Both are asked in process**, never spawned and never parsed out of `--json`:
+`core/checks.js` is the same engine `scripts/ci.mjs` runs, so there is one
+answer to each question.
+
+**A clean project says so.** The proves panel above hides on a clean tree
+because *nothing changed* is noise; *this project passes its own rules* is not,
+and hiding it makes `clean` and `never ran` the same screen.
+
+**The machine goes first when it has something to say**, graded on whether it
+STOPS fli rather than on whether something is absent — `blocked` counts system
+and config only, because a missing `CLOUDFLARE_TOKEN` blocks `cloudflare:` and
+nothing else, and counting it makes almost every machine read as broken.
+
+One thing the paper did not predict: `runChecks` is synchronous and one scope is
+~half a second, so five in a row froze this server — the state poll missed,
+every badge on the page emptied, and a start button did nothing for a second and
+a half. A yield between scopes does not make it faster; it makes the server
+answerable while it runs. The browser drive found it, and two assertions that
+had been passing on timing were rewritten to ask for the poll they depend on.
+
+
+## 2026-08-29 — answering is not working
+
+1375 tests + 82 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.4.
+
+The state badge is a socket that opened, which is equally true of a Junction app
+whose database probe is failing and of a process that bound the port and wedged.
+`GET /api/health/:id` asks the thing on that port what it says about itself, and
+a third badge carries the answer: *healthy*, or *1 check failing* with the check
+NAMED and its error printed on a click.
+
+**The fli server fetches it, not the page.** The page is on 8500 and the app on
+8110, so a browser fetch is cross-origin — an app whose CORS does not name this
+origin answers a network error indistinguishable from the app being down, which
+is the opposite of what this is for.
+
+**The path is probed and the answer says which one worked.** `apiPrefix` moves
+every route an app registers, `/health` included, so where it lives is a fact
+about the app's config rather than about its port. Probe, or be told — never
+derive, which is Invariant 3's rule for the same class of question.
+
+**A row that answers nothing shows nothing.** A Vite dev server is up and has no
+opinion about its own readiness; rendering that red would leave every web
+surface on this page permanently wrong, which is how a signal gets ignored. A
+200 of something else is not a health answer either — without the shape test an
+index page reads as a healthy API.
+
+Polled at a fifth of the state rate, and the verdict is dropped the moment the
+port stops answering: a row that goes down and comes back is a NEW process, and
+without that the badge shows the previous one's failing check for up to fifteen
+seconds. Both of those were mutation-checked twice — the first pair of
+assertions passed against both mutations, because each was written against a row
+that was DOWN and hidden one branch earlier.
+
+
+## 2026-08-29 — the deploy pipeline runs, and nine of its ten shell commands were broken
+
+1398 tests, 0 fail (+115), plus `deployJournalCycle` in CI: deploy → deploy →
+crash → resume → revert, against a real machine with a real Docker daemon.
+
+**Nothing had ever executed `fli deploy`.** The `deploy` CI phase runs
+`fli deploy:local`, which is a different command — it builds an image and runs
+it, and never touches `_steps-docker/`, the journal, the swap, the health poll
+or the revert. The journal's own unit tests drive the real runner against real
+SQLite, so the runner was proven and the pipeline around it was not. Phase 1
+shipped ~1250 green tests over a path that had run zero times.
+
+It had run zero times because it needs a server. So the first move was to give
+*run a command on that machine* one owner, and let the machine be this one.
+
+### `core/machine.js` — the script travels on stdin
+
+Twenty-eight call sites across twelve step files each spelled
+`ssh ${host} "${cmd}"` by hand. `context.exec` is `execSync`, which is
+`/bin/sh -c`, so every one of those scripts was parsed TWICE — once here and
+once there. Measured against the health check that shipped:
+
+```
+ssh HOST "for i in $(seq 1 10); do; STATUS=$(curl -s -w "%{http_code}" …
+```
+
+`$(seq 1 10)` ran on the operator's machine and arrived as literal text.
+`$(curl …)` also ran locally, polling the operator's own `localhost:3000`. The
+nested `"` closed the outer quote. `"$STATUS"` expanded here to empty, so the
+target received `[  = 200 ]`.
+
+**Nine of the ten multi-line commands in the pipeline were shell syntax errors
+on the target**, for a second reason on top: `.replace(/\n\s*/g, '; ')` turns
+`then` into `then;` and `do` into `do;`, and sh refuses both. The deploy lock,
+the container rename, the stop, the health poll, the restore, the cleanup, the
+rollback and both revert steps were all in that set — `sh -n` on the exact text
+each one sends, which is what `tests/deploy-scripts.test.js` now runs over every
+script the pipeline can produce.
+
+A tenth was worse than a syntax error: `deploy:setup` wrote its nginx config
+through a heredoc nested inside ssh's double quotes, so the local shell ate
+every `$host`, `$remote_addr` and `$proxy_add_x_forwarded_for` on the way past.
+The file that landed said `proxy_set_header Host ;`.
+
+A script is never interpolated and never joined now. It goes to `sh -s` on
+stdin, where no shell but the target's own ever reads it.
+
+**`localhost` is a transport, not a simulation.** Same script, same `sh -s`,
+minus the ssh prefix — the real docker commands against the real daemon.
+`deploy.transport` overrides the inference for anybody testing their own sshd.
+`tty` and `pipe` are separate verbs because stdin can only carry one thing and
+`docker exec -it` and the journal runner each need it for something else.
+
+### What running it found
+
+**`fli deploy:revert` restored the bytes it was reverting FROM**, and reported
+success. Under build-on-target the Release id carries no digest, so two deploys
+of different source mint the same id — and looking the image up by release id
+answers whichever transition is newest, which is the one serving. Revert targets
+the previous *transition* now, and a seventh refusal (`same-bytes`, no override)
+catches the rest. What is running is asked of the machine rather than the
+journal: a revert transition has no build step, so after one revert the journal
+cannot say.
+
+**A resumed deploy started `undefined`.** A replayed step contributes nothing to
+the run, and one of those contributions is load-bearing — `04-build-api` records
+which bytes it built and `06-swap` starts them. The step row carries the note;
+the projection the resume reads did not select `output`.
+
+**A revert could not itself be reverted.** `imageFromSteps` matched the step by
+name, and a revert has no `04-build-api`. It reads any step that recorded an
+image now, last one wins, and `_steps-revert/03-swap` records what it started.
+
+**`fli deploy --plan` could not grade `01c-journal`** — the journal step itself.
+Its predicate reads `context.flag.dry` and the plan's synthetic context carried
+only `config`, so it threw. Reported honestly (*it will RUN*) rather than
+silently, which is why it was findable at all.
+
+A failure now names the script and the machine. `execSync` says
+`Command failed: sh -s`, which names every script this module runs and
+distinguishes none of them — and that string is what the journal recorded, so a
+failed step could not be attributed afterwards.
+
+### Also
+
+The deploy lock has one definition, shared by deploy and revert: two copies that
+drifted on the file name or the format would each hold a lock the other could
+not read. `context.exec` takes `describe`, so `--dry` prints the script rather
+than `ssh host sh -s` twelve times.
+
+Filed rather than fixed: `FJS-573` (a crashed deploy strands its lock, and the
+pid in it is the pid of the shell that wrote it) and `FJS-574` (every deploy of
+a freshly scaffolded app fails its backup, and blames the container).
+
+## 2026-08-29 — the dashboard answers *does it pass*, not only *is it running*
+
+1282 tests + 64 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.2.
+
+The child table held an exit code and sixty lines of output and threw both away
+— `stopRow` deleted the entry and `startRow` overwrote it — so every drive and
+every suite read `unknown` forever. Honest about whether it is running, and no
+answer at all to the question somebody actually has about a drive.
+
+A row now carries a second badge: `passed · 4.2s · 2m ago`, `failed (1)`,
+`stopped`, with the kept tail behind a click. **Two badges, one fact each** — a
+single one saying `exited 0` had to choose between *is it running* and *did it
+pass*, and chose the one that disappears.
+
+**`stopped` is not `failed`.** A SIGTERM looks identical whoever sent it, so the
+stop is marked BEFORE the signal and the exit handler reads it. Without that the
+page tells somebody their drive broke when they are the one who stopped it.
+
+**The words are the page's and the facts are the table's.** `children.js` keeps
+when, how long, what it exited with, and whether the stop was asked for; the
+page chooses the vocabulary, because it differs by kind — a suite that exits 0
+passed, and a dev server that exits 0 on its own did something nobody has a word
+for.
+
+**In memory, session-scoped, and the badge says *here*.** Persisting would claim
+a verdict about a tree that has moved on since, and it would still know nothing
+about the runs somebody did in a terminal — so a row nobody has pressed shows
+nothing rather than *never passed*.
+
+`outputOf` falls back to the finished run's tail, which is the whole of why a
+run is kept: sixty lines saying why a drive failed are worth nothing if they are
+dropped the moment it does.
+
+
+## 2026-08-29 — one button starts the whole thing
+
+1269 tests + 51 browser assertions, 0 fail. `IDEAS/control-surface.md` §10.1.
+
+`verify:live` needs `db:seed`, then `api` and `web` — three rows pressed in
+order, with the order living in prose and in the drive's own exit 1. The drive
+row now carries its preamble, shows it before anything is pressed, and one
+button walks it.
+
+**Read, rather than declared or asked.** §7 weighed a declaration beside the
+script (rejected: a third copy that drifts) against `verify:live --preflight`
+(preferred: one owner). What shipped is neither and it dominates the first on
+the first's own argument — `core/preflight.js` reads `CLAUDE.md`'s *Start first*
+column, which adds no copy at all because it is the copy people already
+maintain. Same move `proofs.js` made on the table beside it. What it does not
+close is drift against the drive's own check; what it does close is a renamed
+script, which is the half that bites, and `fli check`'s **`drive-preamble`**
+(error) grades every step against the directory that would have to run it.
+
+**The order is the content and grouping is dropped.** The cell is ordered prose
+— *`db:seed`, then `api` + `web`* — and `+` means *these may run at once*.
+Running them in sequence instead loses only concurrency nobody asked for, and
+two rows say `api` + `build:site` where the second genuinely needs the first, so
+a parser that honoured the `+` would race them.
+
+**The sequence is on the page, not on the server.** Each step lights up as it
+goes, so *the API is still coming up* and *the API failed to start* are
+different things to look at — and the server stays a set of verbs, which is what
+keeps a start an ID and never a command. A step already answering is **skipped**,
+which is what makes this the only start button a drive needs.
+
+Two things fell out of it. `tasks()` read the workspace root's `package.json`
+alone, so `db:seed` and `build:site` — what most drives begin with — **were not
+rows at all**, and the one thing a start button may be handed did not exist for
+them; it now reads the workspace and its apps, with a script already claimed by
+a surface or a drive left to that kind, so one script is one row. And the walk
+refuses a step the table names that its directory does not declare, by name:
+without that it POSTs a null id and the person reads `no runnable called null`.
+
+
+## 2026-08-29 — the dashboard answers *what proves this change*
+
+1235 tests + 35 browser assertions, 0 fail. `IDEAS/proof-map.md` step 4, which
+is `IDEAS/control-surface.md` §10.3.
+
+`GET /api/proves` and a panel above the tiles. Every answer resolved to a
+runnable row renders as the same start button the tile below it carries, which
+is the whole reason the map ends up on this page rather than staying a printout.
+A target that resolved to something else says which — a script to copy, a file
+to read, or `gone`, the finding `proof-target` exists for, on screen where
+somebody is about to take the advice.
+
+**Three decisions, none of them in the paper.**
+
+**The endpoint takes no parameter.** `fli proves --from <ref>` takes a ref
+because the person typing it chose it; a ref arriving over HTTP is
+caller-supplied text on a git command line. So the panel is the working tree,
+`execFileSync` with a fixed argv, and there is nothing to validate because there
+is nothing to send.
+
+**It is not polled.** A port's state goes stale while nobody is typing and a
+diff cannot, so this is read once per dashboard load and on a button — and the
+button re-runs git, because a refresh answering a cached read is a broken
+refresh.
+
+**A clean tree hides the panel; an uncovered change does not.** *Nothing
+changed* on every page load is a panel people learn to skip. *These files
+changed and no row covers them* is the one thing this panel reports that nothing
+else does.
+
+Also: git answers paths from the repository root, which is the project root only
+when the two are the same directory. A project one level down was matching
+against paths carrying a prefix its own table never writes — nothing, or worse,
+the wrong row. The endpoint rebases onto the project, and `tests/server.test.js`
+runs that branch by default, because its `projectRoot` is `packages/cli`.
+
+
+## 2026-08-29 — `fli proves` — the change-to-drive table becomes something that runs
+
+1231 tests, 0 fail. `IDEAS/proof-map.md`, steps 1–3.
+
+`CLAUDE.md` § *Which drive proves a change* is thirty-six rows of the most
+expensive knowledge in this repository — each paid for once, usually by a defect
+that got through — and it was prose. Nothing read it at the moment somebody had
+just changed sierra's router, and nothing checked it, so a row naming a drive
+that has been renamed was indistinguishable from a row that is right.
+
+`core/proofs.js` resolves both columns. `run` becomes runnable ids, graded `row`
+(pressable) · `script` (a real script that is not a row — `sierra`'s
+`test:widgets`) · `file` (a test file, with NO command, because the runner
+differs per package and guessing `bun test` for a vitest package is worse than
+silence) · `unknown`. `changed` becomes a matcher over a diff, graded `path` ·
+`area` · `symbol` · `package`, and **the tier travels with the answer** so a
+weak match reads as a weak one.
+
+**The `area` tier is what made it usable.** Four rows name sierra, so a package
+match answered *run everything*; the narrowing was already in the rows —
+`sierra prerender/islands/static-safety` against `src/build/prerender.js` — so
+it is read rather than declared. On a 139-file tree that moved 13 package
+matches to 1 path, 3 area and 6 symbol.
+
+**Two rules grade the table itself, and this is the half that paid first.**
+`proof-target` (error) — a row naming a drive that is gone. `proof-drive-named`
+(warn) — a drive no row names. The first run: zero unresolvable targets, and
+**seven drives of twenty-eight that no row named**, `verify:catalogue` and
+`verify:tenants` among them, so nobody changing a `File` column or tenancy was
+being told to run either. Six rows were written to close them.
+
+**It is not a build graph and must not become one.** `nx affected` and Tilt
+derive what to rebuild from what imports what; half these rows are not import
+edges at all, and the moment edges are inferred, the rows that are statements
+about what a drive can SEE become exceptions to a mechanism rather than the
+content.
+
+**`findApps` moved to `core/runnables.js`**, where the other tree readers live —
+it had to, because the rules now read the runnable list and two modules importing
+each other is a cycle. `checks.js` re-exports it. And `repo-map.js` reads the
+proof table through the new parser rather than its own copy: the rendered model
+is identical, asserted against the old implementation over the same tree.
+
+**Two small things found while wiring the command.** `context.wsRoot()` is
+ASYNC, and an unawaited one reaches `execSync` as a cwd — which fails with a
+message about a type, three steps from the cause. And a command's `<script>`
+must not import `resolve`: the compiled shim imports `zx/globals`, so it is
+already in scope and the redeclaration is a parse error at run time.
+
+## 2026-08-26 — `fli deploy:revert`, and phase 1 of the Release realm is complete
+
+Phase 1f. It reads the journal, restores the pair (Release, Generation), and
+refuses by name when it cannot. `core/revert.js` holds the decisions; the swap is
+journaled as a `kind: 'revert'` transition of its own.
+
+**The refusals are the feature, and there are six.** The design record predicted
+two. A rollback that puts the previous image back and says nothing is what every
+other tool ships, and it is wrong in exactly the situations somebody reaches for
+it:
+
+    pivot          a deploy since then crossed it            --past-pivot
+    retention      it stopped being a target, with the date  --past-retention
+    bindings       restores the code and NOT the config      --onto-current-bindings
+    no-image       nothing recorded which bytes it ran       no override
+    in-flight      a transition is still open                no override
+    nothing-prior  this is the first release                 no override
+
+**All of them are reported, never just the first.** An operator deciding whether
+to force needs the whole picture; a checker that stops at the first makes them
+discover the rest one flag at a time, mid-incident. The three with no flag say so
+on the line — *not a judgement call* — rather than leaving it to be found.
+
+**`bindings` is a refusal rather than a fix**, and that is the one the record
+under-specified. Serving state is the pair, and `fli` writes no `.env` on a
+target — the operator owns that file. So once the generation has moved a revert
+genuinely cannot restore the pair; it can only put old code onto today's
+configuration, which is the documented Fly failure the generation counter exists
+to refuse. `--onto-current-bindings` is the operator saying a different sentence
+on purpose, and the journal records which sentence happened.
+
+**`revert` and `rollback` are both kept.** `deploy:rollback` puts the previous
+image back with no journal and no questions, and works on a target that has never
+deployed through one. `deploy:revert` restores the pair. The second never
+silently becomes the first: with no journal it says so and names the other
+command, because that degrade is precisely the behaviour this phase exists to
+replace.
+
+**Two extractions, for one reason.** `swapContainer` and `healthOrRestore` moved
+into `deploy/_module.md` and now have two callers each. The going-back path is
+the one nobody exercises until the day it matters, so `_steps-revert` calls the
+same functions `_steps-docker` does rather than a copy that would be discovered
+to have drifted at the worst possible moment.
+
+**The build output is JSON now.** A revert finds its image in the `04-build-api`
+output of the transition that put that release into service — the consequence 1e
+predicted, since the digest is not a term of the Release under build-on-target. A
+row an older `fli` wrote as prose is reported as unreadable rather than scraped: a
+revert that ran the wrong bytes is the worst outcome available here.
+
+38 tests. What is still owed is the same debt 1e left — the `deploy` CI phase
+gaining deploy → deploy → kill → rerun → revert, which is the stated proof for
+both steps.
+
+## 2026-08-29 — `fli dev` refused on ports it was never going to bind
+
+The preflight asked `appPorts()`, which answers **every surface directory that
+exists** (Invariant 3). What `fli dev` then runs is the app's own `dev` script.
+Those are the same set in a scaffolded app — `fli new` composes every surface
+into one `dev`, so the question never comes up — and they are not the same set
+in any app in this repo. `example` has five surfaces and a `dev` of
+`bun run api & bun run web & wait`.
+
+So a storefront left running on 8610 refused `fli dev` with:
+
+```
+  Port already in use:
+
+    8610  site  (bun run dev:site)
+```
+
+naming a port nothing the command was about to start would have taken. The
+refusal is unactionable in the worst way: it is *correct* that something is on
+8610, and stopping it changes nothing about whether `bun run dev` can run.
+
+`devPorts()` is the fix, and it is a second function rather than a change to the
+first, because both questions are real: `runnables.js` wants the catalogue, and
+the preflight wants what this command binds. It narrows `appPorts()` to the
+surfaces the `dev` script actually runs, resolved transitively through its
+`bun run` targets.
+
+Anchored on `run`, never on a bare token that happens to name a script — `cd web
+&& vite` holds a `web` that is a directory, and an app whose web surface script
+is also `web` would match it and reintroduce the bug. A surface matches on
+**either** spelling (`api` or `dev:api`), not just the one `appPorts` chose to
+print, since an app may declare both and run the other.
+
+**A `dev` that runs no other script is not narrowed**, and that is deliberate:
+`fli new` writes `dev` as the surface command itself when there is one surface,
+so there is nothing to walk and every surface the app has is one it starts.
+Narrowing to nothing there would skip the only check worth making.
+
+Nine cases in `tests/ports.test.js`, including the cycle, the indirection, and
+the `cd web` false positive. `FJS-568`.
+
+## 2026-08-26 — the deploy journal executes
+
+Phase 1e of `IDEAS/release-transitions.md`. 1d built the rows and printed them;
+these write them, on the target, as the deploy runs. `core/journal.js` and
+`core/journal-runner.mjs`, opened by `_steps-docker/01c-journal`, settled by
+`09-cleanup`, read by `fli deploy:journal`.
+
+**No new dependency, and measuring the target is what settled it.** This step was
+expected to force `packages/cli` to depend on litestone. A deploy target has
+docker, nginx, git, **bun**, rsync and sqlite3 — `deploy:setup` installs them —
+and `02-pull` leaves a git checkout with **no `node_modules`**, because the build
+happens inside Docker. So litestone cannot be imported there. It does not need to
+be: the schema stays `db/deploy.lite`, its DDL is now a committed snapshot
+(`litestone ddl --schema deploy.lite`), and what ships is that file plus a runner
+whose only import is `bun:sqlite`. The `snapshots` CI phase found the new DDL and
+began checking it with no CI edit at all.
+
+**The brain is local and the runner is dumb.** Every statement and every verdict
+is a pure function in `core/journal.js`; the shipped file binds parameters and
+returns rows and decides nothing — the same split `@frontierjs/outpost` makes
+with `createDocker({ run })`, and for the same reason. It is also what lets the
+suite drive the REAL runner against a temp database rather than asserting SQL as
+strings against the author's memory of SQLite.
+
+**Eleven step files became journal rows without being edited.** The hook is on
+the step RUNNER: `core/runtime.js` calls `config.journal?.beforeStep/afterStep`
+around every step of any command that installs one, and knows nothing about
+deploys. A twelfth step is journaled for free.
+
+Three things it decided:
+
+**The recorded Release carries no digest, and must not.** The id is
+content-addressed on the digest and these bytes do not exist until step 04 —
+minting around one that arrives later would change the id halfway through the
+transition it names, so a resume would compute a different id and open a second
+row. What step 04 built is that step's output instead. The consequence is worth
+stating plainly: resume works BECAUSE the id does not depend on a rebuild being
+reproducible, which a build on the target cannot promise. That is a sharper
+argument for `2.3f`'s second half than the roadmap made.
+
+**`serving` is the last transition that SUCCEEDED**, not the last transition. A
+failed deploy leaves the previous release up. `09-cleanup` settles on both paths
+for the mirror reason — an aborted deploy leaves `failed`, not a `running` row
+the next run reads as a crash worth resuming.
+
+**`attempt` is answered** — the term `--plan` could only mark provisional.
+Counted off the rows by COLUMNS, because the number is inside the id, so asking
+by id could only find the attempt you already guessed.
+
+Refusals rather than reconciliation throughout: a journal belonging to another
+app or another host, a format written by a newer `fli`, and a precondition that
+moved between planning and running each stop the deploy by name. The two answers
+came from two intents and picking one is a guess about which person was right.
+
+45 tests, 19 of them against a real SQLite file through the shipped runner.
+
+## 2026-08-29 — `fli check` grades a doc against what the package ships
+
+Two repo-scope rules, `docs-index` and `roadmap-shipped`, both warnings. The
+register rules already cover a register that contradicts itself; nothing covered
+a page that is merely out of date, which is the same silence one layer over and
+is what actually cost a session a day.
+
+**What it cost.** `packages/litestone/docs/roadmap.md` carried *Exact numbers —
+`@scale(n)`, then `@money`* under **High priority**, opening *there is no
+fixed-point numeric type*, four days after `FJS-D142` ruled and built it.
+`docs/README.md` described that roadmap as *what's coming: `@scale`/`@money`*.
+And `exact-numbers.md` — the page that answers the question — was linked from
+nothing. Three signposts on the path a reader takes, all wrong. A session read
+them, concluded `.lite` could not express money, and filed a defect against the
+ruling (`FJS-560`). Two more roadmap entries were stale the same way (`@type`,
+and half of `@slug`) and two more pages were unindexed (`json-types.md`,
+`traits.md`).
+
+**`docs-index`** — every `.md` beside a `docs/README.md` must be LINKED from it,
+not merely mentioned: the failure is a page nothing navigates to, and prose
+citing a filename does not. A `docs/` with no index is skipped until it holds
+four pages, because a directory of one file is not lying to anyone.
+
+**`roadmap-shipped`** — a roadmap section whose fenced sample uses an attribute
+`catalog.snapshot.md` already carries. It asks the generated catalogue rather
+than carrying a list, for the reason the rule exists: a list here would rot the
+way the roadmap did. Scoped to fenced code, because a paragraph may legitimately
+cite a shipped attribute in an argument while a sample demonstrating one is
+proposing it. Two quieteners, both derived rather than declared — **scaffolding
+comes out of the file itself** (an attribute in two sections' samples is holding
+them up rather than being their subject, which is `@id` in every `model` block,
+and without it the `Embedding` and `LatLng` entries both fired on it), and a
+heading carrying `~~`, `SHIPS` or `SHIPPED` has already answered, since an entry
+may legitimately propose the unbuilt HALF of something that ships.
+
+Both were run against the tree before the docs were fixed and fire on exactly
+the three stale sections; after, the file is silent and a restored section still
+fires. `docs-index`'s other finding was real: `packages/basecamp/docs` held four
+pages and no index.
+
+## 2026-08-28 — a generated create page and a generated edit page stop carrying a form each
+
+1144 tests, 0 fail. `FJS-559`.
+
+The Resource's markup half is the model's default form (Invariant 18,
+`FJS-D112`), and `core/resource-template.js` has emitted one since it existed —
+its own header tells a create page it can be `<Model />` and nothing else. It
+could not be. The wrapper was `<Form ...><slot /></Form>` with **no button
+anywhere**, so that page put five controls on screen and no way to send them,
+and a page reaching for `<Model><Button slot="actions">` did not fix it: that
+names a slot on the wrapper, which forwarded none, so the button was swallowed
+in silence. Measured in a browser, both shapes, before anything changed.
+
+Meanwhile `core/crud-templates.js` — written first — went on emitting its own
+`<Form {resource}>` on the create page **and** on the edit page. That is the
+form written twice in the two files most likely to drift, inside the module that
+exists because those two commands had already drifted once.
+
+**The wrapper now carries the button row**, because a form with no submit is not
+a form. What a PAGE knows is the wording, where Cancel goes and where a save
+lands, so those are props — `submitLabel`, `cancelHref`, `oncancel`, `submitId`,
+plus `record` and `method`. Everything else rides `$attributes` onto `<Form>`,
+which is where `ondone`, `onerror`, `showError`, `class` and `style` are
+declared. A page needing an entirely different row — the edit page, which puts
+Delete beside Save — passes an `actions` snippet, forwarded explicitly, because
+`<Form>` checks the `actions` prop before its own slot.
+
+**Both pages render `<Model />`.** The create page states `method="create"` and
+where to go afterwards; the edit page states nothing but its button row. Neither
+names a field, and now neither names a form.
+
+Proven by scaffolding the real generator output into `example` and opening both
+pages in Chrome: create renders five schema-derived controls with *Create
+Product* and a Cancel link, edit renders the same five over a loaded record with
+Save and Delete. Two tests in `make-resource.test.js` replaced — the old pair
+pinned `auto={!$slots.default}` and `<slot />`, the mechanism that produced the
+buttonless form.
+
+## 2026-08-27 — `project:view` says whether the app it maps is running
+
+1112 tests + 21 browser assertions, 0 fail. `IDEAS/control-surface.md` step 6,
+which completes the paper's build list.
+
+The viewer is read off FILES, so it drew a complete chain of responsibility for
+an app that is not started and looked identical either way. It carries a live
+badge now — the app's surfaces and their state, polled, with the ports in the
+title because a person reading that map is about to go and open one.
+
+**Answered by the command's own server, not fetched from the app.** A browser
+reaching `localhost:8110/api/health` from the viewer's origin is a cross-origin
+request the app has no reason to allow, and a CORS failure would read as *the
+app is down*.
+
+**One owner for the probe.** `probeState(rows, { childOf })` moved into
+`core/runnables.js` and both servers call it — the GUI's `/api/state` and
+`project:view`'s `/state` — so there is one answer to *is it answering* rather
+than two that can disagree. It takes rows rather than a root, and the child
+lookup is passed in, because `project:view` starts nothing and must not import
+a table of processes to ask whether an app is up.
+
+**The badge is the app's own surfaces and not the tooling block.** `fli gui`
+being up is not a fact about the app this page maps, and putting it in the badge
+would make the badge mean two things.
+
+**The tools group needed no work, which was the point.** It has been derived
+from `ports.js` § GLOBAL since the inventory shipped, and the test says so the
+only way that claim can be made: a slot added to that object becomes a tile with
+nothing edited in `runnables.js`, answering `start: null` because no command
+declares that port. `FJS-557` stays open and is visible on the page — studio's
+tile has no start command because its command defaults to 5001 while the schema
+reserves 8502.
+
+**`tests/pview-state.test.js` boots the real command**, because the thing under
+test is the WIRING — that the route exists, that it resolves `runnables.js` from
+`fliRoot`, and that its shape is the one the badge reads. Each of those is fine
+in isolation and can still be absent from the command file. It spawns, so it is
+careful with what this week taught: a test-tier port, a bounded wait, and a kill
+of the process GROUP.
+
+## 2026-08-27 — the dashboard starts a row, and refuses to stop one it did not start
+
+1107 tests + 21 browser assertions, 0 fail. `IDEAS/control-surface.md` step 5.
+
+`core/children.js` is the table: `POST /api/start/:id`, `POST /api/stop/:id`,
+`GET /api/output/:id`, and a kill on the way out.
+
+**The caller sends an ID and never a command.** What runs comes from the
+inventory, which comes from a file in the tree — so a request can choose among
+the project's own declared commands and cannot name one of its own. Every row
+carries `argv` rather than a string to be re-split, so there is no shell and no
+parser between the file and the spawn; two runners are allowed, `bun` and `fli`,
+and `fli` is rewritten to this package's own `bin/fli.js` because a globally
+installed one of a different vintage driving this tree is the drift a pin
+removes. Anything else is refused BY NAME with the line to type, which is the
+honest answer for a snapshot generator: those resolve through their own package,
+they are one-shot, and `fli test:snapshots` already runs the set.
+
+**The stop refusal is the design.** This server stops what it started and says
+so about anything else — *started elsewhere* on the row, and a 409 naming why
+from the route. A page that offered otherwise is a button that kills a process
+somebody else is depending on.
+
+**A child is its own process group, and that is not a detail.** Every command
+here is a launcher — `bun run api` is bun running a script that spawns the app —
+so signalling the pid kills the wrapper and leaves what it started running. It
+was measured the expensive way: the first cut of the HTTP test started the first
+`bun` task it found, which in this package is `bun run test`, and the suite ran
+itself; stopping it reported success and left a tree of suites forking until
+they were killed by hand. For a server the same shape is quieter and worse —
+stop answers 200 and the port keeps answering. `detached: true` and a `-pid`
+kill, with a fallback to the child alone for a spawn that has no group.
+
+**A child that dies is remembered as exited**, with the code and the last 60
+lines, because a row that goes back to *not running* reads as never having
+started — a server that dies two seconds after you press start is exactly the
+silent failure this surface exists to reduce.
+
+**Two things the work found and fixed.** Snapshot rows were joining `dir` to a
+`file` that is already a path from the root, so every snapshot id and source
+named `example/db/example/db/access.snapshot.md` — a path that resolves to
+nothing, which reads as a snapshot that has gone missing. The fixture-based test
+could not see it, because a fixture tree has no snapshots and no packages; there
+is a real-tree case now. And the browser drive's own assertions were twice about
+the ENVIRONMENT rather than the rule — *no open links are offered* and *the gui
+tool reads as down* both failed on a machine with things running on it. They
+assert the rule now.
+
+## 2026-08-27 — the GUI's front page is a dashboard of what can run
+
+1089 tests + a browser drive, 0 fail. `IDEAS/control-surface.md` steps 3 and 4.
+
+`fli gui`'s front page was an empty state saying *select a command*. It is now
+the answer to the question this whole paper is about — what can I start here,
+and what is already up — because the complaint is that there are too many things
+to keep track of and a fifth server on a fifth port would make it one worse.
+
+**Two endpoints with two lifetimes.** `GET /api/runnables` is the inventory, a
+tree walk cached on the same TTL the command registry already uses; `GET
+/api/state` is the probe, polled every three seconds while the page is on
+screen. They are apart because only one of them misleads when stale: a stale
+inventory shows a row that has been renamed, a stale state shows a server that
+is down as up. A poll rather than SSE, because there is no event to push — a
+port somebody else bound is a question somebody has to ask — and the tick is
+printed, since a reading with no time on it cannot be told from a live one.
+
+**Four states and `unknown` is one of them.** A row with no port cannot be
+probed, and *nothing here can tell* is a different sentence from *not running*;
+collapsing them makes every drive and every suite read as stopped.
+`claimed-dead` is a lock claim over a port nothing answers, which is the failure
+the lock file already exists for.
+
+**The page shows and opens; it does not start.** A row hands over the command to
+type. Starting one is a separate step with a process table behind it, and an
+open link is offered only where a row is answering — a link to a port nothing is
+listening on is a browser error page wearing this page's name.
+
+**It composes the design system rather than styling itself** — `.surface`,
+`.rows divided`, `.list-row`, `.row-actions`, `.badge`, read out of
+`@frontierjs/css`'s `vocabulary.json` and its `anatomy` block rather than
+guessed, since a class nothing defines is markup that looks styled and is not.
+
+**`bun run test:browser` is this package's first browser drive**, over mesa's
+CDP harness by relative path, the way `@frontierjs/ui`'s drive reads it. Ten
+assertions, two mutation-checked. The page had never been rendered by anything —
+`tests/server.test.js` covered the API under it — and a dashboard is the worst
+thing to leave that way, because a row that renders as nothing looks exactly
+like a project with nothing in it. **Its first run corrected an assertion rather
+than the page**: *no open links are offered* expected zero and found two, which
+were `example`'s api and web genuinely running on this machine. It asserts the
+RULE now — open is offered exactly where a row is answering — which is the half
+that survives a developer having things up.
+
+## 2026-08-27 — `core/runnables.js` — what can run in this project, one flat list
+
+1083 tests, 0 fail. The inventory half of `IDEAS/control-surface.md`, step 1.
+
+92 rows on this workspace — 9 surfaces, 4 tools, 28 drives, 21 suites, 6 tasks,
+24 snapshots — each `{ kind, id, name, dir, start, port, open, needs, source }`.
+`source` is not decoration: it is `repo-map.js`'s own rule made checkable, so a
+wrong row is traceable to the file that produced it rather than to this module.
+
+**It is a factoring and the proof is byte equality.** `SKIP`, `safeRead`,
+`isDir`, `readJson`, `appDirs`, the drive scan and the command reader moved here
+and `repo-map.js` imports them — 5 insertions against 67 deletions — and the
+rendered map is byte-identical to the one the old file produced over the same
+tree. Two answers to *where could an app be* is how one of them starts missing a
+directory nobody notices.
+
+**Which command starts a reserved tool is derived, not listed** — a command's
+own `port` flag default matched against `ports.js` § GLOBAL. A hand-written
+name→command table would be the one list in the module that could go stale, and
+the derivation has a second virtue: a slot no command claims answers `null`
+rather than a plausible guess. Junction's devtools is honestly one of those (an
+APP configures it), and studio is the other — its command defaults to 5001 while
+the schema reserves 8502, which is `FJS-557`, found by this.
+
+**The command tree is read from a ROOT rather than through the registry**, which
+resolves its directories off `global.fliRoot`. A module that may run before
+install cannot depend on a global somebody else set.
+
+Two things are deliberately not rows and the reasons are in the header: commands
+(the GUI's sidebar already answers them off the registry, and a second list of
+the same 236 things is what this module exists against) and CI phases
+(`scripts/ci.mjs` has no per-phase flag, so a phase tile could only ever run all
+twelve — the runnable is `bun run ci`, which is a task).
+
+## 2026-08-27 — a tsconfig for the surfaces the app actually has
+
+`appTsconfig` wrote `paths: { '@/*': ['./web/src/*'] }` and included
+`api/**/*` and `web/**/*`, whatever else the scaffold had been asked for. A
+`fli new --site` or `--widgets` app got an `@` pointing at a `web/` it does not
+have and a tsconfig that did not include the code it does.
+
+It takes every surface flag now and lists them in a fixed order, first match
+wins. That is exact for an app with one UI surface and a **guess** for an app
+with two, and the guess is stated rather than hidden: `@` is the surface's own
+`src/` because Sierra resolves it per Vite root, and tsc has one program and no
+notion of a root. It costs nothing — `checkJs` is off and tsc cannot read a
+`.mesa` at all — and the alternative is a tsconfig per surface, four programs to
+check what is one app.
+
 ## css-token-undefined — a styled value names a token the stylesheets define
 
 The thirty-second rule, and the first one about CSS. A `var(--x)` naming a token
@@ -122,7 +968,7 @@ basecamp's `db/*.db` excluded `db/basecamp.db` and admitted `db/db/basecamp.db` 
 and `db/db/` is precisely what a relative `database { path }` resolved against the
 wrong working directory creates (`FJS-449`), git-ignored and therefore in no
 diff. `COPY db ./db` then `COPY --from=build /app /app` put it in the image.
-Pattern fixed, `FJS-543` filed for the rest.
+Pattern fixed, `FJS-555` filed for the rest.
 
 The suite is pure — no daemon, no network, no fixtures on disk — because a check
 that needs Docker is a check that stops running. 66 tests.

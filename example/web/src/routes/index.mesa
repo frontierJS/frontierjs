@@ -2,9 +2,9 @@
 title: Home
 ---
 <script>
-  import { session } from '../session.js'
-  import { money }   from '../money.js'
-  import { prefs }   from '../prefs.js'
+  import { session } from '@/session.js'
+  import { money }   from '@/money.js'
+  import { prefs }   from '@/prefs.js'
   import { orders }    from '../resources/Order.mesa'
   import { customers } from '../resources/Customer.mesa'
   import { useStore } from '@frontierjs/sierra/junction'

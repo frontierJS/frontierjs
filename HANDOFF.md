@@ -1,3 +1,121 @@
+# Handoff — 2026-08-29
+
+> **A question that arrives constantly — *can this row point at any row?* — was
+> priced rather than answered, and the answer is no.** Real polymorphic
+> relations are not a large diff, they are a change to what access control
+> means: `policy.js:805` compiles the TARGET's own policy into a correlated
+> subquery, so N possible targets is N branches in a `CASE`, each carrying its
+> own `@@gate`. A caller reading `Order` at 4 and `Product` at 5 would then see
+> half a list as a **200 with fewer rows**, which is the exact shape Invariant 6
+> is arranged around. 158 `relationMap` threadings and 69 single-valued
+> `.targetModel` reads are the cheap half of the cost. `IDEAS/polymorphic-relations.md`
+> (4.28) is the argument; Prisma refuses it too, and ZenStack's `@@delegate` is
+> the ecosystem's best answer to the CLOSED set only, since `extends` is a closed
+> set by construction.
+
+> **`@@arc` shipped instead, and it is the cheap 90%.** Several optional foreign
+> keys of which exactly one is set — `@@arc([orderId, productId])`, plus
+> `optional: true` and `message:`. The whole argument for it is that the members
+> stay ORDINARY relations: a real FK, a real cascade, a real `include`, and all
+> 69 `.targetModel` reads stay single-valued so nothing in the access core moves.
+> It compiles to a table CHECK counting non-null members, so it holds against a
+> migration, a seed, an atomic operator and `asSystem()`. **One column per member
+> and it stops scaling around six — that ceiling is the feature**, because
+> hitting it is the signal the target set is open, and an open set is the one
+> case no relation can serve.
+
+> **Two things the build found that the design had not.** The first refusal read
+> `this record is not valid` — the generic sentence `FJS-534` had removed for
+> `@check` one attribute earlier — so `arcCheckExpr()` is now the single owner of
+> the SQL, written by the emitter and matched back by `client.js` to find the
+> declaration holding the message. And `release:check` **could not see an arc at
+> all**: `describeModel` collected `kind === 'check'` only, so adding one graded
+> as an *expand* — a deploy that cannot be taken back, reported as one that can.
+
+> **`packages/litestone/references/` is a new catalogue, written in `.lite` for
+> one reason: a reference that cannot parse is a reference that is wrong.**
+> `Notification`, `AuditEvent`, `Tag`, each carrying what the model needs and —
+> the more useful half — what is deliberately absent, since a column left off on
+> purpose looks identical to one nobody thought of. `test/references.test.ts`
+> parses every file and fails on any warning. Its first pass found that the
+> polymorphic subject is spelt two ways in one repo (`subjectType`/`subjectId`
+> in basecamp, `contextType`/`contextId` in `example`) and that
+> `@frontierjs/notifications` writes a `Notification` model it does not ship.
+
+---
+
+## `@@arc` — what to know before touching it (2026-08-29)
+
+**The expression has one owner and it must stay that way.** `arcCheckExpr()` in
+`ddl.js` is what the DDL emitter writes into the table AND what `client.js`
+matches SQLite's reported CHECK text back against to resolve the message. A
+second spelling would not fail loudly — it would fall through to the generic
+sentence, which is the failure the message exists to prevent.
+
+**The unknown-member check is deliberately absent.** A generic validator at
+`parser.js:3980` already covers every `@@`-attribute carrying a `fields` array,
+so the arc's own version produced a duplicate message for one typo. What remains
+is only the guard that stops the required-member test also firing about a column
+that is not there.
+
+**Two refusals at parse**: a required member (a column always set is always the
+answer) and fewer than two members (that is `@@check` written long).
+
+`docs/schema.md` § *Exclusive foreign keys*, `test/arc.test.ts` (21 tests), and
+the reference snapshot is at 97 words.
+
+---
+
+## `references/` — the convention, and the constraint that shapes it (2026-08-29)
+
+**A reference carries the foreign key COLUMN and never the relation.** Measured
+before the format was chosen: a `@relation` to a model the file does not declare
+is exactly two errors (`unknown type 'User'` and `@relation references unknown
+model 'User'`). That is honest rather than a dodge — the column is the shape, and
+which model it points at is the installing app's answer, since an identity model
+may be `User`, `Person` or `Account` keyed `Int`, `String` or a uuid.
+
+The test fails on **warnings** as well as errors: a reference is the one place a
+footgun warning must not be tolerated, because it is what somebody is about to
+copy. It was negative-controlled by breaking `Notification.lite` and confirming
+both errors surfaced.
+
+`references/README.md` carries the full running list — roughly fourteen groups
+not yet written. **Add a file when there is an instance worth deriving from**; a
+reference invented from nothing is the stale example the folder exists to
+replace. `Tag.lite` is marked as the one argued rather than derived, and is
+therefore the one most likely to be wrong.
+
+---
+
+## Left open, and whose it is (2026-08-29)
+
+**`FJS-570` was filed and not fixed, because it needs a ruling.** A relation
+picker asks for a service named after the target MODEL
+(`serviceNameFor` → `productVariants`) and Junction names a service after its
+FILE (`loader.ts:4` → `product-variants`). They agree only for single-word
+models, which is why nothing in either app's drives can see it; it fails as an
+empty list rather than an error, so a person reads *there are no variants*.
+Invariant 2 names three resolvers that must agree about a model name and the
+service name is a fourth that nothing reconciles. Teaching `serviceNameFor` the
+kebab spelling invents a fifth rule; letting a resource DECLARE the service a
+relation resolves to is the shape the escape hatch already takes.
+
+**Three CI findings at the end of this session belong to a concurrent session**,
+not to this work: two corpus `.lite` files hidden by `.gitignore`,
+`packages/cli`'s `test-files-run` (two new test files no script lists), and
+`example`'s `surface.snapshot.md` carrying an `orders.paymentCode` method.
+`repo-atlas.snapshot.html` and `repo-map.snapshot.html` want a regenerate that
+would fold that in-flight work into a gated artefact, so it was deliberately not
+run.
+
+**Still deferred with measured reasons**: `FJS-558` (the orders list asks for no
+ordering, which is what breaks `example`'s `bun run verify` at `ORD-CDP-1` — and
+the one-line `orderBy` fix breaks the drive the other way, so sorting alone is
+not the fix).
+
+---
+
 # Handoff — 2026-08-26
 
 > **The Release realm got its recorded-state format, and the audit that

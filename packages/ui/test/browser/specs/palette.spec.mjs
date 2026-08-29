@@ -180,9 +180,13 @@ export async function run(t) {
   // `--cp-font: 'SF Mono', …` — plus five literal colours. Each assertion
   // below is one of those, asked as a measurement.
 
+  // The token is read off document.body and not off documentElement: the
+  // fixture carries the theme class on <body>, so :root answers tokens.css's
+  // default while the panel renders the theme's. That read agreed only while
+  // theme-default set nothing tokens.css did not already set.
   t.is(await t.evaluate(`
     const panel = document.querySelector('.fjs-cp-panel');
-    const token = getComputedStyle(document.documentElement).getPropertyValue('--card-radius').trim();
+    const token = getComputedStyle(document.body).getPropertyValue('--card-radius').trim();
     return getComputedStyle(panel).borderRadius === token;
   `), true, 'the panel takes its radius from --card-radius, not a literal 12px')
 
@@ -192,7 +196,7 @@ export async function run(t) {
   t.is(await t.evaluate(`
     const norm  = (v) => v.replace(/["']/g, '').replace(/\\s+/g, ' ').trim();
     const panel = document.querySelector('.fjs-cp-panel');
-    const token = getComputedStyle(document.documentElement).getPropertyValue('--font-mono');
+    const token = getComputedStyle(document.body).getPropertyValue('--font-mono');
     return norm(getComputedStyle(panel).fontFamily) === norm(token);
   `), true, 'and its face from --font-mono, not its own stack')
 
@@ -201,7 +205,7 @@ export async function run(t) {
   t.is(await t.evaluate(`
     const back  = document.querySelector('.fjs-cp-backdrop');
     const probe = document.createElement('div');
-    probe.style.background = getComputedStyle(document.documentElement).getPropertyValue('--scrim').trim();
+    probe.style.background = getComputedStyle(document.body).getPropertyValue('--scrim').trim();
     document.body.appendChild(probe);
     const same = getComputedStyle(probe).backgroundColor === getComputedStyle(back).backgroundColor;
     probe.remove();

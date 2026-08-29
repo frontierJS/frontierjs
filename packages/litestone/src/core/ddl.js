@@ -239,6 +239,17 @@ function tableConstraints(model, schema, pluralize = false) {
     if (attr.kind === 'check') lines.push(`  CHECK (${attr.expr})`)
   }
 
+  // @@arc — exclusive foreign keys, counted.
+  //
+  // SQLite spells a boolean as 0 or 1, so summing the IS NOT NULL tests counts
+  // the set members and the comparison is the whole constraint. Derived rather
+  // than written by the author, which is what a renamed column can be caught
+  // against at parse; the migrator's CHECK-text comparison stays exact because
+  // both sides are this emitter's output.
+  for (const attr of model.attributes) {
+    if (attr.kind === 'arc') lines.push(`  CHECK (${arcCheckExpr(attr)})`)
+  }
+
   // Foreign keys from @relation attributes
   for (const field of model.fields) {
     const rel = field.attributes.find(a => a.kind === 'relation')
@@ -914,4 +925,25 @@ export function generateModelDDL(model, schema, { pluralize = false } = {}) {
   if (fts) parts.push(fts)
 
   return parts.join('\n')
+}
+
+// The SQL an @@arc compiles to, and the one place it is spelt.
+//
+// The emitter writes it into the table and client.js matches SQLite's reported
+// CHECK text back against it to find the declaration that owns the message. A
+// second spelling would not fail — it would fall through to "this record is not
+// valid", which is the generic sentence the message exists to replace.
+export function arcCheckExpr(attr) {
+  const terms = attr.fields.map(f => `("${f}" IS NOT NULL)`).join(' + ')
+  return `(${terms}) ${attr.optional ? '<=' : '='} 1`
+}
+
+// What a violated arc says to a person, when the author wrote no message.
+// Column names rather than labels: a model-level rule spans columns and marks no
+// box, so the only useful thing to name is which columns are in the choice.
+export function arcDefaultMessage(attr) {
+  const list = attr.fields.join(', ')
+  return attr.optional
+    ? `at most one of ${list} may be set`
+    : `exactly one of ${list} must be set`
 }

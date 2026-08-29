@@ -12,7 +12,7 @@
   to be an island. This one is markup, and that is why it costs nothing.
 -->
 <script>
-  import { BASE } from '../money.js'
+  import { BASE }   from '../money.js'
 </script>
 
 <a class="skip-link" href="#main">Skip to content</a>
@@ -24,6 +24,18 @@
       <a href="/">Home</a>
       <a href="/catalog/">Catalogue</a>
       <a href="/account/">Account</a>
+      <!--
+        A plain link, and no count on it.
+
+        The note at the top of this file says a layout on a static target may
+        not hold state, and this is where that stops being an abstract rule: a
+        header that wanted a basket count would have to be an island, and an
+        island in a LAYOUT hangs `vite build` in the prerender pass with no
+        output at all (`FJS-549`). The link still works from every page, which
+        is what a header owes a shopper; the count is on the two screens that
+        already know it — the buy box says how many, the basket page shows them.
+      -->
+      <a href="/cart/" id="nav-basket">Basket</a>
     </nav>
   </div>
 </header>
@@ -82,6 +94,21 @@
   .topbar-nav {
     display: flex;
     gap: var(--space-2xl);
+  }
+  /*
+   * The nav is the only place on this surface with bare <a>s, and bare means
+   * the UA's own link blue: reset.css deliberately only unstyles `a:where([class])`,
+   * so a classless anchor keeps the browser's colour and underline. Four bright
+   * blue links over the promo hero were the loudest thing on the page.
+   */
+  .topbar-nav a {
+    color:           var(--ink-soft);
+    text-decoration: none;
+    font-size:       var(--text-md);
+  }
+  .topbar-nav a:hover {
+    color:           var(--ink);
+    text-decoration: underline;
   }
 
   .site-main {

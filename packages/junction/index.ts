@@ -5,7 +5,7 @@
 
 // ─── App ──────────────────────────────────────────────────────────────────
 export { createApp }                              from './src/core/app.ts'
-export type { App, AppConduit, AppDb, AppJobs, AppNotify, Plugin, PluginFn, AppOptions, ServiceCaller } from './src/core/app.ts'
+export type { App, AppConduit, AppDb, AppJobs, AppNotify, DevService, Plugin, PluginFn, AppOptions, ServiceCaller } from './src/core/app.ts'
 
 // ─── Config ───────────────────────────────────────────────────────────────
 export { loadConfig, deepMerge, parseTtl, defaultConfig } from './src/config/index.ts'

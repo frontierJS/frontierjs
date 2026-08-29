@@ -22,8 +22,33 @@
 // the app declared in `http.callHeaders`. Set it as a fetch header by hand and
 // the shop works exactly until the WebSocket connects.
 
-import { getClient }  from '@frontierjs/sierra/junction'
 import { watchProxy } from '@frontierjs/mesa/runtime'
+
+/**
+ * Where this store gets its Junction client.
+ *
+ * INJECTED, and it has to be. This module imported `getClient` from
+ * `@frontierjs/sierra/junction` and that is correct for an SPA — the client is
+ * an app-wide singleton `virtual:sierra` builds at boot — but it put sierra's
+ * junction module in the import graph of anything that touches a basket. On a
+ * `target: 'static'` surface a basket is touched by an ISLAND, and an island's
+ * module graph is imported by the prerender pass: `vite build` renders the
+ * pages it can and then hangs, with no error and no output (`FJS-550`).
+ *
+ * So the surface says. The SPA hands over sierra's singleton at boot; the
+ * storefront hands over the client its islands already build for themselves.
+ * Nothing here knows which, and the store below is the same store either way.
+ */
+let _clientFn = null
+
+export function useCartClient(fn) {
+  _clientFn = fn
+  // The token was restored at import against a client that did not exist yet
+  // wherever this is called late, which is the whole reason it is a function.
+  attachToken()
+}
+
+const getClient = () => _clientFn?.() ?? null
 
 /** One spelling, shared with api/cart-claim.ts. */
 const CART_HEADER = 'x-cart-token'
@@ -126,17 +151,45 @@ function remember(token, id) {
   getClient()?.setCallHeader(CART_HEADER, token ?? null)
 }
 
-// At import, so the header is on the very first call — including the refresh
-// below, which is what restores a basket left open in another tab.
-{
+/**
+ * Put the stored token back on the client.
+ *
+ * Called at import below, which is right for an SPA: `virtual:sierra` has
+ * already run `initJunction`, so the header is on the very first call —
+ * including the refresh that restores a basket left open in another tab.
+ *
+ * It is EXPORTED for the surface where that is not true. A prerendered site has
+ * no boot at all — `main.js` is in none of the built output — so its client
+ * cannot exist when this module is imported, and the call below is a no-op
+ * against `null`. That surface builds its client inside a mount and calls this
+ * immediately after. Idempotent, and safe to call with no client.
+ *
+ * Getting it wrong is silent in the worst way: every basket call goes out with
+ * no token, `Cart` is reached by an `@@allow` on that token, and a policy
+ * FILTERS rather than refuses — so the shopper is shown an empty basket with a
+ * 200 and the one they own is still sitting there.
+ */
+export function attachToken() {
   const held = stored()
-  if (held?.token) {
-    getClient()?.setCallHeader(CART_HEADER, held.token)
-    _cart.id = held.id ?? null
-  }
+  if (!held?.token) return null
+  getClient()?.setCallHeader(CART_HEADER, held.token)
+  if (_cart.id == null) _cart.id = held.id ?? null
+  return held.token
 }
 
-const service = () => getClient().service('carts')
+attachToken()
+
+/** The client, or a sentence naming the wiring that is missing. Two of the four
+ *  uses below cannot degrade — a basket call with no client is not a basket. */
+function required() {
+  const c = getClient()
+  if (!c) throw new Error(
+    'The basket has no Junction client. Call useCartClient() at boot — ' +
+    'web/src/main.js does it for the SPA, site/src/cart.js for the storefront.')
+  return c
+}
+
+const service = () => required().service('carts')
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 //
@@ -326,7 +379,7 @@ export function setShipping(shippingMethodId) {
  */
 export async function loadShippingOptions() {
   if (cart.shippingOptions.length) return cart.shippingOptions
-  const rows = await getClient().service('shipping-methods')
+  const rows = await required().service('shipping-methods')
     .find({ active: true }, { orderBy: 'position', limit: 20 })
   _cart.shippingOptions = rows?.data ?? rows ?? []
   return cart.shippingOptions

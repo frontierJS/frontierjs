@@ -107,13 +107,23 @@ export function isPrimaryKeyCollision(err: unknown): boolean {
   return /UNIQUE constraint failed: jobs\.id/i.test(message)
 }
 
-export function openDb(path: string): Database {
+export function openDb(path: string, busyTimeout = 5000): Database {
   const db = new Database(path, { create: true })
 
   // WAL mode — readers don't block writers, better concurrent performance
   db.exec('PRAGMA journal_mode = WAL')
   db.exec('PRAGMA foreign_keys = ON')
-  db.exec('PRAGMA busy_timeout = 5000')
+  // A jobs database is shared by construction, so the wait is the normal case.
+  // Configurable because the two callers want different answers: a worker
+  // draining a batch can afford to wait, an API dispatching a job cannot
+  // (`FJS-569` — and the wait blocks this process's event loop while it runs).
+  //
+  // Refused rather than coerced: `Number('5s') || 0` is zero, which is SQLite's
+  // *fail immediately* — so a typo would silently buy the opposite of what it
+  // asked for, on the one database every process in the app writes.
+  if (!Number.isInteger(busyTimeout) || busyTimeout < 0)
+    throw new Error(`[Caravan] busyTimeout must be a whole number of milliseconds (0 or more), got ${JSON.stringify(busyTimeout)}`)
+  db.exec(`PRAGMA busy_timeout = ${busyTimeout}`)
   migrateUniqueKey(db)
   // Before SCHEMA, not after: SCHEMA declares an index over `owner_id`, and on
   // a jobs table created before that column existed the index is a hard error

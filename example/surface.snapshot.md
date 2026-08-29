@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-20 services · 31 routes · 10 plugins · prefix /api
+20 services · 32 routes · 10 plugins · prefix /api
 ```
 
 ## App hooks
@@ -183,8 +183,8 @@ name when it declares none.
 
 ### `orders` · model `orders`
 
-- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `pay`, `ship`, `refund`, `cancel`, `recordTracking`
-- **custom methods** — `pay`, `ship`, `refund`, `cancel`, `recordTracking`
+- **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `pay`, `ship`, `refund`, `cancel`, `paymentCode`, `recordTracking`
+- **custom methods** — `pay`, `ship`, `refund`, `cancel`, `paymentCode`, `recordTracking`
 - **input** — `recordTracking` takes `TrackingUpdate`
 - **broadcasts on** — `orders`
 - **transactional** — `pay`, `refund`
@@ -366,6 +366,7 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/api/metrics` | raw |
 | GET | `/api/migrations` | raw |
 | POST | `/api/webhooks/payments` | raw |
+| POST | `/api/webhooks/stripe` | raw |
 
 ## Plugins
 

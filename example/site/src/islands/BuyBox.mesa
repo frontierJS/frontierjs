@@ -1,0 +1,228 @@
+<!--
+  The buy box — the one island on this site that WRITES.
+
+  Everything else here reads: the catalogue filters, the prices correct
+  themselves, the account page lists orders somebody already placed. This one
+  puts a row in a table, and the row belongs to a shopper with no account at
+  all — `Cart` is `@@gate("0.0.0.5")` and its rows are reached by `@@allow('read',
+  token == auth().cartToken)`, so the token this browser holds IS the proof.
+  There is no sign-in on this page and there is not supposed to be.
+
+  ─── Two sources, and the join is the point ───────────────────────────────
+
+  The page BAKES what exists — every active variant's sku, colour and size, in
+  the file, at build time, so a crawler sees the whole grid. It cannot bake what
+  you can have: availability is on-hand minus the unexpired holds, it changes by
+  the minute, and a CDN will serve this file for a week.
+
+  So the shop is asked, and the two are joined on SKU. The live answer is also
+  the only place `variantId` appears — the baked half deliberately carries no
+  id — which means **the box cannot add to a basket until the shop has
+  answered**. That is honest rather than awkward: you cannot buy out of a cache.
+-->
+<script>
+  import { cart, add, bootShop, getClient } from '@/cart.js'
+  import { money }                           from '@/money.js'
+
+  /** From the page, which read it at build time. */
+  export let productId = null
+  /** `[{ sku, colour, size, price }]` — the baked grid. */
+  export let variants  = []
+
+  let live   = new Map()   // sku → { variantId, available, price, active }
+  let state  = 'loading'   // loading | ready | offline
+
+  let colour = null
+  let size   = null
+  let qty    = 1
+
+  // The colours in the order the shop listed them, de-duplicated. `[...new Set]`
+  // and not a sort: a shop that wants Parchment before Olive says so by the SKU
+  // order it returns, and re-sorting here would overrule it.
+  const colours = [...new Set(variants.map(v => v.colour).filter(Boolean))]
+  const sizesIn = (c) => variants.filter(v => v.colour === c).map(v => v.size)
+
+  $.onMount(async () => {
+    try {
+      // The storefront's one client, built HERE and not at module scope: an
+      // island's body also runs during the static render, where a client would
+      // open a socket from inside the build. `bootShop` is idempotent, so every
+      // island calling it is one client.
+      bootShop()
+
+      // Addressed to the COLLECTION — one question about a set of shelves —
+      // the same call `LivePrices` makes beside this box. Two islands asking
+      // the same thing is two requests and it is deliberate: each one is a
+      // separate chunk with a separate reason to exist, and coupling them so
+      // one waits for the other is how a price correction stops arriving
+      // because the buy box failed.
+      const body = await getClient().service('product-variants')
+        .invoke('availability', null, { productId })
+
+      const next = new Map()
+      for (const row of body?.variants ?? []) if (row.sku) next.set(row.sku, row)
+      live  = next
+      state = 'ready'
+    } catch {
+      // A storefront whose shop is unreachable is still a catalogue. It just
+      // cannot sell, and it says so rather than offering a button that fails.
+      state = 'offline'
+    }
+  })
+
+  // Pick the first colour that has anything in it, then the first size in that
+  // colour that can actually be bought. A box that opens on a sold-out
+  // combination reads as a sold-out product.
+  $: {
+    if (state === 'ready' && colour === null && colours.length) {
+      colour = colours.find(c => sizesIn(c).some(sz => availableOf(skuOf(c, sz)) > 0)) ?? colours[0]
+    }
+  }
+
+  $: {
+    const offered = colour ? sizesIn(colour) : []
+    if (offered.length && (size === null || !offered.includes(size))) {
+      size = offered.find(sz => availableOf(skuOf(colour, sz)) > 0) ?? offered[0]
+    }
+  }
+
+  const skuOf = (c, sz) => variants.find(v => v.colour === c && v.size === sz)?.sku ?? null
+  const availableOf = (sku) => (sku && live.get(sku)?.available) ?? 0
+
+  $: sku    = colour && size ? skuOf(colour, size) : null
+  $: shelf  = sku ? live.get(sku) : null
+  $: avail  = availableOf(sku)
+  // The LIVE price where the shop answered one, the baked price otherwise. The
+  // table beside this box says which it is showing; this is a button, and the
+  // number on it has to be the number that will be charged.
+  $: price  = shelf?.price ?? variants.find(v => v.sku === sku)?.price ?? 0
+
+  // Everything the button has to say, in one expression. A disabled control
+  // with no reason beside it is the shape people click twice and then reload.
+  $: reason =
+      state === 'loading' ? 'Checking with the shop…'
+    : state === 'offline' ? 'The shop could not be reached'
+    : !sku                ? 'That size is not cut in this colour'
+    : !shelf?.active      ? 'No longer on sale'
+    // Sold out and held are different sentences because one of them comes back
+    // on its own in twenty minutes and the other does not. Telling a shopper
+    // "sold out" about stock sitting in somebody else's basket loses a customer
+    // the shop did not have to lose.
+    : avail === 0         ? (shelf.onHand > 0 ? 'In other baskets right now' : 'Sold out')
+    : qty > avail         ? `Only ${avail} left`
+    : null
+
+  let added = null
+
+  async function addToBasket() {
+    try {
+      await add(shelf.variantId, qty)
+      added = `${qty} × ${sku} held for you — ${cart.holdMinutes} minutes`
+      // Re-ask, both paths, and the failure path is the one that matters: a
+      // refusal means the numbers on screen are stale, so re-asking is how the
+      // shopper stops being told no about something the page says is `3 left`.
+      // A success moves it too — their own hold comes off what everyone else
+      // may buy, and this page is one of the everyone.
+      await recheck()
+    } catch {
+      // `cart.error` carries the shop's own sentence and is rendered below; a
+      // second message here would say the same thing twice.
+      added = null
+      await recheck()
+    }
+  }
+
+  async function recheck() {
+    try {
+      const body = await getClient().service('product-variants')
+        .invoke('availability', null, { productId })
+      const next = new Map()
+      for (const row of body?.variants ?? []) if (row.sku) next.set(row.sku, row)
+      live = next
+    } catch { /* the box already says what it can */ }
+  }
+
+  // Mesa watches PATHS, so the store's fields have to be named for a write to
+  // this component to re-render — see the note at the top of web/src/cart.js.
+  $: (cart.busy, cart.count, cart.error)
+</script>
+
+<div class="card buy" id="buy-box">
+  <div class="buy-grid">
+    <div class="field-group">
+      <label for="buy-colour">Colour</label>
+      <select id="buy-colour" class="field" bind:value={colour}>
+        {#each colours as c}<option value={c}>{c}</option>{/each}
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label for="buy-size">Size</label>
+      <select id="buy-size" class="field" bind:value={size}>
+        {#each (colour ? sizesIn(colour) : []) as sz}<option value={sz}>{sz}</option>{/each}
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label for="buy-qty">Qty</label>
+      <input id="buy-qty" class="field" type="number" min="1" max={avail || 1} bind:value={qty} />
+    </div>
+  </div>
+
+  <p class="buy-line">
+    {#if sku}
+      <strong id="buy-price">{money(price * qty)}</strong>
+      <code id="buy-sku">{sku}</code>
+      <span class="text-sm text-muted" id="buy-avail" data-available={avail}>
+        {avail > 0 ? `${avail} available` : 'none available'}
+      </span>
+    {:else}
+      <span class="text-muted">Pick a colour and size</span>
+    {/if}
+  </p>
+
+  <button
+    type="button"
+    class="btn primary"
+    id="buy-add"
+    disabled={!!reason || cart.busy}
+    onclick={addToBasket}
+  >
+    {reason ?? (cart.busy ? 'Adding…' : 'Add to basket')}
+  </button>
+
+  {#if cart.error}
+    <p class="text-sm text-danger" id="buy-error">{cart.error}</p>
+  {:else if added}
+    <p class="text-sm" id="buy-added">{added}</p>
+  {/if}
+
+  {#if cart.count}
+    <p class="text-sm">
+      <a class="link" href="/cart/" id="buy-basket-link">
+        Basket — {cart.count} item{cart.count === 1 ? '' : 's'}
+      </a>
+    </p>
+  {/if}
+</div>
+
+<style>
+  .buy { padding: var(--space-4xl); }
+  .buy-grid {
+    display: grid;
+    gap: var(--space-2xl);
+    grid-template-columns: 1fr 1fr 5rem;
+    margin-block-end: var(--space-2xl);
+  }
+  .buy-line {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+    margin-block-end: var(--space-2xl);
+  }
+  #buy-add { width: 100%; }
+  @media (max-width: 30rem) {
+    .buy-grid { grid-template-columns: 1fr; }
+  }
+</style>

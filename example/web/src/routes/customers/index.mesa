@@ -1,6 +1,7 @@
 ---
 title: Customers
 ---
+
 <script>
   // The ledger of people, and the screen where a row can be taken back.
   //
@@ -24,9 +25,9 @@ title: Customers
   // keys against the model's real columns; a directive is one of the ten names
   // `@frontierjs/toolbelt/directives` carries, and both boundaries read that
   // one table.
-  import { customers } from '../../resources/Customer.mesa'
-  import { session } from '../../session.js'
-  import { prefs } from '../../prefs.js'
+  import Customer, {customers}   from '@/resources/Customer.mesa'
+  import { session } from '@/session.js'
+  import { prefs } from '@/prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'
 
   import Alert                from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -34,7 +35,6 @@ title: Customers
   import Button               from '@frontierjs/ui/components/forms/Button.mesa'
   import ConfirmationPopover  from '@frontierjs/ui/components/overlay/ConfirmationPopover.mesa'
   import Drawer               from '@frontierjs/ui/components/overlay/Drawer.mesa'
-  import Form                 from '@frontierjs/ui/components/forms/Form.mesa'
   import Mono                 from '@frontierjs/ui/components/display/Mono.mesa'
   import Pill                 from '@frontierjs/ui/components/display/Pill.mesa'
   import Popover              from '@frontierjs/ui/components/overlay/Popover.mesa'
@@ -151,8 +151,7 @@ title: Customers
     error = null
     try {
       const fresh = await customers.service.get(editing.id)
-      await customers.save({ ...draft, [customers.versionField]: fresh[customers.versionField] },
-                           { mode: 'patch' })
+      await customers.save({ ...draft, [customers.versionField]: fresh[customers.versionField] }, { mode: 'patch' })
       conflict = null
       close()
       await reload()
@@ -226,8 +225,9 @@ title: Customers
                 variant="ghost"
                 data-restore
                 disabled={!canRemove || busy === c.id}
-                onclick={() => restore(c)}
-              >Restore</Button>
+                onclick={() => restore(c)}>
+                Restore
+              </Button>
             {:else}
               <Button variant="ghost" data-edit disabled={!canEdit} onclick={() => open(c)}>Edit</Button>
 
@@ -282,26 +282,24 @@ title: Customers
     {/if}
 
     <!--
-      No field list. Every writable column of `Customer`, in schema order, with
-      the control its type implies — `<Form>` asks the resource, which read the
-      model. `fullName` is @generated and `userId` is @system, so neither is
-      offered, and neither is written here.
+      No field list, and no <Form> either: `<Customer />` is the markup half of
+      resources/Customer.mesa, which is where this model's default form lives
+      (repo Invariant 18). This drawer states only what a drawer knows — that it
+      is a patch, that Cancel closes rather than navigates, and that `showError`
+      is off while the panel above is up. <Form> renders the stale-write
+      SENTENCE, which is the right thing to say when nothing else does; but the
+      panel says the same thing with the two numbers and the two ways out, and
+      two alerts about one refusal reads as two refusals.
     -->
-    <!--
-      `showError` is off while the panel above is up. <Form> renders the stale-
-      write SENTENCE, which is the right thing to say when nothing else does —
-      but the panel says the same thing with the two numbers and the two ways
-      out, and two alerts about one refusal reads as two refusals.
-    -->
-    <Form resource={customers} bind:record={draft} method="patch" showError={!conflict}
-          {onerror} ondone={() => { close(); reload() }}>
-      {#snippet actions()}
-        <div class="cluster">
-          <Button type="submit" id="c-save">Save</Button>
-          <Button variant="ghost" onclick={close}>Cancel</Button>
-        </div>
-      {/snippet}
-    </Form>
+    <Customer
+      bind:record={draft}
+      method="patch"
+      submitId="c-save"
+      oncancel={close}
+      showError={!conflict}
+      {onerror}
+      ondone={() => { close(); reload() }}
+    />
   {/if}
 </Drawer>
 

@@ -4,13 +4,13 @@ description: Open Litestone Studio in the browser
 alias: studio
 examples:
   - fli studio
-  - fli studio --port 5001
+  - fli studio --port 8502
 flags:
   port:
     char: p
     type: number
     description: Port to run Studio on
-    defaultValue: 5001
+    defaultValue: 8502
 ---
 
 ```js

@@ -11,6 +11,8 @@ import { Database }           from 'bun:sqlite'
 import { createTestConduit }  from './src/testing.ts'
 import { StubTransport }      from './src/transports/stub.ts'
 import { HttpTransport }      from './src/transports/http.ts'
+import { encodeBody }         from './src/transports/encode.ts'
+import { verifyRequest }      from '@frontierjs/toolbelt/signature'
 import { WebSocketTransport } from './src/transports/websocket.ts'
 import { UnixTransport }      from './src/transports/unix.ts'
 import {
@@ -2579,4 +2581,173 @@ describe('conduit Junction plugin', () => {
     expect(a.conduit).not.toBe(b.conduit)
   })
 
+})
+
+// ─── Body encoding ───────────────────────────────────────────
+//
+// Conduit could only ever speak JSON (`FJS-556`), which is not a gap one vendor
+// has: Stripe, PayPal, Twilio and every OAuth token endpoint take
+// `application/x-www-form-urlencoded`. The trap it replaced is that
+// `Content-Type` was already overridable through `req.headers` while the body
+// was not — so a caller could say `form` and still send `{"amount":500}`, which
+// looks configured and is not.
+
+describe('body encoding — the encoder', () => {
+  it('nests objects with brackets and INDEXES arrays', () => {
+    // Indexed rather than `a[]`, because `a[]` cannot express two fields of one
+    // item: two `a[][price]` pairs read as one item with two prices.
+    expect(encodeBody({ items: [{ price: 'p1', qty: 2 }, { price: 'p2' }] }, 'form'))
+      .toBe('items%5B0%5D%5Bprice%5D=p1&items%5B0%5D%5Bqty%5D=2&items%5B1%5D%5Bprice%5D=p2')
+  })
+
+  it('does not quote a string that looks like a number', () => {
+    // The reason `@frontierjs/toolbelt/query` is not reused: its grammar quotes
+    // this so it can round-trip back through parseValue. A provider stores the
+    // quotes.
+    expect(encodeBody({ code: '5', n: 5 }, 'form')).toBe('code=5&n=5')
+  })
+
+  it('drops undefined and sends null as an empty value', () => {
+    // Absent and "not stated" are the same on a form; null is a provider's
+    // "clear this", and dropping it would silently make it "leave alone".
+    expect(encodeBody({ a: null, b: undefined, c: false }, 'form')).toBe('a=&c=false')
+  })
+
+  it('percent-encodes both halves of a pair', () => {
+    expect(encodeBody({ 'a b': 'x&y=z' }, 'form')).toBe('a%20b=x%26y%3Dz')
+  })
+
+  it('refuses a non-object body rather than double-encoding a string', () => {
+    // A pre-encoded string was the obvious workaround and is the trap:
+    // JSON.stringify('a=1') is '"a=1"', quotes included.
+    expect(() => encodeBody('amount=500', 'form')).toThrow(/needs an object body/)
+  })
+
+  it('json is unchanged', () => {
+    expect(encodeBody({ amount: 500 }, 'json')).toBe('{"amount":500}')
+  })
+})
+
+describe('body encoding — over a real socket', () => {
+  // A recorder of its own: the shared `recorder()` keeps a cloned Request, and
+  // reading a clone's body never resolves here. The bytes are taken inside the
+  // handler instead, which is also what the assertion is about.
+  function bodies(reply: () => Response = () => Response.json({ ok: true })) {
+    const seen: Array<{ body: string, headers: Headers, url: string }> = []
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        seen.push({ body: await req.text(), headers: req.headers, url: req.url })
+        return reply()
+      },
+    })
+    return { seen, url: `http://localhost:${server.port}`, stop: () => server.stop(true) }
+  }
+
+  it('a target declaring form sends form bytes and says so', async () => {
+    const s = bodies()
+    try {
+      const target = providerTarget({ address: s.url, encoding: 'form' })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const result = await t.send({
+        target: target.id, method: 'POST',
+        body: { amount: 500, currency: 'usd', metadata: { order_id: 'ORD-1' } },
+      })
+
+      expect(result.error).toBeNull()
+      expect(s.seen[0].headers.get('content-type')).toBe('application/x-www-form-urlencoded')
+      expect(s.seen[0].body).toBe('amount=500&currency=usd&metadata%5Border_id%5D=ORD-1')
+    } finally { s.stop() }
+  })
+
+  it('a target declaring nothing is still JSON', async () => {
+    const s = bodies()
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      const result = await t.send({ target: target.id, method: 'POST', body: { amount: 500 } })
+
+      expect(result.error).toBeNull()
+      expect(s.seen[0].headers.get('content-type')).toBe('application/json')
+      expect(s.seen[0].body).toBe('{"amount":500}')
+    } finally { s.stop() }
+  })
+
+  it('the bytes follow the TARGET even when a caller states another content-type', async () => {
+    // `...req.headers` is spread after the default, so a caller can still set
+    // the header — that precedence is documented. What it can no longer do is
+    // disagree with the bytes, which is the shape that made `form` look
+    // configurable before it was.
+    const s = bodies()
+    try {
+      const target = providerTarget({ address: s.url, encoding: 'form' })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      await t.send({
+        target: target.id, method: 'POST', body: { a: 1 },
+        headers: { 'Content-Type': 'application/json' },
+      })
+      expect(s.seen[0].body).toBe('a=1')
+    } finally { s.stop() }
+  })
+
+  it('the HMAC signature is over the FORM bytes, not a JSON copy of them', async () => {
+    // The whole reason encoding lives in the transport. An encoder in a caller
+    // or a connector would hash a different string, and every signed form
+    // request would fail as an invalid credential (`FJS-D153`).
+    const s = bodies()
+    try {
+      const target = providerTarget({
+        address: s.url, encoding: 'form',
+        auth: { type: 'hmac', ref: 'AGENT_SECRET', header_prefix: 'X-Psp' },
+      })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      const result = await t.send({ target: target.id, method: 'POST', body: { amount: 500 } })
+      expect(result.error).toBeNull()
+
+      const got = s.seen[0]
+      expect(got.body).toBe('amount=500')
+
+      const check = await verifyRequest({
+        secret:  'test-secret',
+        method:  'POST',
+        path:    new URL(got.url).pathname,
+        body:    got.body,
+        headers: got.headers,
+        prefix:  'X-Psp',
+        now:     Math.floor(Date.now() / 1000),
+      })
+      // Reported rather than asserted bare: `{ ok: false, reason }` is the shape,
+      // so a bare toBe(true) says "false" about a signature that is wrong for a
+      // named reason.
+      expect(check).toEqual({ ok: true })
+
+      // The negative control. Same headers, the JSON the body WOULD have been —
+      // if this also verified, the assertion above would be about nothing.
+      const wrongBytes = await verifyRequest({
+        secret:  'test-secret',
+        method:  'POST',
+        path:    new URL(got.url).pathname,
+        body:    JSON.stringify({ amount: 500 }),
+        headers: got.headers,
+        prefix:  'X-Psp',
+        now:     Math.floor(Date.now() / 1000),
+      })
+      expect(wrongBytes.ok).toBe(false)
+    } finally { s.stop() }
+  })
+
+  it('a body that will not encode is reported, and nothing is sent', async () => {
+    // A pre-encoded string is the workaround somebody will reach for, and it is
+    // exactly wrong: under JSON it would go out as '"amount=500"'.
+    const s = bodies()
+    try {
+      const target = providerTarget({ address: s.url, encoding: 'form' })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+      const result = await t.send({ target: target.id, method: 'POST', body: 'amount=500' })
+      expect(result.error).not.toBeNull()
+      expect(result.error!.kind).toBe('invalid_request')
+      expect(s.seen.length).toBe(0)
+    } finally { s.stop() }
+  })
 })

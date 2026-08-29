@@ -16,6 +16,7 @@ import {
   inspectBuild, parseDockerfile, parseDockerignore, ignoreDecision,
   traceToFinalImage, compileGlob, joinPath, isEnvFile, isStateFile,
   refuses, summarise, gather, walkContextFiles,
+  STATE_EXTENSIONS, CONTEXT_FIND, classifyContextFile,
 } from '../core/build-check.js'
 
 const findingsFor = (opts) => inspectBuild(opts).map(f => `${f.level}:${f.rule}`)
@@ -374,6 +375,50 @@ describe('the report', () => {
 // `deploy:local` / `deploy:doctor` off this tree — so the assembly is one
 // function and only the reading differs. These are the shapes that would break
 // the remote caller silently.
+
+// ─── the finder and the classifier are one list ──────────────────────────────
+
+describe('which files can bake a deployment into an image', () => {
+  // Two lists for one fact, and they disagreed: `CONTEXT_FIND` looked for `*.db`
+  // and not `*.db-wal`, so SQLite's own sidecars were invisible to the check
+  // that exists to catch them. Every deploy after the first shipped the running
+  // app's write-ahead log into the image, and moved the digest with it — which
+  // is what made an unchanged redeploy mint a new Release.
+  test('every extension the classifier grades is one the finder looks for', () => {
+    for (const ext of STATE_EXTENSIONS) {
+      expect(isStateFile(`db/app.${ext}`)).toBe(true)
+      expect(CONTEXT_FIND).toContain(`-name '*.${ext}'`)
+    }
+  })
+
+  test("SQLite's sidecars are state, not incidental files", () => {
+    expect(isStateFile('db/app.db-wal')).toBe(true)
+    expect(isStateFile('db/app.db-shm')).toBe(true)
+    expect(classifyContextFile('db/app.db-wal')).toBe('state')
+  })
+
+  test('the finder still looks for env files, which are the other half', () => {
+    expect(CONTEXT_FIND).toContain(`-name '.env'`)
+    expect(CONTEXT_FIND).toContain(`-name '.env.*'`)
+  })
+
+  // The pattern the scaffold used to write. `*` does not cross a separator
+  // (FJS-555) and it never covered the sidecars either.
+  test('db/*.db protects neither the subtree nor the sidecars', () => {
+    const pats = parseDockerignore('db/*.db')
+    expect(ignoreDecision('db/app.db', pats)).toBe('ignored')
+    expect(ignoreDecision('db/app.db-wal', pats)).toBe('included')
+    expect(ignoreDecision('db/nested/app.db', pats)).toBe('included')
+  })
+
+  test('the pattern the scaffold writes now covers both', () => {
+    const pats = parseDockerignore('**/*.db\n**/*.db-wal\n**/*.db-shm')
+    expect(ignoreDecision('db/app.db', pats)).toBe('ignored')
+    expect(ignoreDecision('db/app.db-wal', pats)).toBe('ignored')
+    expect(ignoreDecision('db/nested/app.db', pats)).toBe('ignored')
+    expect(ignoreDecision('app.db-shm', pats)).toBe('ignored')
+  })
+})
 
 describe('gathering the four inputs', () => {
   const files = {

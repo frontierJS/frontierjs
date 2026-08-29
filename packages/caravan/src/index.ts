@@ -53,6 +53,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // building the workers in this function is exactly what made `db`,
   // `pollInterval`, `queues` and `admin` unsettable from a config file at all.
   let dbPath       = opts.db           ?? './db/jobs.db'
+  let busyTimeout  = opts.busyTimeout  ?? 5_000
   let pollInterval = opts.pollInterval ?? 1_000
   let drainTimeout = opts.drainTimeout ?? 30_000
   let jobsDir      = opts.jobsDir
@@ -95,7 +96,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
   const rt = (): { db: Database; stmts: Statements } => {
     if (!runtime) {
-      const db = openDb(dbPath)
+      const db = openDb(dbPath, busyTimeout)
       runtime    = { db, stmts: buildStatements(db) }
       openedPath = dbPath
     }
@@ -167,6 +168,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
       if (junctionCaravan) {
         if (opts.db           === undefined && junctionCaravan.db           !== undefined) dbPath       = junctionCaravan.db
+        if (opts.busyTimeout  === undefined && junctionCaravan.busyTimeout  !== undefined) busyTimeout  = junctionCaravan.busyTimeout
         if (opts.jobsDir      === undefined && junctionCaravan.jobsDir      !== undefined) jobsDir      = junctionCaravan.jobsDir
         if (opts.cleanupAfter === undefined && junctionCaravan.cleanupAfter !== undefined) cleanupAfter = junctionCaravan.cleanupAfter
         if (opts.pollInterval === undefined && junctionCaravan.pollInterval !== undefined) pollInterval = junctionCaravan.pollInterval

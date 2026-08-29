@@ -1,0 +1,1720 @@
+// mastodon — the data model of mastodon/mastodon, expressed in .lite.
+//
+// Derived mechanically from db/schema.rb (AGPL-3.0) by
+// rails-to-lite.mjs beside this file. A CORPUS FIXTURE, not a design:
+// nothing here is a claim about how any of it should be modelled, and every
+// place the conversion made a choice the source did not is recorded in
+// gaps.json. 116 models. Regenerate with fetch.mjs.
+
+model AccountAlias {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  acct String @default("")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  uri String @default("")
+  @@unique([accountId, uri])
+}
+
+model AccountConversation {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  conversationId Int @map("conversation_id")
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  lastStatusId Int? @map("last_status_id")
+  lockVersion Int @map("lock_version") @default(0)
+  participantAccountIds Int[] @map("participant_account_ids")
+  statusIds Int[] @map("status_ids")
+  unread Boolean @default(false)
+  @@unique([accountId, conversationId, participantAccountIds])
+  @@index([conversationId])
+}
+
+model AccountDeletionRequest {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+}
+
+model AccountDomainBlock {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  domain String
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, domain])
+}
+
+model AccountMigration {
+  id Int @id @default(autoincrement())
+  accountId Int? @map("account_id")
+  account Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  acct String @default("")
+  createdAt DateTime @map("created_at")
+  followersCount Int @map("followers_count") @default(0)
+  targetAccountId Int? @map("target_account_id")
+  targetAccount Account? @relation(fields: [targetAccountId], references: [id], onDelete: SetNull)
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([targetAccountId])
+}
+
+model AccountModerationNote {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  content String
+  createdAt DateTime @map("created_at")
+  targetAccountId Int @map("target_account_id")
+  targetAccount Account @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([targetAccountId])
+}
+
+model AccountNote {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  comment String
+  createdAt DateTime @map("created_at")
+  targetAccountId Int @map("target_account_id")
+  targetAccount Account @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, targetAccountId])
+  @@index([targetAccountId])
+}
+
+model AccountPin {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  targetAccountId Int @map("target_account_id")
+  targetAccount Account @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, targetAccountId])
+  @@index([targetAccountId])
+}
+
+model AccountRelationshipSeveranceEvent {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  followersCount Int @map("followers_count") @default(0)
+  followingCount Int @map("following_count") @default(0)
+  relationshipSeveranceEventId Int @map("relationship_severance_event_id")
+  relationshipSeveranceEvent RelationshipSeveranceEvent @relation(fields: [relationshipSeveranceEventId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, relationshipSeveranceEventId])
+  @@index([relationshipSeveranceEventId])
+}
+
+model AccountStat {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  followersCount Int @map("followers_count") @default(0)
+  followingCount Int @map("following_count") @default(0)
+  lastStatusAt DateTime? @map("last_status_at")
+  statusesCount Int @map("statuses_count") @default(0)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId])
+  @@index([lastStatusAt, accountId])
+}
+
+model AccountStatusesCleanupPolicy {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  enabled Boolean @default(true)
+  keepDirect Boolean @map("keep_direct") @default(true)
+  keepMedia Boolean @map("keep_media") @default(false)
+  keepPinned Boolean @map("keep_pinned") @default(true)
+  keepPolls Boolean @map("keep_polls") @default(false)
+  keepSelfBookmark Boolean @map("keep_self_bookmark") @default(true)
+  keepSelfFav Boolean @map("keep_self_fav") @default(true)
+  minFavs Int? @map("min_favs")
+  minReblogs Int? @map("min_reblogs")
+  minStatusAge Int @map("min_status_age") @default(1209600)
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+}
+
+model AccountSummary {
+  id Int @id @default(autoincrement())
+  language String?
+  sensitive Boolean @default(false)
+  @@index([language, sensitive])
+}
+
+model AccountWarningPreset {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  text String @default("")
+  title String @default("")
+  updatedAt DateTime @map("updated_at")
+}
+
+model AccountWarning {
+  id Int @id @default(autoincrement())
+  accountId Int? @map("account_id")
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  action Int @default(0)
+  createdAt DateTime @map("created_at")
+  overruledAt DateTime? @map("overruled_at")
+  reportId Int? @map("report_id")
+  report Report? @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  statusIds String[]? @map("status_ids")
+  targetAccountId Int? @map("target_account_id")
+  targetAccount Account? @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  text String @default("")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([targetAccountId])
+}
+
+model Account {
+  id Int @id @default(autoincrement())
+  actorType String? @map("actor_type")
+  alsoKnownAs String[]? @map("also_known_as")
+  attributionDomains String[]? @map("attribution_domains")
+  avatarContentType String? @map("avatar_content_type")
+  avatarDescription String @map("avatar_description") @default("")
+  avatarFileName String? @map("avatar_file_name")
+  avatarFileSize Int? @map("avatar_file_size")
+  avatarRemoteUrl String? @map("avatar_remote_url")
+  avatarStorageSchemaVersion Int? @map("avatar_storage_schema_version")
+  avatarUpdatedAt DateTime? @map("avatar_updated_at")
+  collectionsUrl String? @map("collections_url")
+  createdAt DateTime @map("created_at")
+  discoverable Boolean?
+  displayName String @map("display_name") @default("")
+  domain String?
+  featureApprovalPolicy Int @map("feature_approval_policy") @default(0)
+  featuredCollectionUrl String? @map("featured_collection_url")
+  fields Json?
+  followersUrl String @map("followers_url") @default("")
+  followingUrl String @map("following_url") @default("")
+  headerContentType String? @map("header_content_type")
+  headerDescription String @map("header_description") @default("")
+  headerFileName String? @map("header_file_name")
+  headerFileSize Int? @map("header_file_size")
+  headerRemoteUrl String @map("header_remote_url") @default("")
+  headerStorageSchemaVersion Int? @map("header_storage_schema_version")
+  headerUpdatedAt DateTime? @map("header_updated_at")
+  hideCollections Boolean? @map("hide_collections")
+  idScheme Int? @map("id_scheme") @default(1)
+  inboxUrl String @map("inbox_url") @default("")
+  indexable Boolean @default(false)
+  lastWebfingeredAt DateTime? @map("last_webfingered_at")
+  locked Boolean @default(false)
+  memorial Boolean @default(false)
+  movedToAccountId Int? @map("moved_to_account_id")
+  movedToAccount Account? @relation(fields: [movedToAccountId], references: [id], onDelete: SetNull)
+  note String @default("")
+  outboxUrl String @map("outbox_url") @default("")
+  privateKey String? @map("private_key")
+  protocol Int @default(0)
+  publicKey String @map("public_key") @default("")
+  requestedDeletionAt DateTime? @map("requested_deletion_at")
+  requestedReviewAt DateTime? @map("requested_review_at")
+  reviewedAt DateTime? @map("reviewed_at")
+  sensitizedAt DateTime? @map("sensitized_at")
+  sharedInboxUrl String @map("shared_inbox_url") @default("")
+  showFeatured Boolean @map("show_featured") @default(true)
+  showMedia Boolean @map("show_media") @default(true)
+  showMediaReplies Boolean @map("show_media_replies") @default(true)
+  silencedAt DateTime? @map("silenced_at")
+  suspendedAt DateTime? @map("suspended_at")
+  suspensionOrigin Int? @map("suspension_origin")
+  trendable Boolean?
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  url String?
+  username String @default("")
+  @@index([domain])
+  @@index([movedToAccountId])
+  @@unique([uri])
+  @@index([url])
+}
+
+model AccountsTag {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  tagId Int @map("tag_id")
+  @@index([accountId, tagId])
+}
+
+model AdminActionLog {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  action String @default("")
+  createdAt DateTime @map("created_at")
+  humanIdentifier String? @map("human_identifier")
+  permalink String?
+  recordedChanges Json? @map("recorded_changes")
+  recordedChangesFormat String? @map("recorded_changes_format")
+  routeParam String? @map("route_param")
+  targetId Int? @map("target_id")
+  targetType String? @map("target_type")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([targetType, targetId])
+}
+
+model AnnouncementMute {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  announcementId Int @map("announcement_id")
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, announcementId])
+  @@index([announcementId])
+}
+
+model AnnouncementReaction {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  announcementId Int @map("announcement_id")
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  customEmojiId Int? @map("custom_emoji_id")
+  name String @default("")
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, announcementId, name])
+  @@index([announcementId])
+  @@index([customEmojiId])
+}
+
+model Announcement {
+  id Int @id @default(autoincrement())
+  allDay Boolean @map("all_day") @default(false)
+  createdAt DateTime @map("created_at")
+  endsAt DateTime? @map("ends_at")
+  notificationSentAt DateTime? @map("notification_sent_at")
+  published Boolean @default(false)
+  publishedAt DateTime? @map("published_at")
+  scheduledAt DateTime? @map("scheduled_at")
+  startsAt DateTime? @map("starts_at")
+  statusIds Int[]? @map("status_ids")
+  text String @default("")
+  updatedAt DateTime @map("updated_at")
+}
+
+model AnnualReportStatusesPerAccountCount {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  statusesCount Int @map("statuses_count")
+  year Int
+  @@unique([year, accountId])
+}
+
+model Appeal {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountWarningId Int @map("account_warning_id")
+  accountWarning AccountWarning @relation(fields: [accountWarningId], references: [id], onDelete: Cascade)
+  approvedAt DateTime? @map("approved_at")
+  approvedByAccountId Int? @map("approved_by_account_id")
+  approvedByAccount Account? @relation(fields: [approvedByAccountId], references: [id], onDelete: SetNull)
+  createdAt DateTime @map("created_at")
+  rejectedAt DateTime? @map("rejected_at")
+  rejectedByAccountId Int? @map("rejected_by_account_id")
+  rejectedByAccount Account? @relation(fields: [rejectedByAccountId], references: [id], onDelete: SetNull)
+  text String @default("")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@unique([accountWarningId])
+  @@index([approvedByAccountId])
+  @@index([rejectedByAccountId])
+}
+
+model Backup {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  dumpContentType String? @map("dump_content_type")
+  dumpFileName String? @map("dump_file_name")
+  dumpFileSize Int? @map("dump_file_size")
+  dumpUpdatedAt DateTime? @map("dump_updated_at")
+  processed Boolean @default(false)
+  updatedAt DateTime @map("updated_at")
+  userId Int? @map("user_id")
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([userId])
+}
+
+model Block {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  targetAccountId Int @map("target_account_id")
+  targetAccount Account @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  @@unique([accountId, targetAccountId])
+  @@index([targetAccountId])
+}
+
+model Bookmark {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, statusId])
+  @@index([statusId])
+}
+
+model BulkImportRow {
+  id Int @id @default(autoincrement())
+  bulkImportId Int @map("bulk_import_id")
+  bulkImport BulkImport @relation(fields: [bulkImportId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  data Json?
+  updatedAt DateTime @map("updated_at")
+  @@index([bulkImportId])
+}
+
+model BulkImport {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  finishedAt DateTime? @map("finished_at")
+  importedItems Int @map("imported_items") @default(0)
+  likelyMismatched Boolean @map("likely_mismatched") @default(false)
+  missingStatus Boolean @map("missing_status") @default(false)
+  originalFilename String @map("original_filename") @default("")
+  overwrite Boolean @default(false)
+  processedItems Int @map("processed_items") @default(0)
+  state Int
+  totalItems Int @map("total_items") @default(0)
+  type Int
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+}
+
+model CanonicalEmailBlock {
+  id Int @id @default(autoincrement())
+  canonicalEmailHash String @map("canonical_email_hash") @default("")
+  createdAt DateTime @map("created_at")
+  referenceAccountId Int? @map("reference_account_id")
+  referenceAccount Account? @relation(fields: [referenceAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([canonicalEmailHash])
+  @@index([referenceAccountId])
+}
+
+model CollectionItem {
+  id Int @id @default(autoincrement())
+  accountId Int? @map("account_id")
+  account Account? @relation(fields: [accountId], references: [id])
+  activityUri String? @map("activity_uri")
+  approvalLastVerifiedAt DateTime? @map("approval_last_verified_at")
+  approvalUri String? @map("approval_uri")
+  collectionId Int @map("collection_id")
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  objectUri String? @map("object_uri")
+  position Int @default(1)
+  state Int @default(0)
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  @@unique([accountId, collectionId], nullsDistinct: true)
+  @@index([collectionId])
+  @@index([state])
+}
+
+model CollectionReport {
+  id Int @id @default(autoincrement())
+  collectionId Int @map("collection_id")
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  reportId Int @map("report_id")
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@index([collectionId])
+  @@index([reportId])
+}
+
+model Collection {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id])
+  createdAt DateTime @map("created_at")
+  description String?
+  descriptionHtml String? @map("description_html")
+  discoverable Boolean
+  itemCount Int @map("item_count") @default(0)
+  language String?
+  local Boolean
+  name String
+  originalNumberOfItems Int? @map("original_number_of_items")
+  sensitive Boolean
+  tagId Int? @map("tag_id")
+  tag Tag? @relation(fields: [tagId], references: [id])
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  url String?
+  @@index([accountId])
+  @@index([tagId])
+}
+
+model ConversationMute {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  conversationId Int @map("conversation_id")
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  @@unique([accountId, conversationId])
+}
+
+model Conversation {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  parentAccountId Int? @map("parent_account_id")
+  parentStatusId Int? @map("parent_status_id")
+  updatedAt DateTime @map("updated_at")
+  uri String?
+}
+
+model CustomEmojiCategory {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  featuredEmojiId Int? @map("featured_emoji_id")
+  featuredEmoji CustomEmojis? @relation(fields: [featuredEmojiId], references: [id], onDelete: SetNull)
+  name String?
+  updatedAt DateTime @map("updated_at")
+  @@unique([name])
+}
+
+model CustomEmojis {
+  id Int @id @default(autoincrement())
+  categoryId Int? @map("category_id")
+  createdAt DateTime @map("created_at")
+  disabled Boolean @default(false)
+  domain String?
+  imageContentType String? @map("image_content_type")
+  imageFileName String? @map("image_file_name")
+  imageFileSize Int? @map("image_file_size")
+  imageRemoteUrl String? @map("image_remote_url")
+  imageStorageSchemaVersion Int? @map("image_storage_schema_version")
+  imageUpdatedAt DateTime? @map("image_updated_at")
+  shortcode String @default("")
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  visibleInPicker Boolean @map("visible_in_picker") @default(true)
+  @@unique([shortcode, domain], nullsDistinct: true)
+}
+
+model CustomFilterKeyword {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  customFilterId Int @map("custom_filter_id")
+  customFilter CustomFilter @relation(fields: [customFilterId], references: [id], onDelete: Cascade)
+  keyword String @default("")
+  updatedAt DateTime @map("updated_at")
+  wholeWord Boolean @map("whole_word") @default(true)
+  @@index([customFilterId])
+}
+
+model CustomFilterStatus {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  customFilterId Int @map("custom_filter_id")
+  customFilter CustomFilter @relation(fields: [customFilterId], references: [id], onDelete: Cascade)
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@index([customFilterId])
+  @@unique([statusId, customFilterId])
+}
+
+model CustomFilter {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  action Int @default(0)
+  context String[]
+  createdAt DateTime @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+  phrase String @default("")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+}
+
+model DomainAllow {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  domain String @default("")
+  updatedAt DateTime @map("updated_at")
+  @@unique([domain])
+}
+
+model DomainBlock {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  domain String @default("")
+  obfuscate Boolean @default(false)
+  privateComment String? @map("private_comment")
+  publicComment String? @map("public_comment")
+  rejectMedia Boolean @map("reject_media") @default(false)
+  rejectReports Boolean @map("reject_reports") @default(false)
+  severity Int? @default(0)
+  updatedAt DateTime @map("updated_at")
+  @@unique([domain])
+}
+
+model EmailDomainBlock {
+  id Int @id @default(autoincrement())
+  allowWithApproval Boolean @map("allow_with_approval") @default(false)
+  createdAt DateTime @map("created_at")
+  domain String @default("")
+  parentId Int? @map("parent_id")
+  parent EmailDomainBlock? @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([domain])
+}
+
+model EmailSubscription {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  confirmationToken String? @map("confirmation_token")
+  confirmedAt DateTime? @map("confirmed_at")
+  createdAt DateTime @map("created_at")
+  email String
+  locale String
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, email])
+}
+
+model FaspBackfillRequest {
+  id Int @id @default(autoincrement())
+  category String
+  createdAt DateTime @map("created_at")
+  cursor String?
+  faspProviderId Int @map("fasp_provider_id")
+  faspProvider FaspProvider @relation(fields: [faspProviderId], references: [id])
+  fulfilled Boolean @default(false)
+  maxCount Int @map("max_count") @default(100)
+  updatedAt DateTime @map("updated_at")
+  @@index([faspProviderId])
+}
+
+model FaspDebugCallback {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  faspProviderId Int @map("fasp_provider_id")
+  faspProvider FaspProvider @relation(fields: [faspProviderId], references: [id])
+  ip String
+  requestBody String @map("request_body")
+  updatedAt DateTime @map("updated_at")
+  @@index([faspProviderId])
+}
+
+model FaspFollowRecommendation {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  recommendedAccountId Int @map("recommended_account_id")
+  recommendedAccount Account @relation(fields: [recommendedAccountId], references: [id])
+  requestingAccountId Int @map("requesting_account_id")
+  requestingAccount Account @relation(fields: [requestingAccountId], references: [id])
+  updatedAt DateTime @map("updated_at")
+  @@index([recommendedAccountId])
+  @@index([requestingAccountId])
+}
+
+model FaspProvider {
+  id Int @id @default(autoincrement())
+  baseUrl String @map("base_url")
+  capabilities Json
+  confirmed Boolean @default(false)
+  contactEmail String? @map("contact_email")
+  createdAt DateTime @map("created_at")
+  deliveryLastFailedAt DateTime? @map("delivery_last_failed_at")
+  fediverseAccount String? @map("fediverse_account")
+  name String
+  privacyPolicy Json? @map("privacy_policy")
+  providerPublicKeyPem String @map("provider_public_key_pem")
+  remoteIdentifier String @map("remote_identifier")
+  serverPrivateKeyPem String @map("server_private_key_pem")
+  signInUrl String? @map("sign_in_url")
+  updatedAt DateTime @map("updated_at")
+  @@unique([baseUrl])
+}
+
+model FaspSubscription {
+  id Int @id @default(autoincrement())
+  category String
+  createdAt DateTime @map("created_at")
+  faspProviderId Int @map("fasp_provider_id")
+  faspProvider FaspProvider @relation(fields: [faspProviderId], references: [id])
+  maxBatchSize Int @map("max_batch_size")
+  subscriptionType String @map("subscription_type")
+  thresholdLikes Int? @map("threshold_likes")
+  thresholdReplies Int? @map("threshold_replies")
+  thresholdShares Int? @map("threshold_shares")
+  thresholdTimeframe Int? @map("threshold_timeframe")
+  updatedAt DateTime @map("updated_at")
+  @@index([faspProviderId])
+}
+
+model Favourite {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@unique([accountId, statusId])
+  @@index([statusId])
+}
+
+model FeaturedTag {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  lastStatusAt DateTime? @map("last_status_at")
+  name String?
+  statusesCount Int @map("statuses_count") @default(0)
+  tagId Int @map("tag_id")
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, tagId])
+  @@index([tagId])
+}
+
+model FollowRecommendationMute {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  targetAccountId Int @map("target_account_id")
+  targetAccount Account @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, targetAccountId])
+  @@index([targetAccountId])
+}
+
+model FollowRecommendationSuppression {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId])
+}
+
+model FollowRequest {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  languages String[]?
+  notify Boolean @default(false)
+  showReblogs Boolean @map("show_reblogs") @default(true)
+  targetAccountId Int @map("target_account_id")
+  targetAccount Account @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  @@unique([accountId, targetAccountId])
+  @@index([targetAccountId, accountId])
+}
+
+model Follow {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  languages String[]?
+  notify Boolean @default(false)
+  showReblogs Boolean @map("show_reblogs") @default(true)
+  targetAccountId Int @map("target_account_id")
+  targetAccount Account @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  @@unique([accountId, targetAccountId])
+  @@index([targetAccountId, accountId])
+}
+
+model GeneratedAnnualReport {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  data Json
+  schemaVersion Int @map("schema_version")
+  shareKey String? @map("share_key")
+  updatedAt DateTime @map("updated_at")
+  viewedAt DateTime? @map("viewed_at")
+  year Int
+  @@unique([accountId, year])
+}
+
+model GlobalFollowRecommendation {
+  id Int @id @default(autoincrement())
+  rank Float
+  reason String[]
+  stale Boolean @default(false)
+  @@index([rank])
+}
+
+model Identity {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  provider String @default("")
+  uid String @default("")
+  updatedAt DateTime @map("updated_at")
+  userId Int? @map("user_id")
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([uid, provider])
+  @@index([userId])
+}
+
+model InstanceModerationNote {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  content String?
+  createdAt DateTime @map("created_at")
+  domain String
+  updatedAt DateTime @map("updated_at")
+  @@index([domain])
+}
+
+model Invite {
+  id Int @id @default(autoincrement())
+  autofollow Boolean @default(false)
+  code String @default("")
+  comment String?
+  createdAt DateTime @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+  maxUses Int? @map("max_uses")
+  updatedAt DateTime @map("updated_at")
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  uses Int @default(0)
+  @@unique([code])
+  @@index([userId])
+}
+
+model IpBlock {
+  id Int @id @default(autoincrement())
+  comment String @default("")
+  createdAt DateTime @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+  ip String @default("0.0.0.0")
+  severity Int @default(0)
+  updatedAt DateTime @map("updated_at")
+  @@unique([ip])
+}
+
+model Keypair {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+  localFragment String? @map("local_fragment")
+  privateKey String? @map("private_key")
+  publicKey String @map("public_key")
+  revoked Boolean @default(false)
+  type Int
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  @@unique([accountId, localFragment], nullsDistinct: true)
+  @@unique([uri])
+}
+
+model ListAccount {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  followId Int? @map("follow_id")
+  follow Follow? @relation(fields: [followId], references: [id], onDelete: Cascade)
+  followRequestId Int? @map("follow_request_id")
+  followRequest FollowRequest? @relation(fields: [followRequestId], references: [id], onDelete: Cascade)
+  listId Int @map("list_id")
+  list List @relation(fields: [listId], references: [id], onDelete: Cascade)
+  @@unique([accountId, listId])
+  @@index([followId])
+  @@index([followRequestId])
+  @@index([listId, accountId])
+}
+
+model List {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  exclusive Boolean @default(false)
+  repliesPolicy Int @map("replies_policy") @default(0)
+  title String @default("")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+}
+
+model LoginActivity {
+  id Int @id @default(autoincrement())
+  authenticationMethod String? @map("authentication_method")
+  createdAt DateTime? @map("created_at")
+  failureReason String? @map("failure_reason")
+  ip String?
+  provider String?
+  success Boolean?
+  userAgent String? @map("user_agent")
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model Marker {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  lastReadId Int @map("last_read_id") @default(0)
+  lockVersion Int @map("lock_version") @default(0)
+  timeline String @default("")
+  updatedAt DateTime @map("updated_at")
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, timeline])
+}
+
+model MediaAttachment {
+  id Int @id @default(autoincrement())
+  accountId Int? @map("account_id")
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  blurhash String?
+  createdAt DateTime @map("created_at")
+  description String?
+  fileContentType String? @map("file_content_type")
+  fileFileName String? @map("file_file_name")
+  fileFileSize Int? @map("file_file_size")
+  fileMeta Json? @map("file_meta")
+  fileStorageSchemaVersion Int? @map("file_storage_schema_version")
+  fileUpdatedAt DateTime? @map("file_updated_at")
+  processing Int?
+  remoteUrl String @map("remote_url") @default("")
+  scheduledStatusId Int? @map("scheduled_status_id")
+  scheduledStatus ScheduledStatus? @relation(fields: [scheduledStatusId], references: [id], onDelete: SetNull)
+  shortcode String?
+  statusId Int? @map("status_id")
+  status Status? @relation(fields: [statusId], references: [id], onDelete: SetNull)
+  thumbnailContentType String? @map("thumbnail_content_type")
+  thumbnailFileName String? @map("thumbnail_file_name")
+  thumbnailFileSize Int? @map("thumbnail_file_size")
+  thumbnailRemoteUrl String? @map("thumbnail_remote_url")
+  thumbnailStorageSchemaVersion Int? @map("thumbnail_storage_schema_version")
+  thumbnailUpdatedAt DateTime? @map("thumbnail_updated_at")
+  type Int @default(0)
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId, statusId])
+  @@index([scheduledStatusId])
+  @@index([statusId])
+}
+
+model Mention {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  silent Boolean @default(false)
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, statusId])
+  @@index([statusId])
+}
+
+model Mute {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+  hideNotifications Boolean @map("hide_notifications") @default(true)
+  targetAccountId Int @map("target_account_id")
+  targetAccount Account @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, targetAccountId])
+  @@index([targetAccountId])
+}
+
+model NotificationPermission {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  fromAccountId Int @map("from_account_id")
+  fromAccount Account @relation(fields: [fromAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([fromAccountId])
+}
+
+model NotificationPolicy {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  forBots Int @map("for_bots") @default(0)
+  forLimitedAccounts Int @map("for_limited_accounts") @default(1)
+  forNewAccounts Int @map("for_new_accounts") @default(0)
+  forNotFollowers Int @map("for_not_followers") @default(0)
+  forNotFollowing Int @map("for_not_following") @default(0)
+  forPrivateMentions Int @map("for_private_mentions") @default(1)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId])
+}
+
+model NotificationRequest {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  fromAccountId Int @map("from_account_id")
+  fromAccount Account @relation(fields: [fromAccountId], references: [id], onDelete: Cascade)
+  lastStatusId Int? @map("last_status_id")
+  lastStatus Status? @relation(fields: [lastStatusId], references: [id], onDelete: SetNull)
+  notificationsCount Int @map("notifications_count") @default(0)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, fromAccountId])
+  @@index([fromAccountId])
+  @@index([lastStatusId])
+}
+
+model Notification {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  activityId Int @map("activity_id")
+  activityType String @map("activity_type")
+  createdAt DateTime @map("created_at")
+  filtered Boolean @default(false)
+  fromAccountId Int @map("from_account_id")
+  fromAccount Account @relation(fields: [fromAccountId], references: [id], onDelete: Cascade)
+  groupKey String? @map("group_key")
+  type String?
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId, groupKey])
+  @@index([accountId, type])
+  @@index([activityId, activityType])
+  @@index([fromAccountId])
+}
+
+model OauthAccessGrant {
+  id Int @id @default(autoincrement())
+  applicationId Int @map("application_id")
+  application OauthApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  codeChallenge String? @map("code_challenge")
+  codeChallengeMethod String? @map("code_challenge_method")
+  createdAt DateTime @map("created_at")
+  expiresIn Int @map("expires_in")
+  redirectUri String @map("redirect_uri")
+  resourceOwnerId Int @map("resource_owner_id")
+  resourceOwner User @relation(fields: [resourceOwnerId], references: [id], onDelete: Cascade)
+  revokedAt DateTime? @map("revoked_at")
+  scopes String?
+  token String
+  @@index([resourceOwnerId])
+  @@unique([token])
+}
+
+model OauthAccessToken {
+  id Int @id @default(autoincrement())
+  applicationId Int? @map("application_id")
+  application OauthApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  expiresIn Int? @map("expires_in")
+  lastUsedAt DateTime? @map("last_used_at")
+  lastUsedIp String? @map("last_used_ip")
+  refreshToken String? @map("refresh_token")
+  resourceOwnerId Int? @map("resource_owner_id")
+  resourceOwner User? @relation(fields: [resourceOwnerId], references: [id], onDelete: Cascade)
+  revokedAt DateTime? @map("revoked_at")
+  scopes String?
+  token String
+  @@index([resourceOwnerId])
+  @@unique([token])
+}
+
+model OauthApplication {
+  id Int @id @default(autoincrement())
+  confidential Boolean @default(true)
+  createdAt DateTime? @map("created_at")
+  name String
+  ownerId Int? @map("owner_id")
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerType String? @map("owner_type")
+  redirectUri String @map("redirect_uri")
+  scopes String @default("")
+  secret String
+  superapp Boolean @default(false)
+  uid String
+  updatedAt DateTime? @map("updated_at")
+  website String?
+  @@index([ownerId, ownerType])
+  @@index([superapp])
+  @@unique([uid])
+}
+
+model PgheroSpaceStat {
+  id Int @id @default(autoincrement())
+  capturedAt DateTime? @map("captured_at")
+  database String?
+  relation String?
+  schema String?
+  size Int?
+  @@index([database, capturedAt])
+}
+
+model PollVote {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  choice Int @default(0)
+  createdAt DateTime @map("created_at")
+  pollId Int @map("poll_id")
+  poll Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  @@index([accountId])
+  @@index([pollId])
+}
+
+model Poll {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  cachedTallies Int[] @map("cached_tallies")
+  createdAt DateTime @map("created_at")
+  expiresAt DateTime? @map("expires_at")
+  hideTotals Boolean @map("hide_totals") @default(false)
+  lastFetchedAt DateTime? @map("last_fetched_at")
+  lockVersion Int @map("lock_version") @default(0)
+  multiple Boolean @default(false)
+  options String[]
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  votersCount Int? @map("voters_count")
+  votesCount Int @map("votes_count") @default(0)
+  @@index([accountId])
+  @@index([statusId])
+}
+
+model PreviewCardProvider {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  domain String @default("")
+  iconContentType String? @map("icon_content_type")
+  iconFileName String? @map("icon_file_name")
+  iconFileSize Int? @map("icon_file_size")
+  iconUpdatedAt DateTime? @map("icon_updated_at")
+  requestedReviewAt DateTime? @map("requested_review_at")
+  reviewedAt DateTime? @map("reviewed_at")
+  trendable Boolean?
+  updatedAt DateTime @map("updated_at")
+  @@unique([domain])
+}
+
+model PreviewCardTrend {
+  id Int @id @default(autoincrement())
+  allowed Boolean @default(false)
+  language String?
+  previewCardId Int @map("preview_card_id")
+  previewCard PreviewCard @relation(fields: [previewCardId], references: [id], onDelete: Cascade)
+  rank Int @default(0)
+  score Float @default(0.0)
+  @@unique([previewCardId])
+}
+
+model PreviewCard {
+  id Int @id @default(autoincrement())
+  authorAccountId Int? @map("author_account_id")
+  authorAccount Account? @relation(fields: [authorAccountId], references: [id], onDelete: SetNull)
+  authorName String @map("author_name") @default("")
+  authorUrl String @map("author_url") @default("")
+  blurhash String?
+  createdAt DateTime @map("created_at")
+  description String @default("")
+  embedUrl String @map("embed_url") @default("")
+  height Int @default(0)
+  html String @default("")
+  imageContentType String? @map("image_content_type")
+  imageDescription String @map("image_description") @default("")
+  imageFileName String? @map("image_file_name")
+  imageFileSize Int? @map("image_file_size")
+  imageStorageSchemaVersion Int? @map("image_storage_schema_version")
+  imageUpdatedAt DateTime? @map("image_updated_at")
+  language String?
+  linkType Int? @map("link_type")
+  maxScore Float? @map("max_score")
+  maxScoreAt DateTime? @map("max_score_at")
+  providerName String @map("provider_name") @default("")
+  providerUrl String @map("provider_url") @default("")
+  publishedAt DateTime? @map("published_at")
+  title String @default("")
+  trendable Boolean?
+  type Int @default(0)
+  unverifiedAuthorAccountId Int? @map("unverified_author_account_id")
+  unverifiedAuthorAccount Account? @relation(fields: [unverifiedAuthorAccountId], references: [id], onDelete: SetNull)
+  updatedAt DateTime @map("updated_at")
+  url String @default("")
+  width Int @default(0)
+  @@index([authorAccountId])
+  @@index([unverifiedAuthorAccountId])
+  @@unique([url])
+}
+
+model PreviewCardsStatus {
+  id Int @id @default(autoincrement())
+  previewCardId Int @map("preview_card_id")
+  statusId Int @map("status_id")
+  url String?
+}
+
+model Quote {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  activityUri String? @map("activity_uri")
+  approvalUri String? @map("approval_uri")
+  createdAt DateTime @map("created_at")
+  legacy Boolean @default(false)
+  quotedAccountId Int? @map("quoted_account_id")
+  quotedAccount Account? @relation(fields: [quotedAccountId], references: [id], onDelete: SetNull)
+  quotedStatusId Int? @map("quoted_status_id")
+  quotedStatus Status? @relation(fields: [quotedStatusId], references: [id], onDelete: SetNull)
+  state Int @default(0)
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId, quotedAccountId])
+  @@index([approvalUri])
+  @@index([quotedAccountId])
+  @@index([quotedStatusId])
+  @@unique([statusId])
+}
+
+model RelationshipSeveranceEvent {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  purged Boolean @default(false)
+  targetName String @map("target_name")
+  type Int
+  updatedAt DateTime @map("updated_at")
+  @@index([type, targetName])
+}
+
+model Relay {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  followActivityId String? @map("follow_activity_id")
+  inboxUrl String @map("inbox_url") @default("")
+  state Int @default(0)
+  updatedAt DateTime @map("updated_at")
+}
+
+model ReportNote {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  content String
+  createdAt DateTime @map("created_at")
+  reportId Int @map("report_id")
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([reportId])
+}
+
+model Report {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  actionTakenAt DateTime? @map("action_taken_at")
+  actionTakenByAccountId Int? @map("action_taken_by_account_id")
+  actionTakenByAccount Account? @relation(fields: [actionTakenByAccountId], references: [id], onDelete: SetNull)
+  applicationId Int? @map("application_id")
+  application OauthApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  assignedAccountId Int? @map("assigned_account_id")
+  assignedAccount Account? @relation(fields: [assignedAccountId], references: [id], onDelete: SetNull)
+  category Int @default(0)
+  comment String @default("")
+  createdAt DateTime @map("created_at")
+  forwarded Boolean?
+  ruleIds Int[]? @map("rule_ids")
+  statusIds Int[] @map("status_ids")
+  targetAccountId Int @map("target_account_id")
+  targetAccount Account @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  @@index([accountId])
+  @@index([actionTakenByAccountId])
+  @@index([assignedAccountId])
+  @@index([targetAccountId])
+}
+
+model RuleTranslation {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  hint String @default("")
+  language String
+  ruleId Int @map("rule_id")
+  rule Rule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  text String @default("")
+  updatedAt DateTime @map("updated_at")
+  @@unique([ruleId, language])
+}
+
+model Rule {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  deletedAt DateTime? @map("deleted_at")
+  hint String @default("")
+  priority Int @default(0)
+  text String @default("")
+  updatedAt DateTime @map("updated_at")
+}
+
+model ScheduledStatus {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  params Json?
+  scheduledAt DateTime? @map("scheduled_at")
+  @@index([accountId])
+  @@index([scheduledAt])
+}
+
+model SessionActivation {
+  id Int @id @default(autoincrement())
+  accessTokenId Int? @map("access_token_id")
+  accessToken OauthAccessToken? @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  ip String?
+  sessionId String @map("session_id")
+  updatedAt DateTime @map("updated_at")
+  userAgent String @map("user_agent") @default("")
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  webPushSubscriptionId Int? @map("web_push_subscription_id")
+  @@index([accessTokenId])
+  @@unique([sessionId])
+  @@index([userId])
+}
+
+model Setting {
+  id Int @id @default(autoincrement())
+  createdAt DateTime? @map("created_at")
+  updatedAt DateTime? @map("updated_at")
+  value String?
+  var String
+  @@unique([var])
+}
+
+model SeveredRelationship {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  direction Int
+  languages String[]?
+  localAccountId Int @map("local_account_id")
+  localAccount Account @relation(fields: [localAccountId], references: [id], onDelete: Cascade)
+  notify Boolean?
+  relationshipSeveranceEventId Int @map("relationship_severance_event_id")
+  relationshipSeveranceEvent RelationshipSeveranceEvent @relation(fields: [relationshipSeveranceEventId], references: [id], onDelete: Cascade)
+  remoteAccountId Int @map("remote_account_id")
+  remoteAccount Account @relation(fields: [remoteAccountId], references: [id], onDelete: Cascade)
+  showReblogs Boolean? @map("show_reblogs")
+  updatedAt DateTime @map("updated_at")
+  @@index([localAccountId, relationshipSeveranceEventId])
+  @@unique([relationshipSeveranceEventId, localAccountId, direction, remoteAccountId])
+  @@index([remoteAccountId])
+}
+
+model SiteUpload {
+  id Int @id @default(autoincrement())
+  blurhash String?
+  createdAt DateTime @map("created_at")
+  fileContentType String? @map("file_content_type")
+  fileFileName String? @map("file_file_name")
+  fileFileSize Int? @map("file_file_size")
+  fileUpdatedAt DateTime? @map("file_updated_at")
+  meta Json?
+  updatedAt DateTime @map("updated_at")
+  var String @default("")
+  @@unique([var])
+}
+
+model SoftwareDeprecation {
+  id Int @id @default(autoincrement())
+  branch String
+  createdAt DateTime @map("created_at")
+  endOfSupport DateTime @map("end_of_support")
+  updatedAt DateTime @map("updated_at")
+  warningIssued Int @map("warning_issued")
+  @@unique([branch])
+}
+
+model SoftwareUpdate {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  endOfSupport DateTime? @map("end_of_support")
+  releaseNotes String @map("release_notes") @default("")
+  type Int @default(0)
+  updatedAt DateTime @map("updated_at")
+  urgent Boolean @default(false)
+  version String
+  @@unique([version])
+}
+
+model StatusEdit {
+  id Int @id @default(autoincrement())
+  accountId Int? @map("account_id")
+  account Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdAt DateTime @map("created_at")
+  mediaDescriptions String[]? @map("media_descriptions")
+  orderedMediaAttachmentIds Int[]? @map("ordered_media_attachment_ids")
+  pollOptions String[]? @map("poll_options")
+  quoteId Int? @map("quote_id")
+  sensitive Boolean?
+  spoilerText String @map("spoiler_text") @default("")
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  text String @default("")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([statusId])
+}
+
+model StatusPin {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, statusId])
+  @@index([statusId])
+}
+
+model StatusStat {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  favouritesCount Int @map("favourites_count") @default(0)
+  quotesCount Int @map("quotes_count") @default(0)
+  reblogsCount Int @map("reblogs_count") @default(0)
+  repliesCount Int @map("replies_count") @default(0)
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  untrustedFavouritesCount Int? @map("untrusted_favourites_count")
+  untrustedReblogsCount Int? @map("untrusted_reblogs_count")
+  updatedAt DateTime @map("updated_at")
+  @@unique([statusId])
+}
+
+model StatusTrend {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  allowed Boolean @default(false)
+  language String?
+  rank Int @default(0)
+  score Float @default(0.0)
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  @@index([accountId])
+  @@unique([statusId])
+}
+
+model Status {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  applicationId Int? @map("application_id")
+  conversationId Int? @map("conversation_id")
+  createdAt DateTime @map("created_at")
+  deletedAt DateTime? @map("deleted_at")
+  editedAt DateTime? @map("edited_at")
+  fetchedRepliesAt DateTime? @map("fetched_replies_at")
+  inReplyToAccountId Int? @map("in_reply_to_account_id")
+  inReplyToAccount Account? @relation(fields: [inReplyToAccountId], references: [id], onDelete: SetNull)
+  inReplyToId Int? @map("in_reply_to_id")
+  inReplyTo Status? @relation(fields: [inReplyToId], references: [id], onDelete: SetNull)
+  language String?
+  local Boolean?
+  orderedMediaAttachmentIds Int[]? @map("ordered_media_attachment_ids")
+  pollId Int? @map("poll_id")
+  quoteApprovalPolicy Int @map("quote_approval_policy") @default(0)
+  reblogOfId Int? @map("reblog_of_id")
+  reblogOf Status? @relation(fields: [reblogOfId], references: [id], onDelete: Cascade)
+  reply Boolean @default(false)
+  sensitive Boolean @default(false)
+  spoilerText String @map("spoiler_text") @default("")
+  text String @default("")
+  trendable Boolean?
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  url String?
+  visibility Int @default(0)
+  @@index([accountId, visibility, updatedAt])
+  @@index([accountId])
+  @@index([conversationId])
+  @@index([deletedAt])
+  @@index([language, accountId])
+  @@index([inReplyToAccountId])
+  @@index([inReplyToId])
+  @@index([reblogOfId, accountId])
+}
+
+model StatusesTag {
+  id Int @id @default(autoincrement())
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  tagId Int @map("tag_id")
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  @@index([statusId])
+}
+
+model TagFollow {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  tagId Int @map("tag_id")
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, tagId])
+  @@index([tagId])
+}
+
+model TagTrend {
+  id Int @id @default(autoincrement())
+  allowed Boolean @default(false)
+  language String @default("")
+  rank Int @default(0)
+  score Float @default(0.0)
+  tagId Int @map("tag_id")
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  @@unique([tagId, language])
+}
+
+model TaggedObject {
+  id Int @id @default(autoincrement())
+  apType String @map("ap_type")
+  createdAt DateTime @map("created_at")
+  objectId Int? @map("object_id")
+  objectType String? @map("object_type")
+  statusId Int @map("status_id")
+  status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @map("updated_at")
+  uri String?
+  @@index([objectType, objectId])
+}
+
+model Tag {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  displayName String? @map("display_name")
+  lastStatusAt DateTime? @map("last_status_at")
+  listable Boolean?
+  maxScore Float? @map("max_score")
+  maxScoreAt DateTime? @map("max_score_at")
+  name String @default("")
+  requestedReviewAt DateTime? @map("requested_review_at")
+  reviewedAt DateTime? @map("reviewed_at")
+  trendable Boolean?
+  updatedAt DateTime @map("updated_at")
+  usable Boolean?
+}
+
+model TermsOfService {
+  id Int @id @default(autoincrement())
+  changelog String @default("")
+  createdAt DateTime @map("created_at")
+  effectiveDate DateTime? @map("effective_date")
+  notificationSentAt DateTime? @map("notification_sent_at")
+  publishedAt DateTime? @map("published_at")
+  text String @default("")
+  updatedAt DateTime @map("updated_at")
+}
+
+model Tombstone {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  byModerator Boolean? @map("by_moderator")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  uri String
+  @@index([accountId])
+  @@index([uri])
+}
+
+model UnavailableDomain {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  domain String @default("")
+  updatedAt DateTime @map("updated_at")
+  @@unique([domain])
+}
+
+model UserInviteRequest {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  text String?
+  updatedAt DateTime @map("updated_at")
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model UserRole {
+  id Int @id @default(autoincrement())
+  collectionLimit Int @map("collection_limit") @default(10)
+  color String @default("")
+  createdAt DateTime @map("created_at")
+  highlighted Boolean @default(false)
+  name String @default("")
+  permissions Int @default(0)
+  position Int @default(0)
+  require2fa Boolean @map("require_2fa") @default(false)
+  updatedAt DateTime @map("updated_at")
+}
+
+model UsernameBlock {
+  id Int @id @default(autoincrement())
+  allowWithApproval Boolean @map("allow_with_approval") @default(false)
+  createdAt DateTime @map("created_at")
+  exact Boolean @default(false)
+  normalizedUsername String @map("normalized_username")
+  updatedAt DateTime @map("updated_at")
+  username String
+  @@index([normalizedUsername])
+}
+
+model User {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ageVerifiedAt DateTime? @map("age_verified_at")
+  approved Boolean @default(true)
+  chosenLanguages String[]? @map("chosen_languages")
+  confirmationSentAt DateTime? @map("confirmation_sent_at")
+  confirmationToken String? @map("confirmation_token")
+  confirmedAt DateTime? @map("confirmed_at")
+  consumedTimestep Int? @map("consumed_timestep")
+  createdAt DateTime @map("created_at")
+  createdByApplicationId Int? @map("created_by_application_id")
+  createdByApplication OauthApplication? @relation(fields: [createdByApplicationId], references: [id], onDelete: SetNull)
+  currentSignInAt DateTime? @map("current_sign_in_at")
+  disabled Boolean @default(false)
+  email String @default("")
+  encryptedPassword String @map("encrypted_password") @default("")
+  inviteId Int? @map("invite_id")
+  invite Invite? @relation(fields: [inviteId], references: [id], onDelete: SetNull)
+  lastEmailedAt DateTime? @map("last_emailed_at")
+  lastSignInAt DateTime? @map("last_sign_in_at")
+  locale String?
+  otpBackupCodes String[]? @map("otp_backup_codes")
+  otpRequiredForLogin Boolean @map("otp_required_for_login") @default(false)
+  otpSecret String? @map("otp_secret")
+  requireTosInterstitial Boolean @map("require_tos_interstitial") @default(false)
+  resetPasswordSentAt DateTime? @map("reset_password_sent_at")
+  resetPasswordToken String? @map("reset_password_token")
+  roleId Int? @map("role_id")
+  role UserRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  settings String?
+  signInCount Int @map("sign_in_count") @default(0)
+  signInToken String? @map("sign_in_token")
+  signInTokenSentAt DateTime? @map("sign_in_token_sent_at")
+  signUpIp String? @map("sign_up_ip")
+  skipSignInToken Boolean? @map("skip_sign_in_token")
+  timeZone String? @map("time_zone")
+  unconfirmedEmail String? @map("unconfirmed_email")
+  updatedAt DateTime @map("updated_at")
+  webauthnId String? @map("webauthn_id")
+  @@index([accountId])
+  @@unique([confirmationToken])
+  @@index([createdByApplicationId])
+  @@unique([email])
+  @@index([roleId])
+  @@index([unconfirmedEmail])
+}
+
+model WebPushSubscription {
+  id Int @id @default(autoincrement())
+  accessTokenId Int @map("access_token_id")
+  accessToken OauthAccessToken @relation(fields: [accessTokenId], references: [id], onDelete: Cascade)
+  createdAt DateTime @map("created_at")
+  data Json?
+  endpoint String
+  keyAuth String @map("key_auth")
+  keyP256dh String @map("key_p256dh")
+  standard Boolean @default(false)
+  updatedAt DateTime @map("updated_at")
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([accessTokenId])
+  @@index([userId])
+}
+
+model WebSetting {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  data Json?
+  updatedAt DateTime @map("updated_at")
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId])
+}
+
+model WebauthnCredential {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  externalId String @map("external_id")
+  nickname String
+  publicKey String @map("public_key")
+  signCount Int @map("sign_count") @default(0)
+  updatedAt DateTime @map("updated_at")
+  userId Int? @map("user_id")
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([externalId])
+  @@unique([userId, nickname], nullsDistinct: true)
+}
+
+model Webhook {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  enabled Boolean @default(true)
+  events String[]
+  secret String @default("")
+  template String?
+  updatedAt DateTime @map("updated_at")
+  url String
+  @@unique([url])
+}

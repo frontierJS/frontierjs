@@ -15,7 +15,7 @@ title: Order
   import { orderLines }    from '../../resources/OrderLine.mesa'
   import { payments }      from '../../resources/Payment.mesa'
   import { paymentEvents } from '../../resources/PaymentEvent.mesa'
-  import { session } from '../../session.js'
+  import { session } from '@/session.js'
   import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'

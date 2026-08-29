@@ -7,8 +7,17 @@ import 'virtual:sierra'
 // defines a colour, a radius or a spacing scale of its own.
 import '@frontierjs/css'
 
+import { getClient }    from '@frontierjs/sierra/junction'
+import { useCartClient } from './cart.js'
+
 import { mount } from '@frontierjs/mesa/runtime'
 import App from './App.mesa'
+
+// The basket takes its client rather than importing one, so that the same store
+// can run on the storefront — where importing sierra's junction module into an
+// island hangs the prerender (`FJS-550`). Here it is the app-wide singleton
+// `virtual:sierra` built on the line above.
+useCartClient(getClient)
 
 // mount()'s first argument is an anchor NODE, not an element id — Mesa inserts
 // the component immediately after it, so the anchor must already be in the tree.

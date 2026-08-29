@@ -3,6 +3,7 @@
  */
 
 import { describe, test, it, expect } from 'vitest'
+import { resolve } from 'path'
 import { createSierraViteConfig } from '../src/build/index.js'
 
 // We test the config shape, not Vite internals
@@ -56,12 +57,39 @@ describe('createSierraViteConfig', () => {
     )
   })
 
-  test('applies @ alias pointing to src/', () => {
+  // `@` is contributed by a plugin, not by the returned object. The base is the
+  // VITE ROOT, and the app's own vite.config.js sets that after spreading this
+  // — so a value baked in here could only ever be a guess at the cwd, which is
+  // the app root whenever a dev script is typed there (`vite -c web/config/…`)
+  // and therefore points at a directory that does not exist.
+  test('@ is not baked into the returned config', () => {
     const cfg = createSierraViteConfig({ target: 'spa' })
-    const alias = cfg.resolve?.alias
-    expect(alias).toBeDefined()
-    expect(alias['@']).toBeDefined()
-    expect(alias['@']).toContain('src')
+    expect(cfg.resolve?.alias?.['@']).toBeUndefined()
+  })
+
+  test('the alias plugin resolves @ against the vite root, not the cwd', () => {
+    const cfg = createSierraViteConfig({ target: 'spa' })
+    const plugin = cfg.plugins.flat().find((p) => p?.name === 'sierra:app-alias')
+    expect(plugin).toBeDefined()
+
+    const contributed = plugin.config({ root: '/apps/shop/web' })
+    expect(contributed.resolve.alias['@']).toBe(resolve('/apps/shop/web', 'src'))
+    expect(contributed.resolve.alias['@']).not.toContain(process.cwd())
+  })
+
+  test('the alias plugin falls back to the cwd when no root is set', () => {
+    const cfg = createSierraViteConfig({ target: 'spa' })
+    const plugin = cfg.plugins.flat().find((p) => p?.name === 'sierra:app-alias')
+    expect(plugin.config({}).resolve.alias['@']).toBe(resolve(process.cwd(), 'src'))
+  })
+
+  test('the island build gets the alias too', () => {
+    // The island bundle is a SECOND vite build with its own plugin instances,
+    // handed `root` explicitly. Without the plugin in that list an island's
+    // `@/api.js` resolves in the page and not in the chunk that hydrates it.
+    const cfg = createSierraViteConfig({ target: 'static' })
+    const post = cfg.plugins.flat().find((p) => p?.name === 'sierra:postbuild')
+    expect(post).toBeDefined()
   })
 
   test('spa: outDir defaults to dist/client', () => {

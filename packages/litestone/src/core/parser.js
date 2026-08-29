@@ -1969,6 +1969,41 @@ class Parser {
         this.eat(TK.RPAREN)
         return { kind: 'uniqueIndex', fields, nullsDistinct }
       }
+      // @@arc([orderId, productId])                  — exactly one is set
+      // @@arc([orderId, productId], optional: true)  — at most one is set
+      //
+      // An exclusive arc: several optional foreign keys, of which one applies.
+      // The answer to "this row points at an Order OR a Product" that keeps a
+      // real FK, a real cascade and a real include — where a polymorphic
+      // (typeName, id) pair keeps none of the three and the database cannot
+      // refuse a dangling one.
+      //
+      // Emitted as a table CHECK counting the non-null members, so it holds for
+      // a migration, a seed, an atomic operator and for asSystem(), which drops
+      // the gate and every row policy and cannot drop a CHECK.
+      case 'arc': {
+        this.eat(TK.LPAREN)
+        const fields = this.parseFieldList()
+        let optional = false
+        let message  = undefined
+        while (this.maybeEat(TK.COMMA)) {
+          const argName = this.eat(TK.IDENT).value
+          this.eat(TK.COLON)
+          if (argName === 'optional') {
+            if (!this.check(TK.BOOL))
+              throw new ParseError(`@@arc(optional: …): expected true or false`, this.peek())
+            optional = this.eat(TK.BOOL).value === true
+          } else if (argName === 'message') {
+            if (!this.check(TK.STRING))
+              throw new ParseError(`@@arc(message: …): expected a string`, this.peek())
+            message = this.eat(TK.STRING).value
+          } else {
+            throw new ParseError(`@@arc: unknown argument '${argName}' — expected 'optional' or 'message'`, this.peek())
+          }
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'arc', fields, optional, message }
+      }
       case 'strict':   return { kind: 'strict' }    // legacy explicit opt-in
       case 'noStrict': return { kind: 'noStrict' }  // opt-out from default strict
       case 'fts': {
@@ -3700,14 +3735,24 @@ function validate(schema) {
       const _relHasFields    = field.attributes.some(a => a.kind === 'relation' && a.fields)
       const isImplicitM2M    = field.type.array && modelNames.has(field.type.name) && !_relHasFields
       const isFromField      = field.attributes.some(a => a.kind === 'from')
+      // The non-owning side of a one-to-one: `b B?` where B holds the FK. It
+      // carries no @relation and no column, exactly like the plural hasMany
+      // back-reference above, and is paired the same way below. Without this it
+      // failed the type check and was reported as `unknown type 'B'` for a model
+      // that is registered, which sends the reader hunting a missing model
+      // (FJS-563).
+      const isBackRefOne = !field.type.array && modelNames.has(field.type.name)
+        && !isRelationField && !isFromField
       const validType = allTypes.has(field.type.name)
         || (isRelationField && modelNames.has(field.type.name))
         || isImplicitM2M
+        || isBackRefOne
         || (isFromField && modelNames.has(field.type.name))  // @from last/first return model objects
       if (!validType)
         errors.push(`Model '${model.name}', field '${field.name}': unknown type '${field.type.name}'`)
       if (isRelationField) field.type.kind = 'relation'
       if (isImplicitM2M)   field.type.kind = 'implicitM2M'   // wins over name-only @relation
+      if (isBackRefOne)    field.type.kind = 'backRefOne'
 
       // Fix up scalar vs enum kind now that we know all enum names
       if (enumNames.has(field.type.name)) field.type.kind = 'enum'
@@ -4424,6 +4469,53 @@ function validate(schema) {
     }
   }
 
+  // ── @@arc validation ────────────────────────────────────────────────────────
+  //
+  // The constraint is derived from the member list rather than typed, so the
+  // failure this catches is a renamed or mistyped column: a hand-written
+  // @@check naming a column that is gone is a string nothing validates, and
+  // SQLite reports it at migration time against a table the author is no longer
+  // looking at.
+  //
+  // A REQUIRED member is refused because it makes the arc unsatisfiable or
+  // meaningless — two required members can never sum to one, and one required
+  // member among optionals is a column that is always the answer.
+  for (const model of schema.models) {
+    for (const a of model.attributes) {
+      if (a.kind !== 'arc' || !Array.isArray(a.fields)) continue
+
+      if (a.fields.length < 2) {
+        errors.push(
+          `Model '${model.name}': @@arc([${a.fields.join(', ')}]) needs at least two members — ` +
+          `an arc is a choice between columns, and with one there is nothing to choose. ` +
+          `Make the column required, or write the rule as @@check`)
+        continue
+      }
+
+      const seen = new Set()
+      const dupes = a.fields.filter(n => seen.size === seen.add(n).size)
+      if (dupes.length)
+        errors.push(
+          `Model '${model.name}': @@arc([${a.fields.join(', ')}]) names ` +
+          `${[...new Set(dupes)].map(n => `'${n}'`).join(', ')} more than once`)
+
+      // An unknown member is already reported by the generic model-attribute
+      // field-ref check, which covers every @@attr carrying a `fields` array.
+      // Skip rather than restate it — and skip so the required test below does
+      // not also report a column that is not there.
+      if (a.fields.some(n => !model.fields.find(f => f.name === n))) continue
+
+      const required = a.fields.filter(n => !model.fields.find(f => f.name === n)?.type.optional)
+      if (required.length) {
+        const many = required.length > 1
+        errors.push(
+          `Model '${model.name}': @@arc([${a.fields.join(', ')}]) cannot be enforced — ` +
+          `${required.map(n => `'${n}'`).join(', ')} ${many ? 'are' : 'is'} required, and a member that is ` +
+          `always set is always the answer. Make ${many ? 'them' : 'it'} optional`)
+      }
+    }
+  }
+
   // ── @allow (field-level) validation ─────────────────────────────────────────
   for (const model of schema.models) {
     for (const field of model.fields) {
@@ -4855,6 +4947,72 @@ function validate(schema) {
       if (ends.length > 2) {
         errors.push(`Many-to-many relation ${label ? `"${label}"` : '(unlabeled)'} between '${model.name}' and '${targetModel.name}' has ${ends.length} array fields (${ends.join(', ')}) — exactly two are allowed. Use distinct @relation("name") labels.`)
       }
+    }
+  }
+
+  // Pair each unlabelled one-to-one back-reference with the FK that points at
+  // it. Same rule as the plural back-reference above; the difference is that a
+  // plural one with no FK is an implicit m2m candidate and a singular one has
+  // no such fallback, so it is an error naming what is missing (FJS-563).
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (field.type.kind !== 'backRefOne') continue
+      const targetModel = schema.models.find(m => m.name === field.type.name)
+      if (!targetModel) continue   // already reported by the type check
+
+      const owners = targetModel.fields.filter(f => {
+        const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
+        return rel && f.type.name === model.name && (rel.name ?? null) === null
+      })
+
+      if (owners.length === 1) {
+        const owner = owners[0]
+        const rel   = owner.attributes.find(a => a.kind === 'relation' && a.fields)
+        const cols  = rel.fields ?? []
+        // A back-reference that is singular has to READ as singular. If the
+        // foreign key is not unique, many rows point back and the field would
+        // answer one of them arbitrarily — so it is a hasMany written as a
+        // to-one, and saying nothing makes that a silently wrong read.
+        const unique = cols.length > 0 && cols.every(c => {
+          const col = targetModel.fields.find(f => f.name === c)
+          // A primary key is unique by definition, and a one-to-one keyed on
+          // its own foreign key is an ordinary way to write one.
+          if (col?.attributes.some(a => a.kind === 'unique' || a.kind === 'id')) return true
+          // A model-level @@unique parses as 'uniqueIndex'; the field-level one
+          // above is 'unique'. The column set must match exactly — unique on
+          // (a, b) says nothing about a on its own.
+          return targetModel.attributes.some(a =>
+            a.kind === 'uniqueIndex' && Array.isArray(a.fields) &&
+            a.fields.length === cols.length && cols.every(x => a.fields.includes(x)))
+        })
+        if (!unique) {
+          errors.push(
+            `Model '${model.name}', field '${field.name}': '${targetModel.name}.${owner.name}' is not unique, ` +
+            `so many '${targetModel.name}' rows can point back — write '${field.name} ${targetModel.name}[]' for a to-many, ` +
+            `or add @unique to '${targetModel.name}.${cols.join(', ')}' for a one-to-one.`
+          )
+          continue
+        }
+        field.type.kind = 'relation'
+        continue
+      }
+
+      if (owners.length === 0) {
+        const labelled = targetModel.fields.some(f =>
+          f.attributes.some(a => a.kind === 'relation' && a.fields && a.name) && f.type.name === model.name)
+        errors.push(
+          `Model '${model.name}', field '${field.name}': '${targetModel.name}' declares no unlabelled @relation back to '${model.name}'. ` +
+          (labelled
+            ? `It has a LABELLED one — put the same @relation("name") on this field.`
+            : `Add the foreign key on '${targetModel.name}', or a @relation("name") label on both sides.`)
+        )
+        continue
+      }
+
+      errors.push(
+        `Model '${model.name}', field '${field.name}': '${targetModel.name}' has ${owners.length} unlabelled @relation fields ` +
+        `pointing at '${model.name}' (${owners.map(o => o.name).join(', ')}) — label them with @relation("name") to say which one this pairs with.`
+      )
     }
   }
 

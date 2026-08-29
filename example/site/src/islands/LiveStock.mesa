@@ -22,7 +22,7 @@
 -->
 <script>
   import { createJunctionClient } from '@frontierjs/junction/client'
-  import { clientOptions }        from '../api.js'
+  import { clientOptions }        from '@/api.js'
 
   let state    = 'loading'   // loading | ready | offline
   let live     = []
@@ -44,6 +44,7 @@
       // VARIANTS, not products: "can this be ordered today" is a question
       // about a shelf, and a product family has no stock of its own.
       live  = await client.service('product-variants').findData({}, { limit: 500 })
+      console.log(live)
       state = 'ready'
     } catch {
       // A static page must survive its API being down: it is still a

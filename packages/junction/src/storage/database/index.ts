@@ -43,7 +43,9 @@ const PRODUCTION_PRAGMAS = [
   'PRAGMA journal_mode = WAL',     // concurrent reads + no write blocking
   'PRAGMA synchronous  = NORMAL',  // safe with WAL, much faster than FULL
   'PRAGMA foreign_keys = ON',      // enforce referential integrity
-  'PRAGMA busy_timeout = 5000',    // wait 5s before SQLITE_BUSY instead of failing
+  'PRAGMA busy_timeout = 5000',    // wait 5s for another PROCESS's write lock rather than
+                                   // failing; `pragmas: ['PRAGMA busy_timeout = N']` overrides it,
+                                   // since these run first (`FJS-569`)
   'PRAGMA cache_size   = -32000',  // 32 MB page cache (negative = KB)
   'PRAGMA temp_store   = MEMORY',  // temp tables in RAM
 ]

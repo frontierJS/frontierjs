@@ -57,6 +57,8 @@ import { resolve, dirname, join, relative } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { pathToFileURL } from 'url'
+import { appSrcDir } from './app-alias-plugin.js'
+import { explainModuleInitFailure } from './warnings.js'
 import {
   installSchemas, createReadRecorder, checkRoute,
   declaredPublishLevel, formatReport,
@@ -279,6 +281,12 @@ export async function prerenderRoutes(opts) {
 
   const routesDirAbs = resolve(root, routesDir)
   const outDirAbs    = resolve(root, outDir)
+  // The same `@` Vite resolves in the client bundle. A prerender compiles a page
+  // and imports it under Node, which resolves a bare specifier as a package — so
+  // a page that builds and runs in the browser dies here with "Cannot find
+  // package '@'" unless the renderer is told. One base (appSrcDir), two
+  // resolvers; see build/app-alias-plugin.js.
+  const alias = { '@': appSrcDir(root) }
   const written = []
   // The URLs those files answer at. A dynamic route's pages exist only because
   // getStaticPaths() named them, so the route TABLE cannot list them — it
@@ -326,7 +334,7 @@ export async function prerenderRoutes(opts) {
     try {
       targets = await pathsForRoute(node, root)
     } catch (err) {
-      skipped.push({ route: node.id, reason: `getStaticPaths() threw: ${err.message}` })
+      skipped.push({ route: node.id, reason: `getStaticPaths() threw: ${explainModuleInitFailure(err.message, node.file)}` })
       continue
     }
     if (targets.length === 0) {
@@ -362,7 +370,7 @@ export async function prerenderRoutes(opts) {
         try {
           data = await mod.load({ params, fetch: makeBuildFetch(node.id), url: urlPath })
         } catch (err) {
-          skipped.push({ route: urlPath, reason: `load() threw: ${err.message}` })
+          skipped.push({ route: urlPath, reason: `load() threw: ${explainModuleInitFailure(err.message, node.file)}` })
           continue
         }
       }
@@ -383,6 +391,7 @@ export async function prerenderRoutes(opts) {
           // <style id> per component, so Mesa must not also prepend the whole
           // lot as one anonymous blob — that is the same CSS twice on the page.
           styleTag: false,
+          alias,
           // Temp modules land in the app's tree, not Mesa's package root, so a
           // rendered layout's bare imports resolve from the app's node_modules.
           // Without this, `import { page } from '@frontierjs/sierra/router'` in
@@ -390,7 +399,7 @@ export async function prerenderRoutes(opts) {
           ...(tmpDir ? { tmpDir } : {}),
         })
       } catch (err) {
-        skipped.push({ route: urlPath, reason: `render failed: ${err.message}` })
+        skipped.push({ route: urlPath, reason: `render failed: ${explainModuleInitFailure(err.message, node.file)}` })
         continue
       }
 

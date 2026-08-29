@@ -270,6 +270,31 @@ try {
     saysMailHalf: failed.error.startsWith('announce-payment: email:'),
   } : { missing: true })
 
+  // ── the inbox ───────────────────────────────────────────────────────────
+  // The sink's own viewer. An email is the one thing in an app nobody looks at,
+  // and a page nobody opens is a page that breaks quietly — so the two routes
+  // that make it reachable are asserted here rather than trusted. No browser:
+  // this drive has none and should not grow one. That the page RENDERS is a
+  // separate question and was answered by hand against a real Chrome.
+  const page = await fetch(`${SINK}/`)
+  const html = page.ok ? await page.text() : ''
+  const sent = await (await fetch(`${SINK}/outbox`)).json()
+  const one  = sent[0]
+  const raw  = one ? await fetch(`${SINK}/outbox/${one.id}/html`) : null
+  t('inbox.isServed', {
+    status:      page.status,
+    isHtml:      (page.headers.get('content-type') ?? '').startsWith('text/html'),
+    // The body goes in an iframe so an email's own <style> cannot restyle the
+    // inbox around it. Named here because losing it looks like nothing.
+    isolatesTheBody: html.includes('srcdoc'),
+  })
+  t('inbox.servesOneMessageRaw', raw ? {
+    status:   raw.status,
+    isHtml:   (raw.headers.get('content-type') ?? '').startsWith('text/html'),
+    isTheMail: (await raw.text()).length > 0,
+    missing:  (await fetch(`${SINK}/outbox/no-such-id/html`)).status,
+  } : { noMailToCheck: true })
+
   await fetch(`${API}/api/orders/${secondId}`, { method: 'DELETE', headers: admin })
 } catch (e) {
   console.error('\nThe drive threw:', e.message)
@@ -326,6 +351,9 @@ const expected = {
   'mail.providerOutageIsRetried': {
     status: 'pending', namesTheKind: true, saysMailHalf: true,
   },
+
+  'inbox.isServed':          { status: 200, isHtml: true, isolatesTheBody: true },
+  'inbox.servesOneMessageRaw': { status: 200, isHtml: true, isTheMail: true, missing: 404 },
 }
 
 let failed = 0

@@ -5,7 +5,7 @@
 // declarations an FJS app would carry: a gate ladder per model, @@softDelete
 // where the table had a deleted_at column, @version where it had a version one.
 //
-// A SCALE FIXTURE, not a design. 188 models, 1909 columns, 295 relations,
+// A SCALE FIXTURE, not a design. 188 models, 1910 columns, 295 relations,
 // 10 implicit many-to-many pairs. Nothing here is a claim about how an MRP should
 // be modelled, and four things about it are the converter rather than the source:
 //

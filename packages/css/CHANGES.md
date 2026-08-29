@@ -1,5 +1,46 @@
 # Changes — @frontierjs/css
 
+## 2026-08-27 — the default theme carries a ramp, a ground and an elevation
+
+`theme-default` was seven colours, every one of them the value `tokens.css`
+already declares at `:root`. So the theme that every app boots into was a no-op,
+and what an unstyled FrontierJS app looked like was decided entirely by the
+package defaults — which are tuned to be neutral, not to be a design.
+
+Measured on `example/`: white cards on a `#f5f5f5` page separated by a `#e7e3d8`
+hairline. The rules are WARM and the surfaces are NEUTRAL GREY, which is the
+mismatch that reads as unfinished; `--app-bg` fell back to `--surface-sunken`,
+so the page, the table head and every inset well were one colour and a Card had
+nothing but that hairline holding it off the page; and `--surface-shadow: none`
+meant the Block tier was flat against it.
+
+The theme carries the whole neutral ramp now, three grounds rather than two, the
+elevation, the radii and the heading weight — **and it is still tokens and no
+selector**, which is the contract. `--ink-mute` is the one value fitted by hand:
+it is the lightest rung of the ramp and still body text at 11–13px, so it is
+`--color-muted` scaled uniformly in linear RGB — chromaticity exact — to 5.19:1
+on `--surface` and 4.61:1 on `--app-bg`, the deepest of the three grounds.
+
+`--text-4xl` comes down one rung, to 2rem. It is h1 and nothing else in the
+package reads it; at 36px in near-black it was the heaviest thing on a screen
+whose job is to show data. The reading rungs below it are untouched — moving
+those is a house voice, which is what `press.css` is for.
+
+**The suite found the thing this change was always going to find.** Six specs
+asserted a package default — a flat resting Card, an unset
+`--heading-font-weight`, `--app-bg` falling back — while rendering inside
+`<body class="theme-default">`, and two more read a token off
+`document.documentElement` and compared it to an element that inherits the
+theme from `<body>`. Every one of them was true only because the theme set
+nothing `:root` did not. The suite's page carries no theme class now, so a
+claim about the defaults is a claim about the defaults; the themes are still
+graded explicitly, and `contrast.spec.js` sweeps all ten. The same read in
+`@frontierjs/ui`'s palette and datepicker drives is fixed the other way — those
+fixtures are an app and keep their theme, so the token is read off `body`.
+
+All 470 assertions pass, contrast included: 96 across ten themes × seven tones ×
+three jobs.
+
 ## 2026-08-18 — a button and a form control are one height, off one token
 
 Same font-size, same line-height, same border — different vertical padding. A

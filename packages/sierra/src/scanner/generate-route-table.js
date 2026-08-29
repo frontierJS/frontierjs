@@ -125,6 +125,54 @@ export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/
     })
     .join('\n')
 
+  // ── Static routes in dev ─────────────────────────────────────────────────
+  //
+  // A prerendered route's `load()` is build-time by definition and its
+  // companion may never enter the browser graph — that is the paragraph above
+  // and it does not move. What it leaves is a dev server showing nothing, which
+  // is the correct answer to the wrong question: the page is not empty because
+  // the query found nothing, it is empty because nobody asked.
+  //
+  // So the loader runs where it already runs — in NODE, on the dev server, at
+  // `/__sierra/static-data` (build/static-data-plugin.js) — and the browser
+  // gets JSON. The shim below is a `fetch`, deliberately not an `import`: an
+  // import is what published a storefront's database client (`FJS-543`), and a
+  // fetch cannot, whatever the companion pulls in.
+  //
+  // Dev only, and doubly so: these entries are emitted only when the scanner is
+  // running under `serve`, and each is guarded by `import.meta.env.DEV` as well,
+  // so a table written by a dev run and then bundled by a build carries nothing.
+  const devStaticNodes = opts.devStaticData
+    ? routeNodes.filter(n => n.companion && n.meta?.render === 'static')
+    : []
+  const devStaticEntries = devStaticNodes
+    .map(n => `  '${n.id}': () => __sierraDevStatic('${n.id}'),`)
+    .join('\n')
+
+  // `head()` lives in the companion too, and the router asks for it AFTER
+  // load() — so the one response carries both and the shim hands back what it
+  // was told. A navigation that took the prefetch cache never calls load(),
+  // so head is null there and the title falls back to frontmatter, which is
+  // what a route with no head() gets anyway.
+  const devStaticShim = devStaticNodes.length
+    ? `
+function __sierraDevStatic(routeId) {
+  let answered = null
+  return Promise.resolve({
+    async load({ params, url }) {
+      const q = new URLSearchParams({ route: routeId, url, params: JSON.stringify(params ?? {}) })
+      const res = await fetch('/__sierra/static-data?' + q)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? ('static-data ' + res.status))
+      answered = body
+      return body.data
+    },
+    head: () => answered?.head ?? null,
+  })
+}
+`
+    : ''
+
   // Build layouts map — unique layout files used across all routes.
   // Keyed by file path (same value as node.layout in the tree).
   // Loaded eagerly on initRouter so resolveChain() can always find layout components.
@@ -155,10 +203,12 @@ export function renderRouteTable(tree, projectRoot = '.', tableOutput = 'config/
     componentEntries,
     `}`,
     ``,
+    devStaticShim,
     `// Loader factory map — routes with a .meta.js companion`,
     `// Only populated for routes that have a companion file`,
     `export const loaders = {`,
     loaderEntries,
+    devStaticEntries,
     `}`,
     ``,
     `// Layout factory map — keyed by file path (same as node.layout in the tree).`,

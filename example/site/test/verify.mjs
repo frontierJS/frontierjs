@@ -565,7 +565,7 @@ const expected = {
   'lazy.beforeScroll':     ['CatalogList'],
   'lazy.afterScroll':      ['CatalogList', 'LiveStock'],
 
-  'home.featured':         3,
+  'home.featured':         6,
   'home.noJavaScriptNeeded': { apiCalls: 0, headings: 1 },
   'consoleErrors':         [],
 }

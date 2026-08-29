@@ -155,6 +155,15 @@ ${serverLine}
     user: 'deploy',              // SSH user on the server
     path: '/apps/${appId}',      // deploy root on the server
     app_id: '${appId}',
+    // transport: 'ssh',         // inferred from the server name; 'local' runs
+    //                           // the same scripts here, which is what a
+    //                           // localhost server already gets
+
+    // Where the image is BUILT. Absent, it is built on the api target — which
+    // means dev, stage and production each build their own bytes and no two can
+    // be shown to be one artefact. Name a machine here and it is built once and
+    // shipped (docker save | docker load), so one digest serves them all.
+    // builder: { server: 'build.your-app.com', path: '/apps/${appId}' },
 
     api: {
       port:       3000,
@@ -245,7 +254,17 @@ if (existsSync(dockerignorePath)) {
     '!.env.example',
     'node_modules',
     'web/',
-    'db/*.db',
+    // `**/` and every SQLite sidecar, and both halves are measured. A plain `*`
+    // does not cross a separator (`FJS-555`), so `db/*.db` protects one directory
+    // and nothing under it — and `*.db` alone never matched `app.db-wal`, so the
+    // running app's write-ahead log was copied into every image after the first.
+    // That is one deployment's live data in the artefact, and it moved the image
+    // digest on every deploy, which made an unchanged redeploy a new Release.
+    '**/*.db',
+    '**/*.db-wal',
+    '**/*.db-shm',
+    '**/*.sqlite',
+    '**/*.sqlite3',
     'db/backups/',
     'dist/',
     '*.test.ts',

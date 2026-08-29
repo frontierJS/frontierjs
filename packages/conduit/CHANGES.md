@@ -1,5 +1,56 @@
 # Changes — @frontierjs/conduit
 
+## 2026-08-27 — a target declares how its bodies are encoded
+
+`FJS-556`. 204 tests, 0 fail. Typecheck clean.
+
+Every outbound body was `JSON.stringify`d and there was no way past it, so
+conduit could not speak to a form-encoded API at all — Stripe, PayPal, Twilio,
+every OAuth token endpoint. Not one vendor being unusual: it is most of the
+payment world.
+
+The shape it replaced is worse than a plain gap. `Content-Type` was already
+overridable, because `...req.headers` is spread after the `application/json`
+default — so a caller could set `application/x-www-form-urlencoded` and have the
+bytes still be JSON. The request looked configured and was not. Passing a
+pre-encoded string did not help either: `JSON.stringify('amount=500')` is
+`"amount=500"`, quotes included.
+
+`encoding: 'json' | 'form'` on the **target**, defaulting to `json`. On the
+target rather than the call because it is a fact about who is on the other end;
+a provider wanting both would be a second target, which is also how its
+credentials differ.
+
+**In the transport and nowhere else.** `rawBody` is the same string handed to
+`buildAuthHeaders`, which hashes it — so an encoder living in a caller or in a
+connector package would sign bytes the transport did not send, and every signed
+form request would fail as an invalid credential. There is a test for exactly
+that, with the JSON the body would have been as its negative control.
+
+**`transports/encode.ts` is the owner**, and it does not reuse
+`@frontierjs/toolbelt/query`, which also emits bracket notation. That module is
+Invariant 10's grammar — a wire format designed to round-trip back through
+`parseValue` — so it quotes a string that looks like a number (`"5"`), writes
+`null` as four letters, and marks an array `k[]`. A provider reads all three
+literally. Same punctuation, different language.
+
+Arrays are INDEXED (`items[0][price]`) rather than `items[]`, because `items[]`
+cannot express two fields of one item: two `items[][price]` pairs are
+indistinguishable from one item with two prices, and a list of objects is the
+ordinary shape here. `undefined` is dropped and `null` is sent as an empty
+value, since form encoding has no null and empty is what a provider reads as
+*clear this* — dropping it would silently turn a clear into a leave-alone.
+
+Six tests over the encoder and five over a real socket, including the signature
+one above and a body that will not encode, which is reported as
+`invalid_request` with nothing sent.
+
+**What is NOT here is a connector to any named vendor** (`FJS-D153`). Conduit
+owns the mechanism; a connector owns the vendor's paths, payload shapes and
+webhook signature scheme. The first one — Stripe — lives in
+`example/api/src/core/stripe.ts` and moves to `@frontierjs/conduit-stripe` when a
+second exists to argue with it.
+
 ## 2026-08-19 — the HMAC scheme has one owner (`FJS-349`)
 
 193 tests, 0 fail.

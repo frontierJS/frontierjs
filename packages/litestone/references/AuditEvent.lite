@@ -1,0 +1,100 @@
+/// Who did what to which row, kept.
+///
+/// ─── This is NOT `@@log(audit)`, and the difference is the point ──────────
+///
+/// `@@log(audit)` records a WRITE — litestone's own trail, into a declared
+/// `database audit` block, with `@encrypted`/`@guarded`/`@secret` columns
+/// redacted (Invariant 7). It is free, it is complete, and it can only ever see
+/// writes.
+///
+/// This model is for the events that are NOT writes to a model. A sign-in is
+/// not a write to `User`. A FAILED sign-in is not a write at all. An export, a
+/// permission grant that was refused, a webhook that was replayed — nothing the
+/// logger can see names the actor or the attempt.
+///
+/// `db.$audit({ operation, model?, records?, actorId?, meta? })` is the other
+/// half and needs no model: it writes into litestone's own trail by hand. Reach
+/// for THIS model instead when the trail has to be a first-class read — a
+/// screen with a filter and a window over it, a retention different from the
+/// logger's, or rows an app queries rather than an operator greps. basecamp has
+/// the one instance, and that is exactly why: `verify:screens` renders it, 50
+/// rows with a cursor.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `before` and `after`.** `diff` is one column, because the pair invites
+/// storing whole rows and a whole row contains the columns Invariant 7 exists to
+/// redact. A diff is authored by the writer, who knows what may be recorded.
+///
+/// **No `ip` or `userAgent`.** They belong to a REQUEST and most rows here are
+/// not written by one — a job, a cron fire, a replay. An app that wants them
+/// puts them in `meta`, where their absence is not a lie.
+model AuditEvent {
+  id           String     @id @default(uuid())
+
+  /// The tenant, where there is one. Nullable and NOT a relation: this file
+  /// declares no tenant model. Wire it in your own schema, and note the
+  /// nullability is load-bearing rather than lazy — an event about the
+  /// installation itself (a sysadmin acting across tenants, a boot-time
+  /// migration) belongs to no tenant.
+  ///
+  /// Under `strategy row` a nullable tenant column means a row belonging to no
+  /// tenant, which every tenant then reads. That is correct here and is the one
+  /// place it is: the gate below is 5 for read and the rows are the operator's.
+  /// Say it out loud with `@@tenant(none)` and an explicit policy rather than
+  /// leaving the column nullable and hoping.
+  workspaceId  String?
+
+  /// Who. Nullable because the actor may be the application itself — a job, a
+  /// cron fire, `createApp({ system })` resolving to nobody. A plain column, not
+  /// a relation: an actor may be a deleted user, and a foreign key would either
+  /// refuse the write or take the history with the row.
+  actorId      String?
+
+  /// What KIND of actor, because an id alone cannot say. A user, a machine, an
+  /// API key, the system. Defaulted rather than nullable so a row always
+  /// answers.
+  actorType    String     @default("user")
+
+  /// The verb. A string and not an enum, for `Notification.type`'s reason: the
+  /// set lives in application code and an enum makes every new one a migration.
+  action       String
+
+  /// Which row it was done to — the polymorphic subject, a type name and a key,
+  /// because it points at a different model per row and a foreign key names one
+  /// table.
+  ///
+  /// **This spelling is the catalogue's preference for anything new.**
+  /// `Notification` in this tree spells the same idea
+  /// `contextType`/`contextId`, because its package chose first. Two spellings,
+  /// one concept, and neither is wrong — see references/README.md.
+  ///
+  /// Required here where a notification's is optional: an audit row with no
+  /// subject records that something happened to nothing.
+  subjectType  String
+  subjectId    String
+
+  /// What changed, authored by the writer rather than captured. Nullable: a
+  /// sign-in changes nothing and still belongs here.
+  ///
+  /// **Nothing redacts this.** It is yours, so do not put a secret in it — the
+  /// same rule `$audit`'s own `meta` carries.
+  diff         Json?
+
+  createdAt    DateTime   @default(now())
+
+  /// Read 5 · create 8 · update 9 · delete 9.
+  ///
+  /// Append-only, and LOCKED rather than SYSTEM for the two that would edit
+  /// history: a trail `asSystem()` can rewrite is not a trail. 9 is how that is
+  /// spelt for every caller including the application itself.
+  ///
+  /// Read at 5 is an administrator. Lower it with a policy if the product shows
+  /// people their own activity; do not lower the gate.
+  @@gate("5.8.9.9")
+
+  /// Two reads and they are different questions: the operator's feed for one
+  /// tenant, and *everything that ever happened to this row*.
+  @@index([workspaceId, createdAt])
+  @@index([subjectType, subjectId])
+}

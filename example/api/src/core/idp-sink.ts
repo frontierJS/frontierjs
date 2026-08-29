@@ -27,6 +27,7 @@
 
 import { createHash, randomBytes } from 'crypto'
 
+// dev/be/project 1/service 3 — see mail-sink.ts on where the number comes from.
 const PORT = Number(process.env.IDP_SINK_PORT ?? 8113)
 
 const CLIENT_ID     = process.env.IDP_CLIENT_ID     ?? 'dev-idp-client'

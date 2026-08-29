@@ -53,17 +53,16 @@ const appId     = deployConf.app_id ?? path.split('/').pop()
 const container = `${appId}-api`
 const host      = `${user}@${server}`
 
-// Check SSH
-try {
-  context.exec({ command: `ssh -o ConnectTimeout=5 -o BatchMode=yes ${host} "echo ok" > /dev/null` })
-} catch {
+// Check the machine, then the container
+const machine = machineFor(context, host, path, deployConf.transport)
+
+if (!machine.reach()) {
   log.error(`Cannot reach ${host}`)
   return
 }
 
-// Check container exists
 try {
-  context.exec({ command: `ssh ${host} "docker inspect ${container} > /dev/null 2>&1"` })
+  machine.run(`docker inspect ${container} > /dev/null 2>&1`)
 } catch {
   log.error(`Container '${container}' is not running on ${host}`)
   log.info(`Check status with: fli deploy:status${flag.production ? ' --production' : flag.stage ? ' --stage' : ''}`)
@@ -72,10 +71,11 @@ try {
 
 const followFlag = flag.follow ? ' --follow' : ''
 const tailFlag   = ` --tail ${flag.tail}`
-const cmd        = `ssh ${host} "docker logs${followFlag}${tailFlag} ${container}"`
 
-log.info(`${container} on ${target} (${host})${flag.follow ? ' — streaming, Ctrl+C to stop' : ''}`)
+log.info(`${container} on ${target} (${machine.describe()})${flag.follow ? ' — streaming, Ctrl+C to stop' : ''}`)
 echo('')
 
-context.exec({ command: cmd })
+// `tty`, not `run`: --follow streams until Ctrl+C, so stdin has to stay the
+// terminal rather than carry a script.
+machine.tty(`docker logs${followFlag}${tailFlag} ${container}`)
 ```

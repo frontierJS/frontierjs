@@ -448,36 +448,29 @@ if (flag.remote) {
     const host = `${resolved.user}@${resolved.server}`
     const path = resolved.path
 
-    // SSH reachability — use BatchMode to avoid password prompts hanging
-    let sshOk = false
-    try {
-      context.exec({
-        command: `ssh -o ConnectTimeout=5 -o BatchMode=yes ${host} "echo ok" > /dev/null`,
-        stdio: 'pipe',
-      })
-      sshOk = true
-      renderCheck('SSH reachable', 'pass', `connected to ${host}`)
-    } catch {
-      renderCheck('SSH reachable', 'fail',
+    // Reachability — BatchMode, so a password prompt cannot hang the doctor.
+    const machine = machineFor(context, host, path, deployConf.transport)
+    const reachable = machine.reach()
+
+    if (reachable) {
+      renderCheck('Server reachable', 'pass',
+        machine.local ? 'local machine — no ssh' : `connected to ${host}`)
+    } else {
+      renderCheck('Server reachable', 'fail',
         `fix: ssh-copy-id ${host}  (or check that ${resolved.server} is correct)`)
       fail()
     }
 
-    if (sshOk) {
-      // Helper for remote probes — returns trimmed stdout, or '' on error.
-      const ssh = (cmd) => {
-        try {
-          const out = context.exec({
-            command: `ssh ${host} "${cmd}"`,
-            stdio: 'pipe',
-          })
-          return (out?.toString?.('utf8') ?? out ?? '').trim()
-        } catch { return '' }
+    if (reachable) {
+      // Probes — trimmed stdout, or '' on error.
+      const ask = (script) => {
+        try { return machine.capture(script) }
+        catch { return '' }
       }
 
       // Required server tools — the same list deploy:setup checks
       for (const tool of ['docker', 'nginx', 'git', 'bun', 'rsync']) {
-        const probe = ssh(`command -v ${tool} > /dev/null 2>&1 && echo ok`)
+        const probe = ask(`command -v ${tool} > /dev/null 2>&1 && echo ok`)
         if (probe === 'ok') {
           renderCheck(`${tool} on server`, 'pass')
         } else {
@@ -488,17 +481,17 @@ if (flag.remote) {
       }
 
       // Deploy directory exists
-      const pathExists = ssh(`[ -d "${path}" ] && echo ok`)
+      const pathExists = ask(`[ -d "${path}" ] && echo ok`)
       if (pathExists === 'ok') {
         renderCheck(`${path} exists on server`, 'pass')
 
         // Repo cloned at that path
-        const isRepo = ssh(`[ -d "${path}/.git" ] && echo ok`)
+        const isRepo = ask(`[ -d "${path}/.git" ] && echo ok`)
         if (isRepo === 'ok') {
           renderCheck(`${path} is a git repository`, 'pass')
 
           // Repo origin matches local
-          const remoteUrl = ssh(`cd ${path} && git config --get remote.origin.url`)
+          const remoteUrl = ask(`cd ${path} && git config --get remote.origin.url`)
           if (remoteUrl) {
             renderCheck('git remote configured', 'pass', remoteUrl)
           }
@@ -510,7 +503,7 @@ if (flag.remote) {
 
         // .env.production
         const envFile = deployConf.api?.env ?? `${path}/.env.production`
-        const envExists = ssh(`[ -f "${envFile}" ] && echo ok`)
+        const envExists = ask(`[ -f "${envFile}" ] && echo ok`)
         if (envExists === 'ok') {
           renderCheck(`${envFile} exists`, 'pass')
 
@@ -522,7 +515,7 @@ if (flag.remote) {
               .filter(l => l && !l.startsWith('#'))
               .map(l => l.split('=')[0].trim())
               .filter(Boolean)
-            const remoteContent = ssh(`cat "${envFile}"`)
+            const remoteContent = ask(`cat "${envFile}"`)
             const remoteKeys = new Set(
               remoteContent.split('\n')
                 .map(l => l.trim())
@@ -541,13 +534,13 @@ if (flag.remote) {
           }
         } else {
           renderCheck(`${envFile}`, 'fail',
-            `fix: scp .env.production ${host}:${envFile}  (or use fli env:set --remote)`)
+            `fix: ${machine.local ? `cp .env.production ${envFile}` : `scp .env.production ${host}:${envFile}`}  (or use fli env:set --remote)`)
           fail()
         }
 
         // Container state
         const container = `${appId}-api`
-        const containerStatus = ssh(`docker inspect ${container} --format '{{.State.Status}}' 2>/dev/null || echo absent`)
+        const containerStatus = ask(`docker inspect ${container} --format '{{.State.Status}}' 2>/dev/null || echo absent`)
         if (containerStatus === 'absent' || !containerStatus) {
           renderCheck(`${container}`, 'info', `not running — first deploy will create it`)
         } else if (containerStatus === 'running') {
@@ -558,10 +551,10 @@ if (flag.remote) {
         }
 
         // Stale lock
-        const lockContent = ssh(`cat ${path}/.deploy.lock 2>/dev/null`)
+        const lockContent = ask(`cat ${path}/.deploy.lock 2>/dev/null`)
         if (lockContent) {
           renderCheck('deploy lock', 'warn',
-            `lock present (${lockContent}) — clear with: ssh ${host} "rm ${path}/.deploy.lock"`)
+            `lock present (${lockContent}) — clear with: ${machine.local ? `rm ${path}/.deploy.lock` : `ssh ${host} "rm ${path}/.deploy.lock"`}`)
           warn()
         } else {
           renderCheck('deploy lock', 'pass', 'clear')
@@ -570,7 +563,7 @@ if (flag.remote) {
         // Litestream is OPTIONAL, so its absence is informational — but a
         // running one that cannot replicate is not informational, it is a
         // believed backup that does not exist. That grades as a failure.
-        const ls = litestreamStatus((cmd) => ssh(cmd) ?? '')
+        const ls = litestreamStatus((cmd) => ask(cmd) ?? '')
         if (!ls.running) {
           renderCheck('Litestream', 'info', 'not running on server (optional)')
         } else if (ls.supported === false) {

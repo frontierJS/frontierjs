@@ -78,7 +78,7 @@
     {...$attributes}
   >
     {#if leading}{@render leading?.()}{/if}
-    <slot />
+      <slot />
     {#if trailing}{@render trailing?.()}{/if}
   </a>
 {:else}

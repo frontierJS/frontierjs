@@ -9,13 +9,12 @@ skip: "!context.config.doWeb || context.config.deployConf.web === false"
 if (context.config.abort) return
 
 const { host, serverPath } = context.config
+const machine = machineFor(context, host, serverPath)
 
 // List releases newest-first — second entry is the previous release
-const listCmd = `ls -1dt ${serverPath}/releases/* 2>/dev/null | head -2`
 let releases = ''
 try {
-  const result = context.exec({ command: `ssh ${host} "${listCmd}"`, stdio: 'pipe' })
-  releases = result?.toString('utf8').trim() ?? ''
+  releases = machine.capture(`ls -1dt ${serverPath}/releases/* 2>/dev/null | head -2`)
 } catch {
   releases = ''
 }
@@ -35,10 +34,7 @@ const currName = current.split('/').pop()
 
 log.info(`Rolling web back: ${currName} → ${prevName}`)
 
-context.exec({
-  command: `ssh ${host} "ln -sfn ${previous} ${serverPath}/current && nginx -s reload"`,
-  dry: flag.dry,
-})
+machine.run(`ln -sfn ${previous} ${serverPath}/current && nginx -s reload`, { dry: flag.dry })
 
 context.config.webRolledBack = true
 log.success(`Web rolled back → releases/${prevName}`)

@@ -1,0 +1,95 @@
+/// Something that happened, addressed to one person, waiting to be seen.
+///
+/// ─── Where this shape comes from ──────────────────────────────────────────
+///
+/// `@frontierjs/notifications` writes this model and does not ship it.
+/// `drivers/inapp.ts` calls `asSystem().notification.create()` naming five
+/// columns — `userId`, `type`, `data`, `contextType`, `contextId` — against a
+/// hand-written structural type that is the only description of the shape
+/// anywhere. `example/db/schema.lite` has the one instance. So the columns below
+/// are not a proposal: five of them are already load-bearing, and an app that
+/// spells one differently gets a runtime failure inside the driver.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `title` and no `body`.** A notification is an EVENT plus a payload, and
+/// the words are rendered from `type` + `data` by the notification class at the
+/// moment of display — which is what lets one stored row be an email in English,
+/// a line in a dropdown, and a push in Spanish. Storing the sentence freezes all
+/// three at write time and makes a copy change a migration.
+///
+/// **No `channel` or `sentAt`.** Delivery is a TRANSPORT concern and a
+/// transport is not this row: the same notification fans out to in-app, email
+/// and push, so a delivery column here would be one of N answers. `FJS-D06` —
+/// in this framework a *channel* is junction's broadcast set, and the option
+/// that carries a delivery medium is `transports:`.
+///
+/// **No `dismissedAt` beside `readAt`.** Read and dismissed is a product
+/// decision, not a shape one; add it when a screen actually distinguishes them.
+model Notification {
+  id           Int       @id
+
+  /// The recipient, as a plain column and NOT a relation — this file declares
+  /// no identity model and cannot know yours. Wire it in your own schema:
+  ///
+  ///   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ///
+  /// The type follows your `User`'s key. `example` uses `String` because auth
+  /// mints uuids; an app on `Int @id` writes `Int`.
+  ///
+  /// The unit of address is a RECIPIENT rather than a user, and `id` is
+  /// optional in the package for that reason — a shop customer with no account
+  /// still gets an email. But a row keyed by an invented id is one nothing can
+  /// ever read, so the in-app driver refuses an id-less recipient by name, and
+  /// this column is therefore required.
+  userId       String
+
+  /// Which notification class this is. Not an enum: the set is declared in
+  /// application code, one class per type, and an enum here would mean a
+  /// migration every time somebody adds one.
+  type         String
+
+  /// The payload the class renders from. Everything the words need, captured at
+  /// the moment of the event — so a notification about an order that has since
+  /// been cancelled still reads correctly.
+  data         Json
+
+  /// Which row this is about — the polymorphic subject, as a type name and a
+  /// key rather than a relation, because it points at a different model per
+  /// row and a foreign key names one table.
+  ///
+  /// **Spelt `contextType`/`contextId` because the driver names those**, and
+  /// `AuditEvent` in this same tree spells the identical idea
+  /// `subjectType`/`subjectId`. The catalogue prefers `subject` for anything
+  /// new; here the package has already chosen, and a rename is a migration plus
+  /// a package change. See references/README.md.
+  ///
+  /// Nullable, both: a notification may be about nothing in particular.
+  contextType  String?
+  contextId    Int?
+
+  /// Null until seen. A timestamp rather than a boolean so *when* survives, and
+  /// because `readAt != null` reads the same as a flag anyway.
+  readAt       DateTime?
+
+  createdAt    DateTime  @default(now())
+
+  /// Read 0 · create 8 · update 4 · delete 8.
+  ///
+  /// Read at 0 is not a hole — it is 0 BECAUSE the two policies below do the
+  /// work, and a gate is the coarse floor. A stranger matches neither policy
+  /// and gets an empty list with a 200.
+  ///
+  /// Create at 8 says no caller writes one: a notification is the application
+  /// telling you something, and a person who can mint their own is a person who
+  /// can mint one for somebody else. The driver uses `asSystem()`.
+  ///
+  /// Update at 4 is marking it read — the one write a recipient makes, narrowed
+  /// to their own rows by the policy. Delete at 8 for the same reason as create.
+  @@gate("0.8.4.8")
+  @@allow('read',   userId == auth().id)
+  @@allow('update', userId == auth().id)
+
+  /// The list every screen asks for: this person's, newest first.
+  @@index([userId, readAt])
+}

@@ -31,7 +31,12 @@ const { listPage, createPage, editPage } = await import(resolve(HERE, '../core/c
 const { resourceFile } = await import(resolve(HERE, '../core/resource-template.js'))
 
 // The shape `fli make:scaffold` actually passes — see commands/make/scaffold.md.
-const imports  = [`import { orders } from '../../resources/Order.mesa'`]
+// Two imports off one file: the default export is the model's default form,
+// the named one is the accessor. Both, because the pages use both.
+const imports  = [
+  `import Order from '../../resources/Order.mesa'`,
+  `import { orders } from '../../resources/Order.mesa'`,
+]
 const basePath = '/orders/'
 const columns  = [{ key: 'reference', label: 'Reference' }, { key: 'total', label: 'Total' }]
 
@@ -42,11 +47,11 @@ const GENERATED = {
   }),
   'make:scaffold — create page': createPage({
     title: 'New Order', heading: 'New Order', submitLabel: 'Create Order',
-    backLabel: 'Back to list', basePath, imports, res: 'orders',
+    backLabel: 'Back to list', basePath, imports, res: 'orders', form: 'Order',
   }),
   'make:scaffold — edit page': editPage({
     title: 'Order', heading: 'Order', submitLabel: 'Save',
-    backLabel: 'All orders', deleteLabel: 'Delete', basePath, imports, res: 'orders',
+    backLabel: 'All orders', deleteLabel: 'Delete', basePath, imports, res: 'orders', form: 'Order',
   }),
   'make:resource — resource file': resourceFile('Order', 'orders'),
 }

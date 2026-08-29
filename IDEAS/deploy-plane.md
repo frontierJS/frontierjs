@@ -170,7 +170,31 @@ which turns "it passed locally" from an argument into a fact.
 
 **This is the build half of `release-transitions.md` 2.3b.** That row specifies a
 content-addressed Release as image ⨯ config values ⨯ secret references ⨯ schema
-version ⨯ declared pivot, and assumes the image term is well-defined. It is not yet.
+version ⨯ declared pivot, and assumes the image term is well-defined.
+
+**Shipped 2026-08-29, both halves.** The image term is defined: `01c-journal` is
+`04c-journal`, so the transition opens after the artefact exists and the digest
+is a term of the id. `deploy.builder` names the machine it is built on —
+defaulting to the api target, so an app declaring none is unchanged — and where
+that is not the target the bytes are shipped with `docker save | docker load`,
+which preserves the image ID. No registry, which is the strategy this section
+already argued for.
+
+What is NOT closed by it: under build-on-target the digest is an image ID, true
+on one host and meaningless on another, so *one artefact, many environments* is
+sayable only for an app that declares a builder. And the shipping path is proven
+at the argv level plus the property it rests on (a save/load round trip preserves
+the id, executed) — not end to end, because that needs two machines and the CI
+cycle has one.
+
+**What running it found** is the sharpest evidence this row ever had. An
+unchanged redeploy kept minting a new Release, which under the new ordering means
+the bytes really moved: the container writes `db/app.db-wal` into the mounted
+volume, the volume is inside the build context, and the scaffold's
+`.dockerignore` said `db/*.db` — which never matched a sidecar. Every deploy
+after the first copied the running app's write-ahead log into the image. The
+check that exists to catch it was blind for the same class of reason its own
+subject is: two lists for one fact (`FJS-555`).
 Basecamp's `Deployment` model is further along than the CLI here — it already carries
 `builtImage` separately from `fromImage`/`toImage`, which is exactly the distinction
 between *what was produced* and *what is being promoted*.

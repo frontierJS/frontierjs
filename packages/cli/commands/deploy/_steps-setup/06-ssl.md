@@ -9,6 +9,7 @@ skip: "!context.config.sslCert"
 if (context.config.abort) return
 
 const { host, sslCert, sslKey } = context.config
+const machine = machineFor(context, host, context.config.serverPath)
 
 log.info('Checking SSL certificates...')
 
@@ -16,7 +17,7 @@ let certOk = false
 let keyOk  = false
 
 try {
-  context.exec({ command: `ssh ${host} "[ -f ${sslCert} ]"` })
+  machine.run(`[ -f ${sslCert} ]`)
   certOk = true
   log.success(`  cert: ${sslCert} ✓`)
 } catch {
@@ -24,7 +25,7 @@ try {
 }
 
 try {
-  context.exec({ command: `ssh ${host} "[ -f ${sslKey} ]"` })
+  machine.run(`[ -f ${sslKey} ]`)
   keyOk = true
   log.success(`  key:  ${sslKey} ✓`)
 } catch {

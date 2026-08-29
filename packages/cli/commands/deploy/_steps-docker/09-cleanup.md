@@ -7,17 +7,27 @@ runOnAbort: true
 ```js
 // Every machine the run locked, not just the API's — a split deploy that aborts
 // after taking both locks otherwise leaves the web host locked forever.
-const releaseLocks = () => {
+const dropLocks = () => {
   if (!context.config.lockAcquired) return
-  for (const h of context.config.hosts ?? []) {
-    try { context.exec({ command: `ssh ${h.host} "rm -f ${h.path}/.deploy.lock"` }) } catch {}
-  }
+  releaseLocks(context, context.config.hosts ?? [])
   context.config.lockAcquired = false
+}
+
+// ─── Settle the transition ────────────────────────────────────────────────────
+// The journal's last write, and it runs on BOTH paths: a deploy that aborted
+// leaves a `failed` transition, not a `running` one that the next run would
+// mistake for a crash and try to resume. `runOnAbort: true` on this step is what
+// makes that reachable at all.
+const settle = async (status) => {
+  if (!context.config.journal || !context.config.transitionId) return
+  try { await context.config.journal.settle(status) }
+  catch (err) { log.warn(`Journal: could not settle the transition — ${err.message}`) }
 }
 
 if (context.config.abort) {
   // Abnormal exit — still release the locks so the next deploy isn't blocked
-  releaseLocks()
+  await settle('failed')
+  dropLocks()
   return
 }
 
@@ -27,25 +37,21 @@ const apiSide = context.config.api
 // ─── Remove _replaced container ───────────────────────────────────────────────
 // Containers and images live on the API host; a web-only run has none.
 if (apiSide) {
-const host = apiSide.host
-const removeCmd = `
-  if docker inspect ${replaced} > /dev/null 2>&1; then
-    docker stop ${replaced} || true;
-    docker rm   ${replaced}
-  fi
-`.trim().replace(/\n\s*/g, '; ')
+const machine = machineFor(context, apiSide.host, apiSide.path)
 
-context.exec({ command: `ssh ${host} "${removeCmd}"` })
+machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then
+  docker stop ${replaced} || true
+  docker rm   ${replaced}
+fi`)
 
 // ─── Prune dangling images for this app ───────────────────────────────────────
 // Removes untagged images — keeps the last deployed tag and any others in use.
-context.exec({
-  command: `ssh ${host} "docker image prune -f --filter label=app=${appId} 2>/dev/null || true"`,
-})
+machine.run(`docker image prune -f --filter label=app=${appId} 2>/dev/null || true`)
 }
 
-// ─── Release deploy locks ─────────────────────────────────────────────────────
-releaseLocks()
+// ─── Settle, then release the locks ───────────────────────────────────────────
+await settle('succeeded')
+dropLocks()
 
 // ─── Report ───────────────────────────────────────────────────────────────────
 const elapsed = ((Date.now() - context.config.startTime) / 1000).toFixed(1)

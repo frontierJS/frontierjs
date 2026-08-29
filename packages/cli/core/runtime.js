@@ -273,9 +273,12 @@ export async function Command({ file, arg, flag, emit }) {
   // is not an error — it's the user telling us to stop. We swallow the throw
   // and exit cleanly with the matching exit code (130 for SIGINT, 143 for
   // SIGTERM) instead of bubbling a stack trace.
-  config.exec = ({ command, dry, ...opts }) => {
+  // `describe` is what --dry prints when the command itself is not the
+  // interesting part. A deploy step runs `ssh host sh -s` and pipes the real
+  // script to it, so printing the command shows every step as the same line.
+  config.exec = ({ command, dry, describe, ...opts }) => {
     if (dry ?? config.flag.dry) {
-      const msg = command
+      const msg = describe ?? command
       return emit ? emit({ type: 'log', level: 'dry', text: msg }) : logger(msg, 'dry')
     }
     try {
@@ -568,6 +571,7 @@ export async function Command({ file, arg, flag, emit }) {
             const shouldSkip = new Function('flag', 'context', `return ${stepMeta.skip}`)(config.flag, config)
             if (shouldSkip) {
               config.log.info(`  [${stepNum}/${totalSteps}] ${stepName} — skipped`)
+              await config.config?.journal?.afterStep?.(stepName, stepNum, { status: 'skipped' })
               return
             }
           } catch (err) {
@@ -577,6 +581,22 @@ export async function Command({ file, arg, flag, emit }) {
             config.log.warn(`  [${stepNum}/${totalSteps}] ${stepName} — skip predicate error: ${err.message} (running step anyway)`)
           }
         }
+
+        // ── The journal, where a command installed one ────────────────────────
+        // Generic on purpose: the runner knows a step ran and how it ended, and
+        // nothing about deploys. `fli deploy` puts a recorder on config.journal
+        // (`_module.md`), which is what makes the existing `_steps-docker` list
+        // into journal rows without eleven step files each learning to write one.
+        //
+        // A `beforeStep` answering `run: false` is a step a previous attempt
+        // already finished — the replay-into-a-no-op that the whole
+        // occurrence-key scheme exists for.
+        const claim = await config.config?.journal?.beforeStep?.(stepName, stepNum)
+        if (claim && claim.run === false) {
+          config.log.info(`  [${stepNum}/${totalSteps}] ${stepName} — ${claim.note ?? 'already done'}`)
+          return
+        }
+        if (claim?.note) config.log.info(`  ${claim.note}`)
 
         config.log.info(`  [${stepNum}/${totalSteps}] ${stepName}`)
         if (emit) await emit({ type: 'step:start', id: stepName, index: stepNum, total: totalSteps })
@@ -629,8 +649,18 @@ export async function Command({ file, arg, flag, emit }) {
           stepContext.echo = config.echo
           await stepContext.run(stepContext)
 
+          await config.config?.journal?.afterStep?.(stepName, stepNum, {
+            status: 'succeeded', durationMs: Date.now() - stepStartMs,
+          })
           if (emit) await emit({ type: 'step:done', id: stepName, status: 'success', elapsed_ms: Date.now() - stepStartMs })
         } catch (err) {
+          // An OPTIONAL step that failed is recorded as failed and the run goes
+          // on: a journal saying `succeeded` because the pipeline forgave it is
+          // a journal that cannot be read afterwards.
+          await config.config?.journal?.afterStep?.(stepName, stepNum, {
+            status: 'failed', durationMs: Date.now() - stepStartMs, output: err.message,
+          })
+
           if (stepMeta.optional) {
             config.log.warn(`  [${stepNum}/${totalSteps}] ${stepName} — failed (optional, continuing)`)
             config.log.warn(`  ${err.message}`)

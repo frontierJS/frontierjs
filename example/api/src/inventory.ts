@@ -72,6 +72,11 @@ export type Levels = {
 
 export type MovementKind = 'received' | 'sold' | 'returned' | 'adjusted' | 'damaged'
 
+/** A row of the tape, as the Data boundary answered it. Structural rather than
+ *  generated: what a caller does with it is announce it, and a shape stated
+ *  here would go stale the day a column is added. */
+export type InventoryMovementRow = Record<string, unknown> & { id: number }
+
 // ─── The clock ────────────────────────────────────────────────────────────
 //
 // Litestone stores DateTime as ISO-8601 TEXT, so every comparison below is
@@ -250,7 +255,7 @@ export async function move(
   kind: MovementKind,
   delta: number,
   meta: { reference?: string | null, note?: string | null } = {},
-): Promise<{ before: number, after: number }> {
+): Promise<{ before: number, after: number, movement: InventoryMovementRow }> {
   if (!Number.isInteger(delta) || delta === 0)
     throw stockError('A stock movement is a whole number of items and cannot be zero', 400)
 
@@ -266,17 +271,21 @@ export async function move(
     `${variant.sku} has ${variant.stock} on hand — ${Math.abs(delta)} cannot be taken out`, 400,
   )
 
-  await client.inventoryMovement.create({ data: {
+  // The row is kept rather than discarded because it is what the write
+  // ANNOUNCES. A service method broadcasts under its own name, and `receive`
+  // and `adjust` answer a summary a subscriber cannot merge; the movement is
+  // the fact that happened, so `$.dispatch` is handed this.
+  const movement = await client.inventoryMovement.create({ data: {
     variantId, kind, quantity: delta,
     stockBefore: variant.stock,
     stockAfter:  after,
     reference:   meta.reference ?? null,
     note:        meta.note ?? null,
-  } })
+  } }) as InventoryMovementRow
 
   await client.productVariant.update({ where: { id: variantId }, data: { stock: after } })
 
-  return { before: variant.stock, after }
+  return { before: variant.stock, after, movement }
 }
 
 /**

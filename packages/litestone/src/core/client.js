@@ -6,6 +6,7 @@
 //   Statement cache:   compiled statements reused across calls via wrapDb()
 
 import { Database }     from 'bun:sqlite'
+import { applyBusyTimeout, busyTimeoutFor, validateBusyTimeout } from './pragmas.js'
 import { resolve, join, dirname, basename, extname } from 'path'
 import { tmpdir } from 'os'
 import { existsSync, mkdirSync, mkdtempSync, statSync } from 'fs'
@@ -13,7 +14,7 @@ import { resolveAnchor, noteMintedDirectory } from './db-path.js'
 import { parse, parseFile, inferFromFk } from './parser.js'
 import { isSoftDelete, isSoftDeleteCascade, modelToTableName, modelToAccessor, updatedAtFields, isUpdatedAtField } from './ddl.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
-import { detectM2MPairs, buildEdgeMap } from './ddl.js'
+import { detectM2MPairs, buildEdgeMap, arcCheckExpr, arcDefaultMessage } from './ddl.js'
 import {
   buildWhere, buildOrderBy, buildRelationOrderBy,
   buildWindowCols,
@@ -1477,11 +1478,18 @@ export function buildRelationMap(schema) {
       // unlabeled FKs pair with unlabeled arrays. This lets two hasMany
       // relations coexist between the same pair of models.
       const relLabel = rel.name ?? null
-      const backrefField = parentModel?.fields.find(f =>
-        f.type.name === model.name && f.type.array && f.type.kind === 'relation' &&
+      const backrefMatches = (f, wantArray) =>
+        f.type.name === model.name && f.type.array === wantArray && f.type.kind === 'relation' &&
         ((f.attributes.find(a => a.kind === 'relation')?.name ?? null) === relLabel)
-      )
+      // The plural back-reference is looked for first; a SINGULAR one is the
+      // non-owning side of a one-to-one, which the parser pairs the same way
+      // (FJS-563). Without this the field name was never found and the entry
+      // landed under the model's own name, so `include: { profile: true }` was
+      // `Unknown relation "profile"`.
+      const backrefField = parentModel?.fields.find(f => backrefMatches(f, true))
+        ?? parentModel?.fields.find(f => backrefMatches(f, false))
       const backrefName = backrefField?.name ?? model.name  // fallback to old behavior if no field declared
+      const backrefToOne = backrefField ? !backrefField.type.array : false
       if (!map[target][backrefName]) {
         // @hardDelete and @keep both live on the PARENT's hasMany back-ref field
         // (e.g. accounts.sessions[] @hardDelete, customers.orders[] @keep)
@@ -1489,6 +1497,10 @@ export function buildRelationMap(schema) {
         const keep       = backrefField?.attributes.some(a => a.kind === 'keep')       ?? false
         map[target][backrefName] = {
           kind:          'hasMany',
+          // Same shape and the same correlated subquery; `toOne` only decides
+          // whether the caller is handed the row or a list of one. A fourth
+          // relation kind would mean auditing every site that branches on kind.
+          toOne:         backrefToOne,
           targetModel:   model.name,
           foreignKey:    Array.isArray(rel.fields)     ? rel.fields[0]     : rel.fields,
           referencedKey: Array.isArray(rel.references) ? rel.references[0] : rel.references,
@@ -3118,7 +3130,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       // Select j.selfKey alongside t.* so we can group in one pass — no second query.
       const pkField  = rel.referencedKey ?? rel.selfPk ?? 'id'
       const pkValues = [...new Set(rows.map(r => r[pkField]).filter(v => v != null))]
-      if (!pkValues.length) { rows.forEach(r => r[relName] = []); continue }
+      if (!pkValues.length) { rows.forEach(r => r[relName] = rel.toOne ? null : []); continue }
 
       const ph      = pkValues.map(() => '?').join(', ')
       const rwM = relWhereSql('t')   // target aliased `t` in the m2m join query
@@ -3183,7 +3195,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
     } else {
       const pkValues = [...new Set(rows.map(r => r[rel.referencedKey]).filter(v => v != null))]
-      if (!pkValues.length) { rows.forEach(r => r[relName] = []); continue }
+      if (!pkValues.length) { rows.forEach(r => r[relName] = rel.toOne ? null : []); continue }
 
       const parsedNested = nestedSelect
         ? parseSelectArg(nestedSelect, rel.targetModel, relationMap, computedSets, nestedInclude,
@@ -3231,9 +3243,10 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
 
       for (const row of rows) {
         const group = grouped.get(row[rel.referencedKey]) ?? []
-        row[relName] = parsedNested
+        const shaped = parsedNested
           ? group.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => parsedNested.requestedFields.has(k) && !parsedNested.injectedFKs.has(k))))
           : group
+        row[relName] = rel.toOne ? (shaped[0] ?? null) : shaped
       }
     }
   }
@@ -3573,6 +3586,20 @@ function makeTable(
       const declared = field.attributes.find(a => a.kind === 'check' && norm(a.expr) === want)
       const out = new ValidationError([
         { path: [field.name], message: declared?.message ?? 'is not valid' },
+      ])
+      out.model      = modelName
+      out.constraint = expr
+      return out
+    }
+
+    // An @@arc compiles to a CHECK with no `expr` of its own, so it is found by
+    // rebuilding the SQL the emitter wrote. Without this branch every arc
+    // violation falls through to the generic sentence below, which is the
+    // failure `FJS-534` describes one attribute earlier.
+    const arc = model?.attributes?.find(a => a.kind === 'arc' && norm(arcCheckExpr(a)) === want)
+    if (arc) {
+      const out = new ValidationError([
+        { path: [], message: arc.message ?? arcDefaultMessage(arc) },
       ])
       out.model      = modelName
       out.constraint = expr
@@ -8495,7 +8522,7 @@ function resolveDbPath(pathDef, override, anchor = null) {
 }
 
 // Open a SQLite database pair (write + read) with standard Litestone pragmas.
-function openSqliteConnections(absPath) {
+function openSqliteConnections(absPath, busyTimeout) {
   // SQLite can create a DB file but not its parent directory. If the configured
   // path points into a directory that doesn't exist yet, pre-create it so the
   // first `litestone repl`/`studio`/`createClient` call doesn't fail with a
@@ -8532,7 +8559,7 @@ function openSqliteConnections(absPath) {
   rawWriteDb.run('PRAGMA cache_size = -32768')
   rawWriteDb.run('PRAGMA temp_store = MEMORY')
   rawWriteDb.run('PRAGMA mmap_size = 268435456')
-  rawWriteDb.run('PRAGMA busy_timeout = 5000')
+  applyBusyTimeout(rawWriteDb, busyTimeout)
   rawWriteDb.run('PRAGMA wal_autocheckpoint = 1000')
 
   // :memory: databases cannot be opened as a separate read-only connection —
@@ -8542,6 +8569,9 @@ function openSqliteConnections(absPath) {
   if (!isMemory) {
     rawReadDb.run('PRAGMA foreign_keys = ON')
     rawReadDb.run('PRAGMA query_only = ON')
+    // A reader does not queue behind a writer in WAL — but it does during a
+    // checkpoint, and on the recovery a crashed writer leaves behind.
+    applyBusyTimeout(rawReadDb, busyTimeout)
     rawReadDb.run('PRAGMA cache_size = -32768')
     rawReadDb.run('PRAGMA temp_store = MEMORY')
     rawReadDb.run('PRAGMA mmap_size = 268435456')
@@ -8588,7 +8618,7 @@ function resolveAccessConfig(accessConfig, readOnly, schema) {
 //     dbPath arrives as dbOverrides.main and overrides the declaration
 //   - access: 'readwrite' (default) | 'readonly' | false (no connection)
 //   - jsonl/logger driver: no SQLite connections — path stored only
-function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = false, anchor = null) {
+function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = false, anchor = null, busyTimeout = null) {
   const registry = {}
 
   for (const db of schema.databases) {
@@ -8602,7 +8632,7 @@ function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = f
       if (inMemory) {
         resolvedPath = mkdtempSync(join(tmpdir(), `litestone-${db.name}-`)) + '/'
       }
-      registry[db.name] = { driver: db.driver, access, absPath: resolvedPath, retention: db.retention, maxSize: db.maxSize, logModel: db.logModel, rawWriteDb: null, rawReadDb: null, writeDb: null, readDb: null }
+      registry[db.name] = { driver: db.driver, access, absPath: resolvedPath, retention: db.retention, maxSize: db.maxSize, logModel: db.logModel, busyTimeout: busyTimeoutFor(busyTimeout, db.name), rawWriteDb: null, rawReadDb: null, writeDb: null, readDb: null }
       continue
     }
 
@@ -8611,7 +8641,7 @@ function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = f
       continue
     }
 
-    const conns = openSqliteConnections(absPath)
+    const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, db.name))
 
     if (access === 'readonly') {
       conns.rawWriteDb.close()
@@ -8629,11 +8659,11 @@ function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = f
     if (access === false) {
       registry.main = { driver: 'sqlite', access: false, absPath, retention: null, rawWriteDb: null, rawReadDb: null, writeDb: makeThrowingDb('main', false), readDb: makeThrowingDb('main', false) }
     } else if (access === 'readonly') {
-      const conns = openSqliteConnections(absPath)
+      const conns = openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, 'main'))
       conns.rawWriteDb.close()
       registry.main = { driver: 'sqlite', access: 'readonly', absPath, retention: null, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb('main', 'readonly'), readDb: conns.readDb }
     } else {
-      registry.main = { driver: 'sqlite', access: 'readwrite', absPath, retention: null, ...openSqliteConnections(absPath) }
+      registry.main = { driver: 'sqlite', access: 'readwrite', absPath, retention: null, ...openSqliteConnections(absPath, busyTimeoutFor(busyTimeout, 'main')) }
     }
   }
 
@@ -8776,9 +8806,34 @@ function buildLogEntry({ operation, model, field, records, before, after }, ctx,
 // Never blocks, never throws to caller.
 // Uses setImmediate (or setTimeout fallback) to push the I/O outside the current
 // event loop tick entirely — avoids microtask-queue I/O stacking on hot paths.
+//
+// **The catch has to be on the PROMISE.** Every driver's `create` is `async`, so
+// a `try` around the call catches nothing: the throw becomes a rejected promise
+// with no handler, which under Bun is an unhandled rejection rather than the
+// swallowed write this is documented to be. It stayed invisible because the one
+// realistic failure — a contended index — could not happen while the index had
+// a five-second wait; `busyTimeout: { audit: 0 }` makes it happen every time.
+//
+// Swallowed, but not silent: a lost audit row is the one write whose whole
+// purpose is being there afterwards, so the first loss per log table says so.
+// Once, because the failure that produces one produces thousands.
+const _loggedLogFailure = new Set()
+
 function fireLog(logTable, entry) {
   if (!logTable) return
-  const write = () => { try { logTable.create({ data: entry }) } catch {} }
+  const swallow = (err) => {
+    const key = entry?.model ?? 'log'
+    if (_loggedLogFailure.has(key)) return
+    _loggedLogFailure.add(key)
+    console.warn(
+      `[litestone] audit write for '${key}' failed and was dropped: ${err?.message ?? err}\n` +
+      `            The trail is incomplete from here. Further losses for this model are not reported.`
+    )
+  }
+  const write = () => {
+    try { Promise.resolve(logTable.create({ data: entry })).catch(swallow) }
+    catch (err) { swallow(err) }   // a driver that throws before its first await
+  }
   if (typeof setImmediate === 'function') setImmediate(write)
   else setTimeout(write, 0)
 }
@@ -8822,6 +8877,11 @@ export async function createClient({
   databases:  dbOverrides,   // ':memory:' | { dbName: { path } } — override db paths
   access:     accessConfig,
   readOnly,              // true — shorthand for access: { '*': 'readonly' } on all SQLite dbs
+  busyTimeout,           // ms a connection waits for another PROCESS's write lock before
+                         // SQLITE_BUSY. A number for every connection, or { default, <db> }
+                         // per database; 0 means fail immediately. Absent reads
+                         // LITESTONE_BUSY_TIMEOUT, then 5000. There is deliberately no
+                         // `database { }` spelling — see core/pragmas.js and FJS-D154
   pluralize:  pluralizeTableNames = false,  // true — pluralize snake_case table names (user→users)
   onLog,
   onQuery,
@@ -8925,7 +8985,7 @@ export async function createClient({
   // and said nothing. The more specific channel still wins.
   if (dbPath && !inMemory && !resolvedOverrides.main) resolvedOverrides.main = { path: dbPath }
 
-  const dbRegistry  = buildDbRegistry(schema, resolvedDbPath, resolvedOverrides, resolveAccessConfig(accessConfig, readOnly, schema), inMemory, resolveAnchor(resolveFrom, schemaFilePath))
+  const dbRegistry  = buildDbRegistry(schema, resolvedDbPath, resolvedOverrides, resolveAccessConfig(accessConfig, readOnly, schema), inMemory, resolveAnchor(resolveFrom, schemaFilePath), validateBusyTimeout(busyTimeout, (schema.databases ?? []).map(d => d.name)))
   const modelDbMap  = buildModelDbMap(schema)
 
   // Shared with the transaction manager below. Every read connection is wrapped
@@ -9598,7 +9658,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     const conn   = dbRegistry[dbName] ?? dbRegistry.main
     if (conn.driver === 'jsonl' || conn.driver === 'logger') {
       const filePath = jsonlFilePath(conn.absPath, model.name)
-      const table    = makeJsonlTable(filePath, model, schema, conn.retention, conn.maxSize, now)
+      const table    = makeJsonlTable(filePath, model, schema, conn.retention, conn.maxSize, now, conn.busyTimeout)
       jsonlTableCache[model.name] = table
       jsonlTables.push(table)
     }

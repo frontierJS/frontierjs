@@ -329,6 +329,66 @@ place, so the migrator compares the constraint text and rebuilds when it moves.
 Adding one to a populated table is also a **contract** for `fli release:check`:
 the release still serving can write rows the new constraint forbids.
 
+### Exclusive foreign keys (`@@arc`)
+
+```
+@@arc([orderId, productId])                                  exactly one is set
+@@arc([orderId, productId], optional: true)                  at most one — the row may point at nothing
+@@arc([orderId, productId], message: "an order or a product")  the sentence a form shows
+```
+
+**The question it answers is *this row points at an Order or a Product*.** The
+reach for that is usually a polymorphic pair — a `subjectType` naming a model and
+a `subjectId` holding a key — and the pair keeps none of what a relation is for:
+no foreign key, so nothing refuses an id that was deleted; no `onDelete`, so
+something has to sweep the orphans and that something is a job, because the
+database will not; and no `include`, so reading the subject is a second query per
+type.
+
+**An arc keeps all three, because the members are ordinary relations.** Each is a
+real `@relation` with a real `onDelete`, and the only thing the attribute adds is
+the rule that exactly one of them is set — emitted as a table CHECK counting the
+non-null members. So it holds where every constraint in this section holds:
+against a job on `db.`, a migration, a seed, an atomic operator, and against
+`asSystem()`, which drops the gate, every row policy and `@@softDelete` and
+cannot drop a CHECK.
+
+```
+model Attachment {
+  id        Int      @id
+  tagId     Int
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  orderId   Int?
+  order     Order?   @relation(fields: [orderId],   references: [id], onDelete: Cascade)
+  productId Int?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@arc([orderId, productId])
+}
+```
+
+**Members must exist and must be optional.** A required member is refused at
+parse, because a column that is always set is always the answer — with two of
+them the arc can never be satisfied, and with one among optionals it is not a
+choice. An unknown member is refused by the same check that covers every
+`@@`-attribute naming a field, so a renamed column fails at parse rather than at
+migration time against a table you are no longer looking at.
+
+**The message is derived when you do not write one** — `exactly one of orderId,
+productId must be set`, or `at most one … may be set` under `optional: true`.
+That is better than the generic sentence and worse than domain language, so write
+`message:` where a person will read it. As with `@@check`, the expression stays
+on `err.constraint` for the developer and out of the message: a rule spanning
+columns marks no single box, so it is a record-level error.
+
+**One column per member, and it does not scale far.** Six is uncomfortable and
+ten is a mistake. That ceiling is the useful part of the design: reaching it
+means the set of things this row can point at is *open*, and an open set is the
+one case no relation can serve — there, the polymorphic pair is the honest
+answer, along with the sweep job and the absence of integrity it comes with. See
+`references/Tag.lite`, which argues both sides at the file somebody copies.
+
 ### Transforms (applied before validation + write)
 ```
 @trim    @lower    @upper    @slug

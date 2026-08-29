@@ -167,6 +167,18 @@ export interface RunAsOptions {
   tenant?: string | null
 }
 
+/**
+ * A second listener the app started beside itself — announced, never managed.
+ *
+ * `note` is what a person does with it once they have the URL, in the app's own
+ * words: an inbox to open, the one endpoint worth curling. Nothing parses it.
+ */
+export interface DevService {
+  name:  string
+  url:   string
+  note?: string
+}
+
 export interface App {
   // Config
   config:    AppConfig
@@ -418,6 +430,24 @@ export interface App {
    */
   registerHealthCheck: (name: string, fn: () => boolean | Promise<boolean>) => void
 
+  /**
+   * Announce a SECOND LISTENER this app started — a dev mail catcher, a stand-in
+   * payment provider, an identity provider running for the dev flow.
+   *
+   * The banner is derived from MOUNTED ROUTES, and a second listener has none:
+   * it is its own server on its own port, so the one place an app says what it
+   * is serving could not name it. `_devtools` is the same problem solved once
+   * for one case; this is the general one, because the app itself is the only
+   * thing that knows a sidecar exists.
+   *
+   * Announcing is all it does. Junction does not start, stop, health-check or
+   * own the process — a register that implied otherwise would be a supervisor,
+   * and the caller already holds the handle it needs to stop it.
+   *
+   * Keyed by name, so a re-register replaces rather than duplicates.
+   */
+  registerDevService: (svc: DevService) => void
+
   // Route shortcuts (delegate to http.router)
   get:     (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
   post:    (path: string, handler: RouteHandler, mw?: MiddlewareFn[]) => App
@@ -471,6 +501,9 @@ export interface App {
    *  Junction's own plugin, so the banner may name it unprompted; a third-party
    *  sidecar announces itself. */
   _devtools: { status: 'off' | 'on' | 'refused', url?: string, reason?: string }
+  /** The second listeners the app announced. Write through
+   *  `registerDevService`; this is the store, not the seam. */
+  _devServices: Map<string, DevService>
   /** Test-only: runs plugin register(), registerServiceRoutes, and setAppHooks
    *  without binding a port. Call once before the first request() in tests. */
   _startForTest: () => Promise<void>
@@ -1140,6 +1173,7 @@ export function createApp(opts: AppOptions = {}): App {
     _healthChecks:    new Map<string, () => boolean | Promise<boolean>>(),
     _healthChecksApp: new Map<string, () => boolean | Promise<boolean>>(),
     _devtools:        { status: 'off' as const },
+    _devServices:     new Map<string, DevService>(),
 
     registerMetricsSource(name: string, fn: () => unknown): void {
       app._metricsSources.set(name, fn)
@@ -1147,6 +1181,13 @@ export function createApp(opts: AppOptions = {}): App {
 
     registerHealthCheck(name: string, fn: () => boolean | Promise<boolean>): void {
       app._healthChecks.set(name, fn)
+    },
+
+    registerDevService(svc: DevService): void {
+      if (!svc?.name || !svc?.url) {
+        throw new Error('registerDevService: a dev service needs a name and a url')
+      }
+      app._devServices.set(svc.name, svc)
     },
 
     async applyConfigFile(): Promise<void> {
@@ -1653,6 +1694,15 @@ export function createApp(opts: AppOptions = {}): App {
         // at boot instead of three confusing test runs later.
         const _data = describeDataRealm(db)
         if (_data) logger.info(`🗄  litestone`, _data)
+
+        // One line each rather than fields on the banner, for the reason the
+        // line above gets its own: these are separate processes, not more
+        // detail about this one. They print AFTER the app's own line because
+        // that is the order they matter in — what is this, then what else is
+        // up beside it.
+        for (const svc of app._devServices.values()) {
+          logger.info(`🔌 ${svc.name}`, { url: svc.url, note: svc.note })
+        }
       }},
     ]
 

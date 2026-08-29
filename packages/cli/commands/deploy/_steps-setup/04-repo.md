@@ -7,11 +7,12 @@ description: Verify or clone the git repo on the server
 if (context.config.abort) return
 
 const { host, serverPath } = context.config
+const machine = machineFor(context, host, serverPath)
 
 // Check if repo already exists
 let repoExists = false
 try {
-  context.exec({ command: `ssh ${host} "[ -d ${serverPath}/.git ]"` })
+  machine.run(`[ -d ${serverPath}/.git ]`)
   repoExists = true
 } catch {
   repoExists = false
@@ -36,11 +37,12 @@ const url = answer.trim() || remoteUrl
 
 if (!url) {
   log.warn('No remote URL provided — skipping repo clone')
-  log.info(`Clone manually: ssh ${host} "git clone <url> ${serverPath}"`)
+  const byHand = `git clone <url> ${serverPath}`
+  log.info(`Clone manually: ${machine.local ? byHand : `ssh ${host} "${byHand}"`}`)
   return
 }
 
 log.info(`Cloning ${url} into ${serverPath}...`)
-context.exec({ command: `ssh ${host} "git clone ${url} ${serverPath}"` })
+machine.run(`git clone ${url} ${serverPath}`)
 log.success('Repo cloned')
 ```

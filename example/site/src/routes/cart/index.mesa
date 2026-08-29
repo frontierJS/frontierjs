@@ -1,0 +1,35 @@
+---
+title: Basket
+render: static
+---
+<!--
+  The basket screen — a prerendered SHELL with one island in it.
+
+  There is no `load()` and there must not be. Every other static route here
+  reads the database at build time and bakes the answer into the file; a basket
+  belongs to one shopper and is reached by a token this browser holds, so there
+  is nothing about it that could be baked and nothing about it a CDN may cache.
+  What ships is the heading below and an island marker.
+
+  That is also why there is no `publishes:` and no gate question to answer: the
+  build taps the Litestone client while `load()` runs, and this route runs none.
+-->
+<script>
+  import Basket from '../../islands/Basket.mesa'
+</script>
+
+<div class="container">
+  <!--
+    The <noscript> is BESIDE the island and not inside it, and that is not a
+    style choice: an island with element children hangs the prerender pass with
+    no output at all (`FJS-549`). An island's markup is replaced wholesale on
+    mount anyway — it is a marker, not a slot — so there was never a way for
+    children to survive it.
+  -->
+  <noscript>
+    <h1>Basket</h1>
+    <p>Your basket needs JavaScript. <a class="link" href="/catalog/">Back to the catalogue</a>.</p>
+  </noscript>
+
+  <Basket client:load />
+</div>

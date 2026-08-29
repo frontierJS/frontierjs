@@ -23,8 +23,8 @@
 -->
 <script>
   import { createJunctionClient } from '@frontierjs/junction/client'
-  import { clientOptions }        from '../api.js'
-  import { money }                from '../money.js'
+  import { clientOptions }        from '@/api.js'
+  import { money }                from '@/money.js'
 
   export let productId = null
 

@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
-import { appPorts, projectIdFor, PROJECTS, DYNAMIC_PROJECT_FLOOR, port,
+import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, DYNAMIC_PROJECT_FLOOR, port,
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
@@ -128,6 +128,95 @@ describe('appPorts — what this app is about to bind', () => {
   test('a surface with no script says so rather than inventing one', () => {
     const rows = appPorts('/x/odd', { name: 'odd', exists: treeOf('api'), scripts: {} })
     expect(rows[0].script).toBe(null)
+  })
+})
+
+describe('devPorts — what `fli dev` is about to bind', () => {
+  // FJS-568. `appPorts` answers what the app's surfaces WOULD bind; the
+  // preflight has to answer what THIS command is about to. Refusing on the
+  // difference is a refusal nobody can act on: the port named is one the
+  // command would never have taken.
+  const five = treeOf('web', 'api', 'site', 'widgets', 'extension')
+
+  test("an app whose dev starts two of five surfaces is checked on two", () => {
+    const scripts = {
+      dev:          'bun run api & bun run web & wait',
+      api:          'bun run api/index.ts',
+      web:          'vite -c web/config/vite.config.js',
+      'dev:site':   'cd site && vite -c config/vite.config.js',
+      'dev:widgets': 'cd widgets && vite -c config/vite.config.js',
+    }
+    const rows = devPorts('/x/example', { name: 'example', exists: five, scripts })
+    expect(rows.map(r => r.surface).sort()).toEqual(['api', 'web'])
+    // The whole point: the site's port is NOT among them.
+    expect(rows.some(r => r.port === 8610)).toBe(false)
+    // And `appPorts` still answers the catalogue, which `fli ports` wants.
+    expect(appPorts('/x/example', { name: 'example', exists: five, scripts }).length).toBe(5)
+  })
+
+  test('a scaffolded app composes every surface, so every one is checked', () => {
+    const scripts = {
+      dev:        'bun run --parallel dev:api dev:web dev:site',
+      'dev:api':  'bun --watch run api/index.ts',
+      'dev:web':  'cd web && vite -c config/vite.config.js',
+      'dev:site': 'cd site && bun --bun vite -c config/vite.config.js',
+    }
+    const rows = devPorts('/x/new-app', { name: 'new-app', exists: treeOf('web', 'api', 'site'), scripts })
+    expect(rows.map(r => r.surface).sort()).toEqual(['api', 'site', 'web'])
+  })
+
+  test('a dev that IS the surface command cannot be narrowed, so it is not', () => {
+    // `fli new` writes `dev` as the command itself when there is one surface.
+    // Narrowing to nothing here would skip the only check worth making.
+    const rows = devPorts('/x/one', {
+      name: 'one', exists: treeOf('web'),
+      scripts: { dev: 'cd web && vite -c config/vite.config.js' },
+    })
+    expect(rows.map(r => r.surface)).toEqual(['web'])
+  })
+
+  test('a directory name that matches a script is not a script reference', () => {
+    // The trap in anchoring on bare tokens: `cd web && vite` holds a `web` that
+    // is a directory, and this app declares a `web` script.
+    const scripts = {
+      dev: 'bun run api & bun run dev:web & wait',
+      api: 'bun run api/index.ts',
+      web: 'vite',
+      'dev:web': 'cd web && vite -c web/config/vite.config.js',
+    }
+    expect([...scriptsRunBy(scripts)].sort()).toEqual(['api', 'dev:web'])
+  })
+
+  test('a surface matches on either spelling, not just the one appPorts prints', () => {
+    // An app may declare both `web` and `dev:web` and run the other one.
+    const scripts = {
+      dev:       'bun run dev:web',
+      web:       'vite',
+      'dev:web': 'cd web && vite',
+    }
+    const rows = devPorts('/x/both', { name: 'both', exists: treeOf('web'), scripts })
+    expect(rows.map(r => r.surface)).toEqual(['web'])
+  })
+
+  test('an indirection is followed', () => {
+    const scripts = {
+      dev:     'bun run dev:all',
+      'dev:all': 'bun run --parallel dev:api dev:web',
+      'dev:api': 'bun --watch run api/index.ts',
+      'dev:web': 'cd web && vite',
+    }
+    const rows = devPorts('/x/deep', { name: 'deep', exists: treeOf('web', 'api', 'site'), scripts })
+    expect(rows.map(r => r.surface).sort()).toEqual(['api', 'web'])
+  })
+
+  test('a cycle terminates', () => {
+    const scripts = { dev: 'bun run a', a: 'bun run b', b: 'bun run a' }
+    expect(scriptsRunBy(scripts)).toEqual(new Set(['a', 'b']))
+  })
+
+  test('no manifest at all falls back to the catalogue', () => {
+    const rows = devPorts('/x/bare', { name: 'bare', exists: treeOf('web', 'api') })
+    expect(rows.map(r => r.surface).sort()).toEqual(['api', 'web'])
   })
 })
 

@@ -51,7 +51,15 @@ export function scannerPlugin(config, sierraContext) {
     // Node, and pulling the companions into the client graph publishes whatever
     // they import — for a storefront, the app's own database client.
     const omitLoaders = command === 'build' && (config.target ?? 'spa') === 'static'
-    const code = await generateRouteTable(tree, resolve(root, tableOutput), root, { omitLoaders })
+    // A prerendered route's load() runs in Node. In dev there is a Node process
+    // right here, so it runs in THIS one and the browser fetches the result —
+    // which is the difference between a dev server that shows the storefront
+    // and one that shows an empty page correctly. Off with
+    // `dev: { staticData: false }`; never in a build, where the data is baked.
+    const devStaticData = command === 'serve' && (config.dev?.staticData ?? true)
+    const code = await generateRouteTable(tree, resolve(root, tableOutput), root, {
+      omitLoaders, devStaticData,
+    })
     const tableChanged = _lastTable !== null && _lastTable !== code
     _lastTable = code
 

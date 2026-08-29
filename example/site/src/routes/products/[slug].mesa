@@ -28,6 +28,7 @@ render: static
 <script>
   import { money }   from '../../money.js'
   import LivePrices  from '../../islands/LivePrices.mesa'
+  import BuyBox      from '../../islands/BuyBox.mesa'
 
   export let data = null
 
@@ -90,6 +91,13 @@ render: static
          on screen, and a correction that waits for a scroll is a correction the
          reader has already acted on. -->
     <LivePrices client:load productId={data?.productId} />
+
+    <!-- The only island on this site that WRITES. `client:load` and not
+         `client:visible`: the buy box is the reason somebody opened this page,
+         and a button that appears after a scroll is a button they went
+         somewhere else to find. -->
+    <BuyBox client:load productId={data?.productId} variants={data?.variants ?? []} />
+
   </div>
 </article>
 

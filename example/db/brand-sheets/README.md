@@ -1,0 +1,73 @@
+# Brand sheets
+
+The FrontierJS identity, as five contact sheets. They are the source the shop's
+own artwork is cut from — the storefront's promo page (`site/src/routes/index.mesa`)
+serves crops of them out of `site/public/brand/`.
+
+They are kept here rather than beside the crops because a contact sheet is not a
+web asset: it is 1536×1024 of reference, and shipping it into `public/` would put
+a megabyte of wordmarks and colour swatches on a public origin for the sake of a
+120px disc.
+
+| Sheet | What it holds |
+| --- | --- |
+| `fjs-merch.png` | The primary logo suite, the three archetypes, apparel mockups, the brand pillars, the palette and the type stack |
+| `fjs-wolf.png` | The wolf line — the overlook, five trail panels, silhouette variants, logo lockups |
+| `fjs-hawk.png` | The hawk line — canyon studies, feather and eye studies, emblem concepts |
+| `junction-merch.png` · `litestone-merch.png` | The two sub-brands, same treatment |
+
+## The palette
+
+Read off `fjs-merch.png` and `fjs-wolf.png`, which agree.
+
+| Name | Hex |
+| --- | --- |
+| Night / Dusk Navy | `#0B1320` · `#0B182B` |
+| Parchment | `#F1E7D2` |
+| Sandstone | `#D8B892` |
+| Mesa Orange | `#E07B39` |
+| Copper Brown | `#7A4A2E` |
+| Litestone Blue | `#00B7FF` |
+
+Copper Brown is a fill only — it is 2.41:1 on Dusk Navy and fails AA as text.
+Mesa Orange is 5.99:1 on that ground and 2.97:1 under white, which is why the
+promo page hands it to a chip as `--bg-mix` and lets `chip.css` derive the label
+colour rather than setting one.
+
+## Re-cutting the crops
+
+Every file in `site/public/brand/` is a named region of a sheet, so a re-cut is
+repeatable rather than a file somebody once made. Box is `(left, top, right,
+bottom)` in the sheet's own pixels; the photographic crops are saved at 2× and
+displayed at 1×, which is the only reason they are not soft.
+
+| Output | Sheet | Box | Note |
+| --- | --- | --- | --- |
+| `hero.jpg` | `fjs-wolf.png` | `(396, 14, 880, 374)` | The overlook — the promo hero. Framed at its own 1.34:1 rather than used as a ground: the band is nearly 2.8:1, so `cover` would crop half the plate's height away and the wolf would leave the frame. Cut to 880 rather than to the plate's own right edge so the hawk stays in the sky |
+| `ridge.jpg` | `fjs-wolf.png` | `(680, 30, 1010, 376)` | The hero's GROUND — the canyon to the RIGHT of the wolf, upscaled to 1320×1384, blurred 10px, q78. Subject-free on purpose: the ground and the plate are cut from one painting, and with the wolf in both his blurred silhouette sat above the headline and read as a ghost of the plate beside it. Terrain and a sunset do not repeat that way. Starts at 680 to clear his ear |
+| `trail-fire.jpg` | `fjs-wolf.png` | `(281, 394, 488, 602)` | Explorer and wolf at a campfire. Bottom stops at 602: the caption is painted into the sheet below it |
+| `trail-stake.jpg` | `fjs-hawk.png` | `(566, 414, 894, 656)` | The hawk above a lit stake |
+| `trail-bounds.jpg` | `fjs-wolf.png` | `(1110, 398, 1304, 598)` | The explorer at the boundary stones |
+| `arch-explorer.png` | `fjs-merch.png` | `(513, 65, 633, 185)` | Resized to 240×240 and masked to a disc inset 4px, so it sits on any ground |
+| `arch-hawk.png` | `fjs-merch.png` | `(667, 65, 787, 185)` | ” |
+| `arch-wolf.png` | `fjs-merch.png` | `(821, 65, 941, 185)` | ” |
+
+Which archetype leads is a judgement, not an accident, and it has been made
+twice. A first cut used the wolf for the hero and all three trail panels, which
+reads as one animal's brand rather than as three; the correction handed the hero
+to the hawk. The wolf leads again now — he is the sheets' most photogenic
+subject and the overlook is the one plate that carries a headline — but the crop
+stops at 880 so the hawk is in it, the explorer keeps two of the three trail
+panels, and the hawk keeps the third and a disc. The failure being avoided is
+three archetypes and one of them on screen, not any particular one of them
+leading.
+
+Cut with Pillow (`Image.crop` → `resize(..., LANCZOS)`), JPEG at q86 for the
+photographic five — q80 for `ridge.jpg`, which is blurred and gains nothing
+from the extra bytes. There is deliberately no script for it: this runs once when
+the artwork changes, and a build step that needs an image library is a
+dependency the workspace does not otherwise have.
+
+The three discs are quantised to 128 colours after masking. They are painterly
+and the banding is not visible; at full depth the three of them were 290K for
+240×240, which is more than the hero.

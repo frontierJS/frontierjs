@@ -2,6 +2,45 @@
 
 What's coming, what's being considered, and what's known to need fixing.
 
+**This file is a list of proposals and it is never a statement about what the
+package does.** Three of its entries described features that had already shipped,
+and a session reading them concluded the language could not express money and
+filed a defect against a settled ruling (`FJS-560`). What litestone actually
+accepts is [reference.snapshot.md](reference.snapshot.md) and
+[../catalog.snapshot.md](../catalog.snapshot.md), both generated; an entry here
+that names an attribute those already carry is stale or is an EXTENSION of it,
+and must say which. `fli check`'s `roadmap-shipped` grades that.
+
+---
+
+## Shipped
+
+Kept here as tombstones, at the top, because the failure this file caused was a
+reader taking a proposal for the current state.
+
+### ~~Exact numbers — `@scale(n)`, then `@money`~~ — SHIPPED
+
+**RULED [`FJS-D142`](../../../DECISIONS.md#fjs-d142) 2026-08-25, BUILT
+2026-08-26.** `Int @scale(n)` and `Int @money(CUR | field: col | )` ship. The
+page is [exact-numbers.md](exact-numbers.md).
+
+`Int` and **not** a `Decimal` scalar, and that is the settled part rather than a
+compromise: SQLite has no column widths, so the `p` of `decimal(p, s)` emits an
+identical column and only the scale is load-bearing — and Prisma, which HAS the
+type, records that there is no reliable way to store one on SQLite, values being
+written and read back different (`prisma#20635`). What comes back in JS is the
+integer. The scale of money is the currency's, read off `Intl` rather than
+shipped as a table. Rounding and allocation stay the application's.
+
+Still open from the ruling: **changing `n`**, which is the one migration here
+that rewrites stored bytes.
+
+### ~~Typed JSON fields~~ — SHIPPED
+
+`Json @type(TypeName)` ships against a `type` declared in the seed, validated on
+write. The page is [json-types.md](json-types.md); the entry is
+[reference.snapshot.md](reference.snapshot.md#type-field).
+
 ---
 
 ## Before v1.0 publish
@@ -19,34 +58,6 @@ Package is written and working. The unscoped name `litestone` is blocked by npm'
 ---
 
 ## High priority
-
-### Exact numbers — `@scale(n)`, then `@money`
-
-There is no fixed-point numeric type: `TYPE_MAP` offers `Int`, `Float` and
-nothing between them, so an exact quantity is modelled as a float and hoped for.
-
-```prisma
-model Order {
-  qty    Int @scale(6)      // stored 1_500_000; the point sits six places in
-  total  Int @money(USD)    // scale 2, derived from the currency
-}
-```
-
-`Int` and not a `Decimal` scalar, because SQLite has no column widths — the
-precision half of `decimal(p, s)` emits an identical column and is `@lte`
-spelled differently, so only the scale is load-bearing. Stored as an integer, it
-sorts and `SUM`s exactly; it reads back in major units, which puts one rounding
-at the end of an aggregate rather than one per row.
-
-**This entry previously proposed storing a Money as JSON TEXT,
-`{ "amount": 1299, "currency": "USD", "scale": 2 }`, and that is wrong rather
-than merely superseded.** `opaqueSortKind` classifies a `Json` column as opaque,
-so `$checkOrderBy` throws on it — the column could not be sorted, grouped or
-summed, which is every question anyone asks of a money column.
-
-Design record, with the evidence from a 188-model fixture and the two open
-questions (a per-row currency, and rescaling on a scale change):
-`IDEAS/declared-semantics.md` § 2.
 
 ### Embedding(n) — vector search
 
@@ -102,16 +113,26 @@ Haversine formula in JS — no SQLite extension required.
 
 ## Medium priority
 
-### @slug — auto-slug with collision handling
+### `@slug` collision handling — the attribute SHIPS, this half does not
+
+`@slug` ships and slugifies the column on write; the parenthesised form calls a
+`function slug` the schema declares. See
+[reference.snapshot.md](reference.snapshot.md#slug-field).
+
+What is unbuilt is everything AROUND the transform:
 
 ```prisma
 model Post {
   title String
-  slug  String @slug(source: title)
+  slug  String @slug(source: title)   // sourcing from a sibling — unbuilt
 }
 ```
 
-Generates a URL-safe slug from `title` on create. Handles collisions by appending a suffix (`my-post-2`, `my-post-3`). Updates automatically when `title` changes (configurable).
+- **sourcing from a sibling column**, rather than slugifying this column's own value
+- **collision handling** — appending a suffix (`my-post-2`, `my-post-3`), which
+  needs a read inside the write and therefore a rule about what it collides against
+- **re-slugging when the source changes**, which is a decision about URLs that
+  already exist and not a default anyone can pick for an app
 
 ### ExternalSyncPlugin / @sync
 
@@ -138,25 +159,6 @@ const resolved = await db.resolveMany(items, {
   models: { post: 'posts', comment: 'comments', user: 'users' },
 })
 ```
-
-### Typed JSON fields
-
-JSON fields with a declared schema — validated on write, typed in TypeScript output.
-
-```prisma
-type Address {
-  street  String
-  city    String
-  country String
-  zip     String?
-}
-
-model User {
-  address Json @type(Address)
-}
-```
-
-Generates `UsersAddress` TypeScript interface. Validates structure on write. No SQL change — still stored as JSON TEXT.
 
 ### introspect.js — emit @@db(name)
 

@@ -7,9 +7,6 @@ description: Deploy the API
 if (context.config.abort) return
 const { server, serverPath } = context.config
 log.info('Deploying API...')
-context.exec({
-  command: `ssh ${server} "npm run deploy:api --prefix='${serverPath}'"`,
-  dry: flag.dry
-})
+machineFor(context, server, serverPath).run(`npm run deploy:api --prefix='${serverPath}'`, { dry: flag.dry })
 log.success('API deployed')
 ```

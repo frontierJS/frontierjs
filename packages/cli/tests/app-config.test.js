@@ -34,6 +34,33 @@ describe('the config is a dependency, not a copy', () => {
     expect(ts.compilerOptions).toBeUndefined()
   })
 
+  // `@` is the surface's own src/, so an app with more than one UI surface has
+  // more than one answer. tsc has one program, so `paths` lists them all and
+  // the first that exists wins — exact for one surface, a guess for two, and
+  // free either way because checkJs is off. Vite is the resolver that matters
+  // and it is per-root.
+  test('every UI surface the app has is in paths, in a fixed order', () => {
+    const ts = JSON.parse(appTsconfig({
+      useWeb: true, useSite: true, useWidgets: true, useExtension: true,
+    }))
+    expect(ts.compilerOptions.paths['@/*'])
+      .toEqual(['./web/src/*', './site/src/*', './widgets/src/*', './extension/src/*'])
+    expect(ts.include)
+      .toEqual(['api/**/*', 'web/**/*', 'site/**/*', 'widgets/**/*', 'extension/**/*'])
+  })
+
+  test('a site-only app maps @ to site/, never to a web/ it does not have', () => {
+    const ts = JSON.parse(appTsconfig({ useWeb: false, useSite: true }))
+    expect(ts.compilerOptions.paths['@/*']).toEqual(['./site/src/*'])
+    expect(ts.include).toEqual(['api/**/*', 'site/**/*'])
+  })
+
+  test('a widgets-only app with no api includes only widgets', () => {
+    const ts = JSON.parse(appTsconfig({ useWeb: false, useWidgets: true, useApi: false }))
+    expect(ts.compilerOptions.paths['@/*']).toEqual(['./widgets/src/*'])
+    expect(ts.include).toEqual(['widgets/**/*'])
+  })
+
   test('biome.json is extends and nothing else', () => {
     const biome = JSON.parse(appBiomeJson())
     expect(biome).toEqual({ extends: ['@frontierjs/config/biome'] })

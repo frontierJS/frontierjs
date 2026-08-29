@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**96 words** — 11 declarations · 60 field attributes · 25 model attributes.
+**97 words** — 11 declarations · 60 field attributes · 26 model attributes.
 
 ## Declarations
 
@@ -100,6 +100,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@index` | Shape the table | ([field, …]) |  |  |  |
 | `@@unique` | Shape the table | ([field, …]) |  |  | parses as `uniqueIndex` |
 | `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
+| `@@arc` | Shape the table | ([field, …][, optional: true]) |  |  |  |
 | `@@map` | Shape the table | ("table_name") | in a model |  |  |
 | `@@label` | Shape the table | (<field>) |  |  | parses as `labelField` |
 | `@@external` | Shape the table |  |  |  |  |

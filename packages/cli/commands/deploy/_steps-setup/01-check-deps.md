@@ -7,13 +7,13 @@ description: Check SSH connectivity and audit required server dependencies
 if (context.config.abort) return
 
 const { host } = context.config
+const machine  = machineFor(context, host, context.config.serverPath)
 
-// ─── SSH ──────────────────────────────────────────────────────────────────────
-log.info(`Checking SSH → ${host}`)
-try {
-  context.exec({ command: `ssh -o ConnectTimeout=5 -o BatchMode=yes ${host} "echo ok" > /dev/null` })
-  log.success('SSH connected')
-} catch {
+// ─── Is the machine reachable ─────────────────────────────────────────────────
+log.info(`Checking ${machine.describe()}`)
+if (machine.reach()) {
+  log.success(machine.local ? 'Local machine' : 'SSH connected')
+} else {
   log.error(`Cannot reach ${host}`)
   log.info('Check that your SSH key is authorised on the server:')
   log.info(`  ssh-copy-id ${host}`)
@@ -39,7 +39,7 @@ const missing = []
 
 for (const dep of deps) {
   try {
-    context.exec({ command: `ssh ${host} "${dep.check} > /dev/null 2>&1"` })
+    machine.run(`${dep.check} > /dev/null 2>&1`)
     log.success(`  ${dep.name} ✓`)
   } catch {
     log.warn(`  ${dep.name} — not found`)

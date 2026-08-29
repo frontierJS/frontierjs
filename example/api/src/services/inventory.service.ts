@@ -43,6 +43,11 @@ export function createInventoryService() {
     // browser rows the Data boundary refuses them. The shelf itself DOES
     // announce: `move()` writes ProductVariant, junction taps Litestone's write
     // events, and `product-variants updated` reaches every open catalogue.
+    //
+    // That is why `receive` and `adjust` may still set `$.dispatch` to the
+    // movement they wrote: with no channel it reaches the in-process bus and
+    // nothing else, so an app-side subscriber gets the row and no browser gets
+    // a row it may not read. Declaring a channel here would change both at once.
 
     // Both writes are read-modify-write over a number two people can move at
     // once, and each writes two rows that are one fact — the tape and the
@@ -58,6 +63,13 @@ export function createInventoryService() {
      * thousand shelves wants a filter rather than ten thousand rows.
      */
     async levels() {
+      // A read announces nothing. This service is over InventoryMovement — the
+      // ledger — and what `levels` answers is a join across two tables and a
+      // clock, which is a row in neither. There is no `channel:` here, so the
+      // frame went to the in-process bus rather than to a browser, but the
+      // shape is the same defect and the same one line silences it.
+      $.dispatch = false
+
       const { productId, variantIds, limit = 500 } = ($.data ?? $.query ?? {}) as {
         productId?: number | string
         variantIds?: Array<number | string>
@@ -107,7 +119,17 @@ export function createInventoryService() {
       const { variantId, quantity, reference, note } = $.data as {
         variantId: number, quantity: number, reference?: string, note?: string
       }
-      const { before, after } = await move($.db, Number(variantId), 'received', Number(quantity), { reference, note })
+      const { before, after, movement } =
+        await move($.db, Number(variantId), 'received', Number(quantity), { reference, note })
+
+      // What is ANSWERED and what is ANNOUNCED are two questions here, and the
+      // answer is the wrong thing to broadcast: `{ variantId, before, after }`
+      // is what a receiving screen needs back and it is not an
+      // InventoryMovement, so a subscriber has nowhere to put it — the client's
+      // store refuses a record carrying no id. The movement is the fact that
+      // happened, so it is what goes out.
+      $.dispatch = movement
+
       return { variantId: Number(variantId), before, after }
     },
 
@@ -133,7 +155,11 @@ export function createInventoryService() {
         { status: 400 },
       )
 
-      const { before, after } = await move($.db, Number(variantId), kind, Number(quantity), { note })
+      const { before, after, movement } =
+        await move($.db, Number(variantId), kind, Number(quantity), { note })
+
+      $.dispatch = movement
+
       return { variantId: Number(variantId), before, after }
     },
 

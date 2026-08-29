@@ -51,6 +51,8 @@ src/
 
   build/                 — the Vite side
     index.js             createSierraViteConfig — start here
+    app-alias-plugin.js  `@` → the surface's own src/, based on the VITE ROOT
+    static-data-plugin.js  dev only — a prerendered route's load(), run in Node
     mesa-plugin.js       Mesa compilation + reactivity hints
     scanner-plugin.js    runs the scanner
     schema-plugin.js     .lite → client-side model schemas
@@ -79,6 +81,47 @@ src/
 ---
 
 ## What bites here
+
+- **On a static target, dev shows the site with its data now — but the loader
+  runs on the SERVER, and the server must be bun.** A `render: static` route's
+  `load()` is build-time by definition and its companion may never enter the
+  browser graph (`FJS-543`: following one there published a storefront's
+  Litestone client, the DDL emitter and the migration engine as fetchable files
+  on a public origin). That left `vite dev` rendering every page with
+  `data: null` — correct, and identical to a query that found nothing.
+  `static-data-plugin.js` runs the loader where the build already runs it: in
+  Node, in the dev server, at `/__sierra/static-data`, and the browser gets JSON.
+  What the client table emits for those routes is a **fetch shim, never an
+  import** — that is the whole safety argument, and it is asserted on the shape
+  in `tests/scanner-plugin.test.js` rather than trusted.
+  **Two things about it are not obvious.** It imports the companion with a plain
+  `import()` keyed on the file's mtime, NOT `server.ssrLoadModule`: Vite's SSR
+  runner rewrites the module and does not provide Bun's `import.meta.dir`, so
+  `example`'s own db module dies on `join(undefined, …)` before a query is made.
+  And the dev server therefore has to be `bun --bun vite`, exactly as
+  `build:site` always has been — under node it fails as *Only URLs with a scheme
+  in: file, data, and node are supported — received protocol `bun:`*, which
+  names nothing an app author did. `dev: { staticData: false }` is the way back.
+
+- **`@` is the SURFACE's src/, and it is resolved twice.** A surface is a Vite
+  root, so `@/api.js` in `web/` and in `site/` are different files;
+  `app-alias-plugin.js` is the one definition and its base is the Vite root, not
+  the cwd. It had been `resolve(process.cwd(), 'src')` for its whole life, which
+  is the same directory only when a command is typed inside the surface —
+  `build:site` does `cd site` and works, `vite -c web/config/vite.config.js`
+  from the app root does not, and there `@` pointed at an `example/src` nothing
+  ever created. Nothing said so: a missing alias TARGET is not an error, it just
+  falls through to Node, which reports `Cannot find package '@'` and reads as a
+  missing dependency. No app in this repo had ever written a `@/` import, so
+  the alias shipped broken and unused.
+  **The prerender is the second resolver** — it compiles a page and imports it
+  under Node, which has no aliases at all — so `prerenderRoutes` hands the same
+  table to `renderComponent({ alias })`. One base, two resolvers; a page that
+  builds and runs in the browser dies in the static build without the second.
+  It reaches the island bundle and the widget build too, since both are separate
+  Vite builds handed their own `root`. What `@` cannot say is a sibling of
+  `src/`: `extension/src/harbor/index.js` reaching `../../config/jetty.config.js`
+  stays relative, because the alias is rooted at `src`.
 
 - **Inside a watch on `page.*`, read `page.*` — not a `$:` value derived from
   it.** Both react to the same change and the order between them is not a

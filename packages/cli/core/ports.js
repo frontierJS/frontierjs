@@ -60,6 +60,7 @@ export const GLOBAL = {
   pview:    8501,   // fli project:view (FJSChain)
   studio:   8502,   // litestone db studio
   devtools: 8503,   // junction's API console — app.configure(devtools())
+  proxy:    8504,   // fli ports:proxy — the FALLBACK when 80 cannot be bound
 }
 
 /** The whole reserved block, assigned slots and free ones alike. */
@@ -233,6 +234,87 @@ export function appPorts(appRoot, { name, scripts, env = 'dev', exists } = {}) {
     })
   }
   return out
+}
+
+/**
+ * Which package scripts a script transitively RUNS.
+ *
+ * `appPorts` answers what an app's surfaces would bind; this is the other half
+ * of the question `fli dev` actually asks, which is what THIS command is about
+ * to bind. The two are the same set in a scaffolded app, where `fli new`
+ * composes every surface into one `dev` — and they are not in an app whose
+ * `dev` starts a subset, which is what every app in this repo does.
+ *
+ * Anchored on `run`, never on a bare token that happens to be a script name:
+ * `cd web && vite` tokenises to a `web` that is a directory, and an app whose
+ * web surface is also called `web` would match it and re-introduce the bug this
+ * exists to fix.
+ *
+ * Returns `null` — not an empty set — when the entry script is absent or runs
+ * no other script. That is a script which IS the surface command (a
+ * single-surface app, where `fli new` writes `dev` as the command itself), and
+ * the honest answer there is "cannot narrow", not "starts nothing".
+ */
+export function scriptsRunBy(scripts, entry = 'dev') {
+  if (!scripts || typeof scripts[entry] !== 'string') return null
+
+  const RUNNER = /\b(?:bun|npm|pnpm|yarn|deno)\b/
+  const found  = new Set()
+  const seen   = new Set()
+  const queue  = [entry]
+
+  while (queue.length) {
+    const name = queue.shift()
+    if (seen.has(name)) continue
+    seen.add(name)
+
+    const body = scripts[name]
+    if (typeof body !== 'string') continue
+
+    const tokens = body.split(/\s+/).filter(Boolean)
+    for (let i = 0; i < tokens.length; i++) {
+      if (!RUNNER.test(tokens[i])) continue
+      let j = i + 1
+      // Flags may sit either side of `run` — `bun --watch run x`,
+      // `bun run --parallel a b`.
+      while (j < tokens.length && tokens[j].startsWith('-')) j++
+      if (tokens[j] === 'run') j++
+      while (j < tokens.length && tokens[j].startsWith('-')) j++
+      // Then every consecutive token that names a script this app declares.
+      // The first one that does not ends the run — it is a file path, a shell
+      // operator, or the next command.
+      for (; j < tokens.length; j++) {
+        if (typeof scripts[tokens[j]] !== 'string') break
+        found.add(tokens[j])
+        if (!seen.has(tokens[j])) queue.push(tokens[j])
+      }
+      i = j - 1
+    }
+  }
+
+  return found.size ? found : null
+}
+
+/**
+ * The ports `fli dev` is about to bind.
+ *
+ * `appPorts` narrowed to the surfaces the app's own `dev` script actually
+ * starts. Unnarrowed it refuses on a port this command will never take:
+ * `example` has five surfaces and a `dev` that runs two of them, so a storefront
+ * left running on 8610 blocked `fli dev` with a message naming a port nothing it
+ * was about to start would have used (`FJS-568`).
+ *
+ * A surface matches on ANY of its candidate script names rather than on the one
+ * `appPorts` chose to print, because an app may declare both spellings and run
+ * the other one.
+ */
+export function devPorts(appRoot, opts = {}) {
+  const rows  = appPorts(appRoot, opts)
+  const names = scriptsRunBy(opts.scripts, opts.entry ?? 'dev')
+  if (!names) return rows
+
+  const candidates = new Map(SURFACE_PORTS.map(s => [s.dir, s.scripts]))
+  return rows.filter(r => (candidates.get(r.surface) ?? []).some(n => names.has(n)))
 }
 
 /**
@@ -447,4 +529,96 @@ export function getSessionStatus() {
     ...s,
     alive: isProcessAlive(s.pid),
   }))
+}
+
+
+// ─── names ────────────────────────────────────────────────────────────────────
+//
+// `example.localhost` rather than `localhost:8010`, and it is worth having only
+// because the derivation is already here: this table knows that project 1 is
+// `example`, that 8010 is its frontend and 8110 its API. A name is a RENDERING
+// of the table that is already the source of truth for the numbers — nothing is
+// configured, invented, or kept in sync.
+//
+// Browsers resolve `*.localhost` to loopback with no `/etc/hosts` entry, so the
+// client half is free. What is not free is that a name has no port, which is
+// what `fli ports:proxy` is: one listener mapping Host to port.
+//
+// ── Three things it fixes, none of them remembering a number ────────────────
+//
+// `strictPort` exists because vite otherwise hops in silence and the second
+// app's drive tests the first app's app — a name makes that unreachable rather
+// than merely loud. **Cookie scope stops being a lie**: a port is not part of a
+// cookie's origin, so `localhost:8010` and `localhost:8110` share one jar and
+// cookie auth in dev behaves unlike cookie auth anywhere else, where
+// `example.localhost` and `api.example.localhost` reproduce production. And a
+// drive's assertions stop hard-coding the port `CLAUDE.md` also states.
+//
+// ── Strictly additive ───────────────────────────────────────────────────────
+//
+// The numbers keep working and nothing here may come to depend on a name.
+// `FLI_PORT_FE`/`FLI_PORT_BE`, `strictPort`, every drive and the whole table
+// below are the mechanism; a name is a second way to reach the same port, and a
+// DX nicety that becomes load-bearing is a worse trade than the tax it removes.
+
+/** The suffix every dev name ends in. A constant so one edit moves them all. */
+export const NAME_BASE = 'localhost'
+
+/** Tools live under one label of their own, so no app can shadow `studio`. */
+export const TOOL_BASE = 'fli'
+
+/**
+ * A DNS label from a package name — `@frontierjs/basecamp` is `basecamp`.
+ *
+ * `null` where nothing survives the trim: a name that is not a label cannot be
+ * a host, and inventing one would put two apps behind one name.
+ */
+export function nameLabel(name) {
+  const label = String(name ?? '')
+    .replace(/^@[^/]+\//, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return label.length ? label : null
+}
+
+/**
+ * The dev host for one surface of one app.
+ *
+ * The FRONTEND takes the bare name, because it is the thing somebody opens;
+ * every other surface is a subdomain named for its own directory. That is also
+ * what makes the cookie property true — `example.localhost` and
+ * `api.example.localhost` are a parent and a child, which is production's
+ * shape and not `localhost`'s.
+ *
+ * `null` for a surface with no name, which is every SERVED one: `site` means
+ * two ports (8610 written, 8710 served) and a name that could mean either is
+ * worse than no name at all.
+ */
+export function hostFor(name, surface, { base = NAME_BASE } = {}) {
+  const label = nameLabel(name)
+  if (!label) return null
+  if (surface === 'web' || surface === 'fe') return `${label}.${base}`
+  if (!NAMED_SURFACES.has(surface)) return null
+  return `${surface}.${label}.${base}`
+}
+
+/** Which surfaces get a name — the DEV ones, which is what `appPorts` answers. */
+const NAMED_SURFACES = new Set(SURFACE_PORTS.map(s => s.dir))
+
+/**
+ * The host for a reserved tooling slot — `studio.fli.localhost`.
+ *
+ * Under one label of their own rather than at the top level, so an app called
+ * `studio` and litestone's studio are different names rather than a collision
+ * nobody would see until both were running.
+ */
+export function toolHost(tool, { base = NAME_BASE } = {}) {
+  const label = nameLabel(tool)
+  return label ? `${label}.${TOOL_BASE}.${base}` : null
+}
+
+/** The front door: `fli.localhost` is the GUI, because that is what it is. */
+export function toolBaseHost({ base = NAME_BASE } = {}) {
+  return `${TOOL_BASE}.${base}`
 }
