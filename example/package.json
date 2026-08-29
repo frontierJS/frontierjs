@@ -21,6 +21,7 @@
     "verify:live": "node web/test/verify-live.mjs",
     "verify:jobs": "node web/test/verify-jobs.mjs",
     "verify:notify": "node web/test/verify-notify.mjs",
+    "verify:stripe": "bun web/test/verify-stripe.mjs",
     "verify:pay": "node web/test/verify-pay.mjs",
     "email:preview": "bun run api/src/emails/preview.mjs",
     "verify:catalogue": "node web/test/verify-catalogue.mjs",
@@ -31,7 +32,7 @@
     "dev:widgets": "cd widgets && vite -c config/vite.config.js",
     "build:widgets": "cd widgets && bunx sierra widgets --config config/sierra.config.js",
     "serve:widgets": "cd widgets && bunx sierra widgets --config config/sierra.config.js --serve --port 8310",
-    "dev:site": "cd site && vite -c config/vite.config.js",
+    "dev:site": "cd site && bun --bun vite -c config/vite.config.js",
     "build:site": "cd site && bun --bun vite build -c config/vite.config.js",
     "serve:site": "cd site && bunx sierra site --serve --port 8710",
     "verify:site": "bun site/test/verify.mjs",
@@ -41,7 +42,8 @@
     "audit:extension": "bunx jetty-audit --root=extension",
     "verify:extension": "node extension/test/verify.mjs",
     "verify:account": "bun site/test/verify-account.mjs",
-    "verify:revisions": "node web/test/verify-revisions.mjs"
+    "verify:revisions": "node web/test/verify-revisions.mjs",
+    "verify:shop": "bun site/test/verify-shop.mjs"
   },
   "dependencies": {
     "@frontierjs/auth": "workspace:*",

@@ -14,11 +14,12 @@
     "zx": "^8.8.5"
   },
   "scripts": {
-    "test": "bun test tests/plan.test.js tests/build-check.test.js tests/deploy-journal.test.js tests/release-mint.test.js tests/image-identity.test.js tests/compiler.test.js tests/checks.test.js tests/snapshots.test.js tests/registers.test.js tests/register-check.test.js tests/repo-map.test.js tests/repo-atlas.test.js tests/repo-live.test.js tests/runtime.test.js tests/registry.test.js tests/server.test.js tests/deploy-helpers.test.js tests/project-root.test.js tests/db-preflight.test.js tests/vendor.test.js tests/project-helpers.test.js tests/app-config.test.js tests/typecheck.test.js tests/stack.test.js tests/version.test.js tests/help.test.js tests/config.test.js tests/docs.test.js tests/generated-mesa.test.js tests/make-resource.test.js tests/pipe.test.js tests/ports.test.js tests/site-surface.test.js && bun test tests/zz-steps.test.js tests/deploy-dispatch.test.js",
+    "test": "bun test tests/machine.test.js tests/deploy-scripts.test.js tests/revert.test.js tests/journal.test.js tests/plan.test.js tests/build-check.test.js tests/deploy-journal.test.js tests/release-mint.test.js tests/image-identity.test.js tests/compiler.test.js tests/checks.test.js tests/snapshots.test.js tests/registers.test.js tests/register-check.test.js tests/repo-map.test.js tests/proofs.test.js tests/preflight.test.js tests/doctor.test.js tests/proxy.test.js tests/runnables.test.js tests/children.test.js tests/pview-state.test.js tests/repo-atlas.test.js tests/repo-live.test.js tests/runtime.test.js tests/registry.test.js tests/server.test.js tests/deploy-helpers.test.js tests/project-root.test.js tests/db-preflight.test.js tests/vendor.test.js tests/project-helpers.test.js tests/app-config.test.js tests/typecheck.test.js tests/stack.test.js tests/version.test.js tests/help.test.js tests/config.test.js tests/docs.test.js tests/generated-mesa.test.js tests/make-resource.test.js tests/pipe.test.js tests/ports.test.js tests/site-surface.test.js && bun test tests/zz-steps.test.js tests/deploy-dispatch.test.js",
     "test:watch": "bun test --watch",
     "test:steps": "bun test tests/zz-steps.test.js",
     "test:deploy": "bun test tests/deploy-helpers.test.js tests/deploy-dispatch.test.js",
-    "typecheck": "node ../../scripts/typecheck.mjs"
+    "typecheck": "node ../../scripts/typecheck.mjs",
+    "test:browser": "node tests/browser/run.mjs"
   },
   "_built": "2026-04-13",
   "files": [

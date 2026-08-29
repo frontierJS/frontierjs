@@ -17,129 +17,84 @@ flags:
     type: string
     description: Check only a specific namespace
     defaultValue: ''
+  json:
+    char: j
+    type: boolean
+    description: Answer a machine
+    defaultValue: false
 ---
 
 <script>
-import { existsSync } from 'fs'
 import { resolve } from 'path'
-import { execSync } from 'child_process'
 import { homedir } from 'os'
-
-const checkBin = (cmd) => {
-  try { execSync(`which ${cmd}`, { stdio: 'pipe' }); return true }
-  catch { return false }
-}
 </script>
 
 Scans all `_module.md` files for `requires:` declarations and checks whether
 each env var is set. Also verifies system binaries and FLI configuration.
 
 ```js
-const { buildRegistry, getModule } = await import(resolve(global.fliRoot, 'core/registry.js'))
-const { uniqueCommands }           = await import(resolve(global.fliRoot, 'core/registry.js'))
+// The ANSWER is `core/doctor.js` and this is the rendering of it. It used to be
+// a hundred lines of logic interleaved with the `echo`s that printed it, so the
+// only way to ask was to run the command and read a terminal — and `fli gui`'s
+// front page, the second caller, could not ask at all.
+const { buildRegistry, uniqueCommands, getModule } = await import(resolve(global.fliRoot, 'core/registry.js'))
+const { diagnose, requiringModules }               = await import(resolve(global.fliRoot, 'core/doctor.js'))
 
-buildRegistry()
+const modules = requiringModules({ commands: uniqueCommands(buildRegistry()), getModule })
+  .filter(m => flag.namespace ? m.ns === flag.namespace : true)
 
-// ── Gather all namespaces with modules ───────────────────────────────────────
-// Walk every unique command, collect distinct namespaces, check their module
-const registry  = buildRegistry()
-const all       = uniqueCommands(registry)
-const namespaces = [...new Set(all.map(c => c.title.split(':')[0]))]
-  .filter(ns => flag.namespace ? ns === flag.namespace : true)
+const report = diagnose({
+  root:    context.paths.root,
+  fliRoot: global.fliRoot,
+  modules,
+  home:    homedir(),
+})
 
-let totalChecks = 0
-let totalFail   = 0
+if (flag.json) {
+  console.log(JSON.stringify(report, null, 2))
+  return
+}
+
+const ICON = { ok: '\u2713', warn: '\u26a0', error: '\u2717' }
 
 echo('')
 echo('  fli doctor\n')
 
-// ── 1. System binaries ───────────────────────────────────────────────────────
-const bins = [
-  { name: 'bun',     required: true,  hint: 'https://bun.sh' },
-  { name: 'git',     required: true,  hint: 'sudo apt install git' },
-  { name: 'sqlite3', required: false, hint: 'sudo apt install sqlite3  (needed for db: commands)' },
-  { name: 'zip',     required: false, hint: 'sudo apt install zip  (needed for utils:pack)' },
-  { name: 'ssh',     required: false, hint: 'sudo apt install openssh-client' },
-  { name: 'rsync',   required: false, hint: 'sudo apt install rsync  (needed for deploy:)' },
-  { name: 'docker',  required: false, hint: 'https://docs.docker.com/engine/install/' },
-]
-
 echo('  system')
-for (const b of bins) {
-  totalChecks++
-  const ok = checkBin(b.name)
-  if (!ok) totalFail++
-  const icon   = ok ? '✓' : b.required ? '✗' : '⚠'
-  const suffix = ok ? '' : `  →  ${b.hint}`
-  echo(`    ${icon}  ${b.name.padEnd(10)} ${ok ? 'found' : 'not found'}${suffix}`)
+for (const b of report.system) {
+  echo(`    ${ICON[b.level]}  ${b.name.padEnd(10)} ${b.ok ? 'found' : 'not found'}${b.ok ? '' : `  \u2192  ${b.hint}`}`)
 }
 
-// ── 2. FLI config ────────────────────────────────────────────────────────────
 echo('\n  fli config')
-
-const fliRoot    = global.fliRoot
-const globalEnv  = resolve(homedir(), '.config', 'fli', '.env')
-const projectEnv = resolve(context.paths.root, '.env')
-const guiPort    = process.env.FLI_PORT || '5000'
-
-const checks = [
-  { label: 'global env',    ok: existsSync(globalEnv),  hint: `run: fli config  to create ${globalEnv}` },
-  { label: 'project .env',  ok: existsSync(projectEnv), hint: 'no .env in project root' },
-  { label: 'fli root',      ok: existsSync(fliRoot),    hint: fliRoot },
-]
-for (const c of checks) {
-  totalChecks++
-  if (!c.ok) totalFail++
-  echo(`    ${c.ok ? '✓' : '⚠'}  ${c.label.padEnd(14)} ${c.ok ? 'ok' : c.hint}`)
+for (const c of report.config) {
+  echo(`    ${ICON[c.level]}  ${c.label.padEnd(14)} ${c.ok ? 'ok' : c.hint}`)
 }
 
-// ── 3. Namespace requires ────────────────────────────────────────────────────
 echo('\n  namespace env vars')
-
-let anyModule = false
-for (const ns of namespaces) {
-  const mod = getModule(ns)
-  if (!mod?.meta?.requires?.length) continue
-  anyModule = true
-
-  const nsLabel = ns.padEnd(14)
-  let nsOk = true
-
-  for (const key of mod.meta.requires) {
-    totalChecks++
-    const val = process.env[key]
-    const ok  = !!val
-    if (!ok) { totalFail++; nsOk = false }
-    const icon   = ok ? '✓' : '✗'
-    const suffix = ok ? '' : `  →  fli eset ${key} <value> --global`
-    echo(`    ${icon}  ${nsLabel} ${key}${suffix}`)
-  }
+if (!report.namespaces.length) echo('    \u00b7  no _module.md files found with requires:')
+for (const n of report.namespaces) {
+  echo(`    ${ICON[n.level]}  ${n.ns.padEnd(14)} ${n.key}${n.ok ? '' : `  \u2192  ${n.fix}`}`)
 }
 
-if (!anyModule) {
-  echo('    ·  no _module.md files found with requires:')
-}
-
-// ── 4. Summary ───────────────────────────────────────────────────────────────
-const passed = totalChecks - totalFail
 echo('')
-echo(`  ─────────────────────────────────────────────`)
+echo('  ' + '\u2500'.repeat(45))
 
-if (totalFail === 0) {
-  log.success(`All ${totalChecks} checks passed`)
+if (report.ok) {
+  log.success(`All ${report.checks} checks passed`)
 } else {
-  log.warn(`${passed}/${totalChecks} checks passed  ·  ${totalFail} issue${totalFail !== 1 ? 's' : ''} found`)
+  log.warn(`${report.checks - report.failed}/${report.checks} checks passed  \u00b7  ${report.failed} issue${report.failed !== 1 ? 's' : ''} found`)
+  // What is MISSING and what STOPS you are different sentences: a machine with
+  // no CLOUDFLARE_TOKEN cannot run `cloudflare:` and runs everything else.
+  if (!report.blocked) echo('\n  Nothing here stops fli running \u2014 every required binary and path is present.')
   echo('')
-  if (totalFail > 0) {
-    echo('  To fix missing env vars:')
-    echo('    fli config            ← open global env file in editor')
-    echo('    fli eset KEY val --global  ← set a value directly')
-  }
+  echo('  To fix missing env vars:')
+  echo('    fli config            \u2190 open global env file in editor')
+  echo('    fli eset KEY val --global  \u2190 set a value directly')
 }
 echo('')
 
 if (flag.fix) {
-  log.info('Opening global env file…')
+  log.info('Opening global env file\u2026')
   context.exec({ command: `${process.env.EDITOR || 'vi'} "${resolve(homedir(), '.config', 'fli', '.env')}"` })
 }
 ```

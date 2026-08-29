@@ -36,9 +36,9 @@ Preview the SQL that would be generated, without writing a file.
 ## Development commands
 
 ```bash
-litestone studio [--port=5001]
+litestone studio [--port=8502]
 ```
-Launch the browser UI at `http://localhost:5001`. Includes table browser, SQL editor, schema viewer, migration status, REPL, and performance advisor.
+Launch the browser UI at `http://localhost:8502`. Includes table browser, SQL editor, schema viewer, migration status, REPL, and performance advisor.
 
 ```bash
 litestone repl
@@ -191,4 +191,4 @@ writing files nothing will read. See `docs/multi-tenancy.md`.
 | `--schema=<path>` | Path to `.lite` schema file |
 | `--db=<path>` | Path to SQLite database file |
 | `--migrations=<dir>` | Path to migrations directory |
-| `--port=<n>` | Studio port (default: 5001) |
+| `--port=<n>` | Studio port (default: 8502) |

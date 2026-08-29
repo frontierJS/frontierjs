@@ -21,15 +21,19 @@ context.config.apiPort    = apiPort
 context.config.healthPath = healthPath
 context.config.commit     = context.git.branch() || 'unknown'
 
-// ─── Check SSH connectivity ───────────────────────────────────────────────────
+// ─── Check the machines are reachable ─────────────────────────────────────────
 // Every machine, not just the API's: a split deploy that can reach one host and
 // not the other should fail here rather than half-way through, with the web
 // released against an API that never moved.
+//
+// `reach()` is a no-op on a local machine, which is correct rather than lenient
+// — there is nothing to log in to.
+const machines = new Map(hosts.map(h => [h.host, machineFor(context, h.host, h.path)]))
+
 for (const h of hosts) {
-  log.info(`Checking SSH → ${h.host}`)
-  try {
-    context.exec({ command: `ssh -o ConnectTimeout=5 -o BatchMode=yes ${h.host} "echo ok" > /dev/null` })
-  } catch {
+  const m = machines.get(h.host)
+  log.info(`Checking ${m.kind === 'local' ? 'the local machine' : `SSH → ${h.host}`}`)
+  if (!m.reach()) {
     log.error(`Cannot reach ${h.host} — check your SSH key and server address`)
     context.config.abort = true
     return
@@ -38,34 +42,14 @@ for (const h of hosts) {
 
 // ─── Acquire deploy lock ──────────────────────────────────────────────────────
 // Prevents two deploys running simultaneously against the same server.
-// Lock file: {serverPath}/.deploy.lock
 // One lock per machine+path pair. A split app is two locks; an app whose halves
 // share a host is one, which is why distinctHosts() dedupes on the pair.
-const locked = []
 log.info('Acquiring deploy lock...')
-for (const h of hosts) {
-  const lockFile = `${h.path}/.deploy.lock`
-  const lockCmd  = `
-    if [ -f ${lockFile} ]; then
-      echo "LOCKED: $(cat ${lockFile})"
-      exit 1
-    fi
-    echo "$$:$(date -u +%Y-%m-%dT%H:%M:%SZ):${target}" > ${lockFile}
-    echo "ok"
-  `.trim().replace(/\n\s*/g, '; ')
-
-  try {
-    context.exec({ command: `ssh ${h.host} "${lockCmd}"` })
-    locked.push(h)
-  } catch {
-    log.error(`Deploy already in progress on ${h.host} — if this is stale, remove ${lockFile}`)
-    // Release the ones already taken, or a failed second lock strands the first.
-    for (const done of locked) {
-      try { context.exec({ command: `ssh ${done.host} "rm -f ${done.path}/.deploy.lock"` }) } catch {}
-    }
-    context.config.abort = true
-    return
-  }
+const lock = acquireLock(context, { hosts, target })
+if (!lock.ok) {
+  log.error(`Deploy already in progress on ${lock.host} — if this is stale, remove ${lock.lockFile}`)
+  context.config.abort = true
+  return
 }
 
 context.config.lockAcquired = true
@@ -74,8 +58,9 @@ context.config.lockAcquired = true
 // Litestream runs as a separate process outside Docker — do not stop it.
 // We just need to know it's there so we can log it and remind the operator
 // that continuous replication is active throughout the deploy.
-const ls = litestreamStatus((cmd) => {
-  try { return context.exec({ command: `ssh ${host} "${cmd}"`, stdio: 'pipe' })?.toString('utf8') ?? '' }
+const apiMachine = machines.get(host) ?? machineFor(context, host)
+const ls = litestreamStatus((script) => {
+  try { return apiMachine.capture(script) }
   catch { return '' }
 })
 

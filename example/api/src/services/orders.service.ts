@@ -12,6 +12,7 @@ import bookCourier from '../jobs/book-courier.job.ts'
 // `payments.record`, which reaches it from a provider's webhook. It reads `$`,
 // so it runs inside THIS call's transaction with THIS caller's principal.
 import { settleOrder, refundOrder } from '../core/settle.ts'
+import { checkoutCodeFor }          from '../core/checkout-code.ts'
 
 // Orders declare @@transitions, and Litestone enforces the machine at the Data
 // boundary. What this file adds is a way to ASK for a move by name.
@@ -172,6 +173,45 @@ const recordTracking = async () => {
  * For the same reason `total` is coerced here rather than trusted: `autoValidate`
  * has not run either, so this is the raw wire value.
  */
+/**
+ * The code that lets somebody pay for this order, for a caller who may already
+ * read the order.
+ *
+ * `carts.checkout` answers it once, to the shopper who just bought. This is the
+ * other door, and a shop needs it: *send the customer a link to pay* is an
+ * ordinary thing to want, and the column is `@guarded`, so no read of the order
+ * carries it and no filter can probe it.
+ *
+ * The read goes through the CALLER'S own client and that is the whole
+ * permission check — `Order` declares `@@allow('read', auth().isStaff)` and
+ * `@@allow('read', userId == auth().id)`, so staff and the shopper it belongs
+ * to are exactly who gets an answer, and a hook restating that would be a
+ * second copy of a rule the schema already holds. The re-read as the shop is
+ * what fetches the guarded column, after the caller's own client has said they
+ * may see the row at all.
+ */
+const paymentCode = async () => {
+  // Read-shaped, so it opts out of the announcement every other custom method
+  // here makes — and here that is not tidiness. `callService` broadcasts a
+  // custom method's RESULT under its own name, this service declares
+  // `channel: 'orders'`, and `api/src/app.ts` joins every connection to it: the
+  // announcement would put a payment credential on every open socket in the
+  // shop. Nothing has changed, so there is nothing to say.
+  $.dispatch = false
+
+  const id = Number($.id)
+
+  // The CALLER'S own client, and that read is the whole permission check.
+  // `Order` declares `@@allow('read', auth().isStaff)` and
+  // `@@allow('read', userId == auth().id)`, so staff and the shopper it belongs
+  // to are exactly who gets an answer — and a hook restating that would be a
+  // second copy of a rule the schema already holds.
+  const own = await $.db.order.findFirst({ where: { id } })
+  if (!own) throw Object.assign(new Error('No such order'), { status: 404 })
+
+  return { orderId: id, checkoutCode: checkoutCodeFor(id) }
+}
+
 const checkOrderRules = async () => {
   const data = ($.data ?? {}) as { total?: unknown; status?: unknown; note?: string | null }
 
@@ -219,6 +259,7 @@ export function createOrdersService() {
     cancel: move('cancel'),
 
     recordTracking,             // the courier job writing a @system column
+    paymentCode,                // the credential a checkout link carries
 
     // The whole surface, stated — because declaring one method's input is also
     // declaring the list, and a service that named only `recordTracking` would
@@ -231,7 +272,7 @@ export function createOrdersService() {
     // in @@transitions where every other rule about this row lives.
     methods: [
       'find', 'get', 'create', 'update', 'patch', 'remove',
-      'pay', 'ship', 'refund', 'cancel',
+      'pay', 'ship', 'refund', 'cancel', 'paymentCode',
       { method: 'recordTracking', input: 'TrackingUpdate' },
     ],
   })

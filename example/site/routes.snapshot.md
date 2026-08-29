@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-5 routes · 1 layout · target static · trailing slash always
+6 routes · 1 layout · target static · trailing slash always
 ```
 
 ## Publishes
@@ -35,6 +35,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/` | `src/routes/index.mesa` | `src/routes/_module.mesa` | — |
 | `/404/` | `src/routes/404.mesa` | `src/routes/_module.mesa` | — |
 | `/account/` | `src/routes/account/index.mesa` | `src/routes/_module.mesa` | — |
+| `/cart/` | `src/routes/cart/index.mesa` | `src/routes/_module.mesa` | — |
 | `/catalog/` | `src/routes/catalog/index.mesa` | `src/routes/_module.mesa` | — |
 | `/products/:slug/` | `src/routes/products/[slug].mesa` | `src/routes/_module.mesa` | `slug` |
 
@@ -45,9 +46,10 @@ the router merges them — layout, then companion, then the page's own. A key
 arriving from a layout appears on every page under it, which is the change
 this section exists to show.
 
-- `/` — render: `static` · title: `FrontierJS Supply Co.`
+- `/` — description: `Gear for developers who get their hands dirty. Tees, hoodies, caps and mugs for the three realms.` · render: `static` · title: `FrontierJS Supply Co. — Built for The Wild`
 - `/404/` — render: `static` · title: `Page not found — FrontierJS Supply Co.`
 - `/account/` — description: `Sign in to see what you have ordered.` · render: `static` · title: `Your account — FrontierJS Supply Co.`
+- `/cart/` — render: `static` · title: `Basket`
 - `/catalog/` — render: `static` · title: `Catalogue`
 - `/products/:slug/` — render: `static`
 
@@ -56,4 +58,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 5 routes: `/`, `/404/`, `/account/`, `/catalog/`, `/products/:slug/`
+- `src/routes/_module.mesa` — 6 routes: `/`, `/404/`, `/account/`, `/cart/`, `/catalog/`, `/products/:slug/`

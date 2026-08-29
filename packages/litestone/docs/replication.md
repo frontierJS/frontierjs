@@ -55,7 +55,7 @@ of append-only files with no WAL, so it cannot be replicated here at all —
 ## Restoring
 
 **Replication is derived from the schema; restore is not, and you have to type it.**
-There is no `litestone restore` — it is filed as `ISSUES.md` `FJS-540`, with what it
+There is no `litestone restore` — it is filed as `ISSUES.md` `FJS-552`, with what it
 should do — so coming back is one litestream invocation per declared SQLite database,
 naming the same suffix `replicate` wrote to:
 
@@ -91,7 +91,7 @@ litestream restore -o /tmp/verify/main.db s3://mybucket/myapp/main
 DATABASE_URL=/tmp/verify/main.db bun run test
 ```
 
-Making that one command is the other half of `FJS-540`.
+Making that one command is the other half of `FJS-552`.
 
 ## Which Litestream
 

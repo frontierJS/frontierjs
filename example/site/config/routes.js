@@ -9,7 +9,7 @@ export const tree = {
   file: "src/routes/index.mesa",
   companion: "src/routes/index.meta.js",
   layout: "src/routes/_module.mesa",
-  meta: {"title":"FrontierJS Supply Co.","render":"static","isIndex":true},
+  meta: {"title":"FrontierJS Supply Co. — Built for The Wild","description":"Gear for developers who get their hands dirty. Tees, hoodies, caps and mugs for the three realms.","render":"static","isIndex":true},
   params: [],
   children: [
   {
@@ -29,6 +29,16 @@ export const tree = {
       companion: null,
       layout: "src/routes/_module.mesa",
       meta: {"title":"Your account — FrontierJS Supply Co.","description":"Sign in to see what you have ordered.","render":"static","isIndex":true},
+      params: [],
+      children: [],
+    },
+  {
+      id: "cart",
+      path: "/cart/",
+      file: "src/routes/cart/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: {"title":"Basket","render":"static","isIndex":true},
       params: [],
       children: [],
     },
@@ -60,14 +70,34 @@ export const components = {
   'root': () => import('../src/routes/index.mesa'),
   '404': () => import('../src/routes/404.mesa'),
   'account': () => import('../src/routes/account/index.mesa'),
+  'cart': () => import('../src/routes/cart/index.mesa'),
   'catalog': () => import('../src/routes/catalog/index.mesa'),
   'products.[slug]': () => import('../src/routes/products/[slug].mesa'),
+}
+
+
+function __sierraDevStatic(routeId) {
+  let answered = null
+  return Promise.resolve({
+    async load({ params, url }) {
+      const q = new URLSearchParams({ route: routeId, url, params: JSON.stringify(params ?? {}) })
+      const res = await fetch('/__sierra/static-data?' + q)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? ('static-data ' + res.status))
+      answered = body
+      return body.data
+    },
+    head: () => answered?.head ?? null,
+  })
 }
 
 // Loader factory map — routes with a .meta.js companion
 // Only populated for routes that have a companion file
 export const loaders = {
 
+  'root': () => __sierraDevStatic('root'),
+  'catalog': () => __sierraDevStatic('catalog'),
+  'products.[slug]': () => __sierraDevStatic('products.[slug]'),
 }
 
 // Layout factory map — keyed by file path (same as node.layout in the tree).
@@ -82,6 +112,7 @@ export const all = [
   "/",
   "/404/",
   "/account/",
+  "/cart/",
   "/catalog/",
   "/products/:slug/"
 ]
@@ -90,6 +121,7 @@ export const published = [
   "/",
   "/404/",
   "/account/",
+  "/cart/",
   "/catalog/",
   "/products/:slug/"
 ]
@@ -98,6 +130,7 @@ export const indexed = [
   "/",
   "/404/",
   "/account/",
+  "/cart/",
   "/catalog/"
 ]
 

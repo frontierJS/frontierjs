@@ -1,5 +1,124 @@
 # Changes — @frontierjs/sierra
 
+## 2026-08-28 — a static surface's dev server shows its data
+
+1126 tests, 0 fail. Typecheck clean.
+
+`vite dev` on a `site/` surface rendered every page empty. Correctly empty:
+a `render: static` route's `load()` runs in Node at build time, its companion
+may never enter the browser graph, and so the client route table has no loader
+for it. Sierra said so once per route — at `info`, among thirty lines of Vite
+output — and the page underneath was indistinguishable from one whose query
+found nothing. `example/site/`'s catalogue read *0 products, prerendered*.
+
+The dev server is a Node process. So the loader runs there, at
+`/__sierra/static-data` (`build/static-data-plugin.js`), and the browser gets
+JSON. `example`'s catalogue now reads *12 products* in dev, and the page's own
+`head()` comes back on the same round trip because the router asks for it after
+the data.
+
+**What the client table emits is a fetch shim, never an import**, and that is
+the whole safety argument rather than a detail: an import is what pulled a
+storefront's Litestone client, DDL emitter and migration engine into a published
+directory as fetchable files (`FJS-543`). A fetch cannot, whatever the companion
+reaches for. It is asserted on the shape — the build's table must contain no
+`import('…meta.js')` and no shim — because that property is invisible until the
+day it is not.
+
+**It does NOT use `server.ssrLoadModule`**, which was the obvious choice and does
+not work. Vite's SSR runner rewrites the module and does not provide Bun's
+`import.meta.dir`, so `example`'s own db module dies on `join(undefined, …)`
+before a query is made. The companion is imported the way the BUILD imports it —
+a plain dynamic `import()` of the file on disk, exactly what `importCompanion`
+does — keyed on the file's mtime, so editing a `load()` is picked up on the next
+navigation while the modules it imports stay cached and the database client is
+not rebuilt per page view.
+
+**The dev server must therefore run under bun**, which is what `build:site` has
+always needed and for the same reason. `siteScripts()` writes `bun --bun vite`
+for both now; under node it fails as *Only URLs with a scheme in: file, data,
+and node are supported — received protocol `bun:`*, which names nothing an app
+author did.
+
+`dev: { staticData: false }` is the way back to the old behaviour. Default true,
+because a dev server you cannot see the site on is not much of one.
+
+## 2026-08-27 — the build only ever showed the second error
+
+`FJS-551`. 1122 tests, 0 fail.
+
+A half-written `@@transitions` block in `example/db/schema.lite` made
+`bun run build:site` print four messages — `static safety: could not load
+'../api/src/core/db.ts': Cannot access 'db' before initialization.` and three
+routes failing with `load() threw: Cannot access 'sys' before initialization.`
+None of them names a schema, a line or a parse. The real error is
+`@@transitions(status): expected '->' after 'pending', got 'ship' (line 837,
+col 3)` and it was printed nowhere. Two people read it as a broken build on the
+same day; it was a broken file.
+
+**The mechanism is not Sierra's.** `api/src/core/db.ts` ends in
+`export const db = await openShop(…)` — a top-level await. Import it three times
+in one Bun process with the schema broken and the first throws the parse error,
+the second and third throw `Cannot access 'DEFAULT_SHOP' before initialization`.
+A failed TLA module re-imports as a partially-initialised namespace instead of
+re-throwing, so every reader after the first gets a TDZ on whichever binding it
+touched and the cause is gone.
+
+**What is Sierra's is that a build imports that module from several places, so
+what it holds is almost always the second kind.** `explainModuleInitFailure`
+annotates a `before initialization` message with what it actually means and the
+one line that shows the cause (`bun -e "await import('<the module>')"`). Applied
+where `resolveBuildDb` warns and where a route is skipped for `load() threw`,
+`getStaticPaths() threw` or `render failed`.
+
+Additive on purpose — the original message is kept in front, because it is still
+the only thing that names where the read happened, and any other message is
+returned untouched. What it does NOT do is fail the build: the comment above
+`resolveBuildDb` is right that a missing or wrong-shaped db must stay a warning,
+since an unobservable route is refused by `checkRoute` anyway. Separating *the
+module threw* from *the module is not there* is the open half of the issue.
+
+## 2026-08-27 — `@` resolved against the cwd, so it never worked
+
+1122 tests, 0 fail.
+
+`@` is the surface's own `src/` — the alias that turns `../../money.js` into
+`@/money.js` in a route three directories down. It had been in the config object
+`createSierraViteConfig` returns, as `resolve(process.cwd(), 'src')`, since the
+config was written. That is the same directory only when the command was typed
+INSIDE the surface: `build:site` does `cd site` and would have worked,
+`vite build -c web/config/vite.config.js` from the app root — which is every
+`dev` and `build` script this repo scaffolds — resolved `@` to an `example/src`
+that has never existed.
+
+Nothing could see it. A missing alias TARGET is not an error; Vite falls through
+to Node, which reports `Cannot find package '@'`, and that reads as a missing
+dependency rather than as a broken alias. And no app in this repo had ever
+written a `@/` import — the feature shipped, was never used, and was wrong.
+
+The base is the **Vite root** now, and it comes from a plugin
+(`build/app-alias-plugin.js`) rather than from the returned object, because the
+app's own `vite.config.js` spreads that object and sets `root` afterwards — at
+the moment it is built there is nothing to resolve against. A plugin's `config()`
+hook is handed the user's config with `root` already on it, and its return wins
+over the same key in that config (measured, not assumed). It is in the island
+bundle's and the widget build's plugin lists too, since both are separate Vite
+builds handed their own `root`.
+
+**The prerender is a second resolver and had to be told separately.** It compiles
+a page and imports it under Node, which has no aliases at all, so a page that
+built and ran in the browser would have died in the static build. `prerenderRoutes`
+passes the same table to `renderComponent({ alias })` — one base (`appSrcDir`),
+two resolvers.
+
+Proven by conversion rather than by assertion alone: `example`'s six site
+islands, eleven SPA routes and one widget now import `@/api.js`, `@/money.js`
+and `@/cart.js`. The negative control is the same builds with the cwd base put
+back — four unresolved imports in the SPA, which is what had been shipping.
+
+What `@` cannot say is a sibling of `src/`. `extension/src/harbor/index.js`
+reaches `../../config/jetty.config.js` and stays relative.
+
 ## 2026-08-26 — dev on a static surface ran the build-time loader
 
 `FJS-543`. 1114 tests, 0 fail.

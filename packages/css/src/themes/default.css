@@ -1,11 +1,98 @@
-/* default.css — Blue brand, neutral surfaces. */
+/*
+ * default.css — Blue brand, cool-neutral surfaces.
+ *
+ * The theme every app boots into, so it is the one that decides what
+ * "unstyled FrontierJS" looks like. It carries the full neutral ramp, the
+ * grounds and the elevation rather than colours alone: the ramp shipped
+ * warm (#e7e3d8 rules) over neutral-grey surfaces, and a hairline that
+ * disagrees with the surface it divides is what reads as unfinished.
+ *
+ * --ink-mute is the lightest rung of the ramp and is still body text —
+ * placeholders, table heads, field hints, .empty, all at 11–13px, so AA's
+ * 4.5:1 applies rather than the 3:1 large-text threshold. It is fitted by
+ * scaling --color-muted uniformly in LINEAR RGB, the operation tokens.css
+ * documents, so chromaticity is exact and it is the same slate: 5.19:1 on
+ * --surface, 4.61:1 on --app-bg, the deepest of the three grounds.
+ */
 
 .theme-default {
-  --color-primary:   #0d83dd;
-  --color-secondary: #1f2937;
-  --color-muted:     #6b7280;
-  --color-info:      #2EA2C9;
-  --color-success:   #16a34a;
-  --color-warning:   #d4b609;
-  --color-danger:    #F4403A;
+  /* ── Brand ──────────────────────────────────────────────────────────
+   * chip.css derives chip text from the fill's luminance, so these are
+   * safe as fills by construction, and tones.css clamps them through the
+   * legibility window when a tone becomes text. What is hand-tuned here
+   * is the pair that is neither: --color-muted, which --ink-mute is
+   * derived from below.
+   */
+  --color-primary:   #2563eb;
+  --color-secondary: #0f172a;
+  --color-muted:     #64748b;
+  --color-info:      #0369a1;
+  --color-success:   #15803d;
+  --color-warning:   #b45309;
+  --color-danger:    #dc2626;
+
+  /* ── Grounds and ink ────────────────────────────────────────────────
+   * Three grounds rather than two. --app-bg used to fall back to
+   * --surface-sunken, which made the page, the table head and every
+   * inset well one colour — so a white Card on the page had nothing but
+   * a hairline separating it, and the table head dissolved into the page
+   * behind it. Sunken sits between the two now: the page is the deepest,
+   * the card is white, and the head is the step between them.
+   */
+  --app-bg:         #eef2f7;
+  --surface:        #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f2f5f8;
+
+  --ink:            #0f172a;
+  --ink-soft:       #475569;
+  --ink-mute:       #5f6e84;
+
+  --rule:           #dfe5ec;
+  --rule-strong:    #c6d0dc;
+
+  /*
+   * The topbar is chrome and the page is not, so it takes --surface while
+   * the page takes --app-bg. Stated rather than left to the fallback: the
+   * fallback is --surface, which was right by accident while the two
+   * grounds were the same colour and is a decision now that they differ.
+   */
+  --topbar-bg: #ffffff;
+
+  /* ── Elevation ──────────────────────────────────────────────────────
+   * A resting Card was a border and nothing else. That reads flat against
+   * a page ground this close in value, so the Block tier takes the
+   * faintest of the three — enough to lift, not enough to float. The
+   * floating ladder above it is retuned to match: the shipped defaults
+   * were tuned against a white page and disappear on a coloured one.
+   *
+   * Literals, not var(--shadow-sm): an alias in a theme resolves once
+   * here and would not follow a nested theme.
+   */
+  --surface-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm:      0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md:      0 1px 3px rgba(15, 23, 42, 0.08), 0 4px 10px rgba(15, 23, 42, 0.04);
+  --shadow-lg:      0 2px 6px rgba(15, 23, 42, 0.08), 0 12px 28px rgba(15, 23, 42, 0.10);
+
+  /* ── Shape ──────────────────────────────────────────────────────────
+   * --badge-radius is deliberately unset: badges follow --btn-radius by
+   * use-site fallback, so softening buttons softens badges for free.
+   */
+  --btn-radius:   8px;
+  --card-radius:  10px;
+  --field-radius: 8px;
+
+  /* ── The page title ─────────────────────────────────────────────────
+   * At 36px and 700 in near-black, an h1 outweighs everything on a screen
+   * whose job is to show data. Both halves come down: one weight for all
+   * six levels (h1 and h2 default to 700, the rest to 600), and one rung
+   * off the top of the ladder.
+   *
+   * --text-4xl is h1 and nothing else in the package reads it, so this
+   * moves no reading size. The rungs below it are left where the ladder
+   * put them — retuning those is a house voice, which is press.css's job
+   * rather than the default's.
+   */
+  --heading-font-weight: 600;
+  --text-4xl:            2rem;
 }

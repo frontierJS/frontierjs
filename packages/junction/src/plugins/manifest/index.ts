@@ -16,7 +16,7 @@
 //   app.configure(manifestPlugin({ db, devOnly: true }))
 //   // → only mounted in non-production
 
-import type { App, Plugin } from '../../core/app.ts'
+import type { App, DevService, Plugin } from '../../core/app.ts'
 import type { HookMap }     from '../../core/hooks.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -35,13 +35,17 @@ export interface ManifestPluginOptions {
 }
 
 export interface AppManifest {
-  app:      AppMeta
-  services: ServiceManifest[]
-  routes:   RouteManifest[]
-  channels: ChannelManifest[]
-  appHooks: HookManifest
-  plugins:  string[]
-  schema?:  unknown   // generateJsonSchema output — present when opts.schema provided
+  app:         AppMeta
+  services:    ServiceManifest[]
+  routes:      RouteManifest[]
+  channels:    ChannelManifest[]
+  appHooks:    HookManifest
+  plugins:     string[]
+  /** The second listeners this app announced through `app.registerDevService`.
+   *  A sidecar mounts no route here, so nothing else in this document can see
+   *  one. Empty for an app that started none. */
+  devServices: DevService[]
+  schema?:     unknown   // generateJsonSchema output — present when opts.schema provided
   // Migrations are served separately via GET {prefix}/migrations — not embedded here.
 }
 
@@ -142,12 +146,13 @@ async function buildManifest(app: App, opts: ManifestPluginOptions): Promise<App
   }
 
   return {
-    app:      buildAppMeta(app),
-    services: buildServices(app),
-    routes:   buildRoutes(app),
-    channels: buildChannels(app),
-    appHooks: serializeHookMap(app._appHooks),
-    plugins:  app._plugins ?? [],
+    app:         buildAppMeta(app),
+    services:    buildServices(app),
+    routes:      buildRoutes(app),
+    channels:    buildChannels(app),
+    appHooks:    serializeHookMap(app._appHooks),
+    plugins:     app._plugins ?? [],
+    devServices: [...(app._devServices?.values() ?? [])],
     schema,
   }
 }

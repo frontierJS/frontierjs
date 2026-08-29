@@ -64,6 +64,48 @@
 }
 
 /*
+ * The front page. It composes `.surface` and `.rows divided` rather than
+ * drawing a card of its own, so the ground, the hairline and the radius are the
+ * design system's and a theme switch reaches them for free.
+ */
+.gui-home {
+  padding: var(--space-lg);
+}
+
+/* The last-run badge is a BUTTON, because clicking it prints what that run
+ * said. A bare button carries the browser's own chrome, which fights the badge
+ * it is wearing — so only the chrome is removed and the badge is left alone. */
+/* A finding's message is a paragraph — the rule explains what breaks, which is
+ * what makes it worth reading and too long for a row. Two lines here, the whole
+ * of it in the title. */
+.gui-clamp {
+  display:            -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow:           hidden;
+}
+
+button[data-last],
+button[data-health] {
+  border:      0;
+  font:        inherit;
+  font-size:   var(--text-xs);
+  cursor:      pointer;
+}
+
+/* The command to type. Monospace because it is one, and it may be long enough
+ * to need the room, so it truncates rather than pushing the actions off. */
+.gui-cmd {
+  font-family:   var(--font-mono);
+  font-size:     var(--text-xs);
+  color:         var(--ink-mute);
+  max-inline-size: 32ch;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+}
+
+/*
  * The drag handle. A hit area wider than the rule it draws, because a 1px
  * target is one nobody can grab.
  */
@@ -265,7 +307,52 @@
 
   <main class="screen gui-screen">
     <section class="pane gui-work" aria-label="Command">
-      <div class="empty" id="empty-state">
+      <!-- The front page. It is the dashboard rather than a fifth server on a
+           fifth port: the complaint this answers is that there are too many
+           things to keep track of, and a new tool would make it one worse. -->
+      <div class="gui-home stack gap-lg" id="dashboard">
+        <div class="cluster gap-sm">
+          <strong class="text-lg">what can run here</strong>
+          <span class="text-xs text-muted" id="dash-tick" role="status">reading the tree…</span>
+        </div>
+        <!-- Above the tiles rather than beside them: what can run here is the
+             whole list, and this is the handful of it that is about the work
+             in front of you. Hidden on a clean tree — a panel that says
+             "nothing changed" on every page load is a panel people learn to
+             skip past. -->
+        <section class="surface" id="proves" hidden>
+          <div class="bar bordered dense">
+            <strong class="text-sm">what proves this change</strong>
+            <span class="text-xs text-muted" id="proves-note"></span>
+            <button class="btn ghost text-xs" onclick="loadProves()">recheck</button>
+          </div>
+          <ul class="rows divided" id="proves-rows"></ul>
+          <div class="bar dense" id="proves-more" hidden>
+            <button class="btn ghost text-xs" onclick="showAllProves()" id="proves-more-btn"></button>
+          </div>
+        </section>
+
+        <!-- Two engines that existed and were nowhere a person looks. They stay
+             two questions in one panel: `fli check` grades the PROJECT against
+             the rules this framework publishes, `fli doctor` grades the MACHINE
+             the commands run on, and a missing `sqlite3` is not an
+             architecture finding. -->
+        <section class="surface" id="checks">
+          <div class="bar bordered dense">
+            <strong class="text-sm">checks</strong>
+            <span class="text-xs text-muted" id="checks-note">reading…</span>
+            <button class="btn ghost text-xs" onclick="loadChecks()">recheck</button>
+          </div>
+          <ul class="rows divided" id="checks-rows"></ul>
+          <div class="bar dense" id="checks-more" hidden>
+            <button class="btn ghost text-xs" onclick="showAllChecks()" id="checks-more-btn"></button>
+          </div>
+        </section>
+
+        <div class="stack gap-lg" id="dash-groups"></div>
+      </div>
+
+      <div class="empty" id="empty-state" hidden>
         <div class="empty-icon" aria-hidden="true">⌘</div>
         <div class="empty-title">select a command</div>
         <div class="empty-text">pick one from the sidebar, or press <kbd class="kbd">⌘K</kbd></div>
@@ -635,9 +722,11 @@ async function init() {
       document.getElementById('build-date').textContent = `built ${meta.built}`
     }
 
+    await loadDashboard()
+
     // Deep link — /git/commit selects git:commit
     const title = titleFromPath(window.location.pathname)
-    if (title) selectCommand(title)
+    if (title) selectCommand(title); else showHome(true)
   } catch (err) {
     setStatus(false)
     appendOutput(`could not reach the fli server: ${err.message}`, 'error')
@@ -863,7 +952,7 @@ async function selectCommand(title) {
   const meta = await fetch(`${API}/api/commands/${encodeURIComponent(title)}`).then(r => r.json())
   activeCommand = meta
 
-  document.getElementById('empty-state').hidden = true
+  showHome(false)
   const form = document.getElementById('cmd-form')
   form.hidden = false
   form.innerHTML = title === 'make:command' ? buildMakeCommandForm(meta) : buildForm(meta)
@@ -1305,6 +1394,669 @@ function stripAnsi(str) {
 
 init()
 
+// ─── The front page — what can run here ───────────────────────────────────────
+//
+// Two answers with two lifetimes. `/api/runnables` is a tree walk, cached and
+// read once; `/api/state` is a probe, polled while this page is on screen. They
+// are kept apart here for the reason the server keeps them apart: a stale
+// inventory shows a row that has been renamed, and a stale state shows a server
+// that is down as up. Only the second one misleads, so only the second is
+// polled — and the tick is on screen, because a reading with no time on it
+// cannot be told from a live one.
+//
+// This page SHOWS and OPENS. Starting a row is a separate step with a process
+// table behind it; until then a row hands over the command to type, which is
+// what the terminal beside this window is for.
+
+const STATE_POLL_MS = 3000
+let dashRows   = []
+let dashTimer  = null
+
+const KIND_TITLE = {
+  surface:  'surfaces',
+  tool:     'tools',
+  drive:    'drives',
+  suite:    'suites',
+  task:     'tasks',
+  snapshot: 'snapshots',
+}
+
+// A state is a word and a tone. `unknown` is muted rather than absent: a row
+// with no port cannot be probed, and *nothing here can tell* is a different
+// sentence from *not running*.
+const STATE_TONE = {
+  up:             'success',
+  down:           'muted',
+  'claimed-dead': 'warning',
+  unknown:        'muted',
+}
+const STATE_WORD = {
+  up:             'answering',
+  down:           'not running',
+  'claimed-dead': 'claimed, not answering',
+  unknown:        '',
+}
+
+function showHome(on) {
+  document.getElementById('dashboard').hidden = !on
+  // The empty state is for a project with nothing in it, not for "no command
+  // selected" — that is what the dashboard is now.
+  document.getElementById('empty-state').hidden = on ? dashRows.length > 0 : true
+  if (on) startStatePoll(); else stopStatePoll()
+}
+
+async function loadDashboard() {
+  try {
+    const body = await fetch(`${API}/api/runnables`).then(r => r.json())
+    dashRows = body.rows ?? []
+    renderDashboard(body.kinds ?? Object.keys(KIND_TITLE), dashRows)
+    await pollState()
+  } catch (err) {
+    document.getElementById('dash-tick').textContent = `could not read the project: ${err.message}`
+  }
+  loadProves()
+  loadChecks()
+}
+
+// ─── what proves this change ──────────────────────────────────────────────────
+//
+// `CLAUDE.md` § *Which drive proves a change* against the working tree. The
+// server resolves both columns, so every answer here is either a row this page
+// can press or an honest statement that it is not one.
+//
+// Read once per dashboard load and on the button. NOT polled: it is a git call
+// rather than a probe, and unlike a port's state it cannot go stale while
+// nobody is typing.
+
+const PROVES_SHOWN = 6
+let provesRows = []
+let provesAll  = false
+
+async function loadProves() {
+  const panel = document.getElementById('proves')
+  const note  = document.getElementById('proves-note')
+  try {
+    const body = await fetch(`${API}/api/proves`).then(r => r.json())
+    if (body.error) throw new Error(body.error)
+
+    provesRows = body.rows ?? []
+    provesAll  = false
+
+    // A clean tree is the only case with nothing to say. Files changed and no
+    // row matching is worth showing — that is the table being behind, which is
+    // the one thing this panel can report that nothing else does.
+    const files = body.files?.length ?? 0
+    panel.hidden = files === 0
+    note.textContent = provesRows.length
+      ? `${files} file(s) changed · the package's own suite first`
+      : `${files} file(s) changed · no row of the proof table covers them`
+
+    renderProves()
+  } catch (err) {
+    panel.hidden = false
+    note.textContent = `could not read the proof table: ${err.message}`
+  }
+}
+
+function showAllProves() { provesAll = true; renderProves() }
+
+function renderProves() {
+  const list = document.getElementById('proves-rows')
+  const more = document.getElementById('proves-more')
+  const shown = provesAll ? provesRows : provesRows.slice(0, PROVES_SHOWN)
+
+  list.innerHTML = shown.map(provesRow).join('')
+
+  // The count is on the button rather than implied by a cut list — a panel
+  // that quietly shows six of twenty-six reads as *these are the six*.
+  more.hidden = provesRows.length <= shown.length
+  document.getElementById('proves-more-btn').textContent =
+    `show the other ${provesRows.length - shown.length}`
+}
+
+// The tier travels from the server, so a weak match reads as one. A package
+// match means *something in here changed and this row is about here*, which is
+// true of four rows at once for sierra.
+const TIER_WORD = {
+  path:    'names the file',
+  area:    'names the area',
+  symbol:  'names a symbol in the diff',
+  package: 'names the package',
+}
+
+function provesRow(r) {
+  const on = (r.match.on ?? []).slice(0, 3).join(', ')
+
+  const targets = r.targets.map(t => {
+    const where = t.dir ?? t.where
+    // A file is named and never given a command: the runner differs per
+    // package, so guessing `bun test` for a vitest package is worse than
+    // silence.
+    if (t.kind === 'file')    return `<code class="gui-cmd">read ${esc(where)}/${esc(t.name)}</code>`
+    // The finding the check rule exists for, on screen where somebody is about
+    // to take the advice.
+    if (t.kind === 'unknown') return `<span class="badge danger text-xs" title="the proof table names this and nothing answers to it">gone: ${esc(t.name)}</span>`
+    if (t.kind === 'row')     return `<button class="btn ghost text-xs" onclick="startRow(${esc(JSON.stringify(t.id))})">▶ ${esc(where)} · ${esc(t.name)}</button>`
+    return `<button class="btn ghost text-xs" title="not a row this page lists — copy it" onclick="copyText(${esc(JSON.stringify(`cd ${where} && ${t.command}`))})">copy ${esc(where)} · ${esc(t.name)}</button>`
+  }).join('')
+
+  return `
+    <li class="list-row" data-proof="${esc(r.match.tier)}">
+      <div class="stack gap-3xs">
+        <span class="text-sm">${esc(r.changed)}</span>
+        <span class="text-xs text-muted">${esc(TIER_WORD[r.match.tier] ?? r.match.tier)}${on ? ` — ${esc(on)}` : ''}</span>
+      </div>
+      <div class="row-actions cluster gap-2xs">${targets}</div>
+    </li>`
+}
+
+function renderDashboard(kinds, rows) {
+  const groups = document.getElementById('dash-groups')
+  const byKind = {}
+  for (const r of rows) (byKind[r.kind] ??= []).push(r)
+
+  groups.innerHTML = kinds.filter(k => byKind[k]?.length).map(kind => `
+    <section class="surface">
+      <div class="bar bordered dense">
+        <strong class="text-sm">${esc(KIND_TITLE[kind] ?? kind)}</strong>
+        <span class="text-xs text-muted">${byKind[kind].length}</span>
+      </div>
+      <ul class="rows divided">
+        ${byKind[kind].map(dashRow).join('')}
+      </ul>
+    </section>
+  `).join('')
+}
+
+function dashRow(r) {
+  // `start` is null where the project declares nothing that starts this —
+  // the row stays, because a surface that exists and has no script is a
+  // different thing from a surface that is not there.
+  const cmd = r.start
+    ? `<code class="gui-cmd" title="${esc(r.dir)}">${esc(r.dir === '.' ? '' : r.dir + ' · ')}${esc(r.start)}</code>`
+    : `<span class="text-xs text-muted">nothing here starts it</span>`
+
+  // A drive's preamble, from `CLAUDE.md`'s own *Start first* column. A step the
+  // table names that the directory does not declare is shown in danger rather
+  // than dropped: a missing step and a step nobody wrote down look identical
+  // once one of them is invisible.
+  const needs = r.needs?.length
+    ? `<div class="text-xs text-muted" data-needs>needs ${r.needs.map(n => n.id
+        ? esc(n.script)
+        : `<span class="text-danger" title="the drive table names this and ${esc(r.dir)} declares no such script">${esc(n.script)}?</span>`
+      ).join(' → ')}</div>`
+    : ''
+
+  return `
+    <li class="list-row" data-id="${esc(r.id)}">
+      <div class="stack gap-3xs">
+        <div class="cluster gap-sm">
+          <span class="text-sm">${esc(r.name)}</span>
+          ${r.port ? `<span class="text-xs text-muted">:${r.port}</span>` : ''}
+          <span class="badge muted text-xs" data-state hidden></span>
+        <button class="badge muted text-xs" data-health hidden></button>
+        <button class="badge muted text-xs" data-last hidden></button>
+        </div>
+        ${needs}
+      </div>
+      <div class="row-actions cluster gap-2xs">
+        ${cmd}
+        ${r.host ? `<code class="gui-cmd" data-host title="${esc(r.host)} — needs \`fli proxy\`; the port always works">${esc(r.host)}</code>` : ''}
+        ${r.start ? `<button class="btn ghost text-xs" onclick="copyText(${esc(JSON.stringify(r.start))})">copy</button>` : ''}
+        ${r.start ? `<button class="btn ghost text-xs" data-start hidden onclick="${r.needs?.length ? 'startWithNeeds' : 'startRow'}(${esc(JSON.stringify(r.id))})">${r.needs?.length ? 'start it all' : 'start'}</button>` : ''}
+        ${r.start ? `<button class="btn ghost text-xs" data-stop hidden onclick="stopRow(${esc(JSON.stringify(r.id))})">stop</button>` : ''}
+        ${r.open ? `<a class="btn ghost text-xs" data-open hidden href="${esc(r.open)}" target="_blank" rel="noreferrer">open</a>` : ''}
+      </div>
+    </li>`
+}
+
+async function pollState() {
+  try {
+    const { state, at } = await fetch(`${API}/api/state`).then(r => r.json())
+
+    // Before the render, so the badge is drawn from this tick's answer rather
+    // than from the one before it.
+    if (healthTick++ % HEALTH_EVERY === 0) await refreshHealth(state)
+
+    for (const li of document.querySelectorAll('#dash-groups [data-id]')) {
+      const s     = state[li.dataset.id]?.state ?? 'unknown'
+      const badge = li.querySelector('[data-state]')
+      const open  = li.querySelector('[data-open]')
+
+      const mine  = state[li.dataset.id] ?? {}
+      const alive = mine.pid && !mine.exit
+      const start = li.querySelector('[data-start]')
+      const stop  = li.querySelector('[data-stop]')
+
+      // Two badges, one fact each. This one is *is it running*; how the last
+      // run WENT is the one beside it, which outlives the process — a single
+      // badge saying `exited 1` had to choose between the two and chose the
+      // one that disappears.
+      badge.hidden = s === 'unknown' && !alive
+      badge.className = `badge ${STATE_TONE[s]} text-xs`
+      badge.textContent = alive && s === 'unknown' ? 'running here' : STATE_WORD[s]
+
+      renderLast(li, mine.last, alive)
+      renderHealth(li, s)
+
+      // A name is a second way to reach the same port and never the first: the
+      // `open` link stays the number, so nothing on this page stops working
+      // when the proxy is not running. The name is shown as TEXT for that
+      // reason — it is what to type once `fli proxy` is up.
+
+      // Only offered where something is answering: a link to a port nothing is
+      // listening on is a browser error page with this page's name on it.
+      if (open) open.hidden = s !== 'up'
+
+      // Stop is offered ONLY for a process this page started. A row that is
+      // answering and is not ours gets the reason instead of a button, because
+      // the alternative is killing something somebody else is using.
+      if (start) start.hidden = alive
+      if (stop) {
+        stop.hidden = !alive
+        stop.title  = 'stop the process this page started'
+      }
+      if (!alive && s === 'up' && stop) {
+        stop.hidden = true
+        li.querySelector('[data-foreign]')?.remove()
+        const note = document.createElement('span')
+        note.className = 'text-xs text-muted'
+        note.setAttribute('data-foreign', '')
+        note.textContent = 'started elsewhere'
+        if (!li.querySelector('[data-foreign]')) stop.parentNode.insertBefore(note, stop)
+      } else {
+        li.querySelector('[data-foreign]')?.remove()
+      }
+    }
+    document.getElementById('dash-tick').textContent =
+      `checked ${new Date(at).toLocaleTimeString()}`
+  } catch (err) {
+    document.getElementById('dash-tick').textContent = `state unavailable: ${err.message}`
+  }
+}
+
+// ─── what this project and this machine say about themselves ──────────────────
+//
+// `fli check` is the arch-test surface and `fli doctor` asks whether this
+// machine can run fli at all. Both engines existed; neither was anywhere a
+// person looks, and a rule that is silent when broken is only worth having if
+// somebody reads it.
+//
+// **Both are asked in process by the fli server** — `core/checks.js` is the same
+// engine `scripts/ci.mjs` runs and `core/doctor.js` is the one the command
+// renders — so there is no second answer to either question.
+//
+// Read on load and on the button, never polled: both walk the tree, and a
+// findings list refreshed every three seconds costs more than the findings are
+// worth.
+//
+// **A clean project shows a line rather than nothing.** The proves panel above
+// hides on a clean tree because *nothing changed* is noise; *this project
+// passes its own rules* is not, and hiding it would make `clean` and `never ran`
+// the same screen.
+
+const CHECKS_SHOWN = 6
+let checkRows = []
+let checkAll  = false
+
+async function loadChecks() {
+  const note = document.getElementById('checks-note')
+  try {
+    const [checks, machine] = await Promise.all([
+      fetch(`${API}/api/check`).then(r => r.json()),
+      fetch(`${API}/api/doctor`).then(r => r.json()),
+    ])
+    if (checks.error)  throw new Error(checks.error)
+    if (machine.error) throw new Error(machine.error)
+
+    // One list, strongest first, each finding carrying the scope it came from.
+    checkRows = (checks.scopes ?? []).flatMap(sc => sc.findings.map(f => ({ ...f, scope: sc.label })))
+    sortFindings(checkRows)
+    checkAll = false
+
+    // The machine is one row and it goes FIRST, because nothing else on this
+    // page matters if fli cannot run here.
+    if (!machine.ok) checkRows.unshift(machineRow(machine))
+
+    const ran = (checks.scopes ?? []).reduce((n, sc) => n + sc.ran, 0)
+    note.textContent = checks.errors || checks.warns
+      ? `${checks.errors} error(s) · ${checks.warns} warning(s) over ${ran} rule run(s)${machine.ok ? ' · machine ok' : ''}`
+      : `${ran} rule run(s), nothing to report${machine.ok ? ' · machine ok' : ''}`
+
+    renderChecks()
+  } catch (err) {
+    note.textContent = `could not run the checks: ${err.message}`
+  }
+}
+
+/**
+ * Errors before warnings, in place.
+ *
+ * Named rather than inlined so it can be asserted: this project currently
+ * raises no errors at all, so an ordering checked against what is on screen
+ * here is true whether or not the rule is applied.
+ */
+function sortFindings(rows) {
+  return rows.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'error' ? -1 : 1))
+}
+
+/** The machine's own answer, folded into the same list as a finding. */
+function machineRow(m) {
+  const bad = [...m.system, ...m.config, ...m.namespaces].filter(c => !c.ok)
+  return {
+    scope:    'this machine',
+    rule:     m.blocked ? 'fli cannot run here' : 'setup',
+    // `blocked` is system and config only. A missing `CLOUDFLARE_TOKEN` blocks
+    // `cloudflare:` and nothing else, and grading that as an error would make
+    // almost every machine read as broken.
+    severity: m.blocked ? 'error' : 'warn',
+    file:     null,
+    line:     null,
+    message:  bad.map(c => `${c.name ?? c.label ?? c.key} — ${c.hint ?? c.fix}`).join(' · '),
+  }
+}
+
+function showAllChecks() { checkAll = true; renderChecks() }
+
+function renderChecks() {
+  const list  = document.getElementById('checks-rows')
+  const more  = document.getElementById('checks-more')
+  const shown = checkAll ? checkRows : checkRows.slice(0, CHECKS_SHOWN)
+
+  list.innerHTML = shown.map(checkRow).join('')
+
+  more.hidden = checkRows.length <= shown.length
+  document.getElementById('checks-more-btn').textContent =
+    `show the other ${checkRows.length - shown.length}`
+}
+
+function checkRow(f) {
+  const where = f.file ? `${f.file}${f.line ? `:${f.line}` : ''}` : f.scope
+  return `
+    <li class="list-row" data-finding="${esc(f.severity)}">
+      <div class="stack gap-3xs">
+        <div class="cluster gap-sm">
+          <span class="badge ${f.severity === 'error' ? 'danger' : 'warning'} text-xs">${esc(f.rule ?? f.severity)}</span>
+          <code class="gui-cmd" title="${esc(f.scope)}">${esc(where)}</code>
+        </div>
+        <span class="text-xs text-muted gui-clamp" title="${esc(f.message)}">${esc(f.message)}</span>
+      </div>
+    </li>`
+}
+
+// ─── answering is not working ─────────────────────────────────────────────────
+//
+// The state badge is a socket that opened, which is true of an app whose
+// database probe is failing and of a process that bound the port and wedged.
+// Junction answers `/health` with a named check per plugin; the fli server does
+// the fetching, because this page is on 8500 and the app is on 8110 and a
+// cross-origin failure from here reads exactly like the app being down.
+//
+// Polled at a FIFTH of the state rate. Readiness is a question about the app's
+// own dependencies and it does not move every three seconds, and each answer
+// costs the fli server a request to somebody else's process.
+//
+// A row that answers nothing shows NOTHING. A Vite dev server is up and has no
+// opinion about its readiness, and rendering that as unhealthy would leave
+// every web surface on this page permanently red.
+
+const HEALTH_EVERY = 5
+let healthTick = 0
+const healthById = new Map()
+
+async function refreshHealth(state) {
+  const up = dashRows.filter(r => r.port && state[r.id]?.state === 'up')
+  await Promise.all(up.map(async (r) => {
+    try {
+      healthById.set(r.id, await fetch(`${API}/api/health/${encodeURIComponent(r.id)}`).then(x => x.json()))
+    } catch { healthById.delete(r.id) }
+  }))
+  // A row that stopped answering keeps no stale verdict about its health.
+  for (const id of [...healthById.keys()]) if (state[id]?.state !== 'up') healthById.delete(id)
+}
+
+function renderHealth(li, s) {
+  const el = li.querySelector('[data-health]')
+  if (!el) return
+
+  const h = healthById.get(li.dataset.id)
+  if (s !== 'up' || !h?.answered) { el.hidden = true; return }
+
+  const checks = Object.entries(h.health?.checks ?? {})
+  const failed = checks.filter(([, c]) => c.status !== 'ok')
+
+  el.hidden = false
+  el.className = `badge ${failed.length ? 'danger' : 'success'} text-xs`
+  el.textContent = failed.length
+    ? `${failed.length} check${failed.length === 1 ? '' : 's'} failing`
+    : 'healthy'
+  // The names are the answer. *Degraded* with nothing saying which dependency
+  // is the one that is down sends somebody to the logs for a fact this already
+  // has.
+  el.title = `${h.path} · ${checks.map(([n, c]) => `${n} ${c.status}`).join(' · ') || 'no checks declared'}`
+  el.onclick = () => showHealth(li.dataset.id)
+}
+
+function showHealth(id) {
+  const h = healthById.get(id)
+  if (!h?.answered) return
+  const { health, path } = h
+  appendOutput(`── ${health.app} ${health.version} at ${path} — ${health.status}, up ${duration(health.uptime * 1000)} ──`, 'info')
+  for (const [name, c] of Object.entries(health.checks ?? {})) {
+    appendOutput(`${name}: ${c.status}${c.latencyMs != null ? ` (${c.latencyMs}ms)` : ''}${c.error ? ` — ${c.error}` : ''}`,
+      c.status === 'ok' ? 'log' : 'error')
+  }
+}
+
+// ─── how the last run went ────────────────────────────────────────────────────
+//
+// The state badge answers *is it running*, which for a drive or a suite is
+// `unknown` forever — honest, and no answer at all to the question somebody
+// actually has, which is *does it pass*. This is that answer, and it outlives
+// the process: the child table used to drop its exit code and its sixty lines
+// the moment a row was stopped or started again.
+//
+// **Only runs this page started.** A drive run in a terminal leaves nothing
+// here, so the word is *here* — otherwise a row nobody has pressed reads as a
+// row that has never passed.
+//
+// The words are chosen HERE and not in the process table, because they differ
+// by kind: a suite that exits 0 passed, and a dev server that exits 0 on its
+// own did something nobody has a word for.
+
+const VERDICT_KIND = new Set(['drive', 'suite'])
+
+function renderLast(li, last, alive) {
+  const el = li.querySelector('[data-last]')
+  if (!el) return
+  if (!last) { el.hidden = true; return }
+
+  const row  = dashRows.find(r => r.id === li.dataset.id)
+  const code = last.exit?.code
+  const graded = VERDICT_KIND.has(row?.kind)
+
+  const [word, tone] =
+      last.stopped         ? ['stopped',                                   'muted']
+    : last.exit?.error     ? ['could not start',                           'danger']
+    : code === 0           ? [graded ? 'passed' : 'ran',                   graded ? 'success' : 'muted']
+    : typeof code === 'number' ? [graded ? `failed (${code})` : `exited ${code}`, 'danger']
+    : [`signalled ${last.exit?.signal ?? '?'}`,                            'warning']
+
+  // While it is running again, the previous run is still worth showing and is
+  // no longer the current state — so it is said in the past tense either way.
+  el.hidden = false
+  el.className = `badge ${tone} text-xs`
+  el.textContent = `${word} · ${duration(last.ms)}${alive ? '' : ` · ${ago(last.at)}`}`
+  el.title = `the last run started from this page — ${last.lineCount} line(s) kept. Click to print them.`
+  el.onclick = () => showLast(li.dataset.id, row?.name ?? li.dataset.id)
+}
+
+/** The kept tail, printed into the console beside the page. */
+async function showLast(id, name) {
+  const { lines } = await fetch(`${API}/api/output/${encodeURIComponent(id)}`).then(r => r.json())
+  if (!lines.length) { appendOutput(`${name}: nothing was kept from that run`, 'log'); return }
+  appendOutput(`── ${name}, last run here ──`, 'info')
+  for (const line of lines) appendOutput(line, 'output')
+}
+
+function duration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '?'
+  if (ms < 1000)  return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`
+}
+
+function ago(at) {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000))
+  if (s < 60)   return `${s}s ago`
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  return `${Math.floor(s / 3600)}h ago`
+}
+
+function startStatePoll() {
+  stopStatePoll()
+  dashTimer = setInterval(pollState, STATE_POLL_MS)
+}
+function stopStatePoll() {
+  if (dashTimer) clearInterval(dashTimer)
+  dashTimer = null
+}
+
+// A start is a POST naming the ROW, never a command: what runs comes from the
+// inventory, which comes from a file in the tree.
+async function startRow(id) {
+  const res  = await fetch(`${API}/api/start/${encodeURIComponent(id)}`, { method: 'POST' })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) { appendOutput(body.error ?? `could not start ${id}`, 'error'); return }
+  appendOutput(`started ${id} (pid ${body.pid})`, 'success')
+  await pollState()
+  followOutput(id)
+}
+
+// ─── one button starts the whole thing ────────────────────────────────────────
+//
+// `verify:live` needs `db:seed`, then `api` and `web` — three rows pressed in
+// order, and until now the order lived in prose and in the drive's own exit 1.
+//
+// The SEQUENCE is here rather than on the server, and that is the design: each
+// step lights up on the page as it goes, so *the API is still coming up* and
+// *the API failed to start* are different things to look at. The server stays a
+// set of verbs — start, stop, state, output — which is also what keeps a start
+// an ID and never a command.
+//
+// A step already answering is SKIPPED. That is what makes this the only start
+// button a drive needs: press it with the servers up and it runs the drive.
+
+const NEED_TIMEOUT_MS = 90_000
+const NEED_POLL_MS    = 500
+
+async function startWithNeeds(id) {
+  const row = dashRows.find(r => r.id === id)
+  if (!row) return
+
+  for (const need of row.needs ?? []) {
+    // The finding, said out loud rather than skipped: the table names a step
+    // this directory does not declare, so the preamble cannot be run and the
+    // drive would fail for a reason nothing on screen explains.
+    if (!need.id) {
+      appendOutput(`${row.name}: the drive table says to run "${need.run}" first, and ${row.dir} declares no such script`, 'error')
+      return
+    }
+    if (!(await ensureNeed(need, row))) return
+  }
+
+  await startRow(id)
+}
+
+/** True once this step is satisfied; false having said why it is not. */
+async function ensureNeed(need, row) {
+  const stateOf = async () => (await fetch(`${API}/api/state`).then(r => r.json())).state[need.id] ?? {}
+  const childOf = async () => (await fetch(`${API}/api/output/${encodeURIComponent(need.id)}`).then(r => r.json())).child
+
+  // Something is already answering on its port. Whether this page started it is
+  // beside the point — the drive only needs it to be there.
+  if ((await stateOf()).state === 'up') {
+    appendOutput(`${need.script} is already answering`, 'log')
+    return true
+  }
+
+  const res  = await fetch(`${API}/api/start/${encodeURIComponent(need.id)}`, { method: 'POST' })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) { appendOutput(body.error ?? `could not start ${need.script}`, 'error'); return false }
+  appendOutput(`${need.script} started (pid ${body.pid})`, 'log')
+  followOutput(need.id)
+
+  // A server is done when its port answers; a task when it exits, and its exit
+  // CODE is the answer — a seed that failed leaves a database the drive will
+  // read and disagree with for reasons three steps away.
+  const until = Date.now() + NEED_TIMEOUT_MS
+  for (;;) {
+    await new Promise(r => setTimeout(r, NEED_POLL_MS))
+    await pollState()
+
+    const child = await childOf()
+    if (child?.exit) {
+      const code = child.exit.code ?? child.exit.signal ?? '?'
+      if (need.port) { appendOutput(`${need.script} exited (${code}) instead of coming up`, 'error'); return false }
+      if (code === 0) { appendOutput(`${need.script} finished`, 'success'); return true }
+      appendOutput(`${need.script} failed (${code}) — the drive would run against whatever it left`, 'error')
+      return false
+    }
+
+    if (need.port && (await stateOf()).state === 'up') {
+      appendOutput(`${need.script} is answering on :${need.port}`, 'success')
+      return true
+    }
+
+    if (Date.now() > until) {
+      appendOutput(`${need.script} did not ${need.port ? 'come up' : 'finish'} within ${NEED_TIMEOUT_MS / 1000}s`, 'error')
+      return false
+    }
+  }
+}
+
+async function stopRow(id) {
+  const res  = await fetch(`${API}/api/stop/${encodeURIComponent(id)}`, { method: 'POST' })
+  const body = await res.json().catch(() => ({}))
+  // The refusal is the useful message here — *this page did not start it* — so
+  // it is printed rather than swallowed into a disabled button.
+  if (!res.ok) { appendOutput(body.error ?? `could not stop ${id}`, 'error'); return }
+  appendOutput(`stopped ${id}`, 'log')
+  await pollState()
+}
+
+// A server started from a page and dying with nothing on screen is the silent
+// failure this whole surface exists to reduce, so its output lands in the
+// console pane beside it. Pulled rather than streamed: it is a tail, and one
+// more SSE connection per started row is a connection to manage for output
+// nobody may be reading.
+let followed = new Set()
+async function followOutput(id) {
+  if (followed.has(id)) return
+  followed.add(id)
+  let seen = 0
+  const tick = async () => {
+    const { lines, child } = await fetch(`${API}/api/output/${encodeURIComponent(id)}`)
+      .then(r => r.json()).catch(() => ({ lines: [] }))
+    for (const line of lines.slice(seen)) appendOutput(`[${id}] ${line}`, 'log')
+    seen = lines.length
+    if (child && !child.exit) return
+    followed.delete(id)
+    clearInterval(timer)
+  }
+  const timer = setInterval(tick, 1000)
+  tick()
+}
+
+function copyText(text) {
+  navigator.clipboard?.writeText(text)
+}
+
+function esc(v) {
+  return String(v).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+}
+
 // ─── Command palette ──────────────────────────────────────────────────────────
 //
 // A real <dialog>, so Escape, the backdrop and the focus trap are the
@@ -1654,7 +2406,7 @@ window.addEventListener('popstate', e => {
   if (e.state?.title) { selectCommand(e.state.title); return }
 
   activeCommand = null
-  document.getElementById('empty-state').hidden = false
+  showHome(true)
   document.getElementById('cmd-form').hidden = true
   markActive(null)
 })

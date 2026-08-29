@@ -2172,6 +2172,50 @@ Standing consequence for any future *fourth axiom* proposal: state which
 declaration it adds, then check whether the annotations already in the seed
 derive it. If they do, the work is an owner, not a word.
 
+### <a id="fjs-d155"></a>2026-08-29 · `FJS-D155` — how long to wait for the write lock is a fact about the PROCESS, so `busyTimeout` is a `createClient` option and an env var, and there is no `database { }` spelling (`FJS-569`).
+
+**The question.** `busy_timeout` was a literal 5000 in litestone with no way for
+an app to change it. Three homes were candidates: `createClient({ busyTimeout })`,
+`database { busyTimeout }` in the seed, and an environment variable.
+
+**The ruling is option → env → default, and the seed is refused.** The seed is
+the one owner of what the data IS. How long this process is willing to sit
+blocked waiting for a different process is not that — it is a property of who is
+asking. The same `schema.lite` is opened by an API answering a person, which
+cannot afford five seconds, and by a queue draining a batch in its own process,
+which can afford thirty and would rather wait than retry into the same
+contention. A declaration is one answer to a question whose right answer differs
+by caller, which is the same reason a relative `database { path }` resolves
+against the working directory rather than the schema: **code is written against
+the process.**
+
+The env var (`LITESTONE_BUSY_TIMEOUT`) is not a convenience — it is the only
+channel for the callers that construct no client and are the ones that most want
+a different number: the CLI, a migration run against a live database, a worker
+started by a supervisor that can set an environment and cannot pass an option.
+
+**Per-database is part of the ruling, not a later refinement.** `{ default,
+<db> }`, because the database this came from wants the opposite answer to main:
+an audit `logger` index write is fire-and-forget and its failure is swallowed by
+design, so spending the loop's next five seconds to place a row nobody awaits is
+strictly worse than dropping it. `{ audit: 250 }` is an app saying so. A key
+naming a database the schema does not declare is refused by name at
+`createClient`, because a dropped key is a database silently keeping the default.
+
+**What this does NOT do is make contention safe, and the number cannot.**
+`bun:sqlite` is synchronous, so the wait is a bound on how long ONE call blocks
+this process's event loop — a bigger number is a longer stall, and in-process it
+is a deadlock that a bigger number makes worse (measured: two connections on one
+file, the waiter blocks the loop, the holder's release timer never gets a turn,
+the wait expires in full and only then does the holder commit). The in-process
+answer is structural and stays structural: `$transaction`'s FIFO lock, one client
+per file per process, and a worker thread or a second process for work that is
+genuinely long. `packages/litestone/docs/concurrency.md`.
+
+Lives in `packages/litestone/src/core/pragmas.js` — one owner for the resolution
+and the pragma, read by every site that opens a connection. `@frontierjs/caravan`
+and Junction's SQLite cache take their own option for the connections they own.
+
 ## Migrations (Litestone)
 
 ### <a id="fjs-d123"></a>2026-08-23 · `FJS-D123` — `migrate create` diffs against the migration HISTORY, not the live database; `db push` is prototyping only (`FJS-345`, `FJS-388`).
@@ -5471,6 +5515,61 @@ reuses `.mesa` — so that §1–§3 do not foreclose either answer.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d153"></a>2026-08-27 · `FJS-D153` — an official Conduit connector is its own package. Conduit owns the mechanism, never the vendor.
+
+Asked of Stripe, and the answer generalises to every provider this project would
+maintain a connection to.
+
+**Conduit is the outbound boundary, and a boundary that knows a vendor stops
+being one.** `FJS-D06` already fixed the word: a Provider is a third party the
+app speaks to. Conduit's whole job is not knowing who is on the other end of a
+declared target, and a `stripe.ts` inside it inverts that in the one package
+whose value is the inversion.
+
+Three costs follow and none of them is aesthetic:
+
+**Cadence.** Stripe versions its API on Stripe's schedule. Conduit's version
+means *what the outbound boundary guarantees*. Welded together, a Stripe API bump
+ships a conduit release to every app that installed conduit for one internal
+webhook, and a conduit fix waits on whatever a vendor did that week.
+
+**Install weight.** The `registry` and `advisories` CI phases walk each published
+package's runtime `dependencies`, because that is the set every app installs —
+which is exactly how `packages/mesa` was found shipping two criticals to every
+app that installed mesa (`FJS-475`). A connector's dependencies would sit in
+front of every conduit user, whether or not they speak to that provider.
+
+**Suite balance.** A connector needs a dev sink, because a test may not reach a
+vendor's API and a connector nobody can run is a connector nobody trusts.
+`example/api/src/core/psp-sink.ts` is 240 lines standing in for ONE provider.
+Five of those inside conduit's own tests would be most of conduit's tests, and a
+failure in conduit's transport would be reported among them.
+
+**So the line is the mechanism, not the relationship.** Conduit owns body
+encoding, the auth types, error mapping and idempotency — anything a connector
+would otherwise reimplement, and in particular anything the HMAC signer touches:
+`serialise()` produces the bytes the signature is computed over, so an encoder
+living in a connector would sign bytes the transport did not produce. A connector
+owns the vendor's paths, its payload shapes, its own webhook signature scheme
+(Stripe's `t=…,v1=…` is not this project's `X-Hub-Signature`, and neither is
+wrong), and its sink.
+
+**Naming: `@frontierjs/conduit-stripe`, not `@frontierjs/stripe`.** It says which
+boundary it plugs into, and leaves the name free for a connector to something
+that is not conduit.
+
+**But it starts inside `example/`, and is promoted when a SECOND connector exists
+to argue with it.** One instance cannot design the connector interface — whether
+`stripeTarget()` returns a target or installs one, whether a connector ships a
+sink or a fixture, whether the webhook verifier is a function or a hook are all
+questions a single implementation answers by accident. This project's own habit
+is the precedent: every `@frontierjs/toolbelt` kit earned its subpath by having
+callers first (`/inflect` five, `/history` four, `/match` two live stores), and
+`@@transitions` and `@version` were built against a real app before they were
+features. `example` is also where the argument gets tested for free — `psp.ts` is
+conduit's OWN HMAC scheme and Stripe is a real vendor's, and having both against
+one boundary is the only thing that shows whether the boundary is generic.
+
 ### <a id="fjs-d31"></a>2026-08-14 · `FJS-D31` — FrontierJS wraps third-party binaries, it does not fork or republish them. It controls the VERSION, never the artifact.
 
 Asked of
@@ -5510,7 +5609,7 @@ copy is not fought; and a digest pin in the Dockerfile `make:deploy` writes.
 right call outbound and leaves restore in the same hand-typed shape upstream ships it
 in: one `litestream restore` per database, with the jsonl/logger databases litestream
 cannot replicate on a third route. The schema knows the set; nothing reads it inbound.
-That is `FJS-540`, and it is a wrapper question rather than a fork question — exactly
+That is `FJS-552`, and it is a wrapper question rather than a fork question — exactly
 what this ruling says the project is allowed to build.
 
 **Revisit only on a named trigger**: upstream goes unmaintained *and* a CVE

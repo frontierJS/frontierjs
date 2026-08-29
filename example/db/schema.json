@@ -4,27 +4,33 @@
     "Product": {
       "type": "object",
       "title": "Product",
+      "description": "A Product is the FAMILY, not the thing with a price on it. \"FrontierJS Tee\" is a product; the navy one in medium is what a person puts in a basket and what a warehouse counts down.  That split is why `sku`, `price` and `barcode` are NOT on this model. They were, while every product was one buyable thing — and the moment one design carried four colourways, a price on the family had no answer.",
       "properties": {
         "name": {
           "type": "string",
           "minLength": 1,
           "maxLength": 80
         },
-        "sku": {
+        "slug": {
           "type": "string",
-          "minLength": 3,
-          "maxLength": 20
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "The storefront URL segment. A real column rather than @generated from the name, because a slug must SURVIVE a rename: a link somebody bookmarked is not something the catalogue may rewrite. @generated would also make it readOnly, and the merchant is the one who decides it."
         },
-        "price": {
-          "type": "number",
-          "minimum": 0
+        "description": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "barcode": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "description": "Nullable AND unique — the pairing that makes `blankToNull` matter on the client. An empty text box submits '', SQLite accepts any number of NULLs in a UNIQUE column but rejects a second '', so without normalisation the second product saved with a blank barcode fails a constraint nobody wrote."
+        "brand": {
+          "$ref": "#/$defs/Brand"
         },
         "active": {
           "type": "boolean",
@@ -34,9 +40,72 @@
       "additionalProperties": false,
       "required": [
         "name",
-        "sku",
-        "price"
+        "slug",
+        "brand"
       ],
+      "x-version": "version",
+      "x-label-field": "name",
+      "x-gate": {
+        "read": 0,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "variants",
+          "model": "ProductVariant",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "images",
+          "model": "ProductImage",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "Colour": {
+      "type": "object",
+      "title": "Colour",
+      "description": "The colourways this shop has run. `ProductVariant.colour` stores the NAME rather than a foreign key, because the value has to outlive the row: a colourway that is retired is still what the navy tees in the warehouse are, and a deleted row must not take that answer with it.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30
+        },
+        "hex": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 4,
+              "maxLength": 7
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For the swatch a picker draws. Optional — a colourway added by a merchant typing it into the variant form has no hex until somebody sets one."
+        },
+        "retired": {
+          "type": "boolean",
+          "default": false,
+          "description": "Out of the offered list, still on every variant that ran in it. This is what @@scope below reads, and it is why the set is a table and not an enum: retiring a colourway is a row edit rather than a deploy."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "x-label-field": "name",
       "x-gate": {
         "read": 0,
         "create": 4,
@@ -44,11 +113,212 @@
         "delete": 5
       }
     },
+    "ProductVariant": {
+      "type": "object",
+      "title": "ProductVariant",
+      "description": "The buyable thing. One row per option combination, and the row a basket line, a price and a stock count all point at.",
+      "properties": {
+        "productId": {
+          "type": "integer",
+          "title": "Product",
+          "x-messages": {
+            "required": "Every variant belongs to a product"
+          }
+        },
+        "sku": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "colour": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30,
+          "default": "Default",
+          "description": "The option columns. NOT nullable, and the @@unique below is the whole reason — see the note on `enum Size`. A product with nothing to choose takes the defaults, which is what Shopify spells \"Default Title\".  `colour` is the pair `size` is not: a stored STRING with a declared list behind it. `open` is what makes it a colourway rather than an enum — the merchant picks one the shop has run before, and typing a new one adds it to the list instead of asking for a schema change and a deploy.",
+          "x-values": {
+            "set": "ProductColour",
+            "strength": "open",
+            "model": "Colour",
+            "value": "name",
+            "label": "name",
+            "scopes": [
+              "current"
+            ]
+          }
+        },
+        "size": {
+          "$ref": "#/$defs/Size",
+          "default": "one"
+        },
+        "price": {
+          "type": "number",
+          "minimum": 0
+        },
+        "barcode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stock": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "ON HAND: what the warehouse could physically pick right now. NOT what is buyable — a basket holding a reservation has not taken this down yet, and a shopper who is offered the last one after somebody else is already holding it finds out at the till, which is the worst place to find out.  AVAILABLE = stock − the unexpired holds. It is not a column and cannot be: it is a sum over another table that changes with the clock, and a column would be a cached answer with nothing to invalidate it. `api/inventory.ts` is the one place it is computed and the one place this column is written."
+        },
+        "active": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "productId",
+        "sku",
+        "price"
+      ],
+      "x-label-field": "sku",
+      "x-gate": {
+        "read": 0,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "product",
+          "model": "Product",
+          "type": "belongsTo",
+          "fields": [
+            "productId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "images",
+          "model": "ProductImage",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "reservations",
+          "model": "StockReservation",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "movements",
+          "model": "InventoryMovement",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "ProductImage": {
+      "type": "object",
+      "title": "ProductImage",
+      "description": "A photograph. The bytes live in object storage and this column holds the reference — `File` is the type that means that, and `FileStorage` in api/db.ts is what turns a path or an upload into one.",
+      "properties": {
+        "productId": {
+          "type": "integer",
+          "title": "Product"
+        },
+        "variantId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Null means \"shows the family\". A colourway shot names its variant, and a flat-lay of the whole range names none.",
+          "title": "Variant"
+        },
+        "file": {
+          "$ref": "#/$defs/FileRef",
+          "x-litestone-accept": "image/png, image/jpeg, image/webp"
+        },
+        "alt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "title": "Alt text",
+          "x-messages": {
+            "required": "Describe the photo — a shop with no alt text is a shop half its customers cannot use"
+          }
+        },
+        "position": {
+          "type": "integer",
+          "default": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "productId",
+        "file",
+        "alt"
+      ],
+      "x-gate": {
+        "read": 0,
+        "create": 4,
+        "update": 4,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "product",
+          "model": "Product",
+          "type": "belongsTo",
+          "fields": [
+            "productId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "variant",
+          "model": "ProductVariant",
+          "type": "belongsTo",
+          "fields": [
+            "variantId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        }
+      ]
+    },
     "Customer": {
       "type": "object",
       "title": "Customer",
       "properties": {
         "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "firstName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "lastName": {
           "type": "string",
           "minLength": 1,
           "maxLength": 80
@@ -64,15 +334,28 @@
           ],
           "description": "Staff-only. Field-level @allow is the tool for \"some callers may read this column\": the field is stripped from the response for anyone the policy rejects, without a line of service code saying so.  NOT @guarded — that is a system-context lock (@guarded / @guarded(all)), not a level, and it takes no numeric argument. @guarded(5) does not parse.",
           "x-litestone-read-policy": true
+        },
+        "userId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The credential behind this record, once there is one.  A `Customer` is the SHOP's record of a person — it exists the moment somebody checks out as a guest, with no password and no way back in. A `User` is the credential. They are two facts and the second is optional, which is why this is nullable and why it is here rather than the other way round: every buyer has a record, and only some of them have an account.  `@unique` because two accounts claiming one customer record is two people reading each other's orders. Written by the app — at checkout when the caller is signed in, and at registration when an address already has a history — never by the caller, which is what `@system` says.",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
       "required": [
         "name",
+        "firstName",
+        "lastName",
         "email"
       ],
+      "x-litestone-policies": true,
+      "x-version": "version",
       "x-gate": {
-        "read": 0,
+        "read": 1,
         "create": 4,
         "update": 4,
         "delete": 5
@@ -88,6 +371,245 @@
           "optional": false
         }
       ]
+    },
+    "Discount": {
+      "type": "object",
+      "title": "Discount",
+      "description": "A code somebody types at the till.  ─── Why a shopper may not read this table ────────────────────────────────  `@@gate(\"5.5.5.5\")` — staff only, read included. Every other thing a shopper interacts with here is readable at 0, because a storefront has to list it; a discount code is the exception, and the reason is that listing them IS the exploit. `GET /api/discounts` answering the table hands every unreleased code to anyone who asks, and a shop's codes are worth money.  So the shopper never reads a row: they send a string to `carts.applyDiscount`, which validates it through the SYSTEM client and answers the basket with the money recalculated — the same shape `StockReservation` uses for holds, and for the same reason. What comes back is what this code is worth to THIS basket, which is the only fact about it they are entitled to.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "description": "What is typed. `@upper` so `welcome10` and `WELCOME10` are one code — a shopper reading a code off a poster is not going to match its case, and a lookup that fails on that is a support ticket.",
+          "title": "Code",
+          "x-messages": {
+            "length": "A code is 3 to 20 characters",
+            "minLength": "A code is 3 to 20 characters",
+            "maxLength": "A code is 3 to 20 characters"
+          }
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "What the basket screen CALLS it. The code is an identifier; this is the sentence beside the amount, and a receipt saying `-$4.00 (WELCOME10)` tells a customer less than one saying `-$4.00 (10% off your first order)`.",
+          "title": "Description"
+        },
+        "kind": {
+          "$ref": "#/$defs/DiscountKind",
+          "default": "percent",
+          "title": "Kind"
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Percent: 0–100. Fixed: an amount in the shop's base currency. One column for two units, which is the cost of not having two tables — a FIELD validator here cannot see `kind`, so the bound that matters is declared at the model instead, below. `pricing.ts` still caps the discount at the subtotal, which is a different rule: this one is about what may be STORED, that one about what may be charged.",
+          "title": "Value"
+        },
+        "minSubtotal": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "The floor this code is worth anything at. Zero means none.",
+          "title": "Minimum spend"
+        },
+        "startsAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The window. Both nullable — a code with no start is live now, a code with no end runs until somebody turns it off.",
+          "title": "Starts"
+        },
+        "endsAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ends"
+        },
+        "maxRedemptions": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How many times it may be used, and how many times it has been. Null means no limit.  `redemptions` is `@system`: the application writes it, never a caller, and never a merchant editing the form — a counter a person can set is not a count of anything. It is incremented inside `carts.checkout`'s transaction by read-modify-write rather than `{ increment: 1 }`, for `stock`'s reason: an atomic operator computes the new value inside SQLite where no validator can see it, so the limit would be passed and the constraint would never fire (`FJS-D27`). The transaction is what makes the read-then-write safe, and it is the same transaction the order is written in — a code redeemed by an order that rolls back was not redeemed.",
+          "title": "Redemption limit"
+        },
+        "redemptions": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "title": "Times used",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "title": "Active"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "label",
+        "value"
+      ],
+      "x-gate": {
+        "read": 5,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "carts",
+          "model": "Cart",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "ShippingMethod": {
+      "type": "object",
+      "title": "ShippingMethod",
+      "description": "What the shop charges to send it.  Readable at 0, unlike a discount: a storefront has to OFFER these, and the prices are printed on the shipping page anyway. That difference — one table public, its neighbour staff-only, both on the same screen — is the clearest statement in this schema that a gate answers *what kind of caller* and not *what kind of table*.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "title": "Method"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description"
+        },
+        "price": {
+          "type": "number",
+          "minimum": 0,
+          "title": "Price"
+        },
+        "freeOver": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The subtotal at which this method costs nothing. Null means never free.  Measured against the subtotal AFTER the discount, which is a decision and not an accident: a shop that gives free shipping over 50 and a code worth 10 off has to choose whether a 55 basket with the code applied still qualifies. Discount-first is the answer that cannot surprise a merchant into shipping for free at a loss, and `pricing.ts` is where it is written down once.",
+          "title": "Free over"
+        },
+        "position": {
+          "type": "integer",
+          "default": 0,
+          "description": "The order they are offered in. A merchant decides which one is at the top; alphabetical would put Express above Standard and change what most people pick.",
+          "title": "Position"
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "title": "Active"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "price"
+      ],
+      "x-version": "version",
+      "x-gate": {
+        "read": 0,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "carts",
+          "model": "Cart",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "TaxRate": {
+      "type": "object",
+      "title": "TaxRate",
+      "description": "The rate this shop collects, and what it is called where the shop is.  A row rather than a constant because this is a FLEET: `tenancy { strategy database }` gives every shop its own file, so a shop in one jurisdiction and a shop in another disagree about both numbers — and a constant in the API would be the one fact about a shop that every shop had to share.  `label` is not decoration. A line on a receipt reading `Tax` where the law says `VAT` is a receipt a business customer cannot file.",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30,
+          "title": "Shown as"
+        },
+        "rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "A FRACTION, not a percentage — 0.2 and not 20. One representation, chosen because it is the one the arithmetic uses; a column storing 20 and a calculation dividing by 100 puts a unit conversion between the merchant and the money, and it only has to be forgotten once.",
+          "title": "Rate"
+        },
+        "isDefault": {
+          "type": "boolean",
+          "default": false,
+          "description": "Which one applies when nothing else says. Exactly one row should carry it; `pricing.ts` takes the first active default and charges nothing when there is none, because a shop that has not configured tax is a shop that does not charge it — not one that should refuse to sell.",
+          "title": "Default"
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "title": "Active"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "rate"
+      ],
+      "x-version": "version",
+      "x-gate": {
+        "read": 0,
+        "create": 5,
+        "update": 5,
+        "delete": 5
+      }
     },
     "Order": {
       "type": "object",
@@ -107,10 +629,91 @@
           "$ref": "#/$defs/OrderStatus",
           "default": "pending"
         },
+        "subtotal": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "─── What was charged, and why ──────────────────────────────────────────  Nine columns for one number, and every one of them is a copy of something that lives somewhere else — the code, its wording, the method, the rate. `OrderLine`'s header argues the general case; the specific one is that a merchant changes the VAT rate the week after a sale and every historical receipt silently reprices itself if the rate is joined rather than written down.  The arithmetic is `api/src/pricing.ts` and nothing here recomputes it:  subtotal − discount + shipping + tax = total  Each component is rounded once, on the server, at the moment of sale, and `total` is the sum of the ROUNDED components — so the breakdown a customer reads adds up to the figure they were charged, by construction rather than by luck. A screen that re-derived any line of it would round on its own and be a penny out on exactly the orders where a penny is noticed.  Every one is `@system`: the shop computes them, and there is no request in which a caller stating their own total is anything but an attack. They are `@default(0)` rather than nullable because an order with no discount was discounted by zero, which is a fact — where null would mean *nobody has worked it out yet*, and that state does not exist after checkout. The lines, added up. What `OrderLine.lineTotal` sums to.",
+          "title": "Subtotal",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "discountCode": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What came off, and the code that took it off. The code is nullable because most orders have none; `discount` is 0 for those, and the two must agree — a row with a code and a zero is a bug worth being able to find.",
+          "title": "Code",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "discountLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "title": "Discount",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "discount": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "title": "Discount amount",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "shippingLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "What was charged to send it, and what the shopper picked. A label of `Standard` against a zero is the free-over threshold having been met, and that reads correctly on a receipt without a fourth column to say so.",
+          "title": "Shipping",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "shipping": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "title": "Shipping cost",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "taxLabel": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Money that was never the shop's. The RATE is stored beside the amount because a receipt has to be checkable: an auditor reading `$8.40` needs the 0.2 it came from, and the row in `TaxRate` may have moved since.",
+          "title": "Tax",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "taxRate": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "title": "Rate",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "tax": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "title": "Tax amount",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
         "total": {
           "type": "number",
           "minimum": 0,
-          "default": 0
+          "default": 0,
+          "description": "What the card was charged. The sum of the five above, stored rather than derived, and the only one of them a payment is ever compared against.  The ONE money column here that is not `@system`, and the exception is deliberate: staff raise an order by hand for a sale that happened on the telephone, and that order has a total and no itemisation — no lines, and therefore no breakdown to add up. A screen renders the five above only where there are lines to explain, which is the same condition under which they were computed at all."
         },
         "note": {
           "type": [
@@ -135,6 +738,15 @@
           "title": "Tracking",
           "readOnly": true,
           "x-litestone-kind": "system"
+        },
+        "userId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Whose order this is, when the buyer had an account at the moment of sale.  DENORMALISED from `Customer.userId`, deliberately. A row policy compares columns on its own model against `auth()` and does not traverse a relation, and `@from` crosses one only to AGGREGATE (`count: true`) — so *the orders of the customer this account is linked to* has nowhere to be written except here. The alternative was a service filter, which is a rule living outside the boundary that enforces every other rule about this row.  Null for a guest sale, and it stays null: an account registered later takes the customer record with it, and the orders under it, through the policy on `Customer` — but an order already written is a receipt, and back-filling receipts is a write nobody asked for.",
+          "readOnly": true,
+          "x-litestone-kind": "system"
         }
       },
       "additionalProperties": false,
@@ -142,8 +754,9 @@
         "reference",
         "customerId"
       ],
+      "x-litestone-policies": true,
       "x-gate": {
-        "read": 0,
+        "read": 1,
         "create": 4,
         "update": 4,
         "delete": 5
@@ -155,21 +768,24 @@
               "pending"
             ],
             "to": "paid",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "ship": {
             "from": [
               "paid"
             ],
             "to": "shipped",
-            "gate": null
+            "gate": null,
+            "system": false
           },
           "refund": {
             "from": [
               "paid"
             ],
             "to": "refunded",
-            "gate": 5
+            "gate": 5,
+            "system": false
           },
           "cancel": {
             "from": [
@@ -177,7 +793,8 @@
               "paid"
             ],
             "to": "cancelled",
-            "gate": null
+            "gate": null,
+            "system": false
           }
         }
       },
@@ -193,6 +810,563 @@
             "id"
           ],
           "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "lines",
+          "model": "OrderLine",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "OrderLine": {
+      "type": "object",
+      "title": "OrderLine",
+      "description": "What was bought, at the price it was bought for.  ─── Why the columns are copies ──────────────────────────────────────────  Every column below except the two ids is a value this row already has a relation to. That is not denormalisation for speed — it is that a line is a statement about a MOMENT and its neighbours are statements about now. A variant's price is what the shop charges today; `unitPrice` is what this shopper was charged, and re-reading the first to render the second rewrites what past customers paid every time somebody edits the catalogue. Same for the wording: `description` is the sentence that was on the screen, and a colourway renamed next year does not un-sell this one.  The relation stays for the one thing a copy cannot do — link back to the product page — and it is `Restrict` for the reason `InventoryMovement`'s is: history that a DELETE somewhere else can empty is not history.  ─── This does not replace the ledger, and the two are not the same fact ──  `InventoryMovement` records what left the SHELF; these record what was SOLD. A refund still reads the movements back (`api/src/inventory.ts` `restock`), because the question there is what physically moved and the signed tape is the only thing that answers it. The question here is what the shop billed for, which the tape cannot answer: it carries no prices.",
+      "properties": {
+        "orderId": {
+          "type": "integer",
+          "title": "Order"
+        },
+        "variantId": {
+          "type": "integer",
+          "title": "Variant"
+        },
+        "sku": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "The three copies. `sku` is what a picker in the warehouse reads, `description` is what the customer read, and neither is looked up again."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "title": "Item"
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99
+        },
+        "unitPrice": {
+          "type": "number",
+          "minimum": 0,
+          "title": "Unit price"
+        },
+        "lineTotal": {
+          "type": "number",
+          "minimum": 0,
+          "description": "STORED, not multiplied at read time — and this is the column that decides whether the lines add up to the total. Rounding is done once, on the server, at the moment of sale; a screen that recomputed `unitPrice * quantity` in JavaScript would round on its own and the sum of what is shown would not be what was charged, by a penny, on the orders where it matters most.",
+          "title": "Total"
+        },
+        "userId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A FOURTH copy, and the one that is not about the sale.  The three above are copies because a price and a description are facts about the moment of sale. This one is a copy for a duller reason: a row policy compares columns on ITS OWN model against `auth()` and cannot name one on a related model — `@@allow('read', order.userId == auth().id)` is a parse error at the dot (`FJS-499`). So *the lines of my own orders* has nowhere to live but here.  Stated rather than hidden, because the cost is real: this column and `Order.userId` can disagree, and nothing in the schema can stop them. `carts.checkout` writes both inside one transaction, which is the whole of what keeps them together.",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "orderId",
+        "variantId",
+        "sku",
+        "description",
+        "quantity",
+        "unitPrice",
+        "lineTotal"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 1,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "order",
+          "model": "Order",
+          "type": "belongsTo",
+          "fields": [
+            "orderId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "variant",
+          "model": "ProductVariant",
+          "type": "belongsTo",
+          "fields": [
+            "variantId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
+          "optional": false
+        }
+      ]
+    },
+    "Payment": {
+      "type": "object",
+      "title": "Payment",
+      "description": "One attempt to take money for one order.  ─── Why `providerRef` is @unique and is not the id ──────────────────────  A webhook arrives naming the PROVIDER's id and nothing else — it has never heard of this database. So the column the lookup goes through has to be the provider's, and it has to be unique or a redelivery could settle a second row. It is not the primary key because a provider id is theirs to change the shape of, and a foreign key pointing at a string somebody else mints is a migration waiting to happen.",
+      "properties": {
+        "providerRef": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "title": "Provider reference"
+        },
+        "status": {
+          "$ref": "#/$defs/PaymentStatus",
+          "default": "pending"
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "description": "COPIED from the order at the moment the intent was created, not joined. What was authorised is a fact about that authorisation, and an order whose total was corrected afterwards must not silently rewrite what the provider was asked for — the disagreement between the two numbers is the thing a person needs to see."
+        },
+        "currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3,
+          "default": "USD"
+        },
+        "orderId": {
+          "type": "integer",
+          "title": "Order"
+        },
+        "refundedAmount": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0,
+          "description": "How much has gone back, of `amount`. A number rather than a flag because a refund is not one event: a shop refunds the postage today and the item next week, and each is a separate call to the provider with its own ledger row. The order only moves when this reaches `amount`."
+        },
+        "failureReason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The provider's words, kept verbatim. Nothing branches on it — it is for the person reading the row, and inventing a taxonomy over somebody else's failure strings is a mapping that goes stale without ever failing."
+        },
+        "settledAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "providerRef",
+        "amount",
+        "orderId"
+      ],
+      "x-gate": {
+        "read": 5,
+        "create": 8,
+        "update": 8,
+        "delete": 9
+      },
+      "x-relations": [
+        {
+          "field": "order",
+          "model": "Order",
+          "type": "belongsTo",
+          "fields": [
+            "orderId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "PaymentEvent": {
+      "type": "object",
+      "title": "PaymentEvent",
+      "description": "Every event the provider has delivered, once each. Append-only.  ─── What this table is for, and what it is NOT for ──────────────────────  It is NOT what makes paying an order idempotent. That is the state machine: `pay` is `pending -> paid`, so a second one is refused at the Data boundary whatever this table says. Nor is it the signature replay check, which is a nonce inside a five-minute window and is gone the moment the window passes.  It is the answer to \"what did they tell us, and when\" — the row a person reads when the order and the provider's dashboard disagree. The @unique is what makes a redelivery cheap: the handler claims the id and stops, rather than re-deriving that there is nothing to do.  The claim and the effect are written in ONE transaction (`transactional:` on `payments.record`), which is the only arrangement that is correct. Claim first and commit separately, and a crash in between leaves the event claimed and the order unpaid — and the provider's retry is deduped away by the very row that recorded nothing happening.",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 80,
+          "description": "The provider's id FOR THE EVENT, not for the payment — one payment produces several, and deduping on the payment would drop the ones that come after the first.",
+          "title": "Event"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "title": "Type"
+        },
+        "paymentRef": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 64
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which payment it was about, as the provider spelt it. A plain string and not a relation: an event may name a payment this shop has no row for (a provider-side refund, a test event fired from their dashboard), and a foreign key would refuse to record the one event most worth recording.",
+          "title": "Payment"
+        },
+        "receivedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "eventId",
+        "kind"
+      ],
+      "x-gate": {
+        "read": 5,
+        "create": 8,
+        "update": 9,
+        "delete": 9
+      }
+    },
+    "Cart": {
+      "type": "object",
+      "title": "Cart",
+      "description": "A basket, and the one model in this app owned by NOBODY.  A shopper is a stranger — no account, no session, level 0 — and a stranger still has to be the only person who can see their own basket. That cannot be `userId == auth().id`, because there is no `auth().id` to compare, and it must not be a service reading through `asSystem()`, because access is declared in the schema and not in hooks (Invariant 6).  So the owner is a BEARER TOKEN, and `api/cart-claim.ts` turns the header carrying it into a claim on the principal before the Data boundary scopes the client. `auth().cartToken` is then a claim a stranger holds, and the policies below are ordinary row policies over it.  The token is `@guarded`: the app writes it, `asSystem()` reads it, and no caller ever gets it back in a response — the browser knows it because it was handed it once, at creation, by the service that minted it.",
+      "properties": {
+        "userId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Set when a signed-in person owns the basket, null while they are a guest. Both audiences use the same policies — the token is what proves ownership either way, so signing in mid-shop does not lose the basket."
+        },
+        "status": {
+          "$ref": "#/$defs/CartStatus",
+          "default": "open"
+        },
+        "discountId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "─── The money, while it is still changeable ────────────────────────────  Two references and no amounts. A basket stores WHICH code and WHICH method, and every figure is computed on read by `api/src/pricing.ts` — the opposite of `Order`, which stores the figures and no references.  That inversion is the whole distinction between the two tables. A basket is a question the shop answers again on every request, so a rate that changed or a code that expired while the shopper was deciding must show up immediately; an order is a statement about a moment, so nothing about it may move afterwards. Storing amounts on the basket would quote a price the shop no longer offers, and storing references on the order would reprice history.  Both are `@system`. The basket's own policy lets its holder update it — `@@allow('update', token == auth().cartToken)` — which is what makes the quantity stepper work without a session, and it would just as happily let them point `discountId` at any row in the table. So neither is set by a write: `carts.applyDiscount` takes a CODE and validates it, and `carts.setShipping` takes a method and checks it is active.",
+          "title": "Discount",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "shippingMethodId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "title": "Shipping",
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        }
+      },
+      "additionalProperties": false,
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 0,
+        "create": 0,
+        "update": 0,
+        "delete": 5
+      },
+      "x-relations": [
+        {
+          "field": "discount",
+          "model": "Discount",
+          "type": "belongsTo",
+          "fields": [
+            "discountId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        },
+        {
+          "field": "shippingMethod",
+          "model": "ShippingMethod",
+          "type": "belongsTo",
+          "fields": [
+            "shippingMethodId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "SetNull",
+          "optional": true
+        },
+        {
+          "field": "lines",
+          "model": "CartLine",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        },
+        {
+          "field": "holds",
+          "model": "StockReservation",
+          "type": "hasMany",
+          "fields": [],
+          "references": [],
+          "onDelete": null,
+          "optional": false
+        }
+      ]
+    },
+    "CartLine": {
+      "type": "object",
+      "title": "CartLine",
+      "description": "One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not the same fact as the variant's price today — a basket left overnight must either honour what it quoted or say out loud that it changed, and it can do neither if the number was never written down.",
+      "properties": {
+        "cartId": {
+          "type": "integer",
+          "title": "Basket"
+        },
+        "variantId": {
+          "type": "integer",
+          "title": "Variant",
+          "x-messages": {
+            "required": "Pick a size and colour"
+          }
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99,
+          "default": 1
+        },
+        "unitPrice": {
+          "type": "number",
+          "minimum": 0,
+          "readOnly": true,
+          "x-litestone-kind": "system"
+        },
+        "token": {
+          "type": "string",
+          "description": "The basket's token, copied onto the line.  A policy cannot traverse a relation — `cart.token == auth().cartToken` does not parse — so a child row that is scoped by its parent has to carry the parent's key itself. (`@@tenant(via: parent)` does exactly this for the tenancy feature; a plain `@@allow` has no equivalent.) It is written once, with the line, and a line never moves basket.  NOT `@guarded`, unlike the copy on `Cart`. A guard locks BOTH directions, so the caller who has to write this column could not — measured, an `AccessDeniedError` on a guest adding a line to their own basket. It does not need one: the create policy below only admits the caller's own token, and reading it back tells the bearer a secret they are already holding."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cartId",
+        "variantId",
+        "token"
+      ],
+      "x-litestone-policies": true,
+      "x-gate": {
+        "read": 0,
+        "create": 0,
+        "update": 0,
+        "delete": 0
+      },
+      "x-relations": [
+        {
+          "field": "cart",
+          "model": "Cart",
+          "type": "belongsTo",
+          "fields": [
+            "cartId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "variant",
+          "model": "ProductVariant",
+          "type": "belongsTo",
+          "fields": [
+            "variantId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "StockReservation": {
+      "type": "object",
+      "title": "StockReservation",
+      "description": "Stock set aside for one basket, until a moment.  ─── Why this is a row and not a column on CartLine ──────────────────────  It would fit there — a line already names a variant and a quantity, and an `heldUntil` column would have been three characters of schema. It is wrong for one reason and the reason is a POLICY: CartLine is scoped by the shopper's token (`@@allow('read', token == auth().cartToken)`), and availability is a sum over *everybody's* holds. Summing CartLine from a shopper's own client answers a sum over their own basket — a number that is always plausible, usually zero, and never the one asked for. It is the exact shape the house rule warns about: a wrong policy is an empty screen, not an error.  A hold is a fact about the SHELF, so it is a table about the shelf, and the gate says who may look: an administrator reads them (that is the inventory screen), and nothing below `asSystem()` writes one. There is no row policy because there is no caller-facing read — the shopper learns about their own hold from the basket the `carts` service builds for them.",
+      "properties": {
+        "variantId": {
+          "type": "integer",
+          "title": "Variant"
+        },
+        "cartId": {
+          "type": "integer",
+          "title": "Basket"
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 99
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the shelf takes it back. THE READ IS THE TRUTH: every availability sum filters on this instant, so a hold is dead the moment it passes even if no sweep has run. `release-holds` deletes the rows, which keeps the table small and is housekeeping — correctness must not depend on a cron having fired, because then a queue outage quietly stops the shop selling."
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "variantId",
+        "cartId",
+        "quantity",
+        "expiresAt"
+      ],
+      "x-gate": {
+        "read": 5,
+        "create": 8,
+        "update": 8,
+        "delete": 8
+      },
+      "x-relations": [
+        {
+          "field": "variant",
+          "model": "ProductVariant",
+          "type": "belongsTo",
+          "fields": [
+            "variantId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        },
+        {
+          "field": "cart",
+          "model": "Cart",
+          "type": "belongsTo",
+          "fields": [
+            "cartId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "optional": false
+        }
+      ]
+    },
+    "InventoryMovement": {
+      "type": "object",
+      "title": "InventoryMovement",
+      "description": "Why the shelf is at the number it is at. Append-only.  `stock` is the running total and this is the tape behind it: nothing writes that column without writing a row here in the same breath, which is what makes the two reconcilable at all. It is not the audit trail — `@@log(audit)` records that SOMEBODY changed a row and Litestone owns its format. This records what happened to the SHELF, in the shop's own words, and a customer service agent reads it.  ─── The gate is \"5.5.9.9\" and each digit is deliberate ──────────────────  read   5  an administrator; a movement names orders and quantities create 5  receiving stock is an administrator's act, so the Data boundary is what refuses it — `inventory.receive` contains no check of its own and needs none update 9  LOCKED — nothing passes 9, `asSystem()` included delete 9  LOCKED  9 is what \"append-only\" is spelled with. A comment saying the same thing is a comment; this is enforced at the Data boundary for every caller including the application itself, which is the only version of the promise worth having.  The one movement an ADMINISTRATOR does not write is `sold`: that one is written by a shopper at level 0 checking out, so `carts.checkout` makes it through `asSystem()` — the shop recording a sale on its own behalf. Which client a `move()` is handed is therefore a real decision at every call site, and it is why `api/inventory.ts` takes one rather than reaching for a global.",
+      "properties": {
+        "variantId": {
+          "type": "integer",
+          "title": "Variant"
+        },
+        "kind": {
+          "$ref": "#/$defs/StockMovementKind"
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "SIGNED, and it is the movement rather than the new total: +12 received, −2 sold. A ledger of totals cannot be summed, and summing is the only thing anybody ever wants to do with one."
+        },
+        "stockBefore": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Both ends, written down. A movement that says only \"−2\" is unreadable the moment two of them race; with both, a row is checkable on its own and a gap between one row's `after` and the next one's `before` is visible."
+        },
+        "stockAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What it was for. An order reference for a sale, a delivery note for a receipt, blank for a stocktake correction that only has the note."
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "variantId",
+        "kind",
+        "quantity",
+        "stockBefore",
+        "stockAfter"
+      ],
+      "x-gate": {
+        "read": 5,
+        "create": 5,
+        "update": 9,
+        "delete": 9
+      },
+      "x-relations": [
+        {
+          "field": "variant",
+          "model": "ProductVariant",
+          "type": "belongsTo",
+          "fields": [
+            "variantId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Restrict",
           "optional": false
         }
       ]
@@ -246,6 +1420,36 @@
         "delete": 8
       }
     },
+    "Brand": {
+      "type": "string",
+      "enum": [
+        "frontierjs",
+        "junction",
+        "litestone"
+      ],
+      "title": "Brand"
+    },
+    "Size": {
+      "type": "string",
+      "enum": [
+        "one",
+        "xs",
+        "s",
+        "m",
+        "l",
+        "xl",
+        "xxl"
+      ],
+      "title": "Size"
+    },
+    "DiscountKind": {
+      "type": "string",
+      "enum": [
+        "percent",
+        "fixed"
+      ],
+      "title": "DiscountKind"
+    },
     "OrderStatus": {
       "type": "string",
       "enum": [
@@ -256,6 +1460,299 @@
         "cancelled"
       ],
       "title": "OrderStatus"
+    },
+    "PaymentStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "succeeded",
+        "failed",
+        "refunded"
+      ],
+      "title": "PaymentStatus"
+    },
+    "CartStatus": {
+      "type": "string",
+      "enum": [
+        "open",
+        "ordered",
+        "abandoned"
+      ],
+      "title": "CartStatus"
+    },
+    "StockMovementKind": {
+      "type": "string",
+      "enum": [
+        "received",
+        "sold",
+        "returned",
+        "adjusted",
+        "damaged"
+      ],
+      "title": "StockMovementKind"
+    },
+    "TrackingUpdate": {
+      "type": "object",
+      "title": "TrackingUpdate",
+      "properties": {
+        "trackingCode": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 40,
+          "title": "Tracking",
+          "x-messages": {
+            "length": "A tracking code is 4 to 40 characters",
+            "minLength": "A tracking code is 4 to 40 characters",
+            "maxLength": "A tracking code is 4 to 40 characters"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "trackingCode"
+      ]
+    },
+    "DiscountCode": {
+      "type": "object",
+      "title": "DiscountCode",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20,
+          "title": "Discount code",
+          "x-messages": {
+            "length": "A discount code is 3 to 20 characters",
+            "minLength": "A discount code is 3 to 20 characters",
+            "maxLength": "A discount code is 3 to 20 characters",
+            "required": "Enter the code you were given"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code"
+      ]
+    },
+    "ShippingChoice": {
+      "type": "object",
+      "title": "ShippingChoice",
+      "properties": {
+        "shippingMethodId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "title": "Shipping"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CheckoutDetails": {
+      "type": "object",
+      "title": "CheckoutDetails",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "title": "Email",
+          "x-messages": {
+            "required": "We need an email address to send the receipt to"
+          }
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80,
+          "title": "Name",
+          "x-messages": {
+            "required": "Please give a name for the order"
+          }
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Order note"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "email",
+        "name"
+      ]
+    },
+    "StockReceipt": {
+      "type": "object",
+      "title": "StockReceipt",
+      "properties": {
+        "variantId": {
+          "type": "integer",
+          "title": "Variant",
+          "x-messages": {
+            "required": "Which shelf did this arrive on?"
+          }
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "title": "How many",
+          "x-messages": {
+            "gte": "A delivery is at least one item",
+            "minimum": "A delivery is at least one item",
+            "lte": "More than ten thousand in one delivery is a typo more often than it is a pallet",
+            "maximum": "More than ten thousand in one delivery is a typo more often than it is a pallet"
+          }
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Delivery note"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 200
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Note"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "variantId",
+        "quantity"
+      ]
+    },
+    "StockAdjustment": {
+      "type": "object",
+      "title": "StockAdjustment",
+      "properties": {
+        "variantId": {
+          "type": "integer",
+          "title": "Variant",
+          "x-messages": {
+            "required": "Which shelf is being corrected?"
+          }
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": -10000,
+          "maximum": 10000,
+          "title": "Change",
+          "x-messages": {
+            "required": "How many, and which way — negative takes stock off the shelf"
+          }
+        },
+        "kind": {
+          "$ref": "#/$defs/StockMovementKind",
+          "title": "Reason",
+          "x-messages": {
+            "required": "Say why the number is moving"
+          }
+        },
+        "note": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200,
+          "title": "Note",
+          "x-messages": {
+            "required": "An adjustment with no reason is a number nobody can audit"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "variantId",
+        "quantity",
+        "kind",
+        "note"
+      ]
+    },
+    "FileRef": {
+      "type": "object",
+      "title": "FileRef",
+      "description": "Litestone file reference — stored as JSON in SQLite, bytes in object storage.",
+      "x-litestone-file": true,
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Object storage key"
+        },
+        "bucket": {
+          "type": "string",
+          "description": "Bucket name"
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "r2",
+            "s3",
+            "b2",
+            "minio",
+            "local"
+          ],
+          "description": "Storage provider"
+        },
+        "endpoint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "S3-compatible endpoint URL"
+        },
+        "publicBase": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "CDN or public URL base"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "File size in bytes"
+        },
+        "mime": {
+          "type": "string",
+          "description": "MIME type"
+        },
+        "uploadedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Upload timestamp"
+        }
+      },
+      "required": [
+        "key",
+        "bucket",
+        "provider",
+        "size",
+        "mime",
+        "uploadedAt"
+      ],
+      "additionalProperties": false
     }
   }
 }

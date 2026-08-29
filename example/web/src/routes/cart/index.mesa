@@ -17,9 +17,9 @@ title: Basket
   // calculation and not two that agree today.
   import { cart, refresh, setQuantity, remove, checkout, clear, dismissReceipt,
            redeemHandoff, handoffCodeFromUrl,
-           applyDiscount, removeDiscount, setShipping, loadShippingOptions } from '../../cart.js'
-  import { money } from '../../money.js'
-  import { prefs } from '../../prefs.js'
+           applyDiscount, removeDiscount, setShipping, loadShippingOptions } from '@/cart.js'
+  import { money } from '@/money.js'
+  import { prefs } from '@/prefs.js'
   import { toFieldErrors } from '@frontierjs/sierra/junction'
   import { goto } from '@frontierjs/sierra/router'
 

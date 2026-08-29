@@ -1,6 +1,7 @@
 import { createBaseService, $ } from '@frontierjs/junction'
 import { hold, release, consume, heldUntil, levelsFor, HOLD_MINUTES } from '../inventory.ts'
 import { priceBasket, contextFor, discountByCode, discountProblem, round2 } from '../pricing.ts'
+import { checkoutCodeFor } from '../core/checkout-code.ts'
 
 // The basket. Its ACCESS is entirely in db/schema.lite — `@@allow('read',
 // token == auth().cartToken)` on both models — so nothing in this file checks
@@ -584,7 +585,16 @@ export function createCartsService() {
       // The whole breakdown back, not just the figure. A receipt screen that
       // had only a total would have to fetch the order to draw its own lines,
       // and the basket it would need to compare against has just been closed.
-      return { orderId: order.id, reference: order.reference, ...money }
+      // The checkout code with it, and this is the ONE call that answers one to
+      // a shopper. They have no session and their basket has just closed, so a
+      // moment from now nothing identifies them to this shop at all — the code
+      // is what carries the right to pay for what they just bought (`FJS-497`).
+      return {
+        orderId:      order.id,
+        reference:    order.reference,
+        checkoutCode: checkoutCodeFor(order.id),
+        ...money,
+      }
     },
   })
 }

@@ -1,14 +1,42 @@
 ---
-title: FrontierJS Supply Co.
+title: FrontierJS Supply Co. — Built for The Wild
+description: Gear for developers who get their hands dirty. Tees, hoodies, caps and mugs for the three realms.
 render: static
 ---
 <!--
-  The front page. Prerendered — every byte below is in the file a visitor gets,
-  and there is no JavaScript on this page at all.
+  The front page, and the storefront's one piece of marketing.
 
-  That is the claim `verify:site` checks by reading the built HTML rather than a
-  rendered DOM: a page whose product names arrive from a fetch is a page a
-  crawler sees empty, and it looks identical in a browser.
+  Prerendered — every byte below is in the file a visitor gets, artwork and
+  merch grid alike, and there is no JavaScript on this page at all. That is not
+  a nice-to-have here: `verify:site` reads the built HTML and asserts the page
+  made ZERO calls to the API and carries exactly one <h1>. A promo page whose
+  product names arrive from a fetch is a page a crawler sees empty, and it looks
+  identical in a browser.
+
+  So the merch grid is baked by `index.meta.js` at build time, and the artwork
+  is served from `public/brand/` as ordinary files — neither is an API call.
+
+  ── The dark sections ──────────────────────────────────────────────────────
+
+  `theme-dark` on a section, not a hand-mixed palette. A theme in
+  @frontierjs/css is a class of inheriting tokens and nothing else, so putting
+  one on an element hands every descendant the whole inverted ramp — ink, rules,
+  surfaces, AND `--tone-l-min`/`--tone-l-max`, the window a tone is clamped into
+  when it is rendered as text. That last pair is the one a hand-rolled dark
+  section always forgets: tones are tuned as fills behind white text and mostly
+  fail as text on a dark ground, and nothing in CSS can derive the correction
+  because relative colour syntax cannot read the surface a colour will land on.
+
+  What this file then overrides is the three surface COLOURS, to the brand's
+  Dusk Navy. Every derivation on top of them stays the package's.
+
+  ── The brand ─────────────────────────────────────────────────────────────
+
+  The palette, the wordmark voice and the artwork all come from the brand
+  sheets in `db/brand-sheets/`, which is also where the shop's own product
+  photography was cut from. The three archetypes and the trail panels are
+  crops of those sheets; `db/brand-sheets/README.md` says which region each one
+  is, so a re-cut is repeatable rather than a file somebody once made.
 -->
 <script>
   import { priceRange } from '../money.js'
@@ -16,28 +44,129 @@ render: static
   export let data = null
 
   const products = data?.products ?? []
+
+  // The brand's own three archetypes, with its own words. Data rather than
+  // markup because the three are parallel and a copy edit should be one line.
+  const ARCHETYPES = [
+    { id: 'explorer', name: 'The Explorer', art: '/brand/arch-explorer.png',
+      line: 'Walks first. Finds what matters. Defines the path forward.' },
+    { id: 'hawk',     name: 'The Hawk',     art: '/brand/arch-hawk.png',
+      line: 'Sees the whole territory. Maps the relationships. Ensures nothing is missed.' },
+    { id: 'wolf',     name: 'The Wolf',     art: '/brand/arch-wolf.png',
+      line: 'Executes with precision. Protects the system as it moves forward.' },
+  ]
+
+  // One panel per archetype, in the order the brand states them: the explorer
+  // walks first, the hawk sees the whole territory, and the boundary is what
+  // the two of them agree on.
+  const TRAIL = [
+    { id: 'fire',   art: '/brand/trail-fire.jpg',   title: 'A loyal companion',
+      line: 'One schema, and every realm derives from it. Nothing to keep in step by hand.',
+      alt:  'An explorer and a wolf at a campfire under a canyon wall at dusk' },
+    { id: 'stake',  art: '/brand/trail-stake.jpg',  title: 'Guided by Litestone',
+      line: 'Gates, policies and constraints are declared at the data boundary, not remembered in a hook.',
+      alt:  'A hawk on a rock above a canyon, watching a glowing blue stake on the floor below' },
+    { id: 'bounds', art: '/brand/trail-bounds.jpg', title: 'Boundaries create clarity',
+      line: 'Clear limits make a system you can still reason about in a year. Predictable beats clever.',
+      alt:  'An explorer at a row of carved stones lit with blue marks across a desert floor' },
+  ]
 </script>
 
-<div class="container stack">
-  <section class="stack">
-    <h1>Kit for people who ship</h1>
-    <p class="text-muted">
-      Tees, mugs and stickers for the three realms. Everything below was written
-      into this page when the site was built.
-    </p>
-  </section>
+<!--
+  Full bleed. `.site-main` in _module.mesa pads its block edges by --space-4xl,
+  so the hero escapes it with the SAME rung negated — a literal here would stay
+  put the day that padding moves, and the seam under the topbar would reopen.
+-->
+<section class="hero theme-dark">
+  <div class="container hero-inner">
+    <div class="hero-copy stack">
+      <p class="hero-kicker">FrontierJS · Built for The Wild</p>
+      <h1 class="hero-title">Let’s get our hands dirty</h1>
+      <p class="hero-lede">
+        FrontierJS is the JavaScript framework for the long road ahead. Built for
+        makers, explorers and problem solvers who venture beyond the easy path.
+        Out here, we build things that last.
+      </p>
+      <div class="cluster hero-cta">
+        <!--
+          `--bg-mix` is how a chip takes a hue the theme does not declare, and
+          chip.css derives the label colour from that fill's own luminance — so
+          Mesa Orange gets dark text rather than the white that would sit on it
+          at 2.97:1. Setting `color` here by hand is what breaks that.
+        -->
+        <a class="btn hero-btn" href="#merch">Get the merch</a>
+        <a class="btn outlined hero-btn-2" href="/catalog/">Browse the catalogue</a>
+      </div>
+    </div>
 
+    <!--
+      The overlook, at its own aspect rather than as the band's ground. The
+      plate is 1.34:1 and the band is nearly 2.8:1, so `cover` would crop half
+      its height away whatever the position and the wolf would leave the frame.
+      Framed, the whole animal is in shot, the hawk is still in the sky behind
+      him, and at 2× it is sharp.
+    -->
+    <figure class="hero-art">
+      <img src="/brand/hero.jpg" alt="A wolf standing on a canyon overlook at sunset, a hawk circling behind him" width="968" height="720" />
+    </figure>
+  </div>
+</section>
+
+<section class="creed theme-dark">
+  <div class="container creed-inner">
+    <p class="creed-line">We explore. We build. We ship what matters.</p>
+    <p class="creed-line creed-line-soft">No shortcuts. No fluff. Just solid tools for real developers.</p>
+  </div>
+</section>
+
+<div class="container stack band">
   <section class="stack">
-    <h2 class="h4">Latest</h2>
+    <p class="eyebrow">The three archetypes</p>
+    <h2>One source of truth</h2>
+    <ul class="archetypes">
+      {#each ARCHETYPES as a}
+        <li class="archetype stack">
+          <!--
+            The disc is decorative: the name is the <h3> right beside it, so an
+            alt describing the same thing is read twice. Empty alt, not a
+            missing one.
+          -->
+          <img class="archetype-art" src={a.art} alt="" width="120" height="120" loading="lazy" />
+          <h3 class="h5">{a.name}</h3>
+          <p class="text-sm text-muted">{a.line}</p>
+        </li>
+      {/each}
+    </ul>
+  </section>
+</div>
+
+<!-- ── Get the merch ──────────────────────────────────────────────────────
+     `#home-featured` and one `[data-slug]` per product are what `verify:site`
+     counts to prove the grid was baked rather than fetched. Renaming either is
+     a drive edit, not a free rename. -->
+<section class="merch" id="merch">
+  <div class="container stack">
+    <div class="merch-head">
+      <div class="stack merch-head-copy">
+        <p class="eyebrow">Supply Co.</p>
+        <h2 class="merch-title">Get the merch</h2>
+        <p class="text-muted">
+          Tees, hoodies, caps and mugs for the three realms. Printed on the good
+          stuff, shipped from the frontier.
+        </p>
+      </div>
+      <a class="btn outlined" href="/catalog/">See everything</a>
+    </div>
+
     <ul class="cards" id="home-featured">
       {#each products as p}
-        <li class="card" data-slug={p.slug}>
+        <li class="card merch-card" data-slug={p.slug}>
           <a class="card-link" href={`/products/${p.slug}/`}>
             {#if p.image}
               <img class="card-shot" src={p.image.src} alt={p.image.alt} loading="lazy" />
             {/if}
             <strong>{p.name}</strong>
-            <span class="badge">{priceRange(p.from, p.to)}</span>
+            <span class="price">{priceRange(p.from, p.to)}</span>
             {#if p.blurb}<p class="text-sm text-muted">{p.blurb}</p>{/if}
           </a>
         </li>
@@ -52,12 +181,315 @@ render: static
         <li class="text-muted text-sm">Nothing to show.</li>
       {/each}
     </ul>
-  </section>
+  </div>
+</section>
 
+<section class="trail theme-dark">
+  <div class="container stack">
+    <p class="eyebrow">Why we build this way</p>
+    <ul class="trail-list">
+      {#each TRAIL as t}
+        <li class="trail-item">
+          <img class="trail-art" src={t.art} alt={t.alt} loading="lazy" />
+          <h3 class="h5">{t.title}</h3>
+          <p class="text-sm">{t.line}</p>
+        </li>
+      {/each}
+    </ul>
+  </div>
+</section>
+
+<div class="container stack band">
+  <p class="closing">
+    Every page on this storefront was written ahead of time and the parts that
+    have to be current — stock, your basket, the price on the shelf — ask the
+    shop when you open it.
+  </p>
   <p><a class="btn" href="/catalog/">Browse the whole catalogue</a></p>
 </div>
 
 <style>
+  /* ── Shared ─────────────────────────────────────────────────────────── */
+
+  /*
+   * The small caps that name a section. --label-* is the package's own triple
+   * for this role, shared with a table head and a nav group label, so a theme
+   * that restyles those restyles these.
+   */
+  .eyebrow {
+    margin:         0;
+    font-size:      var(--text-2xs);
+    font-weight:    var(--label-font-weight);
+    text-transform: var(--label-text-transform);
+    letter-spacing: var(--label-letter-spacing);
+    color:          var(--ink-mute);
+  }
+
+  .band {
+    padding-block: var(--space-5xl);
+  }
+
+  /* ── Hero ───────────────────────────────────────────────────────────── */
+
+  .hero {
+    /*
+     * The brand's Dusk Navy, over `theme-dark`'s ramp. Only the grounds are
+     * restated: the inks, the rules and the tone-as-text window come from the
+     * theme class, which is what keeps a toned chip in here legible without
+     * this file knowing the rule.
+     */
+    --surface:        #0b182b;
+    --surface-raised: #14263e;
+    --surface-sunken: #060f1c;
+
+    position: relative;
+    /* The same rung `.site-main` pads with, negated — see the note above. */
+    margin-block-start: calc(var(--space-4xl) * -1);
+    /*
+     * The ground carries atmosphere and no subject, and it is cut to be that:
+     * the canyon to the RIGHT of the wolf on the same plate the hero art comes
+     * from, so it shares the painting's light without repeating what is in the
+     * frame beside it. With the wolf in both, his blurred silhouette sat
+     * directly above the headline and read as a ghost of the plate — and a
+     * scrim cannot settle that, because the animal is dark against a bright
+     * sky and darkening the band darkens both.
+     *
+     * It ships DEFOCUSED — a 10px blur baked into the file rather than a CSS
+     * filter, which would need a second stacking layer to avoid blurring the
+     * copy over it — and upscaled before the blur, since the crop is narrower
+     * than the band and `cover` would otherwise sharpen it back up.
+     */
+    background:
+      var(--surface)
+      url('/brand/ridge.jpg') center / cover no-repeat;
+    color: var(--ink);
+    isolation: isolate;
+  }
+
+  /*
+   * The scrim. Heavy and near-even, because the ground is carrying atmosphere
+   * rather than a subject — and both halves of the band now hold something that
+   * has to read: the copy on the left, the overlook plate on the right.
+   */
+  .hero::before {
+    content:  '';
+    position: absolute;
+    inset:    0;
+    z-index:  -1;
+    background: linear-gradient(
+      100deg,
+      rgba(6, 15, 28, 0.95) 0%,
+      rgba(6, 15, 28, 0.88) 46%,
+      rgba(6, 15, 28, 0.74) 100%
+    );
+  }
+
+  .hero-inner {
+    display:       grid;
+    gap:           var(--space-5xl);
+    align-items:   center;
+    min-height:    clamp(24rem, 44vw, 33rem);
+    padding-block: var(--space-5xl);
+  }
+
+  @media (min-width: 900px) {
+    .hero-inner {
+      /* The copy leads; the plate is a shade narrower so the headline keeps the
+         measure it was set for. */
+      grid-template-columns: 1.05fr 0.95fr;
+    }
+  }
+
+  .hero-copy {
+    max-width: 38rem;
+    gap:       var(--space-2xl);
+  }
+
+  .hero-art {
+    margin: 0;
+  }
+  .hero-art img {
+    display:       block;
+    inline-size:   100%;
+    block-size:    auto;
+    border-radius: var(--card-radius);
+    /* A warm hairline rather than --rule: the plate's own edge is sunset and a
+       neutral grey line reads as a seam against it. */
+    border:     var(--border-width) solid rgba(216, 184, 146, 0.35);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .hero-kicker {
+    margin:         0;
+    font-size:      var(--text-xs);
+    font-weight:    var(--label-font-weight);
+    text-transform: var(--label-text-transform);
+    letter-spacing: 0.18em;
+    color:          #d8b892;
+  }
+
+  .hero-title {
+    margin:      0;
+    /* One step above the ladder's top rung: this is the only display type on
+       the surface, and --text-4xl is tuned for a page title in a console. */
+    font-size:   clamp(var(--text-4xl), 6vw, 3.75rem);
+    line-height: var(--leading-display);
+    text-wrap:   balance;
+  }
+
+  .hero-lede {
+    margin:      0;
+    max-width:   34rem;
+    font-size:   var(--text-lg);
+    line-height: var(--leading-relaxed);
+    color:       var(--ink-soft);
+  }
+
+  .hero-cta {
+    gap: var(--space-lg);
+  }
+
+  /* Mesa Orange, as a fill the chip lineage derives its own label colour from. */
+  .hero-btn {
+    --bg-mix: #e07b39;
+  }
+  /*
+   * Sandstone, and `.outlined` renders a tone as TEXT — so this reads through
+   * tones.css's legibility window rather than being painted raw, and the window
+   * is the inverted one because `theme-dark` is on the section.
+   */
+  .hero-btn-2 {
+    --bg-mix: #d8b892;
+  }
+
+  @media (max-width: 899px) {
+    /* One column: the plate stacks under the copy, and at that width it is the
+       first thing scrolled past rather than a companion to the headline. */
+    .hero-art {
+      max-inline-size: 26rem;
+    }
+  }
+
+  /* ── Creed ──────────────────────────────────────────────────────────── */
+
+  .creed {
+    --surface: #060f1c;
+    background:    var(--surface);
+    color:         var(--ink);
+    border-block-end: var(--border-width) solid var(--rule);
+  }
+  .creed-inner {
+    display:        flex;
+    flex-wrap:      wrap;
+    gap:            var(--space-sm) var(--space-4xl);
+    justify-content: space-between;
+    padding-block:  var(--space-2xl);
+  }
+  .creed-line {
+    margin:         0;
+    font-size:      var(--text-sm);
+    font-weight:    var(--label-font-weight);
+    text-transform: var(--label-text-transform);
+    letter-spacing: 0.12em;
+    color:          #d8b892;
+  }
+  .creed-line-soft {
+    color: var(--ink-mute);
+  }
+
+  /* ── Archetypes ─────────────────────────────────────────────────────── */
+
+  .archetypes {
+    list-style: none;
+    padding:    0;
+    margin:     0;
+    display:    grid;
+    gap:        var(--space-4xl);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  }
+  .archetype {
+    gap: var(--space-sm);
+  }
+  .archetype-art {
+    inline-size: 7.5rem;
+    block-size:  7.5rem;
+    /* The disc is already round with a transparent surround; the ring is the
+       artwork's own. */
+    border-radius: var(--pill-radius);
+  }
+
+  /* ── Merch ──────────────────────────────────────────────────────────── */
+
+  .merch {
+    background:    var(--surface-sunken);
+    border-block:  var(--border-width) solid var(--rule);
+    padding-block: var(--space-5xl);
+    /* An anchor target under a sticky header would otherwise land its own
+       heading behind the topbar. The topbar here is not sticky, but the rung
+       is what a reader expects to see above a jumped-to section either way. */
+    scroll-margin-block-start: var(--space-4xl);
+  }
+  .merch-head {
+    display:         flex;
+    flex-wrap:       wrap;
+    align-items:     end;
+    justify-content: space-between;
+    gap:             var(--space-2xl);
+  }
+  .merch-head-copy {
+    gap:       var(--space-sm);
+    max-width: 34rem;
+  }
+  .merch-title {
+    margin:         0;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .merch-card {
+    background: var(--surface);
+  }
+
+  /* ── Trail ──────────────────────────────────────────────────────────── */
+
+  .trail {
+    --surface:        #0b182b;
+    --surface-raised: #14263e;
+    --surface-sunken: #060f1c;
+    background:    var(--surface);
+    color:         var(--ink);
+    padding-block: var(--space-5xl);
+    margin-block-start: var(--space-5xl);
+  }
+  .trail-list {
+    list-style: none;
+    padding:    0;
+    margin:     0;
+    display:    grid;
+    gap:        var(--space-4xl);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  }
+  .trail-item > * + * {
+    margin-block-start: var(--space-sm);
+  }
+  .trail-art {
+    inline-size: 100%;
+    /*
+     * 4/3, which is what the plates are cut at. At 1/1 `cover` took a square
+     * out of the middle of each and the hawk — which sits at the left edge of
+     * its plate — lost a wing to it.
+     */
+    aspect-ratio: 4 / 3;
+    object-fit:   cover;
+    border-radius: var(--card-radius);
+    /* The frame is what stops a dark painting bleeding into a dark section. */
+    border: var(--border-width) solid var(--rule-strong);
+  }
+  .trail-item p {
+    color: var(--ink-soft);
+  }
+
+  /* ── Cards ──────────────────────────────────────────────────────────── */
+
   .cards {
     list-style: none;
     padding: 0;
@@ -65,8 +497,12 @@ render: static
     display: grid;
     gap: var(--space-2xl);
     /* `minmax(0, …)` and not `auto`: an <img> at width:100% contributes no
-       intrinsic minimum, and a track sized from content collapses the card. */
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr));
+       intrinsic minimum, and a track sized from content collapses the card.
+
+       22rem rather than 16: the grid holds six, and at the container's own
+       content width a 16rem track fits four — which orphans two on a second
+       row. Three across is two clean rows. */
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
   }
   .card-link {
     display: grid;
@@ -83,5 +519,22 @@ render: static
     object-fit: contain;
     background: var(--surface-sunken);
     border-radius: var(--card-radius);
+  }
+
+  /*
+   * A price is the second thing a shopper reads and it was a muted chip — the
+   * Badge term is a categorical STATUS, so a price in one is both the wrong
+   * vocabulary and the wrong emphasis.
+   */
+  .price {
+    font-size:   var(--text-lg);
+    font-weight: 600;
+    color:       var(--ink);
+  }
+
+  .closing {
+    margin:    0;
+    max-width: 42rem;
+    color:     var(--ink-soft);
   }
 </style>

@@ -14,4 +14,5 @@
 // Readers declare `$: session.level`. Signing in is `await signIn(...)`, which
 // resolves with the session already loaded.
 
+// TODO: [CLEANUP] - remove this file and just import it from junction in the files..
 export { session, signIn, signOut, refresh, ready } from '@frontierjs/sierra/junction'

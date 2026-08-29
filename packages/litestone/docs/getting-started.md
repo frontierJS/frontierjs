@@ -12,7 +12,7 @@ bun add @frontierjs/litestone
 bunx litestone init              # creates schema.lite + litestone.config.js
 bunx litestone migrate create initial
 bunx litestone migrate apply
-bunx litestone studio            # browser UI at http://localhost:5001
+bunx litestone studio            # browser UI at http://localhost:8502
 ```
 
 ## Quick start
@@ -87,6 +87,11 @@ const db = await createClient({
 
   // Open all SQLite databases read-only — writes throw immediately
   // readOnly: true,
+
+  // ms to wait for another PROCESS's write lock before SQLITE_BUSY.
+  // Default 5000; `0` fails immediately. `{ default: 5000, audit: 250 }` per
+  // database. Or LITESTONE_BUSY_TIMEOUT for a process that builds no client.
+  // busyTimeout: 15_000,   // see docs/concurrency.md
 })
 ```
 

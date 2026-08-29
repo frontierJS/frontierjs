@@ -32,6 +32,41 @@ model Tag {
 
 The `@relation` attribute lives on the **belongsTo** side (the model with the FK column). The reverse side (`users[]`, `posts[]`) is inferred and doesn't need `@relation`.
 
+### One-to-one
+
+The side holding the foreign key declares it; the other side names the model and
+nothing else. No label is needed, exactly as with a list back-reference.
+
+```lite
+model User {
+  id      String   @id @default(cuid())
+  profile Profile?
+}
+
+model Profile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+}
+```
+
+**The foreign key must be unique**, and that is what separates a one-to-one from
+a to-many written as one — without it many rows point back and `user.profile`
+would answer one of them arbitrarily, so it is refused by name. A field
+`@unique`, an exactly-matching `@@unique`, or the column being the primary key
+all count:
+
+```lite
+model CalVideoSettings {
+  eventTypeId Int       @id                                     // the FK is the PK
+  eventType   EventType @relation(fields: [eventTypeId], references: [id])
+}
+```
+
+`include` answers the row itself and `null` where there is none — never a list of
+one. Where two relations run between the same pair of models, label both ends the
+way you would a list.
+
 ### The implicit join table
 
 A mutual `Model[]` pair generates the join table for you — you never write it,

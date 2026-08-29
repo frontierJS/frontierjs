@@ -48,7 +48,7 @@
 // ============================================================
 
 import { spawnSync }                                  from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync,
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync,
          copyFileSync, rmSync, mkdtempSync }           from 'node:fs'
 import { join, dirname, resolve }                      from 'node:path'
 import { fileURLToPath }                               from 'node:url'
@@ -69,7 +69,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 // handler covers that; the reap covers the SIGKILL it cannot see, past an age
 // floor so a concurrent run is never touched.
 
-const WORK_PREFIXES = ['fjs-scaffold-', 'fjs-deploy-']
+const WORK_PREFIXES = ['fjs-scaffold-', 'fjs-deploy-', 'fjs-journal-']
 const active = new Set()
 let trapped = false
 
@@ -399,6 +399,310 @@ export function scaffoldAndDeploy({ source = 'npm', keep = false, verbose = fals
     if (keep) log(`  · kept: ${work}`)
     else rmSync(work, { recursive: true, force: true })
   }
+}
+
+// ─── deployJournalCycle ──────────────────────────────────
+// The proof phase 1 owed: deploy → deploy → revert → crash → resume, run for
+// real against a machine, with a journal on it and a container serving from it.
+//
+// **It is the only thing here that executes `fli deploy`.** `scaffoldAndDeploy`
+// above runs `fli deploy:local`, which is a different command — it builds and
+// runs a container and never touches `_steps-docker/`, the journal, the swap,
+// the health poll or the revert. So for as long as this file has existed, the
+// pipeline an app actually deploys with had run zero times, and that showed:
+// nine of its ten multi-line shell commands were syntax errors on the target
+// (`packages/cli/core/machine.js`), the nginx config it wrote had every `$var`
+// stripped by the local shell, and `fli deploy:revert` restored the bytes it was
+// reverting FROM and reported success.
+//
+// What makes it runnable at all is that a deploy machine can be `localhost`:
+// `core/machine.js` pipes the same script to `sh -s` with or without an ssh
+// prefix, so this is the real pipeline against the real Docker daemon rather
+// than a simulation of it. Nothing is stubbed. The only thing not exercised is
+// ssh itself.
+//
+// The app plays both parts: it is the developer's checkout AND the git origin
+// the "server" pulls from, which is what lets `02-pull` be real.
+//
+// Returns { findings, skipped } like its siblings.
+
+export function deployJournalCycle({ keep = false, verbose = false, log = console.log } = {}) {
+  const findings = []
+  const fail     = (message, output) => { findings.push({ message, output }); return { findings, skipped: null } }
+
+  const docker = exec('docker', ['version', '--format', '{{.Server.Version}}'], { verbose: false })
+  if (docker.status !== 0) return { findings, skipped: 'no Docker daemon — `docker version` failed' }
+  if (exec('git', ['--version'], { verbose: false }).status !== 0)
+    return { findings, skipped: 'no git — the server side of this is a clone' }
+
+  const appName   = `fjsjrn${process.pid}`
+  const container = `${appName}-api`
+  // ports.js: env 7 test · category 1 be · project 0 (what `fli new` scaffolds).
+  // 7100 and 7101 are the two sources of scaffoldAndDeploy; this takes the next.
+  const PORT = 7102
+
+  const base = process.env.FJS_CI_WORKDIR || tmpdir()
+  const work = workDir('fjs-journal-', base)
+  const app  = join(work, appName)
+  const srv  = join(work, 'server')
+  const fli  = join(ROOT, 'packages', 'cli', 'bin', 'fli.js')
+
+  const inApp = (argv, opts = {}) => exec('bun', [fli, ...argv], { cwd: app, verbose, ...opts })
+  const git   = (cwd, argv) => exec('git', ['-c', 'user.email=ci@fjs.invalid', '-c', 'user.name=fjs-ci', ...argv], { cwd })
+
+  /** The image the container is actually on. The ground truth every assertion here compares. */
+  const running = () => {
+    const r = exec('docker', ['inspect', container, '--format', '{{.Image}}'], { verbose: false })
+    return r.status === 0 ? r.output.trim() : ''
+  }
+  const health = () => {
+    const r = exec('curl', ['-s', '-o', '/dev/null', '-w', '%{http_code}',
+                            `http://127.0.0.1:${PORT}/api/health`], { verbose: false })
+    return r.output.trim()
+  }
+  // A crashed deploy leaves the lock behind — the pid in it is the pid of the
+  // shell that wrote it, which exited immediately, so nothing can tell a stale
+  // lock from a live one. Asserted below rather than hidden here.
+  const unlock = () => rmSync(join(srv, '.deploy.lock'), { force: true })
+
+  try {
+    // ── the app, and a "server" that is a clone of it ──────
+    const s = exec('bun', [fli, 'new', appName, '--yes', '--auth', '--source', 'local', '--no-git', '--no-deploy'],
+                   { cwd: work, verbose })
+    if (s.status !== 0) return fail('fli new failed', s.output)
+
+    const key = randomBytes(32).toString('hex')
+    writeFileSync(join(app, '.env'), `ENCRYPTION_KEY=${key}\nDATABASE_URL=/db/app.db\nNODE_ENV=production\n`)
+
+    const m = inApp(['make:deploy', '--server', 'localhost', '--domain', 'ci.invalid'])
+    if (m.status !== 0) return fail('fli make:deploy failed', m.output)
+
+    // Point the generated block at this machine and this directory. `web: false`
+    // because the web half wants nginx and a domain, which is a different proof.
+    const confPath = join(app, 'frontier.config.js')
+    const conf = readFileSync(confPath, 'utf8')
+      .replace(/path: '[^']*',(\s*\/\/ deploy root)/, `path: '${srv}',$1`)
+      .replace(/env:\s*'[^']*'/, `env:        '${srv}/.env.production'`)
+      .replace(/port:\s*3000,/, `port:       ${PORT},`)
+      .replace(/path:\s*'[^']*\/db',/, `path:         '${srv}/db',`)
+      .replace(/\n    web: \{[\s\S]*?\n    \},/, '\n    web: false,')
+    writeFileSync(confPath, conf)
+    if (!conf.includes(srv)) return fail('could not point the deploy block at the local server directory', conf)
+
+    // A release baseline, so the pivot classifies rather than answering unknown
+    // — which counts as a contract and would refuse every revert below.
+    const rc = inApp(['release:check'])
+    if (!existsSync(join(app, 'db', 'release.snapshot.md')))
+      return fail('fli release:check wrote no db/release.snapshot.md', rc.output)
+
+    git(app, ['init', '-q', '.'])
+    git(app, ['add', '-A'])
+    git(app, ['commit', '-qm', 'scaffold'])
+    const clone = exec('git', ['clone', '-q', app, srv])
+    if (clone.status !== 0) return fail('could not clone the app into a server directory', clone.output)
+
+    mkdirSync(join(srv, 'db'), { recursive: true })
+    copyFileSync(join(app, '.env'), join(srv, '.env.production'))
+    // The keys `01b-env-check` compares against .env.example. Named here rather
+    // than by disabling the check: a deploy that skips it is not this pipeline.
+    appendFileSync(join(srv, '.env.production'), `PORT=3000\nAPP_URL=http://127.0.0.1:${PORT}\n`)
+    log('  ✓ scaffolded, and cloned into a server directory on this machine')
+
+    // ── 1 · deploy ────────────────────────────────────────
+    const d1 = inApp(['deploy', '--api'])
+    if (d1.status !== 0) return fail('the first fli deploy failed', d1.output + dockerLogs(container))
+    const A = running()
+    if (!A) return fail('the first deploy finished and no container is on an image', d1.output)
+    if (health() !== '200') return fail(`the deployed app answers ${health()} at /api/health`, dockerLogs(container))
+    log(`  ✓ deploy ran the real pipeline — journal, build, swap, health`)
+
+    const j1 = inApp(['deploy:journal'])
+    if (!/succeeded/.test(j1.output) || !/serving/.test(j1.output))
+      return fail('the deploy wrote no serving transition to the journal on the machine', j1.output)
+    log('  ✓ the journal on the machine records it as serving')
+
+    // ── 2 · deploy again, unchanged ───────────────────────
+    // Not asserted as producing the same bytes, and that is a measurement rather
+    // than a caution: `04-build-api` re-vendors the workspace on every run, and
+    // `bun pm pack` writes a fresh tarball each time, so under `--source local` a
+    // redeploy of unchanged source is never byte-identical. The `same-bytes`
+    // refusal is therefore graded in `packages/cli/tests/revert.test.js`, where
+    // two identical digests can be stated.
+    //
+    // What IS asserted here is that the second deploy is an ordinary one — a
+    // journal that already holds a serving transition must not change how the
+    // next deploy behaves.
+    const d2 = inApp(['deploy', '--api'])
+    if (d2.status !== 0) return fail('the second fli deploy failed', d2.output + dockerLogs(container))
+    if (health() !== '200') return fail('the second deploy does not answer health', dockerLogs(container))
+
+    // The property 2.3f exists for: the Release id names the ARTEFACT, so an
+    // unchanged redeploy is the same Release. Before the digest was a term this
+    // held trivially (every Release was identical); it means something now, and
+    // it is what the resume below depends on — a transition id carries the
+    // Release id, so an id that moves on a rebuild cannot be resumed.
+    if (releaseOf(d1.output) && releaseOf(d1.output) !== releaseOf(d2.output))
+      return fail(
+        `an unchanged redeploy minted a different Release — ${releaseOf(d1.output)} then ${releaseOf(d2.output)}`,
+        d1.output + '\n=== second ===\n' + d2.output)
+
+    // The plan asks the MACHINE what is running rather than the journal, which
+    // is what the `same-bytes` refusal reads. After a revert the serving
+    // transition has no build step, so a journal-only answer would be blank.
+    const plan = inApp(['deploy:revert', '--plan'])
+    if (!/running\s+sha256:/.test(plan.output))
+      return fail('the revert plan does not report the bytes actually running', plan.output)
+    log('  ✓ a second deploy is ordinary, and the revert plan can see what is running')
+
+    // ── 3 · deploy something different ────────────────────
+    appendFileSync(join(app, 'api', 'index.ts'), `\n// ci ${process.pid}\n`)
+    git(app, ['add', '-A'])
+    git(app, ['commit', '-qm', 'change'])
+    exec('git', ['pull', '-q', '--ff-only'], { cwd: srv })
+
+    const d3 = inApp(['deploy', '--api'])
+    if (d3.status !== 0) return fail('the third fli deploy failed', d3.output + dockerLogs(container))
+    const B = running()
+    if (B === A) return fail('a changed source deployed the same bytes', d3.output)
+    log('  ✓ a changed source deploys different bytes')
+
+    // ── 4 · crash mid-deploy, then resume ─────────────────
+    appendFileSync(join(app, 'api', 'index.ts'), `\n// ci crash ${process.pid}\n`)
+    git(app, ['add', '-A'])
+    git(app, ['commit', '-qm', 'crash'])
+    exec('git', ['pull', '-q', '--ff-only'], { cwd: srv })
+
+    const killed = killAtJournal(['bun', fli, 'deploy', '--api'], app)
+    if (killed.finished)
+      return fail('the deploy meant to be interrupted finished before the journal opened', killed.output)
+    if (killed.timedOut)
+      return fail('the deploy never reported opening a journal', killed.output)
+
+    const j2 = inApp(['deploy:journal'])
+    if (!/running/.test(j2.output))
+      return fail('a killed deploy left no unfinished transition in the journal', j2.output)
+    const before = countTransitions(j2.output)
+
+    // The stranded lock is CURRENT behaviour and is asserted rather than swept:
+    // the pid recorded in the lock is the pid of the shell that wrote it, which
+    // exits at once, so no run can tell a stale lock from a live one.
+    const blocked = inApp(['deploy', '--api'])
+    if (!/already in progress/.test(blocked.output))
+      return fail('a crashed deploy left no lock — the next run was not refused', blocked.output)
+    log('  ✓ a crashed deploy leaves an unfinished transition and a held lock')
+
+    unlock()
+    const resumed = inApp(['deploy', '--api'])
+    if (resumed.status !== 0) return fail('the resumed deploy failed', resumed.output + dockerLogs(container))
+    if (!/RESUMING/.test(resumed.output)) {
+      // A resume is keyed on the transition id, which carries the Release id,
+      // which carries the digest — so *started over* usually means the rebuild
+      // produced different bytes. The journal is the only thing that can say
+      // which, so it goes in the finding rather than being asked for afterwards.
+      const j = inApp(['deploy:journal'])
+      return fail('the rerun after a crash started over instead of resuming',
+        `${resumed.output}\n--- journal ---\n${j.output}`)
+    }
+    // The property a resume IS: one transition continued, not a second opened.
+    // Asserted on the count rather than on a replayed step, because since
+    // `04c-journal` the journal opens after the build — the steps ahead of it are
+    // marked done when it opens and are never claimed, so *replayed into a no-op*
+    // is a line only the tail of the pipeline can produce, and where a run died
+    // depends on where it died.
+    const j3 = inApp(['deploy:journal'])
+    if (countTransitions(j3.output) !== before)
+      return fail(
+        `the resume opened a second transition — ${before} before, ${countTransitions(j3.output)} after`,
+        `${resumed.output}\n--- journal ---\n${j3.output}`)
+    if (health() !== '200') return fail('the resumed deploy does not answer health', dockerLogs(container))
+    const C = running()
+    log('  ✓ the rerun continued the same transition rather than opening a second, and landed healthy')
+
+    // ── 5 · revert ────────────────────────────────────────
+    const rev = inApp(['deploy:revert'])
+    if (rev.status !== 0) return fail('fli deploy:revert failed', rev.output + dockerLogs(container))
+    const D = running()
+    if (D === C) return fail('the revert did not move the bytes', rev.output)
+    if (D !== B) return fail(`the revert restored ${short(D)}, not the release before it (${short(B)})`, rev.output)
+    if (health() !== '200') return fail('the reverted app does not answer health', dockerLogs(container))
+    log('  ✓ revert restored the previous release, and it answers health')
+
+    // A revert must itself be a revert target, or the way back is one-way: a
+    // revert has no build step, so nothing recorded its image until 03-swap did.
+    const rev2 = inApp(['deploy:revert'])
+    if (rev2.status !== 0) return fail('a second revert failed — a revert is not a revert target', rev2.output)
+    if (running() !== C) return fail('reverting the revert did not return to the release it replaced', rev2.output)
+    log('  ✓ a revert can itself be reverted')
+
+    const steps = inApp(['deploy:journal', '--steps'])
+    if (!/revert/.test(steps.output)) return fail('the journal does not record the revert', steps.output)
+
+    return { findings, skipped: null }
+
+  } finally {
+    exec('docker', ['rm', '-f', container, `${container}_replaced`], { verbose: false })
+    exec('docker', ['image', 'prune', '-f', '--filter', `label=app=${appName}`], { verbose: false })
+    for (const t of imagesNamed(appName)) exec('docker', ['rmi', '-f', t], { verbose: false })
+    active.delete(work)
+    if (keep) log(`  · kept: ${work}`)
+    else rmSync(work, { recursive: true, force: true })
+  }
+}
+
+const short = (id) => String(id).slice(0, 19)
+
+/** How many transitions the journal holds — a resume must not add one. */
+const countTransitions = (out) => (String(out).match(/^\s*[✓✗…]\s+(deploy|revert)\s/gm) ?? []).length
+
+/** The Release id a deploy reported opening, off its own output. */
+const releaseOf = (out) => (String(out).match(/release\s+([0-9a-f]{12})/) ?? [])[1] ?? null
+
+/** Every image tag this run built — the tag carries the commit, so there are several. */
+function imagesNamed(appName) {
+  const r = exec('docker', ['images', '--format', '{{.Repository}}:{{.Tag}}'], { verbose: false })
+  return r.output.split('\n').map(l => l.trim()).filter(l => l.startsWith(`${appName}:`))
+}
+
+/**
+ * Start a deploy and SIGKILL it the moment the journal has opened.
+ *
+ * A deploy interrupted mid-transition is the state the resume exists for, and it
+ * is not reachable any other way: a step that FAILS settles the transition as
+ * `failed`, so only a killed process leaves a `running` row behind.
+ *
+ * Killed on a MARKER rather than a timer, because since `04c-journal` the
+ * journal opens after the build — and a build takes as long as a build takes.
+ * A fixed delay lands before the transition exists on a slow machine and after
+ * the whole deploy on a warm cache, so the test would be about the clock.
+ *
+ * Answers `{ finished }` — true means it completed before the marker, which is
+ * a failed setup rather than a passed assertion.
+ */
+function killAtJournal(argv, cwd, { timeoutS = 240 } = {}) {
+  const log = join(cwd, '.fli-crash.log')
+  const script = `
+"$@" > ${JSON.stringify(log)} 2>&1 &
+PID=$!
+for i in $(seq 1 ${timeoutS * 2}); do
+  if grep -q "Journal opened" ${JSON.stringify(log)} 2>/dev/null; then
+    sleep 0.3
+    kill -9 $PID 2>/dev/null
+    wait $PID 2>/dev/null
+    exit 0
+  fi
+  kill -0 $PID 2>/dev/null || exit 1
+  sleep 0.5
+done
+kill -9 $PID 2>/dev/null
+exit 2
+`
+  // The argv goes past `-s` as positional parameters — `$1` onward, not `$0`, so
+  // there is no name to pad with.
+  const r = spawnSync('sh', ['-s', ...argv], {
+    cwd, input: script, encoding: 'utf8', maxBuffer: MAX_BUFFER,
+  })
+  const output = existsSync(log) ? readFileSync(log, 'utf8') : ''
+  return { finished: r.status === 1, timedOut: r.status === 2, output }
 }
 
 // The container is gone by the time a caller reads the finding, so its logs

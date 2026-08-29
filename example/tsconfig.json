@@ -1,0 +1,20 @@
+{
+  // `paths` is here for the EDITOR and for `tsc`. Vite is the resolver that
+  // matters at build time, and it resolves `@` per Vite root (see
+  // packages/sierra/src/build/app-alias-plugin.js) — so `@/cart.js` is a
+  // different file in web/ than it is in site/. tsc has one program and no
+  // notion of a root, so the surfaces are listed and the first that exists
+  // wins. That is a guess for the two files this app has under both names, and
+  // it costs nothing: checkJs is off and tsc cannot read a .mesa at all.
+  //
+  // Extends the workspace base rather than @frontierjs/config/tsconfig, which
+  // is what a real app would use — this repo does not extend its own tooling
+  // package yet (FJS-266).
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./web/src/*", "./site/src/*", "./widgets/src/*", "./extension/src/*"]
+    }
+  },
+  "include": ["api/src/**/*.ts", "web/**/*", "site/**/*", "widgets/**/*", "extension/**/*"]
+}

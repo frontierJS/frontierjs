@@ -1,6 +1,7 @@
 import { createBaseService, $ } from '@frontierjs/junction'
 import { occurrenceKey }        from '@frontierjs/toolbelt/history'
 import { createIntent, createRefund } from '../core/psp.ts'
+import { orderIdFromCheckoutCode }     from '../core/checkout-code.ts'
 import { settleOrder, refundOrder }   from '../core/settle.ts'
 
 // Money, in two methods that face opposite directions.
@@ -35,6 +36,18 @@ type PaymentRow = {
 const bad = (message: string) => Object.assign(new Error(message), { status: 400 })
 
 /**
+ * One sentence for every way a caller fails to reach an order, and one status.
+ *
+ * A wrong code, a code that names nothing, an id that does not exist and an id
+ * belonging to somebody else all answer this. Saying which would put the oracle
+ * back: *that order is not yours* confirms the order, and confirming an order
+ * by naming a sequential integer is the whole of `FJS-497`.
+ */
+const notFoundOrder = () =>
+  Object.assign(new Error('No such order, or this checkout link is not one this shop issued'),
+                { status: 404 })
+
+/**
  * Ask the provider to take money for an order, and write the row that says we
  * did.
  *
@@ -52,34 +65,75 @@ const bad = (message: string) => Object.assign(new Error(message), { status: 400
  * of failure it was.
  */
 const start = async () => {
-  const { orderId } = ($.data ?? {}) as { orderId?: number }
-  const id = Number(orderId)
-  if (!Number.isFinite(id)) throw bad('Which order is this payment for?')
+  const { orderId, code } = ($.data ?? {}) as { orderId?: number, code?: string }
 
-  // ─── Read as the SHOP, not as the caller ────────────────────────────────
+  // ─── Two ways to be entitled to pay, and no third ───────────────────────
   //
-  // This was the caller's own client, and it worked because `Order` read at
-  // level 0 — the same gate the catalogue carries. That is the leak this app
-  // shipped with: a hosted checkout is reached by a shopper with no session, so
-  // making the READ public was the way to let them pay, and it made every
-  // order in the shop public with it.
+  // `Order` reads at VISITOR(1) behind two policies — staff, or the shopper it
+  // belongs to. A hosted checkout is reached by a shopper with NO session, so
+  // there is nobody for either policy to admit, and the previous answer was to
+  // look the order up as the shop and open an intent for whatever id was named.
+  // The money could not be redirected (that was `FJS-494`) and the row could
+  // not be read — but the answer carried the total and the refusal named the
+  // status, so an order id being a sequential integer made this an existence,
+  // amount and status oracle over the whole ledger, walked by counting
+  // (`FJS-497`).
   //
-  // The shop looking up its own order to open a payment intent is not the same
-  // act as the caller reading that order, and only the first one is happening
-  // here: nothing about the row is answered back. What the caller gets is an
-  // intent for the id they named.
+  // So the id says WHICH order and something else has to say the caller may pay
+  // it. Either:
   //
-  // What that leaves is a smaller thing worth naming rather than hiding: an
-  // order id is a sequential integer, so a stranger can OPEN a payment for
-  // somebody else's order. They cannot see it, change it or pay it to their own
-  // account, and the shop's answer is the same either way — but the checkout
-  // link should carry a token of its own, and does not (`FJS-497`).
-  const order = await sys().order.findFirst({ where: { id } }) as OrderRow | null
-  if (!order) throw bad('No such order')
+  //   · `code` — `core/checkout-code.ts`, handed to the shopper by
+  //     `carts.checkout` and to staff by `orders.paymentCode`. It IS the
+  //     credential, so it is checked here rather than by a policy: a caller with
+  //     no session has no claim for a policy to work with, which is exactly what
+  //     `carts.redeem` does with a handoff code.
+  //
+  //   · nothing — and then the caller's OWN client answers, so the two `@@allow`
+  //     rules on `Order` decide. Staff opening a payment from the console and a
+  //     signed-in shopper paying their own order both land here, and neither
+  //     needs a code to do what they could already do.
+  //
+  // A stranger naming a bare id now falls into the second branch and reads
+  // nothing, which is the same answer they get for an order that does not
+  // exist. That identical answer is the point: the oracle was never the intent,
+  // it was the difference between the two replies.
+  let order: OrderRow | null
+
+  if (code != null && code !== '') {
+    // The code NAMES its order — `<orderId>.<mac>` — so there is no id to agree
+    // with it and no second field to get wrong. A code that does not verify
+    // resolves to nothing, and nothing is what a caller who guessed an id gets.
+    const named = orderIdFromCheckoutCode(code)
+    if (named === null) throw notFoundOrder()
+    order = await sys().order.findFirst({ where: { id: named } }) as OrderRow | null
+    if (!order) throw notFoundOrder()
+  } else {
+    const id = Number(orderId)
+    if (!Number.isFinite(id)) throw bad('Which order is this payment for?')
+
+    // A policy FILTERS and a gate THROWS, so not being allowed to see this
+    // order arrives here in two different shapes: a signed-in shopper who does
+    // not own it reads `null`, and a caller at STRANGER(0) — which is every
+    // hosted checkout — is refused by `@@gate("1.4.4.5")` before any policy runs.
+    // Both mean the same thing to this method and both have to answer the same
+    // sentence, or the status code is the oracle the code was added to close.
+    // Anything that is not a refusal is a real failure and is rethrown.
+    try {
+      order = await $.db.order.findFirst({ where: { id } }) as OrderRow | null
+    } catch (err) {
+      if ((err as { status?: number })?.status === 403 || (err as Error)?.name === 'AccessDeniedError')
+        throw notFoundOrder()
+      throw err
+    }
+    if (!order) throw notFoundOrder()
+  }
 
   // The state machine's business, asked before spending a round trip on it.
   // Not a substitute for the transition: `record` moves the row and Litestone
   // refuses an illegal move whatever this says.
+  //
+  // Safe to name the status now — whoever got this far has proved they may
+  // read this order, by holding its code or by satisfying its read policy.
   if (order.status !== 'pending')
     throw bad(`That order is ${order.status} — there is nothing to pay`)
 

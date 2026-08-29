@@ -184,9 +184,10 @@ function makePackageJson(spec) {
     deps['@frontierjs/mesa']   = specFor('@frontierjs/mesa')
     // web/src/main.js imports it — the styling language, not an optional extra.
     deps['@frontierjs/css']    = specFor('@frontierjs/css')
-    // Every CRUD page `fli scaffold` and `fli admin:generate` write imports the
-    // kit — `<Form {resource} />` with no children IS the generated form — so
-    // an app without it gets pages that cannot resolve their own imports.
+    // Every Resource and CRUD page `fli scaffold` and `fli admin:generate`
+    // write imports the kit — the model's default form is `<Form {resource} />`
+    // with no children, in the resource file — so an app without it gets pages
+    // that cannot resolve their own imports.
     deps['@frontierjs/ui']     = specFor('@frontierjs/ui')
   }
   if (useExtension) {
@@ -1450,7 +1451,7 @@ const filesToWrite = [
   ['.gitignore',                  makeGitignore()],
   ['.env.example',                makeEnvExample(useAuth)],
   ['.fli.json',                   makeFliJson(appName)],
-  ['tsconfig.json',               appTsconfig({ useWeb })],
+  ['tsconfig.json',               appTsconfig({ useWeb, useSite, useWidgets, useExtension, useApi })],
   ['biome.json',                  appBiomeJson()],
   ['.editorconfig',               EDITORCONFIG],
   ['README.md',                   makeReadme(spec)],

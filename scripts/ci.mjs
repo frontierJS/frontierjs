@@ -59,7 +59,7 @@ import { FJS_PACKAGES, APP_DEV_DEPS }          from '../packages/cli/core/app-co
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
-import { scaffoldAndBuild, scaffoldAndDeploy } from './scaffold-build.mjs'
+import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle } from './scaffold-build.mjs'
 
 const ROOT       = resolveRoot()
 const ALLOWANCES = join(ROOT, 'scripts', 'ci-allowances.json')
@@ -1087,6 +1087,37 @@ function deploy() {
   if (update && fixed.length) saveAllowances()
 
   if (clean(from)) ok('a scaffolded app containerises and answers health, from npm and from the tree', Date.now() - t0)
+
+  // ── the transition cycle ─────────────────────────────────
+  // Everything above runs `fli deploy:local`, which is a different command from
+  // `fli deploy`: it builds an image and runs it, and never touches
+  // `_steps-docker/`, the journal, the swap, the health poll or the revert. So
+  // the pipeline an app actually deploys with had run ZERO times, and every
+  // defect that implies was sitting in it — nine of its ten multi-line shell
+  // commands were syntax errors on the target, `fli deploy:revert` restored the
+  // bytes it was reverting from, and a resumed deploy started `undefined`.
+  //
+  // It is a separate phase rather than a fourth source above because it asks a
+  // different question: not *does the framework install and containerise* but
+  // *can serving state be moved and put back*. ~4 minutes and six real image
+  // builds, so it is in the full tier only.
+  const c0 = Date.now()
+  const cycle = deployJournalCycle({ verbose })
+
+  if (cycle.skipped) {
+    if (process.env.FJS_CI_REQUIRE_DOCKER === '1')
+      fail(`deploy cycle skipped and FJS_CI_REQUIRE_DOCKER=1 — ${cycle.skipped}`)
+    else {
+      note(`deploy transition cycle SKIPPED — ${cycle.skipped}. Set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+      warn(`cycle skipped — ${cycle.skipped}`)
+    }
+    return
+  }
+
+  for (const f of cycle.findings) fail(`deploy cycle: ${f.message}`, f.output)
+
+  if (!cycle.findings.length)
+    ok('deploy → deploy → crash → resume → revert, against a real machine', Date.now() - c0)
 }
 
 // ─── phase 8 · tests ────────────────────────────────────────

@@ -68,27 +68,38 @@ export const ${service} = createResource('${service}', {
 </script>
 
 <script>
-  // The instance half — this model's default form.
+  // The instance half — this model's default form, and the reason a create page
+  // and an edit page can be one tag with a different \`method\`.
   //
   // It names no field. <Form> reads the writable columns off the schema in
   // declaration order and gives each the control its type implies, so a column
   // added to schema.lite appears here with no edit to this file. Saving goes
   // through the resource's own save(), which creates when the record has no id
   // and patches when it has one — addressed by the model's OWN id field.
-  import Form from '@frontierjs/ui/components/forms/Form.mesa'
+  //
+  // The button row is here rather than on the pages because a form with no
+  // submit is not a form. What a PAGE knows is the wording and where Cancel
+  // goes, so those are props; a page needing an entirely different row — an
+  // edit page with a Delete beside Save — passes an \`actions\` snippet, which
+  // <Form> takes over its own slot.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
-  // Absent → a create form seeded from the schema. A row → an edit form.
-  export let record  = undefined
-  export let onsaved = undefined
+  export let record      = undefined   // absent → a create form seeded from the schema
+  export let method      = undefined   // <Form>'s auto | create | patch
+  export let submitLabel = 'Save'
+  export let cancelHref  = null        // Cancel navigates…
+  export let oncancel    = null        // …or calls back, for a drawer
+  export let submitId    = undefined   // when something has to find the button
+  export let actions     = null        // snippet — replaces the whole button row
 
-  // A page that wants a DIFFERENT form passes children, and children win.
-  // \`auto\` is stated because this wrapper ALWAYS hands <Form> a slot: left to
-  // itself the component answers "did I receive children" about this file
-  // rather than about the page, and generation would be off everywhere.
+  // Everything else — class, style, ondone, onerror, showError — rides
+  // $attributes onto <Form>, which is where those props are declared.
 </script>
 
-<Form resource={${service}} {record} ondone={onsaved} auto={!$slots.default}>
-  <slot />
+<Form resource={${service}} bind:record={record} {method} {actions} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>
 `
 }

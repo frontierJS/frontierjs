@@ -17,9 +17,9 @@ title: Products
   // the screen that reads it.
   import { products }      from '../../resources/Product.mesa'
   import { productImages } from '../../resources/ProductImage.mesa'
-  import { session } from '../../session.js'
-  import { prefs }   from '../../prefs.js'
-  import { money }   from '../../money.js'
+  import { session } from '@/session.js'
+  import { prefs }   from '@/prefs.js'
+  import { money }   from '@/money.js'
   import { useStore } from '@frontierjs/sierra/junction'
   import { goto }     from '@frontierjs/sierra/router'
 
@@ -113,7 +113,11 @@ title: Products
   }
 </script>
 
-<SectionHeader title="Products" level={1} sub="read is public — no sign-in needed" />
+<SectionHeader title="Products" level={1} sub="read is public — no sign-in needed">
+  {#snippet action()}
+    <Button href="/products/create/">New product</Button>
+  {/snippet}
+</SectionHeader>
 
 {#if error}
   <Alert tone="danger">{error}</Alert>
@@ -173,7 +177,7 @@ title: Products
           {:else}
             <span class="thumb thumb-empty" aria-hidden="true"></span>
           {/if}
-          <a href={`/products/${p.id}/`}>{p.name}</a>
+          <a class="link" href={`/products/${p.id}/`}>{p.name}</a>
         </span>
       </td>
       <td><Pill tone="info">{p.brand}</Pill></td>

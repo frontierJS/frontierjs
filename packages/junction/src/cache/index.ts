@@ -171,11 +171,25 @@ export interface SqliteCacheOptions {
   path?:        string    // default ':memory:'
   defaultTtl?:  string
   gcInterval?:  number
+  /** ms to wait for another PROCESS's write lock before SQLITE_BUSY. Default
+   *  5_000; `0` fails immediately. Only meaningful for a file-backed cache. */
+  busyTimeout?: number
 }
 
 export function createSqliteCache(opts: SqliteCacheOptions = {}): ICache {
 
   const db = new Database(opts.path ?? ':memory:')
+
+  // A file-backed cache is shared, so a second process finding the write lock
+  // held has to wait rather than throw — `storage/database` already sets the
+  // same floor and this was the one connection in the package without it
+  // (`FJS-569`). Harmless in memory, where there is nothing to contend for.
+  const busyTimeout = opts.busyTimeout ?? 5000
+  // Refused rather than coerced — `Number('5s') || 0` is SQLite's *fail
+  // immediately*, so a typo would buy the opposite of what it asked for.
+  if (!Number.isInteger(busyTimeout) || busyTimeout < 0)
+    throw new Error(`createSqliteCache: busyTimeout must be a whole number of milliseconds (0 or more), got ${JSON.stringify(opts.busyTimeout)}`)
+  db.run(`PRAGMA busy_timeout = ${busyTimeout}`)
   const defaultTtlMs = parseTtl(opts.defaultTtl ?? '5 minutes')
   const stats: CacheStats = { hits: 0, misses: 0, sets: 0, evicts: 0, size: 0 }
 

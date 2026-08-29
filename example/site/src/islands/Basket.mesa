@@ -1,0 +1,251 @@
+<!--
+  The basket, and the checkout under it.
+
+  Everything on this screen belongs to a STRANGER. There is no sign-in, no
+  account and no user id anywhere in it: `Cart` and `CartLine` are
+  `@@gate("0.0.0.5")` and their rows are reached by `@@allow('read', token ==
+  auth().cartToken)`, so the only thing that makes these rows visible is a token
+  this browser is holding. A wrong token is an empty screen rather than an
+  error, because a policy filters — it does not refuse.
+
+  ─── The arithmetic is the server's, all of it ────────────────────────────
+
+  `subtotal`, `discount`, `shipping`, `tax` and `total` all arrive on every
+  basket response and nothing here derives one from another. A percentage
+  re-applied in JavaScript rounds on its own, and a breakdown that is a penny
+  off the figure the card is charged is worse than no breakdown at all.
+
+  That is also why applying a code sends a STRING and adopts a basket. What a
+  code is worth is a function of this basket at this instant, and a browser that
+  could state the amount could state the total.
+-->
+<script>
+  import { cart, refresh, setQuantity, remove, checkout, applyDiscount,
+           removeDiscount, setShipping, loadShippingOptions, dismissReceipt,
+           bootShop, redeemHandoff, handoffCodeFromUrl } from '@/cart.js'
+  import { money } from '@/money.js'
+
+  let code     = ''
+  let details  = { email: '', name: '', note: '' }
+  let fields   = {}
+  let placing  = false
+
+  $.onMount(async () => {
+    bootShop()
+
+    // A handoff code arrives in the FRAGMENT — `#h=…` — because a fragment is
+    // never sent to a server and reaches no log. It is redeemed HERE because
+    // this is the page a widget sends somebody to, and erased immediately: a
+    // one-time code left on the URL is one a reload tries to spend twice.
+    const code = handoffCodeFromUrl()
+    if (code) {
+      history.replaceState(null, '', location.pathname + location.search)
+      try { await redeemHandoff(code) } catch { /* fall through to this browser's own basket */ }
+    }
+
+    // The basket this browser holds a token for has already restored the basket and redeemed
+    // any handoff — it is on every page and mounts first. This refresh is for
+    // the case that island never ran (JavaScript disabled until now, a chunk
+    // that failed) and is a no-op when it did.
+    try { await refresh() } catch { /* no basket is the ordinary case */ }
+    try { await loadShippingOptions() } catch { /* the picker says so below */ }
+  })
+
+  async function apply() {
+    const entered = code.trim()
+    if (!entered) return
+    try { await applyDiscount(entered); code = '' } catch { /* cart.error says why */ }
+  }
+
+  async function place() {
+    placing = true
+    fields  = {}
+    try {
+      await checkout({ ...details, note: details.note.trim() || null })
+      details = { email: '', name: '', note: '' }
+    } catch (err) {
+      // The seed validates this payload — `carts` declares
+      // `{ method: 'checkout', input: 'CheckoutDetails' }` — so a bad email
+      // comes back as a 400 keyed by FIELD, in the schema's own wording. Put it
+      // under the box that caused it rather than in a banner; a form-level
+      // message about an email address is a form people re-read three times.
+      const errs = err?.data?.data ?? err?.data ?? err?.errors ?? []
+      for (const e of Array.isArray(errs) ? errs : []) {
+        const key = e?.path?.replace(/^\//, '') ?? e?.field
+        if (key) fields[key] = e.message
+      }
+      fields = { ...fields }
+    } finally {
+      placing = false
+    }
+  }
+
+  // Path watches — the store is a plain object and only a named path notifies.
+  // Every path the markup reads, named. An imported object is inert — a read
+  // with no watch over it compiles to a static value and never moves again —
+  // and the compiler says so by name, which is how the three labels below were
+  // found before a screen showed a stale delivery charge.
+  $: (cart.count, cart.lines, cart.total, cart.subtotal, cart.discount,
+      cart.shipping, cart.tax, cart.busy, cart.error, cart.receipt,
+      cart.shippingOptions, cart.shippingMethodId, cart.heldUntil,
+      cart.discountCode, cart.discountLabel, cart.shippingLabel, cart.taxLabel)
+</script>
+
+{#if cart.receipt}
+  <!-- The basket is gone the moment the order exists, so the receipt is the
+       only thing left that can say what happened. -->
+  <section class="stack" id="basket-receipt">
+    <h1>Thank you</h1>
+    <p>
+      Order <strong id="receipt-reference">{cart.receipt.reference}</strong> is placed.
+      We have emailed the receipt to {cart.receipt.email ?? 'you'}.
+    </p>
+    <p class="text-lg"><strong id="receipt-total">{money(cart.receipt.total)}</strong></p>
+    <p>
+      <a class="btn" href="/catalog/">Keep shopping</a>
+      <button type="button" class="btn ghost" onclick={dismissReceipt}>Dismiss</button>
+    </p>
+  </section>
+{:else if !cart.count}
+  <section class="stack" id="basket-empty">
+    <h1>Your basket is empty</h1>
+    <p class="text-muted">Nothing here yet.</p>
+    <p><a class="btn" href="/catalog/">Browse the catalogue</a></p>
+  </section>
+{:else}
+  <section class="stack">
+    <h1>Basket</h1>
+
+    {#if cart.error}
+      <p class="text-danger" id="basket-error">{cart.error}</p>
+    {/if}
+
+    <ul class="rows divided" id="basket-lines">
+      {#each cart.lines as line (line.id)}
+        <li class="list-row line" data-sku={line.sku}>
+          <span class="line-name">
+            <strong>{line.name ?? line.sku}</strong>
+            <code class="text-sm">{line.sku}</code>
+          </span>
+          <span class="line-controls">
+            <input
+              class="field qty"
+              type="number"
+              min="1"
+              value={line.quantity}
+              aria-label={`Quantity for ${line.sku}`}
+              disabled={cart.busy}
+              onchange={(e) => setQuantity(line.id, Number(e.target.value))}
+            />
+            <span class="line-total" data-total={line.total}>{money(line.total)}</span>
+            <button
+              type="button"
+              class="btn ghost"
+              data-remove={line.sku}
+              disabled={cart.busy}
+              onclick={() => remove(line.id)}
+            >Remove</button>
+          </span>
+        </li>
+      {/each}
+    </ul>
+
+    {#if cart.heldUntil}
+      <p class="text-sm text-muted" id="basket-hold">
+        Held for you until {new Date(cart.heldUntil).toLocaleTimeString()}.
+      </p>
+    {/if}
+
+    <!-- ─── The code ─────────────────────────────────────────────────── -->
+    <div class="stack" id="basket-discount">
+      {#if cart.discountCode}
+        <p class="split">
+          <span>{cart.discountLabel ?? cart.discountCode}</span>
+          <button type="button" class="btn ghost" id="discount-remove" disabled={cart.busy}
+                  onclick={removeDiscount}>Remove</button>
+        </p>
+      {:else}
+        <div class="field-row">
+          <input class="field" id="discount-code" placeholder="Discount code"
+                 bind:value={code} disabled={cart.busy} />
+          <button type="button" class="btn" id="discount-apply" disabled={cart.busy}
+                  onclick={apply}>Apply</button>
+        </div>
+      {/if}
+    </div>
+
+    <!-- ─── Delivery ─────────────────────────────────────────────────── -->
+    <div class="field-group" id="basket-shipping">
+      <label for="shipping-method">Delivery</label>
+      <select id="shipping-method" class="field" disabled={cart.busy}
+              onchange={(e) => setShipping(e.target.value ? Number(e.target.value) : null)}>
+        <option value="">Choose a delivery method</option>
+        {#each cart.shippingOptions as opt}
+          <option value={opt.id} selected={opt.id === cart.shippingMethodId}>
+            {opt.name} — {money(opt.price)}
+          </option>
+        {/each}
+      </select>
+    </div>
+
+    <!-- ─── What it costs, and why ───────────────────────────────────── -->
+    <dl class="facts" id="basket-totals">
+      <dt>Subtotal</dt><dd data-line="subtotal">{money(cart.subtotal)}</dd>
+      {#if cart.discount}
+        <dt>{cart.discountLabel ?? 'Discount'}</dt>
+        <dd data-line="discount">−{money(cart.discount)}</dd>
+      {/if}
+      <dt>{cart.shippingLabel ?? 'Delivery'}</dt>
+      <dd data-line="shipping">{cart.shippingMethodId ? money(cart.shipping) : '—'}</dd>
+      {#if cart.taxLabel}
+        <dt>{cart.taxLabel}</dt><dd data-line="tax">{money(cart.tax)}</dd>
+      {/if}
+      <dt><strong>Total</strong></dt>
+      <dd data-line="total"><strong id="basket-total">{money(cart.total)}</strong></dd>
+    </dl>
+
+    <!-- ─── Checkout ─────────────────────────────────────────────────── -->
+    <form class="stack" id="basket-checkout" onsubmit={(e) => { e.preventDefault(); place() }} novalidate>
+      <h2 class="h4">Checkout</h2>
+
+      <div class="field-group">
+        <label for="checkout-email">Email</label>
+        <input id="checkout-email" class="field" type="email" bind:value={details.email}
+               aria-invalid={fields.email ? 'true' : null} />
+        {#if fields.email}<p class="text-sm text-danger" data-error="email">{fields.email}</p>{/if}
+      </div>
+
+      <div class="field-group">
+        <label for="checkout-name">Name</label>
+        <input id="checkout-name" class="field" bind:value={details.name}
+               aria-invalid={fields.name ? 'true' : null} />
+        {#if fields.name}<p class="text-sm text-danger" data-error="name">{fields.name}</p>{/if}
+      </div>
+
+      <div class="field-group">
+        <label for="checkout-note">Order note</label>
+        <input id="checkout-note" class="field" bind:value={details.note} />
+        {#if fields.note}<p class="text-sm text-danger" data-error="note">{fields.note}</p>{/if}
+      </div>
+
+      <button type="submit" class="btn primary" id="checkout-place"
+              disabled={placing || cart.busy || !cart.shippingMethodId}>
+        {placing ? 'Placing…' : `Pay ${money(cart.total)}`}
+      </button>
+
+      {#if !cart.shippingMethodId}
+        <p class="text-sm text-muted" id="checkout-needs-delivery">
+          Choose a delivery method first.
+        </p>
+      {/if}
+    </form>
+  </section>
+{/if}
+
+<style>
+  .line-name       { display: grid; gap: var(--space-3xs); }
+  .line-controls   { display: flex; align-items: center; gap: var(--space-2xl); }
+  .qty             { width: 4.5rem; }
+  .line-total      { min-width: 5rem; text-align: right; }
+  #basket-checkout { max-width: 28rem; }
+</style>

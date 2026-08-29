@@ -43,7 +43,7 @@
 // Never imported by production code.
 
 import { deriveAccess, levelLabel } from './access.js'
-import { modelToTableName, columnDefaultExpr, isSoftDelete, isSoftDeleteCascade } from './core/ddl.js'
+import { modelToTableName, columnDefaultExpr, isSoftDelete, isSoftDeleteCascade, arcCheckExpr } from './core/ddl.js'
 
 const OPS = ['read', 'create', 'update', 'delete']
 
@@ -128,9 +128,13 @@ function describeModel(model, access, pluralize) {
   // here covers: it does not change what a read ANSWERS, it changes what a
   // write is allowed to be. The expression is the identity — an edited one is
   // a different constraint, and SQLite cannot alter one in place either.
+  // @@arc is on this list rather than beside it because it IS a row invariant —
+  // it compiles to a CHECK and refuses writes N-1 has been making, so adding one
+  // is a contract exactly as adding a @@check is. Keyed by the emitted SQL,
+  // which is what makes an edited member list a different constraint.
   const checks = attrs
-    .filter(a => a.kind === 'check')
-    .map(a => a.expr)
+    .filter(a => a.kind === 'check' || a.kind === 'arc')
+    .map(a => (a.kind === 'arc' ? arcCheckExpr(a) : a.expr))
     .sort()
 
   const policies = {}

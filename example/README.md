@@ -47,6 +47,7 @@ request is answered by the ghost.
 | `bun run verify:live` | open a watcher tab that never acts, change rows from outside it, and assert what crossed the socket — 14 assertions |
 | `bun run verify:jobs` | the deferred-work realm over HTTP, no browser — the courier booked off the request, the outbox, the abandoned-basket sweep, and the RETENTION pass the schema declares, which plants a row older than the window and asks whether the job can tell it from today's — 12 assertions |
 | `bun run verify:notify` | the outbound boundary: mail at a real server, and who can see what — 9 assertions |
+| `bun run verify:stripe` | a REAL vendor over the same boundary: form-encoded bodies, a bearer key, a pinned API version and Stripe's own `t=…,v1=…` webhook scheme. Its negative control is the feature — the same connector against a target with `encoding` removed is refused by name. Plus a decline that is a domain answer rather than a retry, a major-unit amount refused before anything reaches the wire, and a webhook secret ROTATION, where two signatures ride one header. Starts and stops its own API and Stripe on the test ports — 12 assertions |
 | `bun run verify:pay` | money: an HMAC-signed conduit target the provider VERIFIES, and a signed webhook that drives the order state machine with no session anywhere — plus the four separate ways a webhook is refused, and the fifth that is a redelivery. Then refunds: the only @gate(5) move in the app, a partial that must not move the order, an idempotency key on the one call where a retry costs real money, and the shelf coming back out of the ledger — 22 assertions |
 | `bun run verify:catalogue` | the catalogue end to end — a `File` column's bytes reaching an `<img>` that decoded, the variant grid, an aggregated price range, and **a photograph somebody uploads**: chosen in a real file input, submitted through a form that names no field, refused for a stranger and refused for a type `@accept` does not admit — 35 assertions. Starts and stops both servers itself |
 | `bun run verify:money` | **what a basket costs, and why**: `subtotal − discount + shipping + tax = total`, with one owner for the arithmetic and every screen rendering it rather than re-deriving it. Its two headline assertions exist nowhere else — a code that takes a basket back under the free-delivery threshold, so applying a discount puts the shipping charge back; and two checkouts of a one-redemption code in flight at once. It also proves the five `@@check` constraints — the rules that read a SECOND column of the same row, so none of them can be a field validator — at both boundaries, which for three of the five is only the Data one, because the columns they read are `@system` and no request can reach them — 94 assertions. Starts and stops both servers itself |
@@ -144,16 +145,22 @@ app root, so Sierra's auto-detection finds `../db/schema.lite` — the same file
 | [`api/src/services/orders.service.ts`](api/src/services/orders.service.ts) | 3 lines. CRUD, 401s, 403s and 400s are all derived |
 | [`api/src/core/psp.ts`](api/src/core/psp.ts) | both directions of one third party, and why they are two credentials |
 | [`api/src/services/payments.service.ts`](api/src/services/payments.service.ts) | what a webhook may act on, and why the claim and the effect are one transaction |
-| [`web/src/resources/Order.mesa`](web/src/resources/Order.mesa) | names one model, and nothing else — one Resource per file, named for its noun (Invariant 19) |
-| [`web/src/routes/orders/create.mesa`](web/src/routes/orders/create.mesa) | a form with no field list in it |
+| [`web/src/resources/Order.mesa`](web/src/resources/Order.mesa) | one Resource per file, named for its noun (Invariant 19) — and the model's default form, with no field list in it |
+| [`web/src/routes/orders/create.mesa`](web/src/routes/orders/create.mesa) | a create page with no form on it |
 
 ---
 
 ## What to look at
 
-**The form is generated.** [`orders/create.mesa`](web/src/routes/orders/create.mesa)
-contains no field names, no types, no enum values, no required flags, and no
-mention of the customers service. Rendered, it produces exactly seven controls:
+**The form is generated, and it is not on the page.** It is the markup half of
+[`Order.mesa`](web/src/resources/Order.mesa) — a Resource is the model's whole
+client-side surface, its default form included (Invariant 18) — so
+[`orders/create.mesa`](web/src/routes/orders/create.mesa) is `<Order />` and the
+three things a screen decides: the button's wording, where Cancel goes, where a
+save lands. An edit page renders the same tag with a different `method`, which is
+the reason the form is written where it is. Neither file contains a field name, a
+type, an enum value, a required flag or a mention of the customers service.
+Rendered, it produces exactly seven controls:
 
 ```html
 <input  type="text"   maxlength="20">      <!-- @length(3, 20)        -->
@@ -208,7 +215,7 @@ authored in `.lite` never left the Data boundary and required-ness had no
 message slot at all.
 
 **Validation answers while you type — but only ever to say "fixed".**
-[`orders/create.mesa`](web/src/routes/orders/create.mesa) follows one rule: *on
+The order form ([`Order.mesa`](web/src/resources/Order.mesa)) follows one rule: *on
 input an error may only be removed, never added*. Type two characters into
 `reference` and nothing complains. Leave the field and `@length(3, 20)` speaks
 up. Type the third character and it goes quiet on that keystroke — no blur, no
@@ -261,10 +268,46 @@ that target is [`api/mail-sink.ts`](api/mail-sink.ts) — a dev mail catcher on
 purpose: an in-process fake would prove the payload is built and nothing else,
 while over a real socket the credential really resolves (the sink 401s without
 it) and `POST /fail-next` makes the provider fail so the retry path is a test
-rather than a claim. Read what the shop has sent:
+rather than a claim. Read what the shop has sent — **open <http://localhost:8111/>
+for the inbox**, which is the half a JSON array is not: an email is the one thing
+in an app nobody looks at, rendered on a server and read in a client you do not
+control, and a subject line fished out with `curl | jq` says nothing about what a
+person opens. The body renders in an `<iframe srcdoc>`, so an email's own
+`<style>` — written for a mail client and scoped to nothing — cannot restyle the
+inbox around it.
 
 ```bash
-curl localhost:8111/outbox
+open http://localhost:8111/           # the inbox
+curl localhost:8111/outbox            # the same thing as JSON, what the drives read
+curl localhost:8111/outbox/<id>/html  # one message as a document
+curl -X DELETE localhost:8111/outbox  # empty it
+```
+
+**And there is a second provider, which is the point of having a first.**
+[`api/src/core/stripe.ts`](api/src/core/stripe.ts) is a Stripe connection over
+the same boundary, beside `psp.ts` rather than instead of it. `psp.ts` speaks
+this project's own conventions and was designed alongside conduit, so it can
+agree with conduit by accident; Stripe disagrees in every way a connector can —
+`application/x-www-form-urlencoded` bodies against JSON, a bearer key against an
+HMAC, a pinned `Stripe-Version`, and a webhook signed as `"<timestamp>.<raw
+body>"` under `Stripe-Signature` rather than as this project's canonical string.
+Two providers against one boundary is the only thing that shows whether the
+boundary is generic, which no single connector can (`FJS-D153`).
+
+It is in the app and not in `@frontierjs/conduit` deliberately, and not in
+`@frontierjs/conduit-stripe` yet: conduit owns the mechanism, a connector owns
+the vendor, and one instance cannot design the connector interface. It moves
+when a second exists to argue with it.
+
+Building it is what found `FJS-556` — conduit `JSON.stringify`d every body with
+no way past it, so it could not speak to a form-encoded API at all, while
+`Content-Type` was overridable. A caller could ask for `form` and still send
+JSON.
+
+```bash
+bun run verify:stripe        # 12 assertions, starts and stops everything itself
+curl localhost:8114/intents  # what the dev Stripe holds
+curl localhost:8114/events   # what it has sent the shop, and what the shop answered
 ```
 
 The mailer is [`api/mailer.ts`](api/mailer.ts): Junction's `IMail`, implemented
@@ -522,11 +565,19 @@ the day the shop moved into a browser toolbar, three the day its
 customers got accounts, two the day its orders learned to carry a discount,
 a delivery charge and a tax, three the day a row could be taken back, three the day what the schema
 DECLARES was asked whether it holds, three the day somebody uploaded a
-photograph and then opened the storefront in dev, and three more the day
-somebody looked at the storefront and said it was ugly:
+photograph and then opened the storefront in dev, three more the day
+somebody looked at the storefront and said it was ugly, and three the day it
+turned out you could not buy anything on it, and three the day its
+checkout link grew a credential of its own:
 
 | | |
 | --- | --- |
+| **A checkout link carried an order id and nothing else, and the leak was the DIFFERENCE between two answers.** | A hosted checkout is reached with no session, so `payments.start` had nobody to grade and read the order as the shop for whatever id arrived. The money could never be redirected and the row could never be read — but the reply carried the order's total and the refusal named its status, so counting from 1 was an existence, amount and status oracle over the whole ledger. Neither half is visible from either code path alone: the read is correct, the answer is correct, and the pair is the hole (`FJS-497`) |
+| **`@guarded` plus a generated `@default()` makes a model uncreatable by anybody but the system.** | The obvious fix above was a stored credential column, exactly like `Cart.handoffCode`. It cannot be created: litestone merges its own `@default(nanoid())` into the payload and then grades the guard against what it merged, so the column refuses its own stamp. Deliberate and fail-closed — and it means a server-minted secret nobody may read or write cannot be expressed, `@secret` included. The code is derived rather than stored because of it (`FJS-565`) |
+| **An app migrated its live database to a schema file edited after it booted, on an ordinary `curl`.** | The API had been up since the previous day and correctly answered 405 to a method added that morning — it holds the old code. The tenant database had the morning's column, added minutes earlier by a health check. `openShop()` runs `autoMigrate` on first open per process, and the schema it migrates TO is read later than the schema the app is serving, so the database moves ahead of the code with nothing saying so and the next boot inherits a migration it never ran (`FJS-566`) |
+| **An island in a LAYOUT hangs `vite build`, with no error and no output.** | The storefront's header wanted a basket count, which on a prerendered page can only be an island. `_module.mesa` is composed into every route, and a marker inside it stops the prerender dead on the first one: the client bundle finishes and prints its chunk table, then nothing, forever. It reads as a compiler that crashed rather than a build that will never end, and every diagnosis costs a full build cycle. The same island on a page is fine (`FJS-549`) |
+| **…and so does importing `@frontierjs/sierra/junction` into a prerendered island.** | Narrowed from the above by stubbing one import at a time. That module is the SPA's client singleton — the obvious thing to reach for when three islands need to share one client, and nothing says no. The basket store takes its client now rather than importing one, which is what lets the same 390 lines run behind the console and behind the storefront instead of being copied (`FJS-550`) |
+| **A drive's own regex replaced every letter `s` with a space, and it looked exactly like a rendering bug.** | A CDP probe is carried to the browser inside a template literal, and `\s` is not an escape JavaScript knows — so `.replace(/\s+/g, ' ')` arrives as `.replace(/s+/g, ' ')`. `Basket (1 item)` came back as `Ba ket (1 item)`, survived removing the em dash and collapsing the markup to a single expression, and was two edits away from being filed against Mesa |
 | **The public storefront shipped with no gap, no border and no radius, and every drive was green.** | Thirteen of the fifteen tokens its style blocks read were invented — a Tailwind-shaped `--space-4`, `--radius`, `--border` against the ladder `@frontierjs/css` actually ships (`--space-2xl`, `--card-radius`, `--rule`). An undefined custom property is invalid at computed-value time, so the browser drops the **declaration** rather than the value: no gap, not a wrong gap. Nothing says so — the stylesheet is in the bundle and every selector matches — and `verify:site` passed 39/39 throughout, because a drive asserts what a page SAYS. A second layer under it was invented class names: `.list` for `.rows divided`, `.input` for `.field`, `.button` for `.btn`. `fli check`'s `css-token-undefined` is the guard, reading the token table off whatever CSS the app installs (`FJS-545`) |
 | **Three drives passed exactly once per database, and two of them had never been run twice.** | `verify:ui` and `verify:pay` create orders under fixed `@unique` references and clean up with a DELETE — which SOFT-deletes, and a soft-deleted row keeps its `@unique` values, so the reference is still held by a row no ordinary read returns. The second run's create is a 409 nobody checks, an undefined order id, and thirty assertions against `/orders/undefined`. `FJS-530` had already found and fixed this exact shape in `verify:notify`; nothing was looking for the others (`FJS-546`) |
 | **Two drives asserted a fact in the tick a different fact arrived.** | `verify:site` waited for the catalogue island by element identity, and the node is captured after the navigation returns — so on a warm cache the island has already mounted and the comparison can never become true. One run in six. `verify:ui` read the refund's event trail in the render the refunded amount appeared, which is one render early, and failed saying the refund wrote half of what it writes. Both only reachable once the drives could run twice (`FJS-547`) |
@@ -653,7 +704,7 @@ gates, end to end, verified. Deliberately absent:
 
 | | |
 | --- | --- |
-| **A real mail client** | The confirmation email is rendered by `@frontierjs/email-kit` now and asserted to be a table document — but nobody has opened one in Outlook, Gmail or Apple Mail. `bun run email:preview` writes it to a file; `curl localhost:8111/outbox` gets the delivered copy to forward to yourself. |
+| **A real mail client** | The confirmation email is rendered by `@frontierjs/email-kit` now, asserted to be a table document, and readable in a browser at <http://localhost:8111/> — but a browser is not a mail client, and nobody has opened one in Outlook, Gmail or Apple Mail. `bun run email:preview` writes it to a file; `curl localhost:8111/outbox/<id>/html` gets the delivered copy to forward to yourself. |
 | **`static` / islands** | `site/src/routes/` prerenders a catalogue. What is unproven is an island rehydrating in the built output. |
 | **Live availability across shoppers** | A hold another shopper takes does not move the number on your product page until you act; the page re-asks after each of your own actions. It is a decision, not an omission: a hold would have to travel on a channel to get there, a broadcast does not re-check the gate, and `StockReservation` is `@@gate("5.…")` for reads — so publishing them would hand every open browser exactly the rows the Data boundary refuses it. The buy box can be one hold stale; the server refuses regardless and says which of *sold out* and *in other baskets* it is. |
 | **`@frontierjs/ui`'s remaining 35 components** | 29 of 64 are now driven in a browser. `DatePicker` (1200 lines), `Drawer`, `Popover`, `ConfirmationPopover` and `FileUpload` are compile-only. The way in is a screen that genuinely needs one, not a gallery. |

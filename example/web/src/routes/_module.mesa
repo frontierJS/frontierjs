@@ -4,8 +4,8 @@ siteName: Kitchen sink
 <script>
   import { page, isActive, goto } from '@frontierjs/sierra/router'
   import { status, getClient } from '@frontierjs/sierra/junction'
-  import { session, signIn, signOut } from '../session.js'
-  import { cart, refresh as refreshCart } from '../cart.js'
+  import { session, signIn, signOut } from '@/session.js'
+  import { cart, refresh as refreshCart } from '@/cart.js'
 
   import AccountStatus  from '@frontierjs/ui/components/display/AccountStatus.mesa'
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -27,6 +27,8 @@ siteName: Kitchen sink
 
   import { notifications, isUnread } from '../resources/Notification.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
+
+  $: (session.oauthError, session.oauthMessage)
 
   // The bell. `notifications` is a resource like any other, and the store is
   // fed by the same WS events every other table uses — the inApp driver

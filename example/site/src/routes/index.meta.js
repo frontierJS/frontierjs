@@ -12,11 +12,19 @@
 // into a file a CDN will hold for a week.
 import { sys } from '../../../api/src/core/db.ts'
 
-/** Three products for the front page, newest first, with a price range each. */
+/**
+ * Six products for the front page's merch grid, newest first, with a price
+ * range each.
+ *
+ * Six rather than three because the grid is the page's call to action now and
+ * a two-row grid is what makes it read as a shop rather than as a sample. The
+ * models read are unchanged, so the publish check above is answering the same
+ * question it was.
+ */
 export async function load() {
   const products = await sys.product.findMany({
     where:   { active: true },
-    limit:   3,
+    limit:   6,
     orderBy: { createdAt: 'desc' },
   })
 

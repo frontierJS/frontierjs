@@ -77,6 +77,14 @@ src/
   index.js         — public API re-exports
   index.d.ts       — static TypeScript declarations
 
+references/          — the catalogue: one .lite per common model, heavy /// notes,
+                       parsed by test/references.test.ts. NOT shipped, imported or
+                       installed by anything — a shape you read before writing a
+                       model half a dozen apps have already written differently.
+                       Each file is self-contained (a @relation to a model it does
+                       not declare is two parse errors), so it carries the foreign
+                       key COLUMN and leaves the relation to the installing app
+
 test/
   litestone.test.ts  — 1191 tests (plus cli-smoke, elegance-fixes,
                        migrations-fixes, nullable-optional: 1289 total)
@@ -959,7 +967,7 @@ litestone migrate dry-run [label]
 litestone migrate apply
 litestone migrate status
 litestone migrate verify
-litestone studio [--port=5001]
+litestone studio [--port=8502]
 litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>]
 litestone doctor
 litestone types [out.d.ts] [--only=User,Post] [--audience=client|system] [--augment=junction]
@@ -994,7 +1002,7 @@ STRICT tables and loops forever without exiting, so `pgrep` reports healthy
 against an empty replica). `LITESTREAM_BIN` overrides the lookup.
 
 **There is no `litestone restore`, and the asymmetry is the trap** (`ISSUES.md`
-`FJS-540`): the outbound side reads the schema and covers every database, while
+`FJS-552`): the outbound side reads the schema and covers every database, while
 coming back is `litestream restore -o ./main.db <url>/<name>` typed once per
 SQLite database plus a directory copy for the jsonl/logger ones. A two-database
 app that restores `main` alone starts, and looks fine. `docs/replication.md`
@@ -1293,6 +1301,8 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 ---
 
 ## SQLite gotchas
+
+**`busy_timeout` is 5000ms on every connection this package opens, and it is a CROSS-PROCESS device only.** `src/core/pragmas.js` is the one owner — the number was a literal in three files and absent from four others, so whether a database waited under contention was an accident of which file opened it (`FJS-569`). The one with no wait was the `logger` index, which is schema-global and therefore the single file every tenant and every process writes; a second API beside a running one died on its first audit write, in about a millisecond. **Inside one process the timeout is not a safety net, it is a stall** — `bun:sqlite` is synchronous, so a connection waiting on the lock blocks the event loop, and it can deadlock outright: the waiter blocks the loop, the holder's continuation never runs to commit, and the wait can only expire. Measured both ways — 5000ms then failure in one process for an 800ms hold, 1444ms then commit across two. What makes the in-process case fine is `$transaction`'s FIFO lock, which queues two transactions on one client in JavaScript so they never reach the SQLite lock — and what keeps THAT true is **one client per database file per process**, since `createClient` twice on one path is two connections that can deadlock where `$setAuth`/`asSystem`/`$scopedBy` are views over one handle. **The number is `createClient({ busyTimeout })`, precedence option → env (`LITESTONE_BUSY_TIMEOUT`) → 5000**, per database as `{ default, <db> }` because the audit index wants the opposite answer to main — its write is fire-and-forget and its failure swallowed, so `{ audit: 250 }` says *drop the row rather than stall the loop*. A malformed value and a key naming a database the schema does not declare are both refused by name at `createClient`, since a dropped key is a database silently keeping the default. **There is deliberately no `database { }` spelling** (`FJS-D155`): how long to wait for another process is a fact about THIS process, and the same schema is opened by an API answering a person and a queue draining a batch. `docs/concurrency.md` is the whole of it, including the worker-thread answer for a query that is genuinely long — measured, a worker holding the lock for 600ms let the main loop keep ticking and the main thread's write waited 639ms and committed, where the same shape on one thread deadlocks.
 
 **No ILIKE** — use `WHERE LOWER(name) LIKE '%term%'`
 
@@ -1631,7 +1641,13 @@ from belief asserts a wish.
   `setImmediate`, then the jsonl driver appends synchronously. A read in the same
   tick sees 0 rows and the `.jsonl` may not exist yet; anything after an `await`
   sees the row. Yield once rather than waiting: there is no timed buffer, and no
-  flush on exit to wait for.
+  flush on exit to wait for. **The swallow has to be on the PROMISE**: every
+  driver's `create` is `async`, so the `try`/`catch` that was around the call
+  caught nothing and a failed audit write became an unhandled rejection rather
+  than the dropped row it is documented to be. It could not be seen while the
+  index had a five-second wait; `busyTimeout: { audit: 0 }` makes it every time.
+  Dropped but not silent — the first loss per model warns, once, because whatever
+  produces one produces thousands.
 - **`@guarded` is not a level** — it takes only `(all)`; `@guarded(5)` does not
   parse. Per-role column access is field-level `@allow`. It is a system-context
   lock in BOTH directions: a non-system write naming a guarded column is refused

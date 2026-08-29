@@ -148,6 +148,33 @@ test('inflect: the first character keeps its case', function () {
   assert.equal(singularize('Statuses'), 'Status')
 })
 
+test('inflect: a compound survives the round trip its own rules produce', function () {
+  /*
+   * The asymmetry: `pluralize` must not reach inside a compound (the test below
+   * says why — it renames tables that already exist), so the table a model gets
+   * comes from the REGULAR rules. Reading it back therefore has to use those
+   * same rules on the head, or the trip does not close. It did not: `UserStatus`
+   * is `user_statuses` and came back `user_statuse`, `UserAlias` came back
+   * `user_aliase`. Junction derives a model name from a service name with this,
+   * and a service resolving to no model has no @@gate and no validation, so the
+   * miss fails OPEN.
+   */
+  ;['UserAlias', 'UserStatus', 'AuditIndex', 'SalesPerson', 'Category', 'Status', 'Address']
+    .forEach(function (m) {
+      assert.equal(singularize(pluralize(m)), m, m + ' did not survive the round trip')
+    })
+
+  // The same rules read a foreign snake_case name, which is what a schema
+  // converted from Rails or from raw DDL arrives as.
+  assert.equal(singularize('user_aliases'), 'user_alias')
+  assert.equal(singularize('account_statuses'), 'account_status')
+  assert.equal(singularize('media_attachments'), 'media_attachment')
+
+  // The irregular table stays whole-word in BOTH directions.
+  assert.equal(singularize('people'), 'person')
+  assert.equal(singularize('sales_people'), 'sales_people')
+})
+
 test('inflect: a snake_case table name inflects on the whole word', function () {
   /*
    * What litestone feeds it. The irregular table is whole-word only, so a

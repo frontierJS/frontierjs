@@ -173,6 +173,30 @@ function isMesaSpecifier(spec) {
   return spec.endsWith('.mesa') || spec.endsWith('.md')
 }
 
+/**
+ * Resolve an aliased specifier to an absolute path, or null if none matches.
+ *
+ * A build-time render imports the compiled module under Node, which knows
+ * nothing about a bundler's aliases: `@/api.js` is a BARE specifier there, so
+ * Node looks for a package called `@` and fails with "Cannot find package". The
+ * caller that has an alias table — Sierra's prerender, which is running a Vite
+ * build and holds the same one Vite does — passes it in.
+ *
+ * Longest prefix wins, so `@ui` cannot be swallowed by `@`. An entry matches on
+ * a path BOUNDARY (`@` matches `@/x`, never `@foo/x`) or on the bare key itself.
+ */
+function applyAlias(spec, alias) {
+  if (!alias) return null
+  let best = null
+  for (const key of Object.keys(alias)) {
+    if (spec !== key && !spec.startsWith(key + '/')) continue
+    if (!best || key.length > best.length) best = key
+  }
+  if (best === null) return null
+  const rest = spec.slice(best.length).replace(/^\//, '')
+  return rest ? path.resolve(alias[best], rest) : path.resolve(alias[best])
+}
+
 // ── Recursive compiler ────────────────────────────────────────────────────────
 /**
  * Compile a .mesa/.md file and all its .mesa/.md dependencies recursively.
@@ -300,7 +324,12 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
   let m
   IMPORT_RE.lastIndex = 0
   while ((m = IMPORT_RE.exec(js)) !== null) {
-    const spec = m[2]
+    // An aliased specifier becomes an absolute path BEFORE anything else looks
+    // at it, so both branches below — a Mesa dependency and a plain sibling
+    // module — see a path rather than a bare name they would resolve as a
+    // package. Applied here rather than in each branch because the two must not
+    // be able to disagree about where `@/x` points.
+    const spec = applyAlias(m[2], opts.alias) ?? m[2]
 
     // A RELATIVE import of something that is not a Mesa file — a sibling store,
     // a formatter, a table of constants — is rewritten to an absolute path.
@@ -313,7 +342,10 @@ async function compileTree(filePath, visited = new Map(), tempFiles = [], opts =
     // own neighbour — an ordinary thing for an island to do, and it failed the
     // render rather than the build.
     if (!isMesaSpecifier(spec)) {
-      if (spec.startsWith('.')) {
+      // `path.isAbsolute` also catches an aliased specifier, which is already a
+      // path by now — and rewriting one that was written absolute costs nothing,
+      // since it resolves to itself.
+      if (spec.startsWith('.') || path.isAbsolute(spec)) {
         rewrites.push({
           match:  m[0],
           prefix: m[1],
@@ -584,6 +616,15 @@ async function generateUnoCSS(html, unoConfig) {
  *                                             needs this pointed at a directory
  *                                             the app is resolvable from.
  *                                             Created if missing.
+ * @param {object}  [options.alias]         — Bundler-style import aliases,
+ *                                             `{ '@': '/abs/app/web/src' }`. A
+ *                                             compiled module is imported under
+ *                                             NODE, which resolves `@/api.js` as
+ *                                             a package and fails; a caller that
+ *                                             is itself a bundler (Sierra's
+ *                                             prerender) passes the table it is
+ *                                             already using so both resolvers
+ *                                             agree. Longest prefix wins.
  * @param {boolean} [options.styleTag=true]   — html target only: prepend the
  *                                             collected CSS as one <style> block.
  *                                             Set false when assembling the
@@ -626,6 +667,7 @@ export async function renderComponent(source, options = {}) {
     compileOptions       = {},
     islands              = false,
     tmpDir               = null,
+    alias                = null,
     styleTag             = true,
     preserveMediaQueries = true,
   } = options
@@ -661,7 +703,7 @@ export async function renderComponent(source, options = {}) {
     const tempFiles = []
     try {
       const result = await compileTree(
-        srcPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, noEmit: true }, source
+        srcPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias, noEmit: true }, source
       )
       modules     = result.modules
       css         = result.css
@@ -697,7 +739,7 @@ export async function renderComponent(source, options = {}) {
 
   try {
     // 1. Compile recursively — sourceOverride means rootPath doesn't need to exist on disk
-    const tree = await compileTree(rootPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope }, source)
+    const tree = await compileTree(rootPath, new Map(), tempFiles, { compileOptions: _compileOptions, tmpDir: _tmpDir, descope: _descope, alias }, source)
     css = tree.css.trim()
     treeIslands = tree.islands
     treeStyles  = tree.styles

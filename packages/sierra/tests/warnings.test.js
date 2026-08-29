@@ -7,6 +7,7 @@ import {
   warnUnexportedSnippets,
   warnDuplicateSnippets,
   extractLayoutProps,
+  explainModuleInitFailure,
 } from '../src/build/warnings.js'
 
 // ─── warnUnexportedSnippets ───────────────────────────────────────────────────
@@ -555,5 +556,41 @@ describe('warnReservedFrontmatter', () => {
 
   test('tolerates a missing tree', async () => {
     expect(await collect(null)).toEqual([])
+  })
+})
+
+// ─── explainModuleInitFailure ─────────────────────────────────────────────────
+// A module ending in a top-level await reports its real error once; every import
+// after that resolves to a half-built namespace, so the next reader gets a TDZ
+// naming an arbitrary binding and the cause is gone (FJS-551). A build imports
+// the app's db module from several places, so what it holds is the second kind.
+describe('explainModuleInitFailure', () => {
+  test('a TDZ message is annotated with what it actually means', () => {
+    const out = explainModuleInitFailure(
+      "Cannot access 'sys' before initialization.", '../api/src/core/db.ts',
+    )
+    expect(out).toContain("Cannot access 'sys' before initialization.")
+    expect(out).toContain('This is not the real error')
+    expect(out).toContain('../api/src/core/db.ts')
+    expect(out).toContain('import it once on its own')
+  })
+
+  test('any other message is returned untouched', () => {
+    const msg = "Cannot find module './missing.js'"
+    expect(explainModuleInitFailure(msg, 'x.js')).toBe(msg)
+  })
+
+  test('it does not fire on the word initialization alone', () => {
+    const msg = 'initialization failed'
+    expect(explainModuleInitFailure(msg, 'x.js')).toBe(msg)
+  })
+
+  test('a missing specifier is tolerated', () => {
+    const out = explainModuleInitFailure("Cannot access 'db' before initialization.")
+    expect(out).toContain('This is not the real error')
+  })
+
+  test('an absent message does not throw', () => {
+    expect(explainModuleInitFailure(undefined, 'x.js')).toBeUndefined()
   })
 })

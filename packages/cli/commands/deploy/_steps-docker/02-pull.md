@@ -13,18 +13,14 @@ const { hosts } = context.config
 // and name the web release — if the two ever disagree the deploy is shipping
 // two different commits, which is worth a loud failure rather than a silent
 // pair of versions.
+const machines = new Map(hosts.map(h => [h.host, machineFor(context, h.host, h.path)]))
+
 for (const h of hosts) {
   log.info(`Pulling latest code on ${h.host}...`)
-  context.exec({ command: `ssh ${h.host} "cd ${h.path} && git pull --ff-only"` })
+  machines.get(h.host).run('git pull --ff-only', { cwd: h.path })
 }
 
-const readSha = (h) => {
-  const out = context.exec({
-    command: `ssh ${h.host} "cd ${h.path} && git rev-parse --short HEAD"`,
-    stdio: 'pipe',
-  })
-  return (typeof out === 'object' && out?.toString) ? out.toString('utf8').trim() : null
-}
+const readSha = (h) => machines.get(h.host).capture('git rev-parse --short HEAD', { cwd: h.path }) || null
 
 const shas = hosts.map(h => ({ host: h.host, sha: readSha(h) }))
 const distinct = [...new Set(shas.map(x => x.sha).filter(Boolean))]

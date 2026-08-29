@@ -40,6 +40,16 @@ import { singularize } from '@frontierjs/toolbelt/inflect'
 // `scope: 'app'` runs against a client app; `scope: 'repo'` against a package
 // tree. `fli check` runs the app scope, `ci.mjs` runs both.
 
+// `findApps` moved to `core/runnables.js`, where the other tree readers live —
+// it had to, because these rules now read the runnable list and two modules
+// importing each other is a cycle. Re-exported because it is part of this
+// module's surface and its callers should not have to care.
+export { findApps } from './runnables.js'
+import { runnables }              from './runnables.js'
+import { readProofs, resolveRun } from './proofs.js'
+import { readPreambles, resolveNeeds } from './preflight.js'
+import { hostCollisions }              from './proxy.js'
+
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
     title: 'a model name is PascalCase' },
@@ -105,9 +115,34 @@ export const RULES = [
     title: 'four markdown files are the standard at a package root' },
   { id: 'test-files-run',       scope: 'repo', severity: 'error', invariant: null,
     title: 'a hand-listed test script names every test file beside it' },
+  { id: 'docs-index',           scope: 'repo', severity: 'warn',  invariant: 17,
+    title: 'a docs/ index links every page beside it' },
+  { id: 'roadmap-shipped',      scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'a roadmap proposes nothing the package already ships' },
+  { id: 'proof-target',         scope: 'repo', severity: 'error', invariant: null,
+    title: 'every drive the proof table names still exists' },
+  { id: 'proof-drive-named',    scope: 'repo', severity: 'warn',  invariant: null,
+    title: 'every drive is named by some row of the proof table' },
+  { id: 'drive-preamble',       scope: 'repo', severity: 'error', invariant: null,
+    title: 'every step a drive says to start first is a script that exists' },
+  { id: 'dev-host-unique',      scope: 'repo', severity: 'error', invariant: null,
+    title: 'no two surfaces derive the same dev name' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))
+
+/**
+ * The runnable rows, or none.
+ *
+ * A rule must never take the whole check down, and this one reads a tree that
+ * may be anything: a client app, a half-scaffolded directory, a checkout with
+ * no `packages/`. An empty list makes both proof rules degrade honestly —
+ * `proof-target` still grades a script against the package that declares it,
+ * and `proof-drive-named` skips.
+ */
+function safeRunnables(root) {
+  try { return runnables(root) } catch { return [] }
+}
 
 // Migration files, one directory deep — a schema declaring `database` blocks
 // keeps them under db/migrations/<name>/.
@@ -352,14 +387,6 @@ export function applyFixes(findings, { read = readFileSync, write = writeFileSyn
   return { fixed, failed }
 }
 
-/** Every directory under `root` that looks like an FJS app — one `db/schema.lite`. */
-export function findApps(root) {
-  const out = []
-  walk(root, 4, dir => {
-    if (existsSync(join(dir, 'db', 'schema.lite'))) out.push(dir)
-  })
-  return out
-}
 
 // ─── the checks ───────────────────────────────────────────────────────────────
 
@@ -1678,6 +1705,112 @@ const CHECKS = {
   // is a file something runs, and grading against one script would report it as
   // orphaned. And only `*.test.*` — a harness beside the tests (a stub, a
   // client) is support code and is named by whatever imports it.
+  // ── the proof table ────────────────────────────────────────────────────────
+  //
+  // `CLAUDE.md` § *Which drive proves a change* is thirty rows of knowledge that
+  // was paid for one defect at a time, and nothing had ever checked it. Both
+  // failures are silent and they fail in opposite directions: a row naming a
+  // drive that has been renamed is advice that dies when taken, and a drive no
+  // row names is knowledge that exists and cannot be found.
+  //
+  // Graded differently for that reason. An unresolvable target is never right —
+  // the row names something that is not there. An unnamed drive can be: a
+  // broader row may cover it, and some drives are about a package rather than
+  // about a change anyone makes to the framework.
+
+  'proof-target': ({ root }) => {
+    const rows     = safeRunnables(root)
+    const findings = []
+
+    for (const p of readProofs(root)) {
+      for (const t of resolveRun(p.run, { root, rows })) {
+        if (t.kind !== 'unknown') continue
+        findings.push({
+          file: join(root, 'CLAUDE.md'), line: p.line,
+          message: `the proof table sends a change in "${p.changed}" to \`${t.where}\`: ` +
+                   `\`${t.name}\`, and ${t.dir ? `${t.dir} declares no such script or file` : `there is no ${t.where} here`}. ` +
+                   'A row that names a drive which has been renamed is advice that fails when it is taken.',
+        })
+      }
+    }
+    return { findings }
+  },
+
+  'proof-drive-named': ({ root }) => {
+    const rows = safeRunnables(root)
+    if (!rows.length) return { skipped: 'no runnables — not a workspace with drives' }
+
+    const named = new Set()
+    for (const p of readProofs(root)) {
+      for (const t of resolveRun(p.run, { root, rows })) if (t.id) named.add(t.id)
+    }
+    if (!named.size) return { skipped: 'no proof table' }
+
+    return { findings: rows.filter(r => r.kind === 'drive' && !named.has(r.id)).map(r => ({
+      file: join(root, r.source), line: 1,
+      message: `\`${r.name}\` in ${r.dir} is a drive that no row of CLAUDE.md's proof table names, ` +
+               'so nobody is told to run it for any change. Either add a row, or say in one that an ' +
+               'existing row covers it.',
+    })) }
+  },
+
+  // ── the drive table's other column ────────────────────────────────────────
+  //
+  // *Start first* is the preamble — `verify:live` needs `db:seed`, then `api`
+  // and `web` — and it is now read: `runnables.js` puts it on the row so one
+  // button can run the whole thing. Which makes a renamed script worse than it
+  // was, because the advice is no longer only read by a person who can see it
+  // is wrong; it is pressed.
+  //
+  // An error rather than a warning, for the same reason `proof-target` is: the
+  // row names something that is not there, and there is no reading of that
+  // which is correct.
+
+  'drive-preamble': ({ root }) => {
+    const rows = safeRunnables(root)
+    if (!rows.length) return { skipped: 'no runnables — not a workspace with drives' }
+
+    const preambles = readPreambles(root)
+    if (!preambles.length) return { skipped: 'no drive table' }
+
+    const findings = []
+    for (const p of preambles) {
+      for (const n of resolveNeeds(p.needs, p.dir, rows)) {
+        if (n.id) continue
+        findings.push({
+          file: join(root, 'CLAUDE.md'), line: p.line,
+          message: `\`${p.script}\` says to run \`${n.run}\` first, and ${p.dir} declares no such script. ` +
+                   'The dashboard presses this before it runs the drive, so a step that has been renamed ' +
+                   'is a preamble that fails where it used to be prose somebody could correct.',
+        })
+      }
+    }
+    return { findings }
+  },
+
+  // ── the names ─────────────────────────────────────────────────────────────
+  //
+  // `example.localhost` is derived from the app's package name and the surface
+  // it belongs to, so two apps whose names reduce to one label take one name —
+  // and whichever started first would answer it. That is the same failure
+  // `strictPort` exists for, one layer up, and it is silent in the same way:
+  // the page works, and it is the wrong app.
+
+  'dev-host-unique': ({ root }) => {
+    const rows = safeRunnables(root)
+    if (!rows.length) return { skipped: 'no runnables — nothing to derive a name from' }
+
+    // No second guard: the reserved tooling slots always derive a name, so a
+    // rule that skipped when nothing had one could never run.
+    return { findings: hostCollisions(rows).map(c => ({
+      file: join(root, 'packages', 'cli', 'core', 'ports.js'), line: 1,
+      message: `${c.host} is derived by both ${c.ids.join(' and ')}. ` +
+               'A name comes from the package name and the surface, so two packages whose names ' +
+               'reduce to one label share one — and whichever started first answers it, which is ' +
+               '`strictPort`\'s failure one layer up. Give one of them a distinct name.',
+    })) }
+  },
+
   'test-files-run': ({ root }) => {
     const pkgs = []
     for (const name of safeRead(join(root, 'packages'))) {
@@ -2028,6 +2161,125 @@ const CHECKS = {
                  `question with no answer rather than a shorter index. A package deliberately without ` +
                  `it is an allowance under "structure", same as a fifth file.`,
       })
+    }
+    return { findings }
+  },
+  // Invariant 17 sends everything past the four root files into `docs/`, and
+  // says nothing about `docs/` having an index — so a page can be written,
+  // committed and linked by nothing. That is not a discoverability nicety: a
+  // reader who cannot find `exact-numbers.md` reads `roadmap.md` instead and
+  // concludes the feature does not exist (`FJS-560`).
+  //
+  // The rule only fires where the package HAS chosen to keep an index. A `docs/`
+  // with no README is a directory, and a directory of one file is not lying to
+  // anyone; four or more without one is the shape that starts to.
+  'docs-index': ({ root }) => {
+    const dirs = []
+    for (const name of safeRead(join(root, 'packages'))) {
+      const docs = join(root, 'packages', name, 'docs')
+      if (existsSync(docs)) dirs.push([name, docs])
+    }
+    if (!dirs.length) return { skipped: 'no packages/*/docs/' }
+
+    const findings = []
+    for (const [pkg, docs] of dirs) {
+      const pages = safeRead(docs).filter(n => n.endsWith('.md') && n !== 'README.md')
+      const index = join(docs, 'README.md')
+
+      if (!existsSync(index)) {
+        if (pages.length >= 4) findings.push({
+          file: docs,
+          message: `${pages.length} pages in ${pkg}/docs/ and no README.md to index them. ` +
+                   `Past a handful the directory listing stops being an index — a reader looking ` +
+                   `for one of these finds whichever file they already knew about.`,
+        })
+        continue
+      }
+
+      // A link, not a mention: the failure is a page nothing NAVIGATES to, and
+      // prose citing a filename does not.
+      const text   = readFileSync(index, 'utf8')
+      const linked = new Set([...text.matchAll(/\]\(\.?\/?([A-Za-z0-9._-]+\.md)[^)]*\)/g)].map(m => m[1]))
+      const orphan = pages.filter(n => !linked.has(n))
+
+      if (orphan.length) findings.push({
+        file: index,
+        message: `${orphan.length} page(s) in ${pkg}/docs/ are linked from nothing — ${orphan.join(', ')}. ` +
+                 `An unindexed page is a page a reader reaches only by already knowing it is there, ` +
+                 `which is the population that does not need it. Link it, or delete it.`,
+      })
+    }
+    return { findings }
+  },
+
+  // A roadmap is proposals. The one thing it must never do is describe something
+  // the package already ships, because a reader takes it for the current state
+  // and works around a feature that is sitting right there (`FJS-560`: three
+  // stale entries, one of them four days after the ruling that built it).
+  //
+  // Graded against `catalog.snapshot.md`, which is generated from the catalog and
+  // gated — so this asks the same authority `litestone explain` does rather than
+  // carrying a list that goes stale exactly the way the roadmap did.
+  //
+  // Scoped to FENCED CODE inside a section: a roadmap paragraph may legitimately
+  // cite a shipped attribute in an argument (`@lte spelled differently`), but a
+  // section demonstrating one in a sample is proposing it.
+  //
+  // Two things keep it quiet without a list that rots. **Scaffolding is derived
+  // from the file**: an attribute in more than one section's sample is holding
+  // the sample up (`@id` in every `model` block) rather than being its subject.
+  // And a heading saying `~~`, `SHIPS` or `SHIPPED` has already answered this —
+  // an entry may legitimately propose the unbuilt HALF of something that ships,
+  // which is what `@slug`'s collision handling is.
+  'roadmap-shipped': ({ root }) => {
+    const pairs = []
+    for (const name of safeRead(join(root, 'packages'))) {
+      const dir     = join(root, 'packages', name)
+      const roadmap = join(dir, 'docs', 'roadmap.md')
+      const catalog = join(dir, 'catalog.snapshot.md')
+      if (existsSync(roadmap) && existsSync(catalog)) pairs.push([name, roadmap, catalog])
+    }
+    if (!pairs.length) return { skipped: 'no package with both docs/roadmap.md and catalog.snapshot.md' }
+
+    const findings = []
+    for (const [pkg, roadmap, catalog] of pairs) {
+      const ships = new Set(
+        [...readFileSync(catalog, 'utf8').matchAll(/^\|\s*`(@@?[A-Za-z][A-Za-z0-9]*)`/gm)].map(m => m[1]))
+      if (!ships.size) continue
+
+      const text  = readFileSync(roadmap, 'utf8')
+      const heads = [...text.matchAll(/^#{2,4} .*$/gm)]
+
+      // One pass to read each section, a second to grade it — the scaffolding
+      // set is a property of the whole file and cannot be known section by one.
+      const secs = heads.map((h, i) => {
+        const from = h.index
+        const to   = i + 1 < heads.length ? heads[i + 1].index : text.length
+        const code = [...text.slice(from, to).matchAll(/```[\s\S]*?```/g)].map(m => m[0]).join('\n')
+        return {
+          head: h[0], from,
+          used: new Set([...code.matchAll(/(@@?[A-Za-z][A-Za-z0-9]*)/g)].map(m => m[1])),
+        }
+      })
+
+      const seen = {}
+      for (const sec of secs) for (const a of sec.used) seen[a] = (seen[a] || 0) + 1
+
+      for (const { head, from, used: inSample } of secs) {
+        if (/~~|\bSHIPS\b|\bSHIPPED\b/.test(head)) continue
+
+        const used = [...inSample].filter(a => ships.has(a) && seen[a] === 1)
+        if (!used.length) continue
+
+        findings.push({
+          file: roadmap,
+          line: lineOf(text, from),
+          message: `${head.replace(/^#+\s*/, '')} — this section's sample uses ${used.join(', ')}, ` +
+                   `which ${pkg} already ships (catalog.snapshot.md). A roadmap read as the current ` +
+                   `state is how somebody works around a feature that exists. Strike the heading ` +
+                   `through if it shipped, or say in the section which part is the EXTENSION.`,
+        })
+      }
     }
     return { findings }
   },

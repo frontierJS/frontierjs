@@ -104,6 +104,34 @@ describe('evaluating a skip predicate the way the runner does', () => {
   test('a flag is in scope, as it is for the runner', () => {
     expect(skipDecision('flag.web', { flag: { web: true }, context: {} }).skipped).toBe(true)
   })
+
+  // The runner evaluates a predicate as `(config.flag, config)`, so a step may
+  // reach the flag EITHER way and both have to resolve. `04c-journal` reads
+  // `context.flag.dry`, and against a context carrying only `config` it threw —
+  // so the plan could not grade the journal step itself.
+  test('the flag is reachable through the context too, the way the runner passes it', () => {
+    const ctx = { flag: { dry: true }, config: { deployConf: {} } }
+    const d = skipDecision('context.flag.dry', { flag: ctx.flag, context: ctx })
+    expect(d.skipped).toBe(true)
+    expect(d.threw).toBeUndefined()
+  })
+
+  test("the real 04c-journal predicate grades rather than throwing", () => {
+    const pred = 'context.flag.dry || context.config.deployConf.journal === false'
+    const ctx  = (flagDry, journal) =>
+      ({ flag: { dry: flagDry }, config: { deployConf: { journal } } })
+
+    const dry = ctx(true, undefined)
+    expect(skipDecision(pred, { flag: dry.flag, context: dry })).toMatchObject({ skipped: true })
+
+    const off = ctx(false, false)
+    expect(skipDecision(pred, { flag: off.flag, context: off })).toMatchObject({ skipped: true })
+
+    const on = ctx(false, undefined)
+    const d  = skipDecision(pred, { flag: on.flag, context: on })
+    expect(d.skipped).toBe(false)
+    expect(d.threw).toBeUndefined()
+  })
 })
 
 describe('planning the steps', () => {
@@ -242,6 +270,20 @@ const render = (release, config = { doApi: true }, findings = []) => {
 }
 
 describe('what a person reads', () => {
+  // The digest is a TERM of the Release id, so a plan that built nothing is
+  // naming an id the deploy will not mint. Left unsaid, the first person to
+  // compare the two finds out by noticing they differ.
+  test('an unbuilt plan says its own Release id is provisional', () => {
+    const out = render({ ...RELEASE, digest: null })
+    expect(out).toContain('provisional')
+    expect(out).toContain('term of this id')
+  })
+
+  test('a plan naming real bytes claims nothing provisional about its id', () => {
+    const out = render({ ...RELEASE, digest: 'sha256:' + 'a'.repeat(64), imageRef: 'digest' })
+    expect(out).not.toContain('term of this id')
+  })
+
   test('an expand says the deploy can be taken back', () => {
     const out = render(RELEASE)
     expect(out).toContain('expand')

@@ -68,6 +68,27 @@ function matchCase(sample, word) {
     : word
 }
 
+/*
+ * A caller's word is usually a COMPOUND — `account_aliases` is a table name,
+ * `salesPeople` an accessor, `UserStatuses` a model. English inflects the head
+ * noun and leaves the modifier alone, and the two lookups below key on a whole
+ * word, so every compound missed both: `user_aliases` fell past the `-ses` list
+ * to `user_aliase`, and `sales_people` matched no irregular and came back
+ * unchanged. The suffix rules only ever look at the end of the word, which IS
+ * the head, so routing a compound through its head is at least as good
+ * everywhere and is the only thing that reaches the tables.
+ */
+function headOf(word) {
+  const underscore = word.lastIndexOf('_')
+  if (underscore > 0 && underscore < word.length - 1)
+    return [word.slice(0, underscore + 1), word.slice(underscore + 1)]
+
+  const hump = word.search(/[a-z0-9][A-Z][a-z]*$/)
+  if (hump > 0) return [word.slice(0, hump + 1), word.slice(hump + 1)]
+
+  return ['', word]
+}
+
 /**
  * The plural of an English word.
  *
@@ -104,6 +125,27 @@ export function singularize(word) {
   const lower = word.toLowerCase()
   if (lower in SINGULAR_OF) return matchCase(word, SINGULAR_OF[lower])
 
+  const [prefix, head] = headOf(word)
+  if (prefix) return prefix + rules(head)
+
+  return rules(word)
+}
+
+/*
+ * The suffix rules alone, with no irregular table. A compound is inflected on
+ * its head by these and NEVER by the table, which is the asymmetry the round
+ * trip needs: `pluralize` must not reach inside a compound, because turning
+ * `audit_index` into `audit_indices` renames a table in every schema that
+ * already has one — so `AuditIndex` is `audit_indexes`, and reading that back
+ * has to answer `AuditIndex` rather than `audit_indice`.
+ *
+ * Whole-word rules missing a compound is what broke it: `UserStatus` is
+ * `user_statuses` and read back was `user_statuse`, `UserAlias` was
+ * `user_aliase`. Junction derives a model name from a service name with this,
+ * and a service that resolves to no model has no @@gate and no validation, so
+ * a broken round trip fails OPEN.
+ */
+function rules(word) {
   if (/ies$/i.test(word))                     return word.slice(0, -3) + 'y'
 
   /* `-ses` is the one ending where stripping `es` and stripping `s` are both

@@ -13,14 +13,13 @@ const dbPath   = deployConf.db?.path  ?? `${serverPath}/db`
 const envFile  = deployConf.api?.env  ?? `${serverPath}/.env.production`
 const container = `${appId}-api`
 const replaced  = `${container}_replaced`
+const machine   = machineFor(context, host, serverPath)
 
 // ─── Check for _replaced container first ─────────────────────────────────────
 // Present if the last deploy failed health check or was manually interrupted.
 let hasReplaced = false
 try {
-  context.exec({
-    command: `ssh ${host} "docker inspect ${replaced} > /dev/null 2>&1"`,
-  })
+  machine.run(`docker inspect ${replaced} > /dev/null 2>&1`)
   hasReplaced = true
 } catch {
   hasReplaced = false
@@ -30,14 +29,10 @@ if (hasReplaced) {
   // Fast path — restore _replaced directly
   log.info(`Found ${replaced} — restoring...`)
 
-  const restoreCmd = `
-    docker stop  ${container}  || true;
-    docker rm    ${container}  || true;
-    docker rename ${replaced} ${container};
-    docker start  ${container}
-  `.trim().replace(/\n\s*/g, '; ')
-
-  context.exec({ command: `ssh ${host} "${restoreCmd}"`, dry: flag.dry })
+  machine.run(`docker stop  ${container} || true
+docker rm    ${container} || true
+docker rename ${replaced} ${container}
+docker start  ${container}`, { dry: flag.dry })
   log.success(`API restored → ${container} (from _replaced)`)
 
 } else {
@@ -53,11 +48,8 @@ if (hasReplaced) {
 
   let imageOutput = ''
   try {
-    const result = context.exec({
-      command: `ssh ${host} "docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.CreatedAt}}' | grep '^${appId}:' | head -10"`,
-      stdio: 'pipe',
-    })
-    imageOutput = result?.toString('utf8').trim() ?? ''
+    imageOutput = machine.capture(
+      `docker images --format '{{.Repository}}:{{.Tag}} {{.ID}} {{.CreatedAt}}' | grep '^${appId}:' | head -10`)
   } catch {
     imageOutput = ''
   }
@@ -93,8 +85,8 @@ if (hasReplaced) {
   }
 
   const runCmd = [
-    'docker stop',  container, '|| true;',
-    'docker rm',    container, '|| true;',
+    `docker stop ${container} || true`,
+    `docker rm   ${container} || true`,
     'docker run -d',
     `--name ${container}`,
     '--restart unless-stopped',
@@ -108,7 +100,7 @@ if (hasReplaced) {
     previousImage,
   ].join(' ')
 
-  context.exec({ command: `ssh ${host} "${runCmd}"`, dry: flag.dry })
+  machine.run(runCmd, { dry: flag.dry })
   log.success(`API rolled back → ${previousImage}`)
 }
 ```

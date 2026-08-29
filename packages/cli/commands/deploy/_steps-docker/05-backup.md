@@ -35,9 +35,11 @@ const destHost  = `${backupDir}/pre-deploy-${timestamp}`
 const destInner = `/db/backups/pre-deploy-${timestamp}`
 
 // ─── First deploy has nothing to back up ─────────────────────────────────────
+const machine = machineFor(context, host)
+
 let running = false
 try {
-  context.exec({ command: `ssh ${host} "docker inspect ${container} > /dev/null 2>&1"` })
+  machine.run(`docker inspect ${container} > /dev/null 2>&1`)
   running = true
 } catch {
   running = false
@@ -48,23 +50,22 @@ if (!running) {
   return
 }
 
-context.exec({ command: `ssh ${host} "mkdir -p ${backupDir}"` })
+machine.run(`mkdir -p ${backupDir}`)
 
 log.info(`Backing up every declared database → ${destHost}`)
 try {
-  context.exec({
-    // --schema also fixes the migrations dir (litestone resolves it as a sibling),
-    // and without it the lookup falls back to ./schema.lite in the WORKDIR, which
-    // is not where the canonical layout puts it.
-    command: `ssh ${host} "docker exec ${container} sh -c 'cd /app && bunx litestone backup ${destInner} --schema db/schema.lite'"`,
-  })
+  // --schema also fixes the migrations dir (litestone resolves it as a sibling),
+  // and without it the lookup falls back to ./schema.lite in the WORKDIR, which
+  // is not where the canonical layout puts it.
+  machine.run(`docker exec ${container} sh -c 'cd /app && bunx litestone backup ${destInner} --schema db/schema.lite'`)
 } catch (err) {
   // The step is `optional`, so the deploy continues into 06-swap and the new
   // container's entrypoint migrations. Say what was lost — a one-line warning
   // reads as though the snapshot exists.
   log.error(`Backup FAILED — the deploy will continue and run migrations with NO pre-deploy snapshot`)
   log.info(`  the container must carry db/schema.lite for litestone to resolve databases (FJS-232)`)
-  log.info(`  check by hand:  ssh ${host} "docker exec ${container} sh -c 'cd /app && bunx litestone backup --help'"`)
+  const byHand = `docker exec ${container} sh -c 'cd /app && bunx litestone backup --help'`
+  log.info(`  check by hand:  ${machine.local ? byHand : `ssh ${host} "${byHand}"`}`)
   throw err
 }
 
@@ -73,12 +74,9 @@ try {
 // file — so this prunes with -d and rm -rf. Litestream handles long-term
 // retention; these exist only for the window where a migration goes wrong.
 const keepBackups = deployConf.db?.keep_backups ?? 5
-const pruneCmd = `
-  ls -1dt ${backupDir}/pre-deploy-* 2>/dev/null |
+machine.run(`ls -1dt ${backupDir}/pre-deploy-* 2>/dev/null |
   tail -n +${keepBackups + 1} |
-  xargs rm -rf --
-`.trim().replace(/\n\s*/g, ' ')
-context.exec({ command: `ssh ${host} "${pruneCmd}"` })
+  xargs rm -rf --`)
 
 context.config.backupDir = destHost
 log.success(`Backup complete → ${destHost}`)

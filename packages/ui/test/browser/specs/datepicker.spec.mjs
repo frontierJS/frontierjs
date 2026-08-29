@@ -187,7 +187,7 @@ export async function run(t) {
   // so "same as the body" would have passed against the literal being replaced.
   t.is(await t.evaluate(`
     const dp    = document.querySelector('#stage .fjs-dp');
-    const token = getComputedStyle(document.documentElement).getPropertyValue('--font-primary').trim();
+    const token = getComputedStyle(document.body).getPropertyValue('--font-primary').trim();
     return { same: getComputedStyle(dp).fontFamily === token, face: getComputedStyle(dp).fontFamily };
   `).then(r => r.same), true, 'the type face is the theme\'s --font-primary, not a hardcoded sans-serif')
 

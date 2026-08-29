@@ -17,11 +17,12 @@
   // No `selector:` — this widget is addressed by its tag. The escape hatch is
   // for host markup nobody can edit; a merchant pasting a script tag can paste
   // an element beside it.
+
   export const widget = {}
 </script>
 
 <script>
-  import { createShop } from '../lib/shop.js'
+  import { createShop } from '@/lib/shop.js'
 
   // ── Props ────────────────────────────────────────────────────────────────
   //

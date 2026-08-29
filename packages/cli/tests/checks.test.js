@@ -880,6 +880,99 @@ describe('the repo scope', () => {
 })
 
 
+describe('drive-preamble', () => {
+
+  // `CLAUDE.md`'s *Start first* column is now read: `runnables.js` puts it on the
+  // drive's row so one button runs the whole thing. Which makes a renamed script
+  // worse than it was — the advice is no longer only read by a person who can
+  // see it is wrong, it is pressed.
+
+  const withTable = (cell) => ({
+    'package.json':          '{"name":"ws"}',
+    'shop/db/schema.lite':   'model Order {\n  id Int @id\n}\n',
+    'shop/api/index.ts':     '',
+    'shop/package.json':     JSON.stringify({ name: 'shop', scripts: { api: 'x', 'db:seed': 'y', 'verify:live': 'z' } }),
+    'CLAUDE.md': [
+      '| Drive | Start first | Covers |', '| --- | --- | --- |',
+      `| \`shop\`: \`verify:live\` | ${cell} | x |`, '',
+    ].join('\n'),
+  })
+
+  test('a step the directory does not declare is an error naming both', () => {
+    const root = tree('dp-gone', withTable('`bun run db:reseed`'))
+    const { findings } = only(root, 'drive-preamble', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('error')
+    expect(findings[0].message).toMatch(/db:reseed/)
+    expect(findings[0].message).toMatch(/shop declares no such script/)
+  })
+
+  test('a step that resolves is not', () => {
+    const root = tree('dp-ok', withTable('`bun run db:seed`, then `bun run api`'))
+    expect(only(root, 'drive-preamble', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('prose after the em-dash is not graded as a step', () => {
+    // The rule inherits the parser's guard, and without it every parenthetical
+    // in the real table is an error against a script nobody meant to name.
+    const root = tree('dp-prose', withTable('`bun run api` — it also starts `bun run nonsense` on 8112'))
+    expect(only(root, 'drive-preamble', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('a project with no drive table skips rather than passing', () => {
+    // A rule that silently passes where it cannot see anything is a rule that
+    // reads as green over a workspace it never ran on.
+    const root = tree('dp-none', { 'package.json': '{"name":"ws"}' })
+    const { skipped } = only(root, 'drive-preamble', { scope: 'repo' })
+    expect(skipped.map(s => s.rule)).toContain('drive-preamble')
+  })
+
+})
+
+
+describe('dev-host-unique', () => {
+
+  // A dev name is derived from the package name and the surface, so two
+  // packages whose names reduce to one label take one name — and whichever
+  // started first answers it. `strictPort`'s failure one layer up, and silent
+  // in the same way: the page works, and it is the wrong app.
+
+  const app = (dir, name) => ({
+    [`${dir}/db/schema.lite`]: 'model A {\n  id Int @id\n}\n',
+    [`${dir}/web/src/main.js`]: '',
+    [`${dir}/package.json`]: JSON.stringify({ name, scripts: { web: 'vite' } }),
+  })
+
+  test('two packages whose names reduce to one label are an error naming both', () => {
+    // The directories are `example` and `basecamp` so the two get DIFFERENT
+    // ports off the ports table — two apps sharing a name and a port is a port
+    // collision, which `strictPort` already refuses loudly, and not the silent
+    // one this rule is about.
+    const root = tree('host-clash', {
+      'package.json': '{"name":"ws"}',
+      ...app('example', '@a/shop'),
+      ...app('basecamp', '@b/shop'),
+    })
+    const { findings } = only(root, 'dev-host-unique', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('error')
+    expect(findings[0].message).toMatch(/shop\.localhost/)
+    expect(findings[0].message).toMatch(/surface:example\/web/)
+    expect(findings[0].message).toMatch(/surface:basecamp\/web/)
+  })
+
+  test('two apps with distinct names are not', () => {
+    const root = tree('host-ok', {
+      'package.json': '{"name":"ws"}',
+      ...app('example', 'shop'),
+      ...app('basecamp', 'admin'),
+    })
+    expect(only(root, 'dev-host-unique', { scope: 'repo' }).findings).toEqual([])
+  })
+
+})
+
+
 // ─── the source hazards ───────────────────────────────────────────────────────
 //
 // Five rules that read a line of an app's own JavaScript. Each gets the pair

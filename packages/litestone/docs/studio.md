@@ -3,7 +3,7 @@
 Studio is Litestone's browser UI. Launch it with:
 
 ```bash
-bunx litestone studio            # http://localhost:5001
+bunx litestone studio            # http://localhost:8502
 bunx litestone studio --port=3000
 ```
 
@@ -373,7 +373,7 @@ Studio reads from the read connection — safe to run against production databas
 
 ```bash
 # Host on the server, not localhost
-kamal app exec --no-interactive -- litestone studio --port=5001
+kamal app exec --no-interactive -- litestone studio --port=8502
 ```
 
 > Note: Running Studio via `kamal app exec` spawns a new container — if your SQLite file is on the host, use the host directly to avoid WAL contention.

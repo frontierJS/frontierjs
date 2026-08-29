@@ -7,9 +7,6 @@ description: Deploy the web app
 if (context.config.abort) return
 const { server, serverPath } = context.config
 log.info('Deploying web...')
-context.exec({
-  command: `ssh ${server} "npm run deploy:web --prefix='${serverPath}'"`,
-  dry: flag.dry
-})
+machineFor(context, server, serverPath).run(`npm run deploy:web --prefix='${serverPath}'`, { dry: flag.dry })
 log.success('Web deployed')
 ```

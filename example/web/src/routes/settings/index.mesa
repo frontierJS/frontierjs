@@ -9,10 +9,10 @@ title: Settings
   //
   // Everything here is a real preference the rest of the app reads, not a
   // control put on a page to be looked at.
-  import { session } from '../../session.js'
+  import { session } from '@/session.js'
   import { orders } from '../../resources/Order.mesa'
-  import { prefs, savePrefs } from '../../prefs.js'
-  import { CURRENCIES, BASE, rateNote } from '../../money.js'
+  import { prefs, savePrefs } from '@/prefs.js'
+  import { CURRENCIES, BASE, rateNote } from '@/money.js'
   import { theme as appTheme, setTheme, themes } from '@frontierjs/sierra/theme'
 
   import Accordion     from '@frontierjs/ui/components/layout/AccordionItem.mesa'

@@ -61,6 +61,13 @@ if (deployConf?.server) {
   const api = doApi ? resolveSide(deployConf, target, 'api') : null
   const web = doWeb ? resolveSide(deployConf, target, 'web') : null
 
+  // Where the image is BUILT, which is not necessarily where it runs (2.3f).
+  // The same fallback chain every side takes, so declaring nothing resolves to
+  // the api target and the pipeline behaves exactly as it did — and declaring
+  // `deploy.builder` once builds there and ships the bytes to every target,
+  // which is what makes *one artefact, many environments* sayable at all.
+  const builder = doApi ? resolveSide(deployConf, target, 'builder') : null
+
   if ((doApi && !api) || (doWeb && !web)) {
     const missing = doApi && !api ? 'api' : 'web'
     log.error(`Cannot resolve a server and path for the ${missing} side on target: ${target}`)
@@ -69,17 +76,20 @@ if (deployConf?.server) {
     return
   }
 
-  const hosts = distinctHosts([api, web])
+  const hosts = distinctHosts([api, web, builder])
   const split = api && web && (api.host !== web.host || api.path !== web.path)
 
   const scope = bothSides ? 'api + web' : doApi ? 'api only' : 'web only'
   log.info(`Deploying ${scope} to ${target}${branchStr}`)
   for (const h of hosts) log.info(`  ${h.host}:${h.path}`)
+  if (builder && api && (builder.host !== api.host || builder.path !== api.path))
+    log.info(`  build on ${builder.host}, ship the image to ${api.host}`)
   log.info(`Mode: Docker/SSH/nginx (frontier.config.js)${split ? ' — split across hosts' : ''}`)
 
   context.config.stepsDir   = '_steps-docker'
   context.config.api        = api
   context.config.web        = web
+  context.config.builder    = builder
   context.config.doApi      = Boolean(api)
   context.config.doWeb      = Boolean(web)
   context.config.hosts      = hosts

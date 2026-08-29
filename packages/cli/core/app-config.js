@@ -108,13 +108,35 @@ export const APP_DEV_DEPS = {
 // else — target, lib, strict, allowImportingTsExtensions — is in the dependency,
 // where it can be corrected later.
 
-export function appTsconfig({ useWeb = true } = {}) {
+export function appTsconfig({
+  useWeb = true, useSite = false, useWidgets = false, useExtension = false, useApi = true,
+} = {}) {
+  // `@` is the SURFACE's own src/, and Sierra resolves it against the Vite root
+  // — so it means a different directory in web/ than it does in site/. tsc has
+  // one program and no notion of a Vite root, so `paths` lists every surface the
+  // app has and the FIRST that exists wins. That is exact for an app with one
+  // UI surface and a guess for an app with two: `@/cart.js` in a site/ file
+  // resolves against web/src for the editor while Vite resolves it against
+  // site/src. It costs nothing at runtime — `checkJs` is off and tsc cannot read
+  // a .mesa at all — and the alternative is a tsconfig per surface, which is
+  // four programs to typecheck what is one app.
+  const surfaces = [
+    useWeb       && 'web',
+    useSite      && 'site',
+    useWidgets   && 'widgets',
+    useExtension && 'extension',
+  ].filter(Boolean)
+
   const config = {
-    extends:        '@frontierjs/config/tsconfig',
-    compilerOptions: useWeb ? { paths: { '@/*': ['./web/src/*'] } } : {},
-    include:        useWeb ? ['api/**/*', 'web/**/*'] : ['api/**/*'],
+    extends: '@frontierjs/config/tsconfig',
+    ...(surfaces.length
+      ? { compilerOptions: { paths: { '@/*': surfaces.map((s) => `./${s}/src/*`) } } }
+      : {}),
+    include: [
+      ...(useApi ? ['api/**/*'] : []),
+      ...surfaces.map((s) => `${s}/**/*`),
+    ],
   }
-  if (!useWeb) delete config.compilerOptions
   return JSON.stringify(config, null, 2) + '\n'
 }
 

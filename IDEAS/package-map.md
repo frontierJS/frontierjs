@@ -110,6 +110,7 @@ ladder beside it is written out four separate times across `core/` and two servi
 | **`porter`** | Bulk data — the derived import template, the per-row report, and an export that is a `find` rather than a table scan. Named provisionally and probably wrongly: the template and validator belong beside `foundry`'s generator, the parser already lives in litestone's seeder, and what is genuinely new is a screen. A candidate for *not a package*. | `bulk-data.md` |
 | **`flags`** | Feature flags — one model plus a plugin exposing `app.features`. A good early test that the slice format is real, precisely because it is small. |
 | **`shift`** | The upgrade codemod tool. Deferred not for low value but because it needs a stable surface to move between; worth reserving the name. |
+| **`conduit-*`** | The official connectors — a package per vendor, named for the boundary it plugs into (`FJS-D153`). Ten are proposed and ranked, and the second is chosen for how much it **disagrees** with the first rather than for demand, because one implementation answers the connector interface by accident. Three of the ten are notification transports that do not exist today. | `conduit-connectors.md` |
 
 ---
 

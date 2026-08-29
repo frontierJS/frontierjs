@@ -349,11 +349,18 @@ export function scaffoldSiteSurface({
  */
 export function siteScripts({ dir = 'site', servePort = 8700 } = {}) {
   return {
-    'dev:site':   `cd ${dir} && vite -c config/vite.config.js`,
-    // `bun --bun`, because the build IMPORTS the app's own Litestone client to
-    // tap what `load()` reads, and that module is TypeScript. Node's stripper
-    // refuses a parameter property and Vite reports it as *could not load the
-    // db*, which reads like a path problem and is a runtime one.
+    // `bun --bun` on BOTH, and for one reason: a `render: static` route's
+    // `load()` imports the app's own Litestone client, which is TypeScript and
+    // opens `bun:sqlite`. The build has always needed it — node's stripper
+    // refuses a parameter property, and Vite reports that as *could not load
+    // the db*, which reads like a path problem and is a runtime one.
+    //
+    // Dev needs it now too, because the dev server RUNS that loader (Sierra's
+    // static-data middleware) so the page can be seen with its data instead of
+    // correctly empty. Under node it fails as `Only URLs with a scheme in:
+    // file, data, and node are supported — received protocol 'bun:'`, which
+    // names nothing an app author did.
+    'dev:site':   `cd ${dir} && bun --bun vite -c config/vite.config.js`,
     'build:site': `cd ${dir} && bun --bun vite build -c config/vite.config.js`,
     'serve:site': `cd ${dir} && bunx sierra site --serve --port ${servePort}`,
   }

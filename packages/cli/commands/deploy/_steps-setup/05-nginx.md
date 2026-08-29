@@ -77,22 +77,29 @@ if (answer.trim().toLowerCase() !== 'y') {
   return
 }
 
-// Write via heredoc to avoid quoting issues
-const writeCmd = `sudo tee ${remotePath} > /dev/null << 'NGINXEOF'\n${nginxConf}\nNGINXEOF`
-context.exec({ command: `ssh ${host} "${writeCmd}"` })
+// A QUOTED heredoc, and the quotes are the whole of it: nginx configs are made
+// of `$host`, `$remote_addr` and `$proxy_add_x_forwarded_for`, and a shell that
+// expands them writes `proxy_set_header Host ;` — a file that looks like a
+// config and is one nginx refuses. `machine.run` pipes this to the target's own
+// shell, so `'NGINXEOF'` is the only quoting between here and the file.
+const machine = machineFor(context, host, context.config.serverPath)
+
+machine.run(`sudo tee ${remotePath} > /dev/null << 'NGINXEOF'
+${nginxConf}
+NGINXEOF`)
 
 // Enable site if not already enabled
 try {
-  context.exec({ command: `ssh ${host} "[ -L ${enabledPath} ] || sudo ln -s ${remotePath} ${enabledPath}"` })
+  machine.run(`[ -L ${enabledPath} ] || sudo ln -s ${remotePath} ${enabledPath}`)
 } catch {}
 
 // Test config
 try {
-  context.exec({ command: `ssh ${host} "sudo nginx -t"` })
+  machine.run('sudo nginx -t')
   log.success('nginx config written and validated')
   context.config.nginxWritten = true
 } catch (err) {
   log.warn('nginx config written but validation failed: ' + err.message)
-  log.info(`Review with: ssh ${host} "sudo nginx -t"`)
+  log.info(`Review with: ${machine.local ? 'sudo nginx -t' : `ssh ${host} "sudo nginx -t"`}`)
 }
 ```

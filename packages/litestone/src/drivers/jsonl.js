@@ -21,6 +21,7 @@ import {
   statSync, openSync, readSync, closeSync } from 'fs'
 import { noteMintedDirectory } from '../core/db-path.js'
 import { dirname }    from 'path'
+import { applyBusyTimeout } from '../core/pragmas.js'
 import { Database }   from 'bun:sqlite'
 import { buildWhere } from '../core/query.js'
 import { ID_GENERATORS } from '../core/ids.js'
@@ -174,7 +175,7 @@ function resolveDefault(field) {
 
 // ─── Table factory ────────────────────────────────────────────────────────────
 
-export function makeJsonlTable(filePath, model, schema, retention = null, maxSize = null, now = Date.now) {
+export function makeJsonlTable(filePath, model, schema, retention = null, maxSize = null, now = Date.now, busyTimeout = null) {
   // Run compaction immediately if retention or maxSize is configured.
   // This happens once when createClient() opens — before any queries are served.
   if (retention || maxSize) {
@@ -237,6 +238,26 @@ export function makeJsonlTable(filePath, model, schema, retention = null, maxSiz
       _indexDb = null
     }
     _indexDb = new Database(indexPath)
+
+    // The most contended database an app has, and until `FJS-569` the only one
+    // with no wait at all: a `logger`/`jsonl` database is schema-global, so
+    // every tenant and every process writes THIS index. A second API beside a
+    // running one died on its first audit write, in about a millisecond.
+    //
+    // The timeout and NOT WAL, which was tried and taken back out. WAL would help
+    // here on its own terms — under a rollback journal a reader and a writer
+    // exclude each other on the file every process touches — but it adds `-wal`
+    // and `-shm` beside the index, and this index is DELETED by anything that
+    // rewrites the .jsonl, which is compaction and also any hand-written probe.
+    // Every one of those places would silently start owing two more unlinks, and
+    // one that did not would recover the byte offsets the rewrite invalidated:
+    // measured, as a retention sweep that reported success and removed nothing.
+    // The floor alone fixes what was actually broken.
+    // A short wait is a real answer here and `{ audit: 250 }` is how a caller
+    // says it: this write is fire-and-forget and its failure is swallowed, so
+    // blocking the loop for seconds to place a row nobody awaits is the wrong
+    // trade for an app that would rather lose the row.
+    applyBusyTimeout(_indexDb, busyTimeout)
 
     // Build index table: indexed fields + _offset
     // Primary key is the @id field when present, otherwise _offset itself.

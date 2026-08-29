@@ -629,19 +629,170 @@ Proved on basecamp's own tree, which currently classifies **contract** on 37 fin
 from the tenancy work in flight — so the contract path is exercised against a real
 schema rather than a fixture. 46 tests, pure.
 
-**1e · The journal executes.** The existing `_steps-docker` list becomes journal rows:
-each step claimed under `occurrenceKey('deploy', releaseId, step)`, a precondition
-check ahead of each (serving Release id, binding generation, schema-at-last-applied),
-and a resume that replays into a no-op. Proved by killing a deploy mid-flight and
-rerunning it — and by the `deploy` CI phase, which already runs the whole pipeline
-twice against two package sources and registers and logs in afterwards, so the
-assertion that the app still works exists and only needs the interruption added.
+**1e · The journal executes.** — **shipped 2026-08-26** as `core/journal.js` +
+`core/journal-runner.mjs`, opened by `_steps-docker/01c-journal` and read by
+`fli deploy:journal`.
 
-**1f · `fli revert`.** Reads the journal, restores the pair (Release, Generation), and
-refuses **by name** in the two cases that matter: past the pivot, and past the
-retention the Release recorded. Proved by extending the same CI phase — deploy, deploy
-again, revert, and log in through the app's own prefix, which is the assertion that
-already catches a scaffold that builds and cannot serve.
+**The dependency question this row was expected to force did not need forcing**, and
+what settled it was measuring the target rather than reasoning about it.
+`deploy:setup` installs docker, nginx, git, **bun**, rsync and sqlite3; `02-pull`
+leaves a git checkout with **no `node_modules`**, because the build happens inside
+Docker. So litestone cannot be imported there — and it does not have to be. The
+schema stays `db/deploy.lite`, its DDL is a committed snapshot
+(`litestone ddl --schema deploy.lite`), and what ships to the target is that file
+plus a runner whose only import is `bun:sqlite`. **`packages/cli` gained no
+dependency**, and the `snapshots` CI phase picked the new DDL up with no CI edit —
+the property that mechanism claims, observed rather than assumed.
+
+**The brain is local and the runner is dumb.** Every statement and every verdict is a
+pure function in `core/journal.js`, where the tests are; the shipped file binds
+parameters and returns rows and decides nothing. Same split as
+`@frontierjs/outpost`'s `createDocker({ run })`, for the same reason: the half that
+is hard to test is the half that gets shipped somewhere else, so it is made too
+small to be wrong. Which is also what lets the suite drive the REAL runner against a
+temp database — the sequence walked is deploy, die inside a step, rerun.
+
+**The pipeline became journal rows without eleven step files learning to write one.**
+The hook is on the step RUNNER (`core/runtime.js`), which knows a step ran and how it
+ended and nothing about deploys: a command installs `config.journal` and gets
+`beforeStep`/`afterStep`. `01c-journal` installs it, `09-cleanup` settles on both
+paths — `runOnAbort: true` is what makes that reachable, and an aborted deploy must
+leave a `failed` transition rather than a `running` one the next run would read as a
+crash.
+
+**Three things it decided that the record had left open:**
+
+**The digest is not in the recorded Release, and that is the honest state.** A Release
+id is content-addressed on its four terms, one of which is the image digest — and
+this pipeline builds ON THE TARGET, so the bytes do not exist until step 04. Minting
+around a digest that arrives later would change the id halfway through the transition
+it names, which is the one thing an idempotency key may not do: a resume would
+compute a different id and open a second row. So the Release recorded is exactly the
+one `fli deploy:plan` printed, and what step 04 built is that step's **output**. It
+also means a rerun resumes at all, because the id does not depend on a rebuild
+producing identical bytes — which a build on the target cannot promise. **That is a
+sharper argument for `2.3f`'s second half than the roadmap row makes**: building
+centrally is what lets the digest become a term of the id rather than a note.
+
+**`serving` is the last transition that SUCCEEDED, not the last transition.** A failed
+deploy leaves the previous release up, and a journal that called the attempted one
+serving would be lying in exactly the situation somebody is reading it to get out of.
+
+**`attempt` is answered, and it is the term 1d flagged.** Counted off the rows by
+COLUMNS rather than by id — the number is inside the id, so asking by id could only
+find the attempt you already guessed. A `planned` or `running` row is the interrupted
+attempt and is resumed at its own number; a `succeeded` or `failed` one is finished,
+so the next run is a new attempt. `readAttempts` + `attemptDecision`.
+
+Proved by 45 tests, 19 of them against a real SQLite file through the shipped runner.
+**What is NOT yet proved is the interruption in the `deploy` CI phase** — that phase
+runs the whole pipeline twice against two package sources, so the assertion that the
+app still works exists and needs a kill and a rerun added to it. That is the one piece
+of this step's stated proof still owed.
+
+**1f · `fli revert`.** — **shipped 2026-08-26** as `fli deploy:revert` (alias
+`revert`) over `core/revert.js`, journaled as a `kind: 'revert'` transition of its own.
+
+**The refusals are the feature, and there are SIX rather than the two this row
+named.** A rollback that puts the previous image back and says nothing is what every
+other tool ships, and it is wrong in exactly the situations somebody reaches for it:
+
+| | | override |
+| --- | --- | --- |
+| `pivot` | a deploy since then crossed it — that release cannot serve this database | `--past-pivot` |
+| `retention` | the release stopped being a revert target, and it names the date | `--past-retention` |
+| `bindings` | the generation moved: this restores the code and NOT the configuration | `--onto-current-bindings` |
+| `no-image` | nothing recorded which bytes that release ran | **none** |
+| `in-flight` | a transition is still open — a deploy is running, or died unsettled | **none** |
+| `nothing-prior` | this is the first release | **none** |
+
+**Every one is reported, never just the first.** An operator deciding whether to force
+needs the whole picture; a checker that stops at the first makes them discover the
+rest one flag at a time, mid-incident. Three carry no override at all, and that is
+stated on the line rather than left to be discovered — *no override — this one is not
+a judgement call*.
+
+**The bindings refusal is the one this record under-specified.** Serving state is the
+PAIR, and `fli` writes no `.env` on a target — the operator owns that file. So once
+the generation has moved, a revert genuinely *cannot* restore the pair; it can only
+put old code onto today's configuration, which is the documented Fly failure the
+generation counter exists to refuse. It is therefore a refusal rather than something
+this fixes, and `--onto-current-bindings` is the operator saying a different sentence
+on purpose. The journal records which sentence happened.
+
+**`revert` and `rollback` are both kept, and the split is stated.**
+`fli deploy:rollback` puts the previous IMAGE back with no journal and no questions —
+it works on a target that has never deployed through one. `fli deploy:revert` restores
+the PAIR and refuses. The second never silently becomes the first: with no journal it
+says so and names the other command rather than quietly degrading.
+
+**Two extractions came out of building it**, both for the same reason: the going-back
+path is the one nobody exercises until the day it matters, so a copy that had drifted
+would be discovered at the worst moment. `swapContainer` and `healthOrRestore` are now
+in `deploy/_module.md`, called by both `_steps-docker` and `_steps-revert`.
+
+**Where a revert reads the bytes from is the consequence 1e predicted.** The digest is
+not a term of the Release under build-on-target, so the way back to an image is the
+`04-build-api` output of the transition that put that release into service. That
+output is JSON now, and a row an older `fli` wrote as prose is reported as unreadable
+rather than scraped — a revert that ran the wrong bytes is the worst outcome available
+here. It is one more thing that becomes simpler once `2.3f` builds centrally.
+
+38 tests.
+
+### 1g — the proof, and what running it found
+
+The debt 1e and 1f both left, paid: `deployJournalCycle` in
+`scripts/scaffold-build.mjs`, in CI's `deploy` phase. Deploy → deploy → crash →
+resume → revert → revert, against a machine, with a journal on it and a container
+serving from it.
+
+**Nothing had ever run `fli deploy`.** The phase ran `fli deploy:local`, which is a
+different command: it builds an image and runs it, and never touches
+`_steps-docker/`, the journal, the swap, the health poll or the revert. Phase 1
+shipped ~1250 green tests over a path that had executed zero times.
+
+It had never run because it needs a server, so the first move was to give *run a
+command on that machine* one owner and let the machine be this one —
+`packages/cli/core/machine.js`, the script piped to `sh -s` with or without an ssh
+prefix. `localhost` is a transport rather than a simulation: real docker, real
+journal, real revert, and only ssh itself unexercised.
+
+What one run of it found, in order:
+
+- **Nine of the ten multi-line shell commands in the pipeline were syntax errors on
+  the target.** `.replace(/\n\s*/g, '; ')` turns `then` into `then;` and `do` into
+  `do;`. The lock, the rename, the stop, the health poll, the restore, the cleanup,
+  the rollback and both revert steps. The health check compounded it: interpolated
+  into `ssh host "…"`, its `$(curl …)` ran on the OPERATOR'S machine and `"$STATUS"`
+  expanded here to empty, so the target received `[  = 200 ]`.
+- **`deploy:setup` wrote an nginx config with every variable stripped** —
+  `proxy_set_header Host ;` — because the quoted heredoc protecting them was itself
+  inside ssh's double quotes.
+- **`fli deploy:revert` restored the bytes it was reverting FROM**, and reported
+  success. This one is the sharpest argument 2.3f has: build-on-target puts no digest
+  in the Release id, so two deploys of different source mint the SAME id and a lookup
+  by id answers whichever transition is newest. Revert targets the previous
+  *transition* now, `same-bytes` is a seventh refusal with no override, and what is
+  running is asked of the machine rather than the journal.
+- **A resumed deploy started `undefined`.** A replayed step contributes nothing to the
+  run and one of those contributions is load-bearing; the projection the resume reads
+  did not select `output`.
+- **A revert could not itself be reverted** — `imageFromSteps` matched the build step
+  by name and a revert has none.
+- **`fli deploy --plan` could not grade `01c-journal`**, the journal step itself.
+
+Two are filed rather than fixed: `FJS-573`, a crashed deploy strands its lock and the
+pid recorded in it is the pid of the shell that wrote it, so nothing can tell a stale
+lock from a live one — and the journal already knows better, which makes it a ruling
+about who owns *is a deploy in progress* rather than a patch. `FJS-574`, every deploy
+of a freshly scaffolded app fails its backup because a declared-but-never-written
+database has no file, and blames the container.
+
+### Phase 1 is complete
+
+1a the models · 1b the Release · 1c the build check · 1d `--plan` · 1e the journal
+executes · 1f revert · 1g the proof.
 
 What is deliberately not in phase 1: the traffic switch stays stop-then-start with a
 stated downtime window, retention keeps the previous Release only, and the audience

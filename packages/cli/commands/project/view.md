@@ -286,7 +286,7 @@ const { ownStyleBundle, glowSource, CDN_STYLESHEET } = await import(resolve(glob
 const stylesheet = ownStyleBundle()
 const highlighter = glowSource()
 
-const server = createServer((req, res) => {
+const server = createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
 
   if (req.url === '/fli.css') {
@@ -308,6 +308,35 @@ const server = createServer((req, res) => {
     map = buildMap()
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify(map))
+    return
+  }
+
+  // ── /state ────────────────────────────────────────────────────────────────
+  //
+  // Whether the app this page maps is actually UP. The map is read off files
+  // and says nothing about running processes, so a person could study a
+  // complete chain of responsibility for an app that is not started — and the
+  // page looked identical either way.
+  //
+  // Answered HERE rather than fetched from the app: a browser reaching
+  // `localhost:8110/api/health` from this origin is a cross-origin request the
+  // app has no reason to allow, and a CORS failure would read as *the app is
+  // down*. The probe is `core/runnables.js`'s, the same one the fli GUI's
+  // dashboard uses, so there is one answer to *is it answering* rather than
+  // two that can disagree.
+  if (req.url === '/state') {
+    const { runnables, probeState } = await import(resolve(global.fliRoot, 'core/runnables.js'))
+    // This app's own surfaces, and not the tooling block: `fli gui` being up
+    // is not a fact about the app this page maps, and putting it in the badge
+    // makes the badge mean two things.
+    const rows  = runnables(context.paths.root).filter(r => r.kind === 'surface')
+    const state = await probeState(rows)
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({
+      at:   new Date().toISOString(),
+      rows: rows.map(r => ({ id: r.id, name: r.name, dir: r.dir, port: r.port, open: r.open, start: r.start })),
+      state,
+    }))
     return
   }
 

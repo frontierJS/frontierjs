@@ -13,7 +13,7 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
-import { cp, mkdir, rm, writeFile } from 'fs/promises'
+import { cp, mkdir, rm, writeFile, readFile } from 'fs/promises'
 import { dirname, resolve }         from 'path'
 import { fileURLToPath }            from 'url'
 
@@ -38,12 +38,12 @@ afterAll(async () => {
  * Run the real plugin's buildStart over `root`.
  * `command` is what vite's configResolved reports: 'serve' or 'build'.
  */
-async function runBuildStart(root, command) {
+async function runBuildStart(root, command, config = {}) {
   const warnings = []
   const errors   = []
 
   const plugin = scannerPlugin(
-    { target: 'static', routesDir: 'src/routes' },
+    { target: 'static', routesDir: 'src/routes', ...config },
     { tree: null, layoutPropMap: new Map() }
   )
 
@@ -109,5 +109,49 @@ describe('scannerPlugin buildStart', () => {
     const warning = warnings.find(w => w.includes('[boom].meta.js'))
     expect(warning).toBeTruthy()
     expect(warning).toContain('no database here')
+  })
+})
+
+// ─── A prerendered route's data, in dev ──────────────────────────────────────
+//
+// `load()` runs in Node at build time, and the companion may never enter the
+// browser graph — following one there published a storefront's database client
+// (`FJS-543`). What that left was a dev server rendering every page with
+// `data: null`, which is correct and looks exactly like a query that found
+// nothing. The dev server is a Node process, so the loader runs THERE and the
+// browser fetches JSON. The property that must not move is the one below: the
+// browser still never imports the companion, in dev or in a build.
+describe('static routes in dev', () => {
+  const table = () => readFile(resolve(TMP, 'config/routes.js'), 'utf8')
+
+  test('dev emits a fetch shim for a render:static route', async () => {
+    await runBuildStart(TMP, 'serve')
+    const code = await table()
+    expect(code).toContain('__sierraDevStatic')
+    expect(code).toContain('/__sierra/static-data')
+  })
+
+  test('and still does not import the companion', async () => {
+    // The whole security property, asserted on the shape rather than trusted:
+    // a fetch cannot pull a module into the bundle, an import can.
+    await runBuildStart(TMP, 'serve')
+    const code = await table()
+    expect(code).not.toMatch(/import\(['"][^'"]*\.meta\.js['"]\)/)
+  })
+
+  test('a build emits neither', async () => {
+    await runBuildStart(TMP, 'build')
+    const code = await table()
+    expect(code).not.toContain('__sierraDevStatic')
+    expect(code).not.toMatch(/import\(['"][^'"]*\.meta\.js['"]\)/)
+  })
+
+  test('dev: { staticData: false } opts out', async () => {
+    await runBuildStart(TMP, 'serve', { dev: { staticData: false } })
+    const code = await table()
+    expect(code).not.toContain('__sierraDevStatic')
+    // …and the route is still not given a real loader, which is the behaviour
+    // opting out asks for rather than a second way of getting one.
+    expect(code).not.toMatch(/import\(['"][^'"]*\.meta\.js['"]\)/)
   })
 })

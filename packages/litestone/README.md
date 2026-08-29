@@ -196,7 +196,7 @@ The CLI also compiles to a dependency-free executable for machines without Bun �
 bunx litestone init              # create schema.lite + litestone.config.js
 bunx litestone migrate create initial
 bunx litestone migrate apply
-bunx litestone studio            # browser UI at http://localhost:5001
+bunx litestone studio            # browser UI at http://localhost:8502
 ```
 
 ---
@@ -2164,7 +2164,7 @@ that set.
 ## Studio
 
 ```bash
-bunx litestone studio   # → http://localhost:5001
+bunx litestone studio   # → http://localhost:8502
 ```
 
 - **Browse** — paginated table viewer, inline cell editing, soft-delete toggle, DB filter pills
@@ -2429,7 +2429,7 @@ the moment a schema has a typo. An error inside an imported file names that file
 
 ## Litestream
 
-Litestone sets the pragmas Litestream requires (`WAL`, `synchronous=NORMAL`, `busy_timeout=5000`). Use `db.$backup()` for point-in-time snapshots before migrations. Use `litestone replicate config.js` for continuous WAL streaming to S3/R2.
+Litestone sets the pragmas Litestream requires (`WAL`, `synchronous=NORMAL`, `busy_timeout=5000` — `createClient({ busyTimeout })` or `LITESTONE_BUSY_TIMEOUT` to change it; see [docs/concurrency.md](docs/concurrency.md)). Use `db.$backup()` for point-in-time snapshots before migrations. Use `litestone replicate config.js` for continuous WAL streaming to S3/R2.
 
 ---
 

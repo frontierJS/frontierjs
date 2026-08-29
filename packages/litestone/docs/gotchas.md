@@ -137,10 +137,37 @@ db.task.findMany({
 Blue-green deployments where two app instances overlap and share the same SQLite file can cause WAL contention under write load. Both containers open write connections; only one can hold the write lock at a time. Under high write rates, the losing container's writes queue up or timeout.
 
 Mitigations:
-- Use a `busy_timeout` pragma (Litestone sets this automatically: 5000ms)
+- Use a `busy_timeout` pragma — Litestone sets this automatically on every
+  connection it opens (5000ms default, `src/core/pragmas.js`), and this is where
+  raising it is right: `createClient({ busyTimeout: 15_000 })`, or
+  `LITESTONE_BUSY_TIMEOUT=15000` for a process that builds no client
 - Use Litestream WAL replication — only the primary writes, replicas read from S3
 - Stagger deploys: drain old container before starting new one
 - Keep write rates low (most web apps have far more reads than writes)
+
+**`busy_timeout` is a CROSS-PROCESS device and is no help inside one.**
+`bun:sqlite` is synchronous, so a connection waiting on the write lock blocks
+the thread it is on — which in a single process is the event loop. Two things
+follow, and the second is worse than the first:
+
+- A five-second wait is five seconds of a server answering nobody.
+- It can **deadlock outright**. The waiter blocks the loop, so the holder's own
+  continuation never runs to commit, so the wait can only ever expire. Measured:
+  a second client waited the full 5000ms for a lock held for 800ms, because the
+  holder's release was a `setTimeout` that could not fire. Two real processes,
+  same 800ms hold — waited it out and committed.
+
+So the timeout is worth having for the case it is for (another API, a job
+runner, `fli tinker`, a migration) and is not a substitute for not contending.
+Within one client `$transaction` takes a FIFO lock, so two transactions queue in
+JavaScript and never reach the SQLite lock at all — which is why the in-process
+case is normally fine without any of this. **One client per database file per
+process** is what keeps it that way; two `createClient` calls on one path are two
+connections that can deadlock, where `$setAuth`/`asSystem`/`$scopedBy` are views
+over one handle and are free.
+
+[concurrency.md](concurrency.md) is the whole of it, including how to pick a
+number and what to do when the query itself is the slow part.
 
 ---
 
@@ -152,7 +179,7 @@ Run Studio directly on the host instead:
 
 ```bash
 ssh myserver
-cd /app && litestone studio --port=5001
+cd /app && litestone studio --port=8502
 ```
 
 ---

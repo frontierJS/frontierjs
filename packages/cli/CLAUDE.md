@@ -18,6 +18,44 @@ core/
   registry.js   command discovery and resolution
   prose.js      the markdown side
   checks.js     the architecture rules — shared with scripts/ci.mjs
+  runnables.js  what this project can START — surfaces, tools, drives, suites,
+                tasks, snapshots, each a row with an id, a command and a port.
+                Derived from files that would break something else if they were
+                wrong; `repo-map.js` reads the same readers. `probeState` is the
+                one answer to which of them are up, and it has FOUR — `unknown`
+                is a row with no port, which is a different sentence from `down`
+  children.js   the process table behind a start button. Two runners allowed and
+                nothing else, `detached: true` and a `-pid` kill because a child
+                is a LAUNCHER: signalling the pid kills the wrapper and leaves
+                the server answering. It also keeps the LAST finished run per
+                row — facts only (when, how long, the exit, and whether the stop
+                was asked for), because the words differ by kind and belong to
+                the page. `stopped` is marked before the signal: a SIGTERM looks
+                the same whoever sent it
+  proofs.js     which drive proves a change — the parse of `CLAUDE.md`'s own
+                table and the resolution of both its columns. A PARSE and never
+                a second table; not a build graph, and it must not become one
+  server.js     also the control surface's own endpoints — `/api/runnables`,
+                `/api/state`, `/api/proves`, `/api/health/:id`, and start/stop/
+                output. The health probe is HERE and not in the page: 8500
+                fetching 8110 is cross-origin, and a CORS failure reads exactly
+                like the app being down
+  proxy.js      one listener, so a dev surface has a NAME — `example.localhost`
+                for `localhost:8010`. TCP and not `node:http`, because bun's
+                emits `upgrade` and hands over a socket nothing written to ever
+                reaches the client, and junction's live layer is a socket.
+                Nothing is rewritten: junction READS the Host and vite allows
+                `*.localhost`. The target is picked per CONNECTION, which is the
+                one bound and is why nothing may come to depend on it
+  doctor.js     can this MACHINE run fli — binaries, the two env files, and the
+                env vars a namespace declares. The sibling of `checks.js` and
+                deliberately not merged with it: a missing `sqlite3` is not an
+                architecture finding. `blocked` is system and config only,
+                because a missing token blocks one namespace and nothing else
+  preflight.js  what a drive needs started FIRST — the *Start first* column of
+                the drive table, ordered, resolved onto rows the page can press.
+                Reading the prose beat declaring it beside the script and beat
+                asking the drive, because the answer was already written down
   typecheck.js  tsc's output, filtered to your files — shared with scripts/typecheck.mjs
   app-config.js what a scaffolded app is GIVEN — deps, scripts, configs, workflow
   crud-templates.js     what a GENERATED CRUD page IS — shared by `make:scaffold`
@@ -35,6 +73,35 @@ core/
                 ships what a subtree copy does not, and grading on the context
                 copy alone refuses every multi-stage build here. Pure — the
                 caller reads the files, so the suite needs no daemon
+  revert.js     can serving state be put back, and what stops it — seven
+                refusals, four of them with no override because they are not
+                judgement calls. All of them reported, never just the first. It
+                targets the previous TRANSITION rather than the previous release:
+                build-on-target puts no digest in the id, so two deploys of
+                different source mint the same one and a lookup by id answers
+                whichever is newest — which is the one serving (measured: a
+                revert restored the bytes it was reverting from and said it
+                worked)
+  machine.js    running a command on the machine being deployed to, and moving an
+                IMAGE between two of them (`shipTo` — `docker save | docker load`,
+                which preserves the id, so the digest a Release names is the
+                digest that starts). ONE owner for
+                (host, script) → the argv that runs it there, and the script
+                travels on STDIN — `context.exec` is `/bin/sh -c`, so an
+                interpolated script is parsed twice and nine of this pipeline's
+                ten multi-line commands were syntax errors on the target for as
+                long as they existed. `localhost` is a transport rather than a
+                simulation, which is what makes the pipeline runnable in CI at
+                all. `run`/`capture` are the verbs; `tty` and `pipe` exist
+                because stdin can carry one thing and `docker exec -it` and the
+                journal runner each want it
+  journal.js    the deploy journal — statements and verdicts, all pure. The
+                brain is HERE and `journal-runner.mjs` is the half that ships to
+                the target: it binds parameters and decides nothing, which is
+                what lets the suite drive the real runner against a temp file
+  journal-runner.mjs  copied to the target and run with bun. Imports
+                `bun:sqlite` and nothing else, because a deploy target has no
+                node_modules — the build is inside Docker
   plan.js       the journal rows a transition WOULD write — `Transition` +
                 `TransitionStep`, built once and either printed (1d) or inserted
                 (1e). The step list is READ off `_steps-docker/` with the
@@ -51,7 +118,10 @@ commands/  one directory per namespace — db, auth, api, web, widgets, site, ex
            fetch, ai, cloudflare, caprover, completion, admin, literate, utils,
            fli, release, test, ksite (NOT FrontierJS — a separate static-site
            toolchain that used to hold the `site:` namespace)
-db/        deploy.lite — the deploy journal's models. OPENED, not installed:
+db/        deploy.lite + ddl.snapshot.sql — the deploy journal's models, and the
+           DDL derived from them. The snapshot is what ships: nothing on a target
+           can emit DDL, so the fragment stays the single source and the
+           `snapshots` phase fails a stale derivation. OPENED, not installed:
            `createClient({ schema, db })` with `db` naming `deploy.db` on the
            target, so it declares no `database` block and `@@db(main)` in it
            does not parse
@@ -61,6 +131,13 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
            · deploy-journal (a real Litestone client over a real file)
            · release-mint (what does and does not move a Release id)
            · image-identity (registry digest vs image id vs tag)
+           · plan (the rows a transition would write) · journal (the rows it does
+             write — through the REAL runner, against a real SQLite file)
+           · revert (the seven refusals, and what each one's way out is)
+           · machine (the argv, and — executed — that a script reaches a shell
+             untouched; plus the nine shapes that shipped broken, as scripts)
+           · deploy-scripts (every script the pipeline can send to a machine,
+             parsed with `sh -n` — the check nothing was running)
 ```
 
 ---
@@ -289,7 +366,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   not cross a separator — measured: with `.env.*`, a root `.env.production` is
   excluded and `api/.env.production` is COPIED; `**/.env.*` reaches both. That
   is what `02b-build-check` grades and it found a live one, `db/*.db` admitting
-  `db/db/basecamp.db` into basecamp's image (`FJS-543`). **The step reads the
+  `db/db/basecamp.db` into basecamp's image (`FJS-555`). **The step reads the
   SERVER rather than this tree, and must**: the file most likely to be baked is
   the one deliberately in no repository — `.env.production` sits at the deploy
   root, which IS the build context — and it runs after `02-pull`, because before
@@ -311,6 +388,52 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   runner discovers steps AFTER the orchestrator and falls back to `_steps/` when
   no `stepsDir` is set, which is the legacy CapRover list, so an early return
   would run it.
+- **A deploy target has bun and no `node_modules`, and that is what decides how
+  the journal is written.** `deploy:setup` installs docker, nginx, git, bun,
+  rsync and sqlite3; `02-pull` leaves a git checkout and the build happens inside
+  Docker, so litestone is not there and cannot be imported there. Hence the
+  committed DDL and a runner whose only import is `bun:sqlite` — and hence
+  `packages/cli` still depending on no database. **Every rule lives in
+  `core/journal.js` on the machine running `fli`**; adding a decision to the
+  runner puts it somewhere no test can reach.
+- **The journal hook is on the step RUNNER, not on the steps.** `core/runtime.js`
+  calls `config.journal?.beforeStep/afterStep` around every step of any command
+  that installs one, and knows nothing about deploys. That is what turned the
+  existing eleven `_steps-docker` files into journal rows without editing any of
+  them, and it is why a twelfth is journaled for free. A `beforeStep` answering
+  `run: false` is the replay-into-a-no-op the occurrence-key scheme exists for.
+- **`serving` is the last transition that SUCCEEDED.** Not the last transition: a
+  failed deploy leaves the previous release up, and a journal that called the
+  attempted one serving would be lying in exactly the situation somebody is
+  reading it to get out of. `09-cleanup` settles on BOTH paths for the mirror
+  reason — an aborted deploy must leave `failed` and not a `running` row the next
+  run reads as a crash to resume.
+- **A recorded Release carries no digest under build-on-target, and must not.**
+  The id is content-addressed on the digest, and these bytes do not exist until
+  step 04 — minting around a digest that arrives later changes the id halfway
+  through the transition it names, so a resume computes a different id and opens
+  a second row. What step 04 built is recorded as that step's OUTPUT. The
+  consequence worth holding: resume works BECAUSE the id does not depend on a
+  rebuild being reproducible, which a build on the target cannot promise.
+- **`revert` and `rollback` are two commands on purpose, and one must not become
+  the other.** `deploy:rollback` puts the previous IMAGE back — no journal, no
+  history, no questions — and works on a target that has never deployed through
+  one. `deploy:revert` restores the PAIR (Release, Generation) and refuses by
+  name. With no journal, revert says so and points at rollback rather than
+  quietly degrading into it, because the degrade is exactly the silent
+  previous-image-and-nothing-else every other tool ships.
+- **A revert refusal reports ALL of them, and three carry no override.** An
+  operator deciding whether to force needs the whole picture; stopping at the
+  first makes them discover the rest one flag at a time, mid-incident. `no-image`
+  (nothing recorded which bytes that release ran), `in-flight` and
+  `nothing-prior` have no flag, and the line says so — *not a judgement call*.
+  **`bindings` is a refusal rather than a fix**: `fli` writes no `.env` on a
+  target, so once the generation has moved a revert genuinely cannot restore the
+  pair, only put old code onto today's config.
+- **`swapContainer` and `healthOrRestore` live in `deploy/_module.md` and have
+  two callers each.** The going-back path is the one nobody exercises until the
+  day it matters, so `_steps-revert` calls the same functions `_steps-docker`
+  does rather than a copy of them.
 - **`project:map` and `project:view` read the API surface; they never scan for
   it.** What a service answers is decided at CONSTRUCTION — `collectCustomMethods`,
   read back through `svc.describe()` — so a regex over `*.service.ts` cannot
@@ -328,8 +451,13 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   does: `make:scaffold` and `admin:generate` both emit a list, a create form and
   an edit page, and while each carried its own copy they drifted — one filtered
   `id` by name, the other asked the resource for its idField. The pages are
-  built on `@frontierjs/ui`, so the form is `<Form {resource} />` and nothing
-  about the model is written into the file. **The list is the deliberate
+  built on `@frontierjs/ui`, and **neither page contains a form**: `<Model />`
+  is the form — the markup half of the Resource, `core/resource-template.js` —
+  so the create page and the edit page render the same fields and nothing about
+  the model is written into either. That was documented and generated before it
+  worked: the wrapper had no submit button and swallowed a page's
+  `slot="actions"`, while these templates went on emitting a `<Form>` each
+  (`FJS-559`). **The list is the deliberate
   exception**: which of twenty columns belong in a table is a judgement, so it is
   named at generate time (scaffold) or taken off the schema at runtime (admin,
   which cannot name them). Anything here that names a field, a type or an enum
@@ -374,12 +502,20 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
 - **`fli dev` runs two preflights and they disagree on purpose: the port check
   REFUSES, the database check warns.** An empty database is the correct state
   for a first run; a port that is already answering is not correct in any
-  reading. `appPorts(appRoot)` in `core/ports.js` derives which ports from the
-  SURFACES that exist — `web/`, `api/`, `widgets/`, `site/`, `extension/`,
-  Invariant 3 —
-  so a per-app list cannot go stale the day somebody adds one, and it names a
+  reading. `core/ports.js` derives which ports rather than reading a per-app
+  list, so nothing goes stale the day somebody adds a surface, and it names a
   script the manifest actually declares, because two conventions are live (the
-  apps here call it `api`, `fli new` writes `dev:api`). **An app's own `dev`
+  apps here call it `api`, `fli new` writes `dev:api`). **Two functions and the
+  difference is the bug** (`FJS-568`): `appPorts()` is the CATALOGUE — every
+  surface that exists (Invariant 3), which is what `runnables.js` wants —
+  and `devPorts()` is what `fli dev` refuses on, that set narrowed to the
+  surfaces this app's own `dev` script actually runs, walked transitively
+  through its `bun run` targets. They are the same set only in a scaffolded
+  app, where `fli new` composes every surface into one `dev`; `example` has
+  five surfaces and starts two, so the catalogue refused on a storefront's
+  8610 that `bun run dev` would never have bound. A `dev` that runs no other
+  script cannot be narrowed and is not — that is a one-surface app whose `dev`
+  IS the surface command. **An app's own `dev`
   cannot be `fli dev`** — this runs `bun run dev`, so that is a loop; `dev` runs
   the surfaces and `fli dev` is the checked door in front of it.
 - **`core/db-preflight.js` is why `fli dev` mentions an empty database.** An app
@@ -470,6 +606,26 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
 - **A rule belongs there only if it is SILENT when broken.** A violation that
   already raises an error belongs in the thing that raises it. `--list` prints
   the table with the invariant each rule comes from.
+- **Two rules grade a DOC against what the package ships, and they are the
+  newest class here.** `register-check.js` already covers a register that
+  contradicts ITSELF; nothing covered a page that is merely out of date, which is
+  the same silence one layer over. `docs-index` — a `docs/` page the index links
+  from nowhere (a link, never a mention: the failure is a page nothing navigates
+  to). `roadmap-shipped` — a roadmap section whose fenced sample uses an
+  attribute `catalog.snapshot.md` already carries. The measured cost of not
+  having them: litestone's roadmap kept *Exact numbers — `@scale(n)`, then
+  `@money`* under **High priority**, opening *there is no fixed-point numeric
+  type*, four days after `FJS-D142` built it; `exact-numbers.md` was linked from
+  nothing; and a session read all three signposts, concluded the language could
+  not express money, and filed a defect against the ruling (`FJS-560`).
+- **Neither carries a list of what ships, on purpose** — a list here rots exactly
+  the way the roadmap did. `roadmap-shipped` asks the generated catalogue, the
+  same authority `litestone explain` asks. Its two quieteners are derived too:
+  **scaffolding comes out of the file itself** (an attribute appearing in two
+  sections' samples is holding them up rather than being their subject, which is
+  `@id` in every `model` block), and a heading carrying `~~`, `SHIPS` or
+  `SHIPPED` has already answered — an entry may legitimately propose the unbuilt
+  HALF of something that ships, which is what `@slug`'s collision handling is.
 - **Twelve of the rules read source rather than the tree, and `readCode` is why
   they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
   `call-header-declared`, `service-model`, `resource-model-miss`,

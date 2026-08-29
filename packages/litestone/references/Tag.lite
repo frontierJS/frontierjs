@@ -1,0 +1,148 @@
+/// A label somebody attaches to rows of several different models.
+///
+/// ─── Read this before copying it ──────────────────────────────────────────
+///
+/// **There is no instance of this in the tree.** `AuditEvent` and `Notification`
+/// are derived from working models; this one is argued from a production Prisma
+/// schema outside the repo plus the one precedent below, so it is the file most
+/// likely to be wrong. Treat it as a starting position, not a finding.
+///
+/// ─── The hard part, which is not the tag ──────────────────────────────────
+///
+/// A tag is four columns and no argument. The ATTACHMENT is the whole problem:
+/// one tag goes on rows of many models, and a foreign key names a table, not a
+/// union. There is no polymorphic relation in this framework and adding one is
+/// not a small feature — it is the same wall `IDEAS/schema-variants.md` hits
+/// from the other side.
+///
+/// Three honest answers and none is free:
+///
+///   1. A JOIN TABLE PER TAGGABLE MODEL — `ProductTag`, `OrderTag`, `ContactTag`.
+///      Real foreign keys, so the database refuses a dangling attachment and
+///      `onDelete: Cascade` cleans up by itself. Costs one table per taggable
+///      model and a union query for *everything tagged `urgent`*.
+///
+///   2. ONE TABLE WITH AN EXCLUSIVE ARC — one `TagAttachment` carrying a nullable
+///      foreign key per taggable model and `@@arc([orderId, productId, …])`, which
+///      is a table CHECK saying exactly one is set. Keeps every foreign key and
+///      every cascade that 1 has, in one table, so *everything tagged `urgent`*
+///      is one query. Costs one COLUMN per taggable model rather than one table,
+///      and stops scaling somewhere around six — which is the signal that the set
+///      is open and you are in case 3.
+///
+///   3. ONE TABLE WITH A POLYMORPHIC SUBJECT — `subjectType` + `subjectId`, the
+///      shape `AuditEvent` already uses in this tree. One table, one query for
+///      the cross-model read, and NO referential integrity: nothing stops a row
+///      naming a model that does not exist or an id that has been deleted, and
+///      every read is a join the database cannot check.
+///
+/// **Reach for 2 first** whenever the taggable set is closed and small — it is
+/// the only one of the three that keeps integrity AND the cross-model query, and
+/// it is what `@@arc` was added for. **1** is worth it when the join rows need
+/// columns of their own that differ per model. **3 only when the set is open** —
+/// tagging as a platform feature, or a taggable list that grows without a schema
+/// change. The sketch below is 3, because that is the case a reference is useful
+/// for and the one whose costs need stating; 2 is written in `docs/schema.md`
+/// § *Exclusive foreign keys*, and 1 needs no reference, being ordinary join
+/// tables.
+///
+/// If you take 3, own the cost explicitly: something has to sweep attachments
+/// whose subject is gone, and *something* means a job, because the database will
+/// not. That sweep is the whole of what 1 and 2 get for free.
+///
+/// ─── What is deliberately NOT here ────────────────────────────────────────
+///
+/// **No `count`.** A denormalised total goes stale on every attach and detach
+/// and there is no trigger to keep it. `@from(TagAttachment, count: true)` is a
+/// correlated subquery and is always right.
+///
+/// **No `parent` for tag groups.** A hierarchy is a second feature with its own
+/// questions (does a child inherit the parent's attachments? does filtering by a
+/// parent match children?) and neither has an obvious answer. `group` below is a
+/// flat string, which covers "these tags are colours and those are statuses"
+/// without pretending to be a tree.
+model Tag {
+  id        Int      @id
+
+  /// The tenant, where there is one. A plain column, not a relation — this file
+  /// declares no tenant model. Wire it in your own schema.
+  ///
+  /// It is REQUIRED here, unlike `AuditEvent`'s: a tag with no owner is one
+  /// every tenant reads and any tenant can attach.
+  ownerId   String
+
+  name      String   @trim @length(1, 40) @label("Tag")
+
+  /// Flat, not a tree. "colour", "status", "priority" — what KIND of tag this
+  /// is, so a picker can offer one kind and a filter can ask for one.
+  group     String?  @length(1, 40)
+
+  /// A token name, never a hex value — Invariant 13. `danger`, `info`, `muted`.
+  /// A stored `#ff0000` is a tag that ignores the theme and is unreadable in
+  /// half of them.
+  color     String?  @length(1, 30)
+
+  createdAt DateTime @default(now())
+
+  /// Unique per OWNER and per group, not globally: two tenants both having
+  /// `urgent` is correct, and so is a `red` colour tag beside a `red` status.
+  ///
+  /// Note what this cannot say if `group` is nullable — two NULLs never compare
+  /// equal in SQL, so `(1, 'urgent', NULL)` would be admissible twice while the
+  /// same pair with a group is refused. Litestone refuses a composite `@@unique`
+  /// over a nullable column at parse for exactly that reason; state
+  /// `nullsDistinct: true` if you mean it, or make `group` required.
+  @@unique([ownerId, name, group], nullsDistinct: true)
+
+  /// Read 4 · create 4 · update 4 · delete 5.
+  ///
+  /// Anyone signed in reads and creates a tag; deleting one takes it off every
+  /// row it is attached to, which is why delete is a level higher.
+  @@gate("4.4.4.5")
+}
+
+/// The attachment. One row per (tag, thing).
+///
+/// Separate from `Tag` and not a `Json` array of ids on either side, for the
+/// reason every such array eventually teaches: an array cannot be indexed,
+/// joined, or counted, and litestone classifies a `Json` column as opaque — so
+/// it cannot be sorted or grouped by either.
+model TagAttachment {
+  id          Int      @id
+
+  /// Wire the relation to `Tag` in your own schema, where both models exist:
+  ///
+  ///   tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  ///
+  /// `Cascade` is the right action and is what makes deleting a tag a single
+  /// statement rather than a job.
+  tagId       Int
+
+  /// The polymorphic subject — same spelling as `AuditEvent`, which is the
+  /// catalogue's preference for anything new. `String` for the id because it
+  /// must hold whatever the taggable models use, and `Int` cannot hold a uuid
+  /// while `String` holds both.
+  ///
+  /// **Nothing enforces this pair.** That is the cost of answer 3 above, stated
+  /// where somebody copying the file will read it — and the reason to check
+  /// whether `@@arc` covers your taggable set before taking it.
+  subjectType String
+  subjectId   String
+
+  createdAt   DateTime @default(now())
+
+  /// One tag on one thing once. This is the constraint that makes attaching
+  /// idempotent, which every tag UI needs and few remember to ask for.
+  @@unique([tagId, subjectType, subjectId])
+
+  /// Two reads, two directions: this row's tags, and everything tagged X.
+  @@index([subjectType, subjectId])
+  @@index([tagId])
+
+  /// Read 4 · create 4 · update 9 · delete 4.
+  ///
+  /// Update is LOCKED because there is nothing on this row to edit — moving an
+  /// attachment is a delete and a create, and allowing an update means allowing
+  /// a row to be re-pointed at a subject the caller may not be able to read.
+  @@gate("4.4.9.4")
+}

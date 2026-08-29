@@ -38,8 +38,8 @@
 -->
 <script>
   import { createJunctionClient } from '@frontierjs/junction/client'
-  import { clientOptions }        from '../api.js'
-  import { priceRange }           from '../money.js'
+  import { clientOptions }        from '@/api.js'
+  import { priceRange }           from '@/money.js'
 
   export let products = []
 

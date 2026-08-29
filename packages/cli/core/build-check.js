@@ -359,8 +359,23 @@ export const isEnvFile = (path) => {
   return /^\.env(\..+)?$/i.test(name) && !DECLARATION.test(name)
 }
 
-/** A live database is the sharpest form of the same mistake — one deployment's state, in the artefact. */
-export const isStateFile = (path) => /\.(db|db-wal|db-shm|sqlite3?)$/i.test(path)
+/**
+ * A live database is the sharpest form of the same mistake — one deployment's
+ * state, in the artefact.
+ *
+ * The extensions are a LIST because two readers need them: this predicate, which
+ * grades a path, and `CONTEXT_FIND`, which is the same question spelled for
+ * `find`. They were written twice and disagreed — the finder listed `*.db` and
+ * not `*.db-wal`, so SQLite's own sidecars were invisible to the check that
+ * exists to catch them, and every deploy after the first shipped the running
+ * app's write-ahead log into the image. It also moved the image digest on every
+ * deploy, which is what made an unchanged redeploy mint a new Release.
+ */
+export const STATE_EXTENSIONS = ['db', 'db-wal', 'db-shm', 'sqlite', 'sqlite3']
+
+const STATE_RE = new RegExp(`\\.(${STATE_EXTENSIONS.join('|')})$`, 'i')
+
+export const isStateFile = (path) => STATE_RE.test(path)
 
 export const classifyContextFile = (path) =>
   isEnvFile(path) ? 'config' : isStateFile(path) ? 'state' : null
@@ -536,12 +551,14 @@ export function summarise(findings) {
 //
 // The context is not walked wholesale: a real app root holds node_modules, and
 // the only files that can bake a deployment into an image are the ones named
-// here. This is the same list `classifyContextFile` grades, spelled for `find`.
+// here — and it is BUILT from the same list `classifyContextFile` grades rather
+// than spelled beside it, because the two were written twice and disagreed.
 
 export const CONTEXT_FIND =
   `find . \\( -name node_modules -o -name .git -o -name dist \\) -prune -o -type f ` +
-  `\\( -name '.env' -o -name '.env.*' -o -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \\) ` +
-  `-print 2>/dev/null | head -200`
+  `\\( -name '.env' -o -name '.env.*' ` +
+  STATE_EXTENSIONS.map(e => `-o -name '*.${e}' `).join('') +
+  `\\) -print 2>/dev/null | head -200`
 
 /**
  * Assemble the four inputs from a `read(relativePath) → string | null` and a

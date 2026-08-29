@@ -2,14 +2,19 @@
   "name": "vscode-frontierjs",
   "displayName": "FrontierJS VSCode Plugin",
   "description": "Language support for Litestone (.lite) and (.mesa)",
-  "version": "0.1.0",
-  "publisher": "frontierjs",
+  "version": "0.1.1",
+  "publisher": "frontierJS",
   "license": "MIT",
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/frontierjs/vscode"
+    "url": "https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/frontierjs-vscode"
   },
+  "bugs": {
+    "url": "https://github.com/frontierJS/frontierjs/issues"
+  },
+  "homepage": "https://github.com/frontierJS/frontierjs/tree/main/packages/frontierjs-vscode#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -29,6 +34,16 @@
   "icon": "icons/frontierjs.png",
   "activationEvents": [],
   "main": "./out/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Mesa diagnostics run the WORKSPACE's own @frontierjs/mesa compiler, so opening a folder would execute code from it."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "The Litestone server is a node process and resolves imports and the Mesa compiler through the filesystem."
+    }
+  },
   "contributes": {
     "languages": [
       {
@@ -44,8 +59,8 @@
         ],
         "configuration": "./language-configuration/litestone.json",
         "icon": {
-          "light": "./icons/litestone-light.svg",
-          "dark": "./icons/litestone-dark.svg"
+          "light": "./icons/litestone.png",
+          "dark": "./icons/litestone.png"
         }
       },
       {
@@ -56,7 +71,11 @@
         "extensions": [
           ".mesa"
         ],
-        "configuration": "./language-configuration/mesa.json"
+        "configuration": "./language-configuration/mesa.json",
+        "icon": {
+          "light": "./icons/mesa.png",
+          "dark": "./icons/mesa.png"
+        }
       }
     ],
     "grammars": [

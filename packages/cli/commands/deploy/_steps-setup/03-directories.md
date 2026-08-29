@@ -7,6 +7,7 @@ description: Create the app directory structure on the server
 if (context.config.abort) return
 
 const { host, serverPath } = context.config
+const machine = machineFor(context, host, serverPath)
 
 log.info(`Creating directory structure at ${serverPath}...`)
 
@@ -17,12 +18,11 @@ const dirs = [
   `${serverPath}/web`,
 ].join(' ')
 
-context.exec({ command: `ssh ${host} "mkdir -p ${dirs}"` })
+machine.run(`mkdir -p ${dirs}`)
 
 // Create a placeholder .env.production if it doesn't exist yet
 const envFile = `${serverPath}/.env.production`
-const envCheck = `[ -f ${envFile} ] || echo "# Add your production env vars here" > ${envFile}`
-context.exec({ command: `ssh ${host} "${envCheck}"` })
+machine.run(`[ -f ${envFile} ] || echo "# Add your production env vars here" > ${envFile}`)
 
 log.success('Directories ready')
 log.info(`  ${serverPath}/db          ← SQLite database`)

@@ -3,8 +3,8 @@ title: Orders
 ---
 <script>
   import { orders } from '../../resources/Order.mesa'
-  import { session } from '../../session.js'
-  import { prefs } from '../../prefs.js'
+  import { session } from '@/session.js'
+  import { prefs } from '@/prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -211,7 +211,7 @@ title: Orders
         {#if prefs.quickView}
           <Button variant="link" onclick={() => peek = order}><Mono>{order.reference}</Mono></Button>
         {:else}
-          <a href={'/orders/' + order.id + '/'}><Mono>{order.reference}</Mono></a>
+          <a class="link" href={'/orders/' + order.id + '/'}><Mono>{order.reference}</Mono></a>
         {/if}
       </td>
       <td><Pill tone={tone(order.status)}>{order.status}</Pill></td>

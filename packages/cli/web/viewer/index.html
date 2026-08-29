@@ -310,6 +310,7 @@
       <span class="text-sm text-muted">chain of responsibility</span>
     </div>
     <div class="cluster gap-2xs">
+      <span class="badge muted" id="live-badge" role="status" title="Is the app this page maps actually running?">…</span>
       <span class="badge" id="env-badge" role="status">env …</span>
       <label class="visually-hidden" for="theme-select">Theme</label>
       <select class="field text-xs" id="theme-select" onchange="setTheme(this.value)" style="inline-size:8rem"></select>
@@ -540,11 +541,53 @@ function collectIssues({ services, resources, surface, models, env, packages }) 
 function render() {
   $('app-name').textContent = MODEL.name
   renderEnvBadge()
+  renderLive()
   renderChain()
   renderDetail()
   renderPanels()
   paintCode()
 }
+
+// ─── Is it actually running? ──────────────────────────────────────────────────
+//
+// This page is read off FILES, so it draws a complete chain of responsibility
+// for an app that is not started and looks identical either way. The surfaces
+// and their ports come from the same inventory the fli GUI's dashboard uses,
+// and the probe is the same one, so there is one answer to *is it answering*
+// rather than two that can disagree.
+//
+// Polled rather than read once: the interesting moment is the one where
+// somebody starts the app in the next window.
+
+const LIVE_POLL_MS = 4000
+let liveRows = []
+
+async function renderLive() {
+  const el = $('live-badge')
+  try {
+    const { rows, state } = await fetch('/state').then(r => r.json())
+    liveRows = rows.map(r => ({ ...r, state: state[r.id]?.state ?? 'unknown' }))
+
+    const up = liveRows.filter(r => r.state === 'up')
+    el.className   = `badge ${up.length ? 'success' : 'muted'}`
+    el.textContent = up.length
+      ? `${up.map(r => r.name).join(' · ')} up`
+      : 'nothing running'
+    // The ports are the useful half — a person reading this map is about to go
+    // and open one of them.
+    el.title = liveRows.map(r => `${r.dir}/${r.name} :${r.port} — ${r.state}`).join('\n')
+  } catch {
+    // The endpoint is this server's own, so a failure here is this server, not
+    // the app. Saying nothing is better than saying the app is down.
+    el.className   = 'badge muted'
+    el.textContent = 'state unavailable'
+  }
+}
+
+// One timer for the life of the page. Started here rather than inside
+// `renderLive`, which is called on every render and would otherwise stack a
+// second poller on each one.
+setInterval(renderLive, LIVE_POLL_MS)
 
 function renderEnvBadge() {
   const el   = $('env-badge')

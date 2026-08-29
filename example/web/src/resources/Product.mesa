@@ -8,3 +8,42 @@
 
   export const products = createResource('products')
 </script>
+
+<script>
+  // …and the markup half is this model's DEFAULT form (repo Invariant 18).
+  //
+  // It is here rather than on the create page because there is nothing on it a
+  // screen decides. `<Form>` with no children renders every WRITABLE column in
+  // schema order — `name`, `slug`, `description`, `brand`, `active` — and the
+  // other nine are absent without a word from anywhere: `id` is `@id`,
+  // `createdAt` is `@default(now())`, `deletedAt` belongs to `@@softDelete`,
+  // `version` is `@version`, `variants`/`images` are relations, and
+  // `variantCount`, `priceFrom`, `priceTo` and `onHand` are `@from` aggregates.
+  // All of them reach the browser as `readOnly`, and the control table has no
+  // control for a readOnly field.
+  //
+  // What a page states is what a page knows: where to go afterwards, what the
+  // button says, where Cancel leads. The FIELDS are the model's, so a create
+  // page and an edit page are the same tag with a different `method` — which
+  // is the whole reason this markup is not on either of them.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined   // absent → Form makes one from the schema
+  export let method      = undefined   // Form's auto | create | patch
+  export let submitLabel = 'Save'
+  export let cancelHref  = null        // Cancel navigates…
+  export let oncancel    = null        // …or calls back, for a drawer
+  export let submitId    = undefined   // a drive needs to find the button
+  export let actions     = null        // snippet — replaces the whole button row
+
+  // Everything else — class, style, ondone, onerror, showError — rides
+  // $attributes onto <Form>, which is where those props are declared. A caller
+  // wanting entirely different buttons passes an `actions` snippet the same
+  // way: <Form> takes a snippet prop over its own slot.
+</script>
+
+<Form resource={products} bind:record={record} {method} {actions} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

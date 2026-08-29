@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Studio's Explore panel, which also places a word into your schema and shows you
 the diff first.
 
-**96 words** — 11 declarations · 60 field attributes · 25 model attributes.
+**97 words** — 11 declarations · 60 field attributes · 26 model attributes.
 
 ## Index
 
@@ -39,7 +39,7 @@ the diff first.
 
 **Model attributes**
 
-- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@strict`](#strict-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@softDelete`](#softdelete-model) · [`@@softDeleteCascade`](#softdeletecascade-model) · [`@@hasTemplates`](#hastemplates-model)
+- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@strict`](#strict-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@softDelete`](#softdelete-model) · [`@@softDeleteCascade`](#softdeletecascade-model) · [`@@hasTemplates`](#hastemplates-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
@@ -1166,6 +1166,22 @@ model Example {
 
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@check`](#check-field)
+
+#### `@@arc` `([field, …][, optional: true])` <a id="arc-model"></a>
+
+An exclusive arc — several optional foreign keys, of which exactly one is set. The answer to "this row points at an Order OR a Product" that keeps a real foreign key, a real `onDelete` and a real `include`, where a polymorphic (typeName, id) pair keeps none of the three and the database cannot refuse a dangling one. Emitted as a table CHECK counting the non-null members, so it holds against a migration, a seed, an atomic operator and `asSystem()`, which drops the gate and every row policy and cannot drop a CHECK. `optional: true` relaxes it to at most one, for a row that may point at nothing. Members must exist and be optional; a required member is always the answer and is refused at parse. Costs one column per member and does not scale far — needing many is the signal the target set is open, which no relation can serve.
+
+```lite
+model Example {
+  id Int @id
+  orderId Int?
+  productId Int?
+  @@arc([orderId, productId])
+}
+```
+
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@check`](#check-field) · [`@relation`](#relation-field)
 
 #### `@@map` `("table_name")` <a id="map-model"></a>
 

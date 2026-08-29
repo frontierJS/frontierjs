@@ -14,6 +14,9 @@ export type TargetKind =
   | 'outpost'     // remote server outpost
   | 'local'     // local unix process
 
+import type { BodyEncoding } from './transports/encode.ts'
+export type { BodyEncoding }
+
 // ─── Target ─────────────────────────────────────────────────
 
 // Targets carry a *reference* to a credential, never the credential
@@ -38,6 +41,20 @@ export interface TargetDescriptor {
   protocol:        Protocol
   address:         string
   auth:            TargetAuth
+
+  // How this target's request bodies go on the wire. Defaults to 'json'.
+  //
+  // 'form' is `application/x-www-form-urlencoded` — Stripe, PayPal, Twilio and
+  // every OAuth token endpoint. A property of the TARGET rather than of a call,
+  // because it is a fact about who is on the other end; a provider that wanted
+  // both would be a second target, which is also how its credentials differ.
+  //
+  // It is here and not in the caller because the encoded body is the same string
+  // the HMAC signer hashes — encoding anywhere else signs bytes that were never
+  // sent (`FJS-D153`). Response decoding is unaffected and stays content-type
+  // driven: a form-encoded API almost always answers JSON.
+  encoding?:       BodyEncoding
+
   registered_at:   number        // unix ms
   last_seen_at:    number | null
 }

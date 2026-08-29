@@ -1,0 +1,5399 @@
+// discourse — the data model of discourse/discourse, expressed in .lite.
+//
+// Derived mechanically from db/structure.sql (GPL-2.0) by
+// sql-to-lite.mjs beside this file. A CORPUS FIXTURE, not a design:
+// nothing here is a claim about how any of it should be modelled, and every
+// place the conversion made a choice the source did not is recorded in
+// gaps.json. 356 models. Regenerate with fetch.mjs.
+
+enum AiModerationSettingType {
+  spam
+  nsfw
+  custom
+}
+
+enum HotlinkedMediaStatus {
+  downloaded
+  too_large
+  download_failed
+  upload_create_failed
+}
+
+model AccessControlList {
+  id Int @id
+  targetType String @map("target_type")
+  targetId Int @map("target_id")
+  owner String
+  permission String
+  allowedUserIds Int[] @map("allowed_user_ids")
+  allowedGroupIds Int[] @map("allowed_group_ids")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([allowedGroupIds])
+  @@index([allowedUserIds])
+  @@unique([targetType, targetId, permission])
+}
+
+model AdPluginHouseAd {
+  id Int @id
+  name String
+  html String
+  visibleToLoggedInUsers Boolean @map("visible_to_logged_in_users") @default(true)
+  visibleToAnons Boolean @map("visible_to_anons") @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([name])
+  @@index([visibleToAnons])
+  @@index([visibleToLoggedInUsers])
+}
+
+model AdPluginHouseAdsCategory {
+  id String @id @default(cuid())
+  adPluginHouseAdId Int @map("ad_plugin_house_ad_id")
+  adPluginHouseAd AdPluginHouseAd @relation(fields: [adPluginHouseAdId], references: [id], onDelete: Cascade)
+  categoryId Int @map("category_id")
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([adPluginHouseAdId, categoryId])
+}
+
+model AdPluginHouseAdsGroup {
+  id String @id @default(cuid())
+  adPluginHouseAdId Int @map("ad_plugin_house_ad_id")
+  adPluginHouseAd AdPluginHouseAd @relation(fields: [adPluginHouseAdId], references: [id], onDelete: Cascade)
+  groupId Int @map("group_id")
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([adPluginHouseAdId, groupId])
+}
+
+model AdPluginHouseAdsRoute {
+  id String @id @default(cuid())
+  adPluginHouseAdId Int @map("ad_plugin_house_ad_id")
+  adPluginHouseAd AdPluginHouseAd @relation(fields: [adPluginHouseAdId], references: [id])
+  routeName String @map("route_name")
+
+  @@unique([adPluginHouseAdId, routeName])
+}
+
+model AdPluginImpression {
+  id Int @id
+  adType Int @map("ad_type")
+  adPluginHouseAdId Int? @map("ad_plugin_house_ad_id")
+  adPluginHouseAd AdPluginHouseAd? @relation(fields: [adPluginHouseAdId], references: [id], onDelete: Cascade)
+  placement String
+  userId Int? @map("user_id")
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  clickedAt DateTime? @map("clicked_at")
+
+  @@index([adPluginHouseAdId])
+  @@index([adType])
+  @@index([adType, placement])
+  @@index([clickedAt])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model AdminDashboardReport {
+  id Int @id
+  position Int
+  source String
+  identifier String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([position])
+  @@unique([source, identifier])
+}
+
+model AdminDashboardSection {
+  id Int @id
+  sectionId String @map("section_id")
+  position Int
+  visible Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  settings Json
+
+  @@unique([sectionId])
+}
+
+model AdminNotice {
+  id Int @id
+  subject Int
+  priority Int
+  identifier String
+  details Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([identifier])
+  @@index([subject])
+}
+
+model AiAgentMcpServer {
+  id Int @id
+  aiAgentId Int @map("ai_agent_id")
+  aiMcpServerId Int @map("ai_mcp_server_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  selectedToolNames Json? @map("selected_tool_names")
+
+  @@unique([aiAgentId, aiMcpServerId])
+  @@index([aiMcpServerId])
+}
+
+model AiAgent {
+  id Int @id
+  name String
+  description String
+  systemPrompt String @map("system_prompt")
+  allowedGroupIds Int[] @map("allowed_group_ids")
+  createdById Int? @map("created_by_id")
+  enabled Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  system Boolean @default(false)
+  priority Boolean @default(false)
+  temperature Float?
+  topP Float? @map("top_p")
+  userId Int? @map("user_id")
+  visionEnabled Boolean @map("vision_enabled") @default(false)
+  visionMaxPixels Int @map("vision_max_pixels") @default(1048576)
+  ragChunkTokens Int @map("rag_chunk_tokens") @default(374)
+  ragChunkOverlapTokens Int @map("rag_chunk_overlap_tokens") @default(10)
+  ragConversationChunks Int @map("rag_conversation_chunks") @default(10)
+  tools Json @default("[]")
+  forcedToolCount Int @map("forced_tool_count") @default("-1")
+  allowChatChannelMentions Boolean @map("allow_chat_channel_mentions") @default(false)
+  allowChatDirectMessages Boolean @map("allow_chat_direct_messages") @default(false)
+  allowTopicMentions Boolean @map("allow_topic_mentions") @default(false)
+  allowPersonalMessages Boolean @map("allow_personal_messages") @default(true)
+  forceDefaultLlm Boolean @map("force_default_llm") @default(false)
+  ragLlmModelId Int? @map("rag_llm_model_id")
+  defaultLlmId Int? @map("default_llm_id")
+  questionConsolidatorLlmId Int? @map("question_consolidator_llm_id")
+  responseFormat Json? @map("response_format")
+  examples Json?
+  showThinking Boolean @map("show_thinking") @default(true)
+  maxTurnTokens Int? @map("max_turn_tokens")
+  compressionThreshold Int @map("compression_threshold") @default(80)
+  requireApproval Boolean @map("require_approval") @default(false)
+  thinkingEffort String? @map("thinking_effort")
+  subagentIds Int[] @map("subagent_ids")
+
+  @@unique([name])
+}
+
+model AiApiAuditLog {
+  id Int @id
+  providerId Int @map("provider_id")
+  userId Int? @map("user_id")
+  requestTokens Int? @map("request_tokens")
+  responseTokens Int? @map("response_tokens")
+  rawRequestPayload String? @map("raw_request_payload")
+  rawResponsePayload String? @map("raw_response_payload")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  topicId Int? @map("topic_id")
+  postId Int? @map("post_id")
+  featureName String? @map("feature_name")
+  languageModel String? @map("language_model")
+  featureContext Json? @map("feature_context")
+  durationMsecs Int? @map("duration_msecs")
+  cacheWriteTokens Int? @map("cache_write_tokens")
+  cacheReadTokens Int? @map("cache_read_tokens")
+  llmId Int? @map("llm_id")
+  responseStatus Int? @map("response_status")
+  requestAttempts Json? @map("request_attempts")
+  estimatedCost Float? @map("estimated_cost")
+  timeToFirstTokenMsecs Int? @map("time_to_first_token_msecs")
+
+  @@index([id])
+  @@index([featureName, id])
+  @@index([userId, id])
+  @@index([createdAt, featureName])
+  @@index([createdAt, languageModel])
+  @@index([createdAt, userId])
+  @@index([llmId])
+  @@index([postId])
+  @@index([topicId])
+}
+
+model AiApiRequestStat {
+  id Int @id
+  bucketDate DateTime @map("bucket_date")
+  userId Int? @map("user_id")
+  providerId Int @map("provider_id")
+  llmId Int? @map("llm_id")
+  languageModel String? @map("language_model")
+  featureName String? @map("feature_name")
+  requestTokens Int @map("request_tokens") @default(0)
+  responseTokens Int @map("response_tokens") @default(0)
+  cacheReadTokens Int @map("cache_read_tokens") @default(0)
+  cacheWriteTokens Int @map("cache_write_tokens") @default(0)
+  usageCount Int @map("usage_count") @default(1)
+  rolledUp Boolean @map("rolled_up") @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  estimatedCost Float? @map("estimated_cost")
+
+  @@index([bucketDate, featureName])
+  @@index([bucketDate, languageModel])
+  @@index([bucketDate, llmId])
+  @@index([bucketDate, rolledUp])
+  @@index([bucketDate, userId])
+  @@index([createdAt, featureName])
+  @@index([createdAt, languageModel])
+  @@index([createdAt, userId])
+}
+
+model AiArtifactKeyValue {
+  id Int @id
+  aiArtifactId Int @map("ai_artifact_id")
+  userId Int @map("user_id")
+  key String
+  value String
+  public Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([aiArtifactId, userId, key])
+}
+
+model AiArtifactVersion {
+  id Int @id
+  aiArtifactId Int @map("ai_artifact_id")
+  versionNumber Int @map("version_number")
+  html String?
+  css String?
+  js String?
+  metadata Json?
+  changeDescription String? @map("change_description")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([aiArtifactId, versionNumber])
+}
+
+model AiArtifact {
+  id Int @id
+  userId Int @map("user_id")
+  postId Int @map("post_id")
+  name String
+  html String?
+  css String?
+  js String?
+  metadata Json?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model AiDocumentFragmentsEmbedding {
+  id String @id @default(cuid())
+  ragDocumentFragmentId Int @map("rag_document_fragment_id")
+  modelId Int @map("model_id")
+  modelVersion Int @map("model_version")
+  strategyId Int @map("strategy_id")
+  strategyVersion Int @map("strategy_version")
+  digest String
+  embeddings String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([modelId, strategyId, ragDocumentFragmentId])
+}
+
+model AiMcpOauthToken {
+  id Int @id
+  aiMcpServerId Int @map("ai_mcp_server_id")
+  accessToken String? @map("access_token")
+  refreshToken String? @map("refresh_token")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([aiMcpServerId])
+}
+
+model AiMcpServer {
+  id Int @id
+  name String
+  description String
+  url String
+  aiSecretId Int? @map("ai_secret_id")
+  authHeader String @map("auth_header") @default("Authorization")
+  authScheme String @map("auth_scheme") @default("Bearer")
+  enabled Boolean @default(true)
+  timeoutSeconds Int @map("timeout_seconds") @default(30)
+  lastHealthStatus String? @map("last_health_status")
+  lastHealthError String? @map("last_health_error")
+  lastCheckedAt DateTime? @map("last_checked_at")
+  lastToolsSyncedAt DateTime? @map("last_tools_synced_at")
+  serverCapabilities Json @map("server_capabilities")
+  protocolVersion String? @map("protocol_version")
+  createdById Int? @map("created_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  authType String @map("auth_type") @default("header_secret")
+  oauthClientRegistration String? @map("oauth_client_registration") @default("client_metadata_document")
+  oauthClientId String? @map("oauth_client_id")
+  oauthClientSecretAiSecretId Int? @map("oauth_client_secret_ai_secret_id")
+  oauthScopes String? @map("oauth_scopes")
+  oauthGrantedScopes String? @map("oauth_granted_scopes")
+  oauthTokenType String? @map("oauth_token_type")
+  oauthAccessTokenExpiresAt DateTime? @map("oauth_access_token_expires_at")
+  oauthAuthorizationEndpoint String? @map("oauth_authorization_endpoint")
+  oauthTokenEndpoint String? @map("oauth_token_endpoint")
+  oauthRevocationEndpoint String? @map("oauth_revocation_endpoint")
+  oauthIssuer String? @map("oauth_issuer")
+  oauthResourceMetadataUrl String? @map("oauth_resource_metadata_url")
+  oauthStatus String @map("oauth_status") @default("disconnected")
+  oauthLastError String? @map("oauth_last_error")
+  oauthLastAuthorizedAt DateTime? @map("oauth_last_authorized_at")
+  oauthLastRefreshedAt DateTime? @map("oauth_last_refreshed_at")
+  oauthRegistrationEndpoint String? @map("oauth_registration_endpoint")
+  oauthAuthorizationParams Json @map("oauth_authorization_params")
+  oauthTokenParams Json @map("oauth_token_params")
+  oauthRequireRefreshToken Boolean @map("oauth_require_refresh_token") @default(false)
+  oauthTokenEndpointAuthMethodsSupported Json @map("oauth_token_endpoint_auth_methods_supported") @default("[]")
+
+  @@index([aiSecretId])
+  @@unique([name])
+  @@index([oauthClientSecretAiSecretId])
+}
+
+model AiModerationSetting {
+  id Int @id
+  settingType AiModerationSettingType @map("setting_type")
+  data Json?
+  llmModelId Int @map("llm_model_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  aiAgentId Int @map("ai_agent_id") @default("-31")
+
+  @@unique([settingType])
+}
+
+model AiPostImageCaption {
+  id Int @id
+  postId Int @map("post_id")
+  uploadId Int @map("upload_id")
+  base62Sha1 String @map("base62_sha1")
+  locale String
+  description String?
+  attempts Int @default(0)
+  lastAttemptedAt DateTime? @map("last_attempted_at")
+  lastError String? @map("last_error")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([postId, locale, base62Sha1])
+  @@index([base62Sha1, locale])
+}
+
+model AiPostsEmbedding {
+  id String @id @default(cuid())
+  postId Int @map("post_id")
+  modelId Int @map("model_id")
+  modelVersion Int @map("model_version")
+  strategyId Int @map("strategy_id")
+  strategyVersion Int @map("strategy_version")
+  digest String
+  embeddings String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([modelId, strategyId, postId])
+}
+
+model AiSecret {
+  id Int @id
+  name String
+  secret String
+  createdById Int? @map("created_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([name])
+}
+
+model AiSpamLog {
+  id Int @id
+  postId Int @map("post_id")
+  llmModelId Int @map("llm_model_id")
+  aiApiAuditLogId Int? @map("ai_api_audit_log_id")
+  reviewableId Int? @map("reviewable_id")
+  isSpam Boolean @map("is_spam")
+  payload String @default("")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  error String?
+  reason String?
+
+  @@index([postId])
+}
+
+model AiSummary {
+  id Int @id
+  targetId Int @map("target_id")
+  targetType String @map("target_type")
+  summarizedText String @map("summarized_text")
+  originalContentSha String @map("original_content_sha")
+  algorithm String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  summaryType Int @map("summary_type") @default(0)
+  origin Int?
+  highestTargetNumber Int @map("highest_target_number") @default(1)
+  locale String?
+
+  @@index([targetType, targetId])
+}
+
+model AiToolAction {
+  id Int @id
+  toolName String @map("tool_name")
+  toolParameters Json @map("tool_parameters")
+  aiAgentId Int @map("ai_agent_id")
+  aiAgent AiAgent @relation(fields: [aiAgentId], references: [id])
+  botUserId Int @map("bot_user_id")
+  postId Int? @map("post_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([aiAgentId])
+}
+
+model AiToolSecretBinding {
+  id Int @id
+  aiToolId Int @map("ai_tool_id")
+  alias String
+  aiSecretId Int @map("ai_secret_id")
+  createdById Int? @map("created_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([aiSecretId])
+  @@index([aiToolId])
+  @@unique([aiToolId, alias])
+}
+
+model AiTool {
+  id Int @id
+  name String
+  description String
+  summary String
+  parameters Json
+  script String
+  createdById Int @map("created_by_id")
+  enabled Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  ragChunkTokens Int @map("rag_chunk_tokens") @default(374)
+  ragChunkOverlapTokens Int @map("rag_chunk_overlap_tokens") @default(10)
+  toolName String @map("tool_name") @default("")
+  ragLlmModelId Int? @map("rag_llm_model_id")
+  isImageGenerationTool Boolean @map("is_image_generation_tool") @default(false)
+  secretContracts Json @map("secret_contracts") @default("[]")
+}
+
+model AiTopicsEmbedding {
+  id String @id @default(cuid())
+  topicId Int @map("topic_id")
+  modelId Int @map("model_id")
+  modelVersion Int @map("model_version")
+  strategyId Int @map("strategy_id")
+  strategyVersion Int @map("strategy_version")
+  digest String
+  embeddings String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([modelId, strategyId, topicId])
+  @@index([topicId, modelId])
+}
+
+model AllowedPmUser {
+  id Int @id
+  userId Int @map("user_id")
+  allowedPmUserId Int @map("allowed_pm_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([allowedPmUserId, userId])
+  @@unique([userId, allowedPmUserId])
+}
+
+model AnonymousUser {
+  id Int @id
+  userId Int @map("user_id")
+  masterUserId Int @map("master_user_id")
+  active Boolean
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([userId])
+}
+
+model ApiKeyScope {
+  id Int @id
+  apiKeyId Int @map("api_key_id")
+  resource String
+  action String
+  allowedParameters Json? @map("allowed_parameters")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([apiKeyId])
+}
+
+model ApiKey {
+  id Int @id
+  userId Int? @map("user_id")
+  createdById Int? @map("created_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  allowedIps String[]? @map("allowed_ips")
+  hidden Boolean @default(false)
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt DateTime? @map("revoked_at")
+  description String?
+  keyHash String @map("key_hash")
+  truncatedKey String @map("truncated_key")
+  scopeMode Int? @map("scope_mode")
+
+  @@index([keyHash])
+  @@index([userId])
+}
+
+model ApplicationRequest {
+  id Int @id
+  date DateTime
+  reqType Int @map("req_type")
+  count Int @default(0)
+
+  @@unique([date, reqType])
+}
+
+model ArInternalMetadata {
+  key String @id
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model Assignment {
+  id Int @id
+  topicId Int @map("topic_id")
+  assignedToId Int @map("assigned_to_id")
+  assignedByUserId Int @map("assigned_by_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  assignedToType String @map("assigned_to_type")
+  targetId Int @map("target_id")
+  targetType String @map("target_type")
+  active Boolean? @default(true)
+  note String?
+  status String?
+
+  @@index([active])
+  @@index([assignedToId, assignedToType])
+  @@unique([targetId, targetType])
+  @@index([topicId])
+  @@unique([assignedToId, assignedToType, targetId, targetType])
+}
+
+model AssociatedGroup {
+  id Int @id
+  name String
+  providerName String @map("provider_name")
+  providerId String @map("provider_id")
+  lastUsed DateTime @map("last_used") @default(now())
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([providerName, providerId])
+}
+
+model BackupDraftPost {
+  id Int @id
+  userId Int @map("user_id")
+  postId Int @map("post_id")
+  key String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([postId])
+  @@unique([userId, key])
+}
+
+model BackupDraftTopic {
+  id Int @id
+  userId Int @map("user_id")
+  topicId Int @map("topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([topicId])
+  @@unique([userId])
+}
+
+model BackupMetadata {
+  id Int @id
+  name String
+  value String?
+}
+
+model BadgeGrouping {
+  id Int @id
+  name String
+  description String?
+  position Int
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model Category {
+  id Int @id
+  name String
+  color String @default("0088CC")
+  topicId Int? @map("topic_id")
+  topicCount Int @map("topic_count") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  userId Int @map("user_id")
+  topicsYear Int? @map("topics_year") @default(0)
+  topicsMonth Int? @map("topics_month") @default(0)
+  topicsWeek Int? @map("topics_week") @default(0)
+  slug String
+  description String?
+  textColor String @map("text_color") @default("FFFFFF")
+  readRestricted Boolean @map("read_restricted") @default(false)
+  autoCloseHours Float? @map("auto_close_hours")
+  postCount Int @map("post_count") @default(0)
+  latestPostId Int? @map("latest_post_id")
+  latestTopicId Int? @map("latest_topic_id")
+  position Int?
+  parentCategoryId Int? @map("parent_category_id")
+  postsYear Int? @map("posts_year") @default(0)
+  postsMonth Int? @map("posts_month") @default(0)
+  postsWeek Int? @map("posts_week") @default(0)
+  emailIn String? @map("email_in")
+  emailInAllowStrangers Boolean? @map("email_in_allow_strangers") @default(false)
+  topicsDay Int? @map("topics_day") @default(0)
+  postsDay Int? @map("posts_day") @default(0)
+  allowBadges Boolean @map("allow_badges") @default(true)
+  nameLower String @map("name_lower")
+  autoCloseBasedOnLastPost Boolean? @map("auto_close_based_on_last_post") @default(false)
+  topicTemplate String? @map("topic_template")
+  containsMessages Boolean? @map("contains_messages")
+  sortOrder String? @map("sort_order")
+  sortAscending Boolean? @map("sort_ascending")
+  uploadedLogoId Int? @map("uploaded_logo_id")
+  uploadedBackgroundId Int? @map("uploaded_background_id")
+  topicFeaturedLinkAllowed Boolean? @map("topic_featured_link_allowed") @default(true)
+  allTopicsWiki Boolean @map("all_topics_wiki") @default(false)
+  showSubcategoryList Boolean? @map("show_subcategory_list") @default(false)
+  numFeaturedTopics Int? @map("num_featured_topics") @default(3)
+  defaultView String? @map("default_view")
+  subcategoryListStyle String? @map("subcategory_list_style") @default("rows_with_featured_topics")
+  defaultTopPeriod String? @map("default_top_period") @default("all")
+  mailinglistMirror Boolean @map("mailinglist_mirror") @default(false)
+  minimumRequiredTags Int @map("minimum_required_tags") @default(0)
+  navigateToFirstPostAfterRead Boolean @map("navigate_to_first_post_after_read") @default(false)
+  searchPriority Int? @map("search_priority") @default(0)
+  allowGlobalTags Boolean @map("allow_global_tags") @default(false)
+  reviewableByGroupId Int? @map("reviewable_by_group_id")
+  readOnlyBanner String? @map("read_only_banner")
+  defaultListFilter String? @map("default_list_filter") @default("all")
+  allowUnlimitedOwnerEditsOnFirstPost Boolean @map("allow_unlimited_owner_edits_on_first_post") @default(false)
+  defaultSlowModeSeconds Int? @map("default_slow_mode_seconds")
+  uploadedLogoDarkId Int? @map("uploaded_logo_dark_id")
+  uploadedBackgroundDarkId Int? @map("uploaded_background_dark_id")
+  styleType Int @map("style_type") @default(0)
+  emoji String?
+  icon String?
+  locale String?
+  topicTitlePlaceholder String? @map("topic_title_placeholder")
+
+  @@unique([emailIn])
+  @@index([reviewableByGroupId])
+  @@index([searchPriority])
+  @@index([topicCount])
+}
+
+model Post {
+  id Int @id
+  userId Int? @map("user_id")
+  topicId Int @map("topic_id")
+  postNumber Int @map("post_number")
+  raw String
+  cooked String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  replyToPostNumber Int? @map("reply_to_post_number")
+  replyCount Int @map("reply_count") @default(0)
+  quoteCount Int @map("quote_count") @default(0)
+  deletedAt DateTime? @map("deleted_at")
+  offTopicCount Int @map("off_topic_count") @default(0)
+  likeCount Int @map("like_count") @default(0)
+  incomingLinkCount Int @map("incoming_link_count") @default(0)
+  bookmarkCount Int @map("bookmark_count") @default(0)
+  score Float?
+  reads Int @default(0)
+  postType Int @map("post_type") @default(1)
+  sortOrder Int? @map("sort_order")
+  lastEditorId Int? @map("last_editor_id")
+  hidden Boolean @default(false)
+  hiddenReasonId Int? @map("hidden_reason_id")
+  notifyModeratorsCount Int @map("notify_moderators_count") @default(0)
+  spamCount Int @map("spam_count") @default(0)
+  illegalCount Int @map("illegal_count") @default(0)
+  inappropriateCount Int @map("inappropriate_count") @default(0)
+  lastVersionAt DateTime @map("last_version_at")
+  userDeleted Boolean @map("user_deleted") @default(false)
+  replyToUserId Int? @map("reply_to_user_id")
+  percentRank Float? @map("percent_rank") @default(1.0)
+  notifyUserCount Int @map("notify_user_count") @default(0)
+  likeScore Int @map("like_score") @default(0)
+  deletedById Int? @map("deleted_by_id")
+  editReason String? @map("edit_reason")
+  wordCount Int? @map("word_count")
+  version Int @default(1)
+  cookMethod Int @map("cook_method") @default(1)
+  wiki Boolean @default(false)
+  bakedAt DateTime? @map("baked_at")
+  bakedVersion Int? @map("baked_version")
+  hiddenAt DateTime? @map("hidden_at")
+  selfEdits Int @map("self_edits") @default(0)
+  replyQuoted Boolean @map("reply_quoted") @default(false)
+  viaEmail Boolean @map("via_email") @default(false)
+  rawEmail String? @map("raw_email")
+  publicVersion Int @map("public_version") @default(1)
+  actionCode String? @map("action_code")
+  lockedById Int? @map("locked_by_id")
+  imageUploadId Int? @map("image_upload_id")
+  qaVoteCount Int? @map("qa_vote_count") @default(0)
+  outboundMessageId String? @map("outbound_message_id")
+  locale String?
+
+  @@index([createdAt, topicId])
+  @@index([topicId, postNumber])
+  @@index([userId])
+  @@index([id])
+  @@index([deletedById])
+  @@index([id, bakedVersion])
+  @@index([id, topicId])
+  @@index([imageUploadId])
+  @@index([lastEditorId])
+  @@index([locale])
+  @@index([lockedById])
+  @@index([replyToUserId])
+  @@index([topicId, createdAt])
+  @@index([topicId, percentRank])
+  @@unique([topicId, postNumber])
+  @@index([topicId, replyToPostNumber])
+  @@index([topicId, sortOrder])
+  @@index([updatedAt])
+  @@index([userId, createdAt])
+  @@index([userId, likeCount, createdAt])
+}
+
+model Topic {
+  id Int @id
+  title String
+  lastPostedAt DateTime? @map("last_posted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  views Int @default(0)
+  postsCount Int @map("posts_count") @default(0)
+  userId Int? @map("user_id")
+  lastPostUserId Int @map("last_post_user_id")
+  replyCount Int @map("reply_count") @default(0)
+  featuredUser1Id Int? @map("featured_user1_id")
+  featuredUser2Id Int? @map("featured_user2_id")
+  featuredUser3Id Int? @map("featured_user3_id")
+  deletedAt DateTime? @map("deleted_at")
+  highestPostNumber Int @map("highest_post_number") @default(0)
+  likeCount Int @map("like_count") @default(0)
+  incomingLinkCount Int @map("incoming_link_count") @default(0)
+  categoryId Int? @map("category_id")
+  visible Boolean @default(true)
+  moderatorPostsCount Int @map("moderator_posts_count") @default(0)
+  closed Boolean @default(false)
+  archived Boolean @default(false)
+  bumpedAt DateTime @map("bumped_at")
+  hasSummary Boolean @map("has_summary") @default(false)
+  archetype String @default("regular")
+  featuredUser4Id Int? @map("featured_user4_id")
+  notifyModeratorsCount Int @map("notify_moderators_count") @default(0)
+  spamCount Int @map("spam_count") @default(0)
+  pinnedAt DateTime? @map("pinned_at")
+  score Float?
+  percentRank Float @map("percent_rank") @default(1.0)
+  subtype String?
+  slug String?
+  deletedById Int? @map("deleted_by_id")
+  participantCount Int? @map("participant_count") @default(1)
+  wordCount Int? @map("word_count")
+  excerpt String?
+  pinnedGlobally Boolean @map("pinned_globally") @default(false)
+  pinnedUntil DateTime? @map("pinned_until")
+  fancyTitle String? @map("fancy_title")
+  highestStaffPostNumber Int @map("highest_staff_post_number") @default(0)
+  featuredLink String? @map("featured_link")
+  reviewableScore Float @map("reviewable_score") @default(0.0)
+  imageUploadId Int? @map("image_upload_id")
+  slowModeSeconds Int @map("slow_mode_seconds") @default(0)
+  banneredUntil DateTime? @map("bannered_until")
+  externalId String? @map("external_id")
+  visibilityReasonId Int? @map("visibility_reason_id")
+  locale String?
+  ogImageUploadId Int? @map("og_image_upload_id")
+
+  @@index([deletedAt, visible, archetype, categoryId, id])
+  @@index([userId])
+  @@index([slug])
+  @@index([banneredUntil])
+  @@index([bumpedAt])
+  @@index([categoryId])
+  @@index([createdAt, visible])
+  @@index([id, deletedAt])
+  @@index([imageUploadId])
+  @@index([pinnedAt])
+  @@index([pinnedGlobally])
+  @@index([pinnedUntil])
+  @@index([bumpedAt, createdAt, updatedAt])
+  @@index([updatedAt])
+  @@index([updatedAt, visible, highestStaffPostNumber, highestPostNumber, categoryId, createdAt, id])
+}
+
+model BadgeType {
+  id Int @id
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([name])
+}
+
+model Badge {
+  id Int @id
+  name String
+  description String?
+  badgeTypeId Int @map("badge_type_id")
+  grantCount Int @map("grant_count") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  allowTitle Boolean @map("allow_title") @default(false)
+  multipleGrant Boolean @map("multiple_grant") @default(false)
+  icon String? @default("certificate")
+  listable Boolean? @default(true)
+  targetPosts Boolean? @map("target_posts") @default(false)
+  query String?
+  enabled Boolean @default(true)
+  autoRevoke Boolean @map("auto_revoke") @default(true)
+  badgeGroupingId Int @map("badge_grouping_id") @default(5)
+  trigger Int?
+  showPosts Boolean @map("show_posts") @default(false)
+  system Boolean @default(false)
+  longDescription String? @map("long_description")
+  imageUploadId Int? @map("image_upload_id")
+  showInPostHeader Boolean @map("show_in_post_header") @default(false)
+
+  @@index([badgeTypeId])
+  @@unique([name])
+}
+
+model Bookmark {
+  id Int @id
+  userId Int @map("user_id")
+  name String?
+  reminderAt DateTime? @map("reminder_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  reminderLastSentAt DateTime? @map("reminder_last_sent_at")
+  reminderSetAt DateTime? @map("reminder_set_at")
+  autoDeletePreference Int @map("auto_delete_preference") @default(0)
+  pinned Boolean? @default(false)
+  bookmarkableId Int? @map("bookmarkable_id")
+  bookmarkableType String? @map("bookmarkable_type")
+
+  @@unique([userId, bookmarkableType, bookmarkableId], nullsDistinct: true)
+  @@index([reminderAt])
+  @@index([reminderSetAt])
+  @@index([userId])
+}
+
+model BrowserPageviewCountryDailyRollup {
+  id Int @id
+  date DateTime
+  countryCode String? @map("country_code")
+  count Int
+  loggedInCount Int @map("logged_in_count")
+  likelyCrawlerCount Int @map("likely_crawler_count") @default(0)
+  likelyCrawlerLoggedInCount Int @map("likely_crawler_logged_in_count") @default(0)
+}
+
+model BrowserPageviewCrawlerDailyRollup {
+  id Int @id
+  date DateTime
+  loggedIn Boolean @map("logged_in")
+  count Int
+
+  @@unique([date, loggedIn])
+}
+
+model BrowserPageviewEntryUrlDailyRollup {
+  id Int @id
+  date DateTime
+  entryUrl String @map("entry_url")
+  count Int
+  loggedInCount Int @map("logged_in_count")
+  likelyCrawlerCount Int @map("likely_crawler_count") @default(0)
+  likelyCrawlerLoggedInCount Int @map("likely_crawler_logged_in_count") @default(0)
+
+  @@unique([date, entryUrl])
+}
+
+model BrowserPageviewEventScore {
+  id Int @id
+  eventId Int @map("event_id")
+  automationUaScore Int @map("automation_ua_score") @default(0)
+  knownAsnScore Int @map("known_asn_score") @default(0)
+  velocityScore Int @map("velocity_score") @default(0)
+  churnScore Int @map("churn_score") @default(0)
+  rapidNavScore Int @map("rapid_nav_score") @default(0)
+  referrerScore Int @map("referrer_score") @default(0)
+  engagementScore Int @map("engagement_score") @default(0)
+  ipRotationScore Int @map("ip_rotation_score") @default(0)
+  datacenterAsnScore Int @map("datacenter_asn_score") @default(0)
+  singleRequestNoReferrerScore Int @map("single_request_no_referrer_score") @default(0)
+  staleBrowserScore Int @map("stale_browser_score") @default(0)
+
+  @@unique([eventId])
+}
+
+model BrowserPageviewEvent {
+  id Int @id
+  url String
+  ipAddress String @map("ip_address")
+  referrer String?
+  userAgent String @map("user_agent")
+  sessionId String @map("session_id")
+  topicId Int? @map("topic_id")
+  userId Int? @map("user_id")
+  countryCode String? @map("country_code")
+  createdAt DateTime @map("created_at")
+  asn Int?
+  score Int?
+  normalizedReferrer String? @map("normalized_referrer")
+  normalizedReferrerVersion Int? @map("normalized_referrer_version")
+  source Int @default(1)
+  normalizedUrl String? @map("normalized_url")
+  normalizedUrlVersion Int? @map("normalized_url_version")
+  browser Int?
+
+  @@index([createdAt, id])
+  @@index([source, createdAt, id])
+  @@index([createdAt, countryCode])
+  @@index([createdAt, normalizedReferrer])
+  @@index([ipAddress, userAgent, createdAt])
+  @@index([normalizedReferrerVersion])
+  @@index([normalizedUrlVersion])
+  @@index([sessionId, createdAt])
+  @@index([createdAt])
+  @@index([topicId])
+  @@index([userId])
+}
+
+model BrowserPageviewReferrerDailyRollup {
+  id Int @id
+  date DateTime
+  normalizedReferrer String? @map("normalized_referrer")
+  count Int
+  loggedInCount Int @map("logged_in_count")
+  likelyCrawlerCount Int @map("likely_crawler_count") @default(0)
+  likelyCrawlerLoggedInCount Int @map("likely_crawler_logged_in_count") @default(0)
+}
+
+model BrowserPageviewSessionEngagementDailyRollup {
+  id Int @id
+  date DateTime
+  loggedIn Boolean @map("logged_in")
+  sessions Int
+  bounced Int
+  engagedSecondsTotal Int @map("engaged_seconds_total")
+  likelyCrawlerSessions Int @map("likely_crawler_sessions") @default(0)
+  likelyCrawlerBounced Int @map("likely_crawler_bounced") @default(0)
+  likelyCrawlerEngagedSecondsTotal Int @map("likely_crawler_engaged_seconds_total") @default(0)
+
+  @@unique([date, loggedIn])
+}
+
+model BrowserPageviewSessionEngagement {
+  id Int @id
+  sessionId String @map("session_id")
+  mouseMoveEvents Int @map("mouse_move_events") @default(0)
+  clickEvents Int @map("click_events") @default(0)
+  keyEvents Int @map("key_events") @default(0)
+  scrollEvents Int @map("scroll_events") @default(0)
+  touchEvents Int @map("touch_events") @default(0)
+  backForwardEvents Int @map("back_forward_events") @default(0)
+  engagedSeconds Int @map("engaged_seconds") @default(0)
+  timeToFirstInteractionMs Int? @map("time_to_first_interaction_ms")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([createdAt])
+  @@unique([sessionId])
+}
+
+model CalendarEvent {
+  id Int @id
+  topicId Int @map("topic_id")
+  postId Int? @map("post_id")
+  postNumber Int? @map("post_number")
+  userId Int? @map("user_id")
+  username String?
+  description String?
+  startDate DateTime @map("start_date")
+  endDate DateTime? @map("end_date")
+  recurrence String?
+  region String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  timezone String?
+
+  @@index([postId])
+  @@index([topicId])
+  @@index([userId])
+}
+
+model CategoriesWebHook {
+  id String @id @default(cuid())
+  webHookId Int @map("web_hook_id")
+  categoryId Int @map("category_id")
+
+  @@unique([webHookId, categoryId])
+}
+
+model CategoryActivityDailyRollup {
+  id Int @id
+  date DateTime
+  categoryId Int @map("category_id")
+  topics Int @default(0)
+  posts Int @default(0)
+  pageViews Int @map("page_views") @default(0)
+  likelyCrawlerPageViews Int @map("likely_crawler_page_views") @default(0)
+
+  @@unique([date, categoryId])
+}
+
+model CategoryCustomField {
+  id Int @id
+  categoryId Int @map("category_id")
+  name String
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([categoryId, name])
+}
+
+model CategoryFeaturedTopic {
+  categoryId Int @map("category_id")
+  topicId Int @map("topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  rank Int @default(0)
+  id Int @id
+
+  @@unique([categoryId, topicId])
+  @@index([categoryId, rank])
+}
+
+model CategoryFormTemplate {
+  id Int @id
+  categoryId Int @map("category_id")
+  formTemplateId Int @map("form_template_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([categoryId])
+  @@index([formTemplateId])
+}
+
+model CategoryGroup {
+  id Int @id
+  categoryId Int @map("category_id")
+  groupId Int @map("group_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  permissionType Int? @map("permission_type") @default(1)
+
+  @@index([groupId])
+}
+
+model CategoryLocalization {
+  id Int @id
+  categoryId Int @map("category_id")
+  locale String
+  name String
+  description String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([categoryId])
+  @@unique([categoryId, locale])
+}
+
+model CategoryModerationGroup {
+  id Int @id
+  categoryId Int? @map("category_id")
+  groupId Int? @map("group_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([categoryId, groupId], nullsDistinct: true)
+}
+
+model CategoryPostingReviewGroup {
+  id Int @id
+  postType Int @map("post_type")
+  categoryId Int @map("category_id")
+  groupId Int @map("group_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([categoryId, groupId, postType])
+}
+
+model CategoryRequiredTagGroup {
+  id Int @id
+  categoryId Int @map("category_id")
+  tagGroupId Int @map("tag_group_id")
+  minCount Int @map("min_count") @default(1)
+  order Int @default(1)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([categoryId, tagGroupId])
+}
+
+model CategorySearchData {
+  categoryId Int @map("category_id") @id
+  searchData String? @map("search_data")
+  rawData String? @map("raw_data")
+  locale String?
+  version Int? @default(0)
+
+  @@index([searchData])
+}
+
+model CategorySetting {
+  id Int @id
+  categoryId Int @map("category_id")
+  requireTopicApproval Boolean? @map("require_topic_approval")
+  requireReplyApproval Boolean? @map("require_reply_approval")
+  numAutoBumpDaily Int? @map("num_auto_bump_daily") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  autoBumpCooldownDays Int? @map("auto_bump_cooldown_days") @default(1)
+  topicPostingReviewMode Int @map("topic_posting_review_mode") @default(0)
+  replyPostingReviewMode Int @map("reply_posting_review_mode") @default(0)
+  nestedRepliesDefault Boolean @map("nested_replies_default") @default(false)
+
+  @@unique([categoryId])
+}
+
+model CategoryTagGroup {
+  id Int @id
+  categoryId Int @map("category_id")
+  tagGroupId Int @map("tag_group_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([categoryId, tagGroupId])
+}
+
+model CategoryTagStat {
+  id Int @id
+  categoryId Int @map("category_id")
+  tagId Int @map("tag_id")
+  topicCount Int @map("topic_count") @default(0)
+
+  @@index([categoryId])
+  @@unique([categoryId, tagId])
+  @@index([categoryId, topicCount])
+  @@index([tagId])
+}
+
+model CategoryTag {
+  id Int @id
+  categoryId Int @map("category_id")
+  tagId Int @map("tag_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([categoryId, tagId])
+  @@unique([tagId, categoryId])
+}
+
+model CategoryUser {
+  id Int @id
+  categoryId Int @map("category_id")
+  userId Int @map("user_id")
+  notificationLevel Int @map("notification_level")
+  lastSeenAt DateTime? @map("last_seen_at")
+
+  @@unique([categoryId, userId])
+  @@unique([userId, categoryId])
+  @@index([categoryId, notificationLevel])
+  @@index([userId, lastSeenAt])
+}
+
+model ChatChannelArchive {
+  id Int @id
+  chatChannelId Int @map("chat_channel_id")
+  archivedById Int @map("archived_by_id")
+  destinationTopicId Int? @map("destination_topic_id")
+  destinationTopicTitle String? @map("destination_topic_title")
+  destinationCategoryId Int? @map("destination_category_id")
+  destinationTags String[]? @map("destination_tags")
+  totalMessages Int @map("total_messages")
+  archivedMessages Int @map("archived_messages") @default(0)
+  archiveError String? @map("archive_error")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([chatChannelId])
+}
+
+model ChatChannelCustomField {
+  id Int @id
+  channelId Int @map("channel_id")
+  name String
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([channelId, name])
+}
+
+model ChatChannel {
+  id Int @id
+  chatableId Int @map("chatable_id")
+  deletedAt DateTime? @map("deleted_at")
+  deletedById Int? @map("deleted_by_id")
+  featuredInCategoryId Int? @map("featured_in_category_id")
+  deleteAfterSeconds Int? @map("delete_after_seconds")
+  chatableType String @map("chatable_type")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  name String?
+  description String?
+  status Int @default(0)
+  userCount Int @map("user_count") @default(0)
+  autoJoinUsers Boolean @map("auto_join_users") @default(false)
+  userCountStale Boolean @map("user_count_stale") @default(false)
+  type String?
+  slug String?
+  allowChannelWideMentions Boolean @map("allow_channel_wide_mentions") @default(true)
+  messagesCount Int @map("messages_count") @default(0)
+  threadingEnabled Boolean @map("threading_enabled") @default(false)
+  lastMessageId Int? @map("last_message_id")
+  emoji String?
+
+  @@index([chatableId])
+  @@index([chatableId, chatableType])
+  @@index([lastMessageId])
+  @@index([messagesCount])
+  @@index([status])
+}
+
+model ChatDraft {
+  id Int @id
+  userId Int @map("user_id")
+  chatChannelId Int @map("chat_channel_id")
+  data String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  threadId Int? @map("thread_id")
+}
+
+model ChatMentionNotification {
+  id String @id @default(cuid())
+  chatMentionId Int @map("chat_mention_id")
+  notificationId Int @map("notification_id")
+
+  @@index([chatMentionId])
+  @@unique([notificationId])
+}
+
+model ChatMention {
+  id Int @id
+  chatMessageId Int @map("chat_message_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  type String
+  targetId Int? @map("target_id")
+
+  @@index([chatMessageId])
+  @@index([targetId])
+}
+
+model ChatMessageCustomField {
+  id Int @id
+  messageId Int @map("message_id")
+  name String
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([messageId, name])
+}
+
+model ChatMessageCustomPrompt {
+  id Int @id
+  messageId Int @map("message_id")
+  customPrompt Json @map("custom_prompt")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([messageId])
+}
+
+model ChatMessageInteraction {
+  id Int @id
+  userId Int @map("user_id")
+  chatMessageId Int @map("chat_message_id")
+  action Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([chatMessageId])
+  @@index([userId])
+}
+
+model ChatMessageLink {
+  id Int @id
+  chatMessageId Int @map("chat_message_id")
+  url String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([chatMessageId])
+  @@index([url])
+  @@unique([chatMessageId, url])
+}
+
+model ChatMessageReaction {
+  id Int @id
+  chatMessageId Int? @map("chat_message_id")
+  userId Int? @map("user_id")
+  emoji String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([chatMessageId, userId, emoji], nullsDistinct: true)
+}
+
+model ChatMessageRevision {
+  id Int @id
+  chatMessageId Int? @map("chat_message_id")
+  oldMessage String @map("old_message")
+  newMessage String @map("new_message")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  userId Int @map("user_id")
+
+  @@index([chatMessageId])
+  @@index([userId])
+}
+
+model ChatMessageSearchData {
+  chatMessageId Int @map("chat_message_id") @id
+  searchData String? @map("search_data")
+  rawData String? @map("raw_data")
+  locale String?
+  version Int? @default(0)
+
+  @@index([searchData])
+}
+
+model ChatMessage {
+  id Int @id
+  chatChannelId Int @map("chat_channel_id")
+  userId Int? @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedById Int? @map("deleted_by_id")
+  inReplyToId Int? @map("in_reply_to_id")
+  message String?
+  cooked String?
+  cookedVersion Int? @map("cooked_version")
+  lastEditorId Int @map("last_editor_id")
+  threadId Int? @map("thread_id")
+  streaming Boolean @default(false)
+  excerpt String?
+  createdBySdk Boolean @map("created_by_sdk") @default(false)
+  blocks Json?
+
+  @@index([createdAt])
+  @@index([threadId])
+  @@index([chatChannelId, createdAt])
+  @@index([chatChannelId, id])
+  @@index([lastEditorId])
+}
+
+model ChatPinnedMessage {
+  id Int @id
+  chatMessageId Int @map("chat_message_id")
+  chatChannelId Int @map("chat_channel_id")
+  pinnedById Int @map("pinned_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([chatChannelId, createdAt])
+  @@unique([chatMessageId])
+}
+
+model ChatThreadCustomField {
+  id Int @id
+  threadId Int @map("thread_id")
+  name String
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([threadId, name])
+}
+
+model ChatThread {
+  id Int @id
+  channelId Int @map("channel_id")
+  originalMessageId Int @map("original_message_id")
+  originalMessageUserId Int @map("original_message_user_id")
+  status Int @default(0)
+  title String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  repliesCount Int @map("replies_count") @default(0)
+  lastMessageId Int? @map("last_message_id")
+  force Boolean @default(false)
+
+  @@index([channelId])
+  @@index([channelId, status])
+  @@index([lastMessageId])
+  @@index([originalMessageId])
+  @@index([originalMessageUserId])
+  @@index([repliesCount])
+  @@index([status])
+}
+
+model ChatWebhookEvent {
+  id Int @id
+  chatMessageId Int @map("chat_message_id")
+  incomingChatWebhookId Int @map("incoming_chat_webhook_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([chatMessageId, incomingChatWebhookId])
+}
+
+model ChildTheme {
+  id Int @id
+  parentThemeId Int? @map("parent_theme_id")
+  childThemeId Int? @map("child_theme_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([childThemeId, parentThemeId], nullsDistinct: true)
+  @@unique([parentThemeId, childThemeId], nullsDistinct: true)
+}
+
+model ClassificationResult {
+  id Int @id
+  modelUsed String? @map("model_used")
+  classificationType String? @map("classification_type")
+  targetId Int? @map("target_id")
+  targetType String? @map("target_type")
+  classification Json?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([targetId, targetType, modelUsed], nullsDistinct: true)
+}
+
+model ColorSchemeColor {
+  id Int @id
+  name String
+  hex String
+  colorSchemeId Int @map("color_scheme_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([colorSchemeId])
+}
+
+model ColorScheme {
+  id Int @id
+  name String
+  version Int @default(1)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  viaWizard Boolean @map("via_wizard") @default(false)
+  baseSchemeId Int? @map("base_scheme_id")
+  themeId Int? @map("theme_id")
+  userSelectable Boolean @map("user_selectable") @default(false)
+  remoteCopy Boolean @map("remote_copy") @default(false)
+}
+
+model CompletionPrompt {
+  id Int @id
+  name String
+  translatedName String? @map("translated_name")
+  promptType Int @map("prompt_type") @default(0)
+  enabled Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  messages Json?
+  temperature Int?
+  stopSequences String[]? @map("stop_sequences")
+
+  @@index([name])
+}
+
+model CustomEmojis {
+  id Int @id
+  name String
+  uploadId Int @map("upload_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  group String?
+  userId Int @map("user_id") @default("-1")
+
+  @@unique([name])
+}
+
+model DataExplorerQuery {
+  id Int @id
+  name String?
+  description String?
+  sql String @default("SELECT 1")
+  userId Int? @map("user_id")
+  lastRunAt DateTime? @map("last_run_at")
+  hidden Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model DataExplorerQueryGroup {
+  id Int @id
+  queryId Int? @map("query_id")
+  groupId Int? @map("group_id")
+
+  @@index([groupId])
+  @@index([queryId])
+  @@unique([queryId, groupId], nullsDistinct: true)
+}
+
+model DataExplorerQueryStat {
+  id Int @id
+  queryId Int @map("query_id")
+  date DateTime
+  totalRuns Int @map("total_runs") @default(0)
+
+  @@unique([queryId, date])
+}
+
+model Developer {
+  id Int @id
+  userId Int @map("user_id")
+
+  @@unique([userId])
+}
+
+model DirectMessageChannel {
+  id Int @id
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  group Boolean @default(false)
+}
+
+model DirectMessageUser {
+  id Int @id
+  directMessageChannelId Int @map("direct_message_channel_id")
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([directMessageChannelId, userId])
+}
+
+model DirectoryColumn {
+  id Int @id
+  name String?
+  automaticPosition Int? @map("automatic_position")
+  icon String?
+  userFieldId Int? @map("user_field_id")
+  enabled Boolean
+  position Int
+  createdAt DateTime? @map("created_at") @default(now())
+  type Int @default(0)
+
+  @@index([enabled, position, userFieldId])
+}
+
+model DirectoryItem {
+  id Int @id
+  periodType Int @map("period_type")
+  userId Int @map("user_id")
+  likesReceived Int @map("likes_received")
+  likesGiven Int @map("likes_given")
+  topicsEntered Int @map("topics_entered")
+  topicCount Int @map("topic_count")
+  postCount Int @map("post_count")
+  createdAt DateTime? @map("created_at")
+  updatedAt DateTime? @map("updated_at")
+  daysVisited Int @map("days_visited") @default(0)
+  postsRead Int @map("posts_read") @default(0)
+  solutions Int? @default(0)
+  gamificationScore Int? @map("gamification_score") @default(0)
+
+  @@index([daysVisited])
+  @@index([likesGiven])
+  @@index([likesReceived])
+  @@unique([periodType, userId])
+  @@index([postCount])
+  @@index([postsRead])
+  @@index([topicCount])
+  @@index([topicsEntered])
+}
+
+model DiscourseAiAiBotConversationStar {
+  id Int @id
+  userId Int @map("user_id")
+  topicId Int @map("topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([topicId])
+  @@index([userId, createdAt])
+  @@unique([userId, topicId])
+}
+
+model DiscourseAutomationAutomation {
+  id Int @id
+  name String?
+  script String
+  enabled Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  lastUpdatedById Int @map("last_updated_by_id")
+  trigger String?
+}
+
+model DiscourseAutomationField {
+  id Int @id
+  automationId Int @map("automation_id")
+  metadata Json
+  component String
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  target String?
+}
+
+model DiscourseAutomationPendingAutomation {
+  id Int @id
+  automationId Int @map("automation_id")
+  executeAt DateTime @map("execute_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model DiscourseAutomationPendingPm {
+  id Int @id
+  targetUsernames String[]? @map("target_usernames")
+  sender String?
+  title String?
+  raw String?
+  automationId Int @map("automation_id")
+  executeAt DateTime @map("execute_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  senderId Int? @map("sender_id")
+  targetUserIds Int[]? @map("target_user_ids")
+}
+
+model DiscourseAutomationStat {
+  id Int @id
+  automationId Int @map("automation_id")
+  date DateTime
+  lastRunAt DateTime @map("last_run_at")
+  totalTime Float @map("total_time")
+  averageRunTime Float @map("average_run_time")
+  minRunTime Float @map("min_run_time")
+  maxRunTime Float @map("max_run_time")
+  totalRuns Int @map("total_runs")
+  totalErrors Int @map("total_errors") @default(0)
+
+  @@unique([automationId, date])
+}
+
+model DiscourseAutomationUserGlobalNotice {
+  id Int @id
+  userId Int @map("user_id")
+  notice String
+  identifier String
+  level String? @default("info")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([userId, identifier])
+}
+
+model DiscourseCalendarDisabledHoliday {
+  id Int @id
+  holidayName String @map("holiday_name")
+  regionCode String @map("region_code")
+  disabled Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([holidayName, regionCode])
+}
+
+model DiscourseCalendarPostEventDate {
+  id Int @id
+  eventId Int? @map("event_id")
+  startsAt DateTime? @map("starts_at")
+  endsAt DateTime? @map("ends_at")
+  reminderCounter Int? @map("reminder_counter") @default(0)
+  eventWillStartSentAt DateTime? @map("event_will_start_sent_at")
+  eventStartedSentAt DateTime? @map("event_started_sent_at")
+  finishedAt DateTime? @map("finished_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([eventId, startsAt], nullsDistinct: true)
+  @@index([eventId])
+  @@index([eventId, finishedAt, startsAt, updatedAt, id])
+  @@index([finishedAt])
+}
+
+model DiscoursePostEventEvent {
+  id Int @id
+  status Int @default(0)
+  originalStartsAt DateTime @map("original_starts_at") @default(now())
+  originalEndsAt DateTime? @map("original_ends_at")
+  deletedAt DateTime? @map("deleted_at")
+  rawInvitees String[]? @map("raw_invitees")
+  name String?
+  url String?
+  customFields Json @map("custom_fields")
+  reminders String?
+  recurrence String?
+  timezone String?
+  minimal Boolean?
+  closed Boolean @default(false)
+  chatEnabled Boolean @map("chat_enabled") @default(false)
+  chatChannelId Int? @map("chat_channel_id")
+  recurrenceUntil DateTime? @map("recurrence_until")
+  showLocalTime Boolean @map("show_local_time") @default(false)
+  location String?
+  description String?
+  maxAttendees Int? @map("max_attendees")
+  allDay Boolean @map("all_day") @default(false)
+  imageUploadId Int? @map("image_upload_id")
+  livestream Boolean @default(false)
+
+  @@index([imageUploadId])
+}
+
+model DiscoursePostEventInvitee {
+  id Int @id
+  postId Int @map("post_id")
+  userId Int @map("user_id")
+  status Int?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  notified Boolean @default(false)
+  recurring Boolean @default(false)
+
+  @@unique([postId, userId])
+}
+
+model DiscourseReactionsReactionUser {
+  id Int @id
+  reactionId Int? @map("reaction_id")
+  userId Int? @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  postId Int? @map("post_id")
+
+  @@index([reactionId])
+  @@unique([reactionId, userId], nullsDistinct: true)
+  @@unique([userId, postId], nullsDistinct: true)
+}
+
+model DiscourseReactionsReaction {
+  id Int @id
+  postId Int? @map("post_id")
+  reactionType Int? @map("reaction_type")
+  reactionValue String? @map("reaction_value")
+  reactionUsersCount Int? @map("reaction_users_count")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([postId])
+  @@unique([postId, reactionType, reactionValue], nullsDistinct: true)
+}
+
+model DiscourseRssPollingPollAttempt {
+  id Int @id
+  rssFeedId Int @map("rss_feed_id")
+  status Int @default(0)
+  importedCount Int @map("imported_count") @default(0)
+  updatedCount Int @map("updated_count") @default(0)
+  skippedCount Int @map("skipped_count") @default(0)
+  failedCount Int @map("failed_count") @default(0)
+  error String?
+  items Json @default("[]")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([rssFeedId, createdAt, id])
+}
+
+model DiscourseRssPollingRssFeed {
+  id Int @id
+  url String
+  categoryFilter String? @map("category_filter")
+  author String?
+  categoryId Int? @map("category_id")
+  tags String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  userId Int? @map("user_id")
+  enabled Boolean @default(true)
+
+  @@index([userId])
+}
+
+model DiscourseSolvedSharedIssue {
+  id Int @id
+  topicId Int @map("topic_id")
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([topicId, userId])
+  @@index([userId, topicId])
+}
+
+model DiscourseSolvedSolvedTopic {
+  id Int @id
+  topicId Int @map("topic_id")
+  answerPostId Int? @map("answer_post_id")
+  accepterUserId Int? @map("accepter_user_id")
+  topicTimerId Int? @map("topic_timer_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([answerPostId])
+  @@unique([topicId])
+}
+
+model DiscourseSolvedTopicAnswer {
+  id Int @id
+  solvedTopicId Int @map("solved_topic_id")
+  answerPostId Int @map("answer_post_id")
+  accepterUserId Int @map("accepter_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([answerPostId])
+  @@index([solvedTopicId])
+}
+
+model DiscourseSubscriptionsCustomer {
+  id Int @id
+  customerId String @map("customer_id")
+  productId String? @map("product_id")
+  userId Int? @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([customerId])
+  @@index([userId])
+}
+
+model DiscourseSubscriptionsProduct {
+  id Int @id
+  externalId String @map("external_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([externalId])
+}
+
+model DiscourseSubscriptionsSubscription {
+  id Int @id
+  customerId Int @map("customer_id")
+  externalId String @map("external_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  status String?
+
+  @@index([customerId])
+  @@index([externalId])
+}
+
+model DiscourseTemplatesUsageCount {
+  id Int @id
+  topicId Int @map("topic_id")
+  usageCount Int @map("usage_count") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([topicId])
+}
+
+model DiscourseWorkflowsAiAuthoringSession {
+  id Int @id
+  workflowId Int? @map("workflow_id")
+  userId Int @map("user_id")
+  status String @default("drafting")
+  messages Json @default("[]")
+  latestRequest String? @map("latest_request")
+  latestResponse Json @map("latest_response")
+  proposedPatch Json @map("proposed_patch")
+  baseWorkflowVersionId String? @map("base_workflow_version_id")
+  baseGraphDigest String? @map("base_graph_digest")
+  riskLevel String? @map("risk_level")
+  appliedAt DateTime? @map("applied_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([status, updatedAt])
+  @@index([userId])
+  @@index([workflowId])
+}
+
+model DiscourseWorkflowsCredential {
+  id Int @id
+  name String
+  credentialType String @map("credential_type")
+  data Json
+  createdById Int? @map("created_by_id")
+  updatedById Int? @map("updated_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([createdById])
+  @@index([credentialType])
+  @@unique([name, credentialType])
+  @@index([updatedById])
+}
+
+model DiscourseWorkflowsDataTable {
+  id Int @id
+  name String
+  createdById Int? @map("created_by_id")
+  updatedById Int? @map("updated_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([createdById])
+  @@unique([name])
+  @@index([updatedById])
+}
+
+model DiscourseWorkflowsExecutionData {
+  id String @id @default(cuid())
+  executionId Int @map("execution_id")
+  data Json
+  workflowData Json @map("workflow_data")
+
+  @@unique([executionId])
+}
+
+model DiscourseWorkflowsExecutionStat {
+  id Int @id
+  workflowId Int @map("workflow_id")
+  date DateTime
+  totalRuns Int @map("total_runs") @default(0)
+
+  @@unique([workflowId, date])
+}
+
+model DiscourseWorkflowsExecution {
+  id Int @id
+  workflowId Int @map("workflow_id")
+  workflowVersionId String @map("workflow_version_id")
+  status Int @default(0)
+  executionMode Int @map("execution_mode") @default(0)
+  triggerData Json? @map("trigger_data")
+  error String?
+  waitingNodeId String? @map("waiting_node_id")
+  waitingUntil DateTime? @map("waiting_until")
+  resumeToken String? @map("resume_token")
+  timeoutAction String? @map("timeout_action")
+  triggerNodeId String? @map("trigger_node_id")
+  runTimeMs Int? @map("run_time_ms")
+  startedAt DateTime? @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([resumeToken])
+  @@index([createdAt])
+  @@index([status, waitingUntil])
+  @@index([waitingUntil])
+  @@index([workflowId, createdAt, id])
+  @@index([workflowVersionId])
+}
+
+model DiscourseWorkflowsTag {
+  id Int @id
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([name])
+}
+
+model DiscourseWorkflowsVariable {
+  id Int @id
+  key String
+  value String @default("")
+  description String?
+  createdById Int @map("created_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([createdById])
+  @@unique([key])
+}
+
+model DiscourseWorkflowsWebhook {
+  id Int @id
+  workflowId Int @map("workflow_id")
+  workflowVersionId String? @map("workflow_version_id")
+  nodeName String @map("node_name")
+  webhookPath String @map("webhook_path")
+  httpMethod String @map("http_method")
+  webhookId String? @map("webhook_id")
+  pathLength Int? @map("path_length")
+  testWebhook Boolean @map("test_webhook") @default(false)
+  userId Int? @map("user_id")
+  workflowSnapshot Json? @map("workflow_snapshot")
+  expiresAt DateTime? @map("expires_at")
+  createdAt DateTime @map("created_at") @default(now())
+
+  @@index([expiresAt])
+  @@unique([httpMethod, webhookPath, testWebhook])
+  @@index([webhookId, httpMethod, testWebhook])
+  @@index([workflowId])
+  @@index([workflowVersionId])
+}
+
+model DiscourseWorkflowsWorkflowCallRun {
+  id Int @id
+  parentExecutionId Int @map("parent_execution_id")
+  parentNodeId String @map("parent_node_id")
+  parentResumeToken String @map("parent_resume_token")
+  childExecutionId Int? @map("child_execution_id")
+  targetWorkflowId Int @map("target_workflow_id")
+  targetWorkflowVersionId String @map("target_workflow_version_id")
+  userId Int? @map("user_id")
+  triggerData Json @map("trigger_data")
+  status Int @default(0)
+  error String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([parentExecutionId])
+}
+
+model DiscourseWorkflowsWorkflowDependency {
+  id Int @id
+  workflowId Int @map("workflow_id")
+  dependencyType String @map("dependency_type")
+  dependencyKey String @map("dependency_key")
+  nodeId String? @map("node_id")
+  workflowVersionId String? @map("workflow_version_id")
+  createdAt DateTime @map("created_at") @default(now())
+
+  @@index([dependencyType, dependencyKey])
+  @@index([workflowId])
+  @@index([workflowVersionId])
+}
+
+model DiscourseWorkflowsWorkflowPublishHistory {
+  id Int @id
+  workflowId Int @map("workflow_id")
+  versionId String? @map("version_id")
+  event String
+  userId Int? @map("user_id")
+  createdAt DateTime @map("created_at") @default(now())
+
+  @@index([workflowId, createdAt, id])
+}
+
+model DiscourseWorkflowsWorkflowTag {
+  id Int @id
+  workflowId Int @map("workflow_id")
+  workflowTagId Int @map("workflow_tag_id")
+  createdAt DateTime @map("created_at") @default(now())
+
+  @@unique([workflowTagId, workflowId])
+  @@unique([workflowId, workflowTagId])
+}
+
+model DiscourseWorkflowsWorkflowVersion {
+  versionId String @map("version_id") @id
+  workflowId Int @map("workflow_id")
+  versionNumber Int @map("version_number")
+  name String
+  nodes Json @default("[]")
+  connections Json
+  settings Json
+  autosaved Boolean @default(false)
+  authors String?
+  createdById Int @map("created_by_id")
+  updatedById Int? @map("updated_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([workflowId, createdAt])
+  @@index([workflowId])
+  @@unique([workflowId, versionNumber])
+}
+
+model DiscourseWorkflowsWorkflow {
+  id Int @id
+  name String
+  nodes Json @default("[]")
+  connections Json
+  staticData Json @map("static_data")
+  pinData Json @map("pin_data")
+  triggerState Json @map("trigger_state")
+  settings Json
+  versionId String @map("version_id")
+  activeVersionId String? @map("active_version_id")
+  versionCounter Int @map("version_counter") @default(1)
+  errorWorkflowId Int? @map("error_workflow_id")
+  createdById Int @map("created_by_id")
+  updatedById Int? @map("updated_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([activeVersionId])
+  @@index([createdById])
+  @@index([errorWorkflowId])
+  @@index([updatedById])
+  @@unique([versionId])
+}
+
+model DismissedTopicUser {
+  id Int @id
+  userId Int? @map("user_id")
+  topicId Int? @map("topic_id")
+  createdAt DateTime? @map("created_at")
+
+  @@unique([userId, topicId], nullsDistinct: true)
+}
+
+model DoNotDisturbTiming {
+  id Int @id
+  userId Int @map("user_id")
+  startsAt DateTime @map("starts_at")
+  endsAt DateTime @map("ends_at")
+  scheduled Boolean? @default(false)
+
+  @@index([endsAt])
+  @@index([scheduled])
+  @@index([startsAt])
+  @@index([userId])
+}
+
+model DraftSequence {
+  id Int @id
+  userId Int @map("user_id")
+  draftKey String @map("draft_key")
+  sequence Int
+
+  @@unique([userId, draftKey])
+}
+
+model Draft {
+  id Int @id
+  userId Int @map("user_id")
+  draftKey String @map("draft_key")
+  data String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  sequence Int @default(0)
+  revisions Int @default(1)
+  owner String?
+
+  @@unique([userId, draftKey])
+}
+
+model EmailChangeRequest {
+  id Int @id
+  userId Int @map("user_id")
+  oldEmail String? @map("old_email")
+  newEmail String @map("new_email")
+  oldEmailTokenId Int? @map("old_email_token_id")
+  newEmailTokenId Int? @map("new_email_token_id")
+  changeState Int @map("change_state")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  requestedByUserId Int? @map("requested_by_user_id")
+
+  @@index([requestedByUserId])
+  @@index([userId])
+}
+
+model EmailLoginCode {
+  id Int @id
+  email String
+  codeHash String @map("code_hash")
+  attempts Int @default(0)
+  expiresAt DateTime @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([expiresAt])
+}
+
+model EmailLog {
+  id Int @id
+  toAddress String @map("to_address")
+  emailType String @map("email_type")
+  userId Int? @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  postId Int? @map("post_id")
+  bounceKey String? @map("bounce_key")
+  bounced Boolean @default(false)
+  messageId String? @map("message_id")
+  smtpGroupId Int? @map("smtp_group_id")
+  ccAddresses String? @map("cc_addresses")
+  ccUserIds Int[]? @map("cc_user_ids")
+  raw String?
+  topicId Int? @map("topic_id")
+  bounceErrorCode String? @map("bounce_error_code")
+  smtpTransactionResponse String? @map("smtp_transaction_response")
+  bccAddresses String? @map("bcc_addresses")
+
+  @@index([bounced])
+  @@index([createdAt])
+  @@index([messageId])
+  @@index([postId])
+  @@index([topicId])
+  @@index([userId])
+}
+
+model EmailToken {
+  id Int @id
+  userId Int @map("user_id")
+  email String
+  confirmed Boolean @default(false)
+  expired Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  tokenHash String @map("token_hash")
+  scope Int?
+
+  @@unique([tokenHash])
+  @@index([userId])
+}
+
+model EmbeddableHostTag {
+  id Int @id
+  embeddableHostId Int @map("embeddable_host_id")
+  tagId Int @map("tag_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([embeddableHostId])
+  @@unique([embeddableHostId, tagId])
+  @@index([tagId])
+}
+
+model EmbeddableHost {
+  id Int @id
+  host String
+  categoryId Int @map("category_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  className String? @map("class_name")
+  allowedPaths String? @map("allowed_paths")
+  userId Int? @map("user_id")
+}
+
+model EmbeddingDefinition {
+  id Int @id
+  displayName String @map("display_name")
+  dimensions Int
+  maxSequenceLength Int @map("max_sequence_length")
+  version Int @default(1)
+  pgFunction String @map("pg_function")
+  provider String
+  tokenizerClass String @map("tokenizer_class")
+  url String
+  apiKey String? @map("api_key")
+  seeded Boolean @default(false)
+  providerParams Json? @map("provider_params")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  embedPrompt String @map("embed_prompt") @default("")
+  searchPrompt String @map("search_prompt") @default("")
+  matryoshkaDimensions Boolean @map("matryoshka_dimensions") @default(false)
+  aiSecretId Int? @map("ai_secret_id")
+
+  @@index([aiSecretId])
+}
+
+model ExternalUploadStub {
+  id Int @id
+  key String
+  originalFilename String @map("original_filename")
+  status Int @default(1)
+  uniqueIdentifier String @map("unique_identifier")
+  createdById Int @map("created_by_id")
+  uploadType String @map("upload_type")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  multipart Boolean @default(false)
+  externalUploadIdentifier String? @map("external_upload_identifier")
+  filesize Int
+
+  @@index([createdById])
+  @@index([externalUploadIdentifier])
+  @@unique([key])
+  @@index([status])
+}
+
+model Flag {
+  id Int @id
+  name String?
+  nameKey String? @map("name_key")
+  description String?
+  notifyType Boolean @map("notify_type") @default(false)
+  autoActionType Boolean @map("auto_action_type") @default(false)
+  appliesTo String[] @map("applies_to")
+  position Int
+  enabled Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  scoreType Boolean @map("score_type") @default(false)
+  requireMessage Boolean @map("require_message") @default(false)
+
+  @@unique([nameKey])
+}
+
+model FormTemplate {
+  id Int @id
+  name String
+  template String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([name])
+}
+
+model GamificationLeaderboardScore {
+  id Int @id
+  leaderboardId Int @map("leaderboard_id")
+  userId Int @map("user_id")
+  date DateTime
+  score Int @default(0)
+
+  @@index([leaderboardId, date])
+  @@unique([leaderboardId, userId, date])
+}
+
+model GamificationLeaderboard {
+  id Int @id
+  name String
+  fromDate DateTime? @map("from_date")
+  toDate DateTime? @map("to_date")
+  forCategoryId Int? @map("for_category_id")
+  createdById Int @map("created_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  visibleToGroupsIds Int[] @map("visible_to_groups_ids")
+  includedGroupsIds Int[] @map("included_groups_ids")
+  excludedGroupsIds Int[] @map("excluded_groups_ids")
+  defaultPeriod Int? @map("default_period") @default(0)
+  periodFilterDisabled Boolean @map("period_filter_disabled") @default(false)
+  scoreOverrides Json? @map("score_overrides")
+  scorableCategoryIds Int[]? @map("scorable_category_ids")
+
+  @@unique([name])
+}
+
+model GamificationScoreEvent {
+  id Int @id
+  userId Int @map("user_id")
+  date DateTime
+  points Int
+  description String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([date])
+  @@index([userId, date])
+}
+
+model GamificationScore {
+  id Int @id
+  userId Int @map("user_id")
+  date DateTime
+  score Int
+
+  @@index([date])
+  @@unique([userId, date])
+}
+
+model GithubCommit {
+  id Int @id
+  repoId Int @map("repo_id")
+  sha String
+  email String
+  committedAt DateTime @map("committed_at")
+  roleId Int @map("role_id")
+  mergeCommit Boolean @map("merge_commit") @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([repoId])
+}
+
+model GithubRepo {
+  id Int @id
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([name])
+}
+
+model GivenDailyLike {
+  id String @id @default(cuid())
+  userId Int @map("user_id")
+  likesGiven Int @map("likes_given")
+  givenDate DateTime @map("given_date")
+  limitReached Boolean @map("limit_reached") @default(false)
+
+  @@index([limitReached, userId])
+  @@unique([userId, givenDate])
+}
+
+model GroupArchivedMessage {
+  id Int @id
+  groupId Int @map("group_id")
+  topicId Int @map("topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([groupId, topicId])
+}
+
+model GroupAssociatedGroup {
+  id Int @id
+  groupId Int @map("group_id")
+  associatedGroupId Int @map("associated_group_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([groupId, associatedGroupId])
+  @@index([associatedGroupId])
+  @@index([groupId])
+}
+
+model GroupCategoryNotificationDefault {
+  id Int @id
+  groupId Int @map("group_id")
+  categoryId Int @map("category_id")
+  notificationLevel Int @map("notification_level")
+
+  @@unique([groupId, categoryId])
+}
+
+model GroupCustomField {
+  id Int @id
+  groupId Int @map("group_id")
+  name String
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([groupId, name])
+}
+
+model GroupHistory {
+  id Int @id
+  groupId Int @map("group_id")
+  actingUserId Int @map("acting_user_id")
+  targetUserId Int? @map("target_user_id")
+  action Int
+  subject String?
+  prevValue String? @map("prev_value")
+  newValue String? @map("new_value")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([actingUserId])
+  @@index([action])
+  @@index([groupId])
+  @@index([targetUserId])
+}
+
+model GroupMention {
+  id Int @id
+  postId Int? @map("post_id")
+  groupId Int? @map("group_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([groupId, postId], nullsDistinct: true)
+  @@unique([postId, groupId], nullsDistinct: true)
+}
+
+model GroupRequest {
+  id Int @id
+  groupId Int? @map("group_id")
+  userId Int? @map("user_id")
+  reason String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([groupId])
+  @@unique([groupId, userId], nullsDistinct: true)
+  @@index([userId])
+}
+
+model GroupTagNotificationDefault {
+  id Int @id
+  groupId Int @map("group_id")
+  tagId Int @map("tag_id")
+  notificationLevel Int @map("notification_level")
+
+  @@unique([groupId, tagId])
+}
+
+model GroupUser {
+  id Int @id
+  groupId Int @map("group_id")
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  owner Boolean @default(false)
+  notificationLevel Int @map("notification_level") @default(2)
+  firstUnreadPmAt DateTime @map("first_unread_pm_at") @default(now())
+
+  @@unique([groupId, userId])
+  @@unique([userId, groupId])
+}
+
+model Group {
+  id Int @id
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  automatic Boolean @default(false)
+  userCount Int @map("user_count") @default(0)
+  automaticMembershipEmailDomains String? @map("automatic_membership_email_domains")
+  primaryGroup Boolean @map("primary_group") @default(false)
+  title String?
+  grantTrustLevel Int? @map("grant_trust_level")
+  incomingEmail String? @map("incoming_email")
+  hasMessages Boolean @map("has_messages") @default(false)
+  flairBgColor String? @map("flair_bg_color")
+  flairColor String? @map("flair_color")
+  bioRaw String? @map("bio_raw")
+  bioCooked String? @map("bio_cooked")
+  allowMembershipRequests Boolean @map("allow_membership_requests") @default(false)
+  fullName String? @map("full_name")
+  defaultNotificationLevel Int @map("default_notification_level") @default(3)
+  visibilityLevel Int @map("visibility_level") @default(0)
+  publicExit Boolean @map("public_exit") @default(false)
+  publicAdmission Boolean @map("public_admission") @default(false)
+  membershipRequestTemplate String? @map("membership_request_template")
+  messageableLevel Int? @map("messageable_level") @default(0)
+  mentionableLevel Int? @map("mentionable_level") @default(0)
+  smtpServer String? @map("smtp_server")
+  smtpPort Int? @map("smtp_port")
+  imapServer String? @map("imap_server")
+  imapPort Int? @map("imap_port")
+  imapSsl Boolean? @map("imap_ssl")
+  imapMailboxName String @map("imap_mailbox_name") @default("")
+  imapUidValidity Int @map("imap_uid_validity") @default(0)
+  imapLastUid Int @map("imap_last_uid") @default(0)
+  emailUsername String? @map("email_username")
+  emailPassword String? @map("email_password")
+  publishReadState Boolean @map("publish_read_state") @default(false)
+  membersVisibilityLevel Int @map("members_visibility_level") @default(0)
+  imapLastError String? @map("imap_last_error")
+  imapOldEmails Int? @map("imap_old_emails")
+  imapNewEmails Int? @map("imap_new_emails")
+  flairIcon String? @map("flair_icon")
+  flairUploadId Int? @map("flair_upload_id")
+  allowUnknownSenderTopicReplies Boolean @map("allow_unknown_sender_topic_replies") @default(false)
+  smtpEnabled Boolean? @map("smtp_enabled") @default(false)
+  smtpUpdatedAt DateTime? @map("smtp_updated_at")
+  smtpUpdatedById Int? @map("smtp_updated_by_id")
+  imapEnabled Boolean? @map("imap_enabled") @default(false)
+  imapUpdatedAt DateTime? @map("imap_updated_at")
+  imapUpdatedById Int? @map("imap_updated_by_id")
+  assignableLevel Int @map("assignable_level") @default(0)
+  emailFromAlias String? @map("email_from_alias")
+  smtpSslMode Int @map("smtp_ssl_mode") @default(0)
+
+  @@unique([incomingEmail])
+  @@unique([name])
+}
+
+model GroupsWebHook {
+  id String @id @default(cuid())
+  webHookId Int @map("web_hook_id")
+  groupId Int @map("group_id")
+
+  @@unique([webHookId, groupId])
+}
+
+model IgnoredUser {
+  id Int @id
+  userId Int @map("user_id")
+  ignoredUserId Int @map("ignored_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  summarizedAt DateTime? @map("summarized_at")
+  expiringAt DateTime @map("expiring_at")
+
+  @@unique([ignoredUserId, userId])
+  @@unique([userId, ignoredUserId])
+}
+
+model IncomingChatWebhook {
+  id Int @id
+  name String
+  key String
+  chatChannelId Int @map("chat_channel_id")
+  username String?
+  description String?
+  emoji String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([key, chatChannelId])
+}
+
+model IncomingDomain {
+  id Int @id
+  name String
+  https Boolean @default(false)
+  port Int
+
+  @@unique([name, https, port])
+}
+
+model IncomingEmail {
+  id Int @id
+  userId Int? @map("user_id")
+  topicId Int? @map("topic_id")
+  postId Int? @map("post_id")
+  raw String?
+  error String?
+  messageId String? @map("message_id")
+  fromAddress String? @map("from_address")
+  toAddresses String? @map("to_addresses")
+  ccAddresses String? @map("cc_addresses")
+  subject String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  rejectionMessage String? @map("rejection_message")
+  isAutoGenerated Boolean? @map("is_auto_generated") @default(false)
+  isBounce Boolean @map("is_bounce") @default(false)
+  imapUidValidity Int? @map("imap_uid_validity")
+  imapUid Int? @map("imap_uid")
+  imapSync Boolean? @map("imap_sync")
+  imapGroupId Int? @map("imap_group_id")
+  imapMissing Boolean @map("imap_missing") @default(false)
+  createdVia Int @map("created_via") @default(0)
+
+  @@index([createdAt])
+  @@index([error])
+  @@index([imapGroupId])
+  @@index([imapSync])
+  @@index([messageId])
+  @@index([postId])
+  @@index([topicId])
+  @@index([userId])
+}
+
+model IncomingLink {
+  id Int @id
+  createdAt DateTime @map("created_at")
+  userId Int? @map("user_id")
+  ipAddress String? @map("ip_address")
+  currentUserId Int? @map("current_user_id")
+  postId Int @map("post_id")
+  incomingRefererId Int? @map("incoming_referer_id")
+
+  @@index([createdAt, userId])
+  @@index([currentUserId])
+  @@index([postId])
+  @@index([userId])
+}
+
+model IncomingReferer {
+  id Int @id
+  path String
+  incomingDomainId Int @map("incoming_domain_id")
+
+  @@unique([path, incomingDomainId])
+}
+
+model InferredConceptPost {
+  id String @id @default(cuid())
+  inferredConceptId Int? @map("inferred_concept_id")
+  postId Int? @map("post_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([inferredConceptId])
+  @@unique([postId, inferredConceptId], nullsDistinct: true)
+}
+
+model InferredConceptTopic {
+  id String @id @default(cuid())
+  inferredConceptId Int? @map("inferred_concept_id")
+  topicId Int? @map("topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([inferredConceptId])
+  @@unique([topicId, inferredConceptId], nullsDistinct: true)
+}
+
+model InferredConcept {
+  id Int @id
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([name])
+}
+
+model InvitedGroup {
+  id Int @id
+  groupId Int? @map("group_id")
+  inviteId Int? @map("invite_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([groupId, inviteId], nullsDistinct: true)
+}
+
+model InvitedUser {
+  id Int @id
+  userId Int? @map("user_id")
+  inviteId Int @map("invite_id")
+  redeemedAt DateTime? @map("redeemed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([inviteId])
+}
+
+model Invite {
+  id Int @id
+  inviteKey String @map("invite_key")
+  email String?
+  invitedById Int @map("invited_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedById Int? @map("deleted_by_id")
+  invalidatedAt DateTime? @map("invalidated_at")
+  moderator Boolean @default(false)
+  customMessage String? @map("custom_message")
+  emailedStatus Int? @map("emailed_status")
+  maxRedemptionsAllowed Int @map("max_redemptions_allowed") @default(1)
+  redemptionCount Int @map("redemption_count") @default(0)
+  expiresAt DateTime @map("expires_at")
+  emailToken String? @map("email_token")
+  domain String?
+  description String?
+  admin Boolean @default(false)
+
+  @@index([email, invitedById])
+  @@index([emailedStatus])
+  @@unique([inviteKey])
+  @@index([invitedById])
+}
+
+model JavascriptCach {
+  id Int @id
+  themeFieldId Int? @map("theme_field_id")
+  themeField ThemeField? @relation(fields: [themeFieldId], references: [id], onDelete: Cascade)
+  digest String?
+  content String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  themeId Int? @map("theme_id")
+  theme Theme? @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  sourceMap String? @map("source_map")
+  name String?
+  externalPluginImports String[] @map("external_plugin_imports")
+
+  @@check("(((themeId IS NOT NULL) AND (themeFieldId IS NULL)) OR ((themeId IS NULL) AND (themeFieldId IS NOT NULL)))")
+  @@index([digest])
+  @@unique([themeId])
+}
+
+model LinkedTopic {
+  id Int @id
+  topicId Int @map("topic_id")
+  originalTopicId Int @map("original_topic_id")
+  sequence Int
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([topicId, originalTopicId])
+  @@unique([topicId, sequence])
+}
+
+model LivestreamTopicChatChannel {
+  id Int @id
+  topicId Int @map("topic_id")
+  chatChannelId Int @map("chat_channel_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  referenceMessageId Int? @map("reference_message_id")
+
+  @@unique([topicId, chatChannelId])
+}
+
+model LlmCreditAllocation {
+  id Int @id
+  llmModelId Int @map("llm_model_id")
+  softLimitPercentage Int @map("soft_limit_percentage") @default(80)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  dailyCredits Int @map("daily_credits") @default(0)
+
+  @@unique([llmModelId])
+}
+
+model LlmCreditDailyUsage {
+  id Int @id
+  llmModelId Int @map("llm_model_id")
+  usageDate DateTime @map("usage_date")
+  creditsUsed Int @map("credits_used") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([llmModelId])
+  @@unique([llmModelId, usageDate])
+}
+
+model LlmFeatureCreditCost {
+  id Int @id
+  llmModelId Int @map("llm_model_id")
+  featureName String @map("feature_name")
+  creditsPerToken Int @map("credits_per_token") @scale(4) @default(1.0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([llmModelId, featureName])
+  @@index([llmModelId])
+}
+
+model LlmModel {
+  id Int @id
+  displayName String? @map("display_name")
+  name String
+  provider String
+  tokenizer String
+  maxPromptTokens Int @map("max_prompt_tokens")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  url String?
+  apiKey String? @map("api_key")
+  userId Int? @map("user_id")
+  enabledChatBot Boolean @map("enabled_chat_bot") @default(false)
+  providerParams Json? @map("provider_params")
+  visionEnabled Boolean @map("vision_enabled") @default(false)
+  inputCost Float? @map("input_cost")
+  cachedInputCost Float? @map("cached_input_cost")
+  outputCost Float? @map("output_cost")
+  maxOutputTokens Int? @map("max_output_tokens")
+  cacheWriteCost Float? @map("cache_write_cost") @default(0.0)
+  allowedAttachmentTypes String[] @map("allowed_attachment_types")
+  aiSecretId Int? @map("ai_secret_id")
+  visionLlmModelId Int? @map("vision_llm_model_id")
+
+  @@index([aiSecretId])
+  @@index([visionLlmModelId])
+}
+
+model LlmQuotaUsage {
+  id Int @id
+  userId Int @map("user_id")
+  llmQuotaId Int @map("llm_quota_id")
+  inputTokensUsed Int @map("input_tokens_used")
+  outputTokensUsed Int @map("output_tokens_used")
+  usages Int
+  startedAt DateTime @map("started_at")
+  resetAt DateTime @map("reset_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  costUsed Float @map("cost_used") @default(0.0)
+  cacheReadTokensUsed Int @map("cache_read_tokens_used") @default(0)
+  cacheWriteTokensUsed Int @map("cache_write_tokens_used") @default(0)
+
+  @@index([llmQuotaId])
+  @@unique([userId, llmQuotaId])
+}
+
+model LlmQuotas {
+  id Int @id
+  groupId Int @map("group_id")
+  llmModelId Int @map("llm_model_id")
+  maxTokens Int? @map("max_tokens")
+  maxUsages Int? @map("max_usages")
+  durationSeconds Int @map("duration_seconds")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  maxCost Float? @map("max_cost")
+
+  @@unique([groupId, llmModelId])
+  @@index([llmModelId])
+}
+
+model MessageBus {
+  id Int @id
+  name String?
+  context String?
+  data String?
+  createdAt DateTime @map("created_at")
+
+  @@index([createdAt])
+}
+
+model ModelAccuracy {
+  id Int @id
+  model String
+  classificationType String @map("classification_type")
+  flagsAgreed Int @map("flags_agreed") @default(0)
+  flagsDisagreed Int @map("flags_disagreed") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([model])
+}
+
+model MovedPost {
+  id Int @id
+  oldTopicId Int @map("old_topic_id")
+  oldPostId Int @map("old_post_id")
+  oldPostNumber Int @map("old_post_number")
+  newTopicId Int @map("new_topic_id")
+  newTopicTitle String @map("new_topic_title")
+  newPostId Int @map("new_post_id")
+  newPostNumber Int @map("new_post_number")
+  createdNewTopic Boolean @map("created_new_topic") @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  oldTopicTitle String? @map("old_topic_title")
+  postUserId Int? @map("post_user_id")
+  userId Int? @map("user_id")
+  fullMove Boolean? @map("full_move")
+
+  @@index([newPostId])
+  @@index([newTopicId])
+  @@index([newTopicId, postUserId])
+  @@index([oldPostId])
+  @@index([oldPostNumber])
+  @@index([oldTopicId])
+}
+
+model MutedUser {
+  id Int @id
+  userId Int @map("user_id")
+  mutedUserId Int @map("muted_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([mutedUserId, userId])
+  @@unique([userId, mutedUserId])
+}
+
+model NestedHotPostScore {
+  id String @id @default(cuid())
+  postId Int @map("post_id")
+  topicId Int @map("topic_id")
+  hotScore Float @map("hot_score")
+  threadHotScore Float @map("thread_hot_score")
+
+  @@unique([postId])
+  @@index([topicId])
+}
+
+model NestedHotScoreSnapshot {
+  id String @id @default(cuid())
+  topicId Int @map("topic_id")
+  calculatedAt DateTime @map("calculated_at")
+
+  @@index([calculatedAt])
+  @@unique([topicId])
+}
+
+model NestedTopic {
+  id Int @id
+  topicId Int @map("topic_id")
+  pinnedPostIds Int[] @map("pinned_post_ids")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([topicId])
+}
+
+model NestedViewPostStat {
+  id Int @id
+  postId Int @map("post_id")
+  directReplyCount Int @map("direct_reply_count") @default(0)
+  totalDescendantCount Int @map("total_descendant_count") @default(0)
+  whisperDirectReplyCount Int @map("whisper_direct_reply_count") @default(0)
+  whisperTotalDescendantCount Int @map("whisper_total_descendant_count") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([postId])
+}
+
+model Notification {
+  notificationType Int @map("notification_type")
+  userId Int @map("user_id")
+  data String
+  read Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  topicId Int? @map("topic_id")
+  postNumber Int? @map("post_number")
+  postActionId Int? @map("post_action_id")
+  highPriority Boolean @map("high_priority") @default(false)
+  id Int @id
+
+  @@index([userId, notificationType])
+  @@index([postActionId])
+  @@index([topicId, postNumber])
+  @@index([userId, createdAt])
+  @@index([userId, topicId, postNumber])
+  @@index([userId, id, read, topicId])
+}
+
+model Oauth2UserInfo {
+  id Int @id
+  userId Int @map("user_id")
+  uid String
+  provider String
+  email String?
+  name String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([uid, provider])
+  @@index([userId, provider])
+}
+
+model OnceoffLog {
+  id Int @id
+  jobName String? @map("job_name")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([jobName])
+}
+
+model OptimizedImage {
+  id Int @id
+  sha1 String
+  extension String
+  width Int
+  height Int
+  uploadId Int @map("upload_id")
+  url String
+  filesize Int?
+  etag String?
+  version Int?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([etag])
+  @@index([uploadId])
+  @@unique([uploadId, width, height, extension])
+}
+
+model OptimizedVideo {
+  id Int @id
+  uploadId Int @map("upload_id")
+  upload Upload @relation(fields: [uploadId], references: [id])
+  optimizedUploadId Int @map("optimized_upload_id")
+  optimizedUpload Upload @relation(fields: [optimizedUploadId], references: [id])
+  adapter String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([optimizedUploadId])
+  @@index([uploadId])
+  @@unique([uploadId, adapter], nullsDistinct: true)
+}
+
+model Permalink {
+  id Int @id
+  url String
+  topicId Int? @map("topic_id")
+  postId Int? @map("post_id")
+  categoryId Int? @map("category_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  externalUrl String? @map("external_url")
+  tagId Int? @map("tag_id")
+  userId Int? @map("user_id")
+
+  @@unique([url])
+}
+
+model PluginStoreRow {
+  id Int @id
+  pluginName String @map("plugin_name")
+  key String
+  typeName String @map("type_name")
+  value String?
+
+  @@unique([pluginName, key])
+}
+
+model PolicyUser {
+  id Int @id
+  postPolicyId Int @map("post_policy_id")
+  userId Int @map("user_id")
+  acceptedAt DateTime? @map("accepted_at")
+  revokedAt DateTime? @map("revoked_at")
+  expiredAt DateTime? @map("expired_at")
+  version String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([postPolicyId, userId])
+}
+
+model PollOption {
+  id Int @id
+  pollId Int? @map("poll_id")
+  poll Poll? @relation(fields: [pollId], references: [id])
+  digest String
+  html String
+  anonymousVotes Int? @map("anonymous_votes")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([pollId])
+  @@unique([pollId, digest], nullsDistinct: true)
+}
+
+model PollVote {
+  id String @id @default(cuid())
+  pollId Int? @map("poll_id")
+  poll Poll? @relation(fields: [pollId], references: [id])
+  pollOptionId Int? @map("poll_option_id")
+  pollOption PollOption? @relation(fields: [pollOptionId], references: [id])
+  userId Int? @map("user_id")
+  user User? @relation(fields: [userId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  rank Int @default(0)
+
+  @@index([pollId])
+  @@unique([pollId, pollOptionId, userId], nullsDistinct: true)
+  @@index([pollOptionId])
+  @@index([userId])
+}
+
+model Poll {
+  id Int @id
+  postId Int? @map("post_id")
+  post Post? @relation(fields: [postId], references: [id])
+  name String @default("poll")
+  closeAt DateTime? @map("close_at")
+  type Int @default(0)
+  status Int @default(0)
+  results Int @default(0)
+  visibility Int @default(0)
+  min Int?
+  max Int?
+  step Int?
+  anonymousVoters Int? @map("anonymous_voters")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  chartType Int @map("chart_type") @default(0)
+  groups String?
+  title String?
+  dynamic Boolean @default(false)
+  closedById Int? @map("closed_by_id")
+  closedAt DateTime? @map("closed_at")
+
+  @@index([postId])
+  @@unique([postId, name], nullsDistinct: true)
+}
+
+model PostActionType {
+  nameKey String @map("name_key")
+  isFlag Boolean @map("is_flag") @default(false)
+  icon String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  id Int @id
+  position Int @default(0)
+  scoreBonus Float @map("score_bonus") @default(0.0)
+  reviewablePriority Int @map("reviewable_priority") @default(0)
+}
+
+model PostAction {
+  id Int @id
+  postId Int @map("post_id")
+  userId Int @map("user_id")
+  postActionTypeId Int @map("post_action_type_id")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedById Int? @map("deleted_by_id")
+  relatedPostId Int? @map("related_post_id")
+  staffTookAction Boolean @map("staff_took_action") @default(false)
+  deferredById Int? @map("deferred_by_id")
+  targetsTopic Boolean @map("targets_topic") @default(false)
+  agreedAt DateTime? @map("agreed_at")
+  agreedById Int? @map("agreed_by_id")
+  deferredAt DateTime? @map("deferred_at")
+  disagreedAt DateTime? @map("disagreed_at")
+  disagreedById Int? @map("disagreed_by_id")
+
+  @@index([agreedById])
+  @@index([deferredById])
+  @@index([deletedById])
+  @@index([disagreedById])
+  @@index([postActionTypeId])
+  @@index([postActionTypeId, disagreedAt])
+  @@index([postId])
+  @@index([userId])
+  @@index([userId, postActionTypeId])
+}
+
+model PostCustomField {
+  id Int @id
+  postId Int @map("post_id")
+  name String
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([postId, name])
+}
+
+model PostCustomPrompt {
+  id Int @id
+  postId Int @map("post_id")
+  customPrompt Json @map("custom_prompt")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([postId])
+}
+
+model PostDetail {
+  id Int @id
+  postId Int? @map("post_id")
+  key String?
+  value String?
+  extra String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([postId, key], nullsDistinct: true)
+}
+
+model PostHotlinkedMedia {
+  id Int @id
+  postId Int @map("post_id")
+  url String
+  status HotlinkedMediaStatus
+  uploadId Int? @map("upload_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model PostLocalization {
+  id Int @id
+  postId Int @map("post_id")
+  postVersion Int @map("post_version")
+  locale String
+  raw String
+  cooked String
+  localizerUserId Int @map("localizer_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([postId])
+  @@unique([postId, locale])
+}
+
+model PostPolicy {
+  id Int @id
+  postId Int @map("post_id")
+  renewStart DateTime? @map("renew_start")
+  renewDays Int? @map("renew_days")
+  nextRenewAt DateTime? @map("next_renew_at")
+  reminder String?
+  lastRemindedAt DateTime? @map("last_reminded_at")
+  version String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  renewInterval Int? @map("renew_interval")
+  private Boolean @default(false)
+  lastBumpedAt DateTime? @map("last_bumped_at")
+  addUsersToGroup Int? @map("add_users_to_group")
+}
+
+model PostPolicyGroup {
+  id Int @id
+  groupId Int @map("group_id")
+  postPolicyId Int @map("post_policy_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([postPolicyId, groupId])
+}
+
+model PostReply {
+  id String @id @default(cuid())
+  postId Int? @map("post_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  replyPostId Int? @map("reply_post_id")
+
+  @@unique([postId, replyPostId], nullsDistinct: true)
+  @@index([replyPostId])
+}
+
+model PostReplyKey {
+  id Int @id
+  userId Int @map("user_id")
+  postId Int @map("post_id")
+  replyKey String @map("reply_key")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([replyKey])
+  @@unique([userId, postId])
+}
+
+model PostRevision {
+  id Int @id
+  userId Int? @map("user_id")
+  postId Int? @map("post_id")
+  modifications String?
+  number Int?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  hidden Boolean @default(false)
+
+  @@index([postId])
+  @@index([postId, number])
+  @@index([userId])
+}
+
+model PostSearchData {
+  postId Int @map("post_id") @id
+  searchData String? @map("search_data")
+  rawData String? @map("raw_data")
+  locale String?
+  version Int? @default(0)
+  privateMessage Boolean @map("private_message")
+
+  @@index([searchData])
+  @@index([postId, version, locale])
+}
+
+model PostStat {
+  id Int @id
+  postId Int? @map("post_id")
+  draftsSaved Int? @map("drafts_saved")
+  typingDurationMsecs Int? @map("typing_duration_msecs")
+  composerOpenDurationMsecs Int? @map("composer_open_duration_msecs")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  composerVersion Int? @map("composer_version")
+  writingDevice String? @map("writing_device")
+  writingDeviceUserAgent String? @map("writing_device_user_agent")
+
+  @@index([composerVersion])
+  @@index([postId])
+  @@index([writingDevice])
+}
+
+model PostTiming {
+  id String @id @default(cuid())
+  topicId Int @map("topic_id")
+  postNumber Int @map("post_number")
+  userId Int @map("user_id")
+  msecs Int
+
+  @@index([userId])
+  @@unique([topicId, postNumber, userId])
+}
+
+model PostVotingCommentCustomField {
+  id Int @id
+  postVotingCommentId Int @map("post_voting_comment_id")
+  name String
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([postVotingCommentId, name])
+}
+
+model PostVotingComment {
+  id Int @id
+  postId Int @map("post_id")
+  userId Int @map("user_id")
+  raw String
+  cooked String
+  cookedVersion Int? @map("cooked_version")
+  deletedAt DateTime? @map("deleted_at")
+  deletedById Int? @map("deleted_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  qaVoteCount Int? @map("qa_vote_count") @default(0)
+  lastEditorId Int @map("last_editor_id")
+
+  @@check("(qaVoteCount >= 0)")
+  @@index([deletedById])
+  @@index([lastEditorId])
+  @@index([postId])
+  @@index([userId])
+}
+
+model PostVotingVote {
+  id Int @id
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+  direction String
+  votableType String @map("votable_type")
+  votableId Int @map("votable_id")
+
+  @@unique([votableType, votableId, userId])
+}
+
+model ProblemCheckTracker {
+  id Int @id
+  identifier String
+  blips Int @default(0)
+  lastRunAt DateTime? @map("last_run_at")
+  nextRunAt DateTime? @map("next_run_at")
+  lastSuccessAt DateTime? @map("last_success_at")
+  lastProblemAt DateTime? @map("last_problem_at")
+  details Json?
+  target String @default("__NULL__")
+  ignoredAt DateTime? @map("ignored_at")
+
+  @@unique([identifier, target])
+}
+
+model PublishedPage {
+  id Int @id
+  topicId Int @map("topic_id")
+  slug String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  public Boolean @default(false)
+
+  @@unique([slug])
+  @@unique([topicId])
+}
+
+model PushSubscription {
+  id Int @id
+  userId Int @map("user_id")
+  data String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  errorCount Int @map("error_count") @default(0)
+  firstErrorAt DateTime? @map("first_error_at")
+}
+
+model QuotedPost {
+  id Int @id
+  postId Int @map("post_id")
+  quotedPostId Int @map("quoted_post_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([postId, quotedPostId])
+  @@unique([quotedPostId, postId])
+}
+
+model RagDocumentFragment {
+  id Int @id
+  fragment String
+  uploadId Int @map("upload_id")
+  fragmentNumber Int @map("fragment_number")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  metadata String?
+  targetId Int @map("target_id")
+  targetType String @map("target_type")
+
+  @@index([targetType, targetId])
+}
+
+model RagDocumentSource {
+  id Int @id
+  targetType String @map("target_type")
+  targetId Int @map("target_id")
+  url String
+  urlDigest String @map("url_digest")
+  refreshIntervalHours Int @map("refresh_interval_hours") @default(24)
+  uploadId Int? @map("upload_id")
+  etag String?
+  lastModified String? @map("last_modified")
+  lastFetchedAt DateTime? @map("last_fetched_at")
+  nextRefreshAt DateTime? @map("next_refresh_at")
+  lastErrorAt DateTime? @map("last_error_at")
+  lastError String? @map("last_error")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  pendingUploadId Int? @map("pending_upload_id")
+  managed Boolean @default(false)
+
+  @@unique([targetType, targetId, urlDigest])
+  @@index([nextRefreshAt])
+  @@index([targetType, targetId])
+}
+
+model RedeliveringWebhookEvent {
+  id Int @id
+  webHookEventId Int @map("web_hook_event_id")
+  processing Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([webHookEventId])
+}
+
+model RemoteTheme {
+  id Int @id
+  remoteUrl String @map("remote_url")
+  remoteVersion String? @map("remote_version")
+  localVersion String? @map("local_version")
+  aboutUrl String? @map("about_url")
+  licenseUrl String? @map("license_url")
+  commitsBehind Int? @map("commits_behind")
+  remoteUpdatedAt DateTime? @map("remote_updated_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  privateKey String? @map("private_key")
+  branch String?
+  lastErrorText String? @map("last_error_text")
+  authors String?
+  themeVersion String? @map("theme_version")
+  minimumDiscourseVersion String? @map("minimum_discourse_version")
+  maximumDiscourseVersion String? @map("maximum_discourse_version")
+  localCompatRef String? @map("local_compat_ref")
+  remoteCompatRef String? @map("remote_compat_ref")
+}
+
+model ReviewableClaimedTopic {
+  id Int @id
+  userId Int @map("user_id")
+  topicId Int @map("topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  automatic Boolean @default(false)
+
+  @@unique([topicId])
+}
+
+model ReviewableHistory {
+  id Int @id
+  reviewableId Int @map("reviewable_id")
+  reviewableHistoryType Int @map("reviewable_history_type")
+  status Int
+  createdById Int @map("created_by_id")
+  edited Json?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([createdById])
+  @@index([reviewableId])
+}
+
+model ReviewableNote {
+  id Int @id
+  reviewableId Int @map("reviewable_id")
+  reviewable Reviewable @relation(fields: [reviewableId], references: [id])
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id])
+  content String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([reviewableId])
+  @@index([reviewableId, createdAt])
+  @@index([userId])
+}
+
+model ReviewableScore {
+  id Int @id
+  reviewableId Int @map("reviewable_id")
+  userId Int @map("user_id")
+  reviewableScoreType Int @map("reviewable_score_type")
+  status Int
+  score Float @default(0.0)
+  takeActionBonus Float @map("take_action_bonus") @default(0.0)
+  reviewedById Int? @map("reviewed_by_id")
+  reviewedAt DateTime? @map("reviewed_at")
+  metaTopicId Int? @map("meta_topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  reason String?
+  userAccuracyBonus Float @map("user_accuracy_bonus") @default(0.0)
+  context String?
+
+  @@index([reviewableId])
+  @@index([reviewableScoreType])
+  @@index([userId])
+}
+
+model Reviewable {
+  id Int @id
+  type String
+  status Int @default(0)
+  createdById Int @map("created_by_id")
+  reviewableByModerator Boolean @map("reviewable_by_moderator") @default(false)
+  reviewableByGroupId Int? @map("reviewable_by_group_id")
+  categoryId Int? @map("category_id")
+  topicId Int? @map("topic_id")
+  score Float @default(0.0)
+  potentialSpam Boolean @map("potential_spam") @default(false)
+  targetId Int? @map("target_id")
+  targetType String? @map("target_type")
+  targetCreatedById Int? @map("target_created_by_id")
+  payload Json?
+  version Int @default(0)
+  latestScore DateTime? @map("latest_score")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  forceReview Boolean @map("force_review") @default(false)
+  rejectReason String? @map("reject_reason")
+  potentiallyIllegal Boolean? @map("potentially_illegal") @default(false)
+  typeSource String @map("type_source") @default("unknown")
+
+  @@index([score, createdAt])
+  @@index([reviewableByGroupId])
+  @@index([status, createdAt])
+  @@index([status, score])
+  @@index([status, type])
+  @@index([targetCreatedById])
+  @@index([targetId])
+  @@index([topicId, status, createdById])
+  @@unique([type, targetId], nullsDistinct: true)
+}
+
+model SchedulerStat {
+  id Int @id
+  name String
+  hostname String
+  pid Int
+  durationMs Int? @map("duration_ms")
+  liveSlotsStart Int? @map("live_slots_start")
+  liveSlotsFinish Int? @map("live_slots_finish")
+  startedAt DateTime @map("started_at")
+  success Boolean?
+  error String?
+}
+
+model SchemaMigrationDetail {
+  id Int @id
+  version String
+  name String?
+  hostname String?
+  gitVersion String? @map("git_version")
+  railsVersion String? @map("rails_version")
+  duration Int?
+  direction String?
+  createdAt DateTime @map("created_at")
+
+  @@index([version])
+}
+
+model SchemaMigration {
+  version String @id
+}
+
+model ScreenedEmail {
+  id Int @id
+  email String
+  actionType Int @map("action_type")
+  matchCount Int @map("match_count") @default(0)
+  lastMatchAt DateTime? @map("last_match_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  ipAddress String? @map("ip_address")
+
+  @@unique([email])
+  @@index([lastMatchAt])
+}
+
+model ScreenedIpAddress {
+  id Int @id
+  ipAddress String @map("ip_address")
+  actionType Int @map("action_type")
+  matchCount Int @map("match_count") @default(0)
+  lastMatchAt DateTime? @map("last_match_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([ipAddress])
+  @@index([lastMatchAt])
+}
+
+model ScreenedUrl {
+  id Int @id
+  url String
+  domain String
+  actionType Int @map("action_type")
+  matchCount Int @map("match_count") @default(0)
+  lastMatchAt DateTime? @map("last_match_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  ipAddress String? @map("ip_address")
+
+  @@index([lastMatchAt])
+  @@unique([url])
+}
+
+model SearchLog {
+  id Int @id
+  term String
+  userId Int? @map("user_id")
+  ipAddress String? @map("ip_address")
+  searchResultId Int? @map("search_result_id")
+  searchType Int @map("search_type")
+  createdAt DateTime @map("created_at")
+  searchResultType Int? @map("search_result_type")
+  userAgent String? @map("user_agent")
+  crawler Boolean @default(false)
+  likelyCrawler Boolean @map("likely_crawler") @default(false)
+  sessionId String? @map("session_id")
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+}
+
+model SharedAiConversation {
+  id Int @id
+  userId Int @map("user_id")
+  targetId Int @map("target_id")
+  targetType String @map("target_type")
+  title String
+  llmName String @map("llm_name")
+  context Json
+  shareKey String @map("share_key")
+  excerpt String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([userId, targetId, targetType])
+  @@unique([shareKey])
+  @@unique([targetId, targetType])
+}
+
+model SharedDraft {
+  topicId Int @map("topic_id")
+  categoryId Int @map("category_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  id Int @id
+
+  @@index([categoryId])
+  @@unique([topicId])
+}
+
+model ShelvedNotification {
+  id Int @id
+  notificationId Int @map("notification_id")
+
+  @@index([notificationId])
+}
+
+model SidebarSectionLink {
+  id Int @id
+  userId Int @map("user_id")
+  linkableId Int @map("linkable_id")
+  linkableType String @map("linkable_type")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  sidebarSectionId Int? @map("sidebar_section_id")
+  position Int @default(0)
+
+  @@unique([sidebarSectionId, userId, position], nullsDistinct: true)
+  @@unique([userId, linkableType, linkableId])
+  @@index([linkableType, linkableId])
+}
+
+model SidebarSectionLocalization {
+  id Int @id
+  sidebarSectionId Int @map("sidebar_section_id")
+  locale String
+  title String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([sidebarSectionId, locale])
+  @@index([sidebarSectionId])
+}
+
+model SidebarSection {
+  id Int @id
+  userId Int @map("user_id")
+  title String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  public Boolean @default(false)
+  sectionType Int? @map("section_type")
+  locale String?
+
+  @@unique([sectionType])
+  @@unique([userId, title])
+}
+
+model SidebarUrlLocalization {
+  id Int @id
+  sidebarUrlId Int @map("sidebar_url_id")
+  locale String
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([sidebarUrlId])
+  @@unique([sidebarUrlId, locale])
+}
+
+model SidebarUrl {
+  id Int @id
+  name String
+  value String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  icon String
+  external Boolean @default(false)
+  segment Int @default(0)
+  locale String?
+}
+
+model SilencedAssignment {
+  id Int @id
+  assignmentId Int @map("assignment_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([assignmentId])
+}
+
+model SingleSignOnRecord {
+  id Int @id
+  userId Int @map("user_id")
+  externalId String @map("external_id")
+  lastPayload String @map("last_payload")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  externalUsername String? @map("external_username")
+  externalEmail String? @map("external_email")
+  externalName String? @map("external_name")
+  externalAvatarUrl String? @map("external_avatar_url")
+  externalProfileBackgroundUrl String? @map("external_profile_background_url")
+  externalCardBackgroundUrl String? @map("external_card_background_url")
+
+  @@unique([externalId])
+  @@index([userId])
+}
+
+model SiteSettingGroup {
+  id Int @id
+  name String
+  groupIds String @map("group_ids")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([name])
+}
+
+model SiteSettingLocalization {
+  id Int @id
+  settingName String @map("setting_name")
+  locale String
+  value String
+  cooked String?
+  localizerUserId Int? @map("localizer_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([locale])
+  @@unique([settingName, locale])
+}
+
+model SiteSetting {
+  id Int @id
+  name String
+  dataType Int @map("data_type")
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([name])
+}
+
+model Sitemap {
+  id Int @id
+  name String
+  lastPostedAt DateTime @map("last_posted_at")
+  enabled Boolean @default(true)
+
+  @@unique([name])
+}
+
+model SkippedEmailLog {
+  id Int @id
+  emailType String @map("email_type")
+  toAddress String @map("to_address")
+  userId Int? @map("user_id")
+  postId Int? @map("post_id")
+  reasonType Int @map("reason_type")
+  customReason String? @map("custom_reason")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([createdAt])
+  @@index([postId])
+  @@index([reasonType])
+  @@index([userId])
+}
+
+model StylesheetCache {
+  id Int @id
+  target String
+  digest String
+  content String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  themeId Int @map("theme_id") @default("-1")
+  sourceMap String? @map("source_map")
+
+  @@unique([target, digest])
+}
+
+model SummarySection {
+  id Int @id
+  targetId Int @map("target_id")
+  targetType String @map("target_type")
+  contentRange String? @map("content_range")
+  summarizedText String @map("summarized_text")
+  metaSectionId Int? @map("meta_section_id")
+  originalContentSha String @map("original_content_sha")
+  algorithm String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model TagGroupMembership {
+  id Int @id
+  tagId Int @map("tag_id")
+  tagGroupId Int @map("tag_group_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([tagGroupId, tagId])
+}
+
+model TagGroupPermission {
+  id Int @id
+  tagGroupId Int @map("tag_group_id")
+  groupId Int @map("group_id")
+  permissionType Int @map("permission_type") @default(1)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([groupId])
+  @@index([tagGroupId])
+}
+
+model TagGroup {
+  id Int @id
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  parentTagId Int? @map("parent_tag_id")
+  onePerTopic Boolean? @map("one_per_topic") @default(false)
+}
+
+model TagLocalization {
+  id Int @id
+  tagId Int @map("tag_id")
+  locale String
+  name String
+  description String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  descriptionCooked String? @map("description_cooked")
+  descriptionCookedVersion Int? @map("description_cooked_version")
+
+  @@index([descriptionCookedVersion])
+  @@index([tagId])
+  @@unique([tagId, locale])
+}
+
+model TagSearchData {
+  tagId Int @map("tag_id") @id
+  searchData String? @map("search_data")
+  rawData String? @map("raw_data")
+  locale String?
+  version Int? @default(0)
+
+  @@index([searchData])
+}
+
+model TagUser {
+  id Int @id
+  tagId Int @map("tag_id")
+  userId Int @map("user_id")
+  notificationLevel Int @map("notification_level")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([tagId, userId, notificationLevel])
+  @@unique([userId, tagId])
+  @@index([userId, tagId, notificationLevel])
+}
+
+model Tag {
+  id Int @id
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  pmTopicCount Int @map("pm_topic_count") @default(0)
+  targetTagId Int? @map("target_tag_id")
+  description String?
+  publicTopicCount Int @map("public_topic_count") @default(0)
+  staffTopicCount Int @map("staff_topic_count") @default(0)
+  locale String?
+  slug String @default("")
+  descriptionCooked String? @map("description_cooked")
+  descriptionCookedVersion Int? @map("description_cooked_version")
+
+  @@index([descriptionCookedVersion])
+  @@unique([name])
+  @@index([slug])
+  @@index([targetTagId])
+}
+
+model TagsWebHook {
+  id String @id @default(cuid())
+  webHookId Int @map("web_hook_id")
+  tagId Int @map("tag_id")
+
+  @@unique([webHookId, tagId])
+}
+
+model ThemeField {
+  id Int @id
+  themeId Int @map("theme_id")
+  targetId Int @map("target_id")
+  name String
+  value String
+  valueBaked String? @map("value_baked")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  compilerVersion String @map("compiler_version") @default(0)
+  error String?
+  uploadId Int? @map("upload_id")
+  typeId Int @map("type_id") @default(0)
+
+  @@unique([themeId, targetId, typeId, name])
+}
+
+model ThemeModifierSet {
+  id Int @id
+  themeId Int @map("theme_id")
+  serializeTopicExcerpts Boolean? @map("serialize_topic_excerpts")
+  cspExtensions String[]? @map("csp_extensions")
+  svgIcons String[]? @map("svg_icons")
+  topicThumbnailSizes String[]? @map("topic_thumbnail_sizes")
+  customHomepage Boolean? @map("custom_homepage")
+  serializePostUserBadges String[]? @map("serialize_post_user_badges")
+  themeSettingModifiers Json? @map("theme_setting_modifiers")
+  serializeTopicOpLikesData Boolean? @map("serialize_topic_op_likes_data")
+  serializeTopicIsHot Boolean? @map("serialize_topic_is_hot")
+  onlyThemeColorSchemes Boolean? @map("only_theme_color_schemes")
+
+  @@unique([themeId])
+}
+
+model ThemeSetting {
+  id Int @id
+  name String
+  dataType Int @map("data_type")
+  value String?
+  themeId Int @map("theme_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  jsonValue Json? @map("json_value")
+}
+
+model ThemeSettingsMigration {
+  id Int @id
+  themeId Int @map("theme_id")
+  themeFieldId Int @map("theme_field_id")
+  version Int
+  name String
+  diff Json
+  createdAt DateTime @map("created_at")
+
+  @@unique([themeFieldId])
+  @@unique([themeId, version])
+}
+
+model ThemeSiteSetting {
+  id Int @id
+  themeId Int @map("theme_id")
+  name String
+  dataType Int @map("data_type")
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([themeId])
+  @@unique([themeId, name])
+}
+
+model ThemeSvgSprite {
+  id Int @id
+  themeId Int @map("theme_id")
+  uploadId Int @map("upload_id")
+  sprite Bytes
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([themeId])
+}
+
+model ThemeTranslationOverride {
+  id Int @id
+  themeId Int @map("theme_id")
+  locale String
+  translationKey String @map("translation_key")
+  value String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([themeId])
+  @@unique([themeId, locale, translationKey])
+}
+
+model Theme {
+  id Int @id
+  name String
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  compilerVersion Int @map("compiler_version") @default(0)
+  userSelectable Boolean @map("user_selectable") @default(false)
+  hidden Boolean @default(false)
+  colorSchemeId Int? @map("color_scheme_id")
+  remoteThemeId Int? @map("remote_theme_id")
+  component Boolean @default(false)
+  enabled Boolean @default(true)
+  autoUpdate Boolean @map("auto_update") @default(true)
+  darkColorSchemeId Int? @map("dark_color_scheme_id")
+
+  @@unique([remoteThemeId])
+}
+
+model TopTopic {
+  id Int @id
+  topicId Int? @map("topic_id")
+  yearlyPostsCount Int @map("yearly_posts_count") @default(0)
+  yearlyViewsCount Int @map("yearly_views_count") @default(0)
+  yearlyLikesCount Int @map("yearly_likes_count") @default(0)
+  monthlyPostsCount Int @map("monthly_posts_count") @default(0)
+  monthlyViewsCount Int @map("monthly_views_count") @default(0)
+  monthlyLikesCount Int @map("monthly_likes_count") @default(0)
+  weeklyPostsCount Int @map("weekly_posts_count") @default(0)
+  weeklyViewsCount Int @map("weekly_views_count") @default(0)
+  weeklyLikesCount Int @map("weekly_likes_count") @default(0)
+  dailyPostsCount Int @map("daily_posts_count") @default(0)
+  dailyViewsCount Int @map("daily_views_count") @default(0)
+  dailyLikesCount Int @map("daily_likes_count") @default(0)
+  dailyScore Float? @map("daily_score") @default(0.0)
+  weeklyScore Float? @map("weekly_score") @default(0.0)
+  monthlyScore Float? @map("monthly_score") @default(0.0)
+  yearlyScore Float? @map("yearly_score") @default(0.0)
+  allScore Float? @map("all_score") @default(0.0)
+  dailyOpLikesCount Int @map("daily_op_likes_count") @default(0)
+  weeklyOpLikesCount Int @map("weekly_op_likes_count") @default(0)
+  monthlyOpLikesCount Int @map("monthly_op_likes_count") @default(0)
+  yearlyOpLikesCount Int @map("yearly_op_likes_count") @default(0)
+  quarterlyPostsCount Int @map("quarterly_posts_count") @default(0)
+  quarterlyViewsCount Int @map("quarterly_views_count") @default(0)
+  quarterlyLikesCount Int @map("quarterly_likes_count") @default(0)
+  quarterlyScore Float? @map("quarterly_score") @default(0.0)
+  quarterlyOpLikesCount Int @map("quarterly_op_likes_count") @default(0)
+
+  @@index([allScore])
+  @@index([dailyScore])
+  @@index([monthlyScore])
+  @@unique([topicId])
+  @@index([weeklyScore])
+  @@index([yearlyScore])
+}
+
+model TopicAllowedGroup {
+  id Int @id
+  groupId Int @map("group_id")
+  topicId Int @map("topic_id")
+
+  @@unique([groupId, topicId])
+  @@unique([topicId, groupId])
+}
+
+model TopicAllowedUser {
+  id Int @id
+  userId Int @map("user_id")
+  topicId Int @map("topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([topicId, userId])
+  @@unique([userId, topicId])
+}
+
+model TopicCustomField {
+  id Int @id
+  topicId Int @map("topic_id")
+  name String
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([topicId, name])
+  @@index([value, name])
+}
+
+model TopicEmbed {
+  id Int @id
+  topicId Int @map("topic_id")
+  postId Int @map("post_id")
+  embedUrl String @map("embed_url")
+  contentSha1 String? @map("content_sha1")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedById Int? @map("deleted_by_id")
+  embedContentCache String? @map("embed_content_cache")
+  contentTruncated Boolean? @map("content_truncated")
+
+  @@unique([embedUrl])
+}
+
+model TopicGroup {
+  id Int @id
+  groupId Int @map("group_id")
+  topicId Int @map("topic_id")
+  lastReadPostNumber Int @map("last_read_post_number") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([groupId, topicId])
+}
+
+model TopicHotScore {
+  id Int @id
+  topicId Int @map("topic_id")
+  score Float @default(0.0)
+  recentLikes Int @map("recent_likes") @default(0)
+  recentPosters Int @map("recent_posters") @default(0)
+  recentFirstBumpedAt DateTime? @map("recent_first_bumped_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([score, topicId])
+  @@unique([topicId])
+}
+
+model TopicInvite {
+  id Int @id
+  topicId Int @map("topic_id")
+  inviteId Int @map("invite_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([inviteId])
+  @@unique([topicId, inviteId])
+}
+
+model TopicLinkClick {
+  id Int @id
+  topicLinkId Int @map("topic_link_id")
+  userId Int? @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  ipAddress String? @map("ip_address")
+
+  @@index([topicLinkId])
+}
+
+model TopicLink {
+  id Int @id
+  topicId Int @map("topic_id")
+  postId Int? @map("post_id")
+  userId Int @map("user_id")
+  url String
+  domain String
+  internal Boolean @default(false)
+  linkTopicId Int? @map("link_topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  reflection Boolean? @default(false)
+  clicks Int @default(0)
+  linkPostId Int? @map("link_post_id")
+  title String?
+  crawledAt DateTime? @map("crawled_at")
+  quote Boolean @default(false)
+  extension String?
+
+  @@index([extension])
+  @@index([linkPostId, reflection])
+  @@index([postId])
+  @@index([topicId])
+  @@index([userId, clicks, createdAt])
+  @@index([userId])
+  @@unique([topicId, postId, url], nullsDistinct: true)
+}
+
+model TopicLocalization {
+  id Int @id
+  topicId Int @map("topic_id")
+  locale String
+  title String
+  fancyTitle String @map("fancy_title")
+  localizerUserId Int @map("localizer_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  excerpt String?
+
+  @@index([topicId])
+  @@unique([topicId, locale])
+}
+
+model TopicSearchData {
+  topicId Int @map("topic_id") @id
+  rawData String? @map("raw_data")
+  locale String
+  searchData String? @map("search_data")
+  version Int? @default(0)
+
+  @@index([searchData])
+  @@index([topicId, version, locale])
+}
+
+model TopicTag {
+  id Int @id
+  topicId Int @map("topic_id")
+  tagId Int @map("tag_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([tagId, topicId])
+  @@unique([topicId, tagId])
+}
+
+model TopicThumbnail {
+  id Int @id
+  uploadId Int @map("upload_id")
+  optimizedImageId Int? @map("optimized_image_id")
+  maxWidth Int @map("max_width")
+  maxHeight Int @map("max_height")
+
+  @@index([optimizedImageId])
+  @@index([uploadId])
+  @@unique([uploadId, maxWidth, maxHeight])
+}
+
+model TopicTimer {
+  id Int @id
+  executeAt DateTime @map("execute_at")
+  statusType Int @map("status_type")
+  userId Int @map("user_id")
+  topicId Int? @map("topic_id")
+  basedOnLastPost Boolean @map("based_on_last_post") @default(false)
+  deletedAt DateTime? @map("deleted_at")
+  deletedById Int? @map("deleted_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  categoryId Int? @map("category_id")
+  publicType Boolean? @map("public_type") @default(true)
+  durationMinutes Int? @map("duration_minutes")
+  type String @default("TopicTimer")
+  timerableId Int @map("timerable_id")
+
+  @@index([timerableId])
+  @@index([topicId])
+  @@index([userId])
+}
+
+model TopicUser {
+  userId Int @map("user_id")
+  topicId Int @map("topic_id")
+  posted Boolean @default(false)
+  lastReadPostNumber Int? @map("last_read_post_number")
+  lastVisitedAt DateTime? @map("last_visited_at")
+  firstVisitedAt DateTime? @map("first_visited_at")
+  notificationLevel Int @map("notification_level") @default(1)
+  notificationsChangedAt DateTime? @map("notifications_changed_at")
+  notificationsReasonId Int? @map("notifications_reason_id")
+  totalMsecsViewed Int @map("total_msecs_viewed") @default(0)
+  clearedPinnedAt DateTime? @map("cleared_pinned_at")
+  id Int @id
+  lastEmailedPostNumber Int? @map("last_emailed_post_number")
+  liked Boolean? @default(false)
+  bookmarked Boolean? @default(false)
+  lastPostedAt DateTime? @map("last_posted_at")
+
+  @@index([topicId, notificationLevel])
+  @@unique([topicId, userId])
+  @@unique([userId, topicId])
+}
+
+model TopicViewStat {
+  id Int @id
+  topicId Int @map("topic_id")
+  viewedAt DateTime @map("viewed_at")
+  anonymousViews Int @map("anonymous_views") @default(0)
+  loggedInViews Int @map("logged_in_views") @default(0)
+
+  @@unique([topicId, viewedAt])
+  @@index([viewedAt, topicId])
+}
+
+model TopicView {
+  id String @id @default(cuid())
+  topicId Int @map("topic_id")
+  viewedAt DateTime @map("viewed_at")
+  userId Int? @map("user_id")
+  ipAddress String? @map("ip_address")
+
+  @@index([viewedAt, userId, topicId])
+  @@index([topicId, viewedAt])
+  @@index([userId, viewedAt])
+  @@index([viewedAt, topicId])
+  @@unique([userId, ipAddress, topicId], nullsDistinct: true)
+}
+
+model TopicVotingCategorySetting {
+  id Int @id
+  categoryId Int? @map("category_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([categoryId])
+}
+
+model TopicVotingTopicVoteCount {
+  id Int @id
+  topicId Int? @map("topic_id")
+  votesCount Int? @map("votes_count")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([topicId])
+  @@index([votesCount])
+}
+
+model TopicVotingVote {
+  id Int @id
+  topicId Int? @map("topic_id")
+  userId Int? @map("user_id")
+  archive Boolean? @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([topicId, createdAt])
+  @@unique([userId, topicId], nullsDistinct: true)
+}
+
+model TranslationOverride {
+  id Int @id
+  locale String
+  translationKey String @map("translation_key")
+  value String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  originalTranslation String? @map("original_translation")
+  status Int @default(0)
+
+  @@unique([locale, translationKey])
+}
+
+model UnsubscribeKey {
+  key String @id
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  unsubscribeKeyType String? @map("unsubscribe_key_type")
+  topicId Int? @map("topic_id")
+  postId Int? @map("post_id")
+
+  @@index([createdAt])
+}
+
+model UpcomingChangeEvent {
+  id Int @id
+  eventType Int @map("event_type")
+  upcomingChangeName String @map("upcoming_change_name")
+  eventData Json? @map("event_data")
+  actingUserId Int? @map("acting_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([eventType])
+  @@index([upcomingChangeName])
+}
+
+model UploadReference {
+  id Int @id
+  uploadId Int @map("upload_id")
+  targetType String @map("target_type")
+  targetId Int @map("target_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([targetType, targetId])
+  @@unique([uploadId, targetType, targetId])
+  @@index([uploadId])
+}
+
+model Upload {
+  id Int @id
+  userId Int @map("user_id")
+  originalFilename String @map("original_filename")
+  filesize Int
+  width Int?
+  height Int?
+  url String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  sha1 String?
+  origin String?
+  retainHours Int? @map("retain_hours")
+  extension String?
+  thumbnailWidth Int? @map("thumbnail_width")
+  thumbnailHeight Int? @map("thumbnail_height")
+  etag String?
+  secure Boolean @default(false)
+  accessControlPostId Int? @map("access_control_post_id")
+  originalSha1 String? @map("original_sha1")
+  animated Boolean?
+  verificationStatus Int @map("verification_status") @default(1)
+  securityLastChangedAt DateTime? @map("security_last_changed_at")
+  securityLastChangedReason String? @map("security_last_changed_reason")
+  dominantColor String? @map("dominant_color")
+
+  @@index([verificationStatus])
+  @@index([accessControlPostId])
+  @@index([etag])
+  @@index([id])
+  @@index([id, url])
+  @@index([originalSha1])
+  @@unique([sha1])
+  @@index([url])
+  @@index([userId])
+}
+
+model UserAction {
+  id Int @id
+  actionType Int @map("action_type")
+  userId Int @map("user_id")
+  targetTopicId Int? @map("target_topic_id")
+  targetPostId Int? @map("target_post_id")
+  targetUserId Int? @map("target_user_id")
+  actingUserId Int? @map("acting_user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([actionType, userId, targetTopicId, targetPostId, actingUserId], nullsDistinct: true)
+  @@index([userId, createdAt, actionType])
+  @@index([actingUserId])
+  @@index([actionType, createdAt, userId])
+  @@index([targetPostId])
+  @@index([targetUserId])
+  @@index([userId, actionType])
+}
+
+model UserApiKeyClientScope {
+  id Int @id
+  userApiKeyClientId Int @map("user_api_key_client_id")
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model UserApiKeyClient {
+  id Int @id
+  clientId String @map("client_id")
+  applicationName String @map("application_name")
+  publicKey String? @map("public_key")
+  authRedirect String? @map("auth_redirect")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([clientId])
+}
+
+model UserApiKeyScope {
+  id Int @id
+  userApiKeyId Int @map("user_api_key_id")
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  allowedParameters Json? @map("allowed_parameters")
+
+  @@index([userApiKeyId])
+}
+
+model UserApiKey {
+  id Int @id
+  userId Int @map("user_id")
+  clientId String? @map("client_id")
+  applicationName String? @map("application_name")
+  pushUrl String? @map("push_url")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  revokedAt DateTime? @map("revoked_at")
+  lastUsedAt DateTime @map("last_used_at") @default(now())
+  keyHash String @map("key_hash")
+  userApiKeyClientId Int? @map("user_api_key_client_id")
+  expiresAt DateTime? @map("expires_at")
+
+  @@unique([clientId])
+  @@unique([keyHash])
+  @@index([userApiKeyClientId])
+  @@index([userId])
+}
+
+model UserArchivedMessage {
+  id Int @id
+  userId Int @map("user_id")
+  topicId Int @map("topic_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([userId, topicId])
+}
+
+model UserAssociatedAccount {
+  id Int @id
+  providerName String @map("provider_name")
+  providerUid String @map("provider_uid")
+  userId Int? @map("user_id")
+  lastUsed DateTime @map("last_used") @default(now())
+  info Json
+  credentials Json
+  extra Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([providerName, providerUid])
+  @@unique([providerName, userId], nullsDistinct: true)
+}
+
+model UserAssociatedGroup {
+  id Int @id
+  userId Int @map("user_id")
+  associatedGroupId Int @map("associated_group_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([userId, associatedGroupId])
+  @@index([associatedGroupId])
+  @@index([userId])
+}
+
+model UserAuthTokenLog {
+  id Int @id
+  action String
+  userAuthTokenId Int? @map("user_auth_token_id")
+  userId Int? @map("user_id")
+  clientIp String? @map("client_ip")
+  userAgent String? @map("user_agent")
+  authToken String? @map("auth_token")
+  createdAt DateTime? @map("created_at")
+  path String?
+
+  @@index([userId])
+}
+
+model UserAuthToken {
+  id Int @id
+  userId Int @map("user_id")
+  authToken String @map("auth_token")
+  prevAuthToken String @map("prev_auth_token")
+  userAgent String? @map("user_agent")
+  authTokenSeen Boolean @map("auth_token_seen") @default(false)
+  clientIp String? @map("client_ip")
+  rotatedAt DateTime @map("rotated_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  seenAt DateTime? @map("seen_at")
+  authenticatedWithOauth Boolean? @map("authenticated_with_oauth") @default(false)
+  impersonatedUserId Int? @map("impersonated_user_id")
+  impersonationExpiresAt DateTime? @map("impersonation_expires_at")
+
+  @@unique([authToken])
+  @@index([impersonationExpiresAt])
+  @@unique([prevAuthToken])
+  @@index([userId])
+}
+
+model UserAvatar {
+  id Int @id
+  userId Int @map("user_id")
+  customUploadId Int? @map("custom_upload_id")
+  gravatarUploadId Int? @map("gravatar_upload_id")
+  lastGravatarDownloadAttempt DateTime? @map("last_gravatar_download_attempt")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([customUploadId])
+  @@index([gravatarUploadId])
+  @@index([userId])
+}
+
+model UserBadge {
+  id Int @id
+  badgeId Int @map("badge_id")
+  userId Int @map("user_id")
+  grantedAt DateTime @map("granted_at")
+  grantedById Int @map("granted_by_id")
+  postId Int? @map("post_id")
+  seq Int @default(0)
+  featuredRank Int? @map("featured_rank")
+  createdAt DateTime @map("created_at")
+  isFavorite Boolean? @map("is_favorite")
+  notificationId Int? @map("notification_id")
+
+  @@index([badgeId, userId])
+  @@index([userId])
+}
+
+model UserChatChannelMembership {
+  id Int @id
+  userId Int @map("user_id")
+  chatChannelId Int @map("chat_channel_id")
+  lastReadMessageId Int? @map("last_read_message_id")
+  following Boolean @default(false)
+  muted Boolean @default(false)
+  desktopNotificationLevel Int @map("desktop_notification_level") @default(1)
+  mobileNotificationLevel Int @map("mobile_notification_level") @default(1)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  lastUnreadMentionWhenEmailedId Int? @map("last_unread_mention_when_emailed_id")
+  joinMode Int @map("join_mode") @default(0)
+  lastViewedAt DateTime @map("last_viewed_at") @default(now())
+  notificationLevel Int @map("notification_level") @default(1)
+  starred Boolean @default(false)
+  lastViewedPinsAt DateTime? @map("last_viewed_pins_at")
+
+  @@index([userId, starred])
+  @@index([userId, chatChannelId, notificationLevel, following])
+  @@unique([userId, chatChannelId])
+}
+
+model UserChatThreadMembership {
+  id Int @id
+  userId Int @map("user_id")
+  threadId Int @map("thread_id")
+  lastReadMessageId Int? @map("last_read_message_id")
+  notificationLevel Int @map("notification_level") @default(2)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  threadTitlePromptSeen Boolean @map("thread_title_prompt_seen") @default(false)
+  lastUnreadMessageWhenEmailedId Int? @map("last_unread_message_when_emailed_id")
+
+  @@index([threadId, userId])
+  @@unique([userId, threadId])
+}
+
+model UserCustomField {
+  id Int @id
+  userId Int @map("user_id")
+  name String
+  value String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([userId, name])
+}
+
+model UserEmail {
+  id Int @id
+  userId Int @map("user_id")
+  email String
+  primary Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  normalizedEmail String? @map("normalized_email")
+
+  @@index([userId])
+}
+
+model UserExport {
+  id Int @id
+  fileName String @map("file_name")
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  uploadId Int? @map("upload_id")
+  topicId Int? @map("topic_id")
+}
+
+model UserFieldOption {
+  id Int @id
+  userFieldId Int @map("user_field_id")
+  value String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model UserField {
+  id Int @id
+  name String
+  fieldType String? @map("field_type")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  editable Boolean @default(false)
+  description String
+  required Boolean @default(true)
+  showOnProfile Boolean @map("show_on_profile") @default(false)
+  position Int? @default(0)
+  showOnUserCard Boolean @map("show_on_user_card") @default(false)
+  externalName String? @map("external_name")
+  externalType String? @map("external_type")
+  searchable Boolean @default(false)
+  requirement Int @default(0)
+  fieldTypeEnum Int @map("field_type_enum")
+  showOnSignup Boolean @map("show_on_signup") @default(true)
+}
+
+model UserHistory {
+  id Int @id
+  action Int
+  actingUserId Int? @map("acting_user_id")
+  targetUserId Int? @map("target_user_id")
+  details String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  context String?
+  ipAddress String? @map("ip_address")
+  email String?
+  subject String?
+  previousValue String? @map("previous_value")
+  newValue String? @map("new_value")
+  topicId Int? @map("topic_id")
+  adminOnly Boolean? @map("admin_only") @default(false)
+  postId Int? @map("post_id")
+  customType String? @map("custom_type")
+  categoryId Int? @map("category_id")
+  reviewableId Int? @map("reviewable_id")
+
+  @@index([actingUserId, action, id])
+  @@index([action, id])
+  @@index([categoryId])
+  @@index([postId])
+  @@index([reviewableId])
+  @@index([subject, id])
+  @@index([targetUserId, id])
+  @@index([topicId, targetUserId, action])
+}
+
+model UserIpAddressHistory {
+  id Int @id
+  userId Int @map("user_id")
+  ipAddress String @map("ip_address")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([userId, ipAddress])
+}
+
+model UserNotificationSchedule {
+  id Int @id
+  userId Int @map("user_id")
+  enabled Boolean @default(false)
+  day0StartTime Int @map("day_0_start_time")
+  day0EndTime Int @map("day_0_end_time")
+  day1StartTime Int @map("day_1_start_time")
+  day1EndTime Int @map("day_1_end_time")
+  day2StartTime Int @map("day_2_start_time")
+  day2EndTime Int @map("day_2_end_time")
+  day3StartTime Int @map("day_3_start_time")
+  day3EndTime Int @map("day_3_end_time")
+  day4StartTime Int @map("day_4_start_time")
+  day4EndTime Int @map("day_4_end_time")
+  day5StartTime Int @map("day_5_start_time")
+  day5EndTime Int @map("day_5_end_time")
+  day6StartTime Int @map("day_6_start_time")
+  day6EndTime Int @map("day_6_end_time")
+
+  @@index([enabled])
+  @@index([userId])
+}
+
+model UserOpenId {
+  id Int @id
+  userId Int @map("user_id")
+  email String
+  url String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  active Boolean
+
+  @@index([url])
+}
+
+model UserOption {
+  id String @id @default(cuid())
+  userId Int @map("user_id")
+  mailingListMode Boolean @map("mailing_list_mode") @default(false)
+  emailDigests Boolean? @map("email_digests")
+  externalLinksInNewTab Boolean @map("external_links_in_new_tab") @default(false)
+  enableQuoting Boolean @map("enable_quoting") @default(true)
+  dynamicFavicon Boolean @map("dynamic_favicon") @default(false)
+  automaticallyUnpinTopics Boolean @map("automatically_unpin_topics") @default(true)
+  digestAfterMinutes Int? @map("digest_after_minutes")
+  autoTrackTopicsAfterMsecs Int? @map("auto_track_topics_after_msecs")
+  newTopicDurationMinutes Int? @map("new_topic_duration_minutes")
+  lastRedirectedToTopAt DateTime? @map("last_redirected_to_top_at")
+  emailPreviousReplies Int @map("email_previous_replies") @default(2)
+  emailInReplyTo Boolean @map("email_in_reply_to") @default(true)
+  likeNotificationFrequency Int @map("like_notification_frequency") @default(1)
+  mailingListModeFrequency Int @map("mailing_list_mode_frequency") @default(1)
+  includeTl0InDigests Boolean? @map("include_tl0_in_digests") @default(false)
+  notificationLevelWhenReplying Int? @map("notification_level_when_replying")
+  themeKeySeq Int @map("theme_key_seq") @default(0)
+  allowPrivateMessages Boolean @map("allow_private_messages") @default(true)
+  homepageId Int? @map("homepage_id")
+  themeIds Int[] @map("theme_ids")
+  hideProfileAndPresence Boolean @map("hide_profile_and_presence") @default(false)
+  textSizeKey Int @map("text_size_key") @default(0)
+  textSizeSeq Int @map("text_size_seq") @default(0)
+  emailLevel Int @map("email_level") @default(1)
+  emailMessagesLevel Int @map("email_messages_level") @default(0)
+  titleCountModeKey Int @map("title_count_mode_key") @default(0)
+  enableDefer Boolean @map("enable_defer") @default(false)
+  timezone String?
+  enableAllowedPmUsers Boolean @map("enable_allowed_pm_users") @default(false)
+  darkSchemeId Int? @map("dark_scheme_id")
+  skipNewUserTips Boolean @map("skip_new_user_tips") @default(false)
+  colorSchemeId Int? @map("color_scheme_id")
+  defaultCalendar Int @map("default_calendar") @default(0)
+  chatEnabled Boolean @map("chat_enabled") @default(true)
+  onlyChatPushNotifications Boolean? @map("only_chat_push_notifications")
+  oldestSearchLogDate DateTime? @map("oldest_search_log_date")
+  chatSound String? @map("chat_sound")
+  dismissedChannelRetentionReminder Boolean? @map("dismissed_channel_retention_reminder")
+  dismissedDmRetentionReminder Boolean? @map("dismissed_dm_retention_reminder")
+  bookmarkAutoDeletePreference Int @map("bookmark_auto_delete_preference") @default(3)
+  ignoreChannelWideMention Boolean? @map("ignore_channel_wide_mention")
+  chatEmailFrequency Int @map("chat_email_frequency") @default(1)
+  seenPopups Int[]? @map("seen_popups")
+  policyEmailFrequency Int @map("policy_email_frequency") @default(0)
+  chatHeaderIndicatorPreference Int @map("chat_header_indicator_preference") @default(0)
+  sidebarLinkToFilteredList Boolean @map("sidebar_link_to_filtered_list") @default(false)
+  sidebarShowCountOfNewItems Boolean @map("sidebar_show_count_of_new_items") @default(false)
+  watchedPrecedenceOverMuted Boolean @map("watched_precedence_over_muted") @default(false)
+  chatSeparateSidebarMode Int @map("chat_separate_sidebar_mode") @default(0)
+  showThreadTitlePrompts Boolean @map("show_thread_title_prompts") @default(true)
+  autoImageCaption Boolean @map("auto_image_caption") @default(false)
+  enableSmartLists Boolean @map("enable_smart_lists") @default(true)
+  hideProfile Boolean @map("hide_profile") @default(false)
+  hidePresence Boolean @map("hide_presence") @default(false)
+  chatSendShortcut Int @map("chat_send_shortcut") @default(0)
+  notificationLevelWhenAssigned Int @map("notification_level_when_assigned") @default(3)
+  chatQuickReactionType Int @map("chat_quick_reaction_type") @default(0)
+  chatQuickReactionsCustom String? @map("chat_quick_reactions_custom")
+  aiSearchDiscoveries Boolean @map("ai_search_discoveries") @default(true)
+  compositionMode Int @map("composition_mode") @default(1)
+  interfaceColorMode Int @map("interface_color_mode") @default(1)
+  enableMarkdownMonospaceFont Boolean @map("enable_markdown_monospace_font") @default(true)
+  notifyOnLinkedPosts Boolean @map("notify_on_linked_posts") @default(true)
+  discourseRewindSharePublicly Boolean @map("discourse_rewind_share_publicly") @default(false)
+  discourseRewindDismissedAt DateTime? @map("discourse_rewind_dismissed_at")
+  discourseRewindEnabled Boolean @map("discourse_rewind_enabled") @default(true)
+  notifyOnSolved Boolean @map("notify_on_solved") @default(true)
+  showOriginalContent Boolean @map("show_original_content") @default(false)
+  enableUpcomingChangeAvailableNotifications Boolean @map("enable_upcoming_change_available_notifications") @default(true)
+  chatAnnounceNewMessages Boolean @map("chat_announce_new_messages") @default(true)
+  chatNewMessageSound Boolean @map("chat_new_message_sound") @default(false)
+  pushNotificationLevel Int @map("push_notification_level") @default(1)
+  automaticallyTranslate Boolean @map("automatically_translate") @default(true)
+  understoodLanguages String[] @map("understood_languages")
+  sendShortcut Int @map("send_shortcut") @default(0)
+
+  @@unique([userId])
+  @@index([userId, defaultCalendar])
+  @@index([watchedPrecedenceOverMuted])
+}
+
+model UserPassword {
+  id Int @id
+  userId Int @map("user_id")
+  passwordHash String @map("password_hash")
+  passwordSalt String @map("password_salt")
+  passwordAlgorithm String @map("password_algorithm")
+  passwordExpiredAt DateTime? @map("password_expired_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([userId])
+}
+
+model UserProfileView {
+  id Int @id
+  userProfileId Int @map("user_profile_id")
+  viewedAt DateTime @map("viewed_at")
+  ipAddress String? @map("ip_address")
+  userId Int? @map("user_id")
+
+  @@index([userId])
+  @@index([userProfileId])
+  @@unique([viewedAt, userId, ipAddress, userProfileId], nullsDistinct: true)
+}
+
+model UserProfile {
+  userId Int @map("user_id") @id
+  location String?
+  website String?
+  bioRaw String? @map("bio_raw")
+  bioCooked String? @map("bio_cooked")
+  dismissedBannerKey Int? @map("dismissed_banner_key")
+  bioCookedVersion Int? @map("bio_cooked_version")
+  views Int @default(0)
+  profileBackgroundUploadId Int? @map("profile_background_upload_id")
+  profileBackgroundUpload Upload? @relation(fields: [profileBackgroundUploadId], references: [id])
+  cardBackgroundUploadId Int? @map("card_background_upload_id")
+  cardBackgroundUpload Upload? @relation(fields: [cardBackgroundUploadId], references: [id])
+  grantedTitleBadgeId Int? @map("granted_title_badge_id")
+  grantedTitleBadge Badge? @relation(fields: [grantedTitleBadgeId], references: [id])
+  featuredTopicId Int? @map("featured_topic_id")
+
+  @@index([bioCookedVersion])
+  @@index([cardBackgroundUploadId])
+  @@index([grantedTitleBadgeId])
+  @@index([profileBackgroundUploadId])
+}
+
+model UserRequiredFieldsVersion {
+  id Int @id
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model UserSearchData {
+  userId Int @map("user_id") @id
+  searchData String? @map("search_data")
+  rawData String? @map("raw_data")
+  locale String?
+  version Int? @default(0)
+
+  @@index([searchData])
+}
+
+model UserSecondFactor {
+  id Int @id
+  userId Int @map("user_id")
+  method Int
+  data String
+  enabled Boolean @default(false)
+  lastUsed DateTime? @map("last_used")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  name String?
+
+  @@index([method, enabled])
+  @@index([userId])
+}
+
+model UserSecurityKey {
+  id Int @id
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id])
+  credentialId String @map("credential_id")
+  publicKey String @map("public_key")
+  factorType Int @map("factor_type") @default(0)
+  enabled Boolean @default(true)
+  name String
+  lastUsed DateTime? @map("last_used")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([credentialId])
+  @@index([factorType])
+  @@index([factorType, enabled])
+  @@index([lastUsed])
+  @@index([publicKey])
+  @@index([userId])
+}
+
+model UserStat {
+  userId Int @map("user_id") @id
+  topicsEntered Int @map("topics_entered") @default(0)
+  timeRead Int @map("time_read") @default(0)
+  daysVisited Int @map("days_visited") @default(0)
+  postsReadCount Int @map("posts_read_count") @default(0)
+  likesGiven Int @map("likes_given") @default(0)
+  likesReceived Int @map("likes_received") @default(0)
+  newSince DateTime @map("new_since")
+  readFaq DateTime? @map("read_faq")
+  firstPostCreatedAt DateTime? @map("first_post_created_at")
+  postCount Int @map("post_count") @default(0)
+  topicCount Int @map("topic_count") @default(0)
+  bounceScore Float @map("bounce_score") @default(0)
+  resetBounceScoreAfter DateTime? @map("reset_bounce_score_after")
+  flagsAgreed Int @map("flags_agreed") @default(0)
+  flagsDisagreed Int @map("flags_disagreed") @default(0)
+  flagsIgnored Int @map("flags_ignored") @default(0)
+  firstUnreadAt DateTime @map("first_unread_at") @default(now())
+  distinctBadgeCount Int @map("distinct_badge_count") @default(0)
+  firstUnreadPmAt DateTime @map("first_unread_pm_at") @default(now())
+  digestAttemptedAt DateTime? @map("digest_attempted_at")
+  postEditsCount Int? @map("post_edits_count")
+  draftCount Int @map("draft_count") @default(0)
+  pendingPostsCount Int @map("pending_posts_count") @default(0)
+}
+
+model UserStatus {
+  userId Int @map("user_id") @id
+  emoji String
+  description String
+  setAt DateTime @map("set_at")
+  endsAt DateTime? @map("ends_at")
+}
+
+model UserUpload {
+  id Int @id
+  uploadId Int @map("upload_id")
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+
+  @@unique([uploadId, userId])
+  @@index([userId, uploadId])
+}
+
+model UserVisitDailyRollup {
+  id Int @id
+  date DateTime
+  dau Int
+  mau Int
+
+  @@unique([date])
+}
+
+model UserVisit {
+  id Int @id
+  userId Int @map("user_id")
+  visitedAt DateTime @map("visited_at")
+  postsRead Int? @map("posts_read") @default(0)
+  mobile Boolean? @default(false)
+  timeRead Int @map("time_read") @default(0)
+
+  @@unique([userId, visitedAt])
+  @@index([userId, visitedAt, timeRead])
+  @@index([visitedAt, mobile])
+}
+
+model UserWarning {
+  id Int @id
+  topicId Int @map("topic_id")
+  userId Int @map("user_id")
+  createdById Int @map("created_by_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([topicId])
+  @@index([userId])
+}
+
+model User {
+  id Int @id
+  username String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  name String?
+  lastPostedAt DateTime? @map("last_posted_at")
+  active Boolean @default(false)
+  usernameLower String @map("username_lower")
+  lastSeenAt DateTime? @map("last_seen_at")
+  admin Boolean @default(false)
+  lastEmailedAt DateTime? @map("last_emailed_at")
+  trustLevel Int @map("trust_level")
+  approved Boolean @default(false)
+  approvedById Int? @map("approved_by_id")
+  approvedAt DateTime? @map("approved_at")
+  previousVisitAt DateTime? @map("previous_visit_at")
+  suspendedAt DateTime? @map("suspended_at")
+  suspendedTill DateTime? @map("suspended_till")
+  dateOfBirth DateTime? @map("date_of_birth")
+  views Int @default(0)
+  flagLevel Int @map("flag_level") @default(0)
+  ipAddress String? @map("ip_address")
+  moderator Boolean? @default(false)
+  title String?
+  uploadedAvatarId Int? @map("uploaded_avatar_id")
+  locale String?
+  primaryGroupId Int? @map("primary_group_id")
+  registrationIpAddress String? @map("registration_ip_address")
+  staged Boolean @default(false)
+  firstSeenAt DateTime? @map("first_seen_at")
+  silencedTill DateTime? @map("silenced_till")
+  groupLockedTrustLevel Int? @map("group_locked_trust_level")
+  manualLockedTrustLevel Int? @map("manual_locked_trust_level")
+  secureIdentifier String? @map("secure_identifier")
+  flairGroupId Int? @map("flair_group_id")
+  lastSeenReviewableId Int? @map("last_seen_reviewable_id")
+  requiredFieldsVersion Int? @map("required_fields_version")
+  seenNotificationId Int @map("seen_notification_id") @default(0)
+
+  @@index([id])
+  @@index([ipAddress])
+  @@index([lastPostedAt])
+  @@index([lastSeenAt])
+  @@unique([secureIdentifier])
+  @@index([uploadedAvatarId])
+  @@unique([username])
+  @@unique([usernameLower])
+}
+
+model WatchedWordGroup {
+  id Int @id
+  action Int
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model WatchedWord {
+  id Int @id
+  word String
+  action Int
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  replacement String?
+  caseSensitive Boolean @map("case_sensitive") @default(false)
+  watchedWordGroupId Int? @map("watched_word_group_id")
+  html Boolean @default(false)
+
+  @@unique([action, word])
+  @@index([watchedWordGroupId])
+}
+
+model WebCrawlerRequest {
+  id Int @id
+  date DateTime
+  userAgent String @map("user_agent")
+  count Int @default(0)
+
+  @@unique([date, userAgent])
+}
+
+model WebHookEventType {
+  id Int @id
+  name String
+  group Int?
+}
+
+model WebHookEventTypesHook {
+  id String @id @default(cuid())
+  webHookId Int @map("web_hook_id")
+  webHookEventTypeId Int @map("web_hook_event_type_id")
+
+  @@unique([webHookEventTypeId, webHookId])
+}
+
+model WebHookEvent {
+  id Int @id
+  webHookId Int @map("web_hook_id")
+  headers String?
+  payload String?
+  status Int? @default(0)
+  responseHeaders String? @map("response_headers")
+  responseBody String? @map("response_body")
+  duration Int? @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([createdAt])
+  @@index([webHookId])
+}
+
+model WebHookEventsDailyAggregate {
+  id Int @id
+  webHookId Int @map("web_hook_id")
+  date DateTime?
+  successfulEventCount Int? @map("successful_event_count")
+  failedEventCount Int? @map("failed_event_count")
+  meanDuration Int? @map("mean_duration") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([webHookId])
+}
+
+model WebHook {
+  id Int @id
+  payloadUrl String @map("payload_url")
+  contentType Int @map("content_type") @default(1)
+  lastDeliveryStatus Int @map("last_delivery_status") @default(1)
+  status Int @default(1)
+  secret String? @default("")
+  wildcardWebHook Boolean @map("wildcard_web_hook") @default(false)
+  verifyCertificate Boolean @map("verify_certificate") @default(true)
+  active Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}

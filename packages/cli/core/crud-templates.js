@@ -6,8 +6,16 @@
 // form twice. They had already drifted: one filtered `id` by name, the other
 // asked the resource for its idField.
 //
-// The pages are built on `@frontierjs/ui`, which is why they are short. A
-// `<Form {resource} />` with no children IS the form: every writable column in
+// The pages are short because neither of them contains a form. `<Model />` IS
+// the form — the markup half of the Resource, written by
+// `core/resource-template.js` — so the create page and the edit page render the
+// same fields and neither of them names one. That is Invariant 18, and it is
+// also the second half of this module's own argument: a form written on two
+// pages is a form written twice, which is exactly the drift that put these
+// templates here. It shipped that way regardless, because the resource template
+// grew the markup half after the pages were already writing their own `<Form>`.
+//
+// Under the resource, `<Form>` with no children is every writable column in
 // schema order, each with the control its type implies, the picker rows for a
 // foreign key fetched from the related service, the coerce/validate/blank-strip
 // pass before the request, and a rejection mapped back under the field that
@@ -27,7 +35,6 @@ const SC = '<' + '/script>'
 const KIT = {
   alert:   `import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'`,
   button:  `import Button        from '@frontierjs/ui/components/forms/Button.mesa'`,
-  form:    `import Form          from '@frontierjs/ui/components/forms/Form.mesa'`,
   header:  `import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'`,
   spinner: `import Spinner       from '@frontierjs/ui/components/feedback/Spinner.mesa'`,
   table:   `import Table         from '@frontierjs/ui/components/display/Table.mesa'`,
@@ -204,6 +211,8 @@ ${gateFootnote}`
 
 /**
  * @param {object}  o                  as listPage, plus:
+ * @param {string}  o.form             the Resource component's tag — the default
+ *                                     form, imported by o.imports
  * @param {string}  o.submitLabel      label on the submit button
  * @param {string}  o.backLabel        label on the "back to list" button
  * @param {boolean} [o.gate]           render the gate notice
@@ -216,17 +225,17 @@ export function createPage(o) {
 title: ${o.title}
 ---
 <script>
-  // Look for a field name, a type, an enum value, a required flag or a control
-  // choice in this file — none of them are here, because all of them are in
-  // db/schema.lite. <Form> with no children renders every writable column in
-  // schema order, over the one control table in Sierra's field-rules.js, and
-  // owns submit, in-flight state, per-field messages and the map from a
-  // rejection back to the control that caused it.
+  // There is no form in this file, and no field name, type, enum value,
+  // required flag or control choice either. <${o.form} /> IS the form — the
+  // markup half of the Resource — so a create page and an edit page render the
+  // same fields and neither of them says what the fields are (Invariant 18).
+  //
+  // What a page decides is what a page knows: the wording on the button, where
+  // Cancel leads, and where a save goes afterwards.
 ${o.imports.map(l => '  ' + l).join('\n')}
   import { goto } from '@frontierjs/sierra/router'
 ${session}
 ${o.gate ? '  ' + KIT.alert + '\n' : ''}  ${KIT.button}
-  ${KIT.form}
   ${KIT.header}
 
 ${idFieldLine(o.res)}${watch}
@@ -238,20 +247,14 @@ ${SC}
   {/snippet}
 </SectionHeader>
 
-${o.gate ? gateNotice(o.res, 'create') : ''}<Form
-  resource={${o.res}}
+${o.gate ? gateNotice(o.res, 'create') : ''}<${o.form}
   class="card"
   style="max-width: 32rem"
+  method="create"
+  submitLabel="${o.submitLabel}"
+  cancelHref="${o.basePath}"
   ondone={(created) => goto('${o.basePath}' + created[idField] + '/')}
->
-  <!-- slot="actions" rather than children: children would mean "I am writing
-       this form myself" and turn the generated field list off. A type="submit"
-       button inside <Form> reads the form's in-flight state from context, so it
-       disables and spins on its own; Cancel must not, or a slow save traps you
-       in the form. -->
-  <Button slot="actions" type="submit">${o.submitLabel}</Button>
-  <Button slot="actions" variant="ghost" href="${o.basePath}">Cancel</Button>
-</Form>
+/>
 `
 }
 
@@ -276,7 +279,6 @@ ${o.imports.map(l => '  ' + l).join('\n')}
 ${session}
   ${KIT.alert}
   ${KIT.button}
-  ${KIT.form}
   ${KIT.header}
   ${KIT.spinner}
 
@@ -319,18 +321,26 @@ ${SC}
 {#if failed}<Alert tone="danger">{failed}</Alert>{/if}
 
 ${o.gate ? gateNotice(o.res, 'patch') : ''}{#if record}
-  <!-- \`method\` is left at 'auto': the record carries an id, so this saves as a
-       patch — an absent field means "leave it alone" rather than "clear it". -->
-  <Form resource={${o.res}} bind:record class="card" style="max-width: 32rem">
-    <Button slot="actions" type="submit">${o.submitLabel}</Button>
-    <Button
-      slot="actions"
-      tone="danger"
-      variant="outlined"
-      loading={deleting}
-      onclick={remove}
-    >${o.deleteLabel}</Button>
-  </Form>
+  <!-- The same <${o.form} /> the create page renders, and that is the point:
+       the fields are the model's, so they are written down once. \`method\` is
+       left at 'auto' — the record carries an id, so this saves as a patch, and
+       an absent field means "leave it alone" rather than "clear it".
+
+       This row is not the default one (Save + Cancel), so it is passed as an
+       \`actions\` snippet, which <Form> takes over its own slot. Delete carries
+       its own \`loading\`; submit does not need one, because a type="submit"
+       button inside <Form> reads the form's in-flight state from context. -->
+  <${o.form} bind:record class="card" style="max-width: 32rem">
+    {#snippet actions()}
+      <Button type="submit">${o.submitLabel}</Button>
+      <Button
+        tone="danger"
+        variant="outlined"
+        loading={deleting}
+        onclick={remove}
+      >${o.deleteLabel}</Button>
+    {/snippet}
+  </${o.form}>
 {:else if !failed}
   <Spinner label="Loading" />
 {/if}

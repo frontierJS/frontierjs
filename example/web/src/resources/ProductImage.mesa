@@ -45,9 +45,10 @@
   {...$attributes}
 >
   <!--
-    Children WIN over generation, so naming the actions slot alone would turn
-    the whole generated field list off. `{#snippet actions()}` is the prop form
-    and is the one that composes: the fields above it are still the schema's.
+    `{#snippet actions()}` is the prop form: <Form> checks its `actions` prop
+    before its own slot, so a snippet wins where both are given. `slot="actions"`
+    composes too — only DEFAULT children turn generation off (`_auto = auto ??
+    !$slots.default`), which is what "children win" means and what it does not.
   -->
   {#snippet actions()}
     <Button type="submit" data-add-photo>Add photograph</Button>

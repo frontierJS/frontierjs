@@ -1,5 +1,25 @@
 # Changes — @frontierjs/mesa
 
+## 2026-08-27 — renderComponent takes an alias table
+
+1338 vitest, 0 fail.
+
+A build-time render compiles a component and imports the result under Node,
+which knows nothing about a bundler's aliases: `@/money.js` is a bare specifier
+there, so Node looks for a package called `@` and fails with `Cannot find
+package`. A component that builds and runs in the browser could not be
+prerendered.
+
+`options.alias` is the table — `{ '@': '/abs/app/web/src' }` — passed by the
+caller that is itself a bundler and already has one (Sierra's prerender). It is
+applied at the TOP of the import scan, before anything decides whether a
+specifier is a Mesa dependency or a plain sibling module, so the two branches
+cannot disagree about where `@/x` points. Longest prefix wins and a key matches
+on a path boundary, so `@` cannot swallow `@acme/thing`.
+
+Five tests, one of them the negative control: the same source with no table must
+still throw, or the other four prove nothing about the alias.
+
 ## 2026-08-26 — a block owns its anchor
 
 `FJS-512` and `FJS-468`, which turn out to be one defect. 1333 vitest + 89

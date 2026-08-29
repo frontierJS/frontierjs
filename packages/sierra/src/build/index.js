@@ -25,6 +25,9 @@ import { runPostBuild } from '../postbuild/index.js'
 import { prerenderRoutes } from './prerender.js'
 import { buildIslandBundle, injectIntoPages } from './island-bundle.js'
 import { autoImportPlugin } from './auto-import-plugin.js'
+import { appAliasPlugin } from './app-alias-plugin.js'
+import { staticDataPlugin } from './static-data-plugin.js'
+import { explainModuleInitFailure } from './warnings.js'
 
 /**
  * @typedef {Object} SierraConfig
@@ -38,6 +41,18 @@ import { autoImportPlugin } from './auto-import-plugin.js'
  *   — the `widget` target: where the widgets are (default `src/Embeds`), where
  *   their scripts go (default `dist/embeds`), and the tag/class prefix every
  *   one of them takes (e.g. `mt-`). Built by `sierra widgets`, not by `vite build`.
+ * @property {{ staticData?: boolean }} [dev]
+ *   — `staticData` (default **true**) runs a `render: static` route's `load()`
+ *   on the DEV SERVER and hands the page its JSON, so `vite dev` on a static
+ *   surface shows the site with its data instead of correctly empty. The
+ *   companion is never imported by the browser either way — the client gets a
+ *   `fetch` to `/__sierra/static-data`, which is why this cannot re-open
+ *   `FJS-543`. Dev only; a build is unaffected in every respect. Set it false
+ *   for the old behaviour, where every prerendered page renders `data: null`
+ *   and says so once per route.
+ *   **The dev server must run under bun** for an app whose loader reads its own
+ *   database: `bun --bun vite`, the same reason `build:site` has always needed
+ *   it.
  * @property {{ shadowDOM?: boolean }} [mesa]
  * @property {{ components?: string[], modules?: Record<string, string[]|object|string> }} [autoImport]
  * @property {{ output?: string }} [routeTable] — where the generated route
@@ -95,6 +110,10 @@ export function createSierraViteConfig(config = {}) {
     // so they must exist by the time it is built.
     sierraPlugins.push(schemaPlugin(config, sierraContext))
     sierraPlugins.push(scannerPlugin(config, sierraContext))
+    // Dev only (`apply: 'serve'`). A prerendered route's load() runs in Node,
+    // and in dev this process IS the Node — so the page can be seen with its
+    // data instead of correctly empty.
+    if (config.dev?.staticData ?? true) sierraPlugins.push(staticDataPlugin(config, sierraContext))
     sierraPlugins.push(virtualSierraPlugin(config, sierraContext))
     // The island bundle is a second Vite build, so it needs its own plugin
     // instances — a factory, not the array. Reusing the live instances would
@@ -102,6 +121,9 @@ export function createSierraViteConfig(config = {}) {
     // different config, and including postBuildPlugin itself would recurse:
     // its closeBundle is what starts the island build.
     sierraPlugins.push(postBuildPlugin(config, sierraContext, () => [
+      // The island build is handed `root` explicitly, so the alias plugin
+      // resolves `@` there exactly as it does in the main build.
+      appAliasPlugin(),
       mesaPlugin({ ...mesaOptions, routesDir }, sierraContext),
     ]))
   }
@@ -113,6 +135,11 @@ export function createSierraViteConfig(config = {}) {
   // Mesa compiler for all targets
   // Devtools toolbar — dev only, no bundle impact in production
   sierraPlugins.push(devtoolsPlugin(config))
+
+  // `@` → the surface's own src/. A plugin rather than an alias entry below,
+  // because the base is the Vite root and that is not known until the app's own
+  // vite.config.js sets it. See app-alias-plugin.js.
+  sierraPlugins.push(appAliasPlugin())
 
   sierraPlugins.push(mesaPlugin({ ...mesaOptions, routesDir }, sierraContext))
 
@@ -139,7 +166,10 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
     base,
     resolve: {
       alias: {
-        '@': resolve(process.cwd(), 'src'),
+        // `@` is NOT here — appAliasPlugin contributes it, because it is the
+        // Vite root that decides where it points and this object is built
+        // before the app's config sets one.
+        //
         // NOTE: @frontierjs/mesa subpath resolution is handled by the resolveId
         // hook in mesaPlugin, which resolves both bare and .js-suffixed forms to
         // absolute file paths. No aliases needed here.
@@ -511,7 +541,10 @@ async function resolveBuildDb(config, root) {
     }
     return candidate
   } catch (err) {
-    console.warn(`  [Sierra] static safety: could not load '${config.db}': ${err.message}`)
+    console.warn(
+      `  [Sierra] static safety: could not load '${config.db}': ` +
+      explainModuleInitFailure(err.message, config.db)
+    )
     return null
   }
 }

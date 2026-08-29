@@ -1,5 +1,43 @@
 # Changes — @frontierjs/junction
 
+## 2026-08-29 — `busyTimeout` on the SQLite cache
+
+`createSqliteCache({ busyTimeout })` — ms to wait for another process's write
+lock before `SQLITE_BUSY`, default 5_000, `0` fails immediately. Only meaningful
+for a file-backed cache; in memory there is nothing to contend for.
+
+`createDatabase` needed nothing: its `pragmas: [...]` run after the defaults and
+therefore already override the floor, which the pragma list now says out loud.
+
+`FJS-569` closed. The number is a bound on how long one call blocks this
+process's event loop, because `bun:sqlite` is synchronous — see
+`@frontierjs/litestone`'s `docs/concurrency.md`, and `FJS-D155` for why it is an
+option rather than a declaration.
+
+## 2026-08-27 — `app.registerDevService()` — the second listeners the banner could not see
+
+1547 tests, 0 fail, typecheck clean.
+
+The boot banner is derived from MOUNTED ROUTES, and a sidecar has none: a dev
+mail catcher, a stand-in payment provider and a dev identity provider are each
+their own server on their own port. So the one place an app says what it is
+serving was silent about three of the four processes `example` had just started,
+and the only record they existed was three hand-written `console.log`s in the
+app's entry file — beside a prose row in the repo's port table and a literal in
+the sink's own source, none of which is data.
+
+`app.registerDevService({ name, url, note })` is the announcement, keyed by
+name, beside `registerMetricsSource` and `registerHealthCheck`. Two readers: the
+banner prints one line each, after the app's own line, and `/manifest` carries
+`devServices` — the section nothing else in that document could hold, since a
+sidecar mounts no route to be listed under.
+
+**Announcing is all it does.** Junction does not start, stop or health-check the
+process; the caller already holds the handle it needs to stop it, and a register
+implying otherwise would be a supervisor. `_devtools` is the same problem solved
+once for one case and stays as it is — it has a *refused* state with a reason,
+which an announcement has no way to express.
+
 ## 2026-08-26 — `membershipClaim({ capabilities })`, and a standing claim that was a guess
 
 `FJS-D151`. 1541 tests, 0 fail, typecheck clean.
@@ -108,6 +146,14 @@ on the default; `basecamp` keeps its absolute `autoload:` for the reason that
 has nothing to do with layout — under `bun test` the entry is the test file.
 `fli new` keeps writing the declaration: it is a true statement, and it is the
 only form that also works against the published junction.
+
+## 2026-08-29 — the sqlite cache waits like everything else
+
+`FJS-569`'s junction half, and it is one line. `storage/database` already set
+`busy_timeout = 5000`; `createSqliteCache` was the one connection in the package
+without it, so a file-backed cache shared with a second process failed
+immediately instead of waiting. Harmless in memory, where there is nothing to
+contend for.
 
 ## 2026-08-26 — `remove` declines `$withDeleted` by name
 

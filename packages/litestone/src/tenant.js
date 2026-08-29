@@ -26,6 +26,7 @@
 //   await tenants.migrate()
 
 import { Database }        from 'bun:sqlite'
+import { applyBusyTimeout, busyTimeoutFor } from './core/pragmas.js'
 import { existsSync, unlinkSync, mkdirSync } from 'fs'
 import { resolve, join, dirname } from 'path'
 import { createClient }    from './core/client.js'
@@ -116,10 +117,11 @@ CREATE TABLE IF NOT EXISTS tenants (
 ) STRICT;
 `
 
-function openRegistry(path) {
+function openRegistry(path, busyTimeout) {
   const db = new Database(path)
   db.run('PRAGMA journal_mode = WAL')
   db.run('PRAGMA foreign_keys = ON')
+  applyBusyTimeout(db, busyTimeout)
   db.run(`CREATE TABLE IF NOT EXISTS tenants (
     id        TEXT PRIMARY KEY,
     createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -143,6 +145,7 @@ class TenantRegistry {
   #defaultConcurrency = 8
   #inMemory
   #tenancy
+  #busyTimeout
 
   constructor({ dir, registryDb, maxOpen, encryptionKey, migrationsDir, inMemory, clientOptions, tenancy }) {
     this.#tenancy       = tenancy ?? null
@@ -154,6 +157,9 @@ class TenantRegistry {
     this.#migrationsDir = migrationsDir ?? null
     this.#inMemory      = inMemory ?? false
     this.#clientOptions = clientOptions ?? {}
+    // A tenant's file IS main under `strategy database`, so a per-database
+    // `busyTimeout` narrows to main's entry for every raw handle below.
+    this.#busyTimeout   = busyTimeoutFor(this.#clientOptions.busyTimeout, 'main')
 
     // `databases: ':memory:'` is the single-client shorthand for *move them
     // all*, and a registry decides where a tenant's sqlite files go — so here
@@ -321,6 +327,7 @@ class TenantRegistry {
     const raw = new Database(path)
     raw.run('PRAGMA journal_mode = WAL')
     raw.run('PRAGMA foreign_keys = ON')
+    applyBusyTimeout(raw, this.#busyTimeout)
 
     if (this.#migrationsDir && existsSync(this.#migrationsDir)) {
       // Apply migration files — same as running `litestone migrate apply`.
@@ -536,6 +543,7 @@ class TenantRegistry {
     const results = await this.#fanOut(ids, async (id) => {
       const path   = this.#dbPath(id)
       const raw    = new Database(path)
+      applyBusyTimeout(raw, this.#busyTimeout)
       try {
         // await BEFORE closing — previously this fired-and-forgot the promise,
         // closed the DB immediately, and reported 0 applied migrations.
@@ -682,7 +690,7 @@ export async function createTenantRegistry({
   }
 
   // Open registry DB
-  const registryDb = openRegistry(registryPath)
+  const registryDb = openRegistry(registryPath, busyTimeoutFor(clientOptions?.busyTimeout, 'default'))
 
   const reg = new TenantRegistry({
     dir:           absDir,

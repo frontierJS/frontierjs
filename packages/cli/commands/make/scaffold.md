@@ -182,9 +182,10 @@ const { resourceFile } =
 // The pages themselves are `core/crud-templates.js`, shared with
 // `fli admin:generate` — two commands wrote the same form twice and had already
 // drifted apart on which field is the id. They are built on `@frontierjs/ui`:
-// `<Form {resource} />` with no children IS the form, so nothing about the model
-// is written into the file and a column added to schema.lite later still shows
-// up without regenerating.
+// `<${model} />` IS the form — the markup half of the Resource, written by
+// `core/resource-template.js` — so nothing about the model is written into
+// either page and a column added to schema.lite later still shows up without
+// regenerating. The create page and the edit page render the same tag.
 //
 // The list is the exception, and deliberately: which of twenty columns belong in
 // a table is a judgement, so it is named here and that file is where to change
@@ -196,7 +197,14 @@ const { listPage, createPage, editPage } =
 const routePages = (model, plural, fields) => {
   const singularLabel = toLabel(model)
   const pluralLabel   = toLabel(plural)
-  const imports       = [`import { ${plural} } from '../../resources/${model}.mesa'`]
+  // Two imports off one file, and they are two different things: the default
+  // export is the model's DEFAULT FORM (the resource's markup half), the named
+  // one is the accessor. A page needs the form; it needs the accessor for the
+  // id field and the gate.
+  const imports       = [
+    `import ${model} from '../../resources/${model}.mesa'`,
+    `import { ${plural} } from '../../resources/${model}.mesa'`,
+  ]
   const basePath      = `/${plural}/`
   const columns       = (fields.length ? fields.map(f => f.name) : ['id'])
     .map(name => ({ key: name, label: toLabel(name) }))
@@ -209,13 +217,13 @@ const routePages = (model, plural, fields) => {
     create: createPage({
       title: `New ${singularLabel}`, heading: `New ${singularLabel}`,
       submitLabel: `Create ${singularLabel}`, backLabel: 'Back to list',
-      basePath, imports, res: plural,
+      basePath, imports, res: plural, form: model,
     }),
     edit: editPage({
       title: singularLabel, heading: singularLabel,
       submitLabel: 'Save', backLabel: `All ${pluralLabel.toLowerCase()}`,
       deleteLabel: 'Delete',
-      basePath, imports, res: plural,
+      basePath, imports, res: plural, form: model,
     }),
   }
 }
@@ -237,13 +245,15 @@ Supported field types: `string` `text` `email` `url` `phone` `secret` `slug`
 `int` `float` `boolean` `date` `datetime` `json`. Defaults to `string` when the
 type is omitted.
 
-The routes are built on `@frontierjs/ui`. `<Form {resource} />` with no children
-IS the form — every writable column in schema order, each with the control its
-type implies, the picker rows for a foreign key fetched from the related
-service, and a rejection mapped back under the field that caused it — so the
-**create and edit** routes name no field, no type and no enum member, and a
-column added to `schema.lite` later appears on the next reload without
-regenerating. The **list** route is the exception and names its columns, because
+The routes are built on `@frontierjs/ui`, and **neither the create route nor the
+edit route contains a form**. The form is the Resource's own markup half, so both
+render `<Model />` and differ only in the wording on the button, where Cancel
+goes and what happens after a save. Under it, `<Form {resource} />` with no
+children IS the form — every writable column in schema order, each with the
+control its type implies, the picker rows for a foreign key fetched from the
+related service, and a rejection mapped back under the field that caused it — so
+neither route names a field, a type or an enum member, and a column added to
+`schema.lite` later appears on the next reload without regenerating. The **list** route is the exception and names its columns, because
 which fields belong in a table is a judgement call and that file is where to
 make it.
 

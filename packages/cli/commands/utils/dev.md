@@ -31,10 +31,19 @@ deleted, since an unlinked SQLite file lives on while a handle does. The new
 server never starts, every request is answered by the ghost, and `db:reset`
 looks like it did nothing.
 
-**Which ports are checked comes from the surfaces that exist** — `web/`, `api/`,
-`widgets/`, `extension/` — through `core/ports.js`, which owns the formula and
-the project table. A list kept per app is the thing that goes stale the day
-somebody adds a surface.
+**Which ports are checked comes from what this app's own `dev` script RUNS**,
+resolved through `core/ports.js` — which owns the formula and the project table,
+so a list kept per app cannot go stale the day somebody adds a surface.
+
+It used to be the surfaces that EXIST, and the two are only the same set in a
+scaffolded app: `fli new` composes every surface into one `dev`, so there the
+question does not arise. Every app in this repo answers it differently —
+`example` has five surfaces and a `dev` that starts two — so a storefront left
+running on 8610 refused `fli dev` by naming a port nothing it was about to start
+would have taken (`FJS-568`). `devPorts()` narrows `appPorts()` by walking the
+`dev` script's `bun run` targets, transitively. A `dev` that runs no other
+script cannot be narrowed and is not: that is a single-surface app whose `dev`
+IS the surface command, and every surface it has is one it starts.
 
 **The runner is decided by a lockfile found by walking UP.** A package inside a
 workspace has no lockfile of its own — the one lockfile is at the workspace root
@@ -51,7 +60,7 @@ const root = context.paths.root
 
 const { warnIfDatabaseEmpty, detectRunner } =
   await import(resolve(global.fliRoot, 'core/db-preflight.js'))
-const { appPorts, busyPorts } =
+const { devPorts, busyPorts } =
   await import(resolve(global.fliRoot, 'core/ports.js'))
 
 if (!flag['no-check']) {
@@ -63,7 +72,7 @@ if (!flag['no-check']) {
     manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
   } catch { /* an app with no manifest still has surfaces */ }
 
-  const busy = await busyPorts(appPorts(root, { name: manifest.name, scripts: manifest.scripts }))
+  const busy = await busyPorts(devPorts(root, { name: manifest.name, scripts: manifest.scripts }))
 
   if (busy.length && !flag.dry) {
     log.error('')

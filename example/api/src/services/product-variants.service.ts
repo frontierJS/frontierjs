@@ -46,6 +46,17 @@ export function createProductVariantsService() {
      * re-checked at the Data boundary either way.
      */
     async availability() {
+      // A read announces nothing. Every custom method broadcasts under its own
+      // name unless it says otherwise — only `find` and `get` are excluded by
+      // name — and this one answers a computed summary, not a ProductVariant.
+      // Left alone it put a frame on the `product-variants` channel for every
+      // connected browser on every availability check (a product page asks
+      // about twelve variants, and the storefront's buy box asks on every
+      // load), carrying a payload no store can merge: the client's `upsert`
+      // refuses a record with no id, so the frames were dropped on arrival.
+      // Junction says so once per method rather than letting it be silent.
+      $.dispatch = false
+
       const { productId, variantIds } = ($.data ?? $.query ?? {}) as
         { productId?: number | string, variantIds?: Array<number | string> }
 
@@ -112,6 +123,11 @@ export function createProductVariantsService() {
      * stays here, and `available` crosses. Same line `availability` draws.
      */
     async embed() {
+      // Same as `availability`: a question, not a write. It carries more of the
+      // row than that one does — enough to look mergeable — which is worse, not
+      // better, for a subscriber holding a real ProductVariant.
+      $.dispatch = false
+
       const { sku } = ($.data ?? $.query ?? {}) as { sku?: string }
       if (typeof sku !== 'string' || !sku.trim())
         throw Object.assign(new Error('embed needs a sku'), { status: 400 })

@@ -295,6 +295,17 @@ export interface CaravanOptions {
   /** Path to the SQLite jobs database. Default: './db/jobs.db' */
   db?:           string
   /**
+   * Milliseconds a queue operation waits for another PROCESS's write lock
+   * before `SQLITE_BUSY`. Default: 5_000; `0` fails immediately.
+   *
+   * A jobs database is shared by construction — a second replica, a dispatch
+   * from the API, `fli` — so the wait is the normal case rather than the
+   * exception. Raise it for a queue draining a long batch beside a busy API;
+   * it is a bound on how long ONE call can block this process's event loop,
+   * because `bun:sqlite` is synchronous.
+   */
+  busyTimeout?:  number
+  /**
    * Named queue configuration. The 'default' queue always exists.
    * @example { critical: { concurrency: 5 }, email: { concurrency: 1 } }
    */

@@ -143,7 +143,7 @@ try {
   // once per database for its whole life (`FJS-546`, `FJS-530`); the release
   // below is the same one `verify.mjs` does and the documented way out of a
   // `SoftDeletedUniqueError`.
-  for (const ref of ['ORD-PAY-1', 'ORD-PAY-2', 'ORD-PAY-3']) {
+  for (const ref of ['ORD-PAY-1', 'ORD-PAY-2', 'ORD-PAY-3', 'ORD-PAY-4']) {
     const stale = await json(await fetch(`${API}/api/orders?reference=${ref}&$withDeleted=true`, { headers: auth }))
     for (const row of stale?.data ?? []) {
       // `@length(3, 20)`, so the freed reference is truncated rather than grown.
@@ -163,6 +163,23 @@ try {
     })
     const b = await json(r)
     return b?.id ?? b?.data?.id
+  }
+
+  // What a hosted checkout would have been handed. `carts.checkout` answers this
+  // to the shopper who just bought; the orders that reach `start` here are made
+  // by staff over the API instead, so they come and ask for it as staff — the
+  // other of the two doors, and the reason `orders.paymentCode` exists rather
+  // than the code living only in a checkout response nothing here produces.
+  //
+  // Derived rather than stored (`api/src/core/checkout-code.ts`), so it is on no
+  // read of the order and there is no column to probe: asking is the only way
+  // to hold one, and this method's own read is what grades the asker.
+  const codeFor = async (orderId) => {
+    const r = await fetch(`${API}/api/orders/${orderId}`, {
+      method: 'POST', headers: { ...auth, 'x-service-method': 'paymentCode' },
+      body: '{}',
+    })
+    return (await json(r))?.checkoutCode
   }
 
   // ── The socket, opened FIRST ──────────────────────────────────────────
@@ -212,13 +229,15 @@ try {
   // ── 2. start: the shop asks, signed, and writes the row ───────────────
   //
   // Anonymous on purpose — no `auth` header. A hosted checkout is reached by a
-  // shopper at level 0, and `Order` reads at 0, which is what makes that
-  // possible without a bypass anywhere.
+  // shopper with no session, and what makes that possible is the CODE: `Order`
+  // reads at VISITOR(1) behind two policies, so there is nobody here for either
+  // of them to admit, and the code is the credential instead (`FJS-497`).
   const orderId = await newOrder('ORD-PAY-1', 42.5)
+  const payCode = await codeFor(orderId)
   const startRes = await fetch(`${API}/api/payments`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
-    body: JSON.stringify({ orderId }),
+    body: JSON.stringify({ code: payCode }),
   })
   const started = await json(startRes)
   t('start.answers', {
@@ -227,6 +246,57 @@ try {
     amount:      started?.amount,
     paymentStatus: started?.status,
   })
+
+  // ── 2b. who may open a payment, and the oracle that used to be here ──
+  //
+  // The old shape read the order as the SHOP for whatever id arrived, so a
+  // stranger naming a sequential integer got an intent — and with it the order's
+  // TOTAL in the answer and its STATUS in the refusal. Neither is the money
+  // moving anywhere, and both are an existence-and-amount oracle over the whole
+  // ledger, walked by counting from 1 (`FJS-497`).
+  //
+  // Four probes, and the fourth is the one that matters. A refusal is only
+  // evidence if the identical request SUCCEEDS with the credential added, which
+  // `start.answers` above already showed for this very order.
+  const anonById = await fetch(`${API}/api/payments`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
+    body: JSON.stringify({ orderId }),
+  })
+  const anonBody = await json(anonById)
+
+  const wrongCode = await fetch(`${API}/api/payments`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
+    body: JSON.stringify({ code: 'not-a-code-this-shop-issued' }),
+  })
+
+  // An id nobody has ever used. The assertion is not that it refuses — it is
+  // that it refuses IDENTICALLY to the real order above. A different status or
+  // a different sentence is the oracle wearing a smaller hat.
+  const anonMissing = await fetch(`${API}/api/payments`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
+    body: JSON.stringify({ orderId: 99_999_999 }),
+  })
+  const missingBody = await json(anonMissing)
+
+  t('start.refusesAStrangerNamingAnId', {
+    status:        anonById.status,
+    // Nothing about the order came back with the refusal.
+    leaksAmount:   JSON.stringify(anonBody ?? {}).includes('42.5'),
+    leaksStatus:   /pending|paid|shipped|cancelled/.test(anonBody?.message ?? ''),
+    wrongCode:     wrongCode.status,
+    // A real order and an imaginary one are indistinguishable from outside.
+    sameAsMissing: anonById.status === anonMissing.status
+                   && (anonBody?.message ?? null) === (missingBody?.message ?? null),
+  })
+
+  // Staff need no code: they can read the order, so the policy already answers.
+  // Its own order, so the assertion is about the DOOR and not about the money.
+  const staffOrder = await newOrder('ORD-PAY-4', 3.5)
+  const staffStart = await fetch(`${API}/api/payments`, {
+    method: 'POST', headers: { ...auth, 'x-service-method': 'start' },
+    body: JSON.stringify({ orderId: staffOrder }),
+  })
+  t('start.staffNeedNoCode', { status: staffStart.status })
 
   const ref = started?.providerRef
 
@@ -392,7 +462,7 @@ try {
   // ── 7. paying a paid order ────────────────────────────────────────────
   const startAgain = await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
-    body: JSON.stringify({ orderId }),
+    body: JSON.stringify({ code: payCode }),
   })
   t('start.refusesASettledOrder', { status: startAgain.status })
 
@@ -402,9 +472,10 @@ try {
   // expected to try another card, and `start` has to keep answering — which it
   // only does because nothing moved the status.
   const order2 = await newOrder('ORD-PAY-2', 9.99)
+  const code2  = await codeFor(order2)
   const start2 = await json(await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
-    body: JSON.stringify({ orderId: order2 }),
+    body: JSON.stringify({ code: code2 }),
   }))
   await fetch(`${PSP}/v1/intents/${start2.providerRef}/confirm`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -412,9 +483,12 @@ try {
   })
   const declined = await json(await fetch(`${API}/api/payments?providerRef=${start2.providerRef}`, { headers: auth }))
   const order2After = await json(await fetch(`${API}/api/orders/${order2}`, { headers: auth }))
+  // The same code again. A declined card is expected to be retried, which is
+  // where a payment code parts company with `Cart.handoffCode`: a handoff is one
+  // transfer and this is a capability that lasts as long as the order is payable.
   const retry = await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
-    body: JSON.stringify({ orderId: order2 }),
+    body: JSON.stringify({ code: code2 }),
   })
   t('webhook.declinedLeavesTheOrderPayable', {
     payment:  declined?.data?.[0]?.status,
@@ -448,7 +522,7 @@ try {
   const order3 = await newOrder('ORD-PAY-3', 5)
   const outage = await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
-    body: JSON.stringify({ orderId: order3 }),
+    body: JSON.stringify({ code: await codeFor(order3) }),
   })
   const outageBody = await json(outage)
   t('start.reportsAProviderOutage', {
@@ -506,9 +580,13 @@ try {
 
   const stockAfterSale = (await json(await fetch(`${API}/api/product-variants/${variant.id}`)))?.stock
 
+  // The one start in this file that uses the code a SHOPPER was handed, off
+  // `carts.checkout`'s own answer, rather than one staff asked for. That is the
+  // path a hosted checkout takes, so it is the one worth spending a real
+  // checkout on.
   const sale = await json(await fetch(`${API}/api/payments`, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-service-method': 'start' },
-    body: JSON.stringify({ orderId: bought.orderId }),
+    body: JSON.stringify({ code: bought.checkoutCode }),
   }))
   await fetch(`${PSP}/v1/intents/${sale.providerRef}/confirm`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outcome: 'succeeded' }),
@@ -650,6 +728,10 @@ const expected = {
   'provider.refusesUnsigned': { unsigned: 401, bodySwapped: 401 },
 
   'start.answers': { status: 200, providerRef: true, amount: 42.5, paymentStatus: 'pending' },
+  'start.refusesAStrangerNamingAnId': {
+    status: 404, leaksAmount: false, leaksStatus: false, wrongCode: 404, sameAsMissing: true,
+  },
+  'start.staffNeedNoCode': { status: 200 },
   'start.reachedTheProvider': {
     found: true, amount: 42.5, currency: 'USD',
     reference: 'ORD-PAY-1', status: 'requires_confirmation',

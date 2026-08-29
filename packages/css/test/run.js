@@ -325,7 +325,17 @@ const page = `<!doctype html>
 }
 </style>
 </head>
-<body class="theme-default">
+<!--
+  No theme class. Every "by default" assertion in this suite — a flat resting
+  Card, an unset --heading-font-weight, --app-bg falling back to
+  --surface-sunken — is a claim about tokens.css, and inside a theme class it
+  is a claim about that theme instead. It read as true only while
+  theme-default set nothing tokens.css did not already set.
+
+  The themes are still graded, explicitly: themed(name, html) in the harness
+  mounts into a themed wrapper, and contrast.spec.js sweeps all ten.
+-->
+<body>
 <script>window.__FJS_SHIPPED_CSS__ = ${JSON.stringify(shippedCss)};</script>
 <script>window.__FJS_VOCAB_JSON__ = ${JSON.stringify(vocabularyJsonState)};</script>
 <script>window.__FJS_GLOW__ = ${JSON.stringify(glowSamples)};</script>

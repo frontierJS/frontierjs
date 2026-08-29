@@ -7,6 +7,17 @@
 //   GET  /api/commands/:name  → single command metadata (for form rendering)
 //   POST /api/run/:name       → SSE stream, runs command, emits output as events
 //
+// And the control surface's own four, which are the front page rather than the
+// sidebar — what could run, which of them are up, which of them prove the change
+// in the working tree, and the process table behind a start button:
+//   GET  /api/runnables       → the inventory, cached on the registry's TTL
+//   GET  /api/state           → probed per poll, four answers, `unknown` is one
+//   GET  /api/proves          → CLAUDE.md's proof table against `git diff`
+//   GET  /api/health/:id      → what the thing on that port says about itself
+//   GET  /api/check           → the architecture rules over this project's apps
+//   GET  /api/doctor          → can this machine run fli
+//   POST /api/start/:id · POST /api/stop/:id · GET /api/output/:id
+//
 // SSE event shapes sent to client:
 //   data: {"type":"output","text":"Hello, World!\n"}
 //   data: {"type":"log","level":"success","text":"Done"}
@@ -14,7 +25,8 @@
 //   data: {"type":"error","text":"arg [name] is required!"}
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createServer } from 'http'
+import { createServer }  from 'http'
+import { execFileSync }  from 'child_process'
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { basename } from 'path'
 import { resolve, dirname } from 'path'
@@ -95,6 +107,55 @@ function route(req, res) {
     return handleMeta_info(req, res)
   }
 
+  // GET /api/runnables — what this project can start
+  if (req.method === 'GET' && path === '/api/runnables') {
+    return handleRunnables(req, res)
+  }
+
+  // GET /api/state — which of them are up
+  if (req.method === 'GET' && path === '/api/state') {
+    return handleState(req, res)
+  }
+
+  // GET /api/proves — which of them prove what you have changed
+  if (req.method === 'GET' && path === '/api/proves') {
+    return handleProves(req, res)
+  }
+
+  // GET /api/check — the architecture rules over this project's own apps
+  if (req.method === 'GET' && path === '/api/check') {
+    return handleCheck(req, res)
+  }
+
+  // GET /api/doctor — can this machine run fli
+  if (req.method === 'GET' && path === '/api/doctor') {
+    return handleDoctor(req, res)
+  }
+
+  // GET /api/health/:id — what the thing on that port says about itself
+  const healthMatch = path.match(/^\/api\/health\/(.+)$/)
+  if (req.method === 'GET' && healthMatch) {
+    return handleRowHealth(req, res, decodeURIComponent(healthMatch[1]))
+  }
+
+  // POST /api/start/:id — start a row the inventory declares
+  const startMatch = path.match(/^\/api\/start\/(.+)$/)
+  if (req.method === 'POST' && startMatch) {
+    return handleStart(req, res, decodeURIComponent(startMatch[1]))
+  }
+
+  // POST /api/stop/:id — stop one this server started
+  const stopMatch = path.match(/^\/api\/stop\/(.+)$/)
+  if (req.method === 'POST' && stopMatch) {
+    return handleStop(req, res, decodeURIComponent(stopMatch[1]))
+  }
+
+  // GET /api/output/:id — the tail of a started row's output
+  const outMatch = path.match(/^\/api\/output\/(.+)$/)
+  if (req.method === 'GET' && outMatch) {
+    return handleOutput(req, res, decodeURIComponent(outMatch[1]))
+  }
+
   // GET /api/ports — current session status
   if (req.method === 'GET' && path === '/api/ports') {
     return handlePorts(req, res)
@@ -150,6 +211,302 @@ async function handlePorts(req, res) {
     const { getSessionStatus, GLOBAL } = await import('./ports.js')
     const sessions = getSessionStatus()
     json(res, 200, { sessions, global: GLOBAL })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+// ─── GET /api/runnables ──────────────────────────────────────────────────────
+//
+// The inventory. Cached on the same TTL the command registry uses, because both
+// walk the filesystem and a page polling state must not re-walk the tree on
+// every tick.
+//
+// The commands are handed over rather than re-read: this server has already
+// built the registry for its sidebar, and the tools list only needs each
+// command's name and its `--port` default.
+
+let _cachedRunnables = null
+let _runnablesAt     = 0
+
+async function handleRunnables(req, res) {
+  try {
+    const now = Date.now()
+    if (!_cachedRunnables || now - _runnablesAt > REGISTRY_TTL_MS) {
+      const { runnables, KINDS } = await import('./runnables.js')
+      _cachedRunnables = { rows: runnables(global.projectRoot), kinds: KINDS }
+      _runnablesAt     = now
+    }
+    json(res, 200, _cachedRunnables)
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+// ─── GET /api/state ──────────────────────────────────────────────────────────
+//
+// Which rows are up, keyed by the same id. A poll rather than a stream: the
+// server pushes command OUTPUT over SSE because there is an event to push, and
+// there is no event for a port somebody else bound — a probe is a question
+// somebody has to ask.
+//
+// Four answers and `unknown` is one of them. A row with no port cannot be
+// probed at all, and *nothing here can tell* is a different sentence from *not
+// running*; collapsing them makes every drive and every suite read as down.
+//
+// `claimed-dead` is a lock claim over a port nothing answers, which is the
+// failure the lock file already exists for and the one a person needs told.
+
+async function handleState(req, res) {
+  try {
+    const { runnables, probeState } = await import('./runnables.js')
+    const { childOf, lastOf }       = await import('./children.js')
+
+    const state = await probeState(runnables(global.projectRoot), { childOf, lastOf })
+    json(res, 200, { at: new Date().toISOString(), state })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+// ─── GET /api/proves ─────────────────────────────────────────────────────────
+//
+// The other question this page can answer that a terminal cannot: not *what
+// can run* but *what should I run, for what I have just changed*. Every answer
+// is already a row with an id, so the panel presses the same button the tiles
+// below it do.
+//
+// The working tree, and only the working tree. `fli proves --from <ref>` takes
+// a ref because a person typing one has already chosen it; a ref arriving over
+// HTTP is caller-supplied text on a git command line, and the branch view is
+// not worth that. So there is no parameter here at all.
+//
+// Never cached. A refresh button answering a cached read is a broken refresh,
+// and this is a git call rather than a tree walk — it is asked when somebody
+// asks, and the page does not poll it.
+
+async function handleProves(req, res) {
+  try {
+    const root = global.projectRoot
+    // `execFileSync`, not a shell: nothing here is caller-supplied and it stays
+    // that way by construction rather than by a validator somebody can loosen.
+    const git = (argv) => {
+      try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) }
+      catch { return '' }
+    }
+
+    // Git answers paths from the repository root, which is the project root
+    // only when the two are the same directory. A project one level down would
+    // otherwise be matched against paths carrying a prefix its own table never
+    // writes — matching nothing, or worse, matching the wrong row.
+    const top    = git(['rev-parse', '--show-toplevel']).trim()
+    const prefix = top && resolve(top) !== resolve(root)
+      ? `${git(['rev-parse', '--show-prefix']).trim()}`
+      : ''
+
+    const files = git(['diff', '--name-only', 'HEAD']).trim().split('\n')
+      .filter(Boolean)
+      .filter(f => !prefix || f.startsWith(prefix))
+      .map(f => f.slice(prefix.length))
+
+    if (!files.length) return json(res, 200, { at: new Date().toISOString(), files: [], rows: [] })
+
+    const diff = git(['diff', '-U0', 'HEAD'])
+
+    const { provesFor } = await import('./proofs.js')
+    const { runnables } = await import('./runnables.js')
+    const rows = provesFor(root, { files, diff, rows: runnables(root) })
+
+    json(res, 200, { at: new Date().toISOString(), files, rows })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+// ─── GET /api/check · GET /api/doctor ────────────────────────────────────────
+//
+// Two engines that existed and were nowhere a person looks. `fli check` grades
+// the PROJECT against the rules this framework publishes; `fli doctor` grades
+// the MACHINE the commands are about to run on. They stay two questions,
+// because a missing `sqlite3` is not an architecture finding and a model named
+// in the plural is not something `apt` can fix.
+//
+// **Called in process, not spawned.** `core/checks.js` is the same engine
+// `scripts/ci.mjs` runs and `core/doctor.js` is the one the command renders, so
+// there is no `--json` to parse and no second answer to either question. That
+// is the rule `proofs.js` is already read by.
+//
+// Not cached and not polled: both walk the tree, and the page asks on load and
+// on a button. A findings list that refreshed every three seconds would cost
+// more than the findings are worth.
+
+async function handleCheck(req, res) {
+  try {
+    const root = global.projectRoot
+    const { runChecks, findApps } = await import('./checks.js')
+    const { relative }            = await import('path')
+
+    // Per app, then the workspace's own rules — the same two passes the
+    // `structure` CI phase makes, so a rule loosened for one is loosened for
+    // both. An app is a directory with a seed, which is this framework's own
+    // definition and already what every rule is graded against.
+    const scopes = findApps(root).map(dir => ({ label: relative(root, dir) || '.', root: dir, scope: 'app' }))
+    scopes.push({ label: 'packages', root, scope: 'repo' })
+
+    const out = []
+    for (const s of scopes) {
+      // `runChecks` is synchronous and one scope is ~half a second, so five in
+      // a row freeze this server — the state poll misses, every badge on the
+      // page empties, and a start button does nothing for a second and a half.
+      // Yielding between them does not make it faster; it makes the server
+      // answerable while it runs.
+      await new Promise(setImmediate)
+      const r = runChecks({ root: s.root, scope: s.scope })
+      out.push({
+        label:    s.label,
+        dir:      s.scope === 'repo' ? '.' : s.label,
+        ran:      r.ran.length,
+        skipped:  r.skipped.length,
+        findings: r.findings.map(f => ({
+          rule: f.rule, severity: f.severity, line: f.line ?? null,
+          file: f.file ? relative(root, f.file) : null,
+          message: f.message,
+        })),
+      })
+    }
+
+    json(res, 200, {
+      at: new Date().toISOString(),
+      scopes: out,
+      errors: out.reduce((n, s) => n + s.findings.filter(f => f.severity === 'error').length, 0),
+      warns:  out.reduce((n, s) => n + s.findings.filter(f => f.severity !== 'error').length, 0),
+    })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+async function handleDoctor(req, res) {
+  try {
+    const { diagnose, requiringModules } = await import('./doctor.js')
+    const { getModule }                  = await import('./registry.js')
+
+    // The registry this server already built for its sidebar, rather than a
+    // second walk of the command tree.
+    const modules = requiringModules({ commands: uniqueCommands(getRegistry()), getModule })
+    json(res, 200, {
+      at: new Date().toISOString(),
+      ...diagnose({ root: global.projectRoot, fliRoot: global.fliRoot, modules }),
+    })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+// ─── GET /api/health/:id ─────────────────────────────────────────────────────
+//
+// A port answering is not an app working. `busyPorts` opens a socket, which is
+// true of a Junction app whose database probe is failing and of a process that
+// bound the port and then wedged — so the page said `answering` about both.
+// Junction answers `/health` with a named check per plugin, and this is the one
+// reader of it here.
+//
+// **Fetched by this server and not by the page.** The page is on 8500 and the
+// app is on 8110, so a browser fetch is cross-origin: an app whose CORS does
+// not name this origin answers a network error that is indistinguishable from
+// the app being down, which is the opposite of what this is for.
+//
+// **The path is PROBED and the answer says which one worked.** `apiPrefix`
+// moves every route an app registers, `/health` included, so the path is a fact
+// about the app's config rather than about its port. Invariant 3's rule for the
+// same class of question: probe, or be told — never derive.
+//
+// THREE answers, and the third is the one worth having: `ok`, `degraded`, and
+// *nothing here answers a health question* — which is the honest state of a
+// Vite dev server, a static origin and a widget host, and is not a failure.
+
+const HEALTH_PATHS   = ['/health', '/api/health']
+const HEALTH_TIMEOUT = 2000
+
+async function handleRowHealth(req, res, id) {
+  try {
+    const row = await rowById(id)
+    if (!row)             return json(res, 404, { error: `no runnable called ${id}` })
+    if (!row.port)        return json(res, 200, { id, answered: false, why: 'this row has no port' })
+
+    for (const path of HEALTH_PATHS) {
+      const body = await askHealth(`http://localhost:${row.port}${path}`)
+      if (body) return json(res, 200, { id, answered: true, path, health: body })
+    }
+
+    // Not a failure. A Vite dev server is up and has nothing to say about its
+    // own readiness, and reporting that as unhealthy would make every web
+    // surface on the page permanently red.
+    json(res, 200, { id, answered: false, why: `nothing answered ${HEALTH_PATHS.join(' or ')}` })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+/** The parsed body if it looks like a health answer, else null. */
+async function askHealth(url) {
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(HEALTH_TIMEOUT) })
+    if (!r.ok) return null
+    const body = await r.json()
+    // A 200 of something else is not a health answer. `status` and `checks` are
+    // what every reader of this shape uses, so requiring them is what keeps a
+    // web app's index page from being read as a healthy API.
+    return body && typeof body.status === 'string' && body.checks ? body : null
+  } catch { return null }
+}
+
+// ─── POST /api/start/:id · POST /api/stop/:id · GET /api/output/:id ──────────
+//
+// The caller sends an ID and never a command. What runs comes from the
+// inventory, which comes from a file in the tree — so a request can choose
+// among the project's own declared commands and cannot name one of its own.
+//
+// The stop refusal is the design and not an omission: this server stops what it
+// started and says so about anything else, because the alternative is a button
+// that kills a process somebody else is depending on.
+
+async function rowById(id) {
+  const { runnables } = await import('./runnables.js')
+  return runnables(global.projectRoot).find(r => r.id === id) ?? null
+}
+
+async function handleStart(req, res, id) {
+  try {
+    const row = await rowById(id)
+    if (!row) return json(res, 404, { error: `no runnable called ${id}` })
+
+    const { startRow } = await import('./children.js')
+    const out = startRow(row, { root: global.projectRoot, fliRoot: global.fliRoot })
+    if (!out.ok) return json(res, out.status, { error: out.error })
+
+    json(res, 200, { ok: true, id, pid: out.pid })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+async function handleStop(req, res, id) {
+  try {
+    const row = await rowById(id)
+    const { stopRow } = await import('./children.js')
+    const out = stopRow(id, { name: row?.name ?? id })
+    if (!out.ok) return json(res, out.status, { error: out.error })
+    json(res, 200, { ok: true, id })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+async function handleOutput(req, res, id) {
+  try {
+    const { outputOf, childOf } = await import('./children.js')
+    json(res, 200, { id, lines: outputOf(id), child: childOf(id) })
   } catch (err) {
     json(res, 500, { error: err.message })
   }
@@ -437,5 +794,18 @@ export function startServer() {
     console.log(`  GET  http://localhost:${PORT}/api/commands`)
     console.log(`  POST http://localhost:${PORT}/api/run/:name`)
   })
+
+  // Anything the page started dies with this process. Registered here rather
+  // than at import in `children.js`, because a module that installs a process
+  // listener the moment it is required is one a test cannot import without
+  // inheriting it. `exit` cannot await, which is why the kill is a signal.
+  const reap = async () => {
+    try { (await import('./children.js')).killAll() } catch {}
+  }
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.once(sig, () => { reap().finally(() => process.exit(0)) })
+  }
+  server.once('close', reap)
+
   return server
 }

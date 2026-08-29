@@ -1,5 +1,23 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-08-29 — a compound survives its own round trip (`FJS-571`)
+
+`singularize`'s two whole-word lookups — the irregular table and the `-ses`
+bare-s list — never reached a compound, so `UserStatus` became the table
+`user_statuses` and read back as **`user_statuse`**; `UserAlias` as
+`user_aliase`; `sales_people` unchanged. A compound now goes through its head,
+and through the SUFFIX RULES ONLY.
+
+**`pluralize` is deliberately untouched.** Reaching inside a compound there
+turns `audit_index` into `audit_indices` and renames a table in every schema
+that already has one — a choice `inflect.spec.js` already pinned, and it stands.
+The asymmetry is what makes the trip close: the table a model gets comes from
+the regular rules, so reading it back must use those same rules.
+
+The stakes are the ones the file already stated — junction derives a model name
+from a service name with this, and a service that resolves to no model has no
+`@@gate` and no validation, so the miss fails open.
+
 ## 2026-08-26 — `/match`, and `fieldShapes` under it
 
 **`@frontierjs/toolbelt/match` — does this record belong in that query's

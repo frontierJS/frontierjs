@@ -5,6 +5,8 @@
 // ============================================================
 
 import { BaseTransport } from './base.ts'
+import { encodeBody, CONTENT_TYPE } from './encode.ts'
+import type { BodyEncoding } from './encode.ts'
 import { CredentialError, ConduitStreamError } from '../types.ts'
 import type {
   ConduitRequest,
@@ -147,14 +149,15 @@ export class HttpTransport extends BaseTransport {
       // Inside the try: JSON.stringify throws on cyclic structures and on
       // BigInt, and send() must never throw at the caller (§2.4).
       const isGet   = method === 'GET'
+      const encoding = this.descriptor.encoding ?? 'json'
       const rawBody = (!isGet && req.body !== undefined)
-        ? serialise(req.body)
+        ? serialise(req.body, encoding)
         : undefined
 
       const res = await fetch(url, this.fetchInit({
         method,
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': CONTENT_TYPE[encoding],
           'Accept':       'application/json',
           ...(req.idempotency_key ? { 'Idempotency-Key': req.idempotency_key } : {}),
           // Caller headers first, auth headers last: auth always wins.
@@ -367,9 +370,14 @@ function isJsonType(contentType: string): boolean {
     || type.endsWith('+json')
 }
 
-function serialise(body: unknown): string {
+// The one place a body becomes bytes. `encodeBody` owns the two grammars; this
+// only turns a throw into the error the transport already reports, so a body
+// that will not encode fails the same way whichever encoding was asked for —
+// JSON.stringify throws on a cycle and on BigInt, and form encoding throws on a
+// body that is not an object.
+function serialise(body: unknown, encoding: BodyEncoding): string {
   try {
-    return JSON.stringify(body)
+    return encodeBody(body, encoding)
   } catch (err) {
     throw new SerialiseError(err as Error)
   }

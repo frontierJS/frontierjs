@@ -174,9 +174,11 @@ export const components = {
   '[pkg]': () => import('../src/routes/[pkg].mesa'),
 }
 
+
 // Loader factory map — routes with a .meta.js companion
 // Only populated for routes that have a companion file
 export const loaders = {
+
 
 }
 

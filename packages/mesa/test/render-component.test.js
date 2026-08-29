@@ -496,3 +496,69 @@ describe('renderComponent from another working directory', () => {
     }
   })
 })
+
+// ── Import aliases ────────────────────────────────────────────────────────────
+// A compiled module is imported under NODE, which knows nothing about a
+// bundler's aliases: `@/money.js` is a bare specifier there and resolves as a
+// package called `@`. Sierra's prerender is itself running a Vite build, so it
+// hands over the table Vite is already using and both resolvers agree.
+describe('renderComponent — options.alias', () => {
+  const ALIAS_DIR = path.join(FIXTURES, 'alias-src')
+
+  beforeAll(async () => {
+    await mkdir(path.join(ALIAS_DIR, 'lib'), { recursive: true })
+    await writeFile(path.join(ALIAS_DIR, 'money.js'), 'export const money = (n) => `$${n}`\n')
+    await writeFile(path.join(ALIAS_DIR, 'lib', 'deep.js'), "export const deep = 'DEEP'\n")
+    await writeFile(
+      path.join(ALIAS_DIR, 'Aliased.mesa'),
+      "<script>\n  import { money } from '@/money.js'\n</script>\n<p>{money(5)}</p>\n",
+    )
+  })
+
+  afterAll(() => { try { rmSync(ALIAS_DIR, { recursive: true, force: true }) } catch {} })
+
+  it('resolves an aliased sibling module', async () => {
+    const src = "<script>\n  import { money } from '@/money.js'\n</script>\n<p>{money(7)}</p>\n"
+    const out = await renderComponent(src, {
+      cwd: FIXTURES, filename: path.join(FIXTURES, 'A.mesa'), alias: { '@': ALIAS_DIR },
+    })
+    expect(out.html).toContain('$7')
+  })
+
+  it('resolves an aliased path below the alias root', async () => {
+    const src = "<script>\n  import { deep } from '@/lib/deep.js'\n</script>\n<p>{deep}</p>\n"
+    const out = await renderComponent(src, {
+      cwd: FIXTURES, filename: path.join(FIXTURES, 'B.mesa'), alias: { '@': ALIAS_DIR },
+    })
+    expect(out.html).toContain('DEEP')
+  })
+
+  it('resolves an aliased .mesa import, and the dependency keeps its own alias', async () => {
+    const src = "<script>\n  import Aliased from '@/Aliased.mesa'\n</script>\n<Aliased />\n"
+    const out = await renderComponent(src, {
+      cwd: FIXTURES, filename: path.join(FIXTURES, 'C.mesa'), alias: { '@': ALIAS_DIR },
+    })
+    expect(out.html).toContain('$5')
+  })
+
+  // The negative control: without the table, the same source is a bare
+  // specifier and Node refuses it. If this ever passes, the tests above prove
+  // nothing about the alias.
+  it('without the table the same import fails', async () => {
+    const src = "<script>\n  import { money } from '@/money.js'\n</script>\n<p>{money(7)}</p>\n"
+    await expect(renderComponent(src, {
+      cwd: FIXTURES, filename: path.join(FIXTURES, 'D.mesa'),
+    })).rejects.toThrow()
+  })
+
+  // Longest prefix wins, and a key matches on a path boundary — otherwise `@`
+  // swallows every specifier starting with `@`, npm scopes included.
+  it('does not swallow a scoped package specifier', async () => {
+    const src = "<script>\n  import { money } from '@/money.js'\n</script>\n<p>{money(1)}</p>\n"
+    const out = await renderComponent(src, {
+      cwd: FIXTURES, filename: path.join(FIXTURES, 'E.mesa'),
+      alias: { '@': ALIAS_DIR, '@acme': '/nowhere' },
+    })
+    expect(out.html).toContain('$1')
+  })
+})

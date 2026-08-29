@@ -15,9 +15,7 @@ const currentLink = `${serverPath}/current`
 // Atomic symlink swap — ln -sfn is atomic on Linux
 // nginx serves from the symlink, so the cutover is instant
 log.info('Updating web release symlink...')
-context.exec({
-  command: `ssh ${host} "ln -sfn ${releaseDir} ${currentLink} && nginx -s reload"`,
-})
+machineFor(context, host, serverPath).run(`ln -sfn ${releaseDir} ${currentLink} && nginx -s reload`)
 
 log.success(`Web live → current → releases/${context.config.commit}`)
 ```

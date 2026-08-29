@@ -6,6 +6,20 @@ description: Deploy FrontierJS apps to a server via SSH + Docker + nginx
 <script>
 const { loadFrontierConfig, dockerfileScripts } = await import(new URL('file://' + global.fliRoot + '/core/utils.js'))
 const { vendorWorkspacePackages, linkedDeps, GENERATED_DIR } = await import(new URL('file://' + global.fliRoot + '/core/vendor.js'))
+const { createMachine } = await import(new URL('file://' + global.fliRoot + '/core/machine.js'))
+
+// ─── machineFor ───────────────────────────────────────────────────────────────
+// The one way a step reaches the box. Every command a deploy runs goes through
+// `machine.run(script)`, which pipes the script to `sh -s` there — see
+// `core/machine.js` for what that replaced and why it is not negotiable.
+//
+// `deploy.transport` is the escape hatch and is read here rather than in the
+// module, so the whole pipeline agrees about one machine per host.
+const machineFor = (context, host, path = null, transport = null) => createMachine({
+  host, path,
+  exec:      context.exec,
+  transport: transport ?? context.config?.deployConf?.transport ?? null,
+})
 
 // ─── vendorApp ────────────────────────────────────────────────────────────────
 // Write the build context the Dockerfile installs from: deploy/generated/, with
@@ -115,8 +129,9 @@ const resolveSide = (deployConf, target, side) => {
 // it: litestream reaches the server as a binary and litestone reaches it as a
 // dependency of the app, neither of which the CLI can resolve from here.
 //
-// `run` takes a remote shell command and returns its stdout as a string, so the
-// three callers keep their own ssh plumbing.
+// `run` takes a shell script and returns its stdout as a string — pass
+// `machine.capture`, so this stays a question about litestream rather than about
+// how a command reaches the box.
 const LITESTREAM_MIN = { major: 0, minor: 5 }
 
 const litestreamStatus = (run) => {
@@ -169,7 +184,7 @@ const distinctHosts = (sides) => {
 //
 // It mints rather than being handed a Release, so `--plan` needs no separate
 // `release:mint` run and cannot disagree with one.
-const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb }) => {
+const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, digest = null }) => {
   const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
   const { readdirSync, readFileSync } = await import('fs')
 
@@ -205,7 +220,10 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb }) =
   const release = mintRelease({
     app:           deployConf.app_id ?? deployConf.appId,
     environment:   target,
-    digest:        flag.digest || null,
+    // The bytes, where they exist. `--plan` runs no build and has none, so the
+    // id it prints is provisional and says so; the deploy passes what step 04
+    // produced, which is what makes the Release name an artefact at all (2.3f).
+    digest:        digest ?? flag.digest ?? null,
     bindingsHash:  bindings.hash,
     schemaHash:    schema.hash,
     pivot,
@@ -222,13 +240,378 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb }) =
     return { name: stepNameOf(f), title: fm.title, skip: fm.skip, runOnAbort: fm.runOnAbort }
   })
 
+  // The context a skip predicate is evaluated against has to be the SHAPE the
+  // runner passes — `(config.flag, config)` — so `context.flag.dry` and
+  // `context.config.doApi` both resolve. Without `flag` here, `04c-journal`'s
+  // predicate threw and the plan could not grade the journal step itself.
   const steps = planSteps(metas, {
     flag,
-    context: { config: { doApi, doWeb, deployConf, target } },
+    context: { flag, config: { doApi, doWeb, deployConf, target } },
   })
 
   const plan = planTransition({ release, steps, actor: release.createdBy })
   return { ...plan, release, bindings, findings, schema, text: formatPlan({ ...plan, release, bindings, findings }) }
+}
+
+// ─── the deploy lock ──────────────────────────────────────────────────────────
+// One lock per machine+path pair, and ONE definition of it, because a deploy and
+// a revert have to be able to see each other's: two writers on one journal is
+// two answers to what is serving, which is the state the whole Release design
+// exists to make impossible. Two copies of this script that had drifted on the
+// file name or the format would each hold a lock the other could not read.
+//
+// The failure mode being bought off is a stranded lock: a second machine
+// refusing after the first accepted must release the first, or the next deploy
+// is blocked by a run that never happened.
+const LOCK_FILE = (path) => `${path}/.deploy.lock`
+
+const releaseLocks = (context, hosts = []) => {
+  for (const h of hosts) {
+    try { machineFor(context, h.host, h.path).run(`rm -f ${LOCK_FILE(h.path)}`) } catch {}
+  }
+}
+
+const acquireLock = (context, { hosts, target }) => {
+  const locked = []
+  for (const h of hosts) {
+    const lockFile = LOCK_FILE(h.path)
+    try {
+      machineFor(context, h.host, h.path).run(`if [ -f ${lockFile} ]; then
+  echo "LOCKED: $(cat ${lockFile})"
+  exit 1
+fi
+echo "$$:$(date -u +%Y-%m-%dT%H:%M:%SZ):${target}" > ${lockFile}
+echo "ok"`)
+      locked.push(h)
+    } catch {
+      releaseLocks(context, locked)
+      return { ok: false, host: h.host, lockFile }
+    }
+  }
+  return { ok: true }
+}
+
+// ─── swapContainer ────────────────────────────────────────────────────────────
+// Put a named container onto a given image, keeping the one it replaced under
+// `_replaced` so there is a handle to go back to.
+//
+// Two callers — `_steps-docker/06-swap` deploying forward and
+// `_steps-revert/03-swap` going back — and it is one function because the going-
+// back path is the one nobody exercises until the day it matters. A copy of this
+// that had drifted would be discovered mid-incident.
+//
+// **Stopping `_replaced` before starting the new one is required by SQLite**, not
+// a tidy-up: only one writer at a time, and the new container's entrypoint opens
+// the database to migrate. That costs a 3–10s gap and it is the correct trade.
+// Litestream is unaffected — it checkpoints the WAL when `_replaced` stops.
+const swapContainer = (context, { host, container, image, apiPort, dbPath, envFile, log }) => {
+  const machine  = machineFor(context, host)
+  const replaced = `${container}_replaced`
+
+  log.info('Renaming current container to _replaced...')
+  machine.run(`if docker inspect ${container} > /dev/null 2>&1; then
+  docker rename ${container} ${replaced}
+fi`)
+
+  log.info('Stopping _replaced container...')
+  // `-t`, not `--time`: docker deprecated the long form in favour of `--timeout`
+  // and prints a warning on every deploy, while the short form means the same
+  // thing in both and is not deprecated in either.
+  machine.run(`if docker inspect ${replaced} > /dev/null 2>&1; then
+  docker stop -t 10 ${replaced}
+fi`)
+
+  log.info(`Starting ${image}...`)
+  const runCmd = [
+    'docker run -d',
+    `--name ${container}`,
+    '--restart unless-stopped',
+    `-p 127.0.0.1:${apiPort}:3000`,
+    `--volume ${dbPath}:/db`,
+    `--env-file ${envFile}`,
+    // AFTER --env-file so it wins: the mapping above targets 3000 inside the
+    // container, and the app binds whatever PORT says. A PORT in .env.production
+    // otherwise leaves the container listening where nothing forwards, which the
+    // health step then reports as a sick application.
+    `--env PORT=3000`,
+    `--env NODE_ENV=production`,
+    image,
+  ].join(' ')
+
+  machine.run(runCmd)
+  return { container, replaced }
+}
+
+// ─── healthOrRestore ──────────────────────────────────────────────────────────
+// Poll the health endpoint and, if it never answers, put `_replaced` back.
+//
+// Shared by `_steps-docker/07-health` and `_steps-revert/04-health` for the same
+// reason `swapContainer` is: the restore branch is the one nobody exercises until
+// the day it matters, and a revert whose own safety net had drifted from the
+// deploy's would be discovered at the worst moment.
+//
+// Answers `{ healthy, restored }` and throws nothing — the caller decides what a
+// failure means, because for a deploy it is a rollback and for a revert it is a
+// revert that could not land.
+const healthOrRestore = (context, { host, container, replaced, apiPort, healthPath, log, attempts = 10, intervalS = 2 }) => {
+  const machine = machineFor(context, host)
+  log.info(`Waiting for ${healthPath} (up to ${attempts * intervalS}s)...`)
+
+  // Every `$` and every nested quote below is the TARGET's — the script is piped
+  // to its shell rather than interpolated into a command line, which is what
+  // stops `$(curl …)` running here and polling the operator's own machine.
+  const healthCmd = `for i in $(seq 1 ${attempts}); do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${apiPort}${healthPath} 2>/dev/null)
+  if [ "$STATUS" = "200" ]; then
+    echo "ok"
+    exit 0
+  fi
+  sleep ${intervalS}
+done
+echo "fail"
+exit 1`
+
+  try {
+    machine.run(healthCmd)
+    log.success('Health check passed')
+    return { healthy: true, restored: false }
+  } catch {}
+
+  // Name the URL. The most common cause is not a sick app but a health path that
+  // omits the app's apiPrefix — healthPlugin() registers through app.get(), which
+  // moves with the prefix, so an app serving /api/health polls 404 here and a
+  // working release gets taken down. Without the URL in the message that reads as
+  // the app's fault.
+  log.error(`Health check failed after ${attempts * intervalS}s`)
+  log.error(`  polled: http://localhost:${apiPort}${healthPath}`)
+  log.info(`  if the API is healthy, check deploy.api.health includes your apiPrefix`)
+
+  const restoreCmd = `docker stop ${container} || true
+docker rm   ${container} || true
+if docker inspect ${replaced} > /dev/null 2>&1; then
+  docker rename ${replaced} ${container}
+  docker start  ${container}
+  echo "restored"
+else
+  echo "no previous container to restore"
+fi`
+
+  try {
+    machine.run(restoreCmd)
+    log.warn('Restored the previous container')
+    return { healthy: false, restored: true }
+  } catch (err) {
+    log.error('Restore also failed: ' + err.message)
+    return { healthy: false, restored: false }
+  }
+}
+
+// ─── connectJournal ───────────────────────────────────────────────────────────
+// Copy the runner to the target and hand back a client pointed at its journal.
+// Two callers — the deploy that writes one and `deploy:journal` that reads it —
+// because a reader that resolved the path or shipped the runner a second way is
+// a reader that can be pointed at a different file than the writer.
+//
+// `bun` is what the far side needs and `deploy:setup` installs it. `bun:sqlite`
+// is built in, so there is nothing to resolve on a checkout that has no
+// node_modules — which a deploy target does not, since the build is in Docker.
+const connectJournal = async (context, { host, serverPath, deployConf }) => {
+  const { journalClient } = await import(new URL('file://' + global.fliRoot + '/core/journal.js'))
+  const { readFileSync }  = await import('fs')
+
+  const runnerLocal  = new URL('file://' + global.fliRoot + '/core/journal-runner.mjs').pathname
+  const runnerRemote = `${serverPath}/.fli/journal-runner.mjs`
+  const dbRemote     = deployConf?.journal?.path ?? `${serverPath}/.fli/deploy.db`
+
+  const machine = machineFor(context, host, serverPath)
+  machine.run(`mkdir -p ${serverPath}/.fli`)
+  machine.send(runnerLocal, runnerRemote)
+
+  // The runner reads one JSON object on stdin, so it cannot go through
+  // `machine.run` — that channel is already carrying the script. `machine.pipe`
+  // is the verb for it, which is what keeps the local backend working here.
+  const ddl = readFileSync(new URL('file://' + global.fliRoot + '/db/ddl.snapshot.sql').pathname, 'utf8')
+
+  return journalClient({
+    db: dbRemote, ddl,
+    exec: (stdin) => machine.pipe(`bun ${runnerRemote}`, stdin),
+  })
+}
+
+// ─── noteForJournal ───────────────────────────────────────────────────────────
+// One line a step leaves for the journal, keyed by the step's own name.
+//
+// Keyed rather than a single slot, because since `04c-journal` the build runs
+// BEFORE the journal opens: there is no `afterStep` to read an unkeyed value and
+// the note is simply lost — which is exactly what a revert reads to find a
+// startable image. The bag is drained by whichever reader gets there: the
+// journal's open, for the steps that already ran, and `afterStep` for the rest.
+const noteForJournal = (context, step, value) => {
+  context.config.journalNotes ??= {}
+  context.config.journalNotes[step] = typeof value === 'string' ? value : JSON.stringify(value)
+}
+
+const takeNote = (context, step) => {
+  const bag = context.config.journalNotes
+  if (!bag || !(step in bag)) return null
+  const v = bag[step]
+  delete bag[step]
+  return v
+}
+
+// ─── restoreStepNote ──────────────────────────────────────────────────────────
+// Put a replayed step's recorded output back onto the run.
+//
+// A resume skips steps that already succeeded, so their side effects on
+// `context.config` never happen — and one of those side effects is load-bearing:
+// `04-build-api` records which bytes it built and `06-swap` starts them. A
+// resumed deploy therefore ran `docker run … undefined`.
+//
+// The note is JSON (`04-build-api`, `_steps-revert/03-swap`). A row an older fli
+// wrote is prose and restores nothing rather than being scraped — running the
+// wrong bytes is worse than refusing, and `06-swap` falls back to the tag, which
+// it already says out loud.
+const restoreStepNote = (context, output) => {
+  if (!output) return
+  let note
+  try { note = JSON.parse(output) } catch { return }
+  if (!note || typeof note !== 'object') return
+  if (note.image) {
+    context.config.imageAddress  = note.image
+    context.config.imageIdentity ??= note.scope ? { scope: note.scope } : null
+  }
+}
+
+// ─── openDeployJournal ────────────────────────────────────────────────────────
+// Phase 1e. Turns the plan 1d prints into rows on the TARGET, and hands the step
+// runner a recorder so the existing `_steps-docker` list becomes journal rows
+// with no step file learning to write one.
+//
+// Everything it needs on the far side is `bun`, which `deploy:setup` installs.
+// `core/journal-runner.mjs` is copied over and given JSON on stdin; every rule
+// about what a deploy may do lives in `core/journal.js` on THIS machine, where
+// the tests are.
+//
+// It refuses rather than reconciles. A journal belonging to another app or
+// another host, and a precondition that moved between planning and running, both
+// stop the deploy by name — the two answers were produced by two intents and
+// picking one is a guess about which person was right.
+const openDeployJournal = async (context, flag, opts) => {
+  const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
+  const { JournalError, preconditionVerdict, formatDrift, resumeDecision } = await core('journal.js')
+  const { planTransition } = await core('plan.js')
+  const { occurrenceKey } = await import('@frontierjs/toolbelt/history')
+
+  const { host, serverPath, log } = opts
+  const plan = await deployPlan(context, flag, opts)
+  if (plan.error) return { error: plan.error }
+
+  const j = await connectJournal(context, opts)
+
+  try {
+    await j.open({ app: plan.release.app, host })
+
+    // What is actually serving, which is what the plan could only guess at.
+    const state  = await j.state({ app: plan.release.app, environment: plan.release.environment })
+    const intent = {
+      kind: 'deploy', app: plan.release.app, environment: plan.release.environment,
+      fromReleaseId: state.serving, releaseId: plan.release.id,
+      generation: state.generation ?? 1,
+    }
+    const { attempt, resume } = await j.attempt(intent)
+
+    // Rebuilt against the real serving state and attempt number — the two terms
+    // `--plan` states as provisional.
+    const real = planTransition({
+      release: plan.release, steps: plan.steps.map((s, i) => ({ ...s, ordinal: i + 1 })),
+      fromReleaseId: state.serving, generation: intent.generation, attempt,
+      actor: plan.release.createdBy,
+    })
+
+    const verdict = preconditionVerdict(
+      { serving: state.serving, generation: intent.generation },
+      { serving: state.serving, generation: state.generation ?? intent.generation })
+    if (!verdict.ok) return { error: formatDrift(verdict.drift) }
+
+    const begun = await j.begin({
+      release: plan.release,
+      bindings: {
+        app: plan.release.app, environment: plan.release.environment,
+        generation: intent.generation, hash: plan.release.bindingsHash,
+        values: plan.bindings.values, secretRefs: plan.bindings.secretRefs,
+        createdBy: plan.release.createdBy,
+      },
+      transition: real.transition,
+      steps: real.steps,
+    })
+
+    const byName = new Map(begun.steps.map(r => [r.name, r]))
+    const idFor  = (name) => occurrenceKey('deploy', real.transition.id, name)
+
+    // The steps that already ran are marked done here, because the journal opens
+    // AFTER the build now (`04c-journal`) and nothing else will ever claim them.
+    // Left alone they sit `pending` forever, which reads as a pipeline that
+    // stopped rather than one that had not started recording yet — the same
+    // thing `_steps-revert/02-decide` does for the two steps ahead of it.
+    //
+    // Their PLANNED status is used rather than `succeeded`, so a step its own
+    // predicate skipped is not recorded as having run.
+    const self = real.steps.find(st => /journal/.test(st.name))?.ordinal ?? 0
+    for (const st of real.steps) {
+      if (st.ordinal >= self) continue
+      if (byName.get(st.name)?.status !== 'pending') continue
+      // Their notes too — `04-build-api` records which bytes it built, and that
+      // is what a revert reads to find a startable image.
+      await j.finish({
+        id:     idFor(st.name),
+        status: st.status === 'skipped' ? 'skipped' : 'succeeded',
+        output: takeNote(context, st.name),
+      })
+    }
+
+    return {
+      journal: j,
+      transition: real.transition,
+      release: plan.release,
+      resumed: begun.resumed,
+      attempt,
+      serving: state.serving,
+      // The recorder the step runner calls. It knows step NAMES, because that is
+      // what the runner has — the ordinal it is handed is the file's position and
+      // the id is derived from the name, which is stable when a step is inserted.
+      recorder: {
+        async beforeStep(name) {
+          const d = resumeDecision(byName.get(name))
+          if (d.action === 'skip') {
+            // A replayed step's own contribution to `context.config` never
+            // happens, so what it RECORDED has to be put back. The one such
+            // contribution is the image `04-build-api` built, which `06-swap`
+            // starts — without this a resumed deploy ran `docker run … undefined`
+            // and died, which is the resume failing in the one case it is for.
+            restoreStepNote(context, d.output)
+            return { run: false, note: d.note }
+          }
+          await j.claim({ id: idFor(name) })
+          return { run: true, note: d.note }
+        },
+        async afterStep(name, _ordinal, { status, durationMs, output } = {}) {
+          // A step may leave one line for the journal, keyed by its own name.
+          // Read here rather than passed through the runner, which knows nothing
+          // about deploys.
+          await j.finish({ id: idFor(name), status, durationMs, output: output ?? takeNote(context, name) })
+        },
+        // Called by 09-cleanup on both paths. A deploy that aborted must leave a
+        // `failed` transition and not a `running` one, or the next run reads it
+        // as a crash and tries to resume something nobody started.
+        async settle(status) {
+          await j.settle({ id: real.transition.id, status })
+        },
+      },
+    }
+  } catch (err) {
+    if (err instanceof JournalError) return { error: `deploy journal: ${err.message}` }
+    throw err
+  }
 }
 </script>
 
@@ -292,6 +675,40 @@ fli deploy
 - Docker, nginx, git, Bun
 
 Run `fli deploy:setup` to check and install what's missing.
+
+### Build once, promote a digest
+
+`deploy.builder` names the machine the image is BUILT on. Absent, it is the api
+target — dev, stage and production each build their own bytes, and no two of them
+can be shown to be one artefact:
+
+```
+deploy: {
+  server: 'prod.your-app.com',
+  builder: { server: 'build.your-app.com', path: '/apps/shop' },
+}
+```
+
+Declared, the image is built there once and shipped with
+`docker save | docker load`, which preserves the image ID — so the digest the
+Release names is the digest that starts. No registry; `IDEAS/deploy-plane.md`
+keeps three distribution strategies open and this is the one that needs no
+infrastructure.
+
+**The digest is a term of the Release id**, so an unchanged redeploy is the same
+Release and a changed one is a different Release. That is what `fli deploy:revert`
+reads to tell two deploys apart.
+
+### The machine can be this one
+
+Every command a deploy runs goes through `core/machine.js`, which pipes the
+script to `sh -s` — with an `ssh <host>` in front of it, or without. So a
+`server` of `localhost` (or `local`, `127.0.0.1`, `::1`) runs the same pipeline
+against this machine: same scripts, same Docker daemon, same journal. It is not
+a dry run and it is not a simulation; the only thing it does not exercise is ssh.
+
+That is what CI uses to run `fli deploy` at all. `transport: 'ssh'` in the deploy
+block overrides the inference, for testing sshd on your own box.
 
 ## frontier.config.js
 

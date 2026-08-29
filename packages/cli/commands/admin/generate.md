@@ -294,7 +294,9 @@ ${SC}
 // The pages are `core/crud-templates.js`, shared with `fli make:scaffold`.
 // Both commands emitted the same form and had drifted: one filtered `id` by
 // name, the other asked the resource for its idField, and only one of them
-// rendered a picker for a relation the schema declared.
+// rendered a picker for a relation the schema declared. Neither page holds a
+// form any more — `<ResourceForm />` is the Resource's own markup half, so the
+// create page and the detail page render one definition (`FJS-559`).
 //
 // What is admin-specific is passed in rather than written out: the columns come
 // off the schema at runtime (an admin covers every model and cannot name them),
@@ -310,10 +312,18 @@ const adminPages = (m, paths, res) => {
   // 19), and the export name is read off the file rather than pluralised again
   // here — `fli make:resource Person --service people` writes `people` into
   // `Person.mesa`, which no plural rule applied to `Person` would have found.
-  const imports  = [`import { ${res.name} as resource } from '${paths.up}resources/${m.name}.mesa'`]
+  // Two imports off one file: the default export is the model's DEFAULT FORM —
+  // the resource's markup half, which is what a create or an edit page renders
+  // — and the named one is the accessor, aliased because these pages cover
+  // every model and cannot name each export.
+  const imports  = [
+    `import ResourceForm from '${paths.up}resources/${m.name}.mesa'`,
+    `import { ${res.name} as resource } from '${paths.up}resources/${m.name}.mesa'`,
+  ]
   const shared   = {
     imports,
     res:           'resource',
+    form:          'ResourceForm',
     basePath:      `/admin/${m.key}/`,
     sessionImport: `import { session } from '${paths.session}'`,
     gate:          true,
@@ -347,7 +357,9 @@ detail/edit page per model, plus a dashboard and a nested layout. The output is
 plain Mesa routes for Sierra, dropped into `web/src/routes/admin/`, editable
 after generation.
 
-**Nothing about a model is written into the generated pages.** The pages are built on `@frontierjs/ui`, and
+**Nothing about a model is written into the generated pages.** The create page
+and the detail page both render `<ResourceForm />` — the Resource's own markup
+half — so the form exists once rather than once per page. Under it,
 `<Form {resource} />` with no children IS the form: field names, types, enum
 members, required flags, foreign keys and gate levels are all read off
 `resource.fields` / `.relations` / `.gate` at runtime. Adding a column to

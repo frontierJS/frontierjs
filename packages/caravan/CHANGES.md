@@ -1,5 +1,18 @@
 # Changes — @frontierjs/caravan
 
+## 2026-08-29 — `busyTimeout` on the jobs database
+
+`createCaravan({ busyTimeout })`, also settable from `junction.config.js`'s
+`caravan:` section. Default 5_000 as before; `0` fails immediately.
+
+A jobs database is shared by construction — a second replica, a dispatch from the
+API, `fli` — so waiting for another process's write lock is the normal case
+rather than the exception. It is configurable because the two callers want
+different answers: a worker draining a long batch can afford to wait, an API
+dispatching a job cannot, and since `bun:sqlite` is synchronous the number is a
+bound on how long ONE call blocks that process's event loop. `FJS-569`,
+`FJS-D155`, and `@frontierjs/litestone`'s `docs/concurrency.md`.
+
 ## 2026-08-25 — a fixed-time schedule fires once per calendar day, whatever the clock does
 
 188 tests, 0 fail (18 new). Typecheck clean.
